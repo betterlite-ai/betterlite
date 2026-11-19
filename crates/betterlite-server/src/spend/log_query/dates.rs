@@ -66,13 +66,8 @@ fn parse_date_only(text: &str) -> Option<DateTime<Utc>> {
 }
 
 fn split_date_and_time(text: &str) -> Option<(&str, &str)> {
-    let index = text.find(char::is_whitespace)?;
-    let date_text = text.get(..index)?;
-    let time_text = text.get(index..)?.trim_start();
-    if date_text.is_empty() || time_text.is_empty() {
-        return None;
-    }
-    Some((date_text, time_text))
+    let (date_text, rest) = text.split_once(char::is_whitespace)?;
+    Some((date_text, rest.trim_start()))
 }
 
 fn parse_date_fields(text: &str) -> Option<NaiveDate> {
