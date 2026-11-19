@@ -170,6 +170,24 @@ async fn compaction_at_the_threshold_leaves_one_batch_and_room() {
 }
 
 #[tokio::test]
+async fn a_zero_threshold_compacts_every_add() {
+    let queue = WindowSpendUpdateQueue::new(2, 0, 10).expect("a queue");
+    for spend in ["1.0", "2.0", "0.5"] {
+        timeout(
+            Duration::from_secs(1),
+            queue.add_update(same_window(spend, None)),
+        )
+        .await
+        .expect("each add compacts back to one batch")
+        .expect("room in the queue");
+    }
+    assert_eq!(
+        queue.flush().expect("the windows aggregate"),
+        [same_window("3.5", None)]
+    );
+}
+
+#[tokio::test]
 async fn a_full_queue_waits_for_a_flush() {
     let queue = WindowSpendUpdateQueue::new(1, 100, 10).expect("a queue");
     queue
