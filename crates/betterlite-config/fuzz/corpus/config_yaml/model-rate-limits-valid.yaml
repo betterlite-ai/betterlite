@@ -1,0 +1,26 @@
+model_list:
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+      tpm: 100000
+      rpm: 500
+    model_info:
+      id: gpt-4o-limited
+  - model_name: gpt-4o
+    litellm_params:
+      model: azure/gpt-4o
+      api_base: os.environ/AZURE_API_BASE
+    model_info:
+      id: gpt-4o-unlimited
+      tpm: 200000
+
+router_settings:
+  routing_strategy: usage-based-routing-v2
+  optional_pre_call_checks:
+    - prompt_caching
+    - enforce_model_rate_limits
+  num_retries: 1
+
+litellm_settings:
+  drop_params: true

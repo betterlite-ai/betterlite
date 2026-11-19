@@ -1,0 +1,13 @@
+kind: helper
+name: vertex-chunks-unknown-route
+call:
+  b3640:
+    operation: vertex_chunks
+    body: {}
+    request_body: null
+    url_route: https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/us-central1/publishers/google/models/m:predict
+    lines:
+      - 'data: {"responseId":"r1","candidates":[{"content":{"parts":[{"text":"hi"}],"role":"model"},"finishReason":"STOP","index":0}]}'
+    model: null
+env: {}
+compare: {ignore: []}
