@@ -12,7 +12,7 @@ use betterlite_openai::batches::records::BatchStatus;
 use crate::request_stash::RequestStashSlot;
 
 use super::settlement::PostCallSettlement;
-use super::snapshot::{batch_enqueued_reservation, clear_batch_enqueued_reservation};
+use super::snapshot::{batch_enqueued_reservation, clear_batch_reservation};
 
 // the store methods LiteLLM's batch_enqueued_token_store exposes to the limiter; B1043's EnqueuedTokenRefund implements them
 #[async_trait::async_trait]
@@ -38,9 +38,8 @@ pub struct BatchEnqueuedCall<'request> {
 }
 
 impl PostCallSettlement<'_> {
-    // LiteLLM's _handle_batch_enqueued_post_call: save the request's reservation under the canonical batch id,
-    // then, on a terminal status, pop and refund whatever the store still holds
-    pub async fn handle_batch_enqueued_post_call(
+    // LiteLLM's batch post-call: save under the canonical batch id, then refund on a terminal status
+    pub async fn handle_batch_post_call(
         &self,
         call: &BatchEnqueuedCall<'_>,
     ) -> Result<(), BatchEnqueuedRefundError> {
@@ -53,7 +52,7 @@ impl PostCallSettlement<'_> {
                 self.batch_store
                     .save_reservation(&batch_id, &reservation)
                     .await?;
-                clear_batch_enqueued_reservation(&stash);
+                clear_batch_reservation(&stash);
             }
         }
         if !BATCH_ENQUEUED_REFUND_STATUSES.contains(&status_text(view.status)) {

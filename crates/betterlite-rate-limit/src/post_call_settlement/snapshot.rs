@@ -61,7 +61,7 @@ pub(crate) fn batch_enqueued_reservation(
         .clone()
 }
 
-pub(crate) fn clear_batch_enqueued_reservation(stash: &RequestStash) {
+pub(crate) fn clear_batch_reservation(stash: &RequestStash) {
     stash
         .state
         .lock()
@@ -75,7 +75,7 @@ pub(crate) fn batch_tpd_refund_ops(stash: &RequestStash) -> Vec<ReservationAware
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .batch_tpd_refund_ops
-        .clone()
+        .to_vec()
 }
 
 pub(crate) fn clear_batch_tpd_refund_ops(stash: &RequestStash) {

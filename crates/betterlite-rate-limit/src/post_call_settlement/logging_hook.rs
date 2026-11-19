@@ -2,7 +2,7 @@ use betterlite_models::call_helpers::headers::AdditionalHeaders;
 
 use crate::request_stash::RequestStashSlot;
 
-use super::header_merge::merge_ratelimit_statuses_into_additional_headers;
+use super::header_merge::merge_rate_limit_headers;
 use super::snapshot::rate_limit_statuses;
 
 mod tests;
@@ -13,17 +13,16 @@ pub struct LoggingTargets<'targets> {
     pub response_hidden_params: Option<&'targets mut AdditionalHeaders>,
 }
 
-// LiteLLM's async_logging_hook leaves kwargs and the response untouched besides mirroring the stashed
-// rate-limit statuses into whichever targets the caller holds; no statuses means no write at all
+// LiteLLM's async_logging_hook mirrors the stashed statuses into whichever targets the caller holds
 pub fn logging_hook(slot: &RequestStashSlot, call_id: Option<&str>, targets: LoggingTargets<'_>) {
     let stash = slot.for_call(call_id);
     let Some(statuses) = rate_limit_statuses(stash.as_deref()) else {
         return;
     };
     if let Some(logging) = targets.standard_logging_object {
-        *logging = merge_ratelimit_statuses_into_additional_headers(logging, &statuses);
+        *logging = merge_rate_limit_headers(logging, &statuses);
     }
     if let Some(response) = targets.response_hidden_params {
-        *response = merge_ratelimit_statuses_into_additional_headers(response, &statuses);
+        *response = merge_rate_limit_headers(response, &statuses);
     }
 }

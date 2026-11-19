@@ -7,10 +7,9 @@ use crate::limiter_records::RateLimitStatus;
 
 mod tests;
 
-// LiteLLM's _merge_ratelimit_statuses_into_additional_headers: a copy of the header map, extended with one
-// x-ratelimit-{descriptor_key}-{remaining|limit}-{rate_limit_type} pair per status
+// LiteLLM's status mirror: a copy of the map plus one x-ratelimit pair per status
 #[must_use]
-pub fn merge_ratelimit_statuses_into_additional_headers(
+pub fn merge_rate_limit_headers(
     additional_headers: &AdditionalHeaders,
     statuses: &[RateLimitStatus],
 ) -> AdditionalHeaders {

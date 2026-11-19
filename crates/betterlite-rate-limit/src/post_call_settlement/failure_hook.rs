@@ -9,7 +9,7 @@ use super::apply::{apply_pipeline_operations, apply_side_operations};
 use super::refund_operations::reserved_operations;
 use super::settlement::{PostCallSettlement, PostCallSettlementError};
 use super::snapshot::{
-    batch_enqueued_reservation, batch_tpd_refund_ops, clear_batch_enqueued_reservation,
+    batch_enqueued_reservation, batch_tpd_refund_ops, clear_batch_reservation,
     clear_batch_tpd_refund_ops, mark_reservation_released, stash_snapshot,
 };
 
@@ -68,7 +68,7 @@ impl PostCallSettlement<'_> {
             self.batch_store
                 .refund(&ReservationRecord::from(&reservation))
                 .await?;
-            clear_batch_enqueued_reservation(stash);
+            clear_batch_reservation(stash);
         }
         let operations = batch_tpd_refund_ops(stash);
         if !operations.is_empty() {

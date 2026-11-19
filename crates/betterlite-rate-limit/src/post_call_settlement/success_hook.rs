@@ -14,8 +14,7 @@ pub struct SuccessHook<'request> {
 }
 
 impl PostCallSettlement<'_> {
-    // LiteLLM's async_post_call_success_hook, with one guard per task: the slot release, the header merge and the
-    // batch accounting each run on their own, and only the batch step can fail on this side
+    // LiteLLM's async_post_call_success_hook: release the slot, merge headers, run the fallible batch step
     pub async fn post_call_success_hook(
         &self,
         hook: &SuccessHook<'_>,
@@ -31,7 +30,7 @@ impl PostCallSettlement<'_> {
             stash: hook.stash,
             response: hook.response,
         };
-        if let Err(error) = self.handle_batch_enqueued_post_call(&batch).await {
+        if let Err(error) = self.handle_batch_post_call(&batch).await {
             tracing::warn!(%error, "Error in batch enqueued-token post-call hook");
         }
     }
