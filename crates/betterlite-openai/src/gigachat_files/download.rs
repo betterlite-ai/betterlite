@@ -1,5 +1,4 @@
 use betterlite_http::proxy::ProxiedClient;
-use betterlite_http::user_url::error::UserUrlError;
 use betterlite_http::user_url::fetch::UserUrlFetcher;
 use betterlite_http::user_url::validate::Resolve;
 use http::HeaderMap;
