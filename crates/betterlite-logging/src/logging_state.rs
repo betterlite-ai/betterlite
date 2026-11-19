@@ -77,6 +77,8 @@ pub struct LoggingState {
     pub cost: CostState,
     pub custom_llm_provider: Option<String>,
     pub model_call_details: IndexMap<String, Json>,
+    // LiteLLM's model_call_details["httpx_response"], which B9840 reads and which cannot live in the JSON map
+    pub httpx_response: Option<betterlite_http::proxy::UpstreamResponse>,
     pub response_timing_metrics: IndexMap<String, f64>,
     pub message_copy_duration_ms: f64,
     pub callback_duration_ms: f64,
@@ -160,6 +162,7 @@ impl LoggingState {
             cost: CostState::default(),
             custom_llm_provider: None,
             model_call_details,
+            httpx_response: None,
             response_timing_metrics: IndexMap::new(),
             message_copy_duration_ms: copy_ms,
             callback_duration_ms: 0.0,

@@ -1,0 +1,23 @@
+task: B3488
+deviations:
+  - what: hidden_params.model_id is model_info's id when it is a JSON string, else the model the request names. LiteLLM reads model_info["id"] or the router's model id or "" and writes str() of a non-string id.
+    why: The task text names the request model as the fallback, and a deployment whose model_info carries a non-string id is misconfigured; naming the model on the wire keeps the record useful where LiteLLM would write "7" or an empty string.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L303-L311
+  - what: A sync streaming call reads the whole reply body before the first event, because the sync transport answers a buffered response that the iterator then splits. httpx's stream=True keeps the body open and yields each event as it arrives.
+    why: betterlite's sync transport seam answers one buffered reply, so the sync handler cannot hand back an open body; the events, their order and the metadata before the first event are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11666-L11690
+  - what: logging_obj's httpx_response is stored only after the reply transforms into the response record. LiteLLM stores the raw reply before GenerateContentResponse(**response) builds the record, so a reply that parses as JSON but fails that build keeps the raw reply on its logging state and betterlite keeps none.
+    why: betterlite's transform is one typed decode from bytes to the record, with no half-successful step to store; the stored reply exists to log what the provider answered, and a reply that never became a record answers nothing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/google_genai/transformation.py#L389-L392
+  - what: Every reply the provider config cannot turn into a response record becomes the provider's error class with the reply's status, where LiteLLM wraps only raw_response.json() failures in get_error_class and lets a record-construction error such as pydantic's ValidationError propagate as itself.
+    why: The class is the one LiteLLM's own error path raises for an unreadable reply, carries the same status and headers, and no working setup can rely on a raw pydantic error escaping the proxy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/google_genai/transformation.py#L380-L387
+  - what: The sync timeout message renders the timeout from its typed Duration, so a whole number of seconds prints as 30 where LiteLLM interpolates the Python float or None it was handed and prints 30.0 or None.
+    why: The message still reports the timeout the caller passed and that the request timed out; only the Python float rendering differs, since betterlite keeps durations typed and an absent timeout means the client's default.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1514-L1519
+  - what: The async timeout message renders both durations from Duration values, so the timeout prints as whole seconds plus zero-padded milliseconds and the elapsed time as 0.100 where LiteLLM interpolates Python floats and prints 0.1.
+    why: The message reports the same timeout and elapsed time LiteLLM reports; only the float rendering differs, since betterlite keeps durations typed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L861-L866
+  - what: A transport failure's message is the typed TransportError's own text, where LiteLLM reads str(e) of the httpx exception.
+    why: The exception class and its Python wording do not exist in betterlite; the typed error names the failure, and the status, headers and synthesized flag stay those _handle_error assigns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6082-L6085
