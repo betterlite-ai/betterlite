@@ -5,6 +5,7 @@ use secrecy::SecretString;
 use crate::api::resource_sdk_settings::timeout::FineTuningTimeout;
 
 use super::ClientClass;
+use super::error::AssistantCreateFailure;
 
 // create_assistants' arguments for the openai provider, before the SDK client is built from them
 #[derive(Debug, Clone, PartialEq)]
@@ -56,3 +57,6 @@ pub struct AssistantCreateResult {
     pub call: AssistantCreateCall,
     pub assistant: AssistantObject,
 }
+
+// What both create_assistants façades answer with, so their signatures name the façade's own failure.
+pub type AssistantCreateOutcome = Result<AssistantCreateResult, AssistantCreateFailure>;

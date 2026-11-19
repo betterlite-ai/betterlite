@@ -14,7 +14,7 @@ use betterlite_openai::assistants::records::AssistantObject;
 use betterlite_openai::assistants::transport::AssistantsTransport;
 use betterlite_redact::secret::Redactor;
 
-use super::call::{AssistantCreateCall, AssistantCreateResult};
+use super::call::{AssistantCreateCall, AssistantCreateOutcome, AssistantCreateResult};
 use super::error::{AssistantCreateFailure, Entry, Raised};
 use super::{AssistantCreateInput, AsyncFlag, error, projection};
 
@@ -33,64 +33,76 @@ pub struct AssistantRecords<'context, 'resolution, Transport> {
 }
 
 impl<Transport: AssistantsTransport> AssistantRecords<'_, '_, Transport> {
-    pub async fn create_assistants(
-        &self,
-        input: &AssistantCreateInput,
-    ) -> Result<AssistantCreateResult, AssistantCreateFailure> {
-        self.run(input, Entry::Sync).await
+    pub async fn create_assistants(&self, input: &AssistantCreateInput) -> AssistantCreateOutcome {
+        let (provider, flag) = self.selection(input, Entry::Sync)?;
+        let call = self.call(input, &provider, Entry::Sync, matches!(flag, Some(true)))?;
+        self.answer(input, provider, Entry::Sync, flag, call).await
     }
 
-    pub async fn acreate_assistants(
-        &self,
-        input: &AssistantCreateInput,
-    ) -> Result<AssistantCreateResult, AssistantCreateFailure> {
-        self.run(input, Entry::Async).await
+    pub async fn acreate_assistants(&self, input: &AssistantCreateInput) -> AssistantCreateOutcome {
+        let (provider, flag) = self.selection(input, Entry::Async)?;
+        let call = self.call(input, &provider, Entry::Async, true)?;
+        self.answer(input, provider, Entry::Async, flag, call).await
     }
 
-    async fn run(
+    async fn answer(
         &self,
         input: &AssistantCreateInput,
+        provider: String,
         entry: Entry,
-    ) -> Result<AssistantCreateResult, AssistantCreateFailure> {
-        let provider = self.provider(input, entry)?;
-        let flag = self.flag(input, entry, &provider)?;
-        let is_async = matches!(flag, Some(true));
-        let call = self.call(input, &provider, entry, is_async)?;
-        let assistant = match self.execute(&call, flag).await {
-            Ok(Some(assistant)) => assistant,
-            Ok(None) => return Err(error::no_response()),
-            Err(raised) => {
-                return Err(error::raised(
-                    raised,
-                    &input.model,
-                    &provider,
-                    entry,
-                    self.redactor,
-                ));
-            }
-        };
-        Ok(AssistantCreateResult { call, assistant })
-    }
-
-    // acreate forces the flag true; the sync facade takes the caller's bool and refuses anything else
-    fn flag(
-        &self,
-        input: &AssistantCreateInput,
-        entry: Entry,
-        provider: &str,
-    ) -> Result<Option<bool>, AssistantCreateFailure> {
-        match (entry, &input.async_create_assistants) {
-            (Entry::Async, _) => Ok(Some(true)),
-            (Entry::Sync, Some(AsyncFlag::Bool(value))) => Ok(Some(*value)),
-            (Entry::Sync, Some(AsyncFlag::Other(_))) => Err(error::raised(
-                Raised::Local(String::from(INVALID_FLAG)),
+        flag: Option<bool>,
+        call: AssistantCreateCall,
+    ) -> AssistantCreateOutcome {
+        match self.execute(&call, flag).await {
+            Ok(Some(assistant)) => Ok(AssistantCreateResult { call, assistant }),
+            Ok(None) => Err(error::no_response()),
+            Err(raised) => Err(error::raised(
+                raised,
                 &input.model,
-                provider,
+                &provider,
                 entry,
                 self.redactor,
             )),
-            (Entry::Sync, None) => Ok(None),
         }
+    }
+
+    // Every façade failure carries the model, the provider it was called with and the entry raising it.
+    fn failure(
+        &self,
+        input: &AssistantCreateInput,
+        provider: &str,
+        entry: Entry,
+        message: &str,
+    ) -> AssistantCreateFailure {
+        error::raised(
+            Raised::Local(message.to_owned()),
+            input.model.as_str(),
+            provider,
+            entry,
+            self.redactor,
+        )
+    }
+
+    // acreate resolves the model and forces the flag true; the sync façade refuses a non-bool flag.
+    fn selection(
+        &self,
+        input: &AssistantCreateInput,
+        entry: Entry,
+    ) -> Result<(String, Option<bool>), AssistantCreateFailure> {
+        if entry == Entry::Async {
+            let provider = projection::provider(input, self.resolution).map_err(|source| {
+                self.failure(input, &input.provider, Entry::Async, &source.to_string())
+            })?;
+            return Ok((provider, Some(true)));
+        }
+        let flag = match &input.async_create_assistants {
+            Some(AsyncFlag::Bool(value)) => Some(*value),
+            Some(AsyncFlag::Other(_)) => {
+                return Err(self.failure(input, &input.provider, Entry::Sync, INVALID_FLAG));
+            }
+            None => None,
+        };
+        Ok((input.provider.clone(), flag))
     }
 
     fn call(
@@ -100,51 +112,21 @@ impl<Transport: AssistantsTransport> AssistantRecords<'_, '_, Transport> {
         entry: Entry,
         is_async: bool,
     ) -> Result<AssistantCreateCall, AssistantCreateFailure> {
-        let timeout = projection::timeout(input, provider).map_err(|source| {
-            error::raised(
-                Raised::Local(source.to_string()),
-                &input.model,
-                provider,
-                entry,
-                self.redactor,
-            )
-        })?;
-        match provider {
-            "openai" => Ok(AssistantCreateCall::OpenAi(Box::new(projection::openai(
-                &self.settings,
-                input,
-                timeout,
-                is_async,
-            )))),
-            "azure" => Ok(AssistantCreateCall::Azure(Box::new(projection::azure(
-                &self.settings,
-                self.environment,
-                input,
-                timeout,
-                is_async,
-            )))),
-            _ => Err(error::unsupported(provider)),
-        }
-    }
-
-    // Only acreate_assistants resolves the model first; the sync façade hands the declared name straight over.
-    fn provider(
-        &self,
-        input: &AssistantCreateInput,
-        entry: Entry,
-    ) -> Result<String, AssistantCreateFailure> {
-        match entry {
-            Entry::Sync => Ok(input.provider.clone()),
-            Entry::Async => projection::provider(input, self.resolution).map_err(|message| {
-                error::raised(
-                    Raised::Local(message),
-                    &input.model,
-                    &input.provider,
-                    entry,
-                    self.redactor,
-                )
-            }),
-        }
+        let kind = match provider {
+            "openai" => projection::CallKind::OpenAi,
+            "azure" => projection::CallKind::Azure,
+            _ => return Err(error::unsupported(provider)),
+        };
+        let timeout = projection::timeout(input, provider)
+            .map_err(|source| self.failure(input, provider, entry, &source.to_string()))?;
+        Ok(projection::call(projection::CallRequest {
+            kind,
+            settings: &self.settings,
+            environment: self.environment,
+            input,
+            timeout,
+            is_async,
+        }))
     }
 
     async fn execute(
@@ -154,8 +136,10 @@ impl<Transport: AssistantsTransport> AssistantRecords<'_, '_, Transport> {
     ) -> Result<Option<AssistantObject>, Raised> {
         match call {
             AssistantCreateCall::OpenAi(openai) => {
-                let deadline = projection::deadline(openai.timeout).map_err(Raised::Local)?;
-                let max_retries = projection::retries(openai.max_retries).map_err(Raised::Local)?;
+                let deadline = projection::deadline(openai.timeout)
+                    .map_err(|source| Raised::Local(source.to_string()))?;
+                let max_retries = projection::retries(openai.max_retries)
+                    .map_err(|source| Raised::Local(source.to_string()))?;
                 let api = AssistantsApi {
                     transport: Arc::clone(&self.transport),
                 };
@@ -203,7 +187,7 @@ impl<Transport: AssistantsTransport> AssistantRecords<'_, '_, Transport> {
                 let reply = api
                     .call(&request, None, flag, DefinitionCall::Create(&azure.create))
                     .await
-                    .map_err(Raised::Definitions)?;
+                    .map_err(Raised::from)?;
                 match reply.reply {
                     DefinitionReply::Assistant(assistant) => Ok(Some(*assistant)),
                     DefinitionReply::Page(_) | DefinitionReply::Deleted(_) => Ok(None),

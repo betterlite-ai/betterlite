@@ -24,6 +24,16 @@ pub enum Raised {
     Definitions(DefinitionsError),
 }
 
+// The Azure façade wraps its own SDK error; unwrap it so every projection sees one provider error type.
+impl From<DefinitionsError> for Raised {
+    fn from(error: DefinitionsError) -> Self {
+        match error {
+            DefinitionsError::Assistants(inner) => Raised::Assistants(inner),
+            other => Raised::Definitions(other),
+        }
+    }
+}
+
 // The exception the LiteLLM façade raises: its class name, status and the type/param/code attributes it carries.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AssistantCreateFailure {
@@ -84,39 +94,26 @@ pub fn raised(
     }
 }
 
-// openai.APIError's subclasses read type/param/code off the flattened body; every other exception carries none
+// openai.APIError's subclasses read type/param/code off body["error"]; every other exception carries none
 fn sdk_fields(raised: &Raised) -> (WireField, WireField, WireField) {
     match raised {
-        Raised::Assistants(AssistantsError::Status { body, .. })
-        | Raised::Definitions(DefinitionsError::Assistants(AssistantsError::Status {
-            body, ..
-        })) => body_fields(body),
+        Raised::Assistants(AssistantsError::Status { body, .. }) => match flattened(body) {
+            Some(fields) => (
+                fields.kind.map_or(WireField::Null, WireField::Text),
+                fields.param.map_or(WireField::Null, WireField::Text),
+                fields.code.map_or(WireField::Null, WireField::Text),
+            ),
+            None => (WireField::Null, WireField::Null, WireField::Null),
+        },
         Raised::Assistants(
             AssistantsError::Transport { .. }
             | AssistantsError::Malformed { .. }
             | AssistantsError::Truncated { .. }
             | AssistantsError::Shape { .. },
-        )
-        | Raised::Definitions(DefinitionsError::Assistants(
-            AssistantsError::Transport { .. }
-            | AssistantsError::Malformed { .. }
-            | AssistantsError::Truncated { .. }
-            | AssistantsError::Shape { .. },
-        )) => (WireField::Null, WireField::Null, WireField::Null),
+        ) => (WireField::Null, WireField::Null, WireField::Null),
         Raised::Local(_) | Raised::Assistants(_) | Raised::Definitions(_) => {
             (WireField::MISSING, WireField::MISSING, WireField::MISSING)
         }
-    }
-}
-
-fn body_fields(body: &[u8]) -> (WireField, WireField, WireField) {
-    match flattened(body) {
-        Some(fields) => (
-            fields.kind.map_or(WireField::Null, WireField::Text),
-            fields.param.map_or(WireField::Null, WireField::Text),
-            fields.code.map_or(WireField::Null, WireField::Text),
-        ),
-        None => (WireField::Null, WireField::Null, WireField::Null),
     }
 }
 
@@ -160,18 +157,13 @@ fn assistants(error: &AssistantsError) -> (String, Option<u16>, String) {
 
 fn definitions(error: &DefinitionsError) -> (String, Option<u16>, String) {
     match error {
-        DefinitionsError::Assistants(assistants_error) => assistants(assistants_error),
         DefinitionsError::Endpoint(endpoint) => (
             endpoint.class().to_owned(),
             endpoint.status(),
             endpoint.to_string(),
         ),
         DefinitionsError::Provider { class, message } => (class.clone(), None, message.clone()),
-        DefinitionsError::BaseUrl { .. }
-        | DefinitionsError::MissingCredentials
-        | DefinitionsError::MissingEndpoint
-        | DefinitionsError::ProviderReply
-        | DefinitionsError::Timeout { .. } => (String::from("ValueError"), None, error.to_string()),
+        _ => (String::from("ValueError"), None, error.to_string()),
     }
 }
 
@@ -200,20 +192,8 @@ fn wrapped(
     redactor: &Redactor,
 ) -> AssistantCreateFailure {
     let body = match raised {
-        Raised::Assistants(AssistantsError::Status { body, .. })
-        | Raised::Definitions(DefinitionsError::Assistants(AssistantsError::Status {
-            body, ..
-        })) => flattened(body),
-        Raised::Local(_)
-        | Raised::Assistants(_)
-        | Raised::Definitions(DefinitionsError::Assistants(_))
-        | Raised::Definitions(DefinitionsError::Endpoint(_))
-        | Raised::Definitions(DefinitionsError::BaseUrl { .. })
-        | Raised::Definitions(DefinitionsError::MissingCredentials)
-        | Raised::Definitions(DefinitionsError::MissingEndpoint)
-        | Raised::Definitions(DefinitionsError::ProviderReply)
-        | Raised::Definitions(DefinitionsError::Provider { .. })
-        | Raised::Definitions(DefinitionsError::Timeout { .. }) => None,
+        Raised::Assistants(AssistantsError::Status { body, .. }) => flattened(body),
+        Raised::Local(_) | Raised::Assistants(_) | Raised::Definitions(_) => None,
     };
     let error_str = match status {
         Some(code) => format!("Error code: {code} - {message}"),

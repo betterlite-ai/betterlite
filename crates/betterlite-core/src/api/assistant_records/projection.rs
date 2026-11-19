@@ -1,10 +1,13 @@
 use std::collections::BTreeMap;
-use std::time::Duration;
+use std::num::TryFromIntError;
+use std::time::{Duration, TryFromFloatSecsError};
 
 use betterlite_azure::azure_urls::AuthParams;
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::resource_sdk_settings;
-use betterlite_models::resolution::{ResolutionContext, ResolutionRequest, resolve};
+use betterlite_models::resolution::{
+    ResolutionContext, ResolutionError, ResolutionRequest, resolve,
+};
 use betterlite_openai::assistants::records::AssistantCreate;
 use betterlite_openai::batches::sdk::TimeoutPhases;
 use secrecy::SecretString;
@@ -15,14 +18,35 @@ use crate::api::resource_sdk_settings::timeout::{
 };
 use crate::api::resource_sdk_settings::{ResourceSdkRequestOptions, ResourceSdkSettings};
 
-use super::call::{AzureClientParams, AzureCreateCall, OpenAiCreateCall};
+use super::call::{AssistantCreateCall, AzureClientParams, AzureCreateCall, OpenAiCreateCall};
 use super::{AssistantCreateInput, ClientClass, CreateTimeout};
+
+// every way the façade's own argument handling can refuse a create_assistants call
+#[derive(Debug, thiserror::Error)]
+pub(super) enum ProjectionError {
+    #[error(transparent)]
+    Resolve(#[from] ResolutionError),
+    #[error(transparent)]
+    Timeout(#[from] TimeoutError),
+    #[error("the timeout {seconds} seconds is not a duration")]
+    Duration {
+        seconds: f64,
+        #[source]
+        source: TryFromFloatSecsError,
+    },
+    #[error("max_retries must be a non-negative integer, got {value}")]
+    Retries {
+        value: i64,
+        #[source]
+        source: TryFromIntError,
+    },
+}
 
 // get_llm_provider prepends the declared provider the model doesn't name, then reads the provider back.
 pub(super) fn provider(
     input: &AssistantCreateInput,
     resolution: &ResolutionContext<'_>,
-) -> Result<String, String> {
+) -> Result<String, ProjectionError> {
     let prefixed = format!("{}/{}", input.provider, input.model);
     let model = if input.model.starts_with(&format!("{}/", input.provider)) {
         input.model.as_str()
@@ -35,26 +59,28 @@ pub(super) fn provider(
         api_base: None,
         api_key: None,
     };
-    resolve(&request, resolution)
-        .map(|resolved| resolved.provider.slug().to_owned())
-        .map_err(|source| source.to_string())
+    Ok(resolve(&request, resolution)?.provider.slug().to_owned())
 }
 
 // optional_params.timeout or request_timeout or 600, where a zero or an empty value falls through
 pub(super) fn timeout(
     input: &AssistantCreateInput,
     provider: &str,
-) -> Result<FineTuningTimeout, TimeoutError> {
+) -> Result<FineTuningTimeout, ProjectionError> {
     match input.timeout.as_ref() {
-        Some(CreateTimeout::Phases(phases)) => {
-            resolve_fine_tuning_timeout(None, provider, Some(structured(phases)))
-        }
-        Some(CreateTimeout::Seconds(seconds)) if *seconds != 0.0_f64 => {
-            resolve_fine_tuning_timeout(Some(&TimeoutValue::Number(*seconds)), provider, None)
-        }
-        Some(CreateTimeout::Text(text)) if !text.is_empty() => {
-            resolve_fine_tuning_timeout(Some(&TimeoutValue::String(text.clone())), provider, None)
-        }
+        Some(CreateTimeout::Phases(phases)) => Ok(resolve_fine_tuning_timeout(
+            None,
+            provider,
+            Some(structured(phases)),
+        )?),
+        Some(CreateTimeout::Seconds(seconds)) if *seconds != 0.0_f64 => Ok(
+            resolve_fine_tuning_timeout(Some(&TimeoutValue::Number(*seconds)), provider, None)?,
+        ),
+        Some(CreateTimeout::Text(text)) if !text.is_empty() => Ok(resolve_fine_tuning_timeout(
+            Some(&TimeoutValue::String(text.clone())),
+            provider,
+            None,
+        )?),
         None | Some(CreateTimeout::Seconds(_)) | Some(CreateTimeout::Text(_)) => Ok(
             FineTuningTimeout::Seconds(request_timeout(None, input.request_timeout)?),
         ),
@@ -71,10 +97,10 @@ const fn structured(phases: &TimeoutPhases) -> StructuredTimeout {
 }
 
 // An httpx.Timeout reaches the SDK whole; the client this port builds bounds the call by its read phase.
-pub(super) fn deadline(timeout: FineTuningTimeout) -> Result<Duration, String> {
+pub(super) fn deadline(timeout: FineTuningTimeout) -> Result<Duration, ProjectionError> {
     let seconds = seconds(timeout);
     Duration::try_from_secs_f64(seconds)
-        .map_err(|_source| format!("the timeout {seconds} seconds is not a duration"))
+        .map_err(|source| ProjectionError::Duration { seconds, source })
 }
 
 pub(super) fn seconds(timeout: FineTuningTimeout) -> f64 {
@@ -87,56 +113,57 @@ pub(super) fn seconds(timeout: FineTuningTimeout) -> f64 {
     }
 }
 
-pub(super) fn retries(max_retries: Option<i64>) -> Result<Option<u32>, String> {
+pub(super) fn retries(max_retries: Option<i64>) -> Result<Option<u32>, ProjectionError> {
     max_retries
         .map(|value| {
-            u32::try_from(value).map_err(|_source| {
-                format!("max_retries must be a non-negative integer, got {value}")
-            })
+            u32::try_from(value).map_err(|source| ProjectionError::Retries { value, source })
         })
         .transpose()
 }
 
-pub(super) fn openai(
-    settings: &resource_sdk_settings::Settings,
-    input: &AssistantCreateInput,
-    timeout: FineTuningTimeout,
-    is_async: bool,
-) -> OpenAiCreateCall {
-    let options = ResourceSdkRequestOptions::from(input);
-    let resolved = ResourceSdkSettings::from(settings);
-    OpenAiCreateCall {
-        create: create(input),
-        api_base: resolved.openai_base(&options),
-        api_key: resolved.openai_api_key(&options).cloned(),
-        organization: resolved.openai_organization(&options).map(str::to_owned),
-        timeout,
-        max_retries: input.max_retries,
-        client: input.client,
-        is_async,
-    }
+#[derive(Debug, Clone, Copy)]
+pub(super) enum CallKind {
+    OpenAi,
+    Azure,
 }
 
-pub(super) fn azure(
-    settings: &resource_sdk_settings::Settings,
-    environment: &(dyn EnvironmentLookup + Sync),
-    input: &AssistantCreateInput,
-    timeout: FineTuningTimeout,
-    is_async: bool,
-) -> AzureCreateCall {
-    let options = ResourceSdkRequestOptions::from(input);
-    let resolved = ResourceSdkSettings::from(settings);
-    AzureCreateCall {
-        create: create(input),
-        api_base: resolved.azure_base(&options).map(str::to_owned),
-        api_key: resolved.azure_api_key(&options).cloned(),
-        api_version: resolved.azure_version(&options).map(str::to_owned),
-        azure_ad_token: azure_ad_token(&input.extra_body, environment),
-        timeout,
-        max_retries: input.max_retries,
-        client: effective_client(input.client),
-        is_async,
-        litellm_params: litellm_params(input),
+pub(super) struct CallRequest<'a> {
+    pub kind: CallKind,
+    pub settings: &'a resource_sdk_settings::Settings,
+    pub environment: &'a (dyn EnvironmentLookup + Sync),
+    pub input: &'a AssistantCreateInput,
+    pub timeout: FineTuningTimeout,
+    pub is_async: bool,
+}
+
+pub(super) fn call(request: CallRequest<'_>) -> AssistantCreateCall {
+    let parts = prepare(request.input);
+    let resolved = ResourceSdkSettings::from(request.settings);
+    match request.kind {
+        CallKind::OpenAi => AssistantCreateCall::OpenAi(Box::new(OpenAiCreateCall {
+            create: parts.create,
+            api_base: resolved.openai_base(&parts.options),
+            api_key: resolved.openai_api_key(&parts.options).cloned(),
+            organization: resolved
+                .openai_organization(&parts.options)
+                .map(str::to_owned),
+            timeout: request.timeout,
+            max_retries: request.input.max_retries,
+            client: request.input.client,
+            is_async: request.is_async,
+        })),
+        CallKind::Azure => AssistantCreateCall::Azure(Box::new(AzureCreateCall {
+            create: parts.create,
+            api_base: resolved.azure_base(&parts.options).map(str::to_owned),
+            api_key: resolved.azure_api_key(&parts.options).cloned(),
+            api_version: resolved.azure_version(&parts.options).map(str::to_owned),
+            azure_ad_token: azure_ad_token(&request.input.extra_body, request.environment),
+            timeout: request.timeout,
+            max_retries: request.input.max_retries,
+            client: effective_client(request.input.client),
+            is_async: request.is_async,
+            litellm_params: parts.litellm,
+        })),
     }
 }
 
@@ -161,36 +188,50 @@ fn effective_client(client: Option<ClientClass>) -> Option<ClientClass> {
     }
 }
 
-fn create(input: &AssistantCreateInput) -> AssistantCreate {
-    AssistantCreate {
-        model: input.model.clone(),
-        description: input.description.clone().map(Some),
-        instructions: input.instructions.clone().map(Some),
-        metadata: input.metadata.clone().map(Some),
-        name: input.name.clone().map(Some),
-        reasoning_effort: None,
-        response_format: input.response_format.clone().map(Some),
-        temperature: input.temperature,
-        tool_resources: input.tool_resources.clone().map(Some),
-        tools: input.tools.clone().map(Some),
-        top_p: input.top_p,
-    }
+struct Prepared {
+    create: AssistantCreate,
+    options: ResourceSdkRequestOptions,
+    litellm: AzureClientParams,
 }
 
-// get_litellm_params copies the caller's timeout through as it arrived; only a number reaches a duration.
-fn litellm_params(input: &AssistantCreateInput) -> AzureClientParams {
-    AzureClientParams {
-        azure_ad_token: input.azure_ad_token.clone(),
-        auth: AuthParams {
-            tenant_id: input.tenant_id.clone(),
-            client_id: input.client_id.clone(),
-            client_secret: input.client_secret.clone(),
-            azure_username: input.azure_username.clone(),
-            azure_password: input.azure_password.clone(),
-            azure_scope: input.azure_scope.clone(),
+// What create_assistants, the request options and get_litellm_params each copy out of the same input.
+fn prepare(input: &AssistantCreateInput) -> Prepared {
+    Prepared {
+        create: AssistantCreate {
+            model: input.model.clone(),
+            description: input.description.clone().map(Some),
+            instructions: input.instructions.clone().map(Some),
+            metadata: input.metadata.clone().map(Some),
+            name: input.name.clone().map(Some),
+            reasoning_effort: None,
+            response_format: input.response_format.clone().map(Some),
+            temperature: input.temperature,
+            tool_resources: input.tool_resources.clone().map(Some),
+            tools: input.tools.clone().map(Some),
+            top_p: input.top_p,
         },
-        max_retries: input.max_retries,
-        timeout: raw_timeout(input.timeout.as_ref()),
+        options: ResourceSdkRequestOptions {
+            api_base: input.api_base.clone(),
+            api_version: input.api_version.clone(),
+            api_key: input.api_key.clone(),
+            organization: input.organization.clone(),
+            vertex_project: None,
+            vertex_location: None,
+            vertex_credentials: None,
+        },
+        litellm: AzureClientParams {
+            azure_ad_token: input.azure_ad_token.clone(),
+            auth: AuthParams {
+                tenant_id: input.tenant_id.clone(),
+                client_id: input.client_id.clone(),
+                client_secret: input.client_secret.clone(),
+                azure_username: input.azure_username.clone(),
+                azure_password: input.azure_password.clone(),
+                azure_scope: input.azure_scope.clone(),
+            },
+            max_retries: input.max_retries,
+            timeout: raw_timeout(input.timeout.as_ref()),
+        },
     }
 }
 
@@ -198,17 +239,5 @@ fn raw_timeout(timeout: Option<&CreateTimeout>) -> Option<f64> {
     match timeout {
         Some(CreateTimeout::Seconds(seconds)) => Some(*seconds),
         Some(CreateTimeout::Text(_) | CreateTimeout::Phases(_)) | None => None,
-    }
-}
-
-impl From<&AssistantCreateInput> for ResourceSdkRequestOptions {
-    fn from(input: &AssistantCreateInput) -> Self {
-        Self {
-            api_base: input.api_base.clone(),
-            api_version: input.api_version.clone(),
-            api_key: input.api_key.clone(),
-            organization: input.organization.clone(),
-            ..Self::default()
-        }
     }
 }
