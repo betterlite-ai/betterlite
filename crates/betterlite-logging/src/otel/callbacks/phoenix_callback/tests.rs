@@ -262,7 +262,8 @@ fn fill_projects(cache: &DynamicTracerCache, count: usize) -> Vec<String> {
     let mut names = Vec::with_capacity(count);
     for index in 0..count {
         let project = format!("project-{index}");
-        tracer_for(cache, &project, &project_attributes(&project)).expect("the project tracer");
+        tracer_for(cache, &project, &project_attributes(&project, "production"))
+            .expect("the project tracer");
         names.push(project);
     }
     names
@@ -431,13 +432,13 @@ fn phoenix_moves_a_hit_to_the_end_of_the_lru() {
     tracer_for(
         &lifecycle.tracer_cache,
         touched,
-        &project_attributes(touched),
+        &project_attributes(touched, "production"),
     )
     .expect("the cached tracer");
     tracer_for(
         &lifecycle.tracer_cache,
         "project-new",
-        &project_attributes("project-new"),
+        &project_attributes("project-new", "production"),
     )
     .expect("the new tracer");
     let cached = project_names(&lifecycle.tracer_cache);
@@ -756,9 +757,10 @@ fn phoenix_project_attributes_override_the_resource() {
         .with_attributes([
             KeyValue::new("service.name", "gateway"),
             KeyValue::new("openinference.project.name", "base"),
+            KeyValue::new("deployment.environment", "env-file"),
         ])
         .build();
-    let merged = project_resource(&base, &project_attributes("project-a"));
+    let merged = project_resource(&base, &project_attributes("project-a", "production"));
     let service = merged
         .get(&Key::new("service.name"))
         .map(|value| value.as_str().into_owned());
@@ -771,6 +773,10 @@ fn phoenix_project_attributes_override_the_resource() {
         .get(&Key::new("model_id"))
         .map(|value| value.as_str().into_owned());
     assert_eq!(model.as_deref(), Some("project-a"));
+    let environment = merged
+        .get(&Key::new("deployment.environment"))
+        .map(|value| value.as_str().into_owned());
+    assert_eq!(environment.as_deref(), Some("production"));
 }
 
 #[test]

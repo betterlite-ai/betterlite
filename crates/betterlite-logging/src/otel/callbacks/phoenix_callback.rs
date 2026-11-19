@@ -35,8 +35,12 @@ pub const HEALTHY_MESSAGE: &str = "Arize-Phoenix credentials are configured prop
 pub const MISSING_API_KEY_MESSAGE: &str = "PHOENIX_API_KEY environment variable not set";
 
 #[must_use]
-pub fn project_attributes(project: &str) -> BTreeMap<String, String> {
+pub fn project_attributes(project: &str, deployment_environment: &str) -> BTreeMap<String, String> {
     BTreeMap::from([
+        (
+            "deployment.environment".to_owned(),
+            deployment_environment.to_owned(),
+        ),
         ("model_id".to_owned(), project.to_owned()),
         ("openinference.project.name".to_owned(), project.to_owned()),
         ("service.name".to_owned(), project.to_owned()),
@@ -115,7 +119,8 @@ impl TracerRouter for PhoenixProjects {
         kwargs: &MetadataMap,
     ) -> Result<Option<SdkTracer>, LegacyLifecycleError> {
         let project = resolve_project_name(kwargs, &self.environment);
-        let attributes = project_attributes(&project);
+        // the project carries the config's environment, so OTEL_RESOURCE_ATTRIBUTES cannot pin it
+        let attributes = project_attributes(&project, &lifecycle.config.deployment_environment);
         let tracer = tracer_for(&lifecycle.tracer_cache, &project, &attributes)?;
         Ok(Some(tracer))
     }
