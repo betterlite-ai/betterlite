@@ -72,7 +72,7 @@ impl WindowSpendUpdateQueue {
             }
         };
         drop(state);
-        if take > 0 {
+        if !drained.is_empty() {
             tracing::info!(
                 batches = take,
                 "Spend tracking - flushed budget window spend update batches from in-memory queue"
@@ -104,15 +104,11 @@ impl WindowSpendUpdateQueue {
                 return Err(error);
             }
         };
-        let reinserted = !aggregated.is_empty();
-        if reinserted {
+        if !aggregated.is_empty() {
             state.batches.push_back(aggregated);
         }
-        let freed = drained.len().saturating_sub(usize::from(reinserted));
         drop(state);
-        if freed > 0 {
-            self.room.notify_waiters();
-        }
+        self.room.notify_waiters();
         Ok(())
     }
 }
