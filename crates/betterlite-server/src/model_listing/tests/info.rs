@@ -118,6 +118,33 @@ fn a_deployments_exact_entry_wins_over_a_generalized_listed_entry() {
 }
 
 #[test]
+fn a_deployment_entry_wins_over_an_exact_listed_entry() {
+    let mut router = FakeRouter::default();
+    router.listings.insert(
+        "public".to_owned(),
+        DeploymentListingInfo {
+            cost_map_keys: strings(&["openai/gpt-4o-2024-08-06"]),
+            max_input_tokens: None,
+            max_output_tokens: None,
+        },
+    );
+    let mut cost_map = FakeCostMap::default();
+    cost_map.entries.insert(
+        "public".to_owned(),
+        object(vec![("max_input_tokens", number(999))]),
+    );
+    cost_map.entries.insert(
+        "openai/gpt-4o-2024-08-06".to_owned(),
+        object(vec![("max_input_tokens", number(100))]),
+    );
+    let groups = ExpectedGroups::default();
+    let sources = info_sources(Some(&router), &cost_map, None, &groups);
+    let response =
+        create_model_info_response(&info_request("public"), &sources).expect("the entry answers");
+    assert_eq!(response.get("max_input_tokens"), Some(&number(100)));
+}
+
+#[test]
 fn a_generalized_deployment_entry_follows_the_listed_exact_entry() {
     let mut router = FakeRouter::default();
     router.listings.insert(

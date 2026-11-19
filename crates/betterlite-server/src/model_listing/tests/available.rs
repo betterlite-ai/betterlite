@@ -151,6 +151,22 @@ async fn a_team_the_listing_cannot_fetch_still_lists_the_key_groups() {
 }
 
 #[tokio::test]
+async fn the_effective_team_id_fetches_the_team_for_its_access_groups() {
+    let key = key(r#"{"models": ["a"], "team_id": "t1"}"#);
+    let mut router = FakeRouter::default();
+    router.model_names = strings(&["a", "from-team"]);
+    let mut access = FakeAccess::default();
+    access.team_row = Some(team(&[]));
+    access.team_group_models = strings(&["from-team"]);
+    let credentials = CredentialSnapshot::default();
+    let sources = listing_sources(Some(&router), &access, &NoProviders, &credentials);
+    let models = available_models_for_user(&key, &listing_request(None, listing_flags()), &sources)
+        .await
+        .expect("the listing answers");
+    assert_eq!(models, strings(&["a", "from-team"]));
+}
+
+#[tokio::test]
 async fn the_effective_team_id_reaches_the_wildcard_lookup() {
     let key = key(r#"{"models": ["wild/*"], "team_id": "t1"}"#);
     let mut router = FakeRouter::default();
