@@ -31,6 +31,7 @@ pub(super) async fn run(name: &str) {
         "a_repeated_id_keeps_its_place_and_its_last_deployment" => {
             a_repeated_id_keeps_its_place_and_its_last_deployment();
         }
+        "an_id_with_a_colon_keeps_its_counter" => an_id_with_a_colon_keeps_its_counter().await,
         "a_value_of_another_kind_is_unknown" => a_value_of_another_kind_is_unknown(),
         "a_failed_read_answers_the_cold_pick" => a_failed_read_answers_the_cold_pick().await,
         "the_async_facade_reads_the_pool_in_one_batch" => {
@@ -239,6 +240,29 @@ fn a_repeated_id_keeps_its_place_and_its_last_deployment() {
             .unwrap(),
         Some(2)
     );
+}
+
+// LiteLLM splits a counter key on ':' to find its deployment, so an id holding one loses its counter there.
+async fn an_id_with_a_colon_keeps_its_counter() {
+    let pool = [plain("a:b"), plain("c")];
+    let store = FakeStore::new(&[
+        (tpm_window("a:b").as_str(), 9),
+        (tpm_window("c").as_str(), 5),
+    ]);
+    let clock = TestClock::new();
+    let mut request = RequestReads::default();
+    let picked = service(&pool, 0)
+        .select_async(&store, &tiers(&clock), &mut request, &mut first())
+        .await
+        .unwrap();
+    assert_eq!(picked, 1);
+    let expected = vec![vec![
+        tpm_window("a:b"),
+        tpm_window("c"),
+        rpm_window("a:b"),
+        rpm_window("c"),
+    ]];
+    assert_eq!(store.reads(), expected);
 }
 
 fn a_value_of_another_kind_is_unknown() {
