@@ -91,3 +91,10 @@ path = "fuzz_targets/azure_search.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "azure_stream_errors"
+path = "fuzz_targets/azure_stream_errors.rs"
+test = false
+doc = false
+bench = false
