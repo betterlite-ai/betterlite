@@ -224,7 +224,7 @@ fn local_classifiers_list_no_classifier_model() {
     assert!(dependency_names(&custom).is_empty());
     let jev =
         configured(r#"{"classifier_type":"jev","classifier_llm_config":{"model":"classifier-x"}}"#);
-    assert!(dependency_names(&jev).is_empty());
+    assert_dependencies(&jev, &[("typesafe/jev-latest", "evaluation")]);
 }
 
 #[test]
