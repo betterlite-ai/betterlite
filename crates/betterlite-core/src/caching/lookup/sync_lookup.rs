@@ -11,7 +11,7 @@ use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink};
 use crate::caching::hit_callbacks::context::record_cache_hit_context;
 
 use super::eligibility::cache_supports_call;
-use super::error::LookupError;
+use super::error::{HitError, LookupError};
 use super::hit::{
     HitKind, HitLogging, HitPass, HitResponse, HitTimes, hit_cache_key, hit_record, log_hit_sync,
 };
@@ -111,7 +111,9 @@ where
         end: end_time,
     };
     if replayed.defers_success_callbacks() {
-        record_cache_hit_context(&mut logging.state, &hit)?;
+        record_cache_hit_context(&mut logging.state, &hit).map_err(|source| LookupError::Hit {
+            source: HitError::Context { source },
+        })?;
     } else {
         log_hit_sync(&hit, replayed.success_result(), times, logging)?;
     }

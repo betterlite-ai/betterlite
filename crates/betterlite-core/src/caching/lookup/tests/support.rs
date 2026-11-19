@@ -680,7 +680,7 @@ impl Fixture {
         let sink = CallbackSink::Logger(handle);
         let registration = registry.register(identity, sink, CallbackList::Callbacks);
         assert_ne!(registration, Registration::SkippedCapacity);
-        let counter: Arc<dyn CallbackFailureCounter + Send + Sync> = Arc::clone(&self.counter) as _;
+        let counter: Arc<dyn CallbackFailureCounter + Send + Sync> = Arc::clone(&self.counter);
         OwnedSuccessHandler {
             registry: Arc::new(registry),
             payload_builder: Arc::new(FakeBuilder {

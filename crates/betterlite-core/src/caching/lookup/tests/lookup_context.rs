@@ -6,9 +6,9 @@ use betterlite_cache::types::call_type::CachingSupportedCallType;
 use betterlite_models::decisions::Json;
 
 use super::support::{
-    Fixture, MODEL, Metadata, Tokens, cached_chat, cached_json, chat_kwargs, computed_key,
-    details_fields, duration_field, handler_named, hit_field, lookup, object, perf_clock, services,
-    text, worker,
+    Fixture, MODEL, Metadata, SilentConsole, SilentLogger, Tokens, cached_chat, cached_json,
+    chat_kwargs, computed_key, details_fields, duration_field, handler_named, hit_field, lookup,
+    object, perf_clock, services, text, worker,
 };
 use crate::caching::lookup::async_lookup::async_get_cache;
 use crate::caching::lookup::error::HitError;
@@ -210,7 +210,8 @@ fn the_preset_cache_key_wins_over_the_request_key() {
     handler
         .request_kwargs
         .insert("cache_key".to_owned(), text("request-key"));
-    let key = hit_cache_key(&handler, None).expect("the cache key resolves");
+    let key = hit_cache_key::<SilentLogger, SilentConsole>(&handler, None)
+        .expect("the cache key resolves");
     assert_eq!(key, Some("preset-key".to_owned()));
 }
 
@@ -220,7 +221,8 @@ fn the_request_cache_key_is_used_when_no_preset_exists() {
     handler
         .request_kwargs
         .insert("cache_key".to_owned(), text("request-key"));
-    let key = hit_cache_key(&handler, None).expect("the cache key resolves");
+    let key = hit_cache_key::<SilentLogger, SilentConsole>(&handler, None)
+        .expect("the cache key resolves");
     assert_eq!(key, Some("request-key".to_owned()));
 }
 
@@ -237,7 +239,8 @@ fn the_cache_key_is_computed_from_the_request_kwargs() {
 #[test]
 fn the_cache_key_stays_none_without_a_cache_to_compute_from() {
     let handler = handler_named("acompletion", &["model", "messages"], chat_kwargs());
-    let key = hit_cache_key(&handler, None).expect("the cache key resolves");
+    let key = hit_cache_key::<SilentLogger, SilentConsole>(&handler, None)
+        .expect("the cache key resolves");
     assert_eq!(key, None);
 }
 

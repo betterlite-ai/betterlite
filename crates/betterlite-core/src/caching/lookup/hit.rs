@@ -28,7 +28,7 @@ use crate::caching::hit_callbacks::job::{
 };
 
 use super::error::{HitError, LookupError};
-use super::json::{cache_value_json, kwargs_json};
+use super::json::{cache_value_json, kwargs_json, request_text};
 use super::request::CacheLookup;
 use super::services::LookupServices;
 
@@ -188,7 +188,7 @@ pub fn log_converted_hit<Response>(
     times: HitTimes,
     logging: HitLogging,
     worker: &LoggingWorker<CacheHitSuccessJob>,
-) -> Result<Option<HitLogging>, LookupError>
+) -> Result<Option<HitLogging>, HitError>
 where
     Response: HitResponse + CacheHitMetadata,
 {

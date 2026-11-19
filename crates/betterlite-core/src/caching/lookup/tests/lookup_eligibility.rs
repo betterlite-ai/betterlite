@@ -104,10 +104,10 @@ async fn the_async_gate_decides_whether_the_cache_is_read(
 #[rstest::rstest]
 #[case::a_caching_switch_that_is_not_a_boolean(
     "caching",
-    KeyValue::Text("yes".to_owned()),
+    KeyValue::String("yes".to_owned()),
     "caching"
 )]
-#[case::a_cache_control_that_is_not_an_object("cache", KeyValue::Text("yes".to_owned()), "cache")]
+#[case::a_cache_control_that_is_not_an_object("cache", KeyValue::String("yes".to_owned()), "cache")]
 #[case::a_no_cache_control_that_is_not_a_boolean(
     "cache",
     object(&[("no-cache", text("yes"))]),
