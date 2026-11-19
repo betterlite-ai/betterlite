@@ -389,7 +389,7 @@ fn direct_drop() {
     session.drop_output_config(&mut kept, "fixture-plain", false);
     assert!(kept.contains_key("output_config"));
 
-    // The final drop runs inside the transform when the model takes output_config but not effort.
+    // A model that advertises output_config is effort-supporting, so the transform keeps the config and never warns.
     let transformed = session
         .transform(
             &call(
@@ -401,9 +401,12 @@ fn direct_drop() {
             true,
         )
         .expect("the output-config request transforms");
-    assert!(!transformed.contains_key("output_config"));
+    assert_eq!(
+        transformed.get("output_config").cloned(),
+        Some(js(r#"{"effort":"high"}"#))
+    );
     assert!(
-        kept_warnings(&logs).iter().any(|message| message
+        !kept_warnings(&logs).iter().any(|message| message
             == &DROP_OUTPUT_CONFIG_WARNING.replacen("%s", "fixture-output-config", 1))
     );
 }
