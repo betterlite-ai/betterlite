@@ -1,6 +1,4 @@
 use std::collections::{BTreeMap, VecDeque};
-use std::error::Error as StdError;
-use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::mem;
 use std::sync::Arc;
 
@@ -52,22 +50,6 @@ enum MessagesStreamCause {
     Read(#[source] Box<HttpError>),
 }
 
-// The relay clones every failure it reports and queues, so the cause travels behind an Arc.
-#[derive(Debug, Clone)]
-struct SharedCause(Arc<MessagesStreamCause>);
-
-impl Display for SharedCause {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
-        Display::fmt(&*self.0, formatter)
-    }
-}
-
-impl StdError for SharedCause {
-    fn source(&self) -> Option<&(dyn StdError + 'static)> {
-        Some(&*self.0)
-    }
-}
-
 // What the client sees when the stream dies: LiteLLM's exception class, its message, its status and the typed cause behind them.
 #[derive(Clone, Debug, Error)]
 #[error("{message}")]
@@ -76,81 +58,73 @@ pub struct MessagesStreamError {
     pub message: String,
     pub status: Option<u16>,
     #[source]
-    cause: SharedCause,
+    cause: Arc<MessagesStreamCause>,
 }
 
 // A Bedrock error event carries B682's error, so its class and status survive to the client.
-impl From<EventFrameError> for MessagesStreamError {
-    fn from(source: EventFrameError) -> Self {
-        let (kind, message, status) = match &source {
-            EventFrameError::Bedrock {
-                status,
-                error: bedrock,
-            } => (BEDROCK_ERROR, bedrock.error.message.clone(), Some(*status)),
-            EventFrameError::PreludeChecksum { .. }
-            | EventFrameError::Frame(_)
-            | EventFrameError::DuplicateHeader { .. }
-            | EventFrameError::NotUtf8(_)
-            | EventFrameError::NotJson(_)
-            | EventFrameError::PayloadNotObject
-            | EventFrameError::ChunkBytesNotText
-            | EventFrameError::ChunkBase64(_)
-            | EventFrameError::Header(_) => (FRAME_ERROR, source.to_string(), None),
+fn frame_details(frame: &EventFrameError) -> (&'static str, String, Option<u16>) {
+    match frame {
+        EventFrameError::Bedrock {
+            status,
+            error: bedrock,
+        } => (BEDROCK_ERROR, bedrock.error.message.clone(), Some(*status)),
+        EventFrameError::PreludeChecksum { .. }
+        | EventFrameError::Frame(_)
+        | EventFrameError::DuplicateHeader { .. }
+        | EventFrameError::NotUtf8(_)
+        | EventFrameError::NotJson(_)
+        | EventFrameError::PayloadNotObject
+        | EventFrameError::ChunkBytesNotText
+        | EventFrameError::ChunkBase64(_)
+        | EventFrameError::Header(_) => (FRAME_ERROR, frame.to_string(), None),
+    }
+}
+
+impl From<MessagesStreamCause> for MessagesStreamError {
+    fn from(cause: MessagesStreamCause) -> Self {
+        let (kind, message, status) = match &cause {
+            MessagesStreamCause::Frame(frame) => frame_details(frame),
+            MessagesStreamCause::Json(source) => (JSON_ERROR, source.to_string(), None),
+            MessagesStreamCause::Usage(source) => (MESSAGE_USAGE_ERROR, source.to_string(), None),
+            MessagesStreamCause::Chunk(source) => (CHUNK_ERROR, source.to_string(), None),
+            MessagesStreamCause::Read(source) => (READ_ERROR, source.to_string(), None),
         };
         Self {
             kind: kind.to_owned(),
             message,
             status,
-            cause: SharedCause(Arc::new(MessagesStreamCause::Frame(Box::new(source)))),
+            cause: Arc::new(cause),
         }
+    }
+}
+
+impl From<EventFrameError> for MessagesStreamError {
+    fn from(source: EventFrameError) -> Self {
+        MessagesStreamError::from(MessagesStreamCause::Frame(Box::new(source)))
     }
 }
 
 impl From<serde_json::Error> for MessagesStreamError {
     fn from(source: serde_json::Error) -> Self {
-        let message = source.to_string();
-        Self {
-            kind: JSON_ERROR.to_owned(),
-            message,
-            status: None,
-            cause: SharedCause(Arc::new(MessagesStreamCause::Json(Box::new(source)))),
-        }
+        MessagesStreamError::from(MessagesStreamCause::Json(Box::new(source)))
     }
 }
 
 impl From<MessageUsageError> for MessagesStreamError {
     fn from(source: MessageUsageError) -> Self {
-        let message = source.to_string();
-        Self {
-            kind: MESSAGE_USAGE_ERROR.to_owned(),
-            message,
-            status: None,
-            cause: SharedCause(Arc::new(MessagesStreamCause::Usage(Box::new(source)))),
-        }
+        MessagesStreamError::from(MessagesStreamCause::Usage(Box::new(source)))
     }
 }
 
 impl From<ChunkError> for MessagesStreamError {
     fn from(source: ChunkError) -> Self {
-        let message = source.to_string();
-        Self {
-            kind: CHUNK_ERROR.to_owned(),
-            message,
-            status: None,
-            cause: SharedCause(Arc::new(MessagesStreamCause::Chunk(Box::new(source)))),
-        }
+        MessagesStreamError::from(MessagesStreamCause::Chunk(Box::new(source)))
     }
 }
 
 impl From<HttpError> for MessagesStreamError {
     fn from(source: HttpError) -> Self {
-        let message = source.to_string();
-        Self {
-            kind: READ_ERROR.to_owned(),
-            message,
-            status: None,
-            cause: SharedCause(Arc::new(MessagesStreamCause::Read(Box::new(source)))),
-        }
+        MessagesStreamError::from(MessagesStreamCause::Read(Box::new(source)))
     }
 }
 

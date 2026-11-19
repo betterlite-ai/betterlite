@@ -216,8 +216,7 @@ fn event_stream(call: &EventStream) -> HelperResult {
         .iter()
         .map(|chunk| hex::decode(chunk).map_err(failure))
         .collect::<Result<Vec<_>, _>>()?;
-    let response_chunks =
-        stream::iter(chunks.into_iter().map(Ok::<Vec<u8>, HttpError>)).boxed();
+    let response_chunks = stream::iter(chunks.into_iter().map(Ok::<Vec<u8>, HttpError>)).boxed();
     let redactor = Arc::new(Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(failure)?);
     let mut stream = messages_sse_stream(
         MessagesStreamRequest {
