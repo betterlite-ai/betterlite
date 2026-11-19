@@ -24,7 +24,7 @@ fn reset_text(spec: &str) -> String {
 #[test]
 fn generated_metadata_override_encrypted() {
     let request = generate_request(
-        r#"{"key_alias":"alias","tags":["new"],"end_user_budget_id":"eu-1",
+        r#"{"key_alias":"alias","prompts":null,"tags":["new"],"end_user_budget_id":"eu-1",
             "metadata":{"keep":"value","tags":["old"],
               "logging":[{"callback_name":"custom","callback_vars":{"api_key":"sk-plain","endpoint":"https://example.test"}}]}}"#,
     );
@@ -43,6 +43,8 @@ fn generated_metadata_override_encrypted() {
         token.metadata.0.get("end_user_budget_id"),
         Some(&super::json(r#""eu-1""#))
     );
+    // an explicitly null request field is excluded before the metadata fold
+    assert!(!token.metadata.0.contains_key("prompts"));
     let Some(JsonData::Array(entries)) = token.metadata.0.get("logging") else {
         panic!("the logging slot stays a list");
     };

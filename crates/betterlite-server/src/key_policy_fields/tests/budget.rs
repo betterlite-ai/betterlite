@@ -21,10 +21,13 @@ fn model_budget_numeric_aliases() {
         r#"{"gpt-4":{"budget_limit":"2.5","time_period":"1d","rpm_limit":10,"tpm_limit":20}}"#,
     );
     validate_model_max_budget(Some(&by_limit)).unwrap();
+    // a JSON number is a budget_limit too, since LiteLLM hands the value to float()
+    let numeric_limit = object(r#"{"gpt-4":{"budget_limit":2.5}}"#);
+    validate_model_max_budget(Some(&numeric_limit)).unwrap();
     let by_budget = object(r#"{"gpt-4":{"max_budget":10,"budget_duration":"1d"}}"#);
     validate_model_max_budget(Some(&by_budget)).unwrap();
     // nulls take the model defaults, and unknown keys are not BudgetConfig fields
-    let sparse = object(r#"{"gpt-4":{"max_budget":null,"unknown":"value"}}"#);
+    let sparse = object(r#"{"gpt-4":{"max_budget":null,"tpm_limit":null,"unknown":"value"}}"#);
     validate_model_max_budget(Some(&sparse)).unwrap();
     // the alias replaces the field it names, so a bad max_budget beside budget_limit is unused
     let aliased = object(r#"{"gpt-4":{"budget_limit":"3","max_budget":"not a number"}}"#);

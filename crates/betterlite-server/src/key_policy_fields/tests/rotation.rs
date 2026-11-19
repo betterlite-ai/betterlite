@@ -102,4 +102,13 @@ fn regeneration_absent_null_empty_duration() {
     );
     assert!(!supplied.contains_key("duration"));
     assert!(!supplied.contains_key("budget_duration"));
+    // a nonempty duration is a real change and survives the patch
+    let timed = regenerate_request(r#"{"duration":"1h"}"#);
+    let update = regenerate_as_update_request("hashed", &timed)
+        .unwrap()
+        .expect("a duration is a change");
+    assert_eq!(
+        update.project().unwrap().supplied.get("duration"),
+        Some(&JsonData::String("1h".to_owned()))
+    );
 }

@@ -71,6 +71,7 @@ fn builtin_alias_boundaries() {
     assert_eq!(longest.len(), 255);
     assert!(rule.accepts(&longest));
     assert!(!rule.accepts(&format!("{longest}c")));
+    validate_key_alias_format(Some("ab"), loaded.alias_rule().as_ref()).unwrap();
     let error = validate_key_alias_format(Some("-ab"), loaded.alias_rule().as_ref()).unwrap_err();
     assert_eq!(error.message, BUILTIN_ALIAS_MESSAGE);
     assert_eq!(error.code, "400");
