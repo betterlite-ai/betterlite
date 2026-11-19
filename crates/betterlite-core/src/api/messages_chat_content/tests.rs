@@ -154,6 +154,11 @@ async fn user_and_tool_order(#[case] input: &str, #[case] expected: &str) {
     r#"[{"role":"user","content":[{"type":"text","text":"hi","cache_control":{"type":"ephemeral"},"prompt_cache_breakpoint":false}]}]"#,
     r#"[{"role":"user","content":[{"type":"text","text":"hi","prompt_cache_breakpoint":false}]}]"#
 )]
+#[case::empty_url_media_dropped(
+    "claude-sonnet-5",
+    r#"[{"role":"user","content":[{"type":"image","source":{"type":"url","url":""}},{"type":"document","source":{"type":"url","url":""}}]}]"#,
+    "[]"
+)]
 #[tokio::test]
 async fn user_media_markers(#[case] model: &str, #[case] input: &str, #[case] expected: &str) {
     let (translated, probes) = run(input, model, false, &[]).await;
@@ -198,6 +203,11 @@ async fn user_media_markers(#[case] model: &str, #[case] input: &str, #[case] ex
     "claude-sonnet-5",
     r#"[{"role":"assistant","content":[7,null,{"type":"text","text":"d"}]}]"#,
     r#"[{"role":"assistant","content":"d","thinking_blocks":null}]"#
+)]
+#[case::second_text_block_cache_control(
+    "claude-sonnet-5",
+    r#"[{"role":"assistant","content":[{"type":"text","text":"a"},{"type":"text","text":"b","cache_control":{"type":"ephemeral"}}]}]"#,
+    r#"[{"role":"assistant","content":[{"type":"text","text":"a"},{"type":"text","text":"b","cache_control":{"type":"ephemeral"}}],"thinking_blocks":null}]"#
 )]
 #[tokio::test]
 async fn assistant_text_representation(

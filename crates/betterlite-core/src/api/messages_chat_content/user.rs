@@ -17,7 +17,10 @@ fn user_message(content: Json) -> Json {
 }
 
 fn media_part(block: &Object, model: Option<&str>) -> Option<Object> {
-    let url = block.get("source").and_then(image_source_url)?;
+    let url = block
+        .get("source")
+        .and_then(image_source_url)
+        .filter(|url| !url.is_empty())?;
     let mut image_url = Object::new();
     image_url.insert("url".to_owned(), Json::Text(url));
     let mut part = Object::new();

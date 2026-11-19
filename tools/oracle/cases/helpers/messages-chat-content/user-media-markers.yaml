@@ -74,5 +74,21 @@ calls:
     custom_llm_provider: openai
     preserve_midturn_system: false
     supported: []
+- messages_chat_content:
+    messages:
+    - role: user
+      content:
+      - type: image
+        source:
+          type: url
+          url: ""
+      - type: document
+        source:
+          type: url
+          url: ""
+    model: claude-sonnet-5
+    custom_llm_provider: anthropic
+    preserve_midturn_system: false
+    supported: []
 env: {}
 compare: {ignore: []}

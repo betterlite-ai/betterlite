@@ -55,5 +55,19 @@ calls:
     custom_llm_provider: anthropic
     preserve_midturn_system: false
     supported: []
+- messages_chat_content:
+    messages:
+    - role: assistant
+      content:
+      - type: text
+        text: a
+      - type: text
+        text: b
+        cache_control:
+          type: ephemeral
+    model: claude-sonnet-5
+    custom_llm_provider: anthropic
+    preserve_midturn_system: false
+    supported: []
 env: {}
 compare: {ignore: []}
