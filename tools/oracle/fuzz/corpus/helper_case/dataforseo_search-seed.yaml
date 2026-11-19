@@ -1,0 +1,14 @@
+kind: helper
+name: dataforseo-search-seed
+call:
+  dataforseo_search:
+    environment: {DATAFORSEO_LOGIN: user, DATAFORSEO_PASSWORD: secret}
+    calls:
+      - {kind: settings}
+      - {kind: validate_environment, api_base: "https://api.dataforseo.com/v3/serp/google/organic/live/advanced"}
+      - {kind: complete_url}
+      - {kind: request, query: [q, other], optional_params: {max_results: 5, country: France}}
+      - kind: reply
+        body: '{"tasks": [{"status_code": 20000, "result": [{"items": [{"type": "organic", "title": "t"}]}]}]}'
+env: {}
+compare: {ignore: []}

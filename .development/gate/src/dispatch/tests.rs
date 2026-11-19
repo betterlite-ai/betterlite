@@ -71,6 +71,7 @@ fn progress() -> Progress {
         starts: Vec::new(),
         red: Vec::new(),
         reported_done: false,
+        parity_earlier: None,
     }
 }
 
@@ -731,6 +732,7 @@ fn reviewed(verdict: ReviewVerdict, findings: &[&str]) -> Step {
             commit: "def456".to_owned(),
             findings: findings.iter().map(|&line| line.to_owned()).collect(),
         },
+        parity: None,
         reviewer: pin(),
         litellm: vec!["a LiteLLM bug".to_owned()],
     })
@@ -1292,6 +1294,7 @@ fn the_parity_pass_counts_its_review_rounds_from_zero() {
                 commit: "def456".to_owned(),
                 findings: vec!["a parity finding".to_owned()],
             },
+            parity: None,
             reviewer: ReviewerPin {
                 panel: Panel::Parity,
                 ..pin()
@@ -1308,6 +1311,45 @@ fn the_parity_pass_counts_its_review_rounds_from_zero() {
         .unwrap();
         assert_eq!(flow, ControlFlow::Continue(()));
         assert_eq!(progress.review_rounds, expected);
+    }
+}
+
+#[test]
+fn the_parity_pass_keeps_its_own_review_until_it_runs_again() {
+    let (agents, task) = fixtures();
+    let folder = tempfile::tempdir().unwrap();
+    let mut progress = progress();
+    let own = EarlierReview {
+        commit: "abc123".to_owned(),
+        findings: vec!["a parity finding".to_owned()],
+    };
+    for parity in [Some(own), None] {
+        let step = Step::Reviewed(Round {
+            verdict: ReviewVerdict::Changes,
+            review: EarlierReview {
+                commit: "def456".to_owned(),
+                findings: vec!["a general finding".to_owned()],
+            },
+            parity,
+            reviewer: pin(),
+            litellm: Vec::new(),
+        });
+        let flow = apply_step(
+            &Chain::new(&agents).unwrap(),
+            &brief(&task),
+            &places(folder.path()),
+            &mut progress,
+            step,
+        )
+        .unwrap();
+        assert_eq!(flow, ControlFlow::Continue(()));
+        assert_eq!(
+            progress.parity_earlier,
+            Some(EarlierReview {
+                commit: "abc123".to_owned(),
+                findings: vec!["a parity finding".to_owned()],
+            })
+        );
     }
 }
 
@@ -1368,6 +1410,7 @@ fn run_review(
         places: &places,
         number: 1,
         earlier: None,
+        parity_earlier: None,
         reviewer: pinned,
         resume: None,
         fix_model: None,
