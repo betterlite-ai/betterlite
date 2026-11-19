@@ -33,6 +33,7 @@ fn convert_with(
 ) -> Result<LatencyRoutingSettings, ConfigError> {
     let (raw, _ignored) = parse_view::<Raw>(source)?;
     raw.convert(&environment(variables))
+        .map(|settings| *settings)
 }
 
 fn load(source: &str) -> LatencyRoutingSettings {
