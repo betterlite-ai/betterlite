@@ -6,7 +6,7 @@ use betterlite_router::deployment_credentials::resolve::{
     credentials_with_provider, deployment_credentials,
 };
 use betterlite_router::deployment_credentials::selection::{
-    credential_deployment, deployment_by_id,
+    SelectedDeployment, credential_deployment, deployment_by_id,
 };
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use betterlite_router::deployment_identity::stable_id::generate_model_id;
@@ -34,8 +34,22 @@ pub(crate) fn answer(input: &Input, captured: &Warnings) -> Result<Answer, Failu
         .as_deref()
         .ok_or(Failure::Argument("model_id"))?;
     let (id, credentials) = match input.function {
-        Function::GetDeploymentCredentials => simple(&catalog, model_id)?,
-        Function::CredentialsWithProvider => rich(&catalog, model_id, input)?,
+        // get_deployment then get_deployment_credentials: the id map only, and no named credential resolution.
+        Function::GetDeploymentCredentials => {
+            let id = selected_id(&deployment_by_id(&catalog, model_id)?);
+            let credentials =
+                deployment_credentials(&catalog, model_id)?.map(|params| params.fields);
+            (id, credentials)
+        }
+        // get_credential_deployment then get_deployment_credentials_with_provider, over the case's credential_list.
+        Function::CredentialsWithProvider => {
+            let team = input.arguments.team_id.as_deref();
+            let id = selected_id(&credential_deployment(&catalog, model_id, team)?);
+            let credentials = credential_snapshot(input);
+            let credentials = credentials_with_provider(&catalog, model_id, team, &credentials)?
+                .map(|params| params.fields);
+            (id, credentials)
+        }
     };
     Ok(Answer {
         id,
@@ -44,36 +58,12 @@ pub(crate) fn answer(input: &Input, captured: &Warnings) -> Result<Answer, Failu
     })
 }
 
-// get_deployment then get_deployment_credentials: the id map only, and no named credential resolution.
-fn simple(
-    catalog: &DeploymentCatalog,
-    model_id: &str,
-) -> Result<(Option<String>, Option<JsonObject>), Failure> {
-    let selected = deployment_by_id(catalog, model_id)?;
-    let id = selected
+// The id of the deployment a call selected, when it selected one.
+fn selected_id(selected: &Option<SelectedDeployment>) -> Option<String> {
+    selected
         .as_ref()
-        .and_then(|selected| selected.deployment.id())
-        .map(str::to_owned);
-    let credentials = deployment_credentials(catalog, model_id)?.map(|params| params.fields);
-    Ok((id, credentials))
-}
-
-// get_credential_deployment then get_deployment_credentials_with_provider, over the case's credential_list.
-fn rich(
-    catalog: &DeploymentCatalog,
-    model_id: &str,
-    input: &Input,
-) -> Result<(Option<String>, Option<JsonObject>), Failure> {
-    let team = input.arguments.team_id.as_deref();
-    let selected = credential_deployment(catalog, model_id, team)?;
-    let id = selected
-        .as_ref()
-        .and_then(|selected| selected.deployment.id())
-        .map(str::to_owned);
-    let credentials = credential_snapshot(input);
-    let credentials = credentials_with_provider(catalog, model_id, team, &credentials)?
-        .map(|params| params.fields);
-    Ok((id, credentials))
+        .and_then(|chosen| chosen.deployment.id())
+        .map(str::to_owned)
 }
 
 // set_model_list: every row as a deployment under the catalog's indices, then the patterns a case adds raw.
