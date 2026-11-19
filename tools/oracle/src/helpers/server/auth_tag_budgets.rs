@@ -98,7 +98,7 @@ async fn answer(input: &Input, fixture: &Fixture) -> HelperResult {
                 registry_answer::<ModelAccessGroupBudgetRow>(RegistryKind::Group, fixture).await?;
         }
     }
-    let effects = fixture.snapshot();
+    let effects = fixture.tracked().clone();
     Ok(json!({
         "tags": tags,
         "groups": groups,

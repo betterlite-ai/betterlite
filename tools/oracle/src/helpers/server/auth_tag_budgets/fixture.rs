@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Mutex, MutexGuard};
 
 use async_trait::async_trait;
 use betterlite_auth::auth_cache::AuthCacheError;
@@ -71,12 +71,11 @@ impl Fixture {
         Ok(fixture)
     }
 
-    pub(super) fn snapshot(&self) -> Effects {
-        self.tracked().clone()
-    }
-
-    fn tracked(&self) -> MutexGuard<'_, Effects> {
-        self.effects.lock().unwrap_or_else(PoisonError::into_inner)
+    pub(super) fn tracked(&self) -> MutexGuard<'_, Effects> {
+        match self.effects.lock() {
+            Ok(effects) => effects,
+            Err(poisoned) => poisoned.into_inner(),
+        }
     }
 
     fn probe<Value>(
@@ -90,38 +89,6 @@ impl Fixture {
     {
         self.tracked().reads.push(key.to_owned());
         table.get(key.strip_prefix(prefix).unwrap_or(key)).cloned()
-    }
-
-    fn queried<Row>(
-        &self,
-        rows: &[Row],
-        names: &[String],
-        name: fn(&Row) -> &str,
-    ) -> Result<Vec<Row>, TagBudgetRowsFailure>
-    where
-        Row: Clone,
-    {
-        self.tracked().queries.push(names.to_vec());
-        if self.fail_query {
-            return Err(failure());
-        }
-        Ok(rows
-            .iter()
-            .filter(|row| names.iter().any(|wanted| wanted.as_str() == name(row)))
-            .cloned()
-            .collect())
-    }
-
-    fn fetched<Row>(&self, rows: &[Row], take: i64) -> Result<Vec<Row>, TagBudgetRowsFailure>
-    where
-        Row: Clone,
-    {
-        self.tracked().takes.push(take);
-        if self.fail_query {
-            return Err(failure());
-        }
-        let limit = usize::try_from(take).unwrap_or(usize::MAX);
-        Ok(rows.iter().take(limit).cloned().collect())
     }
 }
 
@@ -199,11 +166,29 @@ macro_rules! fixture_rows {
                 &self,
                 names: Vec<String>,
             ) -> Result<Vec<$model>, TagBudgetRowsFailure> {
-                self.queried(&self.$rows, &names, |row| &row.$name)
+                self.tracked().queries.push(names.to_vec());
+                if self.fail_query {
+                    return Err(failure());
+                }
+                Ok(self
+                    .$rows
+                    .iter()
+                    .filter(|row| {
+                        names
+                            .iter()
+                            .any(|wanted| row.$name.as_str() == wanted.as_str())
+                    })
+                    .cloned()
+                    .collect())
             }
 
             async fn registry_rows(&self, take: i64) -> Result<Vec<$model>, TagBudgetRowsFailure> {
-                self.fetched(&self.$rows, take)
+                self.tracked().takes.push(take);
+                if self.fail_query {
+                    return Err(failure());
+                }
+                let limit = usize::try_from(take).unwrap_or(usize::MAX);
+                Ok(self.$rows.iter().take(limit).cloned().collect())
             }
         }
     };

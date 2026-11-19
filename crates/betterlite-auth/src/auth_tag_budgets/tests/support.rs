@@ -281,8 +281,7 @@ impl RecordingCache {
     }
 }
 
-// The cache decodes a stored payload the way AuthCache's typed read does: a payload the
-// model cannot read is a miss, never an error.
+// a stored payload the model cannot read is a miss, the way AuthCache's typed read treats it
 fn decoded<Value>(value: Option<Json>) -> Result<Option<Value>, PayloadError>
 where
     Value: DeserializeOwned,
