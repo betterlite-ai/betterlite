@@ -97,15 +97,11 @@ fn issue(kind: &'static str, field: &'static str, msg: &'static str) -> QueryIss
     }
 }
 
-#[cfg(test)]
 #[path = "repositories/tests/auth.rs"]
 mod auth;
-#[cfg(test)]
 #[path = "repositories/tests/errors.rs"]
 mod errors;
-#[cfg(test)]
 #[path = "repositories/tests/pagination.rs"]
 mod pagination;
-#[cfg(test)]
 #[path = "repositories/tests/query.rs"]
 mod query;

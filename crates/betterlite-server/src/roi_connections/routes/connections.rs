@@ -40,12 +40,9 @@ where
     Ok(Json(public))
 }
 
-#[cfg(test)]
 #[path = "connections/tests/auth.rs"]
 mod auth;
-#[cfg(test)]
 #[path = "connections/tests/errors.rs"]
 mod errors;
-#[cfg(test)]
 #[path = "connections/tests/success.rs"]
 mod success;
