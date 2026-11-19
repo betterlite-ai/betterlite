@@ -1,17 +1,15 @@
-#![expect(clippy::disallowed_types, reason = "not Send until B9991")]
-
 mod block;
 mod finish;
 
 use std::convert::Infallible;
 use std::error::Error;
-use std::ptr::{eq, from_ref};
+use std::ptr::eq;
 
 use async_trait::async_trait;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_models::decisions::Json;
 use futures_util::FutureExt as _;
-use futures_util::future::LocalBoxFuture;
+use futures_util::future::BoxFuture;
 use indexmap::IndexMap;
 
 use crate::api::realtime_contracts::config::BaseRealtimeConfig;
@@ -23,15 +21,14 @@ use super::callback::{GuardrailFailure, GuardrailInput, GuardrailInputType, Real
 use super::error::RealtimeGuardrailsError;
 use super::message;
 
-// The private steps stay local futures: the connection's callbacks and sockets are not Send, like B1110's sender
 type BlockFuture<'call, ConfigError, CallbackError> =
-    LocalBoxFuture<'call, Result<bool, RealtimeGuardrailsError<ConfigError, CallbackError>>>;
+    BoxFuture<'call, Result<bool, RealtimeGuardrailsError<ConfigError, CallbackError>>>;
 
 // LiteLLM's RealTimeStreaming.run_realtime_guardrails: the connection state, the provider config and litellm.callbacks
 pub struct RealtimeGuardrails<'run, Config, CallbackError = Infallible>
 where
     Config: BaseRealtimeConfig,
-    CallbackError: Error + 'static,
+    CallbackError: Error + Send + 'static,
 {
     pub state: &'run mut RealtimeStreaming,
     pub provider: Option<&'run Config>,
@@ -39,8 +36,8 @@ where
 }
 
 // The relay runs it on the connection state it already owns; a block sends its synthetic frames through B1110's boundary
-#[async_trait(?Send)]
-pub trait RunRealtimeGuardrails {
+#[async_trait]
+pub trait RunRealtimeGuardrails: Send {
     type Error;
 
     async fn run_realtime_guardrails(
@@ -52,11 +49,11 @@ pub trait RunRealtimeGuardrails {
     ) -> Result<bool, Self::Error>;
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl<Config, CallbackError> RunRealtimeGuardrails for RealtimeGuardrails<'_, Config, CallbackError>
 where
     Config: BaseRealtimeConfig,
-    CallbackError: Error + 'static,
+    CallbackError: Error + Send + 'static,
 {
     type Error = RealtimeGuardrailsError<Config::Error, CallbackError>;
 
@@ -75,7 +72,7 @@ where
             if !Self::eligible(guardrail, &already_run, &check_data, hooks)? {
                 continue;
             }
-            already_run.push(from_ref(guardrail).cast::<()>());
+            already_run.push(guardrail);
             if self
                 .apply_and_block(guardrail, pre_block_backend_message, transcript)
                 .await?
@@ -90,7 +87,7 @@ where
 impl<Config, CallbackError> RealtimeGuardrails<'_, Config, CallbackError>
 where
     Config: BaseRealtimeConfig,
-    CallbackError: Error + 'static,
+    CallbackError: Error + Send + 'static,
 {
     // LiteLLM's _check_data: the request data the relay already holds, with the transcript replacing any key of that name
     fn check_data(&self, transcript: &str) -> RequestData {
@@ -105,15 +102,14 @@ where
     // LiteLLM skips a non-guardrail, a native-lifecycle guardrail, an object that already ran, and one no hook selects
     fn eligible(
         guardrail: &dyn RealtimeGuardrail<Error = CallbackError>,
-        already_run: &[*const ()],
+        already_run: &[&dyn RealtimeGuardrail<Error = CallbackError>],
         check_data: &RequestData,
         hooks: &[GuardrailEventHooks],
     ) -> Result<bool, RealtimeGuardrailsError<Config::Error, CallbackError>> {
         if !guardrail.is_custom_guardrail() || guardrail.use_native_lifecycle_hooks() {
             return Ok(false);
         }
-        let identity = from_ref(guardrail).cast::<()>();
-        if already_run.iter().any(|seen| eq(*seen, identity)) {
+        if already_run.iter().any(|seen| eq(*seen, guardrail)) {
             return Ok(false);
         }
         for hook in hooks {
@@ -163,6 +159,6 @@ where
                 }
             }
         }
-        .boxed_local()
+        .boxed()
     }
 }

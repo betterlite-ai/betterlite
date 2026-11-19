@@ -142,7 +142,7 @@ description: >-
   Reusable key auth. Some public routers key only some of their paths (B4720's CatalogViews keys every path but
   /v1/mcp/registry.json; B7321's OauthRoot keys only /introspect). So routes.rs exposes `pub fn with_key_auth(router:
   Router, state: &Arc<ServerState>) -> Router`, which applies exactly the auth layers router() applies to keyed routes
-  (http_auth_stage with B052's key auth, then the route_match stage), and router() itself uses it for those layers. An
+  (http_auth_stage over the key auth stage router() runs today, auth_route_patterns::stage, then the route_match stage), and router() itself uses it for those layers. An
   area builds the keyed part of a public router, passes it through with_key_auth, merges the unkeyed part, and returns
   the result from mount_public.
 

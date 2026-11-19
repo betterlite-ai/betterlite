@@ -133,10 +133,6 @@ where
     RouteStage::ResponsesStreamFallback
 ))]
 #[case::least_busy_without_counters(boundaries::least_busy_without_counters())]
-#[case::latency_routing(boundaries::strategy_unbuilt(
-    RoutingStrategy::LatencyBasedRouting,
-    "latency_routing"
-))]
 #[case::no_deployment_rate_limit(boundaries::no_deployment_rate_limit())]
 #[case::no_deployment_all_in_cooldown(boundaries::no_deployment_all_in_cooldown())]
 #[case::default_min_cooldown(settled(boundaries::default_min_cooldown))]

@@ -1,8 +1,6 @@
-#![expect(clippy::disallowed_types, reason = "not Send until B9991")]
-
 use betterlite_config::sections::guardrail_params::base::OnViolation;
 use betterlite_models::decisions::Json;
-use futures_util::future::LocalBoxFuture;
+use futures_util::future::BoxFuture;
 
 use crate::api::realtime_guardrail_policy::RealtimeGuardrailCallback;
 use crate::api::request_destination::RequestData;
@@ -53,7 +51,7 @@ pub struct RealtimeGuardrailPolicy {
 }
 
 pub type GuardrailApplication<'call, CallbackError> =
-    LocalBoxFuture<'call, Result<GuardrailTexts, GuardrailFailure<CallbackError>>>;
+    BoxFuture<'call, Result<GuardrailTexts, GuardrailFailure<CallbackError>>>;
 
 // B2455's detection and predicate trait plus the apply_guardrail surface and the block attributes the realtime runner reads
 pub trait RealtimeGuardrail: RealtimeGuardrailCallback {

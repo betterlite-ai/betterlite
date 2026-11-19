@@ -8,13 +8,12 @@ use betterlite_core::api::realtime_contracts::error::{HeaderMap, WebSocketError}
 use betterlite_core::api::realtime_contracts::events::{
     AudioTranscriptionUsage, RealtimeResponseTransformInput, RealtimeResponseTypedDict,
 };
-use betterlite_core::api::realtime_contracts::transport::{
-    RealtimeEventNormalizer, RealtimeMessage,
-};
+use betterlite_core::api::realtime_contracts::transport::RealtimeMessage;
 use betterlite_core::api::realtime_guardrail_policy::RealtimeGuardrailCallback;
 use betterlite_core::api::realtime_session_state::RealtimeProviderConfig;
 use betterlite_core::api::request_destination::RequestData;
 use betterlite_models::decisions::Json;
+use betterlite_openai::realtime::normalizer::RealtimeEventNormalizer;
 use serde_json::json;
 use thiserror::Error;
 
