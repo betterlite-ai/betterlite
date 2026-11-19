@@ -2,6 +2,8 @@ from typing import Literal, Required, TypeAlias, TypedDict
 
 from litellm.proxy.hooks.parallel_request_limiter_v3 import (
     RateLimitStatus,
+)
+from litellm.proxy.hooks.parallel_request_limiter_v3 import (
     ReservationAwareIncrementOperation as PipelineOperation,
 )
 from litellm.types.utils import Usage
