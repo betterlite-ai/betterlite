@@ -1,0 +1,41 @@
+kind: sdk_http
+name: assistant-read-delete-delete-assistant-identifier
+env: {}
+call:
+  assistant_read_delete:
+    runs:
+      - input:
+          operation: delete
+          provider: openai
+          assistant_id: asst_a
+          params: {api_base: $API_BASE, api_key: sk-openai}
+      - input:
+          operation: delete
+          provider: azure
+          assistant_id: asst_a
+          client: {kind: azure_openai, api_base: $API_BASE, api_key: sk-supplied, api_version: "2024-02-01"}
+          params: {api_base: $API_BASE, api_key: sk-azure, api_version: "2024-02-01"}
+      - input:
+          operation: delete
+          provider: azure
+          assistant_id: asst_a
+          client: {kind: async_azure_openai, api_base: $API_BASE, api_key: sk-supplied-async, api_version: "2024-02-01"}
+          params: {api_base: $API_BASE, api_key: sk-azure, api_version: "2024-02-01"}
+      - entries: sync
+        input:
+          operation: list
+          provider: azure
+          client: {kind: azure_openai, api_base: $API_BASE, api_key: sk-supplied-list, api_version: "2024-02-01"}
+          params: {api_base: $API_BASE, api_key: sk-azure, api_version: "2024-02-01"}
+upstream:
+  - {status: 200, headers: {content-type: application/json}, body: {id: asst_a, object: assistant.deleted, deleted: true}}
+  - {status: 200, headers: {content-type: application/json}, body: {id: asst_a, object: assistant.deleted, deleted: true}}
+  - {status: 200, headers: {content-type: application/json}, body: {id: asst_a, object: assistant.deleted, deleted: true}}
+  - {status: 200, headers: {content-type: application/json}, body: {id: asst_a, object: assistant.deleted, deleted: true}}
+  - {status: 200, headers: {content-type: application/json}, body: {id: asst_a, object: assistant.deleted, deleted: true}}
+  - {status: 200, headers: {content-type: application/json}, body: {object: list, data: [{id: asst_b, object: assistant, created_at: 1, model: gpt-4o, name: helper, tools: []}], has_more: false, first_id: asst_b, last_id: asst_b}}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, api-key, openai-beta]
+  ignore: []

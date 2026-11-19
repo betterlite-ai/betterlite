@@ -1,0 +1,67 @@
+kind: sdk_http
+name: assistant-read-delete-assistant-read-flags-and-failures
+env: {}
+call:
+  assistant_read_delete:
+    runs:
+      - input:
+          operation: list
+          provider: openai
+          aget_assistants: 1
+          params: {api_base: $API_BASE, api_key: sk-openai}
+      - input:
+          operation: list
+          provider: openai
+          aget_assistants: "true"
+          params: {api_base: $API_BASE, api_key: sk-openai}
+      - input:
+          operation: delete
+          provider: openai
+          assistant_id: asst_a
+          async_delete_assistants: "true"
+          params: {api_base: $API_BASE, api_key: sk-openai}
+      - input:
+          operation: delete
+          provider: openai
+          assistant_id: asst_a
+          async_delete_assistants: 1
+          params: {api_base: $API_BASE, api_key: sk-openai}
+      - input:
+          operation: list
+          provider: anthropic
+      - input:
+          operation: delete
+          provider: anthropic
+          assistant_id: asst_a
+      - input:
+          operation: list
+          provider: openai
+          aget_assistants: false
+          params: {api_base: $API_BASE, api_key: sk-openai}
+      - input:
+          operation: list
+          provider: openai
+          aget_assistants: null
+          params: {api_base: $API_BASE, api_key: sk-openai}
+      - input:
+          operation: list
+          provider: openai
+          params: {api_base: $API_BASE, api_key: sk-openai}
+upstream:
+  - {status: 200, headers: {content-type: application/json}, body: {object: list, data: [{id: asst_b, object: assistant, created_at: 1, model: gpt-4o, name: helper, tools: []}], has_more: false, first_id: asst_b, last_id: asst_b}}
+  - {status: 200, headers: {content-type: application/json}, body: {object: list, data: [{id: asst_b, object: assistant, created_at: 1, model: gpt-4o, name: helper, tools: []}], has_more: false, first_id: asst_b, last_id: asst_b}}
+  - {status: 200, headers: {content-type: application/json}, body: {id: asst_a, object: assistant.deleted, deleted: true}}
+  - {status: 200, headers: {content-type: application/json}, body: {id: asst_a, object: assistant.deleted, deleted: true}}
+  - {status: 200, headers: {content-type: application/json}, body: {object: list, data: [{id: asst_b, object: assistant, created_at: 1, model: gpt-4o, name: helper, tools: []}], has_more: false, first_id: asst_b, last_id: asst_b}}
+  - {status: 200, headers: {content-type: application/json}, body: {object: list, data: [{id: asst_b, object: assistant, created_at: 1, model: gpt-4o, name: helper, tools: []}], has_more: false, first_id: asst_b, last_id: asst_b}}
+  - {status: 200, headers: {content-type: application/json}, body: {object: list, data: [{id: asst_b, object: assistant, created_at: 1, model: gpt-4o, name: helper, tools: []}], has_more: false, first_id: asst_b, last_id: asst_b}}
+  - {status: 200, headers: {content-type: application/json}, body: {object: list, data: [{id: asst_b, object: assistant, created_at: 1, model: gpt-4o, name: helper, tools: []}], has_more: false, first_id: asst_b, last_id: asst_b}}
+  - {status: 404, headers: {content-type: application/json}, body: {error: {message: missing, type: invalid_request_error, param: assistant_id, code: missing}}}
+  - {status: 404, headers: {content-type: application/json}, body: {error: {message: missing, type: invalid_request_error, param: assistant_id, code: missing}}}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, api-key, openai-beta]
+  ignore:
+    - {pointer: /assistant_read_delete/runs/8/sync/failure/message, why: the SDK prints the raw error body and betterlite writes its own message text}
+    - {pointer: /assistant_read_delete/runs/8/async/failure/message, why: LiteLLM prefixes its mapped exception and betterlite does not add the prefix}
