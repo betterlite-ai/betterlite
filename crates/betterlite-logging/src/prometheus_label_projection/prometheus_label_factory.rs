@@ -4,7 +4,7 @@ use betterlite_prometheus::label_names_catalog::UserApiKeyLabelName;
 use betterlite_prometheus::label_sanitization::{sanitize_label_name, sanitize_label_value};
 use betterlite_prometheus::label_value_record::UserApiKeyLabelValues;
 
-use super::end_user_resolution::{CostTrackingEndUserResolver, EndUserResolver};
+use super::end_user_resolution::{CostTrackingEndUserResolver, EndUserResolver as _};
 use super::label_dump_values::sanitized_scalar;
 use super::label_factory_context::PrometheusLabelFactoryContext;
 use super::tag_labels::custom_labels_from_tags;

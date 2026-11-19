@@ -2,7 +2,7 @@
 
 use rstest::rstest;
 
-use super::{CostTrackingEndUserResolver, EndUserResolver};
+use super::{CostTrackingEndUserResolver, EndUserResolver as _};
 use crate::end_user::EndUserCostTrackingSettings;
 
 fn resolver(disable: Option<bool>, prometheus_only: Option<bool>) -> CostTrackingEndUserResolver {
