@@ -33,6 +33,10 @@ description: >-
   260 implementation, 200 tests and 260 adapter/fuzz/HTTP lines, capped at 800.
 scope:
   paths:
+    - "tools/oracle/src/gateway.rs"
+    - "crates/betterlite-server/src/routes.rs"
+    - "crates/betterlite-server/src/routes/key_info.rs"
+    - "crates/betterlite-server/src/lib.rs"
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/cost_estimate_route.rs
     - crates/betterlite-server/src/cost_estimate_route/**

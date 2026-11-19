@@ -1,0 +1,21 @@
+kind: helper
+name: ragflow-chat-model-too-short
+env: {}
+compare: {ignore: []}
+call:
+  b049:
+    op: url
+    environment: {}
+    sdk: {api_base: null, api_key: null}
+    cases:
+      - {model: 'ragflow/chat', api_base: 'http://host:9380'}
+      - {model: 'ragflow/chat/abc', api_base: 'http://host:9380'}
+      - {model: 'ragflow//abc', api_base: 'http://host:9380'}
+calls:
+  - b049:
+      op: provider
+      environment: {RAGFLOW_API_BASE: 'http://env:9380', RAGFLOW_API_KEY: 'env-key'}
+      sdk: {api_base: null, api_key: null}
+      cases:
+        - {model: 'ragflow/chat/abc/openai/gpt-4o', api_base: null, api_key: null}
+        - {model: 'ragflow/chat/abc/m', api_base: 'http://explicit:9380', api_key: 'explicit-key'}

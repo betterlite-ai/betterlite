@@ -107,10 +107,6 @@ pub fn stream_transport<'call>(
 }
 
 // Both LiteLLM wrappers end in this composition; track_llm_api_timing wraps it, so a failed open still records its duration and hook.
-#[expect(
-    clippy::future_not_send,
-    reason = "PrePostEnv's sinks and LoggerFn are not Sync until B9984 makes the logging env Send and Sync"
-)]
 pub async fn custom_stream_wrapper<'deps>(
     transport: &StreamTransport<'_>,
     deps: &StreamDeps<'deps>,
@@ -144,10 +140,6 @@ pub async fn custom_stream_wrapper<'deps>(
 }
 
 // The request and B691's opened stream; a fake stream's body has already been read and converted by here.
-#[expect(
-    clippy::future_not_send,
-    reason = "PrePostEnv's sinks and LoggerFn are not Sync until B9984 makes the logging env Send and Sync"
-)]
 async fn open<'deps>(
     transport: &StreamTransport<'_>,
     deps: &StreamDeps<'deps>,

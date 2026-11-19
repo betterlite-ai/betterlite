@@ -3,7 +3,7 @@ title: Router settings and field metadata endpoints
 description: 'Serve GET /router/settings and GET /router/fields using typed response models and B066 configuration
   provenance. Report effective values, configuration overrides, field defaults, available strategies and
   priority-group support from the implemented router. Keep field definitions in a reviewed static catalog
-  and reproduce source metadata through snapshots/oracle cases. Reuse B052 authentication. This source
+  and reproduce source metadata through snapshots/oracle cases. The routes sit behind the existing authentication middleware. This source
   file defines read endpoints only; settings mutations remain B066''s configuration API. Implement the
   owned native service in crates/betterlite-server/src/router_settings.rs. B301 registers ProbeOperation::RouterSettings and its Python entry as stubs, so fill only tools/oracle/src/router_probes/router_settings.rs and tools/oracle/litellm/probes/router_settings.py and leave mod.rs and registry.py as they are;
   the adapters only call production services.

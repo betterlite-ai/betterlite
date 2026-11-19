@@ -102,7 +102,8 @@ out_of_scope:
     and get_content_items_for_message used to extract response text; B3723 owns _load_credentials,
     _prepare_request, _sign_and_post and _parse_bedrock_guardrail_error_response for HTTP transport.
   - CustomGuardrail.add_standard_logging_guardrail_information_to_request_data is called at L1935, L1951, L1969
-    in _make_invoke_guardrail_checks_request (within this task's owned range L1877-L2090), owned by B164.
+    in _make_invoke_guardrail_checks_request (within this task's owned range L1877-L2090); B3664 built it as
+    add_guardrail_record and GuardrailRecordInput in betterlite-guardrails guardrail_records, so call that.
   - ModifyResponseException is constructed at L2078 in _get_block_exception_for_checks (within this task's
     owned range L2068-L2090), owned by B184 (litellm/exceptions.py).
 pitfalls:

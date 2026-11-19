@@ -1,0 +1,63 @@
+kind: helper
+name: messages-chat-content-user-and-tool-order
+call:
+  messages_chat_content:
+    messages:
+    - role: user
+      content:
+      - type: text
+        text: before
+      - type: tool_result
+        tool_use_id: t
+        content: ok
+        is_error: true
+      - type: text
+      - type: text
+        text: after
+    model: claude-sonnet-5
+    custom_llm_provider: anthropic
+    preserve_midturn_system: false
+    supported: []
+calls:
+- messages_chat_content:
+    messages:
+    - role: user
+      content:
+      - type: tool_result
+    - role: user
+      content: hello
+    - role: user
+      content: ''
+    - role: user
+      content: []
+    - role: user
+      content: null
+    - role: other
+      content: ignored
+    - role: user
+      content:
+      - type: banana
+        text: x
+    model: claude-sonnet-5
+    custom_llm_provider: anthropic
+    preserve_midturn_system: false
+    supported: []
+- messages_chat_content:
+    messages:
+    - role: user
+      content:
+      - type: tool_result
+        tool_use_id: t
+        content:
+        - type: image
+          source:
+            type: url
+            url: https://example.test/a.png
+        cache_control:
+          type: ephemeral
+    model: claude-sonnet-5
+    custom_llm_provider: anthropic
+    preserve_midturn_system: false
+    supported: []
+env: {}
+compare: {ignore: []}

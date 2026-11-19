@@ -1,0 +1,17 @@
+kind: helper
+name: partial_copy
+call:
+  skill_sandbox:
+    code: "print('hello')\n"
+    files: {}
+    requirements: null
+    image: null
+    execution: {exit_code: 0, stdout: "hello\n", stderr: null}
+    listing: {exit_code: 0, stdout: '["/sandbox/a.png", "/sandbox/broken.csv", "/sandbox/b.png"]', stderr: null}
+    runtime_files:
+      /sandbox/a.png: "aaa"
+      /sandbox/b.png: "bbb"
+    refusing_copies:
+      - /sandbox/broken.csv
+env: {}
+compare: {ignore: []}

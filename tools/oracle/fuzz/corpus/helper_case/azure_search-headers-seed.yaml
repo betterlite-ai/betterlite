@@ -1,0 +1,14 @@
+kind: helper
+name: azure-search-headers-seed
+call:
+  azure_search:
+    headers:
+      scenarios:
+        - environment: {BING_GROUNDING_TOKEN: seed-token}
+          headers: {x-existing: seed}
+          api_key: null
+          api_base: null
+          minter: {token: seed-minted}
+env: {}
+compare:
+  ignore: []

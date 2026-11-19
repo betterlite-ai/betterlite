@@ -4,7 +4,8 @@ description: >-
   LiteLLM's ShadowEvalLogger is a success logger. After a real request succeeds it decides whether that request is a
   sample for an active shadow evaluation job, and if so it starts one detached pipeline that replays the conversation
   through the job's other arms and has a judge compare the answers. Its parts are planned: B4081 reads response text
-  and costs, B4082 turns the logged call into a chat request and checks the guardrail snapshot, B4083 loads the jobs and
+  and costs, B4082 turns the logged call into a chat request and rebuilds it from the guardrail snapshot, B9999 builds
+  the snapshot check (betterlite_logging::guardrail_snapshot), B4083 loads the jobs and
   counts the funnel, B4084 makes the shadow and judge calls, and B4085 runs one sampled request through every arm. No
   part builds the logger itself: its constructor, `_sampled_jobs`, `async_log_success_event` and the slot release
   (shadow_eval_logger.py L819-L849 and L905-L1038). This task builds them in betterlite-server as the module
@@ -57,10 +58,10 @@ description: >-
   user_api_key_user_id) from the payload's metadata (event.payload.metadata), each kept only when its value is a
   non-empty string. No targets, return. The request id is event.payload.id; empty, return.
 
-  3. ops is B4082's surface_ops(event.payload.call_type); None, return. When ops has wire_params and B4082's
+  3. ops is B4082's surface_ops(event.payload.call_type); None, return. When ops has wire_params and B9999's
   request_mutating_guardrail_ran(request_metadata) is true, the sample kwargs are B4082's post_guardrail_kwargs(call
   details, request_metadata, surface, event.guardrail_snapshot), and None means return; otherwise they are the call
-  details as they are. B4082 takes serde_json maps, so convert the call details once with serde_json::to_value.
+  details as they are. B4082 and B9999 take serde_json maps, so convert the call details once with serde_json::to_value.
 
   4. Read the active jobs from the job source. When the source reports that this read refilled the cache, clear the
   per-job starts first (LiteLLM resets `_job_starts` on every fill, L899). The candidates are the jobs of each target
@@ -115,8 +116,8 @@ description: >-
   litellm.turn_off_message_logging from message_logging_redacted (and restores it), captures the snapshot with
   GuardrailRequestSnapshot.capture, puts the payload under standard_logging_object, awaits async_log_success_event and
   then the tasks it created. The Rust adapter builds the Rust logger with in-memory fakes for the same five
-  dependencies and captures the snapshot with B4082's capture. Snapshot fingerprints differ in text between the two
-  (B4082's deviation), so no output carries one.
+  dependencies and captures the snapshot with B9999's capture. Snapshot fingerprints differ in text between the two
+  (B9999's deviation), so no output carries one.
 scope:
   paths:
     - crates/betterlite-server/src/shadow_eval_logger.rs
@@ -231,7 +232,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L1019-L1033
 out_of_scope:
   - "Response text, call costs, failure text, routing decision readers and the result records (shadow_eval_logger.py L171-L277, L491-L531, L671-L689, L704-L731): B4081."
-  - "Request normalization, surface ops, the guardrail snapshot and judgeable_sample (L72-L168, L280-L450): B4082."
+  - "Request normalization, surface ops, post_guardrail_kwargs and judgeable_sample (L72-L168, L280-L303, L365-L450): B4082. The non-mutating mode set, _request_mutating_guardrail_ran, request_guardrail_fingerprint and GuardrailRequestSnapshot.capture (L305-L362): B9999."
   - "sample_hits, the spend counter helpers, direction_admits, ActiveShadowEvalJob, canonical_group, scope_admits, as_active_job, the jobs cache and `_active_jobs`, `_record_attempt` and the default prisma provider (L55, L483-L488, L581-L620, L692-L701, L734-L816, L851-L903, L1218-L1264, L1374-L1382), and the pod-local funnel counters: B4083."
   - "The judge prompt and budgets, PairwiseVerdict, `_unmask_preference`, the tool text, `_forwarded_team_id`, `_call_router_shadow` and `_call_judge` (L60-L70, L452-L480, L534-L578, L663-L668, L1266-L1371): B4084."
   - "`_key_or_team_is_over_budget`, `_run_shadow_eval` and `_run_shadow_arm` (L623-L660, L1042-L1216): B4085."

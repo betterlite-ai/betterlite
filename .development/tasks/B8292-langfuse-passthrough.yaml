@@ -13,7 +13,7 @@ description: >-
   `LangfuseDeps` holds the factory's handler (`Arc<PassThroughHandler>` as B3615 and B3613 define it), the bool
   `user_url_validation` (from B5082's `user_url_policy` section, default true) and these ports, each a small trait in
   this module so tests use fakes and no global is read:
-  - `KeyAuthPort`: `authenticate(bearer_key: &str, request) -> Result<UserApiKeyAuth, ProxyException>`, the proxy key check of B052.
+  - `KeyAuthPort`: `authenticate(bearer_key: &str, request) -> Result<UserApiKeyAuth, ProxyException>`, the proxy key check (LiteLLM's user_api_key_auth); B103 passes the real one when it builds `LangfuseDeps`.
   - `LoggingSettingsPort`: `callback_vars(key: &UserApiKeyAuth) -> Option<HashMap<String, String>>`, LiteLLM's `_get_dynamic_logging_metadata` (B1102 to B1105 own it) reduced to its `callback_vars`.
   - `SecretPort`: `get_secret(name: &str) -> Result<Option<String>, SecretLookupError>`, so a lookup error surfaces as LiteLLM's HTTP 500 and never turns into None; LiteLLM's `litellm.utils.get_secret` (B8500).
   - `UrlGuardPort`: `validate_url(url: &str) -> Result<(String, String), String>`, B5082's SSRF check. It returns the URL to call and the Host header, or the error text.
@@ -125,7 +125,7 @@ deviations:
 
 out_of_scope:
   - "create_pass_through_route and the handler it returns: B3615 and B3613."
-  - "The proxy key check (user_api_key_auth): B052."
+  - "The proxy key check (user_api_key_auth) behind KeyAuthPort: B103 supplies it when it mounts the router."
   - "_get_dynamic_logging_metadata: B1102 to B1105."
   - "validate_url and the SSRF rules: B5082."
   - "create_request_copy and default_vertex_config in this file: no caller at the pin (proxy_server.py reads its own default_vertex_config key)."

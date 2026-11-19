@@ -1,0 +1,13 @@
+kind: helper
+name: azure-files-client-seed
+call:
+  azure_files:
+    steps:
+    - action: client
+      args: {api_key: key-1, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 600.0, max_retries: 2}
+    - action: list
+      args: {api_key: key-1, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 600.0, max_retries: 2}
+      purpose: batch
+      reply: {status: 200, headers: {content-type: application/json}, body: '{"object": "list", "data": [], "has_more": false, "first_id": null, "last_id": null}'}
+env: {}
+compare: {ignore: []}

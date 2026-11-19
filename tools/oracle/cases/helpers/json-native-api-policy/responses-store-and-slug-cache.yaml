@@ -1,0 +1,41 @@
+kind: helper
+name: json-native-api-policy-responses-transform-and-cache
+call:
+  json_native_api_policy:
+    calls:
+      - kind: responses_url
+        model: sail/any
+        environment: {}
+      - kind: responses_transform
+        model: parasail/any
+        environment: {}
+        input: hi
+        params: {store: true}
+      - kind: responses_transform
+        model: pinstripes/any
+        environment: {}
+        descriptor:
+          base_url: "https://keep.invalid/v1"
+          api_key_env: PROBE_KEY
+        input: hi
+        params: {store: true}
+      - kind: responses_transform
+        model: cognition/any
+        environment: {}
+        descriptor:
+          base_url: "https://force.invalid/v1"
+          api_key_env: PROBE_KEY
+          special_handling: {force_store_false: true}
+        input: hello
+        params: {store: true, max_output_tokens: 8}
+      - kind: responses_cache
+        model: chutes/any
+        environment: {}
+        first:
+          base_url: "https://first.invalid/v1"
+          api_key_env: PROBE_KEY
+        second:
+          base_url: "https://second.invalid/v1"
+          api_key_env: PROBE_KEY
+env: {}
+compare: {ignore: []}

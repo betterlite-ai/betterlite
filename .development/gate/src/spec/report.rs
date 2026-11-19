@@ -1,7 +1,7 @@
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(
     title = "betterlite worker report",
@@ -34,16 +34,28 @@ pub(crate) struct Report {
     pub(crate) mutants: Vec<MutantTest>,
     #[schemars(description = "Facts the architect needs and nothing else.")]
     pub(crate) notes: Vec<String>,
+    #[schemars(
+        description = "Parts copied from your last done answer on this branch instead of written again: owned, prior_art or mutants. Name a part only when nothing it lists changed since that answer, and mutants only when no Rust file changed since then, since each mutant line carries its line number. Leave a kept part's list empty here, and leave kept empty on a first answer. The gate fills it in and checks the whole report as before."
+    )]
+    pub(crate) kept: Vec<KeptPart>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum ReportStatus {
     Done,
     Blocked,
 }
 
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum KeptPart {
+    Owned,
+    PriorArt,
+    Mutants,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct OwnedBehavior {
     #[schemars(
@@ -58,7 +70,7 @@ pub(crate) struct OwnedBehavior {
     pub(crate) test: String,
 }
 
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct MutantTest {
     #[schemars(description = "The mutant line exactly as cargo mutants --list prints it.")]
@@ -67,7 +79,7 @@ pub(crate) struct MutantTest {
     pub(crate) test: String,
 }
 
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PriorArt {
     #[schemars(
@@ -80,7 +92,7 @@ pub(crate) struct PriorArt {
     pub(crate) options: Vec<PriorOption>,
 }
 
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PriorOption {
     #[schemars(description = "A crate name exactly as in Cargo.toml, a std API, or hand-written.")]
@@ -92,7 +104,7 @@ pub(crate) struct PriorOption {
     pub(crate) why: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum OptionVerdict {
     Chosen,

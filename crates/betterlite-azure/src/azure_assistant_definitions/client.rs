@@ -130,7 +130,7 @@ impl<'data, T: AssistantsTransport> AzureAssistantsClient<'data, T> {
         Ok(decode_assistant_object(&body)?)
     }
 
-    fn outbound(
+    pub(crate) fn outbound(
         &self,
         method: Method,
         tail: &str,
@@ -190,7 +190,10 @@ impl<'data, T: AssistantsTransport> AzureAssistantsClient<'data, T> {
         Ok(headers)
     }
 
-    async fn send_checked(&self, request: OutboundRequest) -> Result<Vec<u8>, DefinitionsError> {
+    pub(crate) async fn send_checked(
+        &self,
+        request: OutboundRequest,
+    ) -> Result<Vec<u8>, DefinitionsError> {
         let response = self
             .transport
             .send(request)
@@ -280,7 +283,7 @@ fn merged_query(query: Option<&str>, api_version: &str) -> Option<String> {
     encoded_query(&pairs)
 }
 
-fn quote_path_segment(segment: &str) -> String {
+pub(crate) fn quote_path_segment(segment: &str) -> String {
     let mut escaped = utf8_percent_encode(segment, NON_ALPHANUMERIC).to_string();
     for (encoded, mark) in SAFE_PATH_MARKS {
         escaped = escaped.replace(encoded, mark);
