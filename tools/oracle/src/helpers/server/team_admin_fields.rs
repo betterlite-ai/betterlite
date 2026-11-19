@@ -1,24 +1,34 @@
 use std::collections::BTreeMap;
-use std::collections::BTreeSet;
 
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_config::sections::team_admin_fields::{
     EDITABLE_FIELDS_SETTING, SettingWarning, may_edit_member_key_budgets, resolve_editable_fields,
 };
 use betterlite_db::budget_permission_rows::JsonData;
-use betterlite_db::identity_rows::key::LiteLLMVerificationToken;
-use betterlite_db::team_rows::team::LiteLLMTeamTable;
+use betterlite_db::identity_rows::key::LiteLLMVerificationToken as KeyRow;
+use betterlite_db::team_rows::team::LiteLLMTeamTable as TeamRow;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::key_fields::decode::TypedValue;
 use betterlite_server::key_fields::update::UpdateKeyRequest;
-use betterlite_server::team_admin_fields::key as key_policy;
-use betterlite_server::team_admin_fields::team as team_policy;
+use betterlite_server::team_admin_fields::error::Forbidden;
+use betterlite_server::team_admin_fields::key;
+use betterlite_server::team_admin_fields::key::TeamAdminKeyEditVerdict;
+use betterlite_server::team_admin_fields::key::TeamAdminKeyEditVerdict::{
+    Allowed as KeyAllowed, Disabled as KeyDisabled, FieldNotPermitted as KeyFieldNotPermitted,
+};
+use betterlite_server::team_admin_fields::team;
+use betterlite_server::team_admin_fields::team::TeamAdminEditVerdict;
+use betterlite_server::team_admin_fields::team::TeamAdminEditVerdict::{
+    Allowed, Disabled, FieldNotPermitted,
+};
 use betterlite_server::team_request_contracts::shared::RequestProjection as _;
 use betterlite_server::team_request_contracts::update::UpdateTeamRequest;
 use serde::Deserialize;
 use serde_json::Value;
+use serde_json::from_value;
 use serde_json::json;
+use serde_json::to_value;
 
 #[derive(Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
@@ -70,32 +80,32 @@ impl Helper for Op {
             Input::Resolve {
                 general_settings,
                 supported,
-            } => Ok(resolve_answer(general_settings, supported)),
-            Input::MemberKeyBudgets { general_settings } => {
-                Ok(member_key_budgets_answer(general_settings))
-            }
-            Input::ChangedTeam { request, existing } => changed_team_answer(request, existing),
+            } => Ok(resolve(general_settings, supported)),
+            Input::MemberKeyBudgets { general_settings } => Ok(
+                json!({"allowed": may_edit_member_key_budgets(general_settings.get(EDITABLE_FIELDS_SETTING))}),
+            ),
+            Input::ChangedTeam { request, existing } => changed_team(request, existing),
+            Input::ChangedKey { request, existing } => changed_key(request, existing),
             Input::TeamVerdict {
                 request,
                 existing,
                 permitted,
-            } => team_verdict_answer(request, existing, permitted),
+            } => team_verdict(request, existing, permitted),
             Input::TeamRequest {
                 request,
                 existing,
                 permitted,
-            } => team_request_answer(request, existing, permitted),
-            Input::ChangedKey { request, existing } => changed_key_answer(request, existing),
+            } => team_request(request, existing, permitted),
             Input::KeyVerdict {
                 request,
                 existing,
                 enabled,
-            } => key_verdict_answer(request, existing, *enabled),
+            } => key_verdict(request, existing, *enabled),
             Input::KeyRequest {
                 request,
                 existing,
                 enabled,
-            } => key_request_answer(request, existing, *enabled),
+            } => key_request(request, existing, *enabled),
         }
     }
 }
@@ -107,139 +117,95 @@ const fn warning_kind(warning: &SettingWarning) -> &'static str {
     }
 }
 
-fn resolve_answer(general_settings: &BTreeMap<String, JsonValue>, supported: &[String]) -> Value {
+fn resolve(general_settings: &BTreeMap<String, JsonValue>, supported: &[String]) -> Value {
     let names: Vec<&str> = supported.iter().map(String::as_str).collect();
-    let resolution = resolve_editable_fields(general_settings.get(EDITABLE_FIELDS_SETTING), &names);
-    let warnings: Vec<Value> = resolution
-        .warnings
-        .iter()
-        .map(|warning| json!({"kind": warning_kind(warning)}))
-        .collect();
-    json!({
-        "fields": resolution.fields.into_iter().collect::<Vec<_>>(),
-        "warnings": warnings,
-    })
+    let resolved = resolve_editable_fields(general_settings.get(EDITABLE_FIELDS_SETTING), &names);
+    let kinds: Vec<&str> = resolved.warnings.iter().map(warning_kind).collect();
+    json!({"fields": resolved.fields.into_iter().collect::<Vec<_>>(), "warnings": kinds.into_iter().map(|kind| json!({"kind": kind})).collect::<Vec<_>>()})
 }
 
-fn member_key_budgets_answer(general_settings: &BTreeMap<String, JsonValue>) -> Value {
-    let setting = general_settings.get(EDITABLE_FIELDS_SETTING);
-    json!({"allowed": may_edit_member_key_budgets(setting)})
-}
-
-fn team_request(document: &JsonData) -> Result<UpdateTeamRequest, Box<HelperError>> {
-    UpdateTeamRequest::from_value(document).or_value_error()
-}
-
-fn team_row(document: &JsonData) -> Result<LiteLLMTeamTable, Box<HelperError>> {
-    LiteLLMTeamTable::try_from(document.clone()).or_value_error()
-}
-
-fn key_request(document: &JsonData) -> Result<UpdateKeyRequest, Box<HelperError>> {
-    UpdateKeyRequest::read(&TypedValue {
-        json: document.clone(),
-    })
-    .or_value_error()
-}
-
-fn key_row(document: &JsonData) -> Result<LiteLLMVerificationToken, Box<HelperError>> {
-    let value = serde_json::to_value(document).or_value_error()?;
-    serde_json::from_value(value).or_value_error()
-}
-
-fn permitted_set(names: &[String]) -> BTreeSet<String> {
-    names.iter().cloned().collect()
-}
-
-fn changed_team_answer(request: &JsonData, existing: &JsonData) -> HelperResult {
-    let changed = team_policy::changed_fields(&team_request(request)?, &team_row(existing)?)
-        .or_value_error()?;
+fn changed_team(request: &JsonData, existing: &JsonData) -> HelperResult {
+    let submitted = UpdateTeamRequest::from_value(request).or_value_error()?;
+    let stored = TeamRow::try_from(existing.clone()).or_value_error()?;
+    let changed = team::changed_fields(&submitted, &stored).or_value_error()?;
     Ok(json!({"changed": changed.into_iter().collect::<Vec<_>>()}))
 }
 
-fn team_verdict_answer(
-    request: &JsonData,
-    existing: &JsonData,
-    permitted: &[String],
-) -> HelperResult {
-    let verdict = team_policy::edit_verdict(
-        &team_request(request)?,
-        &team_row(existing)?,
-        &permitted_set(permitted),
-    )
-    .or_value_error()?;
-    team_verdict_view(verdict)
+fn decode_key(request: &JsonData) -> Result<UpdateKeyRequest, Box<HelperError>> {
+    let value = TypedValue {
+        json: request.clone(),
+    };
+    let submitted = UpdateKeyRequest::read(&value).or_value_error()?;
+    Ok(submitted)
 }
 
-fn team_verdict_view(verdict: team_policy::TeamAdminEditVerdict) -> HelperResult {
-    match verdict {
-        team_policy::TeamAdminEditVerdict::Allowed { request } => Ok(json!({
-            "kind": "allowed",
-            "field": null,
-            "request": request.supplied().or_value_error()?,
-        })),
-        team_policy::TeamAdminEditVerdict::Disabled => {
-            Ok(json!({"kind": "disabled", "field": null, "request": null}))
-        }
-        team_policy::TeamAdminEditVerdict::FieldNotPermitted { field } => {
-            Ok(json!({"kind": "field_not_permitted", "field": field, "request": null}))
-        }
-    }
-}
-
-fn team_request_answer(
-    request: &JsonData,
-    existing: &JsonData,
-    permitted: &[String],
-) -> HelperResult {
-    let verdict = team_policy::edit_verdict(
-        &team_request(request)?,
-        &team_row(existing)?,
-        &permitted_set(permitted),
-    )
-    .or_value_error()?;
-    match team_policy::request_or_raise(verdict) {
-        Ok(allowed) => Ok(json!({
-            "status": null,
-            "detail": null,
-            "request": allowed.supplied().or_value_error()?,
-        })),
-        Err(forbidden) => Ok(json!({
-            "status": 403,
-            "detail": forbidden.to_string(),
-            "request": null,
-        })),
-    }
-}
-
-fn changed_key_answer(request: &JsonData, existing: &JsonData) -> HelperResult {
-    let changed =
-        key_policy::changed_fields(&key_request(request)?, &key_row(existing)?).or_value_error()?;
+fn changed_key(request: &JsonData, existing: &JsonData) -> HelperResult {
+    let submitted = decode_key(request)?;
+    let stored = from_value::<KeyRow>(to_value(existing).or_value_error()?).or_value_error()?;
+    let changed = key::changed_fields(&submitted, &stored).or_value_error()?;
     Ok(json!({"changed": changed.into_iter().collect::<Vec<_>>()}))
 }
 
-fn key_verdict_answer(request: &JsonData, existing: &JsonData, enabled: bool) -> HelperResult {
-    let verdict = key_policy::edit_verdict(&key_request(request)?, &key_row(existing)?, enabled)
+fn team_verdict(request: &JsonData, existing: &JsonData, permitted: &[String]) -> HelperResult {
+    let submitted = UpdateTeamRequest::from_value(request).or_value_error()?;
+    let stored = TeamRow::try_from(existing.clone()).or_value_error()?;
+    let verdict = team::edit_verdict(&submitted, &stored, &permitted.iter().cloned().collect())
         .or_value_error()?;
-    match verdict {
-        key_policy::TeamAdminKeyEditVerdict::Allowed { changed } => Ok(json!({
-            "kind": "allowed",
-            "field": null,
-            "changed": changed.into_iter().collect::<Vec<_>>(),
-        })),
-        key_policy::TeamAdminKeyEditVerdict::Disabled => {
-            Ok(json!({"kind": "disabled", "field": null, "changed": []}))
-        }
-        key_policy::TeamAdminKeyEditVerdict::FieldNotPermitted { field } => {
-            Ok(json!({"kind": "field_not_permitted", "field": field, "changed": []}))
-        }
-    }
+    Ok(team_verdict_view(&verdict))
 }
 
-fn key_request_answer(request: &JsonData, existing: &JsonData, enabled: bool) -> HelperResult {
-    let verdict = key_policy::edit_verdict(&key_request(request)?, &key_row(existing)?, enabled)
+fn team_request(request: &JsonData, existing: &JsonData, permitted: &[String]) -> HelperResult {
+    let submitted = UpdateTeamRequest::from_value(request).or_value_error()?;
+    let stored = TeamRow::try_from(existing.clone()).or_value_error()?;
+    let verdict = team::edit_verdict(&submitted, &stored, &permitted.iter().cloned().collect())
         .or_value_error()?;
-    match key_policy::request_or_raise(verdict) {
-        Ok(()) => Ok(json!({"status": null, "detail": null})),
-        Err(forbidden) => Ok(json!({"status": 403, "detail": forbidden.to_string()})),
-    }
+    Ok(team_request_view(team::request_or_raise(verdict)))
+}
+
+fn key_verdict(request: &JsonData, existing: &JsonData, enabled: bool) -> HelperResult {
+    let submitted = decode_key(request)?;
+    let stored = from_value::<KeyRow>(to_value(existing).or_value_error()?).or_value_error()?;
+    let verdict = key::edit_verdict(&submitted, &stored, enabled).or_value_error()?;
+    Ok(key_verdict_view(&verdict))
+}
+
+fn key_request(request: &JsonData, existing: &JsonData, enabled: bool) -> HelperResult {
+    let submitted = decode_key(request)?;
+    let stored = from_value::<KeyRow>(to_value(existing).or_value_error()?).or_value_error()?;
+    let verdict = key::edit_verdict(&submitted, &stored, enabled).or_value_error()?;
+    Ok(key_request_view(key::request_or_raise(verdict)))
+}
+
+fn team_verdict_view(verdict: &TeamAdminEditVerdict) -> HelperResult {
+    let (kind, field, request) = match verdict {
+        Allowed { request } => ("allowed", None, Some(request.supplied().or_value_error()?)),
+        Disabled => ("disabled", None, None),
+        FieldNotPermitted { field } => ("field_not_permitted", Some(field.as_str()), None),
+    };
+    Ok(json!({"kind": kind, "field": field, "request": request}))
+}
+
+fn team_request_view(outcome: Result<UpdateTeamRequest, Forbidden>) -> HelperResult {
+    let (status, detail, request) = match outcome {
+        Ok(allowed) => (None, None, Some(allowed.supplied().or_value_error()?)),
+        Err(forbidden) => (Some(403_u16), Some(forbidden.to_string()), None),
+    };
+    Ok(json!({"status": status, "detail": detail, "request": request}))
+}
+
+fn key_verdict_view(verdict: &TeamAdminKeyEditVerdict) -> Value {
+    let (kind, field, changed) = match verdict {
+        KeyAllowed { changed } => ("allowed", None, changed.iter().collect::<Vec<_>>()),
+        KeyDisabled => ("disabled", None, Vec::new()),
+        KeyFieldNotPermitted { field } => ("field_not_permitted", Some(field.as_str()), Vec::new()),
+    };
+    json!({"kind": kind, "field": field, "changed": changed})
+}
+
+fn key_request_view(outcome: Result<(), Forbidden>) -> Value {
+    let (status, detail) = match outcome {
+        Ok(()) => (None, None),
+        Err(forbidden) => (Some(403_u16), Some(forbidden.to_string())),
+    };
+    json!({"status": status, "detail": detail})
 }

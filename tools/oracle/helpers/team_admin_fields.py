@@ -1,22 +1,30 @@
 import logging
-from typing import Literal, TypeAlias, TypedDict
+from typing import Final, Literal, TypeAlias, TypedDict, assert_never
 
-from fastapi import HTTPException
 from litellm.models.team import LiteLLM_TeamTable
 from litellm.models.verification_token import LiteLLM_VerificationToken
 from litellm.proxy._types import UpdateKeyRequest, UpdateTeamRequest
 from litellm.proxy.management_endpoints import team_admin_field_permissions as policy
 from litellm.proxy.management_endpoints.team_admin_field_permissions import (
-    TeamAdminEditAllowed,
-    TeamAdminEditingDisabled,
-    TeamAdminFieldNotPermitted,
-    TeamAdminKeyEditAllowed,
     TeamAdminMemberKeyEditingDisabled as KeyEditingDisabled,
 )
-from pydantic import JsonValue, TypeAdapter
-from typing_extensions import assert_never, override
+from pydantic import BaseModel, JsonValue, TypeAdapter
+from starlette.exceptions import HTTPException
+from typing_extensions import override
 
-_JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
+_JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
+TEAM_REQUEST: Final[TypeAdapter[UpdateTeamRequest]] = TypeAdapter(UpdateTeamRequest)
+TEAM_ROW: Final[TypeAdapter[LiteLLM_TeamTable]] = TypeAdapter(LiteLLM_TeamTable)
+KEY_REQUEST: Final[TypeAdapter[UpdateKeyRequest]] = TypeAdapter(UpdateKeyRequest)
+KEY_ROW: Final[TypeAdapter[LiteLLM_VerificationToken]] = TypeAdapter(
+    LiteLLM_VerificationToken
+)
+
+WarningKindLiteral: TypeAlias = Literal["not_a_list", "unsupported", "other"]
+WARNING_FRAGMENTS: Final[tuple[tuple[str, WarningKindLiteral], ...]] = (
+    ("must be a list of field names", "not_a_list"),
+    ("ignores unsupported field(s)", "unsupported"),
+)
 
 
 class ResolveInput(TypedDict):
@@ -30,60 +38,33 @@ class MemberKeyBudgetsInput(TypedDict):
     general_settings: dict[str, JsonValue]
 
 
-class ChangedTeamInput(TypedDict):
-    function: Literal["changed_team"]
+class ChangedInput(TypedDict):
+    function: Literal["changed_team", "changed_key"]
     request: JsonValue
     existing: JsonValue
 
 
-class TeamVerdictInput(TypedDict):
-    function: Literal["team_verdict"]
-    request: JsonValue
-    existing: JsonValue
-    permitted: list[str]
-
-
-class TeamRequestInput(TypedDict):
-    function: Literal["team_request"]
+class PermittedInput(TypedDict):
+    function: Literal["team_verdict", "team_request"]
     request: JsonValue
     existing: JsonValue
     permitted: list[str]
 
 
-class ChangedKeyInput(TypedDict):
-    function: Literal["changed_key"]
-    request: JsonValue
-    existing: JsonValue
-
-
-class KeyVerdictInput(TypedDict):
-    function: Literal["key_verdict"]
-    request: JsonValue
-    existing: JsonValue
-    enabled: bool
-
-
-class KeyRequestInput(TypedDict):
-    function: Literal["key_request"]
+class EnabledInput(TypedDict):
+    function: Literal["key_verdict", "key_request"]
     request: JsonValue
     existing: JsonValue
     enabled: bool
 
 
 Input: TypeAlias = (
-    ResolveInput
-    | MemberKeyBudgetsInput
-    | ChangedTeamInput
-    | TeamVerdictInput
-    | TeamRequestInput
-    | ChangedKeyInput
-    | KeyVerdictInput
-    | KeyRequestInput
+    ResolveInput | MemberKeyBudgetsInput | ChangedInput | PermittedInput | EnabledInput
 )
 
 
 class WarningKind(TypedDict):
-    kind: Literal["not_a_list", "unsupported", "other"]
+    kind: WarningKindLiteral
 
 
 class ResolveAnswer(TypedDict):
@@ -99,25 +80,10 @@ class ChangedAnswer(TypedDict):
     changed: list[str]
 
 
-class TeamAllowedAnswer(TypedDict):
-    kind: Literal["allowed"]
-    field: None
-    request: JsonValue
-
-
-class TeamBlockedAnswer(TypedDict):
-    kind: Literal["field_not_permitted"]
-    field: str
-    request: None
-
-
-class TeamDisabledAnswer(TypedDict):
-    kind: Literal["disabled"]
-    field: None
-    request: None
-
-
-TeamVerdictAnswer: TypeAlias = TeamAllowedAnswer | TeamBlockedAnswer | TeamDisabledAnswer
+class TeamVerdictAnswer(TypedDict):
+    kind: Literal["allowed", "field_not_permitted", "disabled"]
+    field: str | None
+    request: JsonValue | None
 
 
 class TeamRequestAnswer(TypedDict):
@@ -126,25 +92,10 @@ class TeamRequestAnswer(TypedDict):
     request: JsonValue | None
 
 
-class KeyAllowedAnswer(TypedDict):
-    kind: Literal["allowed"]
-    field: None
+class KeyVerdictAnswer(TypedDict):
+    kind: Literal["allowed", "field_not_permitted", "disabled"]
+    field: str | None
     changed: list[str]
-
-
-class KeyBlockedAnswer(TypedDict):
-    kind: Literal["field_not_permitted"]
-    field: str
-    changed: list[str]
-
-
-class KeyDisabledAnswer(TypedDict):
-    kind: Literal["disabled"]
-    field: None
-    changed: list[str]
-
-
-KeyVerdictAnswer: TypeAlias = KeyAllowedAnswer | KeyBlockedAnswer | KeyDisabledAnswer
 
 
 class KeyRequestAnswer(TypedDict):
@@ -163,6 +114,14 @@ Answer: TypeAlias = (
 )
 
 
+class Rejection(BaseModel):
+    status_code: int
+    detail: str
+
+
+REJECTION: Final[TypeAdapter[Rejection]] = TypeAdapter(Rejection)
+
+
 class WarningKinds(logging.Handler):
     def __init__(self) -> None:
         super().__init__(level=logging.WARNING)
@@ -170,33 +129,14 @@ class WarningKinds(logging.Handler):
 
     @override
     def emit(self, record: logging.LogRecord) -> None:
-        message = record.getMessage()
-        if "must be a list of field names" in message:
-            self.kinds.append({"kind": "not_a_list"})
-        elif "ignores unsupported field(s)" in message:
-            self.kinds.append({"kind": "unsupported"})
-        else:
-            self.kinds.append({"kind": "other"})
+        self.kinds.append({"kind": warning_kind(record.getMessage())})
 
 
-def team_request_of(document: JsonValue) -> UpdateTeamRequest:
-    request = UpdateTeamRequest.model_validate(document)
-    return request
-
-
-def team_row_of(document: JsonValue) -> LiteLLM_TeamTable:
-    row = LiteLLM_TeamTable.model_validate(document)
-    return row
-
-
-def key_request_of(document: JsonValue) -> UpdateKeyRequest:
-    request = UpdateKeyRequest.model_validate(document)
-    return request
-
-
-def key_row_of(document: JsonValue) -> LiteLLM_VerificationToken:
-    row = LiteLLM_VerificationToken.model_validate(document)
-    return row
+def warning_kind(message: str) -> WarningKindLiteral:
+    for fragment, kind in WARNING_FRAGMENTS:
+        if fragment in message:
+            return kind
+    return "other"
 
 
 def resolve_answer(input_value: ResolveInput) -> ResolveAnswer:
@@ -209,134 +149,127 @@ def resolve_answer(input_value: ResolveInput) -> ResolveAnswer:
         )
     finally:
         logger.removeHandler(handler)
-    answer: ResolveAnswer = {"fields": sorted(fields), "warnings": handler.kinds}
-    return answer
+    return {"fields": sorted(fields), "warnings": handler.kinds}
 
 
 def member_key_budgets_answer(input_value: MemberKeyBudgetsInput) -> MemberKeyBudgetsAnswer:
     allowed = policy.team_admin_may_edit_member_key_budgets(input_value["general_settings"])
-    answer: MemberKeyBudgetsAnswer = {"allowed": allowed}
-    return answer
+    return {"allowed": allowed}
 
 
-def changed_team_answer(input_value: ChangedTeamInput) -> ChangedAnswer:
+def changed_team_answer(input_value: ChangedInput) -> ChangedAnswer:
     changed = policy.changed_team_fields(
-        team_request_of(input_value["request"]), team_row_of(input_value["existing"])
+        TEAM_REQUEST.validate_python(input_value["request"]),
+        TEAM_ROW.validate_python(input_value["existing"]),
     )
-    answer: ChangedAnswer = {"changed": sorted(changed)}
-    return answer
+    return {"changed": sorted(changed)}
+
+
+def changed_key_answer(input_value: ChangedInput) -> ChangedAnswer:
+    changed = policy.changed_key_fields(
+        KEY_REQUEST.validate_python(input_value["request"]),
+        KEY_ROW.validate_python(input_value["existing"]),
+    )
+    return {"changed": sorted(changed)}
 
 
 def team_verdict_view(verdict: policy.TeamAdminEditVerdict) -> TeamVerdictAnswer:
     match verdict:
-        case TeamAdminEditAllowed():
+        case policy.TeamAdminEditAllowed():
             dumped = _JSON.validate_json(verdict.request.model_dump_json(exclude_unset=True))
-            allowed: TeamAllowedAnswer = {"kind": "allowed", "field": None, "request": dumped}
-            return allowed
-        case TeamAdminFieldNotPermitted(field=field):
-            blocked: TeamBlockedAnswer = {"kind": "field_not_permitted", "field": field, "request": None}
-            return blocked
-        case TeamAdminEditingDisabled():
-            disabled: TeamDisabledAnswer = {"kind": "disabled", "field": None, "request": None}
-            return disabled
+            return {"kind": "allowed", "field": None, "request": dumped}
+        case policy.TeamAdminFieldNotPermitted(field=field):
+            return {"kind": "field_not_permitted", "field": field, "request": None}
+        case policy.TeamAdminEditingDisabled():
+            return {"kind": "disabled", "field": None, "request": None}
     assert_never(verdict)
 
 
-def team_verdict_answer(input_value: TeamVerdictInput) -> TeamVerdictAnswer:
+def key_verdict_view(verdict: policy.TeamAdminKeyEditVerdict) -> KeyVerdictAnswer:
+    match verdict:
+        case policy.TeamAdminKeyEditAllowed():
+            return {"kind": "allowed", "field": None, "changed": sorted(verdict.changed)}
+        case policy.TeamAdminFieldNotPermitted(field=field):
+            return {"kind": "field_not_permitted", "field": field, "changed": []}
+        case KeyEditingDisabled():
+            return {"kind": "disabled", "field": None, "changed": []}
+    assert_never(verdict)
+
+
+def team_verdict_answer(input_value: PermittedInput) -> TeamVerdictAnswer:
     verdict = policy.team_admin_edit_verdict(
-        team_request_of(input_value["request"]),
-        team_row_of(input_value["existing"]),
+        TEAM_REQUEST.validate_python(input_value["request"]),
+        TEAM_ROW.validate_python(input_value["existing"]),
         frozenset(input_value["permitted"]),
     )
     return team_verdict_view(verdict)
 
 
-def team_request_answer(input_value: TeamRequestInput) -> TeamRequestAnswer:
+def team_request_answer(input_value: PermittedInput) -> TeamRequestAnswer:
     verdict = policy.team_admin_edit_verdict(
-        team_request_of(input_value["request"]),
-        team_row_of(input_value["existing"]),
+        TEAM_REQUEST.validate_python(input_value["request"]),
+        TEAM_ROW.validate_python(input_value["existing"]),
         frozenset(input_value["permitted"]),
     )
     try:
         allowed = policy.team_admin_request_or_raise(verdict)
     except HTTPException as error:
-        refused: TeamRequestAnswer = {"status": error.status_code, "detail": error.detail, "request": None}
-        return refused
+        rejected = REJECTION.validate_python(error, from_attributes=True)
+        return {"status": rejected.status_code, "detail": rejected.detail, "request": None}
     dumped = _JSON.validate_json(allowed.model_dump_json(exclude_unset=True))
-    answer: TeamRequestAnswer = {"status": None, "detail": None, "request": dumped}
-    return answer
+    return {"status": None, "detail": None, "request": dumped}
 
 
-def changed_key_answer(input_value: ChangedKeyInput) -> ChangedAnswer:
-    changed = policy.changed_key_fields(
-        key_request_of(input_value["request"]), key_row_of(input_value["existing"])
-    )
-    answer: ChangedAnswer = {"changed": sorted(changed)}
-    return answer
-
-
-def key_verdict_view(verdict: policy.TeamAdminKeyEditVerdict) -> KeyVerdictAnswer:
-    match verdict:
-        case TeamAdminKeyEditAllowed():
-            allowed: KeyAllowedAnswer = {
-                "kind": "allowed",
-                "field": None,
-                "changed": sorted(verdict.changed),
-            }
-            return allowed
-        case TeamAdminFieldNotPermitted(field=field):
-            blocked: KeyBlockedAnswer = {
-                "kind": "field_not_permitted",
-                "field": field,
-                "changed": [],
-            }
-            return blocked
-        case KeyEditingDisabled():
-            disabled: KeyDisabledAnswer = {"kind": "disabled", "field": None, "changed": []}
-            return disabled
-    assert_never(verdict)
-
-
-def key_verdict_answer(input_value: KeyVerdictInput) -> KeyVerdictAnswer:
+def key_verdict_answer(input_value: EnabledInput) -> KeyVerdictAnswer:
     verdict = policy.team_admin_key_edit_verdict(
-        key_request_of(input_value["request"]),
-        key_row_of(input_value["existing"]),
+        KEY_REQUEST.validate_python(input_value["request"]),
+        KEY_ROW.validate_python(input_value["existing"]),
         input_value["enabled"],
     )
     return key_verdict_view(verdict)
 
 
-def key_request_answer(input_value: KeyRequestInput) -> KeyRequestAnswer:
+def key_request_answer(input_value: EnabledInput) -> KeyRequestAnswer:
     verdict = policy.team_admin_key_edit_verdict(
-        key_request_of(input_value["request"]),
-        key_row_of(input_value["existing"]),
+        KEY_REQUEST.validate_python(input_value["request"]),
+        KEY_ROW.validate_python(input_value["existing"]),
         input_value["enabled"],
     )
     try:
         policy.team_admin_key_request_or_raise(verdict)
     except HTTPException as error:
-        refused: KeyRequestAnswer = {"status": error.status_code, "detail": error.detail}
-        return refused
-    answer: KeyRequestAnswer = {"status": None, "detail": None}
-    return answer
+        rejected = REJECTION.validate_python(error, from_attributes=True)
+        return {"status": rejected.status_code, "detail": rejected.detail}
+    return {"status": None, "detail": None}
+
+
+def team_answer(input_value: PermittedInput) -> TeamVerdictAnswer | TeamRequestAnswer:
+    match input_value["function"]:
+        case "team_verdict":
+            return team_verdict_answer(input_value)
+        case "team_request":
+            return team_request_answer(input_value)
+
+
+def key_answer(input_value: EnabledInput) -> KeyVerdictAnswer | KeyRequestAnswer:
+    match input_value["function"]:
+        case "key_verdict":
+            return key_verdict_answer(input_value)
+        case "key_request":
+            return key_request_answer(input_value)
 
 
 def run(input_value: Input) -> Answer:
-    result: Answer
-    if input_value["function"] == "resolve":
-        result = resolve_answer(input_value)
-    elif input_value["function"] == "member_key_budgets":
-        result = member_key_budgets_answer(input_value)
-    elif input_value["function"] == "changed_team":
-        result = changed_team_answer(input_value)
-    elif input_value["function"] == "team_verdict":
-        result = team_verdict_answer(input_value)
-    elif input_value["function"] == "team_request":
-        result = team_request_answer(input_value)
-    elif input_value["function"] == "changed_key":
-        result = changed_key_answer(input_value)
-    elif input_value["function"] == "key_verdict":
-        result = key_verdict_answer(input_value)
-    else:
-        result = key_request_answer(input_value)
-    return result
+    match input_value["function"]:
+        case "resolve":
+            return resolve_answer(input_value)
+        case "member_key_budgets":
+            return member_key_budgets_answer(input_value)
+        case "changed_team":
+            return changed_team_answer(input_value)
+        case "changed_key":
+            return changed_key_answer(input_value)
+        case "team_verdict" | "team_request":
+            return team_answer(input_value)
+        case "key_verdict" | "key_request":
+            return key_answer(input_value)
