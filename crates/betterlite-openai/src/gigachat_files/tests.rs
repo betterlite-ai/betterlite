@@ -248,7 +248,7 @@ fn fixture(given: Setup) -> Fixture {
             .token
             .map_or_else(|| ScriptedBearer::failing(401), ScriptedBearer::issuing),
     );
-    let shared: Arc<dyn GigachatBearer> = Arc::clone(&bearer);
+    let shared = Arc::clone(&bearer);
     let config = GigachatFilesConfig {
         bearer: shared,
         ids: Arc::new(FixedIds),
