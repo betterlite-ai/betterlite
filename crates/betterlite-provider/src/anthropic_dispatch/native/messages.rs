@@ -4,7 +4,7 @@ use super::legacy::Transport;
 use super::{ClientHandle, Counter, Failure, Native, Reply, Runtime, config::Config};
 use betterlite_anthropic::chat_call::transport::{ChatTransport, SuppliedChatClient};
 use betterlite_anthropic::chat_call::{
-    CallStyle, ChatCall, ChatClients, ChatDeps, ChatOutcome, ChatResult, chat_call,
+    CallStyle, ChatCall, ChatClients, ChatDeps, ChatOutcome, chat_call,
 };
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
 use betterlite_models::lemonade_model_metadata::ModelInfoClient;
@@ -56,26 +56,8 @@ where
             disable_add_prefix_to_prompt: runtime.disable_add_prefix_to_prompt,
             model_response: call.model_response.clone(),
         };
-        runtime
-            .send(native, call, config, log)
-            .await
-            .map_err(|source| Failure::Chat(Box::new(source)))
-    })
-}
-
-impl<Client> Runtime<'_, Client>
-where
-    Client: ChatTransport,
-{
-    async fn send<'call>(
-        &'call self,
-        request: ChatCall<'call>,
-        call: &'call CompletionCall<ClientHandle<Client>, Engine>,
-        config: &'call Config<'_>,
-        log: &'call mut CallLogging<'_, '_>,
-    ) -> ChatResult<Client, Counter> {
         let clients = ChatClients {
-            pooled: self.pooled,
+            pooled: runtime.pooled,
             supplied: call.client.as_ref().map(|client| SuppliedChatClient {
                 kind: client.kind,
                 transport: &client.transport,
@@ -86,14 +68,16 @@ where
             clients,
             state: log.state,
             env: log.env,
-            stream_logger: self.stream_logger,
+            stream_logger: runtime.stream_logger,
             counter: Counter(call.encoding.clone()),
-            ids: self.ids,
-            max_event_bytes: self.max_event_bytes,
-            max_error_body_bytes: self.max_error_body_bytes,
+            ids: runtime.ids,
+            max_event_bytes: runtime.max_event_bytes,
+            max_error_body_bytes: runtime.max_error_body_bytes,
         };
-        chat_call(request, deps).await
-    }
+        chat_call(native, deps)
+            .await
+            .map_err(|source| Failure::Chat(Box::new(source)))
+    })
 }
 
 type Completion<'call, ClientFailure, FileFailure> =
