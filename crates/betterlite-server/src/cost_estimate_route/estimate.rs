@@ -40,8 +40,17 @@ pub(crate) async fn estimate(
         |set| set.resolve(service, &request.model),
     );
     let usage = synthetic_usage(request);
-    let response = typed_response(&resolved, &usage);
-    let args = completion_args(&resolved, &response);
+    let response = ResponseView::Typed(TypedResponse {
+        kind: ResponseKind::Chat,
+        model: Some(resolved.model.as_str()),
+        usage: BillingUsage::Chat(&usage),
+        service_tier: None,
+        hidden_params: None,
+    });
+    let args = CompletionArgs {
+        billing: billing_input(&resolved, &response),
+        charge: charge_inputs(&resolved),
+    };
     let (lines, rates) = called_lines(service, &args, instant, request, &resolved).await?;
     Ok(response_for(
         request,
@@ -49,20 +58,6 @@ pub(crate) async fn estimate(
         rates,
         reported_provider(service, &resolved),
     ))
-}
-
-// The mock response carries the caller's model and the quote's synthetic usage, nothing else.
-fn typed_response<'quote>(
-    resolved: &'quote ResolvedCostModel,
-    usage: &'quote Usage,
-) -> ResponseView<'quote> {
-    ResponseView::Typed(TypedResponse {
-        kind: ResponseKind::Chat,
-        model: Some(resolved.model.as_str()),
-        usage: BillingUsage::Chat(usage),
-        service_tier: None,
-        hidden_params: None,
-    })
 }
 
 async fn called_lines(
@@ -105,24 +100,25 @@ fn synthetic_usage(request: &CostEstimateRequest) -> Usage {
     }
 }
 
+// The name and count pairs both usage detail wrappers carry.
+fn details(entries: [(&str, i64); 2]) -> IndexMap<String, Json> {
+    entries
+        .into_iter()
+        .map(|(name, count)| (name.to_owned(), Json::Number(Number::from(count))))
+        .collect()
+}
+
 // PromptTokensDetailsWrapper is built only when any cache token is counted.
 fn prompt_details(request: &CostEstimateRequest) -> Option<IndexMap<String, Json>> {
-    let cache_tokens = request
-        .cache_read_input_tokens
-        .saturating_add(request.cache_creation_input_tokens);
-    if cache_tokens == 0 {
+    let cached = request.cache_read_input_tokens;
+    let created = request.cache_creation_input_tokens;
+    if cached == 0 && created == 0 {
         return None;
     }
-    let mut details = IndexMap::new();
-    details.insert(
-        "cached_tokens".to_owned(),
-        Json::Number(Number::from(request.cache_read_input_tokens)),
-    );
-    details.insert(
-        "cache_creation_tokens".to_owned(),
-        Json::Number(Number::from(request.cache_creation_input_tokens)),
-    );
-    Some(details)
+    Some(details([
+        ("cached_tokens", cached),
+        ("cache_creation_tokens", created),
+    ]))
 }
 
 // Usage.__init__ splits text out of the completion only when reasoning tokens were reported.
@@ -130,20 +126,13 @@ fn completion_details(request: &CostEstimateRequest) -> Option<IndexMap<String, 
     if request.reasoning_tokens == 0 {
         return None;
     }
-    let mut details = IndexMap::new();
-    details.insert(
-        "reasoning_tokens".to_owned(),
-        Json::Number(Number::from(request.reasoning_tokens)),
-    );
-    details.insert(
-        "text_tokens".to_owned(),
-        Json::Number(Number::from(
-            request
-                .output_tokens
-                .saturating_sub(request.reasoning_tokens),
-        )),
-    );
-    Some(details)
+    let text = request
+        .output_tokens
+        .saturating_sub(request.reasoning_tokens);
+    Some(details([
+        ("reasoning_tokens", request.reasoning_tokens),
+        ("text_tokens", text),
+    ]))
 }
 
 // completion_cost is never asked to count anything: the quote's only tokens are the ones the request declares.
@@ -157,16 +146,6 @@ impl BillingTokenCounter for NeverCounts {
 
     async fn count_text(&self, _model: &str, _text: &str) -> Result<usize, CountError> {
         Ok(0)
-    }
-}
-
-fn completion_args<'quote>(
-    resolved: &'quote ResolvedCostModel,
-    response: &'quote ResponseView<'quote>,
-) -> CompletionArgs<'quote> {
-    CompletionArgs {
-        billing: billing_input(resolved, response),
-        charge: charge_inputs(resolved),
     }
 }
 
