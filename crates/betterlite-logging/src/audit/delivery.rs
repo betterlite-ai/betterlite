@@ -40,6 +40,7 @@ pub struct AuditDelivery {
 }
 
 impl AuditDelivery {
+    #[must_use]
     pub fn dispatch(
         &self,
         callbacks: &[AuditCallback],
@@ -52,9 +53,11 @@ impl AuditDelivery {
                 payload: payload.clone(),
             };
             match self.worker.enqueue(job) {
-                Admission::Accepted => report.submitted += 1,
+                Admission::Accepted => {
+                    report.submitted = report.submitted.saturating_add(1);
+                }
                 Admission::Rejected(rejection) => {
-                    report.rejected += 1;
+                    report.rejected = report.rejected.saturating_add(1);
                     tracing::error!(
                         callback = %callback.callback_name(),
                         ?rejection,

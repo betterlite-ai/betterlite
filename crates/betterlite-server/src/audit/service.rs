@@ -101,6 +101,7 @@ impl AuditService {
     }
 
     // A caller that cannot wait schedules the whole record: the queue's admission is synchronous, the write is not
+    #[must_use]
     pub fn try_submit(&self, record: AuditLogRecord) -> AuditSubmission {
         if !self.settings.config.is_audit_logging_enabled(None) {
             return AuditSubmission::Disabled;

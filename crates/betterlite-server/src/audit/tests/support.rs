@@ -226,24 +226,31 @@ impl DedicatedAuditLoggerBuilder for MapBuilder {
 pub(super) struct RecordingRepository {
     pub(super) available: bool,
     pub(super) fails: bool,
-    pub(super) require_callback_first: bool,
+    pub(super) callback_gate: Option<Arc<AtomicBool>>,
     pub(super) inserted: Mutex<Vec<AuditLogRecord>>,
     pub(super) callback_reached: Arc<AtomicBool>,
     pub(super) order: Arc<Mutex<Vec<String>>>,
 }
 
 impl RecordingRepository {
-    pub(super) fn new(available: bool, fails: bool) -> Self {
+    pub(super) fn new(fails: bool) -> Self {
         let inserted = Mutex::default();
         let callback_reached = Arc::default();
         let order = Arc::default();
         Self {
-            available,
+            available: true,
             fails,
-            require_callback_first: false,
+            callback_gate: None,
             inserted,
             callback_reached,
             order,
+        }
+    }
+
+    pub(super) fn unavailable() -> Self {
+        Self {
+            available: false,
+            ..Self::new(false)
         }
     }
 }
@@ -255,10 +262,10 @@ impl AuditLogRepository for RecordingRepository {
     }
 
     async fn insert_audit_log(&self, record: &AuditLogRecord) -> Result<(), AuditRepositoryError> {
-        if self.require_callback_first {
+        if let Some(gate) = &self.callback_gate {
             // the callback worker runs on the same thread, so give it exactly as many turns as it needs to start
             for _ in 0..64 {
-                if self.callback_reached.load(Ordering::SeqCst) {
+                if gate.load(Ordering::SeqCst) {
                     break;
                 }
                 tokio::task::yield_now().await;
@@ -305,7 +312,7 @@ pub(super) struct Fixture {
 pub(super) fn fixture() -> Fixture {
     let resolver: Arc<dyn LoggerResolver> = Arc::new(MapResolver::default());
     let dedicated: Arc<dyn DedicatedAuditLoggerBuilder> = Arc::new(MapBuilder::default());
-    let repository: Arc<dyn AuditLogRepository> = Arc::new(RecordingRepository::new(true, false));
+    let repository: Arc<dyn AuditLogRepository> = Arc::new(RecordingRepository::new(false));
     let settings = enabled();
     Fixture {
         settings,

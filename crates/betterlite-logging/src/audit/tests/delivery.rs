@@ -98,7 +98,8 @@ async fn a_full_queue_rejects_admission_without_waiting() {
 async fn shutdown_drains_accepted_callbacks() {
     let delivery = delivery(8);
     let (callbacks, recorders) = loggers(&[("otel", false)]);
-    delivery.dispatch(&callbacks, &payload());
+    let dispatched = delivery.dispatch(&callbacks, &payload());
+    assert_eq!(dispatched.submitted, 1);
     let report = delivery.shutdown().await;
     assert!(report.drained);
     assert_eq!(report.completed, 1);

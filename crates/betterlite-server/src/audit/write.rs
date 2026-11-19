@@ -30,7 +30,8 @@ pub(super) async fn write_audit_log(target: AuditWriteTarget<'_>, record: AuditL
         &target.delivery.named,
         target.settings.config.s3_audit_callback_params.as_ref(),
     );
-    target.delivery.dispatch(&loggers, &payload);
+    let dispatched = target.delivery.dispatch(&loggers, &payload);
+    tracing::debug!(?dispatched, "the audit log callbacks were dispatched");
     if !target.repository.available() {
         tracing::error!("prisma_client is None, cannot write audit log to DB");
         return;

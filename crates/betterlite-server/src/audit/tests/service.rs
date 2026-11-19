@@ -51,19 +51,17 @@ fn object<'entry>(
 fn repository(
     recorder: &Arc<RecordingLogger>,
     order: Arc<Mutex<Vec<String>>>,
-    require_callback_first: bool,
 ) -> Arc<RecordingRepository> {
     Arc::new(RecordingRepository {
-        require_callback_first,
+        callback_gate: Some(Arc::clone(&recorder.reached)),
         callback_reached: Arc::clone(&recorder.reached),
         order,
-        ..RecordingRepository::new(true, false)
+        ..RecordingRepository::new(false)
     })
 }
 
 fn trait_repository(repository: &Arc<RecordingRepository>) -> Arc<dyn AuditLogRepository> {
-    let repository: Arc<dyn AuditLogRepository> = Arc::<RecordingRepository>::clone(repository);
-    repository
+    Arc::<RecordingRepository>::clone(repository)
 }
 
 fn logger_callback(recorder: &Arc<RecordingLogger>) -> AuditCallbackEntry {
@@ -81,7 +79,7 @@ fn flush(service: &AuditService) -> impl Future<Output = ()> + '_ {
 #[tokio::test]
 async fn object_events_emit_the_pinned_payload_shape() {
     let (entry, recorder) = logger_entry("first", false);
-    let repository = Arc::new(RecordingRepository::new(false, false));
+    let repository = Arc::new(RecordingRepository::unavailable());
     let service = Fixture {
         callbacks: vec![entry],
         repository: trait_repository(&repository),
@@ -119,7 +117,7 @@ async fn object_events_emit_the_pinned_payload_shape() {
 #[tokio::test]
 async fn only_a_boolean_metadata_flag_permits_the_changed_by_header() {
     let (entry, recorder) = logger_entry("first", false);
-    let repository = Arc::new(RecordingRepository::new(false, false));
+    let repository = Arc::new(RecordingRepository::unavailable());
     let service = Fixture {
         callbacks: vec![entry],
         repository: trait_repository(&repository),
@@ -147,7 +145,7 @@ async fn only_a_boolean_metadata_flag_permits_the_changed_by_header() {
 #[tokio::test]
 async fn a_disabled_policy_keeps_callbacks_and_storage_quiet() {
     let (entry, recorder) = logger_entry("first", false);
-    let repository = Arc::new(RecordingRepository::new(true, false));
+    let repository = Arc::new(RecordingRepository::new(false));
     let service = Fixture {
         settings: disabled(),
         callbacks: vec![entry],
@@ -171,7 +169,7 @@ async fn a_disabled_policy_keeps_callbacks_and_storage_quiet() {
 async fn an_object_value_that_is_not_json_is_logged_and_skipped() {
     let (captured, guard) = capture();
     let (entry, recorder) = logger_entry("first", false);
-    let repository = Arc::new(RecordingRepository::new(true, false));
+    let repository = Arc::new(RecordingRepository::new(false));
     let service = Fixture {
         callbacks: vec![entry],
         repository: trait_repository(&repository),
@@ -192,7 +190,7 @@ async fn an_object_value_that_is_not_json_is_logged_and_skipped() {
 #[tokio::test]
 async fn the_debug_line_withholds_the_actor_key() {
     let (captured, guard) = capture();
-    let repository = Arc::new(RecordingRepository::new(true, false));
+    let repository = Arc::new(RecordingRepository::new(false));
     let service = Fixture {
         repository: trait_repository(&repository),
         ..fixture()
@@ -212,7 +210,7 @@ async fn the_debug_line_withholds_the_actor_key() {
 async fn the_callback_runs_while_the_database_write_is_pending() {
     let order = Arc::new(Mutex::new(Vec::new()));
     let recorder = Arc::new(RecordingLogger::watching("first", Arc::clone(&order)));
-    let repository = repository(&recorder, Arc::clone(&order), true);
+    let repository = repository(&recorder, Arc::clone(&order));
     let service = Fixture {
         callbacks: vec![logger_callback(&recorder)],
         repository: trait_repository(&repository),
@@ -232,7 +230,7 @@ async fn the_callback_runs_while_the_database_write_is_pending() {
 async fn a_missing_database_is_logged_after_delivery() {
     let (captured, guard) = capture();
     let (entry, recorder) = logger_entry("first", false);
-    let repository = Arc::new(RecordingRepository::new(false, false));
+    let repository = Arc::new(RecordingRepository::unavailable());
     let service = Fixture {
         callbacks: vec![entry],
         repository: trait_repository(&repository),
@@ -254,7 +252,7 @@ async fn a_missing_database_is_logged_after_delivery() {
 async fn a_failed_insert_does_not_cancel_delivery() {
     let (captured, guard) = capture();
     let (entry, recorder) = logger_entry("first", false);
-    let repository = Arc::new(RecordingRepository::new(true, true));
+    let repository = Arc::new(RecordingRepository::new(true));
     let service = Fixture {
         callbacks: vec![entry],
         repository: trait_repository(&repository),
@@ -271,7 +269,7 @@ async fn a_failed_insert_does_not_cancel_delivery() {
 #[tokio::test]
 async fn unknown_named_callbacks_are_skipped_and_the_database_still_writes() {
     let (captured, guard) = capture();
-    let repository = Arc::new(RecordingRepository::new(true, false));
+    let repository = Arc::new(RecordingRepository::new(false));
     let service = Fixture {
         callbacks: vec![AuditCallbackEntry::Named("missing".to_owned())],
         repository: trait_repository(&repository),
@@ -346,7 +344,7 @@ async fn clearing_and_appending_callbacks_follow_the_configured_list() {
     let otel_logger: Arc<dyn CallbackLogger> = Arc::<RecordingLogger>::clone(&otel);
     let resolver = Arc::new(MapResolver::with(vec![("otel", otel_logger)]));
     let resolver_dyn: Arc<dyn LoggerResolver> = Arc::<MapResolver>::clone(&resolver);
-    let repository = Arc::new(RecordingRepository::new(true, false));
+    let repository = Arc::new(RecordingRepository::new(false));
     let service = Fixture {
         callbacks: vec![entry],
         resolver: resolver_dyn,
@@ -375,7 +373,7 @@ async fn clearing_and_appending_callbacks_follow_the_configured_list() {
 #[tokio::test]
 async fn try_submit_accepts_the_record_and_writes_it_in_the_background() {
     let (entry, recorder) = logger_entry("first", false);
-    let repository = Arc::new(RecordingRepository::new(true, false));
+    let repository = Arc::new(RecordingRepository::new(false));
     let service = Fixture {
         callbacks: vec![entry],
         repository: trait_repository(&repository),
@@ -393,7 +391,7 @@ async fn try_submit_accepts_the_record_and_writes_it_in_the_background() {
 #[tokio::test]
 async fn try_submit_reports_a_full_queue_and_the_record_reaches_nothing() {
     let (entry, recorder) = logger_entry("first", false);
-    let repository = Arc::new(RecordingRepository::new(true, false));
+    let repository = Arc::new(RecordingRepository::new(false));
     let service = Fixture {
         callbacks: vec![entry],
         repository: trait_repository(&repository),
@@ -420,7 +418,7 @@ async fn a_rejected_callback_delivery_still_inserts_the_record() {
     let (captured, guard) = capture();
     let (first, first_recorder) = logger_entry("first", false);
     let (second, second_recorder) = logger_entry("second", false);
-    let repository = Arc::new(RecordingRepository::new(true, false));
+    let repository = Arc::new(RecordingRepository::new(false));
     let service = Fixture {
         callbacks: vec![first, second],
         repository: trait_repository(&repository),
@@ -444,7 +442,7 @@ async fn a_rejected_callback_delivery_still_inserts_the_record() {
 #[tokio::test]
 async fn shutdown_drains_accepted_writes_and_callback_deliveries() {
     let (entry, recorder) = logger_entry("first", false);
-    let repository = Arc::new(RecordingRepository::new(true, false));
+    let repository = Arc::new(RecordingRepository::new(false));
     let service = Fixture {
         callbacks: vec![entry],
         repository: trait_repository(&repository),
