@@ -1,6 +1,6 @@
 use chrono::{Datelike as _, Days, NaiveDate};
 
-use resolve::Resolved;
+use resolve::{Fields, Resolved};
 
 use super::DateFlags;
 
@@ -10,7 +10,14 @@ mod tokens;
 
 pub(super) fn parse_date(text: &str, today: NaiveDate, flags: DateFlags) -> Option<NaiveDate> {
     let tokens = tokens::tokenize(text);
-    let mut parser = parser::Parser::new(&tokens, today, flags);
+    let mut parser = parser::Parser {
+        tokens: &tokens,
+        today,
+        flags,
+        fields: Fields::default(),
+        weekday: None,
+        saw: false,
+    };
     parser.run()?;
     build(&parser)
 }

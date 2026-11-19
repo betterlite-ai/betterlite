@@ -9,19 +9,42 @@ pub(super) enum Token {
 
 // the words the source skips; an ordinal suffix needs no entry because any unknown word is skipped
 const JUMPS: [&str; 7] = ["at", "on", "and", "ad", "m", "t", "of"];
-pub(super) const MONTHS: [&str; 12] = [
-    "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
+// the names the source's parserinfo accepts for each month and weekday: the full name and its abridgement
+const MONTHS: &str =
+    "january february march april may june july august september october november december";
+const WEEKDAYS: &str = "monday tuesday wednesday thursday friday saturday sunday";
+// the h/m/s labels and the am/pm names that turn a number into a time of day
+const CLOCK_LABELS: [&str; 9] = [
+    "h", "hour", "hours", "m", "minute", "minutes", "s", "second", "seconds",
 ];
-pub(super) const WEEKDAYS: [&str; 7] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+const MERIDIEMS: [&str; 4] = ["am", "a", "pm", "p"];
 
-// a name matches by its first letters, the way the source accepts "Mar" and "March" for one month
-pub(super) fn lookup(token: &Token, names: &[&str]) -> Option<i64> {
+// a name matches whole, as the source's parserinfo does, and yields the position it names
+pub(super) fn lookup(token: &Token, names: &str) -> Option<i64> {
     let Token::Word(word) = token else {
         return None;
     };
     let lowered = word.to_ascii_lowercase();
-    let index = names.iter().position(|name| lowered.starts_with(name))?;
+    let index = names.split_ascii_whitespace().position(|name| {
+        name == lowered.as_str()
+            || name.get(..3) == Some(lowered.as_str())
+            || (lowered == "sept" && name == "september")
+    })?;
     i64::try_from(index).ok()
+}
+
+pub(super) fn is_clock_label(token: &Token) -> bool {
+    let Token::Word(word) = token else {
+        return false;
+    };
+    CLOCK_LABELS.contains(&word.to_ascii_lowercase().as_str())
+}
+
+pub(super) fn is_meridiem(token: &Token) -> bool {
+    let Token::Word(word) = token else {
+        return false;
+    };
+    MERIDIEMS.contains(&word.to_ascii_lowercase().as_str())
 }
 
 pub(super) fn tokenize(text: &str) -> Vec<Token> {

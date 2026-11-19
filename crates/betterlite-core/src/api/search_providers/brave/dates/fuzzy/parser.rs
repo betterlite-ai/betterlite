@@ -2,7 +2,7 @@ use chrono::NaiveDate;
 
 use super::super::DateFlags;
 use super::resolve::{self, Fields, Label};
-use super::tokens::{MONTHS, Token, WEEKDAYS, is_jump, lookup};
+use super::tokens::{MONTHS, Token, WEEKDAYS, is_clock_label, is_jump, is_meridiem, lookup};
 
 pub(super) struct Parser<'tokens> {
     pub(super) tokens: &'tokens [Token],
@@ -13,18 +13,7 @@ pub(super) struct Parser<'tokens> {
     pub(super) saw: bool,
 }
 
-impl<'tokens> Parser<'tokens> {
-    pub(super) fn new(tokens: &'tokens [Token], today: NaiveDate, flags: DateFlags) -> Self {
-        Self {
-            tokens,
-            today,
-            flags,
-            fields: Fields::default(),
-            weekday: None,
-            saw: false,
-        }
-    }
-
+impl Parser<'_> {
     pub(super) fn run(&mut self) -> Option<()> {
         let mut index = 0;
         while index < self.tokens.len() {
@@ -39,6 +28,9 @@ impl<'tokens> Parser<'tokens> {
             if self.starts_time(index) {
                 return Some(self.skip_time(index));
             }
+            if let Some(label) = self.clock_member(index) {
+                return Some(label);
+            }
             return self.number_token(index);
         }
         if matches!(token, Token::Punct('+' | '-')) {
@@ -48,6 +40,29 @@ impl<'tokens> Parser<'tokens> {
             return self.word_token(index);
         }
         Some(index)
+    }
+
+    // a number followed by an h/m/s label or an am/pm name is a time of day, not part of the date
+    fn clock_member(&mut self, index: usize) -> Option<usize> {
+        let Token::Number(text) = self.tokens.get(index)? else {
+            return None;
+        };
+        let value: i64 = text.parse().ok()?;
+        let next = index.saturating_add(1);
+        let following = self.tokens.get(next)?;
+        let after = self.tokens.get(index.saturating_add(2));
+        let attached = is_clock_label(following) || is_meridiem(following);
+        let spaced = *following == Token::Punct(' ') && after.is_some_and(is_clock_label);
+        let meridiem = is_jump(following) && after.is_some_and(is_meridiem);
+        if !(0..24).contains(&value) || !(attached || spaced || meridiem) {
+            return None;
+        }
+        self.saw = true;
+        Some(if attached {
+            next
+        } else {
+            index.saturating_add(2)
+        })
     }
 
     // the clock time only says how far into the day the moment is, and the caller reads the day
@@ -86,12 +101,12 @@ impl<'tokens> Parser<'tokens> {
 
     fn word_token(&mut self, index: usize) -> Option<usize> {
         let token = self.tokens.get(index)?.clone();
-        if let Some(month) = lookup(&token, &MONTHS).map(|position| position.saturating_add(1)) {
+        if let Some(month) = lookup(&token, MONTHS).map(|position| position.saturating_add(1)) {
             self.fields
                 .push_text(&month.to_string(), Some(Label::Month))?;
             return self.month_member(index);
         }
-        if let Some(weekday) = lookup(&token, &WEEKDAYS) {
+        if let Some(weekday) = lookup(&token, WEEKDAYS) {
             self.weekday = Some(weekday);
             self.saw = true;
         }
@@ -121,7 +136,7 @@ impl<'tokens> Parser<'tokens> {
         match token {
             Token::Number(text) => self.fields.push_text(text, None),
             Token::Word(_) => {
-                let month = lookup(token, &MONTHS).map(|index| index.saturating_add(1))?;
+                let month = lookup(token, MONTHS).map(|index| index.saturating_add(1))?;
                 self.fields
                     .push_text(&month.to_string(), Some(Label::Month))
             }
