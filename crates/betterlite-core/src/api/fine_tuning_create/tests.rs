@@ -12,7 +12,7 @@ use betterlite_openai::fine_tuning::job::{
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Number;
 use thiserror::Error;
-use tokio::task::{Id, LocalSet, try_id};
+use tokio::task::{Id, LocalSet, spawn_local, try_id};
 use tracing::Level;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::{MakeWriter, fmt};
@@ -890,21 +890,24 @@ impl FineTuningCreateDispatch for Tasked {
 #[tokio::test]
 async fn tuning_dispatch_runs_in_caller_task() {
     let seen = Arc::new(Mutex::new(Vec::new()));
-    let service = FineTuningCreate {
-        dispatch: Tasked {
-            seen: Arc::clone(&seen),
-        },
-        settings: settings(),
-    };
+    let local_seen = Arc::clone(&seen);
     let local = LocalSet::new();
     let caller = local
-        .run_until(async {
-            let caller = try_id().expect("the caller runs inside the local task");
-            service
-                .create(&base_call("openai"))
-                .await
-                .expect("the provider answered");
-            caller
+        .run_until(async move {
+            spawn_local(async move {
+                let caller = try_id().expect("the caller runs inside the local task");
+                let service = FineTuningCreate {
+                    dispatch: Tasked { seen: local_seen },
+                    settings: settings(),
+                };
+                service
+                    .create(&base_call("openai"))
+                    .await
+                    .expect("the provider answered");
+                caller
+            })
+            .await
+            .expect("the local task joins")
         })
         .await;
     let recorded = seen.lock().unwrap_or_else(PoisonError::into_inner).clone();

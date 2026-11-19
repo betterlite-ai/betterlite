@@ -176,11 +176,9 @@ where
     if let Some(integrations) = &call.integrations {
         fields.insert("integrations".to_owned(), Json::List(integrations.clone()));
     }
-    let encoded = to_value(fields).map_err(FineTuningCreateError::Data)?;
-    let mut data: FineTuneCreate = from_value(encoded).map_err(FineTuningCreateError::Data)?;
     if let Some(body) = extra_body {
-        data.extra
-            .insert("extra_body".to_owned(), Json::Object(body.clone()));
+        fields.insert("extra_body".to_owned(), Json::Object(body.clone()));
     }
-    Ok(data)
+    let encoded = to_value(fields).map_err(FineTuningCreateError::Data)?;
+    from_value(encoded).map_err(FineTuningCreateError::Data)
 }
