@@ -383,3 +383,17 @@ path = "fuzz_targets/roi_identity_body.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "passthrough_frames"
+path = "fuzz_targets/passthrough_frames.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "passthrough_request_data"
+path = "fuzz_targets/passthrough_request_data.rs"
+test = false
+doc = false
+bench = false
