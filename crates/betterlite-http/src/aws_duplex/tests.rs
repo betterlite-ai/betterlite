@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::future::poll_fn;
+use std::io::Error as IoError;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -13,7 +14,7 @@ use aws_smithy_types::body::SdkBody;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
 use bytes::Bytes;
-use h2::server::handshake;
+use h2::server::{SendResponse, handshake};
 use http::{HeaderValue, Response as HeadResponse};
 use http_body::{Body as HttpBody, Frame};
 use reqwest::Url;
@@ -36,7 +37,7 @@ struct ChannelBody {
 
 impl HttpBody for ChannelBody {
     type Data = Bytes;
-    type Error = std::io::Error;
+    type Error = IoError;
 
     fn poll_frame(
         self: Pin<&mut Self>,
@@ -111,15 +112,15 @@ async fn serve(listener: TcpListener, report: mpsc::Sender<String>, mode: Peer) 
         let Ok((request, respond)) = result else {
             break;
         };
-        let report = report.clone();
-        streams.spawn(async move { relay(request, respond, report, mode).await });
+        let events = report.clone();
+        streams.spawn(async move { relay(request, respond, events, mode).await });
     }
     while let Some(_joined) = streams.join_next().await {}
 }
 
 async fn relay(
     request: http::Request<h2::RecvStream>,
-    mut respond: h2::server::SendResponse<Bytes>,
+    mut respond: SendResponse<Bytes>,
     report: mpsc::Sender<String>,
     mode: Peer,
 ) {
@@ -175,11 +176,11 @@ async fn aws_duplex_interleaved_events() {
     drop(sender);
     assert_eq!(next_chunk(&mut answer).await, Bytes::from_static(b"two"));
     assert!(next_frame(&mut answer).await.is_none());
-    let report = timeout(TEST_TIMEOUT, reports.recv())
+    let received = timeout(TEST_TIMEOUT, reports.recv())
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(report, "hello|world");
+    assert_eq!(received, "hello|world");
     server.abort_all();
 }
 
@@ -207,13 +208,13 @@ async fn aws_duplex_cancel_reaps_io() {
         .await
         .unwrap()
         .unwrap();
-    let report = timeout(TEST_TIMEOUT, reports.recv())
+    let received = timeout(TEST_TIMEOUT, reports.recv())
         .await
         .unwrap()
         .unwrap();
     assert!(
-        report == "hello|end" || report == "hello|reset",
-        "the request direction stayed open: {report}"
+        received == "hello|end" || received == "hello|reset",
+        "the request direction stayed open: {received}"
     );
     server.abort_all();
 }

@@ -1,3 +1,5 @@
+use std::io::Error as IoError;
+use std::mem;
 use std::sync::Arc;
 
 use aws_smithy_runtime_api::client::http::{
@@ -78,7 +80,7 @@ impl AwsDuplexConnector {
 
     fn build_request(&self, request: HttpRequest) -> Result<reqwest::Request, ConnectorError> {
         if self.client.tracker.is_closed() {
-            return Err(ConnectorError::io(Box::new(std::io::Error::other(
+            return Err(ConnectorError::io(Box::new(IoError::other(
                 "the HTTP client is closed",
             ))));
         }
@@ -86,7 +88,7 @@ impl AwsDuplexConnector {
         let method = Method::from_bytes(request.method().as_bytes())
             .map_err(|source| ConnectorError::user(Box::new(source)))?;
         let mut builder = self.client.client.request(method, uri.as_str());
-        for (name, value) in request.headers().iter() {
+        for (name, value) in request.headers() {
             if REBUILT_HEADERS
                 .iter()
                 .any(|skipped| name.eq_ignore_ascii_case(skipped))
@@ -113,7 +115,7 @@ impl AwsDuplexConnector {
         let status = StatusCode::try_from(response.status().as_u16())
             .map_err(|source| ConnectorError::other(Box::new(source), None))?;
         let mut headers = Headers::new();
-        let received = std::mem::take(response.headers_mut());
+        let received = mem::take(response.headers_mut());
         for (name, value) in &received {
             let text = value
                 .to_str()
