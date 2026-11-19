@@ -322,6 +322,8 @@ fn a_config_write_accepts_the_edge_shapes_the_load_accepts() {
         r#"{"tiers":{"SIMPLE":["x",{"model_name":"y","litellm_params":{"temperature":0.2}}]}}"#,
         r#"{"future_key":1}"#,
         r#"{"context_compaction":false}"#,
+        r#"{"session_affinity":true}"#,
+        r#"{"stall_escalation_enabled":true}"#,
         r#"{"custom_dimensions":[],"dimension_weights":{}}"#,
     ] {
         let judged = validate_complexity_router_config_write(Some(&json(accepted)));

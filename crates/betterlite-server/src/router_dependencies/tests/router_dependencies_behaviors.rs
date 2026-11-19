@@ -421,7 +421,7 @@ fn a_router_is_custom_when_it_replaces_tiers_or_the_prompt(
 #[case::named(Some("auto_router/complexity_router"), vec![], true)]
 #[case::by_config(Some("gpt-4o"), vec!["complexity_router_config"], true)]
 #[case::by_default(Some("gpt-4o"), vec!["complexity_router_default_model"], true)]
-#[case::absent_model(None, vec!["tiers"], true)]
+#[case::absent_model(None, vec!["tiers"], false)]
 #[case::unrelated(Some("gpt-4o"), vec!["auto_router_config", "embedding_model"], false)]
 #[case::none(Some("gpt-4o"), vec![], false)]
 fn carries_complexity_router_settings_reads_the_name_or_the_key_set(
