@@ -14,7 +14,7 @@ pub const MANTLE_PREFIX: &str = "mantle/";
 // AmazonMantleMessagesConfig.beta_headers_provider
 pub const BETA_HEADERS_PROVIDER: &str = "bedrock_mantle";
 // AmazonMantleMessagesConfig.should_filter_anthropic_beta_headers: the caller's list travels as sent.
-pub const SHOULD_FILTER_ANTHROPIC_BETA_HEADERS: bool = false;
+pub const SHOULD_FILTER_BETA_HEADERS: bool = false;
 // AmazonMantleConfig.has_custom_stream_wrapper: the native Anthropic SSE reader owns the body.
 pub const HAS_CUSTOM_STREAM_WRAPPER: bool = false;
 // DEFAULT_ANTHROPIC_API_VERSION in anthropic/pass_through/messages/transformation.py

@@ -10,8 +10,7 @@ use super::{ANTHROPIC_VERSION_HEADER, ANTHROPIC_WORKSPACE_HEADER, DEFAULT_ANTHRO
 
 const PROJECT_ID_FIELD: &str = "aws_bedrock_project_id";
 
-// AmazonMantleConfig.validate_environment: the parent's guardrail and metadata merge, then a truthy project ID
-// overwrites the exact anthropic-workspace key and leaves every other header as it was.
+// AmazonMantleConfig.validate_environment: the parent's merge, then a truthy project ID overwrites anthropic-workspace.
 pub fn chat_headers(
     headers: &IndexMap<String, String>,
     optional_params: &mut Params,
@@ -25,9 +24,7 @@ pub fn chat_headers(
     Ok(merged)
 }
 
-// AmazonMantleMessagesConfig.validate_anthropic_messages_environment: the parent's merge keeps the resolved api_base,
-// then the project ID and the default anthropic-version join it. Any existing version header, even an empty one,
-// blocks the default; a differently cased caller key and the exact workspace key coexist.
+// AmazonMantleMessagesConfig.validate_anthropic_messages_environment: the parent's merge, then the project ID and the default anthropic-version.
 pub fn messages_headers(
     headers: &IndexMap<String, String>,
     litellm_params: &MetadataParams,

@@ -12,8 +12,7 @@ const INPUT_TOKENS: &str = "input_tokens";
 const OUTPUT_TOKENS: &str = "output_tokens";
 const USAGE: &str = "usage";
 
-// transform_anthropic_messages_response: B962's native decode keeps every field as sent, then the usage object gets
-// the two required counts as zero defaults underneath whatever the provider returned.
+// transform_anthropic_messages_response: B962's native decode, then usage gets zero input_tokens and output_tokens defaults.
 pub fn transform_response(
     body: &[u8],
     status: u16,
@@ -36,7 +35,7 @@ fn normalized_usage(existing: Option<&RawValue>) -> Result<Box<RawValue>, Mantle
         BodyJson::Number(Number::from(0_u8)),
     );
     let Some(raw) = existing else {
-        return encode(&usage);
+        return Ok(RawValue::from_string(serde_json::to_string(&usage)?)?);
     };
     match serde_json::from_str::<BodyJson>(raw.get())? {
         BodyJson::Object(entries) => {
@@ -52,9 +51,5 @@ fn normalized_usage(existing: Option<&RawValue>) -> Result<Box<RawValue>, Mantle
             return Err(MantleMessagesError::UsageNotMapping);
         }
     }
-    encode(&usage)
-}
-
-fn encode(usage: &Object) -> Result<Box<RawValue>, MantleMessagesError> {
-    Ok(RawValue::from_string(serde_json::to_string(usage)?)?)
+    Ok(RawValue::from_string(serde_json::to_string(&usage)?)?)
 }

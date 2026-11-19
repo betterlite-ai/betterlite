@@ -7,8 +7,7 @@ use crate::mantle_inputs::records::MantleGlobals;
 const REGION_FIELD: &str = "aws_region_name";
 const ENDPOINT_FIELD: &str = "aws_bedrock_runtime_endpoint";
 
-// AmazonMantleConfig.get_complete_url and AmazonMantleMessagesConfig.get_complete_url: B591 resolves the region from
-// the original model and options, then B690 builds the endpoint from api_base, the configured endpoint and the region.
+// Both get_complete_url overrides: B591 resolves the region, then B690 builds the endpoint from api_base, endpoint and region.
 pub fn complete_url(
     api_base: Option<&str>,
     model: &str,

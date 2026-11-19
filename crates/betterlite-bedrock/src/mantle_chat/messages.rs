@@ -20,8 +20,7 @@ const ANTHROPIC_VERSION_BODY_FIELD: &str = "anthropic_version";
 const MODEL_FIELD: &str = "model";
 const STREAM_FIELD: &str = "stream";
 
-// AmazonMantleMessagesConfig.transform_anthropic_messages_request: the parent prepares the request for the model ID,
-// the beta list moves from the body into the signed headers, and the model and a literal stream=True come back.
+// AmazonMantleMessagesConfig.transform_anthropic_messages_request: parent prep, betas into the signed headers, then model and stream back.
 pub async fn transform_request<Source, Transport, Lookup>(
     request: &MessagesRequest<'_>,
     headers: &mut IndexMap<String, String>,
@@ -60,8 +59,7 @@ where
     Ok(body)
 }
 
-// AmazonMantleMessagesConfig.beta_headers_provider: B622 filters the beta list under the bedrock provider name, so
-// the mantle transform hands it a matrix where that name resolves to the bedrock_mantle mapping, one hop like LiteLLM.
+// beta_headers_provider: B622 filters under the bedrock name, so the matrix aliases that name to bedrock_mantle, one hop.
 fn mantle_beta_matrix(matrix: &BetaMatrix) -> BetaMatrix {
     let mut providers = matrix.0.clone();
     let mantle = matrix.provider_name(BETA_HEADERS_PROVIDER).to_owned();
@@ -74,8 +72,7 @@ fn mantle_beta_matrix(matrix: &BetaMatrix) -> BetaMatrix {
     BetaMatrix(providers)
 }
 
-// The body keeps neither the version nor the beta list, gets the model back only when it has one, and streams
-// only for a literal true.
+// The body drops the version and beta list, takes the model when nonempty and streams only for a literal true.
 pub(super) fn restore_messages_fields(
     body: &mut Object,
     model_id: &str,
@@ -91,8 +88,7 @@ pub(super) fn restore_messages_fields(
     }
 }
 
-// _move_betas_into_header: a nonempty list joins into the exact lowercase key; an empty one removes only that key,
-// so a differently cased caller key stays as it was.
+// _move_betas_into_header: a nonempty list joins into the lowercase key; an empty one removes only that key.
 pub(super) fn move_betas_into_header(
     body: &Object,
     headers: &mut IndexMap<String, String>,

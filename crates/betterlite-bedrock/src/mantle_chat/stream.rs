@@ -14,8 +14,7 @@ use super::error::MantleMessagesError;
 
 const ANTHROPIC: &str = "anthropic";
 
-// get_model_response_iterator: B581's iterator reads Mantle's native Anthropic SSE, with sync_stream and json_mode
-// exactly as the caller supplied them.
+// get_model_response_iterator: B581's native Anthropic iterator, with sync_stream and json_mode exactly as supplied.
 #[must_use]
 pub fn model_response_iterator(
     model: &str,
@@ -34,8 +33,7 @@ pub fn model_response_iterator(
     )
 }
 
-// get_async_streaming_response_iterator: B962's native Anthropic iterator gets the live response, the request body
-// and the logging object unchanged, so neither the AWS event decoder nor the stop-usage promotion runs here.
+// get_async_streaming_response_iterator: B962's native iterator, with response, request body and logging unchanged.
 pub fn messages_iterator<S>(
     deps: StreamDeps<S>,
     response: S::Response,

@@ -36,8 +36,7 @@ const OUTPUT_CONFIG_FIELD: &str = "output_config";
 const STREAM_FIELD: &str = "stream";
 const TOOLS_FIELD: &str = "tools";
 
-// AmazonMantleConfig.transform_request: the model ID loses its first mantle/ prefix, the parent's base builder runs
-// without its document conversion or computed beta list, and the copy puts the model back.
+// transform_request: strip mantle/ once, filter credentials, clamp effort, normalize, prepare, apply the invoke rules, restore model and stream.
 pub async fn transform_request<Source, Transport, Fetcher, Blocks, Ids, Lookup>(
     request: &ClaudeInvokeRequest<'_>,
     sources: &mut TransformSources<'_, '_, Source, Transport, Fetcher, Blocks, Ids, Lookup>,
@@ -51,7 +50,23 @@ where
     Lookup: ModelInfoLookup,
 {
     let model_id = request.model.replacen(MANTLE_PREFIX, "", 1);
-    let mut body = base_request(&model_id, request, sources).await?;
+    let mut optional_params: IndexMap<String, ParamJson> = request
+        .optional_params
+        .iter()
+        .filter(|(key, _value)| !AUTHENTICATION_PARAMS.contains(&key.as_str()))
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
+    normalize_output_config_effort(
+        &model_id,
+        &mut optional_params,
+        sources.lookup,
+        sources.packaged,
+    )
+    .await?;
+    normalize_tool_search_tools(&mut optional_params)?;
+    let prepared = prepare(&model_id, request, optional_params, sources).await?;
+    let mut body: Object = serde_json::from_value(serde_json::to_value(&prepared.body)?)?;
+    apply_bedrock_rules(&model_id, &mut body, sources).await;
     restore_body_fields(
         &mut body,
         &model_id,
@@ -60,8 +75,7 @@ where
     Ok(body)
 }
 
-// AmazonMantleConfig._restore_mantle_body_fields: a copy with the model overwritten unconditionally, stream set only
-// for a literal true, and every other field (a caller's stream included) left as it was.
+// _restore_mantle_body_fields: the model overwritten unconditionally and stream set only for a literal true.
 pub(super) fn restore_body_fields(body: &mut Object, model_id: &str, stream: Option<&ParamJson>) {
     body.insert(MODEL_FIELD.to_owned(), BodyJson::Text(model_id.to_owned()));
     if matches!(stream, Some(ParamJson::Bool(true))) {
@@ -69,62 +83,19 @@ pub(super) fn restore_body_fields(body: &mut Object, model_id: &str, stream: Opt
     }
 }
 
-// The parent's _build_bedrock_anthropic_request_base: filter every credential field, clamp the effort ceiling,
-// normalize tool-search tool types, prepare the native request, then apply the Bedrock invoke rules.
-async fn base_request<E>(
-    model_id: &str,
-    request: &ClaudeInvokeRequest<'_>,
-    sources: &mut TransformSources<
-        '_,
-        '_,
-        impl DynamicMetadataSource,
-        impl ModelInfoClient,
-        impl RemoteMediaFetcher + Sync,
-        impl FileBlocks<Failure = E> + Sync,
-        impl Fn() -> String + Sync,
-        impl ModelInfoLookup,
-    >,
-) -> Result<Object, ClaudeInvokeError<E>>
-where
-    E: StdError + Send + Sync + 'static,
-{
-    let mut optional_params: IndexMap<String, ParamJson> = request
-        .optional_params
-        .iter()
-        .filter(|(key, _value)| !AUTHENTICATION_PARAMS.contains(&key.as_str()))
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect();
-    normalize_output_config_effort(
-        model_id,
-        &mut optional_params,
-        sources.lookup,
-        sources.packaged,
-    )
-    .await?;
-    normalize_tool_search_tools(&mut optional_params)?;
-    let prepared = prepare(model_id, request, optional_params, sources).await?;
-    let mut body: Object = serde_json::from_value(serde_json::to_value(&prepared.body)?)?;
-    apply_bedrock_rules(model_id, &mut body, sources).await;
-    Ok(body)
-}
-
-async fn prepare<E>(
+async fn prepare<Source, Transport, Fetcher, Blocks, Ids, Lookup>(
     model_id: &str,
     request: &ClaudeInvokeRequest<'_>,
     optional_params: IndexMap<String, ParamJson>,
-    sources: &mut TransformSources<
-        '_,
-        '_,
-        impl DynamicMetadataSource,
-        impl ModelInfoClient,
-        impl RemoteMediaFetcher + Sync,
-        impl FileBlocks<Failure = E> + Sync,
-        impl Fn() -> String + Sync,
-        impl ModelInfoLookup,
-    >,
-) -> Result<PreparedRequest, ClaudeInvokeError<E>>
+    sources: &mut TransformSources<'_, '_, Source, Transport, Fetcher, Blocks, Ids, Lookup>,
+) -> Result<PreparedRequest, ClaudeInvokeError<Blocks::Failure>>
 where
-    E: StdError + Send + Sync + 'static,
+    Source: DynamicMetadataSource,
+    Transport: ModelInfoClient,
+    Fetcher: RemoteMediaFetcher + Sync,
+    Blocks: FileBlocks + Sync,
+    Ids: Fn() -> String + Sync,
+    Lookup: ModelInfoLookup,
 {
     let anthropic_request = AnthropicRequest {
         model: model_id,
@@ -145,23 +116,18 @@ where
         .await?)
 }
 
-// The Bedrock invoke rules the parent applies after the native preparation; the model and stream stay out of the
-// body, since the Invoke surface puts them in the URL.
-async fn apply_bedrock_rules<E>(
+// The invoke rules applied after preparation; model and stream stay out of the body because the Invoke surface has them in the URL.
+async fn apply_bedrock_rules<Source, Transport, Fetcher, Blocks, Ids, Lookup>(
     model_id: &str,
     body: &mut Object,
-    sources: &mut TransformSources<
-        '_,
-        '_,
-        impl DynamicMetadataSource,
-        impl ModelInfoClient,
-        impl RemoteMediaFetcher + Sync,
-        impl FileBlocks<Failure = E> + Sync,
-        impl Fn() -> String + Sync,
-        impl ModelInfoLookup,
-    >,
+    sources: &mut TransformSources<'_, '_, Source, Transport, Fetcher, Blocks, Ids, Lookup>,
 ) where
-    E: StdError + Send + Sync + 'static,
+    Source: DynamicMetadataSource,
+    Transport: ModelInfoClient,
+    Fetcher: RemoteMediaFetcher + Sync,
+    Blocks: FileBlocks + Sync,
+    Ids: Fn() -> String + Sync,
+    Lookup: ModelInfoLookup,
 {
     body.shift_remove(MODEL_FIELD);
     body.shift_remove(STREAM_FIELD);
