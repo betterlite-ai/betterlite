@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::fmt::Display;
 
 use betterlite_auth::auth_identity::records::{
     CredentialRef, NetworkContext, Principal, SourceKey,
@@ -17,7 +16,7 @@ use betterlite_core::api::file_upload_options::{
 use betterlite_core::api::request_body::JsonObject;
 use betterlite_core::api::request_form::values::{FormPart, FormParts, PartValue, UploadFile};
 use betterlite_models::decisions::Json;
-use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -117,17 +116,6 @@ impl Helper for Op {
     }
 }
 
-fn value_error(error: &dyn Display) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: "ValueError".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
-    })
-}
-
 fn run_call(call: &Call) -> Result<Value, Box<HelperError>> {
     match call {
         Call::Extract(payload) => extract_answer(payload),
@@ -159,7 +147,7 @@ fn extract_answer(call: &ExtractCall) -> Result<Value, Box<HelperError>> {
         names_form.as_ref(),
         call.target_storage_form.as_deref(),
     )
-    .map_err(|error| value_error(&error))?;
+    .or_value_error()?;
     Ok(json!({
         "target_storage": params.target_storage,
         "target_model_names": params.target_model_names,
@@ -177,9 +165,7 @@ fn managed_upload_answer(call: &ManagedUploadCall) -> Value {
 
 fn managed_id_answer(call: &ManagedIdCall) -> Result<Value, Box<HelperError>> {
     let enabled = gate(&call.require_managed_files);
-    let runtime = Builder::new_current_thread()
-        .build()
-        .map_err(|error| value_error(&error))?;
+    let runtime = Builder::new_current_thread().build()?;
     let outcome = runtime.block_on(validate_managed_id(
         enabled,
         call.resource_id.as_deref(),
