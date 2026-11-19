@@ -16,7 +16,9 @@ use betterlite_logging::logging_state::correlation::{
 use betterlite_logging::logging_state::types::{
     CallbackPolicy, DynamicCallbacks, RequestLoggingFlags,
 };
-use betterlite_logging::logging_state::{LoggingInit, LoggingState};
+use betterlite_logging::logging_state::{
+    LoggingInit, LoggingState, LoggingStateError as UpstreamLoggingStateError,
+};
 use betterlite_logging::passthrough_stream_logging::object::{
     StreamLoggingObject, StreamLoggingState, StreamSuccessCall, StreamSuccessDispatch,
 };
@@ -61,8 +63,8 @@ fn event(fields: &IndexMap<String, Json>) -> ResponsesAPIStreamingResponse {
     match transform_streaming_response(fields) {
         DecodedStreamResponse::Known { record, .. } => ResponsesAPIStreamingResponse::Known(record),
         DecodedStreamResponse::Generic(generic) => ResponsesAPIStreamingResponse::Generic(generic),
-        DecodedStreamResponse::Lax { fields, .. } => {
-            ResponsesAPIStreamingResponse::Generic(generic_event(fields))
+        DecodedStreamResponse::Lax { fields: lax, .. } => {
+            ResponsesAPIStreamingResponse::Generic(generic_event(lax))
         }
     }
 }
@@ -186,5 +188,5 @@ pub(crate) enum LoggingStateError {
     #[error(transparent)]
     Time(#[from] chrono::ParseError),
     #[error(transparent)]
-    State(#[from] betterlite_logging::logging_state::LoggingStateError),
+    State(#[from] UpstreamLoggingStateError),
 }
