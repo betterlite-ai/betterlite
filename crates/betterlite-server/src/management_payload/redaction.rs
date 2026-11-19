@@ -17,7 +17,7 @@ pub const fn object_mapping(value: &Json) -> Option<&JsonObject> {
 
 // LiteLLM's _object_list: only a JSON list is a list, nothing else is
 #[must_use]
-pub const fn object_list(value: &Json) -> Option<&[Json]> {
+pub fn object_list(value: &Json) -> Option<&[Json]> {
     match value {
         Json::List(items) => Some(items),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => None,
