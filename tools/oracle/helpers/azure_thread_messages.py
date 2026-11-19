@@ -10,15 +10,17 @@ from openai import AsyncAzureOpenAI, AzureOpenAI
 from pydantic import JsonValue
 
 from azure_assistant_definitions import (
-    JSON,
-    SdkClient,
-    Step as BaseStep,
-    Wire,
     client_params,
     report,
     reported,
     session,
     values_of,
+)
+from azure_assistant_definitions.sdk import (
+    JSON,
+    SdkClient,
+    Step,
+    Wire,
 )
 
 THREAD = '{"id":"thread_1","object":"thread","created_at":7,"metadata":{"team":"a"}}'
@@ -60,21 +62,21 @@ ASYNC_GET_THREAD: AsyncThreadCall = cast(  # https://github.com/BerriAI/litellm/
 )
 
 
-class Step(BaseStep, total=False):
+class ThreadStep(Step, total=False):
     messages: list[JsonValue]
     metadata: dict[str, JsonValue]
     thread_id: str
 
 
 class Input(TypedDict, total=False):
-    thread_create: list[Step]
-    thread_retrieve: list[Step]
-    assistants_beta_default: list[Step]
-    azure_thread_async_flags: list[Step]
+    thread_create: list[ThreadStep]
+    thread_retrieve: list[ThreadStep]
+    assistants_beta_default: list[ThreadStep]
+    azure_thread_async_flags: list[ThreadStep]
 
 
 class StepReport(Protocol):
-    def __call__(self, step: Step) -> JsonValue: ...
+    def __call__(self, step: ThreadStep) -> JsonValue: ...
 
 
 @contextmanager
@@ -113,7 +115,7 @@ def close_sdk(client: SdkClient) -> None:
 
 
 @contextmanager
-def supplied_sdk(step: Step, wire: Wire) -> Generator[SdkClient | None, None, None]:
+def supplied_sdk(step: ThreadStep, wire: Wire) -> Generator[SdkClient | None, None, None]:
     if "supplied" not in step:
         yield None
         return
@@ -134,7 +136,7 @@ def record_async(wire: Wire, result: Coroutine[None, None, pydantic.BaseModel]) 
 
 
 def run_thread(
-    step: Step,
+    step: ThreadStep,
     params: dict[str, JsonValue],
     flag: JsonValue,
     sync_call: SyncThreadCall,
@@ -148,7 +150,7 @@ def run_thread(
     return report(wire)
 
 
-def create_step(step: Step) -> JsonValue:
+def create_step(step: ThreadStep) -> JsonValue:
     values = values_of(step)
     params = client_params(values)
     del params["client"]
@@ -164,22 +166,24 @@ def create_step(step: Step) -> JsonValue:
     return run_thread(step, params, values.flag, CREATE_THREAD, ASYNC_CREATE_THREAD)
 
 
-def retrieve_step(step: Step) -> JsonValue:
+def retrieve_step(step: ThreadStep) -> JsonValue:
     values = values_of(step)
     params = client_params(values)
     del params["client"]
+    if "thread_id" not in step:
+        raise ValueError("a thread_retrieve step carries no thread_id")
     params["thread_id"] = step["thread_id"]
     params["aget_thread"] = values.flag
     return run_thread(step, params, values.flag, GET_THREAD, ASYNC_GET_THREAD)
 
 
-def mixed_step(step: Step) -> JsonValue:
+def mixed_step(step: ThreadStep) -> JsonValue:
     if "thread_id" in step:
         return retrieve_step(step)
     return create_step(step)
 
 
-def reports(steps: list[Step], step_report: StepReport) -> JsonValue:
+def reports(steps: list[ThreadStep], step_report: StepReport) -> JsonValue:
     produced: list[JsonValue] = [step_report(step) for step in steps]
     shown: dict[str, JsonValue] = {"steps": produced}
     return shown
