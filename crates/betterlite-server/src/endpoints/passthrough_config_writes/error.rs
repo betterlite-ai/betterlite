@@ -94,41 +94,36 @@ impl IntoResponse for PassthroughWriteError {
     }
 }
 
-fn no_endpoints_response(kind: LookupKind) -> Response {
+fn lookup_response(kind: LookupKind, detail: String) -> Response {
     match kind {
-        LookupKind::Update => detail_response(StatusCode::NOT_FOUND, NO_ENDPOINTS.to_owned()),
-        LookupKind::Delete => {
-            detail_response(StatusCode::BAD_REQUEST, NO_SAVED_ENDPOINTS.to_owned())
-        }
+        LookupKind::Update => detail_response(StatusCode::NOT_FOUND, detail),
+        LookupKind::Delete => detail_response(StatusCode::BAD_REQUEST, detail),
     }
+}
+
+fn no_endpoints_response(kind: LookupKind) -> Response {
+    let detail = match kind {
+        LookupKind::Update => NO_ENDPOINTS,
+        LookupKind::Delete => NO_SAVED_ENDPOINTS,
+    };
+    lookup_response(kind, detail.to_owned())
 }
 
 fn missing_endpoint_response(kind: LookupKind, endpoint_id: &str) -> Response {
-    match kind {
-        LookupKind::Update => detail_response(
-            StatusCode::NOT_FOUND,
-            format!("Endpoint with ID '{endpoint_id}' not found"),
-        ),
-        LookupKind::Delete => detail_response(
-            StatusCode::BAD_REQUEST,
-            format!(
-                "Endpoint with ID '{endpoint_id}' was not found in pass-through endpoint list."
-            ),
-        ),
-    }
+    let detail = match kind {
+        LookupKind::Update => format!("Endpoint with ID '{endpoint_id}' not found"),
+        LookupKind::Delete => {
+            format!("Endpoint with ID '{endpoint_id}' was not found in pass-through endpoint list.")
+        }
+    };
+    lookup_response(kind, detail)
 }
 
 fn missing_index_response(kind: LookupKind, endpoint_id: &str) -> Response {
-    match kind {
-        LookupKind::Update => detail_response(
-            StatusCode::NOT_FOUND,
-            format!("Could not find index for endpoint with ID '{endpoint_id}'"),
-        ),
-        LookupKind::Delete => detail_response(
-            StatusCode::BAD_REQUEST,
-            format!("Could not find index for endpoint with ID '{endpoint_id}'"),
-        ),
-    }
+    lookup_response(
+        kind,
+        format!("Could not find index for endpoint with ID '{endpoint_id}'"),
+    )
 }
 
 fn detail_response(status: StatusCode, detail: String) -> Response {
