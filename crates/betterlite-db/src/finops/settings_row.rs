@@ -84,10 +84,12 @@ pub async fn write_settings_row(
     param: &'static str,
     fields: BTreeMap<String, JsonData>,
 ) -> Result<(), SettingsRowError> {
-    ConfigRepository::new(client, false)
+    if let Err(source) = ConfigRepository::new(client, false)
         .set_param(param, JsonData::Object(fields))
         .await
-        .map_err(|source| SettingsRowError::Write { param, source })?;
+    {
+        return Err(SettingsRowError::Write { param, source });
+    }
     Ok(())
 }
 
