@@ -154,14 +154,6 @@ fn credentials() -> Credentials {
     }
 }
 
-fn token(text: &str) -> SecretString {
-    SecretString::from(text.to_owned())
-}
-
-fn catalog() -> ParamMap {
-    serde_json::from_str(CATALOG).unwrap_or_default()
-}
-
 fn block_on<F: Future>(future: F) -> Result<F::Output, Box<HelperError>> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -271,7 +263,7 @@ impl ResponsesFixture {
             run.params.clone().unwrap_or_else(|| json!({})),
         )?;
         let model_cost = if run.model_cost.is_empty() {
-            catalog()
+            serde_json::from_str::<ParamMap>(CATALOG).unwrap_or_else(|_| ParamMap::new())
         } else {
             run.model_cost.clone()
         };
@@ -279,7 +271,10 @@ impl ResponsesFixture {
             input,
             params,
             model_cost,
-            bearer: run.api_key.as_deref().map(token),
+            bearer: run
+                .api_key
+                .as_deref()
+                .map(|text| SecretString::from(text.to_owned())),
             capabilities: Fakes,
         })
     }
@@ -545,7 +540,10 @@ impl SearchFixture {
         Ok(Self {
             query: SearchInput::Single(run.query.clone()),
             optional: serde_json::from_value(run.optional.clone().unwrap_or_else(|| json!({})))?,
-            bearer: run.api_key.as_deref().map(token),
+            bearer: run
+                .api_key
+                .as_deref()
+                .map(|text| SecretString::from(text.to_owned())),
             lookup: BTreeMap::new(),
         })
     }
@@ -663,16 +661,9 @@ fn vector_success(outcome: &vector_retrieve::Outcome) -> Value {
     Value::Object(row)
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error("open failed")]
 struct Failing;
-
-impl std::fmt::Display for Failing {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("open failed")
-    }
-}
-
-impl std::error::Error for Failing {}
 
 impl ProviderClass for Failing {
     fn provider_class_name(&self) -> Option<&str> {
@@ -773,7 +764,8 @@ fn transport_kind(error: &RealtimeTransportError<Failing, io::Error>) -> &'stati
 fn realtime_scope(run: &RealtimeRun) -> EventScope {
     EventScope {
         pending_session_update: Json::Text(run.pending.clone()),
-        ..EventScope::default()
+        session_committed: Json::Null,
+        committed_failure: Json::Null,
     }
 }
 

@@ -3,35 +3,53 @@ import os
 os.environ["LITELLM_RUST"] = "false"
 
 import asyncio
-from typing import Final, Literal, NotRequired, Protocol, TypedDict
+from typing import Final
 
-import httpx
+from litellm.llms.bedrock.common_utils import BedrockError
+from litellm.llms.bedrock.responses.transformation import BedrockOpenAIResponsesConfig
+from litellm.llms.bedrock.vector_stores.transformation import BedrockVectorStoreConfig
+from litellm.types.router import GenericLiteLLMParams
 from pydantic import JsonValue, TypeAdapter
 
 from agentcore_search_reply import run as search_reply
-from bedrock_services_passthrough import SIGNER as PASSTHROUGH_SIGNER, collect_run, logging_fixture, url_run
+from bedrock_services_passthrough import SIGNER as PASSTHROUGH_SIGNER
+from bedrock_services_passthrough import collect_run, reply_run, url_run
 from bedrock_services_realtime_transport import run as realtime_transport_run
 from bedrock_services_realtime_transport.models import Input as RealtimeTransportInput
 from bedrock_services_realtime_transport.models import Run as RealtimeTransportRun
 from bedrock_services_responses.calls import Fixture
 from bedrock_services_responses.handlers import option_cases
-from bedrock_services_responses.models import Calls, Input as ResponsesSource
+from bedrock_services_responses.models import Calls
 from bedrock_services_search import CONFIG as SEARCH
+from bedrock_services_vector_stores import Input as VectorInput
 from bedrock_services_vector_stores import (
-    Input as VectorInput,
     RequestScenario,
     ResponseScenario,
     decoded_responses,
     retrieval_configuration,
 )
-from litellm.litellm_core_utils.litellm_logging import Logging
-from litellm.llms.bedrock.common_utils import BedrockError
-from litellm.llms.bedrock.passthrough.transformation import BedrockPassthroughConfig
-from litellm.llms.bedrock.responses.transformation import BedrockOpenAIResponsesConfig
-from litellm.llms.bedrock.vector_stores.transformation import BedrockVectorStoreConfig
-from litellm.types.router import GenericLiteLLMParams
 
-JsonObject = dict[str, JsonValue]
+from .inputs import (
+    COLLECT_VIEW,
+    KEYS,
+    LOGGED_VIEW,
+    MAPPED_RESULT,
+    REALTIME_RESULT,
+    RESPONSES_SOURCE,
+    URL_VIEW,
+    VECTOR_CALLS,
+    VECTOR_RESULT,
+    Case,
+    JsonObject,
+    PassthroughRun,
+    RealtimeRun,
+    ResponsesRun,
+    SearchRun,
+    VectorCalls,
+    VectorRun,
+    request_view,
+)
+
 JsonAdapter: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 
 RESPONSES_HOST: Final = "https://bedrock-runtime.us-west-2.amazonaws.com"
@@ -43,191 +61,16 @@ REALTIME_MODEL: Final = "amazon.nova-sonic-v1:0"
 ACCESS: Final = "AKIDBETTERLITEFIXTURE"
 SEED: Final = "fixture/secret/key/+EXAMPLEKEY0000"
 MODE: Final = "resolved"
-SEARCH_ENVIRONMENT: Final = ("AGENTCORE_SEARCH_TOOL_NAME", "AGENTCORE_GATEWAY_TOKEN", "AGENTCORE_GATEWAY_URL")
-
-
-class UrlView(TypedDict):
-    url: str
-    endpoint_url: str
-    streaming: bool
-
-
-class CollectView(TypedDict):
-    decoded: bool
-
-
-class MappedParams(TypedDict):
-    params: JsonObject
-
-
-class MappedResult(TypedDict):
-    results: list[MappedParams]
-
-
-class VectorCall(TypedDict):
-    url: str
-    body: JsonObject
-    query: str
-
-
-class VectorCalls(TypedDict):
-    calls: list[VectorCall]
-
-
-class VectorValue(TypedDict):
-    value: JsonObject
-
-
-class VectorResult(TypedDict):
-    responses: list[VectorValue]
-
-
-class RealtimeSeen(TypedDict):
-    outcome: str
-    error_kind: str | None
-    status_code: int | None
-    runtime_closed: bool
-    committed: bool
-
-
-class RealtimeResult(TypedDict):
-    runs: list[RealtimeSeen]
-
-
-URL_VIEW: Final[TypeAdapter[UrlView]] = TypeAdapter(UrlView)
-COLLECT_VIEW: Final[TypeAdapter[CollectView]] = TypeAdapter(CollectView)
-MAPPED_RESULT: Final[TypeAdapter[MappedResult]] = TypeAdapter(MappedResult)
-VECTOR_CALLS: Final[TypeAdapter[VectorCalls]] = TypeAdapter(VectorCalls)
-VECTOR_RESULT: Final[TypeAdapter[VectorResult]] = TypeAdapter(VectorResult)
-REALTIME_RESULT: Final[TypeAdapter[RealtimeResult]] = TypeAdapter(RealtimeResult)
-RESPONSES_SOURCE: Final[TypeAdapter[ResponsesSource]] = TypeAdapter(ResponsesSource)
-
-
-class PassthroughLogging(Protocol):
-    def logging_non_streaming_response(
-        self,
-        model: str,
-        custom_llm_provider: str,
-        httpx_response: httpx.Response,
-        request_data: dict[str, JsonValue],
-        logging_obj: Logging,
-        endpoint: str,
-    ) -> object | None: ...
-
-
-LOGGING: Final[PassthroughLogging] = BedrockPassthroughConfig()
-
-
-class ResponsesRun(TypedDict):
-    model: str
-    input: JsonValue
-    params: JsonObject
-    api_key: NotRequired[str | None]
-    status: int
-    reply: str
-
-
-class PassthroughRun(TypedDict):
-    endpoint: str
-    data: JsonObject
-    region: NotRequired[str | None]
-    status: int
-    reply: str
-    chunks: NotRequired[list[str]]
-
-
-class SearchRun(TypedDict):
-    query: str
-    optional: JsonObject
-    tool_name: NotRequired[str | None]
-    api_key: NotRequired[str | None]
-    status: int
-    reply: str
-
-
-class VectorRun(TypedDict):
-    query: str
-    optional: JsonObject
-    extra_body: NotRequired[JsonObject | None]
-    status: int
-    reply: str
-
-
-class RealtimeRun(TypedDict):
-    pending: str
-    region: NotRequired[str | None]
-
-
-class ResponsesCase(TypedDict):
-    case: Literal["responses"]
-    runs: list[ResponsesRun]
-
-
-class PassthroughCase(TypedDict):
-    case: Literal["passthrough"]
-    runs: list[PassthroughRun]
-
-
-class SearchCase(TypedDict):
-    case: Literal["search"]
-    runs: list[SearchRun]
-
-
-class VectorCase(TypedDict):
-    case: Literal["vector_retrieve"]
-    runs: list[VectorRun]
-
-
-class RealtimeCase(TypedDict):
-    case: Literal["realtime_bridge"]
-    runs: list[RealtimeRun]
-
-
-Case = ResponsesCase | PassthroughCase | SearchCase | VectorCase | RealtimeCase
-
-KEYS: Final = ("request", "endpoint_url", "streaming", "status", "reply", "response", "logged", "error")
-
-
-def empty_row() -> JsonObject:
-    return {key: None for key in KEYS}
-
+SEARCH_ENVIRONMENT: Final = (
+    "AGENTCORE_SEARCH_TOOL_NAME",
+    "AGENTCORE_GATEWAY_TOKEN",
+    "AGENTCORE_GATEWAY_URL",
+)
 
 def error_row(kind: str, status: int | None) -> JsonObject:
-    row = empty_row()
+    row: JsonObject = dict[str, JsonValue].fromkeys(KEYS)
     row["error"] = {"kind": kind, "status": status}
     return row
-
-
-def authorization_view(headers: dict[str, str]) -> JsonValue:
-    value = headers.get("Authorization")
-    if value is None:
-        return None
-    if value.startswith("Bearer "):
-        return {
-            "kind": "bearer",
-            "access_key": None,
-            "region": None,
-            "service": None,
-            "token": value[len("Bearer ") :],
-        }
-    scope = value.partition("Credential=")[2].partition(",")[0]
-    access_key, _date, region, service, _scope = scope.split("/")
-    return {
-        "kind": "sigv4",
-        "access_key": access_key,
-        "region": region,
-        "service": service,
-        "token": None,
-    }
-
-
-def request_view(method: str, url: str, headers: dict[str, str], body: JsonValue) -> JsonValue:
-    return {
-        "method": method,
-        "url": url,
-        "auth": authorization_view(headers),
-        "body": body,
-    }
 
 
 def mapped_params(calls: Calls, params: JsonObject) -> JsonObject:
@@ -241,7 +84,10 @@ def responses_row(run: ResponsesRun) -> JsonValue:
     config = BedrockOpenAIResponsesConfig(
         fetch_image=fixture.fetch, async_fetch_image=fixture.fetch_async
     )
-    calls: Calls = config
+    return responses_request(config, run)
+
+
+def responses_request(calls: Calls, run: ResponsesRun) -> JsonValue:
     api_key = run.get("api_key")
     try:
         source = RESPONSES_SOURCE.validate_python(run["input"])
@@ -250,14 +96,12 @@ def responses_row(run: ResponsesRun) -> JsonValue:
         params = GenericLiteLLMParams(api_key=api_key)
         headers = calls.validate_environment({}, run["model"], params)
         body = asyncio.run(
-            calls.async_transform_responses_api_request(
-                run["model"], source, mapped, params, {}
-            )
+            calls.async_transform_responses_api_request(run["model"], source, mapped, params, {})
         )
     except (KeyError, TypeError, ValueError):
         return error_row("leaf", None)
     signed, _body = calls.sign_request(dict(headers), {}, body, url, api_key=api_key)
-    row = empty_row()
+    row: JsonObject = dict[str, JsonValue].fromkeys(KEYS)
     row["request"] = request_view("POST", url, signed, body)
     row["status"] = run["status"]
     row["reply"] = JsonAdapter.validate_json(run["reply"])
@@ -265,26 +109,23 @@ def responses_row(run: ResponsesRun) -> JsonValue:
 
 
 def passthrough_logged(run: PassthroughRun) -> bool:
-    if run.get("chunks"):
-        data = bytes.fromhex("".join(run["chunks"]))
+    chunks = run.get("chunks")
+    if chunks:
+        data = bytes.fromhex("".join(chunks))
         collected = COLLECT_VIEW.validate_python(
             collect_run({"model": PASSTHROUGH_MODEL, "endpoint": run["endpoint"]}, data)
         )
         return collected["decoded"]
-    response = httpx.Response(run["status"], content=run["reply"].encode())
-    logged = LOGGING.logging_non_streaming_response(
-        model=PASSTHROUGH_MODEL,
-        custom_llm_provider="bedrock",
-        httpx_response=response,
-        request_data=run["data"],
-        logging_obj=logging_fixture(PASSTHROUGH_MODEL),
-        endpoint=run["endpoint"],
+    logged = LOGGED_VIEW.validate_python(
+        reply_run({"provider": "bedrock", "endpoint": run["endpoint"], "body": run["reply"]})
     )
-    return logged is not None
+    return logged["logged"]
 
 
 def passthrough_row(run: PassthroughRun) -> JsonValue:
-    region = run.get("region") or "us-east-1"
+    region = run.get("region")
+    if region is None:
+        region = "us-east-1"
     try:
         view = URL_VIEW.validate_python(
             url_run({"model": PASSTHROUGH_MODEL, "endpoint": run["endpoint"], "region": region})
@@ -303,10 +144,9 @@ def passthrough_row(run: PassthroughRun) -> JsonValue:
         api_base=view["url"],
         model=PASSTHROUGH_MODEL,
     )
-    row = empty_row()
-    row["request"] = request_view(
-        "POST", view["url"], signed, JsonAdapter.validate_json(body if body is not None else b"{}")
-    )
+    text = b"{}" if body is None else body
+    row: JsonObject = dict[str, JsonValue].fromkeys(KEYS)
+    row["request"] = request_view("POST", view["url"], signed, JsonAdapter.validate_json(text))
     row["endpoint_url"] = view["endpoint_url"]
     row["streaming"] = view["streaming"]
     row["status"] = run["status"]
@@ -331,7 +171,7 @@ def search_row(run: SearchRun) -> JsonValue:
     finally:
         for name in SEARCH_ENVIRONMENT:
             os.environ.pop(name, None)
-    row = empty_row()
+    row: JsonObject = dict[str, JsonValue].fromkeys(KEYS)
     row["request"] = request_view("POST", GATEWAY, signed, JsonAdapter.validate_python(body))
     try:
         row["response"] = JsonAdapter.validate_python(
@@ -340,6 +180,15 @@ def search_row(run: SearchRun) -> JsonValue:
     except BedrockError as error:
         return error_row("reply", error.status_code)
     return row
+
+
+def vector_calls(supplied: VectorInput) -> VectorCalls | None:
+    raw = retrieval_configuration(BedrockVectorStoreConfig(), supplied)
+    try:
+        calls = VECTOR_CALLS.validate_python(raw)
+    except ValueError:
+        return None
+    return calls if calls["calls"] else None
 
 
 def vector_row(run: VectorRun) -> JsonValue:
@@ -360,8 +209,10 @@ def vector_row(run: VectorRun) -> JsonValue:
     if calls is None:
         return error_row("leaf", None)
     call = calls["calls"][0]
-    row = empty_row()
-    row["request"] = request_view("POST", call["url"], {}, JsonAdapter.validate_python(call["body"]))
+    row: JsonObject = dict[str, JsonValue].fromkeys(KEYS)
+    row["request"] = request_view(
+        "POST", call["url"], {}, JsonAdapter.validate_python(call["body"])
+    )
     decoded = VECTOR_RESULT.validate_python(
         decoded_responses(
             BedrockVectorStoreConfig(),
@@ -377,16 +228,10 @@ def vector_row(run: VectorRun) -> JsonValue:
     return row
 
 
-def vector_calls(supplied: VectorInput) -> VectorCalls | None:
-    raw = retrieval_configuration(BedrockVectorStoreConfig(), supplied)
-    try:
-        calls = VECTOR_CALLS.validate_python(raw)
-    except ValueError:
-        return None
-    return calls if calls["calls"] else None
-
-
 def realtime_row(run: RealtimeRun) -> JsonValue:
+    region = run.get("region")
+    if region is None:
+        region = "us-east-1"
     scenario = RealtimeTransportInput(
         runs=[
             RealtimeTransportRun(
@@ -407,7 +252,7 @@ def realtime_row(run: RealtimeRun) -> JsonValue:
                 },
                 api_base=None,
                 endpoint=None,
-                region=run.get("region") or "us-east-1",
+                region=region,
                 committed=False,
                 failure=None,
             )
@@ -415,7 +260,7 @@ def realtime_row(run: RealtimeRun) -> JsonValue:
     )
     result = REALTIME_RESULT.validate_python(realtime_transport_run(scenario))
     seen = result["runs"][0]
-    row = empty_row()
+    row: JsonObject = dict[str, JsonValue].fromkeys(KEYS)
     row["response"] = {
         "outcome": seen["outcome"],
         "error_kind": seen["error_kind"],

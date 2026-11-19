@@ -810,7 +810,8 @@ fn vector_case() {
     let optional = SearchOptionalParams {
         filters: Some(json(r#"{"equals":{"key":"k","value":"v"}}"#)),
         max_num_results: Some(5),
-        ..SearchOptionalParams::default()
+        ranking_options: None,
+        rewrite_query: None,
     };
     let litellm_params: IndexMap<String, Json> =
         serde_json::from_str(r#"{"aws_region_name":"us-east-1"}"#).unwrap();
@@ -868,8 +869,10 @@ fn vector_case() {
 fn vector_leaf_failure() {
     let query = SearchQuery::Text("hello".to_owned());
     let optional = SearchOptionalParams {
+        filters: None,
         max_num_results: Some(5),
-        ..SearchOptionalParams::default()
+        ranking_options: None,
+        rewrite_query: None,
     };
     let litellm_params = IndexMap::new();
     let extra: IndexMap<String, Json> =

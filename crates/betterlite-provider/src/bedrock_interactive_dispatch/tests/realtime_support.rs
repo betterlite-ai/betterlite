@@ -27,7 +27,8 @@ use betterlite_core::api::realtime_session_state::logging::{
 };
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error("{message}")]
 struct TestError {
     class: &'static str,
     message: &'static str,
@@ -38,14 +39,6 @@ impl TestError {
         Self { class, message }
     }
 }
-
-impl std::fmt::Display for TestError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(self.message)
-    }
-}
-
-impl std::error::Error for TestError {}
 
 impl ProviderClass for TestError {
     fn provider_class_name(&self) -> Option<&str> {
@@ -346,7 +339,8 @@ impl SessionFixture {
 fn pending_scope() -> EventScope {
     EventScope {
         pending_session_update: Json::Text(SESSION_UPDATE.to_owned()),
-        ..EventScope::default()
+        session_committed: Json::Null,
+        committed_failure: Json::Null,
     }
 }
 

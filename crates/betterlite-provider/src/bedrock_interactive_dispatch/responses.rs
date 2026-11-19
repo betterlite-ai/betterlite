@@ -133,7 +133,13 @@ where
             },
         )
         .await?;
-        let request = sign(self.aws, model, decisions_object(&request_data)?).await?;
+        let decisions = serde_json::to_value(&request_data).map_err(ResponsesError::Encode)?;
+        let request = sign(
+            self.aws,
+            model,
+            serde_json::from_value(decisions).map_err(ResponsesError::Encode)?,
+        )
+        .await?;
         deliver(transport, request).await
     }
 }
@@ -147,11 +153,6 @@ fn request_url(aws: &AwsRequest<'_>) -> Result<String, Error> {
         region_inputs: aws.region_inputs,
     })
     .map_err(Error::Leaf)
-}
-
-fn decisions_object(request: &Object) -> Result<IndexMap<String, Json>, Error> {
-    let raw = serde_json::to_value(request).map_err(ResponsesError::Encode)?;
-    serde_json::from_value(raw).map_err(ResponsesError::Encode)
 }
 
 fn header_pairs(headers: &IndexMap<String, String>) -> Vec<(String, Option<String>)> {
