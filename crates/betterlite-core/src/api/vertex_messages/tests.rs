@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::future::{Future, ready};
+use std::future::{Future, Ready, ready};
 
 use betterlite_anthropic::anthropic_capability_catalog::OptionalParams;
 use betterlite_anthropic::anthropic_capability_catalog::thinking::ThinkingError;
@@ -47,12 +47,7 @@ struct FakeCapabilities {
 }
 
 impl ThinkingCapabilities for FakeCapabilities {
-    fn supports(
-        &mut self,
-        _model: &str,
-        key: &str,
-        provider: &str,
-    ) -> impl Future<Output = bool> + Send {
+    fn supports(&mut self, _model: &str, key: &str, provider: &str) -> Ready<bool> {
         self.asked.push((key.to_owned(), provider.to_owned()));
         ready(self.mid_system && key == MID_SYSTEM)
     }
@@ -62,7 +57,7 @@ impl ThinkingCapabilities for FakeCapabilities {
         _model: &'seam str,
         _effort: &'seam str,
         _provider: &'seam str,
-    ) -> impl Future<Output = Result<Option<Thinking>, ReasoningEffortError>> + Send + 'seam {
+    ) -> Ready<Result<Option<Thinking>, ReasoningEffortError>> {
         ready(Ok(None))
     }
 
@@ -71,15 +66,11 @@ impl ThinkingCapabilities for FakeCapabilities {
         _model: &str,
         _effort: Option<&str>,
         _provider: &str,
-    ) -> impl Future<Output = Option<String>> + Send {
+    ) -> Ready<Option<String>> {
         ready(None)
     }
 
-    fn supports_effort_param(
-        &mut self,
-        _model: &str,
-        _provider: &str,
-    ) -> impl Future<Output = bool> + Send {
+    fn supports_effort_param(&mut self, _model: &str, _provider: &str) -> Ready<bool> {
         ready(false)
     }
 
@@ -88,14 +79,14 @@ impl ThinkingCapabilities for FakeCapabilities {
         _model: &str,
         _params: &mut OptionalParams,
         _provider: &str,
-    ) -> impl Future<Output = bool> + Send {
+    ) -> Ready<bool> {
         ready(false)
     }
 
     fn translate_legacy_thinking<'seam>(
         &'seam mut self,
         _request: &'seam mut LegacyShapes<'seam>,
-    ) -> impl Future<Output = Result<(), ThinkingError>> + Send + 'seam {
+    ) -> Ready<Result<(), ThinkingError>> {
         ready(Ok(()))
     }
 }
@@ -293,8 +284,11 @@ async fn native_vertex_adapter_override_failure_is_a_500() {
         asked: Vec::new(),
     };
     let mut overrides = RecordingOverrides {
+        calls: 0,
+        saw_system: false,
+        saw_scope: false,
+        saw_model: false,
         fail: true,
-        ..Default::default()
     };
     let error = adapt(
         &mut capabilities,

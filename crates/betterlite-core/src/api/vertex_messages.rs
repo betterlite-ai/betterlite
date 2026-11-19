@@ -61,7 +61,11 @@ where
     )
     .await?;
     let supports_mid_system = capabilities
-        .supports(model, NamedCapability::MidConversationSystem.key(), PROVIDER)
+        .supports(
+            model,
+            NamedCapability::MidConversationSystem.key(),
+            PROVIDER,
+        )
         .await;
     normalize_system_turns(&mut body, supports_mid_system);
     remove_cache_scope(&mut body);
