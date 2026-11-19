@@ -37,37 +37,21 @@ fn fits(
 }
 
 #[rstest]
-#[case::comfortably_inside(100, 10)]
-#[case::exactly_at_both_limits(60, 40)]
-fn a_request_inside_the_declared_limits_fits(#[case] input: i64, #[case] output: i64) {
+#[case::comfortably_inside(100, 10, true)]
+#[case::exactly_at_both_limits(60, 40, true)]
+#[case::past_the_input_window(61, 40, false)]
+#[case::past_the_output_limit(10, 51, false)]
+fn a_request_fits_only_inside_both_declared_limits(
+    #[case] input: i64,
+    #[case] output: i64,
+    #[case] expected: bool,
+) {
     let info = r#"{"id":"deployment-a","max_input_tokens":100,"max_output_tokens":50}"#;
-    assert!(fits(
-        PARAMS,
-        info,
-        input,
-        output,
-        &LimitsLookup {
-            max_input: None,
-            max_output: None,
-        }
-    ));
-}
-
-#[rstest]
-#[case::input_window(61, 40)]
-#[case::output_limit(10, 51)]
-fn a_request_outside_one_declared_limit_does_not_fit(#[case] input: i64, #[case] output: i64) {
-    let info = r#"{"id":"deployment-a","max_input_tokens":100,"max_output_tokens":50}"#;
-    assert!(!fits(
-        PARAMS,
-        info,
-        input,
-        output,
-        &LimitsLookup {
-            max_input: None,
-            max_output: None,
-        }
-    ));
+    let lookup = LimitsLookup {
+        max_input: None,
+        max_output: None,
+    };
+    assert_eq!(fits(PARAMS, info, input, output, &lookup), expected);
 }
 
 #[test]

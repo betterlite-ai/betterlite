@@ -180,6 +180,18 @@ pub(crate) struct PriceCall {
     pub(crate) moment: DateTime<Utc>,
 }
 
+impl PriceCall {
+    fn new(request: &PriceRequest<'_>, moment: DateTime<Utc>) -> Self {
+        Self {
+            model: request.model.to_owned(),
+            deployment_id: request.deployment_id.to_owned(),
+            tokens: request.tokens.clone(),
+            completion_tokens: request.completion_tokens,
+            moment,
+        }
+    }
+}
+
 pub(crate) struct FakeCost {
     pub(crate) cost: Option<Decimal>,
     pub(crate) calls: Mutex<Vec<ScenarioCall>>,
@@ -252,13 +264,7 @@ impl CacheCostService for FakeCost {
         self.prices
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(PriceCall {
-                model: request.model.to_owned(),
-                deployment_id: request.deployment_id.to_owned(),
-                tokens: request.tokens.clone(),
-                completion_tokens: request.completion_tokens,
-                moment,
-            });
+            .push(PriceCall::new(request, moment));
         self.cost
     }
 }

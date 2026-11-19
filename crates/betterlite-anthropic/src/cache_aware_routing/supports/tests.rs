@@ -2,13 +2,13 @@
 
 use rstest::rstest;
 
-use crate::cache_aware_routing::AnthropicCacheRouting;
 use crate::cache_aware_routing::deployment::PredictionDeployment;
 use crate::cache_aware_routing::tests::support::PARAMS;
 use crate::cache_aware_routing::tests::support::Resolution;
 use crate::cache_aware_routing::tests::support::model_info;
 use crate::cache_aware_routing::tests::support::params;
 use crate::cache_aware_routing::tests::support::settings;
+use crate::cache_prediction_targets::target::resolve_prediction_target;
 
 fn supported(params_json: &str) -> bool {
     let litellm_params = params(params_json);
@@ -16,11 +16,12 @@ fn supported(params_json: &str) -> bool {
     let deployment = PredictionDeployment::read(&litellm_params, &info);
     let resolution = Resolution::new();
     let context = resolution.context();
-    AnthropicCacheRouting::supports(
-        &deployment,
+    resolve_prediction_target(
+        deployment.litellm_params,
         &settings("https://api.anthropic.com"),
         &context,
     )
+    .is_ok()
 }
 
 #[test]
@@ -49,9 +50,12 @@ fn a_blocked_deployment_still_resolves_a_target() {
     let deployment = PredictionDeployment::read(&litellm_params, &info);
     let resolution = Resolution::new();
     let context = resolution.context();
-    assert!(AnthropicCacheRouting::supports(
-        &deployment,
-        &settings("https://api.anthropic.com"),
-        &context,
-    ));
+    assert!(
+        resolve_prediction_target(
+            deployment.litellm_params,
+            &settings("https://api.anthropic.com"),
+            &context,
+        )
+        .is_ok()
+    );
 }
