@@ -35,13 +35,7 @@ pub(super) async fn update_identity_map(
         return Err(RoiRoutesError::DbNotConnected);
     };
     let payload: IdentityBody = decode_body(&body)?;
-    let login = normalize_login(&payload.github_login).map_err(|error| {
-        RoiRoutesError::Request(vec![issue(
-            "value_error",
-            vec!["body", "github_login"],
-            &format!("Value error, {error}"),
-        )])
-    })?;
+    let login = normalized_login(&payload.github_login)?;
     let mut settings = load_settings(repository.as_ref(), state.cipher.as_ref()).await?;
     let stored = load_ciphertexts(repository.as_ref()).await?;
     let new_email = payload
@@ -71,4 +65,14 @@ pub(super) async fn update_identity_map(
         report: summary,
         identity_map: settings.identity_map,
     }))
+}
+
+fn normalized_login(raw: &str) -> Result<String, RoiRoutesError> {
+    normalize_login(raw).map_err(|error| {
+        RoiRoutesError::Request(vec![issue(
+            "value_error",
+            vec!["body", "github_login"],
+            &format!("Value error, {error}"),
+        )])
+    })
 }

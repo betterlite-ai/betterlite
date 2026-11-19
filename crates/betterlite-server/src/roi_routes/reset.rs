@@ -55,13 +55,22 @@ pub(super) async fn reset_setup(
         state.catalog.as_deref(),
     )
     .await;
+    finish_reset(store.as_ref(), &owner, restarting, body).await
+}
+
+async fn finish_reset(
+    store: &dyn SyncStorePort,
+    owner: &str,
+    restarting: ROISyncStatus,
+    body: Result<ROISettingsResponse, RoiRoutesError>,
+) -> Result<Json<ROISettingsResponse>, RoiRoutesError> {
     let finished = ROISyncStatus {
         running: false,
         phase: ROISyncPhase::Idle,
         stage: IDLE_STAGE.to_owned(),
         ..restarting
     };
-    match store.finish_claim(&owner, &finished, None).await {
+    match store.finish_claim(owner, &finished, None).await {
         Err(error) => Err(error),
         Ok(_) => body.map(Json),
     }

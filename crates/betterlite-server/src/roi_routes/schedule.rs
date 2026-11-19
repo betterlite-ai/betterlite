@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use betterlite_auth::budget_primitives::window_start::coerce_datetime;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_roi::records::{ROIReport, ROISyncStatus};
@@ -9,10 +11,11 @@ use rust_decimal::RoundingStrategy;
 use crate::roi_settings::deployments::router_estimator_models;
 use crate::roi_settings::error::RoiSettingsError;
 use crate::roi_settings::public::public_settings;
+use crate::roi_settings::repository::SettingsRepository;
 use crate::roi_settings::store::{REPORT_KEY, load_parameter, load_settings};
 
 use super::error::RoiRoutesError;
-use super::ports::RouteSyncRun;
+use super::ports::{RouteSyncRun, SyncStorePort};
 use super::state::RoiRouteState;
 
 const MICROS_PER_MINUTE: i64 = 60_000_000;
@@ -72,23 +75,9 @@ pub async fn run_scheduled_sync(state: &RoiRouteState) -> Result<(), RoiRoutesEr
     if !public_settings(&settings, state.catalog.as_deref()).ready {
         return Ok(());
     }
-    let store = state.sync_store.store().await?;
-    let status = store
-        .read_status()
-        .await?
-        .unwrap_or_else(|| state.manager.current_status());
-    let report = load_parameter::<ROIReport, _>(
-        repository.as_ref(),
-        REPORT_KEY,
-        RoiSettingsError::StoredReport,
-    )
-    .await?;
-    let Some(next) = next_update(&settings, &status, report.as_ref())? else {
+    let Some(store) = due_sync_store(state, repository.as_ref(), &settings).await? else {
         return Ok(());
     };
-    if next > (state.clock)() {
-        return Ok(());
-    }
     let complete = (state.completion_caller)(&settings)?;
     let estimator_models =
         router_estimator_models(state.catalog.as_deref(), &settings.estimator_model);
@@ -108,4 +97,26 @@ pub async fn run_scheduled_sync(state: &RoiRouteState) -> Result<(), RoiRoutesEr
     }
     tracing::debug!("the scheduled ROI sync did not start");
     Ok(())
+}
+
+async fn due_sync_store(
+    state: &RoiRouteState,
+    repository: &dyn SettingsRepository,
+    settings: &ROISettings,
+) -> Result<Option<Arc<dyn SyncStorePort>>, RoiRoutesError> {
+    let store = state.sync_store.store().await?;
+    let status = store
+        .read_status()
+        .await?
+        .unwrap_or_else(|| state.manager.current_status());
+    let report =
+        load_parameter::<ROIReport, _>(repository, REPORT_KEY, RoiSettingsError::StoredReport)
+            .await?;
+    let Some(next) = next_update(settings, &status, report.as_ref())? else {
+        return Ok(None);
+    };
+    if next > (state.clock)() {
+        return Ok(None);
+    }
+    Ok(Some(store))
 }
