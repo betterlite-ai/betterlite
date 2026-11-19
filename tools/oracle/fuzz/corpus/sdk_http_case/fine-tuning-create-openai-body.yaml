@@ -21,7 +21,25 @@ call:
         integrations: []
         seed: 0
         params: {api_key: sk-openai, max_retries: 0}
+      - provider: openai
+        model: gpt-4o-mini
+        training_file: file_train
+        hyperparameters: {n_epochs: null, batch_size: auto}
+        params: {api_key: sk-openai, max_retries: 0}
 upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: ft_a
+      object: fine_tuning.job
+      created_at: 1720000000
+      model: gpt-4o-mini
+      status: queued
+      training_file: file_train
+      organization_id: org_a
+      result_files: []
+      seed: 3
+      hyperparameters: {n_epochs: 3, extra_hp: x}
   - status: 200
     headers: {content-type: application/json}
     body:
