@@ -1,0 +1,205 @@
+#![cfg(test)]
+
+use betterlite_core::budget_reset::compute_budget_reset_at;
+use betterlite_db::budget_permission_rows::{JsonData, Timestamp};
+use betterlite_db::identity_rows::PydanticBool;
+use betterlite_db::identity_rows::key::Expiry;
+use betterlite_db::team_rows::member::BudgetLimitEntry;
+use betterlite_secrets::secret_codec::CALLBACK_VAR_ENCRYPTED_PREFIX;
+use rstest::rstest;
+use rust_decimal::Decimal;
+
+use super::{cipher, clock, database, generate_request, instant, object, settings};
+use crate::key_fields::values::LiteLLMKeyType;
+use crate::key_policy_fields::generate::{effective_key_for_generate, generate_budget_windows};
+use crate::key_policy_fields::key_type::handle_key_type;
+use crate::key_policy_fields::{isoformat, microsecond_precision};
+
+fn reset_text(spec: &str) -> String {
+    let reset = compute_budget_reset_at(spec, settings(), clock().now, database()).unwrap();
+    isoformat(microsecond_precision(reset.instant))
+}
+
+#[test]
+fn generated_metadata_override_encrypted() {
+    let request = generate_request(
+        r#"{"key_alias":"alias","tags":["new"],"end_user_budget_id":"eu-1",
+            "metadata":{"keep":"value","tags":["old"],
+              "logging":[{"callback_name":"custom","callback_vars":{"api_key":"sk-plain","endpoint":"https://example.test"}}]}}"#,
+    );
+    let token = effective_key_for_generate(&request, clock(), &cipher()).unwrap();
+    assert_eq!(token.key_alias.as_deref(), Some("alias"));
+    // the request field wins over the same key inside metadata
+    assert_eq!(
+        token.metadata.0.get("tags"),
+        Some(&super::json(r#"["new"]"#))
+    );
+    assert_eq!(
+        token.metadata.0.get("keep"),
+        Some(&super::json(r#""value""#))
+    );
+    assert_eq!(
+        token.metadata.0.get("end_user_budget_id"),
+        Some(&super::json(r#""eu-1""#))
+    );
+    let Some(JsonData::Array(entries)) = token.metadata.0.get("logging") else {
+        panic!("the logging slot stays a list");
+    };
+    let Some(JsonData::Object(entry)) = entries.first() else {
+        panic!("the callback entry stays an object");
+    };
+    let Some(JsonData::Object(vars)) = entry.get("callback_vars") else {
+        panic!("the callback vars stay an object");
+    };
+    let Some(JsonData::String(api_key)) = vars.get("api_key") else {
+        panic!("the api key stays text");
+    };
+    assert!(
+        api_key.starts_with(CALLBACK_VAR_ENCRYPTED_PREFIX),
+        "{api_key} is not encrypted"
+    );
+    assert_ne!(api_key, "sk-plain");
+    // a key no sensitive list names stays readable
+    assert_eq!(
+        vars.get("endpoint"),
+        Some(&super::json(r#""https://example.test""#))
+    );
+    // the request named no key type, so the model default applies
+    assert_eq!(token.key_type.as_deref(), Some("default"));
+}
+
+#[test]
+fn generate_clock_expiry_and_rotation() {
+    let request = generate_request(
+        r#"{"duration":"2h","budget_duration":"1d","auto_rotate":true,"rotation_interval":"30m"}"#,
+    );
+    let token = effective_key_for_generate(&request, clock(), &cipher()).unwrap();
+    assert_eq!(
+        token.expires,
+        Some(Expiry::Text("2026-05-01T12:00:00.123456Z".to_owned()))
+    );
+    assert_eq!(
+        token.budget_reset_at.map(Timestamp::utc),
+        Some(
+            compute_budget_reset_at("1d", settings(), clock().now, database())
+                .unwrap()
+                .instant
+                .with_timezone(&chrono::Utc)
+        )
+    );
+    assert_eq!(
+        token.key_rotation_at.map(Timestamp::utc),
+        Some(instant("2026-05-01T10:30:00.123456Z"))
+    );
+    assert_eq!(token.rotation_interval.as_deref(), Some("30m"));
+    assert_eq!(token.auto_rotate.0, Some(PydanticBool(true)));
+}
+
+#[rstest]
+#[case::rotation_off(r#"{"auto_rotate":false,"rotation_interval":"30m"}"#)]
+#[case::interval_missing(r#"{"auto_rotate":true}"#)]
+#[case::interval_empty(r#"{"auto_rotate":true,"rotation_interval":""}"#)]
+#[case::no_timing_fields(r#"{"key_alias":"alias"}"#)]
+fn generate_without_rotation_keeps_timing_fields_empty(#[case] document: &str) {
+    let token =
+        effective_key_for_generate(&generate_request(document), clock(), &cipher()).unwrap();
+    assert!(token.expires.is_none());
+    assert!(token.budget_reset_at.is_none());
+    assert!(token.key_rotation_at.is_none());
+    assert!(token.rotation_interval.is_none());
+    assert_eq!(token.auto_rotate.0, Some(PydanticBool(false)));
+}
+
+#[test]
+fn budget_windows_empty_and_order() {
+    assert_eq!(generate_budget_windows(None, clock()).unwrap(), None);
+    assert_eq!(generate_budget_windows(Some(&[]), clock()).unwrap(), None);
+    let windows = [
+        BudgetLimitEntry {
+            budget_duration: "1d".to_owned(),
+            max_budget: Decimal::from(10),
+            reset_at: None,
+        },
+        BudgetLimitEntry {
+            budget_duration: "1h".to_owned(),
+            max_budget: Decimal::new(25, 1),
+            reset_at: None,
+        },
+    ];
+    let built = generate_budget_windows(Some(&windows), clock())
+        .unwrap()
+        .expect("two windows stay two windows");
+    assert_eq!(built.len(), 2);
+    let Some(JsonData::Object(first)) = built.first() else {
+        panic!("a window is an object");
+    };
+    let Some(JsonData::Object(second)) = built.get(1) else {
+        panic!("a window is an object");
+    };
+    assert_eq!(first.get("budget_duration"), Some(&super::json(r#""1d""#)));
+    assert_eq!(
+        first.get("reset_at"),
+        Some(&JsonData::String(reset_text("1d")))
+    );
+    assert_eq!(second.get("budget_duration"), Some(&super::json(r#""1h""#)));
+    assert_eq!(
+        second.get("reset_at"),
+        Some(&JsonData::String(reset_text("1h")))
+    );
+    // the window's own fields survive the reset time
+    assert!(matches!(first.get("max_budget"), Some(JsonData::Number(_))));
+}
+
+#[rstest]
+#[case::absent(None, None)]
+#[case::explicit_null(Some(None), None)]
+fn key_type_absent_removes_the_column(
+    #[case] key_type: Option<Option<LiteLLMKeyType>>,
+    #[case] expected: Option<&str>,
+) {
+    let columns = handle_key_type(
+        key_type.flatten(),
+        object(r#"{"key_type":"llm_api","other":1}"#),
+    );
+    assert_eq!(
+        columns.get("key_type"),
+        expected.map(|text| JsonData::String(text.to_owned()))
+    );
+    assert_eq!(columns.get("other"), Some(&super::json("1")));
+}
+
+#[rstest]
+#[case::llm_api(LiteLLMKeyType::LlmApi, "llm_api", "llm_api_routes")]
+#[case::management(LiteLLMKeyType::Management, "management", "management_routes")]
+#[case::read_only(LiteLLMKeyType::ReadOnly, "read_only", "info_routes")]
+fn key_type_route_presets(
+    #[case] key_type: LiteLLMKeyType,
+    #[case] text: &str,
+    #[case] route: &str,
+) {
+    let columns = handle_key_type(Some(key_type), object(r#"{"allowed_routes":["custom"]}"#));
+    assert_eq!(
+        columns.get("key_type"),
+        Some(&JsonData::String(text.to_owned()))
+    );
+    assert_eq!(
+        columns.get("allowed_routes"),
+        Some(&super::json(&format!(r#"["{route}"]"#)))
+    );
+}
+
+#[test]
+fn default_key_type_keeps_routes() {
+    let columns = handle_key_type(
+        Some(LiteLLMKeyType::Default),
+        object(r#"{"allowed_routes":["custom"]}"#),
+    );
+    assert_eq!(
+        columns.get("key_type"),
+        Some(&JsonData::String("default".to_owned()))
+    );
+    assert_eq!(
+        columns.get("allowed_routes"),
+        Some(&super::json(r#"["custom"]"#))
+    );
+}
