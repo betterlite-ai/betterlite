@@ -9,6 +9,7 @@ use crate::media_fetch::error::ImageFetchError;
 
 mod cache_control;
 mod documents;
+mod file_blocks;
 mod invoke;
 
 struct MapSource<'urls> {

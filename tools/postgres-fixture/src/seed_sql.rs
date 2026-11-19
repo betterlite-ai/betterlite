@@ -1,6 +1,6 @@
 use crate::{
     daily_usage, dashboard, dashboard_governance, discovery_skills, error::FixtureError, finops,
-    search_tools, seed::FixtureSeed, sql::BASELINE,
+    scim, search_tools, seed::FixtureSeed, sql::BASELINE,
 };
 use secrecy::ExposeSecret as _;
 use tokio_postgres::{Client, types::ToSql};
@@ -68,6 +68,9 @@ async fn seed_extensions(client: &Client, seed: &FixtureSeed) -> Result<(), Fixt
     }
     if let Some(finops_seed) = &seed.finops {
         finops::seed(client, finops_seed).await?;
+    }
+    if let Some(scim_seed) = &seed.scim {
+        scim::seed(client, scim_seed).await?;
     }
     if let Some(discovery) = &seed.discovery_skills {
         discovery_skills::seed(client, discovery).await?;

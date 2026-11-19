@@ -1,0 +1,174 @@
+use betterlite_openai::watsonx_auth::WatsonxAuth;
+use betterlite_openai::watsonx_auth::environment::WatsonxEnvironment;
+use betterlite_prompts::arguments::json::{Json, Object};
+use secrecy::{ExposeSecret as _, SecretString};
+use uuid::Uuid;
+
+use crate::data_cloud_dispatch::call::CompletionCall;
+use crate::data_cloud_dispatch::context::{DispatchContext, EnvironmentSource};
+use crate::watsonx_rerank::WatsonxRerankConfig;
+
+use super::context::{ChatContext, ReplacedCall, handler_call};
+use super::error::EnterpriseError;
+
+// every name B5970's WatsonxEnvironment carries, read when the call runs
+pub fn environment(source: &EnvironmentSource<'_>) -> Result<WatsonxEnvironment, EnterpriseError> {
+    Ok(WatsonxEnvironment {
+        watsonx_iam_url: source.text("WATSONX_IAM_URL")?,
+        wx_api_key: source.secret("WX_API_KEY")?,
+        watsonx_api_key: source.secret("WATSONX_API_KEY")?,
+        watsonx_apikey: source.secret("WATSONX_APIKEY")?,
+        watsonx_zenapikey: source.secret("WATSONX_ZENAPIKEY")?,
+        watsonx_token: source.secret("WATSONX_TOKEN")?,
+        watsonx_api_base: source.text("WATSONX_API_BASE")?,
+        watsonx_url: source.text("WATSONX_URL")?,
+        wx_url: source.text("WX_URL")?,
+        wml_url: source.text("WML_URL")?,
+        watsonx_project_id: source.text("WATSONX_PROJECT_ID")?,
+        wx_project_id: source.text("WX_PROJECT_ID")?,
+        project_id: source.text("PROJECT_ID")?,
+        watsonx_region: source.text("WATSONX_REGION")?,
+        wx_region: source.text("WX_REGION")?,
+        region: source.text("REGION")?,
+        watsonx_deployment_space_id: source.text("WATSONX_DEPLOYMENT_SPACE_ID")?,
+        watsonx_space_id: source.text("WATSONX_SPACE_ID")?,
+        wx_space_id: source.text("WX_SPACE_ID")?,
+        space_id: source.text("SPACE_ID")?,
+    })
+}
+
+// an absent or null value takes the next default, and an explicit text is used as given, empty included
+fn field_text(
+    value: Option<&Json>,
+    field: &'static str,
+) -> Result<Option<String>, EnterpriseError> {
+    let Some(stored) = value else {
+        return Ok(None);
+    };
+    if let Json::Text(text) = stored {
+        return Ok(Some(text.clone()));
+    }
+    if matches!(stored, Json::Null) {
+        return Ok(None);
+    }
+    Err(EnterpriseError::FieldType { field })
+}
+
+// an absent or null credentials key takes the other name, and a present object is read as the overrides
+fn field_object(
+    value: Option<&Json>,
+    field: &'static str,
+) -> Result<Option<Object>, EnterpriseError> {
+    match value {
+        Some(Json::Object(fields)) => Ok(Some(fields.clone())),
+        None | Some(Json::Null) => Ok(None),
+        Some(_) => Err(EnterpriseError::FieldType { field }),
+    }
+}
+
+// api_key or popped apikey or WATSONX_APIKEY, WATSONX_API_KEY, WX_API_KEY
+fn text_api_key(
+    base: &DispatchContext<'_>,
+    params: &mut Object,
+) -> Result<Option<SecretString>, EnterpriseError> {
+    if let Some(stored) = base.api_key {
+        return Ok(Some(SecretString::from(stored.expose_secret().to_owned())));
+    }
+    if let Some(value) = field_text(params.shift_remove("apikey").as_ref(), "apikey")? {
+        return Ok(Some(SecretString::from(value)));
+    }
+    for name in ["WATSONX_APIKEY", "WATSONX_API_KEY", "WX_API_KEY"] {
+        if let Some(value) = base.env.secret(name)? {
+            return Ok(Some(value));
+        }
+    }
+    Ok(None)
+}
+
+// api_base or the three pops, else WATSONX_API_BASE, WATSONX_URL, WX_URL, WML_URL
+fn text_api_base(
+    base: &DispatchContext<'_>,
+    params: &mut Object,
+) -> Result<Option<String>, EnterpriseError> {
+    if let Some(value) = base.api_base {
+        return Ok(Some(value.to_owned()));
+    }
+    // the inner pop runs first, so all three leave the params even when url wins
+    let base_url = field_text(params.shift_remove("base_url").as_ref(), "base_url")?;
+    let api_base = field_text(params.shift_remove("api_base").as_ref(), "api_base")?;
+    let url = field_text(params.shift_remove("url").as_ref(), "url")?;
+    if let Some(value) = url.or(api_base).or(base_url) {
+        return Ok(Some(value));
+    }
+    for name in ["WATSONX_API_BASE", "WATSONX_URL", "WX_URL", "WML_URL"] {
+        if let Some(value) = base.env.text(name)? {
+            return Ok(Some(value));
+        }
+    }
+    Ok(None)
+}
+
+// both credential names are popped, and a present wx_credentials keeps watsonx_credentials from winning
+fn text_credentials(
+    params: &mut Object,
+    api_key: &mut Option<SecretString>,
+    api_base: &mut Option<String>,
+) -> Result<(), EnterpriseError> {
+    let nested = field_object(
+        params.shift_remove("watsonx_credentials").as_ref(),
+        "watsonx_credentials",
+    )?;
+    let wx = field_object(
+        params.shift_remove("wx_credentials").as_ref(),
+        "wx_credentials",
+    )?;
+    let Some(fields) = wx.or(nested) else {
+        return Ok(());
+    };
+    if let Some(value) = field_text(fields.get("url"), "url")? {
+        *api_base = Some(value);
+    }
+    let key = match field_text(fields.get("apikey"), "apikey")? {
+        Some(value) => Some(value),
+        None => field_text(fields.get("api_key"), "api_key")?,
+    };
+    if let Some(value) = key {
+        *api_key = Some(SecretString::from(value));
+    }
+    let token = match field_text(fields.get("token"), "token")? {
+        Some(value) => Some(value),
+        None => field_text(fields.get("watsonx_token"), "watsonx_token")?,
+    };
+    if let Some(value) = token {
+        params.insert(String::from("token"), Json::Text(value));
+    }
+    Ok(())
+}
+
+// _complete_watsonx_text: the key, base and credentials chains, popping the keys it reads like the dict pops
+pub fn text_call(context: &ChatContext<'_>) -> Result<CompletionCall, EnterpriseError> {
+    let base = &context.base;
+    let mut params: Object = base.optional_params.clone();
+    let mut api_key = text_api_key(base, &mut params)?;
+    let mut api_base = text_api_base(base, &mut params)?;
+    text_credentials(&mut params, &mut api_key, &mut api_base)?;
+    Ok(handler_call(
+        base,
+        ReplacedCall {
+            optional_params: params,
+            api_key,
+            api_base,
+            provider: "watsonx_text",
+            headers: base.headers.cloned(),
+        },
+    ))
+}
+
+// the watsonx rerank selection returns B5842's config over B5970's auth
+#[must_use]
+pub const fn rerank_config<T>(auth: &WatsonxAuth<T>) -> WatsonxRerankConfig<'_, T> {
+    WatsonxRerankConfig {
+        auth,
+        new_id: Uuid::new_v4,
+    }
+}
