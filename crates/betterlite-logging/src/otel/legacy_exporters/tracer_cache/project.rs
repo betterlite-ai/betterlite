@@ -89,15 +89,3 @@ fn project_provider(
         .with_span_processor(processor)
         .build())
 }
-
-#[cfg(test)]
-#[must_use]
-pub(crate) fn project_names(cache: &DynamicTracerCache) -> Vec<String> {
-    let projects = cache
-        .projects
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    let names: Vec<String> = projects.keys().cloned().collect();
-    drop(projects);
-    names
-}

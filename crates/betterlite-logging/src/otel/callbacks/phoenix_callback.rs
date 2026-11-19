@@ -250,6 +250,8 @@ pub fn otel_config(
     config.headers = phoenix
         .otlp_auth_headers
         .map(|header| header.expose_secret().to_owned());
+    // ArizePhoenixLogger._init_tracing builds private per-project providers instead of the global one
+    config.skip_set_global = true;
     config.normalize(environment);
     Ok(config)
 }

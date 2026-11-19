@@ -174,6 +174,8 @@ pub fn otel_config(environment: &BTreeMap<String, String>) -> OpenTelemetryConfi
         // __post_init__ then reads OTEL_MODEL_ID before falling back to the project name
         config.model_id = String::new();
     }
+    // ArizeLogger._init_tracing builds a private provider instead of reusing the global one
+    config.skip_set_global = true;
     config.normalize(environment);
     config
 }

@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use async_trait::async_trait;
 use opentelemetry::trace::Status;
 use opentelemetry_http::{Bytes, HttpClient, HttpError, Request, Response};
-use opentelemetry_sdk::trace::{InMemorySpanExporter, SpanData};
+use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider, SpanData};
 use rstest::rstest;
 
 use super::{
@@ -204,6 +204,31 @@ fn arize_answers_to_the_arize_callback_name() {
     assert!(
         lifecycle.export_gate.is_some(),
         "the sampling gate is installed"
+    );
+}
+
+// ArizeLogger._init_tracing builds a private provider even when a global one exists
+#[test]
+fn arize_keeps_its_tracer_out_of_the_global_slot() {
+    let rig = Rig::new();
+    let mut config = otel_config(&rig.env);
+    config.exporter = Exporter::InMemory;
+    let global_exporter = InMemorySpanExporter::default();
+    let global = SdkTracerProvider::builder()
+        .with_simple_exporter(global_exporter.clone())
+        .build();
+    *rig.globals.tracer.current.lock().expect("the global slot") = Some(global);
+    let lifecycle = arize_lifecycle(rig.init(config, Some(CALLBACK_NAME)), rig.options());
+    lifecycle
+        .handle(&call(&base_kwargs("call-private")), LifecycleEvent::Success)
+        .expect("the arize trace");
+    assert_eq!(rig.spans().len(), 1);
+    assert!(
+        global_exporter
+            .get_finished_spans()
+            .expect("the global spans")
+            .is_empty(),
+        "the arize span never reaches the global provider"
     );
 }
 

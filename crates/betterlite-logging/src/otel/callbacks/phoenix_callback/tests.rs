@@ -19,8 +19,9 @@ use super::{
 use crate::otel::integrations::phoenix_settings::PhoenixSettingsError;
 use crate::otel::legacy_exporters::tracer_cache::DynamicTracerCache;
 use crate::otel::legacy_exporters::tracer_cache::project::{
-    MAX_PROJECT_PROVIDERS, project_names, project_resource, tracer_for,
+    MAX_PROJECT_PROVIDERS, project_resource, tracer_for,
 };
+use crate::otel::legacy_exporters::tracer_cache::tests::project_names;
 use crate::otel::legacy_lifecycle::lifecycle::{
     DEFAULT_HANDLER_CLASS_NAME, LegacyLifecycle, LegacyLifecycleOptions, LifecycleCall,
     LifecycleEvent,
@@ -65,6 +66,10 @@ fn shared_clients() -> HttpClients {
     }
 }
 
+fn in_memory_env() -> BTreeMap<String, String> {
+    BTreeMap::from([("OTEL_EXPORTER".to_owned(), "in_memory".to_owned())])
+}
+
 struct Rig {
     globals: GlobalProviders,
     proxy: ProxyRegistry,
@@ -83,27 +88,31 @@ impl Rig {
     }
 
     fn phoenix(&self) -> LegacyLifecycle {
-        phoenix_lifecycle(
-            self.init(),
-            LegacyLifecycleOptions {
-                dynamic: Arc::new(BaseDynamicOtel),
-                live: Arc::clone(&self.roots),
-                metrics: None,
-                events: None,
-                failure_counters: Vec::new(),
-                handler_class_name: DEFAULT_HANDLER_CLASS_NAME.to_owned(),
-                use_request_span: false,
-                clock: Box::new(SystemClock),
-            },
-            &BTreeMap::new(),
-        )
+        phoenix_lifecycle(self.init(), self.options(), &BTreeMap::new())
+    }
+
+    fn options(&self) -> LegacyLifecycleOptions {
+        LegacyLifecycleOptions {
+            dynamic: Arc::new(BaseDynamicOtel),
+            live: Arc::clone(&self.roots),
+            metrics: None,
+            events: None,
+            failure_counters: Vec::new(),
+            handler_class_name: DEFAULT_HANDLER_CLASS_NAME.to_owned(),
+            use_request_span: false,
+            clock: Box::new(SystemClock),
+        }
     }
 
     fn init(&self) -> LegacyOtel {
-        let env = BTreeMap::from([("OTEL_EXPORTER".to_owned(), "in_memory".to_owned())]);
+        self.init_with(OpenTelemetryConfig::from_env(&in_memory_env()))
+    }
+
+    fn init_with(&self, config: OpenTelemetryConfig) -> LegacyOtel {
+        let env = in_memory_env();
         init_legacy_otel(
             LegacyOtelInit {
-                config: Some(OpenTelemetryConfig::from_env(&env)),
+                config: Some(config),
                 callback_name: Some(CALLBACK_NAME.to_owned()),
                 overrides: MetadataKeyOverrides::default(),
                 injected: InjectedProviders::default(),
@@ -253,6 +262,24 @@ fn phoenix_answers_to_the_arize_phoenix_callback_name() {
     assert_eq!(lifecycle.callback_name.as_deref(), Some(CALLBACK_NAME));
     assert_eq!(CALLBACK_NAME, "arize_phoenix");
     assert_eq!(PROXY_PARENT_SPAN_NAME, "litellm_proxy_request");
+}
+
+// ArizePhoenixLogger._init_tracing builds private providers and never takes the process global
+#[test]
+fn phoenix_keeps_its_tracer_out_of_the_global_slot() {
+    let rig = Rig::new();
+    let mut config = otel_config(&in_memory_env()).expect("the phoenix config");
+    config.exporter = Exporter::InMemory;
+    let _lifecycle = phoenix_lifecycle(rig.init_with(config), rig.options(), &BTreeMap::new());
+    assert!(
+        rig.globals
+            .tracer
+            .current
+            .lock()
+            .expect("the global slot")
+            .is_none(),
+        "phoenix publishes no global tracer provider"
+    );
 }
 
 #[test]
@@ -559,6 +586,30 @@ fn phoenix_ignores_a_base_provider_parent() {
     let spans = rig.spans();
     assert_eq!(spans.len(), 1);
     assert_eq!(spans[0].parent_span_id, SpanId::INVALID);
+}
+
+// an exception inside _handle_phoenix_trace leaves LiteLLM's parent unended and lost
+#[test]
+fn phoenix_closes_the_parent_when_the_lifecycle_errors() {
+    let rig = Rig::new();
+    let lifecycle = rig.phoenix();
+    let mut kwargs = base_kwargs("call-error");
+    with_proxy(&mut kwargs);
+    {
+        let Some(OtelModelValue::Object(payload)) = kwargs.get_mut("standard_logging_object")
+        else {
+            panic!("standard_logging_object must be an object");
+        };
+        payload.insert(
+            "guardrail_information".to_owned(),
+            serde_json::from_str(
+                r#"[{"guardrail_name": "pii", "guardrail_mode": "pre_call", "start_time": "not-a-clock"}]"#,
+            )
+            .expect("guardrail entry"),
+        );
+    }
+    assert!(handle_trace(&lifecycle, &call(&kwargs), LifecycleEvent::Success).is_err());
+    assert!(names(&rig.spans()).contains(&PROXY_PARENT_SPAN_NAME.to_owned()));
 }
 
 #[test]

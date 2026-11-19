@@ -273,4 +273,4 @@ impl DynamicTracerCache {
 }
 
 #[path = "tracer_cache/tests.rs"]
-mod tests;
+pub(crate) mod tests;
