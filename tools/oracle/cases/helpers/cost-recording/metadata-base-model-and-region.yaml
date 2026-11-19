@@ -1,0 +1,101 @@
+kind: helper
+name: cost-recording-metadata-base-model-and-region
+call:
+  cost_recording:
+    function: record
+    model_cost:
+      gpt-4o:
+        input_cost_per_token: 0.0000025
+        output_cost_per_token: 0.00001
+        litellm_provider: openai
+        mode: chat
+      gemini-2.0-flash:
+        input_cost_per_token: 0.0000001
+        output_cost_per_token: 0.0000004
+        litellm_provider: vertex_ai
+        mode: chat
+    vertex_location: global
+    ptu_cost_attribution: false
+    logs:
+      - log:
+          model: gpt-4o
+          call_type: completion
+          litellm_params:
+            base_model: top-level-base
+            metadata: {model_info: {base_model: metadata-base}}
+            litellm_metadata: null
+          optional_params: {}
+          details: {custom_llm_provider: openai}
+        calls:
+          - response:
+              kind: typed
+              model: gpt-4o
+              usage: {prompt_tokens: 10, completion_tokens: 5, total_tokens: 15}
+              hidden_params: {additional_headers: {}}
+              background: false
+            calculator: {cost: null, error: boom}
+            litellm_model_name: null
+            router_model_id: null
+      - log:
+          model: gpt-4o
+          call_type: completion
+          litellm_params:
+            base_model: null
+            metadata: {model_info: {base_model: metadata-base, id: deployment-meta}}
+            litellm_metadata: {model_info: {base_model: litellm-base, id: deployment-litellm}}
+          optional_params: {}
+          details: {custom_llm_provider: openai}
+        calls:
+          - response:
+              kind: typed
+              model: gpt-4o
+              usage: {prompt_tokens: 10, completion_tokens: 5, total_tokens: 15}
+              hidden_params: {additional_headers: {}}
+              background: false
+            calculator: {cost: 0.5, error: null}
+            litellm_model_name: null
+            router_model_id: deployment-litellm
+      - log:
+          model: gemini-2.0-flash
+          call_type: completion
+          litellm_params: {base_model: null, metadata: null, litellm_metadata: null}
+          optional_params: {}
+          details: {custom_llm_provider: vertex_ai}
+        calls:
+          - response:
+              kind: typed
+              model: gemini-2.0-flash
+              usage: {prompt_tokens: 10, completion_tokens: 5, total_tokens: 15}
+              hidden_params: {additional_headers: {}}
+              background: false
+            calculator: {cost: 0.5, error: null}
+            litellm_model_name: null
+            router_model_id: null
+      - log:
+          model: gpt-4o
+          call_type: completion
+          litellm_params:
+            aws_region_name: eu-central-1
+            metadata: null
+            litellm_metadata: null
+          optional_params: {}
+          details: {custom_llm_provider: bedrock_mantle}
+        calls:
+          - response:
+              kind: typed
+              model: gpt-4o
+              usage: {prompt_tokens: 10, completion_tokens: 5, total_tokens: 15}
+              hidden_params: {additional_headers: {}}
+              background: false
+            calculator: {cost: 0.5, error: null}
+            litellm_model_name: null
+            router_model_id: null
+    hidden_params: null
+    cost: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/logs/0/calls/0/failure/error_str
+      why: betterlite reports the calculator error it was given
+    - pointer: /value/logs/0/calls/0/failure/traceback_str
+      why: a Python traceback has no Rust equivalent

@@ -1,0 +1,18 @@
+task: B1717
+deviations:
+  - what: Response costs are exact Decimal values, where LiteLLM adds and returns Python floats; a calculator result that must round to fit the Decimal type is a typed failure rather than silent binary-float rounding.
+    why: B204 owns the monetary representation, and both the sync header and the async success log must return the same value through one implementation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1922-L1937
+  - what: A recorded cost failure carries an empty traceback_str; LiteLLM stores the Python traceback text for the same failure.
+    why: Rust has no traceback to capture, and the key stays so the failure record keeps the schema LiteLLM declares.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1913-L1919
+  - what: A hidden response_cost that is set but not a number records the short argument-preparation failure and returns null; LiteLLM returns that value unchanged as the response cost.
+    why: The recorder returns a Decimal, and docs/compatibility.md makes a value of the wrong type a named-field failure rather than a guess at a number.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1854-L1867
+  - what: A metadata or litellm_metadata model_info that is truthy but not a JSON object records the short argument-preparation failure and returns null; LiteLLM calls .get on the non-mapping value in get_router_model_id and use_custom_pricing_for_model, which raises AttributeError outside its kwargs guard and can break the response.
+    why: A malformed deployment record must never break completion, so the field is rejected with a named error instead of the call failing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L878-L886
+kept_bugs:
+  - what: A Boolean additional_response_cost counts as the number 1 or 0 and is added when true, because Python's isinstance accepts bool as int.
+    why: A caller that stores a truthy flag in additional_response_cost keeps the same total it got from LiteLLM instead of silently losing the addition.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1926-L1932

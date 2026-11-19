@@ -1,0 +1,64 @@
+kind: helper
+name: cost-recording-spillover-and-zero-custom-price
+call:
+  cost_recording:
+    function: record
+    model_cost:
+      gpt-4o:
+        input_cost_per_token: 0.0000025
+        output_cost_per_token: 0.00001
+        litellm_provider: openai
+        mode: chat
+    vertex_location: null
+    ptu_cost_attribution: true
+    logs:
+      - log:
+          model: gpt-4o
+          call_type: completion
+          litellm_params:
+            metadata:
+              model_info:
+                ptu_count: 1
+                cost_per_ptu_per_hour: 1.0
+                team_id: team-1
+                ptu_effective_from: "2026-01-01T00:00:00Z"
+                input_cost_per_token: 0.0
+                output_cost_per_token: 0.0
+            litellm_metadata: null
+          optional_params: {}
+          details:
+            custom_llm_provider: azure
+            response_headers: {x-ms-is-spilled-over: "true"}
+        calls:
+          - response:
+              kind: typed
+              model: gpt-4o
+              usage: {prompt_tokens: 10, completion_tokens: 5, total_tokens: 15}
+              hidden_params: {additional_headers: {}}
+              background: false
+            calculator: {cost: 0.5, error: null}
+            litellm_model_name: null
+            router_model_id: null
+      - log:
+          model: gpt-4o
+          call_type: completion
+          litellm_params:
+            input_cost_per_token: 0.0
+            metadata: null
+            litellm_metadata: null
+          optional_params: {}
+          details: {custom_llm_provider: openai}
+        calls:
+          - response:
+              kind: typed
+              model: gpt-4o
+              usage: {prompt_tokens: 10, completion_tokens: 5, total_tokens: 15}
+              hidden_params: {additional_headers: {}}
+              background: false
+            calculator: {cost: 0.5, error: null}
+            litellm_model_name: null
+            router_model_id: null
+    hidden_params: null
+    cost: null
+env: {LITELLM_ENABLE_PTU_COST_ATTRIBUTION: "true"}
+compare: {ignore: []}

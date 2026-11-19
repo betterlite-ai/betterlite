@@ -1,0 +1,52 @@
+kind: helper
+name: cost-recording-failed-calculation-and-sticky-warning
+call:
+  cost_recording:
+    function: record
+    model_cost:
+      gpt-4o:
+        input_cost_per_token: 0.0000025
+        output_cost_per_token: 0.00001
+        litellm_provider: openai
+        mode: chat
+    vertex_location: null
+    ptu_cost_attribution: false
+    logs:
+      - log:
+          model: gpt-4o
+          call_type: completion
+          litellm_params: {metadata: null, litellm_metadata: null}
+          optional_params: {}
+          details: {custom_llm_provider: openai}
+        calls:
+          - response:
+              kind: typed
+              model: gpt-4o
+              usage: {prompt_tokens: 10, completion_tokens: 5, total_tokens: 15}
+              hidden_params: {additional_headers: {}}
+              background: false
+            calculator: {cost: null, error: boom}
+            litellm_model_name: null
+            router_model_id: null
+          - response:
+              kind: typed
+              model: gpt-4o
+              usage: {prompt_tokens: 10, completion_tokens: 5, total_tokens: 15}
+              hidden_params: {additional_headers: {}}
+              background: false
+            calculator: {cost: null, error: boom}
+            litellm_model_name: null
+            router_model_id: null
+    hidden_params: null
+    cost: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/logs/0/calls/0/failure/error_str
+      why: betterlite reports the calculator error it was given
+    - pointer: /value/logs/0/calls/0/failure/traceback_str
+      why: a Python traceback has no Rust equivalent
+    - pointer: /value/logs/0/calls/1/failure/error_str
+      why: betterlite reports the calculator error it was given
+    - pointer: /value/logs/0/calls/1/failure/traceback_str
+      why: a Python traceback has no Rust equivalent
