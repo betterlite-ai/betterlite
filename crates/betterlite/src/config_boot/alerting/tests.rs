@@ -45,7 +45,10 @@ impl AlertingPort for RecordingAlerting {
             update.alerting_args.is_some(),
             update.alert_type_config.is_some()
         );
-        self.updates.lock().unwrap().push(call);
+        self.updates
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(call);
         Ok(())
     }
 
@@ -56,7 +59,7 @@ impl AlertingPort for RecordingAlerting {
     ) -> Result<(), ConfigBootError> {
         self.loggers
             .lock()
-            .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(format!("{name}:{}", alerting_args.is_some()));
         if self.fail_logger_for == Some(name) {
             return Err(ConfigBootError::Step {
@@ -69,12 +72,12 @@ impl AlertingPort for RecordingAlerting {
 }
 
 fn threshold_text(threshold: Option<f64>) -> String {
-    threshold.map_or("None".to_owned(), |value| format!("Some({value})"))
+    threshold.map_or_else(|| "None".to_owned(), |value| format!("Some({value})"))
 }
 
 fn settings_of(yaml: &str) -> JsonValue {
     let config = config_from_yaml(yaml);
-    config.get("general_settings").unwrap().clone()
+    config.get("general_settings").cloned().unwrap_or_default()
 }
 
 #[test]

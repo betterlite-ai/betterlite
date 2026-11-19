@@ -31,7 +31,10 @@ impl RecordingRegistries {
 
     fn record(&self, call: String) -> Result<(), ConfigBootError> {
         let failed = self.fail_at.is_some_and(|step| call.starts_with(step));
-        self.calls.lock().unwrap().push(call);
+        self.calls
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(call);
         if failed {
             return Err(ConfigBootError::Step {
                 step: "test registry",
