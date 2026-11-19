@@ -13,7 +13,8 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::chat::ChatMessage;
 use crate::openai_base_config::Headers;
-use crate::response_input::{ResponseInputError, ResponsesInput, transform_responses_request};
+use crate::response_input::error::ResponseInputError;
+use crate::response_input::{ResponsesInput, transform_responses_request};
 
 pub mod error;
 
@@ -88,7 +89,7 @@ impl ChatPolicy {
     }
 
     #[must_use]
-    pub const fn parent(&self) -> ChatParent {
+    pub fn parent(&self) -> ChatParent {
         base_class_parent(&self.descriptor.config.base_class)
     }
 

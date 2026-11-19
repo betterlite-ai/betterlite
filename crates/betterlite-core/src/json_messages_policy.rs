@@ -19,7 +19,8 @@ use crate::api::messages_native_transform::request::{TransformRequest, transform
 mod tests;
 
 pub const DEFAULT_ANTHROPIC_API_VERSION: &str = "2023-06-01";
-const GENERIC_PROVIDER: &str = "openai_like";
+// OpenAILikeAnthropicMessagesConfig keeps AnthropicMessagesConfig's custom_llm_provider
+const GENERIC_PROVIDER: &str = "anthropic";
 
 #[derive(Debug, Error)]
 pub enum JsonMessagesPolicyError {
