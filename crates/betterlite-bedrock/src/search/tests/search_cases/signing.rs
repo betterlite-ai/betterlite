@@ -9,7 +9,6 @@ use crate::search::tests::support::{
 pub(super) fn assert_gateway_host_signing() {
     assert_gateway_host_is_sigv4_signed();
     assert_signing_host_matches_botocore();
-    assert_userinfo_is_not_signed();
     assert_configured_hostname_allows_a_custom_host();
     assert_untrusted_signing_host_is_refused();
     assert_spoofed_signing_hosts_need_configuration();
@@ -33,6 +32,7 @@ fn assert_gateway_host_is_sigv4_signed() {
         Some("2025-03-26")
     );
     assert_eq!(body_text(&signed), MCP_BODY_TEXT);
+    assert_userinfo_is_not_signed();
 }
 
 fn assert_signing_host_matches_botocore() {
