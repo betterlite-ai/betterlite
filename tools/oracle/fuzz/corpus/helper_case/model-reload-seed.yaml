@@ -1,0 +1,15 @@
+kind: helper
+name: model-reload-seed
+call:
+  model_reload:
+    environment: {}
+    calls:
+      - function: reload_serving_verdict
+        obligation: must_not_degrade
+        before: [served]
+        written:
+          - {id: served, model_info: {db_model: true}}
+        still_desired: null
+        live: {captured: [], router_ids: null}
+env: {}
+compare: {ignore: []}
