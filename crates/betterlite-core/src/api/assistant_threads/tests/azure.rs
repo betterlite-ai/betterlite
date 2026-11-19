@@ -2,20 +2,45 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use betterlite_azure::azure_assistant_definitions::client::AzureAssistantsClient;
 use betterlite_error::envelope::WireField;
 use betterlite_error::error::ErrorClass;
+use betterlite_models::decisions::Json;
 use betterlite_openai::assistants::client::{ClientKind, SdkClient};
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 
-use super::super::target::{Operation, PrepareRequest, Target};
-use super::super::{FacadeCall, GetThreadCall, SuppliedClient, ThreadFacade, ThreadOperation};
-use super::{Capture, Harness, Recorder, THREAD, TYPED_404, create_call, json, kwargs_of, message};
+use super::super::target::{Operation, PrepareRequest, PreparedThread, Target};
+use super::super::{
+    FacadeCall, GetThreadCall, SuppliedClient, ThreadFacade, ThreadOperation, execute,
+};
+use super::{
+    Capture, Harness, Recorder, THREAD, UNTYPED_404, create_call, json, kwargs_of, message,
+    secret_text,
+};
 
-#[tokio::test]
-async fn azure_gets_litellm_params_and_the_shared_settings() {
+fn azure_prepare<'call>(
+    harness: &Harness,
+    kwargs: &'call BTreeMap<String, Json>,
+    client: Option<SuppliedClient<'call, Recorder>>,
+) -> PreparedThread<'call, Recorder> {
+    harness
+        .threads()
+        .prepare(PrepareRequest {
+            provider: String::from("azure"),
+            operation: Operation::Retrieve(String::from("thread_a")),
+            client,
+            kwargs,
+            facade: ThreadOperation::Get,
+            flag: None,
+        })
+        .expect("the call prepares")
+}
+
+#[test]
+fn azure_gets_litellm_params_and_the_shared_settings() {
     let mut harness = Harness::new();
     harness.resources.azure_api_base = Some(String::from("https://azure.test"));
     harness.resources.azure_api_version = Some(String::from("2024-02-01"));
@@ -23,17 +48,7 @@ async fn azure_gets_litellm_params_and_the_shared_settings() {
     let kwargs = kwargs_of(
         r#"{"tenant_id":"tenant","client_secret":"secret","max_retries":5,"timeout":"7.5","azure_ad_token":"param-token"}"#,
     );
-    let prepared = harness
-        .threads()
-        .prepare(PrepareRequest {
-            provider: String::from("azure"),
-            operation: Operation::Retrieve(String::from("thread_a")),
-            client: None,
-            kwargs: &kwargs,
-            facade: ThreadOperation::Get,
-            flag: None,
-        })
-        .expect("the call prepares");
+    let prepared = azure_prepare(&harness, &kwargs, None);
     let Target::Azure {
         request, client, ..
     } = prepared.target
@@ -42,20 +57,17 @@ async fn azure_gets_litellm_params_and_the_shared_settings() {
     };
     assert_eq!(request.api_base.as_deref(), Some("https://azure.test"));
     assert_eq!(request.api_version.as_deref(), Some("2024-02-01"));
+    assert!(request.azure_ad_token.is_none());
     assert_eq!(
-        request
-            .params
-            .azure_ad_token
-            .as_ref()
-            .map(|token| token.expose_secret().as_str()),
-        Some("param-token")
+        secret_text(request.params.azure_ad_token.as_ref()),
+        Some(String::from("param-token"))
     );
     assert_eq!(request.params.auth.tenant_id.as_deref(), Some("tenant"));
     assert_eq!(request.params.max_retries, Some(5));
     assert_eq!(request.params.timeout, Some(7.5));
     assert_eq!(client.kind, ClientKind::Sync);
     assert_eq!(client.api_version, "2024-02-01");
-    assert_eq!(client.deadline, std::time::Duration::from_secs_f64(7.5));
+    assert_eq!(client.deadline, Duration::from_secs_f64(7.5));
 }
 
 #[rstest]
@@ -63,8 +75,8 @@ async fn azure_gets_litellm_params_and_the_shared_settings() {
 #[case::empty_body("{}", "")]
 #[case::null_body("null", "env-token")]
 #[case::body_token(r#"{"azure_ad_token":"body-token"}"#, "body-token")]
-#[tokio::test]
-async fn azure_token_sources_are_absent_null_or_body(
+#[test]
+fn azure_token_sources_are_absent_null_or_body(
     #[case] extra: &'static str,
     #[case] expected: &'static str,
 ) {
@@ -74,32 +86,16 @@ async fn azure_token_sources_are_absent_null_or_body(
     if !extra.is_empty() {
         kwargs.insert(String::from("extra_body"), json(extra));
     }
-    let prepared = harness
-        .threads()
-        .prepare(PrepareRequest {
-            provider: String::from("azure"),
-            operation: Operation::Retrieve(String::from("thread_a")),
-            client: None,
-            kwargs: &kwargs,
-            facade: ThreadOperation::Get,
-            flag: None,
-        })
-        .expect("the call prepares");
+    let prepared = azure_prepare(&harness, &kwargs, None);
     let Target::Azure { request, .. } = prepared.target else {
         panic!("azure prepares an azure client");
     };
-    let expected = if expected.is_empty() {
+    let wanted = if expected.is_empty() {
         None
     } else {
-        Some(expected)
+        Some(String::from(expected))
     };
-    assert_eq!(
-        request
-            .azure_ad_token
-            .as_ref()
-            .map(|token| token.expose_secret().as_str()),
-        expected
-    );
+    assert_eq!(secret_text(request.azure_ad_token.as_ref()), wanted);
 }
 
 fn azure_client(
@@ -114,28 +110,23 @@ fn azure_client(
         api_version: String::from("2024-01-01"),
         key: Some(SecretString::from("supplied-azure-key")),
         token: None,
-        deadline: std::time::Duration::from_secs(42),
+        deadline: Duration::from_secs(42),
     }
 }
 
 #[rstest]
-#[case::openai_sync(false, false, "azure:Sync:None")]
-#[case::openai_async(false, true, "openai:Async")]
-#[case::azure_sync(true, false, "azure:Sync:None")]
-#[case::azure_async(true, true, "azure:Async:None")]
+#[case::openai_sync(false, ClientKind::Sync, "azure:Sync:None")]
+#[case::openai_async(false, ClientKind::Async, "openai:Async")]
+#[case::azure_sync(true, ClientKind::Sync, "azure:Sync:None")]
+#[case::azure_async(true, ClientKind::Async, "azure:Async:None")]
 #[tokio::test]
 async fn azure_drops_the_sync_sdk_classes_only(
     #[case] azure: bool,
-    #[case] asynchronous: bool,
+    #[case] kind: ClientKind,
     #[case] expected: &'static str,
 ) {
     let harness = Harness::new();
     let capture = Capture::default();
-    let kind = if asynchronous {
-        ClientKind::Async
-    } else {
-        ClientKind::Sync
-    };
     let mut kwargs = BTreeMap::new();
     let mut call = create_call(&mut kwargs, None);
     call.custom_llm_provider = String::from("azure");
@@ -146,17 +137,16 @@ async fn azure_drops_the_sync_sdk_classes_only(
             kind,
             api_key: Some(SecretString::from("supplied-key")),
             base_url: Some(String::from("https://supplied.test/v1")),
-            timeout: Some(std::time::Duration::from_secs(42)),
+            timeout: Some(Duration::from_secs(42)),
             max_retries: Some(0),
             organization: None,
             transport: Arc::default(),
         })
     });
-    let _ = harness
-        .threads()
-        .execute(FacadeCall::Create(call), &capture)
+    let thread = execute(&harness.threads(), FacadeCall::Create(call), &capture)
         .await
         .expect("the call prepares");
+    assert!(thread.is_none());
     assert_eq!(capture.calls.lock().unwrap()[0], expected);
 }
 
@@ -200,11 +190,12 @@ async fn azure_sends_the_facade_token_as_bearer_auth_without_a_key() {
     let mut kwargs = kwargs_of(r#"{"extra_body":null}"#);
     let mut call = create_call(&mut kwargs, None);
     call.custom_llm_provider = String::from("azure");
-    let _ = harness
+    let thread = harness
         .threads()
         .create_thread(call)
         .await
         .expect("the create succeeds");
+    assert!(thread.is_some());
     let seen = &harness.recorder.seen()[0];
     assert_eq!(seen.authorization.as_deref(), Some("Bearer env-token"));
     assert_eq!(seen.api_key, None);
@@ -215,9 +206,9 @@ async fn an_azure_provider_404_maps_without_body_fields_asynchronously() {
     let mut harness = Harness::new();
     harness.resources.azure_api_base = Some(String::from("https://azure.test"));
     harness.resources.azure_openai_api_key = Some(SecretString::from("azure-key"));
-    harness.recorder.queue(404, TYPED_404);
+    harness.recorder.queue(404, UNTYPED_404);
     let mut kwargs = BTreeMap::new();
-    let mut call = GetThreadCall {
+    let call = GetThreadCall {
         custom_llm_provider: String::from("azure"),
         thread_id: String::from("thread_a"),
         client: None,
@@ -240,8 +231,8 @@ async fn an_azure_provider_404_maps_without_body_fields_asynchronously() {
 #[rstest]
 #[case::synchronous(false)]
 #[case::asynchronous(true)]
-#[tokio::test]
-async fn a_supplied_azure_client_is_kept_only_when_it_is_async(#[case] asynchronous: bool) {
+#[test]
+fn a_supplied_azure_client_is_kept_only_when_it_is_async(#[case] asynchronous: bool) {
     let harness = Harness::new();
     let kind = if asynchronous {
         ClientKind::Async
@@ -254,17 +245,11 @@ async fn a_supplied_azure_client_is_kept_only_when_it_is_async(#[case] asynchron
         "https://azure.test"
     };
     let kwargs = BTreeMap::new();
-    let prepared = harness
-        .threads()
-        .prepare(PrepareRequest {
-            provider: String::from("azure"),
-            operation: Operation::Retrieve(String::from("thread_a")),
-            client: Some(SuppliedClient::Azure(azure_client(kind, Arc::default()))),
-            kwargs: &kwargs,
-            facade: ThreadOperation::Get,
-            flag: None,
-        })
-        .expect("the call prepares");
+    let prepared = azure_prepare(
+        &harness,
+        &kwargs,
+        Some(SuppliedClient::Azure(azure_client(kind, Arc::default()))),
+    );
     let Target::Azure { client, .. } = prepared.target else {
         panic!("azure prepares an azure client");
     };
