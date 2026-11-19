@@ -40,6 +40,13 @@ pub struct ReadResource {
     pub query: IndexMap<String, Json>,
 }
 
+// The provider transform a read calls: retrieve uses only the base, input items also carries the query
+#[derive(Debug)]
+pub enum ReadOperation<'query> {
+    Retrieve,
+    InputItems(&'query ListInputItemsQuery),
+}
+
 // The BaseResponsesAPIConfig members the four handlers call; B933 adapts a provider config to this
 pub trait ReadConfig: Send + Sync {
     fn validate_environment(
@@ -50,19 +57,12 @@ pub trait ReadConfig: Send + Sync {
 
     fn complete_url(&self, params: &ReadParams) -> String;
 
-    fn retrieve_request(
+    fn read_resource(
         &self,
         response_id: &str,
         api_base: &str,
         params: &ReadParams,
-    ) -> Result<ReadResource, ResponseResourceError>;
-
-    fn input_items_request(
-        &self,
-        response_id: &str,
-        api_base: &str,
-        params: &ReadParams,
-        query: &ListInputItemsQuery,
+        operation: ReadOperation<'_>,
     ) -> Result<ReadResource, ResponseResourceError>;
 
     fn retrieve_reply(&self, reply: &RawResponse<'_>) -> Result<TypedReply, ResponseResourceError>;
@@ -125,23 +125,21 @@ where
         )
     }
 
-    fn retrieve_request(
+    fn read_resource(
         &self,
         response_id: &str,
         api_base: &str,
         _params: &ReadParams,
+        operation: ReadOperation<'_>,
     ) -> Result<ReadResource, ResponseResourceError> {
-        resource_request(response_id, api_base, ResourceOperation::Get).map(resource)
-    }
-
-    fn input_items_request(
-        &self,
-        response_id: &str,
-        api_base: &str,
-        _params: &ReadParams,
-        query: &ListInputItemsQuery,
-    ) -> Result<ReadResource, ResponseResourceError> {
-        list_input_items_request(response_id, api_base, query).map(resource)
+        match operation {
+            ReadOperation::Retrieve => {
+                resource_request(response_id, api_base, ResourceOperation::Get).map(resource)
+            }
+            ReadOperation::InputItems(query) => {
+                list_input_items_request(response_id, api_base, query).map(resource)
+            }
+        }
     }
 
     fn retrieve_reply(&self, reply: &RawResponse<'_>) -> Result<TypedReply, ResponseResourceError> {

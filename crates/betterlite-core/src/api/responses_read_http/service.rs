@@ -19,9 +19,7 @@ use indexmap::IndexMap;
 use url::Url;
 
 use self::facts::{body_text, status_facts, transport_facts};
-use self::request::{
-    query_pairs, request_endpoint, select_client, validated_headers, wire_headers,
-};
+use self::request::{query_pairs, request_endpoint, select_client, wire_headers};
 use super::config::{ReadConfig, ReadParams, ReadResource};
 use super::error::{ClientError, ReadError};
 use crate::api::vector_store_http_write::error::{FailureFacts, handle_error, header_text};
@@ -171,7 +169,9 @@ where
     let target = call.target();
     let operation = call.operation();
     let client = select_client(deps, mode, target.params.ssl_verify, operation)?;
-    let headers = validated_headers(deps.config, target);
+    // LiteLLM validates the caller's map in place, and its later update re-applies that same map
+    let caller = target.extra_headers.cloned().unwrap_or_default();
+    let headers = deps.config.validate_environment(caller, target.params);
     let (api_base, resource) = request_endpoint(deps.config, call)?;
     let ReadResource { url, query } = resource;
     log_pre_call(&api_base, &headers, &query, log)?;

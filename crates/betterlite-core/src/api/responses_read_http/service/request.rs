@@ -5,9 +5,9 @@ use http::HeaderMap as HttpHeaders;
 use http::header::{HeaderName, HeaderValue};
 use indexmap::IndexMap;
 
-use super::super::config::{ReadConfig, ReadResource};
+use super::super::config::{ReadConfig, ReadOperation, ReadResource};
 use super::super::error::ReadError;
-use super::{ClientKind, ClientSource, Operation, ReadCall, ReadDeps, ReadTarget, Selected};
+use super::{ClientKind, ClientSource, Operation, ReadCall, ReadDeps, Selected};
 
 pub(super) fn select_client<'borrow, 'deps, C, S>(
     deps: &'borrow ReadDeps<'deps, C, S>,
@@ -33,15 +33,6 @@ where
     Ok(Selected::Created(deps.source.client(ssl_verify)?))
 }
 
-// LiteLLM validates the caller's own map in place, and the handler's later update re-applies that same map
-pub(super) fn validated_headers<C>(config: &C, target: &ReadTarget<'_>) -> BTreeMap<String, String>
-where
-    C: ReadConfig,
-{
-    let caller = target.extra_headers.cloned().unwrap_or_default();
-    config.validate_environment(caller, target.params)
-}
-
 pub(super) fn request_endpoint<C>(
     config: &C,
     call: &ReadCall<'_>,
@@ -51,14 +42,11 @@ where
 {
     let target = call.target();
     let api_base = config.complete_url(target.params);
-    let resource = match call {
-        ReadCall::Retrieve(_) => {
-            config.retrieve_request(target.response_id, &api_base, target.params)
-        }
-        ReadCall::InputItems(items) => {
-            config.input_items_request(target.response_id, &api_base, target.params, items.query)
-        }
-    }?;
+    let operation = match call {
+        ReadCall::Retrieve(_) => ReadOperation::Retrieve,
+        ReadCall::InputItems(items) => ReadOperation::InputItems(items.query),
+    };
+    let resource = config.read_resource(target.response_id, &api_base, target.params, operation)?;
     Ok((api_base, resource))
 }
 
