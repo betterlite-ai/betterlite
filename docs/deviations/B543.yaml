@@ -1,0 +1,40 @@
+task: B543
+deviations:
+  - what: >-
+      The OpenAI SDK's fingerprint headers are not sent on run requests: no user-agent, no x-stainless-*
+      header, and no X-Stainless-Poll-Helper on the retrieve calls that poll a run. LiteLLM sends all of
+      them, since the request leaves through the official Python client.
+    why: >-
+      Those headers identify the Python client and its runtime, and betterlite is a different client. The
+      headers a caller or the service acts on, Accept, OpenAI-Beta, api-key and authorization, are sent with
+      the SDK's values; a poll reply without the helper header still falls back to the same one-second interval.
+    link: ""
+  - what: >-
+      The SDK's implicit retries of 408, 409, 429 and 5xx replies are not repeated for run requests: the
+      create and each retrieve are sent once, and max_retries stays on the client's inputs without being acted
+      on here.
+    why: >-
+      Retry and backoff belong to the shared HTTP transport task B173, as they do for threads; this module
+      plans no retry of its own.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L807-L905
+  - what: >-
+      Each run request carries a total deadline: the litellm timeout for a create or retrieve, and a
+      100-minute cap for a streaming create. LiteLLM hands its timeout to the SDK, where httpx applies it
+      separately to connect, read and write and never as a total.
+    why: >-
+      Betterlite bounds every wait (bounded-inputs), and a streaming run can legitimately last longer than a
+      single request, so the stream gets its own cap. A reply trickled slower than the timeout inside one
+      request is cut where the SDK would keep reading.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L705-L757
+kept_bugs:
+  - what: >-
+      Only the literal True selects the async and streaming branches: run_thread tests arun_thread is True and
+      stream is True, so a truthy value such as 1, "yes" or a non-empty list takes the False branch and the
+      call polls on the sync client. Betterlite copies that contract, so the same values poll.
+    why: >-
+      A LiteLLM caller that passes a truthy non-True flag gets a polled run today, and switching that call to
+      a stream would hand back a different result type from the one its code expects.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L812-L905

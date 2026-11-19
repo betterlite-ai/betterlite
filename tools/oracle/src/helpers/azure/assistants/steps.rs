@@ -1,0 +1,186 @@
+use std::sync::Arc;
+use std::time::Duration;
+
+use betterlite_azure::assistants::operations::{
+    AssistantsRunsApi, RunCall, RunDispatch, RunInvocation,
+};
+use betterlite_azure::azure_assistant_definitions::client::AzureAssistantsClient;
+use betterlite_azure::azure_assistant_definitions::operations::ClientRequest;
+use betterlite_azure::endpoints::projection::SessionKind;
+use betterlite_config::sections::azure_endpoints::Settings;
+use betterlite_openai::assistants::client::ClientKind;
+use betterlite_openai::thread_runs::records::RunRequest;
+use betterlite_openai::thread_runs::stream::{RunEventHandler, RunStream};
+use secrecy::SecretString;
+use serde_json::{Value, json};
+use tokio::runtime::{Builder, Runtime};
+
+use betterlite_oracle_helper_api::helper::HelperResult;
+
+use super::fixture::{NoSources, Recorder, RecordingHandler};
+use super::reports;
+use super::{Input, KindName, Step};
+
+const DEFAULT_TIMEOUT: f64 = 600.0;
+const SUPPLIED_BASE_URL: &str = "https://supplied.test/openai";
+const SUPPLIED_API_VERSION: &str = "2024-01-01";
+const SUPPLIED_KEY: &str = "supplied-key";
+const SUPPLIED_DEADLINE: Duration = Duration::from_secs(42);
+
+pub(super) fn run(input: &Input) -> HelperResult {
+    let runtime = Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .map_err(|error| reports::invalid_input(error.to_string()))?;
+    let steps = match input {
+        Input::RunPoll(steps)
+        | Input::RunStream(steps)
+        | Input::RunInstructionsTools(steps)
+        | Input::RunFailure(steps)
+        | Input::RunDispatch(steps)
+        | Input::InstructionsToolsOverrides(steps)
+        | Input::StreamEventHandler(steps)
+        | Input::AssistantsBetaDefault(steps) => steps,
+    };
+    let outcomes = steps
+        .iter()
+        .map(|step| one(&runtime, step))
+        .collect::<Result<Vec<Value>, _>>()?;
+    Ok(json!({"steps": outcomes}))
+}
+
+// The run facade, called with the keywords LiteLLM's run_thread reads, and the run the case names.
+fn one(runtime: &Runtime, step: &Step) -> HelperResult {
+    let harness = Harness::new(step);
+    let request = harness.request(step);
+    let run = step.run.request();
+    let calls: Vec<String> = Vec::new();
+    let handler = step.handler.unwrap_or(false).then(RecordingHandler::start);
+    let dispatch = RunDispatch {
+        arun_thread: flag(step.arun_thread.as_ref()),
+        stream: flag(step.stream.as_ref()),
+    };
+    let supplied = step
+        .supplied
+        .map(|supplied| supplied_client(supplied.kind, &harness.recorder));
+    let attached = handler
+        .as_ref()
+        .map(|handler| Arc::clone(handler) as Arc<dyn RunEventHandler>);
+    match runtime.block_on(harness.runs().run(
+        &request,
+        supplied,
+        RunCall {
+            dispatch,
+            run: &run,
+            handler: attached,
+        },
+    )) {
+        Ok(RunInvocation::Polled(kind, reply)) => Ok(json!({
+            "requests": reports::requests(&harness.recorder),
+            "calls": calls,
+            "kind": reports::kind_name(kind),
+            "result": reply,
+        })),
+        Ok(RunInvocation::Streaming(manager)) => {
+            consumed(runtime, &harness, *manager, handler.as_ref())
+        }
+        Err(error) => Ok(json!({
+            "requests": reports::requests(&harness.recorder),
+            "calls": calls,
+            "error": reports::failure(&error)?,
+        })),
+    }
+}
+
+// The manager is returned unconsumed, so the case's requests start when it does.
+fn consumed(
+    runtime: &Runtime,
+    harness: &Harness,
+    manager: RunStream<Recorder>,
+    recording: Option<&Arc<RecordingHandler>>,
+) -> HelperResult {
+    let outcome = runtime.block_on(manager.consume());
+    let calls = recording.map_or_else(Vec::new, |handler| handler.calls());
+    let mut output = json!({
+        "requests": reports::requests(&harness.recorder),
+        "calls": calls,
+    });
+    match outcome {
+        Ok(events) => output["events"] = json!(events),
+        Err(error) => output["error"] = reports::failure(&error)?,
+    }
+    Ok(output)
+}
+
+struct Harness {
+    recorder: Arc<Recorder>,
+    settings: Settings,
+    sources: NoSources,
+}
+
+impl Harness {
+    fn new(step: &Step) -> Self {
+        Self {
+            recorder: Recorder::start(&step.replies),
+            settings: Settings::default(),
+            sources: NoSources,
+        }
+    }
+
+    fn runs(&self) -> AssistantsRunsApi<Recorder> {
+        AssistantsRunsApi {
+            transport: Arc::clone(&self.recorder),
+        }
+    }
+
+    fn request<'data>(&'data self, step: &'data Step) -> ClientRequest<'data> {
+        ClientRequest {
+            params: step.params.clone(),
+            provider: None,
+            api_key: step.api_key.clone(),
+            api_base: step.api_base.clone(),
+            api_version: step.api_version.clone(),
+            azure_ad_token: step.azure_ad_token.clone(),
+            timeout: step.timeout.unwrap_or(DEFAULT_TIMEOUT),
+            max_retries: step.max_retries,
+            refresh_enabled: false,
+            session: SessionKind::Dedicated,
+            settings: &self.settings,
+            environment: &step.environment,
+            sources: &self.sources,
+        }
+    }
+}
+
+// A client the caller supplied, matching the one the Python adapter builds for the same step.
+fn supplied_client(
+    kind: KindName,
+    recorder: &Arc<Recorder>,
+) -> AzureAssistantsClient<'static, Recorder> {
+    AzureAssistantsClient {
+        kind: client_kind(kind),
+        inputs: None,
+        transport: Arc::clone(recorder),
+        base_url: String::from(SUPPLIED_BASE_URL),
+        api_version: String::from(SUPPLIED_API_VERSION),
+        key: Some(SecretString::from(SUPPLIED_KEY)),
+        token: None,
+        deadline: SUPPLIED_DEADLINE,
+    }
+}
+
+// LiteLLM tests `is True`, so an absent, false or non-boolean truthy switch takes the false branch.
+const fn flag(value: Option<&Value>) -> Option<bool> {
+    match value {
+        Some(Value::Bool(state)) => Some(*state),
+        Some(_) => Some(false),
+        None => None,
+    }
+}
+
+const fn client_kind(kind: KindName) -> ClientKind {
+    match kind {
+        KindName::Sync => ClientKind::Sync,
+        KindName::Async => ClientKind::Async,
+    }
+}
