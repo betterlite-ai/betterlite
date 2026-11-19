@@ -3,10 +3,8 @@ from typing import Literal
 
 import litellm
 import openai
-from litellm.types.llms.openai import (
-    OpenAICreateThreadParamsToolResources as ThreadToolResources,
-    Thread,
-)
+from litellm.types.llms import openai as litellm_types
+from litellm.types.llms.openai import Thread
 from openai.types.beta.thread_create_params import Message
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic import JsonValue as Json
@@ -52,7 +50,7 @@ class AssistantThreadsCall(BaseModel):
     thread_id: str | None = None
     messages: list[Message] | None = None
     metadata: dict[str, Json] | None = None
-    tool_resources: ThreadToolResources | None = None
+    tool_resources: litellm_types.OpenAICreateThreadParamsToolResources | None = None
     kwargs: dict[str, Json] = Field(default_factory=dict)
 
 
@@ -62,6 +60,7 @@ def create_sync(call: AssistantThreadsCall, api_base: str) -> Thread:
         messages=call.messages,
         metadata=call.metadata,
         tool_resources=call.tool_resources,
+        client=None,
         api_base=api_base,
         **call.kwargs,
     )
@@ -94,9 +93,11 @@ def get_sync(call: AssistantThreadsCall, api_base: str) -> Thread:
 
 
 async def get_async(call: AssistantThreadsCall, api_base: str) -> Thread:
+    thread_id = thread_id_of(call)
     return await litellm.aget_thread(
         custom_llm_provider=call.provider,
-        thread_id=thread_id_of(call),
+        thread_id=thread_id,
+        client=None,
         api_base=api_base,
         **call.kwargs,
     )
