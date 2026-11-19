@@ -7,8 +7,8 @@ import litellm
 from litellm.llms.openai_like.dynamic_config import create_responses_config_class
 from litellm.llms.openai_like.json_loader import JSONProviderRegistry, SimpleProviderConfig
 from litellm.llms.openai_like.messages.transformation import (
-    JSONProviderAnthropicMessagesConfig,
-    OpenAILikeAnthropicMessagesConfig,
+    JSONProviderAnthropicMessagesConfig as JSONMessagesConfig,
+    OpenAILikeAnthropicMessagesConfig as NativeMessagesConfig,
 )
 from litellm.llms.openai_like.responses.transformation import OpenAILikeResponsesConfig
 from litellm.types.router import GenericLiteLLMParams
@@ -21,10 +21,10 @@ GENERIC_RESPONSES: Final[type[OpenAILikeResponsesConfig]] = OpenAILikeResponsesC
 
 
 class MessagesFactory(Protocol):
-    def __call__(self, provider: SimpleProviderConfig) -> OpenAILikeAnthropicMessagesConfig: ...
+    def __call__(self, provider: SimpleProviderConfig) -> NativeMessagesConfig: ...
 
 
-JSON_MESSAGES: Final[MessagesFactory] = JSONProviderAnthropicMessagesConfig
+JSON_MESSAGES: Final[MessagesFactory] = JSONMessagesConfig
 
 CallKind: TypeAlias = Literal[
     "generic_messages_url",
@@ -73,7 +73,7 @@ def provider_for(model: str, descriptor: JsonObject | None) -> SimpleProviderCon
     return provider
 
 
-def messages_environment(config: OpenAILikeAnthropicMessagesConfig, call: Call) -> JsonValue:
+def messages_environment(config: NativeMessagesConfig, call: Call) -> JsonValue:
     merged, _ = config.validate_anthropic_messages_environment(  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/messages/transformation.py#L35-L64
         headers=dict(call["headers"]), model=call["model"].split("/", 1)[1],
         messages=call["messages"], optional_params=dict(call["optional_params"]),
@@ -83,7 +83,7 @@ def messages_environment(config: OpenAILikeAnthropicMessagesConfig, call: Call) 
 
 
 def generic_messages_headers(call: Call) -> JsonValue:
-    config = OpenAILikeAnthropicMessagesConfig()
+    config = NativeMessagesConfig()
     return messages_environment(config, call)
 
 
@@ -94,7 +94,7 @@ def json_messages_headers(call: Call) -> JsonValue:
 
 
 def generic_messages_url(call: Call) -> JsonValue:
-    config = OpenAILikeAnthropicMessagesConfig()
+    config = NativeMessagesConfig()
     return config.get_complete_url(
         api_base=call.get("api_base"), api_key=None,
         model=call["model"].split("/", 1)[1],
@@ -112,7 +112,7 @@ def json_messages_url(call: Call) -> JsonValue:
 
 
 def generic_messages_transform(call: Call) -> JsonValue:
-    body = cast(JsonObject, OpenAILikeAnthropicMessagesConfig().transform_anthropic_messages_request(  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/messages/transformation.py#L69-L93
+    body = cast(JsonObject, NativeMessagesConfig().transform_anthropic_messages_request(  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/messages/transformation.py#L69-L93
         model=call["model"].split("/", 1)[1], messages=call["messages"],
         anthropic_messages_optional_request_params=dict(call["optional_params"]),
         litellm_params=GenericLiteLLMParams(), headers=dict(EMPTY),

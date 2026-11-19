@@ -5,7 +5,7 @@ import litellm
 from litellm.llms.openai_like.dynamic_config import create_config_class
 from litellm.llms.openai_like.json_loader import JSONProviderRegistry, SimpleProviderConfig
 from litellm.litellm_core_utils.prompt_templates.common_utils import (
-    handle_messages_with_content_list_to_str_conversion,
+    handle_messages_with_content_list_to_str_conversion as collapse_messages,
 )
 from pydantic import JsonValue, TypeAdapter
 
@@ -50,7 +50,7 @@ class CollapseMessages(Protocol):
 # the documented entry point for a generated JSON provider config, typed through the protocol above
 FACTORY: Final[ChatFactory] = create_config_class
 # AllMessageValues carries Any, so the case's plain dicts go through a protocol instead
-COLLAPSE: Final[CollapseMessages] = cast(CollapseMessages, handle_messages_with_content_list_to_str_conversion)  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L82
+COLLAPSE: Final[CollapseMessages] = cast(CollapseMessages, collapse_messages)  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L82
 
 CallKind: TypeAlias = Literal["identity", "supported", "params", "url", "messages"]
 

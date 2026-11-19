@@ -1,91 +1,30 @@
 use std::collections::BTreeMap;
-use std::future::{Future, ready};
 
-use betterlite_anthropic::anthropic_capability_catalog::OptionalParams;
-use betterlite_anthropic::anthropic_capability_catalog::thinking::ThinkingError;
-use betterlite_anthropic::capabilities::reasoning::ReasoningEffortError;
 use betterlite_config::loader::ConfigLoader;
-use betterlite_core::api::messages_native_transform::capabilities::{
-    LegacyShapes, Thinking, ThinkingCapabilities,
-};
 use betterlite_core::json_messages_policy::{
     JsonMessagesPolicy, MessagesCredentials, generic_complete_url, generic_transform_request,
     generic_validate_environment,
 };
 use betterlite_models::identity::provider_id::ProviderId;
-use betterlite_models::json_provider_registry::{
-    JSONProviderRegistry, ProviderConfig, ProviderDescriptor,
-};
+use betterlite_models::json_provider_registry::{JSONProviderRegistry, ProviderDescriptor};
 use betterlite_openai::json_provider_policy::{
     OpenAiLikeResponsesPolicy, ResponsesPolicy, ResponsesPolicyCache,
 };
 use betterlite_openai::openai_base_config::Headers as OpenAiHeaders;
 use betterlite_openai::response_input::ResponsesInput;
-use betterlite_prompts::arguments::json::{Json, Object};
-use indexmap::IndexMap;
 use secrecy::SecretString;
-use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
 
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
+mod capabilities;
+mod cases;
 mod tests;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum Kind {
-    GenericMessagesUrl,
-    JsonMessagesUrl,
-    GenericMessagesHeaders,
-    JsonMessagesHeaders,
-    GenericMessagesTransform,
-    JsonMessagesTransform,
-    ResponsesUrl,
-    ResponsesHeaders,
-    ResponsesTransform,
-    ResponsesCache,
-    GenericResponsesUrl,
-    GenericResponsesHeaders,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct CaseInput {
-    calls: Vec<Call>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Call {
-    kind: Kind,
-    model: String,
-    #[serde(default)]
-    environment: BTreeMap<String, String>,
-    #[serde(default)]
-    api_base: Option<String>,
-    #[serde(default)]
-    api_key: Option<String>,
-    #[serde(default)]
-    global_api_key: Option<String>,
-    #[serde(default)]
-    descriptor: Option<ProviderConfig>,
-    #[serde(default)]
-    headers: IndexMap<String, String>,
-    #[serde(default)]
-    optional_params: Object,
-    #[serde(default)]
-    messages: Vec<Json>,
-    #[serde(default)]
-    input: String,
-    #[serde(default)]
-    params: Object,
-    #[serde(default)]
-    first: Option<ProviderConfig>,
-    #[serde(default)]
-    second: Option<ProviderConfig>,
-}
+use self::capabilities::NoCapabilities;
+use self::cases::{Call, CaseInput, Kind};
 
 pub(crate) struct Op;
 
@@ -112,7 +51,8 @@ fn run_call(call: &Call, registry: &JSONProviderRegistry) -> Result<Value, Box<H
             Ok(Value::String(url))
         }
         Kind::JsonMessagesUrl => {
-            let policy = messages_policy(call, registry, provider)?;
+            let policy = descriptor_for(call, registry, provider)
+                .map(|descriptor| JsonMessagesPolicy { descriptor })?;
             let (explicit, global) = keys(call);
             let credentials = MessagesCredentials {
                 api_base: call.api_base.as_deref(),
@@ -137,7 +77,8 @@ fn run_call(call: &Call, registry: &JSONProviderRegistry) -> Result<Value, Box<H
             serde_json::to_value(headers)
         }
         Kind::JsonMessagesHeaders => {
-            let policy = messages_policy(call, registry, provider)?;
+            let policy = descriptor_for(call, registry, provider)
+                .map(|descriptor| JsonMessagesPolicy { descriptor })?;
             let (explicit, global) = keys(call);
             let credentials = MessagesCredentials {
                 api_base: call.api_base.as_deref(),
@@ -168,7 +109,8 @@ fn run_call(call: &Call, registry: &JSONProviderRegistry) -> Result<Value, Box<H
             serde_json::to_value(body)
         }
         Kind::JsonMessagesTransform => {
-            let policy = messages_policy(call, registry, provider)?;
+            let policy = descriptor_for(call, registry, provider)
+                .map(|descriptor| JsonMessagesPolicy { descriptor })?;
             let runtime = runtime()?;
             let body = runtime
                 .block_on(policy.transform_request(
@@ -181,13 +123,15 @@ fn run_call(call: &Call, registry: &JSONProviderRegistry) -> Result<Value, Box<H
             serde_json::to_value(body)
         }
         Kind::ResponsesUrl => {
-            let policy = responses_policy(call, registry, provider)?;
+            let policy = descriptor_for(call, registry, provider)
+                .map(|descriptor| ResponsesPolicy { descriptor })?;
             Ok(Value::String(
                 policy.complete_url(call.api_base.as_deref(), &call.environment),
             ))
         }
         Kind::ResponsesHeaders => {
-            let policy = responses_policy(call, registry, provider)?;
+            let policy = descriptor_for(call, registry, provider)
+                .map(|descriptor| ResponsesPolicy { descriptor })?;
             let (explicit, _) = keys(call);
             let headers = policy.validate_environment(
                 responses_headers(call),
@@ -197,7 +141,8 @@ fn run_call(call: &Call, registry: &JSONProviderRegistry) -> Result<Value, Box<H
             serde_json::to_value(headers)
         }
         Kind::ResponsesTransform => {
-            let policy = responses_policy(call, registry, provider)?;
+            let policy = descriptor_for(call, registry, provider)
+                .map(|descriptor| ResponsesPolicy { descriptor })?;
             let body = policy
                 .transform_request(
                     &model,
@@ -272,22 +217,6 @@ fn descriptor_for(
     }
 }
 
-fn messages_policy(
-    call: &Call,
-    registry: &JSONProviderRegistry,
-    provider: ProviderId,
-) -> Result<JsonMessagesPolicy, Box<HelperError>> {
-    descriptor_for(call, registry, provider).map(|descriptor| JsonMessagesPolicy { descriptor })
-}
-
-fn responses_policy(
-    call: &Call,
-    registry: &JSONProviderRegistry,
-    provider: ProviderId,
-) -> Result<ResponsesPolicy, Box<HelperError>> {
-    descriptor_for(call, registry, provider).map(|descriptor| ResponsesPolicy { descriptor })
-}
-
 // create_responses_config_class caches by slug for the process, so the first descriptor's class answers both
 fn cache_value(call: &Call, slug: &str, provider: ProviderId) -> Result<Value, Box<HelperError>> {
     let first = call.first.clone().ok_or_else(|| {
@@ -349,60 +278,4 @@ fn helper_error(class: &str, message: String) -> Box<HelperError> {
         code: None,
         message,
     })
-}
-
-// the cases carry no thinking fields, so the fake never answers a capability question with data
-struct NoCapabilities;
-
-impl ThinkingCapabilities for NoCapabilities {
-    fn supports(
-        &mut self,
-        _model: &str,
-        _key: &str,
-        _provider: &str,
-    ) -> impl Future<Output = bool> + Send {
-        ready(false)
-    }
-
-    fn map_effort<'seam>(
-        &'seam mut self,
-        _model: &'seam str,
-        _effort: &'seam str,
-        _provider: &'seam str,
-    ) -> impl Future<Output = Result<Option<Thinking>, ReasoningEffortError>> + Send + 'seam {
-        ready(Ok(None))
-    }
-
-    fn validate_effort(
-        &mut self,
-        _model: &str,
-        _effort: Option<&str>,
-        _provider: &str,
-    ) -> impl Future<Output = Option<String>> + Send {
-        ready(None)
-    }
-
-    fn supports_effort_param(
-        &mut self,
-        _model: &str,
-        _provider: &str,
-    ) -> impl Future<Output = bool> + Send {
-        ready(false)
-    }
-
-    fn drop_disabled_thinking(
-        &mut self,
-        _model: &str,
-        _params: &mut OptionalParams,
-        _provider: &str,
-    ) -> impl Future<Output = bool> + Send {
-        ready(false)
-    }
-
-    fn translate_legacy_thinking<'seam>(
-        &'seam mut self,
-        _request: &'seam mut LegacyShapes<'seam>,
-    ) -> impl Future<Output = Result<(), ThinkingError>> + Send + 'seam {
-        ready(Ok(()))
-    }
 }
