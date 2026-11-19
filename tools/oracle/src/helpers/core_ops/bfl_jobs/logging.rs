@@ -46,7 +46,7 @@ pub(super) fn logging_state() -> Result<(Redactor, LoggingState), Box<HelperErro
 pub(super) fn logging_env<'setup>(
     redactor: &'setup Redactor,
     sink: &'setup QuietSink,
-    logger: &'setup dyn Fn(&Json) -> Result<(), PrePostError>,
+    logger: &'setup (dyn Fn(&Json) -> Result<(), PrePostError> + Sync),
 ) -> Result<PrePostEnv<'setup>, Box<HelperError>> {
     let now = DateTime::parse_from_rfc3339(NOW).map_err(|error| failure(&error))?;
     Ok(PrePostEnv {

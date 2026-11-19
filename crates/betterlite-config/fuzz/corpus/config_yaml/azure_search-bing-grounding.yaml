@@ -1,0 +1,10 @@
+environment_variables:
+  BING_GROUNDING_PROJECT_ENDPOINT: https://project.services.ai.azure.com/api/projects/example
+  BING_GROUNDING_MODEL: gpt-4.1
+  BING_GROUNDING_CONNECTION_ID: connection-1
+  BING_GROUNDING_TOKEN: fixture-bing-token
+model_list:
+  - model_name: bing-grounding
+    litellm_params:
+      model: azure_ai/bing-grounding
+      api_base: https://project.services.ai.azure.com/api/projects/example

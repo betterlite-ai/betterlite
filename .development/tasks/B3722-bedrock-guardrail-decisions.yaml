@@ -36,9 +36,10 @@ description: >-
   Implement _usage_tracing_detail to call bedrock_guardrail_cost_by_unit with
   usage units and region, returning guardrail_cost_by_unit, guardrail_usage and
   guardrail_cost from B1667's guardrail_cost_total. Implement the three logging
-  functions to add tracing details to request_data and call the unresolved
-  CustomGuardrail.add_standard_logging_guardrail_information_to_request_data with
-  status, duration and end time. _log_apply_guardrail_attempt sums completed_chunk_usages
+  functions to add tracing details to request_data and call
+  CustomGuardrail.add_standard_logging_guardrail_information_to_request_data with status, duration
+  and end time. B3664 built that call as crate::guardrail_records::metadata::add_guardrail_record with
+  a GuardrailRecordInput. _log_apply_guardrail_attempt sums completed_chunk_usages
   before the block into one consolidated cost record. _log_apply_guardrail_success
   preserves the merged response's embedded exception marker when deciding status.
   _log_apply_guardrail_failure sums any billed usages and wraps the error detail
@@ -142,7 +143,7 @@ deviations:
     why: Rust's standard library has different error handling semantics; the fallback to false on any decode error preserves the source's safe behavior.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2100-L2118
 out_of_scope:
-  - CustomGuardrail base class and add_standard_logging_guardrail_information_to_request_data method in litellm/integrations/custom_guardrail.py, owned by B164.
+  - CustomGuardrail base class and add_standard_logging_guardrail_information_to_request_data method in litellm/integrations/custom_guardrail.py, built by B3664 as add_guardrail_record and GuardrailRecordInput in betterlite-guardrails guardrail_records.
   - Recursive redaction via redact_nested_match_and_regex_keys in litellm/litellm_core_utils/core_helpers.py, owned by B3688; the calling site _redact_assessment_match_fields requires this function.
   - ModifyResponseException construction in litellm/integrations, owned by B104; the calling site _get_http_exception_for_blocked_guardrail requires this wire type.
   - The ApplyGuardrail and InvokeGuardrailChecks request/response records are B3720's responsibility.

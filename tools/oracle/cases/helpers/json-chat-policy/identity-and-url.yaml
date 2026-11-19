@@ -1,0 +1,19 @@
+kind: helper
+name: json-chat-policy-identity-and-url
+call:
+  json_chat_policy:
+    calls:
+      - kind: identity
+        model: publicai/swiss-ai/apertus-8b-instruct
+        environment: {PUBLICAI_API_KEY: sk-env}
+      - kind: identity
+        model: publicai/swiss-ai/apertus-8b-instruct
+        environment: {PUBLICAI_API_BASE: "https://env.invalid/v1"}
+        api_key: sk-explicit
+        api_base: null
+      - kind: url
+        model: publicai/swiss-ai/apertus-8b-instruct
+        environment: {}
+        api_base: "https://explicit.invalid/v1/"
+env: {}
+compare: {ignore: []}

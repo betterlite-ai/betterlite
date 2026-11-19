@@ -1,0 +1,34 @@
+kind: helper
+name: over-limit-read-only-pending
+call:
+  b3036:
+    function: check_over_limit
+    keys_to_fetch:
+      - "{api-key:k1}:window"
+      - "{api-key:k1}:requests"
+    cache_values: [1700000000, 10]
+    key_metadata:
+      "{api-key:k1}:window":
+        requests_limit: 10
+        tokens_limit: null
+        window_size: 45
+        descriptor_key: api-key
+        descriptor_value: k1
+    read_only: true
+calls:
+  - b3036:
+      function: check_over_limit
+      keys_to_fetch:
+        - "{api-key:k1}:window"
+        - "{api-key:k1}:requests"
+      cache_values: [1700000000, 10]
+      key_metadata:
+        "{api-key:k1}:window":
+          requests_limit: 10
+          tokens_limit: null
+          window_size: 45
+          descriptor_key: api-key
+          descriptor_value: k1
+      read_only: false
+env: {}
+compare: {ignore: []}

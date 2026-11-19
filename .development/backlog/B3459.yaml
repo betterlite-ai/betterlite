@@ -1,7 +1,7 @@
 id: B3459
 milestone: M5 api families
 title: S3 Vectors RAG embedding and storage workflow
-status: todo
+status: blocked
 depends_on: [B3451, B3456, B3458, B5134, B591, B198]
 file: tasks/B3459-s3-vectors-rag-workflow.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B097
 split_from: B097
 resolution: null
 superseded_by: null
-blocked_reason: null
+blocked_reason: "deferred until the core is done (Max, 11-19): later, RAG ingestion is new and can wait"
 pr: null

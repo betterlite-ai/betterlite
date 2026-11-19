@@ -1,0 +1,27 @@
+name: cost-estimate-cache-and-reasoning-are-subsets
+config: |
+  general_settings:
+    master_key: oracle-master
+  model_list:
+    - model_name: o3-mini
+      litellm_params: {model: o3-mini}
+env: {}
+request:
+  method: POST
+  path: /cost/estimate
+  headers: {content-type: application/json, authorization: Bearer oracle-master}
+  body:
+    model: o3-mini
+    input_tokens: 4096
+    output_tokens: 1024
+    cache_read_input_tokens: 1024
+    cache_creation_input_tokens: 1024
+    reasoning_tokens: 512
+    num_requests_per_day: 0
+    num_requests_per_month: 4
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []

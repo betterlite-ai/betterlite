@@ -3,7 +3,7 @@ title: Evaluate the compliance API's guardrail evidence checks
 description: >-
   Build compliance_checks in betterlite-server with the complete ComplianceChecker and request,
   result and response records. Register POST /compliance/eu-ai-act and POST /compliance/gdpr
-  through B052 authentication and B865's management wrapper. These endpoints evaluate the
+  behind the server's authentication middleware and through B865's management wrapper. These endpoints evaluate the
   caller-supplied record; they neither fetch request_id from spend storage nor execute guardrails.
   decode_compliance_request(bytes) requires a string request_id, permits absent/null user_id,
   model and timestamp, and accepts absent/null guardrail_information or a list of objects with

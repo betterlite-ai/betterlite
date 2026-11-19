@@ -1,7 +1,7 @@
 id: B018
 title: Fallback management API and persistent configuration
 description: 'Serve POST /fallback and GET/DELETE /fallback/{model} using B309''s typed plans and B066''s
-  settings persistence. Reuse B052 authorization and B051''s existing schema; no new schema or table is
+  settings persistence. Reuse B003''s key auth middleware and B051''s existing schema; no new schema or table is
   needed. Persist before publishing the new immutable router snapshot, and retain the old snapshot when
   the write fails. Use B300 scenarios for create/read/replace/delete sequences and B301 adapters with
   a typed repository fixture when database setup is not expressible as an HTTP case. Keep the three fallback

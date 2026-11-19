@@ -95,7 +95,7 @@ oracle_cases: []
 deviations: []
 out_of_scope:
   - "Making the values at startup and passing BootRegistries to load_non_llm_configs: B8613. Building the PythonHooks: B8375. The Shared fields: B8610."
-  - "The loaders and registries themselves: B4680, B4731, B4776, B6762 to B6765, B1062 and B1063."
+  - "The loaders and registries themselves: B4680, B4731, B4776, B6762 to B6765 and B1062. B1063's vector tool selection only reads VectorStores later and supplies nothing here."
   - "The periodic MCP and database object reload: B8384."
 pitfalls:
   - SharedRegistry is an Arc the caller builds; building it twice (once for the mutator, once for the readers) leaves the reload writing a registry no request reads.

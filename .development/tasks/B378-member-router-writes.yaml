@@ -1,6 +1,6 @@
 id: B378
 title: Member-owned automatic router writes
-description: 'Implement MemberRouterAccess using B052 principal, B057 team membership and B060 model write
+description: 'Implement MemberRouterAccess using B2314''s UserAPIKeyAuth caller, B057 team membership and B060 model write
   services. Validate ownership metadata, team opt-in, allowed member config fields and each B377 model
   dependency before create/update. Preserve old state on repository failure. No license quota is enforced.
   Implement the owned native service in crates/betterlite-server/src/member_router_writes.rs. B301 registers ProbeOperation::MemberRouterWrites and its Python entry as stubs, so fill only tools/oracle/src/router_probes/member_router_writes.rs and tools/oracle/litellm/probes/member_router_writes.py and leave mod.rs and registry.py as they are;
