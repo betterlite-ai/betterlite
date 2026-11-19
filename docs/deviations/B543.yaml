@@ -1,6 +1,16 @@
 task: B543
 deviations:
   - what: >-
+      A literal "." or ".." thread or run id is refused with a value error before any request is built. LiteLLM
+      hands the string to the SDK, whose httpx URL drops a dot segment, so the create or retrieve leaves for
+      another path (a "." thread id posts to threads/runs) instead of failing.
+    why: >-
+      betterlite quotes a thread or run id as one path segment and refuses the values that cannot be one, as
+      B521's thread runs and B697's messages already do, so a run can never be created under or retrieved from a
+      path the caller did not name.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L807-L905
+  - what: >-
       The OpenAI SDK's fingerprint headers are not sent on run requests: no user-agent, no x-stainless-*
       header, and no X-Stainless-Poll-Helper on the retrieve calls that poll a run. LiteLLM sends all of
       them, since the request leaves through the official Python client.

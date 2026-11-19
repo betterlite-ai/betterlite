@@ -28,11 +28,6 @@ call:
         api_version: "2024-02-01"
         run: {thread_id: '', assistant_id: asst_a}
         replies: []
-      - api_key: sk-fixture
-        api_base: https://example.test
-        api_version: "2024-02-01"
-        run: {thread_id: '.', assistant_id: asst_a}
-        replies: []
       - api_base: https://example.test
         api_version: "2024-02-01"
         run: {thread_id: thread_a, assistant_id: asst_a}
