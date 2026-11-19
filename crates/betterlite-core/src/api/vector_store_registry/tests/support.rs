@@ -33,9 +33,10 @@ pub(crate) fn fixed_clock() -> RegistryClock {
     Arc::new(move || fixed)
 }
 
-fn decoded<Record>(document: impl Serialize) -> Record
+fn decoded<Record, Document>(document: Document) -> Record
 where
     Record: DeserializeOwned,
+    Document: Serialize,
 {
     let encoded = serde_json::to_value(document).expect("the store document encodes");
     serde_json::from_value(encoded).expect("the store document decodes")
