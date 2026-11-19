@@ -118,11 +118,9 @@ async def management_report(call: Input) -> JsonValue:
 async def team_refresh_report(call: Input) -> JsonValue:
     cache = build_cache(call)
     team = TEAMS.validate_python(call["team"])
-    alias = team.team_alias
-    alias_key: str | None = None
+    alias_key = f"team_alias:{team.team_alias}" if team.team_alias else None
     alias_present = False
-    if alias:
-        alias_key = f"team_alias:{alias}"
+    if alias_key is not None:
         cache.set_cache(alias_key, call["stale_alias"])  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L150-L160
     was_none = team.last_refreshed_at is None
     await _cache_team_object(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2792-L2846

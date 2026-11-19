@@ -16,7 +16,7 @@ pub(super) async fn management(
     team: &JsonData,
 ) -> Result<Value, Box<HelperError>> {
     let row = LiteLLMTeamTableCachedObj::try_from(team.clone()).or_value_error()?;
-    let key = format!("team_id:{}", row.team.fields.base.team_id);
+    let key = format!("team_id:{team_id}", team_id = row.team.fields.base.team_id);
     let invalidation = invalidation(store, 0.0_f64);
     invalidation
         .cache_management_object(&key, &row)
@@ -42,9 +42,9 @@ pub(super) async fn team_refresh(
 ) -> Result<Value, Box<HelperError>> {
     let mut row = LiteLLMTeamTableCachedObj::try_from(team.clone()).or_value_error()?;
     let alias = row.team.fields.base.team_alias.clone();
-    let alias_key = alias.as_ref().map(|alias| format!("team_alias:{alias}"));
-    if let Some(alias_key) = alias_key.as_ref() {
-        store.seed(alias_key, stale_alias);
+    let alias_key = alias.as_ref().map(|value| format!("team_alias:{value}"));
+    if let Some(key) = alias_key.as_ref() {
+        store.seed(key, stale_alias);
     }
     let was_none = row.last_refreshed_at.is_none();
     let invalidation = invalidation(store, 0.0_f64);
@@ -56,7 +56,7 @@ pub(super) async fn team_refresh(
     let stored = store.entry(&key);
     let alias_present = alias_key
         .as_ref()
-        .is_some_and(|alias_key| lock(&store.entries).contains_key(alias_key));
+        .is_some_and(|key| lock(&store.entries).contains_key(key));
     let stored_timestamp = number(&stored.0, "last_refreshed_at");
     Ok(json!({
         "team_id_and_alias_keys": {
