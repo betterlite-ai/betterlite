@@ -15,7 +15,7 @@ pub struct VectorStoreToolParams {
     pub ranking_options: Option<JsonObject>,
 }
 
-// _extract_tool_params: every declared VECTOR_STORE_OPENAI_PARAMS name the tool carries, except rewrite_query, which VectorStoreToolParams never accepted and whose presence raises TypeError
+// _extract_tool_params: every declared VECTOR_STORE_OPENAI_PARAMS name the tool carries; rewrite_query is rejected because VectorStoreToolParams never accepted it
 pub fn extract_tool_params(
     tool: &JsonObject,
 ) -> Result<VectorStoreToolParams, VectorStoreRegistryError> {
