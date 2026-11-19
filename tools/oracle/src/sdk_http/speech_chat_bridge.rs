@@ -296,3 +296,5 @@ fn named_failure(class: &str, error: &SpeechTransformError) -> Failure {
         message: error.to_string(),
     }
 }
+
+mod tests;

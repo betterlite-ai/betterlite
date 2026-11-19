@@ -1,10 +1,10 @@
 kind: sdk_http
-name: sdk-http-gemini-rejects-response-format
+name: sdk-http-speech-chat-bridge-rejection
 env: {}
 call:
   speech_chat_bridge:
     model: gemini-2.5-flash-preview-tts
-    input: hello
+    input: seed
     voice: Kore
     optional_params: {response_format: mp3}
     litellm_params: {}
