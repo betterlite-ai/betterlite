@@ -1,0 +1,11 @@
+kind: helper
+name: country_avoids_location_default
+call:
+  dataforseo_search:
+    calls:
+      - {kind: request, query: q, optional_params: {country: France}}
+      - {kind: request, query: q, optional_params: {country: "United States"}}
+      - {kind: request, query: q, optional_params: {country: ""}}
+      - {kind: request, query: q, optional_params: {country: null}}
+env: {}
+compare: {ignore: []}
