@@ -1,7 +1,7 @@
 id: B1027
 milestone: M5 api families
 title: File storage service
-status: todo
+status: done
 depends_on: [B171, B1015, B1025, B1026, B732, B726, B2401, B9952]
 file: tasks/B1027-file-storage-service.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/base_llm/files/storage_backend_factory.py"
 parent: B087
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2481
