@@ -7,7 +7,8 @@ use betterlite_core::api::response_synthetic_events::estimate::{
     EstimateRequest, TokenCountRequest, UsageTokenization,
 };
 use betterlite_core::api::responses_stream_events::{
-    ResponsesEventTransform, ResponsesStreamBaseState, ResponsesStreamHiddenParams,
+    BaseStreamStateInput, LoggingSnapshot, ResponsesApiBase, ResponsesEventTransform,
+    ResponsesStreamBaseState, StreamTimes, base_stream_state,
 };
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
@@ -19,6 +20,7 @@ use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_logging::passthrough_stream_logging::object::{
     StreamLoggingObject, StreamLoggingState, StreamSuccessCall, StreamSuccessDispatch,
 };
+use betterlite_models::api_base_lookup::{ApiBaseError, ApiBaseParams};
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_event_records::records::{
     GenericEvent, ResponsesAPIStreamingResponse,
@@ -27,11 +29,10 @@ use betterlite_openai::response_events::event_decode::{
     DecodedStreamResponse, transform_streaming_response,
 };
 use betterlite_redact::secret::Redactor;
-use chrono::{DateTime, FixedOffset};
+use chrono::DateTime;
 use indexmap::IndexMap;
 use serde_json::json;
 use thiserror::Error;
-use tokio_util::task::TaskTracker;
 
 use super::Input;
 use super::probe::Probe;
@@ -66,17 +67,15 @@ fn event(fields: &IndexMap<String, Json>) -> ResponsesAPIStreamingResponse {
     }
 }
 
-fn generic_event(fields: IndexMap<String, Json>) -> GenericEvent {
-    let r#type = match fields.get("type") {
-        Some(Json::Text(text)) => text.clone(),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
-        | None => String::new(),
+fn generic_event(mut fields: IndexMap<String, Json>) -> GenericEvent {
+    let r#type = match fields.shift_remove("type") {
+        Some(Json::Text(text)) => text,
+        _ => String::new(),
     };
-    let extra = fields
-        .into_iter()
-        .filter(|(name, _value)| name != "type")
-        .collect();
-    GenericEvent { r#type, extra }
+    GenericEvent {
+        r#type,
+        extra: fields,
+    }
 }
 
 impl UsageTokenization for Probe {
@@ -102,45 +101,36 @@ impl UsageTokenization for Probe {
 }
 
 pub(crate) fn state(input: &Input, probe: &Probe) -> ResponsesStreamBaseState {
-    ResponsesStreamBaseState {
-        model: input.model.clone(),
-        custom_llm_provider: input.provider.clone(),
-        litellm_metadata: Some(input.metadata.clone()),
-        request_data: input.request_data.clone(),
-        call_type: Some("responses".to_owned()),
-        finished: false,
-        failure_handled: false,
-        yielded_first_chunk: false,
-        output_started: false,
-        completed_response: None,
-        completed_response_cached: false,
-        completed_response_logged: false,
-        completed_response_cache_hit: None,
-        persist_before_logging: true,
-        generated_content: String::new(),
-        generated_tool_arguments: String::new(),
-        start_time: probe.clock,
-        created_timestamp: 0.0,
-        max_streaming_duration_seconds: None,
-        hidden_params: ResponsesStreamHiddenParams {
-            model_id: model_id(&input.metadata),
-            api_base: None,
-            custom_llm_provider: input.provider.clone(),
-            additional_headers: IndexMap::new(),
+    base_stream_state(&BaseStreamStateInput {
+        model: &input.model,
+        custom_llm_provider: input.provider.as_deref(),
+        litellm_metadata: Some(&input.metadata),
+        request_data: Some(&input.request_data),
+        call_type: Some("responses"),
+        logging: LoggingSnapshot {
+            start_time: Some(probe.clock),
+            litellm_params: IndexMap::new(),
         },
-        raw_response_headers: IndexMap::new(),
-        pending_tasks: TaskTracker::new(),
-    }
+        headers: &IndexMap::new(),
+        api_base: &NoApiBase,
+        times: StreamTimes {
+            now: probe.clock,
+            created_timestamp: 0.0,
+        },
+        max_streaming_duration_seconds: None,
+    })
 }
 
-fn model_id(metadata: &IndexMap<String, Json>) -> Option<String> {
-    let Some(Json::Object(info)) = metadata.get("model_info") else {
-        return None;
-    };
-    let Some(Json::Text(id)) = info.get("id") else {
-        return None;
-    };
-    Some(id.clone())
+struct NoApiBase;
+
+impl ResponsesApiBase for NoApiBase {
+    fn resolve(
+        &self,
+        _model: &str,
+        _params: &ApiBaseParams,
+    ) -> Result<Option<String>, ApiBaseError> {
+        Ok(None)
+    }
 }
 
 pub(crate) fn logging_object(
