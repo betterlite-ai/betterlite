@@ -147,8 +147,7 @@ fn tool_answer(scenario: &ToolScenario) -> HelperResult {
     let mut chunks: Vec<SseChunk> = scenario.responses_so_far.iter().map(chunk_of).collect();
     let pre = shapes(&scenario.pre_guardrail_tool_calls);
     let post = shapes(&scenario.post_guardrail_tool_calls);
-    let name = scenario.guardrail_name.as_str();
-    let outcome = rewrite_ended_tool_calls(&mut chunks, &pre, &post, name);
+    let outcome = rewrite_ended_tool_calls(&mut chunks, &pre, &post, &scenario.guardrail_name);
     let error = match outcome {
         Ok(()) => Value::Null,
         Err(failure) => Value::String(failure.to_string()),
