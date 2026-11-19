@@ -99,8 +99,10 @@ where
     let window = compute_time_window(&logger.focus, logger.clock.now())
         .map_err(VantageExportError::Schedule)?;
     logger
+        .focus
         .export_usage_data(None, Some(window.start_time), Some(window.end_time))
         .await
+        .map_err(VantageExportError::from)
 }
 
 // VantageLogger.init_vantage_background_job: the first registered instance on the interval or cron trigger.

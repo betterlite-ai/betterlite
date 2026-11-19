@@ -103,18 +103,6 @@ impl<F: FocusEngineFactory> VantageLogger<F> {
         })
     }
 
-    pub async fn export_usage_data(
-        &self,
-        limit: Option<i64>,
-        start_time_utc: Option<DateTime<Utc>>,
-        end_time_utc: Option<DateTime<Utc>>,
-    ) -> Result<(), VantageExportError> {
-        self.focus
-            .export_usage_data(limit, start_time_utc, end_time_utc)
-            .await
-            .map_err(VantageExportError::from)
-    }
-
     // the composition root calls this once scheduling stops: a release a cancelled export left behind finishes here
     pub async fn drain(&self) {
         self.tasks.close();

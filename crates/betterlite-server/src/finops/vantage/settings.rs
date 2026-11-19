@@ -41,19 +41,40 @@ impl VantageSettings {
     where
         L: EnvironmentLookup + ?Sized,
     {
+        let lookup = |variable: &str| {
+            environment
+                .lookup(variable)
+                .filter(|value| !value.is_empty())
+        };
         Self {
-            api_key: resolved_secret(params.api_key.as_ref(), API_KEY_VARIABLE, environment),
-            integration_token: resolved_secret(
-                params.integration_token.as_ref(),
-                INTEGRATION_TOKEN_VARIABLE,
-                environment,
-            ),
-            base_url: resolved_text(params.base_url.as_deref(), BASE_URL_VARIABLE, environment)
+            api_key: params
+                .api_key
+                .clone()
+                .or_else(|| lookup(API_KEY_VARIABLE).map(SecretString::from)),
+            integration_token: params
+                .integration_token
+                .clone()
+                .or_else(|| lookup(INTEGRATION_TOKEN_VARIABLE).map(SecretString::from)),
+            base_url: params
+                .base_url
+                .clone()
+                .or_else(|| lookup(BASE_URL_VARIABLE))
                 .unwrap_or_else(|| DEFAULT_BASE_URL.to_owned()),
-            frequency: resolved_text(params.frequency.as_deref(), FREQUENCY_VARIABLE, environment)
+            frequency: params
+                .frequency
+                .clone()
+                .or_else(|| lookup(FREQUENCY_VARIABLE))
                 .unwrap_or_else(|| DEFAULT_FREQUENCY.to_owned())
                 .to_lowercase(),
-            interval_seconds: resolved_interval(params.interval_seconds, environment),
+            interval_seconds: params.interval_seconds.or_else(|| {
+                let raw = environment.lookup(INTERVAL_VARIABLE)?;
+                betterlite_env::number::<i64>(INTERVAL_VARIABLE, &raw).unwrap_or_else(|_error| {
+                    tracing::warn!(
+                        "Invalid VANTAGE_EXPORT_INTERVAL_SECONDS value: {raw}, ignoring"
+                    );
+                    None
+                })
+            }),
         }
     }
 
@@ -89,45 +110,4 @@ pub fn masked_integration_token(token: Option<&SecretString>) -> String {
     }
     let visible: String = exposed.chars().take(4).collect();
     format!("{visible}***")
-}
-
-// a parameter is used as given, an empty one included; the environment answers only when it is absent
-fn resolved_text<L>(parameter: Option<&str>, variable: &str, environment: &L) -> Option<String>
-where
-    L: EnvironmentLookup + ?Sized,
-{
-    parameter.map(str::to_owned).or_else(|| {
-        environment
-            .lookup(variable)
-            .filter(|value| !value.is_empty())
-    })
-}
-
-fn resolved_secret<L>(
-    parameter: Option<&SecretString>,
-    variable: &str,
-    environment: &L,
-) -> Option<SecretString>
-where
-    L: EnvironmentLookup + ?Sized,
-{
-    parameter
-        .cloned()
-        .or_else(|| resolved_text(None, variable, environment).map(SecretString::from))
-}
-
-fn resolved_interval<L>(parameter: Option<i64>, environment: &L) -> Option<i64>
-where
-    L: EnvironmentLookup + ?Sized,
-{
-    match parameter {
-        Some(seconds) => Some(seconds),
-        None => {
-            let raw = environment.lookup(INTERVAL_VARIABLE)?;
-            betterlite_env::number::<i64>(INTERVAL_VARIABLE, &raw).unwrap_or_else(|_error| {
-                tracing::warn!("Invalid VANTAGE_EXPORT_INTERVAL_SECONDS value: {raw}, ignoring");
-                None
-            })
-        }
-    }
 }

@@ -29,35 +29,14 @@ struct Lists {
 }
 
 impl Lists {
-    // false when a logger with the same registration key is already in this list: the first one keeps its place
-    fn push(&mut self, list: VantageCallbackList, logger: Arc<dyn VantageExportLogger>) -> bool {
-        let key = logger.registration_identity().key();
-        let registered = match list {
+    fn slot(&mut self, list: VantageCallbackList) -> &mut Vec<Arc<dyn VantageExportLogger>> {
+        match list {
             VantageCallbackList::Callbacks => &mut self.callbacks,
             VantageCallbackList::Success => &mut self.success,
             VantageCallbackList::Failure => &mut self.failure,
             VantageCallbackList::AsyncSuccess => &mut self.async_success,
             VantageCallbackList::AsyncFailure => &mut self.async_failure,
-        };
-        if registered
-            .iter()
-            .any(|stored| stored.registration_identity().key() == key)
-        {
-            return false;
         }
-        registered.push(logger);
-        true
-    }
-
-    fn take(&mut self, list: VantageCallbackList) -> Vec<Arc<dyn VantageExportLogger>> {
-        let registered = match list {
-            VantageCallbackList::Callbacks => &mut self.callbacks,
-            VantageCallbackList::Success => &mut self.success,
-            VantageCallbackList::Failure => &mut self.failure,
-            VantageCallbackList::AsyncSuccess => &mut self.async_success,
-            VantageCallbackList::AsyncFailure => &mut self.async_failure,
-        };
-        take(registered)
     }
 
     // one instance per registered logger, first occurrence winning, in _get_all_callbacks order
@@ -100,12 +79,19 @@ impl VantageLoggers {
 
     pub fn register(&self, logger: Arc<dyn VantageExportLogger>, list: VantageCallbackList) {
         let mut lists = self.lists.lock().unwrap_or_else(PoisonError::into_inner);
-        if !lists.push(list, logger) {
+        let key = logger.registration_identity().key();
+        let registered = lists.slot(list);
+        if registered
+            .iter()
+            .any(|stored| stored.registration_identity().key() == key)
+        {
             tracing::debug!(
                 list = ?list,
                 "callback already registered in this list; keeping the first"
             );
+            return;
         }
+        registered.push(logger);
     }
 
     // the callers drop the lock before they await: every call hands out its own ordered copy
@@ -119,7 +105,7 @@ impl VantageLoggers {
     #[must_use]
     pub fn remove_from_list(&self, list: VantageCallbackList) -> usize {
         let mut lists = self.lists.lock().unwrap_or_else(PoisonError::into_inner);
-        lists.take(list).len()
+        take(lists.slot(list)).len()
     }
 }
 
