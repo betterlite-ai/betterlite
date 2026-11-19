@@ -43,7 +43,12 @@ pub fn log_attempt(
         if let Some(blocking) = attempt.json_response.usage.as_ref() {
             usages.push(blocking);
         }
-        logged.usage = Some(sum_usages(&usages)?);
+        let summed = Response {
+            usage: Some(sum_usages(&usages)?),
+            ..Response::default()
+        };
+        // an explicit null usage stays in extra, so the summed one replaces it there too
+        logged.absorb(&summed);
     }
     let detail = tracing_detail(&logged, &call.pricing)?;
     let status = response_status(attempt.status_code, attempt.body);
@@ -68,19 +73,19 @@ pub fn log_failure(
     detail: &str,
     completed_chunk_usages: &[Usage],
 ) -> Result<(), BedrockDecisionError> {
-    let mut billed = None;
-    if !completed_chunk_usages.is_empty() {
-        let usages: Vec<&Usage> = completed_chunk_usages.iter().collect();
-        billed = Some(sum_usages(&usages)?);
-    }
     let mut fields = IndexMap::from([("error".to_owned(), Json::Text(detail.to_owned()))]);
-    let mut tracing = None;
-    if let Some(usage) = billed.as_ref() {
-        fields.insert("usage".to_owned(), json_of(usage)?);
-        let mut response = Response::default();
-        response.usage = Some(usage.clone());
-        tracing = Some(tracing_detail(&response, &call.pricing)?);
-    }
+    let tracing = if completed_chunk_usages.is_empty() {
+        None
+    } else {
+        let usages: Vec<&Usage> = completed_chunk_usages.iter().collect();
+        let billed = sum_usages(&usages)?;
+        fields.insert("usage".to_owned(), json_of(&billed)?);
+        let response = Response {
+            usage: Some(billed),
+            ..Response::default()
+        };
+        Some(tracing_detail(&response, &call.pricing)?)
+    };
     let status = GuardrailStatus::GuardrailFailedToRespond;
     record(context, call, &Json::Object(fields), status, tracing)
 }

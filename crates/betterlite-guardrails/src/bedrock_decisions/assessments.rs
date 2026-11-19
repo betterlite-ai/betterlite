@@ -12,7 +12,10 @@ pub const VIOLATED_POLICY: &str = "Violated guardrail policy";
 // LiteLLM raises for a BLOCKED action only; ANONYMIZED and NONE keep the content path going
 #[must_use]
 pub fn should_raise_blocked(response: &Response) -> bool {
-    response.action.as_deref() == Some(INTERVENED) && !blocked_assessments(response).is_empty()
+    if response.action.as_deref() != Some(INTERVENED) {
+        return false;
+    }
+    !blocked_assessments(response).is_empty()
 }
 
 // LiteLLM's _extract_blocked_assessments: one {policy, matches} entry per policy with a BLOCKED match
@@ -52,7 +55,9 @@ pub fn violation_category_names(response: &Response) -> Vec<String> {
             let Json::Object(candidate) = entry else {
                 continue;
             };
-            if let Some(label) = category_label(candidate) {
+            let name = label_text(candidate.get("name"));
+            let kind = label_text(candidate.get("type"));
+            if let Some(label) = name.or(kind) {
                 names.push(label.to_owned());
             }
         }
@@ -69,10 +74,6 @@ pub fn redact_assessments(assessments: &[Json]) -> Vec<Json> {
         return items;
     }
     assessments.to_vec()
-}
-
-fn category_label(fields: &IndexMap<String, Json>) -> Option<&str> {
-    label_text(fields.get("name")).or(label_text(fields.get("type")))
 }
 
 fn label_text(value: Option<&Json>) -> Option<&str> {
@@ -229,9 +230,15 @@ fn grounding_matches(assessment: &Assessment) -> Vec<Json> {
 }
 
 fn optional_text(value: Option<&String>) -> Json {
-    value.map_or(Json::Null, |text| Json::Text(text.clone()))
+    match value {
+        Some(text) => Json::Text(text.clone()),
+        None => Json::Null,
+    }
 }
 
 fn optional_number(value: Option<&Number>) -> Json {
-    value.map_or(Json::Null, |number| Json::Number(number.clone()))
+    match value {
+        Some(number) => Json::Number(number.clone()),
+        None => Json::Null,
+    }
 }

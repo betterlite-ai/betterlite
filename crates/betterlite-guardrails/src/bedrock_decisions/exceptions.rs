@@ -89,19 +89,38 @@ pub fn http_exception_for_blocked_guardrail(
 ) -> GuardrailFailure {
     let text = output_text(response);
     if guardrail.disable_exception_on_block {
-        let mut model = DEFAULT_MODEL.to_owned();
-        if let Some(GuardrailValue::Text(found)) = request_data.get("model") {
-            model = found.clone();
-        }
-        return GuardrailFailure::ModifyResponse(Box::new(ModifyResponseFailure {
-            message: text,
-            model,
-            request_data: request_data.clone(),
-            guardrail_name: guardrail.name.map(str::to_owned),
-            detection_info: BTreeMap::new(),
-            original_response: None,
-        }));
+        return modify_failure(text, request_data, guardrail);
     }
+    GuardrailFailure::HttpObject {
+        status: 400,
+        detail: http_detail(response, text, guardrail),
+    }
+}
+
+fn modify_failure(
+    text: String,
+    request_data: &BTreeMap<String, GuardrailValue>,
+    guardrail: &BlockedGuardrail<'_>,
+) -> GuardrailFailure {
+    let mut model = DEFAULT_MODEL.to_owned();
+    if let Some(GuardrailValue::Text(found)) = request_data.get("model") {
+        model = found.clone();
+    }
+    GuardrailFailure::ModifyResponse(Box::new(ModifyResponseFailure {
+        message: text,
+        model,
+        request_data: request_data.clone(),
+        guardrail_name: guardrail.name.map(str::to_owned),
+        detection_info: BTreeMap::new(),
+        original_response: None,
+    }))
+}
+
+fn http_detail(
+    response: &Response,
+    text: String,
+    guardrail: &BlockedGuardrail<'_>,
+) -> IndexMap<String, GuardrailValue> {
     let mut detail = IndexMap::from([
         (
             "error".to_owned(),
@@ -131,10 +150,7 @@ pub fn http_exception_for_blocked_guardrail(
             json_to_value(&Json::List(redact_assessments(&assessments))),
         );
     }
-    GuardrailFailure::HttpObject {
-        status: 400,
-        detail,
-    }
+    detail
 }
 
 fn output_text(response: &Response) -> String {

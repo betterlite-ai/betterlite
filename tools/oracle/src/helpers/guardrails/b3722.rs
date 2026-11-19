@@ -4,7 +4,6 @@ use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_guardrails::bedrock_decisions::assessments::{
     blocked_assessments, should_raise_blocked, violation_category_names,
 };
-use betterlite_guardrails::bedrock_decisions::error::BedrockDecisionError;
 use betterlite_guardrails::bedrock_decisions::exceptions::{
     BlockedGuardrail, body_has_exception, http_exception_for_blocked_guardrail,
     payload_has_exception, response_status,
@@ -76,7 +75,9 @@ fn tracing_detail_view(args: &TracingArgs) -> HelperResult {
         catalog: &catalog,
         aws_region_name: args.aws_region_name.as_deref(),
     };
-    encode(tracing_detail(&args.response, &pricing).map_err(decision_failure)?)
+    let detail = tracing_detail(&args.response, &pricing)
+        .map_err(|error| failure("BedrockDecisionError", error.to_string()))?;
+    encode(detail)
 }
 
 fn http_exception_view(args: &HttpExceptionArgs) -> HelperResult {
@@ -123,7 +124,8 @@ fn log_attempt_view(args: &LogAttemptArgs) -> HelperResult {
         json_response: &args.response,
         completed_chunk_usages: &args.completed_chunk_usages,
     };
-    log_attempt(&mut context, &call, &attempt).map_err(decision_failure)?;
+    log_attempt(&mut context, &call, &attempt)
+        .map_err(|error| failure("BedrockDecisionError", error.to_string()))?;
     encode(request_data)
 }
 
@@ -139,7 +141,8 @@ fn log_success_view(args: &LogSuccessArgs) -> HelperResult {
         log_target: None,
         sink: &sink,
     };
-    log_success(&mut context, &call, &args.response).map_err(decision_failure)?;
+    log_success(&mut context, &call, &args.response)
+        .map_err(|error| failure("BedrockDecisionError", error.to_string()))?;
     encode(request_data)
 }
 
@@ -161,7 +164,7 @@ fn log_failure_view(args: &LogFailureArgs) -> HelperResult {
         &args.detail,
         &args.completed_chunk_usages,
     )
-    .map_err(decision_failure)?;
+    .map_err(|error| failure("BedrockDecisionError", error.to_string()))?;
     encode(request_data)
 }
 
@@ -194,10 +197,6 @@ where
     T: Serialize,
 {
     to_value(value).map_err(|error| failure("SerializationError", error.to_string()))
-}
-
-fn decision_failure(error: BedrockDecisionError) -> Box<HelperError> {
-    failure("BedrockDecisionError", error.to_string())
 }
 
 fn unexpected_failure() -> Box<HelperError> {
