@@ -32,6 +32,20 @@ impl EntitySpendQueue for SpendUpdateQueue {
     }
 }
 
+// The owner rows _update_team_db and _update_org_db write. The team keeps raw member ids and swallows a member failure; the organization quotes both ids and passes the failure up.
+#[derive(Clone, Copy, Debug)]
+pub enum OwnerKind {
+    Team,
+    Organization,
+}
+
+// The single rows _update_project_db and _update_agent_db write, which differ only in the entity they charge.
+#[derive(Clone, Copy, Debug)]
+pub enum RowKind {
+    Project,
+    Agent,
+}
+
 // _org_member_transaction_key: both ids percent-encoded with quote's safe='' so a delimiter inside one stays unreadable as a separator.
 #[must_use]
 pub fn org_member_transaction_key(org_id: &str, user_id: &str) -> String {
@@ -54,130 +68,83 @@ fn item(
     }
 }
 
-// _update_team_db: the team is queued first, then its member row; a member failure is logged and swallowed, a team failure is logged and rethrown.
-pub async fn update_team_db(
-    queue: Option<&dyn EntitySpendQueue>,
+// One entity row through the queue: a failure is logged with its entity and id and returned for the caller to swallow or pass up.
+async fn enqueue_row(
+    queue: &dyn EntitySpendQueue,
+    entity_type: EntityType,
+    entity_id: &str,
     response_cost: Option<SpendAmount>,
-    team_id: Option<&str>,
-    user_id: Option<&str>,
+    entity: &'static str,
 ) -> Result<(), SpendAttributionError> {
-    let (Some(queue), Some(team_id)) = (queue, team_id) else {
-        tracing::debug!("No team id or no database, not tracking spend for team");
-        return Ok(());
-    };
     if let Err(source) = queue
-        .enqueue(item(EntityType::Team, team_id, response_cost))
-        .await
-    {
-        tracing::error!(team_id, error = %source, "Failed to enqueue team spend update");
-        return Err(SpendAttributionError::Enqueue {
-            entity: "team",
-            source,
-        });
-    }
-    let Some(user_id) = user_id else {
-        return Ok(());
-    };
-    // key is "team_id::<value>::user_id::<value>", with neither value escaped
-    let member_key = format!("team_id::{team_id}::user_id::{user_id}");
-    if let Err(source) = queue
-        .enqueue(item(EntityType::TeamMember, &member_key, response_cost))
+        .enqueue(item(entity_type, entity_id, response_cost))
         .await
     {
         tracing::error!(
-            team_id,
-            user_id,
+            entity,
+            entity_id,
             error = %source,
-            "Failed to enqueue team member spend update"
+            "Failed to enqueue spend update"
         );
+        return Err(SpendAttributionError::Enqueue { entity, source });
     }
     Ok(())
 }
 
-// _update_org_db: the org row then its member row, and either enqueue failure is logged and passed up.
-pub async fn update_org_db(
+// _update_team_db and _update_org_db: the owner row first, then its member row when a user is known; a team member failure is logged and swallowed, an organization member failure is logged and passed up.
+pub async fn update_owner_db(
     queue: Option<&dyn EntitySpendQueue>,
     response_cost: Option<SpendAmount>,
-    org_id: Option<&str>,
+    owner_id: Option<&str>,
     user_id: Option<&str>,
+    owner: OwnerKind,
 ) -> Result<(), SpendAttributionError> {
-    let (Some(queue), Some(org_id)) = (queue, org_id) else {
-        tracing::debug!("No org id or no database, not tracking spend for org");
+    let (Some(queue), Some(owner_id)) = (queue, owner_id) else {
+        tracing::debug!(
+            owner = ?owner,
+            "No owner id or no database, not tracking spend"
+        );
         return Ok(());
     };
-    if let Err(source) = queue
-        .enqueue(item(EntityType::Organization, org_id, response_cost))
-        .await
-    {
-        tracing::error!(org_id, error = %source, "Failed to enqueue org spend update");
-        return Err(SpendAttributionError::Enqueue {
-            entity: "organization",
-            source,
-        });
-    }
+    let (owner_type, owner_label) = match owner {
+        OwnerKind::Team => (EntityType::Team, "team"),
+        OwnerKind::Organization => (EntityType::Organization, "organization"),
+    };
+    enqueue_row(queue, owner_type, owner_id, response_cost, owner_label).await?;
     let Some(user_id) = user_id else {
         return Ok(());
     };
-    let member_key = org_member_transaction_key(org_id, user_id);
-    if let Err(source) = queue
-        .enqueue(item(
-            EntityType::OrganizationMember,
-            &member_key,
-            response_cost,
-        ))
-        .await
-    {
-        tracing::error!(org_id, error = %source, "Failed to enqueue org member spend update");
-        return Err(SpendAttributionError::Enqueue {
-            entity: "organization member",
-            source,
-        });
+    let (member_type, member_label) = match owner {
+        OwnerKind::Team => (EntityType::TeamMember, "team member"),
+        OwnerKind::Organization => (EntityType::OrganizationMember, "organization member"),
+    };
+    // key is "team_id::<value>::user_id::<value>" for a team, with neither value escaped
+    let member_key = match owner {
+        OwnerKind::Team => format!("team_id::{owner_id}::user_id::{user_id}"),
+        OwnerKind::Organization => org_member_transaction_key(owner_id, user_id),
+    };
+    let member = enqueue_row(queue, member_type, &member_key, response_cost, member_label).await;
+    match owner {
+        OwnerKind::Team => Ok(()),
+        OwnerKind::Organization => member,
     }
-    Ok(())
 }
 
-// _update_project_db: no id or no database returns before the try, so neither path logs.
-pub async fn update_project_db(
+// _update_project_db and _update_agent_db: no id or no database returns before the try, so neither path logs.
+pub async fn update_row_db(
     queue: Option<&dyn EntitySpendQueue>,
     response_cost: Option<SpendAmount>,
-    project_id: Option<&str>,
+    row_id: Option<&str>,
+    row: RowKind,
 ) -> Result<(), SpendAttributionError> {
-    let (Some(queue), Some(project_id)) = (queue, project_id) else {
+    let (Some(queue), Some(row_id)) = (queue, row_id) else {
         return Ok(());
     };
-    if let Err(source) = queue
-        .enqueue(item(EntityType::Project, project_id, response_cost))
-        .await
-    {
-        tracing::error!(project_id, error = %source, "Failed to enqueue project spend update");
-        return Err(SpendAttributionError::Enqueue {
-            entity: "project",
-            source,
-        });
-    }
-    Ok(())
-}
-
-// _update_agent_db: the same silent skip as the project row, then a logged and rethrown enqueue failure.
-pub async fn update_agent_db(
-    queue: Option<&dyn EntitySpendQueue>,
-    response_cost: Option<SpendAmount>,
-    agent_id: Option<&str>,
-) -> Result<(), SpendAttributionError> {
-    let (Some(queue), Some(agent_id)) = (queue, agent_id) else {
-        return Ok(());
+    let (entity_type, label) = match row {
+        RowKind::Project => (EntityType::Project, "project"),
+        RowKind::Agent => (EntityType::Agent, "agent"),
     };
-    if let Err(source) = queue
-        .enqueue(item(EntityType::Agent, agent_id, response_cost))
-        .await
-    {
-        tracing::error!(agent_id, error = %source, "Failed to enqueue agent spend update");
-        return Err(SpendAttributionError::Enqueue {
-            entity: "agent",
-            source,
-        });
-    }
-    Ok(())
+    enqueue_row(queue, entity_type, row_id, response_cost, label).await
 }
 
 // _update_tag_db: a serialized payload decodes to its iterated names, a parsed list is used as sent, anything else returns silently.
@@ -210,16 +177,7 @@ pub async fn update_tag_db(
         if tag.is_empty() {
             continue;
         }
-        if let Err(source) = queue
-            .enqueue(item(EntityType::Tag, tag, response_cost))
-            .await
-        {
-            tracing::error!(tag, error = %source, "Failed to enqueue tag spend update");
-            return Err(SpendAttributionError::Enqueue {
-                entity: "tag",
-                source,
-            });
-        }
+        enqueue_row(queue, EntityType::Tag, tag, response_cost, "tag").await?;
     }
     Ok(())
 }
@@ -236,15 +194,16 @@ pub async fn update_model_access_group_db(
         return;
     };
     for group in debitable_model_access_groups(attributed, served_model_id, deployments) {
-        if let Err(source) = queue
-            .enqueue(item(EntityType::ModelAccessGroup, &group, response_cost))
-            .await
+        if enqueue_row(
+            queue,
+            EntityType::ModelAccessGroup,
+            &group,
+            response_cost,
+            "model access group",
+        )
+        .await
+        .is_err()
         {
-            tracing::error!(
-                model_access_group = %group,
-                error = %source,
-                "Failed to enqueue model access group spend update"
-            );
             return;
         }
     }

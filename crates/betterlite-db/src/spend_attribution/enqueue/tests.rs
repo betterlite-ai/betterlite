@@ -14,8 +14,8 @@ use crate::spend_attribution::tags::{
 use crate::spend_queues::entity::{EntityType, SpendAmount, SpendUpdateQueueItem};
 
 use super::{
-    org_member_transaction_key, update_agent_db, update_model_access_group_db, update_org_db,
-    update_project_db, update_tag_db, update_team_db,
+    OwnerKind, RowKind, org_member_transaction_key, update_model_access_group_db, update_owner_db,
+    update_row_db, update_tag_db,
 };
 
 fn amount(text: &str) -> SpendAmount {
@@ -37,11 +37,12 @@ fn names(values: &[&str]) -> Vec<String> {
 #[tokio::test]
 async fn team_queues_the_team_then_the_member() {
     let queue = RecordingQueue::new(None);
-    update_team_db(
+    update_owner_db(
         Some(&queue),
         Some(amount("1.25")),
         Some("team-1"),
         Some("user-1"),
+        OwnerKind::Team,
     )
     .await
     .unwrap();
@@ -61,11 +62,12 @@ async fn team_queues_the_team_then_the_member() {
 #[tokio::test]
 async fn team_member_failure_is_logged_and_swallowed() {
     let queue = RecordingQueue::new(Some(1));
-    update_team_db(
+    update_owner_db(
         Some(&queue),
         Some(amount("1")),
         Some("team-1"),
         Some("user-1"),
+        OwnerKind::Team,
     )
     .await
     .unwrap();
@@ -75,11 +77,12 @@ async fn team_member_failure_is_logged_and_swallowed() {
 #[tokio::test]
 async fn team_failure_is_logged_and_propagated() {
     let queue = RecordingQueue::new(Some(0));
-    let error = update_team_db(
+    let error = update_owner_db(
         Some(&queue),
         Some(amount("1")),
         Some("team-1"),
         Some("user-1"),
+        OwnerKind::Team,
     )
     .await
     .unwrap_err();
@@ -93,21 +96,39 @@ async fn team_failure_is_logged_and_propagated() {
 #[tokio::test]
 async fn team_missing_id_or_database_queues_nothing() {
     let queue = RecordingQueue::new(None);
-    update_team_db(Some(&queue), Some(amount("1")), None, Some("user-1"))
-        .await
-        .unwrap();
-    update_team_db(None, Some(amount("1")), Some("team-1"), Some("user-1"))
-        .await
-        .unwrap();
+    update_owner_db(
+        Some(&queue),
+        Some(amount("1")),
+        None,
+        Some("user-1"),
+        OwnerKind::Team,
+    )
+    .await
+    .unwrap();
+    update_owner_db(
+        None,
+        Some(amount("1")),
+        Some("team-1"),
+        Some("user-1"),
+        OwnerKind::Team,
+    )
+    .await
+    .unwrap();
     assert!(queue.items().is_empty());
 }
 
 #[tokio::test]
 async fn team_empty_id_is_still_queued() {
     let queue = RecordingQueue::new(None);
-    update_team_db(Some(&queue), None, Some(""), Some("user-1"))
-        .await
-        .unwrap();
+    update_owner_db(
+        Some(&queue),
+        None,
+        Some(""),
+        Some("user-1"),
+        OwnerKind::Team,
+    )
+    .await
+    .unwrap();
     assert_eq!(
         queue.items(),
         vec![
@@ -128,9 +149,15 @@ async fn team_empty_id_is_still_queued() {
 #[tokio::test]
 async fn team_without_a_user_queues_only_the_team() {
     let queue = RecordingQueue::new(None);
-    update_team_db(Some(&queue), Some(amount("1")), Some("team-1"), None)
-        .await
-        .unwrap();
+    update_owner_db(
+        Some(&queue),
+        Some(amount("1")),
+        Some("team-1"),
+        None,
+        OwnerKind::Team,
+    )
+    .await
+    .unwrap();
     assert_eq!(queue.items(), vec![queued(EntityType::Team, "team-1", "1")]);
 }
 
@@ -149,11 +176,12 @@ fn org_member_keys_percent_encode_both_ids() {
 #[tokio::test]
 async fn org_queues_the_org_then_the_encoded_member() {
     let queue = RecordingQueue::new(None);
-    update_org_db(
+    update_owner_db(
         Some(&queue),
         Some(amount("2")),
         Some("org::1"),
         Some("user 1"),
+        OwnerKind::Organization,
     )
     .await
     .unwrap();
@@ -173,11 +201,12 @@ async fn org_queues_the_org_then_the_encoded_member() {
 #[tokio::test]
 async fn org_member_failure_is_logged_and_propagated() {
     let queue = RecordingQueue::new(Some(1));
-    let error = update_org_db(
+    let error = update_owner_db(
         Some(&queue),
         Some(amount("2")),
         Some("org-1"),
         Some("user-1"),
+        OwnerKind::Organization,
     )
     .await
     .unwrap_err();
@@ -197,11 +226,12 @@ async fn org_member_failure_is_logged_and_propagated() {
 #[tokio::test]
 async fn org_failure_is_logged_and_propagated() {
     let queue = RecordingQueue::new(Some(0));
-    let error = update_org_db(
+    let error = update_owner_db(
         Some(&queue),
         Some(amount("2")),
         Some("org-1"),
         Some("user-1"),
+        OwnerKind::Organization,
     )
     .await
     .unwrap_err();
@@ -217,29 +247,51 @@ async fn org_failure_is_logged_and_propagated() {
 #[tokio::test]
 async fn org_missing_id_or_database_queues_nothing() {
     let queue = RecordingQueue::new(None);
-    update_org_db(Some(&queue), Some(amount("2")), None, Some("user-1"))
-        .await
-        .unwrap();
-    update_org_db(None, Some(amount("2")), Some("org-1"), Some("user-1"))
-        .await
-        .unwrap();
+    update_owner_db(
+        Some(&queue),
+        Some(amount("2")),
+        None,
+        Some("user-1"),
+        OwnerKind::Organization,
+    )
+    .await
+    .unwrap();
+    update_owner_db(
+        None,
+        Some(amount("2")),
+        Some("org-1"),
+        Some("user-1"),
+        OwnerKind::Organization,
+    )
+    .await
+    .unwrap();
     assert!(queue.items().is_empty());
 }
 
 #[tokio::test]
 async fn project_queues_the_project_and_propagates_failure() {
     let queue = RecordingQueue::new(None);
-    update_project_db(Some(&queue), Some(amount("3")), Some("project-1"))
-        .await
-        .unwrap();
+    update_row_db(
+        Some(&queue),
+        Some(amount("3")),
+        Some("project-1"),
+        RowKind::Project,
+    )
+    .await
+    .unwrap();
     assert_eq!(
         queue.items(),
         vec![queued(EntityType::Project, "project-1", "3")]
     );
     let failing = RecordingQueue::new(Some(0));
-    let error = update_project_db(Some(&failing), Some(amount("3")), Some("project-1"))
-        .await
-        .unwrap_err();
+    let error = update_row_db(
+        Some(&failing),
+        Some(amount("3")),
+        Some("project-1"),
+        RowKind::Project,
+    )
+    .await
+    .unwrap_err();
     assert!(matches!(
         error,
         super::super::SpendAttributionError::Enqueue {
@@ -252,10 +304,10 @@ async fn project_queues_the_project_and_propagates_failure() {
 #[tokio::test]
 async fn project_missing_id_or_database_queues_nothing() {
     let queue = RecordingQueue::new(None);
-    update_project_db(Some(&queue), Some(amount("3")), None)
+    update_row_db(Some(&queue), Some(amount("3")), None, RowKind::Project)
         .await
         .unwrap();
-    update_project_db(None, Some(amount("3")), Some("project-1"))
+    update_row_db(None, Some(amount("3")), Some("project-1"), RowKind::Project)
         .await
         .unwrap();
     assert!(queue.items().is_empty());
@@ -264,17 +316,27 @@ async fn project_missing_id_or_database_queues_nothing() {
 #[tokio::test]
 async fn agent_queues_the_agent_and_propagates_failure() {
     let queue = RecordingQueue::new(None);
-    update_agent_db(Some(&queue), Some(amount("4")), Some("agent-1"))
-        .await
-        .unwrap();
+    update_row_db(
+        Some(&queue),
+        Some(amount("4")),
+        Some("agent-1"),
+        RowKind::Agent,
+    )
+    .await
+    .unwrap();
     assert_eq!(
         queue.items(),
         vec![queued(EntityType::Agent, "agent-1", "4")]
     );
     let failing = RecordingQueue::new(Some(0));
-    let error = update_agent_db(Some(&failing), Some(amount("4")), Some("agent-1"))
-        .await
-        .unwrap_err();
+    let error = update_row_db(
+        Some(&failing),
+        Some(amount("4")),
+        Some("agent-1"),
+        RowKind::Agent,
+    )
+    .await
+    .unwrap_err();
     assert!(matches!(
         error,
         super::super::SpendAttributionError::Enqueue {
@@ -287,10 +349,10 @@ async fn agent_queues_the_agent_and_propagates_failure() {
 #[tokio::test]
 async fn agent_missing_id_or_database_queues_nothing() {
     let queue = RecordingQueue::new(None);
-    update_agent_db(Some(&queue), Some(amount("4")), None)
+    update_row_db(Some(&queue), Some(amount("4")), None, RowKind::Agent)
         .await
         .unwrap();
-    update_agent_db(None, Some(amount("4")), Some("agent-1"))
+    update_row_db(None, Some(amount("4")), Some("agent-1"), RowKind::Agent)
         .await
         .unwrap();
     assert!(queue.items().is_empty());
@@ -524,31 +586,32 @@ fn tag_decoding_iterates_string_characters() {
     );
 }
 
-#[test]
-fn tag_decoding_treats_malformed_and_falsey_payloads_as_empty() {
-    for payload in [
-        b"[oops".as_slice(),
-        b"[]".as_slice(),
-        b"{}".as_slice(),
-        b"\"\"".as_slice(),
-        b"null".as_slice(),
-        b"false".as_slice(),
-        b"0".as_slice(),
-        b"0.0".as_slice(),
-        b"-0.0".as_slice(),
-    ] {
-        assert_eq!(decode_enqueue_tags(payload).unwrap(), Vec::<String>::new());
-    }
+#[rstest]
+#[case::malformed("[oops")]
+#[case::empty_array("[]")]
+#[case::empty_object("{}")]
+#[case::empty_string("\"\"")]
+#[case::null("null")]
+#[case::false_literal("false")]
+#[case::zero("0")]
+#[case::zero_fraction("0.0")]
+#[case::negative_zero_fraction("-0.0")]
+fn tag_decoding_treats_malformed_and_falsey_payloads_as_empty(#[case] payload: &str) {
+    assert_eq!(
+        decode_enqueue_tags(payload.as_bytes()).unwrap(),
+        Vec::<String>::new()
+    );
 }
 
-#[test]
-fn tag_decoding_rejects_truthy_scalars() {
-    for payload in [b"true".as_slice(), b"5".as_slice(), b"-3.5".as_slice()] {
-        assert!(matches!(
-            decode_enqueue_tags(payload).unwrap_err(),
-            EnqueueTagsError::NotIterable
-        ));
-    }
+#[rstest]
+#[case::true_literal("true")]
+#[case::positive("5")]
+#[case::negative_fraction("-3.5")]
+fn tag_decoding_rejects_truthy_scalars(#[case] payload: &str) {
+    assert!(matches!(
+        decode_enqueue_tags(payload.as_bytes()).unwrap_err(),
+        EnqueueTagsError::NotIterable
+    ));
 }
 
 #[test]

@@ -23,8 +23,8 @@ pub enum AutorouterFactsError {
     SpendOverflow,
 }
 
-// Python truthiness of one metadata value: the source tests `if value:` on fields its types leave untyped.
-pub(crate) fn is_truthy(value: &Json) -> bool {
+// The source tests `if value:` on metadata fields its types leave untyped, so one JSON value stands for that decision.
+pub(crate) fn counts_as_present(value: &Json) -> bool {
     match value {
         Json::Null => false,
         Json::Bool(flag) => *flag,

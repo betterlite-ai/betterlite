@@ -2,6 +2,8 @@
 
 use std::collections::BTreeSet;
 
+use rstest::rstest;
+
 use crate::spend_attribution::support::FixtureDeployments;
 
 use super::{debitable_model_access_groups, served_model_access_groups};
@@ -44,21 +46,18 @@ fn a_known_deployment_reads_its_declared_groups() {
     );
 }
 
-#[test]
-fn a_known_deployment_without_a_group_list_serves_an_empty_set() {
+#[rstest]
+#[case::no_group_list("dep-1")]
+#[case::text_groups("dep-2")]
+#[case::empty_group_list("dep-3")]
+fn a_known_deployment_without_a_group_list_serves_an_empty_set(#[case] deployment_id: &str) {
     let deployments = FixtureDeployments::new(&[
         ("dep-1", r#"{"id":"dep-1"}"#),
         ("dep-2", r#"{"access_groups":"a"}"#),
         ("dep-3", r#"{"access_groups":[]}"#),
     ]);
-    for deployment_id in ["dep-1", "dep-2"] {
-        assert_eq!(
-            served_model_access_groups(Some(&deployments), Some(deployment_id)),
-            Some(BTreeSet::new())
-        );
-    }
     assert_eq!(
-        served_model_access_groups(Some(&deployments), Some("dep-3")),
+        served_model_access_groups(Some(&deployments), Some(deployment_id)),
         Some(BTreeSet::new())
     );
 }

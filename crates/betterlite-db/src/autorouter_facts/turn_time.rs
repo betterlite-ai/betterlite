@@ -33,7 +33,9 @@ pub fn turn_time_utc(start_time_iso: &str) -> Option<NaiveDateTime> {
 // str(payload.get("startTime") or "") is what the source parses, and bytes that are not UTF-8 are not a timestamp.
 #[must_use]
 pub fn decode_turn_time(bytes: &[u8]) -> Option<NaiveDateTime> {
-    let text = std::str::from_utf8(bytes).ok()?;
+    let Ok(text) = std::str::from_utf8(bytes) else {
+        return None;
+    };
     turn_time_utc(text)
 }
 

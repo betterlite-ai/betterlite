@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use betterlite_models::model_registration::JsonObject;
+use rstest::rstest;
 
 use super::{
     CACHE_TTL_1H_SECONDS, CACHE_TTL_5M_SECONDS, TurnCacheFacts, turn_cache_facts, write_ttl_seconds,
@@ -142,17 +143,19 @@ fn a_zero_split_falls_through_to_the_next_reading() {
     );
 }
 
-#[test]
-fn a_non_mapping_ttl_split_is_ignored() {
-    for details in [r#""split""#, "[1,2]", "null", "3"] {
-        let payload = format!(
-            r#"{{"cache_creation_input_tokens":2,"prompt_tokens_details":{{"cache_creation_token_details":{details}}}}}"#
-        );
-        assert_eq!(
-            facts(Some(&usage(&payload))).write_ttl_seconds,
-            Some(CACHE_TTL_5M_SECONDS)
-        );
-    }
+#[rstest]
+#[case::text(r#""split""#)]
+#[case::list("[1,2]")]
+#[case::null("null")]
+#[case::number("3")]
+fn a_non_mapping_ttl_split_is_ignored(#[case] details: &str) {
+    let payload = format!(
+        r#"{{"cache_creation_input_tokens":2,"prompt_tokens_details":{{"cache_creation_token_details":{details}}}}}"#
+    );
+    assert_eq!(
+        facts(Some(&usage(&payload))).write_ttl_seconds,
+        Some(CACHE_TTL_5M_SECONDS)
+    );
 }
 
 #[test]

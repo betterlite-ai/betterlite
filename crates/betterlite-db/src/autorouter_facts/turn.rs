@@ -4,6 +4,7 @@ use betterlite_models::savings_evidence::metadata::Metadata;
 use betterlite_models::savings_evidence::numeric::{numeric_savings, recorded_autorouter_savings};
 use betterlite_models::tiered_pricing::Scalar;
 use rust_decimal::Decimal;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 
 use crate::autorouter_turn_sql::transaction::{AutoRouterTurnTransaction, TurnFlag, TurnTime};
@@ -11,16 +12,16 @@ use crate::autorouter_turn_sql::transaction::{AutoRouterTurnTransaction, TurnFla
 use super::cache::turn_cache_facts;
 use super::session::bounded_session_id;
 use super::turn_time::turn_time_utc;
-use super::{AutorouterFactsError, INTERNAL_CALL_ORIGIN_KEY, is_truthy};
+use super::{AutorouterFactsError, INTERNAL_CALL_ORIGIN_KEY, counts_as_present};
 
-// The SpendLogsPayload fields build_autorouter_turn_transaction reads, plus the routing decision it reads from the metadata mapping.
+// The SpendLogsPayload fields turn_transaction reads, plus the routing decision it reads from the metadata mapping.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct TurnPayload {
     pub status: Option<String>,
     pub model: Option<String>,
     pub model_group: Option<String>,
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     pub user: Option<String>,
     pub session_id: Option<String>,
     #[serde(rename = "startTime")]
@@ -31,8 +32,8 @@ pub struct TurnPayload {
     pub spend: Option<Decimal>,
 }
 
-// build_autorouter_turn_transaction: one rollup transaction for a successful auto-routed turn, and None for everything the rollup must not count.
-pub fn build_autorouter_turn_transaction(
+// turn_transaction: one rollup transaction for a successful auto-routed turn, and None for everything the rollup must not count.
+pub fn turn_transaction(
     payload: &TurnPayload,
     metadata: &JsonObject,
     saved_spend: Decimal,
@@ -42,7 +43,7 @@ pub fn build_autorouter_turn_transaction(
     }
     if metadata
         .get(INTERNAL_CALL_ORIGIN_KEY)
-        .is_some_and(is_truthy)
+        .is_some_and(counts_as_present)
     {
         return Ok(None);
     }
@@ -53,7 +54,7 @@ pub fn build_autorouter_turn_transaction(
         return Ok(None);
     }
     let router_name = match routing_decision.get("router_model_name") {
-        Some(value) if is_truthy(value) => match value {
+        Some(value) if counts_as_present(value) => match value {
             Json::Text(name) => Some(name.as_str()),
             Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
         },
@@ -62,7 +63,10 @@ pub fn build_autorouter_turn_transaction(
     let Some(router_name) = router_name.filter(|name| !name.is_empty()) else {
         return Ok(None);
     };
-    let api_key = payload.api_key.clone().unwrap_or_default();
+    let api_key = match &payload.api_key {
+        Some(key) => key.expose_secret().to_owned(),
+        None => String::new(),
+    };
     let user_id = payload.user.clone().unwrap_or_default();
     let Some(session_id) = payload.session_id.as_deref().filter(|id| !id.is_empty()) else {
         return Ok(None);

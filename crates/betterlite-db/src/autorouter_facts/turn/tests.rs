@@ -4,11 +4,12 @@ use std::str::FromStr as _;
 
 use betterlite_models::model_registration::JsonObject;
 use chrono::NaiveDateTime;
+use rstest::rstest;
 use rust_decimal::Decimal;
 
 use crate::autorouter_turn_sql::transaction::{AutoRouterTurnTransaction, TurnFlag, TurnTime};
 
-use super::{TurnPayload, build_autorouter_turn_transaction};
+use super::{TurnPayload, turn_transaction};
 
 const SUCCESS: &str = r#"{
     "status": "success",
@@ -39,7 +40,7 @@ fn dec(text: &str) -> Decimal {
 }
 
 fn build(payload_text: &str, metadata_text: &str) -> Option<AutoRouterTurnTransaction> {
-    build_autorouter_turn_transaction(
+    turn_transaction(
         &payload(payload_text),
         &metadata(metadata_text),
         dec("0.25"),
@@ -55,8 +56,11 @@ fn naive(text: &str) -> NaiveDateTime {
     NaiveDateTime::parse_from_str(text, "%Y-%m-%dT%H:%M:%S%.f").unwrap()
 }
 
-#[test]
-fn only_a_successful_request_reaches_the_rollup() {
+#[rstest]
+#[case::failure("failure")]
+#[case::empty("")]
+#[case::uppercase("SUCCESS")]
+fn only_a_successful_request_reaches_the_rollup(#[case] status: &str) {
     let turn = record(SUCCESS, DECISION);
     assert_eq!(turn.api_key, "sk-1");
     assert_eq!(turn.user_id, "user-1");
@@ -73,36 +77,38 @@ fn only_a_successful_request_reaches_the_rollup() {
     assert_eq!(turn.savings_estimated_turns, 0);
     assert_eq!(turn.savings_estimated_actual_spend, Decimal::ZERO);
     assert_eq!(turn.savings_estimated_saved_spend, Decimal::ZERO);
-    for status in ["failure", "", "SUCCESS"] {
-        let text = SUCCESS.replace("\"success\"", &format!("\"{status}\""));
-        assert!(build(&text, DECISION).is_none());
-    }
+    let text = SUCCESS.replace("\"success\"", &format!("\"{status}\""));
+    assert!(build(&text, DECISION).is_none());
 }
 
-#[test]
-fn an_internal_call_origin_excludes_the_turn() {
-    for origin in [r#""shadow_eval""#, "true", "1", "[1]", r#"{"a":1}"#] {
-        assert!(build(SUCCESS, &format!(r#"{{"internal_call_origin":{origin}}}"#)).is_none());
-    }
-    for origin in ["false", "0", "0.0", r#""""#, "null", "[]", "{}"] {
-        let text = format!(
-            r#"{{"internal_call_origin":{origin},"routing_decision":{{"router_model_name":"smart"}}}}"#
-        );
-        assert!(build(SUCCESS, &text).is_some());
-    }
+#[rstest]
+#[case::text_origin(r#""shadow_eval""#, false)]
+#[case::true_origin("true", false)]
+#[case::number_origin("1", false)]
+#[case::list_origin("[1]", false)]
+#[case::object_origin(r#"{"a":1}"#, false)]
+#[case::false_origin("false", true)]
+#[case::zero_origin("0", true)]
+#[case::zero_fraction_origin("0.0", true)]
+#[case::empty_text_origin(r#""""#, true)]
+#[case::null_origin("null", true)]
+#[case::empty_list_origin("[]", true)]
+#[case::empty_object_origin("{}", true)]
+fn an_internal_call_origin_excludes_the_turn(#[case] origin: &str, #[case] counted: bool) {
+    let text = format!(
+        r#"{{"internal_call_origin":{origin},"routing_decision":{{"router_model_name":"smart"}}}}"#
+    );
+    assert_eq!(build(SUCCESS, &text).is_some(), counted);
 }
 
-#[test]
-fn a_missing_or_empty_routing_decision_excludes_the_turn() {
-    for text in [
-        "{}",
-        r#"{"routing_decision":{}}"#,
-        r#"{"routing_decision":[]}"#,
-        r#"{"routing_decision":"smart"}"#,
-        r#"{"routing_decision":null}"#,
-    ] {
-        assert!(build(SUCCESS, text).is_none());
-    }
+#[rstest]
+#[case::absent("{}")]
+#[case::empty_object(r#"{"routing_decision":{}}"#)]
+#[case::list(r#"{"routing_decision":[]}"#)]
+#[case::text(r#"{"routing_decision":"smart"}"#)]
+#[case::null(r#"{"routing_decision":null}"#)]
+fn a_missing_or_empty_routing_decision_excludes_the_turn(#[case] text: &str) {
+    assert!(build(SUCCESS, text).is_none());
 }
 
 #[test]
@@ -111,20 +117,26 @@ fn the_router_model_name_wins_over_the_model_group() {
     assert_eq!(turn.router_name, "smart");
 }
 
-#[test]
-fn a_falsey_router_model_name_falls_back_to_the_model_group() {
-    for name in [r#""""#, "null", "0", "false", "[]", "{}"] {
-        let text = format!(r#"{{"routing_decision":{{"router_model_name":{name}}}}}"#);
-        assert_eq!(record(SUCCESS, &text).router_name, "fast");
-    }
+#[rstest]
+#[case::empty_text(r#""""#)]
+#[case::null("null")]
+#[case::zero("0")]
+#[case::false_literal("false")]
+#[case::empty_list("[]")]
+#[case::empty_object("{}")]
+fn a_falsey_router_model_name_falls_back_to_the_model_group(#[case] name: &str) {
+    let text = format!(r#"{{"routing_decision":{{"router_model_name":{name}}}}}"#);
+    assert_eq!(record(SUCCESS, &text).router_name, "fast");
 }
 
-#[test]
-fn a_truthy_non_string_router_name_excludes_the_turn() {
-    for name in ["5", "true", "[1]", r#"{"a":1}"#] {
-        let text = format!(r#"{{"routing_decision":{{"router_model_name":{name}}}}}"#);
-        assert!(build(SUCCESS, &text).is_none());
-    }
+#[rstest]
+#[case::number("5")]
+#[case::true_literal("true")]
+#[case::list("[1]")]
+#[case::object(r#"{"a":1}"#)]
+fn a_truthy_non_string_router_name_excludes_the_turn(#[case] name: &str) {
+    let text = format!(r#"{{"routing_decision":{{"router_model_name":{name}}}}}"#);
+    assert!(build(SUCCESS, &text).is_none());
 }
 
 #[test]
@@ -148,38 +160,21 @@ fn identity_needs_a_key_or_a_user() {
     assert!(build(&empty_both, DECISION).is_none());
 }
 
-#[test]
-fn a_turn_without_a_session_or_a_model_is_excluded() {
-    for key in ["session_id", "model"] {
-        let missing = SUCCESS.replace(
-            &format!(
-                "\"{key}\": \"{}\",",
-                if key == "model" {
-                    "gpt-4o"
-                } else {
-                    "session-1"
-                }
-            ),
-            "",
-        );
-        assert!(build(&missing, DECISION).is_none());
-        let empty = SUCCESS.replace(
-            &format!(
-                "\"{key}\": \"{}\"",
-                if key == "model" {
-                    "gpt-4o"
-                } else {
-                    "session-1"
-                }
-            ),
-            &format!("\"{key}\": \"\""),
-        );
-        assert!(build(&empty, DECISION).is_none());
-    }
+#[rstest]
+#[case::session_id("session_id", "session-1")]
+#[case::model("model", "gpt-4o")]
+fn a_turn_without_a_session_or_a_model_is_excluded(#[case] key: &str, #[case] value: &str) {
+    let missing = SUCCESS.replace(&format!("\"{key}\": \"{value}\","), "");
+    assert!(build(&missing, DECISION).is_none());
+    let empty = SUCCESS.replace(
+        &format!("\"{key}\": \"{value}\""),
+        &format!("\"{key}\": \"\""),
+    );
+    assert!(build(&empty, DECISION).is_none());
 }
 
 #[test]
-fn an_unparseable_start_time_excludes_the_turn() {
+fn an_unparsable_start_time_excludes_the_turn() {
     let bad = SUCCESS.replace("2024-01-02T03:04:05Z", "yesterday");
     assert!(build(&bad, DECISION).is_none());
     let missing = SUCCESS.replace(r#""startTime": "2024-01-02T03:04:05Z","#, "");
@@ -219,19 +214,19 @@ fn the_classifier_cost_is_folded_into_the_turn_spend() {
     assert_eq!(record(&no_spend, split).spend, dec("0.25"));
 }
 
-#[test]
-fn a_non_numeric_classifier_cost_reads_as_zero() {
-    for cost in [r#""0.25""#, "true", "null", "[]", "{}"] {
-        let text = format!(
-            r#"{{"routing_decision":{{"router_model_name":"smart","classifier_cost":{cost}}}}}"#
-        );
-        let turn = record(SUCCESS, &text);
-        assert_eq!(turn.classifier_cost, Decimal::ZERO);
-        assert_eq!(turn.spend, dec("0.5"));
-    }
-    let numeric_text =
-        r#"{"routing_decision":{"router_model_name":"smart","classifier_cost":"2"}}"#;
-    assert_eq!(record(SUCCESS, numeric_text).classifier_cost, Decimal::ZERO);
+#[rstest]
+#[case::quoted_number(r#""0.25""#)]
+#[case::true_literal("true")]
+#[case::null("null")]
+#[case::list("[]")]
+#[case::object("{}")]
+fn a_non_numeric_classifier_cost_reads_as_zero(#[case] cost: &str) {
+    let text = format!(
+        r#"{{"routing_decision":{{"router_model_name":"smart","classifier_cost":{cost}}}}}"#
+    );
+    let turn = record(SUCCESS, &text);
+    assert_eq!(turn.classifier_cost, Decimal::ZERO);
+    assert_eq!(turn.spend, dec("0.5"));
 }
 
 #[test]
@@ -258,31 +253,31 @@ fn an_exact_estimated_saving_travels_with_the_turn() {
     assert_eq!(turn.baseline_model.as_deref(), Some("gpt-4o"));
 }
 
-#[test]
-fn an_inexact_or_absent_estimate_records_no_estimated_saving() {
-    for metadata_text in [
-        r#"{"routing_decision":{"router_model_name":"smart"},"autorouter_savings_estimate":{"version":2,"status":"measured"},"autorouter_savings":1.5}"#,
-        r#"{"routing_decision":{"router_model_name":"smart"},"autorouter_savings_estimate":{"version":4,"status":"estimated"},"autorouter_savings":1.5}"#,
-        r#"{"routing_decision":{"router_model_name":"smart"},"autorouter_savings_estimate":{"version":2.0,"status":"estimated"},"autorouter_savings":1.5}"#,
-        r#"{"routing_decision":{"router_model_name":"smart"},"autorouter_savings_estimate":{"version":2,"status":"estimated"}}"#,
-        r#"{"routing_decision":{"router_model_name":"smart"},"autorouter_savings":1.5}"#,
-    ] {
-        let turn = record(SUCCESS, metadata_text);
-        assert_eq!(turn.savings_estimated_turns, 0);
-        assert_eq!(turn.savings_estimated_actual_spend, Decimal::ZERO);
-        assert_eq!(turn.savings_estimated_saved_spend, Decimal::ZERO);
-    }
+#[rstest]
+#[case::measured_status(r#"{"routing_decision":{"router_model_name":"smart"},"autorouter_savings_estimate":{"version":2,"status":"measured"},"autorouter_savings":1.5}"#)]
+#[case::unsupported_version(r#"{"routing_decision":{"router_model_name":"smart"},"autorouter_savings_estimate":{"version":4,"status":"estimated"},"autorouter_savings":1.5}"#)]
+#[case::fractional_version(r#"{"routing_decision":{"router_model_name":"smart"},"autorouter_savings_estimate":{"version":2.0,"status":"estimated"},"autorouter_savings":1.5}"#)]
+#[case::no_savings_amount(r#"{"routing_decision":{"router_model_name":"smart"},"autorouter_savings_estimate":{"version":2,"status":"estimated"}}"#)]
+#[case::no_estimate(
+    r#"{"routing_decision":{"router_model_name":"smart"},"autorouter_savings":1.5}"#
+)]
+fn an_inexact_or_absent_estimate_records_no_estimated_saving(#[case] metadata_text: &str) {
+    let turn = record(SUCCESS, metadata_text);
+    assert_eq!(turn.savings_estimated_turns, 0);
+    assert_eq!(turn.savings_estimated_actual_spend, Decimal::ZERO);
+    assert_eq!(turn.savings_estimated_saved_spend, Decimal::ZERO);
 }
 
-#[test]
-fn the_tier_travels_only_when_it_is_a_non_empty_string() {
+#[rstest]
+#[case::number("5")]
+#[case::true_literal("true")]
+#[case::list("[]")]
+#[case::object("{}")]
+fn the_tier_travels_only_when_it_is_a_non_empty_string(#[case] tier: &str) {
     let tiered = r#"{"routing_decision":{"router_model_name":"smart","tier":"premium"}}"#;
     assert_eq!(record(SUCCESS, tiered).tier.as_deref(), Some("premium"));
-    for tier in ["5", "true", "[]", "{}"] {
-        let text =
-            format!(r#"{{"routing_decision":{{"router_model_name":"smart","tier":{tier}}}}}"#);
-        assert_eq!(record(SUCCESS, &text).tier, None);
-    }
+    let text = format!(r#"{{"routing_decision":{{"router_model_name":"smart","tier":{tier}}}}}"#);
+    assert_eq!(record(SUCCESS, &text).tier, None);
     let empty = r#"{"routing_decision":{"router_model_name":"smart","tier":""}}"#;
     assert_eq!(record(SUCCESS, empty).tier, None);
 }
@@ -348,14 +343,16 @@ fn a_covered_turn_without_cache_traffic_is_not_touched() {
     assert_eq!(turn.cache_touched, TurnFlag(false));
 }
 
-#[test]
-fn a_non_mapping_usage_object_reads_as_absent() {
-    for usage in ["[]", r#""usage""#, "5", "null", "{}"] {
-        let text = format!(
-            r#"{{"routing_decision":{{"router_model_name":"smart"}},"usage_object":{usage}}}"#
-        );
-        let turn = record(SUCCESS, &text);
-        assert_eq!(turn.covered, TurnFlag(false));
-        assert_eq!(turn.cache_touched, TurnFlag(true));
-    }
+#[rstest]
+#[case::list("[]")]
+#[case::text(r#""usage""#)]
+#[case::number("5")]
+#[case::null("null")]
+#[case::empty_object("{}")]
+fn a_non_mapping_usage_object_reads_as_absent(#[case] usage: &str) {
+    let text =
+        format!(r#"{{"routing_decision":{{"router_model_name":"smart"}},"usage_object":{usage}}}"#);
+    let turn = record(SUCCESS, &text);
+    assert_eq!(turn.covered, TurnFlag(false));
+    assert_eq!(turn.cache_touched, TurnFlag(true));
 }

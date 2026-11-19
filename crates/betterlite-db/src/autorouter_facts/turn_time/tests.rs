@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use chrono::{NaiveDate, NaiveDateTime};
+use rstest::rstest;
 
 use super::{decode_turn_time, turn_time_utc};
 
@@ -81,18 +82,15 @@ fn a_timestamp_without_seconds_or_a_date_reads_the_minute_or_midnight() {
     );
 }
 
-#[test]
-fn an_unparseable_timestamp_reads_none() {
-    for text in [
-        "",
-        "not a time",
-        "2024-13-02T03:04:05",
-        "2024-01-02T24:00:00",
-        "2024-01-02T03:04:05+25:00",
-        "2024/01/02 03:04:05",
-    ] {
-        assert_eq!(turn_time_utc(text), None);
-    }
+#[rstest]
+#[case::empty("")]
+#[case::text("not a time")]
+#[case::month_thirteen("2024-13-02T03:04:05")]
+#[case::hour_twenty_four("2024-01-02T24:00:00")]
+#[case::offset_past_a_day("2024-01-02T03:04:05+25:00")]
+#[case::slashes("2024/01/02 03:04:05")]
+fn an_unparsable_timestamp_reads_none(#[case] text: &str) {
+    assert_eq!(turn_time_utc(text), None);
 }
 
 #[test]

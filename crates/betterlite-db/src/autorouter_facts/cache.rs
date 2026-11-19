@@ -5,7 +5,7 @@ use betterlite_models::savings_evidence::cache_extraction::{
 };
 
 use super::AutorouterFactsError;
-use super::is_truthy;
+use super::counts_as_present;
 
 pub const CACHE_TTL_5M_SECONDS: i64 = 300;
 pub const CACHE_TTL_1H_SECONDS: i64 = 3600;
@@ -52,13 +52,13 @@ pub fn write_ttl_seconds(
     if let Some(creation) = creation {
         if creation
             .get("ephemeral_1h_input_tokens")
-            .is_some_and(is_truthy)
+            .is_some_and(counts_as_present)
         {
             return Ok(Some(CACHE_TTL_1H_SECONDS));
         }
         if creation
             .get("ephemeral_5m_input_tokens")
-            .is_some_and(is_truthy)
+            .is_some_and(counts_as_present)
         {
             return Ok(Some(CACHE_TTL_5M_SECONDS));
         }
