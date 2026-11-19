@@ -1,0 +1,111 @@
+use super::identity::AffinityKey;
+use super::pin::{AffinityPin, StoredPin};
+use crate::routing_state_store::RoutingStateStore;
+use crate::routing_value_store::{PinValue, RouteValue, StoreRead};
+
+// a claim that keeps losing the compare-and-set race falls back to the pod-local claim instead of spinning
+pub const MAX_CLAIM_ATTEMPTS: u8 = 8;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SharedFallback {
+    Unavailable,
+    Conflict,
+    ValueUnusable,
+}
+
+enum Decision {
+    Keep {
+        value: RouteValue,
+        stored: StoredPin,
+    },
+    Replace,
+    Return(StoredPin),
+}
+
+// the Redis claim script without Lua: read the shared pin, decide as the script does, and write it back only when the read still holds
+pub(super) async fn claim(
+    store: &RoutingStateStore,
+    key: &AffinityKey,
+    pin: &AffinityPin,
+    ttl_seconds: u32,
+    eligible: Option<&[AffinityPin]>,
+) -> Result<StoredPin, SharedFallback> {
+    let ttl = Some(f64::from(ttl_seconds));
+    let ours = RouteValue::Pin(PinValue {
+        model_id: pin.wire_text(),
+    });
+    let mut current = read(store, key).await?;
+    for _attempt in 0..MAX_CLAIM_ATTEMPTS {
+        match evaluate(&current, pin, eligible)? {
+            Decision::Return(stored) => return Ok(stored),
+            Decision::Keep { value, stored } => {
+                let outcome = store
+                    .compare_and_set(&key.0, &current, &value, ttl)
+                    .await
+                    .map_err(|_error| SharedFallback::Unavailable)?;
+                if outcome.value.swapped {
+                    return Ok(stored);
+                }
+                current = outcome.value.current;
+            }
+            Decision::Replace => {
+                let outcome = store
+                    .compare_and_set(&key.0, &current, &ours, ttl)
+                    .await
+                    .map_err(|_error| SharedFallback::Unavailable)?;
+                if outcome.value.swapped {
+                    return Ok(StoredPin::Pin(pin.clone()));
+                }
+                current = outcome.value.current;
+            }
+        }
+    }
+    Err(SharedFallback::Conflict)
+}
+
+async fn read(store: &RoutingStateStore, key: &AffinityKey) -> Result<StoreRead, SharedFallback> {
+    match store.get(&key.0).await {
+        Ok(observed) if observed.warning.is_none() => Ok(observed.value),
+        _ => Err(SharedFallback::Unavailable),
+    }
+}
+
+fn evaluate(
+    current: &StoreRead,
+    pin: &AffinityPin,
+    eligible: Option<&[AffinityPin]>,
+) -> Result<Decision, SharedFallback> {
+    let StoreRead::Value(value) = current else {
+        return Ok(Decision::Replace);
+    };
+    let RouteValue::Pin(stored_value) = value else {
+        return Err(SharedFallback::ValueUnusable);
+    };
+    let stored = StoredPin::parse(stored_value.model_id.as_bytes())
+        .map_err(|_error| SharedFallback::ValueUnusable)?;
+    match eligible {
+        Some(candidates) => {
+            if candidates
+                .iter()
+                .any(|candidate| stored.matches_exactly(candidate))
+            {
+                Ok(Decision::Keep {
+                    value: value.clone(),
+                    stored,
+                })
+            } else {
+                Ok(Decision::Replace)
+            }
+        }
+        None => {
+            if stored.wire_text() == pin.wire_text() {
+                Ok(Decision::Keep {
+                    value: value.clone(),
+                    stored,
+                })
+            } else {
+                Ok(Decision::Return(stored))
+            }
+        }
+    }
+}
