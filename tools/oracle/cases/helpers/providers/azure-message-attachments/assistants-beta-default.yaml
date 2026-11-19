@@ -1,0 +1,28 @@
+kind: helper
+name: azure-message-attachments-assistants-beta-default
+call:
+  azure_message_attachments:
+    append_message:
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        data: {role: user, content: hi}
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        flag: true
+        data: {role: user, content: hi}
+calls:
+  - azure_message_attachments:
+      list_messages:
+        - api_key: sk-fixture
+          api_base: https://example.test
+          api_version: "2024-02-01"
+  - azure_message_attachments:
+      list_messages:
+        - api_key: sk-fixture
+          api_base: https://example.test
+          api_version: "2024-02-01"
+          flag: true
+env: {}
+compare: {ignore: []}
