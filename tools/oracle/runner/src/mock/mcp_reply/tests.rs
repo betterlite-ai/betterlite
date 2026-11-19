@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::io::{Read as _, Write as _};
 use std::net::TcpStream;
 
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use super::{McpReplyError, correlate, correlation};
 use crate::case::UpstreamAnswer;
@@ -13,6 +13,7 @@ use crate::routing_mock_scripts::MockScript;
 
 const PATH: &str = "/__mcp_fixture/alpha";
 const MARKER: &str = "$mcp_request_id";
+const NOTIFICATION: &str = r#"{"jsonrpc": "2.0", "method": "notifications/initialized"}"#;
 
 fn json_body(text: &str) -> Value {
     serde_json::from_str(text).unwrap()
@@ -27,12 +28,26 @@ fn scripted(status: u16, body: Option<Value>, events: Option<Vec<String>>) -> Up
     }
 }
 
+fn answered(body: Value) -> UpstreamAnswer {
+    scripted(200, Some(body), None)
+}
+
+fn request_body(id: &str, method: &str) -> Value {
+    json_body(&format!(
+        r#"{{"jsonrpc": "2.0", "id": {id}, "method": "{method}"}}"#
+    ))
+}
+
+fn answer_body(id: &str, fields: &str) -> Value {
+    json_body(&format!(r#"{{"jsonrpc": "2.0", "id": {id}, {fields}}}"#))
+}
+
+fn marked_body(fields: &str) -> Value {
+    answer_body(&format!(r#""{MARKER}""#), fields)
+}
+
 fn marked_answer() -> UpstreamAnswer {
-    scripted(
-        200,
-        Some(json!({"jsonrpc": "2.0", "id": MARKER, "result": {}})),
-        None,
-    )
+    answered(marked_body(r#""result": {}"#))
 }
 
 fn assert_marker_without_id(result: Result<(), McpReplyError>) {
@@ -43,97 +58,67 @@ fn assert_marker_without_id(result: Result<(), McpReplyError>) {
 
 #[test]
 fn integer_id() {
-    let request = json!({"jsonrpc": "2.0", "id": 7, "method": "tools/list"});
+    let request = request_body("7", "tools/list");
     let request_correlation = correlation(PATH, &request);
     let mut reply = marked_answer();
     correlate(&mut reply, &request_correlation).unwrap();
-    assert_eq!(
-        reply.body,
-        Some(json!({"jsonrpc": "2.0", "id": 7, "result": {}}))
-    );
-    let large = json!({"jsonrpc": "2.0", "id": u64::MAX, "method": "tools/list"});
+    assert_eq!(reply.body, Some(answer_body("7", r#""result": {}"#)));
+    let large = request_body("18446744073709551615", "tools/list");
     let mut large_reply = marked_answer();
     correlate(&mut large_reply, &correlation(PATH, &large)).unwrap();
     assert_eq!(
         large_reply.body,
-        Some(json!({"jsonrpc": "2.0", "id": u64::MAX, "result": {}}))
+        Some(answer_body("18446744073709551615", r#""result": {}"#))
     );
 }
 
 #[test]
 fn string_id() {
-    let request = json!({"jsonrpc": "2.0", "id": "req-a", "method": "tools/list"});
+    let request = request_body(r#""req-a""#, "tools/list");
     let request_correlation = correlation(PATH, &request);
     let mut reply = marked_answer();
     correlate(&mut reply, &request_correlation).unwrap();
     assert_eq!(
         reply.body,
-        Some(json!({"jsonrpc": "2.0", "id": "req-a", "result": {}}))
+        Some(answer_body(r#""req-a""#, r#""result": {}"#))
     );
 }
 
 #[test]
 fn no_marker() {
-    let request = json!({"jsonrpc": "2.0", "id": 7, "method": "tools/list"});
+    let request = request_body("7", "tools/list");
     let request_correlation = correlation(PATH, &request);
-    let mut reply = scripted(
-        200,
-        Some(json!({"jsonrpc": "2.0", "id": 99, "result": {}})),
-        None,
-    );
+    let mut reply = answered(answer_body("99", r#""result": {}"#));
     correlate(&mut reply, &request_correlation).unwrap();
-    assert_eq!(
-        reply.body,
-        Some(json!({"jsonrpc": "2.0", "id": 99, "result": {}}))
-    );
+    assert_eq!(reply.body, Some(answer_body("99", r#""result": {}"#)));
 }
 
 #[test]
 fn wrong_path() {
-    let request = json!({"jsonrpc": "2.0", "id": 7, "method": "chat"});
+    let request = request_body("7", "chat");
     let request_correlation = correlation("/v1/chat/completions", &request);
     let mut reply = marked_answer();
     correlate(&mut reply, &request_correlation).unwrap();
-    assert_eq!(
-        reply.body,
-        Some(json!({"jsonrpc": "2.0", "id": MARKER, "result": {}}))
-    );
+    assert_eq!(reply.body, Some(marked_body(r#""result": {}"#)));
     let near_miss = correlation("/__mcp_fixture", &request);
     let mut near_miss_reply = marked_answer();
     correlate(&mut near_miss_reply, &near_miss).unwrap();
-    assert_eq!(
-        near_miss_reply.body,
-        Some(json!({"jsonrpc": "2.0", "id": MARKER, "result": {}}))
-    );
+    assert_eq!(near_miss_reply.body, Some(marked_body(r#""result": {}"#)));
 }
 
 #[test]
 fn nested_marker_unchanged() {
-    let request = json!({"jsonrpc": "2.0", "id": 7, "method": "tools/call"});
+    let request = request_body("7", "tools/call");
     let request_correlation = correlation(PATH, &request);
-    let mut reply = scripted(
-        200,
-        Some(json!({
-            "jsonrpc": "2.0",
-            "id": MARKER,
-            "result": {"content": [{"type": "text", "text": MARKER}]}
-        })),
-        None,
-    );
+    let content = format!(r#""result": {{"content": [{{"type": "text", "text": "{MARKER}"}}]}}"#);
+    let mut reply = answered(marked_body(&content));
     correlate(&mut reply, &request_correlation).unwrap();
-    assert_eq!(
-        reply.body,
-        Some(json!({
-            "jsonrpc": "2.0",
-            "id": 7,
-            "result": {"content": [{"type": "text", "text": MARKER}]}
-        }))
-    );
+    assert_eq!(reply.body, Some(answer_body("7", &content)));
 }
 
 #[test]
 fn missing_id() {
-    let request = json!({"jsonrpc": "2.0", "method": "notifications/initialized"});
+    let request = json_body(NOTIFICATION);
     let request_correlation = correlation(PATH, &request);
     let mut reply = marked_answer();
     let error = correlate(&mut reply, &request_correlation).unwrap_err();
@@ -150,53 +135,63 @@ fn assert_unusable_request(request: &Value) {
 
 #[test]
 fn invalid_id() {
-    assert_unusable_request(&json!({"jsonrpc": "2.0", "id": 1.5, "method": "tools/list"}));
-    assert_unusable_request(&json!({"jsonrpc": "2.0", "id": true, "method": "tools/list"}));
-    assert_unusable_request(&json!({"jsonrpc": "2.0", "id": null, "method": "tools/list"}));
-    assert_unusable_request(&json!({"jsonrpc": "2.0", "id": [7], "method": "tools/list"}));
-    assert_unusable_request(&json!({"jsonrpc": "2.0", "id": {"value": 7}, "method": "tools/list"}));
+    assert_unusable_request(&request_body("1.5", "tools/list"));
+    assert_unusable_request(&request_body("true", "tools/list"));
+    assert_unusable_request(&request_body("null", "tools/list"));
+    assert_unusable_request(&request_body("[7]", "tools/list"));
+    assert_unusable_request(&request_body(r#"{"value": 7}"#, "tools/list"));
 }
 
 #[test]
 fn unusable_body_gives_no_id() {
-    assert_unusable_request(&json!([{"jsonrpc": "2.0", "id": 7, "method": "tools/list"}]));
+    assert_unusable_request(&json_body(
+        r#"[{"jsonrpc": "2.0", "id": 7, "method": "tools/list"}]"#,
+    ));
     assert_unusable_request(&Value::String("not json".to_owned()));
 }
 
 #[test]
 fn jsonrpc_not_2_0() {
-    let request = json!({"jsonrpc": "2.0", "id": 7, "method": "tools/list"});
+    let request = request_body("7", "tools/list");
     let request_correlation = correlation(PATH, &request);
-    let mut missing = scripted(200, Some(json!({"id": MARKER, "result": {}})), None);
+    let mut missing = answered(json_body(&format!(
+        r#"{{"id": "{MARKER}", "result": {{}}}}"#
+    )));
     correlate(&mut missing, &request_correlation).unwrap();
-    assert_eq!(missing.body, Some(json!({"id": MARKER, "result": {}})));
-    let mut other = scripted(
-        200,
-        Some(json!({"jsonrpc": "1.0", "id": MARKER, "result": {}})),
-        None,
+    assert_eq!(
+        missing.body,
+        Some(json_body(&format!(
+            r#"{{"id": "{MARKER}", "result": {{}}}}"#
+        )))
     );
+    let mut other = answered(json_body(&format!(
+        r#"{{"jsonrpc": "1.0", "id": "{MARKER}", "result": {{}}}}"#
+    )));
     correlate(&mut other, &request_correlation).unwrap();
     assert_eq!(
         other.body,
-        Some(json!({"jsonrpc": "1.0", "id": MARKER, "result": {}}))
+        Some(json_body(&format!(
+            r#"{{"jsonrpc": "1.0", "id": "{MARKER}", "result": {{}}}}"#
+        )))
     );
 }
 
 #[test]
 fn non_object_answer_unchanged() {
-    let request = json!({"jsonrpc": "2.0", "id": 7, "method": "tools/list"});
+    let request = request_body("7", "tools/list");
     let request_correlation = correlation(PATH, &request);
-    let mut text = scripted(200, Some(Value::String(MARKER.to_owned())), None);
+    let mut text = answered(Value::String(MARKER.to_owned()));
     correlate(&mut text, &request_correlation).unwrap();
     assert_eq!(text.body, Some(Value::String(MARKER.to_owned())));
-    let mut array = scripted(200, Some(json!([MARKER])), None);
-    correlate(&mut array, &request_correlation).unwrap();
-    assert_eq!(array.body, Some(json!([MARKER])));
+    let array = format!(r#"["{MARKER}"]"#);
+    let mut array_reply = answered(json_body(&array));
+    correlate(&mut array_reply, &request_correlation).unwrap();
+    assert_eq!(array_reply.body, Some(json_body(&array)));
 }
 
 #[test]
 fn notification_without_marker() {
-    let request = json!({"jsonrpc": "2.0", "method": "notifications/initialized"});
+    let request = json_body(NOTIFICATION);
     let request_correlation = correlation(PATH, &request);
     let mut reply = scripted(202, None, Some(Vec::new()));
     correlate(&mut reply, &request_correlation).unwrap();
@@ -207,26 +202,12 @@ fn notification_without_marker() {
 
 #[test]
 fn error_reply() {
-    let request = json!({"jsonrpc": "2.0", "id": "req-a", "method": "tools/call"});
+    let request = request_body(r#""req-a""#, "tools/call");
     let request_correlation = correlation(PATH, &request);
-    let mut reply = scripted(
-        200,
-        Some(json!({
-            "jsonrpc": "2.0",
-            "id": MARKER,
-            "error": {"code": -32601, "message": "method not found"}
-        })),
-        None,
-    );
+    let error = r#""error": {"code": -32601, "message": "method not found"}"#;
+    let mut reply = answered(marked_body(error));
     correlate(&mut reply, &request_correlation).unwrap();
-    assert_eq!(
-        reply.body,
-        Some(json!({
-            "jsonrpc": "2.0",
-            "id": "req-a",
-            "error": {"code": -32601, "message": "method not found"}
-        }))
-    );
+    assert_eq!(reply.body, Some(answer_body(r#""req-a""#, error)));
 }
 
 fn respond(mock: &MockProvider, path: &str, body: &Value) -> String {
@@ -252,29 +233,24 @@ fn response_body(response: &str) -> &str {
     response.split_once("\r\n\r\n").unwrap().1
 }
 
+fn session_replies() -> [UpstreamAnswer; 3] {
+    [
+        answered(marked_body(
+            r#""result": {"protocolVersion": "2025-03-26", "capabilities": {}, "serverInfo": {"name": "test-upstream", "version": "1"}}"#,
+        )),
+        scripted(202, None, Some(Vec::new())),
+        answered(marked_body(r#""result": {"tools": []}"#)),
+    ]
+}
+
 #[test]
 fn loopback_session_correlates_each_reply() {
-    let replies = [
-        scripted(
-            200,
-            Some(json!({
-                "jsonrpc": "2.0",
-                "id": MARKER,
-                "result": {"protocolVersion": "2025-03-26", "capabilities": {}, "serverInfo": {"name": "test-upstream", "version": "1"}}
-            })),
-            None,
-        ),
-        scripted(202, None, Some(Vec::new())),
-        scripted(
-            200,
-            Some(json!({"jsonrpc": "2.0", "id": MARKER, "result": {"tools": []}})),
-            None,
-        ),
-    ];
+    let replies = session_replies();
     let mock = MockProvider::start(MockScript::try_from(&replies[..]).unwrap()).unwrap();
-    let initialize = json!({"jsonrpc": "2.0", "id": 41, "method": "initialize", "params": {}});
-    let notification = json!({"jsonrpc": "2.0", "method": "notifications/initialized"});
-    let list = json!({"jsonrpc": "2.0", "id": "list-2", "method": "tools/list"});
+    let initialize =
+        json_body(r#"{"jsonrpc": "2.0", "id": 41, "method": "initialize", "params": {}}"#);
+    let notification = json_body(NOTIFICATION);
+    let list = request_body(r#""list-2""#, "tools/list");
 
     let initialized = respond(&mock, PATH, &initialize);
     let notified = respond(&mock, PATH, &notification);
@@ -283,14 +259,14 @@ fn loopback_session_correlates_each_reply() {
     assert_eq!(status_of(&initialized), 200);
     assert_eq!(
         json_body(response_body(&initialized)).get("id"),
-        Some(&json!(41))
+        Some(&json_body("41"))
     );
     assert_eq!(status_of(&notified), 202);
     assert_eq!(response_body(&notified), "");
     assert_eq!(status_of(&listed), 200);
     assert_eq!(
         json_body(response_body(&listed)).get("id"),
-        Some(&json!("list-2"))
+        Some(&json_body(r#""list-2""#))
     );
 
     let trace = mock.finish().unwrap();
@@ -305,13 +281,9 @@ fn loopback_session_correlates_each_reply() {
 
 #[test]
 fn loopback_marker_without_id_fails() {
-    let replies = [scripted(
-        200,
-        Some(json!({"jsonrpc": "2.0", "id": MARKER, "result": {}})),
-        None,
-    )];
+    let replies = [marked_answer()];
     let mock = MockProvider::start(MockScript::try_from(&replies[..]).unwrap()).unwrap();
-    let notification = json!({"jsonrpc": "2.0", "method": "notifications/initialized"});
+    let notification = json_body(NOTIFICATION);
 
     let failed = respond(&mock, PATH, &notification);
 
