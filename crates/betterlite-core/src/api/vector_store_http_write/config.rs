@@ -41,7 +41,8 @@ pub struct OpenAiWriteConfig<'settings> {
 }
 
 impl<'settings> OpenAiWriteConfig<'settings> {
-    pub fn new(
+    #[must_use]
+    pub const fn new(
         settings: &'settings OpenAiCredentialsSettings,
         globals: LiteLlmGlobals,
         env_api_key: Option<SecretString>,

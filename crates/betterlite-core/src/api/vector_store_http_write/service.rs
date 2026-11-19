@@ -108,7 +108,7 @@ enum Selected<'client, Client> {
 }
 
 impl<Client> Selected<'_, Client> {
-    fn get(&self) -> &Client {
+    const fn get(&self) -> &Client {
         match self {
             Self::Supplied(client) => client,
             Self::Created(client) => client,
