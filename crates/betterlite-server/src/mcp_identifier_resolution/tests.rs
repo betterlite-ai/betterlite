@@ -281,10 +281,7 @@ async fn resolve_lookup_finds_rows_by_server_id_alias_and_server_name() {
         .await
         .unwrap();
     found.sort_by(|left, right| left.server_id.cmp(&right.server_id));
-    let found_ids: Vec<&str> = found
-        .iter()
-        .filter_map(|row| row.server_id.as_deref())
-        .collect();
+    let found_ids: Vec<&str> = found.iter().map(|row| row.server_id.as_str()).collect();
     assert_eq!(found_ids, ["by-alias-row", "by-id", "by-server-name-row"]);
     assert_eq!(found[0].alias.as_deref(), Some("alias-target"));
     assert!(found[1].alias.is_none());

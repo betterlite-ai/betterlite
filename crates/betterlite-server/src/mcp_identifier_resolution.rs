@@ -22,17 +22,15 @@ pub struct ServerNames<'names> {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 pub struct ServerRow {
-    pub server_id: Option<String>,
+    pub server_id: String,
     pub alias: Option<String>,
     pub server_name: Option<String>,
 }
 
 #[derive(Debug, Error)]
 pub enum ResolveError {
-    #[error("the MCP server identifier lookup failed")]
+    #[error(transparent)]
     Database(#[from] TableError),
-    #[error("a stored MCP server row is not valid JSON")]
-    Row(#[from] serde_json::Error),
 }
 
 #[must_use]
@@ -71,7 +69,7 @@ pub async fn db_servers_by_identifiers(
         let text: &str = row
             .try_get(0)
             .map_err(|source| TableError::Database(backend(source)))?;
-        found.push(serde_json::from_str(text)?);
+        found.push(serde_json::from_str(text).map_err(TableError::Row)?);
     }
     Ok(found)
 }
@@ -89,20 +87,17 @@ pub async fn resolve_identifiers_to_ids(
         resolved.insert(identifier.clone(), BTreeSet::new());
     }
     for row in db_servers_by_identifiers(identifiers, client).await? {
-        let Some(server_id) = row.server_id.as_deref() else {
-            continue;
-        };
-        if server_id.is_empty() {
+        if row.server_id.is_empty() {
             continue;
         }
         // The MCP table has no name column, so a stored row matches three of the four attributes
         let names = ServerNames {
-            server_id: Some(server_id),
+            server_id: Some(&row.server_id),
             alias: row.alias.as_deref(),
             server_name: row.server_name.as_deref(),
             name: None,
         };
-        add_matches(&mut resolved, identifiers, &names, server_id);
+        add_matches(&mut resolved, identifiers, &names, &row.server_id);
     }
     for server in registry {
         let fields = &server.fields;
