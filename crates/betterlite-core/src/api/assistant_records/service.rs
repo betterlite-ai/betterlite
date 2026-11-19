@@ -81,14 +81,14 @@ impl<Transport: AssistantsTransport> AssistantRecords<'_, '_, Transport> {
         provider: &str,
         entry: Entry,
         message: &str,
-    ) -> Box<AssistantCreateFailure> {
-        Box::new(error::raised(
+    ) -> AssistantCreateFailure {
+        error::raised(
             &Raised::Local(message.to_owned()),
             input.model.as_str(),
             provider,
             entry,
             self.redactor,
-        ))
+        )
     }
 
     // acreate resolves the model and forces the flag true; the sync façade refuses a non-bool flag.
@@ -98,9 +98,7 @@ impl<Transport: AssistantsTransport> AssistantRecords<'_, '_, Transport> {
         entry: Entry,
     ) -> Result<Selection, Box<AssistantCreateFailure>> {
         if entry == Entry::Async {
-            let provider = projection::provider(input, self.resolution).map_err(|source| {
-                self.failure(input, &input.provider, Entry::Async, &source.to_string())
-            })?;
+            let provider = self.resolved_provider(input)?;
             return Ok(Selection {
                 provider,
                 entry,
@@ -110,7 +108,12 @@ impl<Transport: AssistantsTransport> AssistantRecords<'_, '_, Transport> {
         let flag = match &input.async_create_assistants {
             Some(AsyncFlag::Bool(value)) => Some(*value),
             Some(AsyncFlag::Other(_)) => {
-                return Err(self.failure(input, &input.provider, Entry::Sync, INVALID_FLAG));
+                return Err(Box::new(self.failure(
+                    input,
+                    &input.provider,
+                    Entry::Sync,
+                    INVALID_FLAG,
+                )));
             }
             None => None,
         };
@@ -118,6 +121,16 @@ impl<Transport: AssistantsTransport> AssistantRecords<'_, '_, Transport> {
             provider: input.provider.clone(),
             entry,
             flag,
+        })
+    }
+
+    // get_llm_provider prepends the declared provider the model doesn't name, then reads it back.
+    fn resolved_provider(
+        &self,
+        input: &AssistantCreateInput,
+    ) -> Result<String, Box<AssistantCreateFailure>> {
+        projection::provider(input, self.resolution).map_err(|source| {
+            Box::new(self.failure(input, &input.provider, Entry::Async, &source.to_string()))
         })
     }
 
@@ -133,8 +146,9 @@ impl<Transport: AssistantsTransport> AssistantRecords<'_, '_, Transport> {
             "azure" => projection::CallKind::Azure,
             _ => return Err(Box::new(error::unsupported(provider))),
         };
-        let timeout = projection::timeout(input, provider)
-            .map_err(|source| self.failure(input, provider, entry, &source.to_string()))?;
+        let timeout = projection::timeout(input, provider).map_err(|source| {
+            Box::new(self.failure(input, provider, entry, &source.to_string()))
+        })?;
         Ok(projection::call(&projection::CallRequest {
             kind,
             settings: &self.settings,

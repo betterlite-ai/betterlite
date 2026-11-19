@@ -23,6 +23,7 @@ use http::HeaderMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::value::RawValue;
+use tokio::task::yield_now;
 
 use super::call::{
     AssistantCreateCall, AssistantCreateOutcome, AssistantCreateResult, AzureCreateCall,
@@ -71,22 +72,28 @@ impl Scripted {
     }
 }
 
+fn readable_headers(headers: &HeaderMap) -> BTreeMap<String, String> {
+    headers
+        .iter()
+        .map(|(name, value)| {
+            (
+                name.as_str().to_owned(),
+                value.to_str().expect("a readable header").to_owned(),
+            )
+        })
+        .collect()
+}
+
 impl AssistantsTransport for Scripted {
     async fn send(&self, request: OutboundRequest) -> Result<UpstreamResponse, TransportError> {
         // the mock answers from memory; this await keeps it a real asynchronous transport
-        tokio::task::yield_now().await;
+        yield_now().await;
         let RequestBody::Json(bytes) = &request.body else {
             panic!("the create request carries a JSON body");
         };
         let body = serde_json::from_slice::<AssistantCreate>(bytes)
             .expect("the create body is an AssistantCreate");
-        let mut headers = BTreeMap::new();
-        for (name, value) in &request.headers {
-            headers.insert(
-                name.as_str().to_owned(),
-                value.to_str().expect("a readable header").to_owned(),
-            );
-        }
+        let headers = readable_headers(&request.headers);
         let mut url = request.url.to_string();
         if !request.query.is_empty() {
             let pairs: Vec<String> = request
@@ -350,9 +357,8 @@ async fn assistant_create_optional_values(#[case] entry: Entry) {
     );
 }
 
-#[tokio::test]
-async fn assistant_create_credentials() {
-    let redactor = redactor();
+// every layer of the credential chains set at once, so a test can see which one wins
+fn layered_settings() -> resource_sdk_settings::Settings {
     let mut settings = bare_settings();
     settings.api_base = Some(String::from("https://global.test/v1"));
     settings.api_key = Some(SecretString::from("sk-global"));
@@ -360,7 +366,13 @@ async fn assistant_create_credentials() {
     settings.openai_base_url = Some(String::from("https://base-url.test/v1"));
     settings.openai_api_key = Some(SecretString::from("sk-env"));
     settings.openai_organization = Some(String::from("org-env"));
-    let fixture = Fixture::new(settings);
+    settings
+}
+
+#[tokio::test]
+async fn assistant_create_credentials() {
+    let redactor = redactor();
+    let fixture = Fixture::new(layered_settings());
     let resolution = fixture.resolution();
     let service = fixture.service(&resolution, &redactor);
 
@@ -386,6 +398,14 @@ async fn assistant_create_credentials() {
         "org-request"
     );
     assert_eq!(seen_deadline(&fixture, 0), Duration::from_millis(7500));
+}
+
+#[tokio::test]
+async fn assistant_create_configured_fallbacks() {
+    let redactor = redactor();
+    let fixture = Fixture::new(layered_settings());
+    let resolution = fixture.resolution();
+    let service = fixture.service(&resolution, &redactor);
 
     // the configured values fill in when the request leaves them out, and a zero falls through
     let fallback_request = input(raw(r#"{"timeout": 0, "request_timeout": 12.0}"#));
@@ -403,17 +423,21 @@ async fn assistant_create_credentials() {
         "org-global"
     );
     assert_eq!(seen_deadline(&fixture, 1), Duration::from_secs(12));
+}
 
+#[tokio::test]
+async fn assistant_create_openai_env_chain() {
+    let redactor = redactor();
     // an empty base falls through, the key chain reaches the env name, and a numeric text converts
-    let mut empty_settings = bare_settings();
-    empty_settings.api_base = Some(String::new());
-    empty_settings.openai_key = Some(SecretString::from("sk-openai-key"));
-    empty_settings.openai_base_url = Some(String::from("https://base-url.test/v1"));
-    let fixture_empty = Fixture::new(empty_settings);
-    let empty_resolution = fixture_empty.resolution();
-    let empty_service = fixture_empty.service(&empty_resolution, &redactor);
+    let mut settings = bare_settings();
+    settings.api_base = Some(String::new());
+    settings.openai_key = Some(SecretString::from("sk-openai-key"));
+    settings.openai_base_url = Some(String::from("https://base-url.test/v1"));
+    let fixture = Fixture::new(settings);
+    let resolution = fixture.resolution();
+    let service = fixture.service(&resolution, &redactor);
     let text_request = input(raw(r#"{"timeout": "7.5"}"#));
-    let text_result = empty_service
+    let text_result = service
         .create_assistants(&text_request)
         .await
         .expect("answered");
@@ -421,21 +445,18 @@ async fn assistant_create_credentials() {
         openai_call(&text_result).api_base,
         "https://base-url.test/v1"
     );
-    assert_eq!(seen_auth(&fixture_empty, 0), "Bearer sk-openai-key");
-    assert_eq!(
-        seen_deadline(&fixture_empty, 0),
-        Duration::from_millis(7500)
-    );
+    assert_eq!(seen_auth(&fixture, 0), "Bearer sk-openai-key");
+    assert_eq!(seen_deadline(&fixture, 0), Duration::from_millis(7500));
+}
 
+#[tokio::test]
+async fn assistant_create_default_base_and_missing_key() {
+    let redactor = redactor();
     // with no key the SDK raises its own OpenAIError
     let fixture_default = Fixture::new(resource_sdk_settings::Settings::default());
     let default_resolution = fixture_default.resolution();
     let default_service = fixture_default.service(&default_resolution, &redactor);
-    let missing = failure(
-        default_service
-            .create_assistants(&input(raw(r#"{}"#)))
-            .await,
-    );
+    let missing = failure(default_service.create_assistants(&input(raw("{}"))).await);
     assert_eq!(missing.class, "OpenAIError");
     assert_eq!(missing.status, None);
 
@@ -444,7 +465,7 @@ async fn assistant_create_credentials() {
     let base_resolution = fixture_base.resolution();
     let base_service = fixture_base.service(&base_resolution, &redactor);
     let base_result = base_service
-        .create_assistants(&input(raw(r#"{}"#)))
+        .create_assistants(&input(raw("{}")))
         .await
         .expect("answered");
     assert_eq!(
@@ -455,42 +476,38 @@ async fn assistant_create_credentials() {
         fixture_base.transport.seen()[0].url,
         "https://api.openai.com/v1/assistants"
     );
+}
+
+#[tokio::test]
+async fn assistant_create_structured_timeout() {
+    let redactor = redactor();
+    let fixture = Fixture::new(openai_settings("sk-test"));
+    let resolution = fixture.resolution();
+    let service = fixture.service(&resolution, &redactor);
 
     // a structured timeout survives for openai and bounds the call by its read phase
-    let fixture_structured = Fixture::new(openai_settings("sk-test"));
-    let structured_resolution = fixture_structured.resolution();
-    let structured_service = fixture_structured.service(&structured_resolution, &redactor);
     let phases_request = input(raw(r#"{"timeout": {"read": 9.0, "connect": 2.0}}"#));
-    structured_service
+    service
         .create_assistants(&phases_request)
         .await
         .expect("answered");
-    assert_eq!(
-        seen_deadline(&fixture_structured, 0),
-        Duration::from_secs(9)
-    );
+    assert_eq!(seen_deadline(&fixture, 0), Duration::from_secs(9));
 
     // an empty text timeout falls through like an absent one
     let empty_text_request = input(raw(r#"{"timeout": "", "request_timeout": 12.0}"#));
-    structured_service
+    service
         .create_assistants(&empty_text_request)
         .await
         .expect("answered");
-    assert_eq!(
-        seen_deadline(&fixture_structured, 1),
-        Duration::from_secs(12)
-    );
+    assert_eq!(seen_deadline(&fixture, 1), Duration::from_secs(12));
 
     // a phase map whose read is zero keeps the SDK default deadline
     let zero_read_request = input(raw(r#"{"timeout": {"read": 0.0}}"#));
-    structured_service
+    service
         .create_assistants(&zero_read_request)
         .await
         .expect("answered");
-    assert_eq!(
-        seen_deadline(&fixture_structured, 2),
-        Duration::from_secs(600)
-    );
+    assert_eq!(seen_deadline(&fixture, 2), Duration::from_secs(600));
 }
 
 #[rstest]
@@ -537,7 +554,7 @@ async fn assistant_create_azure_request_values() {
     let result = service.create_assistants(&request).await.expect("answered");
     let call = azure_call(&result);
     assert_eq!(call.api_version.as_deref(), Some("2020-01-01"));
-    assert_eq!(call.litellm_params.timeout, Some(7.5));
+    assert_eq!(call.litellm_params.timeout, Some(7.5_f64));
     let seen = fixture.transport.seen();
     assert_eq!(
         seen[0].url,
@@ -682,14 +699,14 @@ async fn assistant_create_flag_and_failures(#[case] entry: Entry, #[case] flag: 
     let service = fixture.service(&resolution, &redactor);
 
     // any bool, or none at all, is a legal flag; the async entry forces it true whatever the caller said
-    let mut request = input(raw(r#"{}"#));
+    let mut request = input(raw("{}"));
     request.async_create_assistants = flag.map(AsyncFlag::Bool);
     let result = invoke(&service, &request, entry).await.expect("answered");
     let expected = entry == Entry::Async || flag == Some(true);
     assert_eq!(openai_call(&result).is_async, expected);
 
     // anything else raises the ValueError before a client is built
-    let mut int_flag_request = input(raw(r#"{}"#));
+    let mut int_flag_request = input(raw("{}"));
     int_flag_request.async_create_assistants =
         Some(serde_json::from_str::<AsyncFlag>("1").expect("a flag"));
     let value_error = failure(service.create_assistants(&int_flag_request).await);
@@ -699,7 +716,7 @@ async fn assistant_create_flag_and_failures(#[case] entry: Entry, #[case] flag: 
         value_error.message,
         "Invalid value passed in for async_create_assistants. Only bool or None allowed"
     );
-    let mut text_flag_request = input(raw(r#"{}"#));
+    let mut text_flag_request = input(raw("{}"));
     text_flag_request.async_create_assistants =
         Some(serde_json::from_str::<AsyncFlag>("\"true\"").expect("a flag"));
     let text_value_error = failure(service.create_assistants(&text_flag_request).await);
@@ -744,7 +761,7 @@ async fn assistant_create_flag_and_failures(#[case] entry: Entry, #[case] flag: 
         .reply(404, body_404);
     let not_found_resolution = fixture_404.resolution();
     let not_found_service = fixture_404.service(&not_found_resolution, &redactor);
-    let not_found_request = input(raw(r#"{}"#));
+    let not_found_request = input(raw("{}"));
     let sync = failure(
         not_found_service
             .create_assistants(&not_found_request)
@@ -776,7 +793,7 @@ async fn assistant_create_flag_and_failures(#[case] entry: Entry, #[case] flag: 
         .reply(500, body_500);
     let server_error_resolution = fixture_500.resolution();
     let server_error_service = fixture_500.service(&server_error_resolution, &redactor);
-    let server_error_request = input(raw(r#"{}"#));
+    let server_error_request = input(raw("{}"));
     let sync_500 = failure(
         server_error_service
             .create_assistants(&server_error_request)
@@ -806,7 +823,7 @@ async fn assistant_create_flag_and_failures(#[case] entry: Entry, #[case] flag: 
         .reply(400, body_400);
     let bad_request_resolution = fixture_400.resolution();
     let bad_request_service = fixture_400.service(&bad_request_resolution, &redactor);
-    let bad_request_request = input(raw(r#"{}"#));
+    let bad_request_request = input(raw("{}"));
     let sync_400 = failure(
         bad_request_service
             .create_assistants(&bad_request_request)
@@ -863,7 +880,7 @@ async fn assistant_create_status_classes(#[case] status: u16, #[case] class: &st
     let fixture = Fixture::new(openai_settings("sk-test")).reply(status, body);
     let resolution = fixture.resolution();
     let service = fixture.service(&resolution, &redactor);
-    let sync = failure(service.create_assistants(&input(raw(r#"{}"#))).await);
+    let sync = failure(service.create_assistants(&input(raw("{}"))).await);
     assert_eq!(sync.class, class);
     assert_eq!(sync.status, Some(status));
 }
@@ -875,7 +892,7 @@ async fn assistant_create_status_message() {
     let fixture = Fixture::new(openai_settings("sk-test")).reply(404, body);
     let resolution = fixture.resolution();
     let service = fixture.service(&resolution, &redactor);
-    let sync = failure(service.create_assistants(&input(raw(r#"{}"#))).await);
+    let sync = failure(service.create_assistants(&input(raw("{}"))).await);
     assert_eq!(sync.message, format!("Error code: 404 - {body}"));
 
     // a body that is not UTF-8 decodes like httpx's errors="replace": one U+FFFD per bad sequence
@@ -885,7 +902,7 @@ async fn assistant_create_status_message() {
         .reply_bytes(500, b"oops \xff".to_vec());
     let bad_resolution = fixture_bad.resolution();
     let bad_service = fixture_bad.service(&bad_resolution, &redactor);
-    let bad_sync = failure(bad_service.create_assistants(&input(raw(r#"{}"#))).await);
+    let bad_sync = failure(bad_service.create_assistants(&input(raw("{}"))).await);
     assert_eq!(bad_sync.message, "Error code: 500 - oops \u{fffd}");
 }
 
@@ -893,7 +910,12 @@ async fn assistant_create_status_message() {
 fn assistant_create_retry_values() {
     assert_eq!(super::projection::retries(Some(3)).ok(), Some(Some(3)));
     assert_eq!(super::projection::retries(None).ok(), Some(None));
-    assert!(super::projection::retries(Some(-1)).is_err());
+    assert_eq!(
+        super::projection::retries(Some(-1))
+            .unwrap_err()
+            .to_string(),
+        "max_retries must be a non-negative integer, got -1"
+    );
 }
 
 #[test]
@@ -904,7 +926,7 @@ fn assistant_create_timeout_values_parse() {
     assert_eq!(arguments, CreateTimeout::Text(String::from("7.5")));
     let phases: CreateTimeout = serde_json::from_str(r#"{"read": 9.0}"#).expect("phases");
     match phases {
-        CreateTimeout::Phases(given) => assert_eq!(given.read, Some(9.0)),
+        CreateTimeout::Phases(given) => assert_eq!(given.read, Some(9.0_f64)),
         CreateTimeout::Seconds(_) | CreateTimeout::Text(_) => panic!("a phase map parsed as plain"),
     }
 }
