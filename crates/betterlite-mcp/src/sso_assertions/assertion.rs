@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use betterlite_auth::jwt_claims::TypedValue;
 use betterlite_auth::jwt_claims::decode::unverified_claims;
-use chrono::{DateTime, NaiveDateTime, ParseError, Utc};
+use chrono::{DateTime, Datelike as _, NaiveDateTime, ParseError, Utc};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
