@@ -31,12 +31,10 @@ pub(super) struct Fixture {
 
 impl Fixture {
     pub(super) fn new() -> Result<Self, Box<HelperError>> {
-        let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).or_value_error()?;
-        let now = DateTime::parse_from_rfc3339(NOW).or_value_error()?;
         Ok(Self {
-            redactor,
+            redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).or_value_error()?,
             sink: Silent,
-            now,
+            now: DateTime::parse_from_rfc3339(NOW).or_value_error()?,
         })
     }
 
