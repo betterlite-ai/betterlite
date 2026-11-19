@@ -8,10 +8,12 @@ from pydantic import JsonValue
 class Endpoints(Protocol):
     def set_fine_tuning_config(self, config: JsonValue) -> None: ...
 
-    def get_fine_tuning_provider_config(self, custom_llm_provider: str) -> JsonValue: ...
+    def get_fine_tuning_provider_config(  # ast-grep-ignore: no-long-names
+        self, custom_llm_provider: str
+    ) -> JsonValue: ...
 
 
-FINE_TUNING = cast(Endpoints, endpoints)  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/fine_tuning_endpoints/endpoints.py#L32-L59
+FINE_TUNING = cast(Endpoints, endpoints)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/fine_tuning_endpoints/endpoints.py#L32-L59
 
 
 class Step(TypedDict):

@@ -110,7 +110,7 @@ pub fn fine_tuning_config_for(
     for setting in settings {
         let Json::Object(entries) = setting else {
             return Err(FineTuningConfigError::NotAProviderMap {
-                kind: python_kind(setting),
+                kind: value_kind(setting),
             });
         };
         let matched = entries
@@ -124,7 +124,7 @@ pub fn fine_tuning_config_for(
 }
 
 // the type name Python puts in the AttributeError message
-fn python_kind(value: &Json) -> &'static str {
+fn value_kind(value: &Json) -> &'static str {
     match value {
         Json::Null => "NoneType",
         Json::Bool(_) => "bool",

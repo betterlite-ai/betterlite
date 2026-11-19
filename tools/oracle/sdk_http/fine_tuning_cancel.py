@@ -2,7 +2,7 @@ import asyncio
 import json
 import os
 from collections.abc import Coroutine
-from typing import Literal, TypeAlias
+from typing import Literal, TypeAlias, TypedDict
 
 import litellm
 import openai
@@ -11,6 +11,21 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 ModelResult: TypeAlias = pydantic.BaseModel | Coroutine[object, object, pydantic.BaseModel]
+
+
+class CallKwargs(TypedDict):
+    fine_tuning_job_id: str
+    custom_llm_provider: str | None
+    api_base: str | None
+    extra_headers: dict[str, str] | None
+    extra_body: dict[str, str] | None
+    api_key: str | None
+    api_version: str | None
+    organization: str | None
+    timeout: float | str | None
+    request_timeout: float | None
+    max_retries: int | None
+    azure_ad_token: str | None
 
 
 class Params(BaseModel):
@@ -50,7 +65,8 @@ class FineTuningCancelRequest(BaseModel):
 
     def serialize(self, api_base: str) -> str:
         runs = [run_one(run, api_base) for run in self.fine_tuning_cancel.runs]
-        return json.dumps({"fine_tuning_cancel": {"value": {"runs": runs}}})
+        outcome: JsonValue = {"fine_tuning_cancel": {"value": {"runs": runs}}}
+        return json.dumps(outcome)
 
 
 def prepare_env(run: Run, api_base: str) -> None:
@@ -58,40 +74,31 @@ def prepare_env(run: Run, api_base: str) -> None:
     os.environ[variable] = api_base if run.base == "env" else f"{api_base}/env-base"
 
 
-def call_kwargs(run: Run, api_base: str) -> dict[str, object]:
+def call_kwargs(run: Run, api_base: str) -> CallKwargs:
     params = run.params
-    kwargs: dict[str, object] = {
+    return {
         "fine_tuning_job_id": run.fine_tuning_job_id,
         "custom_llm_provider": run.custom_llm_provider,
+        "api_base": api_base if run.base == "param" else None,
+        "extra_headers": run.extra_headers,
+        "extra_body": run.extra_body,
+        "api_key": params.api_key,
+        "api_version": params.api_version,
+        "organization": params.organization,
+        "timeout": params.timeout,
+        "request_timeout": params.request_timeout,
+        "max_retries": params.max_retries,
+        "azure_ad_token": params.azure_ad_token,
     }
-    if run.base == "param":
-        kwargs["api_base"] = api_base
-    if run.extra_headers is not None:
-        kwargs["extra_headers"] = run.extra_headers
-    if run.extra_body is not None:
-        kwargs["extra_body"] = run.extra_body
-    if params.api_key is not None:
-        kwargs["api_key"] = params.api_key
-    if params.api_version is not None:
-        kwargs["api_version"] = params.api_version
-    if params.organization is not None:
-        kwargs["organization"] = params.organization
-    if params.timeout is not None:
-        kwargs["timeout"] = params.timeout
-    if params.request_timeout is not None:
-        kwargs["request_timeout"] = params.request_timeout
-    if params.max_retries is not None:
-        kwargs["max_retries"] = params.max_retries
-    if params.azure_ad_token is not None:
-        kwargs["azure_ad_token"] = params.azure_ad_token
-    return kwargs
 
 
 def called(run: Run, api_base: str) -> ModelResult:
     kwargs = call_kwargs(run, api_base)
     if run.asynchronous:
-        return litellm.acancel_fine_tuning_job(**kwargs)
-    return litellm.cancel_fine_tuning_job(**kwargs)
+        pending: ModelResult = litellm.acancel_fine_tuning_job(**kwargs)
+        return pending
+    answer: ModelResult = litellm.cancel_fine_tuning_job(**kwargs)
+    return answer
 
 
 def settle(result: ModelResult) -> JsonValue:
@@ -104,24 +111,14 @@ def settle(result: ModelResult) -> JsonValue:
             return JSON.validate_json(result.model_dump_json())
 
 
-def status_failure(error: openai.APIStatusError) -> dict[str, JsonValue]:
+def failure(error: ValueError | openai.OpenAIError, status: int) -> dict[str, JsonValue]:
+    details = error if isinstance(error, openai.APIStatusError) else None
     return {
         "class": type(error).__name__,
-        "status": error.status_code,
-        "type": error.type,
-        "param": error.param,
-        "code": error.code,
-        "message": str(error),
-    }
-
-
-def plain_failure(error: ValueError | openai.OpenAIError) -> dict[str, JsonValue]:
-    return {
-        "class": type(error).__name__,
-        "status": 0,
-        "type": None,
-        "param": None,
-        "code": None,
+        "status": status,
+        "type": None if details is None else details.type,
+        "param": None if details is None else details.param,
+        "code": None if details is None else details.code,
         "message": str(error),
     }
 
@@ -131,7 +128,7 @@ def run_one(run: Run, api_base: str) -> dict[str, JsonValue]:
     try:
         job = settle(called(run, api_base))
     except openai.APIStatusError as error:
-        return {"job": None, "error": status_failure(error)}
+        return {"job": None, "error": failure(error, error.status_code)}
     except (ValueError, openai.OpenAIError) as error:
-        return {"job": None, "error": plain_failure(error)}
+        return {"job": None, "error": failure(error, 0)}
     return {"job": job, "error": None}
