@@ -12,10 +12,10 @@ deviations:
   - what: "There is no caller-supplied SDK client: LiteLLM's add_message and get_messages accept client= and hand it to the provider call, where betterlite always builds its client from the resolved credentials."
     why: "betterlite has no Python client objects to inject, and the credentials, base URL and timeout it resolves are the ones the call uses; the oracle case schema refuses a client field for the same reason."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L892-L1011
-kept_bugs:
-  - what: "Only the literal True async flag dispatches the async provider call: a value such as 1, \"true\" or \"yes\" keeps the sync client, and null and false do too."
-    why: "LiteLLM's wrappers test \"is not None and is True\" around the popped flag, so a caller that sends a merely truthy value gets the sync call today; widening the check would silently move those calls to the async client."
+  - what: "The async provider client is chosen by the wrapper entry point, not by the a_add_message/aget_messages keyword: LiteLLM's sync wrapper with a_add_message=True returns the coroutine instead of awaiting it, where betterlite's add_message always answers a message."
+    why: "Only a_add_message/aget_messages await the coroutine that flag makes the sync wrapper return, so a working setup reaches the async client only through the async wrapper; the flag never changes the request or the reply."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L2622-L2634
+kept_bugs:
   - what: "Azure validates the attachments list and then drops it: file ids are collected into a local list that never reaches optional_params, so a valid attachments value sends neither attachments nor file_ids."
     why: "LiteLLM's mapper builds the list and never assigns it, and Azure callers depend on the v2 attachments field not being forwarded, so the mapper's output is copied as it stands."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L91-L104
