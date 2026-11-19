@@ -5,8 +5,8 @@ use serde_json::Value;
 use thiserror::Error;
 
 use crate::edenai_common::{
-    EdenAiEnv, MissingApiKey, endpoint_url, json_headers, pick, reported_cost_from_bytes,
-    set_response_cost,
+    CONTENT_TYPE, EdenAiEnv, JSON_CONTENT_TYPE, MissingApiKey, authorized_headers, endpoint_url,
+    pick, reported_cost_from_bytes, set_response_cost, with_header,
 };
 use crate::embedding::{EmbeddingInput, EmbeddingRecord, EmbeddingResponse, EmbeddingUsage};
 use crate::openai_base_config::{Headers, Object};
@@ -84,9 +84,10 @@ pub fn request_body(
     Ok(body)
 }
 
-// json_headers, endpoint_url and the request body in one step, so the caller only sends the plan
+// LiteLLM's json_headers and endpoint_url with the request body in one step, so the caller only sends the plan
 pub fn plan_embedding(input: &TransformInput<'_>) -> Result<EmbeddingPlan, EdenAiEmbeddingError> {
-    let headers = json_headers(input.headers, input.api_key, input.model, input.env)?;
+    let authorized = authorized_headers(input.headers, input.api_key, input.model, input.env)?;
+    let headers = with_header(&authorized, CONTENT_TYPE, JSON_CONTENT_TYPE);
     let url = endpoint_url(input.api_base, EMBEDDINGS_PATH, input.env);
     let body = request_body(input.model, input.input, input.optional_params)?;
     Ok(EmbeddingPlan { url, headers, body })

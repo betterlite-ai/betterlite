@@ -124,6 +124,45 @@ fn plan_embedding_builds_the_url_headers_and_body() {
     assert_eq!(plan.body.get("input"), Some(&json!("hi")));
 }
 
+#[rstest]
+#[case::added(&[], "application/json")]
+#[case::replaced(&[("Content-Type", "text/plain")], "application/json")]
+#[case::other_case_replaced(&[("content-type", "text/plain")], "application/json")]
+fn plan_embedding_replaces_a_caller_content_type(
+    #[case] supplied: &[(&str, &str)],
+    #[case] expected: &str,
+) {
+    let env = environment(Some("environment"), None);
+    let headers = caller_headers(supplied);
+    let optional = Object::new();
+    let input = EmbeddingInput::Text(String::from("hi"));
+    let plan = plan_embedding(&TransformInput {
+        model: "m",
+        input: &input,
+        optional_params: &optional,
+        headers: &headers,
+        api_key: Some(&key("explicit")),
+        api_base: None,
+        env: &env,
+    })
+    .unwrap();
+    assert_eq!(
+        plan.headers.get("Content-Type").map(String::as_str),
+        Some(expected)
+    );
+    assert_eq!(
+        plan.headers.get("Authorization").map(String::as_str),
+        Some("Bearer explicit")
+    );
+    assert_eq!(
+        plan.headers
+            .keys()
+            .filter(|name| name.eq_ignore_ascii_case("content-type"))
+            .count(),
+        1
+    );
+}
+
 #[test]
 fn plan_embedding_reads_the_environment_key_and_base() {
     let env = environment(Some("environment"), Some("https://gateway.example/v3"));

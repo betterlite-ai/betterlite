@@ -14,9 +14,9 @@ use serde_json::{Number, Value, json};
 
 use super::{
     CatalogError, EDENAI_API_BASE, EdenAiEnv, MissingApiKey, authorized_headers, cost_value,
-    endpoint_url, get_error_class, insert_response_cost, json_headers, parse_model_catalog, pick,
-    reported_cost, reported_cost_from_bytes, reported_cost_from_headers, require_api_key,
-    resolve_api_base, resolve_api_key, set_response_cost,
+    endpoint_url, get_error_class, insert_response_cost, parse_model_catalog, pick, reported_cost,
+    reported_cost_from_bytes, reported_cost_from_headers, require_api_key, resolve_api_base,
+    resolve_api_key, set_response_cost,
 };
 use crate::openai_base_config::{Headers, Object};
 
@@ -149,38 +149,6 @@ fn authorized_headers_replaces_an_authorization_spelled_in_another_case() {
 fn authorized_headers_without_a_key_is_the_missing_key_error() {
     let error = authorized_headers(&Headers::new(), None, "m", &env(None, None, None)).unwrap_err();
     assert_eq!(error.status_code, 401);
-}
-
-#[rstest]
-#[case::added(&[], "application/json")]
-#[case::replaced(&[("Content-Type", "text/plain")], "application/json")]
-#[case::other_case_replaced(&[("content-type", "text/plain")], "application/json")]
-fn json_headers_sets_the_json_content_type(
-    #[case] supplied: &[(&str, &str)],
-    #[case] expected: &str,
-) {
-    let merged = json_headers(
-        &headers(supplied),
-        Some(&key("eden")),
-        "m",
-        &env(None, None, None),
-    )
-    .unwrap();
-    assert_eq!(
-        merged.get("Content-Type").map(String::as_str),
-        Some(expected)
-    );
-    assert_eq!(
-        merged.get("Authorization").map(String::as_str),
-        Some("Bearer eden")
-    );
-    assert_eq!(
-        merged
-            .keys()
-            .filter(|name| name.eq_ignore_ascii_case("content-type"))
-            .count(),
-        1
-    );
 }
 
 #[rstest]

@@ -23,9 +23,9 @@ pub const RESPONSE_COST_HEADER: &str = "llm_provider-x-litellm-response-cost";
 
 const ADDITIONAL_HEADERS: &str = "additional_headers";
 const AUTHORIZATION: &str = "Authorization";
-const CONTENT_TYPE: &str = "Content-Type";
+pub const CONTENT_TYPE: &str = "Content-Type";
 const COST: &str = "cost";
-const JSON_CONTENT_TYPE: &str = "application/json";
+pub const JSON_CONTENT_TYPE: &str = "application/json";
 
 // LiteLLM's EdenAIException is a BaseLLMException: a status, a message and the reply headers
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -138,26 +138,20 @@ pub fn authorized_headers(
     model: &str,
     env: &EdenAiEnv,
 ) -> Result<Headers, MissingApiKey> {
-    let key = require_api_key(api_key, model, env)?;
-    let mut merged = removed(headers, AUTHORIZATION);
-    merged.insert(
-        AUTHORIZATION.to_owned(),
-        format!("Bearer {}", key.expose_secret()),
+    let bearer = format!(
+        "Bearer {}",
+        require_api_key(api_key, model, env)?.expose_secret()
     );
+    let mut merged = removed(headers, AUTHORIZATION);
+    merged.insert(AUTHORIZATION.to_owned(), bearer);
     Ok(merged)
 }
 
-// LiteLLM's json_headers: authorized_headers with a JSON content type, sent because the handler may send raw content
-pub fn json_headers(
-    headers: &Headers,
-    api_key: Option<&SecretString>,
-    model: &str,
-    env: &EdenAiEnv,
-) -> Result<Headers, MissingApiKey> {
-    let authorized = authorized_headers(headers, api_key, model, env)?;
-    let mut merged = removed(&authorized, CONTENT_TYPE);
-    merged.insert(CONTENT_TYPE.to_owned(), JSON_CONTENT_TYPE.to_owned());
-    Ok(merged)
+// the caller value under the same name in another case is dropped first, as httpx sends the last of the two
+pub fn with_header(headers: &Headers, name: &str, value: &str) -> Headers {
+    let mut merged = removed(headers, name);
+    merged.insert(name.to_owned(), value.to_owned());
+    merged
 }
 
 // a caller value spelled in another case is dropped, as httpx would send the last of the two under one name
@@ -193,11 +187,8 @@ pub fn reported_cost(payload: &Value) -> Option<Decimal> {
     let Value::Object(fields) = payload else {
         return None;
     };
-    cost_value(
-        fields
-            .get(COST)
-            .or_else(|| fields.get(EDENAI_COST_HEADER))?,
-    )
+    let alias = fields.get(COST).or_else(|| fields.get(EDENAI_COST_HEADER));
+    cost_value(alias?)
 }
 
 // any bytes from the provider: a body that is not a JSON object is no cost
