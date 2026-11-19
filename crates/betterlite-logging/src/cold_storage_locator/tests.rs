@@ -12,6 +12,7 @@ use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
+use crate::callback_logger::CallbackLogger as _;
 use crate::cold_storage_key::{ColdStorageLocator as _, ColdStorageTarget};
 use crate::cold_storage_locator::CatalogColdStorage;
 use crate::registry::catalog::{CatalogInputs, LoggerCatalog};
@@ -101,8 +102,9 @@ async fn another_logger_keeps_the_default_target() {
     let catalog = Arc::new(LoggerCatalog::new(inputs));
     let built = catalog
         .resolve_logger("s3")
-        .expect("the s3 logger resolves");
-    assert!(built.is_some());
+        .expect("the s3 logger resolves")
+        .expect("the s3 logger builds");
+    assert_eq!(built.cold_storage_target(), None);
     let locator = CatalogColdStorage::new(Some("s3".to_owned()), Arc::clone(&catalog));
     assert_eq!(locator.locate(), Some(ColdStorageTarget::default()));
     shutdown.cancel();

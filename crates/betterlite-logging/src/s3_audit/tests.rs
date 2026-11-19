@@ -441,6 +441,61 @@ async fn dedicated_logger_redacts_credentials_at_debug() {
     drop(logger);
 }
 
+#[tokio::test]
+async fn dedicated_logger_applies_the_audit_s3_verify() {
+    let inputs = inputs("", credentials());
+    let disabled: Source<()> = serde_json::from_str(
+        r#"{"s3_bucket_name":"audit-bucket","s3_region_name":"us-east-1","s3_endpoint_url":"http://127.0.0.1:9000","s3_verify":false}"#,
+    )
+    .expect("the audit source loads");
+    let logger = build_audit_logger(&inputs, &disabled).expect("a false s3_verify builds");
+    let not_a_bool: Source<()> = serde_json::from_str(
+        r#"{"s3_bucket_name":"audit-bucket","s3_region_name":"us-east-1","s3_endpoint_url":"http://127.0.0.1:9000","s3_verify":"maybe"}"#,
+    )
+    .expect("the audit source loads");
+    let error = build_audit_logger(&inputs, &not_a_bool)
+        .err()
+        .expect("a text s3_verify is refused");
+    assert!(
+        matches!(
+            error,
+            CatalogError::Init { message }
+                if message.contains("s3_audit_callback_params.s3_verify: expected a bool, got str")
+        ),
+        "{error:?}"
+    );
+    inputs.shutdown.cancel();
+    inputs.tracker.close();
+    timeout(Duration::from_secs(1), inputs.tracker.wait())
+        .await
+        .expect("the flush loop stops on shutdown");
+    drop(logger);
+}
+
+#[tokio::test]
+async fn dedicated_logger_refuses_an_unsupported_security_level() {
+    let environment: Arc<dyn EnvironmentLookup + Send + Sync> = Arc::new(BTreeMap::from([
+        ("AWS_ACCESS_KEY_ID".to_owned(), "AKIDTEST".to_owned()),
+        ("AWS_SECRET_ACCESS_KEY".to_owned(), "secrettest".to_owned()),
+        (
+            "SSL_SECURITY_LEVEL".to_owned(),
+            "DEFAULT@SECLEVEL=2".to_owned(),
+        ),
+    ]));
+    let inputs = inputs("", environment);
+    let audit_source: Source<()> = serde_json::from_str(
+        r#"{"s3_bucket_name":"audit-bucket","s3_region_name":"us-east-1","s3_endpoint_url":"http://127.0.0.1:9000","s3_verify":true}"#,
+    )
+    .expect("the audit source loads");
+    let error = build_audit_logger(&inputs, &audit_source)
+        .err()
+        .expect("rustls has no security level");
+    assert!(
+        matches!(error, CatalogError::Init { message } if message.contains("SSL_SECURITY_LEVEL")),
+        "{error:?}"
+    );
+}
+
 fn credentials() -> Arc<dyn EnvironmentLookup + Send + Sync> {
     Arc::new(BTreeMap::from([
         ("AWS_ACCESS_KEY_ID".to_owned(), "AKIDTEST".to_owned()),
