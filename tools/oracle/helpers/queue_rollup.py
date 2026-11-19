@@ -1,4 +1,5 @@
-from typing import NotRequired, TypeAlias, TypedDict
+from datetime import datetime
+from typing import Literal, NotRequired, TypeAlias, TypedDict, cast
 
 from litellm.proxy._types import SpendLogsPayload
 from litellm.proxy.db.db_transaction_queue.window_spend_update_queue import (
@@ -18,8 +19,22 @@ class WireStep(TypedDict):
     transaction: WindowSpendTransaction
 
 
+# the fields build_model_usage_transaction reads, typed as SpendLogsPayload declares them, so nothing here carries Any
+class Payload(TypedDict):
+    startTime: datetime | str
+    metadata: str
+    model: str
+    model_group: str | None
+    custom_llm_provider: str | None
+    request_tags: str
+    spend: float
+    prompt_tokens: int
+    completion_tokens: int
+    status: Literal["success", "failure"]
+
+
 class UsageStep(TypedDict):
-    payload: SpendLogsPayload
+    payload: Payload
 
 
 class Input(TypedDict):
@@ -65,7 +80,11 @@ def usage_result(transaction: ModelUsageTransaction) -> UsageResult:
 
 
 def model_usage(step: UsageStep) -> UsageResult | None:
-    transaction = build_model_usage_transaction(step["payload"])
+    transaction = build_model_usage_transaction(
+        cast(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4219-L4253
+            SpendLogsPayload, step["payload"]
+        )
+    )
     if transaction is None:
         return None
     return usage_result(transaction)
