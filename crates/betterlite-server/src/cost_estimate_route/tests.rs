@@ -78,7 +78,10 @@ async fn post(application: Router, body: &str, key: Option<&str>) -> (StatusCode
     (status, String::from_utf8(bytes.to_vec()).unwrap())
 }
 
-fn quote(body: &str, source: &str) -> Pin<Box<dyn Future<Output = CostEstimateResponse> + '_>> {
+fn quote(
+    body: &'static str,
+    source: &'static str,
+) -> Pin<Box<dyn Future<Output = CostEstimateResponse>>> {
     Box::pin(async move {
         let (status, text) = post(application(&config(source)), body, Some("oracle-master")).await;
         assert_eq!(status, StatusCode::OK);

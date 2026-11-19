@@ -9,7 +9,7 @@ pub(crate) struct Op;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Input {
+pub(crate) struct Input {
     model_list: Vec<JsonObject>,
     request: JsonValue,
 }
