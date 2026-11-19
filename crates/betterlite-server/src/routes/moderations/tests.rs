@@ -436,7 +436,7 @@ fn assert_success_headers(reply: &Reply) {
         .expect("x-litellm-response-duration-ms")
         .parse()
         .expect("the duration header is a number");
-    assert!(millis >= 0.0, "{millis}");
+    assert!(millis.is_finite() && millis.is_sign_positive(), "{millis}");
     // the handler passes no cache key and no logging object, so the name and cost headers stay off
     for header in [
         "x-litellm-model-name",
