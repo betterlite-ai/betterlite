@@ -1,0 +1,21 @@
+task: B927
+deviations:
+  - what: The MidStreamFallbackError an in-stream error event raises carries the mapped class's own message without LiteLLM's inner "litellm.<MappedClass>: " prefix. LiteLLM passes str(mapped_exception) into MidStreamFallbackError, so the client sees both prefixes.
+    why: B926 builds that message from betterlite's typed ErrorClass, whose context message is the provider text without the Python class-name prefix; the class, status, type, param and code match, and the outer "litellm.MidStreamFallbackError: " prefix is kept.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L676-L697
+  - what: The failure handlers receive an ApiConnection ErrorClass for a transport or HTTP read failure, where LiteLLM hands them the raw httpx exception object.
+    why: betterlite's failure port delivers an ErrorClass instead of a Python exception; the message is the httpx error text and the caller still receives the transport failure it raised, so a logging integration records the same failed call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L886-L905
+  - what: The synchronous driver runs the failure handlers on the Rust runtime and awaits pending logging when the caller drains it; LiteLLM's synchronous iterator starts async_failure_handler through run_async_function and submits failure_handler to the shared thread executor without waiting.
+    why: betterlite's logging ports return futures with no thread executor, so a handler is either awaited by the runtime or left pending for drain_logging; a working setup still sees one handler call per failed stream, just ordered before the driver reports the run.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L920-L935
+kept_bugs:
+  - what: The streaming deployment hook's exception is swallowed and the chunk is yielded unchanged, so a callback that raises loses its error.
+    why: A working setup relies on a broken hook not breaking the response stream, and betterlite's chunk_hook port returns the chunk on a port failure the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L759-L790
+  - what: A transport read error that arrives after a terminal event ends iteration silently, with no failure logging, while the same error before a terminal is handled as a failure.
+    why: A working setup treats a completed response as finished whatever the connection does next; betterlite keeps the end-on-terminal branch in transport_failed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L969-L976
+  - what: A response that ends without a terminal event and had already yielded output raises the bare APIConnectionError, and only a stream that never started output is wrapped in MidStreamFallbackError, so retry-eligible fallback skips a stream that already delivered deltas.
+    why: A working setup relies on the output_started gate to keep the caller's already-yielded chunks valid, and betterlite keeps the same branch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L977-L992
