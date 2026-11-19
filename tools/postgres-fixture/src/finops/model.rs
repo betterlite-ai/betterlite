@@ -3,7 +3,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use subtle::ConstantTimeEq as _;
 
-pub(super) fn secret_eq(left: &SecretString, right: &SecretString) -> bool {
+pub(crate) fn secret_eq(left: &SecretString, right: &SecretString) -> bool {
     bool::from(
         left.expose_secret()
             .as_bytes()
