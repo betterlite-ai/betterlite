@@ -37,7 +37,7 @@ pub fn passthrough_region(
 
 // A recognized Mantle base serves only the OpenAI surface, so the request itself goes to the runtime endpoint while keeping the resolved region.
 #[must_use]
-pub fn passthrough_runtime_endpoint(request: PassthroughEndpointRequest<'_>) -> RuntimeEndpoint {
+pub fn passthrough_runtime_endpoint(request: &PassthroughEndpointRequest<'_>) -> RuntimeEndpoint {
     let api_base = request
         .api_base
         .filter(|base| region_from_host(base).is_none());

@@ -54,59 +54,78 @@ where
         request.globals.aws_bearer_token.as_ref(),
     )
     .filter(|token| !token.expose_secret().is_empty());
-    let signed = match bearer {
-        Some(token) => {
-            let params = raw_params(request.optional_params)?;
-            sign_service_request(
-                ServiceRequest {
-                    service: ServiceName::Bedrock,
-                    headers: request.headers,
-                    optional_params: &params,
-                    request_data: request.request_data,
-                    api_base: request.api_base,
-                    model: request.model,
-                    api_key: Some(&token),
-                    configured_bearer: None,
-                    region_inputs: RegionInputs::default(),
-                    now: request.now,
-                },
-                resolve_credentials,
-            )
-            .await
-        }
-        None => {
-            let region =
-                signing_region(request.optional_params, request.api_base, request.globals)?;
-            let mut params = raw_params(request.optional_params)?;
-            params.insert(
-                REGION_PARAM.to_owned(),
-                to_raw_value(&region).map_err(MantleSettingsError::Encode)?,
-            );
-            let headers: Vec<(String, Option<String>)> = request
-                .headers
-                .iter()
-                .filter(|(name, _)| !name.eq_ignore_ascii_case(AUTHORIZATION))
-                .cloned()
-                .collect();
-            sign_service_request(
-                ServiceRequest {
-                    service: ServiceName::Bedrock,
-                    headers: &headers,
-                    optional_params: &params,
-                    request_data: request.request_data,
-                    api_base: request.api_base,
-                    model: request.model,
-                    api_key: None,
-                    configured_bearer: None,
-                    region_inputs: RegionInputs::default(),
-                    now: request.now,
-                },
-                resolve_credentials,
-            )
-            .await
-        }
-    };
-    signed.map_err(classify)
+    if let Some(token) = bearer {
+        return bearer_request(request, &token, resolve_credentials).await;
+    }
+    sigv4_request(request, resolve_credentials).await
+}
+
+async fn bearer_request<Resolve, Fut>(
+    request: SignRequest<'_>,
+    token: &SecretString,
+    resolve_credentials: Resolve,
+) -> Result<AwsSignedRequest, MantleSettingsError>
+where
+    Resolve: FnOnce(&AwsSettings, &str) -> Fut,
+    Fut: Future<Output = Result<Credentials, CredentialError>>,
+{
+    let params = raw_params(request.optional_params)?;
+    sign_service_request(
+        ServiceRequest {
+            service: ServiceName::Bedrock,
+            headers: request.headers,
+            optional_params: &params,
+            request_data: request.request_data,
+            api_base: request.api_base,
+            model: request.model,
+            api_key: Some(token),
+            configured_bearer: None,
+            region_inputs: RegionInputs::default(),
+            now: request.now,
+        },
+        resolve_credentials,
+    )
+    .await
+    .map_err(classify)
+}
+
+async fn sigv4_request<Resolve, Fut>(
+    request: SignRequest<'_>,
+    resolve_credentials: Resolve,
+) -> Result<AwsSignedRequest, MantleSettingsError>
+where
+    Resolve: FnOnce(&AwsSettings, &str) -> Fut,
+    Fut: Future<Output = Result<Credentials, CredentialError>>,
+{
+    let region = signing_region(request.optional_params, request.api_base, request.globals)?;
+    let mut params = raw_params(request.optional_params)?;
+    params.insert(
+        REGION_PARAM.to_owned(),
+        to_raw_value(&region).map_err(MantleSettingsError::Encode)?,
+    );
+    let headers: Vec<(String, Option<String>)> = request
+        .headers
+        .iter()
+        .filter(|(name, _)| !name.eq_ignore_ascii_case(AUTHORIZATION))
+        .cloned()
+        .collect();
+    sign_service_request(
+        ServiceRequest {
+            service: ServiceName::Bedrock,
+            headers: &headers,
+            optional_params: &params,
+            request_data: request.request_data,
+            api_base: request.api_base,
+            model: request.model,
+            api_key: None,
+            configured_bearer: None,
+            region_inputs: RegionInputs::default(),
+            now: request.now,
+        },
+        resolve_credentials,
+    )
+    .await
+    .map_err(classify)
 }
 
 // The four botocore exceptions LiteLLM maps to its Mantle ValueError are the credential-source failures; every other signing failure passes through.
@@ -119,7 +138,7 @@ fn classify(error: SigningError) -> MantleSettingsError {
     MantleSettingsError::Signing(error)
 }
 
-fn is_credential_failure(error: &SigningError) -> bool {
+const fn is_credential_failure(error: &SigningError) -> bool {
     matches!(
         error,
         SigningError::Credential(CredentialError::Source(_) | CredentialError::MissingCredentials)

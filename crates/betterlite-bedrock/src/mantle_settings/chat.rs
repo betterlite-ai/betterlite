@@ -103,7 +103,10 @@ impl MantleChatConfig {
 
     // OpenAIChatCompletionStreamingHandler keeps only json_mode; sync_stream is accepted and has no effect (B504).
     #[must_use]
-    pub fn response_iterator(_sync_stream: bool, json_mode: Option<bool>) -> StreamingHandler {
+    pub const fn response_iterator(
+        _sync_stream: bool,
+        json_mode: Option<bool>,
+    ) -> StreamingHandler {
         match json_mode {
             Some(true) => StreamingHandler { json_mode: true },
             Some(false) | None => StreamingHandler { json_mode: false },

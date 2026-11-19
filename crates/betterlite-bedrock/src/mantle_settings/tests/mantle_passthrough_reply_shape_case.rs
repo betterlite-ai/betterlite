@@ -1,3 +1,11 @@
+#![cfg_attr(
+    test,
+    expect(
+        clippy::too_many_lines,
+        reason = "one scenario function per oracle case reads top to bottom as its fixture steps"
+    )
+)]
+
 use betterlite_openai::passthrough::transformation::types::{PassthroughTarget, RelayedResponse};
 
 use crate::mantle_settings::passthrough::{

@@ -1,8 +1,17 @@
+#![cfg_attr(
+    test,
+    expect(
+        clippy::too_many_lines,
+        reason = "one scenario function per oracle case reads top to bottom as its fixture steps"
+    )
+)]
+
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use betterlite_prompts::arguments::json::{Json as PromptsJson, Object as PromptsObject};
 
+use crate::mantle_inputs::records::MantleGlobals;
 use crate::mantle_settings::error::MantleSettingsError;
 use crate::mantle_settings::messages::{
     CUSTOM_LLM_PROVIDER, MantleMessagesConfig, USES_GET_LLM_PROVIDER_API_BASE,
@@ -14,7 +23,7 @@ use super::support;
 
 const MANTLE_PATH: &str = "/anthropic/v1/messages";
 
-fn globals(pairs: &[(&str, &str)]) -> crate::mantle_inputs::records::MantleGlobals {
+fn globals(pairs: &[(&str, &str)]) -> MantleGlobals {
     support::globals(
         &pairs
             .iter()

@@ -92,11 +92,7 @@ fn base_cases(model_cost: &ParamMap, cases: &[BaseCase]) -> HelperResult {
         let api_key = case.api_key.as_deref().map(SecretString::from);
         chat.push(chat_value(case, api_key.as_ref(), &globals, model_cost));
         standalone.push(standalone_value(case, &globals));
-        let injected = if case.inject_signer {
-            Some(Arc::clone(&cache))
-        } else {
-            None
-        };
+        let injected = case.inject_signer.then(|| Arc::clone(&cache));
         let config = MantleChatConfig::new(injected);
         if config.credential_cache.is_some() {
             signers.push("injected");
@@ -119,7 +115,7 @@ fn scope(value: &str) -> &str {
     if value.starts_with("Bearer ") {
         return value;
     }
-    value.split(',').next().unwrap_or(value)
+    value.split_once(',').map_or(value, |(head, _rest)| head)
 }
 
 fn signed_value(signed: AwsSignedRequest) -> Value {
@@ -172,13 +168,8 @@ fn auth_cases(cases: &[SignCase]) -> HelperResult {
 }
 
 fn error_probe(config: &MantleChatConfig, probe: &ErrorProbe) -> Result<Value, Box<HelperError>> {
-    let pairs: Vec<(String, String)> = probe
-        .headers
-        .iter()
-        .map(|(name, value)| (name.clone(), value.clone()))
-        .collect();
     let error = config
-        .get_error_class(&probe.message, probe.status_code, &pairs)
+        .get_error_class(&probe.message, probe.status_code, &probe.headers)
         .map_err(fixtures::failure)?;
     let headers: BTreeMap<String, String> = error
         .error

@@ -1,8 +1,16 @@
+#![cfg_attr(
+    test,
+    expect(
+        clippy::too_many_lines,
+        reason = "one scenario function per oracle case reads top to bottom as its fixture steps"
+    )
+)]
+
 use std::collections::BTreeMap;
 
 use secrecy::ExposeSecret as _;
 
-use crate::aws_endpoints::runtime::BedrockEndpointType;
+use crate::aws_endpoints::runtime::{BedrockEndpointType, RuntimeEndpoint};
 use crate::mantle_inputs::records::MantleGlobals;
 use crate::mantle_settings::error::MantleSettingsError;
 use crate::mantle_settings::passthrough::{
@@ -27,8 +35,8 @@ fn endpoint(
     environment: Option<&str>,
     region: &str,
     endpoint_type: BedrockEndpointType,
-) -> crate::aws_endpoints::runtime::RuntimeEndpoint {
-    passthrough_runtime_endpoint(PassthroughEndpointRequest {
+) -> RuntimeEndpoint {
+    passthrough_runtime_endpoint(&PassthroughEndpointRequest {
         api_base,
         configured_endpoint: configured,
         environment_endpoint: environment,

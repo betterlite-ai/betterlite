@@ -1,6 +1,15 @@
+#![cfg_attr(
+    test,
+    expect(
+        clippy::too_many_lines,
+        reason = "one scenario function per oracle case reads top to bottom as its fixture steps"
+    )
+)]
+
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use betterlite_openai::openai_base_config::Object;
 use secrecy::ExposeSecret as _;
 
 use crate::mantle_inputs::chat_endpoint::{ChatEndpointParams, chat_endpoint_inputs};
@@ -91,8 +100,8 @@ pub(super) fn standalone_mantle_base() {
         keyed
             .api_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
-        Some("mantle-fixture-key")
+            .map(|key| key.expose_secret().to_owned()),
+        Some(String::from("mantle-fixture-key"))
     );
     // The standalone chain checks the host of the given base before the env region, while the chat chain reads the model prefix first.
     let standalone = support::globals(&environment(&[("BEDROCK_MANTLE_REGION", "eu-west-1")]));
@@ -119,7 +128,7 @@ pub(super) fn standalone_mantle_base() {
         config
             .get_config()
             .expect("the default attributes serialize"),
-        betterlite_openai::openai_base_config::Object::new()
+        Object::new()
     );
     assert_eq!(CUSTOM_LLM_PROVIDER.to_string(), "bedrock_mantle");
     assert!(config.credential_cache.is_none());

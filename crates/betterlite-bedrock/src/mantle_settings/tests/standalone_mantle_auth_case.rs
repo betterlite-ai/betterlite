@@ -1,12 +1,22 @@
+#![cfg_attr(
+    test,
+    expect(
+        clippy::too_many_lines,
+        reason = "one scenario function per oracle case reads top to bottom as its fixture steps"
+    )
+)]
+
 use std::collections::BTreeMap;
 use std::time::{Duration, SystemTime};
 
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use secrecy::ExposeSecret as _;
 
 use crate::aws_settings::sources::Credentials;
 use crate::credentials::error::CredentialError;
+use crate::mantle_inputs::records::MantleGlobals;
 use crate::mantle_settings::auth::{SignRequest, sign_request};
 use crate::mantle_settings::error::MantleSettingsError;
 use crate::signing::error::SigningError;
@@ -16,31 +26,6 @@ use super::support;
 
 const API_BASE: &str = "https://bedrock-mantle.us-east-1.api.aws/v1";
 const MANTLE_BASE: &str = "https://bedrock-mantle.eu-west-3.api.aws/openai/v1";
-
-async fn resolved(_settings: &AwsSettings, _region: &str) -> Result<Credentials, CredentialError> {
-    Ok(support::fixture_credentials())
-}
-
-async fn observed_auth(
-    settings: &AwsSettings,
-    _region: &str,
-) -> Result<Credentials, CredentialError> {
-    assert_eq!(
-        settings
-            .access_key_id
-            .as_ref()
-            .map(|key| key.expose_secret().as_str()),
-        Some("caller-access-key")
-    );
-    assert_eq!(
-        settings
-            .secret_access_key
-            .as_ref()
-            .map(|key| key.expose_secret().as_str()),
-        Some("caller-secret-key")
-    );
-    Ok(support::fixture_credentials())
-}
 
 fn data() -> IndexMap<String, Json> {
     IndexMap::from([(
@@ -75,7 +60,7 @@ fn caller_headers() -> Vec<(String, Option<String>)> {
     ]
 }
 
-fn globals(pairs: &[(&str, &str)]) -> crate::mantle_inputs::records::MantleGlobals {
+fn globals(pairs: &[(&str, &str)]) -> MantleGlobals {
     support::globals(
         &pairs
             .iter()
@@ -85,6 +70,9 @@ fn globals(pairs: &[(&str, &str)]) -> crate::mantle_inputs::records::MantleGloba
 }
 
 pub(super) fn standalone_mantle_auth() {
+    let resolved = |_: &AwsSettings, _: &str| async {
+        Ok::<Credentials, CredentialError>(support::fixture_credentials())
+    };
     let empty = globals(&[]);
     let data = data();
     let headers = caller_headers();
@@ -191,6 +179,23 @@ pub(super) fn standalone_mantle_auth() {
     let auth_params = support::object(
         r#"{"aws_access_key_id": "caller-access-key", "aws_secret_access_key": "caller-secret-key", "aws_region_name": "us-east-2"}"#,
     );
+    let observed_auth = |settings: &AwsSettings, _region: &str| {
+        assert_eq!(
+            settings
+                .access_key_id
+                .as_ref()
+                .map(|key| key.expose_secret().to_owned()),
+            Some(String::from("caller-access-key"))
+        );
+        assert_eq!(
+            settings
+                .secret_access_key
+                .as_ref()
+                .map(|key| key.expose_secret().to_owned()),
+            Some(String::from("caller-secret-key"))
+        );
+        async { Ok::<Credentials, CredentialError>(support::fixture_credentials()) }
+    };
     let keyed = support::block_on(sign_request(
         SignRequest {
             headers: &[],

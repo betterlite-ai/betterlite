@@ -1,4 +1,11 @@
 #![cfg(test)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::too_many_lines,
+        reason = "one scenario function per oracle case reads top to bottom as its fixture steps"
+    )
+)]
 
 mod auth_failure_case;
 mod chat_provider_prefix_case;
@@ -58,19 +65,20 @@ fn bedrock_mantle_settings_credential_identity_isolation() {
     use crate::credentials::error::CredentialError;
     use crate::mantle_settings::auth::{SignRequest, sign_request};
     use crate::mantle_settings::chat::MantleChatConfig;
+    use crate::signing::request::AwsSignedRequest;
 
-    async fn first(_settings: &AwsSettings, _region: &str) -> Result<Credentials, CredentialError> {
-        Ok(support::credentials("first-access-key", "first-secret-key"))
-    }
-    async fn second(
-        _settings: &AwsSettings,
-        _region: &str,
-    ) -> Result<Credentials, CredentialError> {
-        Ok(support::credentials(
+    let first = |_: &AwsSettings, _: &str| async {
+        Ok::<Credentials, CredentialError>(support::credentials(
+            "first-access-key",
+            "first-secret-key",
+        ))
+    };
+    let second = |_: &AwsSettings, _: &str| async {
+        Ok::<Credentials, CredentialError>(support::credentials(
             "second-access-key",
             "second-secret-key",
         ))
-    }
+    };
 
     let first_cache = support::credential_cache();
     let second_cache = support::credential_cache();
@@ -110,7 +118,7 @@ fn bedrock_mantle_settings_credential_identity_isolation() {
         support::block_on(sign_request(request, first)).expect("the first identity signs");
     let second_signed =
         support::block_on(sign_request(request, second)).expect("the second identity signs");
-    let authorization = |signed: &crate::signing::request::AwsSignedRequest| {
+    let authorization = |signed: &AwsSignedRequest| {
         signed
             .headers
             .iter()
@@ -148,14 +156,11 @@ fn bedrock_mantle_settings_secret_safe_failure() {
     use crate::mantle_settings::auth::{SignRequest, sign_request};
     use crate::mantle_settings::error::{AUTH_FAILURE_MESSAGE, MantleSettingsError};
 
-    async fn leaked(
-        _settings: &AwsSettings,
-        _region: &str,
-    ) -> Result<Credentials, CredentialError> {
-        Err(CredentialError::Source(SourceError::Provider(
+    let leaked = |_: &AwsSettings, _: &str| async {
+        Err::<Credentials, CredentialError>(CredentialError::Source(SourceError::Provider(
             CredentialsError::provider_error("fixture-leaked-secret"),
         )))
-    }
+    };
 
     let data = IndexMap::from([(String::from("model"), Json::Text(String::from("fixture")))]);
     let globals = support::empty_globals();

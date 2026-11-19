@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -52,7 +52,7 @@ pub(super) fn secret(text: &str) -> SecretString {
 pub(super) fn catalog(chat_models: &[&str]) -> CatalogCapabilities {
     CatalogCapabilities {
         chat_models: chat_models.iter().map(|name| (*name).to_owned()).collect(),
-        text_models: Default::default(),
+        text_models: BTreeSet::new(),
     }
 }
 

@@ -1,3 +1,11 @@
+#![cfg_attr(
+    test,
+    expect(
+        clippy::too_many_lines,
+        reason = "one scenario function per oracle case reads top to bottom as its fixture steps"
+    )
+)]
+
 use std::time::{Duration, SystemTime};
 
 use aws_credential_types::provider::error::CredentialsError;
@@ -8,6 +16,7 @@ use indexmap::IndexMap;
 use crate::aws_settings::AuthError;
 use crate::aws_settings::sources::{Credentials, SourceError};
 use crate::credentials::error::CredentialError;
+use crate::mantle_inputs::records::MantleGlobals;
 use crate::mantle_settings::auth::{SignRequest, sign_request};
 use crate::mantle_settings::error::{AUTH_FAILURE_MESSAGE, MantleSettingsError};
 use crate::signing::error::SigningError;
@@ -15,40 +24,6 @@ use crate::signing::error::SigningError;
 use super::support;
 
 const LITELLM_MESSAGE: &str = "Bedrock Mantle auth failed: no Bearer token and no usable AWS credentials. Set BEDROCK_MANTLE_API_KEY (or AWS_BEARER_TOKEN_BEDROCK) or pass api_key for Bearer auth, or provide AWS credentials (IAM role / access key / profile / web identity) for SigV4.";
-
-async fn missing_provider(
-    _settings: &AwsSettings,
-    _region: &str,
-) -> Result<Credentials, CredentialError> {
-    Err(CredentialError::Source(SourceError::MissingProvider))
-}
-
-async fn no_credentials(
-    _settings: &AwsSettings,
-    _region: &str,
-) -> Result<Credentials, CredentialError> {
-    Err(CredentialError::MissingCredentials)
-}
-
-async fn partial_credentials(
-    _settings: &AwsSettings,
-    _region: &str,
-) -> Result<Credentials, CredentialError> {
-    Err(CredentialError::Source(SourceError::Provider(
-        CredentialsError::provider_error("fixture-partial-credentials"),
-    )))
-}
-
-async fn unexpected_auth(
-    _settings: &AwsSettings,
-    _region: &str,
-) -> Result<Credentials, CredentialError> {
-    Err(CredentialError::Auth(AuthError::SessionTags))
-}
-
-async fn unused(_settings: &AwsSettings, _region: &str) -> Result<Credentials, CredentialError> {
-    panic!("the signer must not look up credentials for a request it rejects first")
-}
 
 fn data() -> IndexMap<String, Json> {
     IndexMap::from([(
@@ -63,7 +38,7 @@ fn now() -> SystemTime {
 
 fn request<'text>(
     params: &'text betterlite_openai::openai_base_config::Object,
-    globals: &'text crate::mantle_inputs::records::MantleGlobals,
+    globals: &'text MantleGlobals,
     api_base: &'text str,
     data: &'text IndexMap<String, Json>,
 ) -> SignRequest<'text> {
@@ -82,6 +57,25 @@ fn request<'text>(
 }
 
 pub(super) fn mantle_auth_failure() {
+    let missing_provider = |_: &AwsSettings, _: &str| async {
+        Err::<Credentials, CredentialError>(CredentialError::Source(SourceError::MissingProvider))
+    };
+    let no_credentials = |_: &AwsSettings, _: &str| async {
+        Err::<Credentials, CredentialError>(CredentialError::MissingCredentials)
+    };
+    let partial_credentials = |_: &AwsSettings, _: &str| async {
+        Err::<Credentials, CredentialError>(CredentialError::Source(SourceError::Provider(
+            CredentialsError::provider_error("fixture-partial-credentials"),
+        )))
+    };
+    let unexpected_auth = |_: &AwsSettings, _: &str| async {
+        Err::<Credentials, CredentialError>(CredentialError::Auth(AuthError::SessionTags))
+    };
+    let unused = |_: &AwsSettings, _: &str| async {
+        Err::<Credentials, CredentialError>(panic!(
+            "the signer must not look up credentials for a request it rejects first"
+        ))
+    };
     assert_eq!(AUTH_FAILURE_MESSAGE, LITELLM_MESSAGE);
     let globals = support::empty_globals();
     let data = data();
