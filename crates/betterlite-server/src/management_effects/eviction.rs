@@ -46,12 +46,14 @@ where
     match data {
         Some(ManagementData::UpdateKey(key)) => cache.delete_cache(key),
         Some(ManagementData::DeleteKeys(keys)) => delete_each(cache, keys),
-        Some(ManagementData::UpdateUser(user_id)) => cache.delete_cache(user_id),
-        Some(ManagementData::DeleteUsers(user_ids)) => delete_each(cache, user_ids),
+        Some(ManagementData::UpdateUser(user_id) | ManagementData::UpdateCustomer(user_id)) => {
+            cache.delete_cache(user_id)
+        }
+        Some(ManagementData::DeleteUsers(user_ids) | ManagementData::DeleteCustomers(user_ids)) => {
+            delete_each(cache, user_ids)
+        }
         Some(ManagementData::UpdateTeam(team_id)) => cache.delete_cache(team_id),
         Some(ManagementData::DeleteTeams(team_ids)) => delete_each(cache, team_ids),
-        Some(ManagementData::UpdateCustomer(user_id)) => cache.delete_cache(user_id),
-        Some(ManagementData::DeleteCustomers(user_ids)) => delete_each(cache, user_ids),
         None => Ok(()),
     }
 }

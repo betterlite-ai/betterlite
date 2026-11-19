@@ -70,7 +70,7 @@ struct Completion<'deps, Alert, Span, Cache> {
     end_time: DateTime<Utc>,
 }
 
-impl<'deps, Alert, Span, Cache> Completion<'deps, Alert, Span, Cache>
+impl<Alert, Span, Cache> Completion<'_, Alert, Span, Cache>
 where
     Alert: ManagementAlertTransport,
     Span: ManagementSpanTransport,

@@ -67,7 +67,8 @@ impl Harness {
     pub(crate) fn deps(
         &self,
     ) -> ManagementDeps<'_, RecordingAlertTransport, RecordingSpanTransport, RecordingCache> {
-        let clock: Arc<dyn Clock> = Arc::clone(&self.clock);
+        let scripted = Arc::clone(&self.clock);
+        let clock: Arc<dyn Clock> = scripted;
         ManagementDeps {
             alert: Some(&self.alert),
             span: ManagementSpanDeps {
