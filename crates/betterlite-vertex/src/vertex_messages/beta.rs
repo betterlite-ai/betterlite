@@ -42,7 +42,7 @@ impl From<ContextManagementError> for BetaError {
     fn from(error: ContextManagementError) -> Self {
         match error {
             ContextManagementError::NotObject => Self::ContextManagementNotObject,
-            ContextManagementError::Context(error) => Self::Context(error),
+            ContextManagementError::Context(source) => Self::Context(source),
         }
     }
 }
