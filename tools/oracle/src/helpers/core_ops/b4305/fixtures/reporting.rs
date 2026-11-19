@@ -60,7 +60,7 @@ pub(crate) fn lookup_report(
         .map_or(Value::Null, embedding_report);
     let all_cached = response.is_some_and(|lookup| lookup.all_embeddings_cached);
     let uncached = response
-        .and_then(|lookup| lookup.embedding_uncached_input.as_ref())
+        .and_then(|lookup| lookup.embedding_uncached_input.as_deref())
         .map_or(Ok(Value::Null), uncached_report)?;
     Ok(json!({
         "returned": returned,

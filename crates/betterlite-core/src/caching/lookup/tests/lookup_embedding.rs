@@ -94,8 +94,12 @@ fn assert_embedding_logged(fixture: &Fixture) {
     let Some(Json::List(data)) = logged.get("data") else {
         panic!("the merged positions are logged");
     };
-    assert_eq!(data.len(), 2);
-    let Some(Json::Object(first)) = data.first() else {
+    assert_merged_positions(data);
+}
+
+fn assert_merged_positions(positions: &[Json]) {
+    assert_eq!(positions.len(), 2);
+    let Some(Json::Object(first)) = positions.first() else {
         panic!("the cached position is logged as an embedding");
     };
     let Some(Json::List(values)) = first.get("embedding") else {
