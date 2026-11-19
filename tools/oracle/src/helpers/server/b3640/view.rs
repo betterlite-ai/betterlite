@@ -27,10 +27,10 @@ pub(super) fn outcome_view(
 }
 
 fn result_view(response: Option<&PassThroughResponse>) -> Result<Value, Box<HelperError>> {
-    let Some(response) = response else {
+    let Some(result) = response else {
         return Ok(Value::Null);
     };
-    let body = serde_json::to_value(response.clone().into_json()).or_value_error()?;
+    let body = serde_json::to_value(result.clone().into_json()).or_value_error()?;
     let kind = if body.get("object").and_then(Value::as_str) == Some("video") {
         "video"
     } else {

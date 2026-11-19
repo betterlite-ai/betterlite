@@ -84,10 +84,7 @@ impl PassthroughCompletionCost for RecordingCost {
             CostResponse::Completion(body) => ("completion", body_model(body), body_usage(body)),
             CostResponse::Video(video) => ("video", video.model.clone(), None),
         };
-        let call_type = match request.call_type {
-            CallType::CreateVideo => Some("create_video"),
-            _other => None,
-        };
+        let call_type = (request.call_type == CallType::CreateVideo).then_some("create_video");
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
