@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use betterlite_config::provider_budget_view::ProviderBudgetConfig;
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
+use rust_decimal::prelude::ToPrimitive as _;
 use rust_decimal::{Decimal, RoundingStrategy};
 
 use super::cache::SpendCache;
@@ -74,8 +75,7 @@ impl ProviderBudgetReads for ProviderBudgetView {
             return Ok(None);
         };
         let micros = expiry_microseconds(seconds, &key)?;
-        let delta = chrono::Duration::try_microseconds(micros)
-            .ok_or_else(|| ProviderBudgetViewError::Expiry { key: key.clone() })?;
+        let delta = chrono::Duration::microseconds(micros);
         let moment = now
             .checked_add_signed(delta)
             .ok_or_else(|| ProviderBudgetViewError::Expiry { key })?;

@@ -66,6 +66,10 @@ fn reads(spend: Option<Decimal>, reset_at: Option<String>) -> Arc<dyn ProviderBu
     Arc::new(FakeReads { spend, reset_at })
 }
 
+fn erased(cache: &Arc<FakeCache>) -> Arc<dyn SpendCache> {
+    Arc::<FakeCache>::clone(cache)
+}
+
 fn config(entries: &[(&str, Option<&str>)]) -> IndexMap<String, ProviderBudgetConfig> {
     entries
         .iter()
@@ -165,8 +169,8 @@ async fn reads_the_provider_spend_from_redis_when_attached() {
     });
     let view = ProviderBudgetView {
         provider_budget_config: Some(config(&[("openai", Some("1d"))])),
-        redis: Some(Arc::clone(&redis)),
-        dual: Arc::clone(&dual),
+        redis: Some(erased(&redis)),
+        dual: erased(&dual),
     };
     assert_eq!(
         view.current_provider_spend("openai").await.unwrap(),
@@ -186,7 +190,7 @@ async fn reads_the_provider_spend_from_the_dual_cache_without_redis() {
     let view = ProviderBudgetView {
         provider_budget_config: Some(config(&[("openai", Some("1d"))])),
         redis: None,
-        dual: Arc::clone(&dual),
+        dual: erased(&dual),
     };
     assert_eq!(
         view.current_provider_spend("openai").await.unwrap(),
@@ -204,7 +208,7 @@ async fn a_missing_provider_spend_reads_as_zero() {
     let view = ProviderBudgetView {
         provider_budget_config: Some(config(&[("openai", Some("1d"))])),
         redis: None,
-        dual: Arc::clone(&dual),
+        dual: erased(&dual),
     };
     assert_eq!(
         view.current_provider_spend("openai").await.unwrap(),
@@ -218,7 +222,7 @@ async fn an_unconfigured_provider_reads_no_spend() {
     let view = ProviderBudgetView {
         provider_budget_config: Some(config(&[("openai", Some("1d"))])),
         redis: None,
-        dual: Arc::clone(&dual),
+        dual: erased(&dual),
     };
     assert_eq!(
         view.current_provider_spend("anthropic").await.unwrap(),
@@ -233,7 +237,7 @@ async fn a_null_provider_config_reads_no_spend() {
     let view = ProviderBudgetView {
         provider_budget_config: None,
         redis: None,
-        dual: Arc::clone(&dual),
+        dual: erased(&dual),
     };
     assert_eq!(view.current_provider_spend("openai").await.unwrap(), None);
     assert_eq!(
@@ -261,8 +265,8 @@ async fn a_redis_spend_error_does_not_fall_back_to_local_spend() {
     });
     let view = ProviderBudgetView {
         provider_budget_config: Some(config(&[("openai", Some("1d"))])),
-        redis: Some(Arc::clone(&redis)),
-        dual: Arc::clone(&dual),
+        redis: Some(erased(&redis)),
+        dual: erased(&dual),
     };
     let error = view.current_provider_spend("openai").await.unwrap_err();
     assert!(matches!(
@@ -278,7 +282,7 @@ async fn keys_the_spend_with_none_without_a_duration() {
     let view = ProviderBudgetView {
         provider_budget_config: Some(config(&[("openai", None)])),
         redis: None,
-        dual: Arc::clone(&dual),
+        dual: erased(&dual),
     };
     view.current_provider_spend("openai").await.unwrap();
     assert_eq!(
@@ -293,7 +297,7 @@ async fn a_null_expiry_reads_no_reset_time() {
     let view = ProviderBudgetView {
         provider_budget_config: Some(config(&[("openai", Some("1d"))])),
         redis: None,
-        dual: Arc::clone(&dual),
+        dual: erased(&dual),
     };
     assert_eq!(
         view.provider_budget_reset_at("openai", instant("2026-11-19T12:00:00Z"))
@@ -314,7 +318,7 @@ async fn adds_a_positive_expiry_to_the_injected_now() {
     let view = ProviderBudgetView {
         provider_budget_config: Some(config(&[("openai", Some("1d"))])),
         redis: None,
-        dual: Arc::clone(&dual),
+        dual: erased(&dual),
     };
     assert_eq!(
         view.provider_budget_reset_at("openai", instant("2026-11-19T12:00:00Z"))
@@ -335,7 +339,7 @@ async fn adds_a_negative_expiry_to_the_injected_now() {
     let view = ProviderBudgetView {
         provider_budget_config: Some(config(&[("openai", Some("1d"))])),
         redis: None,
-        dual: Arc::clone(&dual),
+        dual: erased(&dual),
     };
     assert_eq!(
         view.provider_budget_reset_at("openai", instant("2026-11-19T12:00:00Z"))
@@ -356,7 +360,7 @@ async fn prints_microseconds_only_when_the_reset_time_has_them() {
     let view = ProviderBudgetView {
         provider_budget_config: Some(config(&[("openai", Some("1d"))])),
         redis: None,
-        dual: Arc::clone(&dual),
+        dual: erased(&dual),
     };
     assert_eq!(
         view.provider_budget_reset_at("openai", instant("2026-11-19T12:00:00.500Z"))
@@ -371,13 +375,13 @@ async fn rounds_a_fractional_expiry_half_to_even_microseconds() {
     let dual = Arc::new(FakeCache {
         spend: None,
         spend_fails: false,
-        expiry: Some(0.0000015),
+        expiry: Some(0.000_001_5),
         keys: Mutex::new(Vec::new()),
     });
     let view = ProviderBudgetView {
         provider_budget_config: Some(config(&[("openai", Some("1d"))])),
         redis: None,
-        dual: Arc::clone(&dual),
+        dual: erased(&dual),
     };
     assert_eq!(
         view.provider_budget_reset_at("openai", instant("2026-11-19T12:00:00Z"))
@@ -402,7 +406,7 @@ async fn an_expiry_no_calendar_can_add_is_an_error(#[case] seconds: f64) {
     let view = ProviderBudgetView {
         provider_budget_config: Some(config(&[("openai", Some("1d"))])),
         redis: None,
-        dual: Arc::clone(&dual),
+        dual: erased(&dual),
     };
     let error = view
         .provider_budget_reset_at("openai", instant("2026-11-19T12:00:00Z"))

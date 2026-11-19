@@ -26,6 +26,7 @@ use betterlite_openai::chat::response::ChatResponse;
 use betterlite_provider::pricing::grounding::ProviderFormulas;
 use betterlite_provider::pricing::image::error::ImagePolicyError;
 use indexmap::IndexMap;
+use rust_decimal::Decimal;
 use serde_json::Number;
 
 use super::decode::SpendCalculateRequest;
