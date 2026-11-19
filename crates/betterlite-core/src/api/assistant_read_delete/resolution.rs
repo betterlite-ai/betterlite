@@ -39,10 +39,10 @@ pub(super) fn resolve_timeout(
 }
 
 // The OpenAI SDK applies one read timeout, so a structured timeout contributes its read phase.
-pub(super) const fn timeout_seconds(timeout: FineTuningTimeout) -> f64 {
+pub(super) fn timeout_seconds(timeout: FineTuningTimeout) -> f64 {
     match timeout {
         FineTuningTimeout::Seconds(seconds) => seconds,
-        FineTuningTimeout::Structured(timeout) => timeout.read.unwrap_or(600.0),
+        FineTuningTimeout::Structured(fields) => fields.read.unwrap_or(600.0_f64),
     }
 }
 
