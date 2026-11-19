@@ -4449,6 +4449,7 @@ dependencies = [
  "base64 0.23.1",
  "betterlite-a2a",
  "betterlite-analytics",
+ "betterlite-anthropic",
  "betterlite-auth",
  "betterlite-azure",
  "betterlite-bedrock",
