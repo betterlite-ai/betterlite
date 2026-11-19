@@ -117,8 +117,7 @@ fn loads_audit_settings_refuses_a_non_scalar_store_flag() {
         "litellm_settings:\n  store_audit_logs:\n    enabled: true\n",
         &environment(&[]),
     )
-    .err()
-    .expect("an object is not a store flag");
+    .expect_err("an object is not a store flag");
     assert!(matches!(
         error,
         AuditSettingsError::Config(ConfigError::InvalidScalar { .. })

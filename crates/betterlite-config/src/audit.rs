@@ -37,9 +37,9 @@ pub fn load_audit_settings<L>(source: &str, lookup: &L) -> Result<Settings, Audi
 where
     L: EnvironmentLookup,
 {
-    let (raw, _ignored) = parse_view::<SectionRaw>(source)?;
+    let (raw, _unknown_section) = parse_view::<SectionRaw>(source)?;
     let config = Section::convert(raw, lookup)?;
-    let (presence, _ignored) = parse_view::<Presence>(source)?;
+    let (presence, _unknown_presence) = parse_view::<Presence>(source)?;
     Ok(Settings {
         config,
         audit_log_callbacks_present: presence.litellm_settings.audit_log_callbacks.is_some(),

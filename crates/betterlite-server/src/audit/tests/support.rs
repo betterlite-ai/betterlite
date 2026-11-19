@@ -152,7 +152,7 @@ impl CallbackLogger for RecordingLogger {
 
 pub(super) fn logger_entry(name: &str, fails: bool) -> (AuditCallbackEntry, Arc<RecordingLogger>) {
     let recorder = Arc::new(RecordingLogger::new(name, fails));
-    let logger: Arc<dyn CallbackLogger> = Arc::clone(&recorder);
+    let logger: Arc<dyn CallbackLogger> = Arc::<RecordingLogger>::clone(&recorder);
     (AuditCallbackEntry::Logger(logger), recorder)
 }
 

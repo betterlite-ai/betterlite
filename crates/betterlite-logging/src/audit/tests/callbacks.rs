@@ -20,7 +20,6 @@ use super::super::callbacks::{
 use super::support::{
     FailingBuilder, FakeBuilder, FakeResolver, RecordingLogger, capture, payload,
 };
-use crate::callback_logger::CallbackLogger as _;
 
 fn named(
     resolver: Arc<FakeResolver>,
@@ -93,7 +92,7 @@ fn s3_v2_with_audit_params_builds_a_dedicated_logger() {
     let dedicated = Arc::new(RecordingLogger::new("dedicated", false));
     let resolver = Arc::new(FakeResolver::new(vec![("s3_v2", shared)], false));
     let builder = Arc::new(FakeBuilder::new(Arc::clone(&dedicated)));
-    let callbacks = named(Arc::clone(&resolver), builder.clone());
+    let callbacks = named(Arc::clone(&resolver), Arc::<FakeBuilder>::clone(&builder));
     let audit_params = params(r#"{"s3_bucket_name": "audit-bucket"}"#);
     let first = callbacks
         .resolve("s3_v2", Some(&audit_params))
@@ -117,7 +116,7 @@ fn s3_v2_without_audit_params_uses_the_shared_resolver() {
         false,
     ));
     let builder = Arc::new(FakeBuilder::new(Arc::new(RecordingLogger::new("x", false))));
-    let callbacks = named(Arc::clone(&resolver), builder.clone());
+    let callbacks = named(Arc::clone(&resolver), Arc::<FakeBuilder>::clone(&builder));
     let resolved = callbacks
         .resolve("s3_v2", None)
         .expect("the resolver answers");
@@ -129,13 +128,14 @@ fn s3_v2_without_audit_params_uses_the_shared_resolver() {
 #[test]
 fn an_empty_s3_override_still_selects_the_dedicated_logger() {
     let dedicated = Arc::new(RecordingLogger::new("dedicated", false));
-    let expected: Arc<dyn crate::callback_logger::CallbackLogger> = Arc::clone(&dedicated);
+    let expected: Arc<dyn crate::callback_logger::CallbackLogger> =
+        Arc::<RecordingLogger>::clone(&dedicated);
     let resolver = Arc::new(FakeResolver::new(
         vec![("s3_v2", Arc::new(RecordingLogger::new("shared", false)))],
         false,
     ));
     let builder = Arc::new(FakeBuilder::new(dedicated));
-    let callbacks = named(Arc::clone(&resolver), builder.clone());
+    let callbacks = named(Arc::clone(&resolver), Arc::<FakeBuilder>::clone(&builder));
     let empty = params("{}");
     let resolved = callbacks.resolve("s3_v2", Some(&empty)).expect("dedicated");
     assert!(Arc::ptr_eq(&resolved, &expected));

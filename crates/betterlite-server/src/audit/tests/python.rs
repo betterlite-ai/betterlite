@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use betterlite_logging::callback_logger::CallbackLogger as _;
 use betterlite_logging::callback_logger::error::LoggerError;
 
 use super::support::{Workspace, record};
@@ -94,13 +93,9 @@ async fn a_python_failure_is_reported_as_a_delivery_error() {
         .async_log_audit_log_event(&audit)
         .await
         .expect_err("the Python callback raises");
-    match error {
-        LoggerError::Delivery { callback, message } => {
-            assert_eq!(callback, "python_audit_log_callback");
-            assert!(message.contains("callback saw audit-1"), "{message}");
-        }
-        other => panic!("expected a delivery error, got {other:?}"),
-    }
+    let LoggerError::Delivery { callback, message } = error;
+    assert_eq!(callback, "python_audit_log_callback");
+    assert!(message.contains("callback saw audit-1"), "{message}");
     fixture.service.shutdown().await;
 }
 

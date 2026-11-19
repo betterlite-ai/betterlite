@@ -5,7 +5,7 @@ use betterlite_server::audit_events::identity::{CallerIdentity, get_audit_log_ch
 use betterlite_server::audit_events::payload::build_audit_log_payload;
 use betterlite_server::audit_events::record::decode_audit_record;
 use serde::Deserialize;
-use serde_json::{Map, Value, json};
+use serde_json::json;
 
 pub(crate) struct Op;
 
@@ -21,11 +21,11 @@ pub(crate) enum Input {
 pub(crate) struct IdentityInput {
     litellm_changed_by: Option<String>,
     user_id: Option<String>,
-    litellm_proxy_admin_name: Option<String>,
+    admin_name: Option<String>,
     #[serde(default)]
-    metadata: Option<Map<String, Value>>,
+    metadata: Option<JsonValue>,
     #[serde(default)]
-    team_metadata: Option<Map<String, Value>>,
+    team_metadata: Option<JsonValue>,
 }
 
 #[derive(Deserialize)]
@@ -62,13 +62,13 @@ fn identity(case: &IdentityInput) -> HelperResult {
     let caller = CallerIdentity {
         user_id: case.user_id.clone(),
         api_key: None,
-        metadata: case.metadata.clone().map(JsonValue::Object),
-        team_metadata: case.team_metadata.clone().map(JsonValue::Object),
+        metadata: case.metadata.clone(),
+        team_metadata: case.team_metadata.clone(),
     };
     let changed_by = get_audit_log_changed_by(
         case.litellm_changed_by.as_deref(),
         &caller,
-        case.litellm_proxy_admin_name.as_deref(),
+        case.admin_name.as_deref(),
     );
     Ok(json!({ "changed_by": changed_by }))
 }

@@ -148,7 +148,7 @@ impl DedicatedAuditLoggerBuilder for FakeBuilder {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(params.clone());
-        let logger: Arc<dyn CallbackLogger> = Arc::clone(&self.logger);
+        let logger: Arc<dyn CallbackLogger> = Arc::<RecordingLogger>::clone(&self.logger);
         Ok(logger)
     }
 }

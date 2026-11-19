@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::future::Future;
 use std::sync::{Arc, Mutex};
 
 use betterlite_logging::callback_logger::CallbackLogger;
@@ -61,16 +62,16 @@ fn repository(
 }
 
 fn trait_repository(repository: &Arc<RecordingRepository>) -> Arc<dyn AuditLogRepository> {
-    let repository: Arc<dyn AuditLogRepository> = Arc::clone(repository);
+    let repository: Arc<dyn AuditLogRepository> = Arc::<RecordingRepository>::clone(repository);
     repository
 }
 
 fn logger_callback(recorder: &Arc<RecordingLogger>) -> AuditCallbackEntry {
-    let logger: Arc<dyn CallbackLogger> = Arc::clone(recorder);
+    let logger: Arc<dyn CallbackLogger> = Arc::<RecordingLogger>::clone(recorder);
     AuditCallbackEntry::Logger(logger)
 }
 
-fn flush(service: &AuditService) -> impl std::future::Future<Output = ()> + '_ {
+fn flush(service: &AuditService) -> impl Future<Output = ()> + '_ {
     async {
         service.writes.flush().await;
         service.delivery.worker.flush().await;
@@ -291,13 +292,13 @@ async fn unknown_named_callbacks_are_skipped_and_the_database_still_writes() {
 #[tokio::test]
 async fn the_configured_s3_parameters_build_the_dedicated_logger() {
     let dedicated = Arc::new(RecordingLogger::new("dedicated", false));
-    let logger: Arc<dyn CallbackLogger> = Arc::clone(&dedicated);
+    let logger: Arc<dyn CallbackLogger> = Arc::<RecordingLogger>::clone(&dedicated);
     let builder = Arc::new(MapBuilder {
         logger: Some(logger),
         calls: Mutex::new(Vec::new()),
     });
     let resolver = Arc::new(MapResolver::default());
-    let resolver_dyn: Arc<dyn LoggerResolver> = Arc::clone(&resolver);
+    let resolver_dyn: Arc<dyn LoggerResolver> = Arc::<MapResolver>::clone(&resolver);
     let params: betterlite_config::sections::settings::JsonValue =
         serde_json::from_str(r#"{"s3_bucket_name": "audit-bucket"}"#).unwrap();
     let mut settings = enabled();
@@ -306,7 +307,7 @@ async fn the_configured_s3_parameters_build_the_dedicated_logger() {
         settings,
         callbacks: vec![AuditCallbackEntry::Named("s3_v2".to_owned())],
         resolver: resolver_dyn,
-        dedicated: builder.clone(),
+        dedicated: Arc::<MapBuilder>::clone(&builder),
         ..fixture()
     }
     .start();
@@ -320,14 +321,14 @@ async fn the_configured_s3_parameters_build_the_dedicated_logger() {
 #[tokio::test]
 async fn without_s3_audit_parameters_the_shared_resolver_answers() {
     let shared = Arc::new(RecordingLogger::new("s3_v2", false));
-    let logger: Arc<dyn CallbackLogger> = Arc::clone(&shared);
+    let logger: Arc<dyn CallbackLogger> = Arc::<RecordingLogger>::clone(&shared);
     let resolver = Arc::new(MapResolver::with(vec![("s3_v2", logger)]));
-    let resolver_dyn: Arc<dyn LoggerResolver> = Arc::clone(&resolver);
+    let resolver_dyn: Arc<dyn LoggerResolver> = Arc::<MapResolver>::clone(&resolver);
     let builder = Arc::new(MapBuilder::default());
     let service = Fixture {
         callbacks: vec![AuditCallbackEntry::Named("s3_v2".to_owned())],
         resolver: resolver_dyn,
-        dedicated: builder.clone(),
+        dedicated: Arc::<MapBuilder>::clone(&builder),
         ..fixture()
     }
     .start();
@@ -342,9 +343,9 @@ async fn without_s3_audit_parameters_the_shared_resolver_answers() {
 async fn clearing_and_appending_callbacks_follow_the_configured_list() {
     let (entry, initial) = logger_entry("initial", false);
     let otel = Arc::new(RecordingLogger::new("otel", false));
-    let otel_logger: Arc<dyn CallbackLogger> = Arc::clone(&otel);
+    let otel_logger: Arc<dyn CallbackLogger> = Arc::<RecordingLogger>::clone(&otel);
     let resolver = Arc::new(MapResolver::with(vec![("otel", otel_logger)]));
-    let resolver_dyn: Arc<dyn LoggerResolver> = Arc::clone(&resolver);
+    let resolver_dyn: Arc<dyn LoggerResolver> = Arc::<MapResolver>::clone(&resolver);
     let repository = Arc::new(RecordingRepository::new(true, false));
     let service = Fixture {
         callbacks: vec![entry],

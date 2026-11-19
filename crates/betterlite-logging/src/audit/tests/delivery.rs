@@ -23,11 +23,11 @@ fn delivery(queue: usize) -> AuditDelivery {
 }
 
 fn loggers(entries: &[(&str, bool)]) -> (Vec<AuditCallback>, Vec<Arc<RecordingLogger>>) {
-    let mut callbacks = Vec::new();
+    let mut callbacks: Vec<AuditCallback> = Vec::new();
     let mut recorders = Vec::new();
     for (name, fails) in entries {
         let recorder = Arc::new(RecordingLogger::new(name, *fails));
-        callbacks.push(Arc::clone(&recorder));
+        callbacks.push(Arc::<RecordingLogger>::clone(&recorder));
         recorders.push(recorder);
     }
     (callbacks, recorders)
