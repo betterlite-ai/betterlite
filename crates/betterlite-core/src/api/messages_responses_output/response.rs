@@ -1,10 +1,5 @@
 use betterlite_models::decisions::Json as WireJson;
 use betterlite_openai::api::responses_objects::ResponseOutputItem;
-use betterlite_openai::api::responses_objects::sdk::output::FunctionCall;
-use betterlite_openai::api::responses_objects::sdk::text::{OutputMessage, Reasoning};
-use betterlite_openai::api::responses_objects::sdk::unions::{
-    OutputMessageContentValue, SdkOutput,
-};
 use betterlite_prompts::arguments::json::{Json, Object};
 use indexmap::IndexMap;
 
@@ -36,8 +31,8 @@ pub fn translate_response(
         stop_reason: AnthropicStopReason::EndTurn,
         limits,
     };
-    for (item, raw) in response.output.iter().zip(&wire) {
-        translation.append(item, raw)?;
+    for raw in &wire {
+        translation.append(raw)?;
     }
     let stop_reason = final_stop_reason(response, refusal, translation.stop_reason);
     let stop_details = (stop_reason == AnthropicStopReason::Refusal)
@@ -106,78 +101,20 @@ struct Translation<'limits> {
 }
 
 impl Translation<'_> {
-    fn append(
-        &mut self,
-        item: &ResponseOutputItem,
-        raw: &WireJson,
-    ) -> Result<(), MessagesResponsesOutputError> {
-        let ResponseOutputItem::Sdk(sdk) = item else {
-            return self.append_raw(raw);
-        };
-        match sdk.as_ref() {
-            SdkOutput::Reasoning(reasoning) => self.append_reasoning(reasoning.as_ref()),
-            SdkOutput::OutputMessage(message) => self.append_message(message.as_ref()),
-            SdkOutput::FunctionCall(call) => return self.append_function_call(call.as_ref()),
-            _ => {}
-        }
-        Ok(())
-    }
-
-    fn append_reasoning(&mut self, reasoning: &Reasoning) {
-        let summary: Vec<SummaryPart> = reasoning
-            .summary
-            .iter()
-            .map(|part| SummaryPart {
-                text: part.text.clone(),
-            })
-            .collect();
-        self.push_thinking(thinking_block(
-            &summary,
-            reasoning.encrypted_content.as_deref(),
-        ));
-    }
-
-    fn append_message(&mut self, message: &OutputMessage) {
-        for part in &message.content {
-            match part {
-                OutputMessageContentValue::OutputText(text) => {
-                    self.push_text(Some(text.text.as_str()));
-                }
-                OutputMessageContentValue::OutputRefusal(refusal) => {
-                    self.push_text(Some(refusal.refusal.as_str()));
-                }
-            }
-        }
-    }
-
-    fn append_function_call(
-        &mut self,
-        call: &FunctionCall,
-    ) -> Result<(), MessagesResponsesOutputError> {
-        let input = arguments_input(&call.arguments, self.limits)?;
-        let id = if call.call_id.is_empty() {
-            call.id.as_deref().unwrap_or("")
-        } else {
-            call.call_id.as_str()
-        };
-        self.append_tool_use(id, &call.name, input);
-        Ok(())
-    }
-
-    fn append_raw(&mut self, raw: &WireJson) -> Result<(), MessagesResponsesOutputError> {
+    fn append(&mut self, raw: &WireJson) -> Result<(), MessagesResponsesOutputError> {
         let WireJson::Object(fields) = raw else {
             return Ok(());
         };
         match field_text(fields.get("type")) {
-            Some("message") => self.append_raw_message(fields),
-            Some("reasoning") => self.append_raw_reasoning(fields),
-            Some("function_call") => return self.append_raw_function_call(fields),
+            Some("message") => self.append_message(fields),
+            Some("reasoning") => self.append_reasoning(fields),
+            Some("function_call") => return self.append_function_call(fields),
             _ => {}
         }
         Ok(())
     }
 
-    fn append_raw_message(&mut self, fields: &WireFields) {
+    fn append_message(&mut self, fields: &WireFields) {
         let Some(WireJson::List(parts)) = fields.get("content") else {
             return;
         };
@@ -193,7 +130,7 @@ impl Translation<'_> {
         }
     }
 
-    fn append_raw_reasoning(&mut self, fields: &WireFields) {
+    fn append_reasoning(&mut self, fields: &WireFields) {
         let mut summary: Vec<SummaryPart> = Vec::new();
         if let Some(WireJson::List(parts)) = fields.get("summary") {
             summary.extend(parts.iter().map(|part| SummaryPart {
@@ -204,7 +141,7 @@ impl Translation<'_> {
         self.push_thinking(thinking_block(&summary, encrypted));
     }
 
-    fn append_raw_function_call(
+    fn append_function_call(
         &mut self,
         fields: &WireFields,
     ) -> Result<(), MessagesResponsesOutputError> {
