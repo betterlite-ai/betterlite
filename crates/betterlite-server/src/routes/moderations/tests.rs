@@ -20,6 +20,7 @@ use rstest::rstest;
 use serde::Deserialize;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::task::JoinSet;
 use tokio::time::timeout;
 use tokio_util::task::TaskTracker;
 use tower::ServiceExt as _;
@@ -301,9 +302,15 @@ fn error_details(reply: &Reply) -> ErrorFields {
         .error
 }
 
+fn header_text<'reply>(reply: &'reply Reply, name: &str) -> Option<&'reply str> {
+    reply
+        .headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+}
+
 fn call_id(reply: &Reply) -> Option<&str> {
-    let value = reply.headers.get("x-litellm-call-id")?;
-    value.to_str().ok()
+    header_text(reply, "x-litellm-call-id")
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -397,43 +404,39 @@ async fn moderations_moderation_tests_behavior(#[case] scenario: Scenario) {
 fn assert_success(reply: &Reply) {
     let text = body_text(reply);
     assert_eq!(reply.status, StatusCode::OK, "{text}");
-    assert_eq!(
-        reply
-            .headers
-            .get("content-type")
-            .and_then(|value| value.to_str().ok()),
-        Some("application/json")
-    );
+    assert_eq!(header_text(reply, "content-type"), Some("application/json"));
     assert_eq!(call_id(reply), Some("caller-id"));
-    // proxy_server.py's moderation handler hands get_custom_headers the served deployment's model id and api base
+    assert_success_headers(reply);
+    let body = answer_body(reply);
+    assert_eq!(body.id, "modr-1");
+    assert_eq!(body.model, "omni-moderation-latest");
+    assert!(!body.results.first().expect("result").flagged);
+}
+
+// proxy_server.py's moderation handler hands get_custom_headers the served deployment's model id, its api base and the hidden params update_response_metadata wrote _response_ms into
+fn assert_success_headers(reply: &Reply) {
     let served = reply
         .served
         .as_ref()
         .expect("the caller named the served deployment");
     assert_eq!(
-        reply
-            .headers
-            .get("x-litellm-model-id")
-            .and_then(|value| value.to_str().ok()),
+        header_text(reply, "x-litellm-model-id"),
         Some(served.model_id.as_str()),
         "x-litellm-model-id"
     );
     assert_eq!(
-        reply
-            .headers
-            .get("x-litellm-model-api-base")
-            .and_then(|value| value.to_str().ok()),
+        header_text(reply, "x-litellm-model-api-base"),
         Some(served.api_base.as_str()),
         "x-litellm-model-api-base"
     );
-    assert_eq!(
-        reply
-            .headers
-            .get("x-litellm-key-spend")
-            .and_then(|value| value.to_str().ok()),
-        Some("0.0")
-    );
+    assert_eq!(header_text(reply, "x-litellm-key-spend"), Some("0.0"));
     assert!(reply.headers.contains_key("x-litellm-version"));
+    // the elapsed milliseconds reach custom_headers as hidden_params["_response_ms"] and print as a float
+    let millis: f64 = header_text(reply, "x-litellm-response-duration-ms")
+        .expect("x-litellm-response-duration-ms")
+        .parse()
+        .expect("the duration header is a number");
+    assert!(millis >= 0.0, "{millis}");
     // the handler passes no cache key and no logging object, so the name and cost headers stay off
     for header in [
         "x-litellm-model-name",
@@ -448,10 +451,6 @@ fn assert_success(reply: &Reply) {
             reply.headers
         );
     }
-    let body = answer_body(reply);
-    assert_eq!(body.id, "modr-1");
-    assert_eq!(body.model, "omni-moderation-latest");
-    assert!(!body.results.first().expect("result").flagged);
 }
 
 // one successful moderation call on the versioned route, checked down to the bytes the provider received
@@ -659,7 +658,8 @@ async fn no_cooldown() {
     let guard = format!("http://{address}/v1");
     let other = format!("http://{address}/other/v1");
     let state = state_with(&guard, &other, "");
-    let provider = tokio::spawn(record_requests(
+    let mut provider = JoinSet::new();
+    provider.spawn(record_requests(
         listener,
         vec![(401, String::from(PROVIDER_401)), (200, answer("0.5"))],
     ));
@@ -677,7 +677,11 @@ async fn no_cooldown() {
         ))
         .await
         .expect("second answer");
-    let sent = provider.await.expect("provider task");
+    let sent = provider
+        .join_next()
+        .await
+        .expect("provider task")
+        .expect("provider result");
     assert_eq!(first.status(), StatusCode::UNAUTHORIZED);
     assert_eq!(second.status(), StatusCode::OK);
     assert_eq!(sent.len(), 2, "the second request reached the provider");
@@ -691,6 +695,7 @@ fn assert_failure_headers(reply: &Reply) {
         reply.headers
     );
     assert!(!reply.headers.contains_key("x-litellm-timeout"));
+    assert!(!reply.headers.contains_key("x-litellm-response-duration-ms"));
 }
 
 // the provider body's type and param for each status the stubbed provider answers

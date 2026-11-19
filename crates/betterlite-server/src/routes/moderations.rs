@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Instant, SystemTime};
 
 use async_trait::async_trait;
 use axum::body::Bytes;
@@ -106,6 +106,7 @@ async fn moderations(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
+    let started = Instant::now();
     let call_id = resolve_call_id(
         headers
             .get("x-litellm-call-id")
@@ -128,7 +129,7 @@ async fn moderations(
     let Ok(deployment) = pick_deployment(&state.calls.executor, &model) else {
         return render_failure(&refusal(Some(&model)), &call_id, state.include_call_id);
     };
-    execute(&state, request, deployment, &call_id).await
+    execute(&state, request, deployment, &call_id, started).await
 }
 
 // resolve_inference_model's moderation arm: the configured default overrides the body, and the launch model is unset
@@ -152,6 +153,7 @@ async fn execute(
     request: ModerationRequest,
     deployment: &ChatDeployment,
     call_id: &str,
+    started: Instant,
 ) -> Response {
     let held: Arc<ModerationCalls> = Arc::clone(&state.calls);
     let calls: Arc<dyn ModerationCall> = held;
@@ -170,7 +172,7 @@ async fn execute(
     });
     let redactor = &state.calls.executor.redactor;
     match state.dispatch.execute(operation, &context).await {
-        Ok(CallResult::Moderation(result)) => answered(state, deployment, result, call_id),
+        Ok(CallResult::Moderation(result)) => answered(state, deployment, result, call_id, started),
         Ok(_) => render_failure(
             &dispatch_failure(
                 DispatchError::NotBuilt {
@@ -189,13 +191,20 @@ async fn execute(
     }
 }
 
-// proxy_server.py's moderation handler gives get_custom_headers the hidden params' model id and api base, but no cache key or logging object
+// proxy_server.py's moderation handler gives get_custom_headers the served model id, api base and the response's _response_ms, but no cache key or logging object
 fn answered(
     state: &ModerationState,
     deployment: &ChatDeployment,
     result: ModerationResult,
     call_id: &str,
+    started: Instant,
 ) -> Response {
+    let mut hidden_params = JsonMap::new();
+    let response_ms = started.elapsed().as_secs_f64().mul_add(1000.0_f64, 0.0_f64);
+    hidden_params.insert(
+        String::from("_response_ms"),
+        serde_json::Value::from(response_ms),
+    );
     let input = CustomHeadersInput {
         key: KeyHeaderView::default(),
         call_id: Some(call_id.to_owned()),
@@ -205,7 +214,7 @@ fn answered(
         version: Some(env!("CARGO_PKG_VERSION").to_owned()),
         model_region: None,
         response_cost: None,
-        hidden_params: JsonMap::new(),
+        hidden_params,
         fastest_batch: None,
         request_data: JsonMap::new(),
         timeout: None,

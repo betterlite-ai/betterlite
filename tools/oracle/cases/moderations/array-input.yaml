@@ -27,6 +27,6 @@ upstream:
           flagged: false
 compare:
   headers: [content-type, x-litellm-call-id]
-  headers_present: []
+  headers_present: [x-litellm-response-duration-ms]
   upstream_headers: [authorization, content-type]
   ignore: []
