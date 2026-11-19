@@ -32,6 +32,13 @@ use super::super::input::{Arguments, Function, Row};
 #[error("{0}")]
 pub(crate) struct Failure(pub(crate) String);
 
+pub(crate) fn argument<'text>(
+    value: Option<&'text str>,
+    field: &str,
+) -> Result<&'text str, Failure> {
+    value.ok_or_else(|| Failure(format!("arguments.{field} is required")))
+}
+
 // ast-grep-ignore: no-one-line-functions
 pub(crate) const fn no_inferred(_model: &str) -> Option<String> {
     None

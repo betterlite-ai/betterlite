@@ -8,7 +8,6 @@ use betterlite_models::full_model_metadata::{
 use betterlite_models::lemonade_model_metadata::ModelInfoClient;
 use betterlite_models::model_catalog_keys::ModelCostKeys;
 use betterlite_models::model_metadata_resolution::dynamic::DynamicMetadataSource;
-use betterlite_models::model_metadata_resolution::hf_config::HfConfigClient;
 use betterlite_models::model_registration::{JsonObject, ModelRegistry};
 use betterlite_models::resolution::ResolutionContext;
 use std::convert::Infallible;

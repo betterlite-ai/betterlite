@@ -21,9 +21,9 @@ struct MergedInputs<'row> {
     resolved: ResolvedModel,
     base_model: Option<String>,
 }
-pub async fn get_router_model_info<Source>(
-    metadata: &RouterMetadata<'_, '_, '_, Source>,
-    deployment: Option<SuppliedDeployment<'_>>,
+pub async fn get_router_model_info<'row, Source>(
+    metadata: &'row RouterMetadata<'_, '_, '_, Source>,
+    deployment: Option<SuppliedDeployment<'row>>,
     received_model_name: &str,
     id: Option<&str>,
     keys: &mut ModelCostKeys,
@@ -56,7 +56,7 @@ where
     Ok(Some(info))
 }
 fn resolve_inputs<'row, Source, SourceError>(
-    metadata: &RouterMetadata<'_, '_, '_, Source>,
+    metadata: &'row RouterMetadata<'_, '_, '_, Source>,
     deployment: Option<SuppliedDeployment<'row>>,
     id: Option<&str>,
 ) -> Result<MergedInputs<'row>, RouterMetadataError<SourceError>>
