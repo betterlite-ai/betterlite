@@ -32,8 +32,8 @@ impl Wire {
     pub(super) fn replying(reply: Option<&Reply>, canned: &str) -> Arc<Self> {
         Arc::new(Self {
             seen: Mutex::new(Vec::new()),
-            status: reply.map_or(200, |reply| reply.status),
-            body: reply.map_or_else(|| canned.to_owned(), |reply| reply.body.clone()),
+            status: reply.map_or(200, |given| given.status),
+            body: reply.map_or_else(|| canned.to_owned(), |given| given.body.clone()),
         })
     }
 }

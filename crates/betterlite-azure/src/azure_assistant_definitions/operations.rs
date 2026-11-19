@@ -69,7 +69,10 @@ impl<T: AssistantsTransport> AssistantsApi<T> {
         supplied: Option<AzureAssistantsClient<'data, T>>,
         kind: ClientKind,
     ) -> Result<AzureAssistantsClient<'data, T>, DefinitionsError> {
-        supplied.map_or_else(|| self.construct(request, kind), Ok)
+        match supplied {
+            Some(client) => Ok(client),
+            None => self.construct(request, kind),
+        }
     }
 
     // Serves every definition facade: the flag picks the client kind and the call picks the SDK method.

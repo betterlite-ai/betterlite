@@ -205,52 +205,47 @@ async fn status_reply_hides_credentials() {
 
 // A transport fault and a credential the SDK cannot turn into a header are both named, never echoed.
 async fn failure_hides_credentials() {
-    transport_failure_hides_credentials().await;
-    header_failure_hides_credentials().await;
-}
-
-async fn transport_failure_hides_credentials() {
-    let mut fixture = Fixture::new();
-    fixture.params.azure_ad_token = Some(SecretString::from(TOKEN_A));
-    let request = fixture.request();
-    let (api, transport) = failing_harness();
-    let failed = api
-        .call(&request, None, None, DefinitionCall::List)
+    let mut tokened = Fixture::new();
+    tokened.params.azure_ad_token = Some(SecretString::from(TOKEN_A));
+    let tokened_request = tokened.request();
+    let (tokened_api, tokened_transport) = failing_harness();
+    let transport_failure = tokened_api
+        .call(&tokened_request, None, None, DefinitionCall::List)
         .await
         .unwrap_err();
     assert!(
         matches!(
-            failed,
+            transport_failure,
             DefinitionsError::Assistants(AssistantsError::Transport { .. })
         ),
-        "{failed:?}"
+        "{transport_failure:?}"
     );
-    assert_clean("transport display", &failed.to_string());
-    assert_clean("transport debug", &format!("{failed:?}"));
-    for shown in transport.debug_texts() {
+    assert_named_clean("transport", &transport_failure);
+    for shown in tokened_transport.debug_texts() {
         assert_clean("transport request debug", &shown);
     }
-}
-
-async fn header_failure_hides_credentials() {
-    let mut fixture = Fixture::new();
-    fixture.api_key = Some(SecretString::from("sk-fixture\nbad"));
-    let request = fixture.request();
-    let (api, transport) = harness(200, PAGE);
-    let failed = api
-        .call(&request, None, None, DefinitionCall::List)
+    let mut bad_header = Fixture::new();
+    bad_header.api_key = Some(SecretString::from("sk-fixture\nbad"));
+    let header_request = bad_header.request();
+    let (header_api, header_transport) = harness(200, PAGE);
+    let header_failure = header_api
+        .call(&header_request, None, None, DefinitionCall::List)
         .await
         .unwrap_err();
     assert!(
         matches!(
-            failed,
+            header_failure,
             DefinitionsError::Assistants(AssistantsError::Header { .. })
         ),
-        "{failed:?}"
+        "{header_failure:?}"
     );
-    assert_clean("header display", &failed.to_string());
-    assert_clean("header debug", &format!("{failed:?}"));
-    assert!(transport.requests().is_empty());
+    assert_named_clean("header", &header_failure);
+    assert!(header_transport.requests().is_empty());
+}
+
+fn assert_named_clean(what: &str, failed: &DefinitionsError) {
+    assert_clean(&format!("{what} display"), &failed.to_string());
+    assert_clean(&format!("{what} debug"), &format!("{failed:?}"));
 }
 
 fn assert_clean(what: &str, text: &str) {

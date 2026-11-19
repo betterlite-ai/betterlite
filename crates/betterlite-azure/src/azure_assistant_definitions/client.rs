@@ -221,8 +221,7 @@ fn resolve_credentials(
             .lookup("AZURE_OPENAI_AD_TOKEN")
             .map(SecretString::from)
     });
-    // The SDK's base client refuses a falsy key even when a token was given (openai/_client.py#L223-L233),
-    // so an explicit empty key builds nothing, and MissingCredentials covers every absent credential.
+    // An explicit empty key builds nothing: the SDK's base client refuses a falsy key even with a token (openai/_client.py#L223-L233).
     let empty_key = key
         .as_ref()
         .is_some_and(|value| value.expose_secret().is_empty());

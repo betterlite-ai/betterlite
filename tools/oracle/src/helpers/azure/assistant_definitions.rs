@@ -37,7 +37,7 @@ struct SuppliedStep {
 // One facade call: the method arguments LiteLLM reads, the litellm_params it forwards, and the SDK reply to serve.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Step {
+pub(crate) struct Step {
     #[serde(default)]
     params: LiteLlmParams,
     #[serde(default)]

@@ -5,7 +5,7 @@ use betterlite_openai::assistants::error::AssistantsError;
 use betterlite_openai::assistants::records::AssistantCreate;
 
 use crate::azure_assistant_definitions::error::DefinitionsError;
-use crate::azure_assistant_definitions::operations::{ClientRequest, DefinitionCall};
+use crate::azure_assistant_definitions::operations::DefinitionCall;
 
 use super::support::{
     ASSISTANT, ASSISTANTS_URL, Auth, CREATE_BODY, DELETE_URL, DELETED, ERROR_BODY, Fixture, KEY,
@@ -29,62 +29,30 @@ async fn kinds() {
     let request = fixture.request();
     let data: AssistantCreate = serde_json::from_str(CREATE_BODY).unwrap();
     for (flag, kind) in KINDS {
-        list_kind(&request, flag, kind).await;
-        create_kind(&request, flag, kind, &data).await;
-        delete_kind(&request, flag, kind).await;
+        let calls = [
+            (
+                DefinitionCall::List,
+                PAGE,
+                wire("GET", ASSISTANTS_URL, None, Auth::Key(KEY)),
+            ),
+            (
+                DefinitionCall::Create(&data),
+                ASSISTANT,
+                wire("POST", ASSISTANTS_URL, Some(CREATE_BODY), Auth::Key(KEY)),
+            ),
+            (
+                DefinitionCall::Delete("asst_1"),
+                DELETED,
+                wire("DELETE", DELETE_URL, None, Auth::Key(KEY)),
+            ),
+        ];
+        for (call, body, expected) in calls {
+            let (api, transport) = harness(200, body);
+            let reply = api.call(&request, None, flag, call).await.unwrap();
+            assert_eq!(reply.kind, kind, "{flag:?}");
+            assert_eq!(transport.requests(), vec![expected], "{flag:?}");
+        }
     }
-}
-
-async fn list_kind(request: &ClientRequest<'_>, flag: Option<bool>, kind: ClientKind) {
-    let (api, transport) = harness(200, PAGE);
-    let listed = api
-        .call(request, None, flag, DefinitionCall::List)
-        .await
-        .unwrap();
-    assert_eq!(listed.kind, kind, "{flag:?}");
-    assert_eq!(
-        transport.requests(),
-        vec![wire("GET", ASSISTANTS_URL, None, Auth::Key(KEY))],
-        "{flag:?}"
-    );
-}
-
-async fn create_kind(
-    request: &ClientRequest<'_>,
-    flag: Option<bool>,
-    kind: ClientKind,
-    data: &AssistantCreate,
-) {
-    let (api, transport) = harness(200, ASSISTANT);
-    let created = api
-        .call(request, None, flag, DefinitionCall::Create(data))
-        .await
-        .unwrap();
-    assert_eq!(created.kind, kind, "{flag:?}");
-    assert_eq!(
-        transport.requests(),
-        vec![wire(
-            "POST",
-            ASSISTANTS_URL,
-            Some(CREATE_BODY),
-            Auth::Key(KEY)
-        )],
-        "{flag:?}"
-    );
-}
-
-async fn delete_kind(request: &ClientRequest<'_>, flag: Option<bool>, kind: ClientKind) {
-    let (api, transport) = harness(200, DELETED);
-    let gone = api
-        .call(request, None, flag, DefinitionCall::Delete("asst_1"))
-        .await
-        .unwrap();
-    assert_eq!(gone.kind, kind, "{flag:?}");
-    assert_eq!(
-        transport.requests(),
-        vec![wire("DELETE", DELETE_URL, None, Auth::Key(KEY))],
-        "{flag:?}"
-    );
 }
 
 // Constructors and SDK calls have no catch: the first failure surfaces unchanged.

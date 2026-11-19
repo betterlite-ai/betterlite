@@ -37,7 +37,10 @@ pub(super) fn failure(error: &DefinitionsError) -> Result<Value, Box<HelperError
         | DefinitionsError::MissingEndpoint
         | DefinitionsError::ProviderReply
         | DefinitionsError::Timeout { .. } => Ok(json!({"kind": "value"})),
-        other => Err(invalid_input(other.to_string())),
+        other @ (DefinitionsError::Assistants(_)
+        | DefinitionsError::Endpoint(_)
+        | DefinitionsError::BaseUrl { .. }
+        | DefinitionsError::Provider { .. }) => Err(invalid_input(other.to_string())),
     }
 }
 

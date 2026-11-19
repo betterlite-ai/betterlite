@@ -389,8 +389,7 @@ async fn provider_error(provider: Arc<dyn CallableTokenProvider>) -> Definitions
     error
 }
 
-// The SDK constructor's OPENAI_ORG_ID, OPENAI_PROJECT_ID and OPENAI_CUSTOM_HEADERS fallbacks are not read
-// (docs/deviations/B686.yaml).
+// The SDK constructor's OPENAI_ORG_ID, OPENAI_PROJECT_ID and OPENAI_CUSTOM_HEADERS fallbacks are not read (docs/deviations/B686.yaml).
 async fn sdk_header_fallbacks_ignored() {
     let mut fixture = Fixture::new();
     fixture
