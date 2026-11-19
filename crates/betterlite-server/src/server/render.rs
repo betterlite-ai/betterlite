@@ -29,13 +29,9 @@ pub(crate) fn plain_failure(
         message,
         repeat_message,
     } = shape;
-    let provider_specific_fields = if repeat_message {
-        Some(RouterErrorFields {
-            error: message.clone(),
-        })
-    } else {
-        None
-    };
+    let provider_specific_fields = repeat_message.then(|| RouterErrorFields {
+        error: message.clone(),
+    });
     let body = ErrorBody {
         error: ErrorObject {
             message,

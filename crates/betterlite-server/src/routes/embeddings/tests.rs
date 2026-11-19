@@ -684,7 +684,7 @@ async fn unknown_model_answers_litellm_text_on_an_engines_path() {
 #[tokio::test]
 async fn unknown_model_retries_once_when_the_read_through_answers() {
     let recorder = RecordingReadThrough::new(true);
-    let port: Arc<dyn ModelReadThrough> = recorder.clone();
+    let port: Arc<dyn ModelReadThrough> = Arc::clone(&recorder);
     let (status, reply) = ask(
         "/v1/embeddings",
         r#"{"model":"nope","input":"hi"}"#,
@@ -699,7 +699,7 @@ async fn unknown_model_retries_once_when_the_read_through_answers() {
 #[tokio::test]
 async fn unknown_model_keeps_the_first_answer_when_the_read_through_declines() {
     let recorder = RecordingReadThrough::new(false);
-    let port: Arc<dyn ModelReadThrough> = recorder.clone();
+    let port: Arc<dyn ModelReadThrough> = Arc::clone(&recorder);
     let (status, reply) = ask(
         "/v1/embeddings",
         r#"{"model":"nope","input":"hi"}"#,
@@ -714,7 +714,7 @@ async fn unknown_model_keeps_the_first_answer_when_the_read_through_declines() {
 #[tokio::test]
 async fn unknown_model_without_a_model_never_asks_the_read_through() {
     let recorder = RecordingReadThrough::new(true);
-    let port: Arc<dyn ModelReadThrough> = recorder.clone();
+    let port: Arc<dyn ModelReadThrough> = Arc::clone(&recorder);
     let (status, reply) = ask("/v1/embeddings", r#"{"input":"hi"}"#, Some(port)).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(reply.error.message, litellm_text("None"));
