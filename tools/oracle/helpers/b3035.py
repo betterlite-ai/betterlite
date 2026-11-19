@@ -154,15 +154,16 @@ def make_limiter(
 
 
 def response_value(response: RateLimitResponse) -> dict[str, JsonValue]:
-    statuses: list[JsonValue] = []
-    for status in response["statuses"]:
-        statuses.append({
+    statuses: list[JsonValue] = [
+        {
             "code": status["code"],
             "current_limit": status["current_limit"],
             "limit_remaining": status["limit_remaining"],
             "rate_limit_type": status["rate_limit_type"],
             "descriptor_key": status["descriptor_key"],
-        })
+        }
+        for status in response["statuses"]
+    ]
     return {
         "overall_code": response["overall_code"],
         "statuses": statuses,
