@@ -200,7 +200,10 @@ fn encode<Encoded>(value: &Encoded) -> Result<String, ComplexityConfigWriteError
 where
     Encoded: Serialize,
 {
-    serde_json::to_string(value).map_err(|source| ComplexityConfigWriteError::Unreadable { source })
+    match serde_json::to_string(value) {
+        Ok(encoded) => Ok(encoded),
+        Err(source) => Err(ComplexityConfigWriteError::Unreadable { source }),
+    }
 }
 
 // the prefix names the field a nested value was read from, and the fallback names the value itself
