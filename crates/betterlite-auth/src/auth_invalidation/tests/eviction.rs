@@ -51,7 +51,7 @@ fn local_auth_failure_skips_usage_but_publishes() {
     let usage = Recorder::new(None);
     let invalidation = deletion(&recorder, Some(&usage));
     let ((), warnings) = support::capture(|| {
-        runtime.block_on(invalidation.delete_cache_team_object("team-1", Some("alias-1")))
+        runtime.block_on(invalidation.delete_cache_team_object("team-1", Some("alias-1")));
     });
     assert!(
         usage.calls().is_empty(),
@@ -89,7 +89,7 @@ fn usage_failure_warns_then_publishes() {
     usage.fail(Fault::UsageDeleteAsync);
     let invalidation = deletion(&recorder, Some(&usage));
     let ((), warnings) = support::capture(|| {
-        runtime.block_on(invalidation.delete_cache_team_object("team-1", Some("alias-1")))
+        runtime.block_on(invalidation.delete_cache_team_object("team-1", Some("alias-1")));
     });
     assert_eq!(
         recorder.calls(),
@@ -130,6 +130,31 @@ fn missing_usage_cache_still_publishes() {
                 ttl: None,
             },
         ]
+    );
+}
+
+#[test]
+fn empty_team_alias_skips_alias_key() {
+    let runtime = support::runtime();
+    let recorder = Recorder::new(None);
+    let usage = Recorder::new(None);
+    let invalidation = deletion(&recorder, Some(&usage));
+    runtime.block_on(invalidation.delete_cache_team_object("team-1", Some("")));
+    assert_eq!(
+        recorder.calls(),
+        vec![
+            Call::AuthDeleteSync("team_id:team-1".to_owned()),
+            Call::Publish {
+                key: "team_id:team-1".to_owned(),
+                new_value: None,
+                ttl: None,
+            },
+        ],
+        "an empty alias key is skipped like an absent one"
+    );
+    assert_eq!(
+        usage.calls(),
+        vec![Call::UsageDeleteAsync("team_id:team-1".to_owned())]
     );
 }
 
@@ -286,8 +311,8 @@ fn self_delivery_keeps_new_values() {
     let invalidation = deletion(&recorder, None);
     let outcome = invalidation.apply(Invalidation {
         cache_key: "team_membership:user-1:team-1".to_owned(),
-        new_value: Some(3.0),
-        ttl: Some(60.0),
+        new_value: Some(3.0_f64),
+        ttl: Some(60.0_f64),
     });
     outcome.unwrap();
     assert!(

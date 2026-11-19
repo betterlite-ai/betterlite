@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::fmt::Debug;
-use std::future::pending;
+use std::future::{Future, pending, ready};
 use std::io;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
@@ -55,7 +55,7 @@ pub(crate) enum Call {
     },
     AuthDeleteSync(String),
     AuthDeleteAsync(String),
-    AuthDeletePreCall(String),
+    AuthPreCallDelete(String),
     AuthDeleteMemory(String),
     AuthDeleteRedis(String),
     UsageDeleteMemory(String),
@@ -195,7 +195,7 @@ impl AuthInvalidationCache for Recorder {
     }
 
     async fn delete_pre_call(&self, key: &str) -> Result<DeferredDelete, InvalidationError> {
-        self.record(Call::AuthDeletePreCall(key.to_owned()));
+        self.record(Call::AuthPreCallDelete(key.to_owned()));
         if self.has(Fault::PreCallFail) {
             return Err(invalidation_failure());
         }
@@ -425,28 +425,28 @@ impl AuthPubSub for RecordingEndpoint {
         "test-channel".to_owned()
     }
 
-    async fn publish(&self, message: &str) -> Result<(), TransportError> {
+    fn publish(&self, message: &str) -> impl Future<Output = Result<(), TransportError>> + Send {
         lock(&self.published).push(message.to_owned());
-        Ok(())
+        ready(Ok(()))
     }
 
-    async fn subscribe(&self) -> Result<Self::Subscription, TransportError> {
-        Ok(RecordingSubscription)
+    fn subscribe(&self) -> impl Future<Output = Result<Self::Subscription, TransportError>> + Send {
+        ready(Ok(RecordingSubscription))
     }
 }
 
 pub(crate) struct RecordingSubscription;
 
 impl AuthPubSubSubscription for RecordingSubscription {
-    async fn next_message(
+    fn next_message(
         &mut self,
         _timeout: Duration,
-    ) -> Result<Option<PubSubMessage>, TransportError> {
-        Ok(None)
+    ) -> impl Future<Output = Result<Option<PubSubMessage>, TransportError>> + Send {
+        ready(Ok(None))
     }
 
-    async fn close(&mut self) -> Result<(), TransportError> {
-        Ok(())
+    fn close(&mut self) -> impl Future<Output = Result<(), TransportError>> + Send {
+        ready(Ok(()))
     }
 }
 
@@ -494,14 +494,11 @@ pub(crate) fn builder(auth: &Arc<Recorder>, usage: Option<&Arc<Recorder>>) -> Au
     let spend_port: Arc<dyn SpendCounterCache> = spend_handle;
     let transport_handle: Arc<Recorder> = Arc::clone(auth);
     let transport_port: Arc<dyn InvalidationTransport> = transport_handle;
-    let usage_port: Option<Arc<dyn UsageInvalidationCache>> = match usage {
-        Some(recorder) => {
-            let usage_handle: Arc<Recorder> = Arc::clone(recorder);
-            let port: Arc<dyn UsageInvalidationCache> = usage_handle;
-            Some(port)
-        }
-        None => None,
-    };
+    let usage_port: Option<Arc<dyn UsageInvalidationCache>> = usage.map(|recorder| {
+        let usage_handle: Arc<Recorder> = Arc::clone(recorder);
+        let port: Arc<dyn UsageInvalidationCache> = usage_handle;
+        port
+    });
     AuthInvalidation {
         auth: auth_port,
         usage: usage_port,
@@ -515,8 +512,11 @@ pub(crate) fn builder(auth: &Arc<Recorder>, usage: Option<&Arc<Recorder>>) -> Au
 pub(crate) fn team(team_id: &str, alias: Option<&str>) -> LiteLLMTeamTableCachedObj {
     let mut fields = BTreeMap::new();
     fields.insert("team_id".to_owned(), JsonData::String(team_id.to_owned()));
-    if let Some(alias) = alias {
-        fields.insert("team_alias".to_owned(), JsonData::String(alias.to_owned()));
+    if let Some(team_alias) = alias {
+        fields.insert(
+            "team_alias".to_owned(),
+            JsonData::String(team_alias.to_owned()),
+        );
     }
     LiteLLMTeamTableCachedObj::try_from(JsonData::Object(fields)).expect("the team row parses")
 }
@@ -633,15 +633,15 @@ pub(crate) fn call_keys(calls: &[Call]) -> Vec<String> {
             Call::AuthWrite { key, .. }
             | Call::AuthDeleteSync(key)
             | Call::AuthDeleteAsync(key)
-            | Call::AuthDeletePreCall(key)
+            | Call::AuthPreCallDelete(key)
             | Call::AuthDeleteMemory(key)
             | Call::AuthDeleteRedis(key)
             | Call::UsageDeleteMemory(key)
             | Call::UsageDeleteAsync(key)
-            | Call::SpendRedisSkipped(key)
-            | Call::SpendRedisDeleted(key) => Some(key.clone()),
-            Call::SpendSetMemory { key, .. }
+            | Call::SpendSetMemory { key, .. }
             | Call::SpendSetRedis { key, .. }
+            | Call::SpendRedisSkipped(key)
+            | Call::SpendRedisDeleted(key)
             | Call::Publish { key, .. } => Some(key.clone()),
             Call::Evict { keys } => keys.first().cloned(),
         })

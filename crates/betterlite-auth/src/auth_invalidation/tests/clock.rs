@@ -1,6 +1,6 @@
 use chrono::Utc;
 
-use crate::auth_invalidation::clock::{InvalidationClock, SystemClock};
+use crate::auth_invalidation::clock::{InvalidationClock as _, SystemClock};
 
 #[test]
 fn system_clock_reads_the_wall_clock() {

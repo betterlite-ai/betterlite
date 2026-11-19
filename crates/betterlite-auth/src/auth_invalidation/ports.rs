@@ -68,7 +68,7 @@ where
     // a Redis marker needs a live Redis cache, and without one this answer and None are the same
     #[cfg_attr(test, mutants::skip)]
     fn redis_handle(&self, key: &str) -> Option<Arc<dyn RedisMarker>> {
-        marker_of(redis_of(self.tier(key)))
+        redis_of(self.tier(key)).map(|redis| -> Arc<dyn RedisMarker> { redis })
     }
 
     fn management_ttl(&self) -> f64 {
@@ -135,7 +135,7 @@ where
     // a Redis marker needs a live Redis cache, and without one this answer and None are the same
     #[cfg_attr(test, mutants::skip)]
     fn redis_handle(&self) -> Option<Arc<dyn RedisMarker>> {
-        marker_of(redis_of(self))
+        redis_of(self).map(|redis| -> Arc<dyn RedisMarker> { redis })
     }
 
     fn delete_memory(&self, key: &str) -> Result<(), BackendError> {
@@ -157,7 +157,7 @@ where
     // a Redis marker needs a live Redis cache, and without one this answer and None are the same
     #[cfg_attr(test, mutants::skip)]
     fn redis_handle(&self) -> Option<Arc<dyn RedisMarker>> {
-        marker_of(redis_of(self))
+        redis_of(self).map(|redis| -> Arc<dyn RedisMarker> { redis })
     }
 
     fn set_memory(&self, key: &str, value: f64, ttl: f64) -> Result<(), BackendError> {
@@ -203,13 +203,4 @@ where
         Ok(guard) => guard.clone(),
         Err(poisoned) => poisoned.into_inner().clone(),
     }
-}
-
-// a marker needs a live Redis cache, and without one this answer and None are the same
-#[cfg_attr(test, mutants::skip)]
-fn marker_of(redis: Option<Arc<RedisCache>>) -> Option<Arc<dyn RedisMarker>> {
-    redis.map(|handle| {
-        let marker: Arc<dyn RedisMarker> = handle;
-        marker
-    })
 }

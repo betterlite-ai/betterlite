@@ -68,7 +68,7 @@ fn team_id_and_alias_keys() {
                 payload: support::encoded_team(&team),
                 ttl: Some(MANAGEMENT_TTL),
             },
-            Call::AuthDeletePreCall("team_alias:alias-1".to_owned()),
+            Call::AuthPreCallDelete("team_alias:alias-1".to_owned()),
         ]
     );
     assert_eq!(
@@ -148,7 +148,7 @@ fn management_ttl_from_cache_settings() {
     let Call::AuthWrite { ttl, .. } = &recorder.calls()[0] else {
         panic!("the refresh writes the team");
     };
-    assert_eq!(*ttl, Some(90.0));
+    assert_eq!(*ttl, Some(90.0_f64));
 }
 
 #[test]
@@ -425,7 +425,7 @@ fn alias_queued_delete_is_awaited() {
                 payload: support::encoded_team(&team),
                 ttl: Some(MANAGEMENT_TTL),
             },
-            Call::AuthDeletePreCall("team_alias:alias-1".to_owned()),
+            Call::AuthPreCallDelete("team_alias:alias-1".to_owned()),
         ],
         "a queued alias delete is awaited, never repeated directly"
     );
@@ -449,7 +449,7 @@ fn alias_direct_delete_only_without_batch() {
                 payload: support::encoded_team(&team),
                 ttl: Some(MANAGEMENT_TTL),
             },
-            Call::AuthDeletePreCall("team_alias:alias-1".to_owned()),
+            Call::AuthPreCallDelete("team_alias:alias-1".to_owned()),
             Call::AuthDeleteAsync("team_alias:alias-1".to_owned()),
         ],
         "without a request batch the alias is deleted directly"
