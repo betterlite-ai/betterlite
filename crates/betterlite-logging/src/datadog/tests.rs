@@ -10,6 +10,7 @@ mod datadog_proxy_user_context_behavior;
 mod datadog_service_failure_queueing_behavior;
 mod datadog_service_success_filtering_behavior;
 mod datadog_success_service_types_behavior;
+mod datadog_trace_context_attachment_behavior;
 mod legacy;
 mod standard;
 mod support;
