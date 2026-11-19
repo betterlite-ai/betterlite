@@ -16,7 +16,7 @@ use betterlite_logging::logging_state::correlation::{
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
-use betterlite_openai::chat::ChatMessage;
+use betterlite_openai::chat::{ChatMessage, ChatRequest};
 use betterlite_openai::compatible_line_stream::Mode;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_vertex::model_policy::error::VertexAiError;
@@ -25,6 +25,7 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
+use tokio::task::JoinSet;
 use tokio::time::timeout;
 use uuid::Uuid;
 
@@ -129,6 +130,7 @@ struct Fixture {
     project: Option<String>,
     resolved_project: String,
     token: SecretString,
+    timeout: Option<Duration>,
 }
 
 impl Fixture {
@@ -142,6 +144,7 @@ impl Fixture {
             project: Some(String::from("proj")),
             resolved_project: String::from("auth-proj"),
             token: SecretString::from("sk-token"),
+            timeout: None,
         }
     }
 
@@ -155,7 +158,7 @@ impl Fixture {
             vertex_project: self.project.as_deref(),
             resolved_project: &self.resolved_project,
             access_token: &self.token,
-            timeout: None,
+            timeout: self.timeout,
             mode: Mode::Async,
             identifier: fixed_id,
             clock: || 1_700_000_000,
@@ -197,6 +200,9 @@ async fn garden_call_appends_one_chat_path_to_a_publisher_target() {
     assert!(request.starts_with(
         "POST /v1/projects/proj/locations/us-central1/endpoints/openapi/chat/completions HTTP/1.1"
     ));
+    let (_, body) = request.split_once("\r\n\r\n").unwrap();
+    let body: ChatRequest = serde_json::from_str(body).unwrap();
+    assert_eq!(body.messages, messages());
     assert_eq!(request.matches("/chat/completions").count(), 1);
     assert!(request.contains(r#""model": "meta/llama-3.3-70b-instruct-maas""#));
     assert!(request.contains(r#""stream": false"#));
@@ -302,4 +308,31 @@ async fn garden_call_normalizes_a_null_stream_to_false() {
     let (request, result) = answer(&fixture.call(), &listener, 200, REPLY.as_bytes()).await;
     assert!(matches!(result.unwrap(), CompatibleChatOutcome::Reply(_)));
     assert!(request.contains(r#""stream": false"#));
+}
+
+#[tokio::test]
+async fn garden_call_bounds_the_request_with_the_caller_timeout() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mut fixture = Fixture::new("meta/llama-3");
+    fixture.api_base = Some(origin(&listener));
+    fixture.timeout = Some(Duration::from_millis(20));
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+    let (mut state, env) = logging(&redactor);
+    // the fixture accepts the connection and never answers, so only the caller's deadline ends the call
+    let mut holder = JoinSet::new();
+    holder.spawn(async move {
+        let (_stream, _) = listener.accept().await.unwrap();
+        std::future::pending::<()>().await;
+    });
+    let result = timeout(
+        EXCHANGE_TIMEOUT,
+        completion(&fixture.call(), &client(), &mut state, &env),
+    )
+    .await
+    .unwrap();
+    holder.abort_all();
+    let Err(error) = result else {
+        panic!("a vertex error");
+    };
+    assert_eq!(error.status_code, 500);
 }
