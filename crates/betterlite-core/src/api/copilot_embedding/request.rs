@@ -1,6 +1,6 @@
 use betterlite_openai::embedding::EmbeddingInput;
-use betterlite_openai::openai_base_config::Object;
-use serde_json::Value;
+use betterlite_prompts::arguments::json::{Json, Object};
+use serde_json::Number;
 
 pub const MODEL_PREFIX: &str = "github_copilot/";
 
@@ -24,7 +24,7 @@ pub fn transform_embedding_request(
     let mut body = Object::from_iter([
         (
             String::from("model"),
-            Value::String(model.strip_prefix(MODEL_PREFIX).unwrap_or(model).to_owned()),
+            Json::Text(model.strip_prefix(MODEL_PREFIX).unwrap_or(model).to_owned()),
         ),
         (String::from("input"), input_value(input)),
     ]);
@@ -33,19 +33,26 @@ pub fn transform_embedding_request(
     body
 }
 
-fn input_value(input: &EmbeddingInput) -> Value {
+fn input_value(input: &EmbeddingInput) -> Json {
     match input {
-        EmbeddingInput::Text(text) => Value::Array(vec![Value::String(text.clone())]),
-        EmbeddingInput::Texts(texts) => {
-            Value::Array(texts.iter().cloned().map(Value::String).collect())
-        }
-        EmbeddingInput::Tokens(tokens) => {
-            Value::Array(tokens.iter().map(|token| Value::from(*token)).collect())
-        }
-        EmbeddingInput::TokenLists(lists) => Value::Array(
+        EmbeddingInput::Text(text) => Json::List(vec![Json::Text(text.clone())]),
+        EmbeddingInput::Texts(texts) => Json::List(texts.iter().cloned().map(Json::Text).collect()),
+        EmbeddingInput::Tokens(tokens) => Json::List(
+            tokens
+                .iter()
+                .map(|token| Json::Number(Number::from(*token)))
+                .collect(),
+        ),
+        EmbeddingInput::TokenLists(lists) => Json::List(
             lists
                 .iter()
-                .map(|list| Value::Array(list.iter().map(|token| Value::from(*token)).collect()))
+                .map(|list| {
+                    Json::List(
+                        list.iter()
+                            .map(|token| Json::Number(Number::from(*token)))
+                            .collect(),
+                    )
+                })
                 .collect(),
         ),
     }

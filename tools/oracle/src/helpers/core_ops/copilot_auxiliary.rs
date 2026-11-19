@@ -8,8 +8,7 @@ use betterlite_core::api::copilot_embedding::request::{
 };
 use betterlite_core::api::copilot_messages::{MessagesConfig, MessagesRequest};
 use betterlite_openai::embedding::EmbeddingInput;
-use betterlite_openai::openai_base_config::Object;
-use betterlite_prompts::arguments::json::Json;
+use betterlite_prompts::arguments::json::{Json, Object};
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::json;

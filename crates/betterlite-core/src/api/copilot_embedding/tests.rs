@@ -6,10 +6,11 @@ use betterlite_config::sections::copilot_chat::Settings;
 use betterlite_openai::copilot::api_key::error::ApiKeyError;
 use betterlite_openai::embedding::EmbeddingInput;
 use betterlite_openai::error::OpenAiError;
-use betterlite_openai::openai_base_config::{Headers, Object};
+use betterlite_openai::openai_base_config::Headers;
+use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
 use secrecy::SecretString;
-use serde_json::{Value, json};
+use serde_json::Number;
 
 use super::EmbeddingConfig;
 use super::error::CopilotEmbeddingError;
@@ -67,45 +68,70 @@ fn advertised_params_are_the_four_embedding_parameters() {
 #[test]
 fn map_params_copies_only_the_advertised_parameters() {
     let requested = Object::from_iter([
-        (String::from("timeout"), json!(30)),
-        (String::from("dimensions"), json!(8)),
-        (String::from("encoding_format"), json!("float")),
-        (String::from("user"), json!("u")),
-        (String::from("model"), json!("m2")),
-        (String::from("input"), json!("x")),
-        (String::from("unknown"), json!(1)),
+        (String::from("timeout"), Json::Number(Number::from(30_u32))),
+        (
+            String::from("dimensions"),
+            Json::Number(Number::from(8_u32)),
+        ),
+        (
+            String::from("encoding_format"),
+            Json::Text(String::from("float")),
+        ),
+        (String::from("user"), Json::Text(String::from("u"))),
+        (String::from("model"), Json::Text(String::from("m2"))),
+        (String::from("input"), Json::Text(String::from("x"))),
+        (String::from("unknown"), Json::Number(Number::from(1_u32))),
     ]);
-    let mut optional = Object::from_iter([(String::from("keep"), json!(1))]);
+    let mut optional =
+        Object::from_iter([(String::from("keep"), Json::Number(Number::from(1_u32)))]);
 
     map_openai_params(&requested, &mut optional);
 
     assert_eq!(
         optional,
         Object::from_iter([
-            (String::from("keep"), json!(1)),
-            (String::from("timeout"), json!(30)),
-            (String::from("dimensions"), json!(8)),
-            (String::from("encoding_format"), json!("float")),
-            (String::from("user"), json!("u")),
+            (String::from("keep"), Json::Number(Number::from(1_u32))),
+            (String::from("timeout"), Json::Number(Number::from(30_u32))),
+            (
+                String::from("dimensions"),
+                Json::Number(Number::from(8_u32))
+            ),
+            (
+                String::from("encoding_format"),
+                Json::Text(String::from("float")),
+            ),
+            (String::from("user"), Json::Text(String::from("u"))),
         ])
     );
 }
 
 #[rstest]
-#[case::scalar(EmbeddingInput::Text(String::from("hello")), json!(["hello"]))]
+#[case::scalar(
+    EmbeddingInput::Text(String::from("hello")),
+    Json::List(vec![Json::Text(String::from("hello"))])
+)]
 #[case::texts(
     EmbeddingInput::Texts(vec![String::from("a"), String::from("b")]),
-    json!(["a", "b"])
+    Json::List(vec![Json::Text(String::from("a")), Json::Text(String::from("b"))])
 )]
-#[case::tokens(EmbeddingInput::Tokens(vec![1, 2]), json!([1, 2]))]
-#[case::token_lists(EmbeddingInput::TokenLists(vec![vec![1], vec![2, 3]]), json!([[1], [2, 3]]))]
-fn transform_converts_every_input_shape(#[case] input: EmbeddingInput, #[case] expected: Value) {
+#[case::tokens(
+    EmbeddingInput::Tokens(vec![1, 2]),
+    Json::List(vec![Json::Number(Number::from(1_u32)), Json::Number(Number::from(2_u32))])
+)]
+#[case::token_lists(
+    EmbeddingInput::TokenLists(vec![vec![1], vec![2, 3]]),
+    Json::List(vec![
+        Json::List(vec![Json::Number(Number::from(1_u32))]),
+        Json::List(vec![Json::Number(Number::from(2_u32)), Json::Number(Number::from(3_u32))]),
+    ])
+)]
+fn transform_converts_every_input_shape(#[case] input: EmbeddingInput, #[case] expected: Json) {
     let body = transform_embedding_request("text-embedding-3-small", &input, &Object::new());
 
     assert_eq!(body.get("input"), Some(&expected));
     assert_eq!(
         body.get("model"),
-        Some(&Value::String(String::from("text-embedding-3-small")))
+        Some(&Json::Text(String::from("text-embedding-3-small")))
     );
 }
 
@@ -119,7 +145,7 @@ fn transform_removes_one_leading_provider_prefix_only() {
 
     assert_eq!(
         body.get("model"),
-        Some(&Value::String(String::from(
+        Some(&Json::Text(String::from(
             "github_copilot/text-embedding-3-small"
         )))
     );
@@ -128,9 +154,15 @@ fn transform_removes_one_leading_provider_prefix_only() {
 #[test]
 fn transform_lets_optional_params_replace_model_and_input() {
     let optional = Object::from_iter([
-        (String::from("model"), json!("override")),
-        (String::from("input"), json!(["given"])),
-        (String::from("dimensions"), json!(256)),
+        (String::from("model"), Json::Text(String::from("override"))),
+        (
+            String::from("input"),
+            Json::List(vec![Json::Text(String::from("given"))]),
+        ),
+        (
+            String::from("dimensions"),
+            Json::Number(Number::from(256_u32)),
+        ),
     ]);
 
     let body = transform_embedding_request(
@@ -139,9 +171,18 @@ fn transform_lets_optional_params_replace_model_and_input() {
         &optional,
     );
 
-    assert_eq!(body.get("model"), Some(&json!("override")));
-    assert_eq!(body.get("input"), Some(&json!(["given"])));
-    assert_eq!(body.get("dimensions"), Some(&json!(256)));
+    assert_eq!(
+        body.get("model"),
+        Some(&Json::Text(String::from("override")))
+    );
+    assert_eq!(
+        body.get("input"),
+        Some(&Json::List(vec![Json::Text(String::from("given"))]))
+    );
+    assert_eq!(
+        body.get("dimensions"),
+        Some(&Json::Number(Number::from(256_u32)))
+    );
 }
 
 #[tokio::test]

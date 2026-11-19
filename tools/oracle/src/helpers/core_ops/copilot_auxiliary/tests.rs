@@ -81,7 +81,7 @@ fn optional_parameters_overlay_the_constructed_body() {
 
     assert_eq!(answer["body"]["model"], json!("override"));
     assert_eq!(answer["body"]["input"], json!(["given"]));
-    assert_eq!(answer["body"]["dimensions"], json!(64));
+    assert_eq!(answer["body"]["dimensions"], json!(64_u64));
     assert_eq!(answer["body"]["user"], json!("u"));
     assert!(answer["body"].get("drop_me").is_none());
 }
