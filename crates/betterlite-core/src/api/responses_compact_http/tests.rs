@@ -246,8 +246,10 @@ async fn compact_signed_body_order() {
         assert_eq!(requests.len(), 2);
         assert_eq!(body_bytes(&requests[1]), Some(b"signed".as_slice()));
         assert!(matches!(
-            requests[1].body,
-            RequestBody::Bytes { data, .. } if data == b"signed"
+            &requests[1].body,
+            RequestBody::Bytes { content_type, data }
+                if data == b"signed"
+                    && content_type.to_str().ok() == Some("application/octet-stream")
         ));
     }
     fixture
@@ -258,7 +260,7 @@ async fn compact_signed_body_order() {
         let requests = wire.requests();
         assert_eq!(requests.len(), 3);
         assert!(matches!(
-            requests[2].body,
+            &requests[2].body,
             RequestBody::Bytes { data, .. } if data.is_empty()
         ));
     }
@@ -379,10 +381,68 @@ async fn compact_transport_errors() {
         };
         assert_eq!(stage, Stage::Response);
         assert_eq!(failure.to_string(), "{not json");
-        let error = CompactError::Step { stage, source: failure };
+        let error = CompactError::Step {
+            stage,
+            source: failure,
+        };
         assert_eq!(error.to_string(), "response transform failed: {not json");
         assert_eq!(wire.requests().len(), 1);
         assert!(config.errors().is_empty());
+    }
+    {
+        let events = Events::new();
+        let config = RecordingConfig::new("http://mock.test/v1/responses", &events);
+        let wire = Wire::replying(Reply::bytes(200, vec![0xff_u8]), &events);
+        let source = Source::new(wire.clone());
+        let deps = CompactDeps {
+            config: &config,
+            source: &source,
+            supplied: None,
+        };
+        let mut fixture = Fixture::new("responses");
+        let result = fixture
+            .run(&deps, ClientKind::Sync, &call.call(), &events)
+            .await;
+        let Err(CompactError::Step {
+            stage,
+            source: failure,
+        }) = result
+        else {
+            panic!("a reply body that is not UTF-8 fails before the response transform");
+        };
+        assert_eq!(stage, Stage::Response);
+        assert!(failure.to_string().starts_with("invalid utf-8 sequence"));
+        assert_eq!(wire.requests().len(), 1);
+        assert!(config.errors().is_empty());
+    }
+    {
+        let events = Events::new();
+        let config = OpenAiConfig::new("sk-unused", &events);
+        let wire = Wire::replying(
+            Reply::bytes(429, vec![0xff_u8, 0xfe_u8]).with_header("retry-after", "3"),
+            &events,
+        );
+        let source = Source::new(wire.clone());
+        let deps = CompactDeps {
+            config: &config,
+            source: &source,
+            supplied: None,
+        };
+        let mut fixture = Fixture::new("responses");
+        let result = fixture
+            .run(&deps, ClientKind::Asynchronous, &call.call(), &events)
+            .await;
+        let Err(CompactError::Provider(error)) = result else {
+            panic!("a 429 with a binary body is a provider error");
+        };
+        assert_eq!(error.status_code, 429);
+        assert!(!error.status_code_is_synthesized);
+        assert_eq!(error.message, "2 bytes that are not UTF-8");
+        assert_eq!(
+            error.headers.get("content-length"),
+            Some(&LoggedJson::Text(String::from("2")))
+        );
+        assert_eq!(wire.requests().len(), 1);
     }
     {
         let events = Events::new();
@@ -473,6 +533,112 @@ async fn compact_transport_errors() {
         };
         assert_eq!(stage, Stage::Normalize);
         assert_eq!(failure.to_string(), "scripted provider failure");
+        assert!(wire.requests().is_empty());
+    }
+    {
+        let events = Events::new();
+        let config = RecordingConfig::new("not a url", &events);
+        let wire = Wire::replying(Reply::json(200, COMPACT_OK), &events);
+        let source = Source::new(wire.clone());
+        let deps = CompactDeps {
+            config: &config,
+            source: &source,
+            supplied: None,
+        };
+        let mut fixture = Fixture::new("responses");
+        let result = fixture
+            .run(&deps, ClientKind::Sync, &call.call(), &events)
+            .await;
+        let Err(CompactError::Step {
+            stage,
+            source: failure,
+        }) = result
+        else {
+            panic!("a base URL that is not a URL fails in the transform");
+        };
+        assert_eq!(stage, Stage::Transform);
+        assert!(
+            failure
+                .to_string()
+                .starts_with("the API base is not a valid URL")
+        );
+        assert!(wire.requests().is_empty());
+        assert!(config.errors().is_empty());
+        assert_eq!(events.recorded(), vec!["validate", "url", "transform"]);
+    }
+    {
+        let events = Events::new();
+        let config =
+            RecordingConfig::transforming_to("http://mock.test/v1/responses", &events, "not a url");
+        let wire = Wire::replying(Reply::json(200, COMPACT_OK), &events);
+        let source = Source::new(wire.clone());
+        let deps = CompactDeps {
+            config: &config,
+            source: &source,
+            supplied: None,
+        };
+        let mut fixture = Fixture::new("responses");
+        let result = fixture
+            .run(&deps, ClientKind::Sync, &call.call(), &events)
+            .await;
+        let Err(CompactError::RequestUrl { url, .. }) = result else {
+            panic!("a transformed URL that is not a URL fails before the send");
+        };
+        assert_eq!(url, "not a url");
+        assert!(wire.requests().is_empty());
+        assert_eq!(
+            events.recorded(),
+            vec!["validate", "url", "transform", "normalize", "sign", "log"]
+        );
+    }
+    {
+        let events = Events::new();
+        let config = RecordingConfig::new("http://mock.test/v1/responses", &events);
+        let wire = Wire::replying(Reply::json(200, COMPACT_OK), &events);
+        let source = Source::new(wire.clone());
+        let deps = CompactDeps {
+            config: &config,
+            source: &source,
+            supplied: None,
+        };
+        let bad = caller_headers(&[("bad name", "value")]);
+        let mut bad_call = TestCall::new("gpt-4o", &input, &optional, &params);
+        bad_call.extra_headers = Some(&bad);
+        let mut fixture = Fixture::new("responses");
+        let result = fixture
+            .run(&deps, ClientKind::Sync, &bad_call.call(), &events)
+            .await;
+        let Err(CompactError::HeaderName { name, .. }) = result else {
+            panic!("a header name HTTP cannot carry fails before the send");
+        };
+        assert_eq!(name, "bad name");
+        assert!(wire.requests().is_empty());
+        assert_eq!(
+            events.recorded(),
+            vec!["validate", "url", "transform", "normalize", "sign", "log"]
+        );
+    }
+    {
+        let events = Events::new();
+        let config = RecordingConfig::new("http://mock.test/v1/responses", &events);
+        let wire = Wire::replying(Reply::json(200, COMPACT_OK), &events);
+        let source = Source::new(wire.clone());
+        let deps = CompactDeps {
+            config: &config,
+            source: &source,
+            supplied: None,
+        };
+        let bad = caller_headers(&[("X-Trace", "café")]);
+        let mut bad_call = TestCall::new("gpt-4o", &input, &optional, &params);
+        bad_call.extra_headers = Some(&bad);
+        let mut fixture = Fixture::new("responses");
+        let result = fixture
+            .run(&deps, ClientKind::Sync, &bad_call.call(), &events)
+            .await;
+        let Err(CompactError::HeaderValue { name, .. }) = result else {
+            panic!("a header value HTTP cannot carry fails before the send");
+        };
+        assert_eq!(name, "X-Trace");
         assert!(wire.requests().is_empty());
     }
     {

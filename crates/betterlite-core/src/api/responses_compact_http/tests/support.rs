@@ -237,6 +237,14 @@ impl Reply {
         }
     }
 
+    pub(crate) fn bytes(status: u16, body: Vec<u8>) -> Self {
+        Self {
+            status,
+            headers: HttpHeaders::new(),
+            body,
+        }
+    }
+
     pub(crate) fn with_header(mut self, name: &'static str, value: &str) -> Self {
         self.headers.insert(
             name,
@@ -334,6 +342,7 @@ pub(crate) struct RecordingConfig {
     pub(crate) base: String,
     events: Events,
     fail_at: Option<FailureStage>,
+    transformed_url: Option<String>,
     signed: Mutex<VecDeque<Option<Vec<u8>>>>,
     signs: Mutex<Vec<SignRecord>>,
     models: Mutex<Vec<String>>,
@@ -346,10 +355,19 @@ impl RecordingConfig {
             base: base.to_owned(),
             events: events.clone(),
             fail_at: None,
+            transformed_url: None,
             signed: Mutex::default(),
             signs: Mutex::default(),
             models: Mutex::default(),
             errors: Mutex::default(),
+        }
+    }
+
+    // A transform whose URL string was never parsed, as a config that builds it by formatting would return
+    pub(crate) fn transforming_to(base: &str, events: &Events, url: &str) -> Self {
+        Self {
+            transformed_url: Some(url.to_owned()),
+            ..Self::new(base, events)
         }
     }
 
@@ -431,6 +449,12 @@ impl CompactConfig for RecordingConfig {
     ) -> Result<ResourceRequest, ConfigFailure> {
         self.events.push("transform");
         self.fail(FailureStage::Transform)?;
+        if let Some(url) = &self.transformed_url {
+            return Ok(ResourceRequest {
+                url: url.clone(),
+                payload: request.optional_params.clone(),
+            });
+        }
         let provider = ProviderCompactRequest {
             model: request.model,
             input: request.input,
