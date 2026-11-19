@@ -218,6 +218,25 @@ fn declared_types_accepted() {
     assert_eq!(params.fields.get("aws_session_tags"), Some(&tags));
 }
 
+// the deviation in docs/deviations/B2306.yaml: items stay as the config declared them, and the STS caller canonicalizes them
+#[test]
+fn tag_items_kept_as_declared() {
+    let tags = Json::List(vec![
+        Json::Object(pairs(&[
+            ("Key", text("team")),
+            ("Value", text("alpha")),
+            ("Extra", text("ignored-by-pydantic")),
+        ])),
+        text("plain"),
+    ]);
+    let catalog = catalog_of(vec![named(&[
+        ("model", text("openai/gpt-4o")),
+        ("aws_session_tags", tags.clone()),
+    ])]);
+    let params = deployment_credentials(&catalog, "d1").unwrap().unwrap();
+    assert_eq!(params.fields.get("aws_session_tags"), Some(&tags));
+}
+
 #[test]
 fn slash_provider_prefix() {
     let catalog = catalog_of(vec![named(&[("model", text("azure/gpt-4o"))])]);

@@ -18,4 +18,15 @@ deviations:
       None matches what LiteLLM answers for a first value it cannot convert, and the task text requires
       no fallback to the next candidate. No configured setup reaches the state.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10592-L10608
+  - what: >-
+      Each aws_session_tags item is copied as the deployment declared it, where LiteLLM's
+      CredentialLiteLLMParams validates every item against the AwsSessionTag TypedDict, requires a
+      string Key and Value and drops keys the TypedDict does not declare.
+    why: >-
+      The STS caller canonicalizes the tags before sending them: betterlite-bedrock's
+      canonicalize_tags requires a string Key and a string Value and drops every other key, the same
+      check pydantic makes here. A deployment whose tags fall outside AwsSessionTag's shape gets that
+      AWS-layer error instead of a credential-resolution error, and every deployment that declares
+      Key and Value gets the same answer from both.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/bedrock.py#L1112-L1114
 kept_bugs: []
