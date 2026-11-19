@@ -1,0 +1,27 @@
+task: B322
+deviations:
+  - what: >-
+      A malformed model_info.access_windows that reaches the reservation filter becomes a typed 400 naming the
+      deployment and the failing field, instead of the pydantic ValidationError LiteLLM lets escape the request.
+    why: >-
+      LiteLLM validates the windows while a deployment is built, but filter_reserved_deployments re-parses them at
+      request time and an exception there is a 500. A working setup cannot rely on a crash, so the refusal is typed.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/access_windows.py#L16-L20
+  - what: >-
+      The text of a window validation error is betterlite's own wording, such as "0.start: must be a time like
+      09:00", not the pydantic message LiteLLM prints.
+    why: >-
+      Pydantic's message text follows its internal validator types rather than anything LiteLLM declares, and
+      betterlite runs no pydantic; the location ("0.start") matches, the sentence does not.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/access_windows.py#L23-L32
+kept_bugs:
+  - what: >-
+      A proxy admin request without a team id keeps only the deployments no team owns; the ambiguity refusal fires
+      only when every candidate is team-owned and named by the requested model.
+    why: >-
+      After the admin arm declines, LiteLLM runs its removal pass with request_team_id None, so every team-owned
+      deployment is removed. A working admin setup can rely on this, so betterlite copies it.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/common_utils.py#L192-L207
