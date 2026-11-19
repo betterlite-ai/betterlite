@@ -536,7 +536,7 @@ impl SearchConfig for RecordingConfig {
 
 #[async_trait]
 impl QueryEmbeddingConfig for RecordingConfig {
-    fn transform_query_search_request(
+    fn transform_query_search(
         &self,
         request: QuerySearchRequest<'_>,
     ) -> Result<PreparedSearch, SearchError> {
@@ -546,7 +546,7 @@ impl QueryEmbeddingConfig for RecordingConfig {
         Ok((self.url.clone(), self.body.clone()))
     }
 
-    async fn atransform_query_search_request(
+    async fn atransform_query_search(
         &self,
         request: QuerySearchRequest<'_>,
     ) -> Result<PreparedSearch, SearchError> {
@@ -651,11 +651,11 @@ impl DirectStore {
             observed.litellm_params.push(request.litellm_params.clone());
         }
         if self.failure {
-            return Err(DirectFailure::new(Box::new(std::io::Error::other(
+            return Err(DirectFailure(Box::new(std::io::Error::other(
                 "the store refused",
             ))));
         }
-        serde_json::from_str(SEARCH_RESPONSE).map_err(|source| DirectFailure::new(Box::new(source)))
+        serde_json::from_str(SEARCH_RESPONSE).map_err(|source| DirectFailure(Box::new(source)))
     }
 }
 
@@ -701,6 +701,16 @@ pub(crate) fn body_bytes(request: &WriteRequest) -> Option<&[u8]> {
 pub(crate) fn body_json(request: &WriteRequest) -> Json {
     let body = body_bytes(request).expect("the request carries a JSON body");
     serde_json::from_slice(body).expect("the request body is JSON")
+}
+
+pub(crate) fn sent_header<'request>(
+    request: &'request WriteRequest,
+    name: &str,
+) -> Option<&'request str> {
+    request
+        .headers
+        .get(name)
+        .map(|value| value.to_str().expect("the header is text"))
 }
 
 pub(crate) fn proxied_client(limits: TransportLimits) -> ProxiedClient {
