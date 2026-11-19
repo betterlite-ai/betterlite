@@ -352,6 +352,77 @@ async fn assistant_create_credentials() {
         seen_deadline(&fixture_structured, 0),
         Duration::from_secs(9)
     );
+
+    // an empty text timeout falls through like an absent one
+    let request = input(json!({"timeout": "", "request_timeout": 12.0}));
+    service.create_assistants(&request).await.expect("answered");
+    assert_eq!(
+        seen_deadline(&fixture_structured, 1),
+        Duration::from_secs(12)
+    );
+
+    // a phase map whose read is zero keeps the SDK default deadline
+    let request = input(json!({"timeout": {"read": 0.0}}));
+    service.create_assistants(&request).await.expect("answered");
+    assert_eq!(
+        seen_deadline(&fixture_structured, 2),
+        Duration::from_secs(600)
+    );
+}
+
+#[tokio::test]
+async fn assistant_create_azure_options() {
+    let redactor = redactor();
+    let fixture = Fixture::new(resource_sdk_settings::Settings {
+        azure_api_base: Some(String::from("https://azure.test")),
+        azure_api_version: Some(String::from("2024-02-15-preview")),
+        azure_api_key: Some(SecretString::from("key-settings")),
+        ..Default::default()
+    });
+    let resolution = fixture.resolution();
+    let service = fixture.service(&resolution, &redactor);
+
+    // only the AsyncOpenAI hierarchy survives isinstance(client, OpenAI)
+    for (client, expected) in [
+        (ClientClass::OpenAi, None),
+        (ClientClass::AzureOpenAi, None),
+        (ClientClass::AsyncOpenAi, Some(ClientClass::AsyncOpenAi)),
+        (
+            ClientClass::AsyncAzureOpenAi,
+            Some(ClientClass::AsyncAzureOpenAi),
+        ),
+    ] {
+        let mut request = input(json!({"provider": "azure"}));
+        request.client = Some(client);
+        let result = service.create_assistants(&request).await.expect("answered");
+        assert_eq!(azure_call(&result).client, expected);
+    }
+
+    // the request's api_version wins over the configured one, and a numeric timeout bounds the call
+    let request = input(json!({
+        "provider": "azure",
+        "api_version": "2020-01-01",
+        "timeout": 7.5,
+    }));
+    let result = service.create_assistants(&request).await.expect("answered");
+    let call = azure_call(&result);
+    assert_eq!(call.api_version.as_deref(), Some("2020-01-01"));
+    assert_eq!(call.litellm_params.timeout, Some(7.5));
+    let seen = fixture.transport.seen();
+    assert_eq!(
+        seen[4].url,
+        "https://azure.test/openai/assistants?api-version=2020-01-01"
+    );
+    assert_eq!(seen[4].deadline, Duration::from_secs_f64(7.5));
+
+    // an azure call with no endpoint anywhere is a bare ValueError, not a provider status
+    let fixture_unset = Fixture::new(resource_sdk_settings::Settings::default());
+    let resolution = fixture_unset.resolution();
+    let service = fixture_unset.service(&resolution, &redactor);
+    let request = input(json!({"provider": "azure", "api_key": "sk-azure"}));
+    let missing = failure(service.create_assistants(&request).await);
+    assert_eq!(missing.class, "ValueError");
+    assert_eq!(missing.status, None);
 }
 
 #[tokio::test]
@@ -560,6 +631,30 @@ async fn assistant_create_flag_and_failures() {
     assert_eq!(asynchronous.param, WireField::Null);
     assert_eq!(asynchronous.code, WireField::Null);
 
+    // a 400 keeps the body's type/param/code in both entries: exception_type forwards the bad-request body whole
+    let body_400 = r#"{"error":{"message":"bad request","type":"invalid_request_error","param":"model","code":"bad"}}"#;
+    let fixture_400 = Fixture::new(resource_sdk_settings::Settings {
+        api_key: Some(SecretString::from("sk-test")),
+        ..Default::default()
+    })
+    .reply(400, body_400)
+    .reply(400, body_400);
+    let resolution = fixture_400.resolution();
+    let service = fixture_400.service(&resolution, &redactor);
+    let request = input(json!({}));
+    let sync = failure(service.create_assistants(&request).await);
+    assert_eq!(sync.class, "BadRequestError");
+    assert_eq!(sync.status, Some(400));
+    let asynchronous = failure(service.acreate_assistants(&request).await);
+    assert_eq!(asynchronous.class, "BadRequestError");
+    assert_eq!(asynchronous.status, Some(400));
+    assert_eq!(
+        asynchronous.kind,
+        WireField::Text(String::from("invalid_request_error"))
+    );
+    assert_eq!(asynchronous.param, WireField::Text(String::from("model")));
+    assert_eq!(asynchronous.code, WireField::Text(String::from("bad")));
+
     // a raw failure with no status is an APIConnection 500 in the async entry and a bare ValueError in sync
     let asynchronous = raised(
         Raised::Local(String::from("no provider")),
@@ -579,6 +674,38 @@ async fn assistant_create_flag_and_failures() {
     );
     assert_eq!(sync.class, "ValueError");
     assert_eq!(sync.status, None);
+}
+
+#[tokio::test]
+async fn assistant_create_status_classes() {
+    let redactor = redactor();
+    let body = r#"{"error":{"message":"rejected","type":"invalid_request_error","param":"model","code":"bad"}}"#;
+    for (status, class) in [
+        (400u16, "BadRequestError"),
+        (401, "AuthenticationError"),
+        (403, "PermissionDeniedError"),
+        (409, "ConflictError"),
+        (422, "UnprocessableEntityError"),
+        (429, "RateLimitError"),
+    ] {
+        let fixture = Fixture::new(resource_sdk_settings::Settings {
+            api_key: Some(SecretString::from("sk-test")),
+            ..Default::default()
+        })
+        .reply(status, body);
+        let resolution = fixture.resolution();
+        let service = fixture.service(&resolution, &redactor);
+        let sync = failure(service.create_assistants(&input(json!({}))).await);
+        assert_eq!(sync.class, class);
+        assert_eq!(sync.status, Some(status));
+    }
+}
+
+#[test]
+fn assistant_create_retry_values() {
+    assert_eq!(super::projection::retries(Some(3)), Ok(Some(3)));
+    assert_eq!(super::projection::retries(None), Ok(None));
+    assert!(super::projection::retries(Some(-1)).is_err());
 }
 
 #[test]

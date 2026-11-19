@@ -69,15 +69,54 @@ pub fn raised(
 ) -> AssistantCreateFailure {
     let (class, status, message) = source(&raised);
     match entry {
-        Entry::Sync => AssistantCreateFailure {
-            class,
-            status,
-            kind: WireField::Null,
-            param: WireField::Null,
-            code: WireField::Null,
-            message,
-        },
+        Entry::Sync => {
+            let (kind, param, code) = sdk_fields(&raised);
+            AssistantCreateFailure {
+                class,
+                status,
+                kind,
+                param,
+                code,
+                message,
+            }
+        }
         Entry::Async => wrapped(&class, status, &message, &raised, model, provider, redactor),
+    }
+}
+
+// openai.APIError's subclasses read type/param/code off the flattened body; every other exception carries none
+fn sdk_fields(raised: &Raised) -> (WireField, WireField, WireField) {
+    match raised {
+        Raised::Assistants(AssistantsError::Status { body, .. })
+        | Raised::Definitions(DefinitionsError::Assistants(AssistantsError::Status {
+            body, ..
+        })) => body_fields(body),
+        Raised::Assistants(
+            AssistantsError::Transport { .. }
+            | AssistantsError::Malformed { .. }
+            | AssistantsError::Truncated { .. }
+            | AssistantsError::Shape { .. },
+        )
+        | Raised::Definitions(DefinitionsError::Assistants(
+            AssistantsError::Transport { .. }
+            | AssistantsError::Malformed { .. }
+            | AssistantsError::Truncated { .. }
+            | AssistantsError::Shape { .. },
+        )) => (WireField::Null, WireField::Null, WireField::Null),
+        Raised::Local(_) | Raised::Assistants(_) | Raised::Definitions(_) => {
+            (WireField::MISSING, WireField::MISSING, WireField::MISSING)
+        }
+    }
+}
+
+fn body_fields(body: &[u8]) -> (WireField, WireField, WireField) {
+    match flattened(body) {
+        Some(fields) => (
+            fields.kind.map_or(WireField::Null, WireField::Text),
+            fields.param.map_or(WireField::Null, WireField::Text),
+            fields.code.map_or(WireField::Null, WireField::Text),
+        ),
+        None => (WireField::Null, WireField::Null, WireField::Null),
     }
 }
 
