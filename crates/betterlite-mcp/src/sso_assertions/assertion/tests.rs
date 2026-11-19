@@ -208,11 +208,12 @@ fn a_token_over_the_decoder_limits_logs_the_warning_and_returns_none() {
     nested.push('1');
     nested.push_str(&"}".repeat(100));
     let deeply_nested = jwt(&nested);
-    for token in [oversized, deeply_nested] {
-        let (captured, _guard) = capture();
-        assert!(assertion_from_sso_login(Some(&text_field(&token)), None).is_none());
-        assert!(captured.text().contains(UNDECODABLE_WARNING));
-    }
+    let (captured, _guard) = capture();
+    let over_the_size = assertion_from_sso_login(Some(&text_field(&oversized)), None);
+    let over_the_depth = assertion_from_sso_login(Some(&text_field(&deeply_nested)), None);
+    assert!(over_the_size.is_none());
+    assert!(over_the_depth.is_none());
+    assert_eq!(captured.text().matches(UNDECODABLE_WARNING).count(), 2);
 }
 
 #[rstest]

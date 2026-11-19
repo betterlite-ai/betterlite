@@ -65,8 +65,17 @@ pub fn assertion_expired(assertion: &SsoIdentityAssertion, now: DateTime<Utc>) -
 #[must_use = "the stored payload text is the reason for the call"]
 pub fn encode_payload(assertion: &SsoIdentityAssertion) -> Result<String, AssertionError> {
     let id_token = assertion.id_token.expose_secret().to_owned();
-    let refresh_token = optional_token(assertion.refresh_token.as_ref());
-    let issuer = optional_text(assertion.issuer.as_deref());
+    let refresh_token = assertion
+        .refresh_token
+        .as_ref()
+        .map(ExposeSecret::expose_secret)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
+    let issuer = assertion
+        .issuer
+        .as_deref()
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
     let expires_at = assertion.expires_at.map(|moment| moment.to_rfc3339());
     let payload = StoredPayload {
         id_token,
@@ -87,18 +96,15 @@ pub fn decode_payload(text: &str) -> Result<SsoIdentityAssertion, AssertionError
         .transpose()?;
     Ok(SsoIdentityAssertion {
         id_token: SecretString::from(payload.id_token),
-        refresh_token: optional_text(payload.refresh_token.as_deref()).map(SecretString::from),
+        refresh_token: payload
+            .refresh_token
+            .as_deref()
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+            .map(SecretString::from),
         issuer: payload.issuer,
         expires_at,
     })
-}
-
-fn optional_token(token: Option<&SecretString>) -> Option<String> {
-    optional_text(token.map(ExposeSecret::expose_secret))
-}
-
-fn optional_text(text: Option<&str>) -> Option<String> {
-    text.filter(|value| !value.is_empty()).map(str::to_owned)
 }
 
 fn token_text(field: Option<&TypedValue>) -> Option<&str> {
