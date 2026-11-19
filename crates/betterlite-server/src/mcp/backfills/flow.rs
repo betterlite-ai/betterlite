@@ -4,7 +4,7 @@ use betterlite_db::mcp_user_credentials::decode::{decode_user_credential, parse_
 use betterlite_db::stored_cipher::DbCipher;
 use betterlite_mcp::server_record::OAuth2Flow;
 
-use super::log::{FlowBackfillEvent, FlowBackfillLog};
+use super::log::{BackfillEvent, BackfillLog};
 use super::{
     BackfillRule, FlowBackfillTable, FlowCandidateRow, FlowClassification, FlowSignals,
     classify_null_flow_row, decrypted_credentials,
@@ -15,7 +15,7 @@ type ClassifiedRow<'row> = (&'row FlowCandidateRow, FlowClassification);
 pub async fn backfill_null_oauth2_flows<T: FlowBackfillTable>(
     table: &T,
     cipher: &DbCipher,
-    log: &dyn FlowBackfillLog,
+    log: &dyn BackfillLog,
 ) -> Result<BTreeMap<BackfillRule, usize>, T::Error> {
     let null_rows = table.null_flow_rows().await?;
     if null_rows.is_empty() {
@@ -25,7 +25,7 @@ pub async fn backfill_null_oauth2_flows<T: FlowBackfillTable>(
     let interactive = interactive_server_ids(table, &server_ids, cipher).await?;
     let (classified, counts) = classify_rows(&null_rows, &interactive, cipher, log);
     stamp_rows(table, &classified).await?;
-    log.flow_event(FlowBackfillEvent::Processed {
+    log.event(BackfillEvent::FlowProcessed {
         rows: null_rows.len(),
         counts: &counts,
     });
@@ -53,7 +53,7 @@ fn classify_rows<'row>(
     null_rows: &'row [FlowCandidateRow],
     interactive: &BTreeSet<String>,
     cipher: &DbCipher,
-    log: &dyn FlowBackfillLog,
+    log: &dyn BackfillLog,
 ) -> (Vec<ClassifiedRow<'row>>, BTreeMap<BackfillRule, usize>) {
     let mut classified: Vec<ClassifiedRow<'row>> = Vec::with_capacity(null_rows.len());
     let mut counts: BTreeMap<BackfillRule, usize> = BTreeMap::new();
@@ -67,13 +67,13 @@ fn classify_rows<'row>(
             credentials: credentials.as_ref(),
         });
         *counts.entry(classification.rule).or_insert(0) += 1;
-        log.flow_event(match classification.flow {
-            Some(flow) => FlowBackfillEvent::Stamped {
+        log.event(match classification.flow {
+            Some(flow) => BackfillEvent::FlowStamped {
                 server_id: row.server_id.as_str(),
                 flow,
                 rule: classification.rule,
             },
-            None => FlowBackfillEvent::Ambiguous {
+            None => BackfillEvent::FlowAmbiguous {
                 server_id: row.server_id.as_str(),
             },
         });

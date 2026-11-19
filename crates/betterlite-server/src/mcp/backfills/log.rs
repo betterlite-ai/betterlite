@@ -4,36 +4,48 @@ use betterlite_mcp::server_record::OAuth2Flow;
 
 use super::{BackfillRule, flow_name};
 
-pub enum FlowBackfillEvent<'event> {
-    Ambiguous {
+pub enum BackfillEvent<'event> {
+    FlowAmbiguous {
         server_id: &'event str,
     },
-    Stamped {
+    FlowStamped {
         server_id: &'event str,
         flow: OAuth2Flow,
         rule: BackfillRule,
     },
-    Processed {
+    FlowProcessed {
         rows: usize,
         counts: &'event BTreeMap<BackfillRule, usize>,
     },
+    IssuerHealFailed {
+        server_id: &'event str,
+        error: &'event str,
+    },
+    IssuerHealed {
+        server_id: &'event str,
+        issuer: &'event str,
+        alias: Option<&'event str>,
+    },
+    IssuerHealedCount {
+        healed: usize,
+    },
 }
 
-pub trait FlowBackfillLog: Send + Sync {
-    fn flow_event(&self, event: FlowBackfillEvent<'_>);
+pub trait BackfillLog: Send + Sync {
+    fn event(&self, event: BackfillEvent<'_>);
 }
 
 #[derive(Debug, Default)]
-pub struct TracingFlowBackfillLog;
+pub struct TracingBackfillLog;
 
-impl FlowBackfillLog for TracingFlowBackfillLog {
-    fn flow_event(&self, event: FlowBackfillEvent<'_>) {
+impl BackfillLog for TracingBackfillLog {
+    fn event(&self, event: BackfillEvent<'_>) {
         match event {
-            FlowBackfillEvent::Ambiguous { server_id } => tracing::warn!(
+            BackfillEvent::FlowAmbiguous { server_id } => tracing::warn!(
                 server_id,
                 "oauth2_flow backfill: server is ambiguous (client credentials + token_url, no interactive signal); left unstamped"
             ),
-            FlowBackfillEvent::Stamped {
+            BackfillEvent::FlowStamped {
                 server_id,
                 flow,
                 rule,
@@ -43,46 +55,17 @@ impl FlowBackfillLog for TracingFlowBackfillLog {
                 rule = rule.as_str(),
                 "oauth2_flow backfill: stamped row"
             ),
-            FlowBackfillEvent::Processed { rows, counts } => tracing::info!(
+            BackfillEvent::FlowProcessed { rows, counts } => tracing::info!(
                 rows,
                 rules = counts.len(),
                 "oauth2_flow backfill: processed oauth2 server rows"
             ),
-        }
-    }
-}
-
-pub enum IssuerBackfillEvent<'event> {
-    HealFailed {
-        server_id: &'event str,
-        error: &'event str,
-    },
-    Healed {
-        server_id: &'event str,
-        issuer: &'event str,
-        alias: Option<&'event str>,
-    },
-    HealedCount {
-        healed: usize,
-    },
-}
-
-pub trait IssuerBackfillLog: Send + Sync {
-    fn issuer_event(&self, event: IssuerBackfillEvent<'_>);
-}
-
-#[derive(Debug, Default)]
-pub struct TracingIssuerBackfillLog;
-
-impl IssuerBackfillLog for TracingIssuerBackfillLog {
-    fn issuer_event(&self, event: IssuerBackfillEvent<'_>) {
-        match event {
-            IssuerBackfillEvent::HealFailed { server_id, error } => tracing::warn!(
+            BackfillEvent::IssuerHealFailed { server_id, error } => tracing::warn!(
                 server_id,
                 error,
                 "MCP issuer stamp backfill: could not heal server"
             ),
-            IssuerBackfillEvent::Healed {
+            BackfillEvent::IssuerHealed {
                 server_id,
                 issuer,
                 alias,
@@ -92,7 +75,7 @@ impl IssuerBackfillLog for TracingIssuerBackfillLog {
                 alias,
                 "MCP issuer stamp backfill: cleared issuer; the configured endpoints apply again"
             ),
-            IssuerBackfillEvent::HealedCount { healed } => tracing::warn!(
+            BackfillEvent::IssuerHealedCount { healed } => tracing::warn!(
                 healed,
                 "MCP issuer stamp backfill: healed servers whose issuer discovery had written"
             ),
