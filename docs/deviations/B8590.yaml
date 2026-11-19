@@ -1,0 +1,24 @@
+task: B8590
+deviations:
+  - what: environment_variables from the config file go into an overlay map that betterlite's own env reads use, not into the process environment.
+    why: Rust code reads settings through the env map it is handed; writing the process environment after threads start is unsound.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6183-L6220
+  - what: LITELLM_LICENSE in environment_variables does not re-check a premium license.
+    why: betterlite has no paid tier.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6207-L6210
+  - what: environment_variables entries are laid over the overlay in sorted key order, not in file order, because betterlite holds the raw config in a BTreeMap. It only matters when one entry resolves os.environ/NAME against another entry of the same mapping.
+    why: the raw config map that B8873 hands the load steps is a BTreeMap, so the original YAML key order is not kept.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6184-L6220
+  - what: init_policy_engine reads the raw top-level policies and policy_attachments keys. It does not read config.sections.policy_engine, which is still crate::sections::stub_section!() in crates/betterlite-config/src/sections/policy_engine.rs, so the section yields no settings yet.
+    why: B9320's policy_engine section has not landed; the raw keys carry the same values LiteLLM reads from its config dict.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7123-L7138
+  - what: Only hashicorp_vault and cyberark install a working client. azure_key_vault with a URI, google_kms, aws_kms, aws_secret_manager and google_secret_manager validate their inputs and install SecretManagerClient::Uninitialized; custom validates its two required fields and installs Uninitialized without running B4419's loader, which has no production CustomSecretManagerRuntime yet. A secret read on any of these reports the client mismatch and falls back to the environment value with an error log.
+    why: betterlite-secret-managers has no production clients for these systems yet; only the trait and the validation exist, and the custom loader needs a Python runtime that is another task's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7191-L7239
+  - what: A custom secret manager's optional_params.replica_regions is [] when replica_regions is not configured, where LiteLLM's KeyManagementSettings.model_dump() gives None.
+    why: B4410's Settings stores replica_regions as Vec<String>, so an absent list and an empty list are the same value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/secret_managers/main.py#L74-L81
+kept_bugs:
+  - what: A known alerting callback whose logger fails to initialize is logged with "[Non-Blocking Error] Error initializing custom logger: ..." and boot continues, where betterlite's error rules would surface it.
+    why: _init_custom_logger_compatible_class catches every exception, logs it and returns None, and _load_alerting_settings keeps going, so a setup with one broken alerting integration still starts.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L5185-L5187
