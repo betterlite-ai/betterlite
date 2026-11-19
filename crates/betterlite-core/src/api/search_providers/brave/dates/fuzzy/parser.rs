@@ -34,18 +34,20 @@ impl<'a> Parser<'a> {
     }
 
     fn step(&mut self, index: usize) -> Option<usize> {
-        let token = self.tokens.get(index)?;
-        match token {
-            Token::Number(_)
-                if self.tokens.get(index.saturating_add(1)) == Some(&Token::Punct(':')) =>
-            {
-                Some(self.skip_time(index))
+        let token = self.tokens.get(index)?.clone();
+        if let Token::Number(_) = token {
+            if self.starts_time(index) {
+                return Some(self.skip_time(index));
             }
-            Token::Number(_) => self.number_token(index),
-            Token::Punct('+' | '-') => Some(self.skip_offset(index)),
-            Token::Word(_) => self.word_token(index),
-            Token::Punct(_) => Some(index),
+            return self.number_token(index);
         }
+        if matches!(token, Token::Punct('+' | '-')) {
+            return Some(self.skip_offset(index));
+        }
+        if let Token::Word(_) = token {
+            return self.word_token(index);
+        }
+        Some(index)
     }
 
     // the clock time only says how far into the day the moment is, and the caller reads the day
