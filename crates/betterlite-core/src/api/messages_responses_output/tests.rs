@@ -323,6 +323,10 @@ fn tools_translation(#[case] source: &str, #[case] expected: &str) {
     r#"{"request":{"model":"claude","messages":[],"output_config":{"format":{"type":"json_schema","schema":{"type":"object"}}}}}"#,
     r#"{"request":{"model":"claude","input":[],"include":["reasoning.encrypted_content"],"text":{"format":{"type":"json_schema","name":"structured_output","schema":{"type":"object"},"strict":false}}}}"#
 )]
+#[case::empty_schema_is_used_as_given(
+    r#"{"request":{"model":"claude","messages":[],"output_format":{"type":"json_schema","schema":{}}}}"#,
+    r#"{"request":{"model":"claude","input":[],"include":["reasoning.encrypted_content"],"text":{"format":{"type":"json_schema","name":"structured_output","schema":{},"strict":false}}}}"#
+)]
 fn request_options(#[case] source: &str, #[case] expected: &str) {
     assert_eq!(translated(source), json(expected));
 }

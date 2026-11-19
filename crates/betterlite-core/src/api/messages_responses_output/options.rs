@@ -181,7 +181,7 @@ pub fn translate_output_format(request: &AnthropicRequestRecord) -> Option<Respo
     if format.r#type.as_deref() != Some(JSON_SCHEMA_TYPE) {
         return None;
     }
-    let schema = format.schema.as_ref().filter(|schema| !schema.is_empty())?;
+    let schema = format.schema.as_ref()?;
     Some(ResponsesText {
         format: ResponsesTextFormat {
             r#type: StructuredOutputKind::JsonSchema,
