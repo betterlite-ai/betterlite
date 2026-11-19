@@ -335,6 +335,7 @@ fn usage_seed_with(rows: Vec<DailyUsageRow>) -> FixtureSeed {
         jwt_mappings: Vec::new(),
         daily_usage: Some(rows),
         finops: None,
+        scim: None,
         discovery_skills: None,
         search_tools: None,
         dashboard: None,
