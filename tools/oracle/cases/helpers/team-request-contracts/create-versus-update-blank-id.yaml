@@ -1,0 +1,15 @@
+kind: helper
+name: create_versus_update_blank_id
+call:
+  team_request_contracts:
+    operation: create
+    document: {"team_id": "   "}
+calls:
+  - team_request_contracts: {operation: create, document: {"team_id": ""}}
+  - team_request_contracts: {operation: create, document: {"team_id": " t "}}
+  - team_request_contracts: {operation: create, document: {"team_id": null}}
+  - team_request_contracts: {operation: update, document: {"team_id": "   "}}
+  - team_request_contracts: {operation: update, document: {"team_id": ""}}
+  - team_request_contracts: {operation: update, document: {}}
+env: {}
+compare: {ignore: []}

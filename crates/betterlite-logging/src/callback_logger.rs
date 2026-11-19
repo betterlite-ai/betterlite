@@ -10,6 +10,7 @@ use async_trait::async_trait;
 use error::LoggerError;
 use event::LoggerEvent;
 
+use crate::cold_storage_key::ColdStorageTarget;
 use crate::mcp_tool_hook::types::{McpPostCallResponse, McpToolHookCall};
 
 // CustomLogger's own body is pass, so a logger overrides only the events it handles
@@ -28,6 +29,11 @@ pub trait CallbackLogger: Send + Sync {
     // the deprecated constructor flag; false redacts the messages and the response for this logger
     fn message_logging(&self) -> bool {
         true
+    }
+
+    // only the s3_v2 logger has a path and a partition granularity a cold-storage key can follow
+    fn cold_storage_target(&self) -> Option<ColdStorageTarget> {
+        None
     }
 
     fn log_success_event(&self, _event: &LoggerEvent) -> Result<(), LoggerError> {

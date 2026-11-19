@@ -1,0 +1,9 @@
+kind: helper
+name: auth-pubsub-redis-outage-warning
+call:
+  auth_pubsub:
+    evict:
+      keys: [key:outage]
+      fail_publish: true
+env: {}
+compare: {ignore: []}
