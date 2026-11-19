@@ -19,7 +19,9 @@ pub struct ModelUsageFields {
 #[must_use]
 pub fn decode_model_usage_fields(metadata: &[u8], request_tags: &[u8]) -> ModelUsageFields {
     let internal_call = match serde_json::from_slice::<IndexMap<String, Json>>(metadata) {
-        Ok(decoded) => decoded.get(INTERNAL_CALL_ORIGIN).is_some_and(json_truthy),
+        Ok(decoded) => decoded
+            .get(INTERNAL_CALL_ORIGIN)
+            .is_some_and(json_has_value),
         Err(_invalid) => false,
     };
     let task_type = match serde_json::from_slice::<Vec<Json>>(request_tags) {
@@ -61,7 +63,7 @@ fn first_known_task(tags: &[Json]) -> Option<String> {
 }
 
 // bool(decoded.get(...)): Python's truthiness over a JSON value, the only reading an object-typed metadata field has.
-fn json_truthy(value: &Json) -> bool {
+fn json_has_value(value: &Json) -> bool {
     match value {
         Json::Null => false,
         Json::Bool(flag) => *flag,

@@ -17,7 +17,7 @@ use crate::model_usage::{
 };
 use crate::postgres_store::session::PostgresStore;
 
-const ROLLUPS_SQL: &str = r#"SELECT date, model_group, model, custom_llm_provider, task_type, spend, prompt_tokens, completion_tokens, request_count, successful_requests, failed_requests FROM "LiteLLM_DailyModelUsage" ORDER BY date, model_group, model, custom_llm_provider, task_type"#;
+const ROLLUPS_SQL: &str = r#"SELECT date, model_group, model, custom_llm_provider, task_type, spend::numeric AS spend, prompt_tokens, completion_tokens, request_count, successful_requests, failed_requests FROM "LiteLLM_DailyModelUsage" ORDER BY date, model_group, model, custom_llm_provider, task_type"#;
 
 const REJECT_BLOCKED_SQL: &str = r#"CREATE FUNCTION reject_blocked_model() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.model = 'blocked' THEN RAISE EXCEPTION 'blocked model'; END IF; RETURN NEW; END $$;
 CREATE TRIGGER reject_blocked_model BEFORE INSERT OR UPDATE ON "LiteLLM_DailyModelUsage" FOR EACH ROW EXECUTE FUNCTION reject_blocked_model();"#;
@@ -37,7 +37,7 @@ struct RollupRow {
     model: String,
     custom_llm_provider: String,
     task_type: String,
-    spend: f64,
+    spend: Decimal,
     prompt_tokens: i64,
     completion_tokens: i64,
     request_count: i64,
@@ -64,7 +64,7 @@ impl ModelUsageCase {
         .resolve()
         .await
         .expect("a test database");
-        let store = store(&fixture);
+        let store = store(fixture.options.config.clone());
         let (client, connection) =
             tokio_postgres::connect(fixture.options.url.expose_secret(), NoTls)
                 .await
@@ -128,19 +128,7 @@ impl ModelUsageCase {
     }
 }
 
-fn store(fixture: &PostgresFixture) -> PostgresStore {
-    let manager = Manager::new(fixture.options.config.clone(), NoTls);
-    let pool = Pool::builder(manager)
-        .max_size(1)
-        .build()
-        .expect("a connection pool");
-    PostgresStore { pool: Some(pool) }
-}
-
-fn unreachable_store() -> PostgresStore {
-    let configuration: Config = "postgres://spend@127.0.0.1:1/spend"
-        .parse()
-        .expect("a URL no server listens on");
+fn store(configuration: Config) -> PostgresStore {
     let manager = Manager::new(configuration, NoTls);
     let pool = Pool::builder(manager)
         .max_size(1)
@@ -149,18 +137,22 @@ fn unreachable_store() -> PostgresStore {
     PostgresStore { pool: Some(pool) }
 }
 
-fn alpha(spend: Decimal, tokens: (i64, i64), successful: bool) -> ModelUsageTransaction {
-    transaction(
-        key("2026-01-02", "group", "alpha", "openai", "uncategorized"),
-        spend,
-        tokens,
-        successful,
+fn unreachable_store() -> PostgresStore {
+    store(
+        "postgres://spend@127.0.0.1:1/spend"
+            .parse()
+            .expect("a URL no server listens on"),
     )
 }
 
-fn beta(spend: Decimal, tokens: (i64, i64), successful: bool) -> ModelUsageTransaction {
+fn sample(
+    model: &str,
+    spend: Decimal,
+    tokens: (i64, i64),
+    successful: bool,
+) -> ModelUsageTransaction {
     transaction(
-        key("2026-01-02", "group", "beta", "openai", "uncategorized"),
+        key("2026-01-02", "group", model, "openai", "uncategorized"),
         spend,
         tokens,
         successful,
@@ -187,9 +179,9 @@ async fn flush(
 async fn the_writer_adds_each_flush_to_the_existing_rows() {
     let case = ModelUsageCase::new().await;
     let transactions = [
-        alpha(Decimal::new(25, 2), (10, 5), true),
-        alpha(Decimal::new(25, 2), (10, 5), true),
-        beta(Decimal::new(5, 1), (3, 1), false),
+        sample("alpha", Decimal::new(25, 2), (10, 5), true),
+        sample("alpha", Decimal::new(25, 2), (10, 5), true),
+        sample("beta", Decimal::new(5, 1), (3, 1), false),
     ];
     flush(&case.store, &transactions)
         .await
@@ -206,7 +198,7 @@ async fn the_writer_adds_each_flush_to_the_existing_rows() {
                 model: String::from("alpha"),
                 custom_llm_provider: String::from("openai"),
                 task_type: String::from("uncategorized"),
-                spend: 1.0_f64,
+                spend: Decimal::new(100, 2),
                 prompt_tokens: 40,
                 completion_tokens: 20,
                 request_count: 4,
@@ -219,7 +211,7 @@ async fn the_writer_adds_each_flush_to_the_existing_rows() {
                 model: String::from("beta"),
                 custom_llm_provider: String::from("openai"),
                 task_type: String::from("uncategorized"),
-                spend: 1.0_f64,
+                spend: Decimal::new(100, 2),
                 prompt_tokens: 6,
                 completion_tokens: 2,
                 request_count: 2,
@@ -237,7 +229,7 @@ async fn a_failed_statement_rolls_back_every_increment_of_the_flush() {
     case.execute(REJECT_BLOCKED_SQL).await;
     case.execute(SEED_ALPHA_SQL).await;
     let transactions = [
-        alpha(Decimal::new(25, 2), (10, 5), true),
+        sample("alpha", Decimal::new(25, 2), (10, 5), true),
         transaction(
             key("2026-01-02", "group", "blocked", "openai", "uncategorized"),
             Decimal::new(5, 1),
@@ -266,7 +258,7 @@ async fn a_failed_statement_rolls_back_every_increment_of_the_flush() {
             model: String::from("alpha"),
             custom_llm_provider: String::from("openai"),
             task_type: String::from("uncategorized"),
-            spend: 1.0_f64,
+            spend: Decimal::new(100, 2),
             prompt_tokens: 10,
             completion_tokens: 2,
             request_count: 1,
@@ -286,7 +278,7 @@ async fn an_unreachable_pool_is_retried_and_then_reported() {
     let pause = RecordingPause::default();
     let outcome = flush_model_usage_transactions(
         &writer,
-        &[alpha(Decimal::new(25, 2), (10, 5), true)],
+        &[sample("alpha", Decimal::new(25, 2), (10, 5), true)],
         1,
         &jitter,
         &pause,

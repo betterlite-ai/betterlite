@@ -4,7 +4,7 @@ use std::fmt::Display;
 use betterlite_db::model_usage::ModelUsagePayload;
 use betterlite_db::model_usage::rollup::build_model_usage_transaction;
 use betterlite_db::window_queue::{
-    WindowSpendTransaction, get_aggregated_window_spend_transactions, to_wire_payload,
+    WindowSpendTransaction, aggregate_window_spend, to_wire_payload,
 };
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
@@ -47,8 +47,7 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         let mut results = BTreeMap::new();
         if let Some(step) = &input.window_transactions {
-            let aggregated =
-                get_aggregated_window_spend_transactions(&step.updates).map_err(failure)?;
+            let aggregated = aggregate_window_spend(&step.updates).map_err(failure)?;
             results.insert(
                 "window_transactions",
                 serde_json::to_value(aggregated).map_err(failure)?,

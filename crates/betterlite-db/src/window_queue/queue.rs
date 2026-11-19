@@ -3,7 +3,7 @@ use std::sync::{Mutex, PoisonError};
 
 use tokio::sync::Notify;
 
-use super::{WindowQueueError, WindowSpendTransaction, get_aggregated_window_spend_transactions};
+use super::{WindowQueueError, WindowSpendTransaction, aggregate_window_spend};
 
 // WindowSpendUpdateQueue: asyncio.Queue(capacity) plus the compaction pass, with the drain and reinsert of one compaction under the queue lock so a compaction never waits on the queue it is refilling.
 pub struct WindowSpendUpdateQueue {
@@ -62,7 +62,7 @@ impl WindowSpendUpdateQueue {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         let take = state.batches.len().min(self.flush_limit);
         let drained: Vec<Vec<WindowSpendTransaction>> = state.batches.drain(..take).collect();
-        let aggregated = match get_aggregated_window_spend_transactions(&drained) {
+        let aggregated = match aggregate_window_spend(&drained) {
             Ok(aggregated) => aggregated,
             Err(error) => {
                 for batch in drained.into_iter().rev() {
@@ -94,7 +94,7 @@ impl WindowSpendUpdateQueue {
         );
         let take = state.batches.len().min(self.flush_limit);
         let drained: Vec<Vec<WindowSpendTransaction>> = state.batches.drain(..take).collect();
-        let aggregated = match get_aggregated_window_spend_transactions(&drained) {
+        let aggregated = match aggregate_window_spend(&drained) {
             Ok(aggregated) => aggregated,
             Err(error) => {
                 // the source loses the drained increments here; betterlite puts them back before reporting the failure

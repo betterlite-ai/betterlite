@@ -9,10 +9,7 @@ use tokio::task::JoinSet;
 use tokio::time::timeout;
 
 use super::queue::WindowSpendUpdateQueue;
-use super::{
-    WindowQueueError, WindowSpendTransaction, get_aggregated_window_spend_transactions,
-    to_wire_payload,
-};
+use super::{WindowQueueError, WindowSpendTransaction, aggregate_window_spend, to_wire_payload};
 use crate::spend_queues::entity::SpendAmount;
 
 mod stamp;
@@ -46,7 +43,7 @@ fn same_window(spend: &str, started_at: Option<&str>) -> WindowSpendTransaction 
 
 #[test]
 fn increments_of_one_window_merge_and_keep_the_earliest_start() {
-    let merged = get_aggregated_window_spend_transactions(&[
+    let merged = aggregate_window_spend(&[
         vec![same_window("0.1", Some("2026-08-01T00:00:05.000000"))],
         vec![
             same_window("0.2", Some("2026-08-01T00:00:03.000000")),
@@ -69,7 +66,7 @@ fn increments_of_one_window_merge_and_keep_the_earliest_start() {
 fn increments_of_different_windows_stay_distinct_and_sort_by_identity() {
     let mut other_key = increment("key-2", WINDOW, "3.0", None);
     other_key.window_duration = String::from("7d");
-    let aggregated = get_aggregated_window_spend_transactions(&[
+    let aggregated = aggregate_window_spend(&[
         vec![other_key.clone()],
         vec![increment("key-1", NEXT_WINDOW, "1.0", None)],
         vec![same_window("2.0", None)],
@@ -87,20 +84,15 @@ fn increments_of_different_windows_stay_distinct_and_sort_by_identity() {
 
 #[test]
 fn a_window_whose_increments_carry_no_start_keeps_none() {
-    let aggregated =
-        get_aggregated_window_spend_transactions(&[vec![same_window("1.0", None)]]).expect("one");
+    let aggregated = aggregate_window_spend(&[vec![same_window("1.0", None)]]).expect("one");
     assert_eq!(aggregated[0].started_at, None);
 }
 
 #[test]
 fn nothing_queued_aggregates_to_nothing() {
+    assert!(aggregate_window_spend(&[]).expect("no batches").is_empty());
     assert!(
-        get_aggregated_window_spend_transactions(&[])
-            .expect("no batches")
-            .is_empty()
-    );
-    assert!(
-        get_aggregated_window_spend_transactions(&[Vec::new(), Vec::new()])
+        aggregate_window_spend(&[Vec::new(), Vec::new()])
             .expect("empty batches")
             .is_empty()
     );
@@ -112,7 +104,7 @@ fn a_spend_sum_beyond_the_decimal_range_fails() {
         spend: SpendAmount(Decimal::MAX),
         ..same_window("1.0", None)
     };
-    let outcome = get_aggregated_window_spend_transactions(&[vec![largest.clone(), largest]]);
+    let outcome = aggregate_window_spend(&[vec![largest.clone(), largest]]);
     assert!(matches!(outcome, Err(WindowQueueError::SpendOverflow)));
 }
 
@@ -172,15 +164,27 @@ async fn compaction_at_the_threshold_leaves_one_batch_and_room() {
 #[tokio::test]
 async fn a_zero_threshold_compacts_every_add() {
     let queue = WindowSpendUpdateQueue::new(2, 0, 10).expect("a queue");
-    for spend in ["1.0", "2.0", "0.5"] {
-        timeout(
-            Duration::from_secs(1),
-            queue.add_update(same_window(spend, None)),
-        )
-        .await
-        .expect("each add compacts back to one batch")
-        .expect("room in the queue");
-    }
+    timeout(
+        Duration::from_secs(1),
+        queue.add_update(same_window("1.0", None)),
+    )
+    .await
+    .expect("each add compacts back to one batch")
+    .expect("room in the queue");
+    timeout(
+        Duration::from_secs(1),
+        queue.add_update(same_window("2.0", None)),
+    )
+    .await
+    .expect("each add compacts back to one batch")
+    .expect("room in the queue");
+    timeout(
+        Duration::from_secs(1),
+        queue.add_update(same_window("0.5", None)),
+    )
+    .await
+    .expect("each add compacts back to one batch")
+    .expect("room in the queue");
     assert_eq!(
         queue.flush().expect("the windows aggregate"),
         [same_window("3.5", None)]
@@ -247,12 +251,18 @@ async fn a_zero_flush_count_drains_nothing() {
         .await
         .expect("the first increment");
     assert!(queue.flush().expect("a flush takes nothing").is_empty());
-    for spend in ["2.0", "3.0", "4.0"] {
-        queue
-            .add_update(same_window(spend, None))
-            .await
-            .expect("the undrained increment leaves room");
-    }
+    queue
+        .add_update(same_window("2.0", None))
+        .await
+        .expect("the undrained increment leaves room");
+    queue
+        .add_update(same_window("3.0", None))
+        .await
+        .expect("the undrained increment leaves room");
+    queue
+        .add_update(same_window("4.0", None))
+        .await
+        .expect("the undrained increment leaves room");
     timeout(
         Duration::from_millis(20),
         queue.add_update(same_window("5.0", None)),
@@ -336,21 +346,22 @@ async fn a_flush_takes_at_most_the_flush_count_batches() {
     );
 }
 
+// one producer's share of the concurrent load: 25 increments that compaction must merge in place
+async fn fill_queue(queue: Arc<WindowSpendUpdateQueue>) -> Result<(), WindowQueueError> {
+    for _round in 0_i32..25_i32 {
+        queue.add_update(same_window("0.25", None)).await?;
+    }
+    Ok(())
+}
+
 #[tokio::test]
 async fn concurrent_producers_lose_no_increment_when_compaction_runs() {
     let queue = Arc::new(WindowSpendUpdateQueue::new(64, 4, 1_000).expect("a queue"));
     let mut tasks = JoinSet::new();
-    for _producer in 0_i32..4_i32 {
-        let producing = Arc::clone(&queue);
-        tasks.spawn(async move {
-            for _increment in 0_i32..25_i32 {
-                producing
-                    .add_update(same_window("0.25", None))
-                    .await
-                    .expect("room in the queue");
-            }
-        });
-    }
+    tasks.spawn(fill_queue(Arc::clone(&queue)));
+    tasks.spawn(fill_queue(Arc::clone(&queue)));
+    tasks.spawn(fill_queue(Arc::clone(&queue)));
+    tasks.spawn(fill_queue(Arc::clone(&queue)));
     while let Some(joined) = tasks.join_next().await {
         joined
             .expect("the producer task finished")

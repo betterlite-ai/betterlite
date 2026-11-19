@@ -10,28 +10,30 @@ use super::{ToolDiscoveryError, ToolDiscoveryItem, ToolDiscoveryQueue};
 fn named(name: &str) -> ToolDiscoveryItem {
     ToolDiscoveryItem {
         tool_name: Some(name.to_owned()),
-        ..ToolDiscoveryItem::default()
+        origin: None,
+        created_by: None,
+        key_hash: None,
+        team_id: None,
+        key_alias: None,
+        user_agent: None,
     }
 }
 
 fn first_occurrence(name: &str) -> ToolDiscoveryItem {
-    ToolDiscoveryItem {
-        tool_name: Some(name.to_owned()),
-        origin: Some(String::from("openai")),
-        created_by: Some(String::from("user-1")),
-        key_hash: Some(String::from("hash-1")),
-        team_id: Some(String::from("team-1")),
-        key_alias: Some(String::from("alias-1")),
-        user_agent: Some(String::from("curl/8.4.0")),
-    }
+    let mut first = named(name);
+    first.origin = Some(String::from("openai"));
+    first.created_by = Some(String::from("user-1"));
+    first.key_hash = Some(String::from("hash-1"));
+    first.team_id = Some(String::from("team-1"));
+    first.key_alias = Some(String::from("alias-1"));
+    first.user_agent = Some(String::from("curl/8.4.0"));
+    first
 }
 
 fn later_occurrence(name: &str) -> ToolDiscoveryItem {
-    ToolDiscoveryItem {
-        tool_name: Some(name.to_owned()),
-        origin: Some(String::from("anthropic")),
-        ..ToolDiscoveryItem::default()
-    }
+    let mut later = named(name);
+    later.origin = Some(String::from("anthropic"));
+    later
 }
 
 #[test]
@@ -41,8 +43,13 @@ fn an_item_without_a_name_is_not_a_tool() {
     assert_eq!(
         item,
         ToolDiscoveryItem {
+            tool_name: None,
             origin: Some(String::from("openai")),
-            ..ToolDiscoveryItem::default()
+            created_by: None,
+            key_hash: None,
+            team_id: None,
+            key_alias: None,
+            user_agent: None,
         }
     );
     let absent: ToolDiscoveryItem =

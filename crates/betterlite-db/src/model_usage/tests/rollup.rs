@@ -191,45 +191,66 @@ fn rollups_group_by_the_whole_key_in_key_order() {
         rollups,
         [
             rollup(
-                key("2026-01-01", "group", "gpt-4o", "openai", "uncategorized"),
-                Decimal::new(2, 2),
-                (0, 1),
+                transaction(
+                    key("2026-01-01", "group", "gpt-4o", "openai", "uncategorized"),
+                    Decimal::new(2, 2),
+                    (0, 1),
+                    true,
+                ),
                 (1, 1, 0)
             ),
             rollup(
-                key("2026-01-02", "group", "gpt-4o", "azure", "uncategorized"),
-                Decimal::new(5, 2),
-                (1, 1),
+                transaction(
+                    key("2026-01-02", "group", "gpt-4o", "azure", "uncategorized"),
+                    Decimal::new(5, 2),
+                    (1, 1),
+                    true,
+                ),
                 (1, 1, 0)
             ),
             rollup(
-                key("2026-01-02", "group", "gpt-4o", "openai", "debugging"),
-                Decimal::new(2, 1),
-                (4, 4),
+                transaction(
+                    key("2026-01-02", "group", "gpt-4o", "openai", "debugging"),
+                    Decimal::new(2, 1),
+                    (4, 4),
+                    false,
+                ),
                 (1, 0, 1)
             ),
             rollup(
-                key("2026-01-02", "group", "gpt-4o", "openai", "translation"),
-                Decimal::new(1, 1),
-                (2, 2),
+                transaction(
+                    key("2026-01-02", "group", "gpt-4o", "openai", "translation"),
+                    Decimal::new(1, 1),
+                    (2, 2),
+                    true,
+                ),
                 (1, 1, 0)
             ),
             rollup(
-                key("2026-01-02", "group", "gpt-4o", "openai", "uncategorized"),
-                Decimal::new(75, 2),
-                (30, 15),
+                transaction(
+                    key("2026-01-02", "group", "gpt-4o", "openai", "uncategorized"),
+                    Decimal::new(75, 2),
+                    (30, 15),
+                    true,
+                ),
                 (2, 1, 1)
             ),
             rollup(
-                key("2026-01-02", "other", "gpt-4o", "openai", "uncategorized"),
-                Decimal::new(1, 2),
-                (1, 0),
+                transaction(
+                    key("2026-01-02", "other", "gpt-4o", "openai", "uncategorized"),
+                    Decimal::new(1, 2),
+                    (1, 0),
+                    true,
+                ),
                 (1, 1, 0)
             ),
             rollup(
-                key("2026-01-03", "group", "gpt-4o", "openai", "uncategorized"),
-                Decimal::new(75, 2),
-                (8, 4),
+                transaction(
+                    key("2026-01-03", "group", "gpt-4o", "openai", "uncategorized"),
+                    Decimal::new(75, 2),
+                    (8, 4),
+                    true,
+                ),
                 (1, 1, 0)
             ),
         ]

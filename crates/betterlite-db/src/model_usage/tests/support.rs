@@ -49,17 +49,12 @@ pub(super) fn transaction(
     }
 }
 
-pub(super) fn rollup(
-    row_key: ModelUsageKey,
-    spend: Decimal,
-    tokens: (i64, i64),
-    counts: (i64, i64, i64),
-) -> ModelUsageRollup {
+pub(super) fn rollup(entry: ModelUsageTransaction, counts: (i64, i64, i64)) -> ModelUsageRollup {
     ModelUsageRollup {
-        key: row_key,
-        spend,
-        prompt_tokens: tokens.0,
-        completion_tokens: tokens.1,
+        key: entry.key,
+        spend: entry.spend.0,
+        prompt_tokens: entry.prompt_tokens,
+        completion_tokens: entry.completion_tokens,
         request_count: counts.0,
         successful_requests: counts.1,
         failed_requests: counts.2,
@@ -87,7 +82,10 @@ pub(super) struct ScriptedWriter {
 }
 
 impl ScriptedWriter {
-    pub(super) fn new(script: impl IntoIterator<Item = WriteFailure>) -> Self {
+    pub(super) fn new<Script>(script: Script) -> Self
+    where
+        Script: IntoIterator<Item = WriteFailure>,
+    {
         Self {
             batches: Mutex::new(Vec::new()),
             script: Mutex::new(script.into_iter().collect()),

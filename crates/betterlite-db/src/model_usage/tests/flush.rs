@@ -20,12 +20,7 @@ fn one_transaction() -> ModelUsageTransaction {
 }
 
 fn one_rollup() -> ModelUsageRollup {
-    rollup(
-        key("2026-01-02", "gpt-4o", "gpt-4o", "openai", "uncategorized"),
-        Decimal::new(25, 2),
-        (10, 5),
-        (1, 1, 0),
-    )
+    rollup(one_transaction(), (1, 1, 0))
 }
 
 #[tokio::test]
@@ -48,9 +43,12 @@ async fn one_flush_writes_one_additive_batch() {
     assert_eq!(
         writer.batches(),
         [vec![rollup(
-            key("2026-01-02", "gpt-4o", "gpt-4o", "openai", "uncategorized"),
-            Decimal::new(5, 1),
-            (30, 15),
+            transaction(
+                key("2026-01-02", "gpt-4o", "gpt-4o", "openai", "uncategorized"),
+                Decimal::new(5, 1),
+                (30, 15),
+                false,
+            ),
             (2, 1, 1)
         )]]
     );
