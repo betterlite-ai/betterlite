@@ -1,9 +1,8 @@
 #![cfg(test)]
 
-use std::collections::VecDeque;
 use std::future::{Future, ready};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_error::proxy_model_not_found::ProxyModelNotFoundError;
 use rstest::rstest;
@@ -38,20 +37,23 @@ fn not_found(retryable_with_model_read_through: bool) -> Result<&'static str, Fa
 
 struct FakeAttempt<E> {
     calls: AtomicUsize,
-    results: Mutex<VecDeque<Result<&'static str, E>>>,
+    results: Mutex<Vec<Result<&'static str, E>>>,
 }
 
 impl<E> FakeAttempt<E> {
     fn new(results: Vec<Result<&'static str, E>>) -> Self {
         Self {
             calls: AtomicUsize::new(0),
-            results: Mutex::new(VecDeque::from(results)),
+            results: Mutex::new(results),
         }
     }
 
     fn next_result(&self) -> Result<&'static str, E> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        self.results.lock().unwrap().pop_front().unwrap()
+        self.results
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(0)
     }
 }
 
@@ -70,8 +72,8 @@ impl FakeResync {
 }
 
 impl Resync for FakeResync {
-    fn resync(&self, model: &str) -> impl Future<Output = Result<bool, ResyncError>> + Send {
-        self.keys.lock().unwrap().push(model.to_owned());
+    fn resync(&self, key: &str) -> impl Future<Output = Result<bool, ResyncError>> + Send {
+        self.keys.lock().unwrap().push(key.to_owned());
         ready(Ok(self.answer))
     }
 }
