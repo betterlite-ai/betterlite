@@ -28,44 +28,29 @@ pub(super) async fn check() {
     returns_a_supplied_client_as_is().await;
     drops_the_facade_only_arguments().await;
     builds_from_the_litellm_params().await;
-    sends_the_provider_bearer_beside_the_key().await;
-    sends_the_provider_bearer_alone().await;
+    sends_the_provider_bearer_with_the_key_it_has().await;
 }
 
-// The SDK adds the api-key whenever the client holds one, so a provider's bearer rides beside it.
-async fn sends_the_provider_bearer_beside_the_key() {
-    let mut fixture = Fixture::new();
-    fixture.provider = Some(support::provider(Arc::new(support::FixedToken("ad-token"))));
-    let recorder = Recorder::start();
-    recorder.queue_poll(200, CREATED);
-    recorder.queue_poll(200, COMPLETED);
-    support::polled(&recorder, &fixture, &run_request()).await;
-    let seen = recorder.requests();
-    assert_eq!(
-        seen[0].headers.get("authorization").map(String::as_str),
-        Some("Bearer ad-token")
-    );
-    assert_eq!(
-        seen[0].headers.get("api-key").map(String::as_str),
-        Some(support::KEY)
-    );
-}
-
-// With no key on the client, the provider's bearer is the only credential sent.
-async fn sends_the_provider_bearer_alone() {
-    let mut fixture = Fixture::new();
-    fixture.api_key = None;
-    fixture.provider = Some(support::provider(Arc::new(support::FixedToken("ad-token"))));
-    let recorder = Recorder::start();
-    recorder.queue_poll(200, CREATED);
-    recorder.queue_poll(200, COMPLETED);
-    support::polled(&recorder, &fixture, &run_request()).await;
-    let seen = recorder.requests();
-    assert_eq!(
-        seen[0].headers.get("authorization").map(String::as_str),
-        Some("Bearer ad-token")
-    );
-    assert_eq!(seen[0].headers.get("api-key"), None);
+// The SDK adds the api-key whenever the client holds one, and the provider's bearer goes out beside it.
+async fn sends_the_provider_bearer_with_the_key_it_has() {
+    for (api_key, expected) in [
+        (Some(SecretString::from(support::KEY)), Some(support::KEY)),
+        (None, None),
+    ] {
+        let mut fixture = Fixture::new();
+        fixture.api_key = api_key;
+        fixture.provider = Some(support::provider(Arc::new(support::FixedToken("ad-token"))));
+        let recorder = Recorder::start();
+        recorder.queue_poll(200, CREATED);
+        recorder.queue_poll(200, COMPLETED);
+        support::polled(&recorder, &fixture, &run_request()).await;
+        let seen = recorder.requests();
+        assert_eq!(
+            seen[0].headers.get("authorization").map(String::as_str),
+            Some("Bearer ad-token")
+        );
+        assert_eq!(seen[0].headers.get("api-key").map(String::as_str), expected);
+    }
 }
 
 fn expected_kind(arun_thread: Option<bool>) -> ClientKind {
