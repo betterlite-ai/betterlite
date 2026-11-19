@@ -25,7 +25,7 @@ Every resource the stack creates is named `${tenant}-litellm-${env}` or that plu
    cp terraform.tfvars.example terraform.tfvars
    ```
 
-2. Set `image` to a pushed betterlite image and replace `litellm_master_key` (or export `TF_VAR_litellm_master_key`). To try the stack over plain HTTP, also set `allow_plaintext_alb = true`; otherwise set `acm_certificate_arn`.
+2. Set `image` to a pushed betterlite image and replace `litellm_master_key`, or set it to `""` to have the module generate one. Terraform reads the value in `terraform.tfvars` before `TF_VAR_litellm_master_key`, so delete or comment out that line before exporting the key there. To try the stack over plain HTTP, also set `allow_plaintext_alb = true`; otherwise set `acm_certificate_arn`.
 
 3. Initialize the folder against the committed lock file.
 
@@ -45,11 +45,11 @@ Every resource the stack creates is named `${tenant}-litellm-${env}` or that plu
    curl "$(terraform output -raw alb_url)/health/readiness"
    ```
 
-The master key is in Secrets Manager if you let the module generate it:
+The master key, supplied or generated, is in Secrets Manager under the stack name. With the sample tenant and env that is `demo-litellm-dev-master-key`:
 
 ```bash
 aws secretsmanager get-secret-value \
-  --secret-id "$(terraform output -raw master_key_secret_arn)" \
+  --secret-id "demo-litellm-dev-master-key" \
   --query SecretString --output text
 ```
 
@@ -121,6 +121,8 @@ aws secretsmanager get-secret-value \
 | `otel_capture_message_content` | `string` | `"no_content"` | Value for `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`: `no_content` or `prompt_and_completion`. |
 
 ## Outputs
+
+The table lists the module's outputs. The example root in `examples/default/` exposes five of them: `alb_url`, `alb_dns_name`, `ecs_cluster`, `migration_run_command` and `db_bootstrap_sql`. Add an `output` block to its `outputs.tf` for any other, reading `module.betterlite.<name>`.
 
 | Name | Description |
 | --- | --- |
