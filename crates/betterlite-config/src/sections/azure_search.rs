@@ -1,4 +1,7 @@
+use std::collections::BTreeMap;
+
 use secrecy::SecretString;
+use serde::de::IgnoredAny;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
@@ -10,8 +13,8 @@ pub const MODEL_ENV: &str = "BING_GROUNDING_MODEL";
 pub const CONNECTION_ID_ENV: &str = "BING_GROUNDING_CONNECTION_ID";
 pub const TOKEN_ENV: &str = "BING_GROUNDING_TOKEN";
 
-#[derive(Debug, Default, serde::Deserialize)]
-pub struct Raw {}
+// env-only section: the loader reports every key, and the box keeps the map value type non-zero-sized for clippy
+pub type Raw = BTreeMap<String, Box<IgnoredAny>>;
 
 #[derive(Debug, Clone, Default)]
 pub struct Settings {
