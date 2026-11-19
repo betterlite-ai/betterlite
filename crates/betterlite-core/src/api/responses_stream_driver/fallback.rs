@@ -12,8 +12,8 @@ use super::source::SourceFailure;
 use crate::api::responses_stream_events::ResponsesStreamBaseState;
 use crate::api::responses_stream_primitives::duration::StreamDurationTimeout;
 
-// The three events that are yielded before a response body starts.
-const PRE_OUTPUT_LIFECYCLE_EVENT_TYPES: [&str; 3] = [
+// LiteLLM's PRE_OUTPUT_LIFECYCLE_EVENT_TYPES, the three events before a response body starts.
+const PRE_OUTPUT_EVENT_TYPES: [&str; 3] = [
     "response.created",
     "response.in_progress",
     "response.queued",
@@ -104,7 +104,7 @@ fn is_lifecycle(event: &Event) -> bool {
             KnownResponseEvent::ResponseCreated(_) | KnownResponseEvent::ResponseInProgress(_)
         ),
         ResponsesAPIStreamingResponse::Generic(record) => {
-            PRE_OUTPUT_LIFECYCLE_EVENT_TYPES.contains(&record.r#type.as_str())
+            PRE_OUTPUT_EVENT_TYPES.contains(&record.r#type.as_str())
         }
     }
 }

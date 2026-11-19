@@ -18,10 +18,10 @@ pub struct TransportFailure {
 
 impl TransportFailure {
     #[must_use]
-    pub fn new(kind: TransportKind, message: impl Into<String>) -> Self {
+    pub fn new(kind: TransportKind, message: &str) -> Self {
         Self {
             kind,
-            message: message.into(),
+            message: message.to_owned(),
         }
     }
 
@@ -40,11 +40,4 @@ pub enum DriverError {
     Class { class: ErrorClass },
     #[error("{0}")]
     Transport(TransportFailure),
-}
-
-impl DriverError {
-    #[must_use]
-    pub fn class(class: ErrorClass) -> Self {
-        Self::Class { class }
-    }
 }

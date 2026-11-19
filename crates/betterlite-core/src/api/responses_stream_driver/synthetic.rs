@@ -9,7 +9,8 @@ use indexmap::IndexMap;
 
 use super::errors::DriverError;
 use super::live::Event;
-use crate::api::response_synthetic_events::builder::build_synthetic_response_events;
+// ast-grep-ignore: no-long-names
+use crate::api::response_synthetic_events::builder::build_synthetic_response_events as build_events;
 use crate::api::response_synthetic_events::error::SyntheticEventsError;
 use crate::api::response_synthetic_events::stamping::ResponsesCostCalculator;
 use crate::api::responses_stream_events::{
@@ -17,7 +18,6 @@ use crate::api::responses_stream_events::{
     base_stream_state,
 };
 use crate::api::responses_stream_hooks::ResponsesStreamHooks;
-use crate::api::responses_stream_hooks::failure::await_pending_logging;
 use crate::api::responses_stream_hooks::logging::log_completed_response;
 use crate::api::responses_stream_hooks::ports::Dispatch;
 use crate::api::responses_stream_hooks::state::ResponsesStreamHookState;
@@ -39,13 +39,13 @@ pub struct SyntheticSetup<'setup> {
     pub persist_before_logging: bool,
 }
 
-/// B928's event list for a whole response, handed out one event per call.
+// one event per call keeps a caller's step boundary, as an iterator does
 pub struct SyntheticStream<'stream> {
     hooks: &'stream ResponsesStreamHooks<'stream>,
     events: Vec<Event>,
     index: usize,
     state: ResponsesStreamBaseState,
-    callback: ResponsesStreamHookState,
+    pub callback: ResponsesStreamHookState,
     details: IndexMap<String, Json>,
 }
 
@@ -58,7 +58,7 @@ impl<'stream> SyntheticStream<'stream> {
     where
         Calculator: ResponsesCostCalculator,
     {
-        let mut events = build_synthetic_response_events(&mut transformed, calculator, CHUNK_SIZE)?;
+        let mut events = build_events(&mut transformed, calculator, CHUNK_SIZE)?;
         let mut state = {
             let input = BaseStreamStateInput {
                 model: setup.model,
@@ -87,19 +87,7 @@ impl<'stream> SyntheticStream<'stream> {
         })
     }
 
-    pub fn next_event(&mut self) -> Result<Option<Event>, DriverError> {
-        futures_executor::block_on(self.advance(Dispatch::Inline))
-    }
-
-    pub async fn next_event_async(&mut self) -> Result<Option<Event>, DriverError> {
-        self.advance(Dispatch::Spawned).await
-    }
-
-    pub async fn drain_logging(&mut self) {
-        await_pending_logging(&mut self.callback).await;
-    }
-
-    async fn advance(&mut self, dispatch: Dispatch) -> Result<Option<Event>, DriverError> {
+    pub async fn advance(&mut self, dispatch: Dispatch) -> Result<Option<Event>, DriverError> {
         let Some(event) = self.events.get(self.index).cloned() else {
             return Ok(None);
         };

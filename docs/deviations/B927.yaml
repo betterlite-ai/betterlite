@@ -1,7 +1,7 @@
 task: B927
 deviations:
-  - what: The MidStreamFallbackError an in-stream error event raises carries the mapped class's own message without LiteLLM's inner "litellm.<MappedClass>: " prefix. LiteLLM passes str(mapped_exception) into MidStreamFallbackError, so the client sees both prefixes.
-    why: B926 builds that message from betterlite's typed ErrorClass, whose context message is the provider text without the Python class-name prefix; the class, status, type, param and code match, and the outer "litellm.MidStreamFallbackError: " prefix is kept.
+  - what: The MidStreamFallbackError an in-stream error event raises carries the mapped class's own message without LiteLLM's inner class-name prefix. LiteLLM passes str(mapped_exception) into MidStreamFallbackError, so the client sees both prefixes.
+    why: B926 builds that message from betterlite's typed ErrorClass, whose context message is the provider text without the Python class-name prefix; the class, status, type, param and code match, and the outer MidStreamFallbackError prefix is kept.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L676-L697
   - what: The failure handlers receive an ApiConnection ErrorClass for a transport or HTTP read failure, where LiteLLM hands them the raw httpx exception object.
     why: betterlite's failure port delivers an ErrorClass instead of a Python exception; the message is the httpx error text and the caller still receives the transport failure it raised, so a logging integration records the same failed call.

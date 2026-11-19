@@ -9,7 +9,7 @@ use futures_util::stream::BoxStream;
 
 use super::errors::{TransportFailure, TransportKind};
 
-/// The provider body in arrival order; a read failure ends it where it happened.
+// the body arrives in order, so a read failure ends the stream where it happened
 pub type BodyStream = BoxStream<'static, Result<Vec<u8>, TransportFailure>>;
 
 // B173's reqwest errors map onto the httpx family LiteLLM's iterator branches on.
@@ -24,9 +24,9 @@ pub fn body_stream(response: StreamResponse) -> BodyStream {
 pub(super) fn classify(error: HttpError) -> TransportFailure {
     match timed_out(error) {
         HttpError::Request(source) => {
-            TransportFailure::new(TransportKind::ReadError, source.to_string())
+            TransportFailure::new(TransportKind::ReadError, &source.to_string())
         }
-        other => TransportFailure::new(TransportKind::HttpError, other.to_string()),
+        other => TransportFailure::new(TransportKind::HttpError, &other.to_string()),
     }
 }
 
@@ -42,7 +42,7 @@ pub trait PayloadSource: Send {
     async fn next_payload(&mut self) -> Option<Result<Vec<u8>, SourceFailure>>;
 }
 
-/// Payloads already collected from the body, so a sync step never waits on I/O.
+// collecting the body first lets a sync step run without an executor
 #[derive(Default)]
 pub struct PrefetchedSource {
     items: VecDeque<Result<Vec<u8>, SourceFailure>>,
@@ -50,7 +50,10 @@ pub struct PrefetchedSource {
 
 impl PrefetchedSource {
     #[must_use]
-    pub fn new(items: impl IntoIterator<Item = Result<Vec<u8>, SourceFailure>>) -> Self {
+    pub fn new<Items>(items: Items) -> Self
+    where
+        Items: IntoIterator<Item = Result<Vec<u8>, SourceFailure>>,
+    {
         Self {
             items: items.into_iter().collect(),
         }
@@ -64,7 +67,7 @@ impl PayloadSource for PrefetchedSource {
     }
 }
 
-/// B173 bytes framed by B005's SSE parser one event at a time.
+// one SSE event per payload keeps B005's framing out of the iterator
 pub struct StreamingSource {
     body: BodyStream,
     parser: SseParser,

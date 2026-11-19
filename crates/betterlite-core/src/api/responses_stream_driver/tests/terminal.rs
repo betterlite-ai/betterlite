@@ -12,6 +12,8 @@ use super::{
     fixed_clock, payload, poll_count, prefetched, scripted_clock, timeout_details, timestamp,
 };
 use crate::api::responses_stream_events::StreamTimes;
+use crate::api::responses_stream_hooks::failure::await_pending_logging;
+use crate::api::responses_stream_hooks::ports::Dispatch;
 #[rstest]
 #[case::rate_limit(RATE_LIMITED, 429, true)]
 #[case::server_error(SERVER_ERROR, 500, true)]
@@ -25,11 +27,9 @@ async fn terminal_error_events_raise_before_the_deployment_hook(
     let hook =
         ReplacingHook::new(serde_json::from_str(COMPLETED).expect("the replacement decodes"));
     let failure = Arc::new(FailurePort::default());
-    let ports = Ports {
-        failure: Some(Arc::clone(&failure)),
-        chunk_hooks: vec![Arc::clone(&hook)],
-        ..Ports::default()
-    };
+    let mut ports = Ports::default();
+    ports.failure = Some(Arc::clone(&failure));
+    ports.chunk_hooks = vec![Arc::clone(&hook)];
     let fixture = Fixture::new(ports, fixed_clock());
     let mut stream = fixture.stream(prefetched(vec![payload(CREATED), payload(event)]), None);
     stream.next_event().await.expect("the created event yields");
@@ -53,10 +53,8 @@ async fn terminal_error_events_raise_before_the_deployment_hook(
 async fn the_deployment_hook_decides_whether_output_started() {
     let replacement: Event = serde_json::from_str(DELTA).expect("the replacement decodes");
     let hook = ReplacingHook::new(replacement);
-    let ports = Ports {
-        chunk_hooks: vec![Arc::clone(&hook)],
-        ..Ports::default()
-    };
+    let mut ports = Ports::default();
+    ports.chunk_hooks = vec![Arc::clone(&hook)];
     let fixture = Fixture::new(ports, fixed_clock());
     let mut stream = fixture.stream(prefetched(vec![payload(CREATED)]), None);
     let yielded = stream
@@ -116,10 +114,8 @@ async fn undecodable_payloads_are_skipped() {
 #[tokio::test]
 async fn streaming_duration_limit_blocks_the_first_read() {
     let failure = Arc::new(FailurePort::default());
-    let ports = Ports {
-        failure: Some(Arc::clone(&failure)),
-        ..Ports::default()
-    };
+    let mut ports = Ports::default();
+    ports.failure = Some(Arc::clone(&failure));
     let fixture = Fixture::new(ports, scripted_clock(&[LATE]));
     let (source, polls) = CountingSource::new(&[CREATED]);
     let mut stream = fixture.stream(Box::new(source), Some(10.0));
@@ -145,18 +141,14 @@ async fn streaming_duration_limit_stops_after_a_received_event() {
 #[test]
 fn sync_iteration_runs_failure_handlers_without_a_runtime() {
     let failure = Arc::new(FailurePort::default());
-    let ports = Ports {
-        failure: Some(Arc::clone(&failure)),
-        ..Ports::default()
-    };
+    let mut ports = Ports::default();
+    ports.failure = Some(Arc::clone(&failure));
     let fixture = Fixture::new(ports, fixed_clock());
     let mut stream = fixture.stream(prefetched(vec![payload(CREATED)]), None);
-    stream
-        .next_event_blocking()
+    futures_executor::block_on(stream.drive(Dispatch::Inline))
         .expect("the created event yields")
         .expect("an event is returned");
-    let error = stream
-        .next_event_blocking()
+    let error = futures_executor::block_on(stream.drive(Dispatch::Inline))
         .expect_err("the stream ends early");
     connection_message(&error);
     assert_eq!(failure.classes().len(), 1);
@@ -165,14 +157,11 @@ fn sync_iteration_runs_failure_handlers_without_a_runtime() {
 #[test]
 fn sync_iteration_logs_a_completed_response_inline() {
     let success = Arc::new(SuccessPort::default());
-    let ports = Ports {
-        success: Some(Arc::clone(&success)),
-        ..Ports::default()
-    };
+    let mut ports = Ports::default();
+    ports.success = Some(Arc::clone(&success));
     let fixture = Fixture::new(ports, fixed_clock());
     let mut stream = fixture.stream(prefetched(vec![payload(COMPLETED)]), None);
-    stream
-        .next_event_blocking()
+    futures_executor::block_on(stream.drive(Dispatch::Inline))
         .expect("the terminal event yields")
         .expect("an event is returned");
     assert_eq!(success.async_calls().len(), 1);
@@ -184,18 +173,16 @@ fn sync_iteration_logs_a_completed_response_inline() {
 async fn fake_response_iteration_slices_text_into_chunks() {
     let success = Arc::new(SuccessPort::default());
     let cache = Arc::new(RecordingCache::default());
-    let ports = Ports {
-        success: Some(Arc::clone(&success)),
-        cache: Some(Arc::clone(&cache)),
-        cache_handler: Some(Arc::new(caching_handler())),
-        ..Ports::default()
-    };
+    let mut ports = Ports::default();
+    ports.success = Some(Arc::clone(&success));
+    ports.cache = Some(Arc::clone(&cache));
+    ports.cache_handler = Some(Arc::new(caching_handler()));
     let fixture = Fixture::new(ports, fixed_clock());
     let mut stream = fixture.synthetic(None, true);
     let mut types = Vec::new();
     let mut deltas = Vec::new();
     while let Some(event) = stream
-        .next_event_async()
+        .advance(Dispatch::Spawned)
         .await
         .expect("the synthetic event yields")
     {
@@ -206,10 +193,10 @@ async fn fake_response_iteration_slices_text_into_chunks() {
     }
     assert_eq!(
         deltas,
-        vec!["hello".to_owned(), " worl".to_owned(), "d!".to_owned()]
+        vec!["abcde".to_owned(), "fghij".to_owned(), "k".to_owned()]
     );
     assert_eq!(types.last().map(String::as_str), Some("response.completed"));
-    stream.drain_logging().await;
+    await_pending_logging(&mut stream.callback).await;
     let dispatches = success.dispatches();
     assert_eq!(dispatches.len(), 1);
     assert_eq!(dispatches[0].cache_hit, None);
@@ -220,17 +207,16 @@ async fn fake_response_iteration_slices_text_into_chunks() {
 fn cached_response_iteration_marks_cache_hit_and_skips_persistence() {
     let success = Arc::new(SuccessPort::default());
     let cache = Arc::new(RecordingCache::default());
-    let ports = Ports {
-        success: Some(Arc::clone(&success)),
-        cache: Some(Arc::clone(&cache)),
-        cache_handler: Some(Arc::new(caching_handler())),
-        ..Ports::default()
-    };
+    let mut ports = Ports::default();
+    ports.success = Some(Arc::clone(&success));
+    ports.cache = Some(Arc::clone(&cache));
+    ports.cache_handler = Some(Arc::new(caching_handler()));
     let fixture = Fixture::new(ports, fixed_clock());
     let mut stream = fixture.synthetic(Some(true), false);
     let mut deltas = Vec::new();
     loop {
-        let event = stream.next_event().expect("the synthetic event yields");
+        let event = futures_executor::block_on(stream.advance(Dispatch::Inline))
+            .expect("the synthetic event yields");
         let Some(event) = event else { break };
         if event_type(&event) == "response.output_text.delta" {
             deltas.push(delta(&event));
@@ -238,7 +224,7 @@ fn cached_response_iteration_marks_cache_hit_and_skips_persistence() {
     }
     assert_eq!(
         deltas,
-        vec!["hello".to_owned(), " worl".to_owned(), "d!".to_owned()]
+        vec!["abcde".to_owned(), "fghij".to_owned(), "k".to_owned()]
     );
     assert_eq!(success.async_calls().len(), 1);
     assert_eq!(success.sync_calls().len(), 1);

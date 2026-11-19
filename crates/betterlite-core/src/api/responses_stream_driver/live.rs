@@ -62,7 +62,7 @@ where
 {
     engine: StreamEngine<'stream, Transform, Tokenization, Calculator>,
     state: ResponsesStreamBaseState,
-    callback: ResponsesStreamHookState,
+    pub callback: ResponsesStreamHookState,
     source: Box<dyn PayloadSource>,
 }
 
@@ -108,17 +108,8 @@ where
         outcome
     }
 
-    // The sync iterator runs the same pipeline through B198's async runner and never waits.
-    pub fn next_event_blocking(&mut self) -> Result<Option<Event>, DriverError> {
-        futures_executor::block_on(self.drive(Dispatch::Inline))
-    }
-
-    // A caller that stops early still owes the spawned logging the iterator started.
-    pub async fn drain_logging(&mut self) {
-        await_pending_logging(&mut self.callback).await;
-    }
-
-    async fn drive(&mut self, dispatch: Dispatch) -> Result<Option<Event>, DriverError> {
+    // both iterators share this pipeline and only the dispatch differs
+    pub async fn drive(&mut self, dispatch: Dispatch) -> Result<Option<Event>, DriverError> {
         match self.pull(dispatch).await {
             Ok(event) => Ok(event),
             Err(DriverError::Transport(failure)) => self.transport_failed(failure).await,
@@ -141,7 +132,7 @@ where
         loop {
             let Some(item) = self.source.next_payload().await else {
                 self.state.finished = true;
-                self.raise_if_ended_without_terminal().await?;
+                self.raise_if_ended().await?;
                 return Ok(None);
             };
             let payload = item.map_err(source_error)?;
@@ -150,7 +141,7 @@ where
             let text = String::from_utf8_lossy(&payload);
             let result = self.process(text.as_ref(), dispatch).await?;
             if self.state.finished {
-                self.raise_if_ended_without_terminal().await?;
+                self.raise_if_ended().await?;
                 return Ok(None);
             }
             if let Some(event) = result {
@@ -222,7 +213,7 @@ where
             .unwrap_or(f64::INFINITY)
     }
 
-    async fn raise_if_ended_without_terminal(&mut self) -> Result<(), DriverError> {
+    async fn raise_if_ended(&mut self) -> Result<(), DriverError> {
         if self.state.completed_response.is_some() {
             return Ok(());
         }

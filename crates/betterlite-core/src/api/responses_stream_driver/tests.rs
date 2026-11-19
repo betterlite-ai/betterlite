@@ -66,7 +66,7 @@ const SERVER_ERROR: &str = r#"{"type":"error","sequence_number":4,"error":{"type
 const BAD_REQUEST: &str = r#"{"type":"error","sequence_number":4,"error":{"type":"invalid_request_error","code":"model_not_found","message":"no such model"}}"#;
 const DONE: &str = "[DONE]";
 
-const RESPONSE_FIXTURE: &str = r#"{"id":"resp_a","created_at":1700000000,"status":"completed","output":[{"type":"message","id":"msg_1","status":"completed","role":"assistant","content":[{"type":"output_text","text":"hello world!","annotations":[],"logprobs":null}]}]}"#;
+const RESPONSE_FIXTURE: &str = r#"{"id":"resp_a","created_at":1700000000,"status":"completed","output":[{"type":"message","id":"msg_1","status":"completed","role":"assistant","content":[{"type":"output_text","text":"abcdefghijk","annotations":[],"logprobs":null}]}]}"#;
 
 fn timestamp(text: &str) -> DateTime<FixedOffset> {
     DateTime::parse_from_rfc3339(text).expect("the fixture time parses")
@@ -666,11 +666,9 @@ fn prefetched(items: Vec<Result<Vec<u8>, SourceFailure>>) -> Box<dyn PayloadSour
 async fn live_sse_delivery_yields_events_and_finishes() {
     let success = Arc::new(SuccessPort::default());
     let failure = Arc::new(FailurePort::default());
-    let ports = Ports {
-        success: Some(Arc::clone(&success)),
-        failure: Some(Arc::clone(&failure)),
-        ..Ports::default()
-    };
+    let mut ports = Ports::default();
+    ports.success = Some(Arc::clone(&success));
+    ports.failure = Some(Arc::clone(&failure));
     let fixture = Fixture::new(ports, fixed_clock());
     let mut stream = fixture.stream(
         prefetched(vec![
@@ -745,10 +743,8 @@ async fn streaming_source_flushes_an_unterminated_frame_at_eof() {
 #[tokio::test]
 async fn early_stream_end_before_any_event_raises_a_fallback() {
     let failure = Arc::new(FailurePort::default());
-    let ports = Ports {
-        failure: Some(Arc::clone(&failure)),
-        ..Ports::default()
-    };
+    let mut ports = Ports::default();
+    ports.failure = Some(Arc::clone(&failure));
     let fixture = Fixture::new(ports, fixed_clock());
     let mut stream = fixture.stream(prefetched(Vec::new()), None);
     let error = stream
@@ -784,10 +780,8 @@ async fn early_stream_end_after_a_lifecycle_event_still_falls_back() {
 #[tokio::test]
 async fn early_stream_end_after_output_raises_the_connection_error() {
     let failure = Arc::new(FailurePort::default());
-    let ports = Ports {
-        failure: Some(Arc::clone(&failure)),
-        ..Ports::default()
-    };
+    let mut ports = Ports::default();
+    ports.failure = Some(Arc::clone(&failure));
     let fixture = Fixture::new(ports, fixed_clock());
     let mut stream = fixture.stream(prefetched(vec![payload(CREATED), payload(DELTA)]), None);
     stream.next_event().await.expect("the created event yields");
@@ -816,10 +810,8 @@ async fn the_done_marker_without_a_terminal_event_raises_the_early_end_error() {
 #[tokio::test]
 async fn the_done_marker_after_a_terminal_event_ends_the_iteration() {
     let failure = Arc::new(FailurePort::default());
-    let ports = Ports {
-        failure: Some(Arc::clone(&failure)),
-        ..Ports::default()
-    };
+    let mut ports = Ports::default();
+    ports.failure = Some(Arc::clone(&failure));
     let fixture = Fixture::new(ports, fixed_clock());
     let mut stream = fixture.stream(prefetched(vec![payload(COMPLETED), payload(DONE)]), None);
     stream
@@ -839,10 +831,8 @@ async fn the_done_marker_after_a_terminal_event_ends_the_iteration() {
 #[tokio::test]
 async fn transport_error_after_a_terminal_event_ends_the_iteration() {
     let failure = Arc::new(FailurePort::default());
-    let ports = Ports {
-        failure: Some(Arc::clone(&failure)),
-        ..Ports::default()
-    };
+    let mut ports = Ports::default();
+    ports.failure = Some(Arc::clone(&failure));
     let fixture = Fixture::new(ports, fixed_clock());
     let mut stream = fixture.stream(
         prefetched(vec![
@@ -868,10 +858,8 @@ async fn transport_error_after_a_terminal_event_ends_the_iteration() {
 #[tokio::test]
 async fn transport_error_before_output_raises_a_fallback_with_503() {
     let failure = Arc::new(FailurePort::default());
-    let ports = Ports {
-        failure: Some(Arc::clone(&failure)),
-        ..Ports::default()
-    };
+    let mut ports = Ports::default();
+    ports.failure = Some(Arc::clone(&failure));
     let fixture = Fixture::new(ports, fixed_clock());
     let mut stream = fixture.stream(
         prefetched(vec![transport(
@@ -894,10 +882,8 @@ async fn transport_error_before_output_raises_a_fallback_with_503() {
 #[tokio::test]
 async fn transport_error_after_output_raises_the_transport_error() {
     let failure = Arc::new(FailurePort::default());
-    let ports = Ports {
-        failure: Some(Arc::clone(&failure)),
-        ..Ports::default()
-    };
+    let mut ports = Ports::default();
+    ports.failure = Some(Arc::clone(&failure));
     let fixture = Fixture::new(ports, fixed_clock());
     let mut stream = fixture.stream(
         prefetched(vec![
@@ -923,10 +909,8 @@ async fn transport_error_after_output_raises_the_transport_error() {
 #[tokio::test]
 async fn other_http_errors_raise_even_after_a_terminal_event() {
     let failure = Arc::new(FailurePort::default());
-    let ports = Ports {
-        failure: Some(Arc::clone(&failure)),
-        ..Ports::default()
-    };
+    let mut ports = Ports::default();
+    ports.failure = Some(Arc::clone(&failure));
     let fixture = Fixture::new(ports, fixed_clock());
     let mut stream = fixture.stream(
         prefetched(vec![
