@@ -25,8 +25,8 @@ use super::credentials::{CredentialLookup, CredentialLookupError};
 use super::ocr::{OcrDocumentKind, OcrError, OcrOperation, OcrRequest, OcrResponse};
 use super::store::{RagStore, StoreRequest, StoreResult};
 use super::upload::{
-    DEFAULT_CONTENT_TYPE, FetchedResponse, FileData, HttpUrlFetch, UploadError, UrlFetch,
-    UrlFetchError, content_type_from_headers, filename_from_url,
+    DEFAULT_CONTENT_TYPE, FetchedResponse, FileData, HttpUrlFetch, MAX_FETCHED_FILE_BYTES,
+    UploadError, UrlFetch, UrlFetchError, content_type_from_headers, filename_from_url,
 };
 use super::{IngestionPorts, IngestionState};
 
@@ -277,6 +277,12 @@ fn init_keeps_a_configured_chunking_strategy() {
 #[test]
 fn init_leaves_supports_existing_file_id_false() {
     assert!(!IngestionState::SUPPORTS_EXISTING_FILE_ID);
+}
+
+#[test]
+fn init_rejects_an_unknown_ingest_option() {
+    let parsed = serde_json::from_str::<IngestionOptions>(r#"{"nmae": "docs"}"#);
+    assert!(parsed.is_err());
 }
 
 #[test]
@@ -673,6 +679,27 @@ async fn upload_fetch_reads_the_body_and_headers_through_the_checked_client() {
     assert_eq!(response.status, 200);
     assert_eq!(response.body, b"hello");
     assert_eq!(content_type_from_headers(&response.headers), "text/plain");
+}
+
+#[tokio::test]
+async fn upload_fetch_refuses_a_body_over_the_download_bound() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let url = format!("http://{address}/files/huge.bin");
+    let fetch = http_fetch(&["127.0.0.1".to_owned()]);
+    let declared = MAX_FETCHED_FILE_BYTES + 1;
+    let serving = async {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut buffer = [0_u8; 1024];
+        let _read = socket.read(&mut buffer).await.unwrap();
+        let headers = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {declared}\r\nConnection: close\r\n\r\n"
+        );
+        socket.write_all(headers.as_bytes()).await.unwrap();
+    };
+    let (result, ()) = tokio::join!(fetch.fetch(&url), serving);
+    let error = result.err().expect("the body is refused");
+    assert!(matches!(error, UrlFetchError::Read(_)));
 }
 
 #[tokio::test]
