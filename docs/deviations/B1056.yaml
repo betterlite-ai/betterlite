@@ -1,61 +1,24 @@
 task: B1056
 deviations:
-  - what: >-
-      A structured timeout (httpx.Timeout phases) becomes a single request deadline: the read phase when set,
-      otherwise 600 seconds. LiteLLM keeps the phases in the SDK clients and times connect, read, write and
-      pool separately.
-    why: >-
-      betterlite's transport carries one deadline per request; the read phase is the one that bounds a thread
-      answer.
-    link: >-
-      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L592-L604
-  - what: >-
-      A timeout at or below zero becomes no deadline (Duration::MAX), and a non-finite one is refused with a
-      BadRequestError naming the timeout before any request; LiteLLM hands both to the SDK client.
-    why: >-
-      The deadline is a std::time::Duration, which cannot hold a negative or non-finite duration; B2487's
-      resolver defines the refusal.
-    link: >-
-      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L592-L604
-  - what: >-
-      The Azure thread client receives its timeout as seconds (a structured timeout contributes its read
-      phase, a numeric string is parsed), where LiteLLM forwards the raw string or httpx.Timeout to AzureOpenAI.
-    why: >-
-      The B176 Azure client and its transport take a number of seconds, and a phase object cannot travel
-      through that interface.
-    link: >-
-      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L628
+  - what: A structured timeout (httpx.Timeout phases) becomes a single request deadline, the read phase when set and otherwise 600 seconds; LiteLLM keeps the phases in its SDK clients and times connect, read, write and pool separately.
+    why: betterlite's transport carries one deadline per request, and the read phase is the one that bounds a thread answer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L592-L604
+  - what: A timeout at or below zero becomes no deadline (Duration::MAX), and a non-finite one is refused with a BadRequestError naming the timeout before any request; LiteLLM hands both to its SDK client.
+    why: The deadline is a std::time::Duration, which cannot hold a negative or non-finite duration, and B2487's resolver defines the refusal.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L592-L604
+  - what: The Azure thread client receives its timeout as seconds, a structured timeout contributing its read phase and a numeric string being parsed, where LiteLLM forwards the raw string or httpx.Timeout to AzureOpenAI.
+    why: The B176 Azure client and its transport take a number of seconds, and a phase object cannot travel through that interface.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L628
 kept_bugs:
-  - what: >-
-      tool_resources is accepted by create_thread and never reaches either provider: the OpenAI and Azure
-      creates send no file_search or code_interpreter resources.
-    why: >-
-      Neither provider method takes the argument, so a working setup gets a thread without the resources;
-      forwarding them would change the request a caller sees today.
-    link: >-
-      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L557-L565
-  - what: >-
-      Only the literal True flag selects an async provider method: 1, "true" or any other truthy value keeps
-      the synchronous method, without a validation error.
-    why: >-
-      A caller that passes a truthy value other than True gets the sync method from LiteLLM today, so the
-      same call stays synchronous here.
-    link: >-
-      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L2826
-  - what: >-
-      create_thread reads acreate_thread from the caller's kwargs without removing it, while get_thread pops
-      aget_thread; the caller's dictionary keeps one flag and loses the other.
-    why: >-
-      The asymmetry is observable in LiteLLM's kwargs and a working setup can read it back, so both facades
-      keep it rather than normalising the two paths.
-    link: >-
-      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L736
-  - what: >-
-      The Azure branch computes azure_ad_token from extra_body (or AZURE_AD_TOKEN) and passes it to the
-      provider, which drops it: get_azure_client never uses the argument, so only api_key or a top-level
-      azure_ad_token authenticates the request.
-    why: >-
-      A working Azure setup therefore authenticates with its key even when it supplies the thread token via
-      extra_body, and sending the token would change the header those setups see.
-    link: >-
-      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L40-L64
+  - what: tool_resources is accepted by create_thread and never reaches either provider, so the OpenAI and Azure creates send no file_search or code_interpreter resources.
+    why: Neither provider method takes the argument, so a working setup gets a thread without the resources, and forwarding them would change the request a caller sees today.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L557-L565
+  - what: Only the literal True flag selects an async provider method, so 1, "true" or any other truthy value keeps the synchronous method without a validation error.
+    why: A caller that passes a truthy value other than True gets the sync method from LiteLLM today, so the same call stays synchronous here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L2826
+  - what: create_thread reads acreate_thread from the caller's kwargs without removing it, while get_thread pops aget_thread, so the caller's dictionary keeps one flag and loses the other.
+    why: The asymmetry is observable in LiteLLM's kwargs and a working setup can read it back, so both facades keep it rather than normalising the two paths.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L736
+  - what: The Azure branch computes azure_ad_token from extra_body or AZURE_AD_TOKEN and passes it to the provider, which drops it, so only api_key or a top-level azure_ad_token authenticates the request.
+    why: A working Azure setup therefore authenticates with its key even when it supplies the thread token via extra_body, and sending the token would change the header those setups see.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L40-L64

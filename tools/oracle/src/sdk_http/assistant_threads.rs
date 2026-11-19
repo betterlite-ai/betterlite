@@ -4,8 +4,9 @@ use std::sync::Arc;
 
 use betterlite_azure::endpoints::projection::SessionKind;
 use betterlite_config::sections::azure_endpoints;
-use betterlite_core::api::assistant_threads::error::{ThreadError, ThreadFailure};
-use betterlite_core::api::assistant_threads::{AssistantThreads, CreateThreadCall, GetThreadCall};
+use betterlite_core::api::assistant_threads::{
+    AssistantThreads, CreateThreadCall, GetThreadCall, ThreadFacade,
+};
 use betterlite_core::api::resource_sdk_settings::ResourceSdkSettings;
 use betterlite_foundry::chat::sources::NoSources;
 use betterlite_http::proxy::ProxiedClient;
@@ -65,6 +66,11 @@ pub struct Outcome {
     pub thread: Option<ThreadRecord>,
 }
 
+enum Facade<'call> {
+    Create(CreateThreadCall<'call, ProxiedClient>),
+    Get(GetThreadCall<'call, ProxiedClient>),
+}
+
 impl CallKind for Call {
     fn send(
         &self,
@@ -90,71 +96,46 @@ impl CallKind for Call {
             // the harness owns the mock origin, so it takes the place of the configured api_base
             let mut kwargs = self.kwargs.clone();
             kwargs.insert(String::from("api_base"), Json::Text(api_base.to_owned()));
-            match (self.mode, self.operation) {
-                (Mode::Sync, Operation::Create) => {
-                    settle_sync(threads.create_thread(self.create_call(&mut kwargs)).await)
+            let facade = match self.operation {
+                Operation::Create => Facade::Create(CreateThreadCall {
+                    custom_llm_provider: self.provider.clone(),
+                    messages: self.messages.clone(),
+                    metadata: self.metadata.clone(),
+                    tool_resources: self.tool_resources.clone(),
+                    client: None,
+                    kwargs: &mut kwargs,
+                }),
+                Operation::Get => {
+                    let thread_id = self.thread_id.clone().ok_or_else(|| {
+                        SdkHttpError::Invalid(String::from("a get call needs a thread_id"))
+                    })?;
+                    Facade::Get(GetThreadCall {
+                        custom_llm_provider: self.provider.clone(),
+                        thread_id,
+                        client: None,
+                        kwargs: &mut kwargs,
+                    })
                 }
-                (Mode::Sync, Operation::Get) => {
-                    settle_sync(threads.get_thread(self.get_call(&mut kwargs)?).await)
-                }
-                (Mode::Async, Operation::Create) => {
-                    settle_async(threads.acreate_thread(self.create_call(&mut kwargs)).await)
-                }
-                (Mode::Async, Operation::Get) => {
-                    settle_async(threads.aget_thread(self.get_call(&mut kwargs)?).await)
-                }
+            };
+            match (self.mode, facade) {
+                (Mode::Sync, Facade::Create(call)) => match threads.create_thread(call).await {
+                    Ok(thread) => Ok(thread_outcome(thread)),
+                    Err(error) => Ok(sync_failure(&error)),
+                },
+                (Mode::Sync, Facade::Get(call)) => match threads.get_thread(call).await {
+                    Ok(thread) => Ok(thread_outcome(thread)),
+                    Err(error) => Ok(sync_failure(&error)),
+                },
+                (Mode::Async, Facade::Create(call)) => match threads.acreate_thread(call).await {
+                    Ok(thread) => Ok(thread_outcome(thread)),
+                    Err(failure) => async_failure(&failure),
+                },
+                (Mode::Async, Facade::Get(call)) => match threads.aget_thread(call).await {
+                    Ok(thread) => Ok(thread_outcome(thread)),
+                    Err(failure) => async_failure(&failure),
+                },
             }
         }
-    }
-}
-
-impl Call {
-    fn create_call<'call>(
-        &'call self,
-        kwargs: &'call mut BTreeMap<String, Json>,
-    ) -> CreateThreadCall<'call, ProxiedClient> {
-        CreateThreadCall {
-            custom_llm_provider: self.provider.clone(),
-            messages: self.messages.clone(),
-            metadata: self.metadata.clone(),
-            tool_resources: self.tool_resources.clone(),
-            client: None,
-            kwargs,
-        }
-    }
-
-    fn get_call<'call>(
-        &'call self,
-        kwargs: &'call mut BTreeMap<String, Json>,
-    ) -> Result<GetThreadCall<'call, ProxiedClient>, SdkHttpError> {
-        let thread_id = self
-            .thread_id
-            .clone()
-            .ok_or_else(|| SdkHttpError::Invalid(String::from("a get call needs a thread_id")))?;
-        Ok(GetThreadCall {
-            custom_llm_provider: self.provider.clone(),
-            thread_id,
-            client: None,
-            kwargs,
-        })
-    }
-}
-
-fn settle_sync(
-    result: Result<Option<ThreadRecord>, ThreadError>,
-) -> Result<SdkResult, SdkHttpError> {
-    match result {
-        Ok(thread) => Ok(thread_outcome(thread)),
-        Err(error) => Ok(sync_failure(&error)),
-    }
-}
-
-fn settle_async(
-    result: Result<Option<ThreadRecord>, ThreadFailure>,
-) -> Result<SdkResult, SdkHttpError> {
-    match result {
-        Ok(thread) => Ok(thread_outcome(thread)),
-        Err(failure) => async_failure(&failure),
     }
 }
 
