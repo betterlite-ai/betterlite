@@ -145,15 +145,9 @@ impl ChatPolicy {
     ) -> Result<(), JsonProviderPolicyError> {
         let mappings = &self.descriptor.config.param_mappings;
         for (name, value) in non_default {
-            match mappings.get(name) {
-                Some(mapped) => {
-                    existing.insert(mapped.clone(), value.clone());
-                }
-                None => {
-                    if supported.iter().any(|param| param == name) {
-                        existing.insert(name.clone(), value.clone());
-                    }
-                }
+            let mapped = mappings.get(name);
+            if mapped.is_some() || supported.contains(name) {
+                existing.insert(mapped.unwrap_or(name).clone(), value.clone());
             }
         }
         self.clamp_temperature(existing)

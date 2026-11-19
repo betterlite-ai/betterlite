@@ -9,7 +9,7 @@ use betterlite_models::json_provider_registry::{
 };
 use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 
 use super::responses::{OpenAiLikeResponsesPolicy, ResponsesPolicy, ResponsesPolicyCache};
 use super::{ChatCapabilities, ChatParent, ChatPolicy, TOOL_PARAMS, base_class_parent};
@@ -181,20 +181,24 @@ fn identity_resolves_the_key_chain() {
     let explicit = SecretString::from("sk-explicit");
     let (_, explicit_key) = policy.resolve_provider_info(None, Some(&explicit), &lookup);
     assert_eq!(
-        explicit_key.as_ref().map(|secret| secret.expose_secret()),
+        explicit_key
+            .as_ref()
+            .map(secrecy::ExposeSecret::expose_secret),
         Some("sk-explicit")
     );
     let (_, empty_explicit) =
         policy.resolve_provider_info(None, Some(&SecretString::from("")), &lookup);
     assert_eq!(
-        empty_explicit.as_ref().map(|secret| secret.expose_secret()),
+        empty_explicit
+            .as_ref()
+            .map(secrecy::ExposeSecret::expose_secret),
         Some("sk-env")
     );
     let (_, environment_key) = policy.resolve_provider_info(None, None, &lookup);
     assert_eq!(
         environment_key
             .as_ref()
-            .map(|secret| secret.expose_secret()),
+            .map(secrecy::ExposeSecret::expose_secret),
         Some("sk-env")
     );
     let (_, descriptor_key) =
@@ -452,21 +456,22 @@ fn null_n_is_an_error_when_the_n_constraint_runs() {
         .expect_err("a null n cannot satisfy the n constraint");
 }
 
-fn message(value: serde_json::Value) -> ChatMessage {
-    serde_json::from_value(value).expect("a chat message")
+fn message(source: &str) -> ChatMessage {
+    serde_json::from_str(source).expect("a chat message")
 }
 
 #[test]
 fn transform_messages_collapses_only_when_the_descriptor_asks() {
-    let message_json = serde_json::json!({
-        "role": "user",
-        "content": [
-            {"type": "text", "text": "hello"},
-            {"type": "text", "text": " world"},
-        ],
-        "name": "probe",
-    });
-    let messages = [message(message_json.clone())];
+    let messages = [message(
+        r#"{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "hello"},
+                {"type": "text", "text": " world"}
+            ],
+            "name": "probe"
+        }"#,
+    )];
     let collapsing = chat_policy(ProviderDescriptor {
         provider: ProviderId::Publicai,
         config: ProviderConfig {
@@ -478,16 +483,15 @@ fn transform_messages_collapses_only_when_the_descriptor_asks() {
         .transform_messages(&messages)
         .expect("the messages collapse");
     assert_eq!(
-        serde_json::to_value(&collapsed).expect("serialized"),
-        serde_json::json!([{"role": "user", "content": "hello world", "name": "probe"}])
+        collapsed,
+        vec![message(
+            r#"{"role": "user", "content": "hello world", "name": "probe"}"#
+        )]
     );
     let unchanged = chat("https://example.invalid/v1")
         .transform_messages(&messages)
         .expect("the messages pass through");
-    assert_eq!(
-        serde_json::to_value(&unchanged).expect("serialized"),
-        serde_json::json!([message_json])
-    );
+    assert_eq!(unchanged, messages.to_vec());
 }
 
 #[test]
@@ -499,12 +503,11 @@ fn empty_content_lists_stay_lists() {
             ..config("https://example.invalid/v1", "openai_gpt")
         },
     });
-    let messages = [message(serde_json::json!({"role": "user", "content": []}))];
-    let transformed = policy.transform_messages(&messages).expect("messages");
-    assert_eq!(
-        serde_json::to_value(&transformed).expect("serialized"),
-        serde_json::json!([{"role": "user", "content": []}])
-    );
+    let original = message(r#"{"role": "user", "content": []}"#);
+    let transformed = policy
+        .transform_messages(&[original.clone()])
+        .expect("messages");
+    assert_eq!(transformed, vec![original]);
 }
 
 #[test]
@@ -665,8 +668,10 @@ fn openai_like_responses_requires_a_base(
     #[case] environment_base: Option<&str>,
     #[case] expected: Result<&str, ()>,
 ) {
-    let mut settings = OpenAiLikeSettings::default();
-    settings.api_base = environment_base.map(str::to_owned);
+    let settings = OpenAiLikeSettings {
+        api_base: environment_base.map(str::to_owned),
+        ..OpenAiLikeSettings::default()
+    };
     let policy = OpenAiLikeResponsesPolicy { settings };
     match expected {
         Ok(url) => assert_eq!(policy.complete_url(explicit).expect("a base"), url),
@@ -682,8 +687,10 @@ fn openai_like_responses_requires_a_base(
 
 #[test]
 fn openai_like_responses_preserves_headers_for_a_truthy_key() {
-    let mut settings = OpenAiLikeSettings::default();
-    settings.api_key = Some(SecretString::from("sk-env"));
+    let settings = OpenAiLikeSettings {
+        api_key: Some(SecretString::from("sk-env")),
+        ..OpenAiLikeSettings::default()
+    };
     let policy = OpenAiLikeResponsesPolicy { settings };
     assert!(policy.settings.api_key.is_some());
     let headers = Headers::from([("X-Trace".to_owned(), "1".to_owned())]);
