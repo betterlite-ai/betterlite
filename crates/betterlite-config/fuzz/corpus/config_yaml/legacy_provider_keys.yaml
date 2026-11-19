@@ -1,0 +1,2 @@
+litellm_settings:
+  aleph_alpha_key: os.environ/LEGACY_ALEPH_ALPHA_KEY
