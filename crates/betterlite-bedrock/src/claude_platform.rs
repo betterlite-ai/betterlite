@@ -49,6 +49,7 @@ pub fn require_workspace(
 }
 
 // `api_key or get_secret_str("ANTHROPIC_AWS_API_KEY")`: Python's `or` drops an empty request key.
+#[must_use]
 pub fn resolve_api_key(
     requested: Option<&SecretString>,
     environment: &PlatformEnvironment,

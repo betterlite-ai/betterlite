@@ -4,6 +4,7 @@ use betterlite_anthropic::stream_state::state::{IdSource, StreamOptions, StreamS
 use indexmap::IndexMap;
 
 // get_model_response_iterator: the shared Anthropic SSE iterator, never the AWS binary event decoder.
+#[must_use]
 pub fn get_model_response_iterator<Source, Counter>(
     streaming_response: Source,
     sync_stream: bool,

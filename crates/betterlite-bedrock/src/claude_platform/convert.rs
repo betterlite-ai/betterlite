@@ -35,11 +35,29 @@ pub fn prompt_messages(messages: &[Json]) -> Result<Vec<PromptJson>, serde_json:
         .collect()
 }
 
+#[must_use]
 pub fn contract_params(params: &IndexMap<String, PromptJson>) -> IndexMap<String, Json> {
     params
         .iter()
-        .map(|(key, value)| (key.clone(), Json::from(value)))
+        .map(|(key, value)| (key.clone(), contract_value(value)))
         .collect()
+}
+
+// The same JSON tree in the decision type; Number clones keep the tokens serde's visitor would reject.
+fn contract_value(input: &PromptJson) -> Json {
+    match input {
+        PromptJson::Null => Json::Null,
+        PromptJson::Bool(flag) => Json::Bool(*flag),
+        PromptJson::Number(number) => Json::Number(number.clone()),
+        PromptJson::Text(text) => Json::Text(text.clone()),
+        PromptJson::List(items) => Json::List(items.iter().map(contract_value).collect()),
+        PromptJson::Object(fields) => Json::Object(
+            fields
+                .iter()
+                .map(|(name, value)| (name.clone(), contract_value(value)))
+                .collect(),
+        ),
+    }
 }
 
 // LiteLLM accepts a list, set, frozenset or tuple of names and warns about every other JSON shape.
