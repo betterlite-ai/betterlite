@@ -63,3 +63,10 @@ path = "fuzz_targets/foundry_agent_runs.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "foundry_passthrough"
+path = "fuzz_targets/foundry_passthrough.rs"
+test = false
+doc = false
+bench = false
