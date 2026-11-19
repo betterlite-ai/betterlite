@@ -1,0 +1,27 @@
+task: B2417
+deviations:
+  - what: "The delete pre-call records input=\"\" where LiteLLM passes the built-in input function; the HTTP status, body and headers are unchanged."
+    why: "The accidental callable cannot be represented as request data in the typed logging boundary, and no pre-call consumer can use a Python builtin as an input."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L2963-L2973"
+  - what: "A send failure whose exception carries no integer status becomes a provider error with status_code_is_synthesized=true. LiteLLM's responses get_error_class raises BaseLLMException itself, so the handler's later assignment to the flag never runs and an OpenAI setup always observes false."
+    why: "The flag is the only signal that the 500 was made up; false would claim the provider answered 500, and no working setup can rely on LiteLLM's unreachable assignment."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6104-L6111"
+  - what: "A 2xx reply that is not the resource's JSON fails with a typed Resource or ReplyText error that names the parse. LiteLLM raises OpenAIError carrying the reply's status and text for a body that does not parse, and a pydantic ValidationError or TypeError for a body that parses but does not fit."
+    why: "The provider answered success; betterlite refuses to turn its own parse failure into a provider error that claims a status the provider never sent."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/transformation.py#L787-L791"
+  - what: "An error body or header value that is not UTF-8 renders as \"{bytes} bytes that are not UTF-8\", where LiteLLM reads the body through response.text and the header values as httpx strings."
+    why: "betterlite records both as JSON text; replacement characters hide that the bytes were binary, and the byte count keeps the record truthful without inventing text."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6082-L6085"
+  - what: "A complete base URL that does not parse as a URL, or a caller header name or value HTTP cannot carry, fails with the typed RequestUrl, HeaderName or HeaderValue error before the send. LiteLLM reaches the send, and the client's own InvalidURL or encoding error becomes a synthesized 500 provider error."
+    why: "Nothing reaches the network on either side; betterlite names the unusable input instead of reporting a 500 as if the provider had answered."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L3071-L3078"
+  - what: "The async \"Creating HTTP client\" debug line renders shared_session as Some or None, where LiteLLM prints id(shared_session) or None."
+    why: "The session id is a process-local integer that no log reader can act on, and betterlite's pooled client is not an aiohttp session; presence is the only portable fact."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L2928-L2932"
+kept_bugs:
+  - what: Caller extra_headers cannot override Authorization or Content-Type. Validation mutates the caller's map in place (provider Bearer key, application/json), and the handler's later headers.update re-applies that same, already rewritten map, so the caller's values are gone.
+    why: A setup passing its own Authorization gets the provider key on the wire, and code depending on that would send the wrong credential if the caller's header won.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L3031-L3036
+  - what: Both handlers accept extra_body and never merge it into the transformed payload, so a caller sending extra_body silently gets an unchanged body.
+    why: A working setup passes extra_body today and gets it ignored; merging it now would change request bodies that deployments have always sent unmerged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L2995-L3008
