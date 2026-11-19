@@ -37,10 +37,31 @@ enum Action {
 #[derive(Default, Deserialize)]
 #[serde(default)]
 struct Flags {
+    #[serde(flatten)]
+    debug: DebugFlags,
+    #[serde(flatten)]
+    raw: RawFlags,
+    #[serde(flatten)]
+    failures: FailureFlags,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(default)]
+struct DebugFlags {
     verbose: bool,
     request_debug: bool,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(default)]
+struct RawFlags {
     log_raw_request_response: bool,
     raw_request_only: bool,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(default)]
+struct FailureFlags {
     failing_callback: bool,
     failing_logger_fn: bool,
 }
@@ -81,16 +102,36 @@ const fn default_original_response() -> Json {
 
 struct Recorder {
     events: Mutex<Vec<Value>>,
-    failing: bool,
+    failing_callback: bool,
+    failing_logger_fn: bool,
 }
 
 impl Recorder {
     fn finish(&self, entry: Value) -> Result<(), PrePostError> {
-        let mut events = self.events.lock().unwrap_or_else(PoisonError::into_inner);
-        events.push(entry);
-        if self.failing {
+        self.events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(entry);
+        if self.failing_callback {
             return Err(PrePostError::CallbackFailed {
                 message: "callback exploded".to_owned(),
+            });
+        }
+        Ok(())
+    }
+
+    fn log_fn(&self, details: &Json) -> Result<(), PrePostError> {
+        self.events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(serde_json::json!({
+                "kind": "logger_fn",
+                "log_event_type": detail(details, "log_event_type"),
+                "input": detail(details, "input"),
+            }));
+        if self.failing_logger_fn {
+            return Err(PrePostError::CallbackFailed {
+                message: "logger_fn exploded".to_owned(),
             });
         }
         Ok(())
@@ -111,12 +152,14 @@ impl LogSink for Recorder {
             LogLevel::Warning => "warning",
             LogLevel::Error => "error",
         };
-        let mut events = self.events.lock().unwrap_or_else(PoisonError::into_inner);
-        events.push(serde_json::json!({
-            "kind": "log",
-            "level": level,
-            "message": record.message,
-        }));
+        self.events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(serde_json::json!({
+                "kind": "log",
+                "level": level,
+                "message": record.message,
+            }));
     }
 }
 
@@ -147,10 +190,11 @@ impl Helper for Op {
         let scrubber =
             Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(|error| failure(error.to_string()))?;
         let mut state = build_state(input, &scrubber)?;
-        state.litellm_request_debug = input.flags.request_debug;
+        state.litellm_request_debug = input.flags.debug.request_debug;
         let recorder = Recorder {
             events: Mutex::new(Vec::new()),
-            failing: input.flags.failing_callback,
+            failing_callback: input.flags.failures.failing_callback,
+            failing_logger_fn: input.flags.failures.failing_logger_fn,
         };
         let error = dispatch(input, &mut state, &recorder, &scrubber)?;
         Ok(output(&state, &recorder, &error))
@@ -179,8 +223,8 @@ fn build_state(input: &Input, redactor: &Redactor) -> Result<LoggingState, Box<H
         "messages": input.messages,
         "litellm_params": input.litellm_params,
         "request_logging": {
-            "log_raw_request_response": input.flags.log_raw_request_response,
-            "raw_request_only": input.flags.raw_request_only,
+            "log_raw_request_response": input.flags.raw.log_raw_request_response,
+            "raw_request_only": input.flags.raw.raw_request_only,
         },
     }))
     .map_err(|error| failure(error.to_string()))?;
@@ -204,25 +248,9 @@ fn dispatch(
     scrubber: &Redactor,
 ) -> Result<Value, Box<HelperError>> {
     let callbacks = [InputCallback::Logger(recorder)];
-    let logger_fn = |details: &Json| {
-        let mut events = recorder
-            .events
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        events.push(serde_json::json!({
-            "kind": "logger_fn",
-            "log_event_type": detail(details, "log_event_type"),
-            "input": detail(details, "input"),
-        }));
-        if input.flags.failing_logger_fn {
-            return Err(PrePostError::CallbackFailed {
-                message: "logger_fn exploded".to_owned(),
-            });
-        }
-        Ok(())
-    };
+    let logger_fn = |details: &Json| recorder.log_fn(details);
     let debug = DebugSettings {
-        verbose: input.flags.verbose,
+        verbose: input.flags.debug.verbose,
         json_logs: false,
     };
     let globals = GlobalFlags {
