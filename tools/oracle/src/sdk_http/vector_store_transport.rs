@@ -30,7 +30,7 @@ pub enum Mode {
 }
 
 impl Mode {
-    fn client_kind(self) -> ClientKind {
+    const fn client_kind(self) -> ClientKind {
         match self {
             Self::Sync => ClientKind::Sync,
             Self::Asynchronous => ClientKind::Asynchronous,
@@ -56,7 +56,7 @@ pub struct Call {
 }
 
 impl Call {
-    fn logging_call_type(&self) -> &'static str {
+    const fn logging_call_type(&self) -> &'static str {
         match self.operation {
             Operation::Update => "vector_store_update",
             Operation::Delete => "vector_store_delete",
