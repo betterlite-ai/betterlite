@@ -38,6 +38,12 @@ async def update_deny_null_message(data):
 async def update_deny_bad_message(data):
     return {"decision": False, "message": 5}
 
+async def update_seen_alias(data):
+    return {"decision": False, "message": "{}|{}".format(data.get("key_alias"), data.get("duration"))}
+
+async def policy_seen_fields(data):
+    return {"decision": False, "message": "{}|{}|{}".format(data.get("operation"), data.get("request", {}).get("key_alias"), data.get("effective_key", {}).get("key_alias"))}
+
 async def update_bad_decision(data):
     return {"decision": "yes"}
 
@@ -205,6 +211,38 @@ async fn decision_default_and_custom_denial() {
     assert!(
         allowed.is_ok(),
         "an allowing policy hook passes: {allowed:?}"
+    );
+    service.shutdown().await;
+}
+
+#[tokio::test]
+async fn update_hook_receives_request_dump() {
+    let workspace = workspace();
+    let service = PythonHooks::new(Some(workspace.config));
+    let hook = load(&service, HookSlot::CustomKeyUpdate, "update_seen_alias").await;
+    let data = update_request(r#"{"key_alias":"alias"}"#);
+    let error = enforce_key_update_hook(Some(&hook), &data)
+        .await
+        .unwrap_err();
+    // the hook sees the request model's dump, so its absent duration arrives as a null
+    assert!(
+        matches!(&error, HookPolicyError::Denied { message } if message == "alias|None"),
+        "{error}"
+    );
+    service.shutdown().await;
+}
+
+#[tokio::test]
+async fn policy_hook_receives_nested_request() {
+    let workspace = workspace();
+    let service = PythonHooks::new(Some(workspace.config));
+    let hook = load(&service, HookSlot::CustomKeyPolicy, "policy_seen_fields").await;
+    let error = enforce_key_policy_hook(Some(&hook), policy_request)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&error, HookPolicyError::Denied { message } if message == "update|new|new"),
+        "{error}"
     );
     service.shutdown().await;
 }
