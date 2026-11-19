@@ -18,7 +18,7 @@ use crate::api::compression_interception::engine::{
 };
 use crate::api::compression_interception::hook::CompressionInterception;
 use crate::api::compression_interception::tools::CONTENT_RETRIEVE_TOOL_NAME;
-use crate::api::compression_retrieval_loop::plan::{RetrievalLoopError, RetrievalLoopRequest};
+use crate::api::compression_retrieval_loop::plan::RetrievalLoopRequest;
 
 pub(super) const MODEL: &str = "claude-sonnet-4";
 pub(super) const NOW: f64 = 1_000.0;
@@ -198,26 +198,13 @@ pub(super) fn plan(
         .expect("the plan builds")
 }
 
-pub(super) fn plan_error(
-    interception: &CompressionInterception<IdleEngine>,
-    tools: &IndexMap<String, Json>,
-    request: &RetrievalLoopRequest<'_>,
-) -> RetrievalLoopError {
-    interception
-        .build_agentic_loop_plan(tools, request)
-        .expect_err("the plan fails")
-}
-
 pub(super) fn raw_map(pairs: Vec<(&str, Json)>) -> JsonMap {
-    pairs
-        .into_iter()
-        .map(|(key, value)| {
-            (
-                key.to_owned(),
-                to_raw_value(&value).expect("the value serializes"),
-            )
-        })
-        .collect()
+    let mut map = JsonMap::new();
+    for (key, value) in pairs {
+        let raw = to_raw_value(&value).expect("the value serializes");
+        map.insert(key.to_owned(), raw);
+    }
+    map
 }
 
 pub(super) fn raw_json(map: &JsonMap) -> IndexMap<String, Json> {

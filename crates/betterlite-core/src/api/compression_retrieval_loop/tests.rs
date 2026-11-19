@@ -9,9 +9,9 @@ use super::gate::extract_retrieval_blocks;
 use super::plan::{RetrievalLoopError, followup_kwargs, retrieval_content};
 use support::{
     MODEL, NOW, cache_map, followups, index, interception, interception_at, list, logging,
-    loop_tools, manual_clock, number, object, other_tools, plan, plan_error, raw_json, raw_map,
-    request, response, retrieval_block, retrieval_call, retrieval_tools, text, tool_result,
-    tool_results, tool_use,
+    loop_tools, manual_clock, number, object, other_tools, plan, raw_json, raw_map, request,
+    response, retrieval_block, retrieval_call, retrieval_tools, text, tool_result, tool_results,
+    tool_use,
 };
 
 mod support;
@@ -599,11 +599,9 @@ fn plan_model_falls_back_for_null_and_rejects_other_types() {
         call_id: None,
         agentic_loop_params: Some(raw_map(vec![("model", number(4))])),
     };
-    let error = plan_error(
-        &interception,
-        &tools,
-        &request(&[], &params, Some(&wrong_model), &kwargs),
-    );
+    let error = interception
+        .build_agentic_loop_plan(&tools, &request(&[], &params, Some(&wrong_model), &kwargs))
+        .expect_err("the plan fails");
     assert!(matches!(
         error,
         RetrievalLoopError::FieldType { field: "model" }
@@ -644,7 +642,9 @@ fn plan_rejects_a_typed_max_tokens_with_the_field_name() {
     let kwargs = index(Vec::new());
     let tools = loop_tools(Vec::new(), Vec::new());
     let params = index(vec![("max_tokens", text("many"))]);
-    let error = plan_error(&interception, &tools, &request(&[], &params, None, &kwargs));
+    let error = interception
+        .build_agentic_loop_plan(&tools, &request(&[], &params, None, &kwargs))
+        .expect_err("the plan fails");
     assert!(matches!(
         error,
         RetrievalLoopError::FieldType {
@@ -652,11 +652,9 @@ fn plan_rejects_a_typed_max_tokens_with_the_field_name() {
         }
     ));
     let negative = index(vec![("max_tokens", number(-1))]);
-    let error = plan_error(
-        &interception,
-        &tools,
-        &request(&[], &negative, None, &kwargs),
-    );
+    let error = interception
+        .build_agentic_loop_plan(&tools, &request(&[], &negative, None, &kwargs))
+        .expect_err("the plan fails");
     assert!(matches!(
         error,
         RetrievalLoopError::FieldType {
@@ -674,11 +672,9 @@ fn plan_rejects_typed_tools_with_the_field_name() {
         ("tool_calls", list(Vec::new())),
         ("thinking_blocks", text("none")),
     ]);
-    let error = plan_error(
-        &interception,
-        &wrong_blocks,
-        &request(&[], &params, None, &kwargs),
-    );
+    let error = interception
+        .build_agentic_loop_plan(&wrong_blocks, &request(&[], &params, None, &kwargs))
+        .expect_err("the plan fails");
     assert!(matches!(
         error,
         RetrievalLoopError::FieldType {
@@ -686,11 +682,9 @@ fn plan_rejects_typed_tools_with_the_field_name() {
         }
     ));
     let wrong_calls = index(vec![("tool_calls", text("none"))]);
-    let error = plan_error(
-        &interception,
-        &wrong_calls,
-        &request(&[], &params, None, &kwargs),
-    );
+    let error = interception
+        .build_agentic_loop_plan(&wrong_calls, &request(&[], &params, None, &kwargs))
+        .expect_err("the plan fails");
     assert!(matches!(
         error,
         RetrievalLoopError::FieldType {
