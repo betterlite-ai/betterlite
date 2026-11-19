@@ -1,5 +1,4 @@
 use betterlite_models::decisions::Json;
-use secrecy::SecretString;
 
 use super::config::Params;
 use super::error::SearchError;
@@ -19,10 +18,6 @@ pub(super) fn text<'params>(
             })
         }
     }
-}
-
-pub(super) fn api_key(params: &Params) -> Result<Option<SecretString>, SearchError> {
-    text(params, "api_key").map(|value| value.map(SecretString::from))
 }
 
 pub(super) fn ssl_verify(params: &Params) -> Result<Option<bool>, SearchError> {

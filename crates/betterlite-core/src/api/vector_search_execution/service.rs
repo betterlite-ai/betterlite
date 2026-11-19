@@ -9,7 +9,7 @@ use betterlite_openai::api::vector_store_records::records::vector::VectorStoreSe
 use betterlite_openai::vector_stores::Headers as OpenAiHeaders;
 use http::header::{HeaderName, HeaderValue};
 use http::{HeaderMap as HttpHeaders, Method};
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 use url::Url;
 
 use self::logging::log_http;
@@ -20,7 +20,7 @@ use super::config::{
     VectorStoreResponse,
 };
 use super::error::{SearchError, TIMEOUT_MESSAGE, convert_error, reply_facts, transport_facts};
-use super::params::{api_key, ssl_verify};
+use super::params::{ssl_verify, text};
 use crate::api::vector_store_http_write::error::{HeaderMap, header_text};
 use crate::api::vector_store_http_write::service::{
     ClientKind, ClientSource, LogContext, SuppliedClient, WriteRequest, WriteTransport,
@@ -92,7 +92,7 @@ where
         optional_params: merged_params(call.litellm_params, call.optional_params),
         request_data: body.clone(),
         api_base: url.clone(),
-        api_key: api_key(call.litellm_params)?,
+        api_key: text(call.litellm_params, "api_key")?.map(SecretString::from),
     };
     let (headers, signed) = sign(deps.config.clone(), seam, mode, input).await?;
     log_http(&api_base, &headers, &body, log)?;

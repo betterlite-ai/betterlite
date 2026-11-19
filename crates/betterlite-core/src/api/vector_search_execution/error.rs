@@ -70,20 +70,8 @@ pub struct SigningFailure {
 
 // A direct store's own exception, which the handler passes through without HTTP error conversion
 #[derive(Debug, Error)]
-#[error("{message}")]
-pub struct DirectFailure {
-    pub message: String,
-    #[source]
-    pub source: Box<dyn Error + Send + Sync>,
-}
-
-impl DirectFailure {
-    #[must_use]
-    pub fn new(source: Box<dyn Error + Send + Sync>) -> Self {
-        let message = source.to_string();
-        Self { message, source }
-    }
-}
+#[error("{0}")]
+pub struct DirectFailure(#[source] pub Box<dyn Error + Send + Sync>);
 
 // B2402's converter decides the status, text and headers; this config only picks the exception class they land in
 #[must_use]

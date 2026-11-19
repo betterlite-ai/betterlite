@@ -114,17 +114,17 @@ pub trait SearchConfig: Send + Sync {
 // The two members a query-embedding config adds to the search transform
 #[async_trait]
 pub trait QueryEmbeddingConfig: SearchConfig {
-    fn transform_query_search_request(
+    fn transform_query_search(
         &self,
         request: QuerySearchRequest<'_>,
     ) -> Result<PreparedSearch, SearchError>;
 
     // LiteLLM's async default hands every argument, the executor included, to the sync transform once
-    async fn atransform_query_search_request(
+    async fn atransform_query_search(
         &self,
         request: QuerySearchRequest<'_>,
     ) -> Result<PreparedSearch, SearchError> {
-        self.transform_query_search_request(request)
+        self.transform_query_search(request)
     }
 }
 

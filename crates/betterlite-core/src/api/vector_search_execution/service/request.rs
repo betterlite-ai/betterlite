@@ -55,8 +55,8 @@ pub(super) async fn transform(
             embedding_executor: call.embedding_executor,
         };
         return match mode {
-            ClientKind::Asynchronous => query_config.atransform_query_search_request(request).await,
-            ClientKind::Sync => query_config.transform_query_search_request(request),
+            ClientKind::Asynchronous => query_config.atransform_query_search(request).await,
+            ClientKind::Sync => query_config.transform_query_search(request),
         };
     }
     let request = search_request(call, api_base, call.litellm_params, logging);

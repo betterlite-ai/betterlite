@@ -13,7 +13,7 @@ use super::config::{
     VectorStoreLogging, VectorStoreResponse,
 };
 use super::error::{BaseLlmException, HeaderMap, SearchError};
-use super::params::{api_key, boolean, integer, present, text};
+use super::params::{boolean, integer, present, text};
 
 // OpenAIVectorStoreConfig's search members over B527, which owns the credential and body shapes
 pub struct OpenAiSearchConfig {
@@ -46,7 +46,7 @@ impl SearchConfig for OpenAiSearchConfig {
         headers: Headers,
         litellm_params: &Params,
     ) -> Result<Headers, SearchError> {
-        let explicit = api_key(litellm_params)?;
+        let explicit = text(litellm_params, "api_key")?.map(SecretString::from);
         Ok(openai_validate_environment(
             headers,
             explicit,
