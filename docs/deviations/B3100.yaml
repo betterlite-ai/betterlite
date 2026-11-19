@@ -1,0 +1,36 @@
+task: B3100
+deviations:
+  - what: >-
+      The three analytics queries bind their values as native PostgreSQL parameters ($1 start date, $2 end
+      date, then one $n per exact tag or one $3 for the substring pattern), where LiteLLM interpolates the
+      end date into the weekly SQL text and the tag conditions are the only values it binds.
+    why: >-
+      A bound value cannot change the statement, so an injected tag can only be compared as text; the
+      parameter indices match the count and order of the values handed to the driver.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L263-L288
+  - what: >-
+      week_offset, period_start, period_end and the "Week N (Mon DD)" label are computed in Rust with chrono
+      from the row's integer week_offset, where LiteLLM computes the week difference with FLOOR, formats the
+      label with TO_CHAR and returns the period boundaries as text columns of the SQL result.
+    why: >-
+      The query returns the integer offset PostgreSQL computes and chrono renders the same text: "Week 7
+      (Jan 05)" for the period 2026-01-05 to 2026-01-11. Integer division equals FLOOR here because every row
+      lies between start_date and end_date, so the difference is never negative.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L383-L402
+kept_bugs:
+  - what: >-
+      The daily window ends at UTC today plus one day and the query compares dts.date <= end_date, so the
+      "last 7 days" report covers eight calendar dates (2026-01-04 through 2026-01-11 for a clock on
+      2026-01-10) and reads the whole future end date.
+    why: >-
+      A working dashboard reads that date range and expects the extra day rather than a seven-date window,
+      so betterlite computes the same end boundary and keeps the inclusive comparison.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L255-L263
+  - what: >-
+      The weekly report orders rows by week_offset descending, which returns the oldest of the seven weeks
+      first (labels "Week 1" through "Week 7"), while the endpoint's own docstring says the most recent week
+      comes first.
+    why: >-
+      The label numbers and the returned order are what a working dashboard renders, so betterlite keeps
+      LiteLLM's order and its labels instead of reversing the list to match the docstring.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L399-L401
