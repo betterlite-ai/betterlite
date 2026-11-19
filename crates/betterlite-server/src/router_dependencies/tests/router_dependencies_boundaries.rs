@@ -13,7 +13,8 @@ fn rejected_location(config: &str) -> String {
     match validate_config_write(Some(&json(config))) {
         Err(
             ComplexityConfigWriteError::Invalid { location, .. }
-            | ComplexityConfigWriteError::InvalidField { location, .. },
+            | ComplexityConfigWriteError::InvalidField { location, .. }
+            | ComplexityConfigWriteError::InvalidTierEntry { location },
         ) => location,
         other => panic!("expected a rejected config, got {other:?}"),
     }
@@ -286,7 +287,17 @@ fn a_config_write_names_the_failing_location(#[case] config: &str, #[case] expec
 #[case::window_type(r#"{"stall_escalation_window":-1}"#, "stall_escalation_window")]
 #[case::tier_pool_model_name_type(
     r#"{"tiers":{"SIMPLE":["x",{"model_name":true,"litellm_params":{"temperature":1}}]}}"#,
-    "tiers.SIMPLE"
+    "tiers.SIMPLE.1"
+)]
+#[case::tier_pool_entry_list(r#"{"tiers":{"SIMPLE":[["x"]]}}"#, "tiers.SIMPLE.0")]
+#[case::tier_pool_entry_number(r#"{"tiers":{"SIMPLE":["x",1]}}"#, "tiers.SIMPLE.1")]
+#[case::tier_pool_entry_params_type(
+    r#"{"tiers":{"SIMPLE":["x",{"model_name":"y","litellm_params":"nope"}]}}"#,
+    "tiers.SIMPLE.1"
+)]
+#[case::tier_models_alias_pool(
+    r#"{"tier_models":{"SIMPLE":["x",{"model_name":true}]}}"#,
+    "tier_models.SIMPLE.1"
 )]
 fn a_config_write_reads_every_field_at_its_own_path(#[case] config: &str, #[case] expected: &str) {
     assert_eq!(rejected_location(config), expected);
@@ -350,6 +361,7 @@ fn a_config_write_that_is_not_an_object_says_so(#[case] config: &str) {
 #[case::tier_pool_integer_param(
     r#"{"tiers":{"SIMPLE":["x",{"model_name":"y","litellm_params":{"temperature":1}}]}}"#
 )]
+#[case::tier_pool_single_detailed(r#"{"tiers":{"SIMPLE":[{"model_name":"y"}]}}"#)]
 fn a_config_write_accepts_the_edge_shapes_the_load_accepts(#[case] accepted: &str) {
     let judged = validate_config_write(Some(&json(accepted)));
     assert!(judged.is_ok(), "{accepted}: {judged:?}");
@@ -366,6 +378,7 @@ fn a_config_write_rule_error_keeps_the_rule_as_its_cause() {
         }
         other @ (ComplexityConfigWriteError::NotAnObject
         | ComplexityConfigWriteError::InvalidField { .. }
+        | ComplexityConfigWriteError::InvalidTierEntry { .. }
         | ComplexityConfigWriteError::Unreadable { .. }) => {
             panic!("expected an invalid config, got {other:?}")
         }

@@ -305,3 +305,11 @@ probes:
       router_dependencies:
         check: config_write
         complexity_router_config: {future_key: 1}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_dependencies:
+        check: config_write
+        complexity_router_config:
+          tiers:
+            SIMPLE: [x, {model_name: true, litellm_params: {temperature: 1}}]
