@@ -87,6 +87,7 @@ async fn direct_search_bypasses_http(#[case] case: direct::DirectCase) {
 #[case::status(errors::ErrorCase::Status)]
 #[case::bad_request(errors::ErrorCase::BadRequest)]
 #[case::wrong_type(errors::ErrorCase::WrongType)]
+#[case::non_utf8(errors::ErrorCase::NonUtf8)]
 #[case::transport(errors::ErrorCase::Transport)]
 #[case::transform(errors::ErrorCase::Transform)]
 #[tokio::test]

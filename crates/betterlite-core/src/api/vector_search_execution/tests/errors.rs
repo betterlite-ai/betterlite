@@ -5,6 +5,7 @@ use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::serve;
 use betterlite_models::decisions::Json;
+use http::{HeaderMap, HeaderValue};
 
 use super::openai_search_config;
 use super::support::{
@@ -24,6 +25,7 @@ pub(super) enum ErrorCase {
     Status,
     BadRequest,
     WrongType,
+    NonUtf8,
     Transport,
     Transform,
 }
@@ -41,6 +43,7 @@ pub(super) async fn errors_case(case: ErrorCase) {
         ErrorCase::Status => status_case(429, "slow").await,
         ErrorCase::BadRequest => status_case(400, "slow").await,
         ErrorCase::WrongType => wrong_type_case().await,
+        ErrorCase::NonUtf8 => non_utf8_case().await,
         ErrorCase::Transport => provider_failure_case(FailureKind::Transport).await,
         ErrorCase::Transform => provider_failure_case(FailureKind::Transform).await,
     }
@@ -167,6 +170,46 @@ async fn wrong_type_case() {
     assert_eq!(expected, "an integer");
     assert!(events.recorded().is_empty());
     assert!(wire.requests().is_empty());
+}
+
+async fn non_utf8_case() {
+    let events = Events::new();
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        "x-binary",
+        HeaderValue::from_bytes(&[0xff]).expect("the header value is opaque"),
+    );
+    let wire = Wire::replying(
+        Reply {
+            status: 500,
+            headers,
+            body: vec![0xff, 0xfe],
+        },
+        &events,
+    );
+    let source = Source::new(wire.clone());
+    let deps = SearchDeps {
+        config: Arc::new(openai_search_config()),
+        source: &source,
+        supplied: None,
+    };
+    let litellm_params = params(r#"{"api_base":"http://mock.test/v1"}"#);
+    let query = SearchQuery::Text("a".to_owned());
+    let optional_params = params("{}");
+    let call = error_call(&query, &optional_params, &litellm_params);
+    let mut fixture = Fixture::new("vector_store_search", &events);
+    let Err(SearchError::Provider(error)) = fixture
+        .search(&deps, &ThreadedSeam, ClientKind::Sync, &call)
+        .await
+    else {
+        panic!("a non-2xx reply is a provider error");
+    };
+    assert_eq!(error.status_code, 500);
+    assert_eq!(error.message, "2 bytes that are not UTF-8");
+    assert_eq!(
+        error.headers.get("x-binary"),
+        Some(&Json::Text("1 bytes that are not UTF-8".to_owned()))
+    );
 }
 
 async fn provider_failure_case(kind: FailureKind) {
