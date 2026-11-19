@@ -1,0 +1,17 @@
+kind: helper
+name: storage-file-projection-corpus
+call:
+  file_storage_service:
+    operation: projection
+    content: abc
+    filename: a.bin
+    content_type: text/plain
+    purpose: batch
+    target_storage: litellm_db
+    storage_url: "litellm_db://r"
+    target_model_names: []
+    environment: {}
+    now: 1234.9
+    uuid: "12345678-1234-5678-1234-567812345678"
+env: {}
+compare: {ignore: []}

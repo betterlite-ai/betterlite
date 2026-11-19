@@ -145,6 +145,7 @@ fn dashboard_seed(logs: Vec<SpendLogSeed>) -> FixtureSeed {
         jwt_mappings: Vec::new(),
         daily_usage: None,
         finops: None,
+        scim: None,
         discovery_skills: None,
         search_tools: None,
         dashboard: Some(DashboardSeed { logs }),
