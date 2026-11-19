@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::future::Future;
 use std::sync::{Arc, Mutex};
 
 use betterlite_config::sections::resource_sdk_settings::Settings as ConfiguredSettings;
@@ -88,7 +89,10 @@ impl Fake {
 impl FineTuningReadDispatch for Fake {
     type Error = FakeError;
 
-    fn read(&self, target: ReadTarget<'_>) -> std::future::Ready<Result<Vec<u8>, Self::Error>> {
+    fn read(
+        &self,
+        target: ReadTarget<'_>,
+    ) -> impl Future<Output = Result<Vec<u8>, Self::Error>> + Send {
         let mut state = self.state.lock().expect("the fake state");
         state.calls.push(record(&target));
         let answer = state
