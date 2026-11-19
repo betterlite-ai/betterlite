@@ -635,6 +635,7 @@ fn missing_content_type_takes_the_json_branch() {
 #[case::off_alphabet_inside("aGVs*bG8=", Some(b"hello".as_slice()))]
 #[case::off_alphabet_after_padding("aGVsbG8=!", Some(b"hello".as_slice()))]
 #[case::padding_inside_a_quad("QU=JD", Some(b"ABC".as_slice()))]
+// CPython 3.13 reads on after a completed pad run, so the second QQ is decoded too
 #[case::padding_between_quads("QQ==QQ==", Some([0x41_u8, 0x04, 0x10].as_slice()))]
 #[case::whitespace("\nQ U J\tD\r\n", Some(b"ABC".as_slice()))]
 fn base64_decodes(#[case] input: &str, #[case] expected: Option<&[u8]>) {
@@ -652,6 +653,8 @@ fn base64_decodes(#[case] input: &str, #[case] expected: Option<&[u8]>) {
 #[case::padding_before_three_characters("=QUJ", Base64DecodeError::IncorrectPadding)]
 #[case::non_ascii("\u{e9}", Base64DecodeError::NonAscii)]
 #[case::non_ascii_after_data("QUJD\u{e9}", Base64DecodeError::NonAscii)]
+#[case::data_after_a_pad_run("QQ==QUJD", Base64DecodeError::IncorrectPadding)]
+#[case::pads_do_not_end_the_decode("ab==a", Base64DecodeError::IncorrectPadding)]
 fn base64_rejects(#[case] input: &str, #[case] expected: Base64DecodeError) {
     assert_eq!(decode(input), Err(expected));
 }

@@ -14,7 +14,7 @@ pub enum Base64DecodeError {
     OneModuloFour { characters: usize },
 }
 
-// CPython's base64.b64decode outside strict mode drops bytes off the alphabet, lets a trailing '=' run complete the last group, and rejects a lone final character by its count
+// CPython's base64.b64decode outside strict mode drops bytes off the alphabet, keeps reading past a completed '=' run (3.12 stopped there), lets the trailing run complete the last group, and rejects a lone final character by its count
 pub(super) fn decode(text: &str) -> Result<Vec<u8>, Base64DecodeError> {
     if !text.is_ascii() {
         return Err(Base64DecodeError::NonAscii);
