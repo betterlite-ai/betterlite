@@ -1,0 +1,81 @@
+task: B3616
+deviations:
+  - what: >-
+      An endpoint whose raw dict has no auth field, or an explicit null, registers
+      unauthenticated. The typed PassThroughGenericEndpoint model defaults auth to true, and
+      LiteLLM's database read path validates rows into that model before registration, so a
+      database endpoint stored without auth is protected there.
+    why: >-
+      The config file path registers the raw general_settings.pass_through_endpoints dicts, where
+      an absent auth is falsy, and betterlite uses one endpoint type for both sources. Applying
+      the typed default would silently turn on auth for endpoints an operator left open.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2532-L2535
+  - what: >-
+      A LANGFUSE_PUBLIC_KEY or LANGFUSE_SECRET_KEY header that is missing, is not a string, or
+      holds an os.environ/ reference that does not resolve fails registration with a typed error
+      naming the header.
+    why: >-
+      LiteLLM raises KeyError when one of the pair is absent and otherwise base64-encodes the
+      text "None" or the non-string value into the Authorization header, which reaches the target
+      as a broken credential. Failing where the configuration is read reports the mistake once,
+      at startup, instead of on every forwarded request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L170-L181
+  - what: >-
+      An auth value that is not a boolean, a string or null (a number, list or object) fails
+      registration with an error naming the field.
+    why: >-
+      LiteLLM compares str(auth).lower() with "true", so auth 1 is silently read as
+      unauthenticated. betterlite's compatibility rules make a wrong field type an error instead
+      of guessing, so a mistyped auth cannot leave an endpoint open by accident.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3274-L3276
+  - what: >-
+      An auth-enforced route stores no authentication dependency. Its path is added to
+      openai_routes and the shared auth stage protects it; the registered entry carries the
+      endpoint metadata, the passthrough params and config_file_path only.
+    why: >-
+      LiteLLM attaches Depends(user_api_key_auth) to the FastAPI route and passes it through
+      add_api_route. An axum router cannot gain a per-route dependency after it serves, so the
+      dispatch calls the route factory after the auth stage has run, which is how B8643 describes
+      the call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3278-L3285
+  - what: >-
+      When a registration cycle drops an endpoint, its path leaves openai_routes once no live
+      registration owns it, and a subpath wildcard leaves too once no live subpath registration
+      has the same base. Paths that are part of the static OPENAI_ROUTES list are never removed.
+    why: >-
+      LiteLLM pops the stale registry key and leaves openai_routes alone, which keeps a path that
+      no longer has a route requiring an API key. The task's stale-removal rule asks for the
+      ownership test, and the static list is the base set of protected OpenAI paths that a
+      proxy reload must not shrink.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3404-L3411
+  - what: >-
+      Every exact and subpath entry stores the config_file_path its route was first installed
+      with, or the current call's value when the path and methods were already installed without
+      a remembered file path. A later call that passes None keeps the remembered value.
+    why: >-
+      LiteLLM keeps no config_file_path in its route metadata; the value lives in the endpoint
+      function the first add_api_route_if_not_exists installed, and SafeRouteAdder never replaces
+      that function, so a database reload that passes None still loads modules and s3:// handlers
+      from the original config file. In betterlite the entry is the only place the dispatch can
+      read the path, so it is stored there with the same first-install rule.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3020-L3037
+kept_bugs:
+  - what: >-
+      A path added to openai_routes by an auth-enforced endpoint stays protected after a later
+      reload registers the same live path with auth false, because the list is only appended to
+      and stale cleanup keeps paths a live registration still owns.
+    why: >-
+      The append checks membership by path and never removes, so an operator who flips auth to
+      false needs a process restart for it to take effect. A running proxy errs on the side of
+      keeping a route protected rather than opening it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3284-L3285
+  - what: >-
+      An endpoint without a target adds its path to openai_routes and then returns before any
+      route is installed, so the path requires an API key with no pass-through route behind it.
+      Nothing removes that entry on a later reload, since the endpoint never received a registry
+      key.
+    why: >-
+      LiteLLM checks the target after the auth block and returns, and the task requires that
+      order, including the side effect. Leaving the path protected is the safe residue: a request
+      for it is refused before the proxy reveals whether the route exists.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3284-L3288

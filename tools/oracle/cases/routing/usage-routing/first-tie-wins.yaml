@@ -1,0 +1,23 @@
+kind: probe
+name: usage-routing-first-tie-wins
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      usage_routing:
+        group: probe-group
+        deployments:
+          - {id: dep-a}
+          - {id: dep-b}
+        steps:
+          # a cold window starts every deployment at zero and the pool order decides the tie
+          - {kind: observe, now_millis: 1700000000000}
+          - {kind: select, now_millis: 1700000000000}
+          # dep-b is written before dep-a, so the window's insertion order decides the next tie
+          - {kind: success, now_millis: 1700000000000, deployment_id: dep-b, total_tokens: 10}
+          - {kind: success, now_millis: 1700000000000, deployment_id: dep-a, total_tokens: 10}
+          - {kind: observe, now_millis: 1700000000000}
+          - {kind: select, now_millis: 1700000000000}
+          # one more success on dep-b and the lower absolute count moves the pick to dep-a
+          - {kind: success, now_millis: 1700000000000, deployment_id: dep-b, total_tokens: 5}
+          - {kind: select, now_millis: 1700000000000}

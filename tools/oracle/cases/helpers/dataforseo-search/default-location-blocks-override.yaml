@@ -1,0 +1,12 @@
+kind: helper
+name: default_location_blocks_override
+call:
+  dataforseo_search:
+    calls:
+      - {kind: request, query: q, optional_params: {location_code: 2840}}
+      - {kind: request, query: q, optional_params: {country: France, location_code: 2840}}
+      - {kind: request, query: q, optional_params: {country: "", location_code: 2840}}
+      - {kind: request, query: q, optional_params: {country: null, location_code: 2840}}
+      - {kind: request, query: q, optional_params: {location_name: France}}
+env: {}
+compare: {ignore: []}
