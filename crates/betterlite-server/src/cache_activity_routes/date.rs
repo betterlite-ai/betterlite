@@ -1,7 +1,6 @@
 use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 
-// Python's strptime("%Y-%m-%d"): a four digit year, a one or two digit month and day,
-// a space in place of a one digit day's zero, and no text or whitespace around it.
+// CPython strptime("%Y-%m-%d"): four digit year, 1-2 digit month and day, no surrounding text.
 pub(crate) fn parse_date(value: &str) -> Option<DateTime<Utc>> {
     let (year_text, remainder) = value.split_once('-')?;
     let (month_text, day_text) = remainder.split_once('-')?;
@@ -37,10 +36,8 @@ fn parse_bounded_number(value: &str, maximum: u32) -> Option<u32> {
     (1_u32..=maximum).contains(&number).then_some(number)
 }
 
-// CPython's repr(str): single quotes unless the text holds a single quote and no double
-// quote, then double quotes; backslash, newline, tab, carriage return and control
-// characters are escaped.
-pub(crate) fn python_repr(value: &str) -> String {
+// CPython repr(str): quote choice plus backslash, newline, tab, carriage return and \xNN.
+pub(crate) fn quoted_value(value: &str) -> String {
     let quote = if value.contains('\'') && !value.contains('"') {
         '"'
     } else {

@@ -6,8 +6,7 @@ pub(crate) struct CacheActivityQuery {
     pub(crate) models: Vec<String>,
 }
 
-// Starlette reads a scalar parameter's last value and a repeated list parameter's
-// values in order.
+// Starlette keeps a scalar's last value and a list's values in order.
 pub(crate) fn decode(raw_query: Option<&str>) -> Result<CacheActivityQuery, Vec<&'static str>> {
     let mut start_date = None;
     let mut end_date = None;

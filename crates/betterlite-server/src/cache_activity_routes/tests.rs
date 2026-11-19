@@ -18,14 +18,14 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
 use tower::ServiceExt as _;
 
-use super::date::{parse_date, python_repr};
+use super::date::{parse_date, quoted_value};
 use super::model::{
     CacheActivityErrorBucket, CacheActivityGroup, CacheActivityResponse, CacheActivityRows,
     compute_totals,
 };
 use super::query::{CacheActivityQuery, decode};
+use super::routes;
 use super::store::{CacheActivityStore, DatabaseCacheActivityStore};
-use super::{CacheActivityState, routes};
 use crate::auth::auth_identity::AuthContext;
 
 #[derive(Parser)]
@@ -288,11 +288,7 @@ fn fake_store(handle: &Arc<FakeStore>) -> Option<Arc<dyn CacheActivityStore>> {
 
 #[tokio::test]
 async fn route_requires_an_authenticated_caller() {
-    let reply = call(
-        routes(CacheActivityState::new(None)),
-        request(Method::GET, REPORT_URI, None),
-    )
-    .await;
+    let reply = call(routes(None), request(Method::GET, REPORT_URI, None)).await;
     assert_eq!(reply.status, StatusCode::UNAUTHORIZED);
     assert_eq!(
         reply.body,
@@ -304,7 +300,7 @@ async fn route_requires_an_authenticated_caller() {
 async fn route_a_missing_start_date_answers_422_before_the_database_check() {
     let caller = caller();
     let reply = call(
-        routes(CacheActivityState::new(None)),
+        routes(None),
         request(
             Method::GET,
             "/global/activity/cache_hits?end_date=2024-01-31",
@@ -324,7 +320,7 @@ async fn route_a_missing_end_date_answers_422() {
     let caller = caller();
     let store = Arc::new(FakeStore::answering(CacheActivityRows::default()));
     let reply = call(
-        routes(CacheActivityState::new(fake_store(&store))),
+        routes(fake_store(&store)),
         request(
             Method::GET,
             "/global/activity/cache_hits?start_date=2024-01-01",
@@ -343,7 +339,7 @@ async fn route_a_missing_end_date_answers_422() {
 async fn route_two_missing_dates_are_listed_start_first() {
     let caller = caller();
     let reply = call(
-        routes(CacheActivityState::new(None)),
+        routes(None),
         request(
             Method::GET,
             "/global/activity/cache_hits?models=m1",
@@ -362,7 +358,7 @@ async fn route_two_missing_dates_are_listed_start_first() {
 async fn route_missing_database_answers_500_before_parsing_the_dates() {
     let caller = caller();
     let reply = call(
-        routes(CacheActivityState::new(None)),
+        routes(None),
         request(
             Method::GET,
             "/global/activity/cache_hits?start_date=2024-13-01&end_date=2024-01-01",
@@ -382,7 +378,7 @@ async fn route_a_bad_start_date_answers_400_with_python_repr() {
     let caller = caller();
     let store = Arc::new(FakeStore::answering(CacheActivityRows::default()));
     let reply = call(
-        routes(CacheActivityState::new(fake_store(&store))),
+        routes(fake_store(&store)),
         request(
             Method::GET,
             "/global/activity/cache_hits?start_date=2024-13-01&end_date=2024-01-31",
@@ -403,7 +399,7 @@ async fn route_a_bad_end_date_answers_400() {
     let caller = caller();
     let store = Arc::new(FakeStore::answering(CacheActivityRows::default()));
     let reply = call(
-        routes(CacheActivityState::new(fake_store(&store))),
+        routes(fake_store(&store)),
         request(
             Method::GET,
             "/global/activity/cache_hits?start_date=2024-01-01&end_date=2024-01-32",
@@ -423,7 +419,7 @@ async fn route_the_start_date_is_parsed_before_the_end_date() {
     let caller = caller();
     let store = Arc::new(FakeStore::answering(CacheActivityRows::default()));
     let reply = call(
-        routes(CacheActivityState::new(fake_store(&store))),
+        routes(fake_store(&store)),
         request(
             Method::GET,
             "/global/activity/cache_hits?start_date=2024-13-01&end_date=2024-01-32",
@@ -443,7 +439,7 @@ async fn route_a_single_quote_date_uses_double_quoted_python_repr() {
     let caller = caller();
     let store = Arc::new(FakeStore::answering(CacheActivityRows::default()));
     let reply = call(
-        routes(CacheActivityState::new(fake_store(&store))),
+        routes(fake_store(&store)),
         request(
             Method::GET,
             "/global/activity/cache_hits?start_date=2024-01-0%275&end_date=2024-01-31",
@@ -463,7 +459,7 @@ async fn route_store_failures_reach_the_generic_internal_error() {
     let caller = caller();
     let store = Arc::new(FakeStore::failing());
     let reply = call(
-        routes(CacheActivityState::new(fake_store(&store))),
+        routes(fake_store(&store)),
         request(Method::GET, REPORT_URI, Some(&caller)),
     )
     .await;
@@ -479,7 +475,7 @@ async fn route_filters_and_dates_reach_the_store() {
     let caller = caller();
     let store = Arc::new(FakeStore::answering(CacheActivityRows::default()));
     let reply = call(
-        routes(CacheActivityState::new(fake_store(&store))),
+        routes(fake_store(&store)),
         request(
             Method::GET,
             "/global/activity/cache_hits?start_date=2023-12-31&end_date=2024-1-5&key_aliases=a&key_aliases=b&models=m&models=",
@@ -504,7 +500,7 @@ async fn route_answers_the_cache_activity_report() {
     let caller = caller();
     let store = Arc::new(FakeStore::answering(sample_rows()));
     let reply = call(
-        routes(CacheActivityState::new(fake_store(&store))),
+        routes(fake_store(&store)),
         request(Method::GET, REPORT_URI, Some(&caller)),
     )
     .await;
@@ -516,7 +512,7 @@ async fn route_answers_the_cache_activity_report() {
 async fn route_post_answers_method_not_allowed() {
     let caller = caller();
     let reply = call(
-        routes(CacheActivityState::new(None)),
+        routes(None),
         request(Method::POST, REPORT_URI, Some(&caller)),
     )
     .await;
@@ -587,23 +583,23 @@ fn date_rejects_zero_month_and_day() {
 
 #[test]
 fn date_repr_quotes_with_single_quotes() {
-    assert_eq!(python_repr("2024-13-01"), "'2024-13-01'");
-    assert_eq!(python_repr(""), "''");
+    assert_eq!(quoted_value("2024-13-01"), "'2024-13-01'");
+    assert_eq!(quoted_value(""), "''");
 }
 
 #[test]
 fn date_repr_switches_to_double_quotes_for_a_single_quote() {
-    assert_eq!(python_repr("2024-01-0'5"), "\"2024-01-0'5\"");
+    assert_eq!(quoted_value("2024-01-0'5"), "\"2024-01-0'5\"");
 }
 
 #[test]
 fn date_repr_escapes_backslashes_and_control_characters() {
-    assert_eq!(python_repr("a\\b\n\t\r\u{1}"), r"'a\\b\n\t\r\x01'");
+    assert_eq!(quoted_value("a\\b\n\t\r\u{1}"), r"'a\\b\n\t\r\x01'");
 }
 
 #[test]
 fn date_repr_escapes_a_single_quote_when_both_quotes_appear() {
-    assert_eq!(python_repr("a'b\"c"), r#"'a\'b"c'"#);
+    assert_eq!(quoted_value("a'b\"c"), r#"'a\'b"c'"#);
 }
 
 #[test]

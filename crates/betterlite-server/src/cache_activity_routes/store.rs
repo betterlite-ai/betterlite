@@ -5,8 +5,8 @@ use betterlite_auth::auxiliary_routes::INFO_ROUTES;
 use betterlite_db::postgres_store::errors::{DbError, backend};
 use betterlite_db::postgres_store::session::PostgresStore;
 use chrono::{DateTime, Utc};
+use tokio_postgres::Row;
 use tokio_postgres::types::{Json, ToSql};
-use tokio_postgres::{Client, Row};
 
 use super::model::{CacheActivityErrorBucket, CacheActivityGroup, CacheActivityRows};
 use super::sql::{ERROR_BREAKDOWN_SQL, GROUPS_SQL, KEY_ALIAS_OPTIONS_SQL, MODEL_OPTIONS_SQL};
@@ -50,21 +50,14 @@ impl CacheActivityStore for DatabaseCacheActivityStore {
         ];
         let options: [Parameter<'_>; 3] = [&start, &end, &info_routes_json];
         let (group_rows, error_rows, key_alias_rows, model_rows) = tokio::try_join!(
-            query(&client, GROUPS_SQL, &filtered),
-            query(&client, ERROR_BREAKDOWN_SQL, &filtered),
-            query(&client, KEY_ALIAS_OPTIONS_SQL, &options),
-            query(&client, MODEL_OPTIONS_SQL, &options),
-        )?;
+            client.query(GROUPS_SQL, &filtered),
+            client.query(ERROR_BREAKDOWN_SQL, &filtered),
+            client.query(KEY_ALIAS_OPTIONS_SQL, &options),
+            client.query(MODEL_OPTIONS_SQL, &options),
+        )
+        .map_err(backend)?;
         decode(group_rows, error_rows, key_alias_rows, model_rows)
     }
-}
-
-async fn query(
-    client: &Client,
-    statement: &str,
-    parameters: &[Parameter<'_>],
-) -> Result<Vec<Row>, DbError> {
-    client.query(statement, parameters).await.map_err(backend)
 }
 
 fn decode(
@@ -118,11 +111,15 @@ impl TryFrom<&Row> for CacheActivityErrorBucket {
     type Error = DbError;
 
     fn try_from(row: &Row) -> Result<Self, Self::Error> {
+        let call_type: String = row.try_get("call_type").map_err(backend)?;
+        let error_code: String = row.try_get("error_code").map_err(backend)?;
+        let error_class: String = row.try_get("error_class").map_err(backend)?;
+        let failures: i32 = row.try_get("count").map_err(backend)?;
         Ok(Self {
-            call_type: row.try_get("call_type").map_err(backend)?,
-            error_code: row.try_get("error_code").map_err(backend)?,
-            error_class: row.try_get("error_class").map_err(backend)?,
-            count: i64::from(row.try_get::<_, i32>("count").map_err(backend)?),
+            call_type,
+            error_code,
+            error_class,
+            count: i64::from(failures),
         })
     }
 }

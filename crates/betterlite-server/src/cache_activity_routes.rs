@@ -31,27 +31,15 @@ use self::store::CacheActivityStore;
 
 pub const CACHE_ACTIVITY_PATH: &str = "/global/activity/cache_hits";
 
-#[derive(Clone)]
-pub struct CacheActivityState {
-    store: Option<Arc<dyn CacheActivityStore>>,
-}
-
-impl CacheActivityState {
-    #[must_use]
-    pub fn new(store: Option<Arc<dyn CacheActivityStore>>) -> Self {
-        Self { store }
-    }
-}
-
-pub fn routes(state: CacheActivityState) -> Router {
+pub fn routes(store: Option<Arc<dyn CacheActivityStore>>) -> Router {
     Router::new()
         .route(CACHE_ACTIVITY_PATH, get(cache_activity))
         .method_not_allowed_fallback(|| async { error::method_not_allowed() })
-        .with_state(state)
+        .with_state(store)
 }
 
 async fn cache_activity(
-    State(state): State<CacheActivityState>,
+    State(store): State<Option<Arc<dyn CacheActivityStore>>>,
     caller: Option<Extension<AuthContext>>,
     RawQuery(raw_query): RawQuery,
 ) -> Response {
@@ -63,7 +51,7 @@ async fn cache_activity(
         Ok(requested) => requested,
         Err(parameters) => return CacheActivityError::MissingDates(parameters).into_response(),
     };
-    let Some(store) = state.store.as_deref() else {
+    let Some(store) = store.as_deref() else {
         return CacheActivityError::DatabaseMissing.into_response();
     };
     let (start_date, end_date) = match requested_dates(&requested) {

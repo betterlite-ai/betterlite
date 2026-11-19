@@ -5,7 +5,7 @@ use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 use thiserror::Error;
 
-use super::date::python_repr;
+use super::date::quoted_value;
 
 pub(crate) const DATABASE_MISSING_ERROR: &str = "Database not connected. Connect a database to your proxy - https://docs.litellm.ai/docs/simple_proxy#managing-auth---virtual-keys";
 
@@ -76,7 +76,7 @@ impl IntoResponse for CacheActivityError {
                 let detail = ErrorDetail {
                     error: format!(
                         "{parameter} must be a YYYY-MM-DD date, got {}",
-                        python_repr(&value)
+                        quoted_value(&value)
                     ),
                 };
                 (StatusCode::BAD_REQUEST, Json(DetailBody { detail })).into_response()
