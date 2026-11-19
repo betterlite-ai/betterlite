@@ -23,6 +23,8 @@ description: 'Implement latency-based-routing selection over B389 samples, B013 
   B016 registers Strategy::LatencyBasedRouting as a stub, so replace only that stub and its not-built test in crates/betterlite-router/src/strategy/latency_routing.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.'
 scope:
   paths:
+  - "crates/betterlite-router/src/strategy.rs"
+  - "crates/betterlite-router/src/router_core/tests/boundaries.rs"
   - "crates/betterlite-router/src/router_core/tests.rs"
   - crates/betterlite-router/src/latency_routing.rs
   - crates/betterlite-router/src/latency_routing/**
