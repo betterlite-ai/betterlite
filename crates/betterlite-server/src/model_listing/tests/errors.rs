@@ -36,6 +36,15 @@ fn a_batch_names_every_unlisted_model() {
 }
 
 #[test]
+fn a_batch_with_an_empty_element_refuses_the_whole_batch() {
+    let error = validate_model_access("a, ", &strings(&["a"])).expect_err("the batch is refused");
+    assert_eq!(
+        error.to_string(),
+        "The following model(s) do not exist or are not accessible: "
+    );
+}
+
+#[test]
 fn a_batch_trims_the_names_it_checks() {
     let error =
         validate_model_access(" a , c ", &strings(&["a"])).expect_err("the models are refused");

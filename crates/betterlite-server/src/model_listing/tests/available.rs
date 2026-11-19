@@ -39,6 +39,10 @@ async fn a_requested_team_the_caller_is_not_on_fails_the_listing() {
     .await
     .expect_err("the listing refuses");
     assert_eq!(error.status(), StatusCode::FORBIDDEN);
+    assert_eq!(
+        error.to_string(),
+        "the caller is not a member of team \"t1\""
+    );
 }
 
 #[tokio::test]
@@ -56,6 +60,7 @@ async fn a_requested_team_the_database_does_not_have_fails_the_listing() {
     .await
     .expect_err("the listing refuses");
     assert_eq!(error.status(), StatusCode::NOT_FOUND);
+    assert_eq!(error.to_string(), "the team \"t1\" does not exist");
 }
 
 #[tokio::test]
