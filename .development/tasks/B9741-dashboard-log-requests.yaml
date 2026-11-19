@@ -1,7 +1,7 @@
 id: B9741
 title: Prove log filters, drawers and unavailable trace services with page-shaped requests
 description: >-
-  B9090 retains the pinned logs page and view_logs tree; B8663 already mounts B1732/B1729/B1731
+  B9090 retains the pinned logs page and view_logs tree; B8662 mounts B1732/B1729/B1731
   list, payload and session routes. Add only their missing page-shaped HTTP transcripts and
   a reviewed logs-page patch. Read B147-route-audit.md beside this plan for the complete caller
   and ownership inventory. No route, SQL query, handler adapter or second log store belongs here.
@@ -132,7 +132,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/view_logs/AuditLogsPanel.tsx#L99-L124
 out_of_scope:
   - All unchanged functions in logs and view_logs are retained by B9090; only the small patch and its client-contract tests are authored here.
-  - B8663 composes B1732/B1729/B1731; B1705 owns facet routes, B1654 compliance, B110/B3867 tracing and B055 trace-key generation.
+  - B069 composes B1729 to B1732 and B8662 mounts them; B1705 owns facet routes, B1654 compliance, B110/B3867 tracing and B055 trace-key generation.
   - B782, B850 and B796 own key-alias/model/user selectors; B9730/B9731 own deleted-key/team workflows outside these covered components.
   - B144 owns auth/discovery/base URL setup and B147 owns the real-browser flow; native ClickHouse storage remains B110's recorded prerequisite.
 pitfalls:

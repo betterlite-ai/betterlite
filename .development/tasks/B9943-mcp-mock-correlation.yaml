@@ -1,0 +1,121 @@
+id: B9943
+title: MCP reply id correlation in the oracle mock
+description: >-
+  Six planned case sets (B136, B140, B9760, B9761, B9762 and B9776) script an upstream MCP server on the oracle's
+  mock provider. The MCP client on each side picks its own JSON-RPC request ids: LiteLLM's comes from the Python mcp
+  SDK, betterlite's from rmcp in betterlite-mcp, and neither promises the other's numbering. A client ignores a reply
+  whose id answers no request it sent, so a scripted answer that guesses the id fails on one side. These cases need
+  the mock to copy the request's id into the reply. B136 planned this facility next to its gateway cases; it moves
+  here so the four tasks that need only the mock (B140, B9760, B9762 and B9776) can start before B136's gateway work.
+  tools/oracle/runner/src/mock/mcp_reply.rs is already an empty file, declared as `pub mod mcp_reply;` in mock.rs.
+
+
+  The rule. A request whose URI path starts with `/__mcp_fixture/` is a fixture request. Its correlation is the
+  top-level `id` of its captured body when that body is a JSON object and the id is a string or an integer. Any
+  other body or id gives no correlation: no id, null, a float such as 1.5, a bool, an array or object id, a JSON-RPC
+  batch array, and the text or byte-array bodies capture_request keeps for non-JSON requests. Keep the id as the
+  captured serde_json Value so the reply echoes it exactly. When a fixture request's scripted Answer has a JSON object
+  body with `"jsonrpc": "2.0"` and a top-level `id` equal to the string `"$mcp_request_id"`, replace that one id with
+  the correlation. A marked answer on a fixture request with no correlation is an error, so the case fails instead of
+  sending a reply with the wrong id. Everything else plays as written: an answer without the marker (a literal id
+  stays as typed), the marker anywhere but the top-level id (inside result or error), a body whose jsonrpc is missing
+  or not "2.0", SSE events, a body encoded with body_kind, an answer with no body, and every request on another path,
+  even when its answer carries the marker. This transforms a reply using the body capture_request already parsed; it
+  is not a JSON parser, an MCP implementation or a new case field.
+
+
+  Module mock::mcp_reply. `McpCorrelation` holds what the mock learned from one request: `Outside` for a path that
+  is not a fixture path, and `Fixture(Option<Value>)` with the id when there is one. `correlation(path: &str, body:
+  &Value) -> McpCorrelation` reads it, and `correlate(answer: &mut UpstreamAnswer, correlation: &McpCorrelation) ->
+  Result<(), McpReplyError>` applies the rule. McpReplyError is the module's thiserror enum, with one variant,
+  `MarkerWithoutId { path: String }`, whose message names the request path and the marker.
+
+
+  The hook in mock.rs. `handle` reads the correlation from parts.uri.path() and the captured body before `admit`
+  takes the captured request, and passes it to `play`. In `play`, the Answer arm calls `correlate` on the answer
+  before `reply`. An error goes through the existing `fail`, which stores it as the recording's failure and answers
+  500, the same way a reply that cannot be encoded fails today. Nothing else in mock.rs changes: the 16 MiB body
+  limit, the 30 second read timeout, script exhaustion, waits and barriers, the GET /v1/models shortcut, credential
+  redaction and the ordered trace stay as they are. upstream_address::fill still runs once at start, so `{{upstream}}`
+  and the id marker can sit in the same answer.
+
+
+  Tests, in mock/mcp_reply/tests.rs (module `mock::mcp_reply::tests`), as plain #[test] functions with these names.
+  On `correlation` and `correlate`: integer_id (request id 7, the marked answer gets 7), string_id ("req-a"),
+  no_marker (an answer with id 99 on a fixture request keeps 99), wrong_path (the marker on /v1/chat/completions stays
+  the string and nothing fails), nested_marker_unchanged (the marker inside result.content stays), missing_id (a
+  notification body with a marked answer gives MarkerWithoutId), invalid_id (an id of 1.5 and an id of true, each
+  with a marked answer, give MarkerWithoutId), notification_without_marker (a notification keeps its scripted 202
+  answer with `events: []`) and error_reply (a marked JSON-RPC error answer gets the request id and keeps its error
+  object). Two loopback tests start a MockProvider and send raw HTTP over a TcpStream, the way the
+  routing_mock_scripts tests do. loopback_session_correlates_each_reply scripts three replies and sends initialize
+  with id 41, notifications/initialized with no id and tools/list with id "list-2" to /__mcp_fixture/alpha. The two
+  marked replies carry 41 and "list-2", the notification gets its 202, and finish() returns the three requests in
+  order with their bodies. loopback_marker_without_id_fails sends a notification whose scripted answer is marked and
+  checks that finish_recording reports the failure.
+
+
+  No oracle case: these tests drive the real mock, and the six case sets above use it through the booted proxies. No
+  fuzz target: capture_request has parsed the body before this module sees it. Budget: about 70 lines for the module
+  and its error and 15 for the hook in mock.rs, within 300; the tests are outside the line budget.
+scope:
+  paths:
+    - tools/oracle/runner/src/mock.rs
+    - tools/oracle/runner/src/mock/mcp_reply.rs
+    - tools/oracle/runner/src/mock/mcp_reply/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L543-L570
+    why: LiteLLM's MCP client sends initialize through the mcp SDK, then the initialized notification, so every upstream conversation starts with an id the SDK picks and a notification with none.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L615-L631
+    why: Each operation opens its own ClientSession, and a response stream that ends without a reply to the request leaves it unanswered.
+  - url: https://modelcontextprotocol.io/specification/2025-03-26/basic
+    why: A JSON-RPC request id is a string or an integer, a response carries the id of its request, and a notification has no id.
+  - url: https://modelcontextprotocol.io/specification/2025-03-26/basic/transports
+    why: Streamable HTTP answers a notification with 202 Accepted and no body, the reply the cases script for notifications/initialized.
+dod:
+  - text: >-
+      A marked JSON-RPC reply to a /__mcp_fixture/ request gets that request's string or integer id; unmarked replies,
+      nested markers, other paths and non-JSON answers play as written, and a marked reply with no usable id is an
+      error.
+    proof: [mcp-reply-rule]
+  - text: The running mock applies the correlation before it plays a scripted answer, keeps its ordered request recording, and fails the case on a marked reply with no id.
+    proof: [mcp-reply-loopback]
+  - text: Scripted replies, waits, captures and answer addresses behave as before for every other request.
+    proof: [mock-regressions]
+checks:
+  optional: []
+  commands:
+    - id: mcp-reply-rule
+      why: A marked reply keeps the marker or gets the wrong id, another answer changes, or a marker without a usable id is played.
+      run: >-
+        list=$(cargo nextest list --locked -p betterlite-oracle-runner -E 'test(/^mock::mcp_reply::tests::/)' --message-format oneline) &&
+        for name in integer_id string_id no_marker wrong_path nested_marker_unchanged missing_id invalid_id notification_without_marker error_reply; do grep -q "::$name$" <<< "$list" || { echo "missing test $name"; exit 1; }; done &&
+        cargo nextest run --locked -p betterlite-oracle-runner --no-tests=fail -E 'test(/^mock::mcp_reply::tests::/) - test(/^mock::mcp_reply::tests::loopback_/)'
+    - id: mcp-reply-loopback
+      why: The mock never applies the correlation to real traffic, loses its ordered recording, or plays a marked reply that has no id.
+      run: >-
+        list=$(cargo nextest list --locked -p betterlite-oracle-runner -E 'test(/^mock::mcp_reply::tests::loopback_/)' --message-format oneline) &&
+        for name in loopback_session_correlates_each_reply loopback_marker_without_id_fails; do grep -q "::$name$" <<< "$list" || { echo "missing test $name"; exit 1; }; done &&
+        cargo nextest run --locked -p betterlite-oracle-runner --no-tests=fail -E 'test(/^mock::mcp_reply::tests::loopback_/)'
+    - id: mock-regressions
+      why: The hook changed how scripted replies, waits, captures or answer addresses behave for other traffic.
+      run: >-
+        test -f tools/oracle/runner/src/mock/mcp_reply/tests.rs &&
+        cargo nextest run --locked -p betterlite-oracle-runner --no-tests=fail -E 'test(/^routing_mock_scripts::/) | test(/^mock::upstream_address::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The MCP cases themselves: B136 (gateway parity), B140 (LLM tools), B9760, B9761 and B9762 (dashboard MCP pages) and B9776 (tool search settings) script their own upstream replies with the marker."
+  - "The mock's body limit, read timeout, script exhaustion, waits, capture redaction and comparison stay B001's, and the `{{upstream}}` answer address stays B9850's."
+  - No LiteLLM function is ported. This is test tooling, so there is nothing to list per file.
+pitfalls:
+  - The runner's serde_json has arbitrary_precision, so as_i64 fails on 1.0 and a u64 id above i64::MAX is still an integer; test is_i64 or is_u64 and copy the captured Value instead of building a new number.
+  - Compare the whole top-level id with the string "$mcp_request_id"; a text replace like upstream_address::fill would also rewrite the marker inside a tool result.
+  - admit takes the captured request by value, so read the correlation before calling it.
+  - A notification has no id and its scripted 202 answer has no body, so it must pass unchanged; only a marked answer without an id fails.
+  - The marker is fixture syntax only, so a marked answer on a fixture request is either rewritten or fails the case and never reaches a client as written.
+review_level: standard
+budget:
+  max_changed_lines: 300
+  max_new_expects: 0

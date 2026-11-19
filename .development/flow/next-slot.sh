@@ -85,7 +85,7 @@ if ! pgrep -x sccache > /dev/null; then
     systemd-run --user --scope --slice=betterlite-dispatch.slice -q -- nice -n 10 "${tools}/bin/sccache" --start-server > /dev/null 2>&1 || exit 1
 fi
 UV_CACHE_DIR="${HOME}/.cache/uv" TMPDIR=${tmp} PATH=${P}/bin:${HOME}/.local/bin:${tools}/bin:${PATH} \
-  NEXTEST_TEST_THREADS=2 GATE_BUILD_SLOTS=8 GATE_LOWEST_BUILD_SLOT=${lowest_slot} GATE_SHARED_BUILDS=${gates} \
+  NEXTEST_TEST_THREADS=2 GATE_BUILD_SLOTS=8 GATE_LOWEST_BUILD_SLOT=${lowest_slot} GATE_SHARED_BUILDS=${gates} GATE_LINT_ROOT=${worktrees}/tmp/lint-lanes GATE_LINT_LANES=2 \
   systemd-run --user --scope --slice=betterlite-dispatch.slice -p MemoryMax=16G -p MemorySwapMax=4G -q -- bash "${P}/build-env.sh" nice -n 10 cargo gate dispatch "${id}" ${3:+--note "$3"} ${GRANT:+--grant "${GRANT}"} > "${log}" 2>&1 9>&- &
 child=$!
 while kill -0 "${child}" 2> /dev/null && ! pgrep -f "^([^ ]*/)?gate dispatch ${id}( |$)" > /dev/null; do

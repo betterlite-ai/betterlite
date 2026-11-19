@@ -7,8 +7,9 @@ description: >-
   invoke this same implementation. Exact cache_hit=true returns zero before diagnostics;
   otherwise use the stored cache flag when the argument is null, then B188's unbilled
   call predicate. Normalize native generateContent responses with the provider's existing
-  B031 conversion, using a synthetic successful response with empty headers; a conversion
-  error leaves the original response intact. Unwrap Responses completion/failure events.
+  conversion, B1326's gemini_response::complete in betterlite-vertex (on main), using a
+  synthetic successful response with empty headers; a conversion error leaves the original
+  response intact. Unwrap Responses completion/failure events.
   A typed response's non-null hidden response_cost wins immediately, with diagnostics but
   without additional_response_cost. Recover model_id from hidden fields then B253's router
   metadata helper. Supply B068 model/provider/base model, call type, optional parameters,
@@ -21,8 +22,11 @@ description: >-
   fields and a pinned membership set, not a second monetary parser. Metadata is checked
   before litellm_metadata for deployment info. B1664's spillover detection disables custom
   pricing. Vertex location uses explicit optional parameters, then logging parameters, then
-  B031's configured default and model-region normalization; only vertex_ai-prefixed providers
-  qualify. Bedrock Mantle uses B625's resolver only for the exact bedrock_mantle provider.
+  the configured default in config.sections.vertex_credential_sources (litellm_settings.vertex_location,
+  then VERTEXAI_LOCATION, then VERTEX_LOCATION), and B1304's endpoint_target::region::select_region
+  normalizes it per model; both are on main, and only vertex_ai-prefixed providers qualify.
+  betterlite-core can't depend on betterlite-vertex, so CostRecorder takes the generateContent
+  conversion and the region normalization through its constructor, like its other dependencies. Bedrock Mantle uses B625's resolver only for the exact bedrock_mantle provider.
   Failed argument preparation records the short failure diagnostic and returns null. A
   calculation failure records the full attempted pricing identity, invokes zero-cost
   diagnostics with calculation_failed=true and returns null. Positive numeric additional
