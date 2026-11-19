@@ -8,7 +8,7 @@ import httpx
 import litellm
 import openai
 from litellm.integrations.custom_logger import CustomLogger
-from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLoggingObj
+from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.base_llm.responses.transformation import BaseResponsesAPIConfig
 from litellm.responses.streaming_iterator import CachedResponsesAPIStreamingIterator as Cached
 from litellm.responses.streaming_iterator import MockResponsesAPIStreamingIterator as Mock
@@ -25,7 +25,6 @@ from openai_chat import Failure, project_failure
 
 VIEW: TypeAdapter[dict[str, Json]] = TypeAdapter(dict[str, Json])
 RESPONSES: TypeAdapter[ResponsesAPIResponse] = TypeAdapter(ResponsesAPIResponse)
-Stub: TypeAlias = LiteLLMLoggingObj
 SyncEvents: TypeAlias = Iterator[ResponsesAPIStreamingResponse]
 AsyncEvents: TypeAlias = AsyncIterator[ResponsesAPIStreamingResponse]
 SyncLive: TypeAlias = tuple[httpx.Client, SyncEvents]
@@ -147,10 +146,10 @@ def scripted_body(spec: RunSpec) -> FailingBytes:
     error = None if failure is None else errors[failure.kind](failure.message)
     return FailingBytes([f"data: {payload}\n\n".encode() for payload in spec.payloads], error)
 
-def recording() -> tuple[Recorder, LiteLLMLoggingObj]:
+def recording() -> tuple[Recorder, Logging]:
     recorder = Recorder()
     litellm.callbacks = [recorder]
-    return recorder, cast("LiteLLMLoggingObj", recorder)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L556
+    return recorder, cast("Logging", recorder)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L556
 
 def provider_config(call: ResponsesStreamDriverCall) -> BaseResponsesAPIConfig:
     provider = ProviderConfigManager.get_provider_responses_api_config("openai", call.model)
@@ -165,44 +164,45 @@ def live_request(
     authorization = {"Authorization": f"Bearer {call.api_key}"}
     return client.build_request("POST", f"{api_base}/responses", json=body, headers=authorization)
 
-def synthetic_stream(call: ResponsesStreamDriverCall, spec: RunSpec, stub: Stub) -> Mock | Cached:
+def synthetic_stream(
+    call: ResponsesStreamDriverCall, spec: RunSpec, stub: Logging
+) -> Mock | Cached:
     if spec.mode == "cached":
-        record = RESPONSES.validate_json(json.dumps(spec.response))
-        return Cached(record, stub)
+        return Cached(RESPONSES.validate_json(json.dumps(spec.response)), stub)
     response = httpx.Response(200, content=json.dumps(spec.response))
     return Mock(response, call.model, provider_config(call), stub, None, "openai")
 
-def offline_sync(call: ResponsesStreamDriverCall, spec: RunSpec, stub: Stub) -> SyncEvents:
+def offline_sync(call: ResponsesStreamDriverCall, spec: RunSpec, stub: Logging) -> SyncEvents:
     if spec.mode in ("cached", "fake"):
         return synthetic_stream(call, spec, stub)
     response = httpx.Response(200, stream=scripted_body(spec))
     return Sync(response, call.model, provider_config(call), stub, None, "openai")
 
-def offline_async(call: ResponsesStreamDriverCall, spec: RunSpec, stub: Stub) -> AsyncEvents:
+def offline_async(call: ResponsesStreamDriverCall, spec: RunSpec, stub: Logging) -> AsyncEvents:
     if spec.mode in ("cached", "fake"):
         return synthetic_stream(call, spec, stub)
     response = httpx.Response(200, stream=scripted_body(spec))
     return Async(response, call.model, provider_config(call), stub, None, "openai")
 
-def live_sync(call: ResponsesStreamDriverCall, api_base: str, stub: Stub) -> SyncLive:
+def live_sync(call: ResponsesStreamDriverCall, api_base: str, stub: Logging) -> SyncLive:
     client = httpx.Client(timeout=float(call.timeout_seconds))
     response = client.send(live_request(client, call, api_base), stream=True)
     return client, Sync(response, call.model, provider_config(call), stub, None, "openai")
 
-async def live_async(call: ResponsesStreamDriverCall, api_base: str, stub: Stub) -> AsyncLive:
+async def live_async(call: ResponsesStreamDriverCall, api_base: str, stub: Logging) -> AsyncLive:
     client = httpx.AsyncClient(timeout=float(call.timeout_seconds))
     response = await client.send(live_request(client, call, api_base), stream=True)
     return client, Async(response, call.model, provider_config(call), stub, None, "openai")
 
 def sync_iterator(
-    call: ResponsesStreamDriverCall, spec: RunSpec, api_base: str, stub: Stub
+    call: ResponsesStreamDriverCall, spec: RunSpec, api_base: str, stub: Logging
 ) -> tuple[httpx.Client | None, Iterator[ResponsesAPIStreamingResponse]]:
     if spec.mode == "live":
         return live_sync(call, api_base, stub)
     return None, offline_sync(call, spec, stub)
 
 async def async_iterator(
-    call: ResponsesStreamDriverCall, spec: RunSpec, api_base: str, stub: Stub
+    call: ResponsesStreamDriverCall, spec: RunSpec, api_base: str, stub: Logging
 ) -> tuple[httpx.AsyncClient | None, AsyncIterator[ResponsesAPIStreamingResponse]]:
     if spec.mode == "live":
         return await live_async(call, api_base, stub)
