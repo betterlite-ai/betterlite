@@ -1,7 +1,7 @@
 import asyncio
-from collections.abc import Callable, Coroutine
+from collections.abc import Coroutine
 from enum import Enum
-from typing import Literal, Protocol, TypeAlias, TypedDict
+from typing import Literal, Protocol, TypeAlias, TypedDict, Unpack, runtime_checkable
 
 import httpx
 import litellm
@@ -22,21 +22,6 @@ ReadResult: TypeAlias = BaseModel | Paginator | Coroutine[object, object, BaseMo
 Provider: TypeAlias = Literal["openai", "azure", "vertex_ai"]
 
 
-# litellm types the four reads' **kwargs as Unknown, so this boundary says what they answer
-class FineTuningApi(Protocol):
-    @property
-    def list_fine_tuning_jobs(self) -> Callable[..., ReadResult]: ...
-    @property
-    def alist_fine_tuning_jobs(self) -> Callable[..., ReadResult]: ...
-    @property
-    def retrieve_fine_tuning_job(self) -> Callable[..., ReadResult]: ...
-    @property
-    def aretrieve_fine_tuning_job(self) -> Callable[..., ReadResult]: ...
-
-
-API: FineTuningApi = litellm
-
-
 # every keyword argument the four calls take, and the per-call ones list and retrieve add
 class ReadValues(TypedDict, total=False):
     api_base: str
@@ -51,6 +36,18 @@ class ReadValues(TypedDict, total=False):
     limit: int | None
     custom_llm_provider: str | None
     fine_tuning_job_id: str
+
+
+class ReadCall(Protocol):
+    def __call__(self, **values: Unpack[ReadValues]) -> ReadResult: ...
+
+
+# litellm leaves the four reads unannotated, so every name on the module answers one typed call
+class FineTuningApi(Protocol):
+    def __getattr__(self, name: str) -> ReadCall: ...
+
+
+API: FineTuningApi = litellm
 
 
 class StructuredTimeout(BaseModel):
@@ -249,15 +246,19 @@ def api_failure(error: openai.APIStatusError) -> Failure:
     )
 
 
+@runtime_checkable
+class HasDump(Protocol):
+    def model_dump_json(self) -> str: ...
+
+
 def settle(result: ReadResult) -> JsonValue:
     match result:
         case Coroutine():
             with asyncio.Runner() as runner:
                 return settle(runner.run(result))
-        case BaseModel():
+        case HasDump():
             return JSON.validate_json(result.model_dump_json())
-        case AsyncPaginator():
-            raise TypeError("an async paginator is not a settled page")
+    raise TypeError("an async paginator is not a settled page")
 
 
 def read_outcome(
