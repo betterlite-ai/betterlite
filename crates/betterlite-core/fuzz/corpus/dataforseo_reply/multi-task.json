@@ -1,0 +1,1 @@
+{"tasks": [{"status_code": 20000, "result": [{"items": [{"type": "organic", "title": "first"}]}, {"items": [{"type": "organic", "title": "second result"}]}]}, {"status_code": 20000, "result": [{"items": [{"type": "organic", "title": "second task"}]}]}]}

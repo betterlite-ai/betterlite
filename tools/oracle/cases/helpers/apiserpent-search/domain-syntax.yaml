@@ -1,0 +1,38 @@
+kind: helper
+name: apiserpent-domain-syntax
+call:
+  apiserpent_search:
+    query: "rust"
+    optional_params: {search_domain_filter: ["a.com", "b.com"]}
+    api_key: "caller-key"
+    api_base: null
+    environment: {}
+    headers: {}
+    reply: null
+calls:
+  - apiserpent_search:
+      query: "rust"
+      optional_params: {search_domain_filter: ["a.com"]}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: null
+  - apiserpent_search:
+      query: "rust"
+      optional_params: {search_domain_filter: []}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: null
+  - apiserpent_search:
+      query: "rust"
+      optional_params: {search_domain_filter: "a.com"}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: null
+env: {}
+compare: {ignore: []}
