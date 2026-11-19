@@ -37,13 +37,6 @@ struct RecordingQueue {
 }
 
 impl RecordingQueue {
-    const fn new(fail_at: Option<usize>) -> Self {
-        Self {
-            items: Mutex::new(Vec::new()),
-            fail_at,
-        }
-    }
-
     fn items(&self) -> Vec<SpendUpdateQueueItem> {
         self.items
             .lock()
@@ -81,81 +74,119 @@ impl ServedDeployments for CaseDeployments {
     }
 }
 
+// EnqueueCase: the writer state an enqueue step needs, so every entity arm reads the same four values.
+struct EnqueueCase<'call> {
+    step: &'call Step,
+    database: Option<&'call dyn EntitySpendQueue>,
+    cost: Option<SpendAmount>,
+    runtime: &'call tokio::runtime::Runtime,
+}
+
 pub(super) fn enqueue_value(step: &Step) -> Result<Value, Box<HelperError>> {
-    let queue = RecordingQueue::new(step.fail_at);
-    let cost = spend_amount(step.response_cost.as_ref())?;
-    let database: Option<&dyn EntitySpendQueue> = if step.database.unwrap_or(true) {
-        Some(&queue)
-    } else {
-        None
+    let queue = RecordingQueue {
+        items: Mutex::new(Vec::new()),
+        fail_at: step.fail_at,
     };
-    let deployments = step
-        .deployments
-        .as_ref()
-        .map(|deployments| CaseDeployments {
-            deployments: deployments.clone(),
-        });
     let runtime = tokio::runtime::Builder::new_current_thread()
         .build()
         .map_err(failure)?;
-    let raised = match step.entity.as_deref().unwrap_or_default() {
-        "team" => runtime
-            .block_on(update_owner_db(
-                database,
-                cost,
-                step.team_id.as_deref(),
-                step.user_id.as_deref(),
-                OwnerKind::Team,
-            ))
-            .is_err(),
-        "org" => runtime
-            .block_on(update_owner_db(
-                database,
-                cost,
-                step.org_id.as_deref(),
-                step.user_id.as_deref(),
-                OwnerKind::Organization,
-            ))
-            .is_err(),
-        "project" => runtime
-            .block_on(update_row_db(
-                database,
-                cost,
-                step.project_id.as_deref(),
-                RowKind::Project,
-            ))
-            .is_err(),
-        "agent" => runtime
-            .block_on(update_row_db(
-                database,
-                cost,
-                step.agent_id.as_deref(),
-                RowKind::Agent,
-            ))
-            .is_err(),
-        "tag" => {
-            let tags = step.request_tags.as_deref().map(RequestTags::Serialized);
-            runtime
-                .block_on(update_tag_db(database, cost, tags))
-                .is_err()
-        }
-        "model_access_group" => {
-            let attributed = step.attributed.clone().unwrap_or_default();
-            runtime.block_on(update_model_access_group_db(
-                database,
-                cost,
-                &attributed,
-                step.served_model_id.as_deref(),
-                deployments
-                    .as_ref()
-                    .map(|deployments| deployments as &dyn ServedDeployments),
-            ));
-            false
-        }
-        other => return Err(failure(format!("unknown spend_entities entity: {other}"))),
+    let database: Option<&dyn EntitySpendQueue> = step.database.unwrap_or(true).then_some(&queue);
+    let case = EnqueueCase {
+        step,
+        database,
+        cost: spend_amount(step.response_cost.as_ref())?,
+        runtime: &runtime,
     };
+    let raised = dispatch(&case)?;
     let queued = queue.items().iter().map(queued_view).collect();
     serde_json::to_value(EnqueueView { queued, raised }).map_err(failure)
+}
+
+// Entity: the owner or row a spend update charges, each routed to its own writer call.
+#[derive(Clone, Copy)]
+enum Entity {
+    Team,
+    Organization,
+    Project,
+    Agent,
+}
+
+// dispatch: the one entity queue call LiteLLM's writer makes for this step, and whether it failed.
+fn dispatch(case: &EnqueueCase<'_>) -> Result<bool, Box<HelperError>> {
+    match case.step.entity.as_deref().unwrap_or_default() {
+        "team" => Ok(entity_raised(case, Entity::Team)),
+        "org" => Ok(entity_raised(case, Entity::Organization)),
+        "project" => Ok(entity_raised(case, Entity::Project)),
+        "agent" => Ok(entity_raised(case, Entity::Agent)),
+        "tag" => Ok(tag_raised(case)),
+        "model_access_group" => Ok(access_group_raised(case)),
+        other => Err(failure(format!("unknown spend_entities entity: {other}"))),
+    }
+}
+
+// entity_raised: _update_team_db, _update_org_db, _update_project_db or _update_agent_db, whose queue failures reach the caller.
+fn entity_raised(case: &EnqueueCase<'_>, entity: Entity) -> bool {
+    let step = case.step;
+    let database = case.database;
+    let cost = case.cost;
+    let queued = match entity {
+        Entity::Team => case.runtime.block_on(update_owner_db(
+            database,
+            cost,
+            step.team_id.as_deref(),
+            step.user_id.as_deref(),
+            OwnerKind::Team,
+        )),
+        Entity::Organization => case.runtime.block_on(update_owner_db(
+            database,
+            cost,
+            step.org_id.as_deref(),
+            step.user_id.as_deref(),
+            OwnerKind::Organization,
+        )),
+        Entity::Project => case.runtime.block_on(update_row_db(
+            database,
+            cost,
+            step.project_id.as_deref(),
+            RowKind::Project,
+        )),
+        Entity::Agent => case.runtime.block_on(update_row_db(
+            database,
+            cost,
+            step.agent_id.as_deref(),
+            RowKind::Agent,
+        )),
+    };
+    queued.is_err()
+}
+
+// tag_raised: _update_tag_db of the writer, whose queue failures reach the caller.
+fn tag_raised(case: &EnqueueCase<'_>) -> bool {
+    let tags = case
+        .step
+        .request_tags
+        .as_deref()
+        .map(RequestTags::Serialized);
+    let queued = case
+        .runtime
+        .block_on(update_tag_db(case.database, case.cost, tags));
+    queued.is_err()
+}
+
+// access_group_raised: _update_model_access_group_db logs and swallows every queue failure, so the step never raises.
+fn access_group_raised(case: &EnqueueCase<'_>) -> bool {
+    let attributed = case.step.attributed.clone().unwrap_or_default();
+    let deployments = CaseDeployments {
+        deployments: case.step.deployments.clone().unwrap_or_default(),
+    };
+    case.runtime.block_on(update_model_access_group_db(
+        case.database,
+        case.cost,
+        &attributed,
+        case.step.served_model_id.as_deref(),
+        Some(&deployments),
+    ));
+    false
 }
 
 fn queued_view(item: &SpendUpdateQueueItem) -> QueuedView {

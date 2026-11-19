@@ -19,7 +19,8 @@ const ORG_MEMBER_QUOTE_SET: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'-')
     .remove(b'~');
 
-pub type EnqueueFuture<'a> = Pin<Box<dyn Future<Output = Result<(), SpendQueueError>> + Send + 'a>>;
+pub type EnqueueFuture<'queue> =
+    Pin<Box<dyn Future<Output = Result<(), SpendQueueError>> + Send + 'queue>>;
 
 // SpendUpdateQueue.add_update behind a port: the writer charges whatever queue it was built with, and a test can fail one enqueue on purpose.
 pub trait EntitySpendQueue: Send + Sync {
@@ -153,7 +154,10 @@ pub async fn update_tag_db(
     response_cost: Option<SpendAmount>,
     request_tags: Option<RequestTags<'_>>,
 ) -> Result<(), SpendAttributionError> {
-    let (Some(queue), Some(request_tags)) = (queue, request_tags) else {
+    let Some(queue) = queue else {
+        return Ok(());
+    };
+    let Some(request_tags) = request_tags else {
         return Ok(());
     };
     let tags = match request_tags {
@@ -173,10 +177,7 @@ pub async fn update_tag_db(
         }
         RequestTags::Parsed(tags) => tags.to_vec(),
     };
-    for tag in &tags {
-        if tag.is_empty() {
-            continue;
-        }
+    for tag in tags.iter().filter(|tag| !tag.is_empty()) {
         enqueue_row(queue, EntityType::Tag, tag, response_cost, "tag").await?;
     }
     Ok(())

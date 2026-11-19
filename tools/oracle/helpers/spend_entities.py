@@ -34,10 +34,6 @@ ENTITY_NAMES: Final[dict[Litellm_EntityType, str]] = {
 }
 
 
-class Deployment(TypedDict, total=False):
-    model_info: dict[str, JsonValue]
-
-
 class Step(TypedDict, total=False):
     kind: Required[Literal["turn", "enqueue"]]
     payload: dict[str, JsonValue]
@@ -53,7 +49,7 @@ class Step(TypedDict, total=False):
     request_tags: str | None
     attributed: list[str] | None
     served_model_id: str | None
-    deployments: dict[str, Deployment] | None
+    deployments: dict[str, dict[str, JsonValue]] | None
     fail_at: int | None
     database: bool
 
@@ -120,7 +116,7 @@ class RecordingQueue(SpendUpdateQueue):
 
 
 class DeploymentRouter:
-    def __init__(self, deployments: dict[str, Deployment]) -> None:
+    def __init__(self, deployments: dict[str, dict[str, JsonValue]]) -> None:
         self.deployments = deployments
 
     def get_model_info(self, id: str) -> Mapping[str, JsonValue] | None:  # noqa: A002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L408-L409

@@ -16,9 +16,9 @@ pub enum EnqueueTagsError {
 
 // The two shapes _update_tag_db accepts: the serialized request_tags column and an already parsed tag list.
 #[derive(Clone, Copy, Debug)]
-pub enum RequestTags<'a> {
-    Serialized(&'a str),
-    Parsed(&'a [String]),
+pub enum RequestTags<'text> {
+    Serialized(&'text str),
+    Parsed(&'text [String]),
 }
 
 // safe_json_loads(request_tags, default=[]) plus the iteration _update_tag_db performs: list members, object keys or a string's characters.

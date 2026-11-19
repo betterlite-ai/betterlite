@@ -142,7 +142,7 @@ fn a_truthy_non_string_router_name_excludes_the_turn(#[case] name: &str) {
 #[test]
 fn a_turn_without_any_router_name_is_excluded() {
     let text = SUCCESS.replace(r#""model_group": "fast","#, "");
-    assert!(build(&text, DECISION).is_none());
+    assert!(build(&text, r#"{"routing_decision":{"router_type":"heuristic"}}"#).is_none());
     assert!(build(&text, r#"{"routing_decision":{"router_model_name":""}}"#).is_none());
 }
 

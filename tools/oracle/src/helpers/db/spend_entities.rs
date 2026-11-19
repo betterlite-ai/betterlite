@@ -7,6 +7,9 @@ use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::Value;
 
+mod enqueue;
+mod turn;
+
 use self::enqueue::enqueue_value;
 use self::turn::turn_value;
 

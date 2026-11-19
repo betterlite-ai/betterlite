@@ -2,7 +2,7 @@ pub mod access_groups;
 pub mod enqueue;
 pub mod tags;
 
-#[path = "spend_attribution/support.rs"]
+#[path = "spend_attribution/tests/support.rs"]
 mod support;
 
 use crate::spend_queues::SpendQueueError;
