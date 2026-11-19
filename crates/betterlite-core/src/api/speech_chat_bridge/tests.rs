@@ -595,6 +595,26 @@ fn response_model_selects_conversion() {
 }
 
 #[test]
+fn response_format_reads_the_original_options() {
+    let (answer, calls) = completed(
+        answered(responded(GEMINI_TTS_MODEL, Some("AAA="))),
+        Call {
+            model: Json::Text(String::from(GEMINI_TTS_MODEL)),
+            optional_params: json_value(r#"{"response_format": "wav"}"#),
+            litellm_params: json_value(r#"{"response_format": "pcm"}"#),
+            ..Call::valid()
+        }
+        .arguments(),
+    );
+    assert_eq!(
+        calls[0].get("response_format"),
+        Some(&Json::Text(String::from("pcm")))
+    );
+    assert_eq!(answer.content.body.len(), 46);
+    assert_eq!(content_type(&answer), Some("audio/wav"));
+}
+
+#[test]
 fn speech_bridge_failures() {
     let call = Call::valid();
     let mut missing_model = call.arguments();
