@@ -17,21 +17,12 @@ fn lookup_of(environment: &[(&str, &str)]) -> BTreeMap<String, String> {
         .collect()
 }
 
-fn loaded(source: &str, environment: &[(&str, &str)]) -> Settings {
+fn load(source: &str, environment: &[(&str, &str)]) -> Result<Settings, ConfigError> {
     let config = ConfigLoader {
         lookup: lookup_of(environment),
     }
-    .load(source)
-    .expect("the config loads");
-    config.sections.compression_interception_state
-}
-
-fn load_error(source: &str, environment: &[(&str, &str)]) -> ConfigError {
-    ConfigLoader {
-        lookup: lookup_of(environment),
-    }
-    .load(source)
-    .expect_err("the config fails to load")
+    .load(source)?;
+    Ok(config.sections.compression_interception_state)
 }
 
 fn expected(
@@ -114,7 +105,10 @@ const NO_ENVIRONMENT: &[(&str, &str)] = &[];
     expected(true, 200_000, None, None, None)
 )]
 fn loads_settings(#[case] source: &str, #[case] expectation: Settings) {
-    assert_eq!(loaded(source, NO_ENVIRONMENT), expectation);
+    assert_eq!(
+        load(source, NO_ENVIRONMENT).expect("the config loads"),
+        expectation
+    );
 }
 
 #[rstest]
@@ -128,7 +122,7 @@ fn loads_enabled_from_the_environment(#[case] value: &str, #[case] enabled: bool
     let source = "litellm_settings:\n  compression_interception_params:\n    enabled: os.environ/COMPRESSION_ENABLED\n";
     let environment = [("COMPRESSION_ENABLED", value)];
     assert_eq!(
-        loaded(source, &environment),
+        load(source, &environment).expect("the config loads"),
         expected(enabled, 200_000, None, None, None)
     );
 }
@@ -141,7 +135,7 @@ fn loads_the_trigger_from_the_environment(#[case] value: &str, #[case] trigger: 
     let source = "litellm_settings:\n  compression_interception_params:\n    compression_trigger: os.environ/COMPRESSION_TRIGGER\n";
     let environment = [("COMPRESSION_TRIGGER", value)];
     assert_eq!(
-        loaded(source, &environment),
+        load(source, &environment).expect("the config loads"),
         expected(true, trigger, None, None, None)
     );
 }
@@ -157,7 +151,7 @@ fn loads_the_embedding_model(#[case] value: &str, #[case] model: Option<&str>) {
     );
     let environment = [("EMBEDDING_MODEL", "bedrock-titan"), ("EMPTY_MODEL", "")];
     assert_eq!(
-        loaded(&source, &environment),
+        load(&source, &environment).expect("the config loads"),
         expected(true, 200_000, None, model, None)
     );
 }
@@ -167,8 +161,8 @@ fn a_negative_trigger_is_a_load_error() {
     let source =
         "litellm_settings:\n  compression_interception_params:\n    compression_trigger: -5\n";
     assert!(matches!(
-        load_error(source, NO_ENVIRONMENT),
-        ConfigError::InvalidInteger { .. }
+        load(source, NO_ENVIRONMENT),
+        Err(ConfigError::InvalidInteger { .. })
     ));
 }
 
@@ -177,8 +171,8 @@ fn a_fractional_trigger_is_a_load_error() {
     let source =
         "litellm_settings:\n  compression_interception_params:\n    compression_trigger: 1.5\n";
     assert!(matches!(
-        load_error(source, NO_ENVIRONMENT),
-        ConfigError::InvalidInteger { .. }
+        load(source, NO_ENVIRONMENT),
+        Err(ConfigError::InvalidInteger { .. })
     ));
 }
 
@@ -187,8 +181,8 @@ fn a_negative_target_is_a_load_error() {
     let source =
         "litellm_settings:\n  compression_interception_params:\n    compression_target: -1\n";
     assert!(matches!(
-        load_error(source, NO_ENVIRONMENT),
-        ConfigError::InvalidInteger { .. }
+        load(source, NO_ENVIRONMENT),
+        Err(ConfigError::InvalidInteger { .. })
     ));
 }
 
@@ -196,8 +190,8 @@ fn a_negative_target_is_a_load_error() {
 fn an_integer_enabled_is_a_load_error() {
     let source = "litellm_settings:\n  compression_interception_params:\n    enabled: 1\n";
     assert!(matches!(
-        load_error(source, NO_ENVIRONMENT),
-        ConfigError::Yaml { .. }
+        load(source, NO_ENVIRONMENT),
+        Err(ConfigError::Yaml { .. })
     ));
 }
 
@@ -205,8 +199,8 @@ fn an_integer_enabled_is_a_load_error() {
 fn an_unset_trigger_variable_is_a_load_error() {
     let source = "litellm_settings:\n  compression_interception_params:\n    compression_trigger: os.environ/MISSING_TRIGGER\n";
     assert!(matches!(
-        load_error(source, NO_ENVIRONMENT),
-        ConfigError::MissingEnvironment { .. }
+        load(source, NO_ENVIRONMENT),
+        Err(ConfigError::MissingEnvironment { .. })
     ));
 }
 
@@ -214,7 +208,7 @@ fn an_unset_trigger_variable_is_a_load_error() {
 fn an_unknown_parameter_is_unsupported() {
     let source = "litellm_settings:\n  compression_interception_params:\n    unknown_key: 1\n";
     assert!(matches!(
-        load_error(source, NO_ENVIRONMENT),
-        ConfigError::Unsupported { .. }
+        load(source, NO_ENVIRONMENT),
+        Err(ConfigError::Unsupported { .. })
     ));
 }
