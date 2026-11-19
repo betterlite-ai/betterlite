@@ -1,6 +1,6 @@
 use super::{
-    DriverError, FindMany, Including, IncludingQuery, Key, KeyAction, KeyColumn, Query, Row,
-    RowCodec, RowError, Table,
+    DriverError, FindMany, Including, IncludingQuery, Infallible, Key, KeyAction, KeyColumn, Query,
+    Row, RowCodec, RowError, Table,
 };
 
 budget_table! {

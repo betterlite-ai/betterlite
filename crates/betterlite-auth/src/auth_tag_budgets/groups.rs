@@ -54,7 +54,7 @@ pub async fn group_budgets_batch(
         }
         probed.push((name.clone(), cached));
     }
-    let fetched = fetch_missing_groups(&misses, cache, rows).await?;
+    let fetched = fetch_missing_groups(&misses, cache, rows).await;
     Ok(merged(probed, fetched))
 }
 
@@ -63,9 +63,9 @@ async fn fetch_missing_groups(
     uncached_groups: &[String],
     cache: &dyn TagBudgetCache,
     rows: &dyn BudgetRows<ModelAccessGroupBudgetRow>,
-) -> Result<Vec<(String, ModelAccessGroupBudget)>, TagBudgetError> {
+) -> Vec<(String, ModelAccessGroupBudget)> {
     if uncached_groups.is_empty() {
-        return Ok(Vec::new());
+        return Vec::new();
     }
     let db_rows = match rows.by_names(uncached_groups.to_vec()).await {
         Ok(found) => found,
@@ -74,7 +74,7 @@ async fn fetch_missing_groups(
                 error = %failure,
                 "Error batch fetching model access group budgets from database"
             );
-            return Ok(Vec::new());
+            return Vec::new();
         }
     };
     let ttl = cache.management_ttl();
@@ -87,9 +87,9 @@ async fn fetch_missing_groups(
                 error = %error,
                 "Error batch fetching model access group budgets from database"
             );
-            return Ok(Vec::new());
+            return Vec::new();
         }
         fetched.push((budget.access_group_name.clone(), budget));
     }
-    Ok(fetched)
+    fetched
 }

@@ -1,3 +1,5 @@
+use std::convert::Infallible;
+
 use async_trait::async_trait;
 use betterlite_db::budget_permission_rows::LiteLLMBudgetTable;
 use betterlite_db::managed_resource_rows::tag::TagTable;
@@ -63,14 +65,17 @@ impl RowName for ModelAccessGroupBudgetRow {
 // Prisma's absent take means no limit, and Postgres returns the same rows for the largest row count.
 const NO_TAKE: i64 = i64::MAX;
 
+// A bare table read has no borrowed limit, so the selecting table applies the request's take.
+const NO_LIMIT: Option<i64> = None;
+
 fn matched<'query>(
     filter: Option<&'query Vec<String>>,
-    limit: &'query Option<i64>,
+    limit: Option<&'query i64>,
     with_budget: bool,
     with_take: [&'static str; 2],
     in_list: [&'static str; 2],
 ) -> Query<'query> {
-    let take = limit.as_ref().unwrap_or(&NO_TAKE);
+    let take = limit.unwrap_or(&NO_TAKE);
     let Some(names) = filter else {
         return Query {
             sql: if with_budget {
@@ -114,9 +119,9 @@ macro_rules! budget_table {
         }
 
         impl Table for $table {
-            type Column = std::convert::Infallible;
+            type Column = Infallible;
             type Filter = Vec<String>;
-            type Order = std::convert::Infallible;
+            type Order = Infallible;
             type Data = ();
 
             fn keyed<'query>(
@@ -134,7 +139,7 @@ macro_rules! budget_table {
                 self.including(
                     IncludingQuery::Listed {
                         filter: options.filter.and_then(|filters| filters.first()),
-                        limit: &None,
+                        limit: &NO_LIMIT,
                     },
                     None,
                 )
@@ -179,7 +184,7 @@ macro_rules! budget_table {
                     },
                     IncludingQuery::Listed { filter, limit } => super::matched(
                         filter,
-                        limit,
+                        limit.as_ref(),
                         with_budget,
                         [$list_budget, $list],
                         [$in_budget, $in_rows],

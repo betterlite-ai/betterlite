@@ -7,7 +7,7 @@ use super::support::{
     GROUP_A, GROUP_B, GROUP_C, GROUP_ZERO_BUDGET, RecordingCache, RecordingRows, TTL, group_budget,
     group_row,
 };
-use crate::auth_read::include::{Including, IncludingQuery};
+use crate::auth_read::include::{Including as _, IncludingQuery};
 use crate::auth_tag_budgets::TagBudgetError;
 use crate::auth_tag_budgets::groups::{
     ModelAccessGroupBudget, group_budgets_batch, model_access_group_budget,
@@ -18,9 +18,9 @@ use crate::auth_tag_budgets::rows::group::ModelAccessGroupBudgetTable;
 async fn batch(
     cache: &RecordingCache,
     rows: &RecordingRows,
-    names: &[&str],
+    values: &[&str],
 ) -> Result<BTreeMap<String, ModelAccessGroupBudget>, TagBudgetError> {
-    let names: Vec<String> = names.iter().map(|name| (*name).to_owned()).collect();
+    let names: Vec<String> = values.iter().map(|value| (*value).to_owned()).collect();
     group_budgets_batch(&names, true, cache, rows).await
 }
 

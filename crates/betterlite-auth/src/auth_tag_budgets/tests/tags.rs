@@ -6,7 +6,7 @@ use betterlite_models::decisions::Json;
 use super::support::{
     RecordingCache, RecordingRows, TAG_A, TAG_B, TAG_C, TAG_REGISTRY_KEY, TTL, registry_names, tag,
 };
-use crate::auth_read::include::{Including, IncludingQuery};
+use crate::auth_read::include::{Including as _, IncludingQuery};
 use crate::auth_tag_budgets::TagBudgetError;
 use crate::auth_tag_budgets::rows::BudgetInclude;
 use crate::auth_tag_budgets::rows::tag::TagBudgetTable;
@@ -15,9 +15,9 @@ use crate::auth_tag_budgets::tags::get_tag_objects_batch;
 async fn batch(
     cache: &RecordingCache,
     rows: &RecordingRows,
-    names: &[&str],
+    values: &[&str],
 ) -> Result<BTreeMap<String, TagTable>, TagBudgetError> {
-    let names: Vec<String> = names.iter().map(|name| (*name).to_owned()).collect();
+    let names: Vec<String> = values.iter().map(|value| (*value).to_owned()).collect();
     get_tag_objects_batch(&names, true, cache, rows).await
 }
 

@@ -117,15 +117,20 @@ fn stored(value: CachedValue<'_>) -> Json {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum ReadKind {
+    Tag,
+    Group,
+    Registry,
+}
+
 pub(super) struct RecordingCache {
     values: Mutex<BTreeMap<String, Json>>,
     once: Mutex<BTreeMap<String, Json>>,
     reads: Mutex<Vec<String>>,
     writes: Mutex<Vec<(String, f64)>>,
     ttl: f64,
-    fail_tag_read: bool,
-    fail_group_read: bool,
-    fail_registry_read: bool,
+    failing_read: Option<ReadKind>,
     fail_write_after: Option<usize>,
 }
 
@@ -137,9 +142,7 @@ impl RecordingCache {
             reads: Mutex::new(Vec::new()),
             writes: Mutex::new(Vec::new()),
             ttl,
-            fail_tag_read: false,
-            fail_group_read: false,
-            fail_registry_read: false,
+            failing_read: None,
             fail_write_after: None,
         }
     }
@@ -172,7 +175,7 @@ impl RecordingCache {
         self
     }
 
-    pub(super) fn with_registry(mut self, key: &str, answer: Json) -> Self {
+    pub(super) fn with_registry(self, key: &str, answer: Json) -> Self {
         self.values
             .lock()
             .expect("the cache values lock")
@@ -189,17 +192,17 @@ impl RecordingCache {
     }
 
     pub(super) fn failing_tag_read(mut self) -> Self {
-        self.fail_tag_read = true;
+        self.failing_read = Some(ReadKind::Tag);
         self
     }
 
     pub(super) fn failing_group_read(mut self) -> Self {
-        self.fail_group_read = true;
+        self.failing_read = Some(ReadKind::Group);
         self
     }
 
     pub(super) fn failing_registry_read(mut self) -> Self {
-        self.fail_registry_read = true;
+        self.failing_read = Some(ReadKind::Registry);
         self
     }
 
@@ -286,22 +289,22 @@ fn decoded<Value>(value: Option<Json>) -> Result<Option<Value>, PayloadError>
 where
     Value: DeserializeOwned,
 {
-    value.map_or(Ok(None), |value| payload::decode(&value))
+    value.map_or(Ok(None), |present| payload::decode(&present))
 }
 
 #[async_trait]
 impl TagBudgetCache for RecordingCache {
     async fn read_tag(&self, key: &str) -> Result<Option<TagTable>, PayloadError> {
-        decoded(self.probe(key, self.fail_tag_read)?)
+        decoded(self.probe(key, self.failing_read == Some(ReadKind::Tag))?)
     }
 
     async fn read_group(&self, key: &str) -> Result<Option<ModelAccessGroupBudget>, PayloadError> {
-        decoded(self.probe(key, self.fail_group_read)?)
+        decoded(self.probe(key, self.failing_read == Some(ReadKind::Group))?)
     }
 
     async fn read_registry(&self, key: &str) -> Result<Option<Json>, AuthCacheError> {
         let found = self
-            .probe(key, self.fail_registry_read)
+            .probe(key, self.failing_read == Some(ReadKind::Registry))
             .map_err(|error| AuthCacheError::Payload(Box::new(error)))?;
         Ok(found)
     }

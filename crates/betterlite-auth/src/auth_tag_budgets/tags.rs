@@ -44,15 +44,16 @@ async fn fetch_missing_tags(
     if uncached_tags.is_empty() {
         return Ok(Vec::new());
     }
-    let registry = load_registry(RegistryKind::Tag, cache, rows).await?;
-    let tags_to_fetch: Vec<String> = match registry {
-        Some(known) => uncached_tags
-            .iter()
-            .filter(|name| known.contains(name.as_str()))
-            .cloned()
-            .collect(),
-        None => uncached_tags.to_vec(),
-    };
+    let known = load_registry(RegistryKind::Tag, cache, rows).await?;
+    let tags_to_fetch: Vec<String> = uncached_tags
+        .iter()
+        .filter(|name| {
+            known
+                .as_ref()
+                .is_none_or(|available| available.contains(name.as_str()))
+        })
+        .cloned()
+        .collect();
     if tags_to_fetch.is_empty() {
         return Ok(Vec::new());
     }

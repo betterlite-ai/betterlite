@@ -16,7 +16,7 @@ use betterlite_models::decisions::Json;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
-use super::{Function, Generated, Input};
+use super::{Function, Input};
 
 // LiteLLM's management-object cache default, which every row and registry write carries
 const MANAGEMENT_TTL_SECONDS: f64 = 60.0;
@@ -51,7 +51,7 @@ impl Fixture {
             group_rows: Vec::new(),
             fail_query: input.fail_query,
         };
-        if matches!(input.function, Function::Tags | Function::TagRegistry) {
+        if matches!(&input.function, Function::Tags | Function::TagRegistry) {
             seed(
                 &mut fixture.tags,
                 &mut fixture.tag_rows,
@@ -78,14 +78,14 @@ impl Fixture {
         }
     }
 
-    fn probe<Value>(
+    fn probe<Entry>(
         &self,
-        table: &BTreeMap<String, Value>,
+        table: &BTreeMap<String, Entry>,
         key: &str,
         prefix: &str,
-    ) -> Option<Value>
+    ) -> Option<Entry>
     where
-        Value: Clone,
+        Entry: Clone,
     {
         self.tracked().reads.push(key.to_owned());
         table.get(key.strip_prefix(prefix).unwrap_or(key)).cloned()

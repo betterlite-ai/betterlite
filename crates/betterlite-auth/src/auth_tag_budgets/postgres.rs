@@ -13,24 +13,6 @@ fn failure(source: AuthReadError<RowError>) -> TagBudgetRowsFailure {
     }
 }
 
-fn names_request(names: Vec<String>) -> FindMany<Vec<String>, BudgetInclude> {
-    FindMany {
-        filter: Presence::Value(names),
-        include: Presence::Value(BudgetInclude {
-            litellm_budget_table: true,
-        }),
-        take: Presence::Omitted,
-    }
-}
-
-fn take_request(take: i64) -> FindMany<Vec<String>, BudgetInclude> {
-    FindMany {
-        filter: Presence::Omitted,
-        include: Presence::Omitted,
-        take: Presence::Value(take),
-    }
-}
-
 #[async_trait]
 impl<Client, Rows, Row> BudgetRows<Row>
     for AuthReadTable<RepositoryTable<Client, Rows>, SystemClock>
@@ -41,10 +23,22 @@ where
         AuthTable<Row = Row, Filter = Vec<String>, Include = BudgetInclude, Failure = RowError>,
 {
     async fn by_names(&self, names: Vec<String>) -> Result<Vec<Row>, TagBudgetRowsFailure> {
-        self.find_many(names_request(names)).await.map_err(failure)
+        let request = FindMany {
+            filter: Presence::Value(names),
+            include: Presence::Value(BudgetInclude {
+                litellm_budget_table: true,
+            }),
+            take: Presence::Omitted,
+        };
+        self.find_many(request).await.map_err(failure)
     }
 
     async fn registry_rows(&self, take: i64) -> Result<Vec<Row>, TagBudgetRowsFailure> {
-        self.find_many(take_request(take)).await.map_err(failure)
+        let request = FindMany {
+            filter: Presence::Omitted,
+            include: Presence::Omitted,
+            take: Presence::Value(take),
+        };
+        self.find_many(request).await.map_err(failure)
     }
 }

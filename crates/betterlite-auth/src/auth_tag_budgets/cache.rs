@@ -8,6 +8,7 @@ use crate::auth_cache::payload::PayloadError;
 use crate::auth_cache::{AuthCache, AuthCacheError, WriteOptions, WriteTtl};
 
 // The three management objects a batch read writes back under the ttl LiteLLM gives them.
+#[derive(Clone, Copy)]
 pub enum CachedValue<'value> {
     Tag(&'value TagTable),
     Group(&'value ModelAccessGroupBudget),

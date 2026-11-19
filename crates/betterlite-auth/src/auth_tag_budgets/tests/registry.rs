@@ -23,6 +23,10 @@ fn names(values: &[&str]) -> Vec<String> {
     values.iter().map(|value| (*value).to_owned()).collect()
 }
 
+fn name_set(values: &[&str]) -> BTreeSet<String> {
+    values.iter().copied().map(str::to_owned).collect()
+}
+
 #[tokio::test]
 async fn tag_registry_take_5001() {
     let cache = RecordingCache::new(TTL);
@@ -32,7 +36,7 @@ async fn tag_registry_take_5001() {
         .await
         .expect("the tag registry loads");
     assert_eq!(rows.registry_takes(), [TAG_REGISTRY_TAKE]);
-    assert_eq!(known, Some(BTreeSet::from(names(&["tag-0", "tag-1"]))));
+    assert_eq!(known, Some(name_set(&["tag-0", "tag-1"])));
     let answer = Json::List(vec![
         Json::Text("tag-0".to_owned()),
         Json::Text("tag-1".to_owned()),
@@ -53,7 +57,7 @@ async fn group_registry_take_5001() {
         .await
         .expect("the group registry loads");
     assert_eq!(rows.group_registry_takes(), [GROUP_REGISTRY_TAKE]);
-    assert_eq!(known, Some(BTreeSet::from(names(&["group-0"]))));
+    assert_eq!(known, Some(name_set(&["group-0"])));
     assert_eq!(
         cache.prefixed_writes(GROUP_REGISTRY_KEY),
         [(GROUP_REGISTRY_KEY.to_owned(), TTL)]
@@ -117,11 +121,11 @@ async fn distinct_registry_keys_locks() {
         .expect("each registry takes its own load lock");
     assert_eq!(
         tags.expect("the tag registry loads"),
-        Some(BTreeSet::from(names(&["tag-a"])))
+        Some(name_set(&["tag-a"]))
     );
     assert_eq!(
         groups.expect("the group registry loads"),
-        Some(BTreeSet::from(names(&["group-a"])))
+        Some(name_set(&["group-a"]))
     );
     assert!(cache.registry_answer(TAG_REGISTRY_KEY).is_some());
     assert!(cache.registry_answer(GROUP_REGISTRY_KEY).is_some());

@@ -17,7 +17,7 @@ use crate::auth_resource_grants::postgres::open_grant_rows;
 use crate::auth_tag_budgets::groups::model_access_group_budget;
 use crate::auth_tag_budgets::rows::group::ModelAccessGroupBudgetTable;
 use crate::auth_tag_budgets::rows::tag::TagBudgetTable;
-use crate::auth_tag_budgets::rows::{BudgetRows, ModelAccessGroupBudgetRow};
+use crate::auth_tag_budgets::rows::{BudgetRows as _, ModelAccessGroupBudgetRow};
 
 const SEED: &str = r#"
 INSERT INTO "LiteLLM_BudgetTable" ("budget_id", "max_budget", "created_by", "updated_by")

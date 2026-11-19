@@ -1,10 +1,10 @@
 use super::{
-    DriverError, FindMany, Including, IncludingQuery, Key, KeyAction, KeyColumn, Query, Row,
-    RowCodec, RowError, Table,
+    DriverError, FindMany, Including, IncludingQuery, Infallible, Key, KeyAction, KeyColumn, Query,
+    Row, RowCodec, RowError, Table, TagTable,
 };
 
 budget_table! {
-    TagBudgetTable, betterlite_db::managed_resource_rows::tag::TagTable,
+    TagBudgetTable, TagTable,
     one: "SELECT (to_jsonb(entry) || jsonb_build_object('models', COALESCE(to_jsonb(entry.\"models\"), '[]'::jsonb), 'spend', COALESCE(to_jsonb(entry.\"spend\"), '0')))::text FROM \"LiteLLM_TagTable\" AS entry WHERE entry.\"tag_name\" = $1",
     delete: "DELETE FROM \"LiteLLM_TagTable\" AS entry WHERE entry.\"tag_name\" = $1 RETURNING to_jsonb(entry)::text",
     update: "UPDATE \"LiteLLM_TagTable\" AS entry SET \"tag_name\" = \"tag_name\" WHERE entry.\"tag_name\" = $1 RETURNING to_jsonb(entry)::text",

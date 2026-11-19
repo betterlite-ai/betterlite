@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use betterlite_models::decisions::Json;
 use tokio::sync::Mutex;
 
-use super::cache::TagBudgetCache;
+use super::cache::{CachedValue, TagBudgetCache};
 use super::rows::{BudgetRows, RowName, TagBudgetRowsFailure};
 use crate::auth_cache::AuthCacheError;
 use crate::auth_cache::keys::{CacheKey, GROUP_REGISTRY_OVERFLOW, TAG_REGISTRY_OVERFLOW};
@@ -39,7 +39,7 @@ impl RegistryCache for RegistryView<'_> {
 
     async fn write(&self, cache_key: &str, answer: &Json, ttl: f64) -> Result<(), AuthCacheError> {
         self.0
-            .write(cache_key, super::cache::CachedValue::Registry(answer), ttl)
+            .write(cache_key, CachedValue::Registry(answer), ttl)
             .await
     }
 
@@ -82,12 +82,13 @@ where
         overflow_sentinel: sentinel,
         max_size: TAG_REGISTRY_MAX_SIZE,
     };
-    load_bounded_registry(&RegistryView(cache), spec, lock, || async move {
+    let fetch = || async move {
         let fetched = rows.registry_rows(take).await.map_err(RegistryRows::from)?;
-        Ok(fetched
+        let names: Vec<String> = fetched
             .iter()
             .map(|row| row.row_name().to_owned())
-            .collect())
-    })
-    .await
+            .collect();
+        Ok::<Vec<String>, RegistryRows>(names)
+    };
+    load_bounded_registry(&RegistryView(cache), spec, lock, fetch).await
 }

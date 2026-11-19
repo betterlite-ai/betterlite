@@ -29,7 +29,7 @@ pub(super) fn merged<Value>(
 ) -> BTreeMap<String, Value> {
     probed
         .into_iter()
-        .filter_map(|(name, value)| value.map(|value| (name, value)))
+        .filter_map(|(name, cached)| cached.map(|present| (name, present)))
         .chain(fetched)
         .collect()
 }

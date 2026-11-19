@@ -7,7 +7,7 @@ use betterlite_models::decisions::Json;
 use super::support::{GROUP_A, TAG_A, group_budget, tag};
 use crate::auth_cache::keys::CacheKey;
 use crate::auth_cache::{AuthCache, gateway_cache};
-use crate::auth_tag_budgets::cache::{CachedValue, TagBudgetCache};
+use crate::auth_tag_budgets::cache::{CachedValue, TagBudgetCache as _};
 
 type TestCache = AuthCache<DualCache<LocalMemoryOps>>;
 
@@ -100,5 +100,8 @@ async fn auth_cache_registry_round_trip() {
 
 #[test]
 fn auth_cache_management_ttl_is_used() {
-    assert_eq!(local_cache().management_ttl(), MANAGEMENT_TTL);
+    assert_eq!(
+        local_cache().management_ttl().to_bits(),
+        MANAGEMENT_TTL.to_bits()
+    );
 }
