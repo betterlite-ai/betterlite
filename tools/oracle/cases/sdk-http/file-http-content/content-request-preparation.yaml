@@ -1,0 +1,21 @@
+kind: sdk_http
+name: file-http-content-request-preparation
+env: {MANUS_API_KEY: sk-manus}
+call:
+  file_http_content:
+    mode: sync
+    file_id: f
+    extra_headers: {x-trace: trace-a}
+    extra_body: {ignored: "yes"}
+    timeout_seconds: 2
+upstream:
+  - status: 200
+    headers: {}
+    body: {body_kind: bytes, fixture: binary-response.bin, content_type: application/octet-stream}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [api_key, content-type, x-trace]
+  ignore:
+    - pointer: /file_http_content/value/result/headers/date
+      why: each side answers from its own mock, so a server-stamped date would differ while answering nothing

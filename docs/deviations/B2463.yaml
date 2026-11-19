@@ -1,0 +1,21 @@
+task: B2463
+deviations:
+  - what: A streaming failure reads at most 64 KiB of the error body before it builds the provider error.
+    why: LiteLLM buffers the whole error body in memory, so an error answer larger than the process can hold ends the request instead of reporting it. betterlite stops at the documented read limit and reports the text it read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5148
+  - what: A failed read of the error body yields the partial text where LiteLLM propagates the raw httpx read error.
+    why: The status and headers are still the provider's answer. betterlite reports that answer instead of replacing it with a transport error the provider never sent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5148
+  - what: A status-error body decodes as UTF-8 with replacement, where httpx's response.text honours a charset named in the content type.
+    why: betterlite's parity surface is standard JSON and UTF-8 text, so a body declared in another charset keeps its bytes' replacement text rather than a decoded string.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5052
+  - what: A header name or value HTTP cannot carry fails with a typed error naming that header before any request is sent.
+    why: LiteLLM builds the streaming request outside its try, so the same header escapes as an httpx exception with no request made. betterlite names the header and never sends a partial request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5135
+  - what: A missing Manus API key surfaces as the provider's typed error carrying LiteLLM's message.
+    why: LiteLLM raises a bare ValueError from validate_environment, which a caller can only catch as ValueError. betterlite keeps the message and returns an error the caller can match by type.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/manus/files/transformation.py#L81
+kept_bugs:
+  - what: The buffered content handlers accept a timeout and never pass it to the request.
+    why: LiteLLM's retrieve_file_content and async_retrieve_file_content read the timeout argument and send the GET without it, so a working setup gets the client's default timeout on that hop. betterlite keeps that behaviour, and only the streaming handler applies the timeout.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5046

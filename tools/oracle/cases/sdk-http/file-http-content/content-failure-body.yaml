@@ -1,0 +1,18 @@
+kind: sdk_http
+name: file-http-content-failure-body
+env: {MANUS_API_KEY: sk-manus}
+call:
+  file_http_content:
+    mode: async
+    file_id: f
+upstream:
+  - status: 404
+    headers: {content-type: text/plain, retry-after: "3"}
+    body: missing
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [api_key]
+  ignore:
+    - pointer: /file_http_content/value/failure/headers/date
+      why: each side answers from its own mock, so a server-stamped date would differ while answering nothing

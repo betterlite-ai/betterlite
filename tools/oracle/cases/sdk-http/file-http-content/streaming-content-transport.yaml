@@ -1,0 +1,20 @@
+kind: sdk_http
+name: file-http-content-streaming-content-transport
+env: {MANUS_API_KEY: sk-manus}
+call:
+  file_http_content:
+    mode: streaming
+    file_id: f
+    chunk_size: 3
+    timeout_seconds: 2
+upstream:
+  - status: 200
+    headers: {content-encoding: IDENTITY, content-disposition: 'attachment; filename="a.bin"'}
+    body: {body_kind: bytes, fixture: binary-response.bin, content_type: application/octet-stream}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [api_key, content-type]
+  ignore:
+    - pointer: /file_http_content/value/result/headers/date
+      why: each side answers from its own mock, so a server-stamped date would differ while answering nothing
