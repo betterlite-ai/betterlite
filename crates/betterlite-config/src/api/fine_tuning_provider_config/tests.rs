@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
+use rstest::rstest;
 
 use super::{FineTuningConfigError, fine_tuning_config_for, set_fine_tuning_config};
 use crate::loader::{ConfigError, ConfigLoader};
@@ -268,6 +269,25 @@ fn a_map_finetune_settings_fails_the_load_naming_the_key() {
     .expect_err("a map is not a list");
     assert!(
         matches!(&error, ConfigError::InvalidScalar { path, .. } if path == "finetune_settings"),
+        "{error:?}"
+    );
+}
+
+#[rstest]
+#[case::boolean_true("finetune_settings: true\n", true)]
+#[case::boolean_false("finetune_settings: false\n", false)]
+#[case::text("finetune_settings: azure\n", false)]
+fn a_scalar_finetune_settings_carries_the_written_boolean(
+    #[case] source: &str,
+    #[case] flag: bool,
+) {
+    let error = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    }
+    .load(source)
+    .expect_err("a scalar is not a list");
+    assert!(
+        matches!(&error, ConfigError::InvalidScalar { path, value } if path == "finetune_settings" && *value == flag),
         "{error:?}"
     );
 }

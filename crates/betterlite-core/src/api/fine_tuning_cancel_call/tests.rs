@@ -366,6 +366,45 @@ async fn cancel_falls_back_to_the_openai_default_base() {
     assert_eq!(api_base, "https://api.openai.com/v1");
 }
 
+#[tokio::test]
+async fn cancel_reads_the_azure_base_and_version_from_the_settings() {
+    let settings = Settings {
+        azure_api_base: Some("https://azure.example".to_owned()),
+        azure_api_version: Some("2024-05-01".to_owned()),
+        ..base_settings()
+    };
+    let entry = first_call(settings, call(Some("azure"), base_params())).await;
+    let Recorded::Azure {
+        api_base,
+        api_version,
+        ..
+    } = &entry
+    else {
+        panic!("azure takes its branch");
+    };
+    assert_eq!(api_base.as_deref(), Some("https://azure.example"));
+    assert_eq!(api_version.as_deref(), Some("2024-05-01"));
+}
+
+#[tokio::test]
+async fn cancel_reads_the_openai_version_and_azure_organization_only_from_the_call() {
+    let settings = Settings {
+        api_version: Some("2024-01-01".to_owned()),
+        organization: Some("org-settings".to_owned()),
+        ..base_settings()
+    };
+    let entry = first_call(settings.clone(), call(Some("openai"), base_params())).await;
+    let Recorded::OpenAi { api_version, .. } = &entry else {
+        panic!("openai takes its branch");
+    };
+    assert_eq!(api_version, &None);
+    let entry = first_call(settings, call(Some("azure"), base_params())).await;
+    let Recorded::Azure { organization, .. } = &entry else {
+        panic!("azure takes its branch");
+    };
+    assert_eq!(organization, &None);
+}
+
 #[rstest]
 #[case::azure_openai_key(Some("azure-openai".to_owned()), None, Some("azure-openai"))]
 #[case::azure_api_key(None, Some("azure-key".to_owned()), Some("azure-key"))]
