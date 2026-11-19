@@ -20,6 +20,37 @@ mock_provider "google" {
       email = "betterlite@test-project.iam.gserviceaccount.com"
     }
   }
+
+  # plan fills computed values only for types a mock_resource declares, so every id an assertion reads gets one
+  mock_resource "google_vpc_access_connector" {
+    defaults = {
+      id = "projects/test-project/locations/us-central1/connectors/tenant-test-betterl-conn"
+    }
+  }
+
+  mock_resource "google_sql_database_instance" {
+    defaults = {
+      private_ip_address = "10.10.0.2"
+    }
+  }
+
+  mock_resource "google_secret_manager_secret" {
+    defaults = {
+      id = "projects/test-project/secrets/tenant-test-betterlite-master-key"
+    }
+  }
+
+  mock_resource "google_cloud_run_v2_service" {
+    defaults = {
+      uri = "https://tenant-test-betterlite-abc123.us-central1.run.app"
+    }
+  }
+
+  mock_resource "google_cloud_run_v2_job" {
+    defaults = {
+      id = "projects/test-project/locations/us-central1/jobs/tenant-test-betterlite-migrate"
+    }
+  }
 }
 
 mock_provider "random" {
@@ -142,6 +173,15 @@ run "default_service_env_and_secrets" {
     ])
     error_message = "The load balancer must be allowed to invoke the service through an allUsers roles/run.invoker binding."
   }
+
+  assert {
+    condition = alltrue([
+      output.service_url == google_cloud_run_v2_service.betterlite[0].uri,
+      output.cloud_run_service_name == google_cloud_run_v2_service.betterlite[0].name,
+      output.migration_job_name == google_cloud_run_v2_job.migrate[0].name,
+    ])
+    error_message = "The runtime outputs must expose the service URL and the names of the service and the migration job."
+  }
 }
 
 run "caller_extra_env_replaces_the_module_value" {
@@ -164,6 +204,27 @@ run "caller_extra_env_replaces_the_module_value" {
       contains([for env in google_cloud_run_v2_service.betterlite[0].template[0].containers[0].env : env.name], "EXTRA_FLAG"),
     ])
     error_message = "A caller extra_env name must replace the module's entry instead of adding a second one with the same name."
+  }
+}
+
+run "database_user_and_name_reach_the_service_and_the_job" {
+  command = plan
+
+  variables {
+    db_username = "appuser"
+    db_name     = "appdb"
+  }
+
+  assert {
+    condition = alltrue([
+      one([for env in google_cloud_run_v2_service.betterlite[0].template[0].containers[0].env : env.value if env.name == "DATABASE_USER"]) == "appuser",
+      one([for env in google_cloud_run_v2_service.betterlite[0].template[0].containers[0].env : env.value if env.name == "DATABASE_NAME"]) == "appdb",
+      one([for env in google_cloud_run_v2_service.betterlite[0].template[0].containers[0].env : env.value if env.name == "DATABASE_PORT"]) == "5432",
+      one([for env in google_cloud_run_v2_job.migrate[0].template[0].template[0].containers[0].env : env.value if env.name == "DATABASE_USER"]) == "appuser",
+      one([for env in google_cloud_run_v2_job.migrate[0].template[0].template[0].containers[0].env : env.value if env.name == "DATABASE_NAME"]) == "appdb",
+      one([for env in google_cloud_run_v2_job.migrate[0].template[0].template[0].containers[0].env : env.value if env.name == "DATABASE_PORT"]) == "5432",
+    ])
+    error_message = "A caller's db_username and db_name must reach DATABASE_USER and DATABASE_NAME on the service and the migration job, with the fixed port 5432."
   }
 }
 
@@ -287,8 +348,48 @@ run "migration_job_runs_betterlite_db_admin" {
       one([for env in google_cloud_run_v2_job.migrate[0].template[0].template[0].containers[0].env : env.value if env.name == "DATABASE_HOST"]) == google_sql_database_instance.writer.private_ip_address,
       one([for env in google_cloud_run_v2_job.migrate[0].template[0].template[0].containers[0].env : one(env.value_source).secret_key_ref[0].secret if env.name == "DATABASE_PASSWORD"]) == google_secret_manager_secret.db_password.id,
       length(terraform_data.migration) == 1,
+      terraform_data.migration[0].triggers_replace["job_id"] == google_cloud_run_v2_job.migrate[0].id,
+      terraform_data.migration[0].triggers_replace["job_image"] == var.image,
     ])
-    error_message = "The migration job must run betterlite-db-admin migrate with max_retries 0, the database environment and the password secret, and terraform_data.migration must exist."
+    error_message = "The migration job must run betterlite-db-admin migrate with max_retries 0, the database environment and the password secret, and terraform_data.migration must be replaced when the job id or the image changes."
+  }
+}
+
+run "sizing_region_and_labels_reach_the_runtime" {
+  command = plan
+
+  variables {
+    cpu             = "4"
+    memory          = "8Gi"
+    min_instances   = 2
+    max_instances   = 5
+    concurrency     = 40
+    timeout_seconds = 600
+    region          = "europe-west1"
+    labels          = { team = "platform" }
+    lb_domains      = ["api.example.com"]
+  }
+
+  assert {
+    condition = alltrue([
+      google_cloud_run_v2_service.betterlite[0].location == "europe-west1",
+      google_cloud_run_v2_service.betterlite[0].labels["team"] == "platform",
+      google_cloud_run_v2_service.betterlite[0].template[0].max_instance_request_concurrency == 40,
+      google_cloud_run_v2_service.betterlite[0].template[0].timeout == "600s",
+      google_cloud_run_v2_service.betterlite[0].template[0].scaling[0].min_instance_count == 2,
+      google_cloud_run_v2_service.betterlite[0].template[0].scaling[0].max_instance_count == 5,
+      google_cloud_run_v2_service.betterlite[0].template[0].containers[0].resources[0].limits["cpu"] == "4",
+      google_cloud_run_v2_service.betterlite[0].template[0].containers[0].resources[0].limits["memory"] == "8Gi",
+      google_cloud_run_v2_job.migrate[0].location == "europe-west1",
+      google_cloud_run_v2_job.migrate[0].labels["team"] == "platform",
+      google_compute_region_network_endpoint_group.betterlite[0].region == "europe-west1",
+      google_compute_global_address.lb[0].labels["managed_by"] == "terraform",
+      google_compute_global_address.lb[0].labels["team"] == "platform",
+      google_compute_global_forwarding_rule.http[0].labels["team"] == "platform",
+      google_compute_global_forwarding_rule.https[0].labels["team"] == "platform",
+      google_compute_backend_service.betterlite[0].timeout_sec == 600,
+    ])
+    error_message = "The cpu, memory, instance limits, concurrency, timeout, region and labels must reach every runtime resource they configure, with the timeout on both the service and the backend service."
   }
 }
 

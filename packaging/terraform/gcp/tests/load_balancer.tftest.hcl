@@ -20,6 +20,43 @@ mock_provider "google" {
       address = "203.0.113.10"
     }
   }
+
+  # plan fills computed values only for types a mock_resource declares, so every id an assertion reads gets one
+  mock_resource "google_compute_region_network_endpoint_group" {
+    defaults = {
+      id = "projects/test-project/regions/us-central1/networkEndpointGroups/tenant-test-betterlite-neg"
+    }
+  }
+
+  mock_resource "google_compute_backend_service" {
+    defaults = {
+      id = "projects/test-project/global/backendServices/tenant-test-betterlite-bs"
+    }
+  }
+
+  mock_resource "google_compute_url_map" {
+    defaults = {
+      id = "projects/test-project/global/urlMaps/tenant-test-betterlite"
+    }
+  }
+
+  mock_resource "google_compute_target_http_proxy" {
+    defaults = {
+      id = "projects/test-project/global/targetHttpProxies/tenant-test-betterlite-http"
+    }
+  }
+
+  mock_resource "google_compute_target_https_proxy" {
+    defaults = {
+      id = "projects/test-project/global/targetHttpsProxies/tenant-test-betterlite-https"
+    }
+  }
+
+  mock_resource "google_compute_managed_ssl_certificate" {
+    defaults = {
+      id = "projects/test-project/global/sslCertificates/tenant-test-betterlite-cert"
+    }
+  }
 }
 
 mock_provider "random" {
