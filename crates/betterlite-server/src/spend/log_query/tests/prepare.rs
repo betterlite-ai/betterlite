@@ -2,7 +2,7 @@ use std::str::from_utf8;
 
 use axum::body::to_bytes;
 use axum::http::StatusCode;
-use axum::response::IntoResponse;
+use axum::response::IntoResponse as _;
 use rstest::rstest;
 
 use super::super::dates::DateFormatError;
@@ -183,7 +183,7 @@ fn prepare_rejects_unicode_digits_that_strptime_would_accept() {
         error,
         PrepareError::InvalidDate {
             source: DateFormatError {
-                value: "٢٠٢٤-01-05".to_owned(),
+                value: "\u{662}\u{660}\u{662}\u{664}-01-05".to_owned(),
                 expected: "'YYYY-MM-DD' or 'YYYY-MM-DD HH:MM:SS'",
             },
         }

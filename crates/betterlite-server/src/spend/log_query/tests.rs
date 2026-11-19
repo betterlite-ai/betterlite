@@ -6,7 +6,7 @@ use std::str::{FromStr as _, from_utf8};
 
 use axum::body::to_bytes;
 use axum::http::StatusCode;
-use axum::response::IntoResponse;
+use axum::response::IntoResponse as _;
 use chrono::{DateTime, Utc};
 use rstest::rstest;
 use rust_decimal::Decimal;
@@ -24,6 +24,7 @@ const DATES: &str = "start_date=2024-01-02&end_date=2024-01-03";
 const PAGE_MINIMUM: &str = "Input should be greater than or equal to 1";
 const NOT_AN_INTEGER: &str =
     "Input should be a valid integer, unable to parse string as an integer";
+const SCALAR_FILTERS: &str = "api_key=k&user_id=u&request_id=r&session_id=s&team_id=t&status_filter=failure&model=m&model_id=mi&model_group=mg&key_alias=ka&end_user=eu&error_code=500&error_message=boom&search=a%26b%3Dc&session_cursor=c";
 
 fn decode(raw: &str) -> SpendLogQuery {
     decode_spend_log_query(Some(raw))
@@ -47,29 +48,11 @@ fn decimal(text: &str) -> Decimal {
 }
 
 #[test]
-fn decoding_defaults_page_page_size_and_content_filters() {
+fn decoding_defaults_page_and_choices() {
     let query = decode("");
     assert_eq!(query.page.page, 1);
     assert_eq!(query.page.page_size, 50);
     assert_eq!(query.page.session_cursor, None);
-    assert_eq!(query.filters.api_key_filter, None);
-    assert_eq!(query.filters.user_id, None);
-    assert_eq!(query.filters.request_id, None);
-    assert_eq!(query.filters.session_id, None);
-    assert_eq!(query.filters.team_id, None);
-    assert_eq!(query.filters.status_filter, None);
-    assert_eq!(query.filters.model, None);
-    assert_eq!(query.filters.model_id, None);
-    assert_eq!(query.filters.model_group, None);
-    assert_eq!(query.filters.key_alias, None);
-    assert_eq!(query.filters.end_user, None);
-    assert_eq!(query.filters.error_code, None);
-    assert_eq!(query.filters.error_message, None);
-    assert_eq!(query.filters.search, None);
-    assert_eq!(query.dates.start_date, None);
-    assert_eq!(query.dates.end_date, None);
-    assert_eq!(query.spend.minimum_inclusive, None);
-    assert_eq!(query.spend.maximum_inclusive, None);
     assert_eq!(query.choices.sort_by, "startTime");
     assert_eq!(query.choices.sort_order, None);
     assert_eq!(query.choices.cache_hit_filter, None);
@@ -81,15 +64,52 @@ fn decoding_defaults_page_page_size_and_content_filters() {
 }
 
 #[test]
-fn decoding_reads_every_scalar_filter() {
-    let query = decode(
-        "api_key=k&user_id=u&request_id=r&session_id=s&team_id=t&status_filter=failure&model=m&model_id=mi&model_group=mg&key_alias=ka&end_user=eu&error_code=500&error_message=boom&search=a%26b%3Dc&session_cursor=c",
-    );
+fn decoding_defaults_leave_identity_filters_null() {
+    let query = decode("");
+    assert_eq!(query.filters.api_key_filter, None);
+    assert_eq!(query.filters.user_id, None);
+    assert_eq!(query.filters.request_id, None);
+    assert_eq!(query.filters.session_id, None);
+    assert_eq!(query.filters.team_id, None);
+}
+
+#[test]
+fn decoding_defaults_leave_content_filters_null() {
+    let query = decode("");
+    assert_eq!(query.filters.status_filter, None);
+    assert_eq!(query.filters.model, None);
+    assert_eq!(query.filters.model_id, None);
+    assert_eq!(query.filters.model_group, None);
+    assert_eq!(query.filters.key_alias, None);
+    assert_eq!(query.filters.end_user, None);
+    assert_eq!(query.filters.error_code, None);
+    assert_eq!(query.filters.error_message, None);
+    assert_eq!(query.filters.search, None);
+}
+
+#[test]
+fn decoding_defaults_leave_dates_and_spend_null() {
+    let query = decode("");
+    assert_eq!(query.dates.start_date, None);
+    assert_eq!(query.dates.end_date, None);
+    assert_eq!(query.spend.minimum_inclusive, None);
+    assert_eq!(query.spend.maximum_inclusive, None);
+}
+
+#[test]
+fn decoding_reads_identity_filters_and_session_cursor() {
+    let query = decode(SCALAR_FILTERS);
     assert_eq!(query.filters.api_key_filter.as_deref(), Some("k"));
     assert_eq!(query.filters.user_id.as_deref(), Some("u"));
     assert_eq!(query.filters.request_id.as_deref(), Some("r"));
     assert_eq!(query.filters.session_id.as_deref(), Some("s"));
     assert_eq!(query.filters.team_id.as_deref(), Some("t"));
+    assert_eq!(query.page.session_cursor.as_deref(), Some("c"));
+}
+
+#[test]
+fn decoding_reads_content_filters() {
+    let query = decode(SCALAR_FILTERS);
     assert_eq!(query.filters.status_filter.as_deref(), Some("failure"));
     assert_eq!(query.filters.model.as_deref(), Some("m"));
     assert_eq!(query.filters.model_id.as_deref(), Some("mi"));
@@ -99,7 +119,6 @@ fn decoding_reads_every_scalar_filter() {
     assert_eq!(query.filters.error_code.as_deref(), Some("500"));
     assert_eq!(query.filters.error_message.as_deref(), Some("boom"));
     assert_eq!(query.filters.search.as_deref(), Some("a&b=c"));
-    assert_eq!(query.page.session_cursor.as_deref(), Some("c"));
 }
 
 #[test]
