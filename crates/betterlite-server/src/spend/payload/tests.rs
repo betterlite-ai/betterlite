@@ -271,9 +271,6 @@ fn assembles_a_standard_enriched_payload() {
 #[test]
 fn the_standard_payload_enrichment_lands_in_the_metadata() {
     let payload = standard_request();
-    assert_eq!(payload.spend, Some(Decimal::new(25, 2)));
-    assert_eq!(payload.litellm_call_id.as_deref(), Some("call-1"));
-    assert_eq!(payload.request_duration_ms, Some(2500));
     let metadata = metadata_of(&payload);
     assert_eq!(
         metadata.get("applied_guardrails"),
@@ -298,6 +295,16 @@ fn the_standard_payload_enrichment_lands_in_the_metadata() {
         object(metadata.get("azure_spillover").expect("spillover")).get("from_deployment"),
         Some(&Json::Null)
     );
+    assert_eq!(
+        payload.session_id.as_deref(),
+        Some("00000000-0000-0000-0000-000000000001")
+    );
+}
+
+#[test]
+fn the_standard_usage_object_fills_additional_usage_values() {
+    let payload = standard_request();
+    let metadata = metadata_of(&payload);
     let additional = object(
         metadata
             .get("additional_usage_values")
@@ -307,10 +314,14 @@ fn the_standard_payload_enrichment_lands_in_the_metadata() {
         additional.get("cache_creation_input_tokens"),
         Some(&Json::Number(Number::from(9_i32)))
     );
-    assert_eq!(
-        payload.session_id.as_deref(),
-        Some("00000000-0000-0000-0000-000000000001")
-    );
+}
+
+#[test]
+fn the_standard_payload_stores_its_spend_and_request_identifiers() {
+    let payload = standard_request();
+    assert_eq!(payload.spend, Some(Decimal::new(25, 2)));
+    assert_eq!(payload.litellm_call_id.as_deref(), Some("call-1"));
+    assert_eq!(payload.request_duration_ms, Some(2500));
 }
 
 #[test]
