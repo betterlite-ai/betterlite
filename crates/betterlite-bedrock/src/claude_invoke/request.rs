@@ -70,10 +70,41 @@ pub struct ClaudeInvokePrepared {
     pub tool_name_reverse: BTreeMap<String, String>,
 }
 
+pub(crate) struct BaseRequest {
+    pub(crate) body: Object,
+    pub(crate) headers: AnthropicHeaders,
+    pub(crate) tool_name_reverse: BTreeMap<String, String>,
+}
+
 pub async fn transform_request<Source, Transport, Fetcher, Blocks, Ids, Lookup>(
     request: &ClaudeInvokeRequest<'_>,
     sources: &mut TransformSources<'_, '_, Source, Transport, Fetcher, Blocks, Ids, Lookup>,
 ) -> Result<ClaudeInvokePrepared, ClaudeInvokeError<Blocks::Failure>>
+where
+    Source: DynamicMetadataSource,
+    Transport: ModelInfoClient,
+    Fetcher: RemoteMediaFetcher + Sync,
+    Blocks: FileBlocks + Sync,
+    Ids: Fn() -> String + Sync,
+    Lookup: ModelInfoLookup,
+{
+    let base = build_base_request(request, sources).await?;
+    let mut body = base.body;
+    convert_document_url_sources(&mut body, sources.prompts.fetcher).await?;
+    sources
+        .apply_beta_headers(request, &base.headers, &mut body)
+        .await?;
+    Ok(ClaudeInvokePrepared {
+        body,
+        tool_name_reverse: base.tool_name_reverse,
+    })
+}
+
+// _build_bedrock_anthropic_request_base: every step both the invoke and mantle chat transforms share, without the invoke surface's document conversion and computed beta list.
+pub(crate) async fn build_base_request<Source, Transport, Fetcher, Blocks, Ids, Lookup>(
+    request: &ClaudeInvokeRequest<'_>,
+    sources: &mut TransformSources<'_, '_, Source, Transport, Fetcher, Blocks, Ids, Lookup>,
+) -> Result<BaseRequest, ClaudeInvokeError<Blocks::Failure>>
 where
     Source: DynamicMetadataSource,
     Transport: ModelInfoClient,
@@ -107,12 +138,10 @@ where
     let mut body: Object = serde_json::from_value(serde_json::to_value(&prepared.body)?)?;
     body.shift_remove(MODELS);
     body.shift_remove(STREAM);
-    sources.rewrite_body(request, &mut body).await?;
-    sources
-        .apply_beta_headers(request, &prepared.headers, &mut body)
-        .await?;
-    Ok(ClaudeInvokePrepared {
+    sources.rewrite_shared_body(request, &mut body).await;
+    Ok(BaseRequest {
         body,
+        headers: prepared.headers,
         tool_name_reverse: prepared.tool_name_reverse,
     })
 }
@@ -136,7 +165,7 @@ where
     transform_request(&inlined_request, sources).await
 }
 
-async fn inlined_messages<Fetcher, Blocks>(
+pub(crate) async fn inlined_messages<Fetcher, Blocks>(
     messages: &[Json],
     fetcher: &Fetcher,
 ) -> Result<Vec<Json>, ClaudeInvokeError<Blocks::Failure>>
@@ -160,11 +189,7 @@ where
     Ids: Fn() -> String + Sync,
     Lookup: ModelInfoLookup,
 {
-    async fn rewrite_body(
-        &mut self,
-        request: &ClaudeInvokeRequest<'_>,
-        body: &mut Object,
-    ) -> Result<(), ClaudeInvokeError<Blocks::Failure>> {
+    async fn rewrite_shared_body(&mut self, request: &ClaudeInvokeRequest<'_>, body: &mut Object) {
         self.apply_schema_rewrites(request, body).await;
         if !body.contains_key("anthropic_version") {
             body.insert(
@@ -175,8 +200,6 @@ where
         normalize_tool_custom_field(body);
         normalize_tool_schema_types(body);
         strip_eager_streaming_tools(body);
-        convert_document_url_sources(body, self.prompts.fetcher).await?;
-        Ok(())
     }
 
     // The schema helpers read both capability answers through the Bedrock provider.

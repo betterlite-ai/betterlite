@@ -1,15 +1,12 @@
-use betterlite_models::decisions::Json as ParamJson;
 use betterlite_models::lemonade_model_metadata::ModelInfoClient;
 use betterlite_models::model_metadata_resolution::dynamic::DynamicMetadataSource;
 use betterlite_prompts::anthropic_results::tool_result::FileBlocks;
 use betterlite_prompts::arguments::json::Object;
-use betterlite_prompts::media::inline::{RemoteMediaFetcher, async_inline_remote_media};
-use betterlite_prompts::media::parts::INLINE_EVERY_REMOTE_URL;
-use betterlite_prompts::message_content::Message;
+use betterlite_prompts::media::inline::RemoteMediaFetcher;
 
 use crate::bedrock_model_capabilities::ModelInfoLookup;
 use crate::claude_invoke::error::ClaudeInvokeError;
-use crate::claude_invoke::request::{ClaudeInvokeRequest, TransformSources};
+use crate::claude_invoke::request::{ClaudeInvokeRequest, TransformSources, inlined_messages};
 
 use super::request::transform_request;
 
@@ -30,18 +27,4 @@ where
     inlined.messages =
         inlined_messages::<Fetcher, Blocks>(&request.messages, sources.prompts.fetcher).await?;
     transform_request(&inlined, sources).await
-}
-
-async fn inlined_messages<Fetcher, Blocks>(
-    messages: &[ParamJson],
-    fetcher: &Fetcher,
-) -> Result<Vec<ParamJson>, ClaudeInvokeError<Blocks::Failure>>
-where
-    Fetcher: RemoteMediaFetcher + Sync,
-    Blocks: FileBlocks + Sync,
-{
-    let typed: Vec<Message> = serde_json::from_value(serde_json::to_value(messages)?)?;
-    let inlined = async_inline_remote_media(&typed, &INLINE_EVERY_REMOTE_URL, fetcher).await?;
-    let converted: Vec<ParamJson> = serde_json::from_value(serde_json::to_value(&inlined)?)?;
-    Ok(converted)
 }
