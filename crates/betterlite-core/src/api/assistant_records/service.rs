@@ -30,35 +30,45 @@ pub struct AssistantRecords<'context, 'resolution, Transport> {
     pub transport: Arc<Transport>,
 }
 
+// Which façade runs, with the provider it resolved and the flag its SDK call carries.
+struct Selection {
+    provider: String,
+    entry: Entry,
+    flag: Option<bool>,
+}
+
 impl<Transport: AssistantsTransport> AssistantRecords<'_, '_, Transport> {
     pub async fn create_assistants(&self, input: &AssistantCreateInput) -> AssistantCreateOutcome {
-        let (provider, flag) = self.selection(input, Entry::Sync)?;
-        let call = self.call(input, &provider, Entry::Sync, matches!(flag, Some(true)))?;
-        self.answer(input, provider, Entry::Sync, flag, call).await
+        let selected = self.selection(input, Entry::Sync)?;
+        let call = self.call(
+            input,
+            &selected.provider,
+            selected.entry,
+            matches!(selected.flag, Some(true)),
+        )?;
+        self.answer(input, &selected, call).await
     }
 
     pub async fn acreate_assistants(&self, input: &AssistantCreateInput) -> AssistantCreateOutcome {
-        let (provider, flag) = self.selection(input, Entry::Async)?;
-        let call = self.call(input, &provider, Entry::Async, true)?;
-        self.answer(input, provider, Entry::Async, flag, call).await
+        let selected = self.selection(input, Entry::Async)?;
+        let call = self.call(input, &selected.provider, selected.entry, true)?;
+        self.answer(input, &selected, call).await
     }
 
     async fn answer(
         &self,
         input: &AssistantCreateInput,
-        provider: String,
-        entry: Entry,
-        flag: Option<bool>,
+        selected: &Selection,
         call: AssistantCreateCall,
     ) -> AssistantCreateOutcome {
-        match self.execute(&call, flag).await {
+        match self.execute(&call, selected.flag).await {
             Ok(Some(assistant)) => Ok(AssistantCreateResult { call, assistant }),
             Ok(None) => Err(error::no_response()),
             Err(raised) => Err(error::raised(
-                raised,
+                &raised,
                 &input.model,
-                &provider,
-                entry,
+                &selected.provider,
+                selected.entry,
                 self.redactor,
             )),
         }
@@ -73,7 +83,7 @@ impl<Transport: AssistantsTransport> AssistantRecords<'_, '_, Transport> {
         message: &str,
     ) -> AssistantCreateFailure {
         error::raised(
-            Raised::Local(message.to_owned()),
+            &Raised::Local(message.to_owned()),
             input.model.as_str(),
             provider,
             entry,
@@ -86,12 +96,16 @@ impl<Transport: AssistantsTransport> AssistantRecords<'_, '_, Transport> {
         &self,
         input: &AssistantCreateInput,
         entry: Entry,
-    ) -> Result<(String, Option<bool>), AssistantCreateFailure> {
+    ) -> Result<Selection, AssistantCreateFailure> {
         if entry == Entry::Async {
             let provider = projection::provider(input, self.resolution).map_err(|source| {
                 self.failure(input, &input.provider, Entry::Async, &source.to_string())
             })?;
-            return Ok((provider, Some(true)));
+            return Ok(Selection {
+                provider,
+                entry,
+                flag: Some(true),
+            });
         }
         let flag = match &input.async_create_assistants {
             Some(AsyncFlag::Bool(value)) => Some(*value),
@@ -100,7 +114,11 @@ impl<Transport: AssistantsTransport> AssistantRecords<'_, '_, Transport> {
             }
             None => None,
         };
-        Ok((input.provider.clone(), flag))
+        Ok(Selection {
+            provider: input.provider.clone(),
+            entry,
+            flag,
+        })
     }
 
     fn call(

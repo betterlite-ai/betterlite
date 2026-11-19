@@ -84,7 +84,7 @@ pub(super) fn timeout(
             provider,
             None,
         )?),
-        None | Some(CreateTimeout::Seconds(_)) | Some(CreateTimeout::Text(_)) => Ok(
+        None | Some(CreateTimeout::Seconds(_) | CreateTimeout::Text(_)) => Ok(
             FineTuningTimeout::Seconds(request_timeout(None, input.request_timeout)?),
         ),
     }
@@ -130,11 +130,11 @@ pub(super) enum CallKind {
     Azure,
 }
 
-pub(super) struct CallRequest<'a> {
+pub(super) struct CallRequest<'request> {
     pub kind: CallKind,
-    pub settings: &'a resource_sdk_settings::Settings,
-    pub environment: &'a (dyn EnvironmentLookup + Sync),
-    pub input: &'a AssistantCreateInput,
+    pub settings: &'request resource_sdk_settings::Settings,
+    pub environment: &'request (dyn EnvironmentLookup + Sync),
+    pub input: &'request AssistantCreateInput,
     pub timeout: FineTuningTimeout,
     pub is_async: bool,
 }
@@ -225,9 +225,8 @@ fn azure_ad_token(
 // isinstance(client, OpenAI) also matches AzureOpenAI; AsyncOpenAI sits outside that hierarchy.
 const fn effective_client(client: Option<ClientClass>) -> Option<ClientClass> {
     match client {
-        Some(ClientClass::OpenAi | ClientClass::AzureOpenAi) => None,
+        Some(ClientClass::OpenAi | ClientClass::AzureOpenAi) | None => None,
         Some(other) => Some(other),
-        None => None,
     }
 }
 
@@ -248,10 +247,10 @@ fn prepare(input: &AssistantCreateInput) -> Prepared {
             name: input.name.clone().map(Some),
             reasoning_effort: None,
             response_format: input.response_format.clone().map(Some),
-            temperature: input.temperature,
+            temperature: input.temperature.clone().map(Some),
             tool_resources: input.tool_resources.clone().map(Some),
             tools: input.tools.clone().map(Some),
-            top_p: input.top_p,
+            top_p: input.top_p.clone().map(Some),
         },
         options: ResourceSdkRequestOptions {
             api_base: input.api_base.clone(),

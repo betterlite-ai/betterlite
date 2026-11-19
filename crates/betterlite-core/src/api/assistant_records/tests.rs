@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::{azure_endpoints, resource_sdk_settings};
 use betterlite_error::envelope::WireField;
 use betterlite_foundry::chat::sources::NoSources;
@@ -136,7 +137,7 @@ impl Fixture {
         self
     }
 
-    fn reply(mut self, status: u16, body: &str) -> Self {
+    fn reply(self, status: u16, body: &str) -> Self {
         self.transport.reply(status, body);
         self
     }
@@ -174,7 +175,10 @@ fn redactor() -> Redactor {
     Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("a redactor")
 }
 
-fn input<Fields: serde::Serialize>(extra: Fields) -> AssistantCreateInput {
+fn input<Fields>(extra: Fields) -> AssistantCreateInput
+where
+    Fields: serde::Serialize,
+{
     let mut base = json!({"provider": "openai", "model": "gpt-4o-mini"});
     let fields = serde_json::to_value(extra).expect("the extra fields are JSON");
     if let (Some(target), Some(source)) = (base.as_object_mut(), fields.as_object()) {
@@ -185,13 +189,23 @@ fn input<Fields: serde::Serialize>(extra: Fields) -> AssistantCreateInput {
     serde_json::from_value(base).expect("an assistant create input")
 }
 
-fn create_body<Fields: serde::Serialize>(fields: Fields) -> AssistantCreate {
+fn create_body<Fields>(fields: Fields) -> AssistantCreate
+where
+    Fields: serde::Serialize,
+{
     let value = serde_json::to_value(fields).expect("the expected fields are JSON");
     serde_json::from_value(value).expect("an assistant create body")
 }
 
+// a config with nothing set, so a test that sets two values says which two
+fn bare_settings() -> resource_sdk_settings::Settings {
+    let lookup = BTreeMap::<String, String>::new();
+    let config = ConfigLoader { lookup }.load("{}").expect("an empty config");
+    config.sections.resource_sdk_settings
+}
+
 fn openai_settings(api_key: &str) -> resource_sdk_settings::Settings {
-    let mut settings = resource_sdk_settings::Settings::default();
+    let mut settings = bare_settings();
     settings.api_key = Some(SecretString::from(api_key));
     settings
 }
@@ -214,7 +228,7 @@ fn failure(
     result: Result<AssistantCreateResult, AssistantCreateFailure>,
 ) -> AssistantCreateFailure {
     match result {
-        Ok(result) => panic!("the call unexpectedly returned {}", result.assistant.id),
+        Ok(created) => panic!("the call unexpectedly returned {}", created.assistant.id),
         Err(failure) => failure,
     }
 }
@@ -299,7 +313,7 @@ async fn assistant_create_optional_values(#[case] entry: Entry) {
     );
 
     // a null for every optional field stays out of the create data
-    let request = input(json!({
+    let null_request = input(json!({
         "api_base": "https://request.test/v1",
         "api_key": "sk-request",
         "name": null,
@@ -312,19 +326,22 @@ async fn assistant_create_optional_values(#[case] entry: Entry) {
         "top_p": null,
         "response_format": null,
     }));
-    let result = invoke(&service, &request, entry)
+    let null_result = invoke(&service, &null_request, entry)
         .await
         .expect("the provider answered");
-    assert_eq!(result.assistant.id, "asst_a");
-    let seen = fixture.transport.seen();
-    assert_eq!(seen.len(), 2);
-    assert_eq!(seen[1].body, create_body(json!({"model": "gpt-4o-mini"})));
+    assert_eq!(null_result.assistant.id, "asst_a");
+    let all_seen = fixture.transport.seen();
+    assert_eq!(all_seen.len(), 2);
+    assert_eq!(
+        all_seen[1].body,
+        create_body(json!({"model": "gpt-4o-mini"}))
+    );
 }
 
 #[tokio::test]
 async fn assistant_create_credentials() {
     let redactor = redactor();
-    let mut settings = resource_sdk_settings::Settings::default();
+    let mut settings = bare_settings();
     settings.api_base = Some(String::from("https://global.test/v1"));
     settings.api_key = Some(SecretString::from("sk-global"));
     settings.organization = Some(String::from("org-global"));
@@ -359,9 +376,15 @@ async fn assistant_create_credentials() {
     assert_eq!(seen_deadline(&fixture, 0), Duration::from_millis(7500));
 
     // the configured values fill in when the request leaves them out, and a zero falls through
-    let request = input(json!({"timeout": 0, "request_timeout": 12.0}));
-    let result = service.create_assistants(&request).await.expect("answered");
-    assert_eq!(openai_call(&result).api_base, "https://global.test/v1");
+    let fallback_request = input(json!({"timeout": 0, "request_timeout": 12.0}));
+    let fallback_result = service
+        .create_assistants(&fallback_request)
+        .await
+        .expect("answered");
+    assert_eq!(
+        openai_call(&fallback_result).api_base,
+        "https://global.test/v1"
+    );
     assert_eq!(seen_auth(&fixture, 1), "Bearer sk-global");
     assert_eq!(
         fixture.transport.seen()[1].headers["openai-organization"],
@@ -370,16 +393,22 @@ async fn assistant_create_credentials() {
     assert_eq!(seen_deadline(&fixture, 1), Duration::from_secs(12));
 
     // an empty base falls through, the key chain reaches the env name, and a numeric text converts
-    let mut settings = resource_sdk_settings::Settings::default();
-    settings.api_base = Some(String::new());
-    settings.openai_base_url = Some(String::from("https://base-url.test/v1"));
-    settings.openai_key = Some(SecretString::from("sk-openai-key"));
-    let fixture_empty = Fixture::new(settings);
-    let resolution = fixture_empty.resolution();
-    let service = fixture_empty.service(&resolution, &redactor);
-    let request = input(json!({"timeout": "7.5"}));
-    let result = service.create_assistants(&request).await.expect("answered");
-    assert_eq!(openai_call(&result).api_base, "https://base-url.test/v1");
+    let mut empty_settings = bare_settings();
+    empty_settings.api_base = Some(String::new());
+    empty_settings.openai_key = Some(SecretString::from("sk-openai-key"));
+    empty_settings.openai_base_url = Some(String::from("https://base-url.test/v1"));
+    let fixture_empty = Fixture::new(empty_settings);
+    let empty_resolution = fixture_empty.resolution();
+    let empty_service = fixture_empty.service(&empty_resolution, &redactor);
+    let text_request = input(json!({"timeout": "7.5"}));
+    let text_result = empty_service
+        .create_assistants(&text_request)
+        .await
+        .expect("answered");
+    assert_eq!(
+        openai_call(&text_result).api_base,
+        "https://base-url.test/v1"
+    );
     assert_eq!(seen_auth(&fixture_empty, 0), "Bearer sk-openai-key");
     assert_eq!(
         seen_deadline(&fixture_empty, 0),
@@ -388,21 +417,24 @@ async fn assistant_create_credentials() {
 
     // with no key the SDK raises its own OpenAIError
     let fixture_default = Fixture::new(resource_sdk_settings::Settings::default());
-    let resolution = fixture_default.resolution();
-    let service = fixture_default.service(&resolution, &redactor);
-    let missing = failure(service.create_assistants(&input(json!({}))).await);
+    let default_resolution = fixture_default.resolution();
+    let default_service = fixture_default.service(&default_resolution, &redactor);
+    let missing = failure(default_service.create_assistants(&input(json!({}))).await);
     assert_eq!(missing.class, "OpenAIError");
     assert_eq!(missing.status, None);
 
     // a missing base is the OpenAI default, unlike Azure, which has none
     let fixture_base = Fixture::new(openai_settings("sk-test"));
-    let resolution = fixture_base.resolution();
-    let service = fixture_base.service(&resolution, &redactor);
-    let result = service
+    let base_resolution = fixture_base.resolution();
+    let base_service = fixture_base.service(&base_resolution, &redactor);
+    let base_result = base_service
         .create_assistants(&input(json!({})))
         .await
         .expect("answered");
-    assert_eq!(openai_call(&result).api_base, "https://api.openai.com/v1");
+    assert_eq!(
+        openai_call(&base_result).api_base,
+        "https://api.openai.com/v1"
+    );
     assert_eq!(
         fixture_base.transport.seen()[0].url,
         "https://api.openai.com/v1/assistants"
@@ -410,26 +442,35 @@ async fn assistant_create_credentials() {
 
     // a structured timeout survives for openai and bounds the call by its read phase
     let fixture_structured = Fixture::new(openai_settings("sk-test"));
-    let resolution = fixture_structured.resolution();
-    let service = fixture_structured.service(&resolution, &redactor);
-    let request = input(json!({"timeout": {"read": 9.0, "connect": 2.0}}));
-    service.create_assistants(&request).await.expect("answered");
+    let structured_resolution = fixture_structured.resolution();
+    let structured_service = fixture_structured.service(&structured_resolution, &redactor);
+    let phases_request = input(json!({"timeout": {"read": 9.0, "connect": 2.0}}));
+    structured_service
+        .create_assistants(&phases_request)
+        .await
+        .expect("answered");
     assert_eq!(
         seen_deadline(&fixture_structured, 0),
         Duration::from_secs(9)
     );
 
     // an empty text timeout falls through like an absent one
-    let request = input(json!({"timeout": "", "request_timeout": 12.0}));
-    service.create_assistants(&request).await.expect("answered");
+    let empty_text_request = input(json!({"timeout": "", "request_timeout": 12.0}));
+    structured_service
+        .create_assistants(&empty_text_request)
+        .await
+        .expect("answered");
     assert_eq!(
         seen_deadline(&fixture_structured, 1),
         Duration::from_secs(12)
     );
 
     // a phase map whose read is zero keeps the SDK default deadline
-    let request = input(json!({"timeout": {"read": 0.0}}));
-    service.create_assistants(&request).await.expect("answered");
+    let zero_read_request = input(json!({"timeout": {"read": 0.0}}));
+    structured_service
+        .create_assistants(&zero_read_request)
+        .await
+        .expect("answered");
     assert_eq!(
         seen_deadline(&fixture_structured, 2),
         Duration::from_secs(600)
@@ -447,7 +488,7 @@ async fn assistant_create_azure_options(
     #[case] expected: Option<ClientClass>,
 ) {
     let redactor = redactor();
-    let mut settings = resource_sdk_settings::Settings::default();
+    let mut settings = bare_settings();
     settings.azure_api_base = Some(String::from("https://azure.test"));
     settings.azure_api_version = Some(String::from("2024-02-15-preview"));
     settings.azure_api_key = Some(SecretString::from("key-settings"));
@@ -463,7 +504,7 @@ async fn assistant_create_azure_options(
 #[tokio::test]
 async fn assistant_create_azure_request_values() {
     let redactor = redactor();
-    let mut settings = resource_sdk_settings::Settings::default();
+    let mut settings = bare_settings();
     settings.azure_api_base = Some(String::from("https://azure.test"));
     settings.azure_api_version = Some(String::from("2024-02-15-preview"));
     settings.azure_api_key = Some(SecretString::from("key-settings"));
@@ -489,9 +530,12 @@ async fn assistant_create_azure_request_values() {
     assert_eq!(seen[0].deadline, Duration::from_millis(7500));
 
     // a structured timeout is accepted for azure and leaves the deadline at the SDK default
-    let request = input(json!({"provider": "azure", "timeout": {"read": 9.0}}));
-    let result = service.create_assistants(&request).await.expect("answered");
-    assert_eq!(azure_call(&result).litellm_params.timeout, None);
+    let phases_request = input(json!({"provider": "azure", "timeout": {"read": 9.0}}));
+    let phases_result = service
+        .create_assistants(&phases_request)
+        .await
+        .expect("answered");
+    assert_eq!(azure_call(&phases_result).litellm_params.timeout, None);
     assert_eq!(
         fixture.transport.seen()[1].deadline,
         Duration::from_secs(600)
@@ -499,10 +543,10 @@ async fn assistant_create_azure_request_values() {
 
     // an azure call with no base anywhere has no default and fails as a bare ValueError
     let fixture_unset = Fixture::new(resource_sdk_settings::Settings::default());
-    let resolution = fixture_unset.resolution();
-    let service = fixture_unset.service(&resolution, &redactor);
-    let request = input(json!({"provider": "azure", "api_key": "sk-azure"}));
-    let missing = failure(service.create_assistants(&request).await);
+    let unset_resolution = fixture_unset.resolution();
+    let unset_service = fixture_unset.service(&unset_resolution, &redactor);
+    let unset_request = input(json!({"provider": "azure", "api_key": "sk-azure"}));
+    let missing = failure(unset_service.create_assistants(&unset_request).await);
     assert_eq!(missing.class, "ValueError");
     assert_eq!(missing.status, None);
 }
@@ -513,7 +557,7 @@ async fn assistant_create_azure_request_values() {
 #[tokio::test]
 async fn assistant_create_azure_token(#[case] empty_extra_body: bool) {
     let redactor = redactor();
-    let mut settings = resource_sdk_settings::Settings::default();
+    let mut settings = bare_settings();
     settings.azure_api_base = Some(String::from("https://azure.test"));
     settings.azure_api_version = Some(String::from("2024-02-15-preview"));
     settings.azure_openai_api_key = Some(SecretString::from("key-settings"));
@@ -545,32 +589,37 @@ async fn assistant_create_azure_token(#[case] empty_extra_body: bool) {
     assert!(!seen[0].headers.contains_key("authorization"));
 
     // an absent or empty extra_body reads no environment token
-    let mut request = input(json!({"provider": "azure"}));
+    let mut plain_request = input(json!({"provider": "azure"}));
     if empty_extra_body {
-        request.extra_body = Some(Some(BTreeMap::new()));
+        plain_request.extra_body = Some(Some(BTreeMap::new()));
     }
-    let result = service.create_assistants(&request).await.expect("answered");
-    assert_eq!(azure_call(&result).azure_ad_token, None);
+    let plain_result = service
+        .create_assistants(&plain_request)
+        .await
+        .expect("answered");
+    assert!(azure_call(&plain_result).azure_ad_token.is_none());
 
     // a body token wins and is popped; every other extra_body key stays out of the request
-    let request = input(json!({
+    let body_request = input(json!({
         "provider": "azure",
         "azure_ad_token": "token-params",
         "extra_body": {"azure_ad_token": "token-body", "other": "x"},
     }));
-    let result = service
-        .acreate_assistants(&request)
+    let body_result = service
+        .acreate_assistants(&body_request)
         .await
         .expect("answered");
-    let call = azure_call(&result);
+    let body_call = azure_call(&body_result);
     assert_eq!(
-        call.azure_ad_token
+        body_call
+            .azure_ad_token
             .as_ref()
             .map(SecretString::expose_secret),
         Some("token-body")
     );
     assert_eq!(
-        call.litellm_params
+        body_call
+            .litellm_params
             .azure_ad_token
             .as_ref()
             .map(SecretString::expose_secret),
@@ -582,16 +631,22 @@ async fn assistant_create_azure_token(#[case] empty_extra_body: bool) {
     );
 
     // the litellm_params token reaches the SDK and the facade's own token never does
-    let mut settings = resource_sdk_settings::Settings::default();
-    settings.azure_api_base = Some(String::from("https://azure.test"));
-    let fixture_bearer = Fixture::new(settings);
-    let resolution = fixture_bearer.resolution();
-    let service = fixture_bearer.service(&resolution, &redactor);
-    let request = input(json!({"provider": "azure", "azure_ad_token": "token-params"}));
-    service.create_assistants(&request).await.expect("answered");
-    let seen = fixture_bearer.transport.seen();
-    assert_eq!(seen[0].headers["authorization"], "Bearer token-params");
-    assert!(!seen[0].headers.contains_key("api-key"));
+    let mut bearer_settings = bare_settings();
+    bearer_settings.azure_api_base = Some(String::from("https://azure.test"));
+    let fixture_bearer = Fixture::new(bearer_settings);
+    let bearer_resolution = fixture_bearer.resolution();
+    let bearer_service = fixture_bearer.service(&bearer_resolution, &redactor);
+    let params_request = input(json!({"provider": "azure", "azure_ad_token": "token-params"}));
+    bearer_service
+        .create_assistants(&params_request)
+        .await
+        .expect("answered");
+    let bearer_seen = fixture_bearer.transport.seen();
+    assert_eq!(
+        bearer_seen[0].headers["authorization"],
+        "Bearer token-params"
+    );
+    assert!(!bearer_seen[0].headers.contains_key("api-key"));
 }
 
 #[rstest]
@@ -616,29 +671,29 @@ async fn assistant_create_flag_and_failures(#[case] entry: Entry, #[case] flag: 
     assert_eq!(openai_call(&result).is_async, expected);
 
     // anything else raises the ValueError before a client is built
-    let mut request = input(json!({}));
-    request.async_create_assistants =
+    let mut int_flag_request = input(json!({}));
+    int_flag_request.async_create_assistants =
         Some(serde_json::from_value::<AsyncFlag>(json!(1)).expect("a flag"));
-    let value_error = failure(service.create_assistants(&request).await);
+    let value_error = failure(service.create_assistants(&int_flag_request).await);
     assert_eq!(value_error.class, "ValueError");
     assert_eq!(value_error.status, None);
     assert_eq!(
         value_error.message,
         "Invalid value passed in for async_create_assistants. Only bool or None allowed"
     );
-    let mut request = input(json!({}));
-    request.async_create_assistants =
+    let mut text_flag_request = input(json!({}));
+    text_flag_request.async_create_assistants =
         Some(serde_json::from_value::<AsyncFlag>(json!("true")).expect("a flag"));
-    let value_error = failure(service.create_assistants(&request).await);
-    assert_eq!(value_error.class, "ValueError");
+    let text_value_error = failure(service.create_assistants(&text_flag_request).await);
+    assert_eq!(text_value_error.class, "ValueError");
     assert_eq!(
-        value_error.message,
+        text_value_error.message,
         "Invalid value passed in for async_create_assistants. Only bool or None allowed"
     );
 
     // an unsupported provider is a 400 before any request is sent
-    let request = input(json!({"provider": "anthropic", "model": "claude-3"}));
-    let unsupported = failure(service.create_assistants(&request).await);
+    let unsupported_request = input(json!({"provider": "anthropic", "model": "claude-3"}));
+    let unsupported = failure(service.create_assistants(&unsupported_request).await);
     assert_eq!(unsupported.class, "BadRequestError");
     assert_eq!(unsupported.status, Some(400));
     assert_eq!(unsupported.kind, WireField::Null);
@@ -669,10 +724,14 @@ async fn assistant_create_flag_and_failures(#[case] entry: Entry, #[case] flag: 
     let fixture_404 = Fixture::new(openai_settings("sk-test"))
         .reply(404, body_404)
         .reply(404, body_404);
-    let resolution = fixture_404.resolution();
-    let service = fixture_404.service(&resolution, &redactor);
-    let request = input(json!({}));
-    let sync = failure(service.create_assistants(&request).await);
+    let not_found_resolution = fixture_404.resolution();
+    let not_found_service = fixture_404.service(&not_found_resolution, &redactor);
+    let not_found_request = input(json!({}));
+    let sync = failure(
+        not_found_service
+            .create_assistants(&not_found_request)
+            .await,
+    );
     assert_eq!(sync.class, "NotFoundError");
     assert_eq!(sync.status, Some(404));
     assert_eq!(
@@ -681,7 +740,11 @@ async fn assistant_create_flag_and_failures(#[case] entry: Entry, #[case] flag: 
     );
     assert_eq!(sync.param, WireField::Text(String::from("assistant_id")));
     assert_eq!(sync.code, WireField::Text(String::from("missing")));
-    let asynchronous = failure(service.acreate_assistants(&request).await);
+    let asynchronous = failure(
+        not_found_service
+            .acreate_assistants(&not_found_request)
+            .await,
+    );
     assert_eq!(asynchronous.class, "NotFoundError");
     assert_eq!(asynchronous.status, Some(404));
     assert_eq!(asynchronous.kind, WireField::Null);
@@ -693,63 +756,79 @@ async fn assistant_create_flag_and_failures(#[case] entry: Entry, #[case] flag: 
     let fixture_500 = Fixture::new(openai_settings("sk-test"))
         .reply(500, body_500)
         .reply(500, body_500);
-    let resolution = fixture_500.resolution();
-    let service = fixture_500.service(&resolution, &redactor);
-    let request = input(json!({}));
-    let sync = failure(service.create_assistants(&request).await);
-    assert_eq!(sync.class, "InternalServerError");
-    assert_eq!(sync.status, Some(500));
-    assert_eq!(sync.kind, WireField::Text(String::from("server_error")));
-    let asynchronous = failure(service.acreate_assistants(&request).await);
-    assert_eq!(asynchronous.class, "InternalServerError");
-    assert_eq!(asynchronous.status, Some(500));
+    let server_error_resolution = fixture_500.resolution();
+    let server_error_service = fixture_500.service(&server_error_resolution, &redactor);
+    let server_error_request = input(json!({}));
+    let sync_500 = failure(
+        server_error_service
+            .create_assistants(&server_error_request)
+            .await,
+    );
+    assert_eq!(sync_500.class, "InternalServerError");
+    assert_eq!(sync_500.status, Some(500));
+    assert_eq!(sync_500.kind, WireField::Text(String::from("server_error")));
+    let async_500 = failure(
+        server_error_service
+            .acreate_assistants(&server_error_request)
+            .await,
+    );
+    assert_eq!(async_500.class, "InternalServerError");
+    assert_eq!(async_500.status, Some(500));
     assert_eq!(
-        asynchronous.kind,
+        async_500.kind,
         WireField::Text(String::from("internal_server_error"))
     );
-    assert_eq!(asynchronous.param, WireField::Null);
-    assert_eq!(asynchronous.code, WireField::Null);
+    assert_eq!(async_500.param, WireField::Null);
+    assert_eq!(async_500.code, WireField::Null);
 
     // a 400 keeps the body's type/param/code in both entries: exception_type forwards the bad-request body whole
     let body_400 = r#"{"error":{"message":"bad request","type":"invalid_request_error","param":"model","code":"bad"}}"#;
     let fixture_400 = Fixture::new(openai_settings("sk-test"))
         .reply(400, body_400)
         .reply(400, body_400);
-    let resolution = fixture_400.resolution();
-    let service = fixture_400.service(&resolution, &redactor);
-    let request = input(json!({}));
-    let sync = failure(service.create_assistants(&request).await);
-    assert_eq!(sync.class, "BadRequestError");
-    assert_eq!(sync.status, Some(400));
-    let asynchronous = failure(service.acreate_assistants(&request).await);
-    assert_eq!(asynchronous.class, "BadRequestError");
-    assert_eq!(asynchronous.status, Some(400));
+    let bad_request_resolution = fixture_400.resolution();
+    let bad_request_service = fixture_400.service(&bad_request_resolution, &redactor);
+    let bad_request_request = input(json!({}));
+    let sync_400 = failure(
+        bad_request_service
+            .create_assistants(&bad_request_request)
+            .await,
+    );
+    assert_eq!(sync_400.class, "BadRequestError");
+    assert_eq!(sync_400.status, Some(400));
+    let async_400 = failure(
+        bad_request_service
+            .acreate_assistants(&bad_request_request)
+            .await,
+    );
+    assert_eq!(async_400.class, "BadRequestError");
+    assert_eq!(async_400.status, Some(400));
     assert_eq!(
-        asynchronous.kind,
+        async_400.kind,
         WireField::Text(String::from("invalid_request_error"))
     );
-    assert_eq!(asynchronous.param, WireField::Text(String::from("model")));
-    assert_eq!(asynchronous.code, WireField::Text(String::from("bad")));
+    assert_eq!(async_400.param, WireField::Text(String::from("model")));
+    assert_eq!(async_400.code, WireField::Text(String::from("bad")));
 
     // a raw failure with no status is an APIConnection 500 in the async entry and a bare ValueError in sync
-    let asynchronous = raised(
-        Raised::Local(String::from("no provider")),
+    let async_raised = raised(
+        &Raised::Local(String::from("no provider")),
         "gpt-4o-mini",
         "openai",
         Entry::Async,
         &redactor,
     );
-    assert_eq!(asynchronous.class, "APIConnectionError");
-    assert_eq!(asynchronous.status, Some(500));
-    let sync = raised(
-        Raised::Local(String::from("no provider")),
+    assert_eq!(async_raised.class, "APIConnectionError");
+    assert_eq!(async_raised.status, Some(500));
+    let sync_raised = raised(
+        &Raised::Local(String::from("no provider")),
         "gpt-4o-mini",
         "openai",
         Entry::Sync,
         &redactor,
     );
-    assert_eq!(sync.class, "ValueError");
-    assert_eq!(sync.status, None);
+    assert_eq!(sync_raised.class, "ValueError");
+    assert_eq!(sync_raised.status, None);
 }
 
 #[rstest]
@@ -786,10 +865,10 @@ async fn assistant_create_status_message() {
     fixture_bad
         .transport
         .reply_bytes(500, b"oops \xff".to_vec());
-    let resolution = fixture_bad.resolution();
-    let service = fixture_bad.service(&resolution, &redactor);
-    let sync = failure(service.create_assistants(&input(json!({}))).await);
-    assert_eq!(sync.message, "Error code: 500 - oops \u{fffd}");
+    let bad_resolution = fixture_bad.resolution();
+    let bad_service = fixture_bad.service(&bad_resolution, &redactor);
+    let bad_sync = failure(bad_service.create_assistants(&input(json!({}))).await);
+    assert_eq!(bad_sync.message, "Error code: 500 - oops \u{fffd}");
 }
 
 #[test]
@@ -807,7 +886,7 @@ fn assistant_create_timeout_values_parse() {
     assert_eq!(arguments, CreateTimeout::Text(String::from("7.5")));
     let phases: CreateTimeout = serde_json::from_value(json!({"read": 9.0})).expect("phases");
     match phases {
-        CreateTimeout::Phases(phases) => assert_eq!(phases.read, Some(9.0)),
+        CreateTimeout::Phases(given) => assert_eq!(given.read, Some(9.0)),
         CreateTimeout::Seconds(_) | CreateTimeout::Text(_) => panic!("a phase map parsed as plain"),
     }
 }

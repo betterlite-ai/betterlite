@@ -1,10 +1,11 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::sync::Arc;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::proxy::ProxyPolicy;
-use betterlite_config::types::ProxyTrust;
+use betterlite_config::types::{Config, ProxyTrust};
+use betterlite_core::api::assistant_records::call::AssistantCreateResult;
 use betterlite_core::api::assistant_records::error::AssistantCreateFailure;
 use betterlite_core::api::assistant_records::service::AssistantRecords;
 use betterlite_core::api::assistant_records::{
@@ -127,14 +128,9 @@ async fn send(
     env: &BTreeMap<String, String>,
 ) -> Result<SdkResult, SdkHttpError> {
     let input = input(call, api_base);
-    let loader = ConfigLoader {
-        lookup: env.clone(),
-    };
-    let config = loader
-        .load("{}")
-        .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
+    let config = load(env)?;
     let catalog = ModelCatalog::default();
-    let names = std::collections::BTreeSet::new();
+    let names = BTreeSet::new();
     let resolution = ResolutionContext {
         catalog: &catalog,
         known_model_names: &names,
@@ -160,23 +156,36 @@ async fn send(
         redactor: &redactor,
         transport: Arc::new(transport),
     };
-    let result = match call.entry {
+    let outcome = match call.entry {
         Entry::Sync => service.create_assistants(&input).await,
         Entry::Async => service.acreate_assistants(&input).await,
     };
-    let outcome = match result {
-        Ok(result) => Outcome {
-            assistant: Some(view(result.assistant)?),
+    Ok(SdkResult::AssistantCreate {
+        value: Box::new(answer(outcome)?),
+    })
+}
+
+fn load(env: &BTreeMap<String, String>) -> Result<Config, SdkHttpError> {
+    ConfigLoader {
+        lookup: env.clone(),
+    }
+    .load("{}")
+    .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))
+}
+
+fn answer(
+    outcome: Result<AssistantCreateResult, AssistantCreateFailure>,
+) -> Result<Outcome, SdkHttpError> {
+    match outcome {
+        Ok(created) => Ok(Outcome {
+            assistant: Some(view(created.assistant)?),
             failure: None,
-        },
-        Err(failure) => Outcome {
+        }),
+        Err(failure) => Ok(Outcome {
             assistant: None,
             failure: Some(record(failure)?),
-        },
-    };
-    Ok(SdkResult::AssistantCreate {
-        value: Box::new(outcome),
-    })
+        }),
+    }
 }
 
 fn input(call: &Call, api_base: &str) -> AssistantCreateInput {
@@ -189,8 +198,8 @@ fn input(call: &Call, api_base: &str) -> AssistantCreateInput {
         tools: call.tools.clone(),
         tool_resources: call.tool_resources.clone(),
         metadata: call.metadata.clone(),
-        temperature: call.temperature,
-        top_p: call.top_p,
+        temperature: call.temperature.clone(),
+        top_p: call.top_p.clone(),
         response_format: call.response_format.clone(),
         client: call.client,
         api_key: call.api_key.clone().map(SecretString::from),

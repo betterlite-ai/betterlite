@@ -97,7 +97,7 @@ pub fn no_response() -> AssistantCreateFailure {
 // acreate_assistants wraps every failure in exception_type; create_assistants lets the SDK's own exception out
 #[must_use]
 pub fn raised(
-    raised: Raised,
+    raised: &Raised,
     model: &str,
     provider: &str,
     entry: Entry,
@@ -105,8 +105,8 @@ pub fn raised(
 ) -> AssistantCreateFailure {
     match entry {
         Entry::Sync => {
-            let (class, status, message) = source(&raised);
-            let (kind, param, code) = sdk_fields(&raised);
+            let (class, status, message) = source(raised);
+            let (kind, param, code) = sdk_fields(raised);
             AssistantCreateFailure {
                 class,
                 status,
@@ -116,21 +116,23 @@ pub fn raised(
                 message,
             }
         }
-        Entry::Async => wrapped(source(&raised), &raised, model, provider, redactor),
+        Entry::Async => wrapped(source(raised), raised, model, provider, redactor),
     }
 }
 
 // openai.APIError's subclasses read type/param/code off body["error"]; every other exception carries none
 fn sdk_fields(raised: &Raised) -> (WireField, WireField, WireField) {
     match raised {
-        Raised::Assistants(AssistantsError::Status { body, .. }) => match flattened(body) {
-            Some(fields) => (
-                fields.kind.map_or(WireField::Null, WireField::Text),
-                fields.param.map_or(WireField::Null, WireField::Text),
-                fields.code.map_or(WireField::Null, WireField::Text),
-            ),
-            None => (WireField::Null, WireField::Null, WireField::Null),
-        },
+        Raised::Assistants(AssistantsError::Status { body, .. }) => flattened(body).map_or(
+            (WireField::Null, WireField::Null, WireField::Null),
+            |fields| {
+                (
+                    fields.kind.map_or(WireField::Null, WireField::Text),
+                    fields.param.map_or(WireField::Null, WireField::Text),
+                    fields.code.map_or(WireField::Null, WireField::Text),
+                )
+            },
+        ),
         Raised::Assistants(
             AssistantsError::Transport { .. }
             | AssistantsError::Malformed { .. }
@@ -212,10 +214,10 @@ fn wrapped(
         Raised::Assistants(AssistantsError::Status { body, .. }) => flattened(body),
         Raised::Local(_) | Raised::Assistants(_) | Raised::Projected { .. } => None,
     };
-    let error_str = match status {
-        Some(code) => format!("Error code: {code} - {message}"),
-        None => message.to_owned(),
-    };
+    let error_str = status.map_or_else(
+        || message.to_owned(),
+        |code| format!("Error code: {code} - {message}"),
+    );
     let projected = dispatch(
         &DispatchInput::Raw(Box::new(RawException {
             model: model.to_owned(),

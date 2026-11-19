@@ -8,7 +8,7 @@ use super::ClientClass;
 use super::error::AssistantCreateFailure;
 
 // create_assistants' arguments for the openai provider, before the SDK client is built from them
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct OpenAiCreateCall {
     pub create: AssistantCreate,
     pub api_base: String,
