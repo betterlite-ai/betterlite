@@ -2,6 +2,8 @@
 
 use std::collections::BTreeMap;
 
+use rstest::rstest;
+
 use crate::loader::{ConfigError, ConfigLoader};
 
 use super::{ALIAS_PATTERN_PATH, AliasRule, CONFIGURED_ALIAS_MESSAGE, Settings, VALIDATION_PATH};
@@ -170,29 +172,28 @@ fn validation_from_environment() {
     ));
 }
 
-#[test]
-fn invalid_regex_rejected() {
-    // "(" is unbalanced on its own; "x)|(.*" only fails the bare compile, since the anchored wrapper
-    // would otherwise accept it as an alternation that matches almost any alias
-    for source in ["(", "x)|(.*"] {
-        let document = format!("litellm_settings:\n  key_alias_pattern: '{source}'\n");
-        let loaded = ConfigLoader { lookup: lookup() }.load(&document);
-        let error = match loaded {
-            Ok(_config) => panic!("{source} must not load"),
-            Err(error) => error,
-        };
-        match error {
-            ConfigError::InvalidScalar { path, .. } => assert_eq!(path, ALIAS_PATTERN_PATH),
-            other @ (ConfigError::CustomDimensions(_)
-            | ConfigError::Environment { .. }
-            | ConfigError::Yaml { .. }
-            | ConfigError::Unsupported { .. }
-            | ConfigError::MissingEnvironment { .. }
-            | ConfigError::InvalidFloat { .. }
-            | ConfigError::InvalidInteger { .. }
-            | ConfigError::LoadThread { .. }) => {
-                panic!("expected an invalid scalar, got: {other}")
-            }
+// "x)|(.*" only fails the bare compile; the anchored wrapper alone would accept it as a match-all
+#[rstest]
+#[case::unbalanced_paren("(")]
+#[case::wrapper_alternation("x)|(.*")]
+fn invalid_regex_rejected(#[case] source: &str) {
+    let document = format!("litellm_settings:\n  key_alias_pattern: '{source}'\n");
+    let loaded = ConfigLoader { lookup: lookup() }.load(&document);
+    let error = match loaded {
+        Ok(_config) => panic!("{source} must not load"),
+        Err(error) => error,
+    };
+    match error {
+        ConfigError::InvalidScalar { path, .. } => assert_eq!(path, ALIAS_PATTERN_PATH),
+        other @ (ConfigError::CustomDimensions(_)
+        | ConfigError::Environment { .. }
+        | ConfigError::Yaml { .. }
+        | ConfigError::Unsupported { .. }
+        | ConfigError::MissingEnvironment { .. }
+        | ConfigError::InvalidFloat { .. }
+        | ConfigError::InvalidInteger { .. }
+        | ConfigError::LoadThread { .. }) => {
+            panic!("expected an invalid scalar, got: {other}")
         }
     }
 }
