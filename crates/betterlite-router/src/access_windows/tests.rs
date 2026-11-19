@@ -345,7 +345,16 @@ fn a_dst_change_shifts_the_local_window() {
 
 fn wall_clock_takes_seconds_and_fractions() {
     let zones = database();
-    for value in ["09:00", "09:00:30", "09:00:30.5", "09:00:30.123456"] {
+    for value in [
+        "09:00",
+        "09:00:30",
+        "09:00:30.5",
+        "09:00:30.55",
+        "09:00:30.555",
+        "09:00:30.5555",
+        "09:00:30.55555",
+        "09:00:30.123456",
+    ] {
         let model_info = windows(Json::List(vec![window(value, "17:00", "UTC", &["t"])]));
         assert!(parse_access_windows(&model_info, &zones).is_ok(), "{value}");
     }
@@ -365,6 +374,8 @@ fn wall_clock_refuses_malformed_values_and_offsets() {
         ),
         ("24:00", "0.start: must be a time like 09:00"),
         ("09:60", "0.start: must be a time like 09:00"),
+        ("0::00", "0.start: must be a time like 09:00"),
+        ("09:00:00.12a", "0.start: must be a time like 09:00"),
         ("09:00:00.1234567", "0.start: must be a time like 09:00"),
     ] {
         let model_info = windows(Json::List(vec![window(value, "17:00", "UTC", &["t"])]));
@@ -528,6 +539,118 @@ fn kept_deployments_keep_catalog_order() {
     assert_eq!(ids(&kept), ["a", "b", "d"]);
 }
 
+fn a_pool_with_one_blocked_deployment_keeps_the_rest() {
+    let deployments = vec![
+        spec(
+            "gpt",
+            "blocked",
+            &[(
+                "access_windows",
+                Json::List(vec![window("09:00", "17:00", "UTC", &["mine"])]),
+            )],
+        ),
+        spec("gpt", "open", &[]),
+    ];
+    let kept = reserved_deployments(
+        "gpt",
+        deployments,
+        Some("other"),
+        at("2026-01-05T10:00:00Z"),
+        &database(),
+    )
+    .unwrap();
+    assert_eq!(ids(&kept), ["open"]);
+}
+
+fn an_empty_owner_team_is_no_team() {
+    let deployments = [
+        spec("gpt", "blank", &[("team_id", text(""))]),
+        spec("gpt", "owned", &[("team_id", text("t1"))]),
+    ];
+    let kept = filter_team_based_models(
+        deployments.to_vec(),
+        Authority {
+            team_id: Some(""),
+            proxy_admin: false,
+        },
+        "gpt",
+    )
+    .unwrap();
+    assert!(kept.is_empty());
+}
+
+fn an_admin_with_a_team_still_serves_that_team() {
+    let deployments = vec![
+        spec(
+            "shared",
+            "a",
+            &[
+                ("team_id", text("t1")),
+                ("team_public_model_name", text("shared")),
+            ],
+        ),
+        spec(
+            "shared",
+            "b",
+            &[
+                ("team_id", text("t2")),
+                ("team_public_model_name", text("shared")),
+            ],
+        ),
+    ];
+    let kept = filter_team_based_models(
+        deployments,
+        Authority {
+            team_id: Some("t1"),
+            proxy_admin: true,
+        },
+        "shared",
+    )
+    .unwrap();
+    assert_eq!(ids(&kept), ["a"]);
+}
+
+fn an_admin_pool_with_a_shared_deployment_loses_its_team_models() {
+    let deployments = vec![
+        spec(
+            "shared",
+            "a",
+            &[
+                ("team_id", text("t1")),
+                ("team_public_model_name", text("shared")),
+            ],
+        ),
+        spec("shared", "open", &[]),
+    ];
+    let kept = filter_team_based_models(
+        deployments,
+        Authority {
+            team_id: None,
+            proxy_admin: true,
+        },
+        "shared",
+    )
+    .unwrap();
+    assert_eq!(ids(&kept), ["open"]);
+}
+
+fn an_admin_pool_unnamed_by_the_request_is_only_filtered() {
+    let deployments = vec![
+        spec("other", "a", &[("team_id", text("t1"))]),
+        spec("other", "b", &[("team_id", text("t2"))]),
+    ];
+    let kept = filter_team_based_models(
+        deployments,
+        Authority {
+            team_id: None,
+            proxy_admin: true,
+        },
+        "shared",
+    )
+    .unwrap();
+    assert!(kept.is_empty());
+}
+
 #[rstest]
 #[case::absent_and_null_parse_empty(absent_and_null_parse_empty)]
 #[case::parses_a_window_with_its_zone_and_teams(parses_a_window_with_its_zone_and_teams)]
@@ -543,6 +666,14 @@ fn kept_deployments_keep_catalog_order() {
     a_non_admin_without_a_team_sees_only_shared_deployments
 )]
 #[case::an_empty_team_id_counts_as_no_team(an_empty_team_id_counts_as_no_team)]
+#[case::an_empty_owner_team_is_no_team(an_empty_owner_team_is_no_team)]
+#[case::an_admin_with_a_team_still_serves_that_team(an_admin_with_a_team_still_serves_that_team)]
+#[case::an_admin_pool_with_a_shared_deployment_loses_its_team_models(
+    an_admin_pool_with_a_shared_deployment_loses_its_team_models
+)]
+#[case::an_admin_pool_unnamed_by_the_request_is_only_filtered(
+    an_admin_pool_unnamed_by_the_request_is_only_filtered
+)]
 fn access_windows_behaviors(#[case] run: fn()) {
     run();
 }
@@ -560,6 +691,9 @@ fn access_windows_behaviors(#[case] run: fn()) {
 #[case::equal_bounds_and_extra_fields_are_refused(equal_bounds_and_extra_fields_are_refused)]
 #[case::a_blocked_pool_is_refused_with_the_window_end(
     a_blocked_pool_is_refused_with_the_window_end
+)]
+#[case::a_pool_with_one_blocked_deployment_keeps_the_rest(
+    a_pool_with_one_blocked_deployment_keeps_the_rest
 )]
 #[case::an_admin_pool_named_by_two_teams_is_refused(an_admin_pool_named_by_two_teams_is_refused)]
 #[case::kept_deployments_keep_catalog_order(kept_deployments_keep_catalog_order)]

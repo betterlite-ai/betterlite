@@ -53,28 +53,6 @@ pub enum WindowError {
     },
 }
 
-impl WindowError {
-    // pydantic's location of the first failing input: "" for the list itself, "0.start" for one window's field.
-    #[must_use]
-    pub fn location(&self) -> &str {
-        match self {
-            Self::NotAList { location }
-            | Self::NotAnObject { location }
-            | Self::Missing { location }
-            | Self::Time { location }
-            | Self::Offset { location }
-            | Self::ZoneType { location }
-            | Self::UnknownZone { location, .. }
-            | Self::TeamIds { location }
-            | Self::TeamId { location }
-            | Self::EmptyTeamId { location }
-            | Self::SameBounds { location }
-            | Self::Extra { location }
-            | Self::Moment { location, .. } => location,
-        }
-    }
-}
-
 // parse_access_windows: an absent or null value has no windows, and every listed window is validated.
 pub fn parse_access_windows(
     model_info: &JsonObject,
@@ -263,24 +241,28 @@ fn offset_marker(text: &str) -> Option<usize> {
 // HH:MM[:SS[.ffffff]]: the zero-padded shape pydantic's time parser accepts, with at most microsecond fractions.
 fn clock_shape(text: &str) -> Option<Time> {
     let bytes = text.as_bytes();
-    if bytes.len() < 5 || bytes.get(2) != Some(&b':') {
+    if bytes.len() < 5 {
+        return None;
+    }
+    if bytes.get(2) != Some(&b':') {
         return None;
     }
     let hour = digits(bytes.get(..2)?)?;
     let minute = digits(bytes.get(3..5)?)?;
-    let (second, nanos) = match bytes.len() {
-        5 => (0, 0),
-        _ => {
-            if bytes.get(5) != Some(&b':') {
+    let (second, nanos) = if bytes.len() == 5 {
+        (0, 0)
+    } else {
+        if bytes.get(5) != Some(&b':') {
+            return None;
+        }
+        let second = digits(bytes.get(6..8)?)?;
+        if bytes.len() == 8 {
+            (second, 0)
+        } else {
+            if bytes.get(8) != Some(&b'.') {
                 return None;
             }
-            let second = digits(bytes.get(6..8)?)?;
-            if bytes.len() == 8 {
-                (second, 0)
-            } else {
-                let nanos = fraction(bytes.get(9..).filter(|_| bytes.get(8) == Some(&b'.'))?)?;
-                (second, nanos)
-            }
+            (second, fraction(bytes.get(9..)?)?)
         }
     };
     Time::new(
@@ -293,7 +275,10 @@ fn clock_shape(text: &str) -> Option<Time> {
 }
 
 fn digits(bytes: &[u8]) -> Option<i32> {
-    if bytes.len() != 2 || !bytes.iter().all(u8::is_ascii_digit) {
+    if bytes.len() != 2 {
+        return None;
+    }
+    if !bytes.iter().all(u8::is_ascii_digit) {
         return None;
     }
     let tens = i32::from(bytes.first()?.checked_sub(b'0')?);
@@ -303,9 +288,6 @@ fn digits(bytes: &[u8]) -> Option<i32> {
 
 // A one-to-six digit fraction, scaled to the nanosecond field jiff's Time keeps.
 fn fraction(bytes: &[u8]) -> Option<i32> {
-    if bytes.is_empty() || bytes.len() > 6 || !bytes.iter().all(u8::is_ascii_digit) {
-        return None;
-    }
     let scale = match bytes.len() {
         1 => 100_000_000,
         2 => 10_000_000,
@@ -315,6 +297,9 @@ fn fraction(bytes: &[u8]) -> Option<i32> {
         6 => 1_000,
         _ => return None,
     };
+    if !bytes.iter().all(u8::is_ascii_digit) {
+        return None;
+    }
     let mut value: i32 = 0;
     for digit in bytes {
         value = value

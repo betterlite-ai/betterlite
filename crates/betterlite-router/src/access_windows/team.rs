@@ -40,10 +40,7 @@ pub fn filter_team_based_models(
 fn named_by_team(deployments: &[DeploymentSpec], requested_model: &str) -> bool {
     !deployments.is_empty()
         && deployments.iter().all(|deployment| {
-            deployment
-                .model_info
-                .get("team_id")
-                .is_some_and(|team| !matches!(team, Json::Null))
+            deployment.model_info.get("team_id").is_some()
                 && (deployment.model_name == requested_model
                     || matches!(
                         deployment.model_info.get("team_public_model_name"),
@@ -55,10 +52,7 @@ fn named_by_team(deployments: &[DeploymentSpec], requested_model: &str) -> bool 
 fn distinct_teams(deployments: &[DeploymentSpec]) -> usize {
     let mut teams: Vec<&Json> = Vec::new();
     for deployment in deployments {
-        if let Some(team) = deployment
-            .model_info
-            .get("team_id")
-            .filter(|team| !matches!(team, Json::Null))
+        if let Some(team) = deployment.model_info.get("team_id")
             && !teams.contains(&team)
         {
             teams.push(team);
