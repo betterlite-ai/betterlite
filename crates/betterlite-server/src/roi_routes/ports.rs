@@ -77,5 +77,5 @@ pub trait SyncManagerPort: Send + Sync {
 
     async fn start_run(&self, run: RouteSyncRun) -> bool;
 
-    async fn cancel_run(&self);
+    async fn cancel_active_run(&self);
 }

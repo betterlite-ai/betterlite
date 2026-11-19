@@ -28,12 +28,12 @@ impl SyncStoreSource for DatabaseSyncStoreSource {
 impl SyncStorePort for SyncStore {
     #[cfg_attr(test, mutants::skip)]
     async fn read_status(&self) -> Result<Option<ROISyncStatus>, RoiRoutesError> {
-        Ok(SyncStore::status(self).await?)
+        Ok(Self::status(self).await?)
     }
 
     #[cfg_attr(test, mutants::skip)]
     async fn cancel_sync(&self) -> Result<(), RoiRoutesError> {
-        Ok(SyncStore::cancel(self).await?)
+        Ok(Self::cancel(self).await?)
     }
 
     #[cfg_attr(test, mutants::skip)]
@@ -43,7 +43,7 @@ impl SyncStorePort for SyncStore {
         status: &ROISyncStatus,
         scheduled_interval: f64,
     ) -> Result<bool, RoiRoutesError> {
-        Ok(SyncStore::acquire(self, owner, status, scheduled_interval).await?)
+        Ok(Self::acquire(self, owner, status, scheduled_interval).await?)
     }
 
     #[cfg_attr(test, mutants::skip)]
@@ -52,7 +52,7 @@ impl SyncStorePort for SyncStore {
         owner: &str,
         status: &ROISyncStatus,
     ) -> Result<bool, RoiRoutesError> {
-        Ok(SyncStore::heartbeat(self, owner, status).await?)
+        Ok(Self::heartbeat(self, owner, status).await?)
     }
 
     #[cfg_attr(test, mutants::skip)]
@@ -67,11 +67,11 @@ impl SyncStorePort for SyncStore {
             status,
             report,
         };
-        Ok(SyncStore::finish(self, claim).await?)
+        Ok(Self::finish(self, claim).await?)
     }
 
     #[cfg_attr(test, mutants::skip)]
     async fn clear_stored_report(&self) -> Result<(), RoiRoutesError> {
-        Ok(SyncStore::clear_report(self).await?)
+        Ok(Self::clear_report(self).await?)
     }
 }

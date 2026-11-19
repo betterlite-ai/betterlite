@@ -54,7 +54,7 @@ where
 {
     #[cfg_attr(test, mutants::skip)]
     fn current_status(&self) -> ROISyncStatus {
-        SyncManager::status(self)
+        Self::status(self)
     }
 
     #[cfg_attr(test, mutants::skip)]
@@ -80,12 +80,12 @@ where
             coordinator,
             scheduled_interval,
         };
-        SyncManager::start(self, sync_run).await
+        Self::start(self, sync_run).await
     }
 
     #[cfg_attr(test, mutants::skip)]
-    async fn cancel_run(&self) {
-        let cancelled = SyncManager::cancel(self).await;
+    async fn cancel_active_run(&self) {
+        let cancelled = Self::cancel(self).await;
         tracing::debug!(cancelled, "the ROI sync cancel answered");
     }
 }

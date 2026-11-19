@@ -86,7 +86,7 @@ pub(super) async fn cancel_sync(
     }
     let store = state.sync_store.store().await?;
     store.cancel_sync().await?;
-    state.manager.cancel_run().await;
+    state.manager.cancel_active_run().await;
     let status = store
         .read_status()
         .await?

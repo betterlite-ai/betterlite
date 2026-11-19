@@ -342,7 +342,7 @@ impl SyncStoreSource for Arc<FakeStore> {
             .lock()
             .expect("calls lock")
             .push("store.open".to_owned());
-        let store: Arc<dyn SyncStorePort> = Arc::<FakeStore>::clone(self);
+        let store: Arc<dyn SyncStorePort> = Self::clone(self);
         Ok(store)
     }
 }
@@ -410,7 +410,7 @@ impl SyncManagerPort for FakeManager {
         accepted
     }
 
-    async fn cancel_run(&self) {
+    async fn cancel_active_run(&self) {
         self.calls
             .lock()
             .expect("calls lock")
@@ -614,7 +614,7 @@ impl Harness {
         let repository: Arc<dyn SettingsRepository> =
             Arc::<MemoryRepository>::clone(&self.repository);
         let catalog: Arc<dyn RouterCatalog> = Arc::<Catalog>::clone(&self.catalog);
-        let store: Arc<dyn SyncStoreSource> = Arc::<FakeStore>::clone(&self.store);
+        let store: Arc<dyn SyncStoreSource> = Arc::new(Arc::<FakeStore>::clone(&self.store));
         let manager: Arc<dyn SyncManagerPort> = Arc::<FakeManager>::clone(&self.manager);
         let now = self.now;
         let spend_reader: SpendReaderFactory =
