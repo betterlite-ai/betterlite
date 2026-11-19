@@ -27,19 +27,55 @@ DeleteWork = DeleteResponseResult | Coroutine[object, object, DeleteResponseResu
 CancelWork = ResponsesAPIResponse | Coroutine[object, object, ResponsesAPIResponse]
 
 SyncDelete = Callable[
-    [str, BaseResponsesAPIConfig, GenericLiteLLMParams, Logging, str, Overrides, Overrides, float | None],
+    [
+        str,
+        BaseResponsesAPIConfig,
+        GenericLiteLLMParams,
+        Logging,
+        str,
+        Overrides,
+        Overrides,
+        float | httpx.Timeout | None,
+    ],
     DeleteWork,
 ]
 AsyncDelete = Callable[
-    [str, BaseResponsesAPIConfig, GenericLiteLLMParams, Logging, str, Overrides, Overrides, float | None],
+    [
+        str,
+        BaseResponsesAPIConfig,
+        GenericLiteLLMParams,
+        Logging,
+        str,
+        Overrides,
+        Overrides,
+        float | httpx.Timeout | None,
+    ],
     Coroutine[object, object, DeleteResponseResult],
 ]
 SyncCancel = Callable[
-    [str, BaseResponsesAPIConfig, GenericLiteLLMParams, Logging, str, Overrides, Overrides, float | None],
+    [
+        str,
+        BaseResponsesAPIConfig,
+        GenericLiteLLMParams,
+        Logging,
+        str,
+        Overrides,
+        Overrides,
+        float | httpx.Timeout | None,
+    ],
     CancelWork,
 ]
 AsyncCancel = Callable[
-    [str, BaseResponsesAPIConfig, GenericLiteLLMParams, Logging, str, Overrides, Overrides, float | None],
+    [
+        str,
+        BaseResponsesAPIConfig,
+        GenericLiteLLMParams,
+        Logging,
+        str,
+        Overrides,
+        Overrides,
+        float | httpx.Timeout | None,
+    ],
     Coroutine[object, object, ResponsesAPIResponse],
 ]
 
@@ -94,13 +130,13 @@ class Handlers(Protocol):
     def delete_response_api_handler(self) -> SyncDelete: ...
 
     @property
-    def async_delete_response_api_handler(self) -> AsyncDelete: ...  # ast-grep-ignore: no-long-names
+    def async_delete_response_api_handler(self) -> AsyncDelete: ...
 
     @property
     def cancel_response_api_handler(self) -> SyncCancel: ...
 
     @property
-    def async_cancel_response_api_handler(self) -> AsyncCancel: ...  # ast-grep-ignore: no-long-names
+    def async_cancel_response_api_handler(self) -> AsyncCancel: ...
 
 
 HANDLER: Handlers = BaseLLMHTTPHandler()
@@ -141,7 +177,7 @@ def cancelled_value(reply: ResponsesAPIResponse) -> JsonValue:
     return fields
 
 
-def call_delete(
+def call_operation(
     call: TransportCall,
     config: BaseResponsesAPIConfig,
     litellm_params: GenericLiteLLMParams,
@@ -150,8 +186,34 @@ def call_delete(
     logging_obj = logging_fixture()
     extra_headers = OBJECTS.validate_python(call.extra_headers)
     extra_body = OBJECTS.validate_python(call.extra_body)
+    if call.operation == "delete":
+        if call.mode == "sync":
+            deleted_work = HANDLER.delete_response_api_handler(
+                call.response_id,
+                config,
+                litellm_params,
+                logging_obj,
+                "openai",
+                extra_headers,
+                extra_body,
+                timeout,
+            )
+            return deleted_value(DELETE_RESULT.validate_python(deleted_work))
+        deleted_answer = asyncio.run(
+            HANDLER.async_delete_response_api_handler(
+                call.response_id,
+                config,
+                litellm_params,
+                logging_obj,
+                "openai",
+                extra_headers,
+                extra_body,
+                timeout,
+            )
+        )
+        return deleted_value(deleted_answer)
     if call.mode == "sync":
-        work = HANDLER.delete_response_api_handler(
+        cancelled_work = HANDLER.cancel_response_api_handler(
             call.response_id,
             config,
             litellm_params,
@@ -161,44 +223,8 @@ def call_delete(
             extra_body,
             timeout,
         )
-        return deleted_value(DELETE_RESULT.validate_python(work))
-    answer = asyncio.run(
-        HANDLER.async_delete_response_api_handler(
-            call.response_id,
-            config,
-            litellm_params,
-            logging_obj,
-            "openai",
-            extra_headers,
-            extra_body,
-            timeout,
-        )
-    )
-    return deleted_value(answer)
-
-
-def call_cancel(
-    call: TransportCall,
-    config: BaseResponsesAPIConfig,
-    litellm_params: GenericLiteLLMParams,
-    timeout: float | httpx.Timeout | None,
-) -> JsonValue:
-    logging_obj = logging_fixture()
-    extra_headers = OBJECTS.validate_python(call.extra_headers)
-    extra_body = OBJECTS.validate_python(call.extra_body)
-    if call.mode == "sync":
-        work = HANDLER.cancel_response_api_handler(
-            call.response_id,
-            config,
-            litellm_params,
-            logging_obj,
-            "openai",
-            extra_headers,
-            extra_body,
-            timeout,
-        )
-        return cancelled_value(RESPONSE.validate_python(work))
-    answer = asyncio.run(
+        return cancelled_value(RESPONSE.validate_python(cancelled_work))
+    cancelled_answer = asyncio.run(
         HANDLER.async_cancel_response_api_handler(
             call.response_id,
             config,
@@ -210,18 +236,16 @@ def call_cancel(
             timeout,
         )
     )
-    return cancelled_value(answer)
+    return cancelled_value(cancelled_answer)
 
 
 def run_transport(call: TransportCall, api_base: str) -> Outcome:
-    config: BaseResponsesAPIConfig = OpenAIResponsesAPIConfig()
+    # LiteLLM's responses config __init__ is untyped and stateless
+    config: BaseResponsesAPIConfig = OpenAIResponsesAPIConfig.__new__(OpenAIResponsesAPIConfig)
     timeout = None if call.timeout_seconds is None else float(call.timeout_seconds)
     litellm_params = GenericLiteLLMParams(api_base=api_base, api_key=call.api_key)
     try:
-        if call.operation == "delete":
-            result = call_delete(call, config, litellm_params, timeout)
-        else:
-            result = call_cancel(call, config, litellm_params, timeout)
+        result = call_operation(call, config, litellm_params, timeout)
     except PROVIDER_ERROR as error:
         return Outcome(failure=Failure.model_validate(error))
     return Outcome(result=result)
