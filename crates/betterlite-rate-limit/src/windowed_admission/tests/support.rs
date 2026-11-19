@@ -112,6 +112,13 @@ impl FixedClock {
             .expect("a representable clock time");
         Arc::new(Self { at })
     }
+
+    pub(crate) fn before_epoch() -> Arc<Self> {
+        let at = UNIX_EPOCH
+            .checked_sub(Duration::from_secs(1))
+            .expect("a representable clock time");
+        Arc::new(Self { at })
+    }
 }
 
 impl LimiterClock for FixedClock {

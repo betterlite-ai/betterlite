@@ -7,8 +7,8 @@ use crate::concurrency_gauges::cache::GaugeCacheValue;
 use crate::limiter_records::{CacheCounterValue, RateLimitStatus, RateLimitType};
 use crate::rate_limit_window_store::batch_rate_limiter_script::window_script_args;
 use crate::windowed_admission::tests::support::{
-    GENERATED_SLOT, GaugeWrite, HANDLER_WINDOW_SIZE, NOW, PlannedScript, ScriptCall, descriptor,
-    gauge_key, harness, key_list, limits, mixed_plan, request, text,
+    FixedClock, GENERATED_SLOT, GaugeWrite, HANDLER_WINDOW_SIZE, NOW, PlannedScript, ScriptCall,
+    descriptor, gauge_key, harness, key_list, limits, mixed_plan, request, text,
 };
 use crate::windowed_admission::{SlotIdGenerator, UuidSlotIds, WindowedAdmissionError};
 
@@ -40,6 +40,38 @@ async fn an_empty_request_is_ok_without_touching_the_cache() {
     assert!(response.reservation_windows.is_none());
     assert!(harness.cache.batch_reads().is_empty());
     assert!(harness.gauges.batch_reads().is_empty());
+}
+
+#[tokio::test]
+async fn a_clock_before_the_epoch_is_an_error() {
+    let mut harness = harness();
+    harness.clock = FixedClock::before_epoch();
+    let limiter = harness.limiter();
+    let error = limiter
+        .should_rate_limit(&request(Vec::new()))
+        .await
+        .unwrap_err();
+    assert!(matches!(error, WindowedAdmissionError::ClockBeforeEpoch(_)));
+}
+
+#[tokio::test]
+async fn a_request_without_a_script_reads_the_in_memory_sliding_window() {
+    let mut harness = harness();
+    harness.script_enabled = false;
+    let limiter = harness.limiter();
+    let descriptors = vec![descriptor(
+        "api-key",
+        "k1",
+        Some(limits(Some(10), None, None, None)),
+    )];
+    let response = limiter
+        .should_rate_limit(&request(descriptors))
+        .await
+        .unwrap();
+    assert_eq!(response.overall_code, "OK");
+    assert_eq!(response.statuses.len(), 1);
+    assert_eq!(response.statuses[0].current_limit, 10);
+    assert!(harness.script.calls().is_empty());
 }
 
 #[tokio::test]
