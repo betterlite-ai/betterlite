@@ -97,7 +97,7 @@ async fn key_access_group_models_extend_a_restricted_key_list() {
 
 #[tokio::test]
 async fn access_group_models_leave_an_unrestricted_key_alone() {
-    let key = key(r#"{}"#);
+    let key = key("{}");
     let mut router = FakeRouter::default();
     router.model_names = strings(&["a"]);
     let mut access = FakeAccess::default();
@@ -276,7 +276,7 @@ async fn a_key_without_an_agent_id_is_not_capped() {
 
 #[tokio::test]
 async fn infer_model_from_keys_adds_the_provider_catalogue() {
-    let key = key(r#"{}"#);
+    let key = key("{}");
     let providers = StaticProviders(strings(&["inferred"]));
     let access = FakeAccess::default();
     let credentials = CredentialSnapshot::default();
@@ -301,7 +301,7 @@ async fn infer_model_from_keys_adds_the_provider_catalogue() {
 
 #[tokio::test]
 async fn infer_model_from_keys_off_leaves_the_list_empty() {
-    let key = key(r#"{}"#);
+    let key = key("{}");
     let providers = StaticProviders(strings(&["inferred"]));
     let access = FakeAccess::default();
     let credentials = CredentialSnapshot::default();
@@ -314,7 +314,7 @@ async fn infer_model_from_keys_off_leaves_the_list_empty() {
 
 #[tokio::test]
 async fn return_wildcard_routes_keeps_the_wildcard_name() {
-    let key = key(r#"{}"#);
+    let key = key("{}");
     let mut router = FakeRouter::default();
     router.model_names = strings(&["wild/*"]);
     let access = FakeAccess::default();
@@ -340,7 +340,7 @@ async fn return_wildcard_routes_keeps_the_wildcard_name() {
 
 #[tokio::test]
 async fn return_wildcard_routes_off_drops_the_wildcard_name() {
-    let key = key(r#"{}"#);
+    let key = key("{}");
     let mut router = FakeRouter::default();
     router.model_names = strings(&["wild/*"]);
     let access = FakeAccess::default();
@@ -397,7 +397,7 @@ async fn non_text_grants_are_ignored() {
 
 #[tokio::test]
 async fn a_failed_wildcard_lookup_fails_the_listing() {
-    let key = key(r#"{}"#);
+    let key = key("{}");
     let mut router = FakeRouter::default();
     router.model_names = strings(&["wild/*"]);
     router.rows_fail = true;
