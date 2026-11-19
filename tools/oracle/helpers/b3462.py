@@ -1,6 +1,6 @@
 import asyncio
 import uuid
-from typing import Final, Literal, TypedDict
+from typing import Final, Literal, TypeAlias, TypedDict
 from uuid import UUID
 
 from litellm.proxy.rag_endpoints.endpoints import parse_rag_ingest_request
@@ -11,7 +11,10 @@ from starlette.types import Message, Scope
 
 BOUNDARY: Final = "betterlite-oracle-boundary"
 FIXED_UUID: Final = UUID("550e8400-e29b-41d4-a716-446655440000")
-OPTIONS: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
+ParsedRequest: TypeAlias = tuple[
+    dict[str, JsonValue], tuple[str, bytes, str] | None, str | None, str | None
+]
+PARSED: Final[TypeAdapter[ParsedRequest]] = TypeAdapter(ParsedRequest)
 
 
 class TextPart(TypedDict):
@@ -115,15 +118,14 @@ def build_request(content_type: str, body: bytes) -> Request:
 
 async def decode(content_type: str, body: bytes) -> Output:
     request = build_request(content_type, body)
-    ingest_options, file_data, file_url, file_id = await parse_rag_ingest_request(
-        request, EicarTestMalwareScanner()
-    )
+    parsed = PARSED.validate_python(await parse_rag_ingest_request(request, EicarTestMalwareScanner()))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L404-L525
+    ingest_options, file_data, file_url, file_id = parsed
     file: FileOutput | None = None
     if file_data is not None:
         filename, content, media_type = file_data
         file = {"filename": filename, "content_hex": content.hex(), "content_type": media_type}
     return {
-        "ingest_options": OPTIONS.validate_python(ingest_options),
+        "ingest_options": ingest_options,
         "file": file,
         "file_url": file_url,
         "file_id": file_id,

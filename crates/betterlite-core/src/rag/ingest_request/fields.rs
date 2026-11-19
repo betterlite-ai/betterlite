@@ -115,12 +115,11 @@ fn text_field(
     key: &str,
     field: &'static str,
 ) -> Result<Option<String>, IngestRequestError> {
-    match body.get(key) {
-        None => Ok(None),
-        Some(value) if value.is_null() => Ok(None),
-        Some(value) => value
-            .as_str()
-            .map(|text| Some(text.to_owned()))
-            .ok_or(IngestRequestError::NotText { field }),
-    }
+    let Some(value) = body.get(key).filter(|value| !value.is_null()) else {
+        return Ok(None);
+    };
+    value
+        .as_str()
+        .map(|text| Some(text.to_owned()))
+        .ok_or(IngestRequestError::NotText { field })
 }
