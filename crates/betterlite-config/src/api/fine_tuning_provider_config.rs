@@ -124,10 +124,11 @@ pub fn fine_tuning_config_for(
 }
 
 // the type name Python puts in the AttributeError message
-const fn python_kind(value: &Json) -> &'static str {
+fn python_kind(value: &Json) -> &'static str {
     match value {
         Json::Null => "NoneType",
         Json::Bool(_) => "bool",
+        Json::Number(number) if number.is_f64() => "float",
         Json::Number(_) => "int",
         Json::Text(_) => "str",
         Json::List(_) => "list",

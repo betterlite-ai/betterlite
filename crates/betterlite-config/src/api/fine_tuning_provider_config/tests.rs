@@ -169,6 +169,29 @@ fn stores_a_non_dict_entry_and_fails_a_lookup_that_reaches_it() {
 }
 
 #[test]
+fn a_number_entry_names_an_int_or_a_float_as_python_does() {
+    let environment = environment();
+    let integer = Json::Number(serde_json::Number::from(1_u8));
+    let float = Json::Number(serde_json::Number::from_f64(1.5).expect("a finite float"));
+    let settings = Json::List(vec![integer, float]);
+    let resolved = set_fine_tuning_config(None, Some(&settings), &environment)
+        .expect("the list stores as given")
+        .expect("the list is configured");
+    let integer_error = fine_tuning_config_for(Some(&resolved), "azure")
+        .expect_err("the lookup reaches the integer entry");
+    assert_eq!(
+        integer_error.to_string(),
+        "'int' object has no attribute 'get'"
+    );
+    let float_error = fine_tuning_config_for(Some(&resolved[1..]), "azure")
+        .expect_err("the lookup reaches the float entry");
+    assert_eq!(
+        float_error.to_string(),
+        "'float' object has no attribute 'get'"
+    );
+}
+
+#[test]
 fn returns_null_for_a_provider_that_is_not_configured() {
     let environment = environment();
     let settings = Json::List(vec![entry("openai", text("second"))]);
