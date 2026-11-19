@@ -1,0 +1,19 @@
+name: cost-estimate-authenticated-quote-never-calls-provider
+config: |
+  general_settings:
+    master_key: oracle-master
+  model_list:
+    - model_name: gpt-4o
+      litellm_params: {model: openai/gpt-4o}
+env: {}
+request:
+  method: POST
+  path: /cost/estimate
+  headers: {content-type: application/json, authorization: Bearer oracle-master}
+  body: {model: gpt-4o, input_tokens: 1000, output_tokens: 500}
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []

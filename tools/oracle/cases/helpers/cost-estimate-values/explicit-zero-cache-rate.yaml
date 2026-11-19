@@ -1,0 +1,21 @@
+kind: helper
+name: cost-estimate-values-explicit-zero-cache-rate
+call:
+  cost_estimate_values:
+    model_list:
+      - model_name: zero-cache
+        litellm_params:
+          model: claude-haiku-4-5-20251001
+          custom_llm_provider: anthropic
+          input_cost_per_token: 0.5
+          output_cost_per_token: 1.5
+          cache_creation_input_token_cost: 0
+    request:
+      model: zero-cache
+      input_tokens: 8
+      output_tokens: 4
+      cache_read_input_tokens: 2
+      cache_creation_input_tokens: 2
+      reasoning_tokens: 1
+env: {}
+compare: {ignore: []}
