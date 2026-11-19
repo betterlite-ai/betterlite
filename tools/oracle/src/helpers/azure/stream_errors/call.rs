@@ -13,7 +13,8 @@ use tokio::runtime::Builder;
 use uuid::Uuid;
 
 use super::hooks::Recorder;
-use super::source::{ScriptedSource, ScriptedSources, callable_provider};
+use super::source::ScriptedSource;
+use super::source::credentials::{ScriptedSources, callable_provider};
 use super::view;
 use super::{Function, Input, StreamCase};
 

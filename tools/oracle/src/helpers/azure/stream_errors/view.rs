@@ -5,14 +5,18 @@ use betterlite_azure::azure_stream_errors::error::{AzureStreamFailure, Reported,
 use betterlite_azure::azure_stream_errors::records::PreCallRecord;
 use betterlite_azure::azure_stream_errors::stream::{AzureChatStream, WrapperHeaders};
 use betterlite_models::decisions::{Extra, Json};
-use betterlite_openai::text_completion_transport::logging::SecretHeaders;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_streaming::stream_chunk_shaping::records::{StreamChunk, StreamOptions};
 use secrecy::ExposeSecret as _;
 use serde_json::Number;
 
 use super::hooks::Recorder;
-use super::source::{FormView, GetView, ScriptedSource, ScriptedSources, requests};
+use super::source::credentials::ScriptedSources;
+use super::source::{FormView, GetView, ScriptedSource};
+
+mod outcomes;
+
+pub(crate) use outcomes::{Outcome, error_report, report};
 
 const CREATED_FLOOR: i64 = 1_000_000_000;
 
@@ -248,55 +252,4 @@ pub(super) fn failure(error: &StreamingError) -> Box<HelperError> {
         code: None,
         message: error.to_string(),
     })
-}
-
-pub(super) struct Outcome {
-    pub(super) name: &'static str,
-    pub(super) wrapper: Json,
-    pub(super) chunks: Json,
-    pub(super) error: Json,
-}
-
-pub(super) fn error_report(
-    source: &ScriptedSource,
-    sources: &ScriptedSources,
-    recorder: &Recorder,
-    error: &StreamingError,
-) -> Result<Json, Box<HelperError>> {
-    match error {
-        StreamingError::Azure(raised) => Ok(report(
-            source,
-            sources,
-            recorder,
-            Outcome {
-                name: "error",
-                wrapper: Json::Null,
-                chunks: Json::Null,
-                error: error_value(raised),
-            },
-        )),
-        other => Err(failure(other)),
-    }
-}
-
-pub(super) fn report(
-    source: &ScriptedSource,
-    sources: &ScriptedSources,
-    recorder: &Recorder,
-    outcome: Outcome,
-) -> Json {
-    let mut fields = Extra::new();
-    fields.insert("outcome".to_owned(), Json::Text(outcome.name.to_owned()));
-    fields.insert("gets".to_owned(), Json::List(gets(source)));
-    fields.insert("requests".to_owned(), Json::List(requests(source)));
-    fields.insert("exchanges".to_owned(), Json::List(exchanges(sources)));
-    fields.insert(
-        "pre".to_owned(),
-        Json::List(recorder.pre.iter().map(pre_value).collect()),
-    );
-    fields.insert("response_headers".to_owned(), response_headers(recorder));
-    fields.insert("wrapper".to_owned(), outcome.wrapper);
-    fields.insert("chunks".to_owned(), outcome.chunks);
-    fields.insert("error".to_owned(), outcome.error);
-    Json::Object(fields)
 }
