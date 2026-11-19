@@ -3,10 +3,7 @@ from typing import Literal, Protocol, runtime_checkable
 
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.hooks import PROXY_HOOKS
-from litellm.proxy.hooks.batch_enqueued_tokens import (
-    BatchEnqueuedTokenReservation,
-    BatchEnqueuedTokenScope,
-)
+from litellm.proxy.hooks.batch_enqueued_tokens import BatchEnqueuedTokenReservation
 from litellm.proxy.hooks.parallel_request_limiter_v3 import (
     ParallelSlotAcquisition,
     RateLimitResponse,
@@ -63,7 +60,7 @@ class RecordingCache:
     ) -> None:
         if litellm_parent_otel_span is not None:
             raise RuntimeError("the settlement cache writes carry no parent span")
-        record = write_json(key, value, ttl)
+        record: JsonValue = {"key": key, "value": value, "ttl": ttl}
         if key in self.gauge_keys:
             self.gauge_writes.append(record)
         else:
@@ -108,8 +105,7 @@ class RecordingDualCache:
     ) -> None:
         if parent_otel_span is not None:
             raise RuntimeError("the post-call pipeline writes carry no parent span")
-        batch: list[JsonValue] = [operation_json(operation) for operation in increment_list]
-        self.owner.pipelines.append(batch)
+        await self.async_increment_cache_pipeline(increment_list=increment_list)
 
 
 class FakeBatchStore:
@@ -236,10 +232,6 @@ def operation_json(operation: PipelineOperation) -> dict[str, JsonValue]:
     }
 
 
-def write_json(key: str, value: JsonValue, ttl: int) -> dict[str, JsonValue]:
-    return {"key": key, "value": value, "ttl": ttl}
-
-
 def scope_set(pairs: list[list[str]]) -> frozenset[tuple[str, str]]:
     scopes = {(pair[0], pair[1]) for pair in pairs}
     return frozenset(scopes)
@@ -250,28 +242,6 @@ def window_set(windows: list[WindowInput]) -> frozenset[ReservationWindow]:
     for window in windows:
         identities.add((window["counter_key"], window["window_start"], window["backend"]))
     return frozenset(identities)
-
-
-def batch_reservation(input_value: StashInput) -> BatchEnqueuedTokenReservation | None:
-    tokens = input_value.get("batch_tokens")
-    if tokens is None:
-        return None
-    scopes: list[BatchEnqueuedTokenScope] = []
-    scope_inputs = input_value.get("batch_scopes")
-    if scope_inputs is not None:
-        for scope in scope_inputs:
-            scopes.append(
-                BatchEnqueuedTokenScope(
-                    key=scope["key"], value=scope["value"], limit=scope["limit"]
-                )
-            )
-    return BatchEnqueuedTokenReservation(
-        tokens=tokens,
-        scopes=tuple(scopes),
-        backend="redis",
-        owner="worker",
-        reserved_at_monotonic=0.0,
-    )
 
 
 def install_stash(input_value: StashInput | None) -> RequestRateLimiterStash:
@@ -313,7 +283,11 @@ def install_stash(input_value: StashInput | None) -> RequestRateLimiterStash:
     otpm_windows = input_value.get("otpm_reserved_windows")
     if otpm_windows is not None:
         stash.otpm_reserved_window_identities = window_set(otpm_windows)
-    stash.batch_enqueued_reservation = batch_reservation(input_value)
+    batch_tokens = input_value.get("batch_tokens")
+    if batch_tokens is not None:
+        stash.batch_enqueued_reservation = BatchEnqueuedTokenReservation(
+            tokens=batch_tokens, scopes=(), backend="redis", owner="worker", reserved_at_monotonic=0.0
+        )
     tpd_ops = input_value.get("batch_tpd_ops")
     if tpd_ops is not None:
         stash.batch_tpd_refund_ops = tuple(tpd_ops)

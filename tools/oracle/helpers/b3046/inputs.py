@@ -33,12 +33,6 @@ class SlotInput(TypedDict):
     counter_keys: list[str]
 
 
-class BatchScopeInput(TypedDict):
-    key: Literal["api_key", "team"]
-    value: str
-    limit: int
-
-
 class ResponseInput(TypedDict, total=False):
     id: str
     status: str
@@ -59,7 +53,6 @@ class StashInput(TypedDict, total=False):
     otpm_reserved_scopes: list[list[str]]
     otpm_reserved_windows: list[WindowInput]
     batch_tokens: int
-    batch_scopes: list[BatchScopeInput]
     batch_tpd_ops: list[ReservationAwareIncrementOperation]
     reservation_released: bool
 
@@ -91,7 +84,6 @@ class CallbackArguments(TypedDict, total=False):
     combined_usage_object: Usage
     litellm_params: LiteLLMParams
     standard_logging_object: LoggingPayload
-    user: str
 
 
 PipelineOperation: TypeAlias = ReservationAwareIncrementOperation

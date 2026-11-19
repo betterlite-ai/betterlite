@@ -51,70 +51,21 @@ class Fixture(NamedTuple):
     store: FakeBatchStore
 
 
-def metadata_of(case: Case) -> dict[str, JsonValue]:
-    logging = case.get("logging")
-    if logging is None:
-        return {}
-    return logging
-
-
-def usage_of(case: Case) -> Usage | None:
-    usage = case.get("usage")
-    if usage is None:
-        return None
-    return TypeAdapter(Usage).validate_python(usage)
-
-
 def callback_arguments(case: Case) -> CallbackArguments:
     arguments = CallbackArguments()
     call_id = case.get("call_id")
     if call_id is not None:
         arguments["litellm_call_id"] = call_id
-    metadata = metadata_of(case)
+    logging = case.get("logging")
+    metadata: dict[str, JsonValue] = {}
+    if logging is not None:
+        metadata = logging
     arguments["litellm_params"] = LiteLLMParams(metadata=metadata)
     arguments["standard_logging_object"] = LoggingPayload(metadata=metadata)
-    usage = usage_of(case)
-    if usage is not None:
-        arguments["combined_usage_object"] = usage
+    usage_input = case.get("usage")
+    if usage_input is not None:
+        arguments["combined_usage_object"] = TypeAdapter(Usage).validate_python(usage_input)
     return arguments
-
-
-def logging_arguments(case: Case, headers: dict[str, JsonValue]) -> CallbackArguments:
-    payload: LoggingPayload = {"hidden_params": HiddenParams(additional_headers=headers)}
-    arguments = CallbackArguments(standard_logging_object=payload)
-    call_id = case.get("call_id")
-    if call_id is not None:
-        arguments["litellm_call_id"] = call_id
-    return arguments
-
-
-def logging_headers(arguments: CallbackArguments) -> dict[str, JsonValue] | None:
-    payload = arguments.get("standard_logging_object")
-    if payload is None:
-        return None
-    hidden = payload.get("hidden_params")
-    if hidden is None:
-        return None
-    return hidden["additional_headers"]
-
-
-def embedding_response(case: Case) -> EmbeddingResponse:
-    usage = usage_of(case)
-    if usage is None:
-        return EmbeddingResponse()
-    return EmbeddingResponse(usage=usage)
-
-
-def popped_reservation(tokens: int | None) -> BatchEnqueuedTokenReservation | None:
-    if tokens is None:
-        return None
-    return BatchEnqueuedTokenReservation(
-        tokens=tokens,
-        scopes=(),
-        backend="redis",
-        owner="worker",
-        reserved_at_monotonic=0.0,
-    )
 
 
 def make_fixture(case: Case) -> Fixture:
@@ -129,7 +80,13 @@ def make_fixture(case: Case) -> Fixture:
     if seed is not None:
         values = seed
     cache = RecordingCache(values, gauge_keys)
-    store = FakeBatchStore(popped_reservation(case.get("pop_tokens")))
+    tokens = case.get("pop_tokens")
+    popped: BatchEnqueuedTokenReservation | None = None
+    if tokens is not None:
+        popped = BatchEnqueuedTokenReservation(
+            tokens=tokens, scopes=(), backend="redis", owner="worker", reserved_at_monotonic=0.0
+        )
+    store = FakeBatchStore(popped)
     limiter = make_limiter(cache)
     limiter.batch_enqueued_token_store = store
     return Fixture(limiter=limiter, stash=stash, cache=cache, store=store)
@@ -166,7 +123,11 @@ async def logging_answer(case: Case, fixture: Fixture, *, mirror: bool) -> Recor
     slp_headers: dict[str, JsonValue] = {}
     if headers is not None:
         slp_headers = headers
-    arguments = logging_arguments(case, slp_headers)
+    payload: LoggingPayload = {"hidden_params": HiddenParams(additional_headers=slp_headers)}
+    arguments = CallbackArguments(standard_logging_object=payload)
+    call_id = case.get("call_id")
+    if call_id is not None:
+        arguments["litellm_call_id"] = call_id
     result = HiddenResponse({}) if mirror else None
     runs = case.get("runs")
     for _ in range(1 if runs is None else runs):
@@ -174,12 +135,21 @@ async def logging_answer(case: Case, fixture: Fixture, *, mirror: bool) -> Recor
     response_headers: dict[str, JsonValue] | None = None
     if result is not None:
         response_headers = result.additional_headers()
-    return record(fixture, logging_headers(arguments), response_headers)
+    after = arguments.get("standard_logging_object")
+    slp_result: dict[str, JsonValue] | None = None
+    if after is not None:
+        hidden = after.get("hidden_params")
+        if hidden is not None:
+            slp_result = hidden["additional_headers"]
+    return record(fixture, slp_result, response_headers)
 
 
 async def success_event_answer(case: Case, fixture: Fixture) -> Record:
-    arguments = callback_arguments(case)
-    await fixture.limiter.async_log_success_event(arguments, embedding_response(case), 0.0, 0.0)
+    response = EmbeddingResponse()
+    usage_input = case.get("usage")
+    if usage_input is not None:
+        response = EmbeddingResponse(usage=TypeAdapter(Usage).validate_python(usage_input))
+    await fixture.limiter.async_log_success_event(callback_arguments(case), response, 0.0, 0.0)
     return record(fixture, None, None)
 
 
