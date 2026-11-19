@@ -484,6 +484,19 @@ fn an_item_without_an_embedding_fails_with_500() {
     assert_eq!(error.status_code, 500);
 }
 
+#[tokio::test]
+async fn the_debug_output_hides_the_header_values() {
+    let value = EmbeddingInput::Text(String::from("hi"));
+    let caller = Headers::new();
+    let request_input = input("Embeddings", &value, &caller);
+    let request = embedding_request(&ScriptedBearer::issuing("token-1"), &request_input)
+        .await
+        .unwrap();
+    let text = format!("{request:?}");
+    assert!(text.contains("Authorization"));
+    assert!(!text.contains("token-1"));
+}
+
 #[test]
 fn an_error_class_carries_the_arguments() {
     let given = headers(r#"{"X-Request-Id": "r-1"}"#);

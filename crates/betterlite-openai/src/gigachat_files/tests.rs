@@ -523,7 +523,7 @@ async fn a_capacity_of_zero_keeps_nothing() {
 #[tokio::test]
 async fn an_upload_status_of_500_returns_none_and_is_not_cached() {
     let fixture = fixture(setup());
-    fixture.script_upload(answer(500, "{}"));
+    fixture.script_upload(answer(500, r#"{"id":"file-500"}"#));
     assert_eq!(fixture.uploader.upload(DATA_URL).await, None);
     fixture.script_upload(id_reply("file-9"));
     assert_eq!(
@@ -642,6 +642,25 @@ async fn a_data_url_with_bad_padding_returns_none() {
     );
     assert!(fixture.downloads().is_empty());
     assert!(fixture.uploads().is_empty());
+}
+
+#[tokio::test]
+async fn data_after_padding_returns_none() {
+    let fixture = fixture(setup());
+    assert_eq!(
+        fixture.uploader.upload("data:image/png;base64,QU=D").await,
+        None
+    );
+    assert!(fixture.uploads().is_empty());
+}
+
+#[tokio::test]
+async fn a_three_character_payload_is_decoded() {
+    let fixture = fixture(setup());
+    fixture.script_upload(id_reply("file-15"));
+    fixture.uploader.upload("data:image/png;base64,QUJ=").await;
+    let uploads = fixture.uploads();
+    assert_eq!(first(&uploads).parts[1].data, b"AB");
 }
 
 #[tokio::test]
