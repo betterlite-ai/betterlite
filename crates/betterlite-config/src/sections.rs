@@ -149,6 +149,7 @@ pub mod copilot_chat;
 pub mod copilot_device;
 pub mod cost_adjustments;
 pub mod cost_routing;
+pub mod credential_list;
 pub mod current_spend;
 pub mod custom_auth;
 pub mod custom_dimensions;
@@ -597,7 +598,7 @@ sections! {
     component_contracts, compresr_writeback, compression_interception_state, content_category,
     content_filter_catalog, content_filter_inputs, content_filter_records, context_placement,
     cooldown_decisions, cooldown_state, copilot_chat, copilot_device, cost_adjustments, cost_routing,
-    current_spend, custom_auth, custom_dimensions, dashboard_assets, database_availability, database_diagnostics,
+    credential_list, current_spend, custom_auth, custom_dimensions, dashboard_assets, database_availability, database_diagnostics,
     database_failures, database_reencryption, database_refresh_loop, database_startup,
     database_tls, database_tokens, database_urls, deepinfra_settings, deepkeep_firewall,
     deepseek_identity, default_user_teams, deployment_affinity, deployment_catalog,

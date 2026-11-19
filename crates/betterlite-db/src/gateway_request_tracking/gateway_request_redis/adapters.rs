@@ -49,19 +49,30 @@ impl GatewayRequestsList for RedisGatewayRequestsList {
                     operation: "async_lpop",
                     source,
                 })?;
-            match popped {
-                LpopResult::Missing => Ok(Vec::new()),
-                LpopResult::Item(text) => Ok(vec![text]),
-                LpopResult::Items(texts) => Ok(texts),
-                LpopResult::ItemBytes(bytes) => Ok(vec![
-                    String::from_utf8(bytes).map_err(GatewayRequestRedisError::Entry)?,
-                ]),
-                LpopResult::ItemsBytes(values) => values
-                    .into_iter()
-                    .map(|bytes| String::from_utf8(bytes).map_err(GatewayRequestRedisError::Entry))
-                    .collect(),
-            }
+            Ok(text_entries(popped))
         })
+    }
+}
+
+pub(super) fn text_entries(popped: LpopResult) -> Vec<String> {
+    match popped {
+        LpopResult::Missing => Vec::new(),
+        LpopResult::Item(text) => vec![text],
+        LpopResult::Items(texts) => texts,
+        LpopResult::ItemBytes(bytes) => decode_text(bytes).into_iter().collect(),
+        LpopResult::ItemsBytes(values) => values.into_iter().filter_map(decode_text).collect(),
+    }
+}
+
+fn decode_text(bytes: Vec<u8>) -> Option<String> {
+    match String::from_utf8(bytes) {
+        Ok(text) => Some(text),
+        Err(error) => {
+            tracing::warn!(
+                "Gateway request tracking - dropped a buffered entry that is not UTF-8: {error}"
+            );
+            None
+        }
     }
 }
 

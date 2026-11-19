@@ -1,0 +1,25 @@
+kind: helper
+name: sap-chat
+call:
+  b8331:
+    op: sap_chat
+    model: gpt-4
+    messages: [{role: user, content: hi}]
+    env:
+      AICORE_CLIENT_ID: client
+      AICORE_CLIENT_SECRET: secret
+      AICORE_AUTH_URL: "{{upstream}}/auth"
+      AICORE_BASE_URL: "{{upstream}}/v2"
+      AICORE_HOME: /nonexistent-b8331-home
+    upstream:
+      - status: 200
+        body: '{"access_token":"oracle-token","expires_in":7200}'
+      - status: 200
+        body: '{"resources":[{"scenarioId":"orchestration","configurationId":"cfg","deploymentUrl":"https://dep.example.com/","createdAt":"2024-06-01"}]}'
+      - status: 200
+        body: '{"executableId":"orchestration"}'
+      - status: 200
+        body: '{"final_result":{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"gpt-4","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}}'
+env: {}
+compare:
+  ignore: []

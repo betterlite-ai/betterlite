@@ -1,0 +1,5 @@
+kind: helper
+name: azure-assistant-definitions-seed-client-arguments
+call: {azure_assistant_definitions: {client_arguments: [{api_key: sk-seed, api_base: 'https://example.test', params: {timeout: 30, max_retries: 4}}, {supplied: {kind: async}}]}}
+env: {}
+compare: {ignore: []}
