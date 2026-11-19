@@ -60,6 +60,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "spend_proxy_selection"
+path = "fuzz_targets/spend_proxy_selection.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "prompt_runtime"
 path = "fuzz_targets/prompt_runtime.rs"
 test = false
@@ -118,6 +125,20 @@ bench = false
 [[bin]]
 name = "spend_statement_limits"
 path = "fuzz_targets/spend_statement_limits.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dimension_pattern"
+path = "fuzz_targets/dimension_pattern.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "capture_rate_settings"
+path = "fuzz_targets/capture_rate_settings.rs"
 test = false
 doc = false
 bench = false

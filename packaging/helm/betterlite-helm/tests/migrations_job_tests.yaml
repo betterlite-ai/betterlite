@@ -1,0 +1,213 @@
+suite: migrations job
+templates:
+  - migrations-job.yaml
+tests:
+  - it: renders no Job when the migrations are disabled
+    set: { migrationJob: { enabled: false } }
+    asserts:
+      - hasDocuments: { count: 0 }
+
+  - it: runs the native migration command on the chart's image
+    asserts:
+      - isKind: { of: Job }
+      - equal: { path: apiVersion, value: batch/v1 }
+      - equal: { path: metadata.name, value: RELEASE-NAME-betterlite-migrations }
+      - equal: { path: 'metadata.labels["app.kubernetes.io/name"]', value: betterlite }
+      - equal: { path: 'metadata.labels["app.kubernetes.io/instance"]', value: RELEASE-NAME }
+      - equal: { path: 'spec.template.spec.containers[0].name', value: db-migrations }
+      - equal: { path: 'spec.template.spec.containers[0].command', value: [betterlite-db-admin, migrate] }
+      - notExists: { path: 'spec.template.spec.containers[0].workingDir' }
+      - equal: { path: 'spec.template.spec.containers[0].image', value: 'ghcr.io/betterlite-ai/betterlite:v1.85.1' }
+      - equal: { path: 'spec.template.spec.containers[0].imagePullPolicy', value: Always }
+      - equal: { path: spec.template.spec.restartPolicy, value: OnFailure }
+
+  - it: follows image.tag on the migration container
+    set: { image: { tag: test } }
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[0].image', value: 'ghcr.io/betterlite-ai/betterlite:test' }
+
+  - it: uses the bundled database URL when the chart deploys the database
+    asserts:
+      - equal:
+          path: 'spec.template.spec.containers[0].env'
+          value:
+            - { name: DATABASE_URL, value: 'postgresql://litellm:NoTaGrEaTpAsSwOrD@RELEASE-NAME-postgresql/litellm' }
+            - { name: DISABLE_SCHEMA_UPDATE, value: "false" }
+
+  - it: takes the existing database variables and URL
+    set: { db: { deployStandalone: false, useExisting: true } }
+    asserts:
+      - equal:
+          path: 'spec.template.spec.containers[0].env'
+          value:
+            - { name: DATABASE_USERNAME, valueFrom: { secretKeyRef: { name: postgres, key: username } } }
+            - { name: DATABASE_PASSWORD, valueFrom: { secretKeyRef: { name: postgres, key: password } } }
+            - { name: DATABASE_HOST, value: localhost }
+            - { name: DATABASE_NAME, value: litellm }
+            - { name: DATABASE_URL, value: 'postgresql://$(DATABASE_USERNAME):$(DATABASE_PASSWORD)@$(DATABASE_HOST)/$(DATABASE_NAME)' }
+            - { name: DISABLE_SCHEMA_UPDATE, value: "false" }
+
+  - it: reads DATABASE_HOST from the existing database secret when a key is configured
+    set: { db: { deployStandalone: false, useExisting: true, secret: { endpointKey: host } } }
+    asserts:
+      - contains:
+          path: 'spec.template.spec.containers[0].env'
+          content: { name: DATABASE_HOST, valueFrom: { secretKeyRef: { name: postgres, key: host } } }
+
+  - it: sets no DATABASE_URL when no database is configured
+    set: { db: { deployStandalone: false, useExisting: false } }
+    asserts:
+      - equal:
+          path: 'spec.template.spec.containers[0].env'
+          value:
+            - { name: DISABLE_SCHEMA_UPDATE, value: "false" }
+
+  - it: adds envVars and extraEnvVars before the schema override
+    set:
+      envVars: { EXAMPLE: one }
+      extraEnvVars: [{ name: EXTRA, value: two }]
+    asserts:
+      - lengthEqual: { path: 'spec.template.spec.containers[0].env', count: 4 }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: EXAMPLE, value: one } }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: EXTRA, value: two } }
+      - equal: { path: 'spec.template.spec.containers[0].env[3]', value: { name: DISABLE_SCHEMA_UPDATE, value: "false" } }
+
+  - it: overrides a DISABLE_SCHEMA_UPDATE from envVars with false in the last position
+    set: { envVars: { DISABLE_SCHEMA_UPDATE: "true" } }
+    asserts:
+      - equal:
+          path: 'spec.template.spec.containers[0].env'
+          value:
+            - { name: DATABASE_URL, value: 'postgresql://litellm:NoTaGrEaTpAsSwOrD@RELEASE-NAME-postgresql/litellm' }
+            - { name: DISABLE_SCHEMA_UPDATE, value: "true" }
+            - { name: DISABLE_SCHEMA_UPDATE, value: "false" }
+
+  - it: runs as an ArgoCD PreSync hook by default
+    asserts:
+      - equal: { path: 'metadata.annotations["argocd.argoproj.io/hook"]', value: PreSync }
+      - equal: { path: 'metadata.annotations["argocd.argoproj.io/hook-delete-policy"]', value: BeforeHookCreation }
+      - notExists: { path: 'metadata.annotations["helm.sh/hook"]' }
+      - matchRegex: { path: 'metadata.annotations["checksum/config"]', pattern: '^[0-9a-f]{64}$' }
+
+  - it: turns into a Helm pre-install and pre-upgrade hook when asked
+    set: { migrationJob: { hooks: { argocd: { enabled: false }, helm: { enabled: true } } } }
+    asserts:
+      - equal: { path: 'metadata.annotations["helm.sh/hook"]', value: "pre-install,pre-upgrade" }
+      - equal: { path: 'metadata.annotations["helm.sh/hook-delete-policy"]', value: before-hook-creation }
+      - equal: { path: 'metadata.annotations["helm.sh/hook-weight"]', value: "1" }
+      - notExists: { path: 'metadata.annotations["argocd.argoproj.io/hook"]' }
+
+  - it: follows an explicit Helm hook weight
+    set: { migrationJob: { hooks: { helm: { enabled: true, weight: 5 } } } }
+    asserts:
+      - equal: { path: 'metadata.annotations["helm.sh/hook-weight"]', value: "5" }
+
+  - it: keeps only the checksum when both hook styles are off
+    set: { migrationJob: { hooks: { argocd: { enabled: false }, helm: { enabled: false } } } }
+    asserts:
+      - notExists: { path: 'metadata.annotations["argocd.argoproj.io/hook"]' }
+      - notExists: { path: 'metadata.annotations["helm.sh/hook"]' }
+      - matchRegex: { path: 'metadata.annotations["checksum/config"]', pattern: '^[0-9a-f]{64}$' }
+
+  - it: uses the default service account for a Helm hook because the chart's account is not created yet
+    set: { migrationJob: { hooks: { helm: { enabled: true } } }, serviceAccount: { create: true } }
+    asserts:
+      - equal: { path: spec.template.spec.serviceAccountName, value: default }
+
+  - it: lets migrationJob.serviceAccountName replace that default for a Helm hook
+    set: { migrationJob: { hooks: { helm: { enabled: true } }, serviceAccountName: migration-sa }, serviceAccount: { create: true } }
+    asserts:
+      - equal: { path: spec.template.spec.serviceAccountName, value: migration-sa }
+
+  - it: uses the chart's service account when Helm hooks are off
+    set: { migrationJob: { hooks: { helm: { enabled: false } } }, serviceAccount: { create: true, name: gateway-sa } }
+    asserts:
+      - equal: { path: spec.template.spec.serviceAccountName, value: gateway-sa }
+
+  - it: uses a pre-existing service account under Helm hooks
+    set: { migrationJob: { hooks: { helm: { enabled: true } } }, serviceAccount: { create: false, name: pre-existing-sa } }
+    asserts:
+      - equal: { path: spec.template.spec.serviceAccountName, value: pre-existing-sa }
+
+  - it: carries the pod labels and the migration Job's annotations only
+    set:
+      podLabels: { team: platform }
+      podAnnotations: { example.com/proxy: "true" }
+      migrationJob: { annotations: { example.com/owner: migrations } }
+    asserts:
+      - equal: { path: spec.template.metadata.labels.team, value: platform }
+      - equal: { path: 'spec.template.metadata.labels["app.kubernetes.io/name"]', value: betterlite }
+      - equal: { path: 'spec.template.metadata.annotations["example.com/owner"]', value: migrations }
+      - notExists: { path: 'spec.template.metadata.annotations["example.com/proxy"]' }
+
+  - it: renders pod and container security settings plus imagePullSecrets
+    set:
+      podSecurityContext: { fsGroup: 10000 }
+      securityContext: { readOnlyRootFilesystem: true }
+      imagePullSecrets: [{ name: registry-creds }]
+    asserts:
+      - equal: { path: spec.template.spec.securityContext, value: { fsGroup: 10000 } }
+      - equal: { path: 'spec.template.spec.containers[0].securityContext', value: { readOnlyRootFilesystem: true } }
+      - equal: { path: spec.template.spec.imagePullSecrets, value: [{ name: registry-creds }] }
+
+  - it: renders the migration Job's extra init and sidecar containers through tpl
+    set:
+      image: { tag: test }
+      migrationJob:
+        extraInitContainers:
+          - { name: wait-for-db, image: '{{ .Values.image.repository }}:{{ .Values.image.tag }}', command: ["wait"] }
+        extraContainers:
+          - { name: notify, image: '{{ .Values.image.repository }}:{{ .Values.image.tag }}' }
+    asserts:
+      - contains:
+          path: spec.template.spec.initContainers
+          content: { name: wait-for-db, image: 'ghcr.io/betterlite-ai/betterlite:test', command: [wait] }
+      - contains:
+          path: spec.template.spec.containers
+          content: { name: notify, image: 'ghcr.io/betterlite-ai/betterlite:test' }
+
+  - it: renders the Job's volumes, mounts and resources from values
+    set:
+      volumeMounts: [{ name: tls, mountPath: /etc/tls, readOnly: true }]
+      volumes: [{ name: tls, secret: { secretName: database-tls } }]
+      migrationJob: { resources: { requests: { cpu: 100m, memory: 128Mi } } }
+    asserts:
+      - contains: { path: 'spec.template.spec.containers[0].volumeMounts', content: { name: tls, mountPath: /etc/tls, readOnly: true } }
+      - contains: { path: spec.template.spec.volumes, content: { name: tls, secret: { secretName: database-tls } } }
+      - equal: { path: 'spec.template.spec.containers[0].resources.requests.cpu', value: 100m }
+
+  - it: schedules the migration pod like the proxy
+    set:
+      nodeSelector: { disktype: ssd }
+      tolerations: [{ key: workload, operator: Equal, value: gateway, effect: NoSchedule }]
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - { key: zone, operator: In, values: [antarctica-east1] }
+    asserts:
+      - equal: { path: spec.template.spec.nodeSelector, value: { disktype: ssd } }
+      - equal: { path: 'spec.template.spec.tolerations[0].key', value: workload }
+      - equal: { path: 'spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key', value: zone }
+
+  - it: bounds the Job with a TTL, a backoff limit and a deadline
+    asserts:
+      - equal: { path: spec.ttlSecondsAfterFinished, value: 120 }
+      - equal: { path: spec.backoffLimit, value: 4 }
+      - equal: { path: spec.activeDeadlineSeconds, value: 1800 }
+
+  - it: writes an explicit backoff limit of zero
+    set: { migrationJob: { backoffLimit: 0 } }
+    asserts:
+      - equal: { path: spec.backoffLimit, value: 0 }
+
+  - it: honours an operator-supplied deadline
+    set: { migrationJob: { activeDeadlineSeconds: 600 } }
+    asserts:
+      - equal: { path: spec.activeDeadlineSeconds, value: 600 }
+
+  - it: omits the deadline when it is nulled out
+    set: { migrationJob: { activeDeadlineSeconds: null } }
+    asserts:
+      - notExists: { path: spec.activeDeadlineSeconds }

@@ -1,0 +1,490 @@
+kind: probe
+name: custom-dimensions-pattern-work-limit
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      custom_dimensions:
+        function: pattern_work
+        patterns:
+          - '\N{LATIN SMALL LETTER A}'
+          - '[\N{LATIN SMALL LETTER A}]'
+          - '\uD800'
+          - '[\uD800]'
+          - '\400'
+          - '[\400]'
+          - '\777'
+          - '[\777]'
+          - '\1(a)'
+          - '(a)\1'
+          - '[a&&b]'
+          - '[a~~b]'
+          - '[[:alpha:]]'
+          - '[[a]]'
+          - '[a-b--c]'
+          - '[!--a]'
+          - '[a--b]'
+          - '[---]'
+          - '[----]'
+          - '[-----a]'
+          - '[---a-]'
+          - '(?=a)b'
+          - '(?<=a)b'
+          - '(?>a)'
+          - '(?P<n>a)(?P=n)'
+          - '(a)(?(1)b|c)'
+          - '(?P<á>a)'
+          - '(?x)a* ?'
+          - ''
+          - 'a'
+          - 'a{2}'
+          - 'a{10}'
+          - 'a{0,64}'
+          - 'a{0,0}'
+          - 'a{,3}'
+          - 'a?'
+          - 'a{1}?'
+          - 'a{64}'
+          - 'a{3,64}'
+          - '[a-z]'
+          - '[a-z]{64}'
+          - '[abc]'
+          - '[^abc]'
+          - '\d'
+          - '\d{2}'
+          - '[\d]{2}'
+          - '(ab)'
+          - 'a|b'
+          - 'a|a'
+          - 'a|ab'
+          - '(?:a|b){2}'
+          - '(?:a){2}'
+          - '()'
+          - '^a'
+          - '\ba'
+          - '(?i)a|b'
+          - '\x61|a'
+          - '\111'
+          - '[\111]'
+          - '\0'
+          - '\D'
+          - '[^\d]'
+          - 'a|'
+          - '(|)'
+          - '(?:|)'
+          - 'a?|a?'
+          - 'abc|abd|abe'
+          - '(?x)a b'
+          - '(?x)[a b]'
+          - '(?x)[a#b]'
+          - '(?x)a{2, 3}'
+          - '(?x)a{ 2 }'
+          - '(?x)a{2,3}'
+          - '(?x)(?#c)'
+          - "(?x)a#c\nb"
+          - '(?x)a\#b'
+          - '(?x)a\ b'
+          - 'a#b'
+          - '(?x:a)'
+          - '(?-x:a)'
+          - '(?a:a)'
+          - '(?u:a)'
+          - '(?i-m:a)'
+          - '(?ii:a)'
+          - '(?-i:a)'
+          - '(?x-i:a)'
+          - '(?i)(?m)a'
+          - '(?x) (?i)a'
+          - '(?i)(?x)a'
+          - '(?x)(?i)a'
+          - '(?x)'
+          - '(?u)'
+          - '(?iu:a)'
+          - '(?#c)a'
+          - '(?#a\)b)c'
+          - '(?#c)(?x)a'
+          - '(?P<name>a)'
+          - '(?P<é>a)'
+          - '(?P<_a>a)'
+          - '[]]'
+          - '[^]]'
+          - '[--a]'
+          - '[--]'
+          - '[]-a]'
+          - '[-a]'
+          - '[a-]'
+          - '[\d-]'
+          - '[a-a]'
+          - '[aa]'
+          - '[^aa]'
+          - '[a-a-z]'
+          - '[\b]'
+          - '[\b-\f]'
+          - '[\_]'
+          - '[\-]'
+          - '[a\-b]'
+          - '\é'
+          - '[\é]'
+          - '\<a'
+          - '\>a'
+          - '\_'
+          - '\%'
+          - '\ '
+          - '\#'
+          - '\&'
+          - '\~'
+          - '\x61'
+          - '\u00e9'
+          - '\U000000e9'
+          - '\Za'
+          - '\b{start}'
+          - '\{2}'
+          - '\}'
+          - '{}'
+          - 'a{}'
+          - 'a\{'
+          - '{'
+          - 'a{'
+          - 'a{64}?'
+          - 'a{02}'
+          - '(?:a)|b'
+          - 'a|(?:b)'
+          - '\d|a'
+          - '[ab]|[cd]'
+          - 'a|[bc]'
+          - '[ab]|c'
+          - 'a|b|[cd]'
+          - '(?:ab)|cd'
+          - '(?:a|b)c'
+          - '(?x)[\ ]'
+          - '\x61-a'
+          - 'a{65}'
+          - 'a*'
+          - 'a+'
+          - 'a{2,}'
+          - 'a{,}'
+          - '(?:ab){2}'
+          - '(a){2}'
+          - '(?i:a){2}'
+          - '(?:a|bc){2}'
+          - 'a{3,65}'
+          - 'a{4294967294}'
+          - '(?x)a *'
+          - '(?x)a *?'
+          - '(?x)a+?'
+          - 'a{2,1}'
+          - 'a**'
+          - '(a'
+          - '[a'
+          - '[a-\d]'
+          - '(?<name>a)'
+          - '(?U:a)'
+          - '(?R:a)'
+          - '(?L:a)'
+          - '(?i-i:a)'
+          - '(?i-m-x:a)'
+          - '(?-)'
+          - '(?-i)'
+          - '(?-i)a'
+          - '(?i-m)a'
+          - '(?au:a)'
+          - '(?au)a'
+          - '\z'
+          - '\x{41}'
+          - '\u{41}'
+          - '\p{L}'
+          - '\P{L}'
+          - '[\p{L}]'
+          - '[\Z]'
+          - '[\A]'
+          - '[\B]'
+          - '[\e]'
+          - '\N'
+          - '[\N]'
+          - '\g<1>'
+          - '\k<n>'
+          - '(?P=name)'
+          - '\x4'
+          - '\x'
+          - '\u041'
+          - '(?P<1a>a)'
+          - '(?P<a.b>a)'
+          - 'a{2}{3}'
+          - 'a{4294967295}'
+          - 'a{2,4294967295}'
+          - 'a{4294967296}'
+          - 'a{0,4294967295}'
+          - 'a{4294967294,4294967295}'
+          - 'a?+'
+          - 'a*+'
+          - 'a++'
+          - 'a{1}+'
+          - '[ab]++'
+          - '(?:a)++'
+          - '(?i:a)++'
+          - 'a{2}+'
+          - 'a{2}++'
+          - 'a{2}+?'
+          - 'a+?+'
+          - 'a*?+'
+          - 'a+++'
+          - 'a(?x)b'
+          - '(?x)a(?i)b'
+          - '(?i)a(?x)b'
+          - '(?:(?i)a)'
+          - '((?i)a)'
+          - '(?i:a)(?m)'
+          - '(?i:)(?m)'
+          - '(?:)(?x)a'
+          - '()(?x)a'
+          - '\8'
+          - '\9'
+          - '\b{2}'
+          - '(?:(?x)a b)'
+          - 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+          - 'a{64}a{64}a{64}a{64}a{64}a{64}a{64}a{64}a{64}a{64}a{64}a{64}a{64}a{64}a{64}a{64}a{64}a{64}a{64}a{64}a{64}a{64}a{64}a{64}a{64}a{64}a{64}a{64}a{64}a{64}a{64}aa'
+          - '((((((((((((((((a))))))))))))))))'
+          - '(((((((((((((((((a)))))))))))))))))'
+          - 'a{64}'
+          - 'a{65}'
+          - '^|$'
+          - 'a{0,3}b{0,63}(?:^|$)'
+          - '(?x)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        a'
+          - 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+          - '\12'
+          - '\18'
+          - '\123'
+          - '\128'
+          - '\10'
+compare:
+  expected_difference:
+    - pointer: /output/custom_dimensions/results/0/work
+      reference: 2
+      rust: null
+      why: 'LiteLLM resolves the character name and scores one literal; betterlite carries no name table.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800'
+    - pointer: /output/custom_dimensions/results/0/message
+      reference: null
+      rust: 'is not a valid regex'
+      why: 'LiteLLM resolves the character name and scores one literal; betterlite carries no name table.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800'
+    - pointer: /output/custom_dimensions/results/1/work
+      reference: 2
+      rust: null
+      why: 'LiteLLM resolves the character name and scores one literal; betterlite carries no name table.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800'
+    - pointer: /output/custom_dimensions/results/1/message
+      reference: null
+      rust: 'is not a valid regex'
+      why: 'LiteLLM resolves the character name and scores one literal; betterlite carries no name table.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800'
+    - pointer: /output/custom_dimensions/results/2/work
+      reference: 2
+      rust: null
+      why: 'LiteLLM accepts a lone surrogate escape and scores one literal; a Rust char cannot hold a surrogate.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800'
+    - pointer: /output/custom_dimensions/results/2/message
+      reference: null
+      rust: 'is not a valid regex'
+      why: 'LiteLLM accepts a lone surrogate escape and scores one literal; a Rust char cannot hold a surrogate.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800'
+    - pointer: /output/custom_dimensions/results/3/work
+      reference: 2
+      rust: null
+      why: 'LiteLLM accepts a lone surrogate escape and scores one literal; a Rust char cannot hold a surrogate.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800'
+    - pointer: /output/custom_dimensions/results/3/message
+      reference: null
+      rust: 'is not a valid regex'
+      why: 'LiteLLM accepts a lone surrogate escape and scores one literal; a Rust char cannot hold a surrogate.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800'
+    - pointer: /output/custom_dimensions/results/4/work
+      reference: null
+      rust: 2
+      why: 'Python caps octal escapes at 255 and reads a lone digit as a group reference; betterlite reads both as octal.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800'
+    - pointer: /output/custom_dimensions/results/4/message
+      reference: 'is not a valid regex'
+      rust: null
+      why: 'Python caps octal escapes at 255 and reads a lone digit as a group reference; betterlite reads both as octal.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800'
+    - pointer: /output/custom_dimensions/results/5/work
+      reference: null
+      rust: 2
+      why: 'Python caps octal escapes at 255 and reads a lone digit as a group reference; betterlite reads both as octal.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800'
+    - pointer: /output/custom_dimensions/results/5/message
+      reference: 'is not a valid regex'
+      rust: null
+      why: 'Python caps octal escapes at 255 and reads a lone digit as a group reference; betterlite reads both as octal.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800'
+    - pointer: /output/custom_dimensions/results/6/work
+      reference: null
+      rust: 2
+      why: 'Python caps octal escapes at 255 and reads a lone digit as a group reference; betterlite reads both as octal.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800'
+    - pointer: /output/custom_dimensions/results/6/message
+      reference: 'is not a valid regex'
+      rust: null
+      why: 'Python caps octal escapes at 255 and reads a lone digit as a group reference; betterlite reads both as octal.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800'
+    - pointer: /output/custom_dimensions/results/7/work
+      reference: null
+      rust: 2
+      why: 'Python caps octal escapes at 255 and reads a lone digit as a group reference; betterlite reads both as octal.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800'
+    - pointer: /output/custom_dimensions/results/7/message
+      reference: 'is not a valid regex'
+      rust: null
+      why: 'Python caps octal escapes at 255 and reads a lone digit as a group reference; betterlite reads both as octal.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800'
+    - pointer: /output/custom_dimensions/results/8/work
+      reference: null
+      rust: 4
+      why: 'Python caps octal escapes at 255 and reads a lone digit as a group reference; betterlite reads both as octal.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800'
+    - pointer: /output/custom_dimensions/results/8/message
+      reference: 'is not a valid regex'
+      rust: null
+      why: 'Python caps octal escapes at 255 and reads a lone digit as a group reference; betterlite reads both as octal.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800'
+    - pointer: /output/custom_dimensions/results/9/work
+      reference: null
+      rust: 4
+      why: 'LiteLLM parses a backreference and refuses it in the cost walk; betterlite reads the digit escape as octal.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L758'
+    - pointer: /output/custom_dimensions/results/9/message
+      reference: 'contains an unsupported regex construct'
+      rust: null
+      why: 'LiteLLM parses a backreference and refuses it in the cost walk; betterlite reads the digit escape as octal.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L758'
+    - pointer: /output/custom_dimensions/results/14/work
+      reference: 4
+      rust: null
+      why: 'Python reads the double hyphen as a range; betterlite refuses the set difference operator.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L758'
+    - pointer: /output/custom_dimensions/results/14/message
+      reference: null
+      rust: 'contains an unsupported regex construct'
+      why: 'Python reads the double hyphen as a range; betterlite refuses the set difference operator.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L758'
+    - pointer: /output/custom_dimensions/results/15/work
+      reference: 4
+      rust: null
+      why: 'Python reads the double hyphen as a range; betterlite refuses the set difference operator.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L758'
+    - pointer: /output/custom_dimensions/results/15/message
+      reference: null
+      rust: 'contains an unsupported regex construct'
+      why: 'Python reads the double hyphen as a range; betterlite refuses the set difference operator.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L758'
+    - pointer: /output/custom_dimensions/results/16/message
+      reference: 'is not a valid regex'
+      rust: 'contains an unsupported regex construct'
+      why: 'Python reads the double hyphen as an invalid range and errors; betterlite refuses the set difference operator.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L758'
+    - pointer: /output/custom_dimensions/results/17/work
+      reference: 3
+      rust: null
+      why: 'Python reads the dash run by its range rule; betterlite refuses the pair of dashes as the set difference operator.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L758'
+    - pointer: /output/custom_dimensions/results/17/message
+      reference: null
+      rust: 'contains an unsupported regex construct'
+      why: 'Python reads the dash run by its range rule; betterlite refuses the pair of dashes as the set difference operator.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L758'
+    - pointer: /output/custom_dimensions/results/18/work
+      reference: 4
+      rust: null
+      why: 'Python reads the dash run by its range rule; betterlite refuses the pair of dashes as the set difference operator.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L758'
+    - pointer: /output/custom_dimensions/results/18/message
+      reference: null
+      rust: 'contains an unsupported regex construct'
+      why: 'Python reads the dash run by its range rule; betterlite refuses the pair of dashes as the set difference operator.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L758'
+    - pointer: /output/custom_dimensions/results/19/work
+      reference: 4
+      rust: null
+      why: 'Python reads the dash run by its range rule; betterlite refuses the pair of dashes as the set difference operator.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L758'
+    - pointer: /output/custom_dimensions/results/19/message
+      reference: null
+      rust: 'contains an unsupported regex construct'
+      why: 'Python reads the dash run by its range rule; betterlite refuses the pair of dashes as the set difference operator.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L758'
+    - pointer: /output/custom_dimensions/results/20/work
+      reference: 5
+      rust: null
+      why: 'Python reads the dash run by its range rule; betterlite refuses the pair of dashes as the set difference operator.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L758'
+    - pointer: /output/custom_dimensions/results/20/message
+      reference: null
+      rust: 'contains an unsupported regex construct'
+      why: 'Python reads the dash run by its range rule; betterlite refuses the pair of dashes as the set difference operator.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L758'
+    - pointer: /output/custom_dimensions/results/21/message
+      reference: 'contains an unsupported regex construct'
+      rust: 'is not a valid regex'
+      why: 'LiteLLM parses the construct and its cost walk refuses it; the Rust parser does not parse it at all.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L777'
+    - pointer: /output/custom_dimensions/results/22/message
+      reference: 'contains an unsupported regex construct'
+      rust: 'is not a valid regex'
+      why: 'LiteLLM parses the construct and its cost walk refuses it; the Rust parser does not parse it at all.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L777'
+    - pointer: /output/custom_dimensions/results/23/message
+      reference: 'contains an unsupported regex construct'
+      rust: 'is not a valid regex'
+      why: 'LiteLLM parses the construct and its cost walk refuses it; the Rust parser does not parse it at all.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L777'
+    - pointer: /output/custom_dimensions/results/24/message
+      reference: 'contains an unsupported regex construct'
+      rust: 'is not a valid regex'
+      why: 'LiteLLM parses the construct and its cost walk refuses it; the Rust parser does not parse it at all.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L777'
+    - pointer: /output/custom_dimensions/results/25/message
+      reference: 'contains an unsupported regex construct'
+      rust: 'is not a valid regex'
+      why: 'LiteLLM parses the construct and its cost walk refuses it; the Rust parser does not parse it at all.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L777'
+    - pointer: /output/custom_dimensions/results/26/work
+      reference: 3
+      rust: null
+      why: 'Python accepts an identifier with a combining mark; the Rust parser accepts only letters and digits.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800'
+    - pointer: /output/custom_dimensions/results/26/message
+      reference: null
+      rust: 'is not a valid regex'
+      why: 'Python accepts an identifier with a combining mark; the Rust parser accepts only letters and digits.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800'
+    - pointer: /output/custom_dimensions/results/27/message
+      reference: 'is not a valid regex'
+      rust: 'requires a single character or class repeated at most 64 times; use {n,m} instead of *, + or {n,}'
+      why: 'Python commits the first quantifier before the ignored space and sees a second repeat; betterlite drops the space first.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L802'
+    - pointer: /output/custom_dimensions/results/80/work
+      reference: 3
+      rust: null
+      why: 'LiteLLM reads Python inline flags, including the ASCII mode this pattern asks for; betterlite refuses a flag its matcher has no mode to carry.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800'
+    - pointer: /output/custom_dimensions/results/80/message
+      reference: null
+      rust: 'contains an unsupported regex construct'
+      why: 'LiteLLM reads Python inline flags, including the ASCII mode this pattern asks for; betterlite refuses a flag its matcher has no mode to carry.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800'
+    - pointer: /output/custom_dimensions/results/242/work
+      reference: 2
+      rust: null
+      why: 'LiteLLM reads and scores a verbose pattern of any length; betterlite refuses a pattern beyond its 4096-character input bound.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L798'
+    - pointer: /output/custom_dimensions/results/242/message
+      reference: null
+      rust: 'is not a valid regex'
+      why: 'LiteLLM reads and scores a verbose pattern of any length; betterlite refuses a pattern beyond its 4096-character input bound.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L798'
+    - pointer: /warnings
+      reference: ['Possible set intersection at position 2', 'Possible set intersection at position 2', 'Possible set symmetric difference at position 2', 'Possible set symmetric difference at position 2', 'Possible nested set at position 1', 'Possible nested set at position 1', 'Possible nested set at position 1', 'Possible nested set at position 1', 'Possible set difference at position 4', 'Possible set difference at position 4', 'Possible set difference at position 2', 'Possible set difference at position 2', 'Possible set difference at position 2', 'Possible set difference at position 2', 'Possible set difference at position 2', 'Possible set difference at position 2', 'Possible set difference at position 2', 'Possible set difference at position 2', 'Possible set difference at position 4', 'Possible set difference at position 2', 'Possible set difference at position 4', 'Possible set difference at position 2', 'Possible set difference at position 2']
+      rust: []
+      why: 'CPython warns about classes it may reread as nested sets or set differences; betterlite validates them silently.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800'

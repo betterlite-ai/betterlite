@@ -92,6 +92,8 @@ async fn deployment_id_generalized() {
 #[case::token_count_from_input_output(settled(behaviors::token_count_from_input_output))]
 #[case::override_pre_call_bound(behaviors::override_pre_call_bound())]
 #[case::override_pre_call_absent(behaviors::override_pre_call_absent())]
+#[case::least_busy_picks_lowest_count(behaviors::least_busy_picks_lowest_count())]
+#[case::each_strategy_counts_its_attempt(behaviors::each_strategy_counts_its_attempt())]
 #[tokio::test]
 async fn router_core_behaviors<Fut>(#[case] case: Fut)
 where
@@ -120,14 +122,10 @@ where
 #[case::stage_responses_stream_fallback(boundaries::stage_skips(
     RouteStage::ResponsesStreamFallback
 ))]
-#[case::least_busy(boundaries::strategy_unbuilt(RoutingStrategy::LeastBusy, "least_busy"))]
+#[case::least_busy_without_counters(boundaries::least_busy_without_counters())]
 #[case::latency_routing(boundaries::strategy_unbuilt(
     RoutingStrategy::LatencyBasedRouting,
     "latency_routing"
-))]
-#[case::cost_routing(boundaries::strategy_unbuilt(
-    RoutingStrategy::CostBasedRouting,
-    "cost_routing"
 ))]
 #[case::usage_routing(boundaries::strategy_unbuilt(
     RoutingStrategy::UsageBasedRouting,

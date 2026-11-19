@@ -62,7 +62,10 @@ description: >-
   previous_response_id=9, pass no hints and do not emit a second error frame
   after response.create validation.
 
-  First-frame model access runs only if query model is absent, master_key is
+  First-frame model access calls B889's _enforce_key_and_fallback_model_access
+  (betterlite-auth key_context) and then B1221's _run_centralized_common_checks
+  (betterlite-auth central_auth_checks), as endpoints.py L1458-L1471 does. It
+  runs only if query model is absent, master_key is
   present (for example master_key="sk-master"), or one of general_settings.enable_jwt_auth,
   general_settings.enable_oauth2_auth, and
   general_settings.enable_oauth2_proxy_auth is true. All three mode keys
@@ -379,7 +382,7 @@ out_of_scope:
 - 'litellm/proxy/response_api_endpoints/endpoints.py: B940 owns _convert_tool_payload_value L77-L86, _convert_tool_envelope L89-L105, _normalize_tool_dialect L108-L120, _is_chat_completions_body L123-L127, _parse_cursor_model_variant L140-L145, _router_can_serve L148-L155, _resolve_cursor_model_variant L158-L179, _resolve_cursor_model_variant_before_auth L182-L191, cursor_model_list L471-L485 and cursor_chat_completions L496-L674.'
 - 'litellm/proxy/response_api_endpoints/endpoints.py: B080 owns responses_api L212-L458; B938 owns get_response L695-L790, delete_response L811-L899, get_response_input_items L920-L970 and cancel_response L1216-L1313; B939 owns compact_response L988-L1052, _TokenCounter.__call__ L1078, _proxy_token_counter L1081-L1084, _responses_invalid_request_response L1090-L1099, _missing_responses_param_response L1102-L1107, _responses_input_as_token_count_messages L1110-L1125 and responses_input_tokens L1143-L1198.'
 - 'litellm/proxy/auth/user_api_key_auth.py: B756 owns user_api_key_auth_websocket L644-L707, including Authorization, api-key and openai-insecure-api-key.<token> extraction and pre-accept 403/1008; B732 and B748 own identity, key and model-grant resolution reached by the first-frame access check.'
-- 'litellm/proxy/auth/user_api_key_auth.py: B754 owns _run_centralized_common_checks called after _enforce_key_and_fallback_model_access; B941 owns only the gate conditions and its pre-call error frame.'
+- 'litellm/proxy/auth/user_api_key_auth.py: B889 owns _enforce_key_and_fallback_model_access and B1221 owns _run_centralized_common_checks, called in that order; B941 owns only the gate conditions and its pre-call error frame.'
 - 'litellm/proxy/common_request_processing.py: B8801 owns common_processing_pre_call_logic and B014 the rest of ProxyBaseLLMRequestProcessing; B941 records its call-before-route ordering and route_type without reimplementing admission, guardrails, rate limits, or budgets.'
 - 'litellm/proxy/route_llm_request.py: B014 owns route_request dispatch; B943 owns native Responses WebSocket execution and B945 owns managed turn execution. B941 supplies routed_data and handles only the surrounding failure control flow.'
 - 'litellm/proxy/utils.py: B8395 owns ProxyLogging.post_call_failure_hook L3197-L3314 and B012 owns logger/event integration; B941 records hook order without implementing callback, persistence, or redaction.'

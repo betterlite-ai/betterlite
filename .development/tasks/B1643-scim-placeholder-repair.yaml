@@ -16,7 +16,8 @@ description: >-
   placeholder_user_id, merged_into_user_id and the original ordered team_ids, with default
   200 JSON semantics. The merge has no encompassing transaction: an add or delete failure
   keeps preceding team writes, and role recomputation can fail after deletion. Preserve
-  B124's exception conversion and B052's normal API-key authorization for both endpoints.
+  B2400's exception conversion (handle_exception_on_proxy in betterlite-server
+  api::proxy_endpoint_support) and B052's normal API-key authorization for both endpoints.
   Use actual PostgreSQL relationships to test list exclusions, rejection precedence,
   successful migration of every roster, missing teams and failures at each write boundary.
   Eligible HTTP cases verify the management JSON content type, response fields, auth and
@@ -24,6 +25,13 @@ description: >-
   The 64 function lines warrant 110 route/service lines and 220 persistence tests plus
   100 HTTP fixtures/wiring lines, capped at 500. This entry consumes existing path/record
   decoders and contributes placeholder-route samples to the HTTP corpus.
+
+  B9941 mounts scim_router and leaves crates/betterlite-server/src/scim_placeholder_repair.rs as a stub routes
+  function scim_router already merges, so fill only scim_placeholder_repair.rs and scim_placeholder_repair/** and
+  leave scim.rs and routes.rs as they are. GET /scim/v2/placeholders and POST /scim/v2/placeholders/{user_id}/merge
+  keep the full prefix. Seed sso_user_id (an empty string included), blocked keys and user teams through B9941's
+  `scim:` block; LiteLLM boots on the case database with B9942's Prisma client, and the handlers reach it through
+  B8610's shared.db.
 scope:
   paths:
     - crates/betterlite-server/Cargo.toml

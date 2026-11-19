@@ -5,7 +5,7 @@ description: >-
   Fallbacks HTTP transactions catalogued in B150-route-audit.md. B8594/B8595/B8596 implement
   config mutations/reads, B8675 mounts them, B4447/B8540 implement and mount service probes, and B8389 owns
   alert descriptors. Their planned no-DB and startup-read cases do not cover successful
-  dashboard edits. Use independent B860/B5076 databases with store_model_in_db=true and
+  dashboard edits. Use independent B860/B9942 databases with store_model_in_db=true and
   B1630 transcripts; keep all provider and webhook URLs on the local oracle upstream.
 
   GET /get/config/callbacks supplies callbacks,available_callbacks,alerts,
