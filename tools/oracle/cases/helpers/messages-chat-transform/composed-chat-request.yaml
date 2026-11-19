@@ -43,5 +43,53 @@ calls:
       metadata:
         user_id: alice
     custom_llm_provider: openai
+- messages_chat_transform:
+    operation: input_params
+    kwargs:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: hello
+      thinking:
+        type: enabled
+        budget_tokens: 9000
+    custom_llm_provider: null
+- messages_chat_transform:
+    operation: input_params
+    kwargs:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: hello
+      thinking:
+        type: adaptive
+      output_config:
+        effort: low
+    custom_llm_provider: null
+- messages_chat_transform:
+    operation: input_params
+    kwargs:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: hello
+      output_format:
+        type: json_schema
+        schema:
+          type: object
+    custom_llm_provider: null
+- messages_chat_transform:
+    operation: input_params
+    kwargs:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: hello
+      output_config:
+        format:
+          type: json_schema
+          schema:
+            type: object
+    custom_llm_provider: null
 env: {}
 compare: {ignore: []}

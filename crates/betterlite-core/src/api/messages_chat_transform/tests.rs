@@ -319,6 +319,92 @@ async fn an_explicit_stop_overwrites_the_translated_stop_sequences() {
 }
 
 #[tokio::test]
+async fn thinking_budget_and_adaptive_effort_reach_the_composed_request() {
+    let mut budgeted = object(
+        r#"{
+            "model": "gpt-4o",
+            "messages": [{"role": "user", "content": "hi"}],
+            "thinking": {"type": "enabled", "budget_tokens": 9000}
+        }"#,
+    );
+    let (request, _budgeted_mapping) = wrap(&mut budgeted, &mut Capabilities::new(&[]))
+        .await
+        .expect("the budgeted request composes");
+    assert_eq!(request.get("reasoning_effort"), Some(&json(r#""high""#)));
+    assert!(
+        request.get("thinking").is_none(),
+        "a non-Claude target receives the budgeted effort, not the thinking block"
+    );
+
+    let mut adaptive = object(
+        r#"{
+            "model": "gpt-4o",
+            "messages": [{"role": "user", "content": "hi"}],
+            "thinking": {"type": "adaptive"},
+            "output_config": {"effort": "low"}
+        }"#,
+    );
+    let (adaptive_request, _adaptive_mapping) = wrap(&mut adaptive, &mut Capabilities::new(&[]))
+        .await
+        .expect("the adaptive request composes");
+    assert_eq!(
+        adaptive_request.get("reasoning_effort"),
+        Some(&json(r#""low""#)),
+        "the declared adaptive tier wins over the adaptive default"
+    );
+    assert!(
+        adaptive_request.get("output_config").is_none(),
+        "the effort tier is translated, so the config does not copy through"
+    );
+}
+
+#[tokio::test]
+async fn output_format_and_output_config_format_reach_the_composed_request() {
+    let expected = json(
+        r#"{
+            "type": "json_schema",
+            "json_schema": {
+                "name": "structured_output",
+                "schema": {"type": "object"},
+                "strict": true
+            }
+        }"#,
+    );
+    let mut legacy = object(
+        r#"{
+            "model": "gpt-4o",
+            "messages": [{"role": "user", "content": "hi"}],
+            "output_format": {"type": "json_schema", "schema": {"type": "object"}}
+        }"#,
+    );
+    let (legacy_request, _legacy_mapping) = wrap(&mut legacy, &mut Capabilities::new(&[]))
+        .await
+        .expect("the output_format request composes");
+    assert_eq!(legacy_request.get("response_format"), Some(&expected));
+
+    let mut configured = object(
+        r#"{
+            "model": "gpt-4o",
+            "messages": [{"role": "user", "content": "hi"}],
+            "output_config": {"format": {"type": "json_schema", "schema": {"type": "object"}}}
+        }"#,
+    );
+    let (configured_request, _configured_mapping) =
+        wrap(&mut configured, &mut Capabilities::new(&[]))
+            .await
+            .expect("the output_config.format request composes");
+    assert_eq!(
+        configured_request.get("response_format"),
+        Some(&expected),
+        "output_config.format translates the same way as the legacy field"
+    );
+    assert!(
+        configured_request.get("output_config").is_none(),
+        "the format is translated, so the config does not copy through"
+    );
+}
+
+#[tokio::test]
 async fn long_tool_names_roundtrip_through_the_returned_mapping() {
     let long = "a".repeat(65);
     let short = format!("{}_635361c4", "a".repeat(55));
