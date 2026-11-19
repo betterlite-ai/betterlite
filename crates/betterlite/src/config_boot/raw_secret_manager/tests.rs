@@ -130,6 +130,39 @@ fn system_from_environment() {
 }
 
 #[test]
+fn literal_system_errors_are_reported() {
+    let unsupported = project(
+        "general_settings:\n  key_management_system: bogus\n",
+        &env(&[]),
+    );
+    let mut unsupported_state = RawSecretManager::new(secret_lookup(None));
+    let error = unsupported_state
+        .initialize(&unsupported, None, &env(&[]), None)
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        RawSecretManagerError::Selection {
+            source: ConfigBootError::InvalidKeyManagementSystem
+        }
+    ));
+    let empty = project(
+        "general_settings:\n  key_management_system: ''\n",
+        &env(&[]),
+    );
+    let mut empty_state = RawSecretManager::new(secret_lookup(None));
+    let error = empty_state
+        .initialize(&empty, None, &env(&[]), None)
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        RawSecretManagerError::Selection {
+            source: ConfigBootError::InvalidKeyManagementSystem
+        }
+    ));
+    assert!(empty_state.lookup.manager.is_none());
+}
+
+#[test]
 fn existing_client_skips_new_settings() {
     let reader = Arc::new(RecordingReader {
         reads: Mutex::new(Vec::new()),
