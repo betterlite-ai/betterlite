@@ -6,7 +6,6 @@ use super::error::ConfigBootError;
 const JWT_KEYS: [&str; 2] = ["enable_jwt_auth", "litellm_jwtauth"];
 
 #[must_use]
-#[must_use]
 pub fn misplaced_jwt_keys(config: &ConfigMap) -> Vec<&'static str> {
     let misplaced: Vec<&'static str> = JWT_KEYS
         .into_iter()
