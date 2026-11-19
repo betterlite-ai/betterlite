@@ -222,7 +222,7 @@ async fn scenario(run: &Run, redactor: &Redactor) -> ScenarioView {
     scenario_view(&recorded, &client, &logging, &scope, label)
 }
 
-fn outcome_label<E, C>(outcome: &Result<(), RealtimeTransportError<E, C>>) -> OutcomeLabel
+const fn outcome_label<E, C>(outcome: &Result<(), RealtimeTransportError<E, C>>) -> OutcomeLabel
 where
     E: StdError + 'static,
     C: StdError + 'static,
@@ -276,7 +276,7 @@ fn scenario_view(
     }
 }
 
-fn classify<E, C>(error: &RealtimeTransportError<E, C>) -> (&'static str, Option<u16>)
+const fn classify<E, C>(error: &RealtimeTransportError<E, C>) -> (&'static str, Option<u16>)
 where
     E: StdError + 'static,
     C: StdError + 'static,
