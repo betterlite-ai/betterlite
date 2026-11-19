@@ -1,5 +1,7 @@
+from abc import ABC, abstractmethod
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
-from typing import Literal, TypeAlias, TypedDict, cast
+from typing import Final, Literal, TypeAlias, TypedDict, cast
 
 import httpx
 from fastapi import HTTPException
@@ -11,6 +13,7 @@ from litellm.types.proxy.guardrails.guardrail_hooks.bedrock_guardrails import (
     BedrockGuardrailUsage,
 )
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import override
 
 JsonObject: TypeAlias = dict[str, JsonValue]
 START_TIME = datetime.fromtimestamp(100.25, tz=UTC)
@@ -45,20 +48,47 @@ class TextView(TypedDict):
 ResponseView: TypeAlias = JsonView | ContentView | TextView
 
 
-class ContentResponse:
+class ModifyView(TypedDict):
+    kind: Literal["modify"]
+    message: str
+    model: str
+    request_data: JsonObject
+    guardrail_name: str | None
+    detection_info: JsonObject
+
+
+class HttpView(TypedDict):
+    kind: Literal["http"]
+    status: int
+    detail: JsonValue
+
+
+# httpx.Response parses its body in json(), so a stand-in whose json() fails must be its own type
+class FailingJsonResponse(ABC):
+    content: bytes | None
+    text: str
+
+    @abstractmethod
+    def json(self) -> JsonValue:
+        ...
+
+
+class ContentResponse(FailingJsonResponse):
     def __init__(self, body: str) -> None:
         self.content = body.encode("utf-8")
+        self.text = body
 
+    @override
     def json(self) -> JsonValue:
-        raise ValueError(self.content.decode("utf-8"))
+        raise ValueError(self.text)
 
 
-class TextResponse:
-    content: None = None
-
+class TextResponse(FailingJsonResponse):
     def __init__(self, text: str) -> None:
+        self.content = None
         self.text = text
 
+    @override
     def json(self) -> JsonValue:
         raise ValueError(self.text)
 
@@ -69,53 +99,22 @@ def response_of(arguments: JsonObject) -> BedrockGuardrailResponse:
     )
 
 
-def response_wire(arguments: JsonObject) -> JsonObject:
-    return TypeAdapter(JsonObject).validate_python(arguments["response"])
-
-
-def request_data_of(arguments: JsonObject) -> JsonObject:
-    return TypeAdapter(JsonObject).validate_python(arguments["request_data"])
-
-
-def setup_of(arguments: JsonObject) -> GuardrailSetup:
-    return TypeAdapter(GuardrailSetup).validate_python(arguments["guardrail"])
-
-
 def chunk_usages(arguments: JsonObject) -> list[BedrockGuardrailUsage]:
     return cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1290
         list[BedrockGuardrailUsage], arguments["completed_chunk_usages"]
     )
 
 
-def region_of(arguments: JsonObject) -> str | None:
-    return TypeAdapter(str | None).validate_python(arguments.get("aws_region_name"))
-
-
-def build_guardrail(setup_value: GuardrailSetup) -> BedrockGuardrail:
-    return BedrockGuardrail(
-        guardrail_name=setup_value["name"],
-        guardrailIdentifier=setup_value["identifier"],
-        guardrailVersion=setup_value["version"],
-        disable_exception_on_block=setup_value["disable_exception_on_block"],
+def configured(arguments: JsonObject) -> tuple[BedrockGuardrail, JsonObject]:
+    setup = TypeAdapter(GuardrailSetup).validate_python(arguments["guardrail"])
+    request_data = TypeAdapter(JsonObject).validate_python(arguments["request_data"])
+    guardrail = BedrockGuardrail(
+        guardrail_name=setup["name"],
+        guardrailIdentifier=setup["identifier"],
+        guardrailVersion=setup["version"],
+        disable_exception_on_block=setup["disable_exception_on_block"],
     )
-
-
-def bare_guardrail() -> BedrockGuardrail:
-    return BedrockGuardrail()
-
-
-def should_raise(arguments: JsonObject) -> JsonValue:
-    return bare_guardrail()._should_raise_guardrail_blocked_exception(response_of(arguments))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2411
-
-
-def blocked(arguments: JsonObject) -> JsonValue:
-    blocks = bare_guardrail()._extract_blocked_assessments(response_of(arguments))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2243
-    return TypeAdapter(JsonValue).validate_python(blocks)
-
-
-def violation_names(arguments: JsonObject) -> JsonValue:
-    names = bare_guardrail()._extract_violation_category_names(response_of(arguments))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2217
-    return TypeAdapter(JsonValue).validate_python(names)
+    return guardrail, request_data
 
 
 def view_response(view: ResponseView) -> httpx.Response | ContentResponse | TextResponse:
@@ -126,9 +125,30 @@ def view_response(view: ResponseView) -> httpx.Response | ContentResponse | Text
     return TextResponse(view["text"])
 
 
+def should_raise(arguments: JsonObject) -> JsonValue:
+    response = response_of(arguments)
+    return BedrockGuardrail()._should_raise_guardrail_blocked_exception(response)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2411
+
+
+def blocked(arguments: JsonObject) -> JsonValue:
+    return TypeAdapter(JsonValue).validate_python(
+        cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2243
+            JsonValue,
+            BedrockGuardrail()._extract_blocked_assessments(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2243
+                response_of(arguments)
+            ),
+        )
+    )
+
+
+def violation_names(arguments: JsonObject) -> JsonValue:
+    names = BedrockGuardrail()._extract_violation_category_names(response_of(arguments))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2217
+    return TypeAdapter(JsonValue).validate_python(names)
+
+
 def has_exception(arguments: JsonObject) -> JsonValue:
     view = TypeAdapter(ResponseView).validate_python(arguments["view"])
-    return bare_guardrail()._check_bedrock_response_for_exception(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2092
+    return BedrockGuardrail()._check_bedrock_response_for_exception(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2092
         view_response(view)
     )
 
@@ -137,137 +157,118 @@ def bedrock_status(arguments: JsonObject) -> JsonValue:
     status_code = TypeAdapter(int).validate_python(arguments["status_code"])
     body = TypeAdapter(str).validate_python(arguments["body"])
     response = httpx.Response(status_code, content=body.encode("utf-8"))
-    return bare_guardrail()._get_bedrock_guardrail_response_status(response)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2125
+    return BedrockGuardrail()._get_bedrock_guardrail_response_status(response)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2125
 
 
 def tracing(arguments: JsonObject) -> JsonValue:
-    detail = bare_guardrail()._build_tracing_detail(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2176
-        response_of(arguments), region_of(arguments)
+    detail = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2176
+        JsonValue,
+        BedrockGuardrail()._build_tracing_detail(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2176
+            response_of(arguments),
+            TypeAdapter(str | None).validate_python(arguments.get("aws_region_name")),
+        ),
     )
     return TypeAdapter(JsonValue).validate_python(detail)
 
 
 def modify_outcome(error: ModifyResponseException) -> JsonValue:
-    request_data = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L1201
+    request_data = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L1225
         JsonObject, error.request_data
     )
-    detection_info = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L1201
+    detection_info = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L1227
         JsonObject, error.detection_info
     )
-    return TypeAdapter(JsonValue).validate_python(
-        {
-            "kind": "modify",
-            "message": error.message,
-            "model": error.model,
-            "request_data": request_data,
-            "guardrail_name": error.guardrail_name,
-            "detection_info": detection_info,
-        }
-    )
+    view: ModifyView = {
+        "kind": "modify",
+        "message": error.message,
+        "model": error.model,
+        "request_data": request_data,
+        "guardrail_name": error.guardrail_name,
+        "detection_info": detection_info,
+    }
+    return TypeAdapter(JsonValue).validate_python(view)
 
 
 def http_outcome(error: HTTPException) -> JsonValue:
     detail = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2409
         JsonValue, error.detail
     )
-    return TypeAdapter(JsonValue).validate_python(
-        {"kind": "http", "status": error.status_code, "detail": detail}
-    )
+    view: HttpView = {
+        "kind": "http",
+        "status": error.status_code,
+        "detail": detail,
+    }
+    return TypeAdapter(JsonValue).validate_python(view)
 
 
 def http_exception(arguments: JsonObject) -> JsonValue:
-    guardrail = build_guardrail(setup_of(arguments))
-    outcome = guardrail._get_http_exception_for_blocked_guardrail(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2374
-        response_of(arguments), request_data_of(arguments)
+    guardrail, request_data = configured(arguments)
+    outcome = guardrail._get_http_exception_for_blocked_guardrail(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2374
+        response_of(arguments), request_data
     )
     match outcome:
-        case ModifyResponseException():
+        case ModifyResponseException():  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L1201
             return modify_outcome(outcome)
-        case HTTPException():
+        case HTTPException():  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2374
             return http_outcome(outcome)
 
 
 def log_attempt(arguments: JsonObject) -> JsonValue:
-    guardrail = build_guardrail(setup_of(arguments))
-    request_data = request_data_of(arguments)
+    guardrail, request_data = configured(arguments)
     status_code = TypeAdapter(int).validate_python(arguments["status_code"])
     body = TypeAdapter(str).validate_python(arguments["body"])
-    guardrail._log_apply_guardrail_attempt(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1280
-        httpx.Response(status_code, content=body.encode("utf-8")),
-        response_wire(arguments),
+    region = TypeAdapter(str | None).validate_python(arguments.get("aws_region_name"))
+    response = httpx.Response(status_code, content=body.encode("utf-8"))
+    guardrail._log_apply_guardrail_attempt(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1280
+        response,
+        response_of(arguments),
         request_data,
         GuardrailEventHooks.during_call,
         START_TIME,
-        region_of(arguments),
+        region,
         chunk_usages(arguments),
     )
     return request_data
 
 
 def log_success(arguments: JsonObject) -> JsonValue:
-    guardrail = build_guardrail(setup_of(arguments))
-    request_data = request_data_of(arguments)
-    guardrail._log_apply_guardrail_success(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1321
-        response_of(arguments),
-        request_data,
-        GuardrailEventHooks.during_call,
-        START_TIME,
-        region_of(arguments),
+    guardrail, request_data = configured(arguments)
+    response = response_of(arguments)
+    region = TypeAdapter(str | None).validate_python(arguments.get("aws_region_name"))
+    guardrail._log_apply_guardrail_success(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1321
+        response, request_data, GuardrailEventHooks.during_call, START_TIME, region
     )
     return request_data
 
 
 def log_failure(arguments: JsonObject) -> JsonValue:
-    guardrail = build_guardrail(setup_of(arguments))
-    request_data = request_data_of(arguments)
+    guardrail, request_data = configured(arguments)
     detail = TypeAdapter(str).validate_python(arguments["detail"])
-    guardrail._log_apply_guardrail_failure(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1355
+    guardrail._log_apply_guardrail_failure(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1355
         detail,
         request_data,
         GuardrailEventHooks.during_call,
         START_TIME,
-        region_of(arguments),
+        TypeAdapter(str | None).validate_python(arguments.get("aws_region_name")),
         chunk_usages(arguments),
     )
     return request_data
 
 
-def assessment_view(operation: str, arguments: JsonObject) -> JsonValue:
-    if operation == "should_raise":
-        return should_raise(arguments)
-    if operation == "blocked_assessments":
-        return blocked(arguments)
-    if operation == "violation_names":
-        return violation_names(arguments)
-    raise ValueError(operation)
-
-
-def decision_view(operation: str, arguments: JsonObject) -> JsonValue:
-    if operation == "has_exception":
-        return has_exception(arguments)
-    if operation == "status":
-        return bedrock_status(arguments)
-    if operation == "tracing_detail":
-        return tracing(arguments)
-    if operation == "http_exception":
-        return http_exception(arguments)
-    raise ValueError(operation)
-
-
-def logging_view(operation: str, arguments: JsonObject) -> JsonValue:
-    if operation == "log_attempt":
-        return log_attempt(arguments)
-    if operation == "log_success":
-        return log_success(arguments)
-    if operation == "log_failure":
-        return log_failure(arguments)
-    raise ValueError(operation)
+OPERATIONS: Final[Mapping[str, Callable[[JsonObject], JsonValue]]] = {
+    "should_raise": should_raise,
+    "blocked_assessments": blocked,
+    "violation_names": violation_names,
+    "has_exception": has_exception,
+    "status": bedrock_status,
+    "tracing_detail": tracing,
+    "http_exception": http_exception,
+    "log_attempt": log_attempt,
+    "log_success": log_success,
+    "log_failure": log_failure,
+}
 
 
 def run(input_value: Input) -> JsonValue:
     ((operation, arguments),) = input_value["bedrock_decisions"].items()
-    if operation in {"should_raise", "blocked_assessments", "violation_names"}:
-        return assessment_view(operation, arguments)
-    if operation in {"has_exception", "status", "tracing_detail", "http_exception"}:
-        return decision_view(operation, arguments)
-    return logging_view(operation, arguments)
+    return OPERATIONS[operation](arguments)
