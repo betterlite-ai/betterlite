@@ -5,7 +5,7 @@ use std::sync::Arc;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::{Config, ProxyTrust};
-use betterlite_core::api::assistant_records::call::AssistantCreateResult;
+use betterlite_core::api::assistant_records::call::AssistantCreateOutcome;
 use betterlite_core::api::assistant_records::error::AssistantCreateFailure;
 use betterlite_core::api::assistant_records::service::AssistantRecords;
 use betterlite_core::api::assistant_records::{
@@ -173,9 +173,7 @@ fn load(env: &BTreeMap<String, String>) -> Result<Config, SdkHttpError> {
     .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))
 }
 
-fn answer(
-    outcome: Result<AssistantCreateResult, AssistantCreateFailure>,
-) -> Result<Outcome, SdkHttpError> {
+fn answer(outcome: AssistantCreateOutcome) -> Result<Outcome, SdkHttpError> {
     match outcome {
         Ok(created) => Ok(Outcome {
             assistant: Some(view(created.assistant)?),
@@ -183,7 +181,7 @@ fn answer(
         }),
         Err(failure) => Ok(Outcome {
             assistant: None,
-            failure: Some(record(failure)?),
+            failure: Some(record(*failure)?),
         }),
     }
 }

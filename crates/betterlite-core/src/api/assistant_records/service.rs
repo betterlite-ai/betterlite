@@ -63,14 +63,14 @@ impl<Transport: AssistantsTransport> AssistantRecords<'_, '_, Transport> {
     ) -> AssistantCreateOutcome {
         match self.execute(&call, selected.flag).await {
             Ok(Some(assistant)) => Ok(AssistantCreateResult { call, assistant }),
-            Ok(None) => Err(error::no_response()),
-            Err(raised) => Err(error::raised(
+            Ok(None) => Err(Box::new(error::no_response())),
+            Err(raised) => Err(Box::new(error::raised(
                 &raised,
                 &input.model,
                 &selected.provider,
                 selected.entry,
                 self.redactor,
-            )),
+            ))),
         }
     }
 
@@ -81,14 +81,14 @@ impl<Transport: AssistantsTransport> AssistantRecords<'_, '_, Transport> {
         provider: &str,
         entry: Entry,
         message: &str,
-    ) -> AssistantCreateFailure {
-        error::raised(
+    ) -> Box<AssistantCreateFailure> {
+        Box::new(error::raised(
             &Raised::Local(message.to_owned()),
             input.model.as_str(),
             provider,
             entry,
             self.redactor,
-        )
+        ))
     }
 
     // acreate resolves the model and forces the flag true; the sync façade refuses a non-bool flag.
@@ -96,7 +96,7 @@ impl<Transport: AssistantsTransport> AssistantRecords<'_, '_, Transport> {
         &self,
         input: &AssistantCreateInput,
         entry: Entry,
-    ) -> Result<Selection, AssistantCreateFailure> {
+    ) -> Result<Selection, Box<AssistantCreateFailure>> {
         if entry == Entry::Async {
             let provider = projection::provider(input, self.resolution).map_err(|source| {
                 self.failure(input, &input.provider, Entry::Async, &source.to_string())
@@ -127,15 +127,15 @@ impl<Transport: AssistantsTransport> AssistantRecords<'_, '_, Transport> {
         provider: &str,
         entry: Entry,
         is_async: bool,
-    ) -> Result<AssistantCreateCall, AssistantCreateFailure> {
+    ) -> Result<AssistantCreateCall, Box<AssistantCreateFailure>> {
         let kind = match provider {
             "openai" => projection::CallKind::OpenAi,
             "azure" => projection::CallKind::Azure,
-            _ => return Err(error::unsupported(provider)),
+            _ => return Err(Box::new(error::unsupported(provider))),
         };
         let timeout = projection::timeout(input, provider)
             .map_err(|source| self.failure(input, provider, entry, &source.to_string()))?;
-        Ok(projection::call(projection::CallRequest {
+        Ok(projection::call(&projection::CallRequest {
             kind,
             settings: &self.settings,
             environment: self.environment,

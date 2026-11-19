@@ -59,4 +59,4 @@ pub struct AssistantCreateResult {
 }
 
 // What both create_assistants façades answer with, so their signatures name the façade's own failure.
-pub type AssistantCreateOutcome = Result<AssistantCreateResult, AssistantCreateFailure>;
+pub type AssistantCreateOutcome = Result<AssistantCreateResult, Box<AssistantCreateFailure>>;

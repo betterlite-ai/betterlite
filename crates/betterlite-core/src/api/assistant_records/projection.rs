@@ -139,7 +139,7 @@ pub(super) struct CallRequest<'request> {
     pub is_async: bool,
 }
 
-pub(super) fn call(request: CallRequest<'_>) -> AssistantCreateCall {
+pub(super) fn call(request: &CallRequest<'_>) -> AssistantCreateCall {
     let parts = prepare(request.input);
     let resolved = ResourceSdkSettings::from(request.settings);
     match request.kind {

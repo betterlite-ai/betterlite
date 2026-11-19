@@ -215,7 +215,7 @@ fn wrapped(
         Raised::Local(_) | Raised::Assistants(_) | Raised::Projected { .. } => None,
     };
     let error_str = status.map_or_else(
-        || message.to_owned(),
+        || message.clone(),
         |code| format!("Error code: {code} - {message}"),
     );
     let projected = dispatch(
@@ -225,7 +225,7 @@ fn wrapped(
             error_str,
             status_code: status,
             status_code_is_synthesized: false,
-            message: Some(message.to_owned()),
+            message: Some(message.clone()),
             body,
             exception_type: class,
         })),
@@ -285,12 +285,12 @@ const fn class_name(class: &ErrorClass) -> &'static str {
         ErrorClass::InternalServer(_) => "InternalServerError",
         ErrorClass::Timeout(_) => "Timeout",
         ErrorClass::RateLimit(_) => "RateLimitError",
-        ErrorClass::Api(_) => "APIError",
         ErrorClass::ApiConnection(_) => "APIConnectionError",
         ErrorClass::ApiResponseValidation(_) => "APIResponseValidationError",
         ErrorClass::BudgetExceeded(_) => "BudgetExceededError",
         ErrorClass::UnsupportedParams(_) => "UnsupportedParamsError",
-        ErrorClass::JsonSchemaValidation(_)
+        ErrorClass::Api(_)
+        | ErrorClass::JsonSchemaValidation(_)
         | ErrorClass::GuardrailRaised(_)
         | ErrorClass::MidStreamFallback(_)
         | ErrorClass::Unclassified(_) => "APIError",
