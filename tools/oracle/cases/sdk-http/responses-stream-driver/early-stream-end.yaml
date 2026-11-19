@@ -1,0 +1,27 @@
+kind: sdk_http
+name: sdk-http-responses-stream-driver-early-stream-end
+env: {}
+call:
+  responses_stream_driver:
+    model: gpt-4o
+    input: hi
+    api_key: sk-test
+    timeout_seconds: 30
+    runs:
+      - {mode: live_sync, steps: [drain]}
+      - {mode: live_async, steps: [drain]}
+upstream:
+  - status: 200
+    headers: {content-type: text/event-stream}
+    events:
+      - '{"type":"response.created","response":{"id":"resp_1","created_at":1,"object":"response","status":"in_progress","output":[]}}'
+  - status: 200
+    headers: {content-type: text/event-stream}
+    events:
+      - '{"type":"response.created","response":{"id":"resp_1","created_at":1,"object":"response","status":"in_progress","output":[]}}'
+      - '{"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"delta":"Hello"}'
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization]
+  ignore: []

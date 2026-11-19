@@ -1,0 +1,22 @@
+kind: sdk_http
+name: sdk-http-responses-stream-driver-transport-error-boundary
+env: {}
+call:
+  responses_stream_driver:
+    model: gpt-4o
+    input: hi
+    api_key: sk-test
+    timeout_seconds: 30
+    runs:
+      - {mode: scripted_sync, steps: [drain], payloads: ["{\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"created_at\":1,\"object\":\"response\",\"status\":\"in_progress\",\"output\":[]}}", "{\"type\":\"response.output_text.delta\",\"item_id\":\"msg_1\",\"output_index\":0,\"content_index\":0,\"delta\":\"Hello\"}"], failure: {kind: read, message: "peer reset"}}
+      - {mode: scripted_sync, steps: [drain], failure: {kind: read, message: "dial closed"}}
+      - {mode: scripted_sync, steps: [next, drain], payloads: ["{\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"created_at\":1,\"object\":\"response\",\"status\":\"in_progress\",\"output\":[]}}", "{\"type\":\"response.output_text.delta\",\"item_id\":\"msg_1\",\"output_index\":0,\"content_index\":0,\"delta\":\"Hello\"}", "{\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"created_at\":1,\"object\":\"response\",\"status\":\"completed\",\"model\":\"gpt-4o\",\"output\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":2,\"total_tokens\":3}}}"], failure: {kind: read, message: "reset after done"}}
+      - {mode: scripted_sync, steps: [drain], payloads: ["{\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"created_at\":1,\"object\":\"response\",\"status\":\"in_progress\",\"output\":[]}}", "{\"type\":\"response.output_text.delta\",\"item_id\":\"msg_1\",\"output_index\":0,\"content_index\":0,\"delta\":\"Hello\"}"], failure: {kind: timeout, message: "read timed out"}}
+      - {mode: scripted_async, steps: [drain], payloads: ["{\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"created_at\":1,\"object\":\"response\",\"status\":\"in_progress\",\"output\":[]}}", "{\"type\":\"response.output_text.delta\",\"item_id\":\"msg_1\",\"output_index\":0,\"content_index\":0,\"delta\":\"Hello\"}", "{\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"created_at\":1,\"object\":\"response\",\"status\":\"completed\",\"model\":\"gpt-4o\",\"output\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":2,\"total_tokens\":3}}}"], failure: {kind: timeout, message: "late timeout"}}
+      - {mode: scripted_async, steps: [drain], payloads: ["{\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"created_at\":1,\"object\":\"response\",\"status\":\"in_progress\",\"output\":[]}}", "{\"type\":\"response.output_text.delta\",\"item_id\":\"msg_1\",\"output_index\":0,\"content_index\":0,\"delta\":\"Hello\"}"], failure: {kind: read, message: "async reset"}}
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization]
+  ignore: []
