@@ -78,7 +78,7 @@ def case_answer(router: Router, call: Input, log: WarningLog) -> JsonValue:
         raw = router.get_deployment_credentials(model_id)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10286-L10299
     else:
         selected = router.get_credential_deployment(model_id, team_id)
-        raw = router.get_deployment_credentials_with_provider(model_id, team_id)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10632-L10661
+        raw = router.get_deployment_credentials_with_provider(model_id, team_id)
     credentials = OPTIONAL.validate_python(raw)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10661
     warnings: list[JsonValue] = []
     warnings.extend(log.messages)
