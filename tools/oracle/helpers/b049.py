@@ -1,5 +1,6 @@
 import os
-from typing import Literal, TypedDict, cast
+from collections.abc import Callable
+from typing import Literal, TypeVar, TypedDict, cast
 
 import litellm
 from litellm.litellm_core_utils.get_llm_provider_logic import get_llm_provider
@@ -13,6 +14,7 @@ KEY_ENV = "RAGFLOW_API_KEY"
 STORED_MODEL = "_ragflow_actual_model"
 EMPTY: dict[str, JsonValue] = {}
 NO_MESSAGES: list[AllMessageValues] = []
+Case = TypeVar("Case")
 
 
 class Sdk(TypedDict):
@@ -93,34 +95,40 @@ def error_value(error: ValueError) -> JsonValue:
     return {"ok": False, "error": {"class": class_name, "message": str(error)}}
 
 
+def probes(cases: list[Case], probe: Callable[[Case], JsonValue]) -> JsonValue:
+    found: list[JsonValue] = []
+    for case in cases:
+        try:
+            found.append(probe(case))
+        except ValueError as error:
+            found.append(error_value(error))
+    return {"probes": found}
+
+
 def provider_case(case: ProviderProbe) -> JsonValue:
-    try:
-        _, _, key, base = get_llm_provider(
-            model=case["model"], api_base=case["api_base"], api_key=case["api_key"]
-        )
-    except ValueError as error:
-        return error_value(error)
+    _, _, key, base = get_llm_provider(
+        model=case["model"], api_base=case["api_base"], api_key=case["api_key"]
+    )
     return {"ok": True, "base": base, "key": key}
 
 
-def url_case(config: RAGFlowConfig, case: UrlProbe) -> JsonValue:
-    try:
-        complete = config.get_complete_url(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ragflow/chat/transformation.py#L63
+def url_case(case: UrlProbe) -> JsonValue:
+    return {
+        "ok": True,
+        "url": RAGFlowConfig().get_complete_url(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ragflow/chat/transformation.py#L63
             api_base=case["api_base"],
             api_key=None,
             model=case["model"],
             optional_params=EMPTY,
             litellm_params=EMPTY,
-        )
-    except ValueError as error:
-        return error_value(error)
-    return {"ok": True, "url": complete}
+        ),
+    }
 
 
-def headers_case(config: RAGFlowConfig, case: HeadersProbe) -> JsonValue:
+def headers_case(case: HeadersProbe) -> JsonValue:
     params: dict[str, JsonValue] = {}
     headers: dict[str, str] = dict(case["headers"])
-    merged: dict[str, JsonValue] = config.validate_environment(  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ragflow/chat/transformation.py#L160
+    merged: dict[str, JsonValue] = RAGFlowConfig().validate_environment(  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ragflow/chat/transformation.py#L160
         headers=headers,
         model=case["model"],
         messages=NO_MESSAGES,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L998
@@ -131,12 +139,12 @@ def headers_case(config: RAGFlowConfig, case: HeadersProbe) -> JsonValue:
     return {"headers": merged, "stored": params.get(STORED_MODEL)}
 
 
-def request_case(config: RAGFlowConfig, case: RequestProbe) -> JsonValue:
+def request_case(case: RequestProbe) -> JsonValue:
     stored = case["stored"]
     params: dict[str, JsonValue] = {}
     if stored is not None:
         params[STORED_MODEL] = stored
-    body: dict[str, JsonValue] = config.transform_request(  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ragflow/chat/transformation.py#L211
+    body: dict[str, JsonValue] = RAGFlowConfig().transform_request(  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ragflow/chat/transformation.py#L211
         model=case["model"],
         messages=cast("list[AllMessageValues]", case["messages"]),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L998
         optional_params=case["options"],
@@ -147,26 +155,19 @@ def request_case(config: RAGFlowConfig, case: RequestProbe) -> JsonValue:
 
 
 def provider(input_value: ProviderInput) -> JsonValue:
-    found = [provider_case(case) for case in input_value["cases"]]
-    return {"probes": found}
+    return probes(input_value["cases"], provider_case)
 
 
 def url(input_value: UrlInput) -> JsonValue:
-    config = RAGFlowConfig()
-    found = [url_case(config, case) for case in input_value["cases"]]
-    return {"probes": found}
+    return probes(input_value["cases"], url_case)
 
 
 def headers(input_value: HeadersInput) -> JsonValue:
-    config = RAGFlowConfig()
-    found = [headers_case(config, case) for case in input_value["cases"]]
-    return {"probes": found}
+    return probes(input_value["cases"], headers_case)
 
 
 def request(input_value: RequestInput) -> JsonValue:
-    config = RAGFlowConfig()
-    found = [request_case(config, case) for case in input_value["cases"]]
-    return {"probes": found}
+    return probes(input_value["cases"], request_case)
 
 
 def run(input_value: Input) -> JsonValue:
