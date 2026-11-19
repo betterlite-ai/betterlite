@@ -68,10 +68,8 @@ where
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum BodyError {
-    #[error("the request body does not convert between the JSON shapes: {0}")]
-    Conversion(#[from] serde_json::Error),
-}
+#[error("the request body does not convert between the JSON shapes: {0}")]
+pub struct BodyError(#[from] serde_json::Error);
 
 // betterlite-models and betterlite-prompts each declare the same untagged JSON enum, so serde carries the body between them, as the native transform's own bridge does.
 fn convert<From, To>(value: &From) -> Result<To, BodyError>
