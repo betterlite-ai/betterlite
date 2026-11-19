@@ -127,10 +127,6 @@ where
     RoutingStrategy::LatencyBasedRouting,
     "latency_routing"
 ))]
-#[case::usage_routing(boundaries::strategy_unbuilt(
-    RoutingStrategy::UsageBasedRouting,
-    "usage_routing"
-))]
 #[case::usage_routing_v2(boundaries::strategy_unbuilt(
     RoutingStrategy::UsageBasedRoutingV2,
     "usage_routing_v2"

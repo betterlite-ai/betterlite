@@ -351,3 +351,22 @@ fn a_failed_check_runs_again_on_the_same_commit() {
     );
     assert_eq!(count_runs(folder.path()), 2);
 }
+
+#[test]
+fn the_lint_lane_names_the_clippy_check_and_that_check_calls_the_lane() {
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let catalog: Catalog = read_yaml(&source.join("checks.yaml")).unwrap();
+    let linted = selection::linted();
+    let clippy: Vec<&Command> = catalog
+        .base
+        .commands
+        .iter()
+        .filter(|command| linted.only.contains(&command.id))
+        .collect();
+    assert_eq!(clippy.len(), linted.only.len());
+    assert!(
+        clippy
+            .iter()
+            .all(|command| command.run.contains(".development/flow/lint-lane.sh"))
+    );
+}

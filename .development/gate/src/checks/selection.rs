@@ -105,6 +105,15 @@ pub(crate) fn unbuilt() -> Selection {
     }
 }
 
+// the dispatcher's local clippy lane, which next-slot.sh turns on with GATE_LINT_ROOT (lever 2, 11-19)
+pub(crate) fn linted() -> Selection {
+    Selection {
+        only: vec!["clippy".to_owned()],
+        skip: Vec::new(),
+        beside: Vec::new(),
+    }
+}
+
 pub(crate) fn builtins_and(
     development: &Development,
     task: &Task,
