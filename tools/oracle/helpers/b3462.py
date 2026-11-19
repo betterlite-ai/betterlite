@@ -118,7 +118,8 @@ def build_request(content_type: str, body: bytes) -> Request:
 
 async def decode(content_type: str, body: bytes) -> Output:
     request = build_request(content_type, body)
-    parsed = PARSED.validate_python(await parse_rag_ingest_request(request, EicarTestMalwareScanner()))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L404-L525
+    scanner = EicarTestMalwareScanner()
+    parsed = PARSED.validate_python(await parse_rag_ingest_request(request, scanner))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L404-L525
     ingest_options, file_data, file_url, file_id = parsed
     file: FileOutput | None = None
     if file_data is not None:
