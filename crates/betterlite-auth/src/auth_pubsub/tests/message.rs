@@ -108,11 +108,11 @@ fn utf8_replacement() {
         decode_invalidation(b"{\"cache_key\":\"k\"}\x80"),
         Err(DecodeError::Syntax)
     );
-    let valid = parsed("{\"cache_key\":\"caf\u{e9}\"}".as_bytes());
+    let valid = parsed("{\"cache_key\":\"r\u{e9}sum\u{e9}\"}".as_bytes());
     assert_eq!(
         valid,
         Some(Invalidation {
-            cache_key: "caf\u{e9}".to_owned(),
+            cache_key: "r\u{e9}sum\u{e9}".to_owned(),
             new_value: None,
             ttl: None,
         })
