@@ -126,14 +126,16 @@ fn available(
     // _deployment.get("tpm"), then litellm_params.tpm, then model_info.tpm, read together for the rpm too
     let limits = match model_limits(deployment) {
         Ok(limits) => limits,
-        Err(ModelRateLimitError::Limit { field }) => return Err(RoutingError::Metric { field }),
+        Err(
+            ModelRateLimitError::Limit { field }
+            | ModelRateLimitError::IoToken(IoPreCallError::OutputCap { field }),
+        ) => {
+            return Err(RoutingError::Metric { field });
+        }
         Err(ModelRateLimitError::Exceeded(spent)) => {
             return Err(RoutingError::Metric {
                 field: spent.channel.label(),
             });
-        }
-        Err(ModelRateLimitError::IoToken(IoPreCallError::OutputCap { field })) => {
-            return Err(RoutingError::Metric { field });
         }
         Err(ModelRateLimitError::IoToken(IoPreCallError::RateLimit(reserved))) => {
             return Err(RoutingError::Metric {
