@@ -99,7 +99,9 @@ fn bytes(parts: &[&str]) -> SseChunk {
 fn event(value: Value) -> SseChunk {
     match value {
         Value::Object(map) => SseChunk::Event(map),
-        _ => panic!("an event object"),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_) => {
+            panic!("an event object");
+        }
     }
 }
 
@@ -405,6 +407,8 @@ async fn unended_reports_a_modify_response_with_the_usage_response() {
     };
     let original = serde_json::to_value(response.original_response.unwrap()).unwrap();
     assert!(original["usage"]["completion_tokens"].is_number());
+    assert_eq!(original["choices"][0]["message"]["content"], "");
+    assert_eq!(original["model"], "");
 }
 
 #[tokio::test]
