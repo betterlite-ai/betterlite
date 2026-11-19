@@ -3,12 +3,13 @@
 use std::collections::BTreeMap;
 use std::fmt;
 use std::future::{Future, ready};
+use std::str;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_config::sections::azure_endpoints::Settings as EndpointSettings;
 use betterlite_http::proxy::UpstreamResponse;
-use betterlite_http::proxy::outbound::OutboundRequest;
+use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::files::error::FilesError;
 use betterlite_openai::files::records::{
@@ -25,7 +26,7 @@ use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use url::Url;
 
 use super::client::auth::{AuthKind, FileAuth};
-use super::client::{ClientMaterializer, ClientSettings, Connection, SelectedClient};
+use super::client::{ClientMaterializer, ClientSettings, Connection, Opened, SelectedClient};
 use super::error::AzureFilesError;
 use super::{Operation, Reply, call};
 use crate::azure_default_chain::grant::{ClientSecretRecord, UsernamePasswordRecord};
@@ -70,30 +71,26 @@ enum Action {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Supplied {
     OpenAi,
-    AsyncOpenAi,
-    AzureOpenAi,
-    AsyncAzureOpenAi,
+    OpenAiAsync,
+    Azure,
+    AzureAsync,
 }
 
 impl Supplied {
     const ALL: [Self; 4] = [
         Self::OpenAi,
-        Self::AsyncOpenAi,
-        Self::AzureOpenAi,
-        Self::AsyncAzureOpenAi,
+        Self::OpenAiAsync,
+        Self::Azure,
+        Self::AzureAsync,
     ];
 
     const fn kind(self) -> ClientKind {
         match self {
             Self::OpenAi => ClientKind::OpenAi,
-            Self::AsyncOpenAi => ClientKind::AsyncOpenAi,
-            Self::AzureOpenAi => ClientKind::AzureOpenAi,
-            Self::AsyncAzureOpenAi => ClientKind::AsyncAzureOpenAi,
+            Self::OpenAiAsync => ClientKind::AsyncOpenAi,
+            Self::Azure => ClientKind::AzureOpenAi,
+            Self::AzureAsync => ClientKind::AsyncAzureOpenAi,
         }
-    }
-
-    const fn is_async(self) -> bool {
-        matches!(self, Self::AsyncOpenAi | Self::AsyncAzureOpenAi)
     }
 }
 
@@ -227,10 +224,11 @@ impl Fake {
     }
 
     fn answer(&self) -> Result<UpstreamResponse, TransportError> {
-        if self.fail {
-            return Err(TransportError::HeadersTooLarge { limit: 0 });
-        }
-        let planned = self.planned.as_ref().expect("the step carries a reply");
+        let planned = self
+            .planned
+            .as_ref()
+            .filter(|_planned| !self.fail)
+            .ok_or(TransportError::HeadersTooLarge { limit: 0 })?;
         let mut headers = HeaderMap::new();
         for (name, value) in &planned.headers {
             headers.append(
@@ -287,7 +285,7 @@ impl ClientMaterializer for Materializer {
                 FileAuth::ApiKey(SecretString::from(SUPPLIED_KEY)),
                 Some(SUPPLIED_VERSION.to_owned()),
             ),
-            _ => (
+            ClientKind::OpenAi | ClientKind::AsyncOpenAi | ClientKind::Other => (
                 format!("{SUPPLIED_ENDPOINT}/v1/"),
                 FileAuth::Bearer(SecretString::from(SUPPLIED_KEY)),
                 None,
@@ -295,14 +293,15 @@ impl ClientMaterializer for Materializer {
         };
         let files = FilesClient {
             api_key: SecretString::from(SUPPLIED_KEY),
-            base_url: Url::parse(&base_url).expect("the supplied base URL is a URL"),
+            base_url: Url::parse(&base_url)
+                .map_err(|source| AzureFilesError::BaseUrl { source })?,
             organization: None,
             timeout: DEFAULT_TIMEOUT,
             max_retries: 0,
         };
         Ok(Some(SelectedClient::new(
             files,
-            auth,
+            &auth,
             api_version,
             outcome.kind,
         )?))
@@ -315,7 +314,7 @@ fn supplied_client(kind: Supplied) -> SuppliedClient {
             "api-version".to_owned(),
             SUPPLIED_VERSION.to_owned(),
         )])),
-        _ => None,
+        ClientKind::OpenAi | ClientKind::AsyncOpenAi | ClientKind::Other => None,
     };
     SuppliedClient {
         kind: kind.kind(),
@@ -381,7 +380,7 @@ struct ClientView {
 }
 
 impl ClientView {
-    fn of(client: SelectedClient) -> Self {
+    fn of(client: &SelectedClient) -> Self {
         Self {
             api_key: client.files.api_key.expose_secret().to_owned(),
             base_url: client.files.base_url.to_string(),
@@ -423,60 +422,45 @@ struct Observation {
 }
 
 async fn perform(
+    prepared: Result<Opened, AzureFilesError>,
     step: &Step,
-    connection: Connection<'_, '_, Materializer>,
     transport: &Fake,
 ) -> Outcome {
-    let result = match step.action {
-        Action::Client => {
-            return connection
-                .open()
-                .map(ClientView::of)
-                .map(Outcome::Client)
-                .unwrap_or_else(|error| Outcome::Raised(raised(&error)));
-        }
-        Action::Create => {
-            let data = step.data.as_ref().expect("a create step carries data");
-            call(connection, transport, Operation::Create(data))
-                .await
-                .map(reply_outcome)
-        }
-        Action::Content => {
-            let request = step
-                .content
-                .as_ref()
-                .expect("a content step carries a request");
-            call(connection, transport, Operation::Content(request))
-                .await
-                .map(reply_outcome)
-        }
-        Action::Retrieve => {
-            let file_id = step
-                .file_id
-                .as_deref()
-                .expect("a retrieve step carries a file id");
-            call(connection, transport, Operation::Retrieve(file_id))
-                .await
-                .map(reply_outcome)
-        }
-        Action::List => call(
-            connection,
-            transport,
-            Operation::List(step.purpose.as_deref()),
-        )
-        .await
-        .map(reply_outcome),
-        Action::Delete => {
-            let file_id = step
-                .file_id
-                .as_deref()
-                .expect("a delete step carries a file id");
-            call(connection, transport, Operation::Delete(file_id))
-                .await
-                .map(reply_outcome)
-        }
+    let opened = match prepared {
+        Ok(opened) => opened,
+        Err(error) => return Outcome::Raised(raised(&error)),
     };
-    result.unwrap_or_else(|error| Outcome::Raised(raised(&error)))
+    let Some(operation) = file_operation(step) else {
+        return Outcome::Client(ClientView::of(&opened.client));
+    };
+    call(&opened, transport, operation)
+        .await
+        .map_or_else(|error| Outcome::Raised(raised(&error)), reply_outcome)
+}
+
+fn file_operation(step: &Step) -> Option<Operation<'_>> {
+    match step.action {
+        Action::Client => None,
+        Action::Create => Some(Operation::Create(
+            step.data.as_ref().expect("a create step carries data"),
+        )),
+        Action::Content => Some(Operation::Content(
+            step.content
+                .as_ref()
+                .expect("a content step carries a request"),
+        )),
+        Action::Retrieve => Some(Operation::Retrieve(
+            step.file_id
+                .as_deref()
+                .expect("a retrieve step carries a file id"),
+        )),
+        Action::List => Some(Operation::List(step.purpose.as_deref())),
+        Action::Delete => Some(Operation::Delete(
+            step.file_id
+                .as_deref()
+                .expect("a delete step carries a file id"),
+        )),
+    }
 }
 
 fn reply_outcome(reply: Reply) -> Outcome {
@@ -489,37 +473,93 @@ fn reply_outcome(reply: Reply) -> Outcome {
 }
 
 fn raised(error: &AzureFilesError) -> Raised {
-    let mut report = Raised {
-        class: "ValueError",
+    match error {
+        AzureFilesError::MissingCredentials => report("OpenAIError", error),
+        AzureFilesError::Files { source } => raised_files(source, error),
+        AzureFilesError::ClientMissing
+        | AzureFilesError::NotAsyncClient
+        | AzureFilesError::UnableToHandleAuth
+        | AzureFilesError::TokenNotString { .. }
+        | AzureFilesError::TokenProvider { .. }
+        | AzureFilesError::MissingBaseUrl
+        | AzureFilesError::BaseUrl { .. }
+        | AzureFilesError::Header { .. }
+        | AzureFilesError::Timeout { .. }
+        | AzureFilesError::Endpoint { .. } => report("ValueError", error),
+    }
+}
+
+fn report(class: &'static str, error: &AzureFilesError) -> Raised {
+    Raised {
+        class,
         message: Some(error.to_string()),
         status: None,
         error_type: None,
         param: None,
         code: None,
-    };
-    match error {
-        AzureFilesError::MissingCredentials => report.class = "OpenAIError",
-        AzureFilesError::Files { source } => match source {
-            FilesError::Status(status) => {
-                report.class = "APIStatusError";
-                report.status = Some(status.status);
-                report.error_type.clone_from(&status.error_type);
-                report.param.clone_from(&status.param);
-                report.code.clone_from(&status.code);
-                report.message = Some(status.message.clone());
-            }
-            FilesError::Decode { .. } => {
-                report.class = "ValidationError";
-                report.message = None;
-            }
-            _ => {}
-        },
-        _ => {}
     }
-    report
 }
 
-fn run(step: Step) -> Observation {
+fn raised_files(source: &FilesError, error: &AzureFilesError) -> Raised {
+    match source {
+        FilesError::Status(status) => Raised {
+            class: "APIStatusError",
+            message: Some(status.message.clone()),
+            status: Some(status.status),
+            error_type: status.error_type.clone(),
+            param: status.param.clone(),
+            code: status.code.clone(),
+        },
+        FilesError::Decode { .. } => Raised {
+            class: "ValidationError",
+            message: None,
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+        },
+        FilesError::NotInitialized
+        | FilesError::NotAsync
+        | FilesError::EmptyValue { .. }
+        | FilesError::DotSegment { .. }
+        | FilesError::BaseUrl { .. }
+        | FilesError::Header { .. }
+        | FilesError::Transport { .. }
+        | FilesError::Body { .. } => report("ValueError", error),
+    }
+}
+
+struct Fixtures {
+    endpoints: EndpointSettings,
+    environment: BTreeMap<String, String>,
+    sources: TestSources,
+}
+
+fn connect<'roots>(
+    step: &Step,
+    fixtures: &'roots Fixtures,
+    cache: &'roots mut TestCache,
+    refresh: &'roots mut RefreshProviderCache<'roots>,
+    materializer: &'roots Materializer,
+) -> Connection<'roots, 'roots, Materializer> {
+    Connection {
+        settings: step.settings.clone(),
+        params: step.params.clone(),
+        provider: step.provider.clone(),
+        supplied: step.client.map(supplied_client),
+        is_async: step.is_async,
+        endpoints: &fixtures.endpoints,
+        environment: &fixtures.environment,
+        sources: &fixtures.sources,
+        session: SessionKind::Dedicated,
+        refresh_enabled: false,
+        cache,
+        refresh,
+        materializer,
+    }
+}
+
+fn run(step: &Step) -> Observation {
     let calls: Calls = Arc::default();
     let seen: Seen = Arc::default();
     let transport = Fake {
@@ -531,34 +571,27 @@ fn run(step: Step) -> Observation {
         mode: step.builder,
         seen: Arc::clone(&seen),
     };
-    let endpoints = EndpointSettings::default();
-    let environment: BTreeMap<String, String> = BTreeMap::new();
-    let sources = TestSources;
+    let fixtures = Fixtures {
+        endpoints: EndpointSettings::default(),
+        environment: BTreeMap::new(),
+        sources: TestSources,
+    };
     let mut cache = TestCache {
         hit: step.cache_hit,
     };
-    let mut refresh = RefreshProviderCache::new(&sources);
-    let connection = Connection {
-        settings: step.settings.clone(),
-        params: step.params.clone(),
-        provider: step.provider.clone(),
-        supplied: step.client.map(supplied_client),
-        is_async: step.is_async,
-        endpoints: &endpoints,
-        environment: &environment,
-        sources: &sources,
-        session: SessionKind::Dedicated,
-        refresh_enabled: false,
-        cache: &mut cache,
-        refresh: &mut refresh,
-        materializer: &materializer,
-    };
+    let mut refresh = RefreshProviderCache::new(&fixtures.sources);
+    let connection = connect(step, &fixtures, &mut cache, &mut refresh, &materializer);
     let runtime = Builder::new_current_thread()
         .build()
         .expect("a test runtime builds");
-    let (outcome, messages) = capture(|| runtime.block_on(perform(&step, connection, &transport)));
+    let (outcome, messages) =
+        capture(|| runtime.block_on(perform(connection.open(), step, &transport)));
     drop(transport);
     drop(materializer);
+    observation(outcome, calls, messages, seen)
+}
+
+fn observation(outcome: Outcome, calls: Calls, messages: Vec<String>, seen: Seen) -> Observation {
     Observation {
         outcome,
         calls: Arc::into_inner(calls)
@@ -579,15 +612,11 @@ fn only_call(observation: &Observation) -> &OutboundRequest {
 }
 
 fn header<'request>(request: &'request OutboundRequest, name: &str) -> Option<&'request str> {
-    request
-        .headers
-        .get(name)
-        .and_then(|value| value.to_str().ok())
+    Some(request.headers.get(name)?.to_str().ok()?)
 }
 
 fn part_view(request: &OutboundRequest) -> Vec<(String, Option<String>, Option<String>, String)> {
-    let betterlite_http::proxy::outbound::RequestBody::Multipart { parts, .. } = &request.body
-    else {
+    let RequestBody::Multipart { parts, .. } = &request.body else {
         return Vec::new();
     };
     parts
@@ -597,9 +626,7 @@ fn part_view(request: &OutboundRequest) -> Vec<(String, Option<String>, Option<S
                 part.name.clone(),
                 part.file_name.clone(),
                 part.content_type.clone(),
-                std::str::from_utf8(&part.data)
-                    .unwrap_or_default()
-                    .to_owned(),
+                str::from_utf8(&part.data).unwrap_or_default().to_owned(),
             )
         })
         .collect()

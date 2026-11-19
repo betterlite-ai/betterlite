@@ -76,7 +76,7 @@ fn object_of(text: &str) -> FileObject {
 }
 
 fn created(step: Step, data: FileCreate) -> Observation {
-    run(Step {
+    run(&Step {
         data: Some(data),
         reply: Some(json_reply(FILE_JSON)),
         ..step
@@ -86,7 +86,7 @@ fn created(step: Step, data: FileCreate) -> Observation {
 fn file_upload() {
     let data = full_upload();
     let original = data.clone();
-    let observation = run(Step {
+    let observation = run(&Step {
         data: Some(data.clone()),
         reply: Some(json_reply(FILE_JSON)),
         ..step(Action::Create)
@@ -114,7 +114,7 @@ fn file_upload_caller_headers_win() {
 fn file_upload_supplied_client_keeps_caller_authorization() {
     let mut data = plain_upload();
     data.extra_headers = IndexMap::from([("authorization".to_owned(), "Bearer caller".to_owned())]);
-    let observation = run(Step {
+    let observation = run(&Step {
         client: Some(Supplied::OpenAi),
         data: Some(data),
         reply: Some(json_reply(FILE_JSON)),
@@ -152,13 +152,13 @@ fn upload_request(request: &OutboundRequest) {
 
 fn upload_logs() {
     let data = full_upload();
-    let async_run = run(Step {
+    let logged = run(&Step {
         is_async: true,
         data: Some(data.clone()),
         reply: Some(json_reply(FILE_JSON)),
         ..step(Action::Create)
     });
-    let lines: Vec<&String> = async_run
+    let lines: Vec<&String> = logged
         .messages
         .iter()
         .filter(|line| line.contains("create_file_data") || line.contains("create_file_response"))
@@ -181,13 +181,17 @@ fn upload_logs() {
         .find(|line| line.contains(DEBUG_RESPONSE))
         .expect("the response record is logged");
     assert!(response_line.contains("id=file-1"));
-    let sync_run = run(Step {
+    upload_logs_sync_stays_quiet(data);
+}
+
+fn upload_logs_sync_stays_quiet(data: FileCreate) {
+    let silent = run(&Step {
         data: Some(data),
         reply: Some(json_reply(FILE_JSON)),
         ..step(Action::Create)
     });
     assert!(
-        !sync_run
+        !silent
             .messages
             .iter()
             .any(|line| line.contains(DEBUG_CREATE) || line.contains(DEBUG_RESPONSE)),
@@ -212,20 +216,24 @@ fn file_upload_defaults() {
 fn file_upload_keeps_expiry_only_when_given() {
     let mut data = plain_upload();
     data.expires_after = Some(ExpiresAfter { seconds: 1 });
-    let observation = created(step(Action::Create), data);
-    let parts = part_view(only_call(&observation));
-    assert!(parts.contains(&field("expires_after[anchor]", "created_at")));
-    assert!(parts.contains(&field("expires_after[seconds]", "1")));
+    let expiring = created(step(Action::Create), data);
+    let expiring_multipart = part_view(only_call(&expiring));
+    assert!(expiring_multipart.contains(&field("expires_after[anchor]", "created_at")));
+    assert!(expiring_multipart.contains(&field("expires_after[seconds]", "1")));
     let mut absent = plain_upload();
     absent.extra_body = IndexMap::from([("note".to_owned(), "n".to_owned())]);
-    let observation = created(step(Action::Create), absent);
-    let parts = part_view(only_call(&observation));
-    assert!(!parts.iter().any(|part| part.0.starts_with("expires_after")));
+    let without_expiry = created(step(Action::Create), absent);
+    let plain_multipart = part_view(only_call(&without_expiry));
+    assert!(
+        !plain_multipart
+            .iter()
+            .any(|part| part.0.starts_with("expires_after"))
+    );
 }
 
 fn file_upload_validates_the_reply() {
     let incomplete = r#"{"id":"file-1","object":"file","bytes":5,"created_at":1700000000,"filename":"notes.txt","status":"processed"}"#;
-    let observation = run(Step {
+    let observation = run(&Step {
         data: Some(plain_upload()),
         reply: Some(json_reply(incomplete)),
         ..step(Action::Create)
@@ -260,7 +268,7 @@ fn file_content() {
     let mut reply = reply(200, "file-bytes");
     reply.headers.push(("content-type", "application/binary"));
     reply.headers.push(("x-request-id", "r1"));
-    let observation = run(content_step(reply));
+    let observation = run(&content_step(reply));
     let Outcome::Content(content) = &observation.outcome else {
         panic!("the content call returns the body");
     };
@@ -281,7 +289,7 @@ fn file_content() {
 }
 
 fn file_content_replies() {
-    let empty = run(content_step(reply(200, "")));
+    let empty = run(&content_step(reply(200, "")));
     assert_eq!(
         empty.outcome,
         Outcome::Content(BinaryContent {
@@ -290,7 +298,7 @@ fn file_content_replies() {
             body: Vec::new(),
         })
     );
-    let missing = run(content_step(reply(404, STATUS_ERROR)));
+    let missing = run(&content_step(reply(404, STATUS_ERROR)));
     assert_eq!(
         missing.outcome,
         Outcome::Raised(Raised {
@@ -306,7 +314,7 @@ fn file_content_replies() {
 
 fn file_retrieve() {
     let with_extra = r#"{"id":"file-1","object":"file","bytes":5,"created_at":1700000000,"filename":"notes.txt","purpose":"batch","status":"processed","extra":1}"#;
-    let observation = run(Step {
+    let observation = run(&Step {
         file_id: Some("file two".to_owned()),
         reply: Some(json_reply(with_extra)),
         ..step(Action::Retrieve)
@@ -324,7 +332,7 @@ fn file_retrieve() {
 
 fn file_retrieve_keeps_optional_fields() {
     let minimal = r#"{"id":"file-1","object":"file","bytes":5,"created_at":1700000000,"filename":"notes.txt","purpose":"assistants_output"}"#;
-    let observation = run(Step {
+    let observation = run(&Step {
         file_id: Some("file-1".to_owned()),
         reply: Some(json_reply(minimal)),
         ..step(Action::Retrieve)
@@ -348,7 +356,7 @@ fn list_step(purpose: Option<&str>, reply: Planned) -> Step {
 }
 
 fn file_list() {
-    let observation = run(list_step(Some("batch"), json_reply(PAGE_JSON)));
+    let observation = run(&list_step(Some("batch"), json_reply(PAGE_JSON)));
     assert_eq!(
         observation.outcome,
         Outcome::Page(serde_json::from_str(PAGE_JSON).expect("the expected page parses"))
@@ -366,13 +374,13 @@ fn file_list() {
 }
 
 fn file_list_purpose_forms() {
-    let empty = run(list_step(Some(""), json_reply(PAGE_JSON)));
+    let empty = run(&list_step(Some(""), json_reply(PAGE_JSON)));
     assert_eq!(
         only_call(&empty).query,
         vec![("api-version".to_owned(), VERSION.to_owned())],
         "an empty purpose is not sent"
     );
-    let absent = run(list_step(None, json_reply(PAGE_JSON)));
+    let absent = run(&list_step(None, json_reply(PAGE_JSON)));
     assert_eq!(
         only_call(&absent).query,
         vec![("api-version".to_owned(), VERSION.to_owned())]
@@ -380,9 +388,9 @@ fn file_list_purpose_forms() {
 }
 
 fn file_list_keeps_the_page() {
-    let page =
+    let body =
         r#"{"object":"list","data":[],"has_more":true,"first_id":"file-1","last_id":"file-2"}"#;
-    let observation = run(list_step(Some("batch"), json_reply(page)));
+    let observation = run(&list_step(Some("batch"), json_reply(body)));
     let Outcome::Page(page) = observation.outcome else {
         panic!("the list call returns the page");
     };
@@ -409,20 +417,20 @@ fn synthesized() -> FileDeleted {
 }
 
 fn file_delete() {
-    let empty_string = run(delete_step(r#""""#));
+    let empty_string = run(&delete_step(r#""""#));
     assert_eq!(empty_string.outcome, Outcome::Deleted(synthesized()));
     let request = only_call(&empty_string);
     assert_eq!(request.method, Method::DELETE);
     assert_eq!(request.url.path(), "/openai/files/file-1");
     assert_eq!(header(request, "accept"), Some("application/json"));
     assert_eq!(header(request, "openai-organization"), None);
-    let null = run(delete_step("null"));
+    let null = run(&delete_step("null"));
     assert_eq!(null.outcome, Outcome::Deleted(synthesized()));
 }
 
 fn file_delete_keeps_a_real_record() {
     let body = r#"{"id":"server-file","object":"file","deleted":false,"extra":1}"#;
-    let observation = run(delete_step(body));
+    let observation = run(&delete_step(body));
     assert_eq!(
         observation.outcome,
         Outcome::Deleted(FileDeleted {
@@ -435,7 +443,7 @@ fn file_delete_keeps_a_real_record() {
 
 fn file_delete_replaces_everything_else() {
     for body in ["{}", "", "not json"] {
-        let observation = run(delete_step(body));
+        let observation = run(&delete_step(body));
         assert_eq!(
             observation.outcome,
             Outcome::Deleted(synthesized()),
@@ -445,7 +453,7 @@ fn file_delete_replaces_everything_else() {
 }
 
 fn file_delete_status_error() {
-    let observation = run(delete_step(STATUS_ERROR));
+    let observation = run(&delete_step(STATUS_ERROR));
     let Outcome::Raised(raised) = observation.outcome else {
         panic!("a 404 reply raises");
     };
@@ -457,7 +465,7 @@ fn file_delete_status_error() {
 fn file_delete_organization_is_unused() {
     let mut step = delete_step(r#""""#);
     step.settings.api_base = Some("https://fixture.test".to_owned());
-    let observation = run(step);
+    let observation = run(&step);
     let request = only_call(&observation);
     assert_eq!(header(request, "openai-organization"), None);
 }

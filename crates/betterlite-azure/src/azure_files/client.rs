@@ -81,7 +81,7 @@ impl<'data, M: ClientMaterializer> Connection<'_, 'data, M> {
     }
 
     // LiteLLM builds the client on every call and keeps a supplied one, so a cached outcome comes back too
-    pub fn open(mut self) -> Result<SelectedClient, AzureFilesError> {
+    pub fn open(mut self) -> Result<Opened, AzureFilesError> {
         let is_async = self.is_async;
         let outcome = self.get_openai_client()?;
         let kind = outcome.kind;
@@ -96,8 +96,14 @@ impl<'data, M: ClientMaterializer> Connection<'_, 'data, M> {
         if is_async && !client.is_async() {
             return Err(AzureFilesError::NotAsyncClient);
         }
-        Ok(client)
+        Ok(Opened { client, is_async })
     }
+}
+
+// The client a call sends through, with the handler's own is_async flag the create records follow
+pub struct Opened {
+    pub client: SelectedClient,
+    pub is_async: bool,
 }
 
 // The request builder every file operation sends through, plus the query and auth the Azure clients add
@@ -112,7 +118,7 @@ pub struct SelectedClient {
 impl SelectedClient {
     pub fn new(
         files: FilesClient,
-        auth: FileAuth,
+        auth: &FileAuth,
         api_version: Option<String>,
         kind: ClientKind,
     ) -> Result<Self, AzureFilesError> {
@@ -149,14 +155,7 @@ impl SelectedClient {
                 u32::try_from(azure.max_retries).unwrap_or(0),
             ),
             ClientInputs::OpenAiV1(v1) => (
-                // B531 picked the v1 key in LiteLLM's order: api_key, then the provider, then the ad token
-                match v1.key.as_ref() {
-                    Some(V1Key::Static(secret)) if !secret.expose_secret().is_empty() => {
-                        FileAuth::Bearer(secret.clone())
-                    }
-                    Some(V1Key::Static(_)) | None => FileAuth::None,
-                    Some(V1Key::Provider { provider, .. }) => provider_auth(provider)?,
-                },
+                v1_auth(v1.key.as_ref())?,
                 parse_base(
                     v1.base_url
                         .as_deref()
@@ -174,7 +173,7 @@ impl SelectedClient {
             timeout,
             max_retries,
         };
-        Self::new(files, auth, api_version, kind)
+        Self::new(files, &auth, api_version, kind)
     }
 
     // the SDK adds its auth header unless the caller's extra headers carry that name, and keeps its query first
@@ -194,9 +193,7 @@ impl SelectedClient {
         if let Some(header) = self.auth.as_ref() {
             match header.kind {
                 AuthKind::ApiKey if !supplied("api-key") => {
-                    request
-                        .headers
-                        .insert(API_KEY.clone(), header.value.clone());
+                    request.headers.insert(API_KEY, header.value.clone());
                 }
                 AuthKind::Bearer if !supplied("authorization") => {
                     request.headers.insert(AUTHORIZATION, header.value.clone());
@@ -228,5 +225,16 @@ impl SelectedClient {
         self.auth
             .as_ref()
             .map_or(AuthKind::None, |header| header.kind)
+    }
+}
+
+// B531 picked the v1 key in LiteLLM's order: api_key, then the provider, then the ad token
+fn v1_auth(key: Option<&V1Key>) -> Result<FileAuth, AzureFilesError> {
+    match key {
+        Some(V1Key::Static(secret)) if !secret.expose_secret().is_empty() => {
+            Ok(FileAuth::Bearer(secret.clone()))
+        }
+        Some(V1Key::Static(_)) | None => Ok(FileAuth::None),
+        Some(V1Key::Provider { provider, .. }) => provider_auth(provider),
     }
 }

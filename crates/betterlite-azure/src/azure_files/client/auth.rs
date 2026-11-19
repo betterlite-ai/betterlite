@@ -79,8 +79,8 @@ pub(super) fn resolve_auth(
     if let Some(token) = ad_token {
         return Ok(FileAuth::Bearer(token));
     }
-    if let Some(provider) = provider {
-        return provider_auth(provider);
+    if let Some(source) = provider {
+        return provider_auth(source);
     }
     match api_key {
         // the SDK raises this before it looks at the base URL or the version

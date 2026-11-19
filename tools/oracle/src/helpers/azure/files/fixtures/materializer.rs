@@ -36,12 +36,12 @@ pub(crate) fn params(step: &Step) -> LiteLlmParams {
     }
 }
 
-pub(crate) fn supplied(kind: Supplied) -> SuppliedClient {
-    let kind = match kind {
-        Supplied::AzureOpenAi => ClientKind::AzureOpenAi,
-        Supplied::AsyncAzureOpenAi => ClientKind::AsyncAzureOpenAi,
-        Supplied::OpenAi => ClientKind::OpenAi,
-        Supplied::AsyncOpenAi => ClientKind::AsyncOpenAi,
+pub(crate) fn supplied(supplied: Supplied) -> SuppliedClient {
+    let kind = match supplied {
+        Supplied::Azure => ClientKind::AzureOpenAi,
+        Supplied::AzureAsync => ClientKind::AsyncAzureOpenAi,
+        Supplied::Plain => ClientKind::OpenAi,
+        Supplied::PlainAsync => ClientKind::AsyncOpenAi,
     };
     SuppliedClient {
         kind,
@@ -86,7 +86,7 @@ impl ClientMaterializer for Materializer {
         };
         Ok(Some(SelectedClient::new(
             files,
-            auth,
+            &auth,
             version,
             outcome.kind,
         )?))

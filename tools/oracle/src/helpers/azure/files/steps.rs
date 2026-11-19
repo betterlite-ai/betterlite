@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, PoisonError};
 
-use betterlite_azure::azure_files::client::Connection;
+use betterlite_azure::azure_files::client::{Connection, Opened};
 use betterlite_azure::azure_files::error::AzureFilesError;
 use betterlite_azure::azure_files::{Operation, Reply, call};
 use betterlite_azure::credentials::cache::RefreshProviderCache;
@@ -57,38 +57,45 @@ pub(super) fn run(step: &Step) -> Result<Value, Box<HelperError>> {
         refresh: &mut refresh,
         materializer: &materializer,
     };
+    let opened = connection.open();
     let result = RuntimeBuilder::new_current_thread()
         .build()
         .or_value_error()?
-        .block_on(perform(&checked, connection, &transport));
+        .block_on(perform(opened, &checked, &transport));
     drop(transport);
+    Ok(report(result, &calls))
+}
+
+// the one wire call the step made and what came back, or the error the SDK raised
+fn report(result: Result<Value, AzureFilesError>, calls: &Log) -> Value {
     let request = calls
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .first()
         .map_or(Value::Null, reports::request);
-    Ok(match result {
+    match result {
         Ok(value) => json!({ "request": request, "result": value, "error": Value::Null }),
         Err(error) => {
             json!({ "request": request, "result": Value::Null, "error": reports::raised(&error) })
         }
-    })
+    }
 }
 
 async fn perform(
+    prepared: Result<Opened, AzureFilesError>,
     checked: &Checked<'_>,
-    connection: Connection<'_, '_, Materializer>,
     transport: &Recorded,
 ) -> Result<Value, AzureFilesError> {
+    let opened = prepared?;
     let operation = match checked {
-        Checked::Client => return connection.open().map(|client| reports::client(&client)),
+        Checked::Client => return Ok(reports::client(&opened.client)),
         Checked::Create(data) => Operation::Create(data),
         Checked::Content(request) => Operation::Content(request),
         Checked::Retrieve(file_id) => Operation::Retrieve(*file_id),
         Checked::List(purpose) => Operation::List(*purpose),
         Checked::Delete(file_id) => Operation::Delete(*file_id),
     };
-    match call(connection, transport, operation).await? {
+    match call(&opened, transport, operation).await? {
         Reply::Object(object) => Ok(reports::object(&object)),
         Reply::Content(binary) => Ok(reports::content(&binary)),
         Reply::Page(page) => Ok(reports::page(&page)),

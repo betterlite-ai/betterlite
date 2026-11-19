@@ -25,9 +25,11 @@ pub(super) fn parse_base(raw: &str) -> Result<Url, AzureFilesError> {
 }
 
 pub(super) fn client_timeout(timeout: Option<f64>) -> Result<Duration, AzureFilesError> {
-    match timeout {
-        Some(seconds) => Duration::try_from_secs_f64(seconds)
-            .map_err(|_invalid| AzureFilesError::Timeout { seconds }),
-        None => Ok(DEFAULT_TIMEOUT),
-    }
+    timeout.map_or_else(
+        || Ok(DEFAULT_TIMEOUT),
+        |seconds| {
+            Duration::try_from_secs_f64(seconds)
+                .map_err(|_invalid| AzureFilesError::Timeout { seconds })
+        },
+    )
 }

@@ -12,7 +12,7 @@ use betterlite_openai::files::transport::FileTransport;
 use indexmap::IndexMap;
 use uuid::Uuid;
 
-use client::{ClientMaterializer, Connection, SelectedClient};
+use client::{Opened, SelectedClient};
 use error::AzureFilesError;
 use patched::Patched;
 
@@ -48,80 +48,90 @@ pub enum Reply {
     Deleted(FileDeleted),
 }
 
-pub async fn call<T, M>(
-    connection: Connection<'_, '_, M>,
+pub async fn call<T>(
+    opened: &Opened,
     transport: &T,
     operation: Operation<'_>,
 ) -> Result<Reply, AzureFilesError>
 where
     T: FileTransport,
-    M: ClientMaterializer,
 {
-    let is_async = connection.is_async;
-    let client = connection.open()?;
-    let reply = match operation {
-        Operation::Create(data) => {
-            // LiteLLM's two debug records hold the whole data and response objects; only their metadata is kept
-            if is_async {
-                tracing::debug!(
-                    purpose = data.purpose.wire_name(),
-                    filename = data.file.filename.as_deref().unwrap_or_default(),
-                    bytes = data.file.data.len(),
-                    expires_after = ?data.expires_after.map(|expires| expires.seconds),
-                    "create_file_data"
-                );
-            }
-            let object = api(&client, transport, Some(&data.extra_headers))
-                .create_file(&client.files, data)
-                .await?;
-            if is_async {
-                tracing::debug!(
-                    id = %object.id,
-                    bytes = object.bytes,
-                    purpose = ?object.purpose,
-                    status = ?object.status,
-                    "create_file_response"
-                );
-            }
-            Reply::Object(object)
-        }
-        Operation::Content(request) => Reply::Content(
-            api(&client, transport, Some(&request.extra_headers))
-                .file_content(&client.files, request)
+    match operation {
+        Operation::Create(data) => create(opened, transport, data).await,
+        Operation::Content(request) => Ok(Reply::Content(
+            api(&opened.client, transport, Some(&request.extra_headers))
+                .file_content(&opened.client.files, request)
                 .await?,
-        ),
-        Operation::Retrieve(file_id) => Reply::Object(
-            api(&client, transport, None)
-                .retrieve_file(&client.files, file_id)
+        )),
+        Operation::Retrieve(file_id) => Ok(Reply::Object(
+            api(&opened.client, transport, None)
+                .retrieve_file(&opened.client.files, file_id)
                 .await?,
-        ),
+        )),
         Operation::List(purpose) => {
             let query = FileQuery {
                 purpose: purpose.map(str::to_owned),
             };
-            Reply::Page(
-                api(&client, transport, None)
-                    .list_files(&client.files, &query)
+            Ok(Reply::Page(
+                api(&opened.client, transport, None)
+                    .list_files(&opened.client.files, &query)
                     .await?,
-            )
+            ))
         }
-        Operation::Delete(file_id) => {
-            let deleted = api(&client, transport, None)
-                .delete_file(&client.files, file_id)
-                .await;
-            Reply::Deleted(match deleted {
-                Ok(deleted) => deleted,
-                // Azure answers delete with an empty body; LiteLLM replaces anything that is not a FileDeleted
-                Err(FilesError::Decode { .. }) => FileDeleted {
-                    id: file_id.to_owned(),
-                    object: FileKind::File,
-                    deleted: true,
-                },
-                Err(error) => return Err(AzureFilesError::from(error)),
-            })
-        }
-    };
-    Ok(reply)
+        Operation::Delete(file_id) => delete(opened, transport, file_id).await,
+    }
+}
+
+// LiteLLM's two debug records hold the whole data and response objects; only their metadata is kept
+async fn create<T>(
+    opened: &Opened,
+    transport: &T,
+    data: &FileCreate,
+) -> Result<Reply, AzureFilesError>
+where
+    T: FileTransport,
+{
+    if opened.is_async {
+        tracing::debug!(
+            purpose = data.purpose.wire_name(),
+            filename = data.file.filename.as_deref().unwrap_or_default(),
+            bytes = data.file.data.len(),
+            expires_after = ?data.expires_after.map(|expires| expires.seconds),
+            "create_file_data"
+        );
+    }
+    let object = api(&opened.client, transport, Some(&data.extra_headers))
+        .create_file(&opened.client.files, data)
+        .await?;
+    if opened.is_async {
+        tracing::debug!(
+            id = %object.id,
+            bytes = object.bytes,
+            purpose = ?object.purpose,
+            status = ?object.status,
+            "create_file_response"
+        );
+    }
+    Ok(Reply::Object(object))
+}
+
+// Azure answers delete with an empty body; LiteLLM replaces anything that is not a FileDeleted
+async fn delete<T>(opened: &Opened, transport: &T, file_id: &str) -> Result<Reply, AzureFilesError>
+where
+    T: FileTransport,
+{
+    let deleted = api(&opened.client, transport, None)
+        .delete_file(&opened.client.files, file_id)
+        .await;
+    Ok(Reply::Deleted(match deleted {
+        Ok(record) => record,
+        Err(FilesError::Decode { .. }) => FileDeleted {
+            id: file_id.to_owned(),
+            object: FileKind::File,
+            deleted: true,
+        },
+        Err(error) => return Err(AzureFilesError::from(error)),
+    }))
 }
 
 mod tests;

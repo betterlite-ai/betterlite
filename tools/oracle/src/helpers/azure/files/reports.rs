@@ -1,3 +1,5 @@
+use std::str;
+
 use betterlite_azure::azure_files::client::SelectedClient;
 use betterlite_azure::azure_files::error::AzureFilesError;
 use betterlite_azure::endpoints::projection::ClientKind;
@@ -30,10 +32,14 @@ pub(super) fn request(request: &OutboundRequest) -> Value {
 fn headers(headers: &HeaderMap) -> Value {
     let mut selected = Map::new();
     for (name, value) in headers {
-        let name = name.as_str();
-        if COMPARED.contains(&name) || (name.starts_with("x-") && !name.starts_with("x-stainless-"))
+        let header_name = name.as_str();
+        if COMPARED.contains(&header_name)
+            || (header_name.starts_with("x-") && !header_name.starts_with("x-stainless-"))
         {
-            selected.insert(name.to_owned(), json!(value.to_str().unwrap_or_default()));
+            selected.insert(
+                header_name.to_owned(),
+                json!(value.to_str().unwrap_or_default()),
+            );
         }
     }
     Value::Object(selected)
@@ -52,7 +58,7 @@ fn parts(body: &RequestBody) -> Value {
                     "name": &part.name,
                     "filename": part.file_name.as_deref().unwrap_or_default(),
                     "content_type": part.content_type.as_deref().unwrap_or_default(),
-                    "data": std::str::from_utf8(&part.data).unwrap_or_default(),
+                    "data": str::from_utf8(&part.data).unwrap_or_default(),
                 })
             })
             .collect(),
@@ -78,7 +84,7 @@ pub(super) fn page(page: &FilePage) -> Value {
 pub(super) fn content(content: &BinaryContent) -> Value {
     json!({
         "status": content.status, "headers": &content.headers,
-        "body": std::str::from_utf8(&content.body).unwrap_or_default(),
+        "body": str::from_utf8(&content.body).unwrap_or_default(),
     })
 }
 
@@ -109,46 +115,34 @@ const fn kind_name(kind: ClientKind) -> &'static str {
 }
 
 pub(super) fn raised(error: &AzureFilesError) -> Value {
-    let (class, status, error_type, param, code, message) = match error {
+    match error {
         AzureFilesError::Files {
             source: FilesError::Status(status),
-        } => (
-            "APIStatusError",
-            json!(status.status),
-            json!(&status.error_type),
-            json!(&status.param),
-            json!(&status.code),
-            Value::Null,
-        ),
+        } => json!({
+            "class": "APIStatusError", "status": status.status, "type": &status.error_type,
+            "param": &status.param, "code": &status.code, "message": Value::Null,
+        }),
         AzureFilesError::Files {
             source: FilesError::Decode { .. },
-        } => (
-            "ValidationError",
-            Value::Null,
-            Value::Null,
-            Value::Null,
-            Value::Null,
-            Value::Null,
-        ),
-        AzureFilesError::MissingCredentials => (
-            "OpenAIError",
-            Value::Null,
-            Value::Null,
-            Value::Null,
-            Value::Null,
-            json!(error.to_string()),
-        ),
-        _ => (
-            "ValueError",
-            Value::Null,
-            Value::Null,
-            Value::Null,
-            Value::Null,
-            json!(error.to_string()),
-        ),
-    };
+        } => plain("ValidationError", Value::Null),
+        AzureFilesError::MissingCredentials => plain("OpenAIError", json!(error.to_string())),
+        AzureFilesError::ClientMissing
+        | AzureFilesError::NotAsyncClient
+        | AzureFilesError::UnableToHandleAuth
+        | AzureFilesError::TokenNotString { .. }
+        | AzureFilesError::TokenProvider { .. }
+        | AzureFilesError::MissingBaseUrl
+        | AzureFilesError::BaseUrl { .. }
+        | AzureFilesError::Header { .. }
+        | AzureFilesError::Timeout { .. }
+        | AzureFilesError::Endpoint { .. }
+        | AzureFilesError::Files { .. } => plain("ValueError", json!(error.to_string())),
+    }
+}
+
+fn plain(class: &'static str, message: Value) -> Value {
     json!({
-        "class": class, "status": status, "type": error_type,
-        "param": param, "code": code, "message": message,
+        "class": class, "status": Value::Null, "type": Value::Null,
+        "param": Value::Null, "code": Value::Null, "message": message,
     })
 }

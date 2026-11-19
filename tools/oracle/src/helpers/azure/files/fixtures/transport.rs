@@ -57,7 +57,7 @@ fn answer<T>(calls: &Log, request: OutboundRequest, reply: T) -> T {
 
 // httpx adds a content-length header for a non-empty body, and keeps every declared header
 fn response(reply: Option<&Reply>) -> Result<UpstreamResponse, Box<HelperError>> {
-    let Some(reply) = reply else {
+    let Some(provided) = reply else {
         return Ok(UpstreamResponse {
             status: 200,
             headers: HeaderMap::new(),
@@ -65,20 +65,21 @@ fn response(reply: Option<&Reply>) -> Result<UpstreamResponse, Box<HelperError>>
         });
     };
     let mut headers = HeaderMap::new();
-    for (name, value) in &reply.headers {
-        let name = HeaderName::from_bytes(name.as_bytes())
+    for (name, value) in &provided.headers {
+        let header_name = HeaderName::from_bytes(name.as_bytes())
             .map_err(|source| invalid(source.to_string()))?;
-        let value = HeaderValue::from_str(value).map_err(|source| invalid(source.to_string()))?;
-        headers.append(name, value);
+        let header_value =
+            HeaderValue::from_str(value).map_err(|source| invalid(source.to_string()))?;
+        headers.append(header_name, header_value);
     }
-    let length = HeaderValue::from_str(&reply.body.len().to_string()).ok();
-    if let Some(length) = length.filter(|_| !reply.body.is_empty()) {
-        headers.entry(CONTENT_LENGTH).or_insert(length);
+    let length = HeaderValue::from_str(&provided.body.len().to_string()).ok();
+    if let Some(header_length) = length.filter(|_| !provided.body.is_empty()) {
+        headers.entry(CONTENT_LENGTH).or_insert(header_length);
     }
     Ok(UpstreamResponse {
-        status: reply.status,
+        status: provided.status,
         headers,
-        body: reply.body.clone().into_bytes(),
+        body: provided.body.clone().into_bytes(),
     })
 }
 
