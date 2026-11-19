@@ -284,6 +284,10 @@ fn a_config_write_names_the_failing_location(#[case] config: &str, #[case] expec
 #[case::keywords_type(r#"{"escalation_keywords":"nope"}"#, "escalation_keywords")]
 #[case::margin_type(r#"{"hybrid_boundary_margin":"0.5"}"#, "hybrid_boundary_margin")]
 #[case::window_type(r#"{"stall_escalation_window":-1}"#, "stall_escalation_window")]
+#[case::tier_pool_model_name_type(
+    r#"{"tiers":{"SIMPLE":["x",{"model_name":true,"litellm_params":{"temperature":1}}]}}"#,
+    "tiers.SIMPLE"
+)]
 fn a_config_write_reads_every_field_at_its_own_path(#[case] config: &str, #[case] expected: &str) {
     assert_eq!(rejected_location(config), expected);
 }
