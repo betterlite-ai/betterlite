@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt::Debug;
 use std::future::pending;
 use std::io;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -18,6 +19,7 @@ use betterlite_redis::redis_live_client::LiveClientError;
 use chrono::{DateTime, TimeZone as _, Utc};
 use redis::RedisError;
 use tokio::runtime::{Builder, Runtime};
+use tokio::task::{Id, JoinSet, yield_now};
 use tracing::field::{Field, Visit};
 use tracing::subscriber::with_default;
 use tracing::{Event, Level, Subscriber};
@@ -467,34 +469,39 @@ impl LocalEviction for RecordingEviction {
 }
 
 pub(crate) async fn settle() {
-    tokio::task::yield_now().await;
-    tokio::task::yield_now().await;
-    tokio::task::yield_now().await;
-    tokio::task::yield_now().await;
+    yield_now().await;
+    yield_now().await;
+    yield_now().await;
+    yield_now().await;
 }
 
 // an id for a load another task owns; the task is cancelled at once, since only its identity is used
-pub(crate) fn other_task_id() -> tokio::task::Id {
+pub(crate) fn other_task_id() -> Id {
     let runtime = runtime();
     runtime.block_on(async {
-        let handle = tokio::spawn(pending::<()>());
+        let mut tasks = JoinSet::new();
+        let handle = tasks.spawn(pending::<()>());
         let id = handle.id();
-        handle.abort();
+        tasks.abort_all();
         id
     })
 }
 
 pub(crate) fn builder(auth: &Arc<Recorder>, usage: Option<&Arc<Recorder>>) -> AuthInvalidation {
-    let auth_port: Arc<dyn AuthInvalidationCache> = Arc::clone(auth);
+    let auth_handle: Arc<Recorder> = Arc::clone(auth);
+    let auth_port: Arc<dyn AuthInvalidationCache> = auth_handle;
+    let spend_handle: Arc<Recorder> = Arc::clone(auth);
+    let spend_port: Arc<dyn SpendCounterCache> = spend_handle;
+    let transport_handle: Arc<Recorder> = Arc::clone(auth);
+    let transport_port: Arc<dyn InvalidationTransport> = transport_handle;
     let usage_port: Option<Arc<dyn UsageInvalidationCache>> = match usage {
         Some(recorder) => {
-            let port: Arc<dyn UsageInvalidationCache> = Arc::clone(recorder);
+            let usage_handle: Arc<Recorder> = Arc::clone(recorder);
+            let port: Arc<dyn UsageInvalidationCache> = usage_handle;
             Some(port)
         }
         None => None,
     };
-    let spend_port: Arc<dyn SpendCounterCache> = Arc::clone(auth);
-    let transport_port: Arc<dyn InvalidationTransport> = Arc::clone(auth);
     AuthInvalidation {
         auth: auth_port,
         usage: usage_port,
@@ -597,7 +604,7 @@ impl Visit for SubjectVisitor {
         }
     }
 
-    fn record_debug(&mut self, _field: &Field, _value: &dyn std::fmt::Debug) {}
+    fn record_debug(&mut self, _field: &Field, _value: &dyn Debug) {}
 }
 
 pub(crate) fn capture<T, F>(operation: F) -> (T, Vec<CapturedEvent>)

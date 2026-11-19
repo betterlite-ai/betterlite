@@ -1,6 +1,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use tokio::time::timeout;
+
 use super::support::{self, Call, Fault, Recorder};
 use crate::auth_invalidation::AuthInvalidation;
 
@@ -214,7 +216,7 @@ fn outer_cancellation_propagates() {
     let invalidation = deletion(&recorder, Some(&recorder));
     let tokens = vec!["hash-1".to_owned()];
     let outcome = runtime.block_on(async {
-        tokio::time::timeout(
+        timeout(
             Duration::from_millis(50),
             invalidation.delete_cache_key_objects(&tokens),
         )

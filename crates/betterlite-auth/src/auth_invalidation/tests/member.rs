@@ -3,7 +3,8 @@ use std::time::Duration;
 
 use rust_decimal::Decimal;
 use tokio::sync::watch;
-use tokio::task::JoinSet;
+use tokio::task::{JoinSet, try_id, yield_now};
+use tokio::time::timeout;
 
 use super::support::{self, Call, Fault, Recorder};
 use crate::auth_invalidation::AuthInvalidation;
@@ -356,7 +357,7 @@ fn cancellation_not_warning_fallback() {
     let (invalidation, inflight) = reset(&recorder);
     let (outcome, warnings) = support::capture(|| {
         runtime.block_on(async {
-            tokio::time::timeout(
+            timeout(
                 Duration::from_millis(50),
                 invalidation.invalidate_team_member_spend(
                     &inflight,
@@ -393,7 +394,7 @@ fn inflight_pop_before_any_mutation() {
         Some(Decimal::from(2_i32)),
     );
     let drive = async {
-        tokio::task::yield_now().await;
+        yield_now().await;
         assert!(
             recorder.calls().is_empty(),
             "the reset waits for the membership load before any mutation"
@@ -425,7 +426,7 @@ fn inflight_wait_ignores_task_result() {
     let reset_future =
         invalidation.invalidate_team_member_spend(&inflight, "user-1", "team-1", None);
     let drive = async {
-        tokio::task::yield_now().await;
+        yield_now().await;
         sender
             .send(Some("loaded".to_owned()))
             .expect("the load still runs");
@@ -441,7 +442,7 @@ fn current_or_missing_task_not_awaited() {
     let invalidation = Arc::new(support::builder(&recorder, None));
     let inflight = Arc::new(MembershipInflight::<String>::default());
     let missing = runtime.block_on(async {
-        tokio::time::timeout(
+        timeout(
             Duration::from_millis(50),
             invalidation.invalidate_team_member_spend(&inflight, "user-1", "team-1", None),
         )
@@ -455,7 +456,7 @@ fn current_or_missing_task_not_awaited() {
     let joined = runtime.block_on(async move {
         let mut tasks = JoinSet::new();
         let _handle = tasks.spawn(async move {
-            let id = tokio::task::try_id().expect("the reset runs inside its task");
+            let id = try_id().expect("the reset runs inside its task");
             let (_sender, receiver) = watch::channel(None::<String>);
             scoped_inflight.install(
                 RESERVATION,
@@ -468,7 +469,7 @@ fn current_or_missing_task_not_awaited() {
                 .invalidate_team_member_spend(&scoped_inflight, "user-1", "team-1", None)
                 .await
         });
-        tokio::time::timeout(Duration::from_millis(50), tasks.join_next()).await
+        timeout(Duration::from_millis(50), tasks.join_next()).await
     });
     joined
         .expect("the reset never waits for its own membership load")
