@@ -191,8 +191,11 @@ fn record<T>(queue: &Mutex<Vec<T>>, entry: T) {
 }
 
 fn scripted(replies: &Mutex<VecDeque<Scripted>>) -> Result<UpstreamResponse, TransportError> {
-    let mut queue = replies.lock().unwrap_or_else(PoisonError::into_inner);
-    let Some(reply) = queue.pop_front() else {
+    let queued = replies
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .pop_front();
+    let Some(reply) = queued else {
         return Err(TransportError::BodyTooLarge { limit: 0 });
     };
     reply.into_result()
