@@ -1,6 +1,7 @@
 mod input;
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use betterlite_config::collector::TracebackPolicy;
 use betterlite_config::spend_attribution::Settings as SpendAttributionSettings;
@@ -12,7 +13,7 @@ use betterlite_logging::payload::deps::PayloadClock;
 use betterlite_logging::spend_bodies::SpendStoragePolicy;
 use betterlite_logging::spend_bodies::session::SpendTimestamp;
 use betterlite_logging::spend_sanitize::SpendSanitizePolicy;
-use betterlite_models::catalog::BundledCatalog;
+use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
 use betterlite_models::decisions::Json;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::model_registration::JsonObject;
@@ -50,16 +51,16 @@ impl Helper for Op {
                 router,
                 clock,
                 session_uuid,
-            } => payload(
+            } => payload(&PayloadCall {
                 kwargs,
                 response,
                 start_time,
                 end_time,
                 settings,
-                router.as_ref(),
-                *clock,
+                router_input: router.as_ref(),
+                clock: *clock,
                 session_uuid,
-            ),
+            }),
             Input::EndUser {
                 litellm_params,
                 service,
@@ -69,80 +70,135 @@ impl Helper for Op {
     }
 }
 
-fn payload(
-    kwargs: &JsonObject,
-    response: &ResponseInput,
-    start_time: &str,
-    end_time: &str,
-    settings: &SettingsInput,
-    router_input: Option<&RouterInput>,
+// The fields get_logging_payload's adapter reads, grouped so the call keeps one argument.
+#[derive(Clone, Copy)]
+struct PayloadCall<'call> {
+    kwargs: &'call JsonObject,
+    response: &'call ResponseInput,
+    start_time: &'call str,
+    end_time: &'call str,
+    settings: &'call SettingsInput,
+    router_input: Option<&'call RouterInput>,
     clock: f64,
-    session_uuid: &str,
-) -> HelperResult {
-    let policy = payload_settings(settings)?;
-    let completion_start_time = completion_start(kwargs)?;
-    let mut deployment_catalog = DeploymentCatalog::default();
-    let mut recognized = BTreeSet::new();
-    let mut teams = BTreeSet::new();
-    if let Some(router) = router_input {
-        for deployment in &router.model_list {
-            deployment_catalog.push(deployment_spec(deployment));
+    session_uuid: &'call str,
+}
+
+fn payload(call: &PayloadCall<'_>) -> HelperResult {
+    let policy = payload_settings(call.settings)?;
+    let completion_start_time = completion_start(call.kwargs)?;
+    let router = OwnedRouter::build(call.router_input);
+    record(
+        call,
+        Record {
+            policy: &policy,
+            completion_start_time,
+            router: &router,
+        },
+    )
+}
+
+// The catalog and router settings get_logging_payload reads, owned so the request can borrow them.
+struct OwnedRouter {
+    deployment_catalog: DeploymentCatalog,
+    aliases: AliasMap,
+    groups: RoutingGroupIndex,
+    model_catalog: Arc<ModelCatalog>,
+    known: BTreeSet<String>,
+    custom: BTreeSet<String>,
+    environment: BTreeMap<String, String>,
+    recognized: BTreeSet<String>,
+    teams: BTreeSet<String>,
+    attribution_settings: SpendAttributionSettings,
+}
+
+impl OwnedRouter {
+    fn build(input: Option<&RouterInput>) -> Self {
+        let mut deployment_catalog = DeploymentCatalog::default();
+        let mut recognized = BTreeSet::new();
+        let mut teams = BTreeSet::new();
+        if let Some(router) = input {
+            for deployment in &router.model_list {
+                deployment_catalog.push(deployment_spec(deployment));
+            }
+            recognized.extend(router.recognized.iter().cloned());
+            teams.extend(router.team_public.iter().cloned());
         }
-        recognized.extend(router.recognized.iter().cloned());
-        teams.extend(router.team_public.iter().cloned());
+        Self {
+            deployment_catalog,
+            aliases: AliasMap::new(),
+            groups: RoutingGroupIndex::default(),
+            model_catalog: BundledCatalog::default().get(),
+            known: BTreeSet::new(),
+            custom: BTreeSet::new(),
+            environment: BTreeMap::new(),
+            recognized,
+            teams,
+            attribution_settings: SpendAttributionSettings::default(),
+        }
     }
-    let aliases = AliasMap::new();
-    let groups = RoutingGroupIndex::default();
+
+    fn resolution(&self) -> ResolutionContext<'_> {
+        ResolutionContext {
+            catalog: &self.model_catalog,
+            known_model_names: &self.known,
+            custom_providers: &self.custom,
+            environment: &self.environment,
+            registry: JSONProviderRegistry::load(),
+            policies: ProviderPolicies::default(),
+            globals: GlobalCredentials::default(),
+        }
+    }
+}
+
+// The settings and router state a payload request is assembled from.
+struct Record<'record> {
+    policy: &'record SpendPayloadSettings,
+    completion_start_time: CompletionStart,
+    router: &'record OwnedRouter,
+}
+
+fn record(call: &PayloadCall<'_>, parts: Record<'_>) -> HelperResult {
+    let Record {
+        policy,
+        completion_start_time,
+        router,
+    } = parts;
     let inferred = |_: &str| -> Option<String> { None };
     let lookup = CatalogLookup {
-        catalog: &deployment_catalog,
-        model_group_alias: &aliases,
-        routing_groups: &groups,
+        catalog: &router.deployment_catalog,
+        model_group_alias: &router.aliases,
+        routing_groups: &router.groups,
         inferred_provider: &inferred,
     };
-    let mut bundled = BundledCatalog::default();
-    let model_catalog = bundled.get();
-    let known = BTreeSet::new();
-    let custom = BTreeSet::new();
-    let environment = BTreeMap::new();
-    let resolution = ResolutionContext {
-        catalog: &model_catalog,
-        known_model_names: &known,
-        custom_providers: &custom,
-        environment: &environment,
-        registry: JSONProviderRegistry::load(),
-        policies: ProviderPolicies::default(),
-        globals: GlobalCredentials::default(),
-    };
-    let attribution_settings = SpendAttributionSettings::default();
-    let router = router_input.map(|_| SpendRouter {
+    let resolution = router.resolution();
+    let router_state = call.router_input.map(|_| SpendRouter {
         catalog: Some(&lookup),
-        settings: &attribution_settings,
+        settings: &router.attribution_settings,
         resolution: &resolution,
-        recognized_groups: &recognized,
-        team_public_names: &teams,
+        recognized_groups: &router.recognized,
+        team_public_names: &router.teams,
     });
-    let injected_clock = CaseClock(clock);
+    let injected_clock = CaseClock(call.clock);
     let (_sender, tracebacks) = watch::channel(TracebackPolicy { suppress: false });
     let request = PayloadRequest {
-        kwargs,
-        response: spend_response(response),
-        start_time: timestamp(start_time)?,
-        end_time: timestamp(end_time)?,
+        kwargs: call.kwargs,
+        response: spend_response(call.response),
+        start_time: timestamp(call.start_time)?,
+        end_time: timestamp(call.end_time)?,
         completion_start_time,
-        router: router.as_ref(),
+        router: router_state.as_ref(),
         cache: None,
         clock: &injected_clock,
-        session_uuid,
+        session_uuid: call.session_uuid,
         tracebacks: &tracebacks,
     };
-    let record = get_logging_payload(&request, &policy, &Utc)
-        .map_err(|error| invalid(&error.to_string()))?;
-    serde_json::to_value(&record).map_err(|error| invalid(&error.to_string()))
+    let stored =
+        get_logging_payload(&request, policy, &Utc).map_err(|error| invalid(&error.to_string()))?;
+    serde_json::to_value(&stored).map_err(|error| invalid(&error.to_string()))
 }
 
 fn end_user(params: &JsonObject, service: &str, settings: &SettingsInput) -> HelperResult {
-    let service = match service {
+    let resolved_service = match service {
         "litellm_logging" => CostTrackingService::LitellmLogging,
         "prometheus" => CostTrackingService::Prometheus,
         other => return Err(invalid(&format!("unknown service {other}"))),
@@ -152,7 +208,7 @@ fn end_user(params: &JsonObject, service: &str, settings: &SettingsInput) -> Hel
         enable_prometheus_only: settings.enable_prometheus_only,
     };
     // ast-grep-ignore: no-long-names
-    let resolved = get_end_user_id_for_cost_tracking(params, service, &policy)
+    let resolved = get_end_user_id_for_cost_tracking(params, resolved_service, &policy)
         .map_err(|error| invalid(&error.to_string()))?;
     serde_json::to_value(resolved).map_err(|error| invalid(&error.to_string()))
 }
@@ -192,7 +248,7 @@ fn completion_start(kwargs: &JsonObject) -> Result<CompletionStart, Box<HelperEr
     }
 }
 
-fn spend_response<'response>(input: &'response ResponseInput) -> SpendResponse<'response> {
+const fn spend_response(input: &ResponseInput) -> SpendResponse<'_> {
     match input {
         ResponseInput::Absent => SpendResponse::Absent,
         ResponseInput::Other => SpendResponse::Other,

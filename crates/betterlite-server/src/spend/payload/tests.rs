@@ -47,8 +47,7 @@ impl PayloadClock for Clock {
 struct DerivedCache;
 
 impl SpendCache for DerivedCache {
-    fn cache_key(&self, kwargs: &JsonObject) -> Result<String, SpendPayloadError> {
-        assert!(kwargs.contains_key("model"));
+    fn cache_key(&self, _kwargs: &JsonObject) -> Result<String, SpendPayloadError> {
         Ok("derived-key".to_owned())
     }
 }
@@ -57,7 +56,7 @@ impl SpendCache for DerivedCache {
 mod fallbacks;
 
 struct Catalog {
-    catalog: Arc<ModelCatalog>,
+    model_catalog: Arc<ModelCatalog>,
     known: BTreeSet<String>,
     custom: BTreeSet<String>,
     environment: BTreeMap<String, String>,
@@ -66,7 +65,7 @@ struct Catalog {
 impl Catalog {
     fn new() -> Self {
         Self {
-            catalog: BundledCatalog::default().get(),
+            model_catalog: BundledCatalog::default().get(),
             known: BTreeSet::new(),
             custom: BTreeSet::new(),
             environment: BTreeMap::new(),
@@ -75,7 +74,7 @@ impl Catalog {
 
     fn context(&self) -> ResolutionContext<'_> {
         ResolutionContext {
-            catalog: &self.catalog,
+            catalog: &self.model_catalog,
             known_model_names: &self.known,
             custom_providers: &self.custom,
             environment: &self.environment,
@@ -228,8 +227,7 @@ const STANDARD: &str = r#"
     }
 "#;
 
-#[test]
-fn assembles_a_standard_enriched_payload() {
+fn standard_request() -> SpendLogsPayload {
     let text = format!(
         r#"{{
             "model": "gpt-4o",
@@ -249,7 +247,12 @@ fn assembles_a_standard_enriched_payload() {
             {STANDARD}
         }}"#
     );
-    let payload = run(&text, SpendResponse::Absent, &settings()).expect("payload");
+    run(&text, SpendResponse::Absent, &settings()).expect("payload")
+}
+
+#[test]
+fn assembles_a_standard_enriched_payload() {
+    let payload = standard_request();
     assert_eq!(payload.request_id, "standard-id");
     assert_eq!(payload.call_type, "acompletion");
     assert_eq!(payload.api_key, hash_token("sk-secret"));
@@ -262,8 +265,13 @@ fn assembles_a_standard_enriched_payload() {
     assert_eq!(payload.organization_id, "org-1");
     assert_eq!(payload.custom_llm_provider, "openai");
     assert_eq!(payload.request_tags, r#"["beta"]"#);
-    assert_eq!(payload.spend, Some(Decimal::new(25, 2)));
     assert_eq!(payload.status, SpendLogStatus::Success);
+}
+
+#[test]
+fn the_standard_payload_enrichment_lands_in_the_metadata() {
+    let payload = standard_request();
+    assert_eq!(payload.spend, Some(Decimal::new(25, 2)));
     assert_eq!(payload.litellm_call_id.as_deref(), Some("call-1"));
     assert_eq!(payload.request_duration_ms, Some(2500));
     let metadata = metadata_of(&payload);
@@ -277,11 +285,11 @@ fn assembles_a_standard_enriched_payload() {
     );
     assert_eq!(
         metadata.get("batch_successful_requests"),
-        Some(&Json::Number(Number::from(2)))
+        Some(&Json::Number(Number::from(2_i32)))
     );
     assert_eq!(
         metadata.get("batch_failed_requests"),
-        Some(&Json::Number(Number::from(1)))
+        Some(&Json::Number(Number::from(1_i32)))
     );
     assert!(metadata.contains_key("guardrail_information"));
     assert!(metadata.contains_key("cost_breakdown"));
@@ -297,7 +305,7 @@ fn assembles_a_standard_enriched_payload() {
     );
     assert_eq!(
         additional.get("cache_creation_input_tokens"),
-        Some(&Json::Number(Number::from(9)))
+        Some(&Json::Number(Number::from(9_i32)))
     );
     assert_eq!(
         payload.session_id.as_deref(),
@@ -318,6 +326,12 @@ fn missing_fields_keep_the_sources_empty_string_defaults() {
     assert_eq!(payload.model_id, "");
     assert_eq!(payload.model_group, "");
     assert_eq!(payload.api_base, "");
+}
+
+#[test]
+fn missing_fields_keep_the_source_defaults() {
+    let payload =
+        run(r#"{"model": "gpt-4o"}"#, SpendResponse::Absent, &settings()).expect("payload");
     assert_eq!(payload.request_tags, "[]");
     assert_eq!(payload.call_type, "");
     assert_eq!(payload.spend, Some(Decimal::ZERO));
@@ -461,10 +475,10 @@ fn scrubbed_metadata_replaces_the_raw_model_in_error_information() {
 #[case::false_plain(Some(false), "None")]
 #[case::null_plain(None, "None")]
 fn cache_hit_suffixes_follow_the_clock(#[case] hit: Option<bool>, #[case] expected: &str) {
-    let encoded = match hit {
-        Some(flag) => format!(r#"{{"model": "gpt-4o", "cache_hit": {flag}}}"#),
-        None => r#"{"model": "gpt-4o", "cache_hit": null}"#.to_owned(),
-    };
+    let encoded = hit.map_or_else(
+        || r#"{"model": "gpt-4o", "cache_hit": null}"#.to_owned(),
+        |flag| format!(r#"{{"model": "gpt-4o", "cache_hit": {flag}}}"#),
+    );
     let payload = run(&encoded, SpendResponse::Absent, &settings()).expect("payload");
     assert_eq!(payload.request_id, expected);
     assert_eq!(
@@ -539,7 +553,7 @@ fn response_usage_overrides_standard_counters_by_presence(
     let text = r#"{"model": "gpt-4o",
         "standard_logging_object": {"total_tokens": 9, "prompt_tokens": 8, "completion_tokens": 7}}"#;
     let message: JsonObject = serde_json::from_str(response).expect("response");
-    let payload = run(&text, SpendResponse::Mapping(&message), &settings()).expect("payload");
+    let payload = run(text, SpendResponse::Mapping(&message), &settings()).expect("payload");
     assert_eq!(payload.total_tokens.unwrap_or(-1), total);
     assert_eq!(payload.prompt_tokens.unwrap_or(-1), prompt);
     assert_eq!(payload.completion_tokens.unwrap_or(-1), completion);
@@ -583,7 +597,7 @@ fn ocr_usage_reads_usage_info() {
     );
     assert_eq!(
         additional.get("pages_processed"),
-        Some(&Json::Number(Number::from(2)))
+        Some(&Json::Number(Number::from(2_i32)))
     );
 }
 
@@ -614,8 +628,8 @@ fn unbilled_management_reads_report_no_usage(
     #[case] origin: Option<&str>,
     #[case] total: i64,
 ) {
-    let metadata = origin.map_or(String::new(), |origin| {
-        format!(r#", "metadata": {{"internal_call_origin": "{origin}"}}"#)
+    let metadata = origin.map_or(String::new(), |origin_value| {
+        format!(r#", "metadata": {{"internal_call_origin": "{origin_value}"}}"#)
     });
     let text = format!(
         r#"{{"model": "m", "call_type": "{call_type}", "litellm_params": {{{metadata}}}}}"#
@@ -830,21 +844,21 @@ fn oauth_and_router_provenance_are_stamped() {
         "litellm_params": {"metadata": {"model_info": {"internal_router_model": true}, "model_group": "group"}}}"#;
     let routed = run(routing, SpendResponse::Absent, &settings()).expect("payload");
     let routed_metadata = metadata_of(&routed);
-    let router = object(
+    let router_fields = object(
         routed_metadata
             .get("router_metadata")
             .expect("router metadata"),
     );
     assert_eq!(
-        router.get("requested_model"),
+        router_fields.get("requested_model"),
         Some(&Json::Text("group".to_owned()))
     );
     assert_eq!(
-        router.get("selected_model"),
+        router_fields.get("selected_model"),
         Some(&Json::Text("claude".to_owned()))
     );
     assert_eq!(
-        router.get("selected_provider"),
+        router_fields.get("selected_provider"),
         Some(&Json::Text("anthropic".to_owned()))
     );
 }

@@ -15,7 +15,7 @@ use betterlite_models::key_digest::hashing::hash_token;
 use betterlite_redact::secret::Redactor;
 use betterlite_redact::structured::Payload;
 
-use super::{SpendCache, SpendResponse, kwargs, metadata_of, object, run, settings};
+use super::{SpendCache as _, SpendResponse, kwargs, metadata_of, object, run, settings};
 
 struct KeylessBackend;
 
