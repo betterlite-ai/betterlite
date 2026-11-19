@@ -454,6 +454,38 @@ async fn long_tool_names_roundtrip_through_the_returned_mapping() {
 }
 
 #[tokio::test]
+async fn the_convenience_wrapper_returns_the_long_tool_request_without_the_map() {
+    let long = "a".repeat(65);
+    let tools = json(&format!(
+        r#"[{{"name":"{long}","input_schema":{{"type":"object"}}}}]"#
+    ));
+    let mut kwargs = Object::new();
+    kwargs.insert("model".to_owned(), Json::Text("gpt-4o".to_owned()));
+    kwargs.insert(
+        "messages".to_owned(),
+        json(r#"[{"role":"user","content":"hi"}]"#),
+    );
+    kwargs.insert("tools".to_owned(), tools);
+    let mut again = kwargs.clone();
+    let (request, _mapping) = wrap(&mut kwargs, &mut Capabilities::new(&[]))
+        .await
+        .expect("the request composes");
+    let declared = Declared;
+    let convenience = adapter()
+        .translate_completion_input_params(
+            &mut again,
+            AdapterSettings::new(&declared),
+            &mut Capabilities::new(&[]),
+        )
+        .await
+        .expect("the convenience wrapper composes");
+    assert_eq!(
+        convenience, request,
+        "the convenience wrapper returns the same request without the map"
+    );
+}
+
+#[tokio::test]
 async fn the_tool_name_mapping_restores_the_response_tool_name() {
     let long = "a".repeat(65);
     let short = format!("{}_635361c4", "a".repeat(55));
