@@ -102,7 +102,7 @@ async fn cascade_carries_spend_past_the_cap_when_rollover_is_enabled() {
     harness.run().await;
     assert_eq!(
         spend_of(&client, "LiteLLM_TeamMembership", "user_id", "user-a").await,
-        Decimal::from(5)
+        Decimal::from(5_i32)
     );
     finish(fixture, store, client).await;
 }

@@ -112,7 +112,7 @@ async fn commit_failure_reports_the_budget_count_and_rolls_the_chunk_back() {
     assert_eq!(reset_at_of(&client, "tier-a").await, Some(past()));
     assert_eq!(
         spend_of(&client, "LiteLLM_TeamMembership", "user_id", "user-a").await,
-        Decimal::from(10)
+        Decimal::from(10_i32)
     );
     finish(fixture, store, client).await;
 }

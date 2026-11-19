@@ -14,7 +14,7 @@ use crate::budget_tier_sweep::tests::support::{
 use crate::postgres_store::session::PostgresStore;
 
 #[tokio::test]
-async fn walk_drops_each_full_page_before_reading_the_next() {
+async fn a_complete_walk_counts_every_customer_and_reaches_the_end() {
     let (fixture, store, client) = schema().await;
     client
         .batch_execute(
@@ -39,8 +39,7 @@ async fn walk_drops_each_full_page_before_reading_the_next() {
             truncated: false,
         }
     );
-    let calls = cache.calls();
-    let sinks: Vec<InvalidatedCache> = calls.iter().map(|call| call.sink).collect();
+    let sinks: Vec<InvalidatedCache> = cache.calls().iter().map(|call| call.sink).collect();
     assert_eq!(
         sinks,
         vec![
@@ -52,10 +51,32 @@ async fn walk_drops_each_full_page_before_reading_the_next() {
             InvalidatedCache::UserApiKeyCache,
         ]
     );
-    let counters: Vec<Vec<String>> = calls
-        .iter()
+    finish(fixture, store, client).await;
+}
+
+#[tokio::test]
+async fn walk_drops_each_full_page_before_reading_the_next() {
+    let (fixture, store, client) = schema().await;
+    client
+        .batch_execute(
+            "INSERT INTO \"LiteLLM_EndUserTable\" (user_id, budget_id, spend) VALUES ('u1', 'tier-a', 10), ('u2', 'tier-a', 10), ('u3', 'tier-a', 10), ('u4', 'tier-a', 10), ('u5', 'tier-a', 10)",
+        )
+        .await
+        .unwrap();
+    let cache = RecordingCache::default();
+    let budget_ids = vec![String::from("tier-a")];
+    let request = EndUserWalkRequest {
+        budget_ids: &budget_ids,
+        default_enduser_budget_id: None,
+        batch_size: 2,
+    };
+    let mut reconnect = CountingReconnect::new(false);
+    invalidate_enduser_caches(&store, &cache, request, Some(&mut reconnect)).await;
+    let counters: Vec<Vec<String>> = cache
+        .calls()
+        .into_iter()
         .filter(|call| call.sink == InvalidatedCache::SpendCounter)
-        .map(|call| call.keys.clone())
+        .map(|call| call.keys)
         .collect();
     assert_eq!(
         counters,
@@ -137,7 +158,7 @@ async fn a_page_read_retries_after_reconnecting() {
 }
 
 #[tokio::test]
-async fn unlinked_customers_join_only_when_the_default_tier_expires() {
+async fn the_default_tier_walk_takes_unlinked_customers() {
     let (fixture, store, client) = schema().await;
     client
         .batch_execute(
@@ -145,23 +166,17 @@ async fn unlinked_customers_join_only_when_the_default_tier_expires() {
         )
         .await
         .unwrap();
+    let cache = RecordingCache::default();
     let budget_ids = vec![String::from("tier-a")];
-    let default_cache = RecordingCache::default();
-    let mut default_reconnect = CountingReconnect::new(false);
-    let default_request = EndUserWalkRequest {
+    let request = EndUserWalkRequest {
         budget_ids: &budget_ids,
         default_enduser_budget_id: Some("tier-a"),
         batch_size: 500,
     };
-    let default_walk = invalidate_enduser_caches(
-        &store,
-        &default_cache,
-        default_request,
-        Some(&mut default_reconnect),
-    )
-    .await;
-    assert_eq!(default_walk.invalidated, 2);
-    let keys: Vec<String> = default_cache
+    let mut reconnect = CountingReconnect::new(false);
+    let walk = invalidate_enduser_caches(&store, &cache, request, Some(&mut reconnect)).await;
+    assert_eq!(walk.invalidated, 2);
+    let keys: Vec<String> = cache
         .calls()
         .into_iter()
         .filter(|call| call.sink == InvalidatedCache::SpendCounter)
@@ -174,21 +189,35 @@ async fn unlinked_customers_join_only_when_the_default_tier_expires() {
             "spend:end_user:unlinked".to_owned(),
         ]
     );
-    let plain_cache = RecordingCache::default();
-    let mut plain_reconnect = CountingReconnect::new(false);
-    let plain_request = EndUserWalkRequest {
+    finish(fixture, store, client).await;
+}
+
+#[tokio::test]
+async fn a_plain_tier_walk_leaves_unlinked_customers_alone() {
+    let (fixture, store, client) = schema().await;
+    client
+        .batch_execute(
+            "INSERT INTO \"LiteLLM_EndUserTable\" (user_id, budget_id, spend) VALUES ('linked', 'tier-a', 10), ('unlinked', NULL, 10), ('other', 'tier-b', 10)",
+        )
+        .await
+        .unwrap();
+    let cache = RecordingCache::default();
+    let budget_ids = vec![String::from("tier-a")];
+    let request = EndUserWalkRequest {
         budget_ids: &budget_ids,
         default_enduser_budget_id: None,
         batch_size: 500,
     };
-    let plain_walk = invalidate_enduser_caches(
-        &store,
-        &plain_cache,
-        plain_request,
-        Some(&mut plain_reconnect),
-    )
-    .await;
-    assert_eq!(plain_walk.invalidated, 1);
+    let mut reconnect = CountingReconnect::new(false);
+    let walk = invalidate_enduser_caches(&store, &cache, request, Some(&mut reconnect)).await;
+    assert_eq!(walk.invalidated, 1);
+    let keys: Vec<String> = cache
+        .calls()
+        .into_iter()
+        .filter(|call| call.sink == InvalidatedCache::SpendCounter)
+        .flat_map(|call| call.keys)
+        .collect();
+    assert_eq!(keys, vec!["spend:end_user:linked".to_owned()]);
     finish(fixture, store, client).await;
 }
 
@@ -210,14 +239,14 @@ async fn the_default_tier_service_walk_reaches_unlinked_customers() {
     );
     harness.default_enduser_budget_id = Some(String::from("tier-a"));
     harness.run().await;
-    let keys: Vec<String> = harness
-        .cache
-        .calls()
-        .into_iter()
-        .filter(|call| call.sink == InvalidatedCache::SpendCounter)
-        .flat_map(|call| call.keys)
-        .collect();
-    assert!(keys.contains(&String::from("spend:end_user:unlinked")));
+    let dropped = harness.cache.calls().iter().any(|call| {
+        call.sink == InvalidatedCache::SpendCounter
+            && call
+                .keys
+                .iter()
+                .any(|key| key.as_str() == "spend:end_user:unlinked")
+    });
+    assert!(dropped);
     assert_eq!(
         spend_of(&client, "LiteLLM_EndUserTable", "user_id", "unlinked").await,
         Decimal::ZERO

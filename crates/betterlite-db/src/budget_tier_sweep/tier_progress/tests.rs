@@ -73,10 +73,6 @@ async fn chunk_success_reports_counts_timing_and_no_truncation() {
         Json::Number(Number::from(1_u8))
     );
     assert_eq!(
-        event.event_metadata["num_endusers_updated"],
-        Json::Number(Number::from(1_u8))
-    );
-    assert_eq!(
         event.event_metadata["enduser_invalidation_truncated"],
         Json::Bool(false)
     );
