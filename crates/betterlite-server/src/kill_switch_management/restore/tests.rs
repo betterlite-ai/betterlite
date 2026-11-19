@@ -65,6 +65,14 @@ fn restoring_a_bearer_marker_over_a_stored_api_key_clears_the_token() {
 }
 
 #[test]
+fn restoring_a_bearer_marker_over_a_stored_password_clears_the_token() {
+    let incoming = config_with_auth(Some(bearer_auth(REDACTED_BY_LITELM)));
+    let existing = config_with_auth(Some(basic_auth("stored-user", "hunter2")));
+    let restored = restore_kill_switch(Some(&incoming), Some(&existing)).expect("a config");
+    assert_eq!(bearer_token(&restored), "");
+}
+
+#[test]
 fn restoring_a_bearer_token_that_is_not_the_marker_keeps_it() {
     let incoming = config_with_auth(Some(bearer_auth("sk-new")));
     let existing = config_with_auth(Some(bearer_auth("sk-stored")));
@@ -108,6 +116,14 @@ fn restoring_a_basic_marker_takes_the_stored_password() {
         basic_parts(&restored),
         (String::from("operator"), String::from("hunter2"))
     );
+}
+
+#[test]
+fn restoring_a_basic_marker_over_a_stored_api_key_clears_the_password() {
+    let incoming = config_with_auth(Some(basic_auth("operator", REDACTED_BY_LITELM)));
+    let existing = config_with_auth(Some(api_key_auth("x-api-key", "key-stored")));
+    let restored = restore_kill_switch(Some(&incoming), Some(&existing)).expect("a config");
+    assert_eq!(basic_parts(&restored).1, "");
 }
 
 #[test]
