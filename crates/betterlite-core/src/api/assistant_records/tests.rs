@@ -11,7 +11,7 @@ use betterlite_foundry::chat::sources::NoSources;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
-use betterlite_models::catalog::ModelCatalog;
+use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
@@ -684,6 +684,44 @@ async fn assistant_create_azure_token(#[case] empty_extra_body: bool) {
     assert!(!bearer_seen[0].headers.contains_key("api-key"));
 }
 
+#[tokio::test]
+async fn assistant_create_async_keeps_the_declared_provider() {
+    let redactor = redactor();
+    let mut settings = bare_settings();
+    settings.azure_api_base = Some(String::from("https://azure.test"));
+    settings.azure_api_version = Some(String::from("2024-02-15-preview"));
+    settings.azure_api_key = Some(SecretString::from("key-settings"));
+    let mut fixture = Fixture::new(settings);
+    fixture.catalog = ModelCatalog::parse(
+        br#"{"command-a-03-2025": {"litellm_provider": "cohere_chat"}}"#,
+        UnknownFields::Reject,
+    )
+    .expect("a catalog");
+    let resolution = fixture.resolution();
+    let service = fixture.service(&resolution, &redactor);
+
+    // get_llm_provider answers openai for this azure cohere model, but the create call keeps the declared provider
+    let request = input(raw(
+        r#"{"provider": "azure", "model": "azure/command-a-03-2025"}"#,
+    ));
+    let result = service
+        .acreate_assistants(&request)
+        .await
+        .expect("answered");
+    assert!(azure_call(&result).is_async);
+    let seen = fixture.transport.seen();
+    assert_eq!(
+        seen[0].url,
+        "https://azure.test/openai/assistants?api-version=2024-02-15-preview"
+    );
+    assert_eq!(seen[0].headers["api-key"], "key-settings");
+    assert!(!seen[0].headers.contains_key("authorization"));
+    assert_eq!(
+        seen[0].body,
+        create_body(raw(r#"{"model": "azure/command-a-03-2025"}"#))
+    );
+}
+
 #[rstest]
 #[case::sync_absent(Entry::Sync, None)]
 #[case::sync_false(Entry::Sync, Some(false))]
@@ -754,7 +792,7 @@ async fn assistant_create_flag_and_failures(#[case] entry: Entry, #[case] flag: 
         "No response returned from 'create_assistants'"
     );
 
-    // the sync entry keeps the body's type/param/code; the async one maps through exception_type to nulls
+    // both entries keep the body's type/param/code: exception_type matches invalid_request_error before the status
     let body_404 = r#"{"error":{"message":"no such assistant","type":"invalid_request_error","param":"assistant_id","code":"missing"}}"#;
     let fixture_404 = Fixture::new(openai_settings("sk-test"))
         .reply(404, body_404)
@@ -780,11 +818,17 @@ async fn assistant_create_flag_and_failures(#[case] entry: Entry, #[case] flag: 
             .acreate_assistants(&not_found_request)
             .await,
     );
-    assert_eq!(asynchronous.class, "NotFoundError");
+    assert_eq!(asynchronous.class, "BadRequestError");
     assert_eq!(asynchronous.status, Some(404));
-    assert_eq!(asynchronous.kind, WireField::Null);
-    assert_eq!(asynchronous.param, WireField::Null);
-    assert_eq!(asynchronous.code, WireField::Null);
+    assert_eq!(
+        asynchronous.kind,
+        WireField::Text(String::from("invalid_request_error"))
+    );
+    assert_eq!(
+        asynchronous.param,
+        WireField::Text(String::from("assistant_id"))
+    );
+    assert_eq!(asynchronous.code, WireField::Text(String::from("missing")));
 
     // a 500 keeps the body's type in sync and uses the internal_server_error literal in async
     let body_500 = r#"{"error":{"message":"boom","type":"server_error","param":null,"code":null}}"#;

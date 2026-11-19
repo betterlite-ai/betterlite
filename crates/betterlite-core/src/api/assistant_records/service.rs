@@ -30,28 +30,33 @@ pub struct AssistantRecords<'context, 'resolution, Transport> {
     pub transport: Arc<Transport>,
 }
 
-// Which façade runs, with the provider it resolved and the flag its SDK call carries.
+// Which façade runs, the provider its call uses, and the provider its failure mapping names.
 struct Selection {
     provider: String,
+    mapped: String,
     entry: Entry,
     flag: Option<bool>,
+}
+
+// The two providers create_assistants branches on; every other declaration is its BadRequestError.
+fn call_kind(provider: &str) -> Option<projection::CallKind> {
+    match provider {
+        "openai" => Some(projection::CallKind::OpenAi),
+        "azure" => Some(projection::CallKind::Azure),
+        _ => None,
+    }
 }
 
 impl<Transport: AssistantsTransport> AssistantRecords<'_, '_, Transport> {
     pub async fn create_assistants(&self, input: &AssistantCreateInput) -> AssistantCreateOutcome {
         let selected = self.selection(input, Entry::Sync)?;
-        let call = self.call(
-            input,
-            &selected.provider,
-            selected.entry,
-            matches!(selected.flag, Some(true)),
-        )?;
+        let call = self.call(input, &selected, matches!(selected.flag, Some(true)))?;
         self.answer(input, &selected, call).await
     }
 
     pub async fn acreate_assistants(&self, input: &AssistantCreateInput) -> AssistantCreateOutcome {
         let selected = self.selection(input, Entry::Async)?;
-        let call = self.call(input, &selected.provider, selected.entry, true)?;
+        let call = self.call(input, &selected, true)?;
         self.answer(input, &selected, call).await
     }
 
@@ -67,7 +72,7 @@ impl<Transport: AssistantsTransport> AssistantRecords<'_, '_, Transport> {
             Err(raised) => Err(Box::new(error::raised(
                 &raised,
                 &input.model,
-                &selected.provider,
+                &selected.mapped,
                 selected.entry,
                 self.redactor,
             ))),
@@ -98,9 +103,10 @@ impl<Transport: AssistantsTransport> AssistantRecords<'_, '_, Transport> {
         entry: Entry,
     ) -> Result<Selection, Box<AssistantCreateFailure>> {
         if entry == Entry::Async {
-            let provider = self.resolved_provider(input)?;
+            let mapped = self.resolved_provider(input)?;
             return Ok(Selection {
-                provider,
+                provider: input.provider.clone(),
+                mapped,
                 entry,
                 flag: Some(true),
             });
@@ -119,6 +125,7 @@ impl<Transport: AssistantsTransport> AssistantRecords<'_, '_, Transport> {
         };
         Ok(Selection {
             provider: input.provider.clone(),
+            mapped: input.provider.clone(),
             entry,
             flag,
         })
@@ -137,17 +144,14 @@ impl<Transport: AssistantsTransport> AssistantRecords<'_, '_, Transport> {
     fn call(
         &self,
         input: &AssistantCreateInput,
-        provider: &str,
-        entry: Entry,
+        selected: &Selection,
         is_async: bool,
     ) -> Result<AssistantCreateCall, Box<AssistantCreateFailure>> {
-        let kind = match provider {
-            "openai" => projection::CallKind::OpenAi,
-            "azure" => projection::CallKind::Azure,
-            _ => return Err(Box::new(error::unsupported(provider))),
+        let Some(kind) = call_kind(selected.provider.as_str()) else {
+            return Err(Box::new(error::unsupported(&selected.provider)));
         };
-        let timeout = projection::timeout(input, provider).map_err(|source| {
-            Box::new(self.failure(input, provider, entry, &source.to_string()))
+        let timeout = projection::timeout(input, &selected.provider).map_err(|source| {
+            Box::new(self.failure(input, &selected.mapped, selected.entry, &source.to_string()))
         })?;
         Ok(projection::call(&projection::CallRequest {
             kind,
