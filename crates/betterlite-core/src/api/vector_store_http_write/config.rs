@@ -89,12 +89,15 @@ impl WriteConfig for OpenAiWriteConfig<'_> {
     ) -> Result<Json, BaseLlmException> {
         let status = response.status().as_u16();
         let headers = header_map(response.headers());
-        let encoded = match transform_response(ReplyKind::Create, response) {
+        let converted = match transform_response(ReplyKind::Create, response) {
             Ok(VectorReply::Record(record)) => serde_json::to_value(&*record),
             Ok(VectorReply::Json(value)) => serde_json::to_value(&value),
             Err(source) => return Err(self.error_class(&source.to_string(), status, headers)),
-        }
-        .map_err(|source| self.error_class(&source.to_string(), status, headers))?;
+        };
+        let encoded = match converted {
+            Ok(encoded) => encoded,
+            Err(source) => return Err(self.error_class(&source.to_string(), status, headers)),
+        };
         serde_json::from_value(encoded)
             .map_err(|source| self.error_class(&source.to_string(), status, headers))
     }
