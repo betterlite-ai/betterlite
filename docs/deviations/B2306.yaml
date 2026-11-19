@@ -1,0 +1,21 @@
+task: B2306
+deviations:
+  - what: >-
+      A deployment index that points past the end of the model list fails with the typed InvalidRow,
+      carrying the index, where LiteLLM indexes model_list at that position and raises IndexError.
+    why: >-
+      An index that points at no row is a damaged index, and no working setup can rely on the class of
+      that failure. The typed error still refuses the lookup instead of answering with a wrong row, and
+      the lookup itself is unchanged for every index a build produces.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10339-L10344
+  - what: >-
+      A first wildcard candidate that was registered without the deployment row that served it yields
+      None; later candidates of the same pattern are not tried.
+    why: >-
+      LiteLLM's pattern map stores the deployment dict beside the pattern, so its potential[0] is always
+      a dict and the answer is either a Deployment or None. betterlite's pattern catalog records the row
+      at the push, and a hand-built or partially rebuilt catalog can hold a candidate without one; the
+      None matches what LiteLLM answers for a first value it cannot convert, and the task text requires
+      no fallback to the next candidate. No configured setup reaches the state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10592-L10608
+kept_bugs: []
