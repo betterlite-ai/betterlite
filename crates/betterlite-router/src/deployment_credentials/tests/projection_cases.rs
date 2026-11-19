@@ -161,47 +161,39 @@ fn explicit_provider_restored() {
     );
 }
 
+fn projection_error(field: &str, value: Json) -> CredentialError {
+    let catalog = catalog_of(vec![named(&[
+        ("model", text("openai/gpt-4o")),
+        (field, value),
+    ])]);
+    deployment_credentials(&catalog, "d1").unwrap_err()
+}
+
 #[test]
 fn wrong_types_name_the_field() {
-    let list_text = catalog_of(vec![named(&[
-        ("model", text("openai/gpt-4o")),
-        ("aws_session_tags", text("team")),
-    ])]);
     assert!(matches!(
-        deployment_credentials(&list_text, "d1").unwrap_err(),
+        projection_error("aws_session_tags", text("team")),
         CredentialError::FieldType {
             field,
             expected: "a list"
         } if field == "aws_session_tags"
     ));
-    let text_object = catalog_of(vec![named(&[
-        ("model", text("openai/gpt-4o")),
-        ("api_key", Json::Object(JsonObject::new())),
-    ])]);
     assert!(matches!(
-        deployment_credentials(&text_object, "d1").unwrap_err(),
+        projection_error("api_key", Json::Object(JsonObject::new())),
         CredentialError::FieldType {
             field,
             expected: "a string or a list"
         } if field == "api_key"
     ));
-    let text_list = catalog_of(vec![named(&[
-        ("model", text("openai/gpt-4o")),
-        ("api_base", Json::List(Vec::new())),
-    ])]);
     assert!(matches!(
-        deployment_credentials(&text_list, "d1").unwrap_err(),
+        projection_error("api_base", Json::List(Vec::new())),
         CredentialError::FieldType {
             field,
             expected: "a string"
         } if field == "api_base"
     ));
-    let text_number = catalog_of(vec![named(&[
-        ("model", text("openai/gpt-4o")),
-        ("api_version", Json::Number(serde_json::Number::from(1_i64))),
-    ])]);
     assert!(matches!(
-        deployment_credentials(&text_number, "d1").unwrap_err(),
+        projection_error("api_version", Json::Number(serde_json::Number::from(1_i64))),
         CredentialError::FieldType {
             field,
             expected: "a string, an object or a list"
