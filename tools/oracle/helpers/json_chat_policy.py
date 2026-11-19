@@ -91,7 +91,7 @@ def identity_value(call: Call) -> JsonObject:
 
 def supported_value(call: Call) -> JsonValue:
     config: ChatConfig = FACTORY(provider_for(call["model"], None))()
-    return list(config.get_supported_openai_params(call["model"].split("/", 1)[1]))
+    return list(config.get_supported_openai_params(call["model"].split("/", 1)[1]))  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/dynamic_config.py#L95-L125
 
 
 def params_value(call: Call) -> JsonValue:
@@ -100,7 +100,7 @@ def params_value(call: Call) -> JsonValue:
     optional: JsonObject | None = call.get("optional")
     if non_default is None or optional is None:
         raise ValueError("a params call needs non_default and optional")
-    return config.map_openai_params(
+    return config.map_openai_params(  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/dynamic_config.py#L127-L167
         non_default_params=non_default,
         optional_params=optional,
         model=call["model"].split("/", 1)[1],
@@ -110,7 +110,7 @@ def params_value(call: Call) -> JsonValue:
 
 def url_value(call: Call) -> JsonValue:
     config: ChatConfig = FACTORY(provider_for(call["model"], None))()
-    return config.get_complete_url(
+    return config.get_complete_url(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/dynamic_config.py#L74-L93
         api_base=call.get("api_base"), api_key=None,
         model=call["model"].split("/", 1)[1],
         optional_params={}, litellm_params={},
