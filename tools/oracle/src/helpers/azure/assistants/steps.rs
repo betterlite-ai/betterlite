@@ -34,16 +34,20 @@ pub(super) fn run(input: &Input) -> HelperResult {
         .enable_time()
         .build()
         .map_err(|error| reports::invalid_input(error.to_string()))?;
-    let steps = match input {
-        Input::RunPoll(steps)
-        | Input::RunStream(steps)
-        | Input::RunInstructionsTools(steps)
-        | Input::RunFailure(steps)
-        | Input::RunDispatch(steps)
-        | Input::InstructionsToolsOverrides(steps)
-        | Input::StreamEventHandler(steps)
-        | Input::AssistantsBetaDefault(steps) => steps,
-    };
+    let steps = [
+        input.run_poll.as_deref(),
+        input.run_stream.as_deref(),
+        input.run_instructions_tools.as_deref(),
+        input.run_failure.as_deref(),
+        input.run_dispatch.as_deref(),
+        input.instructions_tools_overrides.as_deref(),
+        input.stream_event_handler.as_deref(),
+        input.assistants_beta_default.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .next()
+    .ok_or_else(|| reports::invalid_input("expected one azure assistants variant".to_owned()))?;
     let outcomes = steps
         .iter()
         .map(|step| one(&runtime, step))
@@ -64,7 +68,7 @@ fn one(runtime: &Runtime, step: &Step) -> HelperResult {
     let supplied = step
         .supplied
         .map(|chosen| supplied_client(chosen.kind, &harness.recorder));
-    let attached: Option<Arc<dyn RunEventHandler>> = recording
+    let attached = recording
         .as_ref()
         .map(|recorded| -> Arc<dyn RunEventHandler> { Arc::<RecordingHandler>::clone(recorded) });
     match runtime.block_on(harness.runs().run(

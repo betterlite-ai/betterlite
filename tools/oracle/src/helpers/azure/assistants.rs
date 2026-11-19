@@ -100,17 +100,18 @@ pub(crate) struct Step {
     replies: Vec<Reply>,
 }
 
+// A case names exactly one variant, and the steps it replays are in that variant's list.
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum Input {
-    RunPoll(Vec<Step>),
-    RunStream(Vec<Step>),
-    RunInstructionsTools(Vec<Step>),
-    RunFailure(Vec<Step>),
-    RunDispatch(Vec<Step>),
-    InstructionsToolsOverrides(Vec<Step>),
-    StreamEventHandler(Vec<Step>),
-    AssistantsBetaDefault(Vec<Step>),
+#[serde(deny_unknown_fields)]
+pub(crate) struct Input {
+    run_poll: Option<Vec<Step>>,
+    run_stream: Option<Vec<Step>>,
+    run_instructions_tools: Option<Vec<Step>>,
+    run_failure: Option<Vec<Step>>,
+    run_dispatch: Option<Vec<Step>>,
+    instructions_tools_overrides: Option<Vec<Step>>,
+    stream_event_handler: Option<Vec<Step>>,
+    assistants_beta_default: Option<Vec<Step>>,
 }
 
 pub(crate) struct Op;
