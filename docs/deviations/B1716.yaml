@@ -1,0 +1,15 @@
+task: B1716
+deviations:
+  - what: >-
+      A request whose completion_start_time is present and null stores a null
+      completionStartTime row, where LiteLLM's _ensure_datetime_utc call on None raises
+      AttributeError and the spend row is never written.
+    why: >-
+      SpendLogsPayload declares completionStartTime datetime | str | None, so null is a value
+      the record admits; the crash comes from _ensure_datetime_utc dereferencing the optional
+      without a guard, and a setup that streams nothing cannot rely on losing the whole row.
+      The persisted null is the recorded answer, and
+      spend::payload::tests::completion_start_times_default_to_the_end pins both the absent
+      and the null case.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L790
+kept_bugs: []
