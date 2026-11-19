@@ -134,6 +134,24 @@ fn perform(
     }
 }
 
+fn client_settings(step: &Step) -> ClientSettings {
+    ClientSettings {
+        api_key: step.args.api_key.clone().map(SecretString::from),
+        api_base: step.args.api_base.clone(),
+        api_version: step.args.api_version.clone(),
+    }
+}
+
+fn supplied(step: &Step) -> Option<SuppliedClient> {
+    step.client
+        .as_deref()
+        .and_then(supplied_kind)
+        .map(|kind| SuppliedClient {
+            kind,
+            custom_query: None,
+        })
+}
+
 pub(crate) fn run_step(runtime: &Runtime, step: &Step) -> Value {
     let calls = Log::default();
     let materializer = Materializer {
@@ -147,21 +165,10 @@ pub(crate) fn run_step(runtime: &Runtime, step: &Step) -> Value {
     let mut cache = Cache;
     let mut refresh = RefreshProviderCache::new(&sources);
     let connection = Connection {
-        settings: ClientSettings {
-            api_key: step.args.api_key.clone().map(SecretString::from),
-            api_base: step.args.api_base.clone(),
-            api_version: step.args.api_version.clone(),
-        },
+        settings: client_settings(step),
         params: step.params.clone().unwrap_or_default(),
         provider: None,
-        supplied: step
-            .client
-            .as_deref()
-            .and_then(supplied_kind)
-            .map(|kind| SuppliedClient {
-                kind,
-                custom_query: None,
-            }),
+        supplied: supplied(step),
         is_async: step.is_async,
         endpoints: &endpoints,
         environment: &environment,

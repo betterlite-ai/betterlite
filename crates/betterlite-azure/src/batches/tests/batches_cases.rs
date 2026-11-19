@@ -101,19 +101,7 @@ fn case_3_resource_api_version() {
     assert_eq!(azure.timeout, None);
     assert_eq!(azure.max_retries, Some(2));
 
-    for version in ["preview", "latest", "v1"] {
-        let v1 =
-            project(&versioned(step(Action::List), Some(version))).expect("the v1 client projects");
-        assert_eq!(v1.class, "OpenAI");
-        assert_eq!(v1.api_version, None);
-        assert_eq!(
-            v1.base_url.as_deref(),
-            Some("https://fixture.test/openai/v1/")
-        );
-    }
-    let stream = project(&async_(versioned(step(Action::List), Some("v1"))))
-        .expect("the async v1 client projects");
-    assert_eq!(stream.class, "AsyncOpenAI");
+    v1_api_versions();
 
     let default =
         project(&versioned(step(Action::List), None)).expect("the default version projects");
@@ -131,6 +119,23 @@ fn case_3_resource_api_version() {
         Some("https://fixture.test/openai/deployments/d/")
     );
     assert_eq!(deployment.api_version.as_deref(), Some("2024-10-21"));
+}
+
+// preview, latest and v1 all build the v1 OpenAI client, and the async request picks the async class
+fn v1_api_versions() {
+    for version in ["preview", "latest", "v1"] {
+        let v1 =
+            project(&versioned(step(Action::List), Some(version))).expect("the v1 client projects");
+        assert_eq!(v1.class, "OpenAI");
+        assert_eq!(v1.api_version, None);
+        assert_eq!(
+            v1.base_url.as_deref(),
+            Some("https://fixture.test/openai/v1/")
+        );
+    }
+    let stream = project(&async_(versioned(step(Action::List), Some("v1"))))
+        .expect("the async v1 client projects");
+    assert_eq!(stream.class, "AsyncOpenAI");
 }
 
 // List always passes the cursor pair on, as None when the caller gave none, and keeps the SDK page
@@ -256,7 +261,11 @@ fn case_7_cancel_sync_client_type() {
         assert_eq!(seen.calls.len(), 1);
     }
 
-    // a sync create, retrieve or list handed an async client sends the request anyway
+    sync_calls_hand_the_client_on();
+}
+
+// a sync create, retrieve or list handed an async client sends the request anyway
+fn sync_calls_hand_the_client_on() {
     let create = supplying(create_step(), OutcomeKind::AsyncOpenAi);
     let seen = observe(&create);
     assert_eq!(seen.raised, None);
@@ -309,7 +318,11 @@ fn case_8_sdk_error_passthrough() {
         ))
     );
 
-    // timeout, max_retries and the ad token reach the client from litellm_params alone
+    params_reach_the_client();
+}
+
+// timeout, max_retries and the ad token reach the client from litellm_params alone
+fn params_reach_the_client() {
     let tuned = with_params(
         create_step(),
         r#"{"timeout":30.0,"max_retries":5,"azure_ad_token":"ad-token"}"#,

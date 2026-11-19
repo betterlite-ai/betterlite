@@ -62,6 +62,16 @@ struct Summary {
     version: Option<String>,
 }
 
+const fn class_name(kind: ClientKind) -> &'static str {
+    match kind {
+        ClientKind::AzureOpenAi => "AzureOpenAI",
+        ClientKind::AsyncAzureOpenAi => "AsyncAzureOpenAI",
+        ClientKind::OpenAi => "OpenAI",
+        ClientKind::AsyncOpenAi => "AsyncOpenAI",
+        ClientKind::Other => "Other",
+    }
+}
+
 // The client the case can read off the built SDK: family, key, defaults and the api-version it would send
 pub(crate) fn projection(outcome: &ClientOutcome<'_>) -> Value {
     let mut summary = Summary::default();
@@ -87,15 +97,8 @@ pub(crate) fn projection(outcome: &ClientOutcome<'_>) -> Value {
         }
         None => {}
     }
-    let class = match outcome.kind {
-        ClientKind::AzureOpenAi => "AzureOpenAI",
-        ClientKind::AsyncAzureOpenAi => "AsyncAzureOpenAI",
-        ClientKind::OpenAi => "OpenAI",
-        ClientKind::AsyncOpenAi => "AsyncOpenAI",
-        ClientKind::Other => "Other",
-    };
     json!({
-        "class": class,
+        "class": class_name(outcome.kind),
         "api_key": summary.key,
         "max_retries": summary.retries,
         "organization": Value::Null,
