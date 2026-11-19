@@ -24,7 +24,7 @@ pub(super) async fn deployment_or_answer(
             let route = route_endpoint("atext_completion").unwrap_or("atext_completion");
             let deployment = pick_deployment(&shared_executor, text)
                 .map_err(|_error| ProxyModelNotFoundError::new(route, text, true))?;
-            Ok(deployment.clone())
+            Ok::<ChatDeployment, ProxyModelNotFoundError>(deployment.clone())
         }
     };
     let read_through = state.model_read_through.read_through.as_deref();

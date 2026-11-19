@@ -30,7 +30,7 @@ pub(super) async fn deployment_or_answer(
             let endpoint = route_endpoint("aembedding").unwrap_or("aembedding");
             let deployment = pick_deployment(&shared_executor, text)
                 .map_err(|_error| ProxyModelNotFoundError::new(endpoint, text, true))?;
-            Ok(deployment.clone())
+            Ok::<ChatDeployment, ProxyModelNotFoundError>(deployment.clone())
         }
     };
     let read_through = state.read_through.as_deref();
