@@ -108,13 +108,14 @@ fn read_actor(user_api_key_dict: &UserAPIKeyAuth) -> Result<ManagementActor, ser
     serde_json::from_value(serde_json::to_value(user_api_key_dict)?)
 }
 
-// LiteLLM's `user_id or "Unknown"` and `user_role or "Unknown"`: absent and empty both read as unknown
+// LiteLLM's `user_id or "Unknown"` and `user_role or "Unknown"` for an absent actor; an explicit
+// empty string is used as given, since docs/compatibility.md does not copy Python truthiness
 fn key_event(actor: &ManagementActor, request_kwargs: JsonObject) -> VirtualKeyEvent {
     VirtualKeyEvent {
-        created_by_user_id: match actor.user_id.as_deref() {
-            None | Some("") => UNKNOWN_ACTOR.to_owned(),
-            Some(user_id) => user_id.to_owned(),
-        },
+        created_by_user_id: actor
+            .user_id
+            .clone()
+            .unwrap_or_else(|| UNKNOWN_ACTOR.to_owned()),
         created_by_user_role: actor.user_role.map_or_else(
             || UNKNOWN_ACTOR.to_owned(),
             |user_role| user_role.to_string(),

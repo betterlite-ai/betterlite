@@ -82,21 +82,30 @@ async fn absent_logger_sink_unknown_function() {
 async fn unknown_actor_defaults() {
     let transport = RecordingAlertTransport::default();
     let absent = key_fixture("{}");
-    let empty = key_fixture(r#"{"user_id": "", "key_alias": null}"#);
     let nulled = key_fixture(r#"{"user_id": null, "user_role": null}"#);
-    for key in [&absent, &empty, &nulled] {
+    for key in [&absent, &nulled] {
         let sent =
             send_management_endpoint_alert(Some(&transport), "new_team", JsonObject::new(), key)
                 .await;
         assert!(sent.is_ok());
     }
     let sent = transport.alerts.entries();
-    assert_eq!(sent.len(), 3);
+    assert_eq!(sent.len(), 2);
     for alert in &sent {
         assert_eq!(alert.created_by_user_id, "Unknown");
         assert_eq!(alert.created_by_user_role, "Unknown");
         assert_eq!(alert.created_by_key_alias, None);
     }
+    // an explicit empty user id and alias are used as given, not read as unknown
+    let empty = key_fixture(r#"{"user_id": "", "key_alias": ""}"#);
+    let sent =
+        send_management_endpoint_alert(Some(&transport), "new_team", JsonObject::new(), &empty)
+            .await;
+    assert!(sent.is_ok());
+    let sent = transport.alerts.entries();
+    assert_eq!(sent[2].created_by_user_id, "");
+    assert_eq!(sent[2].created_by_user_role, "Unknown");
+    assert_eq!(sent[2].created_by_key_alias.as_deref(), Some(""));
 }
 
 #[tokio::test]
