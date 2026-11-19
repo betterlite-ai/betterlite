@@ -38,6 +38,15 @@ deviations:
       request is cut where the SDK would keep reading.
     link: >-
       https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L705-L757
+  - what: >-
+      With stream set and an azure_ad_token_provider, the provider is asked for its token while the stream value
+      is built, before the caller opens it. LiteLLM returns the SDK's manager and the SDK asks the provider when
+      the manager is entered, so a failing provider surfaces one step later.
+    why: >-
+      RunStream in betterlite-openai, outside this task's scope.paths, carries a fixed outbound request whose
+      headers are built before the manager is returned; deferring the provider call needs a lazy request there.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L732-L757
 kept_bugs:
   - what: >-
       Only the literal True selects the async and streaming branches: run_thread tests arun_thread is True and
