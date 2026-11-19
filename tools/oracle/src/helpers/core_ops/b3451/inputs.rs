@@ -7,7 +7,7 @@ use betterlite_core::rag::ingestion::config::IngestionOptions;
 use betterlite_core::rag::ingestion::ocr::OcrOperation;
 use betterlite_core::rag::ingestion::upload::UrlFetch;
 use betterlite_core::rag::ingestion::{IngestionPorts, IngestionState};
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use serde::Deserialize;
 use serde_json::Value;
 use serde_json::value::{RawValue, to_raw_value};
@@ -51,11 +51,11 @@ pub(crate) struct FetchInput {
 fn raw_map(
     entries: Option<BTreeMap<String, Value>>,
 ) -> Result<Option<BTreeMap<String, Box<RawValue>>>, Box<HelperError>> {
-    let Some(entries) = entries else {
+    let Some(raw_entries) = entries else {
         return Ok(None);
     };
     let mut raws: BTreeMap<String, Box<RawValue>> = BTreeMap::new();
-    for (key, value) in entries {
+    for (key, value) in raw_entries {
         raws.insert(key, to_raw_value(&value)?);
     }
     Ok(Some(raws))

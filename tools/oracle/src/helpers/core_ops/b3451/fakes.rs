@@ -8,7 +8,7 @@ use betterlite_config::credentials::CredentialValues;
 use betterlite_core::rag::ingestion::credentials::{CredentialLookup, CredentialLookupError};
 use betterlite_core::rag::ingestion::ocr::{OcrError, OcrOperation, OcrRequest, OcrResponse};
 use betterlite_core::rag::ingestion::upload::{FetchedResponse, UrlFetch, UrlFetchError};
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use http::HeaderMap;
 use http::HeaderValue;
 use http::header::CONTENT_TYPE;

@@ -64,19 +64,35 @@ impl Helper for Op {
                 file_url,
                 file_id,
                 fetch,
-            } => upload(options, file_data, file_url, file_id, fetch),
+            } => upload(
+                options,
+                file_data.as_ref(),
+                file_url.as_deref(),
+                file_id.as_deref(),
+                fetch.as_ref(),
+            ),
             Input::Ocr {
                 options,
                 file_content_base64,
                 content_type,
                 pages,
-            } => ocr(options, file_content_base64, content_type, pages),
+            } => ocr(
+                options,
+                file_content_base64.as_deref(),
+                content_type.as_deref(),
+                pages,
+            ),
             Input::Chunk {
                 options,
                 text,
                 file_content_base64,
                 ocr_was_used,
-            } => chunk(options, text, file_content_base64, *ocr_was_used),
+            } => chunk(
+                options,
+                text.as_deref(),
+                file_content_base64.as_deref(),
+                *ocr_was_used,
+            ),
         }
     }
 }

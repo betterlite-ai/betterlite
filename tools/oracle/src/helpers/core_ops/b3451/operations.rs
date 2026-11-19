@@ -6,7 +6,7 @@ use betterlite_core::rag::ingestion::IngestionState;
 use betterlite_core::rag::ingestion::config::VectorStoreConfig;
 use betterlite_core::rag::ingestion::ocr::{OcrDocument, OcrOperation};
 use betterlite_core::rag::ingestion::upload::FileData;
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
 use serde_json::{Map, Value, json};
 use tokio::runtime::Builder;
@@ -41,12 +41,12 @@ pub(super) fn init(
 
 pub(super) fn upload(
     options_input: &OptionsInput,
-    file_data: &Option<FileDataInput>,
-    file_url: &Option<String>,
-    file_id: &Option<String>,
-    fetch: &Option<FetchInput>,
+    file_data: Option<&FileDataInput>,
+    file_url: Option<&str>,
+    file_id: Option<&str>,
+    fetch: Option<&FetchInput>,
 ) -> HelperResult {
-    let recorder = Arc::new(RecordingFetch::answer(fetch.as_ref())?);
+    let recorder = Arc::new(RecordingFetch::answer(fetch)?);
     let built = build(
         options_input,
         &[],
@@ -63,7 +63,7 @@ pub(super) fn upload(
     };
     let runtime = Builder::new_current_thread().build().or_value_error()?;
     let uploaded = runtime
-        .block_on(built.upload(data, file_url.as_deref(), file_id.as_deref()))
+        .block_on(built.upload(data, file_url, file_id))
         .or_value_error()?;
     Ok(json!({
         "filename": uploaded.filename,
@@ -77,8 +77,8 @@ pub(super) fn upload(
 
 pub(super) fn ocr(
     options_input: &OptionsInput,
-    file_content_base64: &Option<String>,
-    content_type: &Option<String>,
+    file_content_base64: Option<&str>,
+    content_type: Option<&str>,
     pages: &[String],
 ) -> HelperResult {
     let recorder = Arc::new(RecordingOcr::with_pages(pages));
@@ -95,7 +95,7 @@ pub(super) fn ocr(
     };
     let runtime = Builder::new_current_thread().build().or_value_error()?;
     let text = runtime
-        .block_on(built.ocr(content.as_deref(), content_type.as_deref()))
+        .block_on(built.ocr(content.as_deref(), content_type))
         .or_value_error()?;
     let calls: Vec<Value> = recorder
         .calls
@@ -114,8 +114,8 @@ pub(super) fn ocr(
 
 pub(super) fn chunk(
     options_input: &OptionsInput,
-    text: &Option<String>,
-    file_content_base64: &Option<String>,
+    text: Option<&str>,
+    file_content_base64: Option<&str>,
     ocr_was_used: bool,
 ) -> HelperResult {
     let built = build(
@@ -129,7 +129,7 @@ pub(super) fn chunk(
         None => None,
     };
     let chunks = built
-        .chunk(text.as_deref(), content.as_deref(), ocr_was_used)
+        .chunk(text, content.as_deref(), ocr_was_used)
         .or_value_error()?;
     Ok(json!({ "chunks": chunks }))
 }
