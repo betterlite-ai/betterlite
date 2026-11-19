@@ -1,0 +1,71 @@
+task: B8588
+deviations:
+  - what: >-
+      Validation failure details carry type, loc and msg only. pydantic's input, url and ctx keys
+      are left out of the identity map body errors and the report query errors.
+    why: >-
+      input echoes the submitted value, and the other ROI Calculator endpoints answer with the same
+      three fields. type and loc keep the part a client branches on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/roi_calculator.py#L427-L435
+  - what: >-
+      An identity map field with the wrong JSON type fails with type value_error and serde's message
+      (invalid type: string "soon", expected a string) instead of pydantic's string_type and its
+      "Input should be a valid string" text. The status and the body.<field> loc are the same.
+    why: >-
+      The body is decoded through serde into the route's own IdentityBody, and docs/compatibility.md
+      accepts a value of the wrong type as an error that names the field. pydantic's per-type codes
+      describe Python's runtime, which the Rust types do not have.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/roi_calculator.py#L427-L435
+  - what: >-
+      The admin check and the database check run before the body is decoded. A caller without proxy
+      admin gets 403, and a proxy with no database gets 500, for a malformed JSON body or an empty
+      body where LiteLLM's FastAPI parses the body first and answers 422 json_invalid or missing.
+    why: >-
+      FastAPI parses the request body before it resolves the auth and repository dependencies.
+      Checking the caller before reading untrusted input is the order every other betterlite route
+      uses, and a caller that may not write cannot rely on the validation answer for a request it is
+      refused.
+    link: ""
+  - what: >-
+      Request JSON that Python's json module accepts but RFC 8259 does not is refused: the NaN and
+      Infinity literals answer 422 json_invalid at body, and a body that repeats a field is
+      rejected instead of keeping the last value.
+    why: >-
+      serde_json follows the standard for the literals, and serde's struct decoder rejects a
+      repeated field. docs/compatibility.md keeps standard JSON on the wire; Python parses NaN and
+      keeps the last duplicate key.
+    link: ""
+  - what: >-
+      An identity map body with more than one invalid field reports the first error only, while
+      pydantic's 422 detail carries one entry for every invalid field.
+    why: >-
+      serde stops at the first field it cannot decode, and the login normalization runs after the
+      body decodes, where pydantic validates every field and collects the errors.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/roi_calculator.py#L427-L435
+  - what: >-
+      A repeated mode query key answers 400 from the query extractor, where FastAPI's query map
+      keeps the last value and validates that one.
+    why: >-
+      The query is deserialized into the typed struct, and a repeated key is a serde duplicate-field
+      error. Unknown query keys are ignored, and a single mode value answers the same 422
+      literal_error pydantic gives.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L481-L501
+  - what: >-
+      next_update adds update_interval_minutes as exact rust_decimal microseconds rounded half to
+      even, where LiteLLM adds a float timedelta. Every interval the settings validation accepts
+      gives the same instant; a fractional value whose exact product sits on a half microsecond can
+      land one microsecond away from Python's float arithmetic.
+    why: >-
+      Rule money-is-decimal denies float arithmetic, and the repo converts intervals the same way
+      across the ROI Calculator. Both sides round to the nearest microsecond.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L545-L559
+  - what: >-
+      A sync store call that fails on a database outage answers 500 with the internal error
+      envelope, where LiteLLM's unhandled exception handler detects the prisma connection error in
+      the chain and answers 503 no_db_connection.
+    why: >-
+      The outage classifier in roi_settings::outage is private and typed for ConfigError, and the
+      sync store reports betterlite-db's DbError. Widening that helper is outside this task's
+      files, so every store failure takes the generic 500 path and is logged at error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2049-L2080
+kept_bugs: []
