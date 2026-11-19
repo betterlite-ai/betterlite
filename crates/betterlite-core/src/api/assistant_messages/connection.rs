@@ -136,16 +136,25 @@ pub(crate) fn resolve_timeout(
     params: &MessageParams,
     provider: &str,
 ) -> Result<FineTuningTimeout, TimeoutError> {
-    match configured(params.timeout.as_ref()) {
-        Configured::Structured(timeout) => {
-            resolve_fine_tuning_timeout(None, provider, Some(timeout))
+    match params.timeout.as_ref() {
+        Some(MessageTimeout::Structured(timeout)) => {
+            resolve_fine_tuning_timeout(None, provider, Some(*timeout))
         }
-        Configured::Plain(value) => resolve_fine_tuning_timeout(Some(value), provider, None),
+        Some(MessageTimeout::Plain(value)) if !falls_through(value) => {
+            resolve_fine_tuning_timeout(Some(value), provider, None)
+        }
         // optional_params.timeout or request_timeout or 600, where a zero or an empty value falls through
-        Configured::Unset => Ok(FineTuningTimeout::Seconds(request_timeout(
+        None | Some(MessageTimeout::Plain(_)) => Ok(FineTuningTimeout::Seconds(request_timeout(
             None,
             params.request_timeout,
         )?)),
+    }
+}
+
+fn falls_through(timeout: &TimeoutValue) -> bool {
+    match timeout {
+        TimeoutValue::Number(seconds) => *seconds == 0.0_f64,
+        TimeoutValue::String(text) => text.is_empty(),
     }
 }
 
@@ -159,27 +168,6 @@ pub(crate) fn deadline_of(timeout: &FineTuningTimeout) -> Result<Duration, Setup
             .unwrap_or(600.0_f64),
     };
     Duration::try_from_secs_f64(seconds).map_err(|source| SetupError::Deadline { seconds, source })
-}
-
-enum Configured<'value> {
-    Unset,
-    Plain(&'value TimeoutValue),
-    Structured(StructuredTimeout),
-}
-
-fn configured(timeout: Option<&MessageTimeout>) -> Configured<'_> {
-    match timeout {
-        Some(MessageTimeout::Structured(structured)) => Configured::Structured(*structured),
-        Some(MessageTimeout::Plain(value @ TimeoutValue::Number(seconds)))
-            if *seconds != 0.0_f64 =>
-        {
-            Configured::Plain(value)
-        }
-        Some(MessageTimeout::Plain(value @ TimeoutValue::String(text))) if !text.is_empty() => {
-            Configured::Plain(value)
-        }
-        None | Some(MessageTimeout::Plain(_)) => Configured::Unset,
-    }
 }
 
 impl From<&MessageParams> for ResourceSdkRequestOptions {

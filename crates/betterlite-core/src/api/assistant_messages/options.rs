@@ -65,8 +65,8 @@ pub enum OptionError {
     )]
     AttachmentsNotList { kind: String, raw: String },
     // Python's own TypeError for an entry that `"file_id" in item` or `item["file_id"]` rejects
-    #[error("{message}")]
-    MalformedAttachment { message: String },
+    #[error("an attachment entry is not an object")]
+    MalformedAttachment,
 }
 
 impl OptionError {
@@ -154,12 +154,7 @@ fn params_error(error: ParamsError, attachments: Option<&Json>) -> OptionError {
             kind: attachments.map_or_else(|| "<class 'NoneType'>".to_owned(), python_type_name),
             raw: attachments.map_or_else(String::new, python_str),
         },
-        ParamsError::MalformedAttachment => OptionError::MalformedAttachment {
-            message: attachments.map_or_else(
-                || "an attachment entry is not an object".to_owned(),
-                malformed_message,
-            ),
-        },
+        ParamsError::MalformedAttachment => OptionError::MalformedAttachment,
     }
 }
 
@@ -169,33 +164,6 @@ fn python_str(value: &Json) -> String {
         Json::Text(text) => text.clone(),
         _ => python_repr(value),
     }
-}
-
-// the first entry the pinned mapper rejects, and the TypeError Python raises for it
-fn malformed_message(value: &Json) -> String {
-    let Json::List(items) = value else {
-        return "an attachment entry is not an object".to_owned();
-    };
-    for item in items {
-        match item {
-            Json::Object(_) => {}
-            Json::Text(text) if text.contains("file_id") => {
-                return "string indices must be integers, not 'str'".to_owned();
-            }
-            Json::List(inner)
-                if inner
-                    .iter()
-                    .any(|member| matches!(member, Json::Text(text) if text == "file_id")) =>
-            {
-                return "list indices must be integers or slices, not str".to_owned();
-            }
-            Json::Text(_) | Json::List(_) => {}
-            Json::Null | Json::Bool(_) | Json::Number(_) => {
-                return format!("argument of type '{}' is not iterable", python_type(item));
-            }
-        }
-    }
-    "an attachment entry is not an object".to_owned()
 }
 
 // The formatter writes into a Vec, so its io error branch is unreachable.

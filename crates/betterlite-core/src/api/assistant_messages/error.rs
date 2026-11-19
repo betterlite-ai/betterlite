@@ -55,8 +55,8 @@ impl MessageError {
     #[must_use]
     pub fn status(&self) -> Option<u16> {
         match self {
-            Self::OpenAi(ThreadsError::Status { status, .. }) => Some(*status),
-            Self::Azure(MessagesError::Threads(ThreadsError::Status { status, .. })) => {
+            Self::OpenAi(ThreadsError::Status { status, .. })
+            | Self::Azure(MessagesError::Threads(ThreadsError::Status { status, .. })) => {
                 Some(*status)
             }
             Self::Setup(_) | Self::OpenAi(_) | Self::Azure(_) | Self::UnexpectedReply { .. } => {
@@ -68,8 +68,8 @@ impl MessageError {
     #[must_use]
     pub fn body(&self) -> Option<&[u8]> {
         match self {
-            Self::OpenAi(ThreadsError::Status { body, .. }) => Some(body),
-            Self::Azure(MessagesError::Threads(ThreadsError::Status { body, .. })) => Some(body),
+            Self::OpenAi(ThreadsError::Status { body, .. })
+            | Self::Azure(MessagesError::Threads(ThreadsError::Status { body, .. })) => Some(body),
             Self::Setup(_) | Self::OpenAi(_) | Self::Azure(_) | Self::UnexpectedReply { .. } => {
                 None
             }
