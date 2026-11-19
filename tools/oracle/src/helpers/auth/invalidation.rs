@@ -176,10 +176,6 @@ impl SpendCounterCache for Store {
         Ok(())
     }
 
-    fn delete_memory(&self, _key: &str) -> Result<(), BackendError> {
-        Ok(())
-    }
-
     async fn set_redis(
         &self,
         _key: &str,

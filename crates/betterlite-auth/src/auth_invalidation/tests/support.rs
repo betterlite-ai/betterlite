@@ -2,9 +2,12 @@ use std::collections::BTreeMap;
 use std::future::pending;
 use std::io;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_cache::backend::BackendError;
+use betterlite_cache::backend::memory::local::LocalMemoryOps;
+use betterlite_cache::dual_cache::{DualCache, DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE};
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::resource_rows::access_group::AccessGroupTable;
 use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
@@ -21,7 +24,7 @@ use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
-use crate::auth_cache::payload;
+use crate::auth_cache::{AuthCache, gateway_cache, payload};
 use crate::auth_invalidation::AuthInvalidation;
 use crate::auth_invalidation::clock::InvalidationClock;
 use crate::auth_invalidation::error::InvalidationError;
@@ -29,7 +32,10 @@ use crate::auth_invalidation::ports::{
     AuthInvalidationCache, DeferredDelete, RedisMarker, SpendCounterCache, UsageInvalidationCache,
 };
 use crate::auth_invalidation::transport::InvalidationTransport;
-use crate::auth_pubsub::eviction::LocalEviction;
+use crate::auth_pubsub::endpoint::{
+    AuthPubSub, AuthPubSubSubscription, PubSubMessage, TransportError,
+};
+use crate::auth_pubsub::eviction::{CacheError, LocalEviction};
 use crate::auth_pubsub::message::Invalidation;
 use crate::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 
@@ -57,7 +63,6 @@ pub(crate) enum Call {
         value: f64,
         ttl: f64,
     },
-    SpendDeleteMemory(String),
     SpendSetRedis {
         key: String,
         value: f64,
@@ -256,11 +261,6 @@ impl SpendCounterCache for Recorder {
         Ok(())
     }
 
-    fn delete_memory(&self, key: &str) -> Result<(), BackendError> {
-        self.record(Call::SpendDeleteMemory(key.to_owned()));
-        Ok(())
-    }
-
     async fn set_redis(
         &self,
         key: &str,
@@ -366,6 +366,111 @@ pub(crate) fn runtime() -> Runtime {
         .enable_all()
         .build()
         .expect("the test runtime builds")
+}
+
+fn clock_at(seconds: f64) -> Arc<dyn Fn() -> f64 + Send + Sync> {
+    Arc::new(move || seconds)
+}
+
+pub(crate) fn local_memory() -> Arc<LocalMemoryOps> {
+    let memory =
+        LocalMemoryOps::new(1024, clock_at(FIXED_NOW)).expect("the local memory tier builds");
+    Arc::new(memory)
+}
+
+fn cache_settings(memory_ttl: Option<f64>) -> DualCacheSettings {
+    DualCacheSettings {
+        default_in_memory_ttl: memory_ttl,
+        default_redis_ttl: None,
+        batch_cache_expiry: None,
+        max_redis_batch_cache_size: MAX_REDIS_BATCH_CACHE_SIZE,
+        redis_delete_chunk_size: MAX_REDIS_BATCH_CACHE_SIZE,
+    }
+}
+
+pub(crate) fn auth_cache(
+    memory_ttl: Option<f64>,
+    management_fallback: f64,
+) -> AuthCache<DualCache<LocalMemoryOps>> {
+    gateway_cache(
+        local_memory(),
+        local_memory(),
+        None,
+        cache_settings(memory_ttl),
+        management_fallback,
+    )
+}
+
+pub(crate) fn dual_cache(memory_ttl: Option<f64>) -> DualCache<LocalMemoryOps> {
+    DualCache::new(local_memory(), None, cache_settings(memory_ttl))
+}
+
+#[derive(Default)]
+pub(crate) struct RecordingEndpoint {
+    published: Mutex<Vec<String>>,
+}
+
+impl RecordingEndpoint {
+    pub(crate) fn published(&self) -> Vec<String> {
+        lock(&self.published).clone()
+    }
+}
+
+impl AuthPubSub for RecordingEndpoint {
+    type Subscription = RecordingSubscription;
+
+    fn channel(&self) -> String {
+        "test-channel".to_owned()
+    }
+
+    async fn publish(&self, message: &str) -> Result<(), TransportError> {
+        lock(&self.published).push(message.to_owned());
+        Ok(())
+    }
+
+    async fn subscribe(&self) -> Result<Self::Subscription, TransportError> {
+        Ok(RecordingSubscription)
+    }
+}
+
+pub(crate) struct RecordingSubscription;
+
+impl AuthPubSubSubscription for RecordingSubscription {
+    async fn next_message(
+        &mut self,
+        _timeout: Duration,
+    ) -> Result<Option<PubSubMessage>, TransportError> {
+        Ok(None)
+    }
+
+    async fn close(&mut self) -> Result<(), TransportError> {
+        Ok(())
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct RecordingEviction {
+    applied: Mutex<Vec<String>>,
+}
+
+impl RecordingEviction {
+    pub(crate) fn applied(&self) -> Vec<String> {
+        lock(&self.applied).clone()
+    }
+}
+
+impl LocalEviction for RecordingEviction {
+    fn apply(&self, invalidation: Invalidation) -> Result<(), CacheError> {
+        lock(&self.applied).push(invalidation.cache_key);
+        Ok(())
+    }
+}
+
+pub(crate) async fn settle() {
+    tokio::task::yield_now().await;
+    tokio::task::yield_now().await;
+    tokio::task::yield_now().await;
+    tokio::task::yield_now().await;
 }
 
 // an id for a load another task owns; the task is cancelled at once, since only its identity is used
@@ -523,7 +628,6 @@ pub(crate) fn call_keys(calls: &[Call]) -> Vec<String> {
             | Call::AuthDeleteRedis(key)
             | Call::UsageDeleteMemory(key)
             | Call::UsageDeleteAsync(key)
-            | Call::SpendDeleteMemory(key)
             | Call::SpendRedisSkipped(key)
             | Call::SpendRedisDeleted(key) => Some(key.clone()),
             Call::SpendSetMemory { key, .. }
