@@ -9,7 +9,7 @@ use serde_json::Value;
 pub(crate) struct Op;
 
 #[derive(Debug, Deserialize)]
-struct Input {
+pub(crate) struct Input {
     resolve: Vec<ResolveCase>,
     sniff: Vec<SniffCase>,
 }
@@ -46,12 +46,12 @@ impl Helper for Op {
         let sniff: Vec<Value> = input
             .sniff
             .iter()
-            .map(
-                |case| match sniff_speech_audio(&case.audio, &AudioDecodeLimits::default()) {
-                    Some(media_type) => Value::String(media_type.to_owned()),
-                    None => Value::Null,
-                },
-            )
+            .map(|case| {
+                sniff_speech_audio(&case.audio, &AudioDecodeLimits::default())
+                    .map_or(Value::Null, |media_type| {
+                        Value::String(media_type.to_owned())
+                    })
+            })
             .collect();
         Ok(serde_json::json!({ "resolve": resolve, "sniff": sniff }))
     }
