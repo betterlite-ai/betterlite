@@ -23,5 +23,4 @@ impl Helper for Op {
     }
 }
 
-#[cfg(test)]
 mod tests;

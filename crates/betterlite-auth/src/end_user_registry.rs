@@ -3,7 +3,6 @@ mod end_user_rows;
 pub mod errors;
 pub mod loader;
 pub mod predicate;
-#[cfg(test)]
 mod tests;
 
 use std::collections::BTreeSet;
