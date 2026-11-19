@@ -102,14 +102,16 @@ fn outcome(result: Result<WriteOutcome, WriteError>) -> Result<Outcome, SdkHttpE
     }
 }
 
-fn optional_text(value: &Option<String>) -> Json {
-    value.clone().map_or(Json::Null, Json::Text)
-}
-
 fn deleted_value(record: &DeleteResponseResult) -> Json {
     let mut fields = IndexMap::new();
-    fields.insert(String::from("id"), optional_text(&record.id));
-    fields.insert(String::from("object"), optional_text(&record.object));
+    fields.insert(
+        String::from("id"),
+        record.id.clone().map_or(Json::Null, Json::Text),
+    );
+    fields.insert(
+        String::from("object"),
+        record.object.clone().map_or(Json::Null, Json::Text),
+    );
     fields.insert(
         String::from("deleted"),
         record.deleted.map_or(Json::Null, Json::Bool),
@@ -126,13 +128,16 @@ fn cancelled_value(typed: &TypedReply) -> Json {
     );
     fields.insert(
         String::from("object"),
-        optional_text(&typed.response.object),
+        typed.response.object.clone().map_or(Json::Null, Json::Text),
     );
     fields.insert(
         String::from("status"),
-        optional_text(&typed.response.status),
+        typed.response.status.clone().map_or(Json::Null, Json::Text),
     );
-    fields.insert(String::from("model"), optional_text(&typed.response.model));
+    fields.insert(
+        String::from("model"),
+        typed.response.model.clone().map_or(Json::Null, Json::Text),
+    );
     let headers: IndexMap<String, Json> = typed
         .headers
         .iter()
