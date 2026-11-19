@@ -10,6 +10,6 @@ kept_bugs:
   - what: Deleting a vector store removes config-owned records too, although updating one leaves it untouched.
     why: A working setup can delete a config-defined id and expects it gone until the next config load, which reloads it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L472-L480
-  - what: A file_search tool carrying rewrite_query raises TypeError even though VECTOR_STORE_OPENAI_PARAMS lists rewrite_query as a supported search parameter.
-    why: LiteLLM builds VectorStoreToolParams from those names with a dataclass constructor that lacks rewrite_query, so any request carrying it fails; no working setup can send one.
+  - what: A file_search tool carrying rewrite_query is rejected rather than dropped, because VECTOR_STORE_OPENAI_PARAMS lists rewrite_query as a supported search parameter while VectorStoreToolParams never accepts it.
+    why: LiteLLM builds VectorStoreToolParams from those names with a dataclass constructor that lacks rewrite_query, so any request carrying it fails; no working setup can send one, and betterlite keeps that failure with its own message instead of Python's TypeError text.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L317-L322
