@@ -99,7 +99,7 @@ pub(crate) fn call<'call>(
     }
 }
 
-pub(crate) fn http_request<'path>(path: &'path str) -> ManagementHttpRequest<'path> {
+pub(crate) fn http_request(path: &str) -> ManagementHttpRequest<'_> {
     ManagementHttpRequest {
         route: RequestRouteSource {
             scope: Ok(None),

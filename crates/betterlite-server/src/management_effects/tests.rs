@@ -99,7 +99,7 @@ async fn default_auth_when_missing() {
     let mut request = call(Some(&data), None, None);
     request.parent_otel_span = Some(&parent);
     let outcome = run(&harness, request, ready(Ok(created_key()))).await;
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     let alerts = harness.alert.sent.entries();
     assert_eq!(alerts[0].created_by_user_id, "Unknown");
     assert_eq!(alerts[0].created_by_user_role, "Unknown");
@@ -155,7 +155,7 @@ async fn absent_parent_skips_span() {
         ready(Ok(created_key())),
     )
     .await;
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     assert_eq!(
         harness.events.entries(),
         vec![Effect::Alert, Effect::Delete("k".to_owned())]
@@ -200,7 +200,7 @@ async fn success_span_error_skips_cache() {
         ready(Ok(created_key())),
     )
     .await;
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     assert_eq!(harness.events.entries(), vec![Effect::Alert]);
     assert!(harness.cache.deletes.entries().is_empty());
 }
@@ -247,7 +247,7 @@ async fn debug_not_warning() {
         ready(Ok(created_key())),
     )
     .await;
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     let written = fs::read_to_string(log.path()).unwrap();
     assert!(written.contains("DEBUG"));
     assert!(
@@ -296,7 +296,7 @@ async fn handler_error_no_alert_or_eviction() {
         ready(Err(failure)),
     )
     .await;
-    assert!(outcome.is_err());
+    outcome.unwrap_err();
     assert!(harness.alert.sent.entries().is_empty());
     assert!(harness.cache.deletes.entries().is_empty());
     assert_eq!(harness.events.entries(), vec![Effect::FailureSpan]);
@@ -349,7 +349,7 @@ async fn kwargs_data_only() {
     let mut request = call(None, Some(&auth), None);
     request.request_kwargs = kwargs.clone();
     let outcome = run(&harness, request, ready(Ok(created_key()))).await;
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     assert!(harness.cache.deletes.entries().is_empty());
     assert_eq!(harness.alert.sent.entries()[0].request_kwargs, kwargs);
     let data = ManagementData::UpdateKey("k");
@@ -359,7 +359,7 @@ async fn kwargs_data_only() {
         ready(Ok(created_key())),
     )
     .await;
-    assert!(second.is_ok());
+    second.unwrap();
     assert_eq!(harness.cache.deletes.entries(), keys(&["k"]));
 }
 
@@ -416,7 +416,7 @@ async fn typed_request_dispatch(
         ready(Ok(created_key())),
     )
     .await;
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     assert_eq!(harness.cache.deletes.entries(), keys(expected));
 }
 
@@ -432,7 +432,7 @@ async fn raw_keys_no_prefix_or_hash() {
         ready(Ok(created_key())),
     )
     .await;
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     let hashed = "a".repeat(64);
     let users = vec![hashed.clone()];
     let user_data = ManagementData::DeleteUsers(&users);
@@ -442,7 +442,7 @@ async fn raw_keys_no_prefix_or_hash() {
         ready(Ok(created_key())),
     )
     .await;
-    assert!(second.is_ok());
+    second.unwrap();
     assert_eq!(
         harness.cache.deletes.entries(),
         vec!["team-abc".to_owned(), hashed]
@@ -461,7 +461,7 @@ async fn duplicates_keep_order() {
         ready(Ok(created_key())),
     )
     .await;
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     assert_eq!(harness.cache.deletes.entries(), ids);
 }
 
@@ -477,14 +477,14 @@ async fn null_data_and_other_types_noop() {
         ready(Ok(created_key())),
     )
     .await;
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     let second = run(
         &harness,
         call(None, Some(&auth), None),
         ready(Ok(created_key())),
     )
     .await;
-    assert!(second.is_ok());
+    second.unwrap();
     assert!(harness.cache.deletes.entries().is_empty());
     let key_data = ManagementData::UpdateKey("k1");
     delete_cached_keys(&harness.cache, Some(&key_data)).expect("the key class deletes its one id");
@@ -614,7 +614,7 @@ async fn customer_cache_eviction() {
         ready(Ok(created_key())),
     )
     .await;
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     let deleted = keys(&["c2", "c3"]);
     let data = ManagementData::DeleteCustomers(&deleted);
     let second = run(
@@ -623,6 +623,6 @@ async fn customer_cache_eviction() {
         ready(Ok(created_key())),
     )
     .await;
-    assert!(second.is_ok());
+    second.unwrap();
     assert_eq!(harness.cache.deletes.entries(), keys(&["c1", "c2", "c3"]));
 }
