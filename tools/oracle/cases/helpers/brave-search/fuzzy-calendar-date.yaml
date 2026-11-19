@@ -76,5 +76,25 @@ call:
         value: "Junk"
         dayfirst: false
         yearfirst: false
+      - kind: date
+        value: "990101h"
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: "20240305h"
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: "19990101h"
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: "199901011200h"
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: "19990101120000h"
+        dayfirst: false
+        yearfirst: false
 env: {}
 compare: {ignore: []}

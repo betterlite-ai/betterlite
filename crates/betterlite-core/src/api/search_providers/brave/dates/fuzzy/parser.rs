@@ -47,6 +47,15 @@ impl Parser<'_> {
         let Token::Number(text) = self.tokens.get(index)? else {
             return None;
         };
+        // the source reads a compact date run before it looks for an h/m/s label
+        let compact = match text.len() {
+            6 => self.fields.items.is_empty(),
+            8 | 12 | 14 => true,
+            _ => false,
+        };
+        if compact {
+            return None;
+        }
         let next = index.saturating_add(1);
         let following = self.tokens.get(next);
         let after = self.tokens.get(index.saturating_add(2));
