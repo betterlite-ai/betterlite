@@ -154,10 +154,7 @@ async fn a_full_embedding_hit_logs_the_merged_usage_once() {
     );
     let mut handler = embedding_handler(&request_kwargs);
     let request = embedding_lookup(request_kwargs);
-    let tokens = Tokens {
-        count: 7,
-        ..Tokens::default()
-    };
+    let tokens = Tokens::counting(7);
     let (outcome, worker) = async_cache_lookup(
         &fixture,
         &mut handler,
@@ -195,10 +192,7 @@ async fn every_cached_prompt_token_count_skips_the_counter() {
     );
     let mut handler = embedding_handler(&request_kwargs);
     let request = embedding_lookup(request_kwargs);
-    let tokens = Tokens {
-        count: 99,
-        ..Tokens::default()
-    };
+    let tokens = Tokens::counting(99);
     let (outcome, _worker) = async_cache_lookup(
         &fixture,
         &mut handler,

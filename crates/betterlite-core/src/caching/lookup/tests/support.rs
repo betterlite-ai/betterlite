@@ -444,6 +444,13 @@ pub(super) struct Tokens {
 }
 
 impl Tokens {
+    pub(super) const fn counting(count: i64) -> Self {
+        Self {
+            calls: Mutex::new(Vec::new()),
+            count,
+        }
+    }
+
     pub(super) fn counted(&self) -> Vec<String> {
         self.calls
             .lock()
