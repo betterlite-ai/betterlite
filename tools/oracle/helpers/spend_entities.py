@@ -123,10 +123,10 @@ class DeploymentRouter:
     def __init__(self, deployments: dict[str, Deployment]) -> None:
         self.deployments = deployments
 
-    def get_model_info(self, id: str) -> Mapping[str, object] | None:  # noqa: A002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L408-L409
+    def get_model_info(self, id: str) -> Mapping[str, JsonValue] | None:  # noqa: A002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L408-L409
         if id not in self.deployments:
             return None
-        return dict(self.deployments[id])
+        return self.deployments[id]
 
 
 class FakeClient(PrismaClient):
