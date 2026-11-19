@@ -5,12 +5,22 @@ pub mod records;
 pub mod redaction;
 pub mod router_metadata;
 
+use betterlite_db::search_tools::convert::isoformat;
+use betterlite_models::call_helpers::metadata::{
+    CallParams, MetadataMap, litellm_metadata_from_params,
+};
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use chrono::{DateTime, Utc};
+use rust_decimal::Decimal;
+use rust_decimal::serde::arbitrary_precision_option;
+use serde::{Serialize, Serializer};
 
-use crate::logging_metadata::decode::DecodeError;
+use crate::logging_metadata::decode::{DecodeError, decode};
 
 pub const BATCH_COST_REQUEST_ID_SUFFIX: &str = "_batch_cost";
+const LITELLM_PARAMS_RECORD: &str = "litellm params";
+const METADATA_BUCKETS: [&str; 2] = ["metadata", "litellm_metadata"];
 pub const MAX_MODEL_NAME_LENGTH: usize = 256;
 pub const MCP_SPEND_LOG_MODEL_PREFIX: &str = "MCP: ";
 
@@ -18,9 +28,12 @@ pub const MCP_SPEND_LOG_MODEL_PREFIX: &str = "MCP: ";
 pub enum SpendMetadataError {
     #[error(transparent)]
     Decode(#[from] DecodeError),
+    #[error("the {field} field must have the declared type")]
+    FieldType { field: &'static str },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum SpendLogStatus {
     Success,
     Failure,
@@ -47,6 +60,34 @@ pub(crate) fn as_text(value: &Json) -> Option<&str> {
     match value {
         Json::Text(text) => Some(text),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
+    }
+}
+
+// A declared string field: absent and null both fall to the caller's default, and any other type is named.
+pub fn optional_text_field<'value>(
+    value: Option<&'value Json>,
+    field: &'static str,
+) -> Result<Option<&'value str>, SpendMetadataError> {
+    match value {
+        None | Some(Json::Null) => Ok(None),
+        Some(Json::Text(text)) => Ok(Some(text)),
+        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            Err(SpendMetadataError::FieldType { field })
+        }
+    }
+}
+
+// A declared mapping field: absent and null both fall to the caller's default, and any other type is named.
+pub fn optional_object_field<'value>(
+    value: Option<&'value Json>,
+    field: &'static str,
+) -> Result<Option<&'value JsonObject>, SpendMetadataError> {
+    match value {
+        None | Some(Json::Null) => Ok(None),
+        Some(Json::Object(fields)) => Ok(Some(fields)),
+        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            Err(SpendMetadataError::FieldType { field })
+        }
     }
 }
 
@@ -101,6 +142,76 @@ pub fn looks_like_model_name(model: &str) -> bool {
         .chars()
         .any(|character| character.is_whitespace() || matches!(character, '\u{1c}'..='\u{1f}'));
     candidate.chars().count() <= MAX_MODEL_NAME_LENGTH && !has_space
+}
+
+// SpendLogsPayload: one field per _types.py annotation, in declaration order.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct SpendLogsPayload {
+    pub request_id: String,
+    pub call_type: String,
+    pub api_key: String,
+    #[serde(serialize_with = "arbitrary_precision_option::serialize")]
+    pub spend: Option<Decimal>,
+    pub total_tokens: Option<i64>,
+    pub prompt_tokens: Option<i64>,
+    pub completion_tokens: Option<i64>,
+    #[serde(rename = "startTime")]
+    pub start_time: PythonInstant,
+    #[serde(rename = "endTime")]
+    pub end_time: PythonInstant,
+    #[serde(rename = "completionStartTime")]
+    pub completion_start_time: Option<PythonInstant>,
+    pub model: String,
+    pub model_id: String,
+    pub model_group: String,
+    pub mcp_namespaced_tool_name: Option<String>,
+    pub billing_agent_id: Option<String>,
+    pub agent_id: Option<String>,
+    pub api_base: String,
+    pub user: String,
+    pub metadata: String,
+    pub cache_hit: String,
+    pub cache_key: String,
+    pub request_tags: String,
+    pub team_id: String,
+    pub organization_id: String,
+    pub end_user: String,
+    pub requester_ip_address: Option<String>,
+    pub custom_llm_provider: String,
+    pub messages: String,
+    pub response: String,
+    pub proxy_server_request: String,
+    pub session_id: Option<String>,
+    pub request_duration_ms: Option<i64>,
+    pub status: SpendLogStatus,
+    pub litellm_call_id: Option<String>,
+}
+
+// SpendLogsPayload declares datetime | str for its times, and the row keeps Python's isoformat() text.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PythonInstant(pub DateTime<Utc>);
+
+impl Serialize for PythonInstant {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&isoformat(self.0))
+    }
+}
+
+// get_litellm_metadata_from_kwargs: the merged metadata bucket of a litellm_params record.
+pub fn merged_spend_metadata(
+    litellm_params: &JsonObject,
+) -> Result<MetadataMap, SpendMetadataError> {
+    let mut buckets = JsonObject::new();
+    for name in METADATA_BUCKETS {
+        if let Some(value) = litellm_params.get(name) {
+            buckets.insert(name.to_owned(), value.clone());
+        }
+    }
+    let params: CallParams = decode(LITELLM_PARAMS_RECORD, buckets)?;
+    Ok(litellm_metadata_from_params(Some(&params)))
 }
 
 mod tests;
