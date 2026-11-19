@@ -254,7 +254,12 @@ fn scenario_view(
         secret_access_key,
         session_token,
         model_ids: view.model_ids,
-        client_types: client.sent().iter().map(|text| event_type(text)).collect(),
+        client_types: client
+            .sent()
+            .iter()
+            .map(String::as_str)
+            .map(event_type)
+            .collect(),
         bedrock_keys: recorded.sent_to_bedrock().iter().map(bedrock_key).collect(),
         client_close: client.close_code(),
         runtime_closed: recorded.runtime_closed(),
