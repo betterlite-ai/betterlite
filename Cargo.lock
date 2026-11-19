@@ -2522,6 +2522,7 @@ dependencies = [
  "betterlite",
  "betterlite-a2a",
  "betterlite-anthropic",
+ "betterlite-auth",
  "betterlite-cli",
  "betterlite-config",
  "betterlite-context",
@@ -4266,6 +4267,7 @@ version = "0.1.0"
 dependencies = [
  "arc-swap",
  "async-trait",
+ "betterlite-auth",
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
