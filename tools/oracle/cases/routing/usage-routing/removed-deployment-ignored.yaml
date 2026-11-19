@@ -1,0 +1,22 @@
+kind: probe
+name: usage-routing-removed-deployment-ignored
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      usage_routing:
+        group: probe-group
+        deployments:
+          - {id: dep-a}
+          - {id: dep-b}
+          - {id: dep-c}
+        steps:
+          - {kind: success, now_millis: 1700000000000, deployment_id: dep-a, total_tokens: 100}
+          - {kind: success, now_millis: 1700000000000, deployment_id: dep-b, total_tokens: 50}
+          - {kind: success, now_millis: 1700000000000, deployment_id: dep-c, total_tokens: 10}
+          # dep-c holds the lowest count of the whole window but is not healthy, so the pool's only member answers
+          - {kind: select, now_millis: 1700000000000, healthy: [dep-b]}
+          # a deployment that left an earlier pool still keeps its count, and it is selected once it is back
+          - {kind: select, now_millis: 1700000000000, healthy: [dep-a]}
+          - {kind: select, now_millis: 1700000000000, healthy: [dep-c]}
+          - {kind: observe, now_millis: 1700000000000}
