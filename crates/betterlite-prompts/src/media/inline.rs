@@ -27,12 +27,15 @@ pub type MediaPredicate<'call> = dyn Fn(&RemoteMedia) -> bool + Send + Sync + 'c
 
 // The seam B5083's Fetcher fills; tests and the oracle helper answer from a supplied URL mapping
 pub trait RemoteMediaFetcher {
-    fn convert_url(&self, url: &str) -> impl Future<Output = Result<String, ImageFetchError>>;
+    fn convert_url(
+        &self,
+        url: &str,
+    ) -> impl Future<Output = Result<String, ImageFetchError>> + Send;
 
     fn convert_urls(
         &self,
         urls: &[String],
-    ) -> impl Future<Output = Result<Vec<String>, ImageFetchError>>;
+    ) -> impl Future<Output = Result<Vec<String>, ImageFetchError>> + Send;
 }
 
 impl<R> RemoteMediaFetcher for Fetcher<R>

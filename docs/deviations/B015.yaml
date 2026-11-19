@@ -1,0 +1,51 @@
+task: B015
+deviations:
+- what: A model-less moderation request without an operator-configured default returns 400 invalid_request_error, param model, code moderation_model_required before any network I/O.
+  why: Keep outbound destinations operator supplied; LiteLLM uses OPENAI_API_KEY and the SDK default public base.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7800-L7830
+- what: A finite moderation score that Decimal cannot hold exactly, including one below 1e-28, returns 502 bad_gateway, param category_scores, code decimal_out_of_range instead of the rounded Python float.
+  why: Exact Decimal values have bounded scale and magnitude, and silently rounding a score to zero is forbidden.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7830-L7875
+- what: A moderation body carrying any field other than input and model, including api_base or api_key, is refused with 400 invalid_request_error, and no provider call is made.
+  why: The proxy merges the caller's body into the route data, and a deployment without api_base lets a caller-supplied api_base reach GenericLiteLLMParams and become the provider client's base URL; betterlite keeps every outbound destination and credential operator supplied.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1993-L2090
+- what: A body that is not JSON, is not a moderation request, or lacks input answers 400 invalid_request_error before the provider call; LiteLLM hands the dict to litellm.amoderation, where a missing input surfaces as a TypeError and a 500.
+  why: A malformed caller request is a client error, and this entry's typed records refuse it at the boundary instead of failing inside the provider call.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12398-L12490
+- what: A provider answer that the typed records cannot read, such as a missing result field or category, a result field or category of the wrong type, a category key repeated under both spellings, or an applied input type the SDK's literal does not allow (audio, or image on a text-only category), answers 500 internal_server_error. LiteLLM constructs its moderation model leniently, so the same answer becomes a 200 whose categories, scores and input types carry the nulls and raw values the provider sent; only a result key that LiteLLM's own record cannot take at all, such as a list where the categories dict belongs or a flagged string it cannot read as a bool, answers 500 with the literal strings "None" as type and param.
+  why: betterlite's records are typed, so a provider answer it cannot read is reported as a typed parse failure instead of being passed through as nulls or raw values, and the parse failure names its own type.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7861-L7863
+- what: A provider that spells a category with its SDK field name, such as harassment_threatening or self_harm, instead of the alias the OpenAI schema declares is read as that category and answered with its value. LiteLLM's lenient construction only honours the declared alias, so the same answer becomes a 200 with null for every category spelled that way.
+  why: The field name is the spelling the OpenAI SDK dumps and the only one betterlite records, so accepting it loses no value; LiteLLM answering null for it is the lenient construction's accident.
+  link: https://github.com/openai/openai-python/blob/v2.54.0/src/openai/_models.py#L588-L705
+- what: A deployment with no api_key and no OPENAI_API_KEY in the environment answers 401 with type authentication_error; LiteLLM's SDK client raises openai.OpenAIError, which has no status_code, type or param attribute, so the moderation handler's last except answers 500 with the literal strings "None" as type and param.
+  why: Naming the missing credential as an authentication error tells the caller what to fix; credentials still come only from the deployment or the operator's environment.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12500-L12508
+- what: A request whose resolved model names no model_list entry answers 400 invalid_request_error with the model named before any provider call; LiteLLM's moderation pass-through hands such a model to the OpenAI client unchanged, so the proxy calls the public OpenAI base with the operator's OPENAI_API_KEY and a model name the caller chose.
+  why: betterlite answers every inference request from a configured deployment, so an unconfigured model is a caller error here and no caller-chosen model name reaches a provider.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L6577-L6590
+- what: A moderation deployment whose model names a provider other than OpenAI answers 501 with the model named; LiteLLM routes every moderation model through the OpenAI client, so it either calls OpenAI or fails inside that call.
+  why: Alternative moderation providers belong to a later task, and answering an explicit 501 is clearer than calling a provider that was never configured for the model.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7793-L7875
+- what: Every moderation provider request is bounded by the deployment's litellm_params.timeout, and a timed-out or failed connection answers 408 or 500 without a retry and with a null type and param; LiteLLM's amoderation builds the AsyncOpenAI client with httpx.Timeout(None) and the SDK's default max_retries=2, so a timeout is retried twice and the call itself has no deadline, and its handler writes the literal strings "None" as type and param.
+  why: A bounded input needs a deadline the operator sets; the SDK's status retries (408, 409, 429 and 5xx) still match. The client construction is at https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L380.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7827-L7831
+- what: "A retry is decided by the provider's status alone (408, 409, 429 and 5xx), with the SDK's doubling delay but none of its jitter, and x-should-retry and Retry-After are not read. LiteLLM's client obeys both headers: x-should-retry false stops a 5xx retry and true adds one elsewhere, a Retry-After above two minutes stops the retry, and a smaller one sets the wait."
+  why: The plan bounds each moderation call by the deployment timeout, and carrying the header rules would let a provider stretch three attempts past that deadline; the status list covers what the moderation endpoints answer.
+  link: https://github.com/openai/openai-python/blob/v2.54.0/src/openai/_base_client.py#L797-L863
+- what: "A moderation call retries a retryable answer at most twice: the DEFAULT_MAX_RETRIES environment setting is not read for moderation, so an operator who sets another value still gets two retries."
+  why: The plan bounds each moderation call, and two is the SDK default a stock LiteLLM setup uses; betterlite resolves the configured value in its azure_endpoints section for the clients that take a retry count, and moderation keeps the default.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L81
+- what: A provider answer larger than 32 MiB ends the moderation call as a 500 with a null type and param, the shape of an APIConnectionError; LiteLLM's SDK reads whatever body the provider sends.
+  why: The transport cap bounds the memory one provider answer can take, and a moderation answer for a bounded input is far smaller than that.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7858-L7861
+- what: "A failed provider call answers with betterlite's own message; LiteLLM copies the SDK exception's message, which for a status error is \"Error code: N - <provider body>\"."
+  why: The provider body can repeat the caller's input and deployment details, and betterlite redacts each failure's message before it reaches the client.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12500-L12505
+- what: A deployment that answered a 401 or a 400 stays in service, so the next moderation request reaches the provider again; LiteLLM's router puts a deployment in cooldown for an error it does not retry, and the next request is answered 429 with type all_deployments_in_cooldown and param the literal string "None" without a provider call.
+  why: Cooldown state is router state shared across requests, and the moderation route answers each call from the deployment's own provider answer; router cooldowns belong to the router.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/cooldown_handlers.py#L413
+kept_bugs:
+- what: The error body's code is the stringified HTTP status, so a provider error's own code, such as invalid_input, is dropped.
+  why: LiteLLM's ProxyException stores the status as code and its handler writes that string, and clients that read the OpenAI error envelope see the same value from a working setup.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4352

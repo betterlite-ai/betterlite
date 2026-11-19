@@ -1,7 +1,7 @@
 id: B049
 milestone: M3 providers
 title: Vector store, RAG and OCR providers
-status: todo
+status: done
 depends_on: [B004, B005, B010, B2230, B500, B7810, B7811, B7812, B7813, B7814]
 file: tasks/B049-ragflow-chat-dispatch.yaml
 covers:
@@ -11,7 +11,7 @@ covers:
   - "litellm/main.py"
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2501

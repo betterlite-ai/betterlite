@@ -1,0 +1,23 @@
+kind: helper
+name: vertex-messages-compact-and-clear
+call:
+  vertex_messages:
+    access_token: fixed-token
+    credential_project: credential-project
+    model: claude-sonnet-4-6
+    messages:
+      - role: user
+        content: summarize
+    optional_params:
+      max_tokens: 32
+      stream: true
+      context_management:
+        edits:
+          - type: compact_20260112
+          - type: clear_tool_uses_20250919
+    headers: {}
+    vertex_project: deployment-project
+    vertex_location: null
+    api_base: null
+env: {}
+compare: {ignore: []}
