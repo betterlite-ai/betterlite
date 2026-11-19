@@ -37,7 +37,7 @@ const READ_ERROR: &str = "ReadError";
 
 // Every failure keeps the typed cause it wraps, so a caller can still name what went wrong; the boxes keep the variants within three times each other.
 #[derive(Debug, Error)]
-enum MessagesStreamCause {
+pub enum MessagesStreamCause {
     #[error("{0}")]
     Frame(#[source] Box<EventFrameError>),
     #[error("{0}")]
@@ -54,11 +54,11 @@ enum MessagesStreamCause {
 #[derive(Clone, Debug, Error)]
 #[error("{message}")]
 pub struct MessagesStreamError {
-    pub(crate) kind: String,
-    pub(crate) message: String,
-    pub(crate) status: Option<u16>,
+    pub kind: String,
+    pub message: String,
+    pub status: Option<u16>,
     #[source]
-    cause: Arc<MessagesStreamCause>,
+    pub cause: Arc<MessagesStreamCause>,
 }
 
 // A Bedrock error event carries B682's error, so its class and status survive to the client.
