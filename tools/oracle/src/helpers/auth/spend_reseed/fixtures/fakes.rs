@@ -150,7 +150,7 @@ impl ReseedCache for FakeCache {
         if !self.redis {
             return ready(Ok(None));
         }
-        ready(cache_value(self.take_answer()))
+        ready(cache_value(self.take_answer().as_ref()))
     }
 
     fn redis_set_nx(
@@ -194,13 +194,14 @@ impl ReseedCache for FakeCache {
             return ready(Err(FakeError));
         };
         state.memory = next.to_f64();
+        drop(state);
         ready(Ok(Some(next)))
     }
 }
 
-fn cache_value(answer: Option<Answer>) -> Result<Option<ReseedCacheValue>, FakeError> {
+fn cache_value(answer: Option<&Answer>) -> Result<Option<ReseedCacheValue>, FakeError> {
     match answer {
-        Some(Answer::Amount(value)) => Ok(Decimal::from_f64(value).map(ReseedCacheValue::Number)),
+        Some(Answer::Amount(value)) => Ok(Decimal::from_f64(*value).map(ReseedCacheValue::Number)),
         Some(Answer::Word(Word::Fail)) => Err(FakeError),
         Some(Answer::Word(Word::Miss)) | None => Ok(None),
     }

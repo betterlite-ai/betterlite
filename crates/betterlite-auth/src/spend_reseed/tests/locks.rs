@@ -30,7 +30,7 @@ async fn lru_hit_overflow_zero_negative_and_held_eviction(#[case] bound: i64) {
     let replaced = held_registry.lock_for("held");
     assert!(!Arc::ptr_eq(&held, &replaced));
     held.try_lock().unwrap_err();
-    replaced.try_lock().unwrap();
+    assert!(replaced.try_lock().is_ok());
     drop(guard);
 
     // a zero or negative bound strips every entry it inserts, so callers stop sharing a lock

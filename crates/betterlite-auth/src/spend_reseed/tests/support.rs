@@ -3,7 +3,7 @@ use std::error::Error;
 use std::fmt::Debug;
 use std::future::{Future, ready};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_db::budget_permission_rows::{JsonData, Timestamp};
@@ -28,7 +28,7 @@ use tokio_util::task::TaskTracker;
 use tracing::Event;
 use tracing::field::{Field, Visit};
 use tracing::subscriber::{DefaultGuard, set_default};
-use tracing_subscriber::layer::{Context, SubscriberExt};
+use tracing_subscriber::layer::{Context, SubscriberExt as _};
 
 use crate::budget_primitives::window_start::DurationParser;
 use crate::model_budget_limiter::clock::BudgetClock;
@@ -177,12 +177,12 @@ impl FakeRows {
         let record = (entity, entity_id.to_owned(), window_duration.to_owned());
         self.window_lookups
             .lock()
-            .expect("the fake window lock")
+            .unwrap_or_else(PoisonError::into_inner)
             .push(record);
         Ok(self
             .window
             .lock()
-            .expect("the fake window row lock")
+            .unwrap_or_else(PoisonError::into_inner)
             .clone())
     }
 }
@@ -353,7 +353,7 @@ impl FakeCache {
         let answer = self
             .redis_answers
             .lock()
-            .expect("the fake answer lock")
+            .unwrap_or_else(PoisonError::into_inner)
             .pop_front();
         match answer {
             Some(RedisAnswer::Miss) => Ok(None),
@@ -365,13 +365,16 @@ impl FakeCache {
     fn store_nx(&self, counter_key: &str, value: Decimal) -> Result<Option<bool>, FakeError> {
         self.redis_sets
             .lock()
-            .expect("the fake redis set lock")
+            .unwrap_or_else(PoisonError::into_inner)
             .push((counter_key.to_owned(), value));
-        let answer = *self.set_answer.lock().expect("the fake set answer lock");
+        let answer = *self
+            .set_answer
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         match answer {
             SetAnswer::Fail => Err(FakeError),
             SetAnswer::Stored => {
-                *self.redis.lock().expect("the fake redis lock") =
+                *self.redis.lock().unwrap_or_else(PoisonError::into_inner) =
                     Some(ReseedCacheValue::Number(value));
                 Ok(Some(true))
             }
@@ -387,7 +390,7 @@ impl FakeCache {
         let scripted = self
             .memory_answers
             .lock()
-            .expect("the fake answer lock")
+            .unwrap_or_else(PoisonError::into_inner)
             .pop_front();
         Ok(scripted.unwrap_or_else(|| self.memory_text(counter_key)))
     }
@@ -399,11 +402,11 @@ impl FakeCache {
         let stored = ReseedCacheValue::Number(value);
         self.memory
             .lock()
-            .expect("the fake memory lock")
+            .unwrap_or_else(PoisonError::into_inner)
             .insert(counter_key.to_owned(), stored);
         self.memory_sets
             .lock()
-            .expect("the fake memory set lock")
+            .unwrap_or_else(PoisonError::into_inner)
             .push((counter_key.to_owned(), value));
         Ok(())
     }
@@ -661,8 +664,8 @@ impl BreakerGate for RefusingGate {
     fn swallowed(&self, _admission: &BreakerAdmission, _error: &(dyn Error + Send + Sync)) {}
 }
 
-pub(crate) async fn refusing_redis_cache() -> Arc<RedisCache> {
-    let overrides = RedisOverrides {
+fn dead_redis_overrides() -> RedisOverrides {
+    RedisOverrides {
         host: Some("127.0.0.1".to_owned()),
         port: Some(IntOrText::Value(1)),
         db: None,
@@ -693,7 +696,11 @@ pub(crate) async fn refusing_redis_cache() -> Arc<RedisCache> {
         aws_iam_region: None,
         aws_iam_serverless: None,
         passthrough: BTreeMap::new(),
-    };
+    }
+}
+
+pub(crate) async fn refusing_redis_cache() -> Arc<RedisCache> {
+    let overrides = dead_redis_overrides();
     let options = RedisCacheOptions {
         overrides,
         family: RedisCacheFamily::Standalone,
