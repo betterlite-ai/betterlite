@@ -238,6 +238,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "spend_log_query"
+path = "fuzz_targets/spend_log_query.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "guardrail_write_body"
 path = "fuzz_targets/guardrail_write_body.rs"
 test = false
@@ -331,6 +338,20 @@ bench = false
 [[bin]]
 name = "credential_request"
 path = "fuzz_targets/credential_request.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "team_request_contracts"
+path = "fuzz_targets/team_request_contracts.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pass_through_config_writes"
+path = "fuzz_targets/pass_through_config_writes.rs"
 test = false
 doc = false
 bench = false

@@ -162,12 +162,13 @@ async fn handle(
     }
     let bytes = read_body(&state, body).await?;
     let captured = capture_request(&parts, &bytes)?;
+    let correlation = mcp_reply::correlation(parts.uri.path(), &captured.body);
     let admitted = state
         .lock()
         .map_err(|_source| StatusCode::INTERNAL_SERVER_ERROR)?
         .admit(captured);
     let ticket = admitted.map_err(|error| fail(&state, error))?;
-    play(state, ticket).await
+    play(state, ticket, &correlation).await
 }
 
 async fn read_body(state: &Arc<Mutex<Recording>>, body: Body) -> Result<Vec<u8>, StatusCode> {
@@ -217,7 +218,11 @@ fn capture_request(parts: &Parts, bytes: &[u8]) -> Result<ProviderRequest, Statu
     })
 }
 
-async fn play(state: Arc<Mutex<Recording>>, ticket: Ticket) -> Result<Response<Body>, StatusCode> {
+async fn play(
+    state: Arc<Mutex<Recording>>,
+    ticket: Ticket,
+    correlation: &mcp_reply::McpCorrelation,
+) -> Result<Response<Body>, StatusCode> {
     let mut guard = CallGuard {
         state,
         run: ticket.run,
@@ -233,10 +238,12 @@ async fn play(state: Arc<Mutex<Recording>>, ticket: Ticket) -> Result<Response<B
             guard.outcome = CallOutcome::Closed;
             None
         }
-        (true, Outcome::Answer(answer)) => {
+        (true, Outcome::Answer(mut answer)) => {
             guard.outcome = CallOutcome::Answered {
                 status: answer.status,
             };
+            mcp_reply::correlate(&mut answer, correlation)
+                .map_err(|source| fail(&guard.state, Error::other(source)))?;
             Some(answer)
         }
     };

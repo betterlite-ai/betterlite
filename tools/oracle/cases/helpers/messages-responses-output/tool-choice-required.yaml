@@ -1,0 +1,48 @@
+kind: helper
+name: messages-responses-output-tool-choice-required
+call:
+  messages_responses_output:
+    request:
+      model: claude-sonnet-4-5
+      messages: []
+      tools:
+      - name: lookup
+        description: find a record
+        input_schema:
+          type: object
+          properties:
+            q:
+              type: string
+        strict: true
+      - type: web_search_20250305
+        name: web_search
+      tool_choice:
+        type: any
+    response: null
+    include_encrypted_reasoning: true
+    settings: {}
+calls:
+- messages_responses_output:
+    request:
+      model: claude-sonnet-4-5
+      messages: []
+      tools:
+      - type: custom
+        name: lookup
+      tool_choice:
+        type: tool
+        name: lookup
+    response: null
+    include_encrypted_reasoning: true
+    settings: {}
+- messages_responses_output:
+    request:
+      model: claude-sonnet-4-5
+      messages: []
+      tool_choice:
+        type: none
+    response: null
+    include_encrypted_reasoning: true
+    settings: {}
+env: {}
+compare: {ignore: []}
