@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock-messages-native-error-event
+call:
+  bedrock_messages:
+    function: event_stream
+    chunks:
+      - 000000850000005d09fecdc20f3a657863657074696f6e2d7479706507001376616c69646174696f6e457863657074696f6e0d3a636f6e74656e742d747970650700106170706c69636174696f6e2f6a736f6e0d3a6d6573736167652d747970650700056572726f727b226d657373616765223a202262616420696e707574227d2665d859
+    response_headers:
+      content-type: application/vnd.amazon.eventstream
+env: {}
+compare: {ignore: []}
