@@ -24,7 +24,7 @@ fn assert_failures_omit_secrets() {
     assert!(!message.contains("query-secret"));
     assert!(!format!("{error:?}").contains(TOKEN));
     let mut rejected = baseline("https://custom.example.com/mcp");
-    rejected.request_data = case.request_data.clone();
+    rejected.request_data = case.request_data;
     let environment = lookup(&[("AGENTCORE_GATEWAY_TOKEN", TOKEN)]);
     let rejected_error = sign(&rejected, &environment, failing()).unwrap_err();
     let rejected_message = rejected_error.to_string();

@@ -26,8 +26,8 @@ fn assert_server_tokens_do_not_cross() {
     .unwrap();
     assert_eq!(authorization(&first), "Bearer token-one");
     assert_eq!(authorization(&second), "Bearer token-two");
-    assert!(case.headers.get("Authorization").is_none());
-    assert!(case.headers.get("authorization").is_none());
+    assert!(!case.headers.contains_key("Authorization"));
+    assert!(!case.headers.contains_key("authorization"));
 }
 
 fn assert_caller_and_server_identities_stay_apart() {

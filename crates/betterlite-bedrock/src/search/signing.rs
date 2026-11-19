@@ -44,9 +44,8 @@ pub struct SignRequest<'search> {
 
 // the request carries a caller key and a body, so Debug prints names and no secret values
 impl Debug for SignRequest<'_> {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("SignRequest")
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SignRequest")
             .field("api_base", &self.api_base)
             .field("headers", &self.headers.keys().collect::<Vec<_>>())
             .field(
@@ -63,12 +62,12 @@ impl Debug for SignRequest<'_> {
 
 pub async fn sign_request<F, Fut>(
     request: &SignRequest<'_>,
-    lookup: &dyn EnvironmentLookup,
+    lookup: &(dyn EnvironmentLookup + Sync),
     resolve_credentials: F,
 ) -> Result<AwsSignedRequest, SearchError>
 where
-    F: FnOnce(&AwsSettings, &str) -> Fut,
-    Fut: Future<Output = Result<Credentials, CredentialError>>,
+    F: FnOnce(&AwsSettings, &str) -> Fut + Send,
+    Fut: Future<Output = Result<Credentials, CredentialError>> + Send,
 {
     let Json::Object(body) = request.request_data else {
         return Err(SearchError::RequestBody);

@@ -22,7 +22,7 @@ fn request(query: &SearchQuery, optional: &Params) -> Json {
     transform_search_request(query, optional, None).unwrap()
 }
 
-fn query_text<'json>(body: &'json Json) -> &'json str {
+fn query_text(body: &Json) -> &str {
     text_field(body, &["params", "arguments", "query"])
 }
 
