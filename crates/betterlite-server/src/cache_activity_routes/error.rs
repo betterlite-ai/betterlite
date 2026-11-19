@@ -43,7 +43,6 @@ struct MissingDateIssue {
     kind: &'static str,
     loc: [&'static str; 2],
     msg: &'static str,
-    input: Option<()>,
 }
 
 #[derive(Serialize)]
@@ -90,7 +89,6 @@ fn missing_date_issue(name: &'static str) -> MissingDateIssue {
         kind: "missing",
         loc: ["query", name],
         msg: "Field required",
-        input: None,
     }
 }
 

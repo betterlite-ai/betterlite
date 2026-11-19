@@ -311,7 +311,7 @@ async fn route_a_missing_start_date_answers_422_before_the_database_check() {
     assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(
         reply.body,
-        r#"{"detail":[{"type":"missing","loc":["query","start_date"],"msg":"Field required","input":null}]}"#
+        r#"{"detail":[{"type":"missing","loc":["query","start_date"],"msg":"Field required"}]}"#
     );
 }
 
@@ -331,7 +331,7 @@ async fn route_a_missing_end_date_answers_422() {
     assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(
         reply.body,
-        r#"{"detail":[{"type":"missing","loc":["query","end_date"],"msg":"Field required","input":null}]}"#
+        r#"{"detail":[{"type":"missing","loc":["query","end_date"],"msg":"Field required"}]}"#
     );
 }
 
@@ -350,7 +350,7 @@ async fn route_two_missing_dates_are_listed_start_first() {
     assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(
         reply.body,
-        r#"{"detail":[{"type":"missing","loc":["query","start_date"],"msg":"Field required","input":null},{"type":"missing","loc":["query","end_date"],"msg":"Field required","input":null}]}"#
+        r#"{"detail":[{"type":"missing","loc":["query","start_date"],"msg":"Field required"},{"type":"missing","loc":["query","end_date"],"msg":"Field required"}]}"#
     );
 }
 
