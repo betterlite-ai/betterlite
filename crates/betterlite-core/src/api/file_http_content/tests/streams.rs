@@ -359,13 +359,15 @@ async fn streaming_error_body_reads_at_most_64_kib() {
     let events = Events::new();
     let drops = Arc::new(AtomicUsize::new(0));
     let (sender, body) = gated(&drops, 100);
-    for _index in 0..100_u16 {
-        sender
-            .send(Ok(vec![b'a'; 1024]))
-            .await
-            .expect("the chunk is queued");
-    }
+    let queued = futures_util::future::join_all(
+        (0..100_u16).map(|_index| sender.send(Ok(vec![b'a'; 1024]))),
+    )
+    .await;
     drop(sender);
+    queued
+        .into_iter()
+        .collect::<Result<Vec<()>, _>>()
+        .expect("every chunk is queued");
     let wire = Wire::answering(
         streaming(413, &[("content-length", "102400")], body),
         &events,
