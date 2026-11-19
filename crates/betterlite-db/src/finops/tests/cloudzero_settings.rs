@@ -88,7 +88,7 @@ async fn set_then_get_round_trips_the_settings() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(exposed(&loaded.api_key), Some(PLAINTEXT_KEY));
+    assert_eq!(exposed(loaded.api_key.as_ref()), Some(PLAINTEXT_KEY));
     assert_eq!(loaded.connection_id.as_deref(), Some(CONNECTION_ID));
     assert_eq!(loaded.timezone.as_deref(), Some(TIMEZONE));
     database.close().await;
@@ -115,7 +115,7 @@ async fn set_replaces_the_settings_of_an_existing_row() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(exposed(&loaded.api_key), Some(PLAINTEXT_KEY));
+    assert_eq!(exposed(loaded.api_key.as_ref()), Some(PLAINTEXT_KEY));
     assert_eq!(loaded.connection_id.as_deref(), Some(CONNECTION_ID));
     assert_eq!(loaded.timezone.as_deref(), Some(TIMEZONE));
     database.close().await;
@@ -138,7 +138,7 @@ async fn get_reads_a_json_string_row() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(exposed(&loaded.api_key), Some(PLAINTEXT_KEY));
+    assert_eq!(exposed(loaded.api_key.as_ref()), Some(PLAINTEXT_KEY));
     assert_eq!(loaded.connection_id.as_deref(), Some(CONNECTION_ID));
     assert_eq!(loaded.timezone.as_deref(), Some(TIMEZONE));
     database.close().await;
@@ -161,7 +161,7 @@ async fn get_reads_a_mapping_row() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(exposed(&loaded.api_key), Some(PLAINTEXT_KEY));
+    assert_eq!(exposed(loaded.api_key.as_ref()), Some(PLAINTEXT_KEY));
     assert_eq!(loaded.connection_id.as_deref(), Some(CONNECTION_ID));
     database.close().await;
 }
@@ -184,7 +184,7 @@ async fn get_ignores_a_mapping_field_no_response_type_names() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(exposed(&loaded.api_key), Some(PLAINTEXT_KEY));
+    assert_eq!(exposed(loaded.api_key.as_ref()), Some(PLAINTEXT_KEY));
     assert_eq!(loaded.connection_id.as_deref(), Some(CONNECTION_ID));
     assert_eq!(loaded.timezone.as_deref(), Some(TIMEZONE));
     database.close().await;
@@ -314,7 +314,7 @@ async fn get_keeps_an_empty_api_key_empty() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(exposed(&loaded.api_key), Some(""));
+    assert_eq!(exposed(loaded.api_key.as_ref()), Some(""));
     database.close().await;
 }
 
@@ -326,7 +326,7 @@ async fn get_rejects_a_connection_id_that_is_not_a_string() {
         CLOUDZERO_SETTINGS_PARAM_NAME,
         &row_json(
             JsonData::Null,
-            JsonData::Number(Number::from(5)),
+            JsonData::Number(Number::from(5_i32)),
             JsonData::String(TIMEZONE.to_owned()),
         ),
     )

@@ -90,8 +90,11 @@ async fn set_then_get_round_trips_the_settings() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(exposed(&loaded.api_key), Some(PLAINTEXT_KEY));
-    assert_eq!(exposed(&loaded.integration_token), Some(PLAINTEXT_TOKEN));
+    assert_eq!(exposed(loaded.api_key.as_ref()), Some(PLAINTEXT_KEY));
+    assert_eq!(
+        exposed(loaded.integration_token.as_ref()),
+        Some(PLAINTEXT_TOKEN)
+    );
     assert_eq!(loaded.base_url.as_deref(), Some(BASE_URL));
     database.close().await;
 }
@@ -117,8 +120,11 @@ async fn set_replaces_the_settings_of_an_existing_row() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(exposed(&loaded.api_key), Some(PLAINTEXT_KEY));
-    assert_eq!(exposed(&loaded.integration_token), Some(PLAINTEXT_TOKEN));
+    assert_eq!(exposed(loaded.api_key.as_ref()), Some(PLAINTEXT_KEY));
+    assert_eq!(
+        exposed(loaded.integration_token.as_ref()),
+        Some(PLAINTEXT_TOKEN)
+    );
     assert_eq!(loaded.base_url.as_deref(), Some(BASE_URL));
     database.close().await;
 }
@@ -140,8 +146,11 @@ async fn get_reads_a_json_string_row() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(exposed(&loaded.api_key), Some(PLAINTEXT_KEY));
-    assert_eq!(exposed(&loaded.integration_token), Some(PLAINTEXT_TOKEN));
+    assert_eq!(exposed(loaded.api_key.as_ref()), Some(PLAINTEXT_KEY));
+    assert_eq!(
+        exposed(loaded.integration_token.as_ref()),
+        Some(PLAINTEXT_TOKEN)
+    );
     assert_eq!(loaded.base_url.as_deref(), Some(BASE_URL));
     database.close().await;
 }
@@ -163,7 +172,7 @@ async fn get_reads_a_mapping_row() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(exposed(&loaded.api_key), Some(PLAINTEXT_KEY));
+    assert_eq!(exposed(loaded.api_key.as_ref()), Some(PLAINTEXT_KEY));
     assert_eq!(loaded.base_url.as_deref(), Some(BASE_URL));
     database.close().await;
 }
@@ -302,7 +311,7 @@ async fn get_keeps_an_empty_integration_token_empty() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(exposed(&loaded.integration_token), Some(""));
+    assert_eq!(exposed(loaded.integration_token.as_ref()), Some(""));
     database.close().await;
 }
 
@@ -315,7 +324,7 @@ async fn get_rejects_a_base_url_that_is_not_a_string() {
         &row_json(
             JsonData::String(seal(PLAINTEXT_KEY)),
             JsonData::Null,
-            JsonData::Number(Number::from(5)),
+            JsonData::Number(Number::from(5_i32)),
         ),
     )
     .await;

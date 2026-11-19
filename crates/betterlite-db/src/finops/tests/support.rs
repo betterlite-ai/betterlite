@@ -121,8 +121,8 @@ pub(crate) fn seal_with(text: &str, key: &str) -> String {
     value.expose_secret().to_owned()
 }
 
-pub(crate) fn exposed(secret: &Option<SecretString>) -> Option<&str> {
-    secret.as_ref().map(ExposeSecret::expose_secret)
+pub(crate) fn exposed(secret: Option<&SecretString>) -> Option<&str> {
+    secret.map(ExposeSecret::expose_secret)
 }
 
 pub(crate) fn fields(entries: &[(&str, JsonData)]) -> BTreeMap<String, JsonData> {

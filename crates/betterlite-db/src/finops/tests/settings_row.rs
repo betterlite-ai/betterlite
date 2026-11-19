@@ -49,7 +49,7 @@ fn plain_field_maps_an_absent_or_null_value_to_none() {
 
 #[rstest]
 #[case::boolean(JsonData::Bool(true))]
-#[case::number(JsonData::Number(Number::from(5)))]
+#[case::number(JsonData::Number(Number::from(5_i32)))]
 #[case::array(JsonData::Array(Vec::new()))]
 #[case::object(JsonData::Object(BTreeMap::new()))]
 fn plain_field_rejects_a_value_that_is_not_a_string(#[case] value: JsonData) {
@@ -81,7 +81,7 @@ fn secret_field_maps_an_absent_or_null_credential_to_none() {
 
 #[test]
 fn secret_field_rejects_a_credential_that_is_not_a_string() {
-    let values = fields(&[("api_key", JsonData::Number(Number::from(5)))]);
+    let values = fields(&[("api_key", JsonData::Number(Number::from(5_i32)))]);
     let result = secret_field(&values, PARAM, "api_key", KEY, &cipher());
     assert!(matches!(
         result,
@@ -96,7 +96,7 @@ fn secret_field_rejects_a_credential_that_is_not_a_string() {
 fn secret_field_keeps_an_empty_credential_empty_without_a_salt_key() {
     let values = fields(&[("api_key", JsonData::String(String::new()))]);
     let secret = secret_field(&values, PARAM, "api_key", KEY, &cipher_without_key()).unwrap();
-    assert_eq!(exposed(&secret), Some(""));
+    assert_eq!(exposed(secret.as_ref()), Some(""));
 }
 
 #[test]
@@ -105,7 +105,7 @@ fn secret_field_decrypts_a_credential_sealed_with_the_salt_key() {
     assert_ne!(sealed, "cz-api-key-value");
     let values = fields(&[("api_key", JsonData::String(sealed))]);
     let secret = secret_field(&values, PARAM, "api_key", KEY, &cipher()).unwrap();
-    assert_eq!(exposed(&secret), Some("cz-api-key-value"));
+    assert_eq!(exposed(secret.as_ref()), Some("cz-api-key-value"));
 }
 
 #[test]
@@ -139,7 +139,7 @@ fn seal_secret_hides_the_plaintext_and_the_same_salt_opens_it() {
     assert!(!sealed.contains("cz-api-key-value"));
     let values = fields(&[("api_key", JsonData::String(sealed))]);
     let opened = secret_field(&values, PARAM, "api_key", KEY, &cipher()).unwrap();
-    assert_eq!(exposed(&opened), Some("cz-api-key-value"));
+    assert_eq!(exposed(opened.as_ref()), Some("cz-api-key-value"));
     let other = secret_field(
         &values,
         PARAM,
@@ -297,11 +297,11 @@ async fn write_settings_row_stores_the_fields_as_a_json_string_and_replaces_them
         .await
         .unwrap();
     let replaced = read_row(&database, PARAM).await.unwrap();
-    let values = replaced.fields();
+    let replaced_values = replaced.fields();
     assert_eq!(
-        values.get("connection_id"),
+        replaced_values.get("connection_id"),
         Some(&JsonData::String("conn-2".to_owned()))
     );
-    assert_eq!(values.get("timezone"), None);
+    assert_eq!(replaced_values.get("timezone"), None);
     database.close().await;
 }
