@@ -41,6 +41,9 @@ fn runtime() -> Runtime {
 #[case::the_sync_facade_without_a_tier_sees_no_counters(
     "the_sync_facade_without_a_tier_sees_no_counters"
 )]
+#[case::the_async_facade_without_a_usage_tier_sees_no_counters(
+    "the_async_facade_without_a_usage_tier_sees_no_counters"
+)]
 #[case::the_counter_read_returns_after_the_local_entry_expires(
     "the_counter_read_returns_after_the_local_entry_expires"
 )]

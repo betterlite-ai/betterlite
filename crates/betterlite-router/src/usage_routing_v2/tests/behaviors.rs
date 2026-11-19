@@ -44,6 +44,9 @@ pub(super) async fn run(name: &str) {
         "the_sync_facade_without_a_tier_sees_no_counters" => {
             the_sync_facade_without_a_tier_sees_no_counters();
         }
+        "the_async_facade_without_a_usage_tier_sees_no_counters" => {
+            the_async_facade_without_a_usage_tier_sees_no_counters().await;
+        }
         "the_counter_read_returns_after_the_local_entry_expires" => {
             the_counter_read_returns_after_the_local_entry_expires().await;
         }
@@ -369,6 +372,23 @@ fn the_sync_facade_without_a_tier_sees_no_counters() {
     let pool = [plain("a"), plain("b")];
     let picked = service(&pool, 0).select_now(None, &mut last()).unwrap();
     assert_eq!(picked, 1);
+}
+
+async fn the_async_facade_without_a_usage_tier_sees_no_counters() {
+    let pool = [plain("a"), plain("b")];
+    let store = FakeStore::new(&[]);
+    let clock = TestClock::new();
+    let tiers = ReadTiers {
+        cooldown: Arc::new(usage_tier(&clock)),
+        usage: None,
+    };
+    let mut request = RequestReads::default();
+    let picked = service(&pool, 0)
+        .select_async(&store, &tiers, &mut request, &mut first())
+        .await
+        .unwrap();
+    assert_eq!(picked, 0);
+    assert!(store.reads().is_empty());
 }
 
 async fn the_counter_read_returns_after_the_local_entry_expires() {

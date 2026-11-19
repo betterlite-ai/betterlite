@@ -19,7 +19,7 @@ use super::support::{
 pub(super) async fn run(name: &str) {
     match name {
         "no_deployment_reports_every_loaded_deployment" => {
-            no_deployment_reports_every_loaded_deployment();
+            no_deployment_reports_every_loaded_deployment().await;
         }
         "the_error_counts_an_unread_pool_as_zero" => the_error_counts_an_unread_pool_as_zero(),
         "the_error_keeps_a_missing_value_missing" => the_error_keeps_a_missing_value_missing(),
@@ -39,7 +39,7 @@ pub(super) async fn run(name: &str) {
     }
 }
 
-fn no_deployment_reports_every_loaded_deployment() {
+async fn no_deployment_reports_every_loaded_deployment() {
     let pool = [
         deployment("a", &[("tpm", number(10)), ("rpm", number(2))], &[], &[]),
         deployment("b", &[("tpm", number(1))], &[], &[]),
@@ -80,6 +80,22 @@ fn no_deployment_reports_every_loaded_deployment() {
         reported.to_string(),
         "No deployments available for selected model. Passed model=gpt-4o. Deployments={'a': {'current_tpm': 5, 'tpm_limit': 10, 'current_rpm': 1, 'rpm_limit': 2}, 'b': {'current_tpm': 2, 'tpm_limit': 1, 'current_rpm': None, 'rpm_limit': inf}}"
     );
+    // the async facade reads the same counters from its store and reports the same pool
+    let store = FakeStore::new(&[
+        (tpm_window("a").as_str(), 5),
+        (tpm_window("b").as_str(), 2),
+        (rpm_window("a").as_str(), 1),
+    ]);
+    let clock = TestClock::new();
+    let mut request = RequestReads::default();
+    let failed = service(&pool, 6)
+        .select_async(&store, &tiers(&clock), &mut request, &mut first())
+        .await
+        .unwrap_err();
+    let SelectionError::NoDeployment(async_reported) = failed else {
+        panic!("the async pool is past its limits: {failed:?}");
+    };
+    assert_eq!(async_reported, reported);
 }
 
 fn the_error_counts_an_unread_pool_as_zero() {
