@@ -1,11 +1,9 @@
-use super::azure;
 use super::call::Run;
 use super::client::{self, HttpBuilder};
 use super::outcome::{Outcome, RunOutcome, job_view};
-use super::vertex;
+use super::{azure, vertex};
 use crate::sdk_http::error::SdkHttpError;
-use crate::sdk_http::result::Failure;
-use crate::sdk_http::result::kinds::SdkResult;
+use crate::sdk_http::result::{Failure, kinds::SdkResult};
 use betterlite_azure::fine_tuning::error::AzureFineTuneError;
 use betterlite_core::api::fine_tuning_create::connection::CreateParams;
 use betterlite_core::api::fine_tuning_create::service::FineTuningCreate;
@@ -28,6 +26,7 @@ use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex, PoisonError};
 use thiserror::Error;
+use tokio::task::{JoinError, JoinSet};
 
 #[derive(Debug, Error)]
 pub(crate) enum SendError {
@@ -44,7 +43,9 @@ pub(crate) enum SendError {
     #[error("the oracle base URL is not valid: {0}")]
     BaseUrl(#[from] url::ParseError),
     #[error("the oracle blocking create task stopped: {0}")]
-    Join(#[from] tokio::task::JoinError),
+    Join(#[from] JoinError),
+    #[error("the oracle blocking create task set is empty")]
+    Empty,
 }
 pub(crate) async fn run(
     runs: &[Run],
@@ -139,15 +140,17 @@ impl FineTuningCreateDispatch for Dispatch {
     ) -> impl Future<Output = Result<FineTuneJob, SendError>> + Send {
         let urls = Arc::clone(&self.urls);
         async move {
+            let mut tasks = JoinSet::new();
             match target {
                 FineTuningCreateTarget::OpenAi(call) => {
-                    tokio::task::spawn_blocking(move || openai(call)).await?
+                    tasks.spawn_blocking(move || openai(call));
                 }
                 FineTuningCreateTarget::Azure(call) => {
-                    tokio::task::spawn_blocking(move || azure::create(call)).await?
+                    tasks.spawn_blocking(move || azure::create(call));
                 }
-                FineTuningCreateTarget::Vertex(call) => vertex::create(call, urls).await,
+                FineTuningCreateTarget::Vertex(call) => return vertex::create(call, urls).await,
             }
+            tasks.join_next().await.ok_or(SendError::Empty)?
         }
     }
 }
@@ -186,7 +189,6 @@ pub(crate) fn seconds(timeout: FineTuningTimeout) -> Option<f64> {
         }
     }
 }
-// the case env is the only settings source here: every chain falls back to it after the request values
 fn settings(env: &BTreeMap<String, String>) -> ResourceSdkSettings {
     let secret = |name: &str| {
         env.get(name)
