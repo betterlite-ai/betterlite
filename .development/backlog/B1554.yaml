@@ -1,14 +1,14 @@
 id: B1554
 milestone: M3 providers
 title: Authenticate DataForSEO tasks and preserve first-result semantics
-status: todo
+status: done
 depends_on: [B002, B3274, B171]
 file: tasks/B1554-dataforseo-search.yaml
 covers:
   - "litellm/llms/dataforseo/**"
 parent: B048
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2468
