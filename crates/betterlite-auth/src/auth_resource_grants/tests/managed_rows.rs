@@ -10,7 +10,7 @@ use rstest::rstest;
 use crate::auth_cache::gateway_cache;
 use crate::auth_read::table::AuthReadError;
 use crate::auth_resource_grants::managed_rows::{
-    ManagedVectorStoreCache, ManagedVectorStoreLookupError, VectorStoreRow, project_row,
+    ManagedVectorStoreCache as _, ManagedVectorStoreLookupError, VectorStoreRow, project_row,
     vector_store_rows_by_uuids,
 };
 use crate::auth_resource_grants::tests::support::{
@@ -146,7 +146,7 @@ async fn empty_projection_skipped() {
     assert_eq!(identifiers(&found), ["a"]);
     assert_eq!(
         cache.writes(),
-        vec![("managed_vector_store_id:a".to_owned(), 60.0)]
+        vec![("managed_vector_store_id:a".to_owned(), 60.0_f64)]
     );
 }
 
@@ -171,7 +171,7 @@ async fn management_ttl_applied() {
     assert_eq!(identifiers(&found), ["a"]);
     assert_eq!(
         cache.writes(),
-        vec![("managed_vector_store_id:a".to_owned(), 123.5)]
+        vec![("managed_vector_store_id:a".to_owned(), 123.5_f64)]
     );
 }
 
@@ -254,7 +254,7 @@ async fn cache_partial_writes_survive() {
     }
     assert_eq!(
         cache.writes(),
-        vec![("managed_vector_store_id:a".to_owned(), 60.0)]
+        vec![("managed_vector_store_id:a".to_owned(), 60.0_f64)]
     );
 
     let failing = RecordingCache::new(60.0).failing_write_after(1);
@@ -267,6 +267,6 @@ async fn cache_partial_writes_survive() {
     }
     assert_eq!(
         failing.writes(),
-        vec![("managed_vector_store_id:a".to_owned(), 60.0)]
+        vec![("managed_vector_store_id:a".to_owned(), 60.0_f64)]
     );
 }

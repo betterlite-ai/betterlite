@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Mutex, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_db::budget_permission_rows::{JsonData, LiteLLMObjectPermissionTable};
@@ -140,25 +141,25 @@ impl ObjectPermissionRows for RecordingPermissions {
 
 pub(super) struct RecordingSelection {
     ids: Vec<String>,
-    calls: Mutex<usize>,
+    calls: AtomicUsize,
 }
 
 impl RecordingSelection {
     pub(super) fn new(ids: &[&str]) -> Self {
         Self {
             ids: ids.iter().map(|id| (*id).to_owned()).collect(),
-            calls: Mutex::new(0),
+            calls: AtomicUsize::new(0),
         }
     }
 
     pub(super) fn calls(&self) -> usize {
-        *self.calls.lock().expect("the selection calls lock")
+        self.calls.load(Ordering::Relaxed)
     }
 }
 
 impl VectorStoreIds for RecordingSelection {
     fn vector_store_ids(&self, _body: &BTreeMap<String, JsonData>) -> Vec<String> {
-        *self.calls.lock().expect("the selection calls lock") += 1;
+        self.calls.fetch_add(1, Ordering::Relaxed);
         self.ids.clone()
     }
 }
@@ -232,15 +233,16 @@ impl ManagedVectorStoreCache for RecordingCache {
         _row: &ManagedVectorStoresTable,
         ttl: f64,
     ) -> Result<(), AuthCacheError> {
-        let mut writes = self.writes.lock().expect("the cache writes lock");
-        if self
-            .fail_write_after
-            .is_some_and(|allowed| writes.len() >= allowed)
-        {
-            drop(writes);
+        let over_budget = self.fail_write_after.is_some_and(|allowed| {
+            self.writes.lock().expect("the cache writes lock").len() >= allowed
+        });
+        if over_budget {
             return Err(AuthCacheError::Payload(Box::new(payload_error())));
         }
-        writes.push((key.to_owned(), ttl));
+        self.writes
+            .lock()
+            .expect("the cache writes lock")
+            .push((key.to_owned(), ttl));
         Ok(())
     }
 }
@@ -327,7 +329,7 @@ impl SearchToolGrant for ScriptedGrant {
     fn authorize(&self, name: &str) -> Result<(), SearchToolFailure> {
         self.calls
             .lock()
-            .expect("the grant calls lock")
+            .unwrap_or_else(PoisonError::into_inner)
             .push(name.to_owned());
         match self.answer {
             GrantAnswer::Allow => Ok(()),

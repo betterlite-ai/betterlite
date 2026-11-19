@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::database_failures::gate::{DbLookupStallTracker, SystemClock};
 use betterlite_db::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
-use betterlite_db::postgres_store::rows::{Key, KeyAction, KeyColumn, Table};
+use betterlite_db::postgres_store::rows::{Key, KeyAction, KeyColumn, Table as _};
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
@@ -14,7 +14,7 @@ use tokio_postgres::types::ToSql;
 use tokio_util::task::TaskTracker;
 
 use crate::auth_read::adapter::AuthReadAdapter;
-use crate::auth_read::include::{Including, IncludingQuery};
+use crate::auth_read::include::{Including as _, IncludingQuery};
 use crate::auth_read::table::ReadContext;
 use crate::auth_resource_grants::managed_rows::{
     ManagedRowsQuery, ManagedVectorStoreRows, vector_store_rows_by_uuids,
@@ -108,7 +108,7 @@ fn list_binds_the_id_array_and_take() {
     assert_eq!(listed.parameters.len(), 1);
 }
 
-fn grant_key<'query>(value: &'query (dyn ToSql + Sync)) -> Key<'query, Infallible> {
+fn grant_key(value: &(dyn ToSql + Sync)) -> Key<'_, Infallible> {
     Key {
         column: KeyColumn::Id,
         value,
@@ -278,8 +278,8 @@ async fn postgres_permission_rows() {
             AuthReadAdapter::ObjectPermission,
             context(),
         );
-        assert_permission_rows(&permissions).await;
-    }
+        assert_permission_rows(&permissions).await
+    };
     close(fixture, &pool).await;
 }
 
@@ -296,7 +296,7 @@ async fn postgres_vector_rows() {
             context(),
         );
         assert_store_queries(&stores).await;
-        assert_store_projection(&stores).await;
-    }
+        assert_store_projection(&stores).await
+    };
     close(fixture, &pool).await;
 }

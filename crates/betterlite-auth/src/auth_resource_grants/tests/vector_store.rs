@@ -28,11 +28,9 @@ async fn no_db_debug_skip() {
         key: Some(&key),
         team: None,
     };
-    assert!(
-        vector_store_access_check(request, Some(&selection), &permissions)
-            .await
-            .is_ok()
-    );
+    vector_store_access_check(request, Some(&selection), &permissions)
+        .await
+        .unwrap();
     assert_eq!(selection.calls(), 0);
     assert!(permissions.calls().is_empty());
 }
@@ -49,11 +47,9 @@ async fn no_ids_debug_skip() {
         key: Some(&key),
         team: None,
     };
-    assert!(
-        vector_store_access_check(request, Some(&selection), &permissions)
-            .await
-            .is_ok()
-    );
+    vector_store_access_check(request, Some(&selection), &permissions)
+        .await
+        .unwrap();
     assert_eq!(selection.calls(), 1);
     assert!(permissions.calls().is_empty());
 }
@@ -72,11 +68,9 @@ async fn rag_without_registry() {
         key: Some(&key),
         team: None,
     };
-    assert!(
-        vector_store_access_check(request, None, &allowed)
-            .await
-            .is_ok()
-    );
+    vector_store_access_check(request, None, &allowed)
+        .await
+        .unwrap();
     assert_eq!(allowed.calls(), vec!["perm-key".to_owned()]);
 
     let restricted = RecordingPermissions::new(&[(
@@ -127,11 +121,9 @@ async fn invalid_rag_id_ignored() {
         key: Some(&key),
         team: None,
     };
-    assert!(
-        vector_store_access_check(request, None, &permissions)
-            .await
-            .is_ok()
-    );
+    vector_store_access_check(request, None, &permissions)
+        .await
+        .unwrap();
     assert!(permissions.calls().is_empty());
 }
 
@@ -164,11 +156,9 @@ async fn registry_then_rag_dedup() {
         key: Some(&key),
         team: None,
     };
-    assert!(
-        vector_store_access_check(request, Some(&selection), &permissions)
-            .await
-            .is_ok()
-    );
+    vector_store_access_check(request, Some(&selection), &permissions)
+        .await
+        .unwrap();
     assert_eq!(permissions.calls(), vec!["perm-key".to_owned()]);
 }
 
@@ -194,11 +184,9 @@ async fn key_before_team_query() {
         key: Some(&key),
         team: Some(&team_row),
     };
-    assert!(
-        vector_store_access_check(request, Some(&selection), &permissions)
-            .await
-            .is_ok()
-    );
+    vector_store_access_check(request, Some(&selection), &permissions)
+        .await
+        .unwrap();
     assert_eq!(
         permissions.calls(),
         vec!["perm-key".to_owned(), "perm-team".to_owned()]
@@ -218,11 +206,9 @@ async fn empty_permission_id_queries() {
         key: Some(&key),
         team: Some(&team_row),
     };
-    assert!(
-        vector_store_access_check(request, Some(&selection), &permissions)
-            .await
-            .is_ok()
-    );
+    vector_store_access_check(request, Some(&selection), &permissions)
+        .await
+        .unwrap();
     assert_eq!(
         permissions.calls(),
         vec![String::new(), String::new()],
@@ -267,11 +253,9 @@ async fn missing_row_unrestricted() {
         key: Some(&key),
         team: Some(&team_row),
     };
-    assert!(
-        vector_store_access_check(request, Some(&selection), &permissions)
-            .await
-            .is_ok()
-    );
+    vector_store_access_check(request, Some(&selection), &permissions)
+        .await
+        .unwrap();
     assert_eq!(
         permissions.calls(),
         vec!["perm-missing".to_owned(), "perm-missing-team".to_owned()]
@@ -282,10 +266,10 @@ async fn missing_row_unrestricted() {
 fn null_empty_vector_lists() {
     let ids = vec!["vs-1".to_owned()];
     let null = permission(r#"{"object_permission_id":"perm-1","vector_stores":null}"#);
-    assert!(can_object_call_vector_stores(VectorStoreObject::Key, &ids, Some(&null)).is_ok());
+    can_object_call_vector_stores(VectorStoreObject::Key, &ids, Some(&null)).unwrap();
     let empty = permission(r#"{"object_permission_id":"perm-2","vector_stores":[]}"#);
-    assert!(can_object_call_vector_stores(VectorStoreObject::Key, &ids, Some(&empty)).is_ok());
-    assert!(can_object_call_vector_stores(VectorStoreObject::Key, &ids, None).is_ok());
+    can_object_call_vector_stores(VectorStoreObject::Key, &ids, Some(&empty)).unwrap();
+    can_object_call_vector_stores(VectorStoreObject::Key, &ids, None).unwrap();
     let restricted = permission(r#"{"object_permission_id":"perm-3","vector_stores":["vs-2"]}"#);
     assert!(
         can_object_call_vector_stores(VectorStoreObject::Key, &ids, Some(&restricted)).is_err()
@@ -447,7 +431,7 @@ fn permitted_rows_follow_key_then_team() {
     let denial = permitted_vector_stores(&ids, Some(&key), Some(&team_row), &rows)
         .expect_err("the resolved team row denies");
     assert_eq!(denial.error_type, "team_vector_store_access_denied");
-    assert!(permitted_vector_stores(&ids, Some(&key), None, &rows).is_ok());
+    permitted_vector_stores(&ids, Some(&key), None, &rows).unwrap();
     assert!(
         permitted_vector_stores(&ids, Some(&key), Some(&team_row), &BTreeMap::new()).is_ok(),
         "an unresolved row leaves the object unrestricted"

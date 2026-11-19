@@ -16,7 +16,7 @@ const RESTRICTED_TEAM: &str = r#"{"team_id":"team-1","object_permission":{"objec
 #[test]
 fn absent_permission_unrestricted() {
     let key = user_key(r#"{"token":"key-1"}"#);
-    assert!(can_key_call_search_tool("duckduckgo", &key).is_ok());
+    can_key_call_search_tool("duckduckgo", &key).unwrap();
     assert!(search_tool_names(None).is_empty());
 }
 
@@ -25,11 +25,11 @@ fn empty_search_list_unrestricted() {
     let empty = user_key(
         r#"{"token":"key-1","object_permission":{"object_permission_id":"perm-1","search_tools":[]}}"#,
     );
-    assert!(can_key_call_search_tool("anything", &empty).is_ok());
+    can_key_call_search_tool("anything", &empty).unwrap();
     let null = user_key(
         r#"{"token":"key-2","object_permission":{"object_permission_id":"perm-2","search_tools":null}}"#,
     );
-    assert!(can_key_call_search_tool("anything", &null).is_ok());
+    can_key_call_search_tool("anything", &null).unwrap();
     assert!(
         search_tool_names(Some(&permission(
             r#"{"object_permission_id":"perm-3","search_tools":[]}"#
@@ -47,7 +47,7 @@ fn empty_search_list_unrestricted() {
 #[test]
 fn exact_search_name() {
     let key = user_key(RESTRICTED_KEY);
-    assert!(can_key_call_search_tool("allowed-tool", &key).is_ok());
+    can_key_call_search_tool("allowed-tool", &key).unwrap();
     assert!(can_key_call_search_tool("allowed", &key).is_err());
     assert!(can_key_call_search_tool("allowed-tool-2", &key).is_err());
 }
@@ -66,14 +66,14 @@ fn search_no_wildcards() {
     assert_eq!(error.code, "403");
     assert!(error.message.contains("tool-1"), "{}", error.message);
     assert!(error.message.contains("tool-*"), "{}", error.message);
-    assert!(can_key_call_search_tool("*", &key).is_ok());
+    can_key_call_search_tool("*", &key).unwrap();
 }
 
 #[test]
 fn team_missing_allows() {
-    assert!(can_team_call_search_tool("tool", None).is_ok());
+    can_team_call_search_tool("tool", None).unwrap();
     let plain = team(r#"{"team_id":"team-1"}"#);
-    assert!(can_team_call_search_tool("tool", Some(&plain)).is_ok());
+    can_team_call_search_tool("tool", Some(&plain)).unwrap();
 }
 
 #[test]
@@ -194,7 +194,7 @@ fn admin_has_no_helper_bypass() {
         r#"{"token":"key-viewer","user_role":"proxy_admin_viewer","object_permission":{"object_permission_id":"perm-viewer","search_tools":["allowed-tool"]}}"#,
     );
     assert!(can_key_call_search_tool("other", &viewer).is_err());
-    assert!(can_key_call_search_tool("allowed-tool", &admin).is_ok());
+    can_key_call_search_tool("allowed-tool", &admin).unwrap();
 }
 
 #[test]
@@ -219,7 +219,7 @@ fn team_check_runs_only_with_a_team_id() {
     let restricted_team = team(RESTRICTED_TEAM);
     // without a team id the team row never decides, even where it would deny
     let solo = user_key(r#"{"token":"key-solo"}"#);
-    assert!(authorize_search_tool("other", &solo, Some(&restricted_team)).is_ok());
+    authorize_search_tool("other", &solo, Some(&restricted_team)).unwrap();
     // the key is unrestricted, so only the team decides; the team does not allow this tool
     let member = user_key(r#"{"token":"key-member","team_id":"team-1"}"#);
     let denial = authorize_search_tool("other", &member, Some(&restricted_team))
@@ -231,5 +231,5 @@ fn team_check_runs_only_with_a_team_id() {
         "{}",
         denial.message
     );
-    assert!(authorize_search_tool("other", &member, None).is_ok());
+    authorize_search_tool("other", &member, None).unwrap();
 }
