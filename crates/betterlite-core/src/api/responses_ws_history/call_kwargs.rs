@@ -46,13 +46,14 @@ pub fn update_proxy_request(
             });
         }
     };
+    // an empty stored map and a new one behave the same, so no emptiness guard is needed
     let mut proxy = match metadata.get("proxy_server_request") {
-        Some(Json::Object(fields)) if !fields.is_empty() => fields.clone(),
+        Some(Json::Object(fields)) => fields.clone(),
         Some(other) if has_content(other) => return Ok(()),
         _ => IndexMap::new(),
     };
     let mut body = match proxy.get("body") {
-        Some(Json::Object(fields)) if !fields.is_empty() => fields.clone(),
+        Some(Json::Object(fields)) => fields.clone(),
         Some(other) if has_content(other) => {
             return Err(ResponsesWsHistoryError::Shape {
                 field: "body",

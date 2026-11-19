@@ -234,6 +234,11 @@ fn constructor_defaults_and_passthrough() {
         None
     );
     assert_eq!(
+        model_group_view(r#"{"model_group": {}, "deployment_model_name": "deployment-alias"}"#)
+            .as_deref(),
+        Some("deployment-alias")
+    );
+    assert_eq!(
         model_group_view(r#"{"deployment_model_name": "deployment-alias"}"#).as_deref(),
         Some("deployment-alias")
     );
@@ -872,6 +877,10 @@ fn different_provider_does_not_copy_credentials() {
         Some(Json::Text("key-2".to_owned()))
     );
     assert!(!kwargs.contains_key("custom_llm_provider"));
+    assert!(
+        handler.same_provider(Some(UNKNOWN_MODEL)),
+        "the connection's own model is the same provider even when its provider is the custom fallback"
+    );
 
     let handles = support::recording_sink();
     let mut connection = support::connection(MODEL, handles.sink);
@@ -939,6 +948,12 @@ fn proxy_request_projection() {
     );
     assert_eq!(
         proxy_fresh(r#"{"input": "i", "litellm_metadata": {"proxy_server_request": []}}"#),
+        (Some(body.clone()), Some(body.clone()))
+    );
+    assert_eq!(
+        proxy_fresh(
+            r#"{"input": "i", "litellm_metadata": {"proxy_server_request": {"body": null}}}"#
+        ),
         (Some(body.clone()), Some(body.clone()))
     );
     assert!(proxy_unchanged(
