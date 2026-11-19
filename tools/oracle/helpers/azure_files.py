@@ -1,4 +1,5 @@
 import asyncio
+import io
 from collections.abc import Coroutine
 from typing import Final, Literal, NotRequired, Protocol, TypeAlias, TypedDict, cast
 
@@ -8,7 +9,11 @@ import openai
 import pydantic
 from litellm.llms.azure.common_utils import BaseAzureLLM
 from litellm.llms.azure.files.handler import AzureOpenAIFilesAPI
-from litellm.types.llms.openai import CREATE_FILE_REQUESTS_PURPOSE
+from litellm.types.llms.openai import (
+    CREATE_FILE_REQUESTS_PURPOSE,
+    CreateFileRequest,
+    FileExpiresAfter,
+)
 from openai import AsyncAzureOpenAI, AsyncOpenAI, AzureOpenAI, OpenAI
 from pydantic import JsonValue, TypeAdapter
 
@@ -29,17 +34,6 @@ COMPARED: Final[tuple[str, ...]] = ("accept", "api-key", "authorization", "opena
 RAISED: Final[JsonObject] = {
     "class": "", "status": None, "type": None, "param": None, "code": None, "message": None,
 }
-
-
-class Expiry(TypedDict):
-    anchor: Literal["created_at"]
-    seconds: int
-
-
-class Upload(TypedDict):
-    file: bytes
-    purpose: CREATE_FILE_REQUESTS_PURPOSE
-    expires_after: NotRequired[Expiry]
 
 
 class Reply(TypedDict):
@@ -194,11 +188,14 @@ def client_step(step: Step, client: SdkClient | None, *, is_async: bool) -> Json
     if built is None:
         raise ValueError(CLIENT_MISSING)
     read: float | None = None
+    # the client union's `timeout` lookup yields the client classes too, so the match names them
     match built.timeout:
         case httpx.Timeout():
             read = built.timeout.read
-        case float():
-            read = built.timeout
+        case float() | int() as seconds:
+            read = seconds
+        case None | OpenAI() | AsyncOpenAI():
+            read = None
     return {
         "kind": type(built).__name__, "base_url": str(built.base_url),
         "query": JSON.validate_python(built.default_query), "max_retries": built.max_retries,
@@ -215,10 +212,14 @@ def file_step(step: Step, client: SdkClient | None, *, is_async: bool) -> JsonVa
         purpose = step.get("create_purpose")
         if content is None or purpose is None:
             raise ValueError("a create step carries no content or create purpose")
-        data: Upload = {"file": content.encode(), "purpose": PURPOSE.validate_python(purpose)}
-        expires_after = step.get("expires_after")
-        if expires_after is not None:
-            data["expires_after"] = {"anchor": "created_at", "seconds": expires_after}
+        expiry = step.get("expires_after")
+        expires_after: FileExpiresAfter | None = None
+        if expiry is not None:
+            expires_after = {"anchor": "created_at", "seconds": expiry}
+        data: CreateFileRequest = {
+            "file": io.BytesIO(content.encode()), "purpose": PURPOSE.validate_python(purpose),
+            "expires_after": expires_after,
+        }
         created = API.create_file(
             _is_async=is_async, create_file_data=data, api_base=args["api_base"],
             api_key=args["api_key"], api_version=args["api_version"], client=client,
