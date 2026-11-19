@@ -180,12 +180,12 @@ fn runtime() -> Runtime {
 }
 
 fn responded(model: &str, audio: Option<&str>) -> ChatResponse {
-    let audio = audio.map_or_else(String::new, |data| {
+    let audio_part = audio.map_or_else(String::new, |data| {
         format!(r#", "audio": {{"data": "{data}"}}"#)
     });
     let body = format!(
         r#"{{"id": "chatcmpl-1", "object": "chat.completion", "created": 1, "model": {model:?},
-            "choices": [{{"index": 0, "message": {{"role": "assistant", "content": null{audio}}},
+            "choices": [{{"index": 0, "message": {{"role": "assistant", "content": null{audio_part}}},
             "finish_reason": "stop"}}],
             "usage": {{"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}}}}"#
     );
@@ -223,8 +223,10 @@ fn transform_failure(
         .block_on(bridge.speech(arguments, Some(&mut logging)))
         .expect_err("a failed transformation");
     match error {
-        SpeechBridgeError::Transform(error) => error,
-        other => panic!("expected a transformation error, got {other}"),
+        SpeechBridgeError::Transform(transform) => transform,
+        other @ (SpeechBridgeError::Required { .. } | SpeechBridgeError::Completion { .. }) => {
+            panic!("expected a transformation error, got {other}")
+        }
     }
 }
 
@@ -513,7 +515,7 @@ fn gemini_needs_both_substrings() {
     );
     assert_eq!(plain.content.body, b"a");
     assert_eq!(content_type(&plain), Some("audio/mpeg"));
-    let (tts, calls) = completed(
+    let (tts, tts_calls) = completed(
         answered(responded("gpt-4o-mini-tts", Some("YQ=="))),
         Call {
             model: Json::Text(String::from("gpt-4o-mini-tts")),
@@ -523,7 +525,7 @@ fn gemini_needs_both_substrings() {
         .arguments(),
     );
     assert_eq!(
-        calls[0].get("audio"),
+        tts_calls[0].get("audio"),
         Some(&json_value(r#"{"voice": "alloy", "format": "mp3"}"#))
     );
     assert_eq!(tts.content.body, b"a");
@@ -724,7 +726,7 @@ fn retained_cost(hidden: HiddenParams) -> Option<Decimal> {
 fn response_cost_keeps_only_python_floats() {
     assert_eq!(
         retained_cost(projection(r#"{"response_cost": 2.0}"#)),
-        Some(Decimal::from(2))
+        Some(Decimal::from(2_i32))
     );
     assert_eq!(
         retained_cost(projection(r#"{"response_cost": 2.5}"#)),

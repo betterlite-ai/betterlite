@@ -48,7 +48,7 @@ impl<'call> SpeechBridgeArguments<'call> {
         let optional_params = required("optional_params", self.optional_params, object_of)?;
         let litellm_params = required("litellm_params", self.litellm_params, object_of)?;
         let headers = required("headers", self.headers, object_of)?;
-        let logging = logging.ok_or(SpeechBridgeError::Required {
+        let state = logging.ok_or(SpeechBridgeError::Required {
             name: "logging_obj",
         })?;
         Ok(ValidatedArguments {
@@ -59,7 +59,7 @@ impl<'call> SpeechBridgeArguments<'call> {
             litellm_params,
             headers,
             custom_llm_provider,
-            logging,
+            logging: state,
         })
     }
 }
@@ -72,10 +72,9 @@ fn required<'value, Source, T>(
 where
     Source: Error + 'static,
 {
-    match value.and_then(read) {
-        Some(found) => Ok(found),
-        None => Err(SpeechBridgeError::Required { name }),
-    }
+    value
+        .and_then(read)
+        .map_or_else(|| Err(SpeechBridgeError::Required { name }), Ok)
 }
 
 const fn text_of(value: &Json) -> Option<&str> {
@@ -134,10 +133,10 @@ impl<'call> ValidatedArguments<'call> {
 }
 
 fn user_message(input: &str) -> Json {
-    Json::Object(IndexMap::from([
+    Json::List(vec![Json::Object(IndexMap::from([
         (String::from("role"), Json::Text(String::from("user"))),
         (String::from("content"), Json::Text(input.to_owned())),
-    ]))
+    ]))])
 }
 
 fn insert_chat_options(
@@ -160,11 +159,11 @@ fn chat_audio_param(
     voice: Option<&Json>,
     optional_params: &IndexMap<String, Json>,
 ) -> Option<Json> {
-    let Json::Text(voice) = voice? else {
+    let Json::Text(text) = voice? else {
         return None;
     };
     let mut audio = IndexMap::new();
-    audio.insert(String::from("voice"), Json::Text(voice.clone()));
+    audio.insert(String::from("voice"), Json::Text(text.clone()));
     if let Some(format) = chat_audio_format(model, optional_params) {
         audio.insert(String::from("format"), Json::Text(format.to_owned()));
     }

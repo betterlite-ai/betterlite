@@ -64,7 +64,7 @@ pub struct SpeechToCompletionBridge<Completions> {
 
 impl<Completions> SpeechToCompletionBridge<Completions>
 where
-    Completions: SpeechCompletions,
+    Completions: SpeechCompletions + Sync,
 {
     pub async fn speech<'call>(
         &self,
