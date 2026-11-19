@@ -19,7 +19,8 @@ use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
-    InputParams {
+    #[serde(rename = "input_params")]
+    Params {
         kwargs: Object,
         #[serde(default)]
         custom_llm_provider: Option<String>,
@@ -89,7 +90,7 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::InputParams {
+            Input::Params {
                 kwargs,
                 custom_llm_provider,
             } => input_params_answer(kwargs, custom_llm_provider.as_deref()),
