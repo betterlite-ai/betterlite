@@ -25,7 +25,7 @@ use tokio::sync::Mutex as AsyncMutex;
 
 use super::cases::{Case, StashCase, TpdOperationCase, WindowCase};
 use super::fakes::{
-    FakeBatchStore, FakeUsage, RecordingCounters, RecordingGauges, lock, operation_json,
+    FakeBatchStore, FakeUsage, RecordingCounters, RecordingGauges, WINDOW, lock, operation_json,
 };
 
 pub(crate) struct FixedClock;
