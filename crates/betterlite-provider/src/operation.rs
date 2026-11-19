@@ -239,10 +239,7 @@ pub enum OperationError {
         source: ParameterError,
     },
     #[error(transparent)]
-    Anthropic {
-        #[source]
-        source: Box<AnthropicCallError>,
-    },
+    Anthropic { source: Box<AnthropicCallError> },
 }
 
 // LiteLLM routes a status of 400 and up back as the provider's own error body, so the caller can render it

@@ -26,7 +26,7 @@ use indexmap::IndexMap;
 use uuid::Uuid;
 
 use crate::anthropic_dispatch::base::Surface;
-use crate::anthropic_dispatch::completion::{CompletionCall, CompletionSettings, Reply};
+use crate::anthropic_dispatch::completion::{CompletionCall, CompletionSettings};
 use crate::anthropic_dispatch::gateway::context;
 use crate::anthropic_dispatch::gateway::error;
 use crate::anthropic_dispatch::gateway::files;
@@ -36,7 +36,7 @@ use crate::anthropic_dispatch::gateway::runtime::AnthropicRuntime;
 use crate::anthropic_dispatch::gateway::{AnthropicUpstream, provider_headers};
 use crate::anthropic_dispatch::native::legacy::Legacy;
 use crate::anthropic_dispatch::native::preparation::Preparation;
-use crate::anthropic_dispatch::native::{ClientHandle, Counter, Native, Runtime};
+use crate::anthropic_dispatch::native::{ClientHandle, Counter, Native, Reply, Runtime};
 use crate::anthropic_dispatch::{CallLogging, completion};
 use crate::operation::OperationError;
 use crate::prepared::body::chat_request_fields;
@@ -61,21 +61,21 @@ pub(crate) async fn execute(
     prepared: &PreparedRequest,
     deployment: &Deployment,
 ) -> Result<Upstream, OperationError> {
-    let PreparedRequest::Anthropic(prepared) = prepared else {
+    let PreparedRequest::Anthropic(inner) = prepared else {
         return Err(error::unsupported());
     };
     let runtime = deployment
         .anthropic
         .as_deref()
         .ok_or_else(error::unavailable)?;
-    let fields = chat_request_fields(&prepared.chat.request)?;
+    let fields = chat_request_fields(&inner.chat.request)?;
     let messages = serde_json::to_value(fields.messages)
         .and_then(serde_json::from_value)
         .map_err(|source| OperationError::Encode { source })?;
     let request = Request {
         messages,
         params: fields.params,
-        stream: prepared.stream,
+        stream: inner.stream,
     };
     let outcome = run(runtime, client, deployment, request).await?;
     let headers = provider_headers(&outcome);
