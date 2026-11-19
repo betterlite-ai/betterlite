@@ -519,10 +519,14 @@ fn operation<'step>(step: &'step Step) -> Operation<'step> {
     }
 }
 
+// The fixture builds the connection, then hands it to the work the case asks for
 fn with_connection<T>(
     step: &Step,
     materializer: &Materializer,
-    run: impl FnOnce(Connection<'_, '_, Materializer>) -> T,
+    work: for<'cache, 'data, 'request> fn(
+        Connection<'cache, 'data, Materializer>,
+        &'request Step,
+    ) -> T,
 ) -> T {
     let endpoints = EndpointSettings::default();
     let environment: BTreeMap<String, String> = BTreeMap::new();
@@ -550,7 +554,27 @@ fn with_connection<T>(
         refresh: &mut refresh,
         materializer,
     };
-    run(connection)
+    work(connection, step)
+}
+
+fn call_through(
+    connection: Connection<'_, '_, Materializer>,
+    step: &Step,
+) -> Result<Reply, AzureBatchesError> {
+    tokio::runtime::Builder::new_current_thread()
+        .build()
+        .expect("the test runtime builds")
+        .block_on(call(connection, operation(step)))
+}
+
+fn project_through(
+    mut connection: Connection<'_, '_, Materializer>,
+    _step: &Step,
+) -> Result<Projection, Raised> {
+    connection
+        .get_openai_client()
+        .map(|outcome| projection(&outcome))
+        .map_err(|error| raised(&error))
 }
 
 fn raised(error: &AzureBatchesError) -> Raised {
@@ -601,12 +625,7 @@ pub(super) fn observe(step: &Step) -> Observation {
         calls: Arc::clone(&calls),
         seen: Arc::clone(&seen),
     };
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .expect("the test runtime builds");
-    let result = with_connection(step, &materializer, |connection| {
-        runtime.block_on(call(connection, operation(step)))
-    });
+    let result = with_connection(step, &materializer, call_through);
     let raised = result.as_ref().err().map(raised);
     Observation {
         reply: result.ok().map(answered),
@@ -623,12 +642,7 @@ pub(super) fn project(step: &Step) -> Result<Projection, Raised> {
         calls: Calls::default(),
         seen: Shared::default(),
     };
-    with_connection(step, &materializer, |mut connection| {
-        connection
-            .get_openai_client()
-            .map(|outcome| projection(&outcome))
-            .map_err(|error| raised(&error))
-    })
+    with_connection(step, &materializer, project_through)
 }
 
 pub(super) fn batch_object(body: &str) -> BatchObject {
