@@ -71,25 +71,29 @@ async fn uniqueness_global_excludes_raw_token() {
     assert_eq!(exception.code, "400");
     assert_eq!(exception.error_type, "bad_request_error");
     assert_eq!(exception.param.as_deref(), Some("key_alias"));
-    // the holding token exempts its own row, and an empty token exempts nothing
-    enforce_unique_key_alias(Some("taken"), Some(&store), Some("sk-raw"))
+    assert_token_exemption_and_free_alias(&store).await;
+    pool.close();
+    fixture.close_async().await.unwrap();
+}
+
+// the holding token exempts its own row, and an empty token exempts nothing
+async fn assert_token_exemption_and_free_alias(store: &PostgresStore) {
+    enforce_unique_key_alias(Some("taken"), Some(store), Some("sk-raw"))
         .await
         .unwrap();
     assert!(matches!(
-        enforce_unique_key_alias(Some("taken"), Some(&store), Some("sk-other")).await,
+        enforce_unique_key_alias(Some("taken"), Some(store), Some("sk-other")).await,
         Err(AliasUniquenessError::Duplicate(_))
     ));
     assert!(matches!(
-        enforce_unique_key_alias(Some("taken"), Some(&store), Some("")).await,
+        enforce_unique_key_alias(Some("taken"), Some(store), Some("")).await,
         Err(AliasUniquenessError::Duplicate(_))
     ));
     // a free alias and a missing alias both pass without a read
-    enforce_unique_key_alias(Some("free"), Some(&store), None)
+    enforce_unique_key_alias(Some("free"), Some(store), None)
         .await
         .unwrap();
-    enforce_unique_key_alias(None, Some(&store), None)
+    enforce_unique_key_alias(None, Some(store), None)
         .await
         .unwrap();
-    pool.close();
-    fixture.close_async().await.unwrap();
 }

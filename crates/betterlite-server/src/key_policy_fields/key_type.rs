@@ -10,11 +10,11 @@ pub fn handle_key_type(
     key_type: Option<LiteLLMKeyType>,
     mut columns: BTreeMap<String, JsonData>,
 ) -> BTreeMap<String, JsonData> {
-    let Some(key_type) = key_type else {
+    let Some(requested) = key_type else {
         columns.remove("key_type");
         return columns;
     };
-    let (text, preset) = key_type_parts(key_type);
+    let (text, preset) = key_type_parts(requested);
     columns.insert("key_type".to_owned(), JsonData::String(text.to_owned()));
     if let Some(route) = preset {
         columns.insert(

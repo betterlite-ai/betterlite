@@ -53,12 +53,12 @@ pub async fn enforce_key_update_hook(
     hook: Option<&LoadedHook>,
     data: &UpdateKeyRequest,
 ) -> Result<(), HookPolicyError> {
-    let Some(hook) = hook else {
+    let Some(loaded) = hook else {
         return Ok(());
     };
-    ensure_coroutine(hook, UPDATE_NOT_COROUTINE)?;
+    ensure_coroutine(loaded, UPDATE_NOT_COROUTINE)?;
     let argument = request_payload(data)?;
-    evaluate(hook, argument).await
+    evaluate(loaded, argument).await
 }
 
 // the policy request is built only after the hook proved to be a coroutine, exactly as LiteLLM orders it
@@ -69,12 +69,12 @@ pub async fn enforce_key_policy_hook<Build>(
 where
     Build: FnOnce() -> Result<CustomKeyPolicyRequest, DecodeError>,
 {
-    let Some(hook) = hook else {
+    let Some(loaded) = hook else {
         return Ok(());
     };
-    ensure_coroutine(hook, POLICY_NOT_COROUTINE)?;
+    ensure_coroutine(loaded, POLICY_NOT_COROUTINE)?;
     let request = policy_payload(&build_policy_request()?)?;
-    evaluate(hook, request).await
+    evaluate(loaded, request).await
 }
 
 fn ensure_coroutine(hook: &LoadedHook, message: &'static str) -> Result<(), HookPolicyError> {

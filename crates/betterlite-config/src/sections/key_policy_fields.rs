@@ -134,7 +134,6 @@ where
         other @ JsonValue::Null
         | other @ JsonValue::Bool(_)
         | other @ JsonValue::Number(_)
-        | other @ JsonValue::String(_)
         | other @ JsonValue::Array(_)
         | other @ JsonValue::Object(_) => parse_key_alias_pattern(other),
     }

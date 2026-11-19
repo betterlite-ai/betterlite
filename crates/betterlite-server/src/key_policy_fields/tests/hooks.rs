@@ -6,8 +6,8 @@ use axum::http::StatusCode;
 use tempfile::TempDir;
 
 use super::{object, update_request};
-use crate::key_fields::decode::DecodeError;
 use crate::key_fields::policy::{CustomKeyPolicyRequest, PolicyOperation, PolicyRequestBody};
+use crate::key_fields::update::UpdateKeyRequest;
 use crate::key_policy_fields::columns::{update_policy_request, verification_token_from_row};
 use crate::key_policy_fields::hooks::{
     DEFAULT_DENIAL, HookPolicyError, KeyHooks, POLICY_NOT_COROUTINE, UPDATE_NOT_COROUTINE,
@@ -142,11 +142,12 @@ async fn synchronous_hook_rejected_before_builder() {
     assert_eq!(error.to_string(), UPDATE_NOT_COROUTINE);
     assert_eq!(error.status_code(), None);
     let sync_policy = load(&service, HookSlot::CustomKeyPolicy, "policy_sync").await;
-    let error = enforce_key_policy_hook(Some(&sync_policy), || panic!("the builder must not run"))
-        .await
-        .unwrap_err();
+    let policy_error =
+        enforce_key_policy_hook(Some(&sync_policy), || panic!("the builder must not run"))
+            .await
+            .unwrap_err();
     assert!(matches!(
-        &error,
+        &policy_error,
         HookPolicyError::NotCoroutine { message } if *message == POLICY_NOT_COROUTINE
     ));
     service.shutdown().await;
@@ -157,62 +158,44 @@ async fn decision_default_and_custom_denial() {
     let workspace = workspace();
     let service = PythonHooks::new(Some(workspace.config));
     let data = update_request(r#"{"key_alias":"alias"}"#);
-    let default_allow = load(&service, HookSlot::CustomKeyUpdate, "update_default").await;
-    assert!(
-        enforce_key_update_hook(Some(&default_allow), &data)
-            .await
-            .is_ok()
-    );
-    let explicit_allow = load(&service, HookSlot::CustomKeyUpdate, "update_allow").await;
-    assert!(
-        enforce_key_update_hook(Some(&explicit_allow), &data)
-            .await
-            .is_ok()
-    );
-    let deny = load(&service, HookSlot::CustomKeyUpdate, "update_deny").await;
-    let error = enforce_key_update_hook(Some(&deny), &data)
-        .await
-        .unwrap_err();
-    assert!(matches!(
-        &error,
-        HookPolicyError::Denied { message } if message == DEFAULT_DENIAL
-    ));
-    assert_eq!(error.status_code(), Some(StatusCode::FORBIDDEN));
-    let custom = load(&service, HookSlot::CustomKeyUpdate, "update_deny_custom").await;
-    let error = enforce_key_update_hook(Some(&custom), &data)
-        .await
-        .unwrap_err();
-    assert!(matches!(
-        &error,
-        HookPolicyError::Denied { message } if message == "no keys for you"
-    ));
-    let null_decision = load(&service, HookSlot::CustomKeyUpdate, "update_null_decision").await;
-    assert!(
-        enforce_key_update_hook(Some(&null_decision), &data)
-            .await
-            .is_ok(),
-        "a null decision takes the default"
-    );
-    let null_message = load(
+    assert_update_outcome(&service, &data, "update_default", None).await;
+    assert_update_outcome(&service, &data, "update_allow", None).await;
+    assert_update_outcome(&service, &data, "update_deny", Some(DEFAULT_DENIAL)).await;
+    assert_update_outcome(
         &service,
-        HookSlot::CustomKeyUpdate,
-        "update_deny_null_message",
+        &data,
+        "update_deny_custom",
+        Some("no keys for you"),
     )
     .await;
-    let error = enforce_key_update_hook(Some(&null_message), &data)
-        .await
-        .unwrap_err();
-    assert!(matches!(
-        &error,
-        HookPolicyError::Denied { message } if message == DEFAULT_DENIAL
-    ));
+    assert_update_outcome(&service, &data, "update_null_decision", None).await;
+    let null_message = "update_deny_null_message";
+    assert_update_outcome(&service, &data, null_message, Some(DEFAULT_DENIAL)).await;
     let policy = load(&service, HookSlot::CustomKeyPolicy, "update_allow").await;
-    let allowed = enforce_key_policy_hook(Some(&policy), policy_request).await;
+    let allowed = enforce_key_policy_hook(Some(&policy), || Ok(policy_request())).await;
     assert!(
         allowed.is_ok(),
         "an allowing policy hook passes: {allowed:?}"
     );
     service.shutdown().await;
+}
+
+// a missing decision or message takes the default, so an absent denial means the update passes
+async fn assert_update_outcome(
+    service: &PythonHooks,
+    data: &UpdateKeyRequest,
+    name: &str,
+    denial: Option<&str>,
+) {
+    let hook = load(service, HookSlot::CustomKeyUpdate, name).await;
+    let outcome = enforce_key_update_hook(Some(&hook), data).await;
+    let Some(expected) = denial else {
+        assert!(outcome.is_ok(), "{name} allows the update: {outcome:?}");
+        return;
+    };
+    let error = outcome.unwrap_err();
+    assert!(matches!(&error, HookPolicyError::Denied { message } if message == expected));
+    assert_eq!(error.status_code(), Some(StatusCode::FORBIDDEN));
 }
 
 #[tokio::test]
@@ -237,7 +220,7 @@ async fn policy_hook_receives_nested_request() {
     let workspace = workspace();
     let service = PythonHooks::new(Some(workspace.config));
     let hook = load(&service, HookSlot::CustomKeyPolicy, "policy_seen_fields").await;
-    let error = enforce_key_policy_hook(Some(&hook), policy_request)
+    let error = enforce_key_policy_hook(Some(&hook), || Ok(policy_request()))
         .await
         .unwrap_err();
     assert!(
@@ -247,16 +230,16 @@ async fn policy_hook_receives_nested_request() {
     service.shutdown().await;
 }
 
-fn policy_request() -> Result<CustomKeyPolicyRequest, DecodeError> {
+fn policy_request() -> CustomKeyPolicyRequest {
     let existing = verification_token_from_row(&object(r#"{"key_alias":"old"}"#)).unwrap();
     let request = PolicyRequestBody::Update(update_request(r#"{"key_alias":"new"}"#));
-    Ok(update_policy_request(
+    update_policy_request(
         PolicyOperation::Update,
         &existing,
         &object(r#"{"key_alias":"new"}"#),
         request,
     )
-    .unwrap())
+    .unwrap()
 }
 
 #[tokio::test]

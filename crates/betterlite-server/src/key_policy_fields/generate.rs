@@ -42,22 +42,33 @@ where
     let mut requested = request.project()?.supplied;
     requested.retain(|_field, value| !matches!(value, JsonData::Null));
     let mut metadata_fields = BTreeMap::new();
-    let mut columns = BTreeMap::new();
+    let mut supplied_columns = BTreeMap::new();
     for (field, value) in requested {
         if PREMIUM_METADATA_FIELDS.contains(&field.as_str())
             || METADATA_FIELDS.contains(&field.as_str())
         {
             metadata_fields.insert(field, value);
         } else {
-            columns.insert(field, value);
+            supplied_columns.insert(field, value);
         }
     }
-    let columns = handle_key_type(resolved_key_type(request), columns);
+    let mut row = handle_key_type(resolved_key_type(request), supplied_columns);
     let base = &request.base.base;
     let mut metadata = base.metadata.clone().flatten().unwrap_or_default().0;
     metadata.extend(metadata_fields);
-    let mut row = columns;
     row.insert("metadata".to_owned(), encrypt_metadata(metadata, cipher)?);
+    insert_timing_fields(&mut row, request, clock)?;
+    row.insert("object_permission".to_owned(), JsonData::Null);
+    Ok(verification_token_from_row(&row)?)
+}
+
+// the timing columns a generate request stores: expiry, budget reset, rotation and the budget windows
+fn insert_timing_fields(
+    row: &mut BTreeMap<String, JsonData>,
+    request: &GenerateKeyRequest,
+    clock: KeyClock<'_>,
+) -> Result<(), GenerateError> {
+    let base = &request.base.base;
     let duration = base.duration.as_ref().and_then(Option::as_ref);
     let budget_duration = base.budget_duration.as_ref().and_then(Option::as_ref);
     let windows = generate_budget_windows(base.budget_limits.clone().flatten().as_deref(), clock)?;
@@ -74,8 +85,7 @@ where
         "budget_limits".to_owned(),
         windows.map_or(JsonData::Null, JsonData::Array),
     );
-    row.insert("object_permission".to_owned(), JsonData::Null);
-    Ok(verification_token_from_row(&row)?)
+    Ok(())
 }
 
 // the pydantic model defaults key_type to DEFAULT, so only an explicit null leaves the column out

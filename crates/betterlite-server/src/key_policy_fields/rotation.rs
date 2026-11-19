@@ -17,23 +17,29 @@ pub enum RotationError {
     AliasRequired(Box<ProxyException>),
 }
 
+// the two switches rotation depends on: the request's auto_rotate and the proxy's store_virtual_keys
+#[derive(Debug, Clone, Copy)]
+pub struct RotationSwitches {
+    pub auto_rotate: bool,
+    pub store_virtual_keys: bool,
+}
+
 // rotation fields change only when rotation is switched on with an interval; turning it off keeps them
 pub fn set_key_rotation_fields(
     data: &mut BTreeMap<String, JsonData>,
-    auto_rotate: bool,
+    switches: RotationSwitches,
     rotation_interval: Option<&str>,
     existing_key_alias: Option<&str>,
-    store_virtual_keys: bool,
     clock: KeyClock<'_>,
 ) -> Result<(), RotationError> {
-    if !auto_rotate {
+    if !switches.auto_rotate {
         return Ok(());
     }
     let Some(interval) = rotation_interval.filter(|text| !text.is_empty()) else {
         return Ok(());
     };
     let requested_alias_is_missing = matches!(data.get("key_alias"), None | Some(JsonData::Null));
-    if store_virtual_keys && requested_alias_is_missing && existing_key_alias.is_none() {
+    if switches.store_virtual_keys && requested_alias_is_missing && existing_key_alias.is_none() {
         return Err(RotationError::AliasRequired(bad_request_for_alias(
             ALIAS_REQUIRED_MESSAGE.to_owned(),
         )));

@@ -60,6 +60,7 @@ pub fn microsecond_precision(instant: DateTime<Utc>) -> DateTime<Utc> {
 }
 
 // every key alias rejection LiteLLM raises is this one ProxyException shape
+#[must_use]
 pub fn bad_request_for_alias(message: String) -> Box<ProxyException> {
     Box::new(ProxyException::new(ProxyExceptionInit {
         message,

@@ -48,9 +48,10 @@ fn unsafe_alias_always_rejected() {
         validate_key_alias_format(Some("a b"), builtin_settings.alias_rule().as_ref()).unwrap_err();
     assert_eq!(error.message, INVALID_ALIAS_MESSAGE);
     let configured_settings = configured("[a-z ]+");
-    let error = validate_key_alias_format(Some("a b"), configured_settings.alias_rule().as_ref())
-        .unwrap_err();
-    assert_eq!(error.message, INVALID_ALIAS_MESSAGE);
+    let configured_error =
+        validate_key_alias_format(Some("a b"), configured_settings.alias_rule().as_ref())
+            .unwrap_err();
+    assert_eq!(configured_error.message, INVALID_ALIAS_MESSAGE);
 }
 
 #[test]
@@ -91,11 +92,11 @@ fn custom_fullmatch_and_length() {
     assert_eq!(error.message, format!("{CONFIGURED_ALIAS_MESSAGE}a|bc"));
     // the 255-character maximum applies to a custom rule as well
     let any = configured(".+");
-    let rule = any.alias_rule().expect("the pattern is the rule");
+    let any_rule = any.alias_rule().expect("the pattern is the rule");
     let longest = "a".repeat(255);
-    assert!(rule.accepts(&longest));
-    assert!(!rule.accepts(&"a".repeat(256)));
-    assert_eq!(rule.message(), format!("{CONFIGURED_ALIAS_MESSAGE}.+"));
+    assert!(any_rule.accepts(&longest));
+    assert!(!any_rule.accepts(&"a".repeat(256)));
+    assert_eq!(any_rule.message(), format!("{CONFIGURED_ALIAS_MESSAGE}.+"));
 }
 
 #[test]

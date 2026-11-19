@@ -1,7 +1,6 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::sync::OnceLock;
 
 use betterlite_config::sections::budget_reset::BudgetResetSettings;
 use betterlite_db::budget_permission_rows::JsonData;
@@ -24,6 +23,32 @@ mod generate;
 mod hooks;
 mod rotation;
 mod unique_alias;
+
+// the request time, the default reset policy and the calendar the key helpers read
+struct Fixture {
+    now: DateTime<Utc>,
+    reset: BudgetResetSettings,
+    database: TimeZoneDatabase,
+}
+
+impl Fixture {
+    // a request time with microseconds that are not a whole millisecond, the finest digit Python keeps
+    const fn clock(&self) -> KeyClock<'_> {
+        KeyClock {
+            now: self.now,
+            reset: &self.reset,
+            database: &self.database,
+        }
+    }
+}
+
+fn fixture() -> Fixture {
+    Fixture {
+        now: instant("2026-05-01T10:00:00.123456Z"),
+        reset: BudgetResetSettings::default(),
+        database: TimeZoneDatabase::from_env(),
+    }
+}
 
 fn value(document: &str) -> TypedValue {
     decode_key_request(document.as_bytes()).expect("the fixture is a JSON object")
@@ -54,29 +79,10 @@ fn regenerate_request(document: &str) -> RegenerateKeyRequest {
     RegenerateKeyRequest::read(&value(document)).expect("a regenerate request")
 }
 
-fn settings() -> &'static BudgetResetSettings {
-    static SETTINGS: OnceLock<BudgetResetSettings> = OnceLock::new();
-    SETTINGS.get_or_init(BudgetResetSettings::default)
-}
-
-fn database() -> &'static TimeZoneDatabase {
-    static DATABASE: OnceLock<TimeZoneDatabase> = OnceLock::new();
-    DATABASE.get_or_init(TimeZoneDatabase::from_env)
-}
-
 fn instant(text: &str) -> DateTime<Utc> {
     DateTime::parse_from_rfc3339(text)
         .expect("a timestamp")
         .with_timezone(&Utc)
-}
-
-// a request time with microseconds that are not a whole millisecond, the finest digit Python keeps
-fn clock() -> KeyClock<'static> {
-    KeyClock {
-        now: instant("2026-05-01T10:00:00.123456Z"),
-        reset: settings(),
-        database: database(),
-    }
 }
 
 fn cipher() -> StoredCipher<OsNonces, TracingDiagnostics> {

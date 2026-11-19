@@ -23,7 +23,7 @@ pub async fn enforce_unique_key_alias(
     let Some(alias) = key_alias else {
         return Ok(());
     };
-    let Some(store) = store else {
+    let Some(database) = store else {
         return Ok(());
     };
     let excluded = existing_key_token.filter(|token| !token.is_empty());
@@ -31,7 +31,7 @@ pub async fn enforce_unique_key_alias(
         r#"SELECT 1 FROM "{KEY_TABLE}" WHERE key_alias = $1 AND ($2::text IS NULL OR NOT token = $2) LIMIT 1"#
     );
     let parameters: Vec<&(dyn ToSql + Sync)> = vec![&alias, &excluded];
-    let row = store
+    let row = database
         .session()
         .await?
         .query_opt(sql.as_str(), &parameters)
