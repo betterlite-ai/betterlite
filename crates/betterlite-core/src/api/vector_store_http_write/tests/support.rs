@@ -6,6 +6,7 @@ use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::sections::openai_credentials::Settings as OpenAiCredentialsSettings;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::limits::TransportLimits;
+use betterlite_http::proxy::outbound::RequestBody;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use betterlite_logging::logging_pre_post::env::{
@@ -100,13 +101,17 @@ impl Fixture {
         }
     }
 
-    pub(crate) fn prepare<'deps, C: WriteConfig, S: ClientSource>(
+    pub(crate) fn prepare<'deps, C, S>(
         &mut self,
         deps: &'deps WriteDeps<'deps, C, S>,
         mode: ClientKind,
         call: &WriteCall<'_>,
         events: &Events,
-    ) -> Result<PreparedWrite<'deps, C, S>, WriteError> {
+    ) -> Result<PreparedWrite<'deps, C, S>, WriteError>
+    where
+        C: WriteConfig,
+        S: ClientSource,
+    {
         let logger = |_details: &Json| -> Result<(), PrePostError> {
             events.push("log");
             Ok(())
@@ -338,10 +343,10 @@ pub(crate) fn openai_settings() -> OpenAiCredentialsSettings {
     OpenAiCredentialsSettings::default()
 }
 
-pub(crate) fn openai_config(
-    settings: &OpenAiCredentialsSettings,
+pub(crate) fn openai_config<'settings>(
+    settings: &'settings OpenAiCredentialsSettings,
     env_api_key: &str,
-) -> OpenAiWriteConfig<'_> {
+) -> OpenAiWriteConfig<'settings> {
     OpenAiWriteConfig::new(
         settings,
         LiteLlmGlobals::default(),
@@ -388,10 +393,10 @@ pub(crate) fn proxied_client(limits: TransportLimits) -> ProxiedClient {
 
 pub(crate) fn body_bytes(request: &WriteRequest) -> Option<&[u8]> {
     match &request.body {
-        betterlite_http::proxy::outbound::RequestBody::Empty => None,
-        betterlite_http::proxy::outbound::RequestBody::Json(body) => Some(body),
-        betterlite_http::proxy::outbound::RequestBody::Bytes { data, .. } => Some(data),
-        betterlite_http::proxy::outbound::RequestBody::Multipart { .. } => None,
+        RequestBody::Empty => None,
+        RequestBody::Json(body) => Some(body),
+        RequestBody::Bytes { data, .. } => Some(data),
+        RequestBody::Multipart { .. } => None,
     }
 }
 

@@ -96,7 +96,7 @@ async fn update_http_order(#[case] mode: ClientKind) {
             .expect("the update succeeds");
         assert_eq!(value, json(CREATED));
     }
-    let many: IndexMap<String, Json> = (1..=18)
+    let many: IndexMap<String, Json> = (1..=18_u32)
         .map(|index| (format!("k{index:02}"), Json::Text(format!("v{index}"))))
         .collect();
     let capped = UpdateParams {
