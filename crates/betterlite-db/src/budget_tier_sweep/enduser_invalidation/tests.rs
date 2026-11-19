@@ -146,17 +146,22 @@ async fn unlinked_customers_join_only_when_the_default_tier_expires() {
         .await
         .unwrap();
     let budget_ids = vec![String::from("tier-a")];
-    let with_default = RecordingCache::default();
-    let mut reconnect = CountingReconnect::new(false);
-    let request = EndUserWalkRequest {
+    let default_cache = RecordingCache::default();
+    let mut default_reconnect = CountingReconnect::new(false);
+    let default_request = EndUserWalkRequest {
         budget_ids: &budget_ids,
         default_enduser_budget_id: Some("tier-a"),
         batch_size: 500,
     };
-    let walk =
-        invalidate_enduser_caches(&store, &with_default, request, Some(&mut reconnect)).await;
-    assert_eq!(walk.invalidated, 2);
-    let keys: Vec<String> = with_default
+    let default_walk = invalidate_enduser_caches(
+        &store,
+        &default_cache,
+        default_request,
+        Some(&mut default_reconnect),
+    )
+    .await;
+    assert_eq!(default_walk.invalidated, 2);
+    let keys: Vec<String> = default_cache
         .calls()
         .into_iter()
         .filter(|call| call.sink == InvalidatedCache::SpendCounter)
@@ -169,16 +174,21 @@ async fn unlinked_customers_join_only_when_the_default_tier_expires() {
             "spend:end_user:unlinked".to_owned(),
         ]
     );
-    let without_default = RecordingCache::default();
-    let mut reconnect = CountingReconnect::new(false);
-    let request = EndUserWalkRequest {
+    let plain_cache = RecordingCache::default();
+    let mut plain_reconnect = CountingReconnect::new(false);
+    let plain_request = EndUserWalkRequest {
         budget_ids: &budget_ids,
         default_enduser_budget_id: None,
         batch_size: 500,
     };
-    let walk =
-        invalidate_enduser_caches(&store, &without_default, request, Some(&mut reconnect)).await;
-    assert_eq!(walk.invalidated, 1);
+    let plain_walk = invalidate_enduser_caches(
+        &store,
+        &plain_cache,
+        plain_request,
+        Some(&mut plain_reconnect),
+    )
+    .await;
+    assert_eq!(plain_walk.invalidated, 1);
     finish(fixture, store, client).await;
 }
 
