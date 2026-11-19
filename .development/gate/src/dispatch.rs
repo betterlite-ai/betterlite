@@ -39,6 +39,7 @@ use serde::{Deserialize, Serialize};
 pub(crate) struct Round {
     pub(crate) verdict: ReviewVerdict,
     pub(crate) review: EarlierReview,
+    pub(crate) parity: Option<EarlierReview>,
     pub(crate) reviewer: ReviewerPin,
     pub(crate) litellm: Vec<String>,
 }
@@ -78,6 +79,7 @@ pub(crate) struct Attempt<'run> {
     pub(crate) places: &'run Places<'run>,
     pub(crate) number: u32,
     pub(crate) earlier: Option<&'run EarlierReview>,
+    pub(crate) parity_earlier: Option<&'run EarlierReview>,
     pub(crate) reviewer: Option<&'run ReviewerPin>,
     pub(crate) resume: Option<&'run str>,
     pub(crate) fix_model: Option<&'run str>,
@@ -275,7 +277,13 @@ fn apply_step(
         Step::Retry(_) | Step::Blocked(_) => false,
     };
     match step {
-        Step::Reviewed(round) => return apply_round(agents, brief, places, progress, round),
+        Step::Reviewed(mut round) => {
+            // a round the parity pass sat out keeps its last review
+            if let Some(parity) = round.parity.take() {
+                progress.parity_earlier = Some(parity);
+            }
+            return apply_round(agents, brief, places, progress, round);
+        }
         Step::Fix(failure) if progress.fix_turns < agents.policy.max_fix_turns => {
             progress.feedback = failure.feedback;
             progress.fix_turns = progress.fix_turns.saturating_add(1);
@@ -336,6 +344,7 @@ fn run_once(
         places,
         number: progress.number,
         earlier: progress.earlier.as_ref(),
+        parity_earlier: progress.parity_earlier.as_ref(),
         reviewer: progress.reviewer.as_ref(),
         resume,
         fix_model,

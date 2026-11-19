@@ -18,21 +18,10 @@ description: >-
   production MCP area, shared registry and transport; do not assemble a router of fake MCP
   handlers. Inject only outside dependencies such as the upstream peer and recording exporter.
 
-  One small oracle facility is needed. tools/oracle/runner/src/mock/mcp_reply.rs transforms an
-  already parsed mock reply for a request whose path starts with /__mcp_fixture/. Extract
-  only its JSON-RPC string or integer id into an owned correlation value. When an Answer's
-  JSON object has jsonrpc "2.0" and top-level id equal to the string "$mcp_request_id",
-  replace that one value with the incoming id. A marker without a valid correlation fails
-  the fixture instead of sending a mismatched response. Do not touch another field, SSE
-  event text, non-JSON answer, unmarked id or request on another path. This is a reply
-  transformer, not a JSON parser, MCP SDK implementation or new case format. Existing body
-  limits, timeout, script exhaustion and capture redaction remain B001's. The architect
-  connects it to mock.rs after capture and before the admitted ticket's Answer is played;
-  no shared runner, parser or registry file is in this task's scope. Unit tests cover
-  integer_id, string_id, no_marker, wrong_path, nested_marker_unchanged, missing_id,
-  invalid_id, notification_without_marker and error_reply. A loopback fixture test sends
-  initialize, initialized notification and tools/list with deliberately different ids and
-  proves the actual mock answers correlate without losing its ordered request recording.
+  B9943 built the oracle mock's MCP reply id correlation: a scripted JSON-RPC answer whose
+  top-level id is the string "$mcp_request_id" gets the id of the /__mcp_fixture/ request
+  it answers, and a marked answer to a request with no id fails the case. This task adds
+  no mock code.
 
   Upstream fixture setup. Use an operator-configured mcp_servers entry named alpha, fixed
   server_id test-alpha, transport http, protocol_version 2025-03-26, auth_type none and
@@ -41,7 +30,7 @@ description: >-
   returns the requested legacy revision, serverInfo {name: test-upstream, version: "1"},
   tools/prompts/resources capabilities and no mcp-session-id, so each upstream operation is
   stateless; notifications return 202 with events: [] for an empty body. Application replies
-  use the id marker above. Keep the script strict: an unexpected discovery, handshake,
+  use B9943's id marker. Keep the script strict: an unexpected discovery, handshake,
   permission-denied call or extra request must fail instead of getting a generic success.
   LITELLM_MCP_CLIENT_TIMEOUT stays 60 seconds and LITELLM_MCP_TOOL_LISTING_TIMEOUT 30;
   cases do not wait for either timeout. Use only localhost mock destinations, a fixed dummy
@@ -119,15 +108,14 @@ description: >-
   text block for a completed error result, with the repository's wording reason. Generated
   upstream JSON-RPC ids may be ignored individually after the mock proves correlation,
   not by ignoring the whole request. Add HTTP-case corpus seeds and replay the existing
-  decoder; no new production decoder or fuzz target is introduced. The new executable
-  code here is only the small mock transformer; the previously owned logic remains with
-  its parts, so the integration references are not another 750-line implementation claim.
+  decoder; no new production decoder or fuzz target is introduced. There is no new
+  executable code here: B9943 owns the mock transformer and the previously owned logic
+  remains with its parts, so the integration references are not another 750-line
+  implementation claim.
 scope:
   paths:
     - crates/betterlite-server/src/mcp/gateway_parity.rs
     - crates/betterlite-server/src/mcp/gateway_parity/**
-    - tools/oracle/runner/src/mock/mcp_reply.rs
-    - tools/oracle/runner/src/mock/mcp_reply/**
     - tools/oracle/cases/http/mcp-gateway-parity/**
     - tools/oracle/fuzz/corpus/http_case/mcp-gateway-parity-*
   lint_tables: false
@@ -155,8 +143,6 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/mcp_servers.json#L1-L23
     why: Audit-only root sample catalog, with no reader at the pin; the served registry is a different file.
 dod:
-  - text: The oracle's reserved MCP fixture path correlates scripted replies with real upstream request ids while preserving ordinary mock behavior, ordered captures and bounded input handling.
-    proof: [mock-tests]
   - text: Tools reach configured upstreams through the production registry and ports with the pinned naming, warm-up, authorization, credential precedence, debug headers and managed OpenAPI result/error boundaries, and the separator startup diagnostic runs once without rejecting config.
     proof: [composition-tests, case-files, oracle]
   - text: Prompt and resource round trips preserve their names, URIs, arguments, cached copies and failure shapes through HTTP, and cache disablement causes another fetch.
@@ -170,9 +156,6 @@ dod:
 checks:
   optional: []
   commands:
-    - id: mock-tests
-      why: The id transformer or the real mock handoff is absent, or other mock traffic is changed.
-      run: cargo nextest run --locked -p betterlite-oracle-runner --no-tests=fail -E 'test(/^mock::mcp_reply::/)'
     - id: composition-tests
       why: Registry sharing, authorization-before-egress, tracing handoff or SSE shutdown is not exercised through the actual application.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::gateway_parity::/)'
@@ -214,9 +197,9 @@ out_of_scope:
   - "types/mcp.py and types/mcp_server/mcp_server_manager.py contracts are B2305, B6590 and B7943. normalize_upstream_header_name is B4650/B4716 validation; same_header, has_header and without_header are the case-insensitive operations implemented by B4741 credentials; custom_credential_slot is B4683's resolved-header selection; crosses_origin and credential_redirect_hook are the implemented B4744 RedirectGuard reused by B4683. B7943 owns the Python exports."
   - "litellm/proxy/mcp_tools.py get_current_time and get_current_date: no caller at the pin; root mcp_servers.json: no reader at the pin; AGENTS.md contains contributor instructions, not runtime logic. The served litellm/proxy/mcp_registry.json is already B4720, mounted by B8625."
   - "Configured Python local tools and their HTTP cases are B8871/B124, not the unused sample functions; no enterprise-only behavior is implemented."
+  - "The MCP reply id correlation in the oracle mock (tools/oracle/runner/src/mock/mcp_reply.rs and its hook in mock.rs): B9943."
 pitfalls:
   - A successful prefixed OpenAPI protocol call can take the local registry shortcut, so only a bare REST name with server_id proves the manager leaf is connected.
-  - The request-id marker is fixture syntax only and must never escape to an upstream client or alter an unmarked response.
   - Prompt and resource caches return copies, so a second HTTP read must not accumulate another alpha- prefix.
   - The existing HTTP oracle reads a response to EOF, so a live SSE GET requires the native concurrent-client test rather than a hanging sequential transcript.
   - A protocol isError result remains an HTTP success and must not be compared as the REST endpoint's 401 challenge.

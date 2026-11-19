@@ -1,0 +1,120 @@
+id: B9948
+title: Production models read-through over the database deployment sync
+description: >-
+  LiteLLM keeps one models read-through, model_registry_read_through (registry_read_through.py L193). route_request
+  calls its attempt(model) before it retries a not-found route (route_llm_request.py L449-L466), and the access-group
+  model check calls it for every missing name (model_access_group_management_endpoints.py L303-L310). B8231 built
+  RegistryReadThrough, ModelResync and the ModelSync port in betterlite-server, and B9949 builds the retry over a
+  ModelReadThrough trait object. Nothing builds the instance: no type implements ModelSync, and nothing constructs a
+  models RegistryReadThrough. This task builds it in crates/betterlite, next to B8381's DeploymentSync. The sync it
+  calls lives in this crate, and betterlite-server cannot depend on it.
+
+
+  Module `model_read_through` (crates/betterlite/src/model_read_through.rs, tests in model_read_through/tests.rs). The
+  plan commit already declares `pub mod model_read_through;` in the crate's lib.rs over an empty file.
+
+
+  `DeploymentModelSync` implements B8231's `ModelSync` (betterlite-server, registry_read_through::resyncs) with
+  LiteLLM's _resync_model_deployments (registry_read_through.py L107-L131). It holds the database store and its
+  Availability, B8611's `Arc<RouterHandle>`, B8381's `Arc<DeploymentSync>` and B836's `ModelReconcileLock`, the same
+  handle DeploymentSync holds. `find_rows(ModelKey::Name(key))` returns the LiteLLM_ProxyModelTable rows with
+  model_name equal to key, and `ModelKey::Id(key)` the rows with model_id equal to key. They are raw rows with no
+  decryption: LiteLLM's ModelRepository(prisma_client).table.find_many reads them as stored, and _add_deployment
+  decrypts them later. B8231's ModelResync already tries the name first and the id only when the name finds nothing
+  (L116-L118). A database error becomes ResyncError::Failed with its text. `router_exists` is
+  RouterHandle::get().is_some(). `add_deployments_from_db` runs DeploymentSync's add_deployment with the store, then
+  answers RouterHandle::get().is_some(), so a reconcile that built no router answers false (L122-L126).
+  `add_rows_to_router(rows)` takes the reconcile lock, then runs DeploymentSync's `sync_credentials` with the store and
+  its `add_rows` with the rows, in that order, inside the lock (L127-L129). LiteLLM then sets proxy_server.llm_model_list
+  to router.get_model_list() (L130). betterlite keeps no copy of that list, since B8611's RouterViews read the live
+  router, so there is nothing to set.
+
+
+  `ModelsReadThrough` is the type alias RegistryReadThrough<ModelResync<DeploymentModelSync, ProxyDbObjects>>. B8612's
+  `ProxyDbObjects` is the DbObjects: it is enabled only with a database store, store_model_in_db exactly true and B8380's
+  should_load_db_object allowing models, as _db_backed_registries_enabled reads them (L99-L104). Build it the way
+  B8612's SharedAgents::new does. B8613 builds one ModelsReadThrough with RegistryReadThrough::new (B8231's default
+  miss TTL and window) when it builds DeploymentSync, and B8610 hands it to the routes.
+
+
+  The rows by column. betterlite-db reads resource rows only by the binding's key column: ResourceActions::find with
+  KeyFilter::Equal matches model_id for ProxyModelBinding (crates/betterlite-db/src/resource_repository/table.rs
+  L74-L88). Add `ResourceActions::find_by(column, value)` there, the same row_to_json select with
+  `WHERE t."<column>" = $1` for a `&'static str` column name, and read model_name and model_id through it. Reach the
+  table access the way cache_settings_read/stored.rs L53-L63 in betterlite-server does: a PrismaClient over the store,
+  a PrismaTableRepository over ProxyModelBinding with redis_config_change_publisher(None), then access(). Decode each row
+  with ProxyModelTable::try_from, never through ModelRepository's to_model, since that decrypts.
+
+
+  Tests. model_read_through::tests use a test Postgres (betterlite-postgres-fixture, as betterlite-db's tests do) for
+  the rows and B8381's in-memory repositories and recording router for the rest (read B8381's merged tests): a name hit
+  with a router adds those rows under the lock and answers true; an id hit after a name miss does the same; no rows
+  answers false and adds nothing; with no router, add_deployment runs and the answer says whether a router exists after
+  it; a second lock holder waits while credentials and rows are added; a disabled ProxyDbObjects reads no rows; a row
+  with an encrypted litellm_params value reaches add_rows still encrypted. resource_repository::tests::rows tests named
+  `postgres_find_by_` cover find_by on model_name and model_id: matching rows come back as stored, other rows do not,
+  and no match is an empty list. No oracle case: the oracle harness writes no model row after the proxy boots, and the
+  routes that call the read-through own their HTTP cases.
+scope:
+  paths:
+  - crates/betterlite/Cargo.toml
+  - crates/betterlite/src/model_read_through.rs
+  - crates/betterlite/src/model_read_through/**
+  - crates/betterlite-db/src/resource_repository/table.rs
+  - crates/betterlite-db/src/resource_repository/tests/rows.rs
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/registry_read_through.py#L99-L131
+  why: _db_backed_registries_enabled and _resync_model_deployments, the resync this task's ModelSync serves.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/registry_read_through.py#L193-L193
+  why: model_registry_read_through, the one models instance.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L449-L466
+  why: route_request's retry, the caller B9949 ports.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L298-L312
+  why: _missing_models_after_read_through, the other caller (B823).
+dod:
+- text: >-
+    find_rows returns the stored rows by model_name, and by model_id only when the name finds none, without
+    decrypting them; a database error becomes a ResyncError.
+  proof: [read-through-tests, find-by-tests]
+- text: >-
+    With a router, the resync takes the reconcile lock and runs the credential sync, then adds the rows, and answers
+    true; with no router it runs add_deployment and answers whether a router exists afterwards.
+  proof: [read-through-tests]
+- text: A disabled ProxyDbObjects makes the read-through answer false without reading a row.
+  proof: [read-through-tests]
+- text: The resource repository tests still pass with find_by added.
+  proof: [regressions]
+checks:
+  optional: []
+  commands:
+  - id: read-through-tests
+    why: The models read-through reads the wrong rows, decrypts them, adds them outside the lock or answers a different
+      result than LiteLLM's _resync_model_deployments.
+    run: >-
+      cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^model_read_through::/)'
+  - id: find-by-tests
+    why: The read by model_name or model_id misses a row, returns another row or decrypts it.
+    run: >-
+      cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^resource_repository::tests::rows::postgres_find_by_/)'
+  - id: regressions
+    why: find_by broke another resource repository read or write.
+    run: >-
+      cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^resource_repository::tests::rows::postgres_find_by_/)'
+      && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^resource_repository::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+- "RegistryReadThrough, its miss cache and resync budget, ModelResync and the ModelSync and DbObjects ports: B8231."
+- "ProxyDbObjects: B8612. DeploymentSync's add_deployment, sync_credentials and add_rows: B8381. RouterHandle: B8611. ModelReconcileLock: B836."
+- "Building the instance at startup and carrying it in Started: B8613. Putting it in Shared and the routes' model_read_through slot: B8610."
+- "The retry that calls attempt: B9949. The routes that call the retry: B9947 for chat, completions and embeddings, B9800 for /v1/messages."
+- "The guardrails and agents read-throughs: B3683 and B8612."
+pitfalls:
+- 'Do not decrypt the rows in find_rows. LiteLLM passes them on as stored, and B8381''s add_rows decrypts each param once with B8382.'
+- 'Hold the one ModelReconcileLock DeploymentSync holds, not a new Mutex. A second lock lets the scheduled add_deployment job run its delete while the read-through adds rows.'
+- 'The no-router branch takes no lock of its own: add_deployment takes the reconcile lock itself, so holding it there deadlocks.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

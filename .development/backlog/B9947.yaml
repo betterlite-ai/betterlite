@@ -1,0 +1,13 @@
+id: B9947
+milestone: R2 bug fixes
+title: The chat, completions and embeddings routes answer an unknown model with LiteLLM's not-found error
+status: todo
+depends_on: [B9964, B9949]
+file: tasks/B9947-unknown-model-routes.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
