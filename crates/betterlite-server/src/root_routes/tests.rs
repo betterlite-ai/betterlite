@@ -173,7 +173,7 @@ async fn state_serializes_every_snapshot_field() {
         ["fast".to_owned(), "slow".to_owned()]
     );
     assert_eq!(router.weights.quality.to_bits(), 0.75_f64.to_bits());
-    assert_eq!(router.weights.cost.to_bits(), 0.25_f64.to_bits());
+    assert_eq!(router.weights.economy.to_bits(), 0.25_f64.to_bits());
     let costs: Vec<(&str, Decimal)> = router
         .model_costs
         .iter()
@@ -393,7 +393,8 @@ struct SnapshotReply {
 #[derive(Deserialize)]
 struct WeightsReply {
     quality: f64,
-    cost: f64,
+    #[serde(rename = "cost")]
+    economy: f64,
 }
 
 #[derive(Deserialize)]

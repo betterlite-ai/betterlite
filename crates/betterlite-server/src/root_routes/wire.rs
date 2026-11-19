@@ -21,7 +21,9 @@ pub(super) struct SnapshotWire {
 #[derive(Debug, Serialize)]
 struct WeightsWire {
     quality: f64,
-    cost: f64,
+    // LiteLLM's cost weight is a dimensionless score weight, not a price
+    #[serde(rename = "cost")]
+    economy: f64,
 }
 
 // the exact Decimal value lands as a JSON number, as LiteLLM's float costs do
@@ -52,7 +54,7 @@ impl From<StateSnapshot> for SnapshotWire {
             available_models,
             weights: WeightsWire {
                 quality: weights.quality,
-                cost: weights.economy,
+                economy: weights.economy,
             },
             model_costs: model_costs
                 .into_iter()
