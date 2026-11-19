@@ -427,10 +427,7 @@ where
         .expect("the local memory tier accepts the seeded value");
 }
 
-pub(crate) fn stored<M>(memory: &M, key: &str) -> Option<f64>
-where
-    M: MemoryCacheOps,
-{
+pub(crate) fn stored(memory: &FaultingMemory, key: &str) -> Option<f64> {
     let value = memory
         .get_cache(key)
         .expect("the local memory tier answers")?;
@@ -440,10 +437,7 @@ where
     Some(number)
 }
 
-pub(crate) fn expiry<M>(memory: &M, key: &str) -> Option<f64>
-where
-    M: MemoryCacheOps,
-{
+pub(crate) fn expiry(memory: &FaultingMemory, key: &str) -> Option<f64> {
     memory
         .ttl_entries()
         .expect("the local memory tier lists expiries")
