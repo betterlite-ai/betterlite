@@ -84,5 +84,6 @@ pub struct AssistantCreateInput {
     pub azure_password: Option<SecretString>,
     pub azure_scope: Option<String>,
     // GenericLiteLLMParams.get("extra_body", {}): absent, explicit null, or a mapping
+    #[serde(default, with = "serde_with::rust::double_option")]
     pub extra_body: Option<Option<BTreeMap<String, String>>>,
 }
