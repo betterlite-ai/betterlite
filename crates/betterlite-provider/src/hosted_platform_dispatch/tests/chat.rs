@@ -25,6 +25,15 @@ fn chat_object(params: &Object) -> ChatObject {
         .expect("the params convert")
 }
 
+#[test]
+fn handler_errors_report_their_status_code() {
+    assert_eq!(
+        HandlerError::Upstream { status_code: 503 }.status_code(),
+        Some(503)
+    );
+    assert_eq!(HandlerError::EmptyReply.status_code(), None);
+}
+
 #[tokio::test]
 async fn fireworks_maps_extra_body_params_only_for_its_chat_config() {
     let redactor = redactor();
