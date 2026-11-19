@@ -1,6 +1,6 @@
 import os
 from collections.abc import Callable
-from typing import Literal, TypeVar, TypedDict, cast
+from typing import Literal, TypedDict, TypeVar, cast
 
 import litellm
 from litellm.litellm_core_utils.get_llm_provider_logic import get_llm_provider
@@ -154,28 +154,12 @@ def request_case(case: RequestProbe) -> JsonValue:
     return {"model": body["model"]}
 
 
-def provider(input_value: ProviderInput) -> JsonValue:
-    return probes(input_value["cases"], provider_case)
-
-
-def url(input_value: UrlInput) -> JsonValue:
-    return probes(input_value["cases"], url_case)
-
-
-def headers(input_value: HeadersInput) -> JsonValue:
-    return probes(input_value["cases"], headers_case)
-
-
-def request(input_value: RequestInput) -> JsonValue:
-    return probes(input_value["cases"], request_case)
-
-
 def run(input_value: Input) -> JsonValue:
     apply_environment(input_value["environment"], input_value["sdk"])
     if input_value["op"] == "provider":
-        return provider(input_value)
+        return probes(input_value["cases"], provider_case)
     if input_value["op"] == "url":
-        return url(input_value)
+        return probes(input_value["cases"], url_case)
     if input_value["op"] == "headers":
-        return headers(input_value)
-    return request(input_value)
+        return probes(input_value["cases"], headers_case)
+    return probes(input_value["cases"], request_case)
