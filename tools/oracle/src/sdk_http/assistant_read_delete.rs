@@ -33,9 +33,9 @@ const API_BASE_SENTINEL: &str = "$API_BASE";
 pub struct Globals {
     pub api_base: Option<String>,
     pub api_version: Option<String>,
-    pub api_key: Option<SecretString>,
-    pub openai_key: Option<SecretString>,
-    pub azure_key: Option<SecretString>,
+    pub api_key: Option<String>,
+    pub openai_key: Option<String>,
+    pub azure_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -75,7 +75,7 @@ pub struct Outcome {
 pub struct View(pub Value);
 impl Eq for View {}
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RunOutcome {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -105,17 +105,15 @@ impl CallKind for Call {
             if let Some(client) = input.client.as_mut() {
                 harness_base(&mut client.api_base, api_base);
             }
-            let sync = if run.entries == EntrySet::Async {
-                None
-            } else {
-                Some(harness.execute(&input, AssistantWrapper::Sync).await)
-            };
-            let asynchronous = if run.entries == EntrySet::Sync {
-                None
-            } else {
-                Some(harness.execute(&input, AssistantWrapper::Async).await)
-            };
-            runs.push(RunOutcome { sync, asynchronous });
+            let mut outcome = RunOutcome::default();
+            if run.entries != EntrySet::Async {
+                outcome.sync = Some(harness.execute(&input, AssistantWrapper::Sync).await?);
+            }
+            if run.entries != EntrySet::Sync {
+                outcome.asynchronous =
+                    Some(harness.execute(&input, AssistantWrapper::Async).await?);
+            }
+            runs.push(outcome);
         }
         Ok(SdkResult::AssistantReadDelete {
             value: Box::new(Outcome { runs }),
@@ -131,7 +129,11 @@ struct Harness<'a> {
 }
 
 impl Harness<'_> {
-    async fn execute(&self, input: &AssistantReadDeleteInput, wrapper: AssistantWrapper) -> View {
+    async fn execute(
+        &self,
+        input: &AssistantReadDeleteInput,
+        wrapper: AssistantWrapper,
+    ) -> Result<View, SdkHttpError> {
         let mut input = input.clone();
         input.entry = wrapper;
         let facade = AssistantReadDelete {
@@ -145,7 +147,7 @@ impl Harness<'_> {
             settings: self.settings.clone(),
         };
         match facade.run(&input).await {
-            Ok(result) => step_view(result.step),
+            Ok(result) => Ok(step_view(result.step)),
             Err(error) => failure_view(&error, wrapper),
         }
     }
@@ -179,11 +181,13 @@ fn step_view(step: AssistantStep) -> View {
     }
 }
 
+type FailureValue = Result<Value, SdkHttpError>;
+
 // litellm's own classes print as litellm.<Class>: message; a plain Exception prints only its message
 fn failure_view(
     error: &AssistantReadDeleteError<AssistantSdkError>,
     wrapper: AssistantWrapper,
-) -> View {
+) -> Result<View, SdkHttpError> {
     let value = if let Some(fields) = error.fields() {
         let text = error.to_string();
         let message = if fields.prefixed {
@@ -199,33 +203,33 @@ fn failure_view(
         AssistantsError::Status { status, body },
     )) = error
     {
-        status_failure(*status, body, wrapper)
+        status_failure(*status, body, wrapper)?
     } else {
         json!({ "class": "Exception", "message": error.to_string() })
     };
-    View(compact(json!({ "failure": value })))
+    Ok(View(compact(json!({ "failure": value }))))
 }
 
 // the sync SDK names the status and prints the raw body; the async wrapper maps the body through B011
-fn status_failure(status: u16, body: &[u8], wrapper: AssistantWrapper) -> Value {
-    let text = String::from_utf8_lossy(body);
+fn status_failure(status: u16, body: &[u8], wrapper: AssistantWrapper) -> FailureValue {
+    let text = String::from_utf8(body.to_vec()).map_err(SdkHttpError::ErrorBodyUtf8)?;
     let response = UpstreamResponse {
         status,
-        headers: Default::default(),
+        headers: http::HeaderMap::new(),
         body: body.to_vec(),
     };
     let Ok(failure) = mapped_failure("", &response) else {
-        return json!({ "class": "APIError", "status": status, "message": text });
+        return Ok(json!({ "class": "APIError", "status": status, "message": text }));
     };
     if wrapper == AssistantWrapper::Sync {
-        return json!({
+        return Ok(json!({
             "class": sdk_class(status), "status": status, "type": failure.kind.flatten(),
             "param": failure.param.flatten(), "code": failure.code.flatten(),
             "message": format!("Error code: {status} - {text}"),
-        });
+        }));
     }
     // LiteLLM's mapped exception is built with body=None, so it carries no type, param or code
-    json!({ "class": failure.class, "status": failure.status, "message": failure.message })
+    Ok(json!({ "class": failure.class, "status": failure.status, "message": failure.message }))
 }
 
 // the OpenAI SDK names a status failure after its status code
@@ -272,9 +276,12 @@ fn resolve_settings(
     let mut settings = config.sections.resource_sdk_settings;
     settings.api_base = globals.api_base.clone().or(settings.api_base);
     settings.api_version = globals.api_version.clone().or(settings.api_version);
-    settings.api_key = globals.api_key.clone().or(settings.api_key);
-    settings.openai_key = globals.openai_key.clone().or(settings.openai_key);
-    settings.azure_key = globals.azure_key.clone().or(settings.azure_key);
+    let api_key = globals.api_key.clone().map(SecretString::from);
+    settings.api_key = api_key.or(settings.api_key);
+    let openai_key = globals.openai_key.clone().map(SecretString::from);
+    settings.openai_key = openai_key.or(settings.openai_key);
+    let azure_key = globals.azure_key.clone().map(SecretString::from);
+    settings.azure_key = azure_key.or(settings.azure_key);
     harness_base(&mut settings.api_base, api_base);
     harness_base(&mut settings.openai_base_url, api_base);
     harness_base(&mut settings.openai_api_base, api_base);

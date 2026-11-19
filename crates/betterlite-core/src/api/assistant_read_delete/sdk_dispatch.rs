@@ -105,6 +105,9 @@ where
         async move {
             let reply = match &call.provider {
                 AssistantProviderCall::OpenAi(options) => self.openai(call, options).await?,
+                AssistantProviderCall::Azure(_) if openai_class_supplied(call) => {
+                    self.openai(call, &ClientOptions::default()).await?
+                }
                 AssistantProviderCall::Azure(values) => self.azure_call(call, values).await?,
             };
             Ok(Some(reply))
@@ -130,7 +133,7 @@ where
         let supplied = call
             .supplied
             .as_ref()
-            .map(|client| openai_client(&self.transport, client));
+            .map(|client| self.supplied_openai(client));
         let asynchronous = call.kind == ClientKind::Async;
         let reply = match call.operation {
             AssistantOperation::List => AssistantReply::Page(
@@ -162,23 +165,14 @@ where
         call: &AssistantCall,
         values: &AzureAssistantCall,
     ) -> Result<AssistantReply, AssistantSdkError> {
-        // Azure keeps an OpenAI SDK client, and that client sends the OpenAI request, not an Azure one
-        let openai_client_supplied = call.supplied.as_ref().is_some_and(|client| {
-            matches!(
-                client.kind,
-                SuppliedClientKind::OpenAi | SuppliedClientKind::AsyncOpenAi
-            )
-        });
-        if openai_client_supplied {
-            return self.openai(call, &ClientOptions::default()).await;
-        }
         let api = AzureAssistantsApi {
             transport: Arc::clone(&self.transport),
         };
-        let supplied = match call.supplied.as_ref() {
-            Some(client) => Some(self.azure_client(client)),
-            None => None,
-        };
+        let supplied = call
+            .supplied
+            .as_ref()
+            .map(|client| self.azure_client(client))
+            .transpose()?;
         let environment: &(dyn EnvironmentLookup + Sync) = &self.environment;
         let sources: &(dyn CredentialSources + Sync) = &self.sources;
         let request = ClientRequest {
@@ -240,20 +234,26 @@ where
         };
         AzureAssistantsClient::new(kind, inputs, &self.environment, Arc::clone(&self.transport))
     }
+
+    // a supplied OpenAI client keeps its own key, base and defaults, so the facade's options never reach it
+    fn supplied_openai(&self, client: &SuppliedClient) -> SdkClient<T> {
+        SdkClient {
+            kind: client.kind.client_kind(),
+            api_key: client.api_key.clone(),
+            base_url: client.api_base.clone(),
+            timeout: Some(Duration::from_secs(600)),
+            max_retries: None,
+            organization: None,
+            transport: Arc::clone(&self.transport),
+        }
+    }
 }
 
-// a supplied OpenAI client keeps its own key, base and defaults, so the facade's options never reach it
-fn openai_client<T: AssistantsTransport>(
-    transport: &Arc<T>,
-    client: &SuppliedClient,
-) -> SdkClient<T> {
-    SdkClient {
-        kind: client.kind.client_kind(),
-        api_key: client.api_key.clone(),
-        base_url: client.api_base.clone(),
-        timeout: Some(Duration::from_secs(600)),
-        max_retries: None,
-        organization: None,
-        transport: Arc::clone(transport),
-    }
+// Azure keeps an OpenAI SDK client, and that client sends the OpenAI request, not an Azure one
+fn openai_class_supplied(call: &AssistantCall) -> bool {
+    let kind = call.supplied.as_ref().map(|client| client.kind);
+    matches!(
+        kind,
+        Some(SuppliedClientKind::OpenAi | SuppliedClientKind::AsyncOpenAi)
+    )
 }

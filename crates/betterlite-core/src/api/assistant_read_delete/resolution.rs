@@ -4,9 +4,10 @@ use betterlite_openai::assistants::client::ClientOptions;
 use betterlite_prompts::arguments::json::Json;
 use indexmap::IndexMap;
 use secrecy::SecretString;
+use std::time::Duration;
 
 use crate::api::resource_sdk_settings::timeout::{
-    FineTuningTimeout, StructuredTimeout, TimeoutError, TimeoutValue, request_timeout,
+    FineTuningTimeout, StructuredTimeout, TimeoutError, request_timeout,
     resolve_fine_tuning_timeout,
 };
 use crate::api::resource_sdk_settings::{ResourceSdkRequestOptions, ResourceSdkSettings};
@@ -22,20 +23,23 @@ pub(super) fn resolve_timeout(
     input: &AssistantReadDeleteInput,
 ) -> Result<FineTuningTimeout, TimeoutError> {
     let timeout = input.params.timeout.as_ref();
-    if let Some(phases) = timeout.and_then(AssistantTimeout::phases) {
+    if let Some(AssistantTimeout::Structured(fields)) = timeout {
+        let phases = StructuredTimeout {
+            connect: fields.connect,
+            read: fields.read,
+            write: fields.write,
+            pool: fields.pool,
+        };
         return resolve_fine_tuning_timeout(None, &input.provider, Some(phases));
     }
     match timeout.and_then(AssistantTimeout::value) {
         Some(value) => resolve_fine_tuning_timeout(Some(&value), &input.provider, None),
-        None => Ok(FineTuningTimeout::Seconds(request_timeout(
-            None,
-            input.params.request_timeout,
-        )?)),
+        None => request_timeout(None, input.params.request_timeout).map(FineTuningTimeout::Seconds),
     }
 }
 
 // The OpenAI SDK applies one read timeout, so a structured timeout contributes its read phase.
-pub(super) fn timeout_seconds(timeout: FineTuningTimeout) -> f64 {
+pub(super) const fn timeout_seconds(timeout: FineTuningTimeout) -> f64 {
     match timeout {
         FineTuningTimeout::Seconds(seconds) => seconds,
         FineTuningTimeout::Structured(timeout) => timeout.read.unwrap_or(600.0),
@@ -52,7 +56,7 @@ pub(super) fn openai(
         api_key: settings.openai_api_key(options).cloned(),
         // LiteLLM passes the resolved default as base_url, so this branch always names a base
         api_base: Some(settings.openai_base(options)),
-        timeout: std::time::Duration::try_from_secs_f64(timeout_seconds(timeout)).ok(),
+        timeout: Duration::try_from_secs_f64(timeout_seconds(timeout)).ok(),
         // the SDK compares its attempt count against max_retries, so a negative value behaves as zero
         max_retries: input
             .params
@@ -64,14 +68,13 @@ pub(super) fn openai(
 
 // extra_body's azure_ad_token wins whenever extra_body exists; only a null extra_body reads the env
 fn azure_ad_token(
-    extra_body: &Option<Option<IndexMap<String, Json>>>,
+    extra_body: Option<&Option<IndexMap<String, Json>>>,
     settings: &ResourceSdkSettings,
 ) -> (Option<SecretString>, IndexMap<String, Json>) {
-    let Some(body) = extra_body else {
-        return (None, IndexMap::new());
-    };
-    let Some(body) = body else {
-        return (settings.azure_ad_token.clone(), IndexMap::new());
+    let body = match extra_body {
+        Some(Some(body)) => body,
+        Some(None) => return (settings.azure_ad_token.clone(), IndexMap::new()),
+        None => return (None, IndexMap::new()),
     };
     let mut remaining = body.clone();
     let token = remaining
@@ -89,7 +92,7 @@ pub(super) fn azure(
     options: &ResourceSdkRequestOptions,
     timeout: FineTuningTimeout,
 ) -> AzureAssistantCall {
-    let (azure_ad_token, extra_body) = azure_ad_token(&input.extra_body, settings);
+    let (azure_ad_token, extra_body) = azure_ad_token(input.extra_body.as_ref(), settings);
     AzureAssistantCall {
         api_base: settings.azure_base(options).map(str::to_owned),
         api_version: settings.azure_version(options).map(str::to_owned),

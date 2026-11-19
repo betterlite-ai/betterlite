@@ -70,17 +70,7 @@ where
         check_limits(&self.limits, input)?;
         let flag = requested_flag(input)
             .map_err(|(flag, class)| AssistantReadDeleteError::InvalidFlag { flag, class })?;
-        let kind = if flag == Some(true) {
-            ClientKind::Async
-        } else {
-            ClientKind::Sync
-        };
-        let call = self.resolve(input, kind)?;
-        let asynchronous_client = kind == ClientKind::Async
-            || call
-                .supplied
-                .as_ref()
-                .is_some_and(|client| client.kind.client_kind() == ClientKind::Async);
+        let (call, asynchronous_client) = self.resolve(input, flag)?;
         if input.entry == AssistantWrapper::Sync && asynchronous_client {
             return Ok(AssistantReadDeleteResult {
                 call,
@@ -117,14 +107,19 @@ where
     fn resolve(
         &self,
         input: &AssistantReadDeleteInput,
-        kind: ClientKind,
-    ) -> Result<AssistantCall, AssistantReadDeleteError<Dispatch::Error>> {
+        flag: Option<bool>,
+    ) -> Result<(AssistantCall, bool), AssistantReadDeleteError<Dispatch::Error>> {
         if input.operation == AssistantOperation::Delete && input.assistant_id.is_none() {
             return Err(AssistantReadDeleteError::MissingAssistantId);
         }
         let timeout = resolution::resolve_timeout(input)?;
         let settings = ResourceSdkSettings::from(&self.settings);
         let options = ResourceSdkRequestOptions::from(&input.params);
+        // the flag only picks the client type; a supplied async client makes the call async on its own
+        let kind = match flag {
+            Some(true) => ClientKind::Async,
+            Some(false) | None => ClientKind::Sync,
+        };
         let provider = match input.provider.as_str() {
             "openai" => AssistantProviderCall::OpenAi(resolution::openai(
                 input, &settings, &options, timeout,
@@ -139,14 +134,20 @@ where
                 });
             }
         };
-        Ok(AssistantCall {
+        let call = AssistantCall {
             operation: input.operation,
             provider,
             assistant_id: input.assistant_id.clone(),
             kind,
             supplied: resolution::supplied_client(input),
             timeout,
-        })
+        };
+        let asynchronous = call.kind == ClientKind::Async
+            || call
+                .supplied
+                .as_ref()
+                .is_some_and(|client| client.kind.client_kind() == ClientKind::Async);
+        Ok((call, asynchronous))
     }
 }
 
@@ -164,20 +165,23 @@ fn requested_flag(
     match raw {
         None => Ok(None),
         Some(AssistantFlag::Bool(value)) => Ok(Some(*value)),
-        Some(AssistantFlag::Other(_)) => Err(input.operation.invalid_flag()),
+        // the flag's name, and the class its sync function raises when the value isn't a bool
+        Some(AssistantFlag::Other(_)) => Err(match input.operation {
+            AssistantOperation::List => ("aget_assistants", "Exception"),
+            AssistantOperation::Delete => ("async_delete_assistants", "ValueError"),
+        }),
     }
 }
 
 fn check_limits(limits: &ApiLimits, input: &AssistantReadDeleteInput) -> Result<(), ApiLimitError> {
     let body = input.extra_body.as_ref().and_then(Option::as_ref);
-    let items = ItemsBoundary {
-        known_count: body.map_or(0, IndexMap::len),
-    };
-    limits.check(ApiBoundariesInput::Items(items))?;
+    let known_count = body.map_or(0, IndexMap::len);
+    limits.check(ApiBoundariesInput::Items(ItemsBoundary { known_count }))?;
     let body_bytes = body.map_or(0, |body| {
         serde_json::to_vec(body).map_or(usize::MAX, |bytes| bytes.len())
     });
     let id_bytes = input.assistant_id.as_ref().map_or(0, String::len);
     let known_bytes = id_bytes.saturating_add(body_bytes);
-    limits.check(ApiBoundariesInput::Json(JsonBoundary { known_bytes }))
+    limits.check(ApiBoundariesInput::Json(JsonBoundary { known_bytes }))?;
+    Ok(())
 }

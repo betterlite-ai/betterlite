@@ -1,12 +1,25 @@
 use betterlite_openai::assistants::client::ClientKind;
 use betterlite_prompts::arguments::json::Json;
 use indexmap::IndexMap;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use serde_with::rust::double_option;
 
 use crate::api::resource_sdk_settings::ResourceSdkRequestOptions;
-use crate::api::resource_sdk_settings::timeout::{StructuredTimeout, TimeoutValue};
+use crate::api::resource_sdk_settings::timeout::TimeoutValue;
+
+// serde's adapter builds this private, non-Debug value only while a model is serialized
+#[derive(Serialize)]
+#[serde(transparent)]
+struct ExposedSecret(String);
+
+impl From<&SecretString> for ExposedSecret {
+    fn from(secret: &SecretString) -> Self {
+        Self(secret.expose_secret().to_owned())
+    }
+}
+
+type SecretWire = Option<serde_with::FromIntoRef<ExposedSecret>>;
 
 // get/aget_assistants and delete/adelete_assistant
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -22,15 +35,6 @@ impl AssistantOperation {
         match self {
             Self::List => "get_assistants",
             Self::Delete => "delete_assistant",
-        }
-    }
-
-    // the flag's name, and the class its sync function raises when the value isn't a bool
-    #[must_use]
-    pub const fn invalid_flag(self) -> (&'static str, &'static str) {
-        match self {
-            Self::List => ("aget_assistants", "Exception"),
-            Self::Delete => ("async_delete_assistants", "ValueError"),
         }
     }
 }
@@ -68,19 +72,6 @@ impl AssistantTimeout {
             Self::Number(value) if *value != 0.0 => Some(TimeoutValue::Number(*value)),
             Self::Text(text) if !text.is_empty() => Some(TimeoutValue::String(text.clone())),
             Self::Number(_) | Self::Text(_) | Self::Structured(_) => None,
-        }
-    }
-
-    #[must_use]
-    pub fn phases(&self) -> Option<StructuredTimeout> {
-        match self {
-            Self::Structured(fields) => Some(StructuredTimeout {
-                connect: fields.connect,
-                read: fields.read,
-                write: fields.write,
-                pool: fields.pool,
-            }),
-            Self::Number(_) | Self::Text(_) => None,
         }
     }
 }
@@ -127,6 +118,7 @@ pub struct SuppliedClient {
     pub kind: SuppliedClientKind,
     // the SDK the caller built: its own base, key and api_version, never the facade's options
     pub api_base: Option<String>,
+    #[serde(serialize_with = "serde_with::As::<SecretWire>::serialize")]
     pub api_key: Option<SecretString>,
     pub api_version: Option<String>,
 }
@@ -135,6 +127,7 @@ pub struct SuppliedClient {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct AssistantParams {
+    #[serde(serialize_with = "serde_with::As::<SecretWire>::serialize")]
     pub api_key: Option<SecretString>,
     pub api_base: Option<String>,
     pub api_version: Option<String>,
@@ -142,11 +135,14 @@ pub struct AssistantParams {
     pub max_retries: Option<i64>,
     pub timeout: Option<AssistantTimeout>,
     pub request_timeout: Option<f64>,
+    #[serde(serialize_with = "serde_with::As::<SecretWire>::serialize")]
     pub azure_ad_token: Option<SecretString>,
     pub tenant_id: Option<String>,
     pub client_id: Option<String>,
+    #[serde(serialize_with = "serde_with::As::<SecretWire>::serialize")]
     pub client_secret: Option<SecretString>,
     pub azure_username: Option<String>,
+    #[serde(serialize_with = "serde_with::As::<SecretWire>::serialize")]
     pub azure_password: Option<SecretString>,
     pub azure_scope: Option<String>,
 }

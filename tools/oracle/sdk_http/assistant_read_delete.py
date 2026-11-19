@@ -25,6 +25,8 @@ class Strict(BaseModel):
 
 
 class Params(Strict):
+    # the wire also carries the Azure credential kwargs, which the mocked entry points never take
+    model_config = ConfigDict(extra="ignore")
     api_key: str | None = None
     api_base: str | None = None
     api_version: str | None = None
@@ -45,6 +47,7 @@ class Input(Strict):
     operation: Literal["list", "delete"]
     provider: str
     assistant_id: str | None = None
+    entry: Literal["sync", "async"] = "sync"
     aget_assistants: JsonValue = None
     async_delete_assistants: JsonValue = None
     extra_body: dict[str, JsonValue] | None = None
@@ -263,30 +266,23 @@ def value_mode(value: Answer) -> Mode:
 
 
 def failure_view(error: BaseException) -> FailureView:
-    status: int | None = None
-    kind: str | None = None
-    param: str | None = None
-    code: str | None = None
-    message = str(error)
     match error:
         case openai.APIStatusError():
-            status = error.status_code
-            kind = error.type
-            param = error.param
-            code = error.code
-            message = error.message
+            return FailureView(
+                class_name=type(error).__name__,
+                status=error.status_code,
+                kind=error.type,
+                param=error.param,
+                code=error.code,
+                message=error.message,
+            )
         case openai.APIError():
-            kind = error.type
-            param = error.param
-            code = error.code
-            message = error.message
+            return FailureView(
+                class_name=type(error).__name__,
+                kind=error.type,
+                param=error.param,
+                code=error.code,
+                message=error.message,
+            )
         case BaseException():
-            message = str(error)
-    return FailureView(
-        class_name=type(error).__name__,
-        status=status,
-        kind=kind,
-        param=param,
-        code=code,
-        message=message,
-    )
+            return FailureView(class_name=type(error).__name__, message=str(error))

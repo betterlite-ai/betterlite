@@ -43,7 +43,7 @@ where
     #[error("the dispatch answered with the wrong reply")]
     MismatchedReply,
     #[error(transparent)]
-    Dispatch(#[from] DispatchError),
+    Dispatch(DispatchError),
 }
 
 impl<DispatchError> AssistantReadDeleteError<DispatchError>
@@ -52,28 +52,24 @@ where
 {
     #[must_use]
     pub const fn fields(&self) -> Option<AssistantErrorFields> {
-        match self {
-            Self::Unsupported { .. } => Some(AssistantErrorFields {
-                class: "BadRequestError",
-                status: Some(400),
-                error_type: None,
-                prefixed: true,
-            }),
-            Self::InvalidFlag { class, .. } => Some(AssistantErrorFields {
-                class,
-                status: None,
-                error_type: None,
-                prefixed: false,
-            }),
-            Self::MissingReply { .. } | Self::MismatchedReply => Some(AssistantErrorFields {
-                class: "InternalServerError",
-                status: Some(500),
-                error_type: Some("internal_server_error"),
-                prefixed: true,
-            }),
+        let (class, status, error_type, prefixed) = match self {
+            Self::Unsupported { .. } => ("BadRequestError", Some(400), None, true),
+            Self::InvalidFlag { class, .. } => (*class, None, None, false),
+            Self::MissingReply { .. } | Self::MismatchedReply => (
+                "InternalServerError",
+                Some(500),
+                Some("internal_server_error"),
+                true,
+            ),
             Self::Limits(_) | Self::Timeout(_) | Self::MissingAssistantId | Self::Dispatch(_) => {
-                None
+                return None;
             }
-        }
+        };
+        Some(AssistantErrorFields {
+            class,
+            status,
+            error_type,
+            prefixed,
+        })
     }
 }
