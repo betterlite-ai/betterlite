@@ -18,11 +18,11 @@ pub fn complete_url(sources: BaseSources<'_>) -> String {
     if base.ends_with("/v1/messages") {
         return base.to_owned();
     }
-    let base = match base.strip_suffix("/v1/chat/completions") {
-        Some(stripped) => stripped,
-        None => base.strip_suffix("/v1").unwrap_or(base),
-    };
-    format!("{base}/v1/messages")
+    let root = base
+        .strip_suffix("/v1/chat/completions")
+        .or_else(|| base.strip_suffix("/v1"))
+        .unwrap_or(base);
+    format!("{root}/v1/messages")
 }
 
 pub async fn transform_request<Capabilities>(

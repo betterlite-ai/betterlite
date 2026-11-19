@@ -53,16 +53,16 @@ fn keys_follow_the_python_or_chain(
     #[case] global: Option<&str>,
     #[case] expected: Option<&str>,
 ) {
-    let explicit = explicit.map(secret);
-    let environment = environment.map(secret);
-    let global = global.map(secret);
+    let explicit_key = explicit.map(secret);
+    let environment_key = environment.map(secret);
+    let global_key = global.map(secret);
     let resolved = resolve_key(KeySources {
-        explicit: explicit.as_ref(),
-        environment: environment.as_ref(),
-        global: global.as_ref(),
+        explicit: explicit_key.as_ref(),
+        environment: environment_key.as_ref(),
+        global: global_key.as_ref(),
     });
-    let resolved = resolved.as_ref().map(ExposeSecret::expose_secret);
-    assert_eq!(resolved, expected);
+    let exposed = resolved.as_ref().map(ExposeSecret::expose_secret);
+    assert_eq!(exposed, expected);
 }
 
 #[rstest]
@@ -548,7 +548,7 @@ fn typed_tool(kind: &str) -> Json {
 
 fn transform_parameters(tools: Json) -> Object {
     let mut parameters = Object::new();
-    parameters.insert("max_tokens".to_owned(), Json::Number(Number::from(128)));
+    parameters.insert("max_tokens".to_owned(), Json::Number(Number::from(128_i64)));
     parameters.insert("tools".to_owned(), tools);
     parameters
 }
@@ -618,7 +618,7 @@ async fn other_hosts_keep_custom_tool_types() {
 
 async fn transform_with_system(model: &str, system: Json) -> Object {
     let mut parameters = Object::new();
-    parameters.insert("max_tokens".to_owned(), Json::Number(Number::from(128)));
+    parameters.insert("max_tokens".to_owned(), Json::Number(Number::from(128_i64)));
     parameters.insert("system".to_owned(), system);
     let request = HostRequest {
         model,

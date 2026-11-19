@@ -28,10 +28,14 @@ pub fn complete_url(sources: BaseSources<'_>) -> String {
     if base.ends_with("/v1/messages") && base.contains("/anthropic/") {
         return base.to_owned();
     }
-    let base = base.strip_suffix("/v1/messages").unwrap_or(base);
-    let base = base.strip_suffix("/v1").unwrap_or(base);
-    let base = base.strip_suffix("/beta").unwrap_or(base);
-    let mut complete = base.to_owned();
+    let without_messages = base.strip_suffix("/v1/messages").unwrap_or(base);
+    let without_version = without_messages
+        .strip_suffix("/v1")
+        .unwrap_or(without_messages);
+    let without_beta = without_version
+        .strip_suffix("/beta")
+        .unwrap_or(without_version);
+    let mut complete = without_beta.to_owned();
     if !complete.ends_with("/anthropic") && !complete.contains("/anthropic/") {
         complete.push_str("/anthropic");
     }
