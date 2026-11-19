@@ -306,6 +306,7 @@ async fn failure_stops_downstream() {
     );
     assert!(!group_reached);
     assert_eq!(group_lookup.group_calls(), vec![names(&["group-one"])]);
+    assert!(group_lookup.tag_calls().is_empty());
 }
 
 #[tokio::test]
@@ -320,6 +321,18 @@ async fn resolved_budgets_reach_the_handler() {
     assert!(reached);
     assert_eq!(lookup.tag_calls(), vec![names(&["tag-one"])]);
     assert_eq!(lookup.group_calls(), vec![names(&["group-one"])]);
+
+    // a rule with no model access groups never asks for group budgets
+    let tags_only = ScriptedLookup::new(Answer::Resolved);
+    let (tag_status, _tag_body, tag_reached) = run_request(
+        &config_with_database(),
+        rule(Arc::clone(&tags_only), &["tag-one"], &[]),
+    )
+    .await;
+    assert_eq!(tag_status, StatusCode::OK);
+    assert!(tag_reached);
+    assert_eq!(tags_only.tag_calls(), vec![names(&["tag-one"])]);
+    assert!(tags_only.group_calls().is_empty());
 
     // without a database the same rule resolves nothing and the request still reaches the handler
     let skipped = ScriptedLookup::new(Answer::TagFailure);
