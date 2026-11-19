@@ -52,7 +52,7 @@ impl StreamLogAssembler for Assembler {
         chunks: &[StreamChunk],
         _logging_obj: &mut dyn PassthroughLogging,
     ) -> Option<Json> {
-        (!chunks.is_empty()).then(|| shared::json!({"id": "assembled"}))
+        (!chunks.is_empty()).then_some(shared::json!({"id": "assembled"}))
     }
 }
 
