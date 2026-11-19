@@ -1,0 +1,35 @@
+kind: helper
+name: oauth use, azure spillover, agent attribution and router metadata are stamped
+call:
+  spend_payload:
+    function: payload
+    kwargs:
+      model: claude-3-5-sonnet
+      custom_llm_provider: anthropic
+      agent_id: agent-1
+      litellm_trace_id: trace-oauth
+      response_headers:
+        x-ms-spillover-from-deployment: west
+        x-ms-is-spilled-over: "true"
+      litellm_params:
+        metadata:
+          model_group: claude-group
+          model_info: {id: dep-oauth, internal_router_model: true, model_name: claude-group}
+          used_client_oauth_token: true
+          agent_id: agent-1
+          billing_agent_id: billing-1
+      standard_logging_object:
+        id: row-7
+        model: anthropic/claude-3-5-sonnet
+        model_group: claude-group
+        custom_llm_provider: anthropic
+    response:
+      mapping:
+        usage: {total_tokens: 7, prompt_tokens: 4, completion_tokens: 3}
+    start_time: "2024-01-01T00:00:00+00:00"
+    end_time: "2024-01-01T00:00:02+00:00"
+    settings: {store_bodies: false}
+    clock: 1700000000.0
+    session_uuid: "00000000-0000-0000-0000-000000000007"
+env: {}
+compare: {ignore: []}
