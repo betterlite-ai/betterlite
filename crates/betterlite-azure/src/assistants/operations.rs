@@ -9,6 +9,7 @@ use betterlite_openai::thread_runs::records::{RunReply, RunRequest};
 use betterlite_openai::thread_runs::stream::{RunEventHandler, RunStream, RunStreamTransport};
 use http::HeaderMap;
 use http::Method;
+use tokio::time::sleep;
 
 use crate::assistants::error::AssistantsRunError;
 use crate::assistants::request;
@@ -72,7 +73,7 @@ where
                 None => next_poll(&fetched.headers)?,
             };
             delay = Some(wait);
-            tokio::time::sleep(wait).await;
+            sleep(wait).await;
         }
     }
 

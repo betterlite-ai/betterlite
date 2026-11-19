@@ -74,7 +74,7 @@ async fn picks_the_client_and_helper() {
             recorder.queue_poll(200, CREATED);
             recorder.queue_poll(200, COMPLETED);
             match support::invoked(&recorder, &fixture, &run, dispatch, None).await {
-                RunInvocation::Polled(kind, _) => (kind, false),
+                RunInvocation::Polled(served, _) => (served, false),
                 RunInvocation::Streaming(_) => panic!("expected a polled run"),
             }
         };
@@ -126,7 +126,7 @@ async fn returns_a_supplied_client_as_is() {
 async fn drops_the_facade_only_arguments() {
     let mut fixture = Fixture::new();
     fixture.azure_ad_token = Some(SecretString::from("method-token"));
-    fixture.timeout = 3.0;
+    fixture.timeout = 3.0_f64;
     fixture.max_retries = Some(9);
     let recorder = Recorder::start();
     recorder.queue_poll(200, CREATED);
@@ -144,7 +144,7 @@ async fn drops_the_facade_only_arguments() {
 async fn builds_from_the_litellm_params() {
     let mut fixture = Fixture::new();
     fixture.params.azure_ad_token = Some(SecretString::from("litellm-token"));
-    fixture.params.timeout = Some(12.5);
+    fixture.params.timeout = Some(12.5_f64);
     fixture.params.max_retries = Some(4);
     for (arun_thread, stream) in [
         (None, None),

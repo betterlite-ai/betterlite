@@ -1,7 +1,6 @@
 #![cfg(test)]
 
 use betterlite_openai::thread_runs::records::RunRequest;
-use serde_json::json;
 
 use super::support::{self, COMPLETED, CREATED, Recorder, parsed};
 
@@ -21,9 +20,11 @@ async fn forwards_the_run_keywords() {
         assistant_id: String::from("asst_9"),
         additional_instructions: Some(String::from("use the file")),
         instructions: Some(String::from("be terse")),
-        metadata: Some(json!({"team": "a"})),
+        metadata: Some(parsed(r#"{"team":"a"}"#)),
         model: Some(String::from("gpt-4.1")),
-        tools: Some(json!([{"type": "function", "function": {"name": "lookup"}}])),
+        tools: Some(parsed(
+            r#"[{"type":"function","function":{"name":"lookup"}}]"#,
+        )),
     };
     support::polled(&recorder, &fixture, &run).await;
     let seen = recorder.requests();

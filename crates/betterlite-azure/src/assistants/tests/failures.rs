@@ -123,16 +123,16 @@ async fn refuses_bad_run_ids() {
     ));
     assert_eq!(recorder.requests().len(), 1);
 
-    let recorder = Recorder::start();
-    let mut created = support::parsed(CREATED);
-    created["id"] = JsonValue::String(String::from(".."));
-    recorder.queue(200, &created.to_string());
-    let dots = support::failed(&recorder, &fixture, &run_request()).await;
+    let second = Recorder::start();
+    let mut dots_body = support::parsed(CREATED);
+    dots_body["id"] = JsonValue::String(String::from(".."));
+    second.queue(200, &dots_body.to_string());
+    let dots = support::failed(&second, &fixture, &run_request()).await;
     assert!(matches!(
         dots,
         AssistantsRunError::Runs(ThreadRunsError::DotSegment(_))
     ));
-    assert_eq!(recorder.requests().len(), 1);
+    assert_eq!(second.requests().len(), 1);
 }
 
 async fn reports_poll_header_failures() {
@@ -151,18 +151,18 @@ async fn reports_poll_header_failures() {
     let text = support::failed(&recorder, &fixture, &run_request()).await;
     assert!(matches!(
         text,
-        AssistantsRunError::Runs(ThreadRunsError::PollAfter(ref value)) if value == "soon"
+        AssistantsRunError::Runs(ThreadRunsError::PollAfter(value)) if value == "soon"
     ));
 
-    let recorder = Recorder::start();
-    recorder.queue_poll(200, CREATED);
-    let mut headers = HeaderMap::new();
-    headers.insert(
+    let raw_recorder = Recorder::start();
+    raw_recorder.queue_poll(200, CREATED);
+    let mut raw_headers = HeaderMap::new();
+    raw_headers.insert(
         HeaderName::from_static("openai-poll-after-ms"),
         HeaderValue::from_bytes(b"\xff").unwrap(),
     );
-    recorder.queue_with(200, headers, &moving.to_string());
-    let bytes = support::failed(&recorder, &fixture, &run_request()).await;
+    raw_recorder.queue_with(200, raw_headers, &moving.to_string());
+    let bytes = support::failed(&raw_recorder, &fixture, &run_request()).await;
     assert!(matches!(
         bytes,
         AssistantsRunError::Runs(ThreadRunsError::PollAfter(_))
@@ -184,15 +184,15 @@ async fn reports_provider_failures() {
         DefinitionsError::Provider { .. }
     ));
     let empty = with_provider(Arc::new(support::EmptyToken));
-    let error = support::failed(&recorder, &empty, &run_request()).await;
+    let empty_error = support::failed(&recorder, &empty, &run_request()).await;
     assert!(matches!(
-        support::definitions(error),
+        support::definitions(empty_error),
         DefinitionsError::ProviderReply
     ));
     let nontext = with_provider(Arc::new(support::NonTextToken));
-    let error = support::failed(&recorder, &nontext, &run_request()).await;
+    let nontext_error = support::failed(&recorder, &nontext, &run_request()).await;
     assert!(matches!(
-        support::definitions(error),
+        support::definitions(nontext_error),
         DefinitionsError::ProviderReply
     ));
     assert!(recorder.requests().is_empty());

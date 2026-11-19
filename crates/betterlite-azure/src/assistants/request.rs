@@ -202,17 +202,22 @@ fn auth_headers<T>(client: &AzureAssistantsClient<'_, T>) -> Result<HeaderMap, A
             .map(provider_token)
             .transpose()?,
     };
-    if let Some(token) = token {
-        headers.insert(
-            AUTHORIZATION,
-            sensitive(format!("Bearer {}", token.expose_secret()))?,
-        );
-    } else if let Some(key) = client
-        .key
-        .as_ref()
-        .filter(|value| !value.expose_secret().is_empty())
-    {
-        headers.insert(API_KEY, sensitive(key.expose_secret().to_owned())?);
+    match token {
+        Some(bearer) => {
+            headers.insert(
+                AUTHORIZATION,
+                sensitive(format!("Bearer {}", bearer.expose_secret()))?,
+            );
+        }
+        None => {
+            let usable = client
+                .key
+                .as_ref()
+                .filter(|value| !value.expose_secret().is_empty());
+            if let Some(key) = usable {
+                headers.insert(API_KEY, sensitive(key.expose_secret().to_owned())?);
+            }
+        }
     }
     Ok(headers)
 }

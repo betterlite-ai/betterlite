@@ -70,16 +70,11 @@ pub(super) struct Seen {
     pub(super) body: Option<JsonValue>,
 }
 
-#[derive(Clone, Copy)]
-pub(super) enum Auth<'text> {
-    None,
-    Key(&'text str),
-    Bearer(&'text str),
-}
+type Queued = Result<(u16, HeaderMap, Vec<u8>), TransportError>;
 
 #[derive(Default)]
 pub(super) struct Recorder {
-    replies: Mutex<VecDeque<Result<(u16, HeaderMap, Vec<u8>), TransportError>>>,
+    replies: Mutex<VecDeque<Queued>>,
     seen: Mutex<Vec<Seen>>,
 }
 
@@ -124,14 +119,15 @@ impl Recorder {
         self.seen.lock().unwrap().push(recorded(request));
     }
 
-    fn next(&self) -> Result<(u16, HeaderMap, Vec<u8>), TransportError> {
-        self.replies.lock().unwrap().pop_front().unwrap()
+    fn next(&self) -> Queued {
+        self.replies
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop_front()
+            .ok_or(TransportError::Closed)
     }
 
-    fn reply(
-        &self,
-        request: &OutboundRequest,
-    ) -> Result<(u16, HeaderMap, Vec<u8>), TransportError> {
+    fn reply(&self, request: &OutboundRequest) -> Queued {
         self.record(request);
         self.next()
     }
@@ -312,34 +308,6 @@ pub(super) fn run_body(stream: bool) -> JsonValue {
 
 pub(super) fn parsed(text: &str) -> JsonValue {
     serde_json::from_str(text).unwrap()
-}
-
-pub(super) fn wire(method: &str, url: &str, body: Option<JsonValue>, auth: Auth<'_>) -> Seen {
-    let mut headers = Headers::new();
-    headers.insert(String::from("accept"), String::from("application/json"));
-    headers.insert(String::from("openai-beta"), String::from("assistants=v2"));
-    if body.is_some() {
-        headers.insert(
-            String::from("content-type"),
-            String::from("application/json"),
-        );
-    }
-    match auth {
-        Auth::None => {}
-        Auth::Key(key) => {
-            headers.insert(String::from("api-key"), key.to_owned());
-        }
-        Auth::Bearer(bearer) => {
-            headers.insert(String::from("authorization"), format!("Bearer {bearer}"));
-        }
-    }
-    Seen {
-        method: method.to_owned(),
-        url: url.to_owned(),
-        deadline: Duration::from_secs(600),
-        headers,
-        body,
-    }
 }
 
 pub(super) fn status_of(error: AssistantsRunError) -> (u16, Vec<u8>) {
@@ -576,7 +544,9 @@ fn error_kind(error: &ThreadRunsError) -> &'static str {
 
 pub(super) fn definitions(error: AssistantsRunError) -> DefinitionsError {
     match error {
-        AssistantsRunError::Client(error) => error,
-        other => panic!("expected a client failure, got {other:?}"),
+        AssistantsRunError::Client(failure) => failure,
+        other @ (AssistantsRunError::Runs(_) | AssistantsRunError::Encode(_)) => {
+            panic!("expected a client failure, got {other:?}")
+        }
     }
 }

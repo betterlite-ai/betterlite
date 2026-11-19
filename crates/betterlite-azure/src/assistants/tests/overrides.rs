@@ -3,7 +3,6 @@
 use std::time::Duration;
 
 use betterlite_openai::thread_runs::records::RunRequest;
-use serde_json::json;
 
 use super::support::{
     self, COMPLETED, CREATED, ERROR_BODY, FAILED, REQUIRES_ACTION, Recorder, parsed, run_request,
@@ -72,9 +71,9 @@ async fn overrides_the_assistant_defaults() {
         assistant_id: String::from("asst_1"),
         additional_instructions: Some(String::from("extra")),
         instructions: Some(String::from("override")),
-        metadata: Some(json!({"tag": "x"})),
+        metadata: Some(parsed(r#"{"tag":"x"}"#)),
         model: Some(String::from("gpt-4o")),
-        tools: Some(json!([{"type": "code_interpreter"}])),
+        tools: Some(parsed(r#"[{"type":"code_interpreter"}]"#)),
     };
     support::polled(&recorder, &fixture, &run).await;
     let seen = recorder.requests();
@@ -135,7 +134,7 @@ async fn keeps_the_callers_deadline_per_request() {
     recorder.queue_poll(200, CREATED);
     recorder.queue_poll(200, COMPLETED);
     let mut fixture = support::Fixture::new();
-    fixture.params.timeout = Some(30.0);
+    fixture.params.timeout = Some(30.0_f64);
     support::polled(&recorder, &fixture, &run_request()).await;
     let seen = recorder.requests();
     assert_eq!(seen.len(), 3);

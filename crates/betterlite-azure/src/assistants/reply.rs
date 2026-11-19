@@ -42,8 +42,8 @@ fn shape_tool(tool: &mut Value) {
             let ranking = search
                 .as_object_mut()
                 .and_then(|fields| fields.get_mut("ranking_options"));
-            if let Some(ranking) = ranking {
-                add_keys(ranking, &["ranker", "score_threshold"]);
+            if let Some(options) = ranking {
+                add_keys(options, &["ranker", "score_threshold"]);
             }
         }
         Some("function") => {

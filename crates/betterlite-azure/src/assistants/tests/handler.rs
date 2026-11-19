@@ -28,13 +28,13 @@ async fn passes_the_handler_through() {
     let recorder = Recorder::start();
     let fixture = Fixture::new();
     let handler = support::RecordingHandler::start();
-    let expected: Arc<dyn RunEventHandler> = handler.clone();
+    let expected: Arc<dyn RunEventHandler> = Arc::clone(&handler);
     let manager = support::streamed(
         &recorder,
         &fixture,
         &run_request(),
         streaming(),
-        Some(handler.clone()),
+        Some(Arc::clone(&expected)),
     )
     .await;
     let attached = manager.handler.as_ref().unwrap();
@@ -55,12 +55,13 @@ async fn delivers_events_before_ending() {
     recorder.queue(200, STREAM_BODY);
     let fixture = Fixture::new();
     let handler = support::RecordingHandler::start();
+    let attached: Arc<dyn RunEventHandler> = Arc::clone(&handler);
     let manager = support::streamed(
         &recorder,
         &fixture,
         &run_request(),
         streaming(),
-        Some(handler.clone()),
+        Some(attached),
     )
     .await;
     assert!(handler.calls().is_empty());
