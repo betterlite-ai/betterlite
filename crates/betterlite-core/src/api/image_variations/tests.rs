@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+mod credential_chains;
 mod support;
 
 use std::sync::atomic::Ordering;
@@ -8,14 +9,17 @@ use std::time::Duration;
 use betterlite_error::envelope::WireField;
 use betterlite_error::error::ErrorClass;
 use betterlite_models::decisions::Json;
-use betterlite_models::identity::provider_id::ProviderId;
+use betterlite_models::provider_metadata_factory::selection::select;
 use betterlite_openai::api::image_contracts::records::{ImageData, ImageResponse};
 use http::Method;
+use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Number;
 
 use super::call::{DEFAULT_MODEL, VariationAnswer, VariationOptions, VariationResponseFormat};
-use super::credentials::{DEFAULT_OPENAI_API_BASE, DEFAULT_TOPAZ_API_BASE, VariationPolicies};
+use super::credentials::{
+    Credentials, DEFAULT_TOPAZ_API_BASE, VariationPolicies, provider_credentials,
+};
 use super::entry::{aimage_variation, image_variation};
 use super::error::ImageVariationError;
 
@@ -117,20 +121,16 @@ async fn async_variation_sends_the_same_request() {
     assert_eq!(sync_request.query, async_request.query);
     assert_eq!(sync_request.headers, async_request.headers);
     assert_eq!(sync_request.deadline, async_request.deadline);
-    let sync_parts = multipart_parts(sync_request);
-    let async_parts = multipart_parts(async_request);
-    assert_eq!(sync_parts.len(), async_parts.len());
-    for (left, right) in sync_parts.iter().zip(async_parts) {
-        assert_eq!(
-            (&left.name, &left.file_name, &left.content_type, &left.data),
-            (
-                &right.name,
-                &right.file_name,
-                &right.content_type,
-                &right.data
-            )
-        );
-    }
+    let [sync_part] = multipart_parts(sync_request) else {
+        panic!("the sync request carries the image");
+    };
+    let [async_part] = multipart_parts(async_request) else {
+        panic!("the async request carries the image");
+    };
+    assert_eq!(sync_part.name, async_part.name);
+    assert_eq!(sync_part.file_name, async_part.file_name);
+    assert_eq!(sync_part.content_type, async_part.content_type);
+    assert_eq!(sync_part.data, async_part.data);
 }
 
 #[tokio::test]
@@ -319,40 +319,48 @@ async fn an_empty_declared_provider_is_unset() {
     assert_eq!(transport.take().len(), 1);
 }
 
+#[rstest]
+#[case(None, Duration::from_secs(600))]
+#[case(Some(0.0), Duration::ZERO)]
+#[case(Some(3.0), Duration::from_secs(3))]
 #[tokio::test]
-async fn openai_receives_the_timeout_unchanged() {
+async fn openai_receives_the_timeout_unchanged(
+    #[case] timeout: Option<f64>,
+    #[case] expected: Duration,
+) {
     let fixture = Fixture::new();
     let context = fixture.context();
     let settings = settings(SOURCE, &[("OPENAI_API_KEY", "sk-test")]);
-    for (timeout, expected) in [
-        (None, Duration::from_secs(600)),
-        (Some(0.0), Duration::ZERO),
-        (Some(3.0), Duration::from_secs(3)),
-    ] {
-        let transport = RecordingTransport::new(200, SUCCESS_BODY);
-        let service = service(
-            &settings,
-            &context,
-            &transport,
-            &NoTopaz,
-            VariationPolicies::default(),
-        );
-        let mut call = variation_call();
-        call.timeout = timeout;
-        let answer = image_variation(&service, &call)
-            .await
-            .expect("the variation succeeds");
-        assert!(matches!(answer, VariationAnswer::Response(_)));
-        let requests = transport.take();
-        let [request] = requests.as_slice() else {
-            panic!("one request");
-        };
-        assert_eq!(request.deadline, expected);
-    }
+    let transport = RecordingTransport::new(200, SUCCESS_BODY);
+    let service = service(
+        &settings,
+        &context,
+        &transport,
+        &NoTopaz,
+        VariationPolicies::default(),
+    );
+    let mut call = variation_call();
+    call.timeout = timeout;
+    let answer = image_variation(&service, &call)
+        .await
+        .expect("the variation succeeds");
+    assert!(matches!(answer, VariationAnswer::Response(_)));
+    let requests = transport.take();
+    let [request] = requests.as_slice() else {
+        panic!("one request");
+    };
+    assert_eq!(request.deadline, expected);
 }
 
+#[rstest]
+#[case(None, 6000.0)]
+#[case(Some(0.0), 6000.0)]
+#[case(Some(3.0), 3.0)]
 #[tokio::test]
-async fn topaz_falls_back_to_the_default_request_timeout() {
+async fn topaz_falls_back_to_the_default_request_timeout(
+    #[case] timeout: Option<f64>,
+    #[case] expected: f64,
+) {
     let fixture = Fixture::new();
     let context = fixture.context();
     let settings = settings(SOURCE, &[("TOPAZ_API_KEY", "topaz-key")]);
@@ -365,25 +373,28 @@ async fn topaz_falls_back_to_the_default_request_timeout() {
         &topaz,
         VariationPolicies::default(),
     );
-    for timeout in [None, Some(0.0), Some(3.0)] {
-        let mut call = variation_call();
-        call.custom_llm_provider = Some("topaz".to_owned());
-        call.timeout = timeout;
-        let answer = image_variation(&service, &call)
-            .await
-            .expect("the topaz variation succeeds");
-        assert!(matches!(answer, VariationAnswer::Response(_)));
-    }
-    let timeouts: Vec<f64> = topaz
-        .take()
-        .iter()
-        .map(|request| request.timeout_seconds)
-        .collect();
-    assert_eq!(timeouts, [6000.0, 6000.0, 3.0]);
+    let mut call = variation_call();
+    call.custom_llm_provider = Some("topaz".to_owned());
+    call.timeout = timeout;
+    let answer = image_variation(&service, &call)
+        .await
+        .expect("the topaz variation succeeds");
+    assert!(matches!(answer, VariationAnswer::Response(_)));
+    let requests = topaz.take();
+    let [request] = requests.as_slice() else {
+        panic!("one topaz request");
+    };
+    assert_eq!(request.timeout_seconds, expected);
 }
 
+#[rstest]
+#[case(None, 7.0)]
+#[case(Some(0.0), 7.0)]
 #[tokio::test]
-async fn topaz_uses_the_configured_request_timeout() {
+async fn topaz_uses_the_configured_request_timeout(
+    #[case] timeout: Option<f64>,
+    #[case] expected: f64,
+) {
     let fixture = Fixture::new();
     let context = fixture.context();
     let settings = settings(
@@ -399,21 +410,18 @@ async fn topaz_uses_the_configured_request_timeout() {
         &topaz,
         VariationPolicies::default(),
     );
-    for timeout in [None, Some(0.0)] {
-        let mut call = variation_call();
-        call.custom_llm_provider = Some("topaz".to_owned());
-        call.timeout = timeout;
-        let answer = image_variation(&service, &call)
-            .await
-            .expect("the topaz variation succeeds");
-        assert!(matches!(answer, VariationAnswer::Response(_)));
-    }
-    let timeouts: Vec<f64> = topaz
-        .take()
-        .iter()
-        .map(|request| request.timeout_seconds)
-        .collect();
-    assert_eq!(timeouts, [7.0, 7.0]);
+    let mut call = variation_call();
+    call.custom_llm_provider = Some("topaz".to_owned());
+    call.timeout = timeout;
+    let answer = image_variation(&service, &call)
+        .await
+        .expect("the topaz variation succeeds");
+    assert!(matches!(answer, VariationAnswer::Response(_)));
+    let requests = topaz.take();
+    let [request] = requests.as_slice() else {
+        panic!("one topaz request");
+    };
+    assert_eq!(request.timeout_seconds, expected);
 }
 
 #[tokio::test]
@@ -468,8 +476,8 @@ async fn unknown_models_project_a_bad_request() {
     let error = aimage_variation(&service, &call)
         .await
         .expect_err("the model names no provider");
-    assert_eq!(error.status_code(), 400);
-    assert!(matches!(error.class(), ErrorClass::BadRequest(_)));
+    assert_eq!(error.class.metadata().status_code, 400);
+    assert!(matches!(&error.class, ErrorClass::BadRequest(_)));
     assert_eq!(transport.take().len(), 0);
 }
 
@@ -481,7 +489,7 @@ async fn missing_model_info_names_the_provider() {
     let transport = RecordingTransport::new(200, SUCCESS_BODY);
     let policies = VariationPolicies {
         model_info: |_, _| None,
-        ..VariationPolicies::default()
+        credentials: provider_credentials,
     };
     let service = service(&settings, &context, &transport, &NoTopaz, policies);
     let error = image_variation(&service, &variation_call())
@@ -539,8 +547,11 @@ async fn null_bases_name_the_provider() {
     );
     let transport = RecordingTransport::new(200, SUCCESS_BODY);
     let policies = VariationPolicies {
-        api_base: |_, _, _| None,
-        ..VariationPolicies::default()
+        model_info: select,
+        credentials: |_, _, _, _| Credentials {
+            api_key: Some(SecretString::from("sk-test")),
+            api_base: None,
+        },
     };
     let service = service(&settings, &context, &transport, &NoTopaz, policies);
     let error = image_variation(&service, &variation_call())
@@ -607,9 +618,9 @@ async fn topaz_failures_keep_their_status_and_message() {
     let error = aimage_variation(&service, &call)
         .await
         .expect_err("the topaz executor fails");
-    assert_eq!(error.status_code(), 502);
+    assert_eq!(error.class.metadata().status_code, 502);
     assert_eq!(error.message, "topaz is down");
-    assert!(matches!(error.class(), ErrorClass::BadGateway(_)));
+    assert!(matches!(&error.class, ErrorClass::BadGateway(_)));
     assert_eq!(transport.take().len(), 0);
 }
 
@@ -654,13 +665,13 @@ async fn bad_request_variations_project_a_bad_request() {
     let error = aimage_variation(&service, &variation_call())
         .await
         .expect_err("the provider refuses the request");
-    let metadata = error.metadata();
+    let metadata = error.class.metadata();
     assert_eq!(metadata.status_code, 400);
     assert_eq!(metadata.error_type, WireField::Null);
     assert_eq!(metadata.param, WireField::Null);
     assert_eq!(metadata.openai_code, None);
-    assert!(matches!(error.class(), ErrorClass::BadRequest(_)));
-    assert!(error.to_string().contains("nope"));
+    assert!(matches!(&error.class, ErrorClass::BadRequest(_)));
+    assert!(error.message.contains("nope"));
     assert_eq!(transport.take().len(), 1);
 }
 
@@ -680,7 +691,7 @@ async fn rate_limited_variations_project_without_a_retry() {
     let error = aimage_variation(&service, &variation_call())
         .await
         .expect_err("the provider rate limits the call");
-    let metadata = error.metadata();
+    let metadata = error.class.metadata();
     assert_eq!(metadata.status_code, 429);
     assert_eq!(
         metadata.error_type,
@@ -688,7 +699,7 @@ async fn rate_limited_variations_project_without_a_retry() {
     );
     assert_eq!(metadata.param, WireField::Null);
     assert_eq!(metadata.openai_code.as_deref(), Some("429"));
-    assert!(matches!(error.class(), ErrorClass::RateLimit(_)));
+    assert!(matches!(&error.class, ErrorClass::RateLimit(_)));
     assert_eq!(transport.take().len(), 1, "the wrapper does not retry");
 }
 
@@ -803,7 +814,7 @@ async fn dict_answers_with_wrong_fields_raise_the_wrapper_exception() {
     let error = aimage_variation(&operation, &variation_call())
         .await
         .expect_err("the fields do not normalize");
-    assert_eq!(error.status_code(), 500);
+    assert_eq!(error.class.metadata().status_code, 500);
 }
 
 #[tokio::test]
@@ -812,7 +823,7 @@ async fn async_failures_default_to_openai() {
     let error = aimage_variation(&operation, &variation_call())
         .await
         .expect_err("the operation fails");
-    assert_eq!(error.metadata().provider.as_deref(), Some("openai"));
+    assert_eq!(error.class.metadata().provider.as_deref(), Some("openai"));
     assert_eq!(
         operation.inferences.load(Ordering::SeqCst),
         0,
@@ -828,7 +839,7 @@ async fn async_failures_infer_a_provider_only_with_a_model() {
     let error = aimage_variation(&operation, &call)
         .await
         .expect_err("the operation fails");
-    assert_eq!(error.metadata().provider.as_deref(), Some("topaz"));
+    assert_eq!(error.class.metadata().provider.as_deref(), Some("topaz"));
     assert_eq!(operation.inferences.load(Ordering::SeqCst), 1);
 }
 
@@ -841,7 +852,7 @@ async fn async_failures_prefer_the_declared_provider() {
     let error = aimage_variation(&operation, &call)
         .await
         .expect_err("the operation fails");
-    assert_eq!(error.metadata().provider.as_deref(), Some("azure"));
+    assert_eq!(error.class.metadata().provider.as_deref(), Some("azure"));
     assert_eq!(
         operation.inferences.load(Ordering::SeqCst),
         0,
@@ -867,106 +878,6 @@ async fn async_failures_use_the_provider_the_model_resolves_to() {
     let error = aimage_variation(&service, &call)
         .await
         .expect_err("the topaz key is missing");
-    assert_eq!(error.metadata().provider.as_deref(), Some("topaz"));
+    assert_eq!(error.class.metadata().provider.as_deref(), Some("topaz"));
     assert_eq!(transport.take().len(), 0);
-}
-
-#[test]
-fn openai_key_falls_through_its_sources() {
-    let policies = VariationPolicies::default();
-    let all = settings(
-        "litellm_settings:\n  api_key: yaml-key\n  openai_key: yaml-openai-key\n",
-        &[("OPENAI_API_KEY", "env-key")],
-    );
-    let supplied = SecretString::from("supplied");
-    let key = (policies.api_key)(ProviderId::Openai, Some(&supplied), &all).expect("supplied key");
-    assert_eq!(key.expose_secret(), "supplied");
-    let key = (policies.api_key)(ProviderId::Openai, None, &all).expect("global key");
-    assert_eq!(key.expose_secret(), "yaml-key");
-    let openai_key_only = settings(
-        "litellm_settings:\n  openai_key: yaml-openai-key\n",
-        &[("OPENAI_API_KEY", "env-key")],
-    );
-    let key = (policies.api_key)(ProviderId::Openai, None, &openai_key_only).expect("openai_key");
-    assert_eq!(key.expose_secret(), "yaml-openai-key");
-    let environment_only = settings(SOURCE, &[("OPENAI_API_KEY", "env-key")]);
-    let key =
-        (policies.api_key)(ProviderId::Openai, None, &environment_only).expect("environment key");
-    assert_eq!(key.expose_secret(), "env-key");
-    let empty = SecretString::from("");
-    let key = (policies.api_key)(ProviderId::Openai, Some(&empty), &environment_only)
-        .expect("an empty key falls through");
-    assert_eq!(key.expose_secret(), "env-key");
-    let none = settings(SOURCE, &[]);
-    assert!((policies.api_key)(ProviderId::Openai, None, &none).is_none());
-}
-
-#[test]
-fn openai_base_falls_through_its_sources() {
-    let policies = VariationPolicies::default();
-    let all = settings(
-        "litellm_settings:\n  api_base: https://yaml.example/v1\n",
-        &[
-            ("OPENAI_BASE_URL", "https://env.example/v1"),
-            ("OPENAI_API_BASE", "https://legacy.example/v1"),
-        ],
-    );
-    let supplied = (policies.api_base)(ProviderId::Openai, Some("https://call.example/v1"), &all);
-    assert_eq!(supplied.as_deref(), Some("https://call.example/v1"));
-    assert_eq!(
-        (policies.api_base)(ProviderId::Openai, None, &all).as_deref(),
-        Some("https://yaml.example/v1")
-    );
-    let environment_only = settings(
-        SOURCE,
-        &[
-            ("OPENAI_BASE_URL", "https://env.example/v1"),
-            ("OPENAI_API_BASE", "https://legacy.example/v1"),
-        ],
-    );
-    assert_eq!(
-        (policies.api_base)(ProviderId::Openai, None, &environment_only).as_deref(),
-        Some("https://env.example/v1")
-    );
-    let legacy_only = settings(SOURCE, &[("OPENAI_API_BASE", "https://legacy.example/v1")]);
-    assert_eq!(
-        (policies.api_base)(ProviderId::Openai, None, &legacy_only).as_deref(),
-        Some("https://legacy.example/v1")
-    );
-    assert_eq!(
-        (policies.api_base)(ProviderId::Openai, None, &settings(SOURCE, &[])).as_deref(),
-        Some(DEFAULT_OPENAI_API_BASE)
-    );
-    assert_eq!(
-        (policies.api_base)(ProviderId::Openai, Some(""), &all).as_deref(),
-        Some("https://yaml.example/v1")
-    );
-}
-
-#[test]
-fn topaz_credentials_fall_through_their_sources() {
-    let policies = VariationPolicies::default();
-    let settings = settings(SOURCE, &[("TOPAZ_API_KEY", "topaz-env-key")]);
-    let key = (policies.api_key)(ProviderId::Topaz, None, &settings).expect("topaz key");
-    assert_eq!(key.expose_secret(), "topaz-env-key");
-    assert_eq!(
-        (policies.api_base)(ProviderId::Topaz, None, &settings).as_deref(),
-        Some(DEFAULT_TOPAZ_API_BASE)
-    );
-    let supplied = SecretString::from("supplied-topaz");
-    let key = (policies.api_key)(ProviderId::Topaz, Some(&supplied), &settings)
-        .expect("supplied topaz key");
-    assert_eq!(key.expose_secret(), "supplied-topaz");
-    let supplied_base =
-        (policies.api_base)(ProviderId::Topaz, Some("https://topaz.example"), &settings);
-    assert_eq!(supplied_base.as_deref(), Some("https://topaz.example"));
-    let with_base = settings(SOURCE, &[("TOPAZ_API_BASE", "https://topaz.example")]);
-    assert_eq!(
-        (policies.api_base)(ProviderId::Topaz, None, &with_base).as_deref(),
-        Some("https://topaz.example")
-    );
-    let none = settings(SOURCE, &[]);
-    assert!((policies.api_key)(ProviderId::Topaz, None, &none).is_none());
-    assert!((policies.api_key)(ProviderId::Azure, None, &settings).is_none());
-    assert!((policies.api_base)(ProviderId::Azure, None, &settings).is_none());
 }

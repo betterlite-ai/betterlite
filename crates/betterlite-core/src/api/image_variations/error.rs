@@ -1,6 +1,4 @@
-use std::fmt;
-
-use betterlite_error::error::{ErrorClass, ErrorMetadata};
+use betterlite_error::error::ErrorClass;
 use betterlite_error::openai::{OpenaiExceptionInput, map_openai_exception};
 use betterlite_models::resolution::ResolutionError;
 use betterlite_openai::image_variations::error::OpenAiImageVariationError;
@@ -42,7 +40,7 @@ pub struct TopazVariationError {
 // aimage_variation's failure, after litellm's exception_type has mapped the sync exception
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VariationException {
-    class: ErrorClass,
+    pub class: ErrorClass,
     pub message: String,
 }
 
@@ -62,42 +60,10 @@ impl VariationException {
         };
         project(&message, status, model, provider)
     }
-
-    // ImageResponse(**cached_dict) can fail the way pydantic does, and no status reaches that mapping
-    pub(crate) fn unmapped(
-        source: &serde_json::Error,
-        model: Option<&str>,
-        provider: &str,
-    ) -> Self {
-        project(&source.to_string(), None, model, provider)
-    }
-
-    #[must_use]
-    pub fn status_code(&self) -> u16 {
-        self.class.metadata().status_code
-    }
-
-    #[must_use]
-    pub fn metadata(&self) -> ErrorMetadata {
-        self.class.metadata()
-    }
-
-    #[must_use]
-    pub fn class(&self) -> &ErrorClass {
-        &self.class
-    }
 }
-
-impl fmt::Display for VariationException {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.message)
-    }
-}
-
-impl std::error::Error for VariationException {}
 
 // litellm's exception_type reads no structured body off these exceptions, so only status and text reach it
-fn project(
+pub(crate) fn project(
     message: &str,
     status_code: Option<u16>,
     model: Option<&str>,

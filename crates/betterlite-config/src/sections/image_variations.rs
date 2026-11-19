@@ -6,7 +6,7 @@ use crate::sections::Section;
 use secrecy::SecretString;
 
 // LiteLLM's constants.request_timeout: REQUEST_TIMEOUT or 6000, read once at import
-const DEFAULT_REQUEST_TIMEOUT_SECONDS: f64 = 6000.0;
+const DEFAULT_REQUEST_TIMEOUT: f64 = 6000.0;
 
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct Raw {
@@ -39,7 +39,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            request_timeout_seconds: DEFAULT_REQUEST_TIMEOUT_SECONDS,
+            request_timeout_seconds: DEFAULT_REQUEST_TIMEOUT,
             api_base: None,
             api_key: None,
             openai_key: None,
@@ -63,7 +63,7 @@ impl Section for Raw {
         let environment_text = lookup.lookup("REQUEST_TIMEOUT").unwrap_or_default();
         let request_timeout_seconds =
             betterlite_env::number::<f64>("REQUEST_TIMEOUT", &environment_text)?
-                .unwrap_or(DEFAULT_REQUEST_TIMEOUT_SECONDS);
+                .unwrap_or(DEFAULT_REQUEST_TIMEOUT);
         let settings = Settings {
             request_timeout_seconds,
             api_base: match litellm_settings.api_base {

@@ -22,7 +22,8 @@ use betterlite_openai::api::image_contracts::records::{
 use betterlite_openai::image_variations::transport::ImageVariationTransport;
 
 use super::super::call::{
-    ImageVariationCall, PendingVariation, VariationOptions, VariationResponseFormat, VariationStep,
+    ImageVariationCall, PendingVariation, VariationAnswer, VariationOptions,
+    VariationResponseFormat, VariationStep,
 };
 use super::super::credentials::VariationPolicies;
 use super::super::entry::ImageVariationOperation;
@@ -48,9 +49,10 @@ pub(super) struct Fixture {
 
 impl Fixture {
     pub(super) fn new() -> Self {
+        let catalog = ModelCatalog::parse(CATALOG.as_bytes(), UnknownFields::Reject)
+            .expect("the test catalog parses");
         Self {
-            catalog: ModelCatalog::parse(CATALOG.as_bytes(), UnknownFields::Reject)
-                .expect("the test catalog parses"),
+            catalog,
             names: BTreeSet::new(),
             environment: BTreeMap::new(),
         }
@@ -309,9 +311,15 @@ impl ImageVariationOperation for ScriptedOperation {
             });
         };
         match scripted {
-            Scripted::Response(response) => Ok(VariationStep::Response(response)),
-            Scripted::Mapping(mapping) => Ok(VariationStep::Mapping(mapping)),
-            Scripted::Unexpected(value) => Ok(VariationStep::Unexpected(value)),
+            Scripted::Response(response) => {
+                Ok(VariationStep::Answer(VariationAnswer::Response(response)))
+            }
+            Scripted::Mapping(mapping) => {
+                Ok(VariationStep::Answer(VariationAnswer::Mapping(mapping)))
+            }
+            Scripted::Unexpected(value) => {
+                Ok(VariationStep::Answer(VariationAnswer::Unexpected(value)))
+            }
             Scripted::Pending(response) => {
                 let awaited = &self.awaits;
                 Ok(VariationStep::Pending(Box::pin(async move {

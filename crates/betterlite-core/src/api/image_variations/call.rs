@@ -57,16 +57,13 @@ pub struct ImageVariationCall {
 pub type PendingVariation<'operation> =
     Pin<Box<dyn Future<Output = Result<ImageResponse, ImageVariationError>> + Send + 'operation>>;
 
-// what image_variation can hand back: a provider response, a cached dict, or any other provider result
+// what image_variation can hand back: a ready answer or a provider future this entry awaits
 pub enum VariationStep<'operation> {
-    Response(ImageResponse),
-    Mapping(Json),
+    Answer(VariationAnswer),
     Pending(PendingVariation<'operation>),
-    Unexpected(Json),
 }
 
-// aimage_variation's answer: a dict from the first call was already turned into an ImageResponse,
-// while a second-call result comes back exactly as the provider produced it
+// the wrapper's answer: a dict became an ImageResponse, while a second-call result comes back unchecked
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VariationAnswer {
     Response(ImageResponse),

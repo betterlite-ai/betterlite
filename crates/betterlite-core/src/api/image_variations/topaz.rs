@@ -17,8 +17,7 @@ pub struct TopazVariationRequest {
     pub metadata: ImageParams,
 }
 
-// B046 supplies Topaz's transforms and aiohttp execution through this seam; Ok(None) is a response the
-// branch did not produce, which main.image_variation turns into its invalid-provider ValueError.
+// B046 supplies Topaz's execution through this seam; Ok(None) becomes main.image_variation's ValueError
 pub trait TopazVariationExecutor {
     fn execute(
         &self,

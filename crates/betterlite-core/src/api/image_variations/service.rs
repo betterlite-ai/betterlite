@@ -57,30 +57,28 @@ where
         let resolved =
             resolve(&request, self.resolution).map_err(ImageVariationError::Resolution)?;
         let provider = VariationProvider::of(&resolved.provider)?;
-        if (self.policies.model_info)(&resolved.model, provider.id()).is_none() {
+        if (self.policies.model_info)(Some(resolved.model.as_str()), provider.id()).is_none() {
             return Err(ImageVariationError::UnknownModelInfo {
                 provider: resolved.provider.slug().to_owned(),
             });
         }
-        let api_key = (self.policies.api_key)(provider.id(), call.api_key.as_ref(), self.settings)
+        let credentials = (self.policies.credentials)(
+            provider.id(),
+            call.api_key.as_ref(),
+            call.api_base.as_deref(),
+            self.settings,
+        );
+        let api_key = credentials
+            .api_key
             .ok_or_else(|| ImageVariationError::MissingKey {
                 provider: provider.name(),
             })?;
-        let api_base =
-            (self.policies.api_base)(provider.id(), call.api_base.as_deref(), self.settings)
-                .ok_or_else(|| ImageVariationError::MissingBase {
-                    provider: provider.name(),
-                })?;
-        match provider {
-            VariationProvider::OpenAi => self.openai_step(call, resolved.model, api_key, api_base),
-            VariationProvider::Topaz => self.topaz_step(
-                call,
-                resolved.model,
-                api_key,
-                api_base,
-                resolved.provider.slug(),
-            ),
-        }
+        let api_base = credentials
+            .api_base
+            .ok_or_else(|| ImageVariationError::MissingBase {
+                provider: provider.name(),
+            })?;
+        self.dispatch(call, resolved.model, api_key, api_base, provider)
     }
 
     fn inferred_provider(&self, call: &ImageVariationCall) -> Option<String> {
@@ -102,76 +100,75 @@ where
     Transport: ImageVariationTransport,
     Topaz: TopazVariationExecutor,
 {
-    fn openai_step(
+    fn dispatch(
         &self,
         call: &ImageVariationCall,
         model: String,
         api_key: SecretString,
         api_base: String,
+        provider: VariationProvider,
     ) -> Result<VariationStep<'_>, ImageVariationError> {
-        let request = ImageVariationRequest {
-            model: Some(model),
-            image: call.image.clone(),
-            // the signature's n, response_format, size and user stop here
-            optional_params: ImageParams::new(),
-            headers: None,
-            api_key: Some(api_key),
-            api_base: Some(api_base),
-            organization: None,
-            timeout: call
-                .timeout
-                .map(|seconds| {
-                    Duration::try_from_secs_f64(seconds)
-                        .map_err(|_invalid| ImageVariationError::InvalidTimeout { seconds })
-                })
-                .transpose()?,
-            params: ImageVariationParams {
-                async_call: call.async_call,
-            },
-            client: None,
-            shared_session: None,
-            config: Some(OpenAiImageVariationConfig),
-            boundary: (self.identify)().to_string(),
-            now_seconds: (self.clock)(),
-        };
-        let prepared = begin_image_variation(request, &mut VariationLogger)?;
-        let transport: &Transport = self.transport;
-        Ok(VariationStep::Pending(Box::pin(async move {
-            let sent = send_image_variation(&prepared, transport).await;
-            let outcome = finish_image_variation(&prepared, sent, &mut VariationLogger)?;
-            Ok(image_response(outcome))
-        })))
-    }
-
-    fn topaz_step(
-        &self,
-        call: &ImageVariationCall,
-        model: String,
-        api_key: SecretString,
-        api_base: String,
-        slug: &str,
-    ) -> Result<VariationStep<'_>, ImageVariationError> {
-        let request = TopazVariationRequest {
-            model,
-            image: call.image.clone(),
-            optional_params: ImageParams::new(),
-            api_key,
-            api_base,
-            timeout_seconds: topaz_timeout(call.timeout, self.settings.request_timeout_seconds),
-            async_call: call.async_call,
-            metadata: call.metadata.clone(),
-        };
-        match self.topaz.execute(request)? {
-            Some(pending) => Ok(VariationStep::Pending(pending)),
-            None => Err(ImageVariationError::InvalidProvider {
-                provider: slug.to_owned(),
-            }),
+        match provider {
+            VariationProvider::OpenAi => {
+                let request = ImageVariationRequest {
+                    model: Some(model),
+                    image: call.image.clone(),
+                    // the signature's n, response_format, size and user stop here
+                    optional_params: ImageParams::new(),
+                    headers: None,
+                    api_key: Some(api_key),
+                    api_base: Some(api_base),
+                    organization: None,
+                    timeout: call
+                        .timeout
+                        .map(|seconds| {
+                            Duration::try_from_secs_f64(seconds)
+                                .map_err(|_invalid| ImageVariationError::InvalidTimeout { seconds })
+                        })
+                        .transpose()?,
+                    params: ImageVariationParams {
+                        async_call: call.async_call,
+                    },
+                    client: None,
+                    shared_session: None,
+                    config: Some(OpenAiImageVariationConfig),
+                    boundary: (self.identify)().to_string(),
+                    now_seconds: (self.clock)(),
+                };
+                let prepared = begin_image_variation(request, &mut VariationLogger)?;
+                let transport: &Transport = self.transport;
+                Ok(VariationStep::Pending(Box::pin(async move {
+                    let sent = send_image_variation(&prepared, transport).await;
+                    let outcome = finish_image_variation(&prepared, sent, &mut VariationLogger)?;
+                    Ok(image_response(outcome))
+                })))
+            }
+            VariationProvider::Topaz => {
+                let request = TopazVariationRequest {
+                    model,
+                    image: call.image.clone(),
+                    optional_params: ImageParams::new(),
+                    api_key,
+                    api_base,
+                    timeout_seconds: topaz_timeout(
+                        call.timeout,
+                        self.settings.request_timeout_seconds,
+                    ),
+                    async_call: call.async_call,
+                    metadata: call.metadata.clone(),
+                };
+                match self.topaz.execute(request)? {
+                    Some(pending) => Ok(VariationStep::Pending(pending)),
+                    None => Err(ImageVariationError::InvalidProvider {
+                        provider: provider.id().to_string(),
+                    }),
+                }
+            }
         }
     }
 }
 
-// LiteLLM's line 207 reinsertion: a declared provider prefixes a model that does not already name it.
-// The azure non-openai branch runs first there, so its model keeps its prefix.
+// get_llm_provider's line 207 prefix runs after its azure non-openai branch, whose model keeps its prefix
 fn declared_model(call: &ImageVariationCall, catalog: &ModelCatalog) -> String {
     let model = call
         .model

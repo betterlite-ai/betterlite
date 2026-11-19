@@ -2,7 +2,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::ImageResponse;
 
 use super::call::{ImageVariationCall, VariationAnswer, VariationStep};
-use super::error::{ImageVariationError, VariationException};
+use super::error::{ImageVariationError, VariationException, project};
 
 const DEFAULT_PROVIDER: &str = "openai";
 
@@ -14,25 +14,18 @@ pub trait ImageVariationOperation {
     fn inferred_provider(&self, call: &ImageVariationCall) -> Option<String>;
 }
 
-// image_variation: the sync entry point. Its provider is a future in Rust, so the future is awaited here;
-// the dict and fallback handling LiteLLM keeps in aimage_variation stays there.
-pub async fn image_variation<O>(
+// the sync entry: a ready provider answer passes through, and a provider future is awaited here
+pub async fn image_variation<O: ImageVariationOperation>(
     operation: &O,
     call: &ImageVariationCall,
-) -> Result<VariationAnswer, ImageVariationError>
-where
-    O: ImageVariationOperation,
-{
+) -> Result<VariationAnswer, ImageVariationError> {
     match operation.begin(call)? {
-        VariationStep::Response(response) => Ok(VariationAnswer::Response(response)),
-        VariationStep::Mapping(mapping) => Ok(VariationAnswer::Mapping(mapping)),
-        VariationStep::Unexpected(value) => Ok(VariationAnswer::Unexpected(value)),
+        VariationStep::Answer(answer) => Ok(answer),
         VariationStep::Pending(pending) => Ok(VariationAnswer::Response(pending.await?)),
     }
 }
 
-// aimage_variation: forces async_call, keeps the call's context, infers a provider for attribution only,
-// converts one dict answer, awaits one coroutine, and repeats the sync call for anything else.
+// forces async_call, converts one dict, awaits one coroutine, and repeats the sync call for anything else
 pub async fn aimage_variation<O>(
     operation: &O,
     call: &ImageVariationCall,
@@ -81,7 +74,7 @@ fn normalized(
     provider: &str,
 ) -> Result<ImageResponse, VariationException> {
     let value = serde_json::to_value(mapping)
-        .map_err(|error| VariationException::unmapped(&error, model, provider))?;
+        .map_err(|error| project(&error.to_string(), None, model, provider))?;
     serde_json::from_value(value)
-        .map_err(|error| VariationException::unmapped(&error, model, provider))
+        .map_err(|error| project(&error.to_string(), None, model, provider))
 }
