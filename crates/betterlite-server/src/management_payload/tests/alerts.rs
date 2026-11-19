@@ -3,7 +3,6 @@
 use betterlite_config::sections::alert_settings::types::AlertType;
 use betterlite_models::model_registration::JsonObject;
 use rstest::rstest;
-use serde_json::json;
 
 use crate::alerting::model_alerts::key_event::KeyEventAlerts;
 use crate::management_payload::alerts::{
@@ -11,8 +10,8 @@ use crate::management_payload::alerts::{
     send_management_endpoint_alert,
 };
 use crate::management_payload::tests::support::{
-    FakeTransportError, RecordingAlertTransport, RecordingModelAlertSender, json_object,
-    json_value, key_fixture,
+    FakeTransportError, RecordingAlertTransport, RecordingModelAlertSender, json_doc,
+    json_doc_object, key_fixture,
 };
 
 #[rstest]
@@ -58,11 +57,11 @@ async fn absent_logger_sink_unknown_function() {
         &key,
     )
     .await;
-    assert!(skipped.is_ok());
+    skipped.expect("a missing transport still returns");
     let unknown =
         send_management_endpoint_alert(Some(&transport), "generate_key", JsonObject::new(), &key)
             .await;
-    assert!(unknown.is_ok());
+    unknown.expect("an unknown function still returns");
     assert!(transport.alerts.entries().is_empty());
 }
 
@@ -81,7 +80,7 @@ async fn unknown_actor_defaults(
     let key = key_fixture(fields);
     let sent =
         send_management_endpoint_alert(Some(&transport), "new_team", JsonObject::new(), &key).await;
-    assert!(sent.is_ok());
+    sent.expect("the alert is sent");
     let alerts = transport.alerts.entries();
     assert_eq!(alerts.len(), 1);
     assert_eq!(alerts[0].created_by_user_id, expected_id);
@@ -94,15 +93,17 @@ async fn alert_kwargs_and_alias_preserved() {
     let transport = RecordingAlertTransport::default();
     let key =
         key_fixture(r#"{"user_id": "admin", "user_role": "proxy_admin", "key_alias": "ops-key"}"#);
-    let kwargs: JsonObject = json_object(json!({
-        "api_key": "sk-secret",
-        "nested": {"password": "p@ss"},
-        "user_id": "someone"
-    }));
+    let kwargs: JsonObject = json_doc_object(
+        r#"{
+            "api_key": "sk-secret",
+            "nested": {"password": "p@ss"},
+            "user_id": "someone"
+        }"#,
+    );
     let sent =
         send_management_endpoint_alert(Some(&transport), "update_key_fn", kwargs.clone(), &key)
             .await;
-    assert!(sent.is_ok());
+    sent.expect("the alert is sent");
     let alerts = transport.alerts.entries();
     assert_eq!(alerts.len(), 1);
     let alert = &alerts[0];
@@ -113,7 +114,7 @@ async fn alert_kwargs_and_alias_preserved() {
     assert_eq!(alert.request_kwargs, kwargs);
     assert_eq!(
         alert.request_kwargs.get("api_key"),
-        Some(&json_value(json!("sk-secret")))
+        Some(&json_doc(r#""sk-secret""#))
     );
     assert_eq!(alert.alert_type, AlertType::VirtualKeyUpdated);
     assert_eq!(alert.event_name, "Virtual Key Updated");
@@ -126,7 +127,7 @@ async fn slack_alert_reaches_the_sender() {
         sender: sender.clone(),
     };
     let key = key_fixture(r#"{"user_id": "admin", "key_alias": "ops-key"}"#);
-    let kwargs: JsonObject = json_object(json!({"api_key": "sk-secret"}));
+    let kwargs: JsonObject = json_doc_object(r#"{"api_key": "sk-secret"}"#);
     send_management_endpoint_alert(Some(&transport), "generate_key_fn", kwargs, &key)
         .await
         .expect("the slack alert is sent");

@@ -348,12 +348,13 @@ where
     serde_json::from_value(tree).expect("the value is JSON")
 }
 
-pub(crate) fn json_object<Value>(value: Value) -> JsonObject
-where
-    Value: Serialize,
-{
-    let Json::Object(fields) = json_value(value) else {
-        panic!("the fixture is a JSON object");
+pub(crate) fn json_doc(document: &str) -> Json {
+    serde_json::from_str(document).expect("the fixture document is JSON")
+}
+
+pub(crate) fn json_doc_object(document: &str) -> JsonObject {
+    let Json::Object(fields) = json_doc(document) else {
+        panic!("the fixture document is a JSON object");
     };
     fields
 }

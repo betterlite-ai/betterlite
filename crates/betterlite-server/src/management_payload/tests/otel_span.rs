@@ -7,12 +7,11 @@ use betterlite_models::decisions::Json;
 use opentelemetry::trace::{Tracer as _, TracerProvider as _};
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
 use rstest::rstest;
-use serde_json::json;
 
 use crate::management_payload::otel_span::ManagementSpanError;
 use crate::management_payload::tests::support::{
     FakeTransportError, SpanHarness, SpanHook, emit_without_transport, end_time, exception,
-    json_request, json_value, span_call, start_time,
+    json_doc, json_request, span_call, start_time,
 };
 
 fn parent_span() -> LiveSpan {
@@ -26,7 +25,7 @@ fn parent_span() -> LiveSpan {
 #[tokio::test]
 async fn legacy_span_without_request() {
     let harness = SpanHarness::default();
-    let result = json_value(json!({"key_alias": "ops", "env_vars": []}));
+    let result = json_doc(r#"{"key_alias": "ops", "env_vars": []}"#);
     harness
         .emit(span_call("delete_user", Some(&result), None))
         .await
@@ -35,17 +34,17 @@ async fn legacy_span_without_request() {
     assert_eq!(sent.len(), 1);
     assert_eq!(sent[0].hook, SpanHook::Success);
     assert_eq!(sent[0].route, "delete_user");
-    assert_eq!(sent[0].request_data, json_value(json!({})));
+    assert_eq!(sent[0].request_data, json_doc("{}"));
     assert_eq!(
         sent[0].response,
-        Some(json_value(json!({"key_alias": "ops", "env_vars": []})))
+        Some(json_doc(r#"{"key_alias": "ops", "env_vars": []}"#))
     );
 }
 
 #[tokio::test]
 async fn request_route_and_body() {
     let harness = SpanHarness::default();
-    let result = json_value(json!({"key": "sk-generated", "user_id": "u1"}));
+    let result = json_doc(r#"{"key": "sk-generated", "user_id": "u1"}"#);
     let mut call = span_call("generate_key_fn", Some(&result), None);
     call.http_request = Some(json_request(
         "/key/generate",
@@ -57,15 +56,15 @@ async fn request_route_and_body() {
     // the request body keeps every field it carried; only the response is stripped
     assert_eq!(
         sent[0].request_data,
-        json_value(json!({"user_id": "u1", "api_key": "sk-request-secret"}))
+        json_doc(r#"{"user_id": "u1", "api_key": "sk-request-secret"}"#)
     );
-    assert_eq!(sent[0].response, Some(json_value(json!({"user_id": "u1"}))));
+    assert_eq!(sent[0].response, Some(json_doc(r#"{"user_id": "u1"}"#)));
 }
 
 #[tokio::test]
 async fn otel_v2_skips_all_payload_work() {
     let harness = SpanHarness::default();
-    let result = json_value(json!({"key": "sk-generated"}));
+    let result = json_doc(r#"{"key": "sk-generated"}"#);
     // the body would fail to parse, so a completed call proves the parser never ran
     let mut skipped = span_call("generate_key_fn", Some(&result), None);
     skipped.http_request = Some(json_request("/key/generate", "not json"));
@@ -84,20 +83,22 @@ async fn otel_v2_skips_all_payload_work() {
 #[tokio::test]
 async fn top_level_credential_fields_only() {
     let harness = SpanHarness::default();
-    let result = json_value(json!({
-        "key": "sk-top",
-        "token": "top-token",
-        "api_key": "top-api-key",
-        "secret": "top-secret",
-        "password": "top-password",
-        "access_token": "top-access",
-        "refresh_token": "top-refresh",
-        "private_key": "top-private",
-        "service_account_key": "top-service",
-        "key_alias": "ops",
-        "nested": {"api_key": "sk-nested", "secret": "nested-secret"},
-        "env_vars": [{"name": "A", "value": "env-secret", "scope": "global"}]
-    }));
+    let result = json_doc(
+        r#"{
+            "key": "sk-top",
+            "token": "top-token",
+            "api_key": "top-api-key",
+            "secret": "top-secret",
+            "password": "top-password",
+            "access_token": "top-access",
+            "refresh_token": "top-refresh",
+            "private_key": "top-private",
+            "service_account_key": "top-service",
+            "key_alias": "ops",
+            "nested": {"api_key": "sk-nested", "secret": "nested-secret"},
+            "env_vars": [{"name": "A", "value": "env-secret", "scope": "global"}]
+        }"#,
+    );
     harness
         .emit(span_call("update_key_fn", Some(&result), None))
         .await
@@ -105,19 +106,21 @@ async fn top_level_credential_fields_only() {
     let sent = harness.transport.spans.entries();
     assert_eq!(
         sent[0].response,
-        Some(json_value(json!({
-            "key_alias": "ops",
-            "nested": {"api_key": "sk-nested", "secret": "nested-secret"},
-            "env_vars": [
-                {"name": "A", "scope": "global", "description": null, "value": ""}
-            ]
-        })))
+        Some(json_doc(
+            r#"{
+                "key_alias": "ops",
+                "nested": {"api_key": "sk-nested", "secret": "nested-secret"},
+                "env_vars": [
+                    {"name": "A", "scope": "global", "description": null, "value": ""}
+                ]
+            }"#
+        ))
     );
 }
 
 #[rstest]
-#[case::text_result(json_value(json!("not a mapping")))]
-#[case::list_result(json_value(json!([["key", 1]])))]
+#[case::text_result(json_doc(r#""not a mapping""#))]
+#[case::list_result(json_doc(r#"[["key", 1]]"#))]
 #[tokio::test]
 async fn response_conversion_failure_silent(#[case] value: Json) {
     let harness = SpanHarness::default();
@@ -138,13 +141,13 @@ async fn success_null_result_and_failure_payload() {
         .emit(span_call("delete_key_fn", None, None))
         .await
         .expect("an absent result is no response");
-    let nulled = json_value(json!(null));
+    let nulled = json_doc("null");
     harness
         .emit(span_call("delete_key_fn", Some(&nulled), None))
         .await
         .expect("a null result is no response");
     let facts = exception();
-    let secret = json_value(json!({"key": "sk-failed", "env_vars": [{"name": "A", "value": "x"}]}));
+    let secret = json_doc(r#"{"key": "sk-failed", "env_vars": [{"name": "A", "value": "x"}]}"#);
     harness
         .emit(span_call("delete_key_fn", Some(&secret), Some(&facts)))
         .await
@@ -170,7 +173,7 @@ async fn success_null_result_and_failure_payload() {
 async fn timestamps_and_optional_parent_preserved() {
     let harness = SpanHarness::default();
     let parent = parent_span();
-    let result = json_value(json!({"key_alias": "ops"}));
+    let result = json_doc(r#"{"key_alias": "ops"}"#);
     let mut with_parent = span_call("new_team", Some(&result), None);
     with_parent.parent_otel_span = Some(&parent);
     harness
@@ -207,7 +210,7 @@ async fn body_parser_failure_propagates() {
 #[tokio::test]
 async fn span_sender_failure_propagates() {
     let harness = SpanHarness::failing();
-    let result = json_value(json!({"key_alias": "ops"}));
+    let result = json_doc(r#"{"key_alias": "ops"}"#);
     let success = harness
         .emit(span_call("new_team", Some(&result), None))
         .await;
@@ -229,11 +232,13 @@ async fn span_sender_failure_propagates() {
 #[tokio::test]
 async fn unchanged_caller_response() {
     let harness = SpanHarness::default();
-    let result = json_value(json!({
-        "key": "sk-live",
-        "env_vars": [{"name": "A", "value": "env-secret", "scope": "global"}],
-        "items": [{"env_vars": [{"name": "B", "value": "item-secret"}]}]
-    }));
+    let result = json_doc(
+        r#"{
+            "key": "sk-live",
+            "env_vars": [{"name": "A", "value": "env-secret", "scope": "global"}],
+            "items": [{"env_vars": [{"name": "B", "value": "item-secret"}]}]
+        }"#,
+    );
     let before = result.clone();
     harness
         .emit(span_call("update_key_fn", Some(&result), None))
@@ -244,15 +249,17 @@ async fn unchanged_caller_response() {
     let sent = harness.transport.spans.entries();
     assert_eq!(
         sent[0].response,
-        Some(json_value(json!({
-            "env_vars": [
-                {"name": "A", "scope": "global", "description": null, "value": ""}
-            ],
-            "items": [
-                {"env_vars": [
-                    {"name": "B", "scope": null, "description": null, "value": ""}
-                ]}
-            ]
-        })))
+        Some(json_doc(
+            r#"{
+                "env_vars": [
+                    {"name": "A", "scope": "global", "description": null, "value": ""}
+                ],
+                "items": [
+                    {"env_vars": [
+                        {"name": "B", "scope": null, "description": null, "value": ""}
+                    ]}
+                ]
+            }"#
+        ))
     );
 }
