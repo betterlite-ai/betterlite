@@ -1,0 +1,65 @@
+kind: sdk_http
+name: compression-interception-configuration-loading
+env: {}
+call:
+  compression_interception:
+    steps:
+      - settings: {litellm_settings: {}, callback_settings: {}}
+        request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: defaults}]
+        now: 0
+        compress:
+          messages: [{role: user, content: compressed defaults}]
+          tools: [{type: custom, name: litellm_content_retrieve}]
+          original_tokens: 1000
+          compressed_tokens: 400
+          cache: {key-1: original one}
+      - settings:
+          litellm_settings:
+            compression_interception_params:
+              enabled: true
+              compression_trigger: 1000
+              compression_target: 400
+              embedding_model: text-embedding-3-small
+              embedding_model_params: {dimensions: 512}
+          callback_settings:
+            compression_interception: {compression_trigger: 7}
+        request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: top level wins}]
+        now: 10
+        compress:
+          messages: [{role: user, content: compressed top level}]
+          tools: [{type: custom, name: litellm_content_retrieve}]
+          original_tokens: 5000
+          compressed_tokens: 2000
+          cache: {key-2: original two}
+      - settings:
+          litellm_settings: {}
+          callback_settings:
+            compression_interception: {compression_trigger: 5000, compression_target: 2000}
+        request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: callback fallback}]
+        now: 20
+        compress:
+          messages: [{role: user, content: compressed callback}]
+          tools: [{type: custom, name: litellm_content_retrieve}]
+          original_tokens: 6000
+          compressed_tokens: 2500
+          cache: {key-3: original three}
+      - settings:
+          litellm_settings: {}
+          callback_settings:
+            compression_interception: {enabled: false}
+        request:
+          model: claude-sonnet-4
+          messages: [{role: user, content: disabled}]
+        now: 30
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []

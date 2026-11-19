@@ -43,7 +43,7 @@ pub(crate) fn run_builtin(id: BuiltinId, context: &Context<'_>) -> Result<Vec<St
                 &format!("{}/blob/{}/", litellm.repository, litellm.commit),
                 &context.facts.added_rust_lines,
                 &context.facts.added_python_lines,
-                &context.facts.added_helper_lines,
+                &context.facts.added_litellm_caller_lines,
             ))
         }
         BuiltinId::FileSize => file_size::check(context),

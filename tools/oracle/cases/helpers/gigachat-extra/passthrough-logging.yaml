@@ -1,0 +1,52 @@
+kind: helper
+name: gigachat-passthrough-logging
+call:
+  b8178:
+    steps:
+      - kind: passthrough_logging
+        endpoint: v1/chat/completions
+        model: gigachat/GigaChat
+        status: 200
+        body: '{"id": "chat-1", "created": 17, "model": "BodyModel", "choices": [{"index": 0, "message": {"role": "assistant", "content": "hey"}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5}}'
+      - kind: passthrough_logging
+        endpoint: v1/chat/completions
+        model: gigachat/GigaChat
+        status: 200
+        body: '{"id": "chat-2", "created": 18, "choices": [{"index": 0, "message": {"role": "assistant", "content": "a"}, "finish_reason": "stop"}, {"index": 1, "message": {"role": "assistant", "content": "b"}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 4, "completion_tokens": 3, "total_tokens": 7}}'
+      - kind: passthrough_logging
+        endpoint: v1/embeddings
+        model: Embeddings
+        status: 200
+        body: '{"object": "list", "model": "Embeddings", "data": [{"object": "embedding", "embedding": [0.5], "index": 0, "usage": {"prompt_tokens": 4}}, {"object": "embedding", "embedding": [0.25], "index": 1, "usage": {"prompt_tokens": 6}}]}'
+      - kind: passthrough_logging
+        endpoint: v1/models
+        model: m
+        status: 200
+        body: '{}'
+      - kind: passthrough_headers
+        headers: {}
+        token: null
+      - kind: passthrough_key
+        api_key: null
+        env_key: null
+      - kind: passthrough_collected
+        endpoint: v1/chat/completions
+        model: gigachat/GigaChat
+        chunks:
+          - 'data: {"choices": [{"index": 0, "delta": {"content": "one"}}]}'
+          - nope
+          - 'data: {"choices": [{"index": 0, "delta": {"content": "two"}}]}'
+          - 'data: {"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5}}'
+      - kind: passthrough_collected
+        endpoint: v1/chat/completions
+        model: m
+        chunks:
+          - '{"choices": [{"index": 0, "delta": {"content": "raw"}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}}'
+      - kind: passthrough_collected
+        endpoint: v1/chat/completions
+        model: m
+        chunks:
+          - nope
+          - '[DONE]'
+env: {}
+compare: {ignore: []}

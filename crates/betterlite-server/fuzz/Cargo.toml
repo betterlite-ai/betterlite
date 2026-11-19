@@ -364,6 +364,27 @@ doc = false
 bench = false
 
 [[bin]]
+name = "cost_estimate_request"
+path = "fuzz_targets/cost_estimate_request.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "latest_release"
+path = "fuzz_targets/latest_release.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "roi_identity_body"
+path = "fuzz_targets/roi_identity_body.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "passthrough_frames"
 path = "fuzz_targets/passthrough_frames.rs"
 test = false

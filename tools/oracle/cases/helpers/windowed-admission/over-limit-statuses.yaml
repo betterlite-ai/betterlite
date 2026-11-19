@@ -1,0 +1,29 @@
+kind: helper
+name: over-limit-statuses
+call:
+  b3036:
+    function: check_over_limit
+    keys_to_fetch:
+      - "{api-key:k1}:window"
+      - "{api-key:k1}:requests"
+      - "{api-key:k1}:window"
+      - "{api-key:k1}:tokens"
+      - "{api-key:k2}:window"
+      - "{api-key:k2}:requests"
+    cache_values: [1700000000, 5, 1700000000, 25, null, null]
+    key_metadata:
+      "{api-key:k1}:window":
+        requests_limit: 10
+        tokens_limit: 20
+        window_size: 45
+        descriptor_key: api-key
+        descriptor_value: k1
+      "{api-key:k2}:window":
+        requests_limit: 7
+        tokens_limit: null
+        window_size: 60
+        descriptor_key: api-key
+        descriptor_value: k2
+    read_only: false
+env: {}
+compare: {ignore: []}

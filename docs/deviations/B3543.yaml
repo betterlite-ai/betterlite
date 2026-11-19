@@ -1,0 +1,65 @@
+task: B3543
+deviations:
+  - what: >-
+      A textual value for enabled is read as a flag, so "false", "0" and "off" load as false,
+      where LiteLLM's bool() makes every non-empty string true.
+    why: >-
+      betterlite's config resolves a flag written as text the same way everywhere, and a value
+      that reads as off must not silently turn compression on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L110-L118
+  - what: >-
+      A negative or fractional compression_trigger or compression_target fails configuration
+      loading with the field path, where LiteLLM's int() accepts -1 and turns 0.5 into 0.
+    why: >-
+      Both fields are token counts, so a value that is not a whole non-negative number is a
+      wrong-typed value that docs/compatibility.md makes an error naming the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L110-L118
+  - what: >-
+      A litellm_call_id that is not a non-empty string is replaced by a generated id, where
+      LiteLLM keeps a truthy value of any type and keys the cache with it.
+    why: >-
+      A cache keyed by a number or a list is never found again, because the retrieval hooks
+      resolve the id as a string; generating an id keeps the compressed content reachable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L183-L187
+  - what: >-
+      A _agentic_loop_depth that is not a whole number counts as 0, so compression runs, where
+      LiteLLM's int() truncates a float, accepts a numeric string and raises on any other text.
+    why: >-
+      docs/compatibility.md reads a field of the wrong type as an error or its default rather
+      than Python's coercion, and a depth the caller did not send as a number is no depth.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L144
+  - what: >-
+      A tools field that is not a list fails the hook with an error naming the field when
+      compression appends tools, where LiteLLM treats it as no tools and replaces it with the
+      compressed list.
+    why: >-
+      docs/compatibility.md makes a value of the wrong type an error that names the field, and
+      silently dropping a caller's tools would lose data.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L179-L182
+  - what: >-
+      Compression diagnostics are structured tracing events carrying the kind, the call id and
+      the token counts, where LiteLLM writes one Python log line whose %d fields truncate a
+      float and drop the line for a count that is not a number.
+    why: >-
+      betterlite logs through tracing, so a diagnostic is a typed event rather than formatted
+      text; docs/compatibility.md limits parity to declared types, and a count keeps its JSON
+      value instead of going through Python formatting.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L194-L207
+  - what: >-
+      A nested map under callback_settings.compression_interception, embedding_model_params
+      included, fails configuration loading as an unsupported key, where LiteLLM reads the whole
+      callback dict as compression parameters; the map is accepted under
+      litellm_settings.compression_interception_params.
+    why: >-
+      betterlite's callback settings layer keeps scalar callback values only and rejects a nested
+      value whose section has not registered with it as an owner, and only otel registers nested
+      keys; the map is therefore accepted under litellm_settings.compression_interception_params.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L120-L135
+  - what: >-
+      The compression cache holds at most 10,000 entries and drops the oldest past that, where
+      LiteLLM's _compression_cache_by_call_id keeps every entry for its 900 seconds.
+    why: >-
+      Distinct call ids would otherwise let one client allocate memory without bound inside the
+      TTL.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L187
+kept_bugs: []

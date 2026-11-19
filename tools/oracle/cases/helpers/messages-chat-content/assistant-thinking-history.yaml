@@ -1,0 +1,36 @@
+kind: helper
+name: messages-chat-content-assistant-thinking-history
+call:
+  messages_chat_content:
+    messages:
+    - role: assistant
+      content:
+      - type: thinking
+        thinking: one
+        signature: sig
+        cache_control:
+          type: ephemeral
+      - type: thinking
+        thinking: two
+      - type: thinking
+      - type: redacted_thinking
+        data: hidden
+      - type: redacted_thinking
+    - role: assistant
+      content:
+      - type: thinking
+        thinking: leak
+        signature: 'litellm_encrypted_reasoning:abc'
+      - type: text
+        text: kept
+    - role: assistant
+      content:
+      - type: thinking
+        thinking: leak
+        signature: 'litellm_encrypted_reasoning:abc'
+    model: claude-sonnet-5
+    custom_llm_provider: anthropic
+    preserve_midturn_system: false
+    supported: []
+env: {}
+compare: {ignore: []}

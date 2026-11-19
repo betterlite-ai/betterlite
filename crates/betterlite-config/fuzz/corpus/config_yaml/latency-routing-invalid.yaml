@@ -1,0 +1,6 @@
+model_list: []
+router_settings:
+  routing_strategy: latency-based-routing
+  routing_strategy_args:
+    lowest_latency_buffer: os.environ/LATENCY_ROUTING_BUFFER
+    ttft_percentile: 1.5

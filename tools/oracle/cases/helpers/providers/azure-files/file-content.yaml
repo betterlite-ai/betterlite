@@ -1,0 +1,15 @@
+kind: helper
+name: file-content
+call:
+  azure_files:
+    steps:
+    - action: content
+      args: {api_key: key-1, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 600.0, max_retries: 2}
+      file_id: "file two"
+      reply: {status: 200, headers: {content-type: application/binary}, body: file-bytes}
+    - action: content
+      args: {api_key: key-1, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 600.0, max_retries: 2}
+      file_id: file-1
+      reply: {status: 200, headers: {content-type: text/plain}, body: "two\nlines\n"}
+env: {}
+compare: {ignore: []}

@@ -1,7 +1,7 @@
 id: B160
 milestone: M12 python
 title: Python Responses, Anthropic Messages, Google GenAI and Interactions functions
-status: todo
+status: blocked
 depends_on: [B7840, B7841, B7842, B7843, B7844, B7845]
 file: tasks/B160-python-responses-surface.yaml
 covers: []
@@ -9,5 +9,5 @@ parent: null
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: null
+blocked_reason: "deferred until the core is done (Max, 11-19): later, Python SDK parity"
 pr: null

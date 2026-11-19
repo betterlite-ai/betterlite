@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 
 use crate::OracleError;
 use crate::http;
+pub(crate) mod release_fixture;
 
 pub(crate) struct Gateway {
     pub(crate) child: Child,

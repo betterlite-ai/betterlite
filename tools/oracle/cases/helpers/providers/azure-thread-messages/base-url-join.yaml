@@ -1,0 +1,14 @@
+kind: helper
+name: azure-thread-messages-base-url-join
+call:
+  azure_thread_messages:
+    assistants_beta_default:
+      - api_key: sk-fixture
+        api_base: https://example.test/openai/deployments/dep//
+        api_version: "2024-02-01"
+      - api_key: sk-fixture
+        api_base: "https://example.test/openai/deployments/dep#x"
+        api_version: "2024-02-01"
+        thread_id: thread_1
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,56 @@
+kind: helper
+name: query-list-and-200-char-cap
+call:
+  bedrock_services_search:
+    scenario: query_list_and_200_char_cap
+    runs:
+      - query: hello
+        optional_params: {}
+        configured_tool_name: null
+      - query: [alpha, beta]
+        optional_params: {}
+        configured_tool_name: null
+      - query: []
+        optional_params: {}
+        configured_tool_name: null
+      - query: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        optional_params: {}
+        configured_tool_name: null
+      - query: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+        optional_params: {}
+        configured_tool_name: null
+      - query: ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+        optional_params: {}
+        configured_tool_name: null
+      - query: ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
+        optional_params: {}
+        configured_tool_name: null
+      - query: 𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞
+        optional_params: {}
+        configured_tool_name: null
+      - query: hello
+        optional_params: {max_results: 0}
+        configured_tool_name: null
+      - query: hello
+        optional_params: {max_results: -3}
+        configured_tool_name: null
+      - query: hello
+        optional_params: {max_results: 25}
+        configured_tool_name: null
+      - query: hello
+        optional_params: {max_results: 30}
+        configured_tool_name: null
+      - query: hello
+        optional_params: {max_results: null}
+        configured_tool_name: null
+      - query: hello
+        optional_params: {max_results: '5'}
+        configured_tool_name: null
+      - query: hello
+        optional_params: {max_results: 1.5}
+        configured_tool_name: null
+      - query: hello
+        optional_params: {max_results: 5, tool_name: packages___WebSearch, search_domain_filter: [x], country: US}
+        configured_tool_name: null
+env: {}
+compare: {ignore: []}
