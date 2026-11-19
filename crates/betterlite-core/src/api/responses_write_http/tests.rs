@@ -304,30 +304,34 @@ async fn write_transport_failures(#[case] operation: Operation) {
     let write_params = params("http://unused.test");
     let mut fixture = Fixture::new("responses");
     let call = operation_call(operation, "resp_a", &write_params, None, None);
-    let Err(WriteError::Provider(error)) =
+    let Err(WriteError::Provider(provider_error)) =
         run(&mut fixture, &deps, ClientKind::Sync, &call, &events).await
     else {
         panic!("a 429 is a provider error");
     };
-    assert_eq!(error.status_code, 429);
-    assert!(!error.status_code_is_synthesized);
-    assert_eq!(error.message, "slow down");
+    assert_eq!(provider_error.status_code, 429);
+    assert!(!provider_error.status_code_is_synthesized);
+    assert_eq!(provider_error.message, "slow down");
     assert_eq!(
-        error.headers.get("retry-after"),
+        provider_error.headers.get("retry-after"),
         Some(&Json::Text(String::from("3")))
     );
     assert_eq!(
-        error.headers.get("content-type"),
+        provider_error.headers.get("content-type"),
         Some(&Json::Text(String::from("text/plain")))
     );
     assert_eq!(
-        error.headers.get("content-length"),
+        provider_error.headers.get("content-length"),
         Some(&Json::Text(String::from("9")))
     );
     assert_eq!(wire.requests().len(), 1);
     assert_eq!(
         config.errors(),
-        vec![(String::from("slow down"), 429, error.headers.clone())]
+        vec![(
+            String::from("slow down"),
+            429,
+            provider_error.headers.clone()
+        )]
     );
     let rejected = RecordingConfig::new("http://mock.test/v1/responses");
     let rejected_wire = Wire::replying(Reply::json(400, DELETED), &events);
@@ -340,7 +344,7 @@ async fn write_transport_failures(#[case] operation: Operation) {
     };
     let mut rejected_fixture = Fixture::new("responses");
     let rejected_call = operation_call(operation, "resp_a", &write_params, None, None);
-    let Err(WriteError::Provider(error)) = run(
+    let Err(WriteError::Provider(rejected_error)) = run(
         &mut rejected_fixture,
         &rejected_deps,
         ClientKind::Sync,
@@ -351,9 +355,9 @@ async fn write_transport_failures(#[case] operation: Operation) {
     else {
         panic!("a 400 is a provider error even when its body is a valid record");
     };
-    assert_eq!(error.status_code, 400);
-    assert!(!error.status_code_is_synthesized);
-    assert_eq!(error.message, DELETED);
+    assert_eq!(rejected_error.status_code, 400);
+    assert!(!rejected_error.status_code_is_synthesized);
+    assert_eq!(rejected_error.message, DELETED);
     assert_eq!(rejected_wire.requests().len(), 1);
     let invalid = RecordingConfig::new("http://mock.test/v1/responses");
     let invalid_wire = Wire::replying(Reply::json(200, "not json"), &events);
@@ -366,7 +370,7 @@ async fn write_transport_failures(#[case] operation: Operation) {
     };
     let mut invalid_fixture = Fixture::new("responses");
     let invalid_call = operation_call(operation, "resp_a", &write_params, None, None);
-    let Err(WriteError::Resource(error)) = run(
+    let Err(WriteError::Resource(resource_error)) = run(
         &mut invalid_fixture,
         &invalid_deps,
         ClientKind::Sync,
@@ -377,7 +381,7 @@ async fn write_transport_failures(#[case] operation: Operation) {
     else {
         panic!("a 200 that is not JSON fails the transform");
     };
-    assert_eq!(error.http_status(), Some(200));
+    assert_eq!(resource_error.http_status(), Some(200));
     assert!(invalid.errors().is_empty());
     assert_eq!(invalid_wire.requests().len(), 1);
     if matches!(operation, Operation::Cancel) {
@@ -416,7 +420,7 @@ async fn write_transport_failures(#[case] operation: Operation) {
     };
     let mut failed_fixture = Fixture::new("responses");
     let failed_call = operation_call(operation, "resp_a", &write_params, None, None);
-    let Err(WriteError::Provider(error)) = run(
+    let Err(WriteError::Provider(failure)) = run(
         &mut failed_fixture,
         &failed_deps,
         ClientKind::Sync,
@@ -427,10 +431,10 @@ async fn write_transport_failures(#[case] operation: Operation) {
     else {
         panic!("a closed client is a provider error");
     };
-    assert_eq!(error.status_code, 500);
-    assert!(error.status_code_is_synthesized);
-    assert_eq!(error.message, TransportError::Closed.to_string());
-    assert!(error.headers.is_empty());
+    assert_eq!(failure.status_code, 500);
+    assert!(failure.status_code_is_synthesized);
+    assert_eq!(failure.message, TransportError::Closed.to_string());
+    assert!(failure.headers.is_empty());
     assert_eq!(
         failing.errors(),
         vec![(TransportError::Closed.to_string(), 500, HeaderMap::new())]
