@@ -1,0 +1,6 @@
+kind: helper
+name: image-description-concurrent
+call:
+  b3699: {"operation": "images", "patterns": [{"pattern_type": "regex", "pattern_name": null, "pattern": "alpha", "name": "alpha", "action": "MASK"}], "blocked_words": [], "images": ["img-1", "img-2"], "image_model": "vision-model", "image_description": "an alpha scene"}
+env: {}
+compare: {ignore: []}

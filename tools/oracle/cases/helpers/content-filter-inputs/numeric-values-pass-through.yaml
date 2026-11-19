@@ -1,0 +1,6 @@
+kind: helper
+name: numeric-values-pass-through
+call:
+  b3699: {"operation": "tool_calls", "patterns": [{"pattern_type": "regex", "pattern_name": null, "pattern": "secret", "name": "secret", "action": "MASK"}], "blocked_words": [], "tool_calls": [{"id": "call-1", "type": "function", "function": {"name": "lookup", "arguments": "{\"n\": 4111, \"flag\": true, \"missing\": null, \"text\": \"plain\"}"}}]}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,6 @@
+kind: helper
+name: image-description-filtering
+call:
+  b3699: {"operation": "images", "patterns": [{"pattern_type": "regex", "pattern_name": null, "pattern": "alpha", "name": "leak", "action": "BLOCK"}], "blocked_words": [], "images": ["img-1"], "image_model": "vision-model", "image_description": "an alpha scene"}
+env: {}
+compare: {ignore: []}

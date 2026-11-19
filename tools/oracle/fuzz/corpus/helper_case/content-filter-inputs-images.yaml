@@ -1,0 +1,5 @@
+kind: helper
+name: content-filter-inputs-images-seed
+call: {b3699: {operation: images, patterns: [{pattern_type: regex, pattern_name: null, pattern: secret, name: content_filter_inputs, action: MASK}], blocked_words: [], images: [https://example.test/photo.png], image_model: vision-model, image_description: a secret scene}}
+env: {}
+compare: {ignore: []}
