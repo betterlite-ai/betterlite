@@ -58,7 +58,7 @@ fn logging(redactor: &Redactor) -> (LoggingState, PrePostEnv<'_>) {
         },
         redactor,
         || String::from("trace"),
-        Duration::default(),
+        Duration::default,
     )
     .unwrap();
     let env = PrePostEnv {
