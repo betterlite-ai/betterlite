@@ -41,14 +41,21 @@ fn document(body: &str) -> Result<ParsedIngestRequest, IngestRequestError> {
     parse_rag_ingest_request(&request, LIMIT, &EicarTestMalwareScanner, || ID)
 }
 
-fn form(items: Vec<FormPart>) -> Result<ParsedIngestRequest, IngestRequestError> {
+fn form_with_limit(
+    items: Vec<FormPart>,
+    max_upload_bytes: usize,
+) -> Result<ParsedIngestRequest, IngestRequestError> {
     let parts = FormParts { items };
     let headers = request_headers("multipart/form-data; boundary=betterlite");
     let request = IngestRequest {
         headers: &headers,
         body: IngestBody::Multipart(&parts),
     };
-    parse_rag_ingest_request(&request, LIMIT, &EicarTestMalwareScanner, || ID)
+    parse_rag_ingest_request(&request, max_upload_bytes, &EicarTestMalwareScanner, || ID)
+}
+
+fn form(items: Vec<FormPart>) -> Result<ParsedIngestRequest, IngestRequestError> {
+    form_with_limit(items, LIMIT)
 }
 
 fn text_part(name: &str, text: &str) -> FormPart {
@@ -498,7 +505,8 @@ fn base64_error_is_reported_before_source_check() {
 fn upload_is_validated_before_vector_store() {
     let file = upload_part("file", "eicar.txt", EICAR_TEST_SIGNATURE);
     let request = text_part("request", r#"{"ingest_options": {}}"#);
-    let error = form(vec![file, request]).unwrap_err();
+    let limit = EICAR_TEST_SIGNATURE.len();
+    let error = form_with_limit(vec![file, request], limit).unwrap_err();
     let IngestRequestError::UploadRejected { upload } = error else {
         panic!("the upload must be validated before the vector store is read");
     };
