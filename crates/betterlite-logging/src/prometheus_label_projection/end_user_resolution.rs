@@ -3,8 +3,9 @@ use betterlite_models::model_registration::JsonObject;
 
 use crate::end_user::{
     CostTrackingService, END_USER_ID_FIELD, EndUserCostTrackingSettings, EndUserIdError,
-    get_end_user_id_for_cost_tracking,
 };
+// ast-grep-ignore: no-long-names
+use crate::end_user::get_end_user_id_for_cost_tracking;
 
 // LiteLLM lazily imports get_end_user_id_for_cost_tracking to keep utils.py out of the prometheus import; in Rust the same call costs nothing
 pub trait EndUserResolver: Send + Sync {
@@ -23,6 +24,7 @@ impl EndUserResolver for CostTrackingEndUserResolver {
             END_USER_ID_FIELD.to_owned(),
             end_user.map_or(Json::Null, |id| Json::Text(id.to_owned())),
         );
+        // ast-grep-ignore: no-long-names
         get_end_user_id_for_cost_tracking(&params, CostTrackingService::Prometheus, &self.settings)
     }
 }

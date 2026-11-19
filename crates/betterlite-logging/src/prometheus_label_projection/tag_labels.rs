@@ -11,7 +11,7 @@ pub fn custom_labels_from_tags(
     let mut labels = BTreeMap::new();
     for configured in configured_tags {
         let label_name = sanitize_label_name(&format!("tag_{configured}"));
-        if tags.iter().any(|tag| tag == configured) {
+        if tags.contains(configured) {
             labels.insert(label_name, "true".to_owned());
             continue;
         }

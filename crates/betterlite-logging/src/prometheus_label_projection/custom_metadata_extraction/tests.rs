@@ -40,9 +40,9 @@ fn a_configured_key_names_a_string_label(
     #[case] expected: &[(&str, &str)],
 ) {
     let labels = custom_labels_from_metadata(&metadata(), &texts(configured));
-    let expected: BTreeMap<String, String> = expected
+    let wanted: BTreeMap<String, String> = expected
         .iter()
         .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
         .collect();
-    assert_eq!(labels, expected);
+    assert_eq!(labels, wanted);
 }

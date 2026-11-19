@@ -63,7 +63,7 @@ fn merge_supported(
     supported_enum_labels: &[String],
 ) {
     for (key, value) in extra {
-        if supported_enum_labels.iter().any(|label| label == key) {
+        if supported_enum_labels.contains(key) {
             labels.insert(key.clone(), value.clone());
         }
     }
@@ -90,8 +90,8 @@ fn labels_from_context(
             labels.insert(label.clone(), value.clone());
         }
     }
-    if labels.contains_key(END_USER_LABEL) {
-        labels.insert(END_USER_LABEL.to_owned(), context.get_resolved_end_user()?);
+    if let Some(end_user) = labels.get_mut(END_USER_LABEL) {
+        *end_user = context.get_resolved_end_user()?;
     }
     merge_supported(
         &mut labels,
@@ -112,33 +112,24 @@ fn labels_from_values(
     let dump = enum_values.model_dump();
     let mut labels = ProjectedLabels::new();
     for (label, value) in &dump {
-        if supported_enum_labels
-            .iter()
-            .any(|supported| supported == label)
-        {
+        if supported_enum_labels.contains(label) {
             labels.insert(label.clone(), sanitized_scalar(value));
         }
     }
-    if labels.contains_key(END_USER_LABEL) {
+    if let Some(end_user) = labels.get_mut(END_USER_LABEL) {
         let resolver = CostTrackingEndUserResolver {
             settings: end_user_settings,
         };
-        labels.insert(
-            END_USER_LABEL.to_owned(),
-            resolver.resolve_end_user(enum_values.end_user.as_deref())?,
-        );
+        *end_user = resolver.resolve_end_user(enum_values.end_user.as_deref())?;
     }
     for (key, value) in &enum_values.custom_metadata_labels {
         let sanitized_key = sanitize_label_name(key);
-        if supported_enum_labels
-            .iter()
-            .any(|label| *label == sanitized_key)
-        {
+        if supported_enum_labels.contains(&sanitized_key) {
             labels.insert(sanitized_key, sanitize_label_value(Some(value.as_str())));
         }
     }
     for (key, value) in custom_labels_from_tags(&enum_values.tags, &settings.custom_tags)? {
-        if supported_enum_labels.iter().any(|label| *label == key) {
+        if supported_enum_labels.contains(&key) {
             labels.insert(key, sanitize_label_value(Some(value.as_str())));
         }
     }

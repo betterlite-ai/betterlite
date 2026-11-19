@@ -30,11 +30,11 @@ fn tag_labels_say_whether_each_configured_tag_matched(
     #[case] expected: &[(&str, &str)],
 ) {
     let labels = custom_labels_from_tags(&texts(tags), &texts(configured)).expect("valid patterns");
-    let expected: BTreeMap<String, String> = expected
+    let wanted: BTreeMap<String, String> = expected
         .iter()
         .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
         .collect();
-    assert_eq!(labels, expected);
+    assert_eq!(labels, wanted);
 }
 
 #[test]

@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 
 use super::combined_custom_metadata;
 use crate::fields::payload::records::StandardLoggingMetadata;
@@ -62,7 +63,10 @@ fn top_level_scalars_and_subobject_entries_are_combined() {
     assert_eq!(combined.get("log_bucket"), Some(&text("b1")));
     assert_eq!(
         combined.get("nested"),
-        Some(&Json::Object([("zone".to_owned(), text("z1"))].into()))
+        Some(&Json::Object(IndexMap::from([(
+            "zone".to_owned(),
+            text("z1")
+        )])))
     );
 }
 

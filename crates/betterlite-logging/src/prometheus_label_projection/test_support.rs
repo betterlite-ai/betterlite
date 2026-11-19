@@ -65,7 +65,8 @@ impl CountingResolver {
 impl EndUserResolver for CountingResolver {
     fn resolve_end_user(&self, end_user: Option<&str>) -> Result<Option<String>, EndUserIdError> {
         let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
-        *calls += 1;
+        let count = calls.saturating_add(1);
+        *calls = count;
         drop(calls);
         match self.resolution {
             Resolution::Echo => Ok(end_user.map(|id| format!("resolved-{id}"))),
