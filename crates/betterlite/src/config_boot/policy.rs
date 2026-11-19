@@ -5,7 +5,7 @@ use super::error::ConfigBootError;
 use super::raw::is_configured;
 use crate::job_scheduler::BoxFuture;
 
-// B3250 owns the init_policies algorithm; this step only decides when it runs
+// B3250 owns init_policies; the port fixes LiteLLM's fail_on_error=True and this step picks validate_db
 pub trait PolicyEngine: Send + Sync {
     fn init_policies<'config>(
         &'config self,
