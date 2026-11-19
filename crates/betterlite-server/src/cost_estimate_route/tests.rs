@@ -503,6 +503,24 @@ fn quotes_a_partial_custom_price_with_a_zero_for_the_missing_rate() {
 }
 
 #[test]
+fn falls_back_to_the_custom_input_rate_for_cache_tokens() {
+    let response = helper_quote(
+        r#"[{"model_name":"input-only","litellm_params":{"model":"self-hosted",
+            "custom_llm_provider":"openai","input_cost_per_token":0.5}}]"#,
+        r#"{"model":"input-only","input_tokens":8,"output_tokens":4,"cache_read_input_tokens":2,
+            "cache_creation_input_tokens":2}"#,
+    );
+    assert_eq!(response.cost_per_request.0, dec("4"));
+    assert_eq!(response.input_cost_per_request.0, dec("4"));
+    assert_eq!(response.output_cost_per_request.0, Decimal::ZERO);
+    assert_eq!(response.cache_read_cost_per_request.0, dec("1"));
+    assert_eq!(response.cache_creation_cost.0, dec("1"));
+    assert_eq!(response.cache_read_input_token_cost.unwrap().0, dec("0.5"));
+    assert_eq!(response.cache_creation_token_cost.unwrap().0, dec("0.5"));
+    assert_eq!(response.output_cost_per_token.unwrap().0, Decimal::ZERO);
+}
+
+#[test]
 fn falls_back_to_the_backend_cache_rates() {
     let response = helper_quote(
         r#"[{"model_name":"period-quote","litellm_params":{"model":"claude-haiku-4-5-20251001",
