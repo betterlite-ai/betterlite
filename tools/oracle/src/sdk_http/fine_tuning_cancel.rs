@@ -9,7 +9,6 @@ use betterlite_core::api::fine_tuning_cancel_call::{
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::decisions::Json;
 use betterlite_openai::batches::sdk::TimeoutPhases;
-use betterlite_openai::fine_tuning::job::FineTuneJob;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
@@ -24,7 +23,7 @@ use projection::failure;
 mod dispatch;
 mod projection;
 
-fn openai_provider() -> Option<String> {
+fn default_custom_llm_provider() -> Option<String> {
     Some("openai".to_owned())
 }
 
@@ -39,7 +38,7 @@ pub struct Call {
 #[serde(deny_unknown_fields)]
 pub struct Run {
     pub(crate) fine_tuning_job_id: String,
-    #[serde(default = "openai_provider")]
+    #[serde(default = "default_custom_llm_provider")]
     pub(crate) custom_llm_provider: Option<String>,
     // who supplies the api base: the call's params or the provider's environment variable
     #[serde(default)]
@@ -188,7 +187,9 @@ async fn run_once(
     };
     match service.run(&request).await {
         Ok(job) => Ok(RunOutcome {
-            job: Some(job_json(&job)?),
+            job: Some(decision_json(
+                serde_json::to_value(&job).map_err(SdkHttpError::Serialize)?,
+            )),
             error: None,
         }),
         Err(error) => Ok(RunOutcome {
@@ -229,11 +230,6 @@ fn environment_settings(env: &BTreeMap<String, String>) -> Result<Settings, SdkH
     .load("model_list: []")
     .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
     Ok(config.sections.resource_sdk_settings.clone())
-}
-
-fn job_json(job: &FineTuneJob) -> Result<Json, SdkHttpError> {
-    let value = serde_json::to_value(job).map_err(SdkHttpError::Serialize)?;
-    Ok(decision_json(value))
 }
 
 // the workspace serializes numbers with arbitrary precision, so the two JSON types convert directly
