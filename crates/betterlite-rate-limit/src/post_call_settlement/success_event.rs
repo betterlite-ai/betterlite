@@ -26,7 +26,7 @@ pub(super) async fn log_success_event(
     }
 }
 
-pub(super) async fn settle_success(
+async fn settle_success(
     settlement: &PostCallSettlement<'_>,
     callback: &SuccessCallback<'_>,
 ) -> Result<(), PostCallSettlementError> {

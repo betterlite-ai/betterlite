@@ -44,33 +44,12 @@ impl PostCallSettlement<'_> {
         success_event::log_success_event(self, callback).await;
     }
 
-    pub(crate) async fn settle_success(
-        &self,
-        callback: &SuccessCallback<'_>,
-    ) -> Result<(), PostCallSettlementError> {
-        success_event::settle_success(self, callback).await
-    }
-
     pub async fn log_failure_event(&self, event: &FailureEvent<'_>) {
         failure_event::log_failure_event(self, event).await;
     }
 
-    pub(crate) async fn settle_failure(
-        &self,
-        event: &FailureEvent<'_>,
-    ) -> Result<(), PostCallSettlementError> {
-        failure_event::settle_failure(self, event).await
-    }
-
     pub async fn post_call_failure_hook(&self, event: &FailureHook<'_>) {
         failure_hook::post_call_failure_hook(self, event).await;
-    }
-
-    pub(crate) async fn settle_failure_hook(
-        &self,
-        event: &FailureHook<'_>,
-    ) -> Result<(), PostCallSettlementError> {
-        failure_hook::settle_failure_hook(self, event).await
     }
 
     pub async fn release_slot_on_disconnect(&self, slot: &RequestStashSlot) {

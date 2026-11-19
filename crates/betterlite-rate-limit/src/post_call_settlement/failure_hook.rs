@@ -29,7 +29,7 @@ pub(super) async fn post_call_failure_hook(
     }
 }
 
-pub(super) async fn settle_failure_hook(
+async fn settle_failure_hook(
     settlement: &PostCallSettlement<'_>,
     event: &FailureHook<'_>,
 ) -> Result<(), PostCallSettlementError> {

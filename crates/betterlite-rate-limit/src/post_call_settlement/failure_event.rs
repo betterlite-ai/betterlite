@@ -25,7 +25,7 @@ pub(super) async fn log_failure_event(
     }
 }
 
-pub(super) async fn settle_failure(
+async fn settle_failure(
     settlement: &PostCallSettlement<'_>,
     event: &FailureEvent<'_>,
 ) -> Result<(), PostCallSettlementError> {
