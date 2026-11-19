@@ -106,6 +106,16 @@ async fn a_missing_cached_key_sends_no_alert() {
 }
 
 #[tokio::test]
+async fn a_token_without_a_cost_looks_up_no_key_and_sends_no_alert() {
+    let state = FakeState::new().with_key_object(key_object(1300, Some(2000), false));
+    let mut input = token_input("sk-test-token");
+    input.response_cost = None;
+    let (cache, alerts) = run(input, state).await;
+    assert!(cache.state().auth_requests.is_empty());
+    assert!(alerts.sent().is_empty());
+}
+
+#[tokio::test]
 async fn every_request_over_the_soft_limit_alerts_again() {
     let cache =
         FakeCache::new(FakeState::new().with_key_object(key_object(1300, Some(2000), false)));

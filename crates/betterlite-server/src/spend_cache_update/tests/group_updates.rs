@@ -157,6 +157,20 @@ async fn a_missing_user_row_leaves_the_global_spend_alone() {
 }
 
 #[tokio::test]
+async fn a_missing_global_spend_is_not_created() {
+    let cache = FakeCache::new(
+        FakeState::new().with_cached(BTreeMap::from([("user-1".to_owned(), user_fixture())])),
+    );
+    run_update(&cache, &user_cost_input()).await;
+    let state = cache.state();
+    assert_eq!(state.writes.len(), 1);
+    assert!(state.writes[0].local_only);
+    assert_eq!(state.writes[0].entries.len(), 1);
+    assert_eq!(state.writes[0].entries[0].0, "user-1");
+    drop(state);
+}
+
+#[tokio::test]
 async fn a_text_global_spend_is_not_replaced() {
     let cache = FakeCache::new(FakeState::new().with_cached(BTreeMap::from([
         ("user-1".to_owned(), user_fixture()),
