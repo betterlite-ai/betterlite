@@ -1,24 +1,17 @@
 use std::sync::Arc;
 
-use betterlite_anthropic::message_replay::tool_ids::sanitize_tool_use_ids;
-use betterlite_anthropic::message_replay::{BlockStrip, strip_blocks};
-use betterlite_anthropic::web_replay::flatten_web_search_results;
 use betterlite_models::decisions::Json;
-use betterlite_prompts::arguments::json::Json as PromptJson;
 use indexmap::IndexMap;
-use secrecy::ExposeSecret as _;
 
 use super::dispatch::{MessagesDispatchRequest, MessagesExecutionContinuation};
 use super::entry::{MessagesEntryRequest, MessagesEntryResult};
 use super::error::MessagesExecuteError;
-use super::hooks::{litellm_params, pop_named, pop_stream, pop_tools, provider_from_hook_map};
-use super::seams::{
-    CacheControlOutcome, CacheControlRequest, InterceptorRequest, MessagesEntrySeams,
-    advisor_requested,
+use super::hooks::{
+    build_hook_map, cache_stage, pop_named, pop_typed_arguments, provider_from_hook_map,
+    resolve_provider, run_pre_request_hooks, sanitize_messages,
 };
+use super::seams::{InterceptorRequest, MessagesEntrySeams, advisor_requested};
 use crate::api::messages_fake_stream::MessagesFakeStream;
-use crate::api::messages_native_transform::error::TransformError;
-use crate::api::messages_reasoning_route::seams::ProviderLookup;
 
 // B4115 sets this marker when it converted a streaming web-search request to a non-streaming call
 const WEBSEARCH_STREAM_MARKER: &str = "_websearch_interception_converted_stream";
@@ -28,238 +21,257 @@ pub enum MessagesEntryOutcome {
     Dispatch(Box<MessagesExecutionContinuation>),
 }
 
+// the request as the hooks left it, plus the fields the later stages read
+struct EntryState {
+    request: MessagesEntryRequest,
+    messages: Vec<Json>,
+    named: NamedArguments,
+    provider: Option<String>,
+    kwargs: IndexMap<String, Json>,
+    original_stream: bool,
+}
+
+// the named arguments the hook map carries, with the caller's originals as their defaults
+struct NamedArguments {
+    metadata: Option<Json>,
+    stop_sequences: Option<Json>,
+    system: Option<Json>,
+    temperature: Option<Json>,
+    thinking: Option<Json>,
+    tool_choice: Option<Json>,
+    top_k: Option<Json>,
+    top_p: Option<Json>,
+    tools: Option<Vec<Json>>,
+    stream: Option<bool>,
+}
+
+// the request between the cache hook and the named-argument pops
+struct PendingHooks {
+    request: MessagesEntryRequest,
+    messages: Vec<Json>,
+    system: Option<Json>,
+    kwargs: IndexMap<String, Json>,
+    provider: Option<String>,
+    original_stream: bool,
+    hook_map: IndexMap<String, Json>,
+}
+
 // The decorated anthropic_messages body, in LiteLLM's order; the final dispatch comes back as an effect
 pub async fn execute(
     request: MessagesEntryRequest,
     seams: &MessagesEntrySeams<'_>,
 ) -> Result<MessagesEntryOutcome, MessagesExecuteError> {
-    let MessagesEntryRequest {
-        max_tokens,
-        messages,
-        model,
-        metadata,
-        stop_sequences,
-        stream,
-        system,
-        temperature,
-        thinking,
-        tool_choice,
-        tools,
-        top_k,
-        top_p,
-        api_key,
-        api_base,
-        client,
-        custom_llm_provider,
-        mut kwargs,
-    } = request;
-
-    let sanitized_messages = sanitize_messages(&messages)?;
-    let CacheControlOutcome {
-        messages: hook_messages,
-        system: hook_system,
-    } = seams
-        .cache
-        .maybe_inject_cache_control(CacheControlRequest {
-            messages: &sanitized_messages,
-            system: system.as_ref(),
-            kwargs: &mut kwargs,
-            model: &model,
-            custom_llm_provider: custom_llm_provider.as_deref(),
-            tools: tools.as_deref(),
-            api_base: api_base.as_deref(),
-        })?;
-
-    // anthropic_messages defaults stream to False, so an absent value is the default, not None
-    let requested_stream = stream.unwrap_or(false);
-    let original_stream =
-        requested_stream || matches!(kwargs.get(WEBSEARCH_STREAM_MARKER), Some(Json::Bool(true)));
-
-    let mut provider = custom_llm_provider.clone().filter(|name| !name.is_empty());
-    let exposed_key = api_key
-        .as_ref()
-        .map(|secret| secret.expose_secret().as_str());
-    let hook_provider = match &provider {
-        Some(name) => Some(name.clone()),
-        None => resolve_provider(
-            &model,
-            api_base.as_deref(),
-            exposed_key,
-            custom_llm_provider.as_deref(),
-            seams,
-        ),
-    };
-
-    let mut hook_map: IndexMap<String, Json> = IndexMap::new();
-    hook_map.insert(
-        "tools".to_owned(),
-        match tools.as_deref() {
-            Some(list) => Json::List(list.to_vec()),
-            None => Json::Null,
-        },
-    );
-    hook_map.insert("stream".to_owned(), Json::Bool(requested_stream));
-    hook_map.insert(
-        "litellm_params".to_owned(),
-        litellm_params(hook_provider.as_deref()),
-    );
-    hook_map.insert(
-        "tool_choice".to_owned(),
-        tool_choice.clone().unwrap_or(Json::Null),
-    );
-    for (key, value) in &kwargs {
-        hook_map.insert(key.clone(), value.clone());
-    }
-
-    for hook in seams.pre_request_hooks {
-        let modified = hook
-            .pre_request(&model, &hook_messages, &mut hook_map)
-            .await?;
-        if let Some(replacement) = modified {
-            hook_map = replacement;
-        }
-    }
-
-    let final_tools = pop_tools(&mut hook_map, tools)?;
-    let final_stream = pop_stream(&mut hook_map, Some(requested_stream))?;
-    let final_metadata = pop_named(&mut hook_map, "metadata", metadata);
-    let final_stop_sequences = pop_named(&mut hook_map, "stop_sequences", stop_sequences);
-    let final_system = pop_named(&mut hook_map, "system", hook_system);
-    let final_temperature = pop_named(&mut hook_map, "temperature", temperature);
-    let final_thinking = pop_named(&mut hook_map, "thinking", thinking);
-    let final_tool_choice = pop_named(&mut hook_map, "tool_choice", tool_choice);
-    let final_top_k = pop_named(&mut hook_map, "top_k", top_k);
-    let final_top_p = pop_named(&mut hook_map, "top_p", top_p);
-
-    if provider.is_none() {
-        let from_hook = provider_from_hook_map(&hook_map)?;
-        provider = match from_hook {
-            Some(name) => Some(name),
-            None => resolve_provider(
-                &model,
-                api_base.as_deref(),
-                exposed_key,
-                custom_llm_provider.as_deref(),
-                seams,
-            ),
-        };
-    }
-    let _removed = hook_map.shift_remove("litellm_params");
-    for (key, value) in hook_map {
-        kwargs.insert(key, value);
-    }
-
-    let mut search_kwargs = kwargs.clone();
-    search_kwargs.insert(
-        "metadata".to_owned(),
-        final_metadata.clone().unwrap_or(Json::Null),
-    );
-    for searcher in seams.search_short_circuits {
-        let response = searcher
-            .try_short_circuit_search(
-                &model,
-                &hook_messages,
-                final_tools.as_deref(),
-                provider.as_deref(),
-                &search_kwargs,
-            )
-            .await?;
-        if let Some(value) = response {
-            let result = if original_stream {
-                MessagesEntryResult::Stream(Box::new(MessagesFakeStream::new(&value)?))
-            } else {
-                MessagesEntryResult::Response(value)
-            };
-            return Ok(MessagesEntryOutcome::Returned(result));
-        }
-    }
-
-    for interceptor in seams.interceptors {
-        if !interceptor.can_handle(final_tools.as_deref(), provider.as_deref()) {
-            continue;
-        }
-        let result = interceptor
-            .handle(&InterceptorRequest {
-                model: &model,
-                messages: &hook_messages,
-                tools: final_tools.as_deref(),
-                stream: original_stream,
-                max_tokens,
-                custom_llm_provider: provider.as_deref(),
-                api_key: api_key.as_ref(),
-                api_base: api_base.as_deref(),
-                metadata: final_metadata.as_ref(),
-                stop_sequences: final_stop_sequences.as_ref(),
-                system: final_system.as_ref(),
-                temperature: final_temperature.as_ref(),
-                thinking: final_thinking.as_ref(),
-                tool_choice: final_tool_choice.as_ref(),
-                top_k: final_top_k.as_ref(),
-                top_p: final_top_p.as_ref(),
-                kwargs: &kwargs,
-            })
-            .await?;
+    let state = prepare(request, seams).await?;
+    if let Some(result) = state.search(seams).await? {
         return Ok(MessagesEntryOutcome::Returned(result));
     }
-    if advisor_requested(final_tools.as_deref(), provider.as_deref()) {
+    if let Some(result) = state.intercept(seams).await? {
+        return Ok(MessagesEntryOutcome::Returned(result));
+    }
+    if advisor_requested(state.named.tools.as_deref(), state.provider.as_deref()) {
         return Err(MessagesExecuteError::AdvisorNotBuilt);
     }
-
-    kwargs.insert("is_async".to_owned(), Json::Bool(true));
-    let prepared = MessagesDispatchRequest {
-        max_tokens,
-        messages: hook_messages,
-        model,
-        metadata: final_metadata,
-        stop_sequences: final_stop_sequences,
-        stream: final_stream,
-        system: final_system,
-        temperature: final_temperature,
-        thinking: final_thinking,
-        tool_choice: final_tool_choice,
-        tools: final_tools,
-        top_k: final_top_k,
-        top_p: final_top_p,
-        api_key,
-        api_base,
-        client,
-        custom_llm_provider: provider,
-        kwargs,
-        presanitized: true,
-    };
+    let prepared = state.into_dispatch();
     let continuation =
         MessagesExecutionContinuation::prepare(prepared, Arc::clone(&seams.redactor))?;
     Ok(MessagesEntryOutcome::Dispatch(Box::new(continuation)))
 }
 
-// B571, then B572, over the prompt types their implementations own
-fn sanitize_messages(messages: &[Json]) -> Result<Vec<Json>, MessagesExecuteError> {
-    let encoded = serde_json::to_vec(messages).map_err(TransformError::from)?;
-    let prompt_messages: Vec<PromptJson> =
-        serde_json::from_slice(&encoded).map_err(TransformError::from)?;
-    let stripped = strip_blocks(&prompt_messages, BlockStrip::EmptyContent);
-    let with_ids = sanitize_tool_use_ids(&stripped);
-    let flattened = flatten_web_search_results(&with_ids);
-    let reencoded = serde_json::to_vec(&flattened).map_err(TransformError::from)?;
-    let contract: Vec<Json> = serde_json::from_slice(&reencoded).map_err(TransformError::from)?;
-    Ok(contract)
+async fn prepare(
+    request: MessagesEntryRequest,
+    seams: &MessagesEntrySeams<'_>,
+) -> Result<EntryState, MessagesExecuteError> {
+    let pending = hooks_pending(request, seams).await?;
+    settle(pending, seams)
 }
 
-fn resolve_provider(
-    model: &str,
-    api_base: Option<&str>,
-    api_key: Option<&str>,
-    custom_llm_provider: Option<&str>,
+// The cache hook, the provider resolution and every pre-request hook, up to the named-argument pops
+async fn hooks_pending(
+    request: MessagesEntryRequest,
     seams: &MessagesEntrySeams<'_>,
-) -> Option<String> {
-    let lookup = ProviderLookup {
-        model: Some(model),
-        custom_llm_provider,
-        api_base,
-        api_key,
+) -> Result<PendingHooks, MessagesExecuteError> {
+    let mut kwargs = request.kwargs.clone();
+    let sanitized = sanitize_messages(&request.messages)?;
+    let cached = cache_stage(seams, &request, &sanitized, &mut kwargs)?;
+    let requested_stream = request.stream.unwrap_or(false);
+    let original_stream =
+        requested_stream || matches!(kwargs.get(WEBSEARCH_STREAM_MARKER), Some(Json::Bool(true)));
+    let provider = request
+        .custom_llm_provider
+        .clone()
+        .filter(|name| !name.is_empty());
+    let hook_provider = provider
+        .clone()
+        .or_else(|| resolve_provider(&request, seams));
+    let hook_map = build_hook_map(
+        &request,
+        hook_provider.as_deref(),
+        requested_stream,
+        &kwargs,
+    );
+    let hook_map = run_pre_request_hooks(
+        seams.pre_request_hooks,
+        &request.model,
+        &cached.messages,
+        hook_map,
+    )
+    .await?;
+    Ok(PendingHooks {
+        request,
+        messages: cached.messages,
+        system: cached.system,
+        kwargs,
+        provider,
+        original_stream,
+        hook_map,
+    })
+}
+
+// After the hooks: the typed pops, the provider fallback, and the hook map merged into the extras
+fn settle(
+    mut pending: PendingHooks,
+    seams: &MessagesEntrySeams<'_>,
+) -> Result<EntryState, MessagesExecuteError> {
+    let named = pop_named_arguments(
+        &pending.request,
+        &mut pending.hook_map,
+        pending.system.take(),
+    )?;
+    let provider = match pending.provider {
+        Some(name) => Some(name),
+        None => match provider_from_hook_map(&pending.hook_map)? {
+            Some(name) => Some(name),
+            None => resolve_provider(&pending.request, seams),
+        },
     };
-    seams
-        .provider_resolution
-        .resolve(&lookup)
-        .map(|target| target.provider)
+    let _removed = pending.hook_map.shift_remove("litellm_params");
+    for (key, value) in pending.hook_map {
+        pending.kwargs.insert(key, value);
+    }
+    Ok(EntryState {
+        request: pending.request,
+        messages: pending.messages,
+        named,
+        provider,
+        kwargs: pending.kwargs,
+        original_stream: pending.original_stream,
+    })
+}
+
+fn pop_named_arguments(
+    request: &MessagesEntryRequest,
+    hook_map: &mut IndexMap<String, Json>,
+    system: Option<Json>,
+) -> Result<NamedArguments, MessagesExecuteError> {
+    let requested_stream = request.stream.unwrap_or(false);
+    let (tools, stream) =
+        pop_typed_arguments(hook_map, request.tools.clone(), Some(requested_stream))?;
+    Ok(NamedArguments {
+        metadata: pop_named(hook_map, "metadata", request.metadata.clone()),
+        stop_sequences: pop_named(hook_map, "stop_sequences", request.stop_sequences.clone()),
+        system: pop_named(hook_map, "system", system),
+        temperature: pop_named(hook_map, "temperature", request.temperature.clone()),
+        thinking: pop_named(hook_map, "thinking", request.thinking.clone()),
+        tool_choice: pop_named(hook_map, "tool_choice", request.tool_choice.clone()),
+        top_k: pop_named(hook_map, "top_k", request.top_k.clone()),
+        top_p: pop_named(hook_map, "top_p", request.top_p.clone()),
+        tools,
+        stream,
+    })
+}
+
+impl EntryState {
+    async fn search(
+        &self,
+        seams: &MessagesEntrySeams<'_>,
+    ) -> Result<Option<MessagesEntryResult>, MessagesExecuteError> {
+        let mut search_kwargs = self.kwargs.clone();
+        search_kwargs.insert(
+            "metadata".to_owned(),
+            self.named.metadata.clone().unwrap_or(Json::Null),
+        );
+        for searcher in seams.search_short_circuits {
+            let response = searcher
+                .try_short_circuit_search(
+                    &self.request.model,
+                    &self.messages,
+                    self.named.tools.as_deref(),
+                    self.provider.as_deref(),
+                    &search_kwargs,
+                )
+                .await?;
+            if let Some(value) = response {
+                return Ok(Some(self.search_result(value)?));
+            }
+        }
+        Ok(None)
+    }
+
+    fn search_result(&self, value: Json) -> Result<MessagesEntryResult, MessagesExecuteError> {
+        if self.original_stream {
+            return Ok(MessagesEntryResult::Stream(Box::new(
+                MessagesFakeStream::new(&value)?,
+            )));
+        }
+        Ok(MessagesEntryResult::Response(value))
+    }
+
+    async fn intercept(
+        &self,
+        seams: &MessagesEntrySeams<'_>,
+    ) -> Result<Option<MessagesEntryResult>, MessagesExecuteError> {
+        for interceptor in seams.interceptors {
+            if !interceptor.can_handle(self.named.tools.as_deref(), self.provider.as_deref()) {
+                continue;
+            }
+            let result = interceptor
+                .handle(&InterceptorRequest {
+                    model: &self.request.model,
+                    messages: &self.messages,
+                    tools: self.named.tools.as_deref(),
+                    stream: self.original_stream,
+                    max_tokens: self.request.max_tokens,
+                    custom_llm_provider: self.provider.as_deref(),
+                    api_key: self.request.api_key.as_ref(),
+                    api_base: self.request.api_base.as_deref(),
+                    metadata: self.named.metadata.as_ref(),
+                    stop_sequences: self.named.stop_sequences.as_ref(),
+                    system: self.named.system.as_ref(),
+                    temperature: self.named.temperature.as_ref(),
+                    thinking: self.named.thinking.as_ref(),
+                    tool_choice: self.named.tool_choice.as_ref(),
+                    top_k: self.named.top_k.as_ref(),
+                    top_p: self.named.top_p.as_ref(),
+                    kwargs: &self.kwargs,
+                })
+                .await?;
+            return Ok(Some(result));
+        }
+        Ok(None)
+    }
+
+    fn into_dispatch(mut self) -> MessagesDispatchRequest {
+        self.kwargs.insert("is_async".to_owned(), Json::Bool(true));
+        MessagesDispatchRequest {
+            max_tokens: self.request.max_tokens,
+            messages: self.messages,
+            model: self.request.model,
+            metadata: self.named.metadata,
+            stop_sequences: self.named.stop_sequences,
+            stream: self.named.stream,
+            system: self.named.system,
+            temperature: self.named.temperature,
+            thinking: self.named.thinking,
+            tool_choice: self.named.tool_choice,
+            tools: self.named.tools,
+            top_k: self.named.top_k,
+            top_p: self.named.top_p,
+            api_key: self.request.api_key,
+            api_base: self.request.api_base,
+            client: self.request.client,
+            custom_llm_provider: self.provider,
+            kwargs: self.kwargs,
+            presanitized: true,
+        }
+    }
 }

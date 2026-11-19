@@ -13,47 +13,52 @@ use betterlite_core::api::messages_reasoning_route::seams::{
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
-use super::{Call, HookScript, InterceptorScript, Outcome, SearchScript};
+use super::{Call, HookScript, InterceptorScript};
 
 pub(super) type Record = IndexMap<String, Json>;
 
 pub(super) const API_BASE: &str = "<api_base>";
 
-pub(super) fn optional(value: Option<&Json>) -> Json {
-    value.cloned().unwrap_or(Json::Null)
-}
-
-pub(super) fn optional_text(value: Option<&str>) -> Json {
-    value.map_or(Json::Null, |text| Json::Text(text.to_owned()))
-}
-
-// The harness's mock base must not be compared, so its record keeps a marker instead
-pub(super) fn api_base(value: Option<&str>) -> Json {
-    value.map_or(Json::Null, |_found| Json::Text(API_BASE.to_owned()))
-}
-
-pub(super) fn number(value: i64) -> Json {
-    Json::Number(serde_json::Number::from(value))
-}
-
-fn list_value(values: Option<&[Json]>) -> Json {
-    values.map_or(Json::Null, |items| Json::List(items.to_vec()))
-}
-
-fn take_calls(store: &Mutex<Vec<Record>>) -> Vec<Record> {
-    store.lock().unwrap_or_else(PoisonError::into_inner).clone()
-}
-
+// The cache hook and every pre-hook write here, so one lock holds all the records the case observed
 #[derive(Default)]
-pub(super) struct ScriptedCache {
-    first: Mutex<Option<Record>>,
+pub(super) struct Recordings {
+    pub(super) cache: Option<Record>,
+    pub(super) hooks: Vec<Record>,
 }
 
-impl ScriptedCache {
-    pub(super) fn take(&self) -> Record {
-        let slot = self.first.lock().unwrap_or_else(PoisonError::into_inner);
-        slot.clone().unwrap_or_default()
-    }
+pub(super) struct ScriptedCache {
+    pub(super) recordings: Arc<Mutex<Recordings>>,
+}
+
+fn cache_record(request: &CacheControlRequest<'_>) -> Record {
+    let mut record: Record = IndexMap::new();
+    record.insert("messages".to_owned(), Json::List(request.messages.to_vec()));
+    record.insert(
+        "system".to_owned(),
+        request.system.cloned().unwrap_or(Json::Null),
+    );
+    record.insert("model".to_owned(), Json::Text(request.model.to_owned()));
+    record.insert(
+        "custom_llm_provider".to_owned(),
+        request
+            .custom_llm_provider
+            .map_or(Json::Null, |text| Json::Text(text.to_owned())),
+    );
+    record.insert(
+        "tools".to_owned(),
+        request
+            .tools
+            .map_or(Json::Null, |items| Json::List(items.to_vec())),
+    );
+    // the harness's mock base must not be compared, so its record keeps a marker instead
+    record.insert(
+        "api_base".to_owned(),
+        request
+            .api_base
+            .map_or(Json::Null, |_found| Json::Text(API_BASE.to_owned())),
+    );
+    record.insert("kwargs".to_owned(), Json::Object(request.kwargs.clone()));
+    record
 }
 
 impl CacheControlHook for ScriptedCache {
@@ -61,22 +66,15 @@ impl CacheControlHook for ScriptedCache {
         &self,
         request: CacheControlRequest<'_>,
     ) -> Result<CacheControlOutcome, MessagesExecuteError> {
-        let mut record: Record = IndexMap::new();
-        record.insert("messages".to_owned(), Json::List(request.messages.to_vec()));
-        record.insert("system".to_owned(), optional(request.system));
-        record.insert("model".to_owned(), Json::Text(request.model.to_owned()));
-        record.insert(
-            "custom_llm_provider".to_owned(),
-            optional_text(request.custom_llm_provider),
-        );
-        record.insert("tools".to_owned(), list_value(request.tools));
-        record.insert("api_base".to_owned(), api_base(request.api_base));
-        record.insert("kwargs".to_owned(), Json::Object(request.kwargs.clone()));
-        let mut slot = self.first.lock().unwrap_or_else(PoisonError::into_inner);
-        if slot.is_none() {
-            *slot = Some(record);
+        let record = cache_record(&request);
+        let mut recordings = self
+            .recordings
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if recordings.cache.is_none() {
+            recordings.cache = Some(record);
         }
-        drop(slot);
+        drop(recordings);
         Ok(CacheControlOutcome {
             messages: request.messages.to_vec(),
             system: request.system.cloned(),
@@ -85,21 +83,8 @@ impl CacheControlHook for ScriptedCache {
 }
 
 pub(super) struct ScriptedHook {
-    script: HookScript,
-    calls: Mutex<Vec<Record>>,
-}
-
-impl ScriptedHook {
-    pub(super) fn new(script: HookScript) -> Self {
-        Self {
-            script,
-            calls: Mutex::new(Vec::new()),
-        }
-    }
-
-    pub(super) fn take(&self) -> Vec<Record> {
-        take_calls(&self.calls)
-    }
+    pub(super) script: HookScript,
+    pub(super) recordings: Arc<Mutex<Recordings>>,
 }
 
 #[async_trait]
@@ -118,9 +103,11 @@ impl PreRequestHook for ScriptedHook {
         record.insert("model".to_owned(), Json::Text(model.to_owned()));
         record.insert("messages".to_owned(), Json::List(messages.to_vec()));
         record.insert("kwargs".to_owned(), Json::Object(kwargs.clone()));
-        let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
-        calls.push(record);
-        drop(calls);
+        self.recordings
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .hooks
+            .push(record);
         match &self.script {
             HookScript::Pass => Ok(None),
             HookScript::Mutate { values } => {
@@ -192,83 +179,49 @@ impl ProviderResolution for ScriptedResolver {
     }
 }
 
-// The scripted seams in the case's order; the entry borrows the trait objects, the records stay here
+// The case's scripted seams in order; the entry borrows the trait objects, the records stay here
 pub(super) struct Scripts {
     pub(super) cache: ScriptedCache,
-    resolver: ScriptedResolver,
-    hooks: Vec<Arc<ScriptedHook>>,
-    pub(super) hook_objects: Vec<Arc<dyn PreRequestHook>>,
-    pub(super) search_objects: Vec<Arc<dyn SearchShortCircuit>>,
-    pub(super) interceptor_objects: Vec<Arc<dyn MessagesInterceptor>>,
+    pub(super) resolver: ScriptedResolver,
+    pub(super) recordings: Arc<Mutex<Recordings>>,
+    pub(super) hooks: Vec<Arc<dyn PreRequestHook>>,
+    pub(super) searches: Vec<Arc<dyn SearchShortCircuit>>,
+    pub(super) interceptors: Vec<Arc<dyn MessagesInterceptor>>,
 }
 
 impl Scripts {
     pub(super) fn new(call: &Call) -> Self {
-        let hooks: Vec<Arc<ScriptedHook>> = call
-            .hooks
-            .iter()
-            .cloned()
-            .map(|script| Arc::new(ScriptedHook::new(script)))
-            .collect();
-        let searches: Vec<Arc<ScriptedSearch>> = call
-            .searches
-            .iter()
-            .cloned()
-            .map(|script| {
-                Arc::new(ScriptedSearch {
-                    answer: script.answer,
-                })
-            })
-            .collect();
-        let interceptors: Vec<Arc<ScriptedInterceptor>> = call
-            .interceptors
-            .iter()
-            .cloned()
-            .map(|script| Arc::new(ScriptedInterceptor { script }))
-            .collect();
-        let mut hook_objects: Vec<Arc<dyn PreRequestHook>> = Vec::with_capacity(hooks.len());
-        for hook in &hooks {
-            let object: Arc<dyn PreRequestHook> = Arc::clone(hook);
-            hook_objects.push(object);
+        let recordings = Arc::new(Mutex::new(Recordings::default()));
+        let mut hooks: Vec<Arc<dyn PreRequestHook>> = Vec::new();
+        for script in &call.hooks {
+            hooks.push(Arc::new(ScriptedHook {
+                script: script.clone(),
+                recordings: Arc::clone(&recordings),
+            }));
         }
-        let mut search_objects: Vec<Arc<dyn SearchShortCircuit>> =
-            Vec::with_capacity(searches.len());
-        for search in &searches {
-            let object: Arc<dyn SearchShortCircuit> = Arc::clone(search);
-            search_objects.push(object);
+        let mut searches: Vec<Arc<dyn SearchShortCircuit>> = Vec::new();
+        for search in &call.searches {
+            searches.push(Arc::new(ScriptedSearch {
+                answer: search.answer.clone(),
+            }));
         }
-        let mut interceptor_objects: Vec<Arc<dyn MessagesInterceptor>> =
-            Vec::with_capacity(interceptors.len());
-        for interceptor in &interceptors {
-            let object: Arc<dyn MessagesInterceptor> = Arc::clone(interceptor);
-            interceptor_objects.push(object);
+        let mut interceptors: Vec<Arc<dyn MessagesInterceptor>> = Vec::new();
+        for interceptor in &call.interceptors {
+            interceptors.push(Arc::new(ScriptedInterceptor {
+                script: interceptor.clone(),
+            }));
         }
         Self {
-            cache: ScriptedCache::default(),
+            cache: ScriptedCache {
+                recordings: Arc::clone(&recordings),
+            },
             resolver: ScriptedResolver {
                 provider: call.provider.clone(),
             },
+            recordings,
             hooks,
-            hook_objects,
-            search_objects,
-            interceptor_objects,
+            searches,
+            interceptors,
         }
-    }
-
-    pub(super) fn resolver(&self) -> &ScriptedResolver {
-        &self.resolver
-    }
-
-    pub(super) fn fill(&self, outcome: &mut Outcome) {
-        outcome.cache = self.cache.take();
-        outcome.hooks = self.take_hooks();
-    }
-
-    pub(super) fn take_hooks(&self) -> Vec<Record> {
-        let mut found = Vec::new();
-        for hook in &self.hooks {
-            found.extend(hook.take());
-        }
-        found
     }
 }

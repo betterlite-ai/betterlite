@@ -21,7 +21,7 @@ use indexmap::IndexMap;
 use serde::de::DeserializeOwned;
 use url::Url;
 
-use super::scripted::{api_base, number};
+use super::scripted::API_BASE;
 use super::{Failure, Outcome};
 use crate::sdk_http::error::SdkHttpError;
 use crate::sdk_http::vector_query_embedding::outbound_client;
@@ -34,7 +34,10 @@ pub(super) async fn execute_dispatch(
     base: &str,
     env: &BTreeMap<String, String>,
 ) -> Result<MessagesDispatchOutcome, SdkHttpError> {
-    let optional = optional_params(dispatch)?;
+    let params = base_params(dispatch);
+    let optional = requested_optional_params(&params, None).map_err(|error| {
+        SdkHttpError::Invalid(format!("the optional parameters failed: {error}"))
+    })?;
     let request = outbound_request(dispatch, &optional, base)?;
     let client = outbound_client(env)?;
     let response = client
@@ -61,7 +64,10 @@ pub(super) fn dispatch_record(dispatch: &MessagesDispatchRequest) -> IndexMap<St
     let mut record: IndexMap<String, Json> = IndexMap::new();
     record.insert(
         "api_base".to_owned(),
-        api_base(dispatch.api_base.as_deref()),
+        dispatch
+            .api_base
+            .as_deref()
+            .map_or(Json::Null, |_found| Json::Text(API_BASE.to_owned())),
     );
     record.insert("client".to_owned(), Json::Null);
     record.insert(
@@ -83,19 +89,15 @@ pub(super) fn record_failure(
             outcome.failure = Some(Failure {
                 class: raised.class,
                 status: raised.status.unwrap_or(500),
-                error_type: text_or_null(raised.kind.as_deref()),
-                param: text_or_null(raised.param.as_deref()),
-                code: text_or_null(raised.code.as_deref()),
+                error_type: raised.kind.map_or(Json::Null, Json::Text),
+                param: raised.param.map_or(Json::Null, Json::Text),
+                code: raised.code.map_or(Json::Null, Json::Text),
             });
         }
         MessagesExecuteError::Classified(class) => outcome.failure = Some(class_failure(&class)),
         other => return Err(SdkHttpError::Invalid(other.to_string())),
     }
     Ok(())
-}
-
-fn text_or_null(value: Option<&str>) -> Json {
-    value.map_or(Json::Null, |text| Json::Text(text.to_owned()))
 }
 
 fn class_failure(class: &ErrorClass) -> Failure {
@@ -142,17 +144,12 @@ fn class_name(class: &ErrorClass) -> &'static str {
     }
 }
 
-fn optional_params(
-    dispatch: &MessagesDispatchRequest,
-) -> Result<IndexMap<String, Json>, SdkHttpError> {
-    let params = base_params(dispatch);
-    requested_optional_params(&params, None)
-        .map_err(|error| SdkHttpError::Invalid(format!("the optional parameters failed: {error}")))
-}
-
 fn base_params(dispatch: &MessagesDispatchRequest) -> IndexMap<String, Json> {
     let mut params: IndexMap<String, Json> = IndexMap::new();
-    params.insert("max_tokens".to_owned(), number(dispatch.max_tokens));
+    params.insert(
+        "max_tokens".to_owned(),
+        Json::Number(serde_json::Number::from(dispatch.max_tokens)),
+    );
     insert_optional(&mut params, "metadata", dispatch.metadata.as_ref());
     insert_optional(
         &mut params,
@@ -190,7 +187,10 @@ fn provider_body(
     let mut body = optional.clone();
     body.insert("model".to_owned(), Json::Text(dispatch.model.clone()));
     body.insert("messages".to_owned(), Json::List(dispatch.messages.clone()));
-    body.insert("max_tokens".to_owned(), number(dispatch.max_tokens));
+    body.insert(
+        "max_tokens".to_owned(),
+        Json::Number(serde_json::Number::from(dispatch.max_tokens)),
+    );
     body
 }
 

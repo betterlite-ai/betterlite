@@ -7,6 +7,7 @@ use std::sync::{Arc, PoisonError};
 use betterlite_error::envelope::WireField;
 use betterlite_error::error::ErrorClass;
 use betterlite_models::decisions::Json;
+use rstest::rstest;
 use secrecy::SecretString;
 
 use super::dispatch::{MessagesBaseLlmException, MessagesDispatchOutcome};
@@ -250,67 +251,56 @@ async fn explicit_provider_wins_over_hooks() {
     );
 }
 
+#[rstest]
+#[case::tools_type(r#"{"tools":5}"#, "the field tools must be a list")]
+#[case::stream_type(r#"{"stream":"yes"}"#, "the field stream must be a boolean")]
+#[case::provider_type(
+    r#"{"litellm_params":{"custom_llm_provider":5}}"#,
+    "the field litellm_params.custom_llm_provider must be a string"
+)]
+#[case::litellm_params_null(
+    r#"{"litellm_params":null}"#,
+    "'NoneType' object has no attribute 'get'"
+)]
+#[case::litellm_params_text(r#"{"litellm_params":"text"}"#, "'str' object has no attribute 'get'")]
+#[case::litellm_params_number(r#"{"litellm_params":5}"#, "'int' object has no attribute 'get'")]
 #[tokio::test]
-async fn hook_map_type_errors() {
-    let cases = [
-        (r#"{"tools":5}"#, "the field tools must be a list"),
-        (r#"{"stream":"yes"}"#, "the field stream must be a boolean"),
-        (
-            r#"{"litellm_params":{"custom_llm_provider":5}}"#,
-            "the field litellm_params.custom_llm_provider must be a string",
-        ),
-        (
-            r#"{"litellm_params":null}"#,
-            "'NoneType' object has no attribute 'get'",
-        ),
-        (
-            r#"{"litellm_params":"text"}"#,
-            "'str' object has no attribute 'get'",
-        ),
-        (
-            r#"{"litellm_params":5}"#,
-            "'int' object has no attribute 'get'",
-        ),
-    ];
-    for (replacement, expected) in cases {
-        let mut harness = Harness::new(Resolver::new(None));
-        harness
-            .hooks
-            .push(Arc::new(Hook::new(HookEffect::Replace(map(replacement)))));
-        let seams = harness.seams();
-        let entry = request(
-            "claude-sonnet-4-20250514",
-            vec![json(r#"{"role":"user","content":"hi"}"#)],
-        );
-        let error = failure(execute(entry, &seams).await);
-        assert_eq!(error.to_string(), expected);
-    }
+async fn hook_map_type_errors(#[case] replacement: &str, #[case] expected: &str) {
+    let mut harness = Harness::new(Resolver::new(None));
+    harness
+        .hooks
+        .push(Arc::new(Hook::new(HookEffect::Replace(map(replacement)))));
+    let seams = harness.seams();
+    let entry = request(
+        "claude-sonnet-4-20250514",
+        vec![json(r#"{"role":"user","content":"hi"}"#)],
+    );
+    let error = failure(execute(entry, &seams).await);
+    assert_eq!(error.to_string(), expected);
 }
 
+#[rstest]
+#[case::max_tokens("max_tokens")]
+#[case::model("model")]
+#[case::api_key("api_key")]
+#[case::presanitized("_litellm_messages_presanitized")]
 #[tokio::test]
-async fn duplicate_hook_extras_raise_type_error() {
-    for name in [
-        "max_tokens",
-        "model",
-        "api_key",
-        "_litellm_messages_presanitized",
-    ] {
-        let replacement = format!(r#"{{"{name}":1}}"#);
-        let mut harness = Harness::new(Resolver::new(Some("anthropic")));
-        harness
-            .hooks
-            .push(Arc::new(Hook::new(HookEffect::Replace(map(&replacement)))));
-        let seams = harness.seams();
-        let entry = request(
-            "claude-sonnet-4-20250514",
-            vec![json(r#"{"role":"user","content":"hi"}"#)],
-        );
-        let error = failure(execute(entry, &seams).await);
-        assert_eq!(
-            error.to_string(),
-            format!("functools.partial() got multiple values for keyword argument '{name}'")
-        );
-    }
+async fn duplicate_hook_extras_raise_type_error(#[case] name: &str) {
+    let replacement = format!(r#"{{"{name}":1}}"#);
+    let mut harness = Harness::new(Resolver::new(Some("anthropic")));
+    harness
+        .hooks
+        .push(Arc::new(Hook::new(HookEffect::Replace(map(&replacement)))));
+    let seams = harness.seams();
+    let entry = request(
+        "claude-sonnet-4-20250514",
+        vec![json(r#"{"role":"user","content":"hi"}"#)],
+    );
+    let error = failure(execute(entry, &seams).await);
+    assert_eq!(
+        error.to_string(),
+        format!("functools.partial() got multiple values for keyword argument '{name}'")
+    );
 }
 
 #[tokio::test]

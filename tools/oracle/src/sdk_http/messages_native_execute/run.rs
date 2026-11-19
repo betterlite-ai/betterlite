@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::str;
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError};
 
 use betterlite_core::api::messages_native_execute::entry::{
     MessagesEntryRequest, MessagesEntryResult, MessagesExecuteStream,
@@ -25,7 +25,8 @@ pub(super) async fn send(
 ) -> Result<SdkResult, SdkHttpError> {
     let base = api_base.strip_suffix("/v1").unwrap_or(api_base);
     let scripts = Scripts::new(call);
-    let redactor = fixture_redactor()?;
+    let redactor =
+        Arc::new(Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SdkHttpError::Redactor)?);
     let mut outcome = Outcome::empty();
     match run_entry(call, base, &scripts, redactor).await {
         Ok(MessagesEntryOutcome::Returned(result)) => fill_returned(&mut outcome, result).await?,
@@ -39,16 +40,16 @@ pub(super) async fn send(
         }
         Err(error) => record_failure(&mut outcome, error)?,
     }
-    outcome.cache = scripts.cache.take();
-    outcome.hooks = scripts.take_hooks();
+    let recordings = scripts
+        .recordings
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    outcome.cache = recordings.cache.clone().unwrap_or_default();
+    outcome.hooks = recordings.hooks.clone();
+    drop(recordings);
     Ok(SdkResult::MessagesNativeExecute {
         value: Box::new(outcome),
     })
-}
-
-fn fixture_redactor() -> Result<Arc<Redactor>, SdkHttpError> {
-    let inner = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SdkHttpError::Redactor)?;
-    Ok(Arc::new(inner))
 }
 
 async fn run_entry(
@@ -59,10 +60,10 @@ async fn run_entry(
 ) -> Result<MessagesEntryOutcome, MessagesExecuteError> {
     let seams = MessagesEntrySeams {
         cache: &scripts.cache,
-        provider_resolution: scripts.resolver(),
-        pre_request_hooks: &scripts.hook_objects,
-        search_short_circuits: &scripts.search_objects,
-        interceptors: &scripts.interceptor_objects,
+        provider_resolution: &scripts.resolver,
+        pre_request_hooks: &scripts.hooks,
+        search_short_circuits: &scripts.searches,
+        interceptors: &scripts.interceptors,
         redactor,
     };
     execute(entry_request(call, base), &seams).await
