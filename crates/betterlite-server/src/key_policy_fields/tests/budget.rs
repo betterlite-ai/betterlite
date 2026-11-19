@@ -29,6 +29,9 @@ fn model_budget_numeric_aliases() {
     // nulls take the model defaults, and unknown keys are not BudgetConfig fields
     let sparse = object(r#"{"gpt-4":{"max_budget":null,"tpm_limit":null,"unknown":"value"}}"#);
     validate_model_max_budget(Some(&sparse)).unwrap();
+    // a negative number is still an integer, and serde holds it only as i64
+    let negative = object(r#"{"gpt-4":{"tpm_limit":-5,"rpm_limit":-7}}"#);
+    validate_model_max_budget(Some(&negative)).unwrap();
     // the alias replaces the field it names, so a bad max_budget beside budget_limit is unused
     let aliased = object(r#"{"gpt-4":{"budget_limit":"3","max_budget":"not a number"}}"#);
     validate_model_max_budget(Some(&aliased)).unwrap();

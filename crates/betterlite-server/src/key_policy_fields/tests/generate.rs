@@ -192,6 +192,13 @@ fn key_type_route_presets(
 }
 
 #[test]
+fn explicit_null_key_type_leaves_the_column_out() {
+    let request = generate_request(r#"{"key_type":null,"key_alias":"alias"}"#);
+    let token = effective_key_for_generate(&request, clock(), &cipher()).unwrap();
+    assert!(token.key_type.is_none());
+}
+
+#[test]
 fn default_key_type_keeps_routes() {
     let columns = handle_key_type(
         Some(LiteLLMKeyType::Default),
