@@ -127,7 +127,7 @@ async fn an_unobserved_prefix_is_unknown_and_prices_three_scenarios() {
     assert_eq!(estimate.tokens.cache_creation_5m_input_tokens, SMALL_PREFIX);
     assert_eq!(estimate.tokens.cache_read_input_tokens, 0);
     assert_eq!(arm.cold.as_ref(), Some(&estimate));
-    let warm = arm.warm.clone().expect("a warm scenario");
+    let warm = arm.warm.expect("a warm scenario");
     assert_eq!(warm.tokens.cache_read_input_tokens, SMALL_PREFIX);
     assert_eq!(warm.tokens.cache_creation_5m_input_tokens, 0);
     let calls = fixture.cost.calls();
@@ -150,8 +150,8 @@ async fn a_fresh_exact_observation_is_warm() {
     assert_eq!(arm.cache_state, CacheState::Warm);
     assert_eq!(arm.reason, None);
     let evidence = arm.evidence.expect("evidence");
-    assert_eq!(evidence.observed_at, CHECKED_AT);
-    assert_eq!(evidence.expires_at, FRESH_UNTIL);
+    assert_eq!(evidence.observed_at.to_bits(), CHECKED_AT.to_bits());
+    assert_eq!(evidence.expires_at.to_bits(), FRESH_UNTIL.to_bits());
     assert_eq!(evidence.source, CacheEvidenceSource::ProviderUsage);
     assert_eq!(evidence.confidence, CacheEvidenceConfidence::Observed);
     let estimate = arm.estimate.expect("an estimate");
@@ -224,7 +224,7 @@ async fn an_expired_exact_observation_is_stale() {
     assert_eq!(arm.cache_state, CacheState::Stale);
     assert_eq!(arm.reason.as_deref(), Some("observation_expired"));
     let evidence = arm.evidence.expect("evidence");
-    assert_eq!(evidence.expires_at, EXPIRED_AT);
+    assert_eq!(evidence.expires_at.to_bits(), EXPIRED_AT.to_bits());
     let estimate = arm.estimate.expect("an estimate");
     assert_eq!(estimate.tokens.cache_read_input_tokens, 0);
     assert_eq!(estimate.tokens.cache_creation_5m_input_tokens, 80);

@@ -39,22 +39,22 @@ async fn disabled(cost: Option<Decimal>, total: i64) -> (Option<CachePredictionA
 #[tokio::test]
 async fn disabled_arm_prices_the_whole_prompt_as_uncached() {
     let (arm, _cost) = disabled(Some(Decimal::ONE), 120).await;
-    let arm = arm.expect("a disabled arm");
-    assert_eq!(arm.cache_state, CacheState::Disabled);
-    assert_eq!(arm.reason.as_deref(), Some(BELOW_MINIMUM));
-    assert_eq!(arm.deployment_id, DEPLOYMENT_ID);
-    assert_eq!(arm.model.as_deref(), Some(MODEL));
-    assert!(arm.evidence.is_none());
+    let prediction = arm.expect("a disabled arm");
+    assert_eq!(prediction.cache_state, CacheState::Disabled);
+    assert_eq!(prediction.reason.as_deref(), Some(BELOW_MINIMUM));
+    assert_eq!(prediction.deployment_id, DEPLOYMENT_ID);
+    assert_eq!(prediction.model.as_deref(), Some(MODEL));
+    assert!(prediction.evidence.is_none());
     assert_eq!(
-        arm.token_count_source,
+        prediction.token_count_source,
         Some(TokenCountSource::AnthropicCountTokens)
     );
-    let estimate = arm.estimate.clone().expect("an estimate");
+    let estimate = prediction.estimate.clone().expect("an estimate");
     assert_eq!(estimate.tokens.uncached_input_tokens, 120);
     assert_eq!(estimate.tokens.total_tokens(), 120);
     assert_eq!(estimate.tokens.cache_read_input_tokens, 0);
-    assert_eq!(arm.cold, Some(estimate.clone()));
-    assert_eq!(arm.warm, Some(estimate));
+    assert_eq!(prediction.cold, Some(estimate.clone()));
+    assert_eq!(prediction.warm, Some(estimate));
 }
 
 #[tokio::test]

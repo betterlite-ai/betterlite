@@ -25,6 +25,8 @@ use crate::cache_aware_routing::tests::support::scope;
 use crate::cache_aware_routing::tests::support::settings;
 
 const NOW: f64 = 1_700_000_000.0;
+const FRESH_UNTIL: f64 = 1_700_000_060.0;
+const EXPIRED_AT: f64 = 1_699_999_999.0;
 
 fn routing(body: &str) -> AnthropicCacheRouting {
     AnthropicCacheRouting::from_body(&json(body)).expect("a predictable body")
@@ -60,7 +62,7 @@ async fn warm(body: &str, cache: &MemoryCache, params_json: &str, now: f64) -> b
 async fn a_fresh_observation_with_the_same_fingerprint_is_warm() {
     let cache = MemoryCache::new();
     let prefix = routing(BODY).prefix;
-    seed(&cache, &prefix.fingerprint, 60, NOW + 60.0);
+    seed(&cache, &prefix.fingerprint, 60, FRESH_UNTIL);
     assert!(warm(BODY, &cache, PARAMS, NOW).await);
 }
 
@@ -76,7 +78,7 @@ async fn an_observation_expiring_exactly_now_is_not_warm() {
 async fn an_expired_observation_is_not_warm() {
     let cache = MemoryCache::new();
     let prefix = routing(BODY).prefix;
-    seed(&cache, &prefix.fingerprint, 60, NOW - 1.0);
+    seed(&cache, &prefix.fingerprint, 60, EXPIRED_AT);
     assert!(!warm(BODY, &cache, PARAMS, NOW).await);
 }
 
@@ -90,7 +92,7 @@ async fn a_fresh_observation_for_another_prefix_is_not_warm() {
     let cache = MemoryCache::new();
     let prefix = routing(MULTI_BODY).prefix;
     assert!(prefix.fingerprints.len() > 1);
-    seed(&cache, &prefix.fingerprints[1], 60, NOW + 60.0);
+    seed(&cache, &prefix.fingerprints[1], 60, FRESH_UNTIL);
     assert!(!warm(MULTI_BODY, &cache, PARAMS, NOW).await);
 }
 
@@ -105,6 +107,6 @@ async fn a_fresh_observation_for_another_prefix_is_not_warm() {
 async fn an_unpredictable_deployment_is_not_warm(#[case] params_json: &str) {
     let cache = MemoryCache::new();
     let prefix = routing(BODY).prefix;
-    seed(&cache, &prefix.fingerprint, 60, NOW + 60.0);
+    seed(&cache, &prefix.fingerprint, 60, FRESH_UNTIL);
     assert!(!warm(BODY, &cache, params_json, NOW).await);
 }

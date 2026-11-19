@@ -37,6 +37,7 @@ use crate::cache_aware_routing::types::CacheTokenBuckets;
 use crate::cache_prediction_targets::counting::TokenCounter;
 use crate::cache_prediction_targets::scope::cache_scope;
 use crate::count_tokens::handler::CountTokensTransport;
+use crate::credentials::ANTHROPIC_VERSION;
 use crate::credentials::AnthropicSettings;
 
 pub(crate) const MODEL: &str = "claude-x";
@@ -60,7 +61,7 @@ pub(crate) fn settings(api_base: &str) -> AnthropicSettings {
         auth_token: None,
         api_base: api_base.to_owned(),
         use_bearer_for_custom_base: false,
-        anthropic_version: crate::credentials::ANTHROPIC_VERSION.to_owned(),
+        anthropic_version: ANTHROPIC_VERSION.to_owned(),
     }
 }
 
@@ -185,7 +186,7 @@ impl PriceCall {
         Self {
             model: request.model.to_owned(),
             deployment_id: request.deployment_id.to_owned(),
-            tokens: request.tokens.clone(),
+            tokens: *request.tokens,
             completion_tokens: request.completion_tokens,
             moment,
         }
@@ -250,12 +251,12 @@ impl CacheCostService for FakeCost {
             .push(ScenarioCall {
                 model: request.model.to_owned(),
                 deployment_id: request.deployment_id.to_owned(),
-                tokens: request.tokens.clone(),
+                tokens: *request.tokens,
                 moment,
             });
         let cost = self.cost?;
         Some(CacheCostScenario {
-            tokens: request.tokens.clone(),
+            tokens: *request.tokens,
             input_cost: cost,
         })
     }
@@ -333,16 +334,23 @@ impl ScriptedCounter {
 }
 
 impl TokenCounter for ScriptedCounter {
-    async fn count(&self, _model: &str, _api_key: &SecretString, body: &Json) -> Option<i64> {
+    fn count(
+        &self,
+        _model: &str,
+        _api_key: &SecretString,
+        body: &Json,
+    ) -> impl Future<Output = Option<i64>> + Send {
         self.asked
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(body.clone());
-        self.replies
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop_front()
-            .flatten()
+        ready(
+            self.replies
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .pop_front()
+                .flatten(),
+        )
     }
 }
 
