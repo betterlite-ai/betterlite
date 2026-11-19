@@ -2,6 +2,7 @@ use betterlite_core::api::image_variations::call::VariationAnswer;
 use betterlite_core::api::image_variations::error::{ImageVariationError, VariationException};
 use betterlite_error::envelope::WireField;
 use betterlite_error::error::ErrorClass;
+use betterlite_error::error::metadata::ErrorMetadata;
 
 use super::super::error::SdkHttpError;
 use super::super::result::kinds::SdkResult;
@@ -49,29 +50,43 @@ pub(super) fn error_failure(error: &ImageVariationError) -> SdkResult {
         }
         ImageVariationError::Topaz(source) => ("Exception", source.status_code.unwrap_or(0)),
     };
-    let failure = Failure {
-        class: class.to_owned(),
-        status,
-        kind: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
-    };
-    failure_result(failure)
+    project_failure(class, status, None, &error.to_string())
 }
 
 // aimage_variation re-raises through exception_type, so the class and its fields come from the mapping
 pub(super) fn exception_failure(error: &VariationException) -> Result<SdkResult, SdkHttpError> {
     let metadata = error.class.metadata();
-    let failure = Failure {
-        class: class_name(&error.class)?.to_owned(),
-        status: metadata.status_code,
-        kind: field(metadata.error_type),
-        param: field(metadata.param),
-        code: Some(metadata.openai_code),
-        message: error.message.clone(),
-    };
-    Ok(failure_result(failure))
+    let class = class_name(&error.class)?;
+    Ok(project_failure(
+        class,
+        metadata.status_code,
+        Some(metadata),
+        &error.message,
+    ))
+}
+
+// one reported failure; only the exception_type path carries the metadata's type, param and code
+fn project_failure(
+    class: &str,
+    status: u16,
+    metadata: Option<ErrorMetadata>,
+    message: &str,
+) -> SdkResult {
+    let (kind, param, code) = metadata.map_or((None, None, None), |metadata| {
+        (
+            field(metadata.error_type),
+            field(metadata.param),
+            Some(metadata.openai_code),
+        )
+    });
+    failure_result(Failure {
+        class: class.to_owned(),
+        status,
+        kind,
+        param,
+        code,
+        message: message.to_owned(),
+    })
 }
 
 // the helper's Result wraps both outcomes the same way: one outcome object under image_variations.value

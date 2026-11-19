@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use betterlite_config::sections::image_variations::Settings;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_models::catalog::ModelCatalog;
@@ -24,7 +22,9 @@ use betterlite_openai::image_variations::{
 use secrecy::SecretString;
 use uuid::Uuid;
 
-use super::call::{DEFAULT_MODEL, ImageVariationCall, VariationStep};
+use super::call::{
+    DEFAULT_MODEL, ImageVariationCall, VariationStep, openai_timeout, topaz_timeout,
+};
 use super::credentials::VariationPolicies;
 use super::entry::ImageVariationOperation;
 use super::error::ImageVariationError;
@@ -112,36 +112,56 @@ where
             api_base,
             provider,
         };
-        match provider {
-            VariationProvider::OpenAi => self.openai_step(call, resolved),
-            VariationProvider::Topaz => self.topaz_step(call, resolved),
+        match self.provider_request(call, resolved)? {
+            ProviderRequest::OpenAi(request) => self.openai_step(request),
+            ProviderRequest::Topaz(request) => self.topaz_step(request, provider),
+        }
+    }
+
+    // the call each branch receives: the remaining differences live in the request types
+    fn provider_request(
+        &self,
+        call: &ImageVariationCall,
+        resolved: ResolvedCall,
+    ) -> Result<ProviderRequest, ImageVariationError> {
+        let topaz_seconds = topaz_timeout(call.timeout, self.settings.request_timeout_seconds);
+        match resolved.provider {
+            VariationProvider::OpenAi => Ok(ProviderRequest::OpenAi(ImageVariationRequest {
+                model: Some(resolved.model),
+                image: call.image.clone(),
+                // the signature's n, response_format, size and user stop here
+                optional_params: ImageParams::new(),
+                headers: None,
+                api_key: Some(resolved.api_key),
+                api_base: Some(resolved.api_base),
+                organization: None,
+                timeout: openai_timeout(call.timeout)?,
+                params: ImageVariationParams {
+                    async_call: call.async_call,
+                },
+                client: None,
+                shared_session: None,
+                config: Some(OpenAiImageVariationConfig),
+                boundary: (self.identify)().to_string(),
+                now_seconds: (self.clock)(),
+            })),
+            VariationProvider::Topaz => Ok(ProviderRequest::Topaz(TopazVariationRequest {
+                model: resolved.model,
+                image: call.image.clone(),
+                optional_params: ImageParams::new(),
+                api_key: resolved.api_key,
+                api_base: resolved.api_base,
+                timeout_seconds: topaz_seconds,
+                async_call: call.async_call,
+                metadata: call.metadata.clone(),
+            })),
         }
     }
 
     fn openai_step(
         &self,
-        call: &ImageVariationCall,
-        resolved: ResolvedCall,
+        request: ImageVariationRequest,
     ) -> Result<VariationStep<'_>, ImageVariationError> {
-        let request = ImageVariationRequest {
-            model: Some(resolved.model),
-            image: call.image.clone(),
-            // the signature's n, response_format, size and user stop here
-            optional_params: ImageParams::new(),
-            headers: None,
-            api_key: Some(resolved.api_key),
-            api_base: Some(resolved.api_base),
-            organization: None,
-            timeout: openai_timeout(call.timeout)?,
-            params: ImageVariationParams {
-                async_call: call.async_call,
-            },
-            client: None,
-            shared_session: None,
-            config: Some(OpenAiImageVariationConfig),
-            boundary: (self.identify)().to_string(),
-            now_seconds: (self.clock)(),
-        };
         let prepared = begin_image_variation(request, &mut VariationLogger)?;
         let transport: &Transport = self.transport;
         Ok(VariationStep::Pending(Box::pin(async move {
@@ -153,28 +173,24 @@ where
 
     fn topaz_step(
         &self,
-        call: &ImageVariationCall,
-        resolved: ResolvedCall,
+        request: TopazVariationRequest,
+        provider: VariationProvider,
     ) -> Result<VariationStep<'_>, ImageVariationError> {
-        let request = TopazVariationRequest {
-            model: resolved.model,
-            image: call.image.clone(),
-            optional_params: ImageParams::new(),
-            api_key: resolved.api_key,
-            api_base: resolved.api_base,
-            timeout_seconds: topaz_timeout(call.timeout, self.settings.request_timeout_seconds),
-            async_call: call.async_call,
-            metadata: call.metadata.clone(),
-        };
         self.topaz.execute(request)?.map_or_else(
             || {
                 Err(ImageVariationError::InvalidProvider {
-                    provider: resolved.provider.id().to_string(),
+                    provider: provider.id().to_string(),
                 })
             },
             |pending| Ok(VariationStep::Pending(pending)),
         )
     }
+}
+
+// the provider call begin resolved, before either provider's request type wraps it
+enum ProviderRequest {
+    OpenAi(ImageVariationRequest),
+    Topaz(TopazVariationRequest),
 }
 
 // what begin resolved: the model the provider call receives and the credentials that provider's config found
@@ -204,24 +220,6 @@ fn declared_model(call: &ImageVariationCall, catalog: &ModelCatalog) -> String {
         return model;
     }
     format!("{provider}/{model}")
-}
-
-// litellm_params.timeout in seconds as a Duration, and a negative or non-finite value is refused
-fn openai_timeout(timeout: Option<f64>) -> Result<Option<Duration>, ImageVariationError> {
-    timeout
-        .map(|seconds| {
-            Duration::try_from_secs_f64(seconds)
-                .map_err(|_invalid| ImageVariationError::InvalidTimeout { seconds })
-        })
-        .transpose()
-}
-
-// litellm_params.timeout or DEFAULT_REQUEST_TIMEOUT: a missing or zero timeout takes the configured value
-fn topaz_timeout(timeout: Option<f64>, request_timeout_seconds: f64) -> f64 {
-    match timeout {
-        Some(seconds) if seconds != 0.0 => seconds,
-        _ => request_timeout_seconds,
-    }
 }
 
 // the handler builds ImageResponse(**response_json) over the reply: litellm's ImageUsage defaults to zeros

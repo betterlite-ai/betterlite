@@ -1,5 +1,6 @@
 use std::future::Future;
 use std::pin::Pin;
+use std::time::Duration;
 
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::{ImageFile, ImageParams, ImageResponse};
@@ -52,6 +53,26 @@ pub struct ImageVariationCall {
     pub async_call: bool,
     // the request context the async wrapper keeps across its executor call
     pub metadata: ImageParams,
+}
+
+// litellm_params.timeout in seconds as a Duration, and a negative or non-finite value is refused
+pub(super) fn openai_timeout(
+    timeout: Option<f64>,
+) -> Result<Option<Duration>, ImageVariationError> {
+    timeout
+        .map(|seconds| {
+            Duration::try_from_secs_f64(seconds)
+                .map_err(|_invalid| ImageVariationError::InvalidTimeout { seconds })
+        })
+        .transpose()
+}
+
+// litellm_params.timeout or DEFAULT_REQUEST_TIMEOUT: a missing or zero timeout takes the configured value
+pub(super) fn topaz_timeout(timeout: Option<f64>, request_timeout_seconds: f64) -> f64 {
+    match timeout {
+        Some(seconds) if seconds != 0.0 => seconds,
+        _ => request_timeout_seconds,
+    }
 }
 
 pub type PendingVariation<'operation> =
