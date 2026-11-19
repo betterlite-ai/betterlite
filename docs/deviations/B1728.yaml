@@ -9,4 +9,7 @@ deviations:
   - what: A page value above the signed 64-bit range fails with 422 int_parsing instead of being accepted as a Python arbitrary-precision int.
     why: The page is stored as an i64; LiteLLM only fails later when the offset reaches the database.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L2513
+  - what: Date fields accept only ASCII digits, while strptime's %Y, %H, %M and %S match any Unicode decimal digit and int() converts it; start_date=٢٠٢٤-01-05 parses in LiteLLM and answers 400 here.
+    why: The date parser checks bytes as ASCII digits instead of mapping Unicode decimal digits to values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L2668-L2684
 kept_bugs: []

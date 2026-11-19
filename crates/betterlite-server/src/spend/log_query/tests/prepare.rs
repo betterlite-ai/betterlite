@@ -136,6 +136,8 @@ fn prepare_accepts_date_only_single_digit_month_and_day() {
 #[case::wide_hour("2024-01-02 003:04:05")]
 #[case::wide_second("2024-01-02 03:04:005")]
 #[case::day_single_zero("2024-01-0 03:04:05")]
+#[case::day_space_before_zero("2024-01- 0 03:04:05")]
+#[case::day_space_before_two_digits("2024-01- 15 03:04:05")]
 #[case::no_separator("2024-01-0203:04:05")]
 fn prepare_rejects_dates_outside_the_shape(#[case] date: &str) {
     let encoded = date.replace(' ', "+");
@@ -146,6 +148,42 @@ fn prepare_rejects_dates_outside_the_shape(#[case] date: &str) {
         PrepareError::InvalidDate {
             source: DateFormatError {
                 value: date.to_owned(),
+                expected: "'YYYY-MM-DD' or 'YYYY-MM-DD HH:MM:SS'",
+            },
+        }
+    );
+}
+
+#[test]
+fn prepare_accepts_a_space_before_a_single_digit_day_on_the_ui_route() {
+    let query = decode("start_date=2024-01-+5+03:04:05&end_date=2024-01-+9+04:05:06");
+    let window = query.prepare(SpendLogRoute::Ui).unwrap().window.unwrap();
+    assert_eq!(window.start_inclusive, utc("2024-01-05 03:04:05"));
+    assert_eq!(window.end_inclusive, utc("2024-01-09 04:05:06"));
+}
+
+#[test]
+fn prepare_accepts_a_space_before_a_single_digit_day_on_the_public_route() {
+    let query = decode("start_date=2024-01-+5&end_date=2024-01-+9");
+    let window = query
+        .prepare(SpendLogRoute::PublicV2)
+        .unwrap()
+        .window
+        .unwrap();
+    assert_eq!(window.start_inclusive, utc("2024-01-05 00:00:00"));
+    assert_eq!(window.end_inclusive, utc("2024-01-09 00:00:00"));
+}
+
+#[test]
+fn prepare_rejects_unicode_digits_that_strptime_would_accept() {
+    let error = decode("start_date=%D9%A2%D9%A0%D9%A2%D9%A4-01-05&end_date=2024-01-03")
+        .prepare(SpendLogRoute::PublicV2)
+        .unwrap_err();
+    assert_eq!(
+        error,
+        PrepareError::InvalidDate {
+            source: DateFormatError {
+                value: "٢٠٢٤-01-05".to_owned(),
                 expected: "'YYYY-MM-DD' or 'YYYY-MM-DD HH:MM:SS'",
             },
         }
