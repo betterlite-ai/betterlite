@@ -96,7 +96,7 @@ pub enum WriteError {
 pub fn header_text(value: &http::HeaderValue) -> String {
     value.to_str().map_or_else(
         |_| format!("{} bytes that are not UTF-8", value.as_bytes().len()),
-        |text| text.to_owned(),
+        ToOwned::to_owned,
     )
 }
 

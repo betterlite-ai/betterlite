@@ -30,7 +30,7 @@ pub(super) fn http_response(reply: &UpstreamResponse) -> http::Response<Vec<u8>>
 pub(super) fn status_facts(reply: &UpstreamResponse) -> FailureFacts {
     let text = from_utf8(&reply.body).map_or_else(
         |_| format!("{} bytes that are not UTF-8", reply.body.len()),
-        |text| text.to_owned(),
+        ToOwned::to_owned,
     );
     let headers = error_headers(&reply.headers);
     FailureFacts {
