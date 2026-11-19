@@ -17,16 +17,19 @@ pub(super) fn reject_swallowed_pools(
             let Json::List(written) = declared else {
                 continue;
             };
-            for (index, entry) in written.iter().enumerate() {
-                let location = format!("{key}.{tier}.{index}");
-                match entry {
-                    Json::Text(_) | Json::Object(_) => decode_entry(entry, &location)?,
-                    Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => {
-                        return Err(ComplexityConfigWriteError::InvalidTierEntry { location });
-                    }
-                }
-            }
+            reject_pool(key, tier, written)?;
         }
+    }
+    Ok(())
+}
+
+fn reject_pool(key: &str, tier: &str, written: &[Json]) -> Result<(), ComplexityConfigWriteError> {
+    for (index, entry) in written.iter().enumerate() {
+        let location = format!("{key}.{tier}.{index}");
+        if !matches!(entry, Json::Text(_) | Json::Object(_)) {
+            return Err(ComplexityConfigWriteError::InvalidTierEntry { location });
+        }
+        decode_entry(entry, &location)?;
     }
     Ok(())
 }
