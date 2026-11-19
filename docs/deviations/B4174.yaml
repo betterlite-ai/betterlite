@@ -12,4 +12,7 @@ deviations:
   - what: This router contributes no paths to betterlite's OpenAPI document, including /debug/asyncio-tasks, which LiteLLM leaves in its schema because that route's decorator does not set include_in_schema=False.
     why: betterlite builds its document from typed RouteDoc inputs that each route module supplies, and this one supplies none; the other debug endpoints are operator-only and the task's schema proof covers the include_in_schema=False routes.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L60-L65
+  - what: LiteLLM parses PYTHON_GC_THRESHOLD at import and calls gc.set_threshold on the CPython collector (called at line 57); betterlite has no CPython collector, so it performs no startup GC configuration and ignores the variable.
+    why: The native runtime has no garbage collector generations or gc.set_threshold to configure, which is also why the GC configure route answers 501.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L37-L58
 kept_bugs: []
