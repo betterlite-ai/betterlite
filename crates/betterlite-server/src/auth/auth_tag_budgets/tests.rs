@@ -52,17 +52,21 @@ impl ScriptedLookup {
         })
     }
 
-    fn recorded<Value>(
-        &self,
-        kind: Kind,
-        values: &[String],
-        database: bool,
-    ) -> Result<BTreeMap<String, Value>, TagBudgetError> {
+    fn record(&self, kind: Kind, names: &[String], database: bool) {
         assert!(database, "the absent database never reaches the lookup");
         kind.calls(self)
             .lock()
             .expect("the lookup calls lock")
-            .push(values.to_vec());
+            .push(names.to_vec());
+    }
+
+    fn recorded<Value>(
+        &self,
+        kind: Kind,
+        names: &[String],
+        database: bool,
+    ) -> Result<BTreeMap<String, Value>, TagBudgetError> {
+        self.record(kind, names, database);
         if self.answer == kind.failing() {
             return Err(kind.failure());
         }
@@ -123,12 +127,12 @@ type GroupAnswer = Result<BTreeMap<String, ModelAccessGroupBudget>, TagBudgetErr
 
 #[async_trait]
 impl TagBudgetLookup for ScriptedLookup {
-    async fn tag_objects(&self, values: &[String], database: bool) -> TagAnswer {
-        self.recorded(Kind::Tag, values, database)
+    async fn tag_objects(&self, names: &[String], database: bool) -> TagAnswer {
+        self.recorded(Kind::Tag, names, database)
     }
 
-    async fn group_budgets(&self, values: &[String], database: bool) -> GroupAnswer {
-        self.recorded(Kind::Group, values, database)
+    async fn group_budgets(&self, names: &[String], database: bool) -> GroupAnswer {
+        self.recorded(Kind::Group, names, database)
     }
 }
 

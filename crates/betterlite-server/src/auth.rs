@@ -100,11 +100,11 @@ pub(crate) async fn authenticate(
             Ok(input) => input,
             Err(failure) => return stage_failure_response(&failure),
         };
-        let input = match prefetch_tag_budgets(input).await {
-            Ok(input) => input,
+        let prefetched = match prefetch_tag_budgets(input).await {
+            Ok(prefetched) => prefetched,
             Err(failure) => return stage_failure_response(&failure),
         };
-        match dispatch(*backend, &input, master_key) {
+        match dispatch(*backend, &prefetched, master_key) {
             Ok(context) => authenticated = Some(context),
             Err(failure) => return stage_failure_response(&failure),
         }
@@ -117,7 +117,7 @@ pub(crate) async fn authenticate(
 
 fn stage_failure_response(failure: &StageFailure) -> Response {
     match failure {
-        StageFailure::Authentication(failure) => authentication_error(failure),
+        StageFailure::Authentication(authentication) => authentication_error(authentication),
         StageFailure::ModelAccess(rejection) => rejection_response(rejection),
         StageFailure::ResourceGrants(exception) | StageFailure::TagBudgets(exception) => {
             denial_response(exception)
@@ -166,7 +166,7 @@ fn stage_input(
     }
 }
 
-// LiteLLM runs both batch reads before common_checks; the input is owned because Request<Body> is Send but not Sync
+// stage_input cannot await while holding the request borrow (Request<Body> is Send but not Sync), so the caller awaits the prefetch on the owned stage
 async fn prefetch_tag_budgets(input: StageInput) -> Result<StageInput, StageFailure> {
     match input {
         StageInput::AuthTagBudgets(stage) => {
@@ -175,7 +175,10 @@ async fn prefetch_tag_budgets(input: StageInput) -> Result<StageInput, StageFail
                 .map_err(StageFailure::TagBudgets)?;
             Ok(StageInput::AuthTagBudgets(stage))
         }
-        other => Ok(other),
+        other @ (StageInput::MasterKey(_)
+        | StageInput::AuthRequestModels(_)
+        | StageInput::AuthModelPatterns(_)
+        | StageInput::AuthResourceGrants(_)) => Ok(other),
     }
 }
 
