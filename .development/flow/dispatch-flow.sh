@@ -77,8 +77,8 @@ if [[ -z "${LAND_ONLY}" ]]; then
   # a grant moves the next start to another vendor, so a used-up ladder does not hold a granted run
   while [[ -z "${grant}" ]] && ! (cd "${main}" && cargo gate availability "${id}") > "${L}/availability-${id}.log" 2>&1; do
     if grep -q 'worker ladder is unavailable' "${L}/availability-${id}.log"; then
-      # with only deepseek left the other limits reset days later, so the run takes the grant instead of waiting (Max, 11-17)
-      others=$(awk '/^vendors:/ {v = 1; next} /^[^ ]/ {v = 0} v && $1 == "-" && $2 == "id:" && $3 != "deepseek" {print $3}' "${main}/.development/agents.yaml")
+      # with only the per-token vendors left (deepseek, the vercel trial) the other limits reset days later, so the run takes the grant instead of waiting (Max, 11-17)
+      others=$(awk '/^vendors:/ {v = 1; next} /^[^ ]/ {v = 0} v && $1 == "-" && $2 == "id:" && $3 != "deepseek" && $3 !~ /^vercel-/ {print $3}' "${main}/.development/agents.yaml")
       others_out=1
       while read -r vendor; do
         grep -q -E "(\(|; )${vendor} (is |can't)" "${L}/availability-${id}.log" || others_out=
