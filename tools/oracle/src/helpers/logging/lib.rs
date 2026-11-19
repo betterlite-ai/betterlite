@@ -20,7 +20,7 @@ betterlite_oracle_helper_api::helper_group! {
     "b3976" => b3976, "b3978" => b3978, "b3992" => b3992, "b3993" => b3993, "b3994" => b3994,
     "b3996" => b3996, "b3997" => b3997, "b3998" => b3998, "b4000" => b4000, "b4002" => b4002,
     "b4023" => b4023, "b5240" => b5240, "b8400" => b8400, "b8910" => b8910, "b9520" => b9520,
-    "b9650" => b9650,
+    "b9650" => b9650, "b9999" => b9999,
     "batch_delivery" => batch_delivery,
     "billing_context" => billing_context, "callback_registry" => callback_registry,
     "callback_validation" => callback_validation, "collector_policy" => collector_policy,
