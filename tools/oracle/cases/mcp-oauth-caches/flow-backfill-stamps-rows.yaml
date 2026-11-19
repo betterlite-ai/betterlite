@@ -1,0 +1,19 @@
+kind: helper
+name: flow-backfill-stamps-rows
+call:
+  b4662:
+    function: flow_backfill
+    flow_rows:
+      - server_id: srv-a
+        authorization_url: https://idp.example.com/authorize
+        registration_url: null
+        token_url: null
+        credentials: null
+      - server_id: srv-c
+        authorization_url: null
+        registration_url: null
+        token_url: null
+        credentials: null
+    user_credentials: []
+env: {}
+compare: {ignore: []}

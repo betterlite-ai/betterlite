@@ -1,0 +1,22 @@
+task: B4662
+deviations:
+  - what: >-
+      The per-identity lock map is capped at 1024 entries and the oldest lock is dropped when a
+      new identity arrives at the cap; the tokens themselves keep the 200-entry limit.
+    why: >-
+      LiteLLM's _locks dict only grows: every distinct token identity a server ever had leaves an
+      asyncio.Lock behind for the life of the worker. A dropped lock is harmless because the next
+      caller for that identity creates a fresh one, so the cap costs nothing but bounds memory
+      under a stream of edited configurations.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth2_token_cache.py#L83-L84
+kept_bugs:
+  - what: >-
+      A failed per-user cache read, write or delete is logged at debug and treated as a miss or a
+      no-op; the token is minted again or the stale entry survives a revocation.
+    why: >-
+      A working deployment runs with a dual in-memory and Redis cache, and a Redis outage must not
+      fail MCP tool calls whose token could still be fetched. LiteLLM swallows every exception
+      from the cache layer with the same debug log, and setups rely on the call path continuing.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth2_token_cache.py#L224-L313

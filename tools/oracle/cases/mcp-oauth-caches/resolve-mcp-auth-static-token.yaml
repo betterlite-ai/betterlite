@@ -1,0 +1,23 @@
+kind: helper
+name: resolve-mcp-auth-static-token
+call:
+  b4662:
+    function: auth_resolve
+    server:
+      server_id: srv-1
+      name: Server
+      transport: http
+      url: https://mcp.example.com/mcp
+      auth_type: oauth2
+      oauth2_flow: null
+      client_id: client
+      client_secret: secret
+      token_url: https://idp.example.com/token
+      scopes:
+        - read
+        - write
+      authentication_token: static-token
+    mcp_auth_header: null
+    outcomes: []
+env: {}
+compare: {ignore: []}

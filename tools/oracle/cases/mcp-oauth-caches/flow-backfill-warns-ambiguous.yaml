@@ -1,0 +1,16 @@
+kind: helper
+name: flow-backfill-warns-ambiguous
+call:
+  b4662:
+    function: flow_backfill
+    flow_rows:
+      - server_id: srv-b
+        authorization_url: null
+        registration_url: null
+        token_url: https://idp.example.com/token
+        credentials:
+          client_id: client
+          client_secret: secret
+    user_credentials: []
+env: {}
+compare: {ignore: []}

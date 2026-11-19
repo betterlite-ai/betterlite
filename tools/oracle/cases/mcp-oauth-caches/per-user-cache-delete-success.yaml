@@ -1,0 +1,10 @@
+kind: helper
+name: per-user-cache-delete-success
+call:
+  b4662:
+    function: per_user_delete
+    user_id: user-1
+    server_id: srv-1
+    fail_delete: false
+env: {}
+compare: {ignore: []}

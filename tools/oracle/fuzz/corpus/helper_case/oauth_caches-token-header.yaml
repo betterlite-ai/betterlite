@@ -1,0 +1,5 @@
+kind: helper
+name: oauth_caches-token-header-seed
+call: {b4662: {function: token_header, server: {server_id: srv-1, name: Server, transport: http, url: 'https://mcp.example.com/mcp', auth_type: oauth2, oauth2_flow: client_credentials, client_id: client, client_secret: secret, token_url: 'https://idp.example.com/token', scopes: [read], upstream_token_header: x-api-key}, mcp_auth_header: {kind: headers, headers: {x-api-key: override}}}}
+env: {}
+compare: {ignore: []}

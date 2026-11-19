@@ -1,0 +1,13 @@
+kind: helper
+name: per-user-cache-set-success
+call:
+  b4662:
+    function: per_user_set
+    user_id: user-1
+    server_id: srv-1
+    access_token: tok
+    ttl: 300
+    identity_binding_proof: proof
+    fail_set: false
+env: {}
+compare: {ignore: []}
