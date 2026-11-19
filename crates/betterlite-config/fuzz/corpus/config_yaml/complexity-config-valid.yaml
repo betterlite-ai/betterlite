@@ -1,0 +1,10 @@
+model_list:
+  - model_name: bounded-router
+    litellm_params:
+      model: openai/gpt-4o
+      complexity_router_config:
+        escalation_keywords: [LITELLM ESCALATE, "  retry harder  "]
+        plan_mode_min_tier: COMPLEX
+        plan_mode_patterns: [Plan mode is active]
+        housekeeping_patterns: [Write the title in the predominant language of the session]
+        heuristic_first_max_tier: MEDIUM

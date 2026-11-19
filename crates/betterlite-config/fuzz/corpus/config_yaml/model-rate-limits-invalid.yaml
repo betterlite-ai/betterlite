@@ -1,0 +1,11 @@
+model_list:
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      tpm: "many"
+    model_info:
+      id: gpt-4o-limited
+
+router_settings:
+  optional_pre_call_checks: enforce_model_rate_limits
+  num_retries: 1
