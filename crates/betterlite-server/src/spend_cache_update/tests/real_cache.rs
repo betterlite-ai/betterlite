@@ -60,15 +60,14 @@ fn all_groups_input() -> UpdateInput {
 }
 
 fn key_input() -> UpdateInput {
-    UpdateInput {
-        token: Some("sk-test-token".to_owned()),
-        user_id: None,
-        end_user_id: None,
-        team_id: None,
-        response_cost: Some(Decimal::from(100_i32)),
-        span: None,
-        tags: None,
-    }
+    let mut input = all_groups_input();
+    input.token = Some("sk-test-token".to_owned());
+    input.user_id = None;
+    input.end_user_id = None;
+    input.team_id = None;
+    input.response_cost = Some(Decimal::from(100_i32));
+    input.tags = None;
+    input
 }
 
 async fn run_update(
