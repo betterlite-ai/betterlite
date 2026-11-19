@@ -2,6 +2,8 @@
 
 use std::collections::BTreeMap;
 
+use rstest::rstest;
+
 use crate::concurrency_gauges::PARALLEL_SLOT_TTL;
 use crate::concurrency_gauges::cache::GaugeCacheValue;
 use crate::limiter_records::{CacheCounterValue, RateLimitStatus, RateLimitType};
@@ -312,30 +314,31 @@ async fn the_gauge_phase_appends_its_status_to_the_windowed_check() {
     );
 }
 
+#[rstest]
+#[case::missing(None)]
+#[case::empty(Some(String::new()))]
 #[tokio::test]
-async fn a_missing_or_empty_slot_id_generates_one() {
-    for slot in [None, Some(String::new())] {
-        let harness = harness();
-        let mut check = request(vec![descriptor(
-            "api-key",
-            "k1",
-            Some(limits(None, None, Some(5), None)),
-        )]);
-        check.parallel_slot_id = slot;
-        let limiter = harness.limiter();
-        let response = limiter.should_rate_limit(&check).await.unwrap();
-        assert_eq!(response.overall_code, "OK");
-        assert_eq!(response.statuses.len(), 1);
-        let writes = harness.gauges.writes();
-        assert_eq!(writes.len(), 1);
-        let GaugeCacheValue::Registry(registry) = &writes[0].value else {
-            panic!("the gauge write is a slot registry");
-        };
-        assert_eq!(
-            registry.keys().cloned().collect::<Vec<String>>(),
-            vec![GENERATED_SLOT.to_owned()]
-        );
-    }
+async fn a_missing_or_empty_slot_id_generates_one(#[case] slot: Option<String>) {
+    let harness = harness();
+    let mut check = request(vec![descriptor(
+        "api-key",
+        "k1",
+        Some(limits(None, None, Some(5), None)),
+    )]);
+    check.parallel_slot_id = slot;
+    let limiter = harness.limiter();
+    let response = limiter.should_rate_limit(&check).await.unwrap();
+    assert_eq!(response.overall_code, "OK");
+    assert_eq!(response.statuses.len(), 1);
+    let writes = harness.gauges.writes();
+    assert_eq!(writes.len(), 1);
+    let GaugeCacheValue::Registry(registry) = &writes[0].value else {
+        panic!("the gauge write is a slot registry");
+    };
+    assert_eq!(
+        registry.keys().cloned().collect::<Vec<String>>(),
+        vec![GENERATED_SLOT.to_owned()]
+    );
 }
 
 #[tokio::test]

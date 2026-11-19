@@ -404,6 +404,15 @@ pub(crate) struct GaugeWrite {
     pub(crate) local_only: bool,
 }
 
+fn gauge_write(key: &str, value: GaugeCacheValue, ttl: Duration, local_only: bool) -> GaugeWrite {
+    GaugeWrite {
+        key: key.to_owned(),
+        value,
+        ttl,
+        local_only,
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct RecordingGauges {
     stored: Mutex<BTreeMap<String, GaugeCacheValue>>,
@@ -460,13 +469,9 @@ impl GaugeCache for RecordingGauges {
     }
 
     async fn set(&self, key: &str, value: GaugeCacheValue, ttl: Duration, local_only: bool) {
-        self.write_log().push(GaugeWrite {
-            key: key.to_owned(),
-            value: value.clone(),
-            ttl,
-            local_only,
-        });
-        self.stored().insert(key.to_owned(), value);
+        self.stored().insert(key.to_owned(), value.clone());
+        self.write_log()
+            .push(gauge_write(key, value, ttl, local_only));
     }
 
     async fn batch_get(
@@ -476,7 +481,11 @@ impl GaugeCache for RecordingGauges {
     ) -> Option<Vec<Option<GaugeCacheValue>>> {
         self.record_batch_read(keys, local_only);
         let stored = self.stored();
-        Some(keys.iter().map(|key| stored.get(key).cloned()).collect())
+        let mut values = Vec::with_capacity(keys.len());
+        for key in keys {
+            values.push(stored.get(key).cloned());
+        }
+        Some(values)
     }
 }
 

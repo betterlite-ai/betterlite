@@ -9,6 +9,7 @@ use crate::rate_limit_window_store::in_memory_window::in_memory_cache_sliding_wi
 use crate::rate_limit_window_store::pipeline_scripts::pipeline_scripts;
 use crate::rate_limit_window_store::{CounterValues, ScriptCall, ScriptHandle};
 use crate::settlement_and_rollback::AtomicSettlement;
+// ast-grep-ignore: no-long-names
 use crate::settlement_and_rollback::refunds::counter_refunds_from_batch_values;
 
 use super::{WindowedAdmission, WindowedAdmissionError};
@@ -42,7 +43,12 @@ impl WindowedAdmission {
         for (index, group) in groups.iter().enumerate() {
             let handle = handles.get_mut(index).and_then(Option::take);
             let outcome = match handle {
-                Some(handle) => pipelined_values(handle).await,
+                Some(handle) => match handle.await {
+                    Ok(reply) => {
+                        counter_values_from_reply(&reply).map_err(WindowedAdmissionError::from)
+                    }
+                    Err(error) => Err(WindowedAdmissionError::Batch(error)),
+                },
                 None => run_batch_rate_limiter_script(&self.windows, &group.1, &args)
                     .await
                     .map_err(WindowedAdmissionError::from),
@@ -69,17 +75,20 @@ impl WindowedAdmission {
             let Some(handle) = slot.take() else {
                 continue;
             };
-            let Ok(group_values) = pipelined_values(handle).await else {
+            let Ok(reply) = handle.await else {
+                continue;
+            };
+            let Ok(group_values) = counter_values_from_reply(&reply) else {
                 continue;
             };
             let applied: CounterValues = group_values.iter().cloned().map(Some).collect();
+            // ast-grep-ignore: no-long-names
             let refunds = counter_refunds_from_batch_values(&group.1, &applied)?;
             self.settlement().refund_counter_increments(&refunds).await;
         }
         Ok(())
     }
 
-    // ast-grep-ignore: no-long-names
     async fn refund_on_failure(
         &self,
         groups: &[(String, Vec<String>)],
@@ -96,6 +105,7 @@ impl WindowedAdmission {
             .flat_map(|(_tag, group_keys)| group_keys.iter().cloned())
             .collect();
         let applied: CounterValues = values.iter().cloned().map(Some).collect();
+        // ast-grep-ignore: no-long-names
         let refunds = counter_refunds_from_batch_values(&applied_keys, &applied)?;
         self.settlement().refund_counter_increments(&refunds).await;
         let later = index.saturating_add(1);
@@ -130,13 +140,6 @@ fn group_calls(groups: &[(String, Vec<String>)], args: &[RedisScalar]) -> Vec<Sc
         .iter()
         .map(|(_tag, group_keys)| (group_keys.clone(), args.to_vec()))
         .collect()
-}
-
-async fn pipelined_values(
-    handle: ScriptHandle,
-) -> Result<Vec<CacheCounterValue>, WindowedAdmissionError> {
-    let reply = handle.await.map_err(WindowedAdmissionError::Batch)?;
-    Ok(counter_values_from_reply(&reply)?)
 }
 
 mod tests;

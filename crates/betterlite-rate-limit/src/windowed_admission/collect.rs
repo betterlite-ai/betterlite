@@ -15,8 +15,8 @@ pub struct CollectedWindowedKeys {
 }
 
 impl WindowedAdmission {
-    // ast-grep-ignore: no-long-names
     #[must_use]
+    // ast-grep-ignore: no-long-names
     pub fn collect_windowed_keys_and_gauges(
         &self,
         descriptors: &[RateLimitDescriptor],
