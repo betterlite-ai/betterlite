@@ -5,7 +5,7 @@ use std::future::{Future, ready};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use betterlite_azure::credentials::source::CredentialSources;
+use betterlite_azure::credentials::source::CredentialSources as _;
 use betterlite_azure::oidc_exchange::OidcExchangeInput;
 use betterlite_config::sections::azure_endpoints::Settings as AzureSettings;
 use betterlite_config::sections::resource_sdk_settings::Settings;
@@ -414,7 +414,7 @@ async fn check_supplied(
     let openai_class = kind == SuppliedClientKind::OpenAi;
     let url = match (operation, openai_class) {
         (AssistantOperation::Delete, _) => format!("{base}/assistants/asst_a"),
-        (AssistantOperation::List, true) => format!("{base}/assistants?limit=20&order=desc"),
+        (AssistantOperation::List, true) => format!("{base}/assistants"),
         (AssistantOperation::List, false) => {
             "https://azure.test/v1/openai/assistants?api-version=2024-02-01".to_owned()
         }
@@ -471,6 +471,7 @@ struct Credentials {
     settings: Settings,
     api_base: Option<&'static str>,
     api_key: Option<SecretString>,
+    params_organization: Option<&'static str>,
     url: &'static str,
     authorization: Option<&'static str>,
     organization: Option<&'static str>,
@@ -489,6 +490,7 @@ fn env_settings() -> Settings {
     settings: keyed_settings(),
     api_base: Some(""),
     api_key: None,
+    params_organization: None,
     url: "https://settings.test/v1/assistants?limit=20&order=desc",
     authorization: Some("Bearer sk-settings"),
     organization: Some("org-settings"),
@@ -497,6 +499,7 @@ fn env_settings() -> Settings {
     settings: env_settings(),
     api_base: None,
     api_key: Some(SecretString::from("")),
+    params_organization: None,
     url: "https://env.test/v1/assistants?limit=20&order=desc",
     authorization: Some("Bearer sk-env"),
     organization: Some("org-env"),
@@ -504,16 +507,27 @@ fn env_settings() -> Settings {
 #[case::default_base(Credentials {
     settings: empty_settings(),
     api_base: None,
-    api_key: None,
+    api_key: Some(SecretString::from("sk-default")),
+    params_organization: None,
     url: "https://api.openai.com/v1/assistants?limit=20&order=desc",
-    authorization: None,
+    authorization: Some("Bearer sk-default"),
     organization: None,
+})]
+#[case::request_organization(Credentials {
+    settings: keyed_settings(),
+    api_base: None,
+    api_key: None,
+    params_organization: Some("org-request"),
+    url: "https://settings.test/v1/assistants?limit=20&order=desc",
+    authorization: Some("Bearer sk-settings"),
+    organization: Some("org-request"),
 })]
 #[tokio::test]
 async fn openai_credentials_follow_the_litellm_chain(#[case] scenario: Credentials) {
     let mut input = list_openai(AssistantWrapper::Sync);
     input.params.api_base = scenario.api_base.map(str::to_owned);
     input.params.api_key = scenario.api_key;
+    input.params.organization = scenario.params_organization.map(str::to_owned);
     let (recorder, dispatch) = harness(200, PAGE);
     facade(dispatch, scenario.settings)
         .run(&input)
@@ -555,13 +569,13 @@ async fn a_number_wins_over_everything() {
 }
 
 async fn a_zero_timeout_falls_to_the_request_timeout() {
-    let input = timeout_input(AssistantTimeout::Number(0.0), Some(8.0));
+    let input = timeout_input(AssistantTimeout::Number(0.0), Some(8.0_f64));
     let (_, result) = recorded(&input).await;
     assert_eq!(result.call.timeout, FineTuningTimeout::Seconds(8.0));
 }
 
 async fn an_empty_text_timeout_falls_to_the_request_timeout() {
-    let input = timeout_input(AssistantTimeout::Text(String::new()), Some(8.0));
+    let input = timeout_input(AssistantTimeout::Text(String::new()), Some(8.0_f64));
     let (_, result) = recorded(&input).await;
     assert_eq!(result.call.timeout, FineTuningTimeout::Seconds(8.0));
 }
@@ -575,8 +589,8 @@ async fn a_text_timeout_is_parsed_like_float() {
 async fn a_structured_timeout_keeps_its_read_phase() {
     let input = timeout_input(
         AssistantTimeout::Structured(TimeoutPhases {
-            connect: Some(2.0),
-            read: Some(9.0),
+            connect: Some(2.0_f64),
+            read: Some(9.0_f64),
             write: None,
             pool: None,
         }),
@@ -586,8 +600,8 @@ async fn a_structured_timeout_keeps_its_read_phase() {
     assert_eq!(
         result.call.timeout,
         FineTuningTimeout::Structured(StructuredTimeout {
-            connect: Some(2.0),
-            read: Some(9.0),
+            connect: Some(2.0_f64),
+            read: Some(9.0_f64),
             write: None,
             pool: None,
         })
@@ -656,20 +670,20 @@ async fn a_number_timeout_reaches_litellm_params() {
     let mut input = delete_azure(AssistantWrapper::Sync);
     input.params.timeout = Some(AssistantTimeout::Number(9.5));
     let result = azure_call(&input).await;
-    assert_eq!(azure_values(&result).params.timeout, Some(9.5));
+    assert_eq!(azure_values(&result).params.timeout, Some(9.5_f64));
 }
 
 async fn a_text_timeout_reaches_litellm_params() {
     let mut input = delete_azure(AssistantWrapper::Sync);
     input.params.timeout = Some(AssistantTimeout::Text(" 7.5 ".to_owned()));
     let result = azure_call(&input).await;
-    assert_eq!(azure_values(&result).params.timeout, Some(7.5));
+    assert_eq!(azure_values(&result).params.timeout, Some(7.5_f64));
 }
 
 async fn a_structured_timeout_skips_litellm_params() {
     let mut input = delete_azure(AssistantWrapper::Sync);
     input.params.timeout = Some(AssistantTimeout::Structured(TimeoutPhases {
-        connect: Some(1.0),
+        connect: Some(1.0_f64),
         read: None,
         write: None,
         pool: None,
@@ -731,7 +745,7 @@ fn no_request() -> Sdk {
 
 async fn a_list_flag_that_is_not_a_bool_is_an_exception() {
     let mut input = list_openai(AssistantWrapper::Sync);
-    input.aget_assistants = Some(Json::Number(serde_json::Number::from(1)));
+    input.aget_assistants = Some(Json::Number(serde_json::Number::from(1_i32)));
     let error = facade(no_request(), Settings::default())
         .run(&input)
         .await

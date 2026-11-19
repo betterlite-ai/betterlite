@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -98,20 +97,18 @@ where
 {
     type Error = AssistantSdkError;
 
-    fn call(
+    async fn call(
         &self,
         call: &AssistantCall,
-    ) -> impl Future<Output = Result<Option<AssistantReply>, AssistantSdkError>> + Send {
-        async move {
-            let reply = match &call.provider {
-                AssistantProviderCall::OpenAi(options) => self.openai(call, options).await?,
-                AssistantProviderCall::Azure(_) if openai_class_supplied(call) => {
-                    self.openai(call, &ClientOptions::default()).await?
-                }
-                AssistantProviderCall::Azure(values) => self.azure_call(call, values).await?,
-            };
-            Ok(Some(reply))
-        }
+    ) -> Result<Option<AssistantReply>, AssistantSdkError> {
+        let reply = match &call.provider {
+            AssistantProviderCall::OpenAi(options) => self.openai(call, options).await?,
+            AssistantProviderCall::Azure(_) if openai_class_supplied(call) => {
+                self.openai(call, &ClientOptions::default()).await?
+            }
+            AssistantProviderCall::Azure(values) => self.azure_call(call, values).await?,
+        };
+        Ok(Some(reply))
     }
 }
 
@@ -134,16 +131,14 @@ where
             .supplied
             .as_ref()
             .map(|client| self.supplied_openai(client));
-        let asynchronous = call.kind == ClientKind::Async;
+        let azure = matches!(&call.provider, AssistantProviderCall::Azure(_));
+        // the Azure API calls the supplied client's list() bare, so its entry never takes the async defaults
+        let asynchronous = call.kind == ClientKind::Async && !azure;
+        let params = azure.then_some(UNPAGED).unwrap_or_default();
         let reply = match call.operation {
             AssistantOperation::List => AssistantReply::Page(
-                api.get_assistants(
-                    options.clone(),
-                    supplied,
-                    asynchronous,
-                    &ListParams::default(),
-                )
-                .await?,
+                api.get_assistants(options.clone(), supplied, asynchronous, &params)
+                    .await?,
             ),
             AssistantOperation::Delete => AssistantReply::Deleted(
                 api.delete_assistant(
@@ -158,7 +153,6 @@ where
         Ok(reply)
     }
 
-    // The flag only picks B686's client type, and both types send the same request through the transport.
     #[cfg_attr(test, mutants::skip)]
     async fn azure_call(
         &self,
@@ -248,6 +242,14 @@ where
         }
     }
 }
+
+// LiteLLM's Azure API calls the supplied client's list() with no arguments, so no pagination reaches it
+const UNPAGED: ListParams = ListParams {
+    order: None,
+    limit: None,
+    before: None,
+    after: None,
+};
 
 // Azure keeps an OpenAI SDK client, and that client sends the OpenAI request, not an Azure one
 fn openai_class_supplied(call: &AssistantCall) -> bool {

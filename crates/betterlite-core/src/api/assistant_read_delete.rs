@@ -34,7 +34,6 @@ pub enum AssistantReply {
 pub enum AssistantStep {
     Page(AssistantPage),
     Deleted(AssistantDeleted),
-    // a sync entry hands Python the coroutine an async client returns, so no request is made here
     Coroutine,
 }
 
@@ -83,7 +82,7 @@ where
             .call(&call)
             .await
             .map_err(AssistantReadDeleteError::Dispatch)?;
-        let Some(reply) = reply else {
+        let Some(answer) = reply else {
             // a null list reply repeats the get_assistants bad request, while delete answers 500
             return Err(match input.operation {
                 AssistantOperation::List => AssistantReadDeleteError::Unsupported {
@@ -95,7 +94,7 @@ where
                 },
             });
         };
-        let step = match (input.operation, reply) {
+        let step = match (input.operation, answer) {
             (AssistantOperation::List, AssistantReply::Page(page)) => AssistantStep::Page(page),
             (AssistantOperation::Delete, AssistantReply::Deleted(deleted)) => {
                 AssistantStep::Deleted(deleted)
@@ -180,8 +179,8 @@ fn check_limits(limits: &ApiLimits, input: &AssistantReadDeleteInput) -> Result<
     let body = input.extra_body.as_ref().and_then(Option::as_ref);
     let known_count = body.map_or(0, IndexMap::len);
     limits.check(ApiBoundariesInput::Items(ItemsBoundary { known_count }))?;
-    let body_bytes = body.map_or(0, |body| {
-        serde_json::to_vec(body).map_or(usize::MAX, |bytes| bytes.len())
+    let body_bytes = body.map_or(0, |fields| {
+        serde_json::to_vec(fields).map_or(usize::MAX, |bytes| bytes.len())
     });
     let id_bytes = input.assistant_id.as_ref().map_or(0, String::len);
     let known_bytes = id_bytes.saturating_add(body_bytes);

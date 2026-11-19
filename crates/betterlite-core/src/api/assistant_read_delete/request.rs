@@ -1,7 +1,7 @@
 use betterlite_openai::assistants::client::ClientKind;
 use betterlite_prompts::arguments::json::Json;
 use indexmap::IndexMap;
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 use serde_with::rust::double_option;
 
