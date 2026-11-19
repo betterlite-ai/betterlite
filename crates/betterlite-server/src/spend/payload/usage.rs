@@ -59,10 +59,10 @@ fn response_usage(response: Option<&JsonObject>) -> Result<JsonObject, SpendPayl
 
 // kwargs.combined_usage_object is a Usage model: only a mapping is one, and null means the stream recovered nothing.
 fn combined_usage(value: Option<&Json>) -> Result<JsonObject, SpendPayloadError> {
-    let Some(value) = value else {
+    let Some(present) = value else {
         return Ok(JsonObject::new());
     };
-    match value {
+    match present {
         Json::Null => Ok(JsonObject::new()),
         Json::Object(fields) => Ok(fields.clone()),
         Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
@@ -139,7 +139,7 @@ fn carries_write(value: &Json) -> bool {
     match value {
         Json::Null => false,
         Json::Bool(flag) => *flag,
-        Json::Number(number) => number.as_f64().is_some_and(|number| number != 0.0),
+        Json::Number(number) => number.as_f64().is_some_and(|amount| amount != 0.0_f64),
         Json::Text(text) => !text.is_empty(),
         Json::List(items) => !items.is_empty(),
         Json::Object(fields) => !fields.is_empty(),

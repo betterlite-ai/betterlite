@@ -19,6 +19,8 @@ call:
         prompt_tokens: 3
         completion_tokens: 2
         request_tags: [beta]
+        metadata: {}
+        model_map_information: null
     response:
       mapping:
         usage: {}

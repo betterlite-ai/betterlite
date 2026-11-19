@@ -24,6 +24,29 @@ use super::{
     counter, instant,
 };
 
+// The record's times, normalized to UTC through the injected zone.
+struct Times {
+    start: String,
+    end: String,
+    completion_start: Option<String>,
+}
+
+// The three token totals, each keeping the presence the source gave it.
+struct Tokens {
+    total: Option<i64>,
+    prompt: Option<i64>,
+    completion: Option<i64>,
+}
+
+// The values the literal reads besides the context, the settings and the resolved pieces.
+struct Stored {
+    times: Times,
+    tokens: Tokens,
+    params: Json,
+    kwargs: Json,
+    metadata: Json,
+}
+
 // The SpendLogsPayload literal, one field per entry the source passes, with the times normalized to UTC.
 pub(crate) fn record<T>(
     context: &Context<'_>,
@@ -34,6 +57,20 @@ pub(crate) fn record<T>(
 where
     T: TimeZone,
 {
+    let stored = Stored {
+        times: times(context, zone)?,
+        tokens: token_totals(context, &pieces.usage)?,
+        params: Json::Object(context.litellm_params.clone().into_owned()),
+        kwargs: Json::Object(context.kwargs.clone()),
+        metadata: Json::Object(context.metadata.clone()),
+    };
+    payload(context, settings, pieces, &stored)
+}
+
+fn times<T>(context: &Context<'_>, zone: &T) -> Result<Times, SpendPayloadError>
+where
+    T: TimeZone,
+{
     let start = instant(context.request.start_time, zone, "startTime")?;
     let end = instant(context.request.end_time, zone, "endTime")?;
     let completion_start = match context.request.completion_start_time {
@@ -41,21 +78,30 @@ where
         CompletionStart::Null => None,
         CompletionStart::At(moment) => Some(instant(moment, zone, "completionStartTime")?),
     };
-    let params = Json::Object(context.litellm_params.clone().into_owned());
-    let metadata_object = Json::Object(context.metadata.clone());
-    let kwargs_object = Json::Object(context.kwargs.clone());
-    let (total, prompt, completion) = token_totals(context, &pieces.usage)?;
+    Ok(Times {
+        start,
+        end,
+        completion_start,
+    })
+}
+
+fn payload(
+    context: &Context<'_>,
+    settings: &SpendPayloadSettings,
+    pieces: &Pieces,
+    stored: &Stored,
+) -> Result<SpendLogsPayload, SpendPayloadError> {
     Ok(SpendLogsPayload {
         request_id: pieces.request_id.clone(),
         call_type: context.call_type.unwrap_or("").to_owned(),
         api_key: pieces.envelope.api_key.clone(),
         spend: spend(context)?,
-        total_tokens: total,
-        prompt_tokens: prompt,
-        completion_tokens: completion,
-        start_time: start,
-        end_time: end,
-        completion_start_time: completion_start,
+        total_tokens: stored.tokens.total,
+        prompt_tokens: stored.tokens.prompt,
+        completion_tokens: stored.tokens.completion,
+        start_time: stored.times.start.clone(),
+        end_time: stored.times.end.clone(),
+        completion_start_time: stored.times.completion_start.clone(),
         model: pieces.attribution.model_name.clone(),
         model_id: pieces.attribution.model_id.clone(),
         model_group: pieces.attribution.model_group.clone(),
@@ -74,17 +120,9 @@ where
         requester_ip_address: pieces.clean.requester_ip_address.clone(),
         custom_llm_provider: pieces.attribution.provider.clone().unwrap_or_default(),
         messages: storage_messages(context.standard_raw, settings.storage.sanitize.store_bodies),
-        response: storage_response(
-            context.standard_raw,
-            Some(&ResponseKwargs {
-                realtime_tool_calls: context.kwargs.get("realtime_tool_calls"),
-                litellm_params: Some(&params),
-                dynamic_params: context.kwargs.get("standard_callback_dynamic_params"),
-            }),
-            settings.storage,
-        ),
-        proxy_server_request: request_body(context, settings.storage, pieces, &params),
-        session_id: session(context, settings, pieces, &kwargs_object, &metadata_object),
+        response: response_body(context, settings, &stored.params),
+        proxy_server_request: request_body(context, settings.storage, pieces, &stored.params),
+        session_id: session(context, settings, pieces, &stored.kwargs, &stored.metadata),
         request_duration_ms: request_duration_ms(
             context.request.start_time,
             context.request.end_time,
@@ -92,6 +130,18 @@ where
         status: status_for_spend_log(&context.metadata),
         litellm_call_id: pieces.attribution.call_id.clone(),
     })
+}
+
+fn response_body(context: &Context<'_>, settings: &SpendPayloadSettings, params: &Json) -> String {
+    storage_response(
+        context.standard_raw,
+        Some(&ResponseKwargs {
+            realtime_tool_calls: context.kwargs.get("realtime_tool_calls"),
+            litellm_params: Some(params),
+            dynamic_params: context.kwargs.get("standard_callback_dynamic_params"),
+        }),
+        settings.storage,
+    )
 }
 
 fn request_body(
@@ -159,31 +209,28 @@ fn spend(context: &Context<'_>) -> Result<Option<Decimal>, SpendPayloadError> {
 }
 
 // usage.get(field, standard): a source usage field wins by presence, so a null there stays null.
-fn token_totals(
-    context: &Context<'_>,
-    usage: &JsonObject,
-) -> Result<(Option<i64>, Option<i64>, Option<i64>), SpendPayloadError> {
+fn token_totals(context: &Context<'_>, usage: &JsonObject) -> Result<Tokens, SpendPayloadError> {
     let standard = context.standard.as_ref();
     let fallback = |field: fn(&super::source::StandardSource) -> Option<Option<i64>>| {
         standard.map_or(Some(0), |source| field(source).unwrap_or(Some(0)))
     };
-    Ok((
-        counted(
+    Ok(Tokens {
+        total: counted(
             usage,
             "total_tokens",
             fallback(|source| source.total_tokens),
         )?,
-        counted(
+        prompt: counted(
             usage,
             "prompt_tokens",
             fallback(|source| source.prompt_tokens),
         )?,
-        counted(
+        completion: counted(
             usage,
             "completion_tokens",
             fallback(|source| source.completion_tokens),
         )?,
-    ))
+    })
 }
 
 fn counted(
@@ -191,10 +238,9 @@ fn counted(
     field: &'static str,
     standard: Option<i64>,
 ) -> Result<Option<i64>, SpendPayloadError> {
-    match usage.get(field) {
-        Some(value) => counter(Some(value), field),
-        None => Ok(standard),
-    }
+    usage
+        .get(field)
+        .map_or_else(|| Ok(standard), |value| counter(Some(value), field))
 }
 
 // clean_metadata.get("mcp_tool_call_metadata"), then its namespaced_tool_name.

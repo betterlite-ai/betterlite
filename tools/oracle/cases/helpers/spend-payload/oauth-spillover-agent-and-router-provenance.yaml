@@ -23,6 +23,8 @@ call:
         model: anthropic/claude-3-5-sonnet
         model_group: claude-group
         custom_llm_provider: anthropic
+        metadata: {}
+        model_map_information: null
     response:
       mapping:
         usage: {total_tokens: 7, prompt_tokens: 4, completion_tokens: 3}

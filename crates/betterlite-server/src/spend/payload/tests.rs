@@ -25,9 +25,10 @@ use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use betterlite_router::model_catalog_lookup::alias::AliasMap;
 use betterlite_router::model_catalog_lookup::lookup::CatalogLookup;
 use betterlite_router::routing_groups::index::RoutingGroupIndex;
-use chrono::{DateTime, FixedOffset, NaiveDate, TimeZone as _, Utc};
+use chrono::{DateTime, FixedOffset, NaiveDate, Utc};
 use rstest::rstest;
 use rust_decimal::Decimal;
+use serde_json::Number;
 use tokio::sync::watch;
 
 use super::{
@@ -273,11 +274,11 @@ fn assembles_a_standard_enriched_payload() {
     );
     assert_eq!(
         metadata.get("batch_successful_requests"),
-        Some(&Json::Number(2.into()))
+        Some(&Json::Number(Number::from(2)))
     );
     assert_eq!(
         metadata.get("batch_failed_requests"),
-        Some(&Json::Number(1.into()))
+        Some(&Json::Number(Number::from(1)))
     );
     assert!(metadata.contains_key("guardrail_information"));
     assert!(metadata.contains_key("cost_breakdown"));
@@ -293,7 +294,7 @@ fn assembles_a_standard_enriched_payload() {
     );
     assert_eq!(
         additional.get("cache_creation_input_tokens"),
-        Some(&Json::Number(9.into()))
+        Some(&Json::Number(Number::from(9)))
     );
     assert_eq!(
         payload.session_id.as_deref(),
@@ -328,13 +329,13 @@ fn missing_fields_keep_the_sources_empty_string_defaults() {
 
 #[test]
 fn the_caller_kwargs_are_not_mutated() {
+    let cache = DerivedCache;
     let harness = Harness::new(
         r#"{"model": "gpt-4o", "litellm_params": {"metadata": {"model_group": "group"}},
             "standard_logging_object": {"model": "openai/gpt-4o"}}"#,
-    );
+    )
+    .with_cache(&cache);
     let before = serde_json::to_value(&harness.kwargs).expect("encoded");
-    let cache = DerivedCache;
-    let harness = harness.with_cache(&cache);
     let payload = harness
         .run(SpendResponse::Absent, &settings())
         .expect("payload");
@@ -476,8 +477,8 @@ fn cache_hit_suffixes_follow_the_clock(#[case] hit: Option<bool>, #[case] expect
 }
 
 #[rstest]
-#[case::off(r#"{}"#, None, "Cache OFF")]
-#[case::derived(r#"{}"#, Some("derived"), "derived-key")]
+#[case::off("{}", None, "Cache OFF")]
+#[case::derived("{}", Some("derived"), "derived-key")]
 #[case::preset(r#"{"preset_cache_key": "given"}"#, Some("derived"), "given")]
 #[case::empty_preset(r#"{"preset_cache_key": ""}"#, Some("derived"), "")]
 #[case::null_preset(r#"{"preset_cache_key": null}"#, Some("derived"), "derived-key")]
@@ -489,10 +490,10 @@ fn cache_keys_read_the_preset_the_cache_and_off(
 ) {
     let text = format!(r#"{{"model": "gpt-4o", "litellm_params": {params}}}"#);
     let derived = DerivedCache;
-    let harness = Harness::new(&text);
+    let plain = Harness::new(&text);
     let harness = match cache {
-        Some(_) => harness.with_cache(&derived),
-        None => harness,
+        Some(_) => plain.with_cache(&derived),
+        None => plain,
     };
     let payload = harness
         .run(SpendResponse::Absent, &settings())
@@ -502,12 +503,13 @@ fn cache_keys_read_the_preset_the_cache_and_off(
 
 #[test]
 fn preset_cache_keys_must_be_text() {
-    let error = run(
+    let Err(error) = run(
         r#"{"model": "gpt-4o", "litellm_params": {"preset_cache_key": 4}}"#,
         SpendResponse::Absent,
         &settings(),
-    )
-    .expect_err("a non-text preset is out of type");
+    ) else {
+        panic!("a non-text preset is out of type");
+    };
     assert!(error.to_string().contains("preset_cache_key"));
 }
 
@@ -578,7 +580,7 @@ fn ocr_usage_reads_usage_info() {
     );
     assert_eq!(
         additional.get("pages_processed"),
-        Some(&Json::Number(2.into()))
+        Some(&Json::Number(Number::from(2)))
     );
 }
 
@@ -802,9 +804,13 @@ fn oauth_and_router_provenance_are_stamped() {
     let routing = r#"{"model": "claude",
         "custom_llm_provider": "anthropic",
         "litellm_params": {"metadata": {"model_info": {"internal_router_model": true}, "model_group": "group"}}}"#;
-    let payload = run(routing, SpendResponse::Absent, &settings()).expect("payload");
-    let metadata = metadata_of(&payload);
-    let router = object(metadata.get("router_metadata").expect("router metadata"));
+    let routed = run(routing, SpendResponse::Absent, &settings()).expect("payload");
+    let routed_metadata = metadata_of(&routed);
+    let router = object(
+        routed_metadata
+            .get("router_metadata")
+            .expect("router metadata"),
+    );
     assert_eq!(
         router.get("requested_model"),
         Some(&Json::Text("group".to_owned()))
@@ -861,7 +867,9 @@ fn the_mcp_tool_name_comes_from_the_clean_metadata() {
 #[case::combined_usage(r#"{"combined_usage_object": []}"#, "combined_usage_object")]
 #[case::standard(r#"{"standard_logging_object": []}"#, "standard_logging_object")]
 fn out_of_type_fields_are_named(#[case] text: &str, #[case] field: &str) {
-    let error = run(text, SpendResponse::Absent, &settings()).expect_err("out of type");
+    let Err(error) = run(text, SpendResponse::Absent, &settings()) else {
+        panic!("out of type");
+    };
     assert!(error.to_string().contains(field), "{error}");
 }
 
@@ -874,10 +882,7 @@ fn naive_times_use_the_injected_zone() {
     let zone = FixedOffset::east_opt(3600).expect("zone");
     let normalized =
         super::instant(SpendTimestamp::Naive(naive), &zone, "startTime").expect("instant");
-    assert_eq!(
-        normalized.0,
-        Utc.with_ymd_and_hms(2023, 12, 31, 23, 0, 0).unwrap()
-    );
+    assert_eq!(normalized, "2023-12-31T23:00:00+00:00");
 }
 
 #[test]

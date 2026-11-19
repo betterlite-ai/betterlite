@@ -47,9 +47,10 @@ pub(crate) fn resolve(context: &Context<'_>) -> Result<Attribution, SpendPayload
         resolved.as_str()
     };
     let placeholdered = model_name == UNKNOWN_MODEL;
-    let persisted_metadata = match placeholdered {
-        true => scrub_metadata(context, raw.text)?,
-        false => context.metadata.clone(),
+    let persisted_metadata = if placeholdered {
+        scrub_metadata(context, raw.text)?
+    } else {
+        context.metadata.clone()
     };
     Ok(Attribution {
         base_id: base_id(context),
@@ -200,9 +201,10 @@ fn configured_group(context: &Context<'_>, group: &str) -> bool {
 // The group survives unless it is the unsafe raw model itself.
 fn persisted_group(placeholdered: bool, group: &str, raw: &str) -> String {
     let cleared = placeholdered && group == raw && !looks_like_model_name(raw);
-    match cleared {
-        true => String::new(),
-        false => group.to_owned(),
+    if cleared {
+        String::new()
+    } else {
+        group.to_owned()
     }
 }
 

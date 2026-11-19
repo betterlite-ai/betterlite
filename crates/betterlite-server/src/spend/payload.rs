@@ -6,11 +6,15 @@ pub mod metadata;
 pub mod source;
 pub mod usage;
 
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 
+use betterlite_cache::cache_key::error::CacheKeyError;
+use betterlite_cache::handler::HandlerError;
 use betterlite_config::collector::TracebackPolicy;
 use betterlite_config::spend_attribution::Settings as SpendAttributionSettings;
 use betterlite_config::spend_storage::MissingSessionId;
+use betterlite_db::search_tools::convert::isoformat;
 use betterlite_logging::end_user::{EndUserCostTrackingSettings, EndUserIdError};
 use betterlite_logging::logging_metadata::decode::DecodeError;
 use betterlite_logging::payload::deps::PayloadClock;
@@ -20,7 +24,7 @@ use betterlite_logging::spend_bodies::session::{SpendTimestamp, ensure_datetime_
 use betterlite_logging::spend_error::log_spend_error;
 use betterlite_logging::spend_metadata::records::SpendLogsMetadata;
 use betterlite_logging::spend_metadata::{
-    SpendLogsPayload, SpendMetadataError, optional_text_field,
+    SpendLogsPayload, SpendMetadataError, merged_spend_metadata, optional_text_field,
 };
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
@@ -104,12 +108,12 @@ pub enum SpendPayloadError {
     #[error("the cache request could not be read: {source}")]
     CacheRequest {
         #[from]
-        source: betterlite_cache::handler::HandlerError,
+        source: HandlerError,
     },
     #[error("the cache key could not be derived: {source}")]
     CacheKey {
         #[from]
-        source: betterlite_cache::cache_key::error::CacheKeyError,
+        source: CacheKeyError,
     },
     #[error("the {record} could not be written as JSON: {source}")]
     Json {
@@ -128,7 +132,7 @@ pub enum SpendPayloadError {
 pub(crate) struct Context<'request> {
     pub(crate) request: &'request PayloadRequest<'request>,
     pub(crate) kwargs: &'request JsonObject,
-    pub(crate) litellm_params: std::borrow::Cow<'request, JsonObject>,
+    pub(crate) litellm_params: Cow<'request, JsonObject>,
     pub(crate) metadata: JsonObject,
     pub(crate) standard: Option<StandardSource>,
     pub(crate) standard_raw: Option<&'request Json>,
@@ -140,7 +144,7 @@ impl<'request> Context<'request> {
     fn new(request: &'request PayloadRequest<'request>) -> Result<Self, SpendPayloadError> {
         let kwargs = request.kwargs;
         let litellm_params = params_of(kwargs)?;
-        let metadata = betterlite_logging::spend_metadata::merged_spend_metadata(&litellm_params)?;
+        let metadata = merged_spend_metadata(&litellm_params)?;
         Ok(Self {
             request,
             kwargs,
@@ -208,11 +212,11 @@ where
 mod tests;
 
 // litellm_params defaults to {} when absent or null, and any other type is named instead of crashing a .get call.
-fn params_of(kwargs: &JsonObject) -> Result<std::borrow::Cow<'_, JsonObject>, SpendPayloadError> {
+fn params_of(kwargs: &JsonObject) -> Result<Cow<'_, JsonObject>, SpendPayloadError> {
     let absent = JsonObject::new();
     match kwargs.get("litellm_params") {
-        None | Some(Json::Null) => Ok(std::borrow::Cow::Owned(absent)),
-        Some(Json::Object(fields)) => Ok(std::borrow::Cow::Borrowed(fields)),
+        None | Some(Json::Null) => Ok(Cow::Owned(absent)),
+        Some(Json::Object(fields)) => Ok(Cow::Borrowed(fields)),
         Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
             Err(SpendPayloadError::FieldType {
                 field: "litellm_params",
@@ -222,7 +226,7 @@ fn params_of(kwargs: &JsonObject) -> Result<std::borrow::Cow<'_, JsonObject>, Sp
 }
 
 // kwargs.get("cache_hit", False): absent reads as False and a present null stays None for str().
-fn cache_hit(value: Option<&Json>) -> Result<Option<bool>, SpendPayloadError> {
+const fn cache_hit(value: Option<&Json>) -> Result<Option<bool>, SpendPayloadError> {
     match value {
         None => Ok(Some(false)),
         Some(Json::Null) => Ok(None),
@@ -269,6 +273,6 @@ where
     T: TimeZone,
 {
     ensure_datetime_utc(moment, zone)
-        .map(betterlite_db::search_tools::convert::isoformat)
+        .map(isoformat)
         .ok_or(SpendPayloadError::Time { field })
 }

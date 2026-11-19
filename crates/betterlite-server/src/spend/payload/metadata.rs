@@ -40,13 +40,15 @@ fn arguments(
     let standard = context.standard.as_ref();
     let stored = standard.and_then(|source| source.metadata.as_ref());
     let hidden = standard.and_then(|source| source.hidden_params.as_ref());
-    let guardrail_information = match standard {
-        Some(source) => source.guardrail_information.clone(),
-        None => context
-            .metadata
-            .get("standard_logging_guardrail_information")
-            .cloned(),
-    };
+    let guardrail_information = standard.map_or_else(
+        || {
+            context
+                .metadata
+                .get("standard_logging_guardrail_information")
+                .cloned()
+        },
+        |source| source.guardrail_information.clone(),
+    );
     let router_metadata = router_metadata(context, attribution)?;
     let oauth = used_client_oauth_token(context, attribution.provider.as_deref())?;
     let spillover = spillover(context)?;

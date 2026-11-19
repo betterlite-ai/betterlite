@@ -35,11 +35,11 @@ pub(crate) fn key(
     context: &Context<'_>,
     cache: Option<&dyn SpendCache>,
 ) -> Result<String, SpendPayloadError> {
-    let Some(cache) = cache else {
+    let Some(configured) = cache else {
         return Ok(CACHE_OFF.to_owned());
     };
     match context.litellm_params.get(PRESET_CACHE_KEY) {
-        None | Some(Json::Null) => cache.cache_key(context.kwargs),
+        None | Some(Json::Null) => configured.cache_key(context.kwargs),
         Some(Json::Text(preset)) => Ok(preset.clone()),
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
             Err(SpendPayloadError::FieldType {
@@ -82,7 +82,7 @@ fn key_value(value: &Json) -> KeyValue {
         Json::Object(fields) => KeyValue::Object(
             fields
                 .iter()
-                .map(|(name, value)| (name.clone(), key_value(value)))
+                .map(|(name, item)| (name.clone(), key_value(item)))
                 .collect(),
         ),
     }

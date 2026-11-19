@@ -229,11 +229,13 @@ def normalize(record: PayloadView) -> JsonValue:
         "agent_id": record["agent_id"],
         "api_base": record["api_base"],
         "user": record["user"],
-        "metadata": json.dumps(OBJECT.validate_json(record["metadata"]), separators=(",", ":")),
+        "metadata": json.dumps(
+            OBJECT.validate_json(record["metadata"]), separators=(",", ":"), sort_keys=True
+        ),
         "cache_hit": record["cache_hit"],
         "cache_key": record["cache_key"],
         "request_tags": json.dumps(
-            TAGS.validate_json(record["request_tags"]), separators=(",", ":")
+            TAGS.validate_json(record["request_tags"]), separators=(",", ":"), sort_keys=True
         ),
         "team_id": record["team_id"],
         "organization_id": record["organization_id"],
