@@ -20,9 +20,7 @@ pub fn extract_tool_params(
     tool: &JsonObject,
 ) -> Result<VectorStoreToolParams, VectorStoreRegistryError> {
     if tool.contains_key("rewrite_query") {
-        return Err(VectorStoreRegistryError::UnexpectedToolParam {
-            name: "rewrite_query",
-        });
+        return Err(VectorStoreRegistryError::RewriteQueryNotSupported);
     }
     Ok(VectorStoreToolParams {
         filters: object_param(tool, "filters")?,

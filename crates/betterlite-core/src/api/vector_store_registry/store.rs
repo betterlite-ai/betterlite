@@ -44,19 +44,6 @@ impl Default for VectorStoreRegistry {
 }
 
 impl VectorStoreRegistry {
-    #[must_use]
-    pub const fn new(
-        stores: Vec<LiteLlmManagedVectorStore>,
-        clock: RegistryClock,
-        credentials: Arc<dyn VectorStoreCredentials>,
-    ) -> Self {
-        Self {
-            stores,
-            clock,
-            credentials,
-        }
-    }
-
     // load_vector_stores_from_config: each entry appends as it converts, so a bad one leaves the earlier records and raises without logging
     pub fn load_vector_stores_from_config(
         &mut self,

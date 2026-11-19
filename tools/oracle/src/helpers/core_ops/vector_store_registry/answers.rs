@@ -11,6 +11,7 @@ use betterlite_core::api::vector_store_registry::tools::{
 use betterlite_models::model_registration::JsonObject;
 use betterlite_openai::api::vector_store_records::records::pydantic::LiteLlmManagedVectorStoreIndex;
 use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
+use betterlite_oracle_helper_api::error::OrHelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use chrono::Utc;
 use serde_json::{Value, json};
@@ -153,7 +154,7 @@ fn database_rows(input: &Input) -> HelperResult {
 }
 
 fn ids_and_tool_params(input: &Input) -> HelperResult {
-    let ids = ids_to_run(&input.non_default_params, input.tools.as_deref())?;
+    let ids = ids_to_run(&input.non_default_params, input.tools.as_deref()).or_value_error()?;
     let (params, raised_text) = tool_params_fields(input.tool.as_ref());
     Ok(json!({
         "ids": ids,
@@ -189,7 +190,11 @@ fn named_credentials(input: &Input) -> HelperResult {
     let credentials = Arc::new(ScriptedCredentials {
         values: input.credentials.clone(),
     });
-    let registry = VectorStoreRegistry::new(stores, Arc::new(Utc::now), credentials);
+    let registry = VectorStoreRegistry {
+        stores,
+        clock: Arc::new(Utc::now),
+        credentials,
+    };
     let results = input
         .ids
         .iter()
@@ -199,11 +204,11 @@ fn named_credentials(input: &Input) -> HelperResult {
 }
 
 fn registry_with(stores: Vec<LiteLlmManagedVectorStore>) -> VectorStoreRegistry {
-    VectorStoreRegistry::new(
+    VectorStoreRegistry {
         stores,
-        Arc::new(Utc::now),
-        Arc::new(CredentialSnapshot::default()),
-    )
+        clock: Arc::new(Utc::now),
+        credentials: Arc::new(CredentialSnapshot::default()),
+    }
 }
 
 fn runtime() -> Result<Runtime, HelperFailure> {

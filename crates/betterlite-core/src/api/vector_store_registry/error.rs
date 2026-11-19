@@ -12,8 +12,8 @@ pub enum VectorStoreRegistryError {
     ParamType { field: &'static str },
     #[error("{field} must be a list of strings")]
     IdList { field: &'static str },
-    #[error("VectorStoreToolParams.__init__() got an unexpected keyword argument '{name}'")]
-    UnexpectedToolParam { name: &'static str },
+    #[error("rewrite_query is not a supported tool parameter")]
+    RewriteQueryNotSupported,
     #[error("tool parameter {field} cannot hold this JSON type")]
     ToolParamType { field: &'static str },
     #[error("the vector store record could not be encoded as JSON")]

@@ -48,18 +48,22 @@ where
 }
 
 pub(crate) fn registry(stores: Vec<LiteLlmManagedVectorStore>) -> VectorStoreRegistry {
-    VectorStoreRegistry::new(
+    VectorStoreRegistry {
         stores,
-        fixed_clock(),
-        Arc::new(CredentialSnapshot::default()),
-    )
+        clock: fixed_clock(),
+        credentials: Arc::new(CredentialSnapshot::default()),
+    }
 }
 
 pub(crate) fn registry_with_credentials(
     stores: Vec<LiteLlmManagedVectorStore>,
     credentials: Arc<dyn VectorStoreCredentials>,
 ) -> VectorStoreRegistry {
-    VectorStoreRegistry::new(stores, fixed_clock(), credentials)
+    VectorStoreRegistry {
+        stores,
+        clock: fixed_clock(),
+        credentials,
+    }
 }
 
 pub(crate) fn store(id: &str) -> LiteLlmManagedVectorStore {
