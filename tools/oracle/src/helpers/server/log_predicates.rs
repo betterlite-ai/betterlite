@@ -42,16 +42,15 @@ fn parse_stamp(text: &str) -> Result<DateTime<Utc>, Box<HelperError>> {
     let naive = NaiveDateTime::parse_from_str(trimmed, STAMP_FORMAT)
         .ok()
         .or_else(|| {
-            NaiveDate::parse_from_str(trimmed, DATE_FORMAT)
-                .ok()
-                .and_then(|date| date.and_hms_opt(0, 0, 0))
+            let date = NaiveDate::parse_from_str(trimmed, DATE_FORMAT).ok()?;
+            date.and_hms_opt(0, 0, 0)
         });
-    let Some(naive) = naive else {
+    let Some(stamp) = naive else {
         return Err(failure(
             "the case needs a '%Y-%m-%d %H:%M:%S' or '%Y-%m-%d' stamp",
         ));
     };
-    Ok(DateTime::from_naive_utc_and_offset(naive, Utc))
+    Ok(DateTime::from_naive_utc_and_offset(stamp, Utc))
 }
 
 fn search_answer(search: &str, start: &str, end: &str, next_param_index: usize) -> HelperResult {
