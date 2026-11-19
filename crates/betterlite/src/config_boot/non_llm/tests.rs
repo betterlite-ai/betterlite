@@ -3,6 +3,7 @@
 use std::io::Error;
 use std::path::Path;
 use std::sync::Mutex;
+use std::sync::PoisonError;
 
 use betterlite_config::sections::settings::JsonValue;
 
@@ -33,7 +34,7 @@ impl RecordingRegistries {
         let failed = self.fail_at.is_some_and(|step| call.starts_with(step));
         self.calls
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .unwrap_or_else(PoisonError::into_inner)
             .push(call);
         if failed {
             return Err(ConfigBootError::Step {

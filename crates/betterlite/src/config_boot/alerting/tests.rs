@@ -2,6 +2,7 @@
 
 use std::io::Error;
 use std::sync::Mutex;
+use std::sync::PoisonError;
 
 use betterlite_config::sections::settings::JsonValue;
 
@@ -47,7 +48,7 @@ impl AlertingPort for RecordingAlerting {
         );
         self.updates
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .unwrap_or_else(PoisonError::into_inner)
             .push(call);
         Ok(())
     }
@@ -59,7 +60,7 @@ impl AlertingPort for RecordingAlerting {
     ) -> Result<(), ConfigBootError> {
         self.loggers
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .unwrap_or_else(PoisonError::into_inner)
             .push(format!("{name}:{}", alerting_args.is_some()));
         if self.fail_logger_for == Some(name) {
             return Err(ConfigBootError::Step {
