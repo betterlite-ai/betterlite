@@ -1,0 +1,11 @@
+model_list:
+  - model_name: gpt
+    litellm_params:
+      model: openai/gpt-4o-mini
+    model_info:
+      access_windows:
+        - {start: "09:00", end: "09:00", timezone: UTC, team_ids: [team-a]}
+        - {start: "25:00", end: "07:00", timezone: UTC, team_ids: [team-a]}
+        - {start: "09:00", end: "17:00", timezone: Mars/Olympus, team_ids: [team-a]}
+        - {start: "09:00", end: "17:00", timezone: UTC, team_ids: []}
+        - {start: "09:00", end: "17:00", timezone: UTC, team_ids: [team-a], colour: blue}
