@@ -1,0 +1,53 @@
+task: B6100
+deviations:
+  - what: >-
+      A /models body that is not {"data":[{"id":..}]} becomes EdenAiError with status 500 and a
+      message that names the missing piece (JSON, data or id).
+    why: >-
+      LiteLLM lets the pydantic ValidationError escape from _EdenAIModelCatalog.model_validate, so
+      the proxy reports a generic 500 with no field name.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/edenai/chat/transformation.py#L143
+  - what: >-
+      A stream_options value on a stream request that is not a JSON object is a 400 error naming
+      the field.
+    why: >-
+      LiteLLM's _OPTIONAL_MAPPING TypeAdapter raises a pydantic ValidationError out of
+      transform_request, which reaches the client as a generic 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/edenai/chat/transformation.py#L42-L44
+  - what: >-
+      Authorization and Content-Type replace a caller header whatever its spelling, so a caller
+      "authorization" or "content-type" key is dropped instead of staying beside the added header.
+    why: >-
+      LiteLLM merges the caller map with a dict spread on the exact spelling, so a differently
+      spelled caller key survives and both headers go out; betterlite's header map holds one entry
+      per name, and a caller value must not override the resolved key.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/edenai/common_utils.py#L61-L72
+  - what: >-
+      A cost larger than the decimal cost type holds, or a non-finite one, reads as no cost.
+    why: >-
+      LiteLLM's cost is a Python float, so a value like 1e400 becomes inf and is written into the
+      response; betterlite's cost is B1717's decimal, and writing inf is not possible, so the
+      unrepresentable cost is dropped rather than recorded as Infinity.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/edenai/common_utils.py#L26-L27
+kept_bugs:
+  - what: >-
+      The /models URL appends "/models" to the resolved base without trimming trailing slashes, so
+      a base ending in "/" produces a double slash.
+    why: >-
+      LiteLLM formats the resolved base directly here while endpoint_url trims it; a setup that
+      configures a trailing-slash base gets the double-slash path from LiteLLM, so betterlite
+      sends the same URL.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/edenai/chat/transformation.py#L140
+  - what: >-
+      The /models catalog request carries no Authorization header even when a key resolves.
+    why: >-
+      LiteLLM calls the shared module client with the URL only; the catalog is public on Eden, and
+      the caller that sends the GET owns its headers (B8311).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/edenai/chat/transformation.py#L140-L142
+  - what: >-
+      A streamed chat chunk's cost is dropped when the parsed chunk carries no usage.
+    why: >-
+      LiteLLM sets usage.cost only when both a cost and a Usage object exist, so a setup reading
+      the per-chunk cost of a usage-less chunk sees none, and the streamed total comes from the
+      final usage chunk instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/edenai/chat/transformation.py#L47-L54
