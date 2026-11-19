@@ -95,16 +95,12 @@ pub(crate) fn with_spans(state: DebugRoutesState, spans: Vec<RecordedSpan>) -> D
     }
 }
 
-pub(crate) fn empty_environment() -> BTreeMap<String, String> {
-    BTreeMap::new()
-}
-
-pub(crate) fn environment(profile: &str) -> BTreeMap<String, String> {
-    BTreeMap::from([("LITELLM_PROFILE".to_owned(), profile.to_owned())])
-}
-
-pub(crate) fn router(state: DebugRoutesState, environment: &BTreeMap<String, String>) -> Router {
-    debug_router(state, environment)
+pub(crate) fn router(state: DebugRoutesState, profile: Option<&str>) -> Router {
+    let mut environment: BTreeMap<String, String> = BTreeMap::new();
+    if let Some(value) = profile {
+        environment.insert("LITELLM_PROFILE".to_owned(), value.to_owned());
+    }
+    debug_router(state, &environment)
 }
 
 pub(crate) fn protected(router: Router) -> Router {

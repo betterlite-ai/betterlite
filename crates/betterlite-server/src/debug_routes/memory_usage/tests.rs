@@ -7,9 +7,7 @@ use rstest::rstest;
 use crate::debug_routes::test_support;
 
 fn router_with(profile: Option<&str>) -> Router {
-    let environment =
-        profile.map_or_else(test_support::empty_environment, test_support::environment);
-    test_support::protected(test_support::router(test_support::state(), &environment))
+    test_support::protected(test_support::router(test_support::state(), profile))
 }
 
 #[rstest]
@@ -48,10 +46,7 @@ async fn answers_501_when_profiling_is_on(#[case] profile: Option<&str>) {
 
 #[tokio::test]
 async fn refuses_a_request_without_a_key() {
-    let router = test_support::router(
-        test_support::state(),
-        &test_support::environment("true"),
-    );
+    let router = test_support::router(test_support::state(), Some("true"));
     let (status, text) = test_support::call(router, "GET", "/memory-usage", None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert!(text.contains("\"type\":\"auth_error\""));

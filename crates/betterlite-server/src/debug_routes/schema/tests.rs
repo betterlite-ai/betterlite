@@ -6,8 +6,9 @@ use betterlite_openapi::document_builder::{
 };
 use betterlite_openapi::llm_request_bodies::LlmRequestSchemas;
 use betterlite_openapi::schema_transforms::tree::{JsonObject, JsonTree};
+use rstest::rstest;
 
-use crate::debug_routes::schema::documented_routes;
+use crate::debug_routes::schema::DOCUMENTED_ROUTES;
 use crate::debug_routes::test_support;
 
 const RUNTIME_ROUTES: [(&str, &str); 8] = [
@@ -40,13 +41,15 @@ fn paths(document: &JsonObject) -> &JsonObject {
 
 #[test]
 fn no_runtime_path_reaches_the_schema() {
-    let documentation = documented_routes();
-    assert!(documentation.is_empty());
-    let built = document(documentation);
+    assert!(DOCUMENTED_ROUTES.is_empty());
+    let built = document(DOCUMENTED_ROUTES.to_vec());
     let listed = paths(&built);
-    for (_, path) in RUNTIME_ROUTES {
-        assert!(!listed.contains_key(path), "{path} stays out of the schema");
-    }
+    assert!(
+        RUNTIME_ROUTES
+            .iter()
+            .all(|(_, path)| !listed.contains_key(*path)),
+        "none of the runtime paths is documented"
+    );
 }
 
 #[test]
@@ -65,11 +68,18 @@ fn the_builder_lists_a_route_it_is_given() {
     assert!(paths(&built).contains_key("/debug/asyncio-tasks"));
 }
 
+#[rstest]
+#[case::asyncio_tasks("GET", "/debug/asyncio-tasks")]
+#[case::memory_usage("GET", "/memory-usage")]
+#[case::cache_counts("GET", "/memory-usage-in-mem-cache")]
+#[case::cache_items("GET", "/memory-usage-in-mem-cache-items")]
+#[case::memory_summary("GET", "/debug/memory/summary")]
+#[case::memory_details("GET", "/debug/memory/details")]
+#[case::gc_configure("POST", "/debug/memory/gc/configure")]
+#[case::otel_spans("GET", "/otel-spans")]
 #[tokio::test]
-async fn every_runtime_path_is_registered() {
-    let router = test_support::router(test_support::state(), &test_support::environment("true"));
-    for (method, path) in RUNTIME_ROUTES {
-        let (status, _text) = test_support::call(router.clone(), method, path, None).await;
-        assert_eq!(status, StatusCode::UNAUTHORIZED, "{path} is registered");
-    }
+async fn every_runtime_path_is_registered(#[case] method: &str, #[case] path: &str) {
+    let router = test_support::router(test_support::state(), Some("true"));
+    let (status, _text) = test_support::call(router, method, path, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "{path} is registered");
 }

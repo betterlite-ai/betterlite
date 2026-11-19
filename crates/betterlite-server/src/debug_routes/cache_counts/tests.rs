@@ -24,10 +24,7 @@ async fn counts_cache_and_ttl_entries_of_every_component() {
         )),
         test_support::cache(test_support::dict(&[]), test_support::ttl(&["p"])),
     );
-    let router = test_support::protected(test_support::router(
-        state,
-        &test_support::empty_environment(),
-    ));
+    let router = test_support::protected(test_support::router(state, None));
     let (status, text) = test_support::call(
         router,
         "GET",
@@ -44,10 +41,7 @@ async fn counts_cache_and_ttl_entries_of_every_component() {
 
 #[tokio::test]
 async fn an_absent_router_cache_counts_zero_items() {
-    let router = test_support::protected(test_support::router(
-        test_support::state(),
-        &test_support::empty_environment(),
-    ));
+    let router = test_support::protected(test_support::router(test_support::state(), None));
     let (status, text) = test_support::call(
         router,
         "GET",
@@ -64,7 +58,7 @@ async fn an_absent_router_cache_counts_zero_items() {
 
 #[tokio::test]
 async fn refuses_a_request_without_a_key() {
-    let router = test_support::router(test_support::state(), &test_support::empty_environment());
+    let router = test_support::router(test_support::state(), None);
     let (status, text) =
         test_support::call(router, "GET", "/memory-usage-in-mem-cache", None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);

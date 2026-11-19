@@ -34,10 +34,7 @@ fn reads_an_explicit_true_process_flag() {
 }
 
 fn protected_router() -> Router {
-    test_support::protected(test_support::router(
-        test_support::state(),
-        &test_support::empty_environment(),
-    ))
+    test_support::protected(test_support::router(test_support::state(), None))
 }
 
 #[tokio::test]
@@ -84,7 +81,7 @@ async fn rejects_a_non_boolean_process_flag() {
 
 #[tokio::test]
 async fn refuses_a_request_without_a_key_before_reading_the_query() {
-    let router = test_support::router(test_support::state(), &test_support::empty_environment());
+    let router = test_support::router(test_support::state(), None);
     let (status, text) =
         test_support::call(router, "GET", "/debug/memory/details?top_n=abc", None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);

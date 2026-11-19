@@ -24,19 +24,13 @@ fn span(name: &str, parent: Option<u128>, start: u64) -> RecordedSpan {
 
 async fn response_with(spans: Vec<RecordedSpan>) -> (StatusCode, String) {
     let state = test_support::with_spans(test_support::state(), spans);
-    let router = test_support::protected(test_support::router(
-        state,
-        &test_support::empty_environment(),
-    ));
+    let router = test_support::protected(test_support::router(state, None));
     test_support::call(router, "GET", "/otel-spans", Some(test_support::MASTER_KEY)).await
 }
 
 #[tokio::test]
 async fn an_absent_exporter_answers_with_empty_results() {
-    let router = test_support::protected(test_support::router(
-        test_support::state(),
-        &test_support::empty_environment(),
-    ));
+    let router = test_support::protected(test_support::router(test_support::state(), None));
     let (status, text) =
         test_support::call(router, "GET", "/otel-spans", Some(test_support::MASTER_KEY)).await;
     assert_eq!(status, StatusCode::OK);
@@ -98,7 +92,7 @@ async fn keeps_a_full_width_trace_id() {
 
 #[tokio::test]
 async fn refuses_a_request_without_a_key() {
-    let router = test_support::router(test_support::state(), &test_support::empty_environment());
+    let router = test_support::router(test_support::state(), None);
     let (status, text) = test_support::call(router, "GET", "/otel-spans", None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert!(text.contains("\"type\":\"auth_error\""));

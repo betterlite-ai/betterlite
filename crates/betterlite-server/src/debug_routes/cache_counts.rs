@@ -12,9 +12,12 @@ mod tests;
 
 #[derive(Serialize)]
 struct CacheCountsBody {
-    num_items_in_user_api_key_cache: usize,
-    num_items_in_llm_router_cache: usize,
-    num_items_in_proxy_logging_obj_cache: usize,
+    #[serde(rename = "num_items_in_user_api_key_cache")]
+    user_api_key_items: usize,
+    #[serde(rename = "num_items_in_llm_router_cache")]
+    llm_router_items: usize,
+    #[serde(rename = "num_items_in_proxy_logging_obj_cache")]
+    proxy_logging_items: usize,
 }
 
 fn item_count(snapshot: &CacheSnapshot) -> usize {
@@ -40,9 +43,9 @@ pub(super) async fn handler(
     };
     let logging_items = item_count(&state.proxy_logging_cache.snapshot());
     Json(CacheCountsBody {
-        num_items_in_user_api_key_cache: user_items,
-        num_items_in_llm_router_cache: router_items,
-        num_items_in_proxy_logging_obj_cache: logging_items,
+        user_api_key_items: user_items,
+        llm_router_items: router_items,
+        proxy_logging_items: logging_items,
     })
     .into_response()
 }

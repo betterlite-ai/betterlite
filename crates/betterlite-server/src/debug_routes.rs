@@ -55,7 +55,8 @@ pub fn router(state: DebugRoutesState, environment: &dyn EnvironmentLookup) -> R
 
 // LiteLLM registers the profiling route at import time, and the mount happens once at startup
 fn profiling_enabled(environment: &dyn EnvironmentLookup) -> bool {
-    environment
-        .lookup(PROFILE_VARIABLE)
-        .is_some_and(|value| value.eq_ignore_ascii_case("true"))
+    environment.lookup(PROFILE_VARIABLE).is_some_and(|value| {
+        // ast-grep-ignore: no-python-habits - betterlite_env::flag also accepts 1, yes and on, and LiteLLM does not
+        value.eq_ignore_ascii_case("true")
+    })
 }

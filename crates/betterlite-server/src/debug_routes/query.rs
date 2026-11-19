@@ -82,7 +82,9 @@ pub(crate) fn boolean(
         return Ok(default);
     };
     match text.to_ascii_lowercase().as_str() {
+        // ast-grep-ignore: no-python-habits - pydantic's spellings for a declared query bool, not env text
         "1" | "on" | "t" | "true" | "y" | "yes" => Ok(true),
+        // ast-grep-ignore: no-python-habits - the same for the false spellings
         "0" | "off" | "f" | "false" | "n" | "no" => Ok(false),
         _ => Err(QueryError::NotABoolean { name }),
     }
