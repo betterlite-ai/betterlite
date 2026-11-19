@@ -18,6 +18,9 @@ description: >-
   and 25 wiring/corpus lines, totaling 540.
 scope:
   paths:
+  - "crates/betterlite-core/src/api/response_id_traversal/**"
+  - "crates/betterlite-core/src/api/response_id_traversal"
+  - "crates/betterlite-core/src/api/chat_response_stream/finalize.rs"
   - crates/betterlite-core/src/api/responses_stream_events.rs
   - crates/betterlite-core/src/api/responses_stream_events/**
   - crates/betterlite-core/fuzz/corpus/responses_stream_value/responses-event-*

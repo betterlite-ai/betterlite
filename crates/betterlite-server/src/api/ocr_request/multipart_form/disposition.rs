@@ -86,7 +86,7 @@ fn parse_params(disposition: &[u8]) -> Vec<(Vec<u8>, Vec<u8>)> {
     params
 }
 
-pub(super) fn disposition_param_bytes(disposition: &[u8], key: &str) -> Option<Vec<u8>> {
+pub(crate) fn disposition_param_bytes(disposition: &[u8], key: &str) -> Option<Vec<u8>> {
     let key_bytes = key.as_bytes();
     let mut result = None;
     for (segment_key, segment_value) in parse_params(disposition) {
