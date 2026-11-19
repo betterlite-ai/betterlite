@@ -1,5 +1,3 @@
-use betterlite_error::error::{ErrorClass, ErrorContext};
-use betterlite_logging::passthrough_stream_logging::object::StreamLoggingObject;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_event_records::records::{
     KnownResponseEvent, ResponsesAPIStreamingResponse,
@@ -8,14 +6,14 @@ use betterlite_openai::api::responses_objects::ResponsesApiResponse;
 use indexmap::IndexMap;
 
 use super::errors::DriverError;
+use super::fallback::unclassified;
 use super::live::Event;
 // ast-grep-ignore: no-long-names
 use crate::api::response_synthetic_events::builder::build_synthetic_response_events as build_events;
 use crate::api::response_synthetic_events::error::SyntheticEventsError;
 use crate::api::response_synthetic_events::stamping::ResponsesCostCalculator;
 use crate::api::responses_stream_events::{
-    BaseStreamStateInput, LoggingSnapshot, ResponsesApiBase, ResponsesStreamBaseState, StreamTimes,
-    base_stream_state,
+    BaseStreamStateInput, ResponsesStreamBaseState, base_stream_state,
 };
 use crate::api::responses_stream_hooks::ResponsesStreamHooks;
 use crate::api::responses_stream_hooks::logging::log_completed_response;
@@ -25,16 +23,8 @@ use crate::api::responses_stream_hooks::state::ResponsesStreamHookState;
 pub const CHUNK_SIZE: i64 = 5;
 
 pub struct SyntheticSetup<'setup> {
+    pub state: BaseStreamStateInput<'setup>,
     pub hooks: &'setup ResponsesStreamHooks<'setup>,
-    pub model: &'setup str,
-    pub custom_llm_provider: Option<&'setup str>,
-    pub litellm_metadata: Option<&'setup IndexMap<String, Json>>,
-    pub request_data: Option<&'setup IndexMap<String, Json>>,
-    pub call_type: Option<&'setup str>,
-    pub headers: &'setup IndexMap<String, String>,
-    pub api_base: &'setup dyn ResponsesApiBase,
-    pub logging: &'setup StreamLoggingObject,
-    pub times: StreamTimes,
     pub cache_hit: Option<bool>,
     pub persist_before_logging: bool,
 }
@@ -59,21 +49,7 @@ impl<'stream> SyntheticStream<'stream> {
         Calculator: ResponsesCostCalculator,
     {
         let mut events = build_events(&mut transformed, calculator, CHUNK_SIZE)?;
-        let mut state = {
-            let input = BaseStreamStateInput {
-                model: setup.model,
-                custom_llm_provider: setup.custom_llm_provider,
-                litellm_metadata: setup.litellm_metadata,
-                request_data: setup.request_data,
-                call_type: setup.call_type,
-                logging: LoggingSnapshot::read(setup.logging),
-                headers: setup.headers,
-                api_base: setup.api_base,
-                times: setup.times,
-                max_streaming_duration_seconds: None,
-            };
-            base_stream_state(&input)
-        };
+        let mut state = base_stream_state(&setup.state);
         state.completed_response_cache_hit = setup.cache_hit;
         state.persist_before_logging = setup.persist_before_logging;
         state.completed_response = events.last().cloned();
@@ -104,16 +80,7 @@ impl<'stream> SyntheticStream<'stream> {
             .await
             {
                 return Err(DriverError::Class {
-                    class: ErrorClass::Unclassified(Box::new(ErrorContext {
-                        message: failure.message,
-                        model: None,
-                        provider: None,
-                        max_retries: None,
-                        num_retries: None,
-                        body_type: None,
-                        body_param: None,
-                        body_code: None,
-                    })),
+                    class: unclassified(failure.message),
                 });
             }
         }

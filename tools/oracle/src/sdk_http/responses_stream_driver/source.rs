@@ -1,11 +1,11 @@
 use std::time::Duration;
 
 use betterlite_core::api::responses_stream_driver::errors::{TransportFailure, TransportKind};
-use betterlite_core::api::responses_stream_driver::source::{
-    PayloadSource as _, SourceFailure, StreamingSource, body_stream,
-};
+use betterlite_core::api::responses_stream_driver::source::{SourceFailure, classify};
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
+use betterlite_openai::stream::SseParser;
+use futures_util::StreamExt as _;
 use http::header::{AUTHORIZATION, HeaderValue};
 use http::{HeaderMap, Method};
 use serde::Serialize;
@@ -83,10 +83,25 @@ pub(super) async fn prefetch(
             "the mock answered the responses call with status {status}"
         )));
     }
-    let mut source = StreamingSource::new(body_stream(response));
+    let mut body = response.body_stream();
+    let mut parser = SseParser::default();
     let mut items = Opened::new();
-    while let Some(item) = source.next_payload().await {
-        items.push(item);
+    while let Some(chunk) = body.next().await {
+        let bytes = match chunk {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                items.push(Err(SourceFailure::Transport(classify(error))));
+                return Ok(items);
+            }
+        };
+        match parser.push(&bytes) {
+            Ok(payloads) => items.extend(payloads.into_iter().map(Ok)),
+            Err(error) => {
+                items.push(Err(SourceFailure::Decode(error.to_string())));
+                return Ok(items);
+            }
+        }
     }
+    items.extend(parser.finish().into_iter().map(Ok));
     Ok(items)
 }

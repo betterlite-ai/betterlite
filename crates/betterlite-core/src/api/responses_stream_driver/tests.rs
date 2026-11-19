@@ -26,24 +26,23 @@ use betterlite_openai::api::responses_event_records::records::ResponsesAPIStream
 use betterlite_openai::api::responses_objects::ResponsesApiResponse;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
-use futures_util::StreamExt as _;
 use indexmap::IndexMap;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use thiserror::Error;
 
 use super::errors::{DriverError, TransportFailure, TransportKind};
-use super::live::{Event, LiveStream, LiveStreamSetup, StreamEngine};
-use super::source::{
-    BodyStream, PayloadSource, PrefetchedSource, SourceFailure, StreamingSource, classify,
-};
+use super::live::{Event, LiveStream, StreamEngine};
+use super::source::{PayloadSource, PrefetchedSource, SourceFailure, classify};
 use super::synthetic::{SyntheticSetup, SyntheticStream, is_completed};
 use crate::api::api_boundaries::ApiLimits;
 use crate::api::response_synthetic_events::estimate::{
     EstimateRequest, TokenCountRequest, UsageTokenization,
 };
 use crate::api::response_synthetic_events::stamping::{CostTarget, ResponsesCostCalculator};
-use crate::api::responses_stream_events::{ResponsesApiBase, ResponsesEventTransform, StreamTimes};
+use crate::api::responses_stream_events::{
+    BaseStreamStateInput, LoggingSnapshot, ResponsesApiBase, ResponsesEventTransform, StreamTimes,
+};
 use crate::api::responses_stream_hooks::ResponsesStreamHooks;
 use crate::api::responses_stream_hooks::ports::{
     CacheWrite, ChunkDeploymentHook, ChunkHookCall, DynamicCacheObject, FailureDelivery,
@@ -575,12 +574,13 @@ impl Fixture {
                 details: IndexMap::new(),
                 limits: &self.limits,
             },
-            LiveStreamSetup {
+            BaseStreamStateInput {
                 model: "gpt-4o",
                 custom_llm_provider: Some("openai"),
                 litellm_metadata: None,
                 request_data: None,
                 call_type: Some("responses"),
+                logging: LoggingSnapshot::read(&self.logging),
                 headers: &self.headers,
                 api_base: &self.api_base,
                 times: StreamTimes {
@@ -603,19 +603,22 @@ impl Fixture {
         SyntheticStream::build(
             response,
             SyntheticSetup {
-                hooks: &self.hooks,
-                model: "gpt-4o",
-                custom_llm_provider: Some("openai"),
-                litellm_metadata: None,
-                request_data: None,
-                call_type: Some("responses"),
-                headers: &self.headers,
-                api_base: &self.api_base,
-                logging: &self.logging,
-                times: StreamTimes {
-                    now: timestamp(START),
-                    created_timestamp: CREATED_AT,
+                state: BaseStreamStateInput {
+                    model: "gpt-4o",
+                    custom_llm_provider: Some("openai"),
+                    litellm_metadata: None,
+                    request_data: None,
+                    call_type: Some("responses"),
+                    logging: LoggingSnapshot::read(&self.logging),
+                    headers: &self.headers,
+                    api_base: &self.api_base,
+                    times: StreamTimes {
+                        now: timestamp(START),
+                        created_timestamp: CREATED_AT,
+                    },
+                    max_streaming_duration_seconds: None,
                 },
+                hooks: &self.hooks,
                 cache_hit,
                 persist_before_logging,
             },
@@ -707,37 +710,6 @@ async fn live_sse_delivery_yields_events_and_finishes() {
     assert!(dispatches[0].prefer_async_handlers);
     assert!(success.async_calls().is_empty());
     assert!(failure.classes().is_empty());
-}
-
-#[tokio::test]
-async fn streaming_source_frames_events_split_across_reads() {
-    let body: BodyStream = futures_util::stream::iter(vec![
-        Ok(b"data: {\"type\":\"response.cre".to_vec()),
-        Ok(b"ated\"}\n\ndata: [DONE]\n".to_vec()),
-        Ok(b"\n".to_vec()),
-    ])
-    .boxed();
-    let mut source = StreamingSource::new(body);
-    match source.next_payload().await {
-        Some(Ok(payload)) => assert_eq!(payload, b"{\"type\":\"response.created\"}".to_vec()),
-        _ => panic!("the first event is framed"),
-    }
-    match source.next_payload().await {
-        Some(Ok(payload)) => assert_eq!(payload, DONE.as_bytes().to_vec()),
-        _ => panic!("the done marker is framed"),
-    }
-    assert!(source.next_payload().await.is_none());
-}
-
-#[tokio::test]
-async fn streaming_source_flushes_an_unterminated_frame_at_eof() {
-    let body: BodyStream = futures_util::stream::iter(vec![Ok(b"data: [DONE]".to_vec())]).boxed();
-    let mut source = StreamingSource::new(body);
-    match source.next_payload().await {
-        Some(Ok(payload)) => assert_eq!(payload, DONE.as_bytes().to_vec()),
-        _ => panic!("the unterminated frame is flushed"),
-    }
-    assert!(source.next_payload().await.is_none());
 }
 
 #[tokio::test]

@@ -8,8 +8,8 @@ call:
     api_key: sk-test
     timeout_seconds: 30
     runs:
-      - {mode: live_sync, steps: [drain]}
-      - {mode: live_async, steps: [drain]}
+      - {mode: live, asynchronous: false, steps: [drain]}
+      - {mode: live, asynchronous: true, steps: [drain]}
 upstream:
   - status: 200
     headers: {content-type: text/event-stream}

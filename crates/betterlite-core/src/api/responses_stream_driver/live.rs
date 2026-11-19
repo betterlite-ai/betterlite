@@ -15,8 +15,8 @@ use crate::api::api_boundaries::ApiLimits;
 use crate::api::response_synthetic_events::estimate::UsageTokenization;
 use crate::api::response_synthetic_events::stamping::ResponsesCostCalculator;
 use crate::api::responses_stream_events::{
-    BaseStreamStateInput, LoggingSnapshot, ResponsesApiBase, ResponsesEventProcessor,
-    ResponsesEventTransform, ResponsesStreamBaseState, StreamTimes, base_stream_state,
+    BaseStreamStateInput, ResponsesEventProcessor, ResponsesEventTransform,
+    ResponsesStreamBaseState, base_stream_state,
 };
 use crate::api::responses_stream_hooks::ResponsesStreamHooks;
 use crate::api::responses_stream_hooks::deployment::{ChunkHookContext, chunk_hook};
@@ -26,18 +26,6 @@ use crate::api::responses_stream_hooks::ports::Dispatch;
 use crate::api::responses_stream_hooks::state::ResponsesStreamHookState;
 
 pub type Event = ResponsesAPIStreamingResponse;
-
-pub struct LiveStreamSetup<'setup> {
-    pub model: &'setup str,
-    pub custom_llm_provider: Option<&'setup str>,
-    pub litellm_metadata: Option<&'setup IndexMap<String, Json>>,
-    pub request_data: Option<&'setup IndexMap<String, Json>>,
-    pub call_type: Option<&'setup str>,
-    pub headers: &'setup IndexMap<String, String>,
-    pub api_base: &'setup dyn ResponsesApiBase,
-    pub times: StreamTimes,
-    pub max_streaming_duration_seconds: Option<f64>,
-}
 
 pub struct StreamEngine<'stream, Transform, Tokenization, Calculator>
 where
@@ -76,21 +64,9 @@ where
     #[must_use]
     pub fn new(
         engine: StreamEngine<'stream, Transform, Tokenization, Calculator>,
-        setup: LiveStreamSetup<'_>,
+        input: BaseStreamStateInput<'_>,
         source: Box<dyn PayloadSource>,
     ) -> Self {
-        let input = BaseStreamStateInput {
-            model: setup.model,
-            custom_llm_provider: setup.custom_llm_provider,
-            litellm_metadata: setup.litellm_metadata,
-            request_data: setup.request_data,
-            call_type: setup.call_type,
-            logging: LoggingSnapshot::read(engine.logging),
-            headers: setup.headers,
-            api_base: setup.api_base,
-            times: setup.times,
-            max_streaming_duration_seconds: setup.max_streaming_duration_seconds,
-        };
         Self {
             state: base_stream_state(&input),
             callback: ResponsesStreamHookState::default(),
@@ -139,7 +115,29 @@ where
             self.check_duration()?;
             // httpx decodes the body with replacement characters, so an unreadable frame skips like malformed JSON
             let text = String::from_utf8_lossy(&payload);
-            let result = self.process(text.as_ref(), dispatch).await?;
+            let outcome = {
+                let mut processor = ResponsesEventProcessor {
+                    transform: self.engine.transform,
+                    tokenization: self.engine.tokenization,
+                    calculator: self.engine.calculator,
+                    hooks: self.engine.hooks,
+                    details: &mut self.engine.details,
+                    dispatch,
+                    limits: self.engine.limits,
+                };
+                processor
+                    .process(
+                        text.as_ref(),
+                        &mut self.state,
+                        &mut self.callback,
+                        self.engine.logging,
+                    )
+                    .await
+            };
+            let result = outcome.map_err(|error| DriverError::Class {
+                class: error
+                    .error_class(&self.state.model, self.state.custom_llm_provider.as_deref()),
+            })?;
             if self.state.finished {
                 self.raise_if_ended().await?;
                 return Ok(None);
@@ -163,35 +161,6 @@ where
                 return Ok(Some(event));
             }
         }
-    }
-
-    async fn process(
-        &mut self,
-        payload: &str,
-        dispatch: Dispatch,
-    ) -> Result<Option<Event>, DriverError> {
-        let outcome = {
-            let mut processor = ResponsesEventProcessor {
-                transform: self.engine.transform,
-                tokenization: self.engine.tokenization,
-                calculator: self.engine.calculator,
-                hooks: self.engine.hooks,
-                details: &mut self.engine.details,
-                dispatch,
-                limits: self.engine.limits,
-            };
-            processor
-                .process(
-                    payload,
-                    &mut self.state,
-                    &mut self.callback,
-                    self.engine.logging,
-                )
-                .await
-        };
-        outcome.map_err(|error| DriverError::Class {
-            class: error.error_class(&self.state.model, self.state.custom_llm_provider.as_deref()),
-        })
     }
 
     fn check_duration(&self) -> Result<(), DriverError> {

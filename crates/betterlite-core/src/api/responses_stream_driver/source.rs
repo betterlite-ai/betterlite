@@ -2,26 +2,13 @@ use std::collections::VecDeque;
 
 use async_trait::async_trait;
 use betterlite_http::error::HttpError;
-use betterlite_http::proxy::{StreamResponse, timed_out};
-use betterlite_openai::stream::SseParser;
-use futures_util::StreamExt as _;
-use futures_util::stream::BoxStream;
+use betterlite_http::proxy::timed_out;
 
 use super::errors::{TransportFailure, TransportKind};
 
-// the body arrives in order, so a read failure ends the stream where it happened
-pub type BodyStream = BoxStream<'static, Result<Vec<u8>, TransportFailure>>;
-
 // B173's reqwest errors map onto the httpx family LiteLLM's iterator branches on.
 #[must_use]
-pub fn body_stream(response: StreamResponse) -> BodyStream {
-    response
-        .body_stream()
-        .map(|chunk| chunk.map_err(classify))
-        .boxed()
-}
-
-pub(super) fn classify(error: HttpError) -> TransportFailure {
+pub fn classify(error: HttpError) -> TransportFailure {
     match timed_out(error) {
         HttpError::Request(source) => {
             TransportFailure::new(TransportKind::ReadError, &source.to_string())
@@ -64,56 +51,5 @@ impl PrefetchedSource {
 impl PayloadSource for PrefetchedSource {
     async fn next_payload(&mut self) -> Option<Result<Vec<u8>, SourceFailure>> {
         self.items.pop_front()
-    }
-}
-
-// one SSE event per payload keeps B005's framing out of the iterator
-pub struct StreamingSource {
-    body: BodyStream,
-    parser: SseParser,
-    ready: VecDeque<Vec<u8>>,
-    ended: bool,
-}
-
-impl StreamingSource {
-    #[must_use]
-    pub fn new(body: BodyStream) -> Self {
-        Self {
-            body,
-            parser: SseParser::default(),
-            ready: VecDeque::new(),
-            ended: false,
-        }
-    }
-}
-
-#[async_trait]
-impl PayloadSource for StreamingSource {
-    async fn next_payload(&mut self) -> Option<Result<Vec<u8>, SourceFailure>> {
-        loop {
-            if let Some(payload) = self.ready.pop_front() {
-                return Some(Ok(payload));
-            }
-            if self.ended {
-                return None;
-            }
-            match self.body.next().await {
-                Some(Ok(bytes)) => match self.parser.push(&bytes) {
-                    Ok(payloads) => self.ready.extend(payloads),
-                    Err(error) => {
-                        self.ended = true;
-                        return Some(Err(SourceFailure::Decode(error.to_string())));
-                    }
-                },
-                Some(Err(failure)) => {
-                    self.ended = true;
-                    return Some(Err(SourceFailure::Transport(failure)));
-                }
-                None => {
-                    self.ended = true;
-                    self.ready.extend(self.parser.finish());
-                }
-            }
-        }
     }
 }

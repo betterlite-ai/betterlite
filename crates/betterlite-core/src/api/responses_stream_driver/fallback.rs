@@ -23,18 +23,22 @@ pub(super) fn source_error(failure: SourceFailure) -> DriverError {
     match failure {
         SourceFailure::Transport(failure) => DriverError::Transport(failure),
         SourceFailure::Decode(message) => DriverError::Class {
-            class: ErrorClass::Unclassified(Box::new(ErrorContext {
-                message,
-                model: None,
-                provider: None,
-                max_retries: None,
-                num_retries: None,
-                body_type: None,
-                body_param: None,
-                body_code: None,
-            })),
+            class: unclassified(message),
         },
     }
+}
+
+pub(super) fn unclassified(message: String) -> ErrorClass {
+    ErrorClass::Unclassified(Box::new(ErrorContext {
+        message,
+        model: None,
+        provider: None,
+        max_retries: None,
+        num_retries: None,
+        body_type: None,
+        body_param: None,
+        body_code: None,
+    }))
 }
 
 pub(super) fn timeout_class(timeout: &StreamDurationTimeout) -> ErrorClass {

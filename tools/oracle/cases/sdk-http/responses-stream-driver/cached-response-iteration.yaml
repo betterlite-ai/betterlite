@@ -8,10 +8,12 @@ call:
     api_key: sk-test
     timeout_seconds: 30
     runs:
-      - mode: cached_sync
+      - mode: cached
+        asynchronous: false
         steps: [next, drain]
         response: {"id":"resp_cached","created_at":1,"object":"response","status":"completed","model":"gpt-4o","output":[]}
-      - mode: cached_async
+      - mode: cached
+        asynchronous: true
         steps: [next, drain]
         response: {"id":"resp_cached","created_at":1,"object":"response","status":"completed","model":"gpt-4o","output":[]}
 upstream: []

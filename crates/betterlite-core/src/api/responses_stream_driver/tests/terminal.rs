@@ -4,14 +4,14 @@ use betterlite_error::error::ErrorClass;
 use indexmap::IndexMap;
 use rstest::rstest;
 
-use super::super::live::{Event, LiveStream, LiveStreamSetup, StreamEngine};
+use super::super::live::{Event, LiveStream, StreamEngine};
 use super::{
     BAD_REQUEST, COMPLETED, CREATED, CREATED_AT, CountingSource, DELTA, FailurePort, Fixture,
     IN_PROGRESS, LATE, Ports, QUEUED, RATE_LIMITED, RecordingCache, ReplacingHook, SERVER_ERROR,
     START, SuccessPort, caching_handler, class_of, connection_message, delta, event_type, fallback,
     fixed_clock, payload, poll_count, prefetched, scripted_clock, timeout_details, timestamp,
 };
-use crate::api::responses_stream_events::StreamTimes;
+use crate::api::responses_stream_events::{BaseStreamStateInput, LoggingSnapshot, StreamTimes};
 use crate::api::responses_stream_hooks::failure::await_pending_logging;
 use crate::api::responses_stream_hooks::ports::Dispatch;
 #[rstest]
@@ -245,12 +245,13 @@ async fn a_stream_without_a_provider_names_provider_in_the_early_end_message() {
             details: IndexMap::new(),
             limits: &fixture.limits,
         },
-        LiveStreamSetup {
+        BaseStreamStateInput {
             model: "gpt-4o",
             custom_llm_provider: None,
             litellm_metadata: None,
             request_data: None,
             call_type: Some("responses"),
+            logging: LoggingSnapshot::read(&fixture.logging),
             headers: &fixture.headers,
             api_base: &fixture.api_base,
             times: StreamTimes {

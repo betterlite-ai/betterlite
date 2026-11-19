@@ -8,14 +8,10 @@ pub type Outcome = Vec<RunOutcome>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Mode {
-    LiveSync,
-    LiveAsync,
-    ScriptedSync,
-    ScriptedAsync,
-    FakeSync,
-    FakeAsync,
-    CachedSync,
-    CachedAsync,
+    Live,
+    Scripted,
+    Fake,
+    Cached,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -54,6 +50,7 @@ pub struct Call {
 #[serde(deny_unknown_fields)]
 pub struct RunSpec {
     pub mode: Mode,
+    pub asynchronous: bool,
     pub steps: Vec<Step>,
     #[serde(default)]
     pub payloads: Vec<String>,

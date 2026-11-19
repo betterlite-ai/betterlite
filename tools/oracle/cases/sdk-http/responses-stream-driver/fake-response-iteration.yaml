@@ -8,10 +8,12 @@ call:
     api_key: sk-test
     timeout_seconds: 30
     runs:
-      - mode: fake_sync
+      - mode: fake
+        asynchronous: false
         steps: [next, drain]
         response: {"id":"resp_fake","created_at":1,"object":"response","status":"completed","model":"gpt-4o","output":[]}
-      - mode: fake_async
+      - mode: fake
+        asynchronous: true
         steps: [next, drain]
         response: {"id":"resp_fake","created_at":1,"object":"response","status":"completed","model":"gpt-4o","output":[]}
 upstream: []
