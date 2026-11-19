@@ -21,4 +21,4 @@ compare:
   headers_present: []
   upstream_headers: [authorization, content-type]
   ignore:
-    - {pointer: /fine_tuning_create/value/runs/1/failure/message, why: LiteLLM's message is the SDK's "Error code: 400 - {body}" repr, which betterlite does not reproduce}
+    - {pointer: /fine_tuning_create/value/runs/1/failure/message, why: "LiteLLM's message is the SDK's \"Error code: 400 - {body}\" repr, which betterlite does not reproduce"}

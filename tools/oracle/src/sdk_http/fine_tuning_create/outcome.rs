@@ -2,7 +2,7 @@ use crate::sdk_http::error::SdkHttpError;
 use crate::sdk_http::result::Failure;
 use betterlite_openai::fine_tuning::job::FineTuneJob;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::Value;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -19,7 +19,6 @@ pub struct RunOutcome {
 }
 // the fields of the OpenAI-spec job both sides keep, under the SDK's own names
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct JobView {
     pub id: String,
     pub object: String,
@@ -35,21 +34,6 @@ pub struct JobView {
     pub hyperparameters: Value,
 }
 pub fn job_view(job: &FineTuneJob) -> Result<JobView, SdkHttpError> {
-    let value = serde_json::to_value(job).map_err(SdkHttpError::Serialize)?;
-    let field = |name: &str| value.get(name).cloned().unwrap_or(Value::Null);
-    serde_json::from_value(json!({
-        "id": field("id"),
-        "object": field("object"),
-        "created_at": field("created_at"),
-        "model": field("model"),
-        "status": field("status"),
-        "training_file": field("training_file"),
-        "validation_file": field("validation_file"),
-        "organization_id": field("organization_id"),
-        "result_files": field("result_files"),
-        "fine_tuned_model": field("fine_tuned_model"),
-        "seed": field("seed"),
-        "hyperparameters": field("hyperparameters"),
-    }))
-    .map_err(SdkHttpError::Serialize)
+    serde_json::from_value(serde_json::to_value(job).map_err(SdkHttpError::Serialize)?)
+        .map_err(SdkHttpError::Serialize)
 }

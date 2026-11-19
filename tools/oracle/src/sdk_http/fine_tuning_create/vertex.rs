@@ -1,6 +1,5 @@
 use super::native::{SendError, seconds};
 use betterlite_config::proxy::ProxyPolicy;
-use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
 use betterlite_config::types::ProxyTrust;
 use betterlite_core::api::fine_tuning_create::VertexCreateCall;
 use betterlite_http::proxy::outbound::OutboundRequest;
@@ -10,7 +9,6 @@ use betterlite_models::catalog::BundledCatalog;
 use betterlite_models::decisions::{Extra, Json};
 use betterlite_openai::fine_tuning::job::FineTuneJob;
 use betterlite_vertex::provider_metadata::timestamp::LocalTimeContext;
-use betterlite_vertex::token_cache::error::CredentialCacheError;
 use betterlite_vertex::token_cache::probe::AccessToken;
 use betterlite_vertex::vertex_fine_tuning::execution::TuningTransport;
 use betterlite_vertex::vertex_fine_tuning::execution::create::{
@@ -20,14 +18,12 @@ use betterlite_vertex::vertex_fine_tuning::records::request::OriginalHyperparame
 use jiff::tz::TimeZone;
 use secrecy::SecretString;
 use std::collections::BTreeMap;
-use std::future::{Ready, ready};
+use std::future::ready;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 use url::Position;
 
-const TOKEN: &str = "vertex-test";
 // the source's mock auth returns this project, so the native seam returns the same one
-const PROJECT: &str = "mock-project-id";
 pub async fn create(
     call: VertexCreateCall,
     urls: Arc<Mutex<Vec<String>>>,
@@ -61,18 +57,14 @@ pub async fn create(
         local: &local,
         timeout: seconds(timeout).and_then(|value| Duration::try_from_secs_f64(value).ok()),
     };
-    create_tuning_job(&transport, &request, lookup)
-        .await
-        .map_err(SendError::from)
-}
-fn lookup(
-    _credentials: Option<&ConfiguredCredentials>,
-    _project: Option<&str>,
-) -> Ready<Result<AccessToken, CredentialCacheError>> {
-    ready(Ok(AccessToken {
-        token: SecretString::from(TOKEN.to_owned()),
-        project: PROJECT.to_owned(),
-    }))
+    create_tuning_job(&transport, &request, |_, _| {
+        ready(Ok(AccessToken {
+            token: SecretString::from("vertex-test".to_owned()),
+            project: "mock-project-id".to_owned(),
+        }))
+    })
+    .await
+    .map_err(SendError::from)
 }
 // LiteLLM reads adapter_size from the caller's original map, and a falsy value never reaches Vertex
 fn adapter_size(original: &Extra) -> Option<String> {

@@ -2,7 +2,7 @@ task: B1052
 deviations:
   - what: Debug logging of acreate_fine_tuning_job kwargs redacts credential values; the source prints the kwargs representation.
     why: Credential output is forbidden by repository policy; the diagnostic event is kept without secret bytes.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L96-L96
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L94-L94
   - what: A numeric adapter_size in hyperparameters reaches Vertex as a decimal string, while LiteLLM copies the caller's number unchanged.
     why: B1384 types adapter_size as the declared literal string; the declared type is the parity boundary.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/fine_tuning/handler.py#L137-L140

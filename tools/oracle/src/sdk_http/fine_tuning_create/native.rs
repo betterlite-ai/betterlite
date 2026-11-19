@@ -15,11 +15,11 @@ use betterlite_core::api::fine_tuning_create::{
 };
 use betterlite_core::api::resource_sdk_settings::ResourceSdkSettings;
 use betterlite_core::api::resource_sdk_settings::timeout::FineTuningTimeout;
-use betterlite_models::decisions::{Extra, Json};
-use betterlite_openai::fine_tuning::client::{ClientSettings, SdkError};
+use betterlite_models::decisions::Json;
+use betterlite_openai::fine_tuning::client::{ClientSettings, Connection, SdkError};
 use betterlite_openai::fine_tuning::error::FineTuneError;
 use betterlite_openai::fine_tuning::job::FineTuneJob;
-use betterlite_openai::fine_tuning::{Connection, JobRequest, request_fine_tuning_job};
+use betterlite_openai::fine_tuning::{JobRequest, request_fine_tuning_job};
 use betterlite_vertex::vertex_fine_tuning::execution::TuningExecutionError;
 use secrecy::SecretString;
 use std::collections::BTreeMap;

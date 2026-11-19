@@ -1,10 +1,10 @@
 import asyncio
-from collections.abc import Coroutine
-from typing import Literal, NotRequired, Protocol, TypedDict
+from collections.abc import Awaitable, Coroutine
+from typing import Literal, NotRequired, Protocol, TypeAlias, TypedDict
 
 import httpx
-import litellm
 import openai
+from litellm import acreate_fine_tuning_job, create_fine_tuning_job
 from litellm.fine_tuning import main as fine_tuning_main
 from litellm.integrations.gcs_bucket import gcs_bucket_mock_client
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
@@ -14,6 +14,9 @@ from pydantic import JsonValue as Json
 from typing_extensions import override
 
 from openai_chat import Failure, project_failure
+
+# LiteLLM's sync create returns the job, or a coroutine of it on its internal async path
+CreateAnswer: TypeAlias = LiteLLMFineTuningJob | Awaitable[LiteLLMFineTuningJob]
 
 
 class RunParams(BaseModel):
@@ -137,7 +140,7 @@ class VertexRecorder(httpx.AsyncBaseTransport):
         return await self.inner.handle_async_request(forwarded)
 
 
-def request_options(run: Run, api_base: str) -> CreateOptions:
+def request_options(run: Run, api_base: str) -> dict[str, Json]:
     options: CreateOptions = {
         "model": run.model,
         "training_file": run.training_file,
@@ -162,18 +165,21 @@ def request_options(run: Run, api_base: str) -> CreateOptions:
     }
     if run.params.training_type is not None:
         options["trainingType"] = run.params.training_type
-    return options
+    return TypeAdapter(dict[str, Json]).validate_python(options)
 
 
 def invoke(run: Run, api_base: str) -> LiteLLMFineTuningJob:
     options = request_options(run, api_base)
     if run.is_async:
-        held: Coroutine[None, None, LiteLLMFineTuningJob] = litellm.acreate_fine_tuning_job(
+        held: Coroutine[None, None, LiteLLMFineTuningJob] = acreate_fine_tuning_job(
             **options
         )
         return asyncio.run(held)
-    answer: LiteLLMFineTuningJob = litellm.create_fine_tuning_job(**options)
-    return answer
+    answer: CreateAnswer = create_fine_tuning_job(**options)
+    if asyncio.iscoroutine(answer):
+        pending: Coroutine[None, None, LiteLLMFineTuningJob] = answer
+        return asyncio.run(pending)
+    return TypeAdapter(LiteLLMFineTuningJob).validate_python(answer)
 
 
 def run_one(run: Run, api_base: str) -> RunOutcome:
