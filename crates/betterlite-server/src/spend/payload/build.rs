@@ -41,7 +41,7 @@ where
         CompletionStart::Null => None,
         CompletionStart::At(moment) => Some(instant(moment, zone, "completionStartTime")?),
     };
-    let params = Json::Object(context.litellm_params.as_ref().clone());
+    let params = Json::Object(context.litellm_params.clone().into_owned());
     let metadata_object = Json::Object(context.metadata.clone());
     let kwargs_object = Json::Object(context.kwargs.clone());
     let (total, prompt, completion) = token_totals(context, &pieces.usage)?;
