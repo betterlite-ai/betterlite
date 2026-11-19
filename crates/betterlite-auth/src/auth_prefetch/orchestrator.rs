@@ -42,15 +42,7 @@ impl OwnerPrefetch<'_> {
             return Ok(());
         };
         let remaining = missing_in_memory(&missing, memory);
-        fill_from_db(
-            refs,
-            &remaining,
-            self.cache,
-            redis.as_deref(),
-            database,
-            self.clock,
-        )
-        .await
+        fill_from_db(refs, &remaining, self.cache, database, self.clock).await
     }
 }
 // the request path binds counters before warming rows; the model authorization check runs earlier

@@ -8,7 +8,10 @@ const VARIABLE: &str = "DEFAULT_IN_MEMORY_TTL";
 const DEFAULT_ORGANIZATION_TTL: f64 = 5.0;
 
 #[derive(Debug, Default, serde::Deserialize)]
-pub struct Raw {}
+pub struct Raw {
+    #[serde(skip)]
+    _unused: (),
+}
 // only the organization entries read this; membership is fixed at 5 and the registry cap at 30
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Settings {

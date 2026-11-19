@@ -165,8 +165,8 @@ fn each_entry_ttl() {
             Some(MANAGEMENT_TTL),
         ]
     );
-    assert_eq!(MEMBERSHIP_AUTH_TTL, 5.0);
-    assert_eq!(REGISTRY_ERROR_TTL, 30.0);
+    assert_eq!(MEMBERSHIP_AUTH_TTL.to_bits(), 5.0_f64.to_bits());
+    assert_eq!(REGISTRY_ERROR_TTL.to_bits(), 30.0_f64.to_bits());
 }
 
 #[test]
@@ -257,9 +257,18 @@ fn group_registry_always_last(#[case] resolved: bool, #[case] end_user: Option<&
 #[test]
 fn string_value_ttl_min_30() {
     let value = decoded(r#""registry unavailable""#);
-    assert_eq!(identity_memory_ttl(&value, 100.0), 30.0);
-    assert_eq!(identity_memory_ttl(&value, 5.0), 5.0);
-    assert_eq!(identity_memory_ttl(&value, 30.0), 30.0);
+    assert_eq!(
+        identity_memory_ttl(&value, 100.0).to_bits(),
+        30.0_f64.to_bits()
+    );
+    assert_eq!(
+        identity_memory_ttl(&value, 5.0).to_bits(),
+        5.0_f64.to_bits()
+    );
+    assert_eq!(
+        identity_memory_ttl(&value, 30.0).to_bits(),
+        30.0_f64.to_bits()
+    );
 }
 
 #[rstest]
@@ -269,7 +278,10 @@ fn string_value_ttl_min_30() {
 #[case::list("[1]")]
 #[case::object(r#"{"a": 1}"#)]
 fn nonstring_value_management_ttl(#[case] text: &str) {
-    assert_eq!(identity_memory_ttl(&decoded(text), 12.5), 12.5);
+    assert_eq!(
+        identity_memory_ttl(&decoded(text), 12.5).to_bits(),
+        12.5_f64.to_bits()
+    );
 }
 
 #[test]

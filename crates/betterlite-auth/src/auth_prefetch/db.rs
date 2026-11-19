@@ -25,6 +25,14 @@ pub enum PrefetchDatabaseError {
     },
 }
 pub type RowsAnswer = Result<RowValues, PrefetchDatabaseError>;
+// the SELECT returns one column per kind, in this order
+const ROW_KINDS: [RowKind; 5] = [
+    RowKind::User,
+    RowKind::Team,
+    RowKind::Membership,
+    RowKind::Organization,
+    RowKind::Project,
+];
 // one query for every requested kind; the kinds not requested bind SQL NULL
 #[async_trait]
 pub trait PrefetchDatabase: Send + Sync {
@@ -63,16 +71,7 @@ impl PrefetchDatabase for WriterRows {
             return Ok(RowValues::default());
         };
         let mut values = RowValues::default();
-        for (index, kind) in [
-            RowKind::User,
-            RowKind::Team,
-            RowKind::Membership,
-            RowKind::Organization,
-            RowKind::Project,
-        ]
-        .into_iter()
-        .enumerate()
-        {
+        for (index, kind) in ROW_KINDS.into_iter().enumerate() {
             if let Some(value) = decode_column(&row, index, kind)? {
                 values.insert(kind, value);
             }

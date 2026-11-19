@@ -612,7 +612,7 @@ async fn permission_deadline_uses_shared_boundary() {
         panic!("the bounded lookup reports the shared deadline");
     };
     assert_eq!(error.lookup, LOOKUP_LABEL);
-    assert_eq!(error.deadline_seconds, 0.0);
+    assert_eq!(error.deadline_seconds.to_bits(), 0.0_f64.to_bits());
 }
 
 #[tokio::test]

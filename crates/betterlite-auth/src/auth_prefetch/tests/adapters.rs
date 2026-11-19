@@ -252,7 +252,7 @@ fn system_clock_reads_unix_seconds() {
 #[tokio::test]
 async fn spend_scope_trait_binds_admission_counters() {
     let gate = Arc::new(RecordingGate::default());
-    let recording: Arc<dyn BreakerGate> = gate.clone();
+    let recording: Arc<dyn BreakerGate> = Arc::clone(&gate);
     let cache = Arc::new(dead_redis(recording).await);
     let scope = SpendCounterScope::default();
     let _guard = scope.enter(Some(&cache), &BTreeSet::new());

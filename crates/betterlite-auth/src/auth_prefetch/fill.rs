@@ -127,7 +127,6 @@ pub async fn fill_from_db(
     refs: &AuthObjectRefs,
     entries: &[PrefetchEntry],
     cache: &dyn PrefetchCache,
-    redis: Option<&dyn PrefetchRedis>,
     database: &dyn PrefetchDatabase,
     clock: &dyn PrefetchClock,
 ) -> Result<(), PrefetchError> {
@@ -157,7 +156,8 @@ pub async fn fill_from_db(
     if writes.is_empty() {
         return Ok(());
     }
-    write_back(&writes, cache, redis).await
+    let redis = cache.redis();
+    write_back(&writes, cache, redis.as_deref()).await
 }
 // time.time() at the point LiteLLM reads it: once, after the query
 pub trait PrefetchClock: Send + Sync {
