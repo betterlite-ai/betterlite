@@ -531,11 +531,10 @@ fn cache_keys_read_the_preset_the_cache_and_off(
 
 #[test]
 fn preset_cache_keys_must_be_text() {
-    let Err(error) = run(
-        r#"{"model": "gpt-4o", "litellm_params": {"preset_cache_key": 4}}"#,
-        SpendResponse::Absent,
-        &settings(),
-    ) else {
+    let cache = DerivedCache;
+    let harness = Harness::new(r#"{"model": "gpt-4o", "litellm_params": {"preset_cache_key": 4}}"#)
+        .with_cache(&cache);
+    let Err(error) = harness.run(SpendResponse::Absent, &settings()) else {
         panic!("a non-text preset is out of type");
     };
     assert!(error.to_string().contains("preset_cache_key"));
@@ -640,7 +639,7 @@ fn unbilled_management_reads_report_no_usage(
     #[case] total: i64,
 ) {
     let metadata = origin.map_or(String::new(), |origin_value| {
-        format!(r#", "metadata": {{"internal_call_origin": "{origin_value}"}}"#)
+        format!(r#""metadata": {{"internal_call_origin": "{origin_value}"}}"#)
     });
     let text = format!(
         r#"{{"model": "m", "call_type": "{call_type}", "litellm_params": {{{metadata}}}}}"#
