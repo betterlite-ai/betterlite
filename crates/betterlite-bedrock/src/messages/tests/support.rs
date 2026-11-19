@@ -85,7 +85,9 @@ pub(super) const MODEL_COST: &str = r#"{
   "bedrock/fixture-mid-system": {"litellm_provider": "bedrock", "mode": "chat", "supports_mid_conversation_system": true},
   "fixture-mid-system": {"litellm_provider": "bedrock", "mode": "chat", "supports_mid_conversation_system": true},
   "bedrock/fixture-structured": {"litellm_provider": "bedrock", "mode": "chat", "supports_native_structured_output": true},
-  "fixture-structured": {"litellm_provider": "bedrock", "mode": "chat", "supports_native_structured_output": true}
+  "fixture-structured": {"litellm_provider": "bedrock", "mode": "chat", "supports_native_structured_output": true},
+  "bedrock/fixture-output-config": {"litellm_provider": "bedrock", "mode": "chat", "supports_adaptive_thinking": true, "supports_output_config": true},
+  "fixture-output-config": {"litellm_provider": "bedrock", "mode": "chat", "supports_adaptive_thinking": true, "supports_output_config": true}
 }"#;
 
 pub(super) const EFFORT_TIER_INFO: &str =

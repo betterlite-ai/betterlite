@@ -342,6 +342,7 @@ fn clear_thinking(session: &mut Session<'_>) {
 pub(crate) fn unsupported_output_config_warn_drop() {
     transform_drop();
     direct_drop();
+    pipeline_drop_output_config();
 }
 
 fn transform_drop() {
@@ -386,6 +387,24 @@ fn direct_drop() {
     let mut kept = obj(r#"{"output_config":{"format":{"type":"json_schema"}}}"#);
     session.drop_output_config(&mut kept, "fixture-plain", false);
     assert!(kept.contains_key("output_config"));
+
+    // The final drop runs inside the transform when the model takes output_config but not effort.
+    let body = session
+        .transform(
+            &call(
+                "fixture-output-config",
+                USER_MESSAGES,
+                r#"{"max_tokens":256,"output_config":{"effort":"high"}}"#,
+                "{}",
+            ),
+            true,
+        )
+        .expect("the output-config request transforms");
+    assert!(!body.contains_key("output_config"));
+    assert!(
+        kept_warnings(&logs).iter().any(|message| message
+            == &DROP_OUTPUT_CONFIG_WARNING.replacen("%s", "fixture-output-config", 1))
+    );
 }
 
 pub(crate) fn normalization_order() {
