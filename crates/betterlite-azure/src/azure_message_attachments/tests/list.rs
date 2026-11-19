@@ -1,15 +1,17 @@
 #![cfg(test)]
 
+use std::sync::Arc;
+
 use betterlite_openai::assistants::client::ClientKind;
 use betterlite_openai::threads::error::ThreadsError;
 use betterlite_openai::threads::records::ThreadMessagePage;
 
+use crate::azure_assistant_definitions::operations::AssistantsApi;
 use crate::azure_message_attachments::error::MessagesError;
-use crate::azure_message_attachments::operations::{MessageCall, MessageReply};
+use crate::azure_message_attachments::operations::{MessageCall, MessageReply, MessagesApi};
 
 use super::support::{
-    Auth, ERROR_BODY, Fixture, KEY, MESSAGES_URL, PAGE, PAGE_WITH_MESSAGE, failing_harness,
-    harness, wire,
+    Auth, ERROR_BODY, Fixture, KEY, MESSAGES_URL, PAGE, PAGE_WITH_MESSAGE, Recorder, harness, wire,
 };
 
 const PAGE_MISSING_STATUS: &str = r#"{"object":"list","data":[{"id":"msg_1","object":"thread.message","created_at":7,"thread_id":"thread_1","role":"user","content":[{"type":"text","text":{"value":"hi","annotations":[]}}]}],"first_id":"msg_1","last_id":"msg_1","has_more":false}"#;
@@ -118,7 +120,13 @@ async fn http_status_propagates() {
 async fn transport_failure_propagates() {
     let fixture = Fixture::new();
     let request = fixture.request();
-    let (api, transport) = failing_harness();
+    let transport = Arc::new(Recorder::default());
+    transport.fail_next();
+    let api = MessagesApi {
+        assistants: AssistantsApi {
+            transport: Arc::clone(&transport),
+        },
+    };
     let error = api
         .call(&request, None, None, MessageCall::List("thread_1"))
         .await

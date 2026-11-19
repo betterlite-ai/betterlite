@@ -179,8 +179,7 @@ async fn providers() {
     provider_alone().await;
     provider_with_key().await;
     static_token_wins().await;
-    provider_failure().await;
-    provider_reply().await;
+    provider_failures().await;
 }
 
 async fn provider_alone() {
@@ -245,38 +244,36 @@ async fn static_token_wins() {
     );
 }
 
-async fn provider_failure() {
-    let mut fixture = Fixture::new();
-    fixture.api_key = None;
-    fixture.provider = Some(provider(Arc::new(FailingToken)));
-    let request = fixture.request();
-    let (api, transport) = harness(200, MESSAGE);
-    let error = api
-        .call(&request, None, None, MessageCall::List("thread_1"))
-        .await
-        .unwrap_err();
-    assert!(
-        matches!(&error, MessagesError::Definitions(DefinitionsError::Provider { class, .. }) if class == "ClientAuthenticationError"),
-        "{error:?}"
-    );
-    assert!(transport.requests().is_empty());
-}
-
-async fn provider_reply() {
-    let mut fixture = Fixture::new();
-    fixture.api_key = None;
-    fixture.provider = Some(provider(Arc::new(EmptyToken)));
-    let request = fixture.request();
-    let (api, transport) = harness(200, MESSAGE);
-    let error = api
-        .call(&request, None, None, MessageCall::List("thread_1"))
-        .await
-        .unwrap_err();
-    assert!(matches!(
-        error,
-        MessagesError::Definitions(DefinitionsError::ProviderReply)
-    ));
-    assert!(transport.requests().is_empty());
+// A provider failure and a provider reply that is not text surface as their own errors before any request.
+async fn provider_failures() {
+    let tokens: [(Arc<dyn CallableTokenProvider>, bool); 2] = [
+        (Arc::new(FailingToken), false),
+        (Arc::new(EmptyToken), true),
+    ];
+    for (token, reply_expected) in tokens {
+        let mut fixture = Fixture::new();
+        fixture.api_key = None;
+        fixture.provider = Some(provider(token));
+        let request = fixture.request();
+        let (api, transport) = harness(200, PAGE);
+        let error = api
+            .call(&request, None, None, MessageCall::List("thread_1"))
+            .await
+            .unwrap_err();
+        if reply_expected {
+            assert!(matches!(
+                error,
+                MessagesError::Definitions(DefinitionsError::ProviderReply)
+            ));
+        } else {
+            assert!(matches!(
+                &error,
+                MessagesError::Definitions(DefinitionsError::Provider { class, .. })
+                    if class == "ClientAuthenticationError"
+            ));
+        }
+        assert!(transport.requests().is_empty());
+    }
 }
 
 fn provider(token: Arc<dyn CallableTokenProvider>) -> CallableProvider {

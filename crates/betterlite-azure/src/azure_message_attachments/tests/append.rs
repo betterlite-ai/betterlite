@@ -23,15 +23,11 @@ fn expected(json: &str) -> ThreadMessage {
 
 pub(super) async fn check() {
     status_preserved().await;
-    missing_status_completed().await;
-    null_status_completed().await;
-    empty_status_rejected().await;
-    unknown_status_rejected().await;
+    status_outcomes().await;
     message_data_unfiltered().await;
     extras_kept().await;
     thread_id_quoted().await;
-    empty_thread_id_refused().await;
-    dot_segment_refused().await;
+    invalid_thread_id_refused().await;
 }
 
 // The thread id travels as the first positional argument and every message_data field reaches the body.
@@ -68,109 +64,42 @@ async fn status_preserved() {
     assert_eq!(*message, expected(MESSAGE_IN_PROGRESS));
 }
 
-// LiteLLM fills a status the SDK left out with completed before validating the message.
-async fn missing_status_completed() {
+// An absent or null status is filled with completed before validation; an empty or unknown one fails it.
+async fn status_outcomes() {
     let fixture = Fixture::new();
     let request = fixture.request();
     let data = data(MESSAGE_DATA);
-    let (api, transport) = harness(200, MESSAGE_NO_STATUS);
-    let reply = api
-        .call(
-            &request,
-            None,
-            None,
-            MessageCall::Append {
-                thread_id: "thread_1",
-                data: &data,
-            },
-        )
-        .await
-        .unwrap();
-    assert_eq!(transport.requests().len(), 1);
-    let MessageReply::Message(message) = reply.reply else {
-        panic!("append returns a message");
-    };
-    assert_eq!(*message, expected(MESSAGE));
-    assert_eq!(message.status, Some(MessageStatus::Completed));
-}
-
-async fn null_status_completed() {
-    let fixture = Fixture::new();
-    let request = fixture.request();
-    let data = data(MESSAGE_DATA);
-    let (api, transport) = harness(200, MESSAGE_NULL_STATUS);
-    let reply = api
-        .call(
-            &request,
-            None,
-            None,
-            MessageCall::Append {
-                thread_id: "thread_1",
-                data: &data,
-            },
-        )
-        .await
-        .unwrap();
-    assert_eq!(transport.requests().len(), 1);
-    let MessageReply::Message(message) = reply.reply else {
-        panic!("append returns a message");
-    };
-    assert_eq!(*message, expected(MESSAGE));
-}
-
-// An empty or unknown status stays as the SDK wrote it and the OpenAIMessage validation fails.
-async fn empty_status_rejected() {
-    let fixture = Fixture::new();
-    let request = fixture.request();
-    let data = data(MESSAGE_DATA);
-    let (api, transport) = harness(200, MESSAGE_EMPTY_STATUS);
-    let error = api
-        .call(
-            &request,
-            None,
-            None,
-            MessageCall::Append {
-                thread_id: "thread_1",
-                data: &data,
-            },
-        )
-        .await
-        .unwrap_err();
-    assert!(matches!(
-        error,
-        MessagesError::Threads(ThreadsError::Reply {
-            fault: ReplyFault::Shape,
-            ..
-        })
-    ));
-    assert_eq!(transport.requests().len(), 1);
-}
-
-async fn unknown_status_rejected() {
-    let fixture = Fixture::new();
-    let request = fixture.request();
-    let data = data(MESSAGE_DATA);
-    let (api, transport) = harness(200, MESSAGE_UNKNOWN_STATUS);
-    let error = api
-        .call(
-            &request,
-            None,
-            None,
-            MessageCall::Append {
-                thread_id: "thread_1",
-                data: &data,
-            },
-        )
-        .await
-        .unwrap_err();
-    assert!(matches!(
-        error,
-        MessagesError::Threads(ThreadsError::Reply {
-            fault: ReplyFault::Shape,
-            ..
-        })
-    ));
-    assert_eq!(transport.requests().len(), 1);
+    for (body, completes) in [
+        (MESSAGE_NO_STATUS, true),
+        (MESSAGE_NULL_STATUS, true),
+        (MESSAGE_EMPTY_STATUS, false),
+        (MESSAGE_UNKNOWN_STATUS, false),
+    ] {
+        let (api, transport) = harness(200, body);
+        let call = MessageCall::Append {
+            thread_id: "thread_1",
+            data: &data,
+        };
+        let outcome = api.call(&request, None, None, call).await;
+        assert_eq!(transport.requests().len(), 1);
+        if completes {
+            let MessageReply::Message(message) =
+                outcome.expect("an absent status is completed").reply
+            else {
+                panic!("append returns a message");
+            };
+            assert_eq!(message.status, Some(MessageStatus::Completed));
+            assert_eq!(*message, expected(MESSAGE));
+        } else {
+            assert!(matches!(
+                outcome.unwrap_err(),
+                MessagesError::Threads(ThreadsError::Reply {
+                    fault: ReplyFault::Shape,
+                    ..
+                })
+            ));
+        }
+    }
 }
 
 // Append hands message_data to the SDK itself; the legacy attachment mapper runs nowhere on this path.
@@ -244,50 +173,36 @@ async fn thread_id_quoted() {
     assert_eq!(transport.requests()[0].url, QUOTED_URL);
 }
 
-async fn empty_thread_id_refused() {
+async fn invalid_thread_id_refused() {
     let fixture = Fixture::new();
     let request = fixture.request();
     let data = data(MESSAGE_DATA);
-    let (api, transport) = harness(200, MESSAGE);
-    let error = api
-        .call(
-            &request,
-            None,
-            None,
-            MessageCall::Append {
-                thread_id: "",
-                data: &data,
-            },
-        )
+    let empty_call = MessageCall::Append {
+        thread_id: "",
+        data: &data,
+    };
+    let (empty_api, empty_transport) = harness(200, MESSAGE);
+    let empty = empty_api
+        .call(&request, None, None, empty_call)
         .await
         .unwrap_err();
     assert!(matches!(
-        error,
+        empty,
         MessagesError::Threads(ThreadsError::EmptyThreadId)
     ));
-    assert!(transport.requests().is_empty());
-}
-
-async fn dot_segment_refused() {
-    let fixture = Fixture::new();
-    let request = fixture.request();
-    let data = data(MESSAGE_DATA);
-    let (api, transport) = harness(200, MESSAGE);
-    let error = api
-        .call(
-            &request,
-            None,
-            None,
-            MessageCall::Append {
-                thread_id: "..",
-                data: &data,
-            },
-        )
+    assert!(empty_transport.requests().is_empty());
+    let dot_call = MessageCall::Append {
+        thread_id: "..",
+        data: &data,
+    };
+    let (dot_api, dot_transport) = harness(200, MESSAGE);
+    let dot = dot_api
+        .call(&request, None, None, dot_call)
         .await
         .unwrap_err();
     assert!(matches!(
-        error,
+        dot,
         MessagesError::Threads(ThreadsError::DotSegment { .. })
     ));
-    assert!(transport.requests().is_empty());
+    assert!(dot_transport.requests().is_empty());
 }

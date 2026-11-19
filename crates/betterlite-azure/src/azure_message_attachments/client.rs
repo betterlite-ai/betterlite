@@ -2,9 +2,7 @@ use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_openai::assistants::transport::AssistantsTransport;
 use betterlite_openai::threads::decode::decode_thread_message_reply;
 use betterlite_openai::threads::error::ThreadsError;
-use betterlite_openai::threads::records::{
-    MessageStatus, ThreadMessage, ThreadMessageData, ThreadMessagePage,
-};
+use betterlite_openai::threads::records::{MessageStatus, ThreadMessage, ThreadMessageData};
 use http::header::{ACCEPT, AUTHORIZATION};
 use http::{HeaderMap, HeaderName, HeaderValue, Method};
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
@@ -58,7 +56,7 @@ fn thread_tail(thread_id: &str) -> Result<String, ThreadsError> {
     ))
 }
 
-async fn send<T, R>(
+pub(crate) async fn send<T, R>(
     client: &AzureAssistantsClient<'_, T>,
     method: Method,
     thread_id: &str,
@@ -86,14 +84,6 @@ pub async fn append_message<T: AssistantsTransport>(
         message.status = Some(MessageStatus::Completed);
     }
     Ok(message)
-}
-
-pub async fn list_messages<T: AssistantsTransport>(
-    client: &AzureAssistantsClient<'_, T>,
-    thread_id: &str,
-) -> Result<ThreadMessagePage, MessagesError> {
-    let page = send(client, Method::GET, thread_id, RequestBody::Empty).await?;
-    Ok(page)
 }
 
 fn outbound<T>(

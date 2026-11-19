@@ -158,17 +158,6 @@ pub(super) fn harness(status: u16, body: &str) -> (MessagesApi<Recorder>, Arc<Re
     (api, transport)
 }
 
-pub(super) fn failing_harness() -> (MessagesApi<Recorder>, Arc<Recorder>) {
-    let transport = Arc::new(Recorder::default());
-    transport.fail_next();
-    let api = MessagesApi {
-        assistants: AssistantsApi {
-            transport: Arc::clone(&transport),
-        },
-    };
-    (api, transport)
-}
-
 // What the Azure SDK sends for a method once auth and the API version have been applied.
 pub(super) fn wire(method: &str, url: &str, body: Option<&str>, auth: Auth<'_>) -> Seen {
     let mut headers = Headers::new();

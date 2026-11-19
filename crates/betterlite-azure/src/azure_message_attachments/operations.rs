@@ -1,10 +1,12 @@
+use betterlite_http::proxy::outbound::RequestBody;
 use betterlite_openai::assistants::client::ClientKind;
 use betterlite_openai::assistants::transport::AssistantsTransport;
 use betterlite_openai::threads::records::{ThreadMessage, ThreadMessageData, ThreadMessagePage};
+use http::Method;
 
 use crate::azure_assistant_definitions::client::AzureAssistantsClient;
 use crate::azure_assistant_definitions::operations::{AssistantsApi, ClientRequest};
-use crate::azure_message_attachments::client::{append_message, list_messages};
+use crate::azure_message_attachments::client::{append_message, send};
 use crate::azure_message_attachments::error::MessagesError;
 
 pub struct MessagesApi<T> {
@@ -50,9 +52,9 @@ impl<T: AssistantsTransport> MessagesApi<T> {
             MessageCall::Append { thread_id, data } => {
                 MessageReply::Message(Box::new(append_message(&client, thread_id, data).await?))
             }
-            MessageCall::List(thread_id) => {
-                MessageReply::Page(Box::new(list_messages(&client, thread_id).await?))
-            }
+            MessageCall::List(thread_id) => MessageReply::Page(Box::new(
+                send(&client, Method::GET, thread_id, RequestBody::Empty).await?,
+            )),
         };
         Ok(MessagesReply { reply, kind })
     }
