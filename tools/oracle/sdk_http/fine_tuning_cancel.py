@@ -9,7 +9,7 @@ import openai
 import pydantic
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
-JSON = TypeAdapter(JsonValue)
+JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 ModelResult: TypeAlias = pydantic.BaseModel | Coroutine[object, object, pydantic.BaseModel]
 
 
