@@ -1,0 +1,17 @@
+kind: helper
+name: router_weights_and_budget_aliases
+call:
+  team_request_contracts:
+    operation: create
+    document: {"router_settings": {"weights": {"g": {"d": 1}}}}
+calls:
+  - team_request_contracts: {operation: create, document: {"router_settings": {"weights": {"g": {"d": 1.5}}}}}
+  - team_request_contracts: {operation: create, document: {"router_settings": {"weights": {"g": {"d": 0.0}}}}}
+  - team_request_contracts: {operation: create, document: {"router_settings": {"weights": []}}}
+  - team_request_contracts: {operation: create, document: {"model_max_budget": {"gpt": {"budget_limit": 10.5, "time_period": "1d"}}}}
+  - team_request_contracts: {operation: create, document: {"model_max_budget": {"gpt": {"max_budget": 3.5, "budget_limit": 10.5}}}}
+  - team_request_contracts: {operation: create, document: {"model_max_budget": {"gpt": {}}}}
+  - team_request_contracts: {operation: create, document: {"model_max_budget": {"gpt": {"tpm_limit": 2, "rpm_limit": 3}}}}
+  - team_request_contracts: {operation: update, document: {"team_id": "t", "model_max_budget": {"gpt": {"budget_limit": 4.5, "time_period": "7d"}}}}
+env: {}
+compare: {ignore: []}

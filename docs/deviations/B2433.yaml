@@ -1,0 +1,10 @@
+task: B2433
+deviations:
+  - what: >-
+      A reasoning_effort dict whose own effort value is a list or an object is left unchanged, where LiteLLM's
+      dictionary lookup on an unhashable key raises TypeError out of normalize.
+    why: >-
+      The effort field is declared as an effort string, so a wrong-typed value has no tier to normalize; the
+      exception comes from Python's dict lookup rather than from a rule a caller can rely on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/utils.py#L84-L86
+kept_bugs: []

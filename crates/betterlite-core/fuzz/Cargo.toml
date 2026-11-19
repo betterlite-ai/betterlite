@@ -305,6 +305,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "generated_paths"
+path = "fuzz_targets/generated_paths.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "fal_image_reply"
 path = "fuzz_targets/fal_image_reply.rs"
 test = false
@@ -454,6 +461,13 @@ bench = false
 [[bin]]
 name = "duckduckgo_reply"
 path = "fuzz_targets/duckduckgo_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "messages_responses_output"
+path = "fuzz_targets/messages_responses_output.rs"
 test = false
 doc = false
 bench = false

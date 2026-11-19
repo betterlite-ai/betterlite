@@ -1,6 +1,6 @@
-use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
+use std::sync::{Mutex, PoisonError};
 
 use betterlite_prompts::media::inline::RemoteMediaFetcher;
 use betterlite_prompts::media_fetch::error::ImageFetchError;
@@ -31,12 +31,15 @@ impl UrlDownloader for FetchedMedia {
 // The pass that lists the URLs LiteLLM would download for this request; it answers an empty data URL
 #[derive(Default)]
 struct RecordDownloads {
-    urls: RefCell<Vec<String>>,
+    urls: Mutex<Vec<String>>,
 }
 
 impl UrlDownloader for RecordDownloads {
     fn download(&self, url: &str) -> Result<String, ImageFetchError> {
-        self.urls.borrow_mut().push(url.to_owned());
+        self.urls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(url.to_owned());
         Ok(String::new())
     }
 }
@@ -60,10 +63,6 @@ impl RemoteMediaFetcher for RefuseDownloads {
     }
 }
 
-#[expect(
-    clippy::future_not_send,
-    reason = "the request borrows its environment and downloader as plain trait objects, and a plain transform stays synchronous"
-)]
 #[expect(
     clippy::multiple_inherent_impl,
     reason = "the media seam lives beside its recording pass and tests; chat_content.rs keeps the type's first impl"
@@ -91,7 +90,11 @@ impl ChatContent<'_> {
         };
         let record_error = recording.transformed_messages();
         let mut data = BTreeMap::new();
-        for url in recorded.urls.into_inner() {
+        for url in recorded
+            .urls
+            .into_inner()
+            .unwrap_or_else(PoisonError::into_inner)
+        {
             let data_url = fetcher.convert_url(&url).await?;
             data.insert(url, data_url);
         }

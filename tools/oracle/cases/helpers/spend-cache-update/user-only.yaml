@@ -1,0 +1,15 @@
+kind: helper
+name: spend-cache-update-user-only
+call:
+  b8376:
+    user_id: user-2
+    response_cost: 0.25
+calls:
+  - b8376:
+      user_id: user-2
+      response_cost: 0
+  - b8376:
+      user_id: ""
+      response_cost: 1
+env: {}
+compare: {ignore: []}

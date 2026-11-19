@@ -1,0 +1,9 @@
+task: B4305
+deviations:
+  - what: The parent OTel span is stored back into kwargs as a W3C traceparent string, not as the span object LiteLLM writes there.
+    why: betterlite carries an OpenTelemetry trace context rather than Python span objects; the traceparent is the same text its propagator emits, and the cache key never reads the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L275
+kept_bugs:
+  - what: A sync cache hit whose stored value is not a dict (for example a cached list) still runs the success callbacks and records the hit, because LiteLLM converts only dicts and logs whatever the conversion returned.
+    why: A cache shared with another writer can hold such a value, and the hit path then logs it as a successful cache hit instead of failing open; betterlite reports the same hit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L398-L451

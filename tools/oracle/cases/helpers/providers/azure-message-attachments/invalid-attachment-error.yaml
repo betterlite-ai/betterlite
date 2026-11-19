@@ -1,0 +1,36 @@
+kind: helper
+name: azure-message-attachments-invalid-attachment-error
+call:
+  azure_message_attachments:
+    map_create_message_params:
+      - non_default: {attachments: [{file_id: file-1}, {tools: []}, {file_id: file-2}]}
+        optional: {}
+        drop_params: false
+calls:
+  - azure_message_attachments:
+      map_create_message_params:
+        - non_default: {attachments: [plain]}
+          optional: {}
+          drop_params: false
+  - azure_message_attachments:
+      map_create_message_params:
+        - non_default: {attachments: "single"}
+          optional: {}
+          drop_params: true
+  - azure_message_attachments:
+      map_create_message_params:
+        - non_default: {attachments: [5]}
+          optional: {}
+          drop_params: false
+  - azure_message_attachments:
+      map_create_message_params:
+        - non_default: {attachments: ["file_id"]}
+          optional: {}
+          drop_params: false
+  - azure_message_attachments:
+      map_create_message_params:
+        - non_default: {attachments: [{file_id: file-1}, {tools: []}]}
+          optional: {}
+          drop_params: false
+env: {}
+compare: {ignore: []}

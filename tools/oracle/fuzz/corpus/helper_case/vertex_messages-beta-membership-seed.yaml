@@ -1,0 +1,27 @@
+kind: helper
+name: vertex-messages-beta-membership-seed
+call:
+  vertex_messages:
+    access_token: fixed-token
+    credential_project: credential-project
+    model: claude-sonnet-4-6
+    messages:
+      - role: user
+        content: hi
+        output_config:
+          effort: high
+    optional_params:
+      max_tokens: 16
+      safeguards: {}
+      tools:
+        - type: web_search_20250305
+          name: web_search
+      context_management:
+        edits:
+          - type: compact_20260112
+    headers: {}
+    vertex_project: null
+    vertex_location: null
+    api_base: null
+env: {}
+compare: {ignore: []}
