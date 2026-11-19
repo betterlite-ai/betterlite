@@ -80,7 +80,7 @@ where
 
 const fn text_of(value: &Json) -> Option<&str> {
     match value {
-        Json::Text(text) => Some(text),
+        Json::Text(text) => Some(text.as_str()),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
     }
 }
@@ -198,8 +198,14 @@ fn validate_response_format(
                 response_format: format.clone(),
             })
         }
-        Some(Json::Text(_) | Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_))
-        | Some(Json::Object(_))
+        Some(
+            Json::Text(_)
+            | Json::Null
+            | Json::Bool(_)
+            | Json::Number(_)
+            | Json::List(_)
+            | Json::Object(_),
+        )
         | None => Ok(()),
     }
 }

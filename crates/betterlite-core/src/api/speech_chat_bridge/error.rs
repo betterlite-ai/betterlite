@@ -63,8 +63,5 @@ where
     #[error(transparent)]
     Transform(#[from] SpeechTransformError),
     #[error(transparent)]
-    Completion {
-        #[source]
-        source: Source,
-    },
+    Completion { source: Source },
 }
