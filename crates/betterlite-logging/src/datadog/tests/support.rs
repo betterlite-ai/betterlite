@@ -341,7 +341,7 @@ pub(crate) fn build_logger(
     intake: Intake,
 ) -> (Arc<DatadogLogger>, Arc<RecordingTransport>) {
     let transport = RecordingTransport::new(intake);
-    let dyn_transport: Arc<dyn Transport> = Arc::clone(&transport);
+    let dyn_transport: Arc<dyn Transport> = Arc::<RecordingTransport>::clone(&transport);
     let values = lookup(environment);
     let logger = DatadogLogger::new(
         &datadog_init(),
