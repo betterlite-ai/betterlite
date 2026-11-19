@@ -26,15 +26,11 @@ fn owned(model_name: &str, id: &str, team: &str) -> DeploymentSpec {
 }
 
 fn team_public(model_name: &str, id: &str, public_name: &str) -> DeploymentSpec {
-    spec(
-        model_name,
-        id,
-        &[("model", text("openai/public"))],
-        &[
-            ("team_id", text("team-a")),
-            ("team_public_model_name", text(public_name)),
-        ],
-    )
+    let mut deployment = owned(model_name, id, "team-a");
+    deployment
+        .model_info
+        .insert("team_public_model_name".to_owned(), text(public_name));
+    deployment
 }
 
 #[test]
