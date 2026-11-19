@@ -52,7 +52,7 @@ deviations:
       litellm_settings.compression_interception_params.
     why: >-
       betterlite's callback settings layer keeps scalar callback values only and rejects a nested
-      value whose section has not registered with it, and that registry lives in the callback
-      settings section, outside this task's scope.
+      value whose section has not registered with it as an owner, and only otel registers nested
+      keys; the map is therefore accepted under litellm_settings.compression_interception_params.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L120-L135
 kept_bugs: []
