@@ -1,9 +1,11 @@
 use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
+use http::{HeaderMap, HeaderValue};
 use secrecy::SecretString;
 
 use crate::azure_stream_errors::error::{AzureStreamFailure, Raised, StreamingError};
+use crate::azure_stream_errors::stream::raw_headers;
 use crate::azure_stream_errors::{async_streaming, streaming};
 use crate::endpoints::projection::ClientKind;
 
@@ -91,6 +93,26 @@ fn azure_chat_streams_credential_identity_isolation() {
         forms[1]
             .1
             .contains(&("client_assertion".to_owned(), "assertion-B".to_owned()))
+    );
+}
+
+#[test]
+fn repeated_response_headers_join_with_a_comma() {
+    let mut headers = HeaderMap::new();
+    headers.append("x-ms-tag", HeaderValue::from_static("first"));
+    headers.append("x-ms-tag", HeaderValue::from_static("second"));
+    headers.append(
+        "content-type",
+        HeaderValue::from_static("text/event-stream"),
+    );
+    let raw = raw_headers(&headers);
+    assert_eq!(
+        raw.get("x-ms-tag").map(String::as_str),
+        Some("first, second")
+    );
+    assert_eq!(
+        raw.get("content-type").map(String::as_str),
+        Some("text/event-stream")
     );
 }
 

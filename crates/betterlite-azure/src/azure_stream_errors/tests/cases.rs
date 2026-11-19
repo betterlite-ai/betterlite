@@ -242,7 +242,7 @@ fn stream_http_failure() {
     let source = failing_source(
         ClientKind::AsyncAzureOpenAi,
         Raised::raised(
-            "ScriptedError",
+            "ScriptedError".to_owned(),
             Reported::Present(None),
             Reported::Present(None),
             "".to_owned(),

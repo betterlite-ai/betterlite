@@ -474,7 +474,7 @@ pub fn secret_headers(pairs: &[(&str, &str)]) -> SecretHeaders {
 
 pub fn raised_with(status: Option<u16>, message: String) -> Raised {
     Raised::raised(
-        "ScriptedError",
+        "ScriptedError".to_owned(),
         Reported::Present(status),
         Reported::Present(Some(message.clone())),
         message,

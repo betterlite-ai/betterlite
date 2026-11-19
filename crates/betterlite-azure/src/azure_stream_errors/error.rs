@@ -43,13 +43,13 @@ impl Raised {
     // an exception an SDK client or our transport raised: class plus whichever attributes it carries
     #[must_use]
     pub fn raised(
-        class: impl Into<String>,
+        class: String,
         status: Reported<Option<u16>>,
         message: Reported<Option<String>>,
         text: String,
     ) -> Self {
         Self {
-            class: class.into(),
+            class,
             status,
             message,
             headers: None,

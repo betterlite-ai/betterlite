@@ -39,3 +39,12 @@ fn replays_the_azure_stream_errors_corpus() {
     }
     assert!(seen > 0, "the corpus must hold seeds");
 }
+
+#[test]
+fn a_plain_error_body_is_not_a_content_filter() {
+    let decoded = decode_content_filter_error(
+        br#"{"error":{"code":"invalid_request_error","type":"invalid_request_error","message":"no filter here"}}"#,
+    )
+    .expect("a plain error body parses");
+    assert!(decoded.is_none(), "no filter signal means no filter error");
+}

@@ -46,18 +46,31 @@ pub struct AzureChatStream {
     pub chunks: ChatStream,
 }
 
-// headers = dict(raw_response.headers): names lowercased, a repeated name keeps its last value
+// httpx decodes header bytes as ascii, then utf-8, then latin-1
+fn header_text(value: &[u8]) -> String {
+    match std::str::from_utf8(value) {
+        Ok(text) => text.to_owned(),
+        Err(_) => value.iter().map(|byte| char::from(*byte)).collect(),
+    }
+}
+
+// headers = dict(raw_response.headers): names lowercased, a repeated name's values joined by ", "
 #[must_use]
 pub fn raw_headers(headers: &HeaderMap) -> IndexMap<String, String> {
-    headers
-        .iter()
-        .map(|(name, value)| {
-            (
-                name.as_str().to_owned(),
-                String::from_utf8_lossy(value.as_bytes()).into_owned(),
-            )
-        })
-        .collect()
+    let mut joined: IndexMap<String, String> = IndexMap::new();
+    for (name, value) in headers {
+        let text = header_text(value.as_bytes());
+        match joined.get_mut(name.as_str()) {
+            Some(existing) => {
+                existing.push_str(", ");
+                existing.push_str(&text);
+            }
+            None => {
+                joined.insert(name.as_str().to_owned(), text);
+            }
+        }
+    }
+    joined
 }
 
 // CustomStreamWrapper(stream_options=data.get("stream_options") or logging_obj.stream_options)
