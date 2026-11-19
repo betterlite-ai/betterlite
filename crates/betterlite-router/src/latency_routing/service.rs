@@ -73,7 +73,7 @@ impl LatencyRouting {
                 .id()
                 .and_then(|id| selection.samples.deployments.get(id));
             let score = self.score(stored, selection.stream);
-            if self.available(deployment, stored, selection)? {
+            if available(deployment, stored, selection)? {
                 eligible.push((position, score));
             }
             scores.push(score);
@@ -109,23 +109,22 @@ impl LatencyRouting {
         latency_sample_math::percentile(first_token, percentile)
             .unwrap_or_else(|| latency_sample_math::average(first_token))
     }
+}
 
-    // item_tpm + input_tokens > tpm, or item_rpm + 1 > rpm, leaves the deployment out of the pool
-    fn available(
-        &self,
-        deployment: &DeploymentSpec,
-        stored: Option<&LatencySamples>,
-        selection: &Selection<'_>,
-    ) -> Result<bool, RoutingError> {
-        let usage = stored
-            .and_then(|samples| samples.minutes.get(selection.minute))
-            .copied()
-            .unwrap_or_default();
-        let tokens = i128::from(usage.tpm).saturating_add(i128::from(selection.input_tokens));
-        let requests = i128::from(usage.rpm).saturating_add(1);
-        Ok(tokens <= limit(deployment, "tpm")?.unwrap_or(i128::MAX)
-            && requests <= limit(deployment, "rpm")?.unwrap_or(i128::MAX))
-    }
+// item_tpm + input_tokens > tpm, or item_rpm + 1 > rpm, leaves the deployment out of the pool
+fn available(
+    deployment: &DeploymentSpec,
+    stored: Option<&LatencySamples>,
+    selection: &Selection<'_>,
+) -> Result<bool, RoutingError> {
+    let usage = stored
+        .and_then(|samples| samples.minutes.get(selection.minute))
+        .copied()
+        .unwrap_or_default();
+    let tokens = i128::from(usage.tpm).saturating_add(i128::from(selection.input_tokens));
+    let requests = i128::from(usage.rpm).saturating_add(1);
+    Ok(tokens <= limit(deployment, "tpm")?.unwrap_or(i128::MAX)
+        && requests <= limit(deployment, "rpm")?.unwrap_or(i128::MAX))
 }
 
 // _deployment.get("tpm"), then litellm_params.tpm, then model_info.tpm; a null or absent limit is unbounded

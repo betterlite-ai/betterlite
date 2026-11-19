@@ -118,9 +118,8 @@ pub(super) enum Outcome {
 }
 
 // one selection: the pool, the stored map, the request and the one random draw it takes
-#[derive(Clone, Copy)]
 pub(super) struct Case {
-    pub(super) specs: &'static [Spec],
+    pub(super) specs: Vec<Spec>,
     pub(super) stream: bool,
     pub(super) input_tokens: i64,
     pub(super) buffer: f64,
@@ -150,8 +149,8 @@ impl TryRng for FixedDraw {
     }
 }
 
-pub(super) fn check(case: &Case) {
-    let (deployments, samples) = build(case);
+pub(super) fn check(case: Case) {
+    let (deployments, samples) = build(case.specs);
     let router = LatencyRouting {
         args: RoutingArgs {
             lowest_latency_buffer: case.buffer,
@@ -196,10 +195,10 @@ pub(super) fn check(case: &Case) {
     }
 }
 
-fn build(case: &Case) -> (Vec<DeploymentSpec>, ModelGroupSamples) {
+fn build(specs: Vec<Spec>) -> (Vec<DeploymentSpec>, ModelGroupSamples) {
     let mut deployments = Vec::new();
     let mut stored = BTreeMap::new();
-    for spec in case.specs {
+    for spec in specs {
         deployments.push(spec.deployment());
         if spec.stored {
             stored.insert(
