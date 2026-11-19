@@ -222,17 +222,18 @@ fn deadline(values: &ReadValues<'_>) -> Duration {
 fn sdk_error(body: &[u8], status: u16) -> Result<SdkError, ReadWireError> {
     let value: Value = serde_json::from_slice(body).map_err(ReadWireError::Body)?;
     let error = value.get("error");
-    let text = |name: &str| {
-        error
-            .and_then(|error| error.get(name))
-            .and_then(Value::as_str)
-            .map(str::to_owned)
-    };
     Ok(SdkError {
         status,
-        error_type: text("type"),
-        param: text("param"),
-        code: text("code"),
-        message: text("message").unwrap_or_default(),
+        error_type: error_field(error, "type"),
+        param: error_field(error, "param"),
+        code: error_field(error, "code"),
+        message: error_field(error, "message").unwrap_or_default(),
     })
+}
+
+fn error_field(error: Option<&Value>, name: &str) -> Option<String> {
+    error
+        .and_then(|error| error.get(name))
+        .and_then(Value::as_str)
+        .map(str::to_owned)
 }

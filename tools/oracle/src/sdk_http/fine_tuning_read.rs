@@ -2,9 +2,10 @@ use std::collections::BTreeMap;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::resource_sdk_settings::Settings;
+use betterlite_core::api::fine_tuning_read::service::FineTuningRead;
 use betterlite_core::api::fine_tuning_read::{
-    FineTuningListCall, FineTuningRead, FineTuningReadError, FineTuningReadInput,
-    FineTuningReadOutcome, FineTuningRetrieveCall,
+    FineTuningListCall, FineTuningReadError, FineTuningReadInput, FineTuningReadOutcome,
+    FineTuningRetrieveCall,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -107,7 +108,7 @@ impl CallKind for Call {
                 dispatch,
                 settings: settings.clone(),
             };
-            steps.push(outcome(read.run(&input).await));
+            steps.push(outcome(read.run(&input).await)?);
         }
         Ok(SdkResult::FineTuningRead {
             value: Box::new(Outcome { steps }),
@@ -163,23 +164,23 @@ fn environment_settings(env: &BTreeMap<String, String>) -> Result<Settings, SdkH
 
 fn outcome(
     result: Result<FineTuningReadOutcome, FineTuningReadError<ReadWireError>>,
-) -> StepOutcome {
+) -> Result<StepOutcome, SdkHttpError> {
     match result {
-        Ok(FineTuningReadOutcome::Page(page)) => StepOutcome {
-            page: Some(page.0),
+        Ok(FineTuningReadOutcome::Page(page)) => Ok(StepOutcome {
+            page: Some(serde_json::to_value(page).map_err(SdkHttpError::Serialize)?),
             job: None,
             failure: None,
-        },
-        Ok(FineTuningReadOutcome::Job(job)) => StepOutcome {
+        }),
+        Ok(FineTuningReadOutcome::Job(job)) => Ok(StepOutcome {
             page: None,
-            job: Some(serde_json::to_value(job).expect("a decoded job serializes")),
+            job: Some(serde_json::to_value(job).map_err(SdkHttpError::Serialize)?),
             failure: None,
-        },
-        Err(error) => StepOutcome {
+        }),
+        Err(error) => Ok(StepOutcome {
             page: None,
             job: None,
             failure: Some(failure(&error)),
-        },
+        }),
     }
 }
 
@@ -225,7 +226,7 @@ where
 }
 
 // the classes the openai client raises for an HTTP status
-fn class_for_status(status: u16) -> &'static str {
+const fn class_for_status(status: u16) -> &'static str {
     match status {
         400 => "BadRequestError",
         401 => "AuthenticationError",
