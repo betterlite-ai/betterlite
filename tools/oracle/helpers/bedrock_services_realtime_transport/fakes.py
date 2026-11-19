@@ -122,7 +122,7 @@ class FakeRuntimeClient(ClosableBedrockRuntimeClient):
         self.closed = False
         CLIENTS.append(self)
 
-    async def invoke_model_with_bidirectional_stream(
+    async def invoke_model_with_bidirectional_stream(  # ast-grep-ignore: no-long-names
         self, operation: FakeOperation
     ) -> FakeStream:
         RECORDING.model_ids.append(operation.model_id)
