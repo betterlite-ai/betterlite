@@ -93,9 +93,7 @@ pub fn push_user_messages(
         Some(Json::Text(text)) if !text.is_empty() => {
             new_messages.push(user_message(Json::Text(text.clone())));
         }
-        Some(Json::List(blocks)) if !blocks.is_empty() => {
-            push_blocks(blocks, target, new_messages)?;
-        }
+        Some(Json::List(blocks)) => push_blocks(blocks, target, new_messages)?,
         Some(_) | None => {}
     }
     Ok(())
