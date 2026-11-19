@@ -270,10 +270,15 @@ fn responses_operation<'call>(
 const RESPONSES_INPUT: &str = r#"[{"type":"message","role":"user","content":"keep"}]"#;
 const RESPONSES_PARAMS: &str = r#"{"background": true, "temperature": 0.5, "tools": [{"type": "function", "name": "f"}, {"type": "web_search"}]}"#;
 
+fn responses_cost() -> ParamMap {
+    serde_json::from_str(r#"{"openai.gpt-oss-120b": {"supported_endpoints": ["/v1/responses"]}}"#)
+        .unwrap()
+}
+
 fn responses_body() -> Object {
     let input: ResponsesInput = serde_json::from_str(RESPONSES_INPUT).unwrap();
     let params: ResponsesParams = serde_json::from_str(RESPONSES_PARAMS).unwrap();
-    let model_cost = ParamMap::new();
+    let model_cost = responses_cost();
     let mut capabilities = Capabilities;
     let bearer = token("fixture-token");
     let operation = responses_operation(
@@ -326,7 +331,7 @@ fn responses_remote_image() {
     )
     .unwrap();
     let params: ResponsesParams = serde_json::from_str("{}").unwrap();
-    let model_cost = ParamMap::new();
+    let model_cost = responses_cost();
     let mut capabilities = Capabilities;
     let operation = responses_operation(
         &input,
