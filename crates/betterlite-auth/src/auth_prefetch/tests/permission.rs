@@ -11,7 +11,9 @@ use betterlite_db::budget_permission_rows::{JsonData, LiteLLMObjectPermissionTab
 use betterlite_db::database_failures::deadline::{DbLookupDeadlineExceeded, DbLookupError};
 use betterlite_db::database_failures::gate::{DbLookupStallTracker, SystemClock};
 use betterlite_db::database_faults::{DbError as FaultDbError, ErrorType};
+use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::postgres_store::errors::DbError;
+use betterlite_db::postgres_store::session::PostgresStore;
 use tokio::time::{sleep, timeout};
 use tokio_util::task::TaskTracker;
 
@@ -23,9 +25,11 @@ use crate::auth_prefetch::permission::lookup::{
     ObjectPermissionSource, PermissionCacheError, PermissionError, PermissionStores,
     get_object_permission,
 };
-use crate::auth_prefetch::permission::store::{BoundedPermissionStore, ObjectPermissionStore};
+use crate::auth_prefetch::permission::store::{
+    BoundedPermissionStore, ObjectPermissionStore, PermissionTable,
+};
 use crate::auth_read::table::{
-    AuthReadError, AuthTable, Create, FindMany, FindOne, ReadContext, Update,
+    AuthReadError, AuthTable, Create, FindMany, FindOne, Presence, ReadContext, Update,
 };
 
 use super::support::DropFlag;
@@ -605,6 +609,45 @@ async fn permission_deadline_uses_shared_boundary() {
     };
     assert_eq!(error.lookup, LOOKUP_LABEL);
     assert_eq!(error.deadline_seconds.to_bits(), 0.0_f64.to_bits());
+}
+
+#[tokio::test]
+async fn permission_table_other_actions_stay_unread() {
+    let store = PostgresStore { pool: None };
+    let table = PermissionTable {
+        reader: store.clone(),
+        writer: store,
+        availability: Arc::new(Availability::default()),
+        use_writer: false,
+    };
+    assert!(matches!(
+        table
+            .find_first(FindOne {
+                filter: String::new(),
+                include: Presence::Omitted,
+            })
+            .await,
+        Err(AuthReadError::Repository(DbError::InvalidRecord { .. }))
+    ));
+    assert!(matches!(
+        table
+            .find_many(FindMany {
+                filter: Presence::Omitted,
+                include: Presence::Omitted,
+                take: Presence::Omitted,
+            })
+            .await,
+        Err(AuthReadError::Repository(DbError::InvalidRecord { .. }))
+    ));
+    assert!(matches!(
+        table
+            .update(Update {
+                filter: String::new(),
+                data: (),
+            })
+            .await,
+        Err(AuthReadError::Repository(DbError::InvalidRecord { .. }))
+    ));
 }
 
 #[tokio::test]
