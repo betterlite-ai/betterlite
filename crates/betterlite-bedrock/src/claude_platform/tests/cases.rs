@@ -11,7 +11,7 @@ use secrecy::SecretString;
 use serde_json::json;
 
 use super::support::{
-    Counting, CounterError, FixedIds, MAX_EVENT_BYTES, Records, defaults, stream_chunks,
+    CounterError, Counting, FixedIds, MAX_EVENT_BYTES, Records, defaults, stream_chunks,
 };
 use crate::claude_platform::chat::{ChatHeadersRequest, ChatRequest};
 use crate::claude_platform::convert;
@@ -60,20 +60,6 @@ fn expected_betas(names: &[&str]) -> BTreeSet<String> {
     names.iter().map(|name| (*name).to_owned()).collect()
 }
 
-fn text(value: Option<&Json>) -> Option<&str> {
-    match value {
-        Some(Json::Text(value)) => Some(value.as_str()),
-        None | Some(_) => None,
-    }
-}
-
-fn prompt_text(value: Option<&PromptJson>) -> Option<&str> {
-    match value {
-        Some(PromptJson::Text(value)) => Some(value.as_str()),
-        None | Some(_) => None,
-    }
-}
-
 // One request the cases vary; every field a validation or transform reads lives here.
 #[derive(Default)]
 struct Case {
@@ -108,8 +94,8 @@ impl Case {
     fn native_headers(&self) -> Result<NativeHeaders, NativeHeaderError> {
         let messages =
             convert::prompt_messages(&self.messages).expect("the case messages round trip");
-        let optional_params =
-            convert::prompt_params(&self.optional_params).expect("the case params round trip");
+        let optional_params: IndexMap<String, PromptJson> =
+            convert::mapped(&self.optional_params).expect("the case params round trip");
         validate_native(&NativeHeadersRequest {
             model: self.model,
             caller_headers: &self.caller_headers,
@@ -131,8 +117,32 @@ fn request_case() -> Case {
     Case {
         model: "claude-sonnet-4-5",
         messages: json_list(json!([{"role": "user", "content": "hi"}])),
-        ..Case::default()
+        optional_params: IndexMap::new(),
+        litellm_params: IndexMap::new(),
+        caller_headers: IndexMap::new(),
+        api_key: None,
+        api_base: None,
+        deployment: PlatformInputs::default(),
+        global: PlatformInputs::default(),
+        environment: PlatformEnvironment::default(),
     }
+}
+
+// Both bodies carry the token budget and the filtered keys, so one helper reads the shared assertions.
+fn inspect_body<Body>(body: &Body, model: &str, max_tokens: &str) -> serde_json::Value
+where
+    Body: serde::Serialize,
+{
+    let value = serde_json::to_value(body).expect("the body encodes");
+    let encoded = value.to_string();
+    assert_eq!(
+        value.get("model").and_then(serde_json::Value::as_str),
+        Some(model),
+        "{encoded}"
+    );
+    assert!(encoded.contains(max_tokens), "{encoded}");
+    assert!(value.get("context_management").is_none(), "{encoded}");
+    value
 }
 
 // B2211's alias chain, read through both validations, and the one 401 it raises.
@@ -176,8 +186,13 @@ pub(crate) fn workspace_id_required() {
     // The environment chain reads the AWS alias first and skips an empty one.
     case.environment.anthropic_aws_workspace_id = Some(SecretString::from(""));
     case.environment.anthropic_workspace_id = Some(SecretString::from("second-environment"));
-    let chat = case.chat_headers(&records).expect("the second environment value");
-    assert_eq!(header(&chat.values, WORKSPACE_HEADER), Some("second-environment"));
+    let chat = case
+        .chat_headers(&records)
+        .expect("the second environment value");
+    assert_eq!(
+        header(&chat.values, WORKSPACE_HEADER),
+        Some("second-environment")
+    );
     case.environment.anthropic_workspace_id = None;
 
     // An empty request selector is falsy, so the environment answers instead.
@@ -191,7 +206,9 @@ pub(crate) fn workspace_id_required() {
     // Python's `or` chain keeps its last operand, so a falsy final alias is sent as an empty header.
     case.optional_params = IndexMap::new();
     case.global.anthropic_hyphen_workspace_id = Some(String::new());
-    let chat = case.chat_headers(&records).expect("the empty selector renders");
+    let chat = case
+        .chat_headers(&records)
+        .expect("the empty selector renders");
     assert_eq!(header(&chat.values, WORKSPACE_HEADER), Some(""));
     let native = case
         .native_headers()
@@ -244,7 +261,10 @@ pub(crate) fn chat_platform_headers() {
         header(&chat.values, "anthropic-version"),
         Some("2023-06-01")
     );
-    assert_eq!(header(&chat.values, "content-type"), Some("application/json"));
+    assert_eq!(
+        header(&chat.values, "content-type"),
+        Some("application/json")
+    );
     assert_eq!(
         beta_set(&chat.values),
         expected_betas(&[
@@ -284,7 +304,8 @@ pub(crate) fn native_platform_headers() {
         "x-api-key": "",
     }));
     case.api_key = Some(SecretString::from("native-key"));
-    case.api_base = Some("https://aws-external-anthropic.us-west-2.amazonaws.com/v1/messages".to_owned());
+    case.api_base =
+        Some("https://aws-external-anthropic.us-west-2.amazonaws.com/v1/messages".to_owned());
     case.deployment.workspace_id = Some("deployment-workspace".to_owned());
     let native = case.native_headers().expect("the native headers build");
     assert_eq!(
@@ -316,13 +337,21 @@ pub(crate) fn native_platform_headers() {
     case.caller_headers = headers(json!({}));
     case.api_base = None;
     case.environment.anthropic_aws_api_key = Some(SecretString::from("environment-key"));
-    let native = case.native_headers().expect("the environment key is inserted");
-    assert_eq!(header(&native.headers, "x-api-key"), Some("environment-key"));
+    let native = case
+        .native_headers()
+        .expect("the environment key is inserted");
+    assert_eq!(
+        header(&native.headers, "x-api-key"),
+        Some("environment-key")
+    );
     assert_eq!(
         header(&native.headers, "anthropic-version"),
         Some("2023-06-01")
     );
-    assert_eq!(header(&native.headers, "content-type"), Some("application/json"));
+    assert_eq!(
+        header(&native.headers, "content-type"),
+        Some("application/json")
+    );
     assert!(native.api_base.is_none());
     case.environment.anthropic_aws_api_key = Some(SecretString::from(""));
     let native = case
@@ -331,101 +360,118 @@ pub(crate) fn native_platform_headers() {
     assert!(header(&native.headers, "x-api-key").is_none());
 }
 
-// B577 under provider bedrock with billing metadata stripped and unsupported params filtered.
-pub(crate) fn chat_platform_body() {
-    let records = Records::empty();
-    let mut case = request_case();
-    case.messages = json_list(json!([
-        {"role": "system", "content": [{"type": "text", "text": "x-anthropic-billing-header: 5f1a"}]},
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": "hi"},
-    ]));
-    case.optional_params = json_map(json!({
-        "max_tokens": 64,
-        "workspace_id": "request-workspace",
-        "context_management": {"edits": [{"type": "compact_20260112"}]},
-    }));
-    let defaults = defaults();
-    let prepared = records
-        .chat_body(&ChatRequest {
-            model: case.model,
-            messages: case.messages.clone(),
-            optional_params: case.optional_params.clone(),
-            litellm_params: case.litellm_params.clone(),
-            headers: AnthropicHeaders::default(),
-            defaults: &defaults,
-            catalog: records.catalog(),
-            default_chat_max_tokens: 4096,
-            modify_params: false,
-            global_drop_params: false,
-        })
-        .expect("the chat body prepares");
-    let body = &prepared.prepared.body;
-    let encoded = serde_json::to_string(body).expect("the body encodes");
-    assert_eq!(text(body.get("model")), Some("claude-sonnet-4-5"));
-    assert!(encoded.contains("\"max_tokens\":64"), "{encoded}");
-    assert!(!body.contains_key("workspace_id"), "{encoded}");
-    assert!(!body.contains_key("context_management"), "{encoded}");
-    assert!(encoded.contains("You are a helpful assistant."), "{encoded}");
-    assert!(!encoded.contains("x-anthropic-billing-header"), "{encoded}");
-    assert_eq!(
-        prepared.warnings,
-        vec![PlatformWarning::DroppedUnsupported {
-            params: vec!["context_management".to_owned()],
-        }]
-    );
-    // The provider is bedrock, so B577 never adds the native compaction beta for the dropped edits.
-    assert!(
-        !prepared.prepared.headers.values.contains_key("anthropic-beta"),
-        "{:?}",
-        prepared.prepared.headers
-    );
+#[derive(Clone, Copy)]
+pub(crate) enum BodyRoute {
+    Chat,
+    Native,
 }
 
-// B962 after one route strip, with the normal filter warnings and the billing block kept.
-pub(crate) fn native_platform_body() {
+// B577 and B962 read the same request fields, so one function walks whichever body the case names.
+pub(crate) fn platform_body(route: BodyRoute) {
     let records = Records::empty();
-    let messages = json_list(json!([
-        {"role": "system", "content": [{"type": "text", "text": "You are a helpful assistant."}]},
-        {"role": "system", "content": [{"type": "text", "text": "x-anthropic-billing-header: 5f1a"}]},
-        {"role": "user", "content": "hi"},
-    ]));
-    let optional_params = json_map(json!({
-        "max_tokens": 32,
-        "claude_platform_unsupported_params": 5,
-        "context_management": {"edits": []},
-    }));
-    let prompt_messages =
-        convert::prompt_messages(&messages).expect("the case messages round trip");
-    let prompt_params =
-        convert::prompt_params(&optional_params).expect("the case params round trip");
-    let prepared = records
-        .native_body(&NativeRequest {
-            model: "claude_platform/claude-sonnet-4-5",
-            messages: prompt_messages,
-            optional_params: prompt_params,
-            litellm_params: IndexMap::new(),
-        })
-        .expect("the native body prepares");
-    let body = &prepared.body;
-    let encoded = serde_json::to_string(body).expect("the body encodes");
-    assert_eq!(prompt_text(body.get("model")), Some("claude-sonnet-4-5"));
-    assert!(encoded.contains("\"max_tokens\":32"), "{encoded}");
-    assert!(!body.contains_key("context_management"), "{encoded}");
-    assert!(
-        !body.contains_key("claude_platform_unsupported_params"),
-        "{encoded}"
-    );
-    assert!(encoded.contains("x-anthropic-billing-header: 5f1a"), "{encoded}");
-    assert_eq!(
-        prepared.warnings,
-        vec![
-            PlatformWarning::IgnoredOverride { type_name: "int" },
-            PlatformWarning::DroppedUnsupported {
-                params: vec!["context_management".to_owned()],
-            },
-        ]
-    );
+    match route {
+        // B577 under provider bedrock with billing metadata stripped and unsupported params filtered.
+        BodyRoute::Chat => {
+            let mut case = request_case();
+            case.messages = json_list(json!([
+                {"role": "system", "content": [{"type": "text", "text": "x-anthropic-billing-header: 5f1a"}]},
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": "hi"},
+            ]));
+            case.optional_params = json_map(json!({
+                "max_tokens": 64,
+                "workspace_id": "request-workspace",
+                "context_management": {"edits": [{"type": "compact_20260112"}]},
+            }));
+            let defaults = defaults();
+            let prepared = records
+                .chat_body(&ChatRequest {
+                    model: case.model,
+                    messages: case.messages.clone(),
+                    optional_params: case.optional_params.clone(),
+                    litellm_params: case.litellm_params.clone(),
+                    headers: AnthropicHeaders::default(),
+                    defaults: &defaults,
+                    catalog: records.catalog(),
+                    default_chat_max_tokens: 4096,
+                    modify_params: false,
+                    global_drop_params: false,
+                })
+                .expect("the chat body prepares");
+            let body = inspect_body(
+                &prepared.prepared.body,
+                "claude-sonnet-4-5",
+                "\"max_tokens\":64",
+            );
+            let encoded = body.to_string();
+            assert!(body.get("workspace_id").is_none(), "{encoded}");
+            assert!(
+                encoded.contains("You are a helpful assistant."),
+                "{encoded}"
+            );
+            assert!(!encoded.contains("x-anthropic-billing-header"), "{encoded}");
+            assert_eq!(
+                prepared.warnings,
+                vec![PlatformWarning::DroppedUnsupported {
+                    params: vec!["context_management".to_owned()],
+                }]
+            );
+            // The provider is bedrock, so B577 never adds the native compaction beta for the dropped edits.
+            assert!(
+                !prepared
+                    .prepared
+                    .headers
+                    .values
+                    .contains_key("anthropic-beta"),
+                "{:?}",
+                prepared.prepared.headers
+            );
+        }
+        // B962 after one route strip, with the normal filter warnings and the billing block kept.
+        BodyRoute::Native => {
+            let messages = json_list(json!([
+                {"role": "system", "content": [{"type": "text", "text": "You are a helpful assistant."}]},
+                {"role": "system", "content": [{"type": "text", "text": "x-anthropic-billing-header: 5f1a"}]},
+                {"role": "user", "content": "hi"},
+            ]));
+            let optional_params = json_map(json!({
+                "max_tokens": 32,
+                "claude_platform_unsupported_params": 5,
+                "context_management": {"edits": []},
+            }));
+            let prompt_messages =
+                convert::prompt_messages(&messages).expect("the case messages round trip");
+            let prompt_params: IndexMap<String, PromptJson> =
+                convert::mapped(&optional_params).expect("the case params round trip");
+            let prepared = records
+                .native_body(&NativeRequest {
+                    model: "claude_platform/claude-sonnet-4-5",
+                    messages: prompt_messages,
+                    optional_params: prompt_params,
+                    litellm_params: IndexMap::new(),
+                })
+                .expect("the native body prepares");
+            let body = inspect_body(&prepared.body, "claude-sonnet-4-5", "\"max_tokens\":32");
+            let encoded = body.to_string();
+            assert!(
+                body.get("claude_platform_unsupported_params").is_none(),
+                "{encoded}"
+            );
+            assert!(
+                encoded.contains("x-anthropic-billing-header: 5f1a"),
+                "{encoded}"
+            );
+            assert_eq!(
+                prepared.warnings,
+                vec![
+                    PlatformWarning::IgnoredOverride { type_name: "int" },
+                    PlatformWarning::DroppedUnsupported {
+                        params: vec!["context_management".to_owned()],
+                    },
+                ]
+            );
+        }
+    }
 }
 
 fn anthropic_stream() -> Vec<TransportChunk> {
@@ -521,26 +567,38 @@ pub(crate) fn credential_identity_isolation() {
 
     let first_native = first.native_headers().expect("the first identity builds");
     let second_native = second.native_headers().expect("the second identity builds");
-    assert_eq!(header(&first_native.headers, "x-api-key"), Some("first-key"));
+    assert_eq!(
+        header(&first_native.headers, "x-api-key"),
+        Some("first-key")
+    );
     assert_eq!(
         header(&first_native.headers, WORKSPACE_HEADER),
         Some("first-workspace")
     );
-    assert_eq!(header(&second_native.headers, "x-api-key"), Some("second-key"));
+    assert_eq!(
+        header(&second_native.headers, "x-api-key"),
+        Some("second-key")
+    );
     assert_eq!(
         header(&second_native.headers, WORKSPACE_HEADER),
         Some("second-workspace")
     );
-    assert!(!second_native
-        .headers
-        .values()
-        .any(|value| value == "first-key"));
-    assert!(!first_native
-        .headers
-        .values()
-        .any(|value| value == "second-key"));
+    assert!(
+        !second_native
+            .headers
+            .values()
+            .any(|value| value == "first-key")
+    );
+    assert!(
+        !first_native
+            .headers
+            .values()
+            .any(|value| value == "second-key")
+    );
 
-    let first_chat = first.chat_headers(&records).expect("the first chat headers");
+    let first_chat = first
+        .chat_headers(&records)
+        .expect("the first chat headers");
     let second_chat = second
         .chat_headers(&records)
         .expect("the second chat headers");

@@ -194,32 +194,40 @@ impl Records {
         }
     }
 
+    fn parts(
+        &self,
+    ) -> (
+        CatalogSources<'_>,
+        ModelCostKeys,
+        NoDynamicMetadata,
+        ResolutionContext<'_>,
+    ) {
+        (
+            self.catalogs(),
+            ModelCostKeys::default(),
+            NoDynamicMetadata,
+            self.resolution(),
+        )
+    }
+
     pub(crate) fn chat_headers(
         &self,
         request: &ChatHeadersRequest<'_>,
     ) -> Result<AnthropicHeaders, ChatValidationError> {
-        let catalogs = self.catalogs();
-        let resolution = self.resolution();
-        let mut keys = ModelCostKeys::default();
-        let dynamic = NoDynamicMetadata;
+        let (catalogs, mut keys, dynamic, resolution) = self.parts();
         let mut environment = self.environment(&resolution, &mut keys, &dynamic);
-        block_on(validate_environment(
-            request,
-            &mut HeaderSources {
-                environment: &mut environment,
-                catalogs: &catalogs,
-            },
-        ))
+        let sources = HeaderSources {
+            environment: &mut environment,
+            catalogs: &catalogs,
+        };
+        block_on(validate_environment(request, &mut sources))
     }
 
     pub(crate) fn chat_body(
         &self,
         request: &ChatRequest<'_>,
     ) -> Result<ChatPrepared, RequestError<NoFileError>> {
-        let catalogs = self.catalogs();
-        let resolution = self.resolution();
-        let mut keys = ModelCostKeys::default();
-        let dynamic = NoDynamicMetadata;
+        let (catalogs, mut keys, dynamic, resolution) = self.parts();
         let mut environment = self.environment(&resolution, &mut keys, &dynamic);
         let fetcher = RefusingFetcher;
         let blocks = NoFileBlocks;
@@ -243,10 +251,7 @@ impl Records {
         &self,
         request: &NativeRequest<'_>,
     ) -> Result<NativePrepared, NativeTransformError> {
-        let catalogs = self.catalogs();
-        let resolution = self.resolution();
-        let mut keys = ModelCostKeys::default();
-        let dynamic = NoDynamicMetadata;
+        let (catalogs, mut keys, dynamic, resolution) = self.parts();
         let mut environment = self.environment(&resolution, &mut keys, &dynamic);
         block_on(native_transform(
             request,
@@ -259,7 +264,10 @@ impl Records {
     }
 }
 
-pub(crate) fn block_on<Output>(future: impl Future<Output = Output>) -> Output {
+pub(crate) fn block_on<Output, Fut>(future: Fut) -> Output
+where
+    Fut: Future<Output = Output>,
+{
     let runtime = Builder::new_current_thread().build();
     runtime.expect("the test runtime builds").block_on(future)
 }
