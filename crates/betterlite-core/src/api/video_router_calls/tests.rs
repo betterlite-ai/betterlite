@@ -638,37 +638,22 @@ fn plan_unknown_model_pass_through_beats_a_default_and_a_deployment_name() {
 }
 
 #[rstest]
-#[case::status(VideoCallKind::Status)]
-#[case::content(VideoCallKind::Content)]
-#[case::remix(VideoCallKind::Remix)]
-#[case::create_character(VideoCallKind::CreateCharacter)]
-#[case::get_character(VideoCallKind::GetCharacter)]
-#[case::edit(VideoCallKind::Edit)]
-#[case::extension(VideoCallKind::Extension)]
-fn plan_unknown_model_fallback_kinds_are_router(#[case] kind: VideoCallKind) {
+#[case::status(VideoCallKind::Status, VideoRoute::Router { model: "mystery-video".to_owned(), specific_deployment: false })]
+#[case::content(VideoCallKind::Content, VideoRoute::Router { model: "mystery-video".to_owned(), specific_deployment: false })]
+#[case::remix(VideoCallKind::Remix, VideoRoute::Router { model: "mystery-video".to_owned(), specific_deployment: false })]
+#[case::create_character(VideoCallKind::CreateCharacter, VideoRoute::Router { model: "mystery-video".to_owned(), specific_deployment: false })]
+#[case::get_character(VideoCallKind::GetCharacter, VideoRoute::Router { model: "mystery-video".to_owned(), specific_deployment: false })]
+#[case::edit(VideoCallKind::Edit, VideoRoute::Router { model: "mystery-video".to_owned(), specific_deployment: false })]
+#[case::extension(VideoCallKind::Extension, VideoRoute::Router { model: "mystery-video".to_owned(), specific_deployment: false })]
+#[case::generation(VideoCallKind::Generation, VideoRoute::NotFound { model: "mystery-video".to_owned() })]
+#[case::list(VideoCallKind::List, VideoRoute::NotFound { model: "mystery-video".to_owned() })]
+fn plan_unknown_model_fallback_and_final_kinds(
+    #[case] kind: VideoCallKind,
+    #[case] expected: VideoRoute,
+) {
     let view = empty_view();
     let route = plan_video_route(&input(kind, Some("mystery-video")), Some(&view));
-    assert_eq!(
-        route,
-        VideoRoute::Router {
-            model: "mystery-video".to_owned(),
-            specific_deployment: false
-        }
-    );
-}
-
-#[rstest]
-#[case::generation(VideoCallKind::Generation)]
-#[case::list(VideoCallKind::List)]
-fn plan_unknown_model_generation_and_list_are_not_found(#[case] kind: VideoCallKind) {
-    let view = empty_view();
-    let route = plan_video_route(&input(kind, Some("mystery-video")), Some(&view));
-    assert_eq!(
-        route,
-        VideoRoute::NotFound {
-            model: "mystery-video".to_owned()
-        }
-    );
+    assert_eq!(route, expected);
 }
 
 #[rstest]
