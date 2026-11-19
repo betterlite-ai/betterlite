@@ -13,8 +13,10 @@ pub const MODEL_ENV: &str = "BING_GROUNDING_MODEL";
 pub const CONNECTION_ID_ENV: &str = "BING_GROUNDING_CONNECTION_ID";
 pub const TOKEN_ENV: &str = "BING_GROUNDING_TOKEN";
 
-// env-only section: the loader reports every key, and the box keeps the map value type non-zero-sized for clippy
-pub type Raw = BTreeMap<String, Box<IgnoredAny>>;
+// env-only section: the loader reports every key, and the newtype keeps this Section impl its own
+#[derive(Default, serde::Deserialize)]
+#[serde(transparent)]
+pub struct Raw(pub BTreeMap<String, Box<IgnoredAny>>);
 
 #[derive(Debug, Clone, Default)]
 pub struct Settings {
