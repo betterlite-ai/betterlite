@@ -1,3 +1,5 @@
+use std::time::SystemTime;
+
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use betterlite_router::model_catalog_lookup::alias::AliasMap;
 use rust_decimal::Decimal;
@@ -18,7 +20,7 @@ async fn priced(state: &EstimatesState, body: &str) -> Result<Decimal, EstimateE
         state.counter.as_ref(),
         state.router.as_deref(),
         &request,
-        state.clock.now().into(),
+        SystemTime::from(state.clock.now()),
     )
     .await
 }

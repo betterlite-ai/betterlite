@@ -30,7 +30,8 @@ fn providers(settings: super::Settings) -> indexmap::IndexMap<String, ProviderBu
 #[test]
 fn loads_provider_budget_view() {
     let source = "router_settings:\n  provider_budget_config:\n    openai:\n      budget_limit: 100\n      time_period: 1d\n    azure:\n      budget_limit: 12.5\n      time_period: 30d\n";
-    let loaded = providers(load_provider_budget_view(source, &BTreeMap::new()).unwrap());
+    let loaded =
+        providers(load_provider_budget_view(source, &BTreeMap::<String, String>::new()).unwrap());
     assert_eq!(loaded.len(), 2);
     assert_eq!(
         loaded["openai"],
@@ -72,7 +73,8 @@ fn provider_budget_config_is_null_unless_the_map_exists(
 #[case::empty_map("openai: {}")]
 fn a_provider_entry_keeps_its_fields_optional(#[case] entry: &str) {
     let source = format!("router_settings:\n  provider_budget_config:\n    {entry}\n");
-    let loaded = providers(load_provider_budget_view(&source, &BTreeMap::new()).unwrap());
+    let loaded =
+        providers(load_provider_budget_view(&source, &BTreeMap::<String, String>::new()).unwrap());
     assert_eq!(loaded["openai"], ProviderBudgetConfig::default());
 }
 
@@ -84,7 +86,8 @@ fn a_provider_entry_keeps_its_fields_optional(#[case] entry: &str) {
 fn ignores_names_the_provider_tier_never_reads(#[case] name: &str) {
     let source =
         format!("router_settings:\n  provider_budget_config:\n    openai:\n      {name}: 7\n");
-    let loaded = providers(load_provider_budget_view(&source, &BTreeMap::new()).unwrap());
+    let loaded =
+        providers(load_provider_budget_view(&source, &BTreeMap::<String, String>::new()).unwrap());
     assert_eq!(loaded["openai"], ProviderBudgetConfig::default());
 }
 
@@ -126,7 +129,8 @@ fn a_missing_environment_reference_fails_the_load() {
 fn keeps_an_empty_time_period_written_into_the_file() {
     let source =
         "router_settings:\n  provider_budget_config:\n    openai:\n      time_period: \"\"\n";
-    let loaded = providers(load_provider_budget_view(source, &BTreeMap::new()).unwrap());
+    let loaded =
+        providers(load_provider_budget_view(source, &BTreeMap::<String, String>::new()).unwrap());
     assert_eq!(loaded["openai"].budget_duration.as_deref(), Some(""));
 }
 

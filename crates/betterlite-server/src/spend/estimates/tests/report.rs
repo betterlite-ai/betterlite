@@ -13,85 +13,66 @@ use betterlite_postgres_fixture::connection::PostgresFixture;
 
 use crate::spend::estimates::report::postgres::PostgresSpendReportStore;
 use crate::spend::estimates::report::{
-    ReportDateError, ReportError, SpendReportSource, TagSpendRow, TeamSpendRow,
-    get_spend_report_for_time_range,
+    ReportDateError, ReportError, SpendReportSource, SpendRow, SpendTotals,
+    spend_report_for_time_range,
 };
 
 use super::support::decimal;
 
-struct RecordingSource {
-    calls: Mutex<Vec<&'static str>>,
+// The source the report tests drive: it records each query and answers scripted rows or a failure.
+struct ScriptedSource {
+    team_rows: Vec<SpendRow>,
+    tag_rows: Vec<SpendRow>,
+    fail: Option<SpendTotals>,
+    calls: Mutex<Vec<SpendTotals>>,
     bounds: Mutex<Vec<(DateTime<Utc>, DateTime<Utc>)>>,
 }
 
-impl RecordingSource {
+impl ScriptedSource {
     fn new() -> Self {
         Self {
+            team_rows: vec![SpendRow {
+                name: Some("alpha".to_owned()),
+                total_spend: decimal("3"),
+            }],
+            tag_rows: vec![SpendRow {
+                name: Some("batch".to_owned()),
+                total_spend: decimal("1.5"),
+            }],
+            fail: None,
             calls: Mutex::new(Vec::new()),
             bounds: Mutex::new(Vec::new()),
         }
     }
 
-    fn calls(&self) -> Vec<&'static str> {
+    fn failing(totals: SpendTotals) -> Self {
+        let mut source = Self::new();
+        source.fail = Some(totals);
+        source
+    }
+
+    fn calls(&self) -> Vec<SpendTotals> {
         self.calls.lock().unwrap().clone()
     }
 }
 
 #[async_trait]
-impl SpendReportSource for RecordingSource {
-    async fn team_totals(
+impl SpendReportSource for ScriptedSource {
+    async fn totals(
         &self,
+        totals: SpendTotals,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
-    ) -> Result<Vec<TeamSpendRow>, ReportError> {
-        self.calls.lock().unwrap().push("teams");
+    ) -> Result<Vec<SpendRow>, ReportError> {
+        self.calls.lock().unwrap().push(totals);
         self.bounds.lock().unwrap().push((start, end));
-        Ok(vec![TeamSpendRow {
-            team_alias: Some("alpha".to_owned()),
-            total_spend: decimal("3"),
-        }])
-    }
-
-    async fn tag_totals(
-        &self,
-        start: DateTime<Utc>,
-        end: DateTime<Utc>,
-    ) -> Result<Vec<TagSpendRow>, ReportError> {
-        self.calls.lock().unwrap().push("tags");
-        self.bounds.lock().unwrap().push((start, end));
-        Ok(vec![TagSpendRow {
-            request_tag: Some("batch".to_owned()),
-            total_spend: decimal("1.5"),
-        }])
-    }
-}
-
-struct FailingSource {
-    tags_fail: bool,
-    calls: Mutex<Vec<&'static str>>,
-}
-
-#[async_trait]
-impl SpendReportSource for FailingSource {
-    async fn team_totals(
-        &self,
-        _start: DateTime<Utc>,
-        _end: DateTime<Utc>,
-    ) -> Result<Vec<TeamSpendRow>, ReportError> {
-        self.calls.lock().unwrap().push("teams");
-        if !self.tags_fail {
+        if self.fail == Some(totals) {
             return Err(ReportError::Database(DbError::NoDbConnected));
         }
-        Ok(Vec::new())
-    }
-
-    async fn tag_totals(
-        &self,
-        _start: DateTime<Utc>,
-        _end: DateTime<Utc>,
-    ) -> Result<Vec<TagSpendRow>, ReportError> {
-        self.calls.lock().unwrap().push("tags");
-        Err(ReportError::Database(DbError::NoDbConnected))
+        Ok(match totals {
+            SpendTotals::Teams => self.team_rows.clone(),
+            SpendTotals::Tags => self.tag_rows.clone(),
+        })
     }
 }
 
@@ -103,7 +84,7 @@ fn midnight() -> DateTime<Utc> {
 
 #[tokio::test]
 async fn a_missing_database_answers_none() {
-    let report = get_spend_report_for_time_range(None, "2026-01-01", "2026-01-31").await;
+    let report = spend_report_for_time_range(None, "2026-01-01", "2026-01-31").await;
     assert!(report.unwrap().is_none());
 }
 
@@ -112,14 +93,14 @@ async fn a_store_without_a_pool_answers_none() {
     let store = PostgresSpendReportStore {
         store: PostgresStore { pool: None },
     };
-    let report = get_spend_report_for_time_range(Some(&store), "2026-01-01", "2026-01-31").await;
+    let report = spend_report_for_time_range(Some(&store), "2026-01-01", "2026-01-31").await;
     assert!(report.unwrap().is_none());
 }
 
 #[tokio::test]
 async fn a_malformed_start_date_is_an_error_before_the_query() {
-    let source = RecordingSource::new();
-    let error = get_spend_report_for_time_range(Some(&source), "01/01/2026", "2026-01-31")
+    let source = ScriptedSource::new();
+    let error = spend_report_for_time_range(Some(&source), "01/01/2026", "2026-01-31")
         .await
         .unwrap_err();
     assert!(matches!(
@@ -134,8 +115,8 @@ async fn a_malformed_start_date_is_an_error_before_the_query() {
 
 #[tokio::test]
 async fn a_malformed_end_date_is_an_error_before_the_query() {
-    let source = RecordingSource::new();
-    let error = get_spend_report_for_time_range(Some(&source), "2026-01-01", "2026-13-01")
+    let source = ScriptedSource::new();
+    let error = spend_report_for_time_range(Some(&source), "2026-01-01", "2026-13-01")
         .await
         .unwrap_err();
     assert!(matches!(
@@ -150,43 +131,47 @@ async fn a_malformed_end_date_is_an_error_before_the_query() {
 
 #[tokio::test]
 async fn queries_teams_then_tags_over_utc_midnights() {
-    let source = RecordingSource::new();
-    let (teams, tags) = get_spend_report_for_time_range(Some(&source), "2026-01-01", "2026-01-31")
+    let source = ScriptedSource::new();
+    let (teams, tags) = spend_report_for_time_range(Some(&source), "2026-01-01", "2026-01-31")
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(source.calls(), ["teams", "tags"]);
+    assert_eq!(source.calls(), [SpendTotals::Teams, SpendTotals::Tags]);
     let bounds = source.bounds.lock().unwrap().clone();
     let end = DateTime::parse_from_rfc3339("2026-01-31T00:00:00Z")
         .unwrap()
         .with_timezone(&Utc);
     assert_eq!(bounds, [(midnight(), end), (midnight(), end)]);
-    assert_eq!(teams[0].team_alias.as_deref(), Some("alpha"));
-    assert_eq!(teams[0].total_spend, decimal("3"));
-    assert_eq!(tags[0].request_tag.as_deref(), Some("batch"));
-    assert_eq!(tags[0].total_spend, decimal("1.5"));
+    assert_eq!(
+        teams,
+        [SpendRow {
+            name: Some("alpha".to_owned()),
+            total_spend: decimal("3"),
+        }]
+    );
+    assert_eq!(
+        tags,
+        [SpendRow {
+            name: Some("batch".to_owned()),
+            total_spend: decimal("1.5"),
+        }]
+    );
 }
 
 #[tokio::test]
 async fn a_failing_team_query_answers_none_without_the_tag_query() {
-    let source = FailingSource {
-        tags_fail: false,
-        calls: Mutex::new(Vec::new()),
-    };
-    let report = get_spend_report_for_time_range(Some(&source), "2026-01-01", "2026-01-31").await;
+    let source = ScriptedSource::failing(SpendTotals::Teams);
+    let report = spend_report_for_time_range(Some(&source), "2026-01-01", "2026-01-31").await;
     assert!(report.unwrap().is_none());
-    assert_eq!(*source.calls.lock().unwrap(), ["teams"]);
+    assert_eq!(source.calls(), [SpendTotals::Teams]);
 }
 
 #[tokio::test]
 async fn a_failing_tag_query_answers_none() {
-    let source = FailingSource {
-        tags_fail: true,
-        calls: Mutex::new(Vec::new()),
-    };
-    let report = get_spend_report_for_time_range(Some(&source), "2026-01-01", "2026-01-31").await;
+    let source = ScriptedSource::failing(SpendTotals::Tags);
+    let report = spend_report_for_time_range(Some(&source), "2026-01-01", "2026-01-31").await;
     assert!(report.unwrap().is_none());
-    assert_eq!(*source.calls.lock().unwrap(), ["teams", "tags"]);
+    assert_eq!(source.calls(), [SpendTotals::Teams, SpendTotals::Tags]);
 }
 
 const SCHEMA_SQL: &str = r#"
@@ -261,12 +246,12 @@ async fn postgres_team_totals_order_by_spend_over_the_inclusive_end_day() {
     )
     .await;
     let rows = store(&pool)
-        .team_totals(midnight_window(), end_window())
+        .totals(SpendTotals::Teams, midnight_window(), end_window())
         .await
         .unwrap();
     let summary: Vec<(Option<&str>, rust_decimal::Decimal)> = rows
         .iter()
-        .map(|row| (row.team_alias.as_deref(), row.total_spend))
+        .map(|row| (row.name.as_deref(), row.total_spend))
         .collect();
     assert_eq!(
         summary,
@@ -295,12 +280,12 @@ async fn postgres_tag_totals_expand_each_request_tag() {
     )
     .await;
     let rows = store(&pool)
-        .tag_totals(midnight_window(), end_window())
+        .totals(SpendTotals::Tags, midnight_window(), end_window())
         .await
         .unwrap();
     let summary: Vec<(Option<&str>, rust_decimal::Decimal)> = rows
         .iter()
-        .map(|row| (row.request_tag.as_deref(), row.total_spend))
+        .map(|row| (row.name.as_deref(), row.total_spend))
         .collect();
     assert_eq!(
         summary,
@@ -332,13 +317,13 @@ async fn postgres_report_window_ignores_the_session_timezone() {
     execute(&pool, "SET TIME ZONE 'Pacific/Kiritimati'").await;
     assert_eq!(session_timezone(&pool).await, "Pacific/Kiritimati");
     let east = store
-        .team_totals(midnight_window(), end_window())
+        .totals(SpendTotals::Teams, midnight_window(), end_window())
         .await
         .unwrap();
     execute(&pool, "SET TIME ZONE 'Pacific/Pago_Pago'").await;
     assert_eq!(session_timezone(&pool).await, "Pacific/Pago_Pago");
     let west = store
-        .team_totals(midnight_window(), end_window())
+        .totals(SpendTotals::Teams, midnight_window(), end_window())
         .await
         .unwrap();
     assert_eq!(east, west);

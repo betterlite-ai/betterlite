@@ -62,21 +62,7 @@ pub async fn estimate(
         // an unknown model is handed to completion_cost as it came in
         None => (Some(requested).filter(|model| !model.is_empty()), None),
     };
-    let billing = CompletionBillingInput {
-        model,
-        prompt: "",
-        messages,
-        completion: "",
-        call_type: Some(CallType::Completion),
-        custom_llm_provider: None,
-        region_name: None,
-        router_model_id: None,
-        custom_pricing: None,
-        base_model: None,
-        optional_params: None,
-        service_tier: None,
-        response: None,
-    };
+    let billing = billing_input(model, messages, None);
     price(
         service,
         counter,
@@ -102,10 +88,20 @@ async fn price_response(
         service_tier: None,
         hidden_params: None,
     });
-    let billing = CompletionBillingInput {
-        model: None,
+    let billing = billing_input(None, &[], Some(&view));
+    price(service, counter, billing, charge_inputs(None), instant).await
+}
+
+// Both paths bill one completion call and leave every other option unset; they differ only in what they carry.
+fn billing_input<'a>(
+    model: Option<&'a str>,
+    messages: &'a [Json],
+    response: Option<&'a ResponseView<'a>>,
+) -> CompletionBillingInput<'a> {
+    CompletionBillingInput {
+        model,
         prompt: "",
-        messages: &[],
+        messages,
         completion: "",
         call_type: Some(CallType::Completion),
         custom_llm_provider: None,
@@ -115,9 +111,8 @@ async fn price_response(
         base_model: None,
         optional_params: None,
         service_tier: None,
-        response: Some(&view),
-    };
-    price(service, counter, billing, charge_inputs(None), instant).await
+        response,
+    }
 }
 
 // ModelResponse(**request.completion_response) runs LiteLLM's chat decoder, whose usage defaults to zero counts.

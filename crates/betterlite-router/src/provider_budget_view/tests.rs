@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use betterlite_config::provider_budget_view::ProviderBudgetConfig;
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
+use rstest::rstest;
 use rust_decimal::Decimal;
 
 use super::cache::SpendCache;
@@ -52,7 +53,7 @@ impl ProviderBudgetReads for FakeReads {
         Ok(self.spend)
     }
 
-    async fn current_provider_budget_reset_at(
+    async fn provider_budget_reset_at(
         &self,
         _provider: &str,
         _now: DateTime<Utc>,
@@ -236,7 +237,7 @@ async fn a_null_provider_config_reads_no_spend() {
     };
     assert_eq!(view.current_provider_spend("openai").await.unwrap(), None);
     assert_eq!(
-        view.current_provider_budget_reset_at("openai", Utc::now())
+        view.provider_budget_reset_at("openai", Utc::now())
             .await
             .unwrap(),
         None
@@ -295,7 +296,7 @@ async fn a_null_expiry_reads_no_reset_time() {
         dual: Arc::clone(&dual),
     };
     assert_eq!(
-        view.current_provider_budget_reset_at("openai", instant("2026-11-19T12:00:00Z"))
+        view.provider_budget_reset_at("openai", instant("2026-11-19T12:00:00Z"))
             .await
             .unwrap(),
         None
@@ -316,7 +317,7 @@ async fn adds_a_positive_expiry_to_the_injected_now() {
         dual: Arc::clone(&dual),
     };
     assert_eq!(
-        view.current_provider_budget_reset_at("openai", instant("2026-11-19T12:00:00Z"))
+        view.provider_budget_reset_at("openai", instant("2026-11-19T12:00:00Z"))
             .await
             .unwrap(),
         Some("2026-11-19T12:01:30+00:00".to_owned())
@@ -337,7 +338,7 @@ async fn adds_a_negative_expiry_to_the_injected_now() {
         dual: Arc::clone(&dual),
     };
     assert_eq!(
-        view.current_provider_budget_reset_at("openai", instant("2026-11-19T12:00:00Z"))
+        view.provider_budget_reset_at("openai", instant("2026-11-19T12:00:00Z"))
             .await
             .unwrap(),
         Some("2026-11-19T11:59:30+00:00".to_owned())
@@ -358,7 +359,7 @@ async fn prints_microseconds_only_when_the_reset_time_has_them() {
         dual: Arc::clone(&dual),
     };
     assert_eq!(
-        view.current_provider_budget_reset_at("openai", instant("2026-11-19T12:00:00.500Z"))
+        view.provider_budget_reset_at("openai", instant("2026-11-19T12:00:00.500Z"))
             .await
             .unwrap(),
         Some("2026-11-19T12:00:00.500000+00:00".to_owned())
@@ -379,34 +380,36 @@ async fn rounds_a_fractional_expiry_half_to_even_microseconds() {
         dual: Arc::clone(&dual),
     };
     assert_eq!(
-        view.current_provider_budget_reset_at("openai", instant("2026-11-19T12:00:00Z"))
+        view.provider_budget_reset_at("openai", instant("2026-11-19T12:00:00Z"))
             .await
             .unwrap(),
         Some("2026-11-19T12:00:00.000002+00:00".to_owned())
     );
 }
 
+#[rstest]
+#[case::infinite(f64::INFINITY)]
+#[case::nan(f64::NAN)]
+#[case::huge(1e300)]
 #[tokio::test]
-async fn an_expiry_no_calendar_can_add_is_an_error() {
-    for seconds in [f64::INFINITY, f64::NAN, 1e300] {
-        let dual = Arc::new(FakeCache {
-            spend: None,
-            spend_fails: false,
-            expiry: Some(seconds),
-            keys: Mutex::new(Vec::new()),
-        });
-        let view = ProviderBudgetView {
-            provider_budget_config: Some(config(&[("openai", Some("1d"))])),
-            redis: None,
-            dual: Arc::clone(&dual),
-        };
-        let error = view
-            .current_provider_budget_reset_at("openai", instant("2026-11-19T12:00:00Z"))
-            .await
-            .unwrap_err();
-        assert!(matches!(
-            error,
-            ProviderBudgetViewError::Expiry { ref key } if key == "provider_spend:openai:1d"
-        ));
-    }
+async fn an_expiry_no_calendar_can_add_is_an_error(#[case] seconds: f64) {
+    let dual = Arc::new(FakeCache {
+        spend: None,
+        spend_fails: false,
+        expiry: Some(seconds),
+        keys: Mutex::new(Vec::new()),
+    });
+    let view = ProviderBudgetView {
+        provider_budget_config: Some(config(&[("openai", Some("1d"))])),
+        redis: None,
+        dual: Arc::clone(&dual),
+    };
+    let error = view
+        .provider_budget_reset_at("openai", instant("2026-11-19T12:00:00Z"))
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        ProviderBudgetViewError::Expiry { ref key } if key == "provider_spend:openai:1d"
+    ));
 }

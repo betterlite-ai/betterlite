@@ -25,7 +25,7 @@ pub struct ProviderBudgetResponseObject {
 pub async fn provider_budgets(
     router: Option<&dyn EstimateRouterPort>,
     now: DateTime<Utc>,
-) -> Result<ProviderBudgetResponse, EstimateError> {
+) -> Result<IndexMap<String, ProviderBudgetResponseObject>, EstimateError> {
     let Some(router) = router else {
         return Err(EstimateError::NoRouter);
     };
@@ -45,7 +45,7 @@ pub async fn provider_budgets(
             })?
             .unwrap_or(Decimal::ZERO);
         let reset_at = limiter
-            .current_provider_budget_reset_at(provider, now)
+            .provider_budget_reset_at(provider, now)
             .await
             .map_err(|error| EstimateError::BudgetRead {
                 message: error.to_string(),
@@ -60,5 +60,5 @@ pub async fn provider_budgets(
             },
         );
     }
-    Ok(ProviderBudgetResponse { providers })
+    Ok(providers)
 }

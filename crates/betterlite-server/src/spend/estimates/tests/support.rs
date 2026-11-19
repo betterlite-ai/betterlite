@@ -94,7 +94,7 @@ impl ProviderBudgetReads for FakeReads {
         }
     }
 
-    async fn current_provider_budget_reset_at(
+    async fn provider_budget_reset_at(
         &self,
         provider: &str,
         _now: DateTime<Utc>,

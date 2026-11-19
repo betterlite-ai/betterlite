@@ -49,7 +49,7 @@ async fn calculate(
     body: Bytes,
 ) -> Result<Json<SpendCalculateResponse>, EstimateError> {
     let request = decode_spend_estimate(&body)?;
-    let instant: SystemTime = state.clock.now().into();
+    let instant = SystemTime::from(state.clock.now());
     let cost = estimate(
         &state.cost,
         state.counter.as_ref(),
@@ -64,6 +64,7 @@ async fn calculate(
 async fn read_budgets(
     State(state): State<Arc<EstimatesState>>,
 ) -> Result<Json<ProviderBudgetResponse>, EstimateError> {
-    let response = provider_budgets(state.router.as_deref(), state.clock.now()).await?;
-    Ok(Json(response))
+    let now = state.clock.now();
+    let providers = provider_budgets(state.router.as_deref(), now).await?;
+    Ok(Json(ProviderBudgetResponse { providers }))
 }

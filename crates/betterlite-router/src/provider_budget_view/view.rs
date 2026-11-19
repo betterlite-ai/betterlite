@@ -19,7 +19,7 @@ pub trait ProviderBudgetReads: Send + Sync {
         provider: &str,
     ) -> Result<Option<Decimal>, ProviderBudgetViewError>;
 
-    async fn current_provider_budget_reset_at(
+    async fn provider_budget_reset_at(
         &self,
         provider: &str,
         now: DateTime<Utc>,
@@ -58,7 +58,7 @@ impl ProviderBudgetReads for ProviderBudgetView {
         Ok(Some(spend.unwrap_or(Decimal::ZERO)))
     }
 
-    async fn current_provider_budget_reset_at(
+    async fn provider_budget_reset_at(
         &self,
         provider: &str,
         now: DateTime<Utc>,

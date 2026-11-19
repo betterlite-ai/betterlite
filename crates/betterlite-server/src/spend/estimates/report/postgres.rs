@@ -8,7 +8,7 @@ use rust_decimal::Decimal;
 use tokio_postgres::Row;
 use tokio_postgres::types::ToSql;
 
-use super::{ReportError, SpendReportSource, TagSpendRow, TeamSpendRow};
+use super::{ReportError, SpendReportSource, SpendRow, SpendTotals};
 
 // _get_daily_spend_reports' team query: a tz-aware parameter wrapped back to UTC, then the inclusive end day.
 const TEAM_SQL: &str = r#"SELECT t.team_alias, SUM(s.spend)::text AS spend_text
@@ -31,16 +31,18 @@ pub struct PostgresSpendReportStore {
     pub store: PostgresStore,
 }
 
-impl PostgresSpendReportStore {
-    async fn read<Record>(
+#[async_trait]
+impl SpendReportSource for PostgresSpendReportStore {
+    async fn totals(
         &self,
-        sql: &str,
+        totals: SpendTotals,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
-    ) -> Result<Vec<Record>, ReportError>
-    where
-        Record: for<'row> TryFrom<&'row Row, Error = ReportError>,
-    {
+    ) -> Result<Vec<SpendRow>, ReportError> {
+        let (sql, column) = match totals {
+            SpendTotals::Teams => (TEAM_SQL, "team_alias"),
+            SpendTotals::Tags => (TAG_SQL, "individual_request_tag"),
+        };
         let client = self.store.session().await?;
         let params: [&(dyn ToSql + Sync); 2] = [&start, &end];
         let rows = client
@@ -49,50 +51,12 @@ impl PostgresSpendReportStore {
             .map_err(|source| ReportError::Database(backend(source)))?;
         let mut records = Vec::with_capacity(rows.len());
         for row in &rows {
-            records.push(Record::try_from(row)?);
+            records.push(SpendRow {
+                name: text(row, column)?,
+                total_spend: spend(row)?,
+            });
         }
         Ok(records)
-    }
-}
-
-#[async_trait]
-impl SpendReportSource for PostgresSpendReportStore {
-    async fn team_totals(
-        &self,
-        start: DateTime<Utc>,
-        end: DateTime<Utc>,
-    ) -> Result<Vec<TeamSpendRow>, ReportError> {
-        self.read(TEAM_SQL, start, end).await
-    }
-
-    async fn tag_totals(
-        &self,
-        start: DateTime<Utc>,
-        end: DateTime<Utc>,
-    ) -> Result<Vec<TagSpendRow>, ReportError> {
-        self.read(TAG_SQL, start, end).await
-    }
-}
-
-impl TryFrom<&Row> for TeamSpendRow {
-    type Error = ReportError;
-
-    fn try_from(row: &Row) -> Result<Self, Self::Error> {
-        Ok(Self {
-            team_alias: text(row, "team_alias")?,
-            total_spend: spend(row)?,
-        })
-    }
-}
-
-impl TryFrom<&Row> for TagSpendRow {
-    type Error = ReportError;
-
-    fn try_from(row: &Row) -> Result<Self, Self::Error> {
-        Ok(Self {
-            request_tag: text(row, "individual_request_tag")?,
-            total_spend: spend(row)?,
-        })
     }
 }
 

@@ -15,11 +15,8 @@ use crate::spend::estimates::counter::TokenizerCounter;
 const CONFIG: &str = "general_settings:\n  master_key: test-master\n";
 
 fn counter() -> TokenizerCounter {
-    let config: Config = ConfigLoader {
-        lookup: BTreeMap::new(),
-    }
-    .load(CONFIG)
-    .unwrap();
+    let lookup: BTreeMap<String, String> = BTreeMap::new();
+    let config: Config = ConfigLoader { lookup }.load(CONFIG).unwrap();
     let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap();
     let client = Arc::new(ProxiedClient::outbound(&Arc::new(policy)).unwrap());
     let catalog = BundledCatalog::default().get();

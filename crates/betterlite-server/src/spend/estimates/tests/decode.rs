@@ -127,11 +127,10 @@ fn decode_keeps_message_entries_as_they_came() {
     assert!(matches!(messages[2], Json::Object(_)));
 }
 
-fn issues_of(
-    error: Result<impl std::fmt::Debug, EstimateError>,
-    kind: &str,
-    loc: Vec<String>,
-) -> String {
+fn issues_of<E>(error: Result<E, EstimateError>, kind: &str, loc: Vec<String>) -> String
+where
+    E: std::fmt::Debug,
+{
     let issues = issues(error.unwrap_err());
     let issue = issues.first().expect("one issue");
     assert_eq!(issue.kind, kind);

@@ -9,19 +9,21 @@ pub mod postgres;
 pub const DATABASE_NOT_CONNECTED: &str =
     "Database not connected. Connect a database to your proxy for weekly, monthly spend reports";
 
+// Both of the report's queries answer (name, spend) rows: a team alias or one expanded request tag.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TeamSpendRow {
-    pub team_alias: Option<String>,
+pub struct SpendRow {
+    pub name: Option<String>,
     pub total_spend: Decimal,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TagSpendRow {
-    pub request_tag: Option<String>,
-    pub total_spend: Decimal,
+// Which of _get_daily_spend_reports' two queries a source runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpendTotals {
+    Teams,
+    Tags,
 }
 
-pub type SpendReport = (Vec<TeamSpendRow>, Vec<TagSpendRow>);
+pub type SpendReport = (Vec<SpendRow>, Vec<SpendRow>);
 
 #[derive(Debug, Error)]
 pub enum ReportError {
@@ -52,20 +54,15 @@ pub enum ReportDateError {
 // The report's two queries, so the weekly/monthly report owner stays free of the Slack integration.
 #[async_trait]
 pub trait SpendReportSource: Send + Sync {
-    async fn team_totals(
+    async fn totals(
         &self,
+        totals: SpendTotals,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
-    ) -> Result<Vec<TeamSpendRow>, ReportError>;
-
-    async fn tag_totals(
-        &self,
-        start: DateTime<Utc>,
-        end: DateTime<Utc>,
-    ) -> Result<Vec<TagSpendRow>, ReportError>;
+    ) -> Result<Vec<SpendRow>, ReportError>;
 }
 
-pub async fn get_spend_report_for_time_range(
+pub async fn spend_report_for_time_range(
     source: Option<&dyn SpendReportSource>,
     start_date: &str,
     end_date: &str,
@@ -76,11 +73,11 @@ pub async fn get_spend_report_for_time_range(
     };
     let start = utc_midnight(start_date, "start_date")?;
     let end = utc_midnight(end_date, "end_date")?;
-    let teams = match source.team_totals(start, end).await {
+    let teams = match source.totals(SpendTotals::Teams, start, end).await {
         Ok(rows) => rows,
         Err(error) => return logged_failure(error),
     };
-    let tags = match source.tag_totals(start, end).await {
+    let tags = match source.totals(SpendTotals::Tags, start, end).await {
         Ok(rows) => rows,
         Err(error) => return logged_failure(error),
     };
