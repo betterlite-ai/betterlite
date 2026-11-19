@@ -61,7 +61,14 @@ CONFIG: Final = BraveSearchConfig()
 
 
 def result_value(result: ResultView) -> JsonValue:
-    return JSON.validate_python(result)
+    view: ResultView = {
+        "title": result["title"],
+        "url": result["url"],
+        "snippet": result["snippet"],
+        "date": result["date"],
+        "last_updated": result["last_updated"],
+    }
+    return JSON.validate_python(view)
 
 
 def request_value(call: RequestCall) -> JsonValue:

@@ -158,8 +158,7 @@ fn unix_date(text: &str) -> Option<NaiveDate> {
     Some(moment.date_naive())
 }
 
-// above 1e11 the value is milliseconds; the source divides by 1000.0, and the exact decimal
-// shift keeps every digit, so a fraction that rounds the seconds up or down cannot move the day
+// above 1e11 the value is milliseconds; the source's /1000.0 shift keeps every digit
 fn to_seconds(integer: &str, fraction: &str) -> Option<(String, String)> {
     const LIMIT: &str = "100000000000";
     let above = match integer.len().cmp(&LIMIT.len()) {
