@@ -44,11 +44,11 @@ fn body_of(body: &RequestBody) -> Value {
 fn headers_of(reply: &Reply) -> HeaderMap {
     let mut headers = HeaderMap::new();
     for (name, value) in &reply.headers {
-        if let (Ok(name), Ok(value)) = (
+        if let (Ok(parsed_name), Ok(parsed_value)) = (
             HeaderName::try_from(name.as_str()),
             HeaderValue::from_str(value),
         ) {
-            headers.insert(name, value);
+            headers.insert(parsed_name, parsed_value);
         }
     }
     headers

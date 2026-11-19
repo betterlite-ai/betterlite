@@ -63,7 +63,7 @@ fn one(runtime: &Runtime, step: &Step) -> HelperResult {
     };
     let supplied = step
         .supplied
-        .map(|supplied| supplied_client(supplied.kind, &harness.recorder));
+        .map(|chosen| supplied_client(chosen.kind, &harness.recorder));
     let attached = recording.as_ref().map(|recorded| {
         let object: Arc<dyn RunEventHandler> = Arc::<RecordingHandler>::clone(recorded);
         object
