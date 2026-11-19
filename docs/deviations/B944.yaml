@@ -2,16 +2,15 @@ task: B944
 deviations: []
 kept_bugs:
   - what: >-
-      A websocket send that fails while writing an error frame is swallowed, so the client gets no error
-      frame and the connection continues into B945's own failure handling.
+      A websocket send that fails while writing an error frame is swallowed, so no error frame reaches the
+      client and the connection continues into B945's own failure handling.
     why: >-
-      LiteLLM catches every exception from send_text and passes, and the task keeps that on purpose; a
-      working client already treats a dead socket as terminal, so the swallowed error changes no frame it
-      can act on.
+      LiteLLM catches every exception from send_text and the task keeps that on purpose; a working client
+      treats a dead socket as terminal, so the lost frame changes nothing it can act on.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2577-L2583
   - what: >-
-      A chunk whose model dump fails to serialize is dropped with a debug log, and a warmup
-      acknowledgement drops only that event before trying the next status.
+      A chunk whose model dump fails to serialize is dropped with a debug log, and a warmup acknowledgement
+      drops only that event before trying the next status.
     why: >-
       LiteLLM returns None from _serialize_chunk on any exception and the warmup loop continues, so the
       client sees a stream missing one frame rather than an error; a setup that survives a broken frame
