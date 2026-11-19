@@ -1,0 +1,1 @@
+min_spend=1.5&max_spend=2e2&used_client_oauth_token=true&group_by_session=1

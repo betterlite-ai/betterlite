@@ -1,0 +1,60 @@
+task: B8520
+deviations:
+  - what: >-
+      The general settings read and write go through the GeneralSettingsStore trait: get_field(name) and
+      update_field(update), and GeneralSettingsError carries the status and detail the store chose. LiteLLM's routes call
+      proxy_server.py's get_config_general_settings and update_config_general_settings directly.
+    why: >-
+      proxy_server.py owns both functions, so B8520 does not port them. B8640 passes the real store from B8641. That
+      store answers 400 with the db_not_connected detail when no database is connected, and the route returns its status
+      and detail unchanged so a refusal reads as the HTTPException LiteLLM raises.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18264-L18290
+  - what: >-
+      The three write routes answer any authenticated caller. LiteLLM's get_config_general_settings answers 400
+      not_allowed_access unless the caller has admin view, and update_config_general_settings answers 400 unless the
+      caller is PROXY_ADMIN, so a non-admin virtual key cannot create, update or delete a stored pass-through endpoint
+      there.
+    why: >-
+      The task builds the routes with user_api_key_auth and nothing more, and the settings port takes no caller, so the
+      store cannot apply a per-caller role gate. B8641's store and the mount task decide whether a role check is added
+      above these routes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18550-L18554
+  - what: >-
+      Update and delete resolve the headers and write the new list to the store first, and only then remove the old
+      routes and install the new ones. LiteLLM removes the old routes before the store write, so when the store refuses,
+      it answers the refusal with the live route already gone and the stored entry unchanged. Create resolves its
+      headers before the store write; LiteLLM stores first and resolves after, so an unresolvable header leaves the
+      entry stored with no route.
+    why: >-
+      A refused write must leave the running proxy serving exactly what the store holds. The answers are the same for a
+      store that accepts the write, and the failure cases are ones no working setup can rely on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3692-L3701
+  - what: >-
+      A stored pass_through_endpoints value that is not a JSON list answers 500 with betterlite's internal error body on
+      update, create and delete. LiteLLM hands the value on as if it were a list, so update and delete report an
+      unknown endpoint (404 and 400) for a dict or a string and raise on a number, while create appends nothing and
+      still answers 200 with the endpoint it did not store. initialize_pass_through_endpoints_in_db treats the value as
+      no stored endpoints; LiteLLM skips its contents and registers only the config endpoints.
+    why: >-
+      docs/compatibility.md has betterlite reject a value the shape can't hold instead of copying Python's duck typing.
+      The write routes store a list, so any other shape came from the database. The write reports it as an internal
+      error rather than as a missing endpoint.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3449-L3450
+  - what: >-
+      A create or update installs only the changed endpoint's route, through B3616's add_exact_path_route and
+      add_subpath_route. Those record its auth value in the route metadata and leave the registry's openai_routes list
+      alone. LiteLLM's update_config_general_settings re-serves the whole stored list after every write, and that path
+      appends each authenticated endpoint's path to LiteLLMRoutes.openai_routes.
+    why: >-
+      The store port replaces update_config_general_settings, and whatever runs after a write belongs to B8641's store.
+      The startup path, initialize_pass_through_endpoints_in_db, does refresh openai_routes through B3616's initialize.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18357-L18359
+kept_bugs:
+  - what: >-
+      A failed stored read counts as an empty field: update answers 404 "No pass-through endpoints found", delete
+      answers 400 "There are no pass-through endpoints setup.", and create starts a new list. A database outage or a
+      caller the store refuses therefore reads as a proxy with no stored pass-through endpoints.
+    why: >-
+      LiteLLM wraps the read in a bare except in all three routes, and a setup whose requests race a database restart
+      relies on create and the two refusals instead of a 400 from the read. B3617 keeps the same catch for its reads.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3625-L3634

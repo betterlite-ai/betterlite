@@ -1,13 +1,13 @@
 id: B9943
 milestone: M9 agents and mcp
 title: MCP reply id correlation in the oracle mock
-status: todo
+status: done
 depends_on: [B001]
 file: tasks/B9943-mcp-mock-correlation.yaml
 covers: []
 parent: B136
 split_from: B136
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2547
