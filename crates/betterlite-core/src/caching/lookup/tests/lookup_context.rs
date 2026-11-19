@@ -93,7 +93,9 @@ fn assert_sync_chat_snapshot(fixture: &Fixture, logging: &HitLogging) {
 #[tokio::test]
 async fn an_async_hit_records_the_resolved_model_and_cache_duration() {
     let fixture = Fixture::new();
-    let request_kwargs = chat_kwargs();
+    // the request spells the provider out, so the hit must record the model resolution strips it to
+    let mut request_kwargs = chat_kwargs();
+    request_kwargs.insert("model".to_owned(), text("openai/gpt-4o"));
     let key = computed_key(&fixture.cache, &request_kwargs);
     fixture.backend.seed(&key, cached_chat());
     let mut handler = handler_named(
@@ -101,7 +103,8 @@ async fn an_async_hit_records_the_resolved_model_and_cache_duration() {
         &["model", "messages"],
         request_kwargs.clone(),
     );
-    let request = lookup(CachingSupportedCallType::Acompletion, request_kwargs);
+    let mut request = lookup(CachingSupportedCallType::Acompletion, request_kwargs);
+    request.model = "openai/gpt-4o".to_owned();
     let tokens = Tokens::default();
     let (outcome, worker) = async_cache_lookup(
         &fixture,
@@ -343,4 +346,59 @@ fn an_unreadable_parent_span_is_written_back_as_null() {
     let mut request: KeyObject = chat_kwargs();
     add_parent_otel_span(&mut request);
     assert_eq!(request.get("parent_otel_span"), Some(&KeyValue::Null));
+}
+
+#[tokio::test]
+async fn the_async_lookup_writes_the_parent_span_into_the_request_kwargs() {
+    let fixture = Fixture::new();
+    let traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0c9d02b7-01";
+    let mut request_kwargs = chat_kwargs();
+    request_kwargs.insert(
+        "metadata".to_owned(),
+        object(&[("litellm_parent_otel_span", text(traceparent))]),
+    );
+    let mut handler = handler_named(
+        "acompletion",
+        &["model", "messages"],
+        request_kwargs.clone(),
+    );
+    let request = lookup(CachingSupportedCallType::Acompletion, request_kwargs);
+    let tokens = Tokens::default();
+    let (_outcome, _worker) = async_cache_lookup(
+        &fixture,
+        &mut handler,
+        &request,
+        &tokens,
+        perf_clock(&[Duration::ZERO, Duration::ZERO]),
+    )
+    .await;
+    assert_eq!(
+        handler.request_kwargs.get("parent_otel_span"),
+        Some(&text(traceparent))
+    );
+}
+
+#[tokio::test]
+async fn a_lookup_without_a_parent_span_writes_null_into_the_request_kwargs() {
+    let fixture = Fixture::new();
+    let request_kwargs = chat_kwargs();
+    let mut handler = handler_named(
+        "acompletion",
+        &["model", "messages"],
+        request_kwargs.clone(),
+    );
+    let request = lookup(CachingSupportedCallType::Acompletion, request_kwargs);
+    let tokens = Tokens::default();
+    let (_outcome, _worker) = async_cache_lookup(
+        &fixture,
+        &mut handler,
+        &request,
+        &tokens,
+        perf_clock(&[Duration::ZERO, Duration::ZERO]),
+    )
+    .await;
+    assert_eq!(
+        handler.request_kwargs.get("parent_otel_span"),
+        Some(&KeyValue::Null)
+    );
 }
