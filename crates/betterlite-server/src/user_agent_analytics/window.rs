@@ -77,7 +77,7 @@ pub(super) fn weekly_result(
     let period_days = offset
         .checked_mul(WEEK_DAYS)
         .ok_or(AnalyticsError::WeekOffset { week_offset })?;
-    let number = MAX_WEEKS
+    let week_number = MAX_WEEKS
         .checked_sub(offset)
         .ok_or(AnalyticsError::WeekOffset { week_offset })?;
     let period_end = window
@@ -90,7 +90,10 @@ pub(super) fn weekly_result(
     Ok(TagActiveUsersResponse {
         tag,
         active_users,
-        date: format!("Week {number} ({})", period_start.format(LABEL_DATE_FORMAT)),
+        date: format!(
+            "Week {week_number} ({})",
+            period_start.format(LABEL_DATE_FORMAT)
+        ),
         period_start: Some(period_start.format(DATE_FORMAT).to_string()),
         period_end: Some(period_end.format(DATE_FORMAT).to_string()),
     })
