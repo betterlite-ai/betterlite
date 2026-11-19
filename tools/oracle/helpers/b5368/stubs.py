@@ -5,6 +5,7 @@ import litellm
 from litellm import utils as litellm_utils
 from litellm.caching.caching import Cache
 from litellm.caching.in_memory_cache import InMemoryCache
+from litellm.exceptions import APIError, BadRequestError, ContextWindowExceededError
 from litellm.types.caching import LiteLLMCacheType
 from pydantic import JsonValue
 from pydantic_core import to_jsonable_python
@@ -121,11 +122,11 @@ def scripted_error(step: StepSpec) -> Exception:
     message = step.get("message")
     text = "" if message is None else message
     if error_class == "BadRequestError":
-        return litellm.BadRequestError(message=text, model="", llm_provider="openai")
+        return BadRequestError(message=text, model="", llm_provider="openai")
     if error_class == "ContextWindowExceededError":
-        return litellm.ContextWindowExceededError(message=text, model="", llm_provider="openai")
+        return ContextWindowExceededError(message=text, model="", llm_provider="openai")
     if error_class == "APIError":
-        return litellm.APIError(status_code=500, message=text, llm_provider="openai", model="")
+        return APIError(status_code=500, message=text, llm_provider="openai", model="")
     return Exception(text)
 
 
@@ -228,7 +229,7 @@ def install_state(input_value: Input) -> None:
     max_budget = None if budget is None else budget.get("max_budget")
     current_cost = None if budget is None else budget.get("current_cost")
     STATE.max_budget = 0.0 if max_budget is None else max_budget
-    STATE._current_cost = 0.0 if current_cost is None else current_cost  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L418
+    STATE._current_cost = 0.0 if current_cost is None else current_cost  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L418
     STATE.num_retries = None if retry is None else retry.get("num_retries")
     STATE.num_retries_per_request = (
         None if retry is None else retry.get("num_retries_per_request")
