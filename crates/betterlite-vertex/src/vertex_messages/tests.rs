@@ -478,15 +478,19 @@ fn the_stream_flag_selects_the_endpoint(
         api_base,
     );
     let suffix = query.unwrap_or("");
-    let expected = match api_base {
-        Some(base) => format!(
-            "{base}/v1/projects/deployment-project/locations/us-central1/publishers/anthropic/models/{MODEL}:{endpoint}{suffix}"
-        ),
-        None => format!(
-            "{}{suffix}",
-            url("us-central1", "deployment-project", endpoint)
-        ),
-    };
+    let expected = api_base.map_or_else(
+        || {
+            format!(
+                "{}{suffix}",
+                url("us-central1", "deployment-project", endpoint)
+            )
+        },
+        |base| {
+            format!(
+                "{base}/v1/projects/deployment-project/locations/us-central1/publishers/anthropic/models/{MODEL}:{endpoint}{suffix}"
+            )
+        },
+    );
     assert_eq!(outcome.api_base, expected);
 }
 

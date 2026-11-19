@@ -138,12 +138,12 @@ struct VertexOverrides;
 impl VertexMessagesOverrides for VertexOverrides {
     type Error = BodyError;
 
-    fn apply<'body>(
+    async fn apply<'body>(
         &'body mut self,
         body: &'body mut Object,
         model: &'body str,
-    ) -> impl Future<Output = Result<(), BodyError>> + Send + 'body {
-        async move { body::apply(body, model, &mut NoSanitizer).await }
+    ) -> Result<(), BodyError> {
+        body::apply(body, model, &mut NoSanitizer).await
     }
 }
 
