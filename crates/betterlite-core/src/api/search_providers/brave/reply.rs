@@ -78,7 +78,7 @@ fn section_results<'reply>(
 
 // an unsupported or empty filter selects every section, in the source's own order
 fn sections(url: Option<&str>) -> Vec<&'static str> {
-    let raw = query_parameter(url, RESULT_FILTER).1.unwrap_or_default();
+    let raw = query_parameter(url, RESULT_FILTER).unwrap_or_default();
     let selected: Vec<&'static str> = raw
         .split(',')
         .map(|part| part.trim().to_ascii_lowercase())
@@ -91,26 +91,18 @@ fn sections(url: Option<&str>) -> Vec<&'static str> {
     }
 }
 
-// dict(query_params) keeps a repeated parameter's last value; QueryParams.get keeps its first
-fn query_parameter(url: Option<&str>, name: &str) -> (Option<String>, Option<String>) {
-    let mut first = None;
-    let mut last = None;
-    if let Some(query) = url
+// httpx reads both dict(query_params) and QueryParams.get as the first value of a repeated name
+fn query_parameter(url: Option<&str>, name: &str) -> Option<String> {
+    let query = url
         .and_then(|text| text.split_once('?'))
-        .map(|(_, query)| query)
-    {
-        for (key, value) in form_urlencoded::parse(query.as_bytes()) {
-            if key == name {
-                first = first.or_else(|| Some(value.as_ref().to_owned()));
-                last = Some(value.into_owned());
-            }
-        }
-    }
-    (first, last)
+        .map(|(_, query)| query)?;
+    form_urlencoded::parse(query.as_bytes())
+        .find(|(key, _)| key.as_ref() == name)
+        .map(|(_, value)| value.into_owned())
 }
 
 fn result_limit(url: Option<&str>) -> Result<usize, BraveSearchError> {
-    let Some(raw) = query_parameter(url, COUNT).0 else {
+    let Some(raw) = query_parameter(url, COUNT) else {
         return Ok(DEFAULT_COUNT);
     };
     let count = raw
