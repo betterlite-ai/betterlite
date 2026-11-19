@@ -29,22 +29,22 @@ fn helper_seeds_select_azure_thread_messages() {
         })
         .collect();
     assert!(!seeds.is_empty(), "no azure_thread_messages seeds");
-    let mut selected: Vec<String> = Vec::new();
-    for (stem, source) in &seeds {
-        let case: HelperCase = serde_saphyr::from_str(source).unwrap();
-        validate_helper(Path::new("<helper>"), &case).unwrap();
-        case.call.check(&[crate::GROUP]).unwrap();
-        assert_eq!(case.call.operation, "azure_thread_messages", "{stem}");
-        let input = case.call.input.as_object().unwrap();
-        assert_eq!(input.len(), 1, "{stem}");
-        let variant = input.keys().next().unwrap().replace('_', "-");
-        assert_eq!(stem, &variant);
-        selected.push(variant);
-    }
-    for expected in VARIANTS {
-        assert!(
-            selected.iter().any(|variant| variant == expected),
-            "no seed selects {expected}"
-        );
-    }
+    let selected: Vec<String> = seeds
+        .iter()
+        .map(|(stem, source)| {
+            let case: HelperCase = serde_saphyr::from_str(source).unwrap();
+            validate_helper(Path::new("<helper>"), &case).unwrap();
+            case.call.check(&[crate::GROUP]).unwrap();
+            assert_eq!(case.call.operation, "azure_thread_messages", "{stem}");
+            let input = case.call.input.as_object().unwrap();
+            assert_eq!(input.len(), 1, "{stem}");
+            let variant = input.keys().next().unwrap().replace('_', "-");
+            assert_eq!(stem, &variant);
+            variant
+        })
+        .collect();
+    let missing = VARIANTS
+        .into_iter()
+        .find(|expected| !selected.iter().any(|variant| variant.as_str() == *expected));
+    assert!(missing.is_none(), "no seed selects {missing:?}");
 }
