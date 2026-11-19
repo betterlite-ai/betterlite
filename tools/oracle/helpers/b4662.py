@@ -1,7 +1,7 @@
 import asyncio
 import os
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from collections import UserDict
+from typing import Final, Required, TypedDict
 from urllib.parse import parse_qsl
 
 import httpx
@@ -11,13 +11,14 @@ from litellm.caching.llm_caching_handler import LLMClientCache
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
 from litellm.proxy import proxy_server
 from litellm.proxy._experimental.mcp_server.oauth2_flow_backfill import (
+    BackfillRule,
     backfill_null_oauth2_flows,
     classify_null_flow_row,
 )
 from litellm.proxy._experimental.mcp_server.oauth2_token_cache import (
     MCPOAuth2TokenCache,
     MCPPerUserTokenCache,
-    _compute_per_user_token_ttl,  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth2_token_cache.py#L206-L221
+    _compute_per_user_token_ttl,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth2_token_cache.py#L206-L221
     resolve_mcp_auth,
     resolved_token_header,
 )
@@ -32,46 +33,51 @@ from litellm.types.mcp_server.mcp_server_manager import MCPServer
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
-JSON = TypeAdapter(JsonValue)
-STR = TypeAdapter(str)
-OSTR = TypeAdapter(str | None)
-INT = TypeAdapter(int)
-BOOL = TypeAdapter(bool)
-SERVER = TypeAdapter(MCPServer)
-DICT = TypeAdapter(dict[str, JsonValue])
-DICTS = TypeAdapter(list[dict[str, JsonValue]])
-IDS = TypeAdapter(dict[str, list[str]])
-OVERRIDE = TypeAdapter(str | dict[str, str] | None)
-AMOUNT = TypeAdapter(int | None)
+Where = dict[str, JsonValue]
+STRING: Final = TypeAdapter(str)
+OPTIONAL_STRING: Final = TypeAdapter(str | None)
+DICT: Final = TypeAdapter(Where)
+IDS: Final = TypeAdapter(dict[str, list[str]])
+
+Input = TypedDict("Input", {
+    "function": Required[str], "servers": list[Where], "server": Where, "outcomes": list[Where],
+    "calls": int, "concurrent": bool, "user_id": str, "server_id": str, "seed": str | None,
+    "garbage": bool, "access_token": str, "ttl": int, "identity_binding_proof": str | None,
+    "expires_in": int | None, "fail_get": bool, "fail_set": bool, "fail_delete": bool,
+    "signals": list[Where], "flow_rows": list[Where], "user_credentials": list[Where],
+    "issuer_rows": list[Where], "fail_server_ids": list[str], "runs": int,
+    "mcp_auth_header": str | dict[str, str] | None,
+}, total=False)
+
+Answer = TypedDict("Answer", {
+    "identities": list[str], "tokens": list[str | None], "posts": int, "token": str | None,
+    "token_after": str | None, "ttl": int | None, "form": list[list[str]], "raw_differs": bool,
+    "authorization": str | None, "results": list[Where], "rows": list[Where], "healed": int,
+    "updated": list[str], "failed": list[str], "header": str | None, "ambiguous": list[str],
+    "counts": dict[BackfillRule, int], "stamps": list[dict[str, str | list[str]]],
+    "auth": str | dict[str, str] | None,
+}, total=False)
 
 
 class ScriptedClient(LLMClientCache):
-    def __init__(self, outcomes: list[dict[str, JsonValue]]) -> None:
+    def __init__(self, outcomes: list[Where]) -> None:
         super().__init__()
         self.outcomes = outcomes
         self.posts = 0
-        self.form: JsonValue = None
+        self.form: list[list[str]] = []
         self.authorization: str | None = None
         self.handler = AsyncHTTPHandler(transport=httpx.MockTransport(self.respond))
         litellm.in_memory_llm_clients_cache = self
 
     @override
-    def get_cache(self, key: str, **kwargs: JsonValue) -> AsyncHTTPHandler:
-        return self.handler
+    def get_cache(self, key: str, **kwargs: JsonValue) -> AsyncHTTPHandler: return self.handler
 
     def respond(self, request: httpx.Request) -> httpx.Response:
-        pairs = sorted(parse_qsl(request.content.decode("utf-8")))
         self.posts += 1
-        self.form = JSON.validate_python([[name, value] for name, value in pairs])
+        self.form = [[name, value] for name, value in sorted(parse_qsl(request.content.decode()))]
         self.authorization = request.headers.get("authorization")
-        outcome = self.outcomes.pop(0)
-        kind = STR.validate_python(outcome["kind"])
-        if kind == "success":
-            return httpx.Response(200, json=JSON.validate_json(STR.validate_python(outcome["body"])), request=request)
-        if kind == "denied":
-            status = INT.validate_python(outcome["status_code"])
-            return httpx.Response(status, text=STR.validate_python(outcome["detail"]), request=request)
-        raise httpx.ConnectError(STR.validate_python(outcome["detail"]))
+        body = DICT.validate_json(STRING.validate_python(self.outcomes.pop(0)["body"]))
+        return httpx.Response(200, json=body, request=request)
 
 
 class Memory(InMemoryCache):
@@ -92,7 +98,7 @@ class Memory(InMemoryCache):
         if self.failure == "set":
             raise RuntimeError("the fake cache set failed")
         self.raw[key] = value
-        self.ttls[key] = INT.validate_python(kwargs["ttl"])
+        self.ttls[key] = TypeAdapter(int).validate_python(kwargs["ttl"])
 
     @override
     def delete_cache(self, key: str) -> None:
@@ -101,271 +107,194 @@ class Memory(InMemoryCache):
         self.raw.pop(key, None)
 
 
-def install_user_cache(failure: str) -> Memory:
-    memory = Memory(failure)
-    os.environ["LITELLM_SALT_KEY"] = "b4662-oracle-salt"
-    proxy_server.redis_usage_cache = None
-    proxy_server.user_api_key_cache = UserApiKeyCache(in_memory_cache=memory, redis_cache=None)
-    return memory
+class FakeRow(UserDict[str, JsonValue]):
+    # LiteLLM reads a row's columns as attributes; a column a table does not carry reads as None.
+    def __getattr__(self, name: str) -> JsonValue:
+        return self.get(name)
+
+    def sort_key(self) -> str:
+        return STRING.validate_python(self["server_id"])
 
 
-@dataclass(order=True)
-class Row:
-    server_id: str
-    alias: str | None = None
-    server_name: str | None = None
-    auth_type: str | None = None
-    issuer: str | None = None
-    authorization_url: str | None = None
-    registration_url: str | None = None
-    token_url: str | None = None
-    updated_by: str | None = None
-    credentials: dict[str, JsonValue] | None = None
-    oauth2_flow: str | None = None
-    credential_b64: str | None = None
-
-
-class Table:
-    def __init__(self, rows: list[Row]) -> None:
-        self.rows = rows
-
-
-class ServerTable(Table):
-    def __init__(self, rows: list[Row]) -> None:
-        super().__init__(rows)
+class FakeTable:
+    def __init__(self, rows: list[Where], match: tuple[str, JsonValue] | None = None) -> None:
+        self.rows = [FakeRow(spec) for spec in rows]
+        self.match = match
+        self.fail: list[str] = []
         self.stamps: list[tuple[str, list[str]]] = []
-
-    async def find_many(self, **_kwargs: JsonValue) -> list[Row]:
-        return [row for row in self.rows if row.oauth2_flow is None]
-
-    async def update_many(self, *, where: dict[str, JsonValue], data: dict[str, JsonValue]) -> None:
-        ids = IDS.validate_python(where["server_id"])["in"]
-        selected = [row for row in self.rows if row.server_id in ids and row.oauth2_flow is None]
-        flow = STR.validate_python(data["oauth2_flow"])
-        self.stamps.append((flow, [row.server_id for row in selected]))
-        for row in selected:
-            row.oauth2_flow = flow
-            row.updated_by = STR.validate_python(data["updated_by"])
-
-
-class CredentialTable(Table):
-    async def find_many(self, *, where: dict[str, JsonValue]) -> list[Row]:
-        ids = IDS.validate_python(where["server_id"])["in"]
-        return [row for row in self.rows if row.server_id in ids]
-
-
-class IssuerTable(Table):
-    def __init__(self, rows: list[Row], fail: list[str]) -> None:
-        super().__init__(rows)
-        self.fail = fail
         self.attempted: list[str] = []
         self.updated: list[str] = []
 
-    async def find_many(self, **_kwargs: JsonValue) -> list[Row]:
-        return [row for row in self.rows if row.updated_by == "mcp_oauth_discovery"]
+    async def find_many(self, where: Where) -> list[FakeRow]:
+        if self.match is not None:
+            name, value = self.match
+            return [row for row in self.rows if row.get(name) == value]
+        ids = IDS.validate_python(where["server_id"])["in"]
+        return [row for row in self.rows if STRING.validate_python(row["server_id"]) in ids]
 
-    async def update(self, *, where: dict[str, JsonValue], data: dict[str, JsonValue]) -> None:
-        server_id = STR.validate_python(where["server_id"])
+    async def update_many(self, *, where: Where, data: Where) -> None:
+        ids = IDS.validate_python(where["server_id"])["in"]
+        self.stamps.append((STRING.validate_python(data["oauth2_flow"]), sorted(ids)))
+        for server_id in ids:
+            await self.update(where={"server_id": server_id}, data=data)
+
+    async def update(self, *, where: Where, data: Where) -> None:
+        server_id = STRING.validate_python(where["server_id"])
         self.attempted.append(server_id)
         if server_id in self.fail:
             raise RuntimeError("the fake issuer write failed")
         for row in self.rows:
-            if row.server_id == server_id:
-                row.issuer = OSTR.validate_python(data["issuer"])
-                row.updated_by = STR.validate_python(data["updated_by"])
+            if STRING.validate_python(row["server_id"]) == server_id:
+                row.update(data)
         self.updated.append(server_id)
 
 
-class FakeDb(PrismaWrapper):
-    def __init__(self, servers: Table, credentials: Table) -> None:
+class FakeClient(PrismaClient, PrismaWrapper):
+    def __init__(self, servers: FakeTable, credentials: FakeTable) -> None:
+        self.db = self
         self.litellm_mcpservertable = servers
         self.litellm_mcpusercredentials = credentials
 
 
-class FakeClient(PrismaClient):
-    def __init__(self, servers: Table, credentials: Table) -> None:
-        self.db = FakeDb(servers, credentials)
-
-
-def row_of(spec: dict[str, JsonValue]) -> Row:
-    credentials = spec.get("credentials")
-    return Row(
-        server_id=STR.validate_python(spec["server_id"]),
-        alias=OSTR.validate_python(spec.get("alias")),
-        server_name=OSTR.validate_python(spec.get("server_name")),
-        auth_type=OSTR.validate_python(spec.get("auth_type")),
-        issuer=OSTR.validate_python(spec.get("issuer")),
-        authorization_url=OSTR.validate_python(spec.get("authorization_url")),
-        registration_url=OSTR.validate_python(spec.get("registration_url")),
-        token_url=OSTR.validate_python(spec.get("token_url")),
-        updated_by=OSTR.validate_python(spec.get("updated_by")),
-        credentials=None if credentials is None else DICT.validate_python(credentials),
-        credential_b64=OSTR.validate_python(spec.get("credential_b64")),
-    )
-
-
-def per_user(call: dict[str, JsonValue]) -> tuple[MCPPerUserTokenCache, str, str]:
-    cache = MCPPerUserTokenCache()
-    return cache, STR.validate_python(call["user_id"]), STR.validate_python(call["server_id"])
-
-
-async def identity_op(call: dict[str, JsonValue]) -> JsonValue:
-    identities = [
-        MCPOAuth2TokenCache._token_identity(server)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth2_token_cache.py#L66-L81
-        for server in TypeAdapter(list[MCPServer]).validate_python(call["servers"])
-    ]
-    return JSON.validate_python({"identities": identities})
-
-
-async def get_token_op(call: dict[str, JsonValue]) -> JsonValue:
-    client = ScriptedClient(DICTS.validate_python(call["outcomes"]))
-    cache = MCPOAuth2TokenCache()
-    server = SERVER.validate_python(call["server"])
-    calls = INT.validate_python(call["calls"])
-    if BOOL.validate_python(call["concurrent"]):
-        tokens = list(await asyncio.gather(*[cache.async_get_token(server) for _ in range(calls)]))
-    else:
-        tokens = [await cache.async_get_token(server) for _ in range(calls)]
-    return JSON.validate_python({"tokens": tokens, "posts": client.posts})
-
-
-async def fetch_op(call: dict[str, JsonValue]) -> JsonValue:
-    client = ScriptedClient(DICTS.validate_python(call["outcomes"]))
-    server = SERVER.validate_python(call["server"])
-    token, ttl = await MCPOAuth2TokenCache()._fetch_token(server)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth2_token_cache.py#L117-L190
-    return JSON.validate_python(
-        {"token": token, "ttl": ttl, "form": client.form, "authorization": client.authorization}
-    )
-
-
-async def invalidate_op(call: dict[str, JsonValue]) -> JsonValue:
-    client = ScriptedClient(DICTS.validate_python(call["outcomes"]))
-    cache = MCPOAuth2TokenCache()
-    server = SERVER.validate_python(call["server"])
-    first = await cache.async_get_token(server)
-    cache.invalidate(server.server_id)
-    second = await cache.async_get_token(server)
-    return JSON.validate_python({"tokens": [first, second], "posts": client.posts})
-
-
-async def per_user_get_op(call: dict[str, JsonValue]) -> JsonValue:
-    memory = install_user_cache("get" if BOOL.validate_python(call["fail_get"]) else "none")
-    cache, user_id, server_id = per_user(call)
-    seed = OSTR.validate_python(call["seed"])
-    if seed is not None:
-        await cache.set(user_id, server_id, seed, 300)
-    if BOOL.validate_python(call["garbage"]):
-        memory.raw[next(iter(memory.raw))] = "garbage"
-    token = await cache.get_token(user_id, server_id)
-    return JSON.validate_python({"token": None if token is None else token.access_token})
-
-
-async def per_user_set_op(call: dict[str, JsonValue]) -> JsonValue:
-    memory = install_user_cache("set" if BOOL.validate_python(call["fail_set"]) else "none")
-    cache, user_id, server_id = per_user(call)
-    access_token = STR.validate_python(call["access_token"])
-    await cache.set(
-        user_id,
-        server_id,
-        access_token,
-        INT.validate_python(call["ttl"]),
-        OSTR.validate_python(call["identity_binding_proof"]),
-    )
-    stored = next(iter(memory.raw.values()), None)
-    token = await cache.get_token(user_id, server_id)
-    return JSON.validate_python(
+def row_views(rows: list[FakeRow], field: str) -> list[Where]:
+    return [
         {
-            "token": None if token is None else token.access_token,
+            "server_id": row["server_id"],
+            field: row.get(field),
+            "updated_by": row.get("updated_by"),
+        }
+        for row in sorted(rows, key=FakeRow.sort_key)
+    ]
+
+
+async def stored_token(cache: MCPPerUserTokenCache, user_id: str, server_id: str) -> str | None:
+    token = await cache.get_token(user_id, server_id)
+    return None if token is None else token.access_token
+
+
+async def oauth2(call: Input) -> Answer:
+    if call["function"] == "identity":
+        identities = [
+            MCPOAuth2TokenCache._token_identity(server)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth2_token_cache.py#L66-L81
+            for server in TypeAdapter(list[MCPServer]).validate_python(call["servers"])
+        ]
+        return {"identities": identities}
+    server = TypeAdapter(MCPServer).validate_python(call["server"])
+    if call["function"] == "token_header":
+        return {"header": resolved_token_header(server, call.get("mcp_auth_header"))}
+    client = ScriptedClient(call["outcomes"])
+    if call["function"] == "auth_resolve":
+        auth = await resolve_mcp_auth(server, call.get("mcp_auth_header"))
+        return {"auth": auth, "posts": client.posts}
+    cache = MCPOAuth2TokenCache()
+    if call["function"] == "oauth2_invalidate":
+        first = await cache.async_get_token(server)
+        cache.invalidate(server.server_id)
+        second = await cache.async_get_token(server)
+        return {"tokens": [first, second], "posts": client.posts}
+    if call["function"] == "oauth2_fetch":
+        token, ttl = await cache._fetch_token(server)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth2_token_cache.py#L117-L190
+        return {
+            "token": token, "ttl": ttl, "form": client.form,
+            "authorization": client.authorization,
+        }
+    calls = range(call["calls"])
+    if call.get("concurrent"):
+        tokens = list(await asyncio.gather(*[cache.async_get_token(server) for _ in calls]))
+    else:
+        tokens = [await cache.async_get_token(server) for _ in calls]
+    return {"tokens": tokens, "posts": client.posts}
+
+
+async def per_user(call: Input) -> Answer:
+    action = call["function"].removeprefix("per_user_")
+    if action == "ttl":
+        server = TypeAdapter(MCPServer).validate_python(call["server"])
+        ttl = _compute_per_user_token_ttl(server, call.get("expires_in"))
+        return {"ttl": ttl}
+    fail = call.get("fail_get") or call.get("fail_set") or call.get("fail_delete")
+    memory = Memory(action if fail else "none")
+    os.environ["LITELLM_SALT_KEY"] = "b4662-oracle-salt"
+    proxy_server.redis_usage_cache = None
+    proxy_server.user_api_key_cache = UserApiKeyCache(in_memory_cache=memory, redis_cache=None)
+    cache = MCPPerUserTokenCache()
+    user_id = call["user_id"]
+    server_id = call["server_id"]
+    if action == "get":
+        seed = call.get("seed")
+        if seed is not None:
+            await cache.set(user_id, server_id, seed, 300)
+        if call.get("garbage"):
+            memory.raw[cache._cache_key(user_id, server_id)] = "garbage"  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth2_token_cache.py#L231-L232
+        return {"token": await stored_token(cache, user_id, server_id)}
+    if action == "set":
+        access_token = call["access_token"]
+        proof = call.get("identity_binding_proof")
+        await cache.set(user_id, server_id, access_token, call["ttl"], proof)
+        stored = next(iter(memory.raw.values()), None)
+        return {
+            "token": await stored_token(cache, user_id, server_id),
             "raw_differs": stored is not None and stored != access_token,
             "ttl": next(iter(memory.ttls.values()), None),
         }
-    )
-
-
-async def per_user_delete_op(call: dict[str, JsonValue]) -> JsonValue:
-    install_user_cache("delete" if BOOL.validate_python(call["fail_delete"]) else "none")
-    cache, user_id, server_id = per_user(call)
     await cache.set(user_id, server_id, "token-value", 300)
     await cache.delete(user_id, server_id)
-    token = await cache.get_token(user_id, server_id)
-    return JSON.validate_python({"token_after": None if token is None else token.access_token})
+    return {"token_after": await stored_token(cache, user_id, server_id)}
 
 
-async def per_user_ttl_op(call: dict[str, JsonValue]) -> JsonValue:
-    server = SERVER.validate_python(call["server"])
-    ttl = _compute_per_user_token_ttl(server, AMOUNT.validate_python(call["expires_in"]))
-    return JSON.validate_python({"ttl": ttl})
-
-
-def classify_op(call: dict[str, JsonValue]) -> JsonValue:
-    results: list[JsonValue] = []
-    for signal in DICTS.validate_python(call["signals"]):
+async def classify(call: Input) -> Answer:
+    results: list[Where] = []
+    for signal in call["signals"]:
         raw = signal.get("credentials")
         credentials = None if raw is None else TypeAdapter(MCPCredentials).validate_python(raw)
         flow, rule = classify_null_flow_row(
-            has_per_user_tokens=BOOL.validate_python(signal["has_per_user_tokens"]),
-            authorization_url=OSTR.validate_python(signal.get("authorization_url")),
-            registration_url=OSTR.validate_python(signal.get("registration_url")),
-            token_url=OSTR.validate_python(signal.get("token_url")),
+            has_per_user_tokens=TypeAdapter(bool).validate_python(signal["has_per_user_tokens"]),
+            authorization_url=OPTIONAL_STRING.validate_python(signal.get("authorization_url")),
+            registration_url=OPTIONAL_STRING.validate_python(signal.get("registration_url")),
+            token_url=OPTIONAL_STRING.validate_python(signal.get("token_url")),
             credentials=credentials,
         )
-        results.append(JSON.validate_python({"flow": flow, "rule": rule}))
-    return JSON.validate_python({"results": results})
+        results.append({"flow": flow, "rule": rule})
+    return {"results": results}
 
 
-async def flow_backfill_op(call: dict[str, JsonValue]) -> JsonValue:
-    table = ServerTable([row_of(spec) for spec in DICTS.validate_python(call["flow_rows"])])
-    credentials = CredentialTable([row_of(spec) for spec in DICTS.validate_python(call["user_credentials"])])
+async def flow_backfill(call: Input) -> Answer:
+    table = FakeTable(call["flow_rows"], ("oauth2_flow", None))
+    credentials = FakeTable(call["user_credentials"])
     counts = await backfill_null_oauth2_flows(FakeClient(table, credentials))
-    stamps = [{"flow": flow, "server_ids": sorted(ids)} for flow, ids in table.stamps]
-    rows = [
-        JSON.validate_python({"server_id": row.server_id, "oauth2_flow": row.oauth2_flow, "updated_by": row.updated_by})
-        for row in sorted(table.rows)
-    ]
-    ambiguous = sorted(row.server_id for row in table.rows if row.oauth2_flow is None)
-    return JSON.validate_python({"counts": dict(counts), "rows": rows, "stamps": stamps, "ambiguous": ambiguous})
+    open_rows = [row for row in table.rows if row.get("oauth2_flow") is None]
+    ambiguous = sorted(STRING.validate_python(row["server_id"]) for row in open_rows)
+    return {
+        "counts": counts,
+        "rows": row_views(table.rows, "oauth2_flow"),
+        "stamps": [{"flow": flow, "server_ids": sorted(ids)} for flow, ids in table.stamps],
+        "ambiguous": ambiguous,
+    }
 
 
-async def issuer_backfill_op(call: dict[str, JsonValue]) -> JsonValue:
-    table = IssuerTable(
-        [row_of(spec) for spec in DICTS.validate_python(call["issuer_rows"])],
-        TypeAdapter(list[str]).validate_python(call["fail_server_ids"]),
-    )
+async def issuer_backfill(call: Input) -> Answer:
+    table = FakeTable(call["issuer_rows"], ("updated_by", "mcp_oauth_discovery"))
+    table.fail = call["fail_server_ids"]
     healed = 0
-    for _run in range(INT.validate_python(call["runs"])):
-        healed += await backfill_discovery_stamped_issuers(FakeClient(table, CredentialTable([])))
-    rows = [
-        JSON.validate_python({"server_id": row.server_id, "issuer": row.issuer, "updated_by": row.updated_by})
-        for row in sorted(table.rows)
-    ]
-    failed = sorted(server_id for server_id in table.attempted if server_id not in table.updated)
-    return JSON.validate_python(
-        {"healed": healed, "rows": rows, "updated": sorted(table.updated), "failed": failed}
-    )
+    for _run in range(call["runs"]):
+        healed += await backfill_discovery_stamped_issuers(FakeClient(table, FakeTable([])))
+    return {
+        "healed": healed,
+        "rows": row_views(table.rows, "issuer"),
+        "updated": sorted(table.updated),
+        "failed": sorted(i for i in table.attempted if i not in table.updated),
+    }
 
 
-async def resolve_op(call: dict[str, JsonValue]) -> JsonValue:
-    client = ScriptedClient(DICTS.validate_python(call["outcomes"]))
-    server = SERVER.validate_python(call["server"])
-    auth = await resolve_mcp_auth(server, OVERRIDE.validate_python(call["mcp_auth_header"]))
-    return JSON.validate_python({"auth": auth, "posts": client.posts})
-
-
-async def header_op(call: dict[str, JsonValue]) -> JsonValue:
-    server = SERVER.validate_python(call["server"])
-    header = resolved_token_header(server, OVERRIDE.validate_python(call["mcp_auth_header"]))
-    return JSON.validate_python({"header": header})
-
-
-OPS: dict[str, Callable[[dict[str, JsonValue]], Awaitable[JsonValue]]] = {
-    "identity": identity_op, "oauth2_get_token": get_token_op, "oauth2_fetch": fetch_op,
-    "oauth2_invalidate": invalidate_op, "per_user_get": per_user_get_op, "per_user_set": per_user_set_op,
-    "per_user_delete": per_user_delete_op, "per_user_ttl": per_user_ttl_op, "flow_classify": classify_op,
-    "flow_backfill": flow_backfill_op, "issuer_backfill": issuer_backfill_op, "auth_resolve": resolve_op,
-    "token_header": header_op,
+OPS = {
+    "identity": oauth2, "oauth2_get_token": oauth2, "oauth2_fetch": oauth2,
+    "oauth2_invalidate": oauth2, "per_user_get": per_user, "per_user_set": per_user,
+    "per_user_delete": per_user, "per_user_ttl": per_user, "flow_classify": classify,
+    "flow_backfill": flow_backfill, "issuer_backfill": issuer_backfill, "auth_resolve": oauth2,
+    "token_header": oauth2,
 }
 
 
-def run(input_value: dict[str, JsonValue]) -> JsonValue:
-    operation = STR.validate_python(input_value["function"])
-    return asyncio.run(OPS[operation](input_value))
+def run(input_value: Input) -> Answer:
+    answer: Answer = asyncio.run(OPS[input_value["function"]](input_value))
+    return answer
