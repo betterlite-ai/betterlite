@@ -101,7 +101,7 @@ fn passthrough_key_value(step: &PassthroughKeyStep) -> Value {
     let settings = config(None, step.env_key.clone());
     let api_key = step.api_key.clone().map(SecretString::from);
     let key = settings.get_api_key(api_key.as_ref());
-    json!({"ok": true, "key": key.map(|key| key.expose_secret())})
+    json!({"ok": true, "key": key.map(|secret| secret.expose_secret())})
 }
 
 fn config(base: Option<String>, key: Option<String>) -> GigachatPassthroughConfig {
@@ -112,15 +112,15 @@ fn config(base: Option<String>, key: Option<String>) -> GigachatPassthroughConfi
 }
 
 fn passthrough_streaming_value(step: &PassthroughStreamingStep) -> Value {
-    let config = GigachatPassthroughConfig::default();
+    let settings = GigachatPassthroughConfig::default();
     json!({
         "ok": true,
-        "streaming": config.is_streaming_request("", &step.request_data),
+        "streaming": settings.is_streaming_request("", &step.request_data),
     })
 }
 
 fn passthrough_logging_value(step: &PassthroughLoggingStep) -> Value {
-    let config = GigachatPassthroughConfig::default();
+    let settings = GigachatPassthroughConfig::default();
     let target = PassthroughTarget {
         model: &step.model,
         custom_llm_provider: "gigachat",
@@ -131,8 +131,12 @@ fn passthrough_logging_value(step: &PassthroughLoggingStep) -> Value {
         body: step.body.as_bytes(),
     };
     let request_data = Object::new();
-    match config.logging_non_streaming_response(&target, &response, &request_data, &mut NoopLogging)
-    {
+    match settings.logging_non_streaming_response(
+        &target,
+        &response,
+        &request_data,
+        &mut NoopLogging,
+    ) {
         Some(GigachatPassthroughLogged::Chat(reply)) => {
             json!({"ok": true, "value": chat_value(&reply)})
         }
@@ -144,13 +148,13 @@ fn passthrough_logging_value(step: &PassthroughLoggingStep) -> Value {
 }
 
 fn passthrough_collected_value(step: &PassthroughCollectedStep) -> Value {
-    let config = GigachatPassthroughConfig::default();
+    let settings = GigachatPassthroughConfig::default();
     let target = PassthroughTarget {
         model: &step.model,
         custom_llm_provider: "gigachat",
         endpoint: &step.endpoint,
     };
-    match config.handle_collected_chunks(&step.chunks, &mut NoopLogging, &target) {
+    match settings.handle_collected_chunks(&step.chunks, &mut NoopLogging, &target) {
         Some(GigachatPassthroughLogged::Chunks(chunks)) => {
             json!({"ok": true, "value": collected_value(&chunks)})
         }
