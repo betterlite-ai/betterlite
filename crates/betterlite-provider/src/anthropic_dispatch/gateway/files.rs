@@ -34,6 +34,20 @@ pub(crate) struct Files<'a, Source> {
     pub(crate) fetched: &'a Prefetched,
 }
 
+impl<Source> Files<'_, Source>
+where
+    Source: RemoteMediaFetcher + Sync,
+{
+    // A prefetched answer wins over the fetcher, so the same URL never leaves the proxy twice.
+    async fn resolve(&self, url: &str) -> Result<String, ImageFetchError> {
+        match self.fetched.get(url) {
+            Some(Ok(fetched)) => Ok(fetched.clone()),
+            Some(Err(error)) => Err(reraise(error)),
+            None => self.fetcher.convert_url(url).await,
+        }
+    }
+}
+
 impl<Source> RemoteMediaFetcher for Files<'_, Source>
 where
     Source: RemoteMediaFetcher + Sync,
@@ -42,13 +56,7 @@ where
         &self,
         url: &str,
     ) -> impl Future<Output = Result<String, ImageFetchError>> + Send {
-        async move {
-            match self.fetched.get(url) {
-                Some(Ok(fetched)) => Ok(fetched.clone()),
-                Some(Err(error)) => Err(reraise(error)),
-                None => self.fetcher.convert_url(url).await,
-            }
-        }
+        async move { self.resolve(url).await }
     }
 
     fn convert_urls(
@@ -58,7 +66,7 @@ where
         async move {
             let mut converted = Vec::with_capacity(urls.len());
             for url in urls {
-                converted.push(self.convert_url(url).await?);
+                converted.push(self.resolve(url).await?);
             }
             Ok(converted)
         }

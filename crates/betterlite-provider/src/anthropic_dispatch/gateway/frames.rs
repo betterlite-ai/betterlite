@@ -155,11 +155,14 @@ fn written(frames: &mut Frames, chunk: &StreamChunk) -> Step {
 
 fn ending(frames: &mut Frames) -> Step {
     frames.done = true;
-    match frames.wrapper.finish() {
-        None => Step::End,
-        Some(Ok(chunk)) => written(frames, &chunk),
-        Some(Err(error)) => failed(frames, &error, "the anthropic stream could not end"),
-    }
+    let Some(ended) = frames.wrapper.finish() else {
+        return Step::End;
+    };
+    let chunk = match ended {
+        Ok(chunk) => chunk,
+        Err(error) => return failed(frames, &error, "the anthropic stream could not end"),
+    };
+    written(frames, &chunk)
 }
 
 fn failed(frames: &mut Frames, error: &dyn Display, message: &str) -> Step {

@@ -76,22 +76,18 @@ pub(super) async fn stream() {
         MESSAGE_STOP,
     ])
     .await;
-    assert!(!chunks.is_empty());
     let mut named = false;
     let mut finished = false;
-    for choice in chunks.iter().flat_map(|chunk| &chunk.choices) {
-        for call in choice.delta.tool_calls.iter().flatten() {
-            if call.id.as_deref() == Some("tool_1")
-                && call
-                    .function
-                    .as_ref()
-                    .is_some_and(|function| function.name.as_deref() == Some("get_weather"))
-            {
-                named = true;
-            }
-        }
-        if choice.finish_reason.as_deref() == Some("tool_calls") {
-            finished = true;
+    for chunk in &chunks {
+        for choice in &chunk.choices {
+            named |= choice.delta.tool_calls.iter().flatten().any(|call| {
+                call.id.as_deref() == Some("tool_1")
+                    && call
+                        .function
+                        .as_ref()
+                        .is_some_and(|function| function.name.as_deref() == Some("get_weather"))
+            });
+            finished |= choice.finish_reason.as_deref() == Some("tool_calls");
         }
     }
     assert!(named, "the tool_use block arrives as delta tool_calls");
@@ -109,26 +105,27 @@ pub(super) async fn thinking() {
         MESSAGE_STOP,
     ])
     .await;
-    let deltas = chunks
+    let thought = chunks
         .iter()
         .flat_map(|chunk| &chunk.choices)
-        .map(|choice| &choice.delta)
-        .collect::<Vec<_>>();
-    let thought = deltas.iter().find(|delta| {
-        delta.reasoning_content.as_deref() == Some("hmm")
-            && delta.thinking_blocks.as_ref().is_some_and(|blocks| {
-                blocks.len() == 1
-                    && blocks[0].kind == ThinkingKind::Thinking
-                    && blocks[0].thinking.as_deref() == Some("hmm")
-            })
-    });
+        .find(|choice| {
+            choice.delta.reasoning_content.as_deref() == Some("hmm")
+                && choice.delta.thinking_blocks.as_ref().is_some_and(|blocks| {
+                    blocks.len() == 1
+                        && blocks[0].kind == ThinkingKind::Thinking
+                        && blocks[0].thinking.as_deref() == Some("hmm")
+                })
+        });
     assert!(thought.is_some(), "the thinking block reaches the delta");
-    let signed = deltas.iter().any(|delta| {
-        delta.thinking_blocks.as_ref().is_some_and(|blocks| {
-            blocks
-                .iter()
-                .any(|block| block.signature.as_deref() == Some("sig-abc"))
-        })
-    });
+    let signed = chunks
+        .iter()
+        .flat_map(|chunk| &chunk.choices)
+        .any(|choice| {
+            choice.delta.thinking_blocks.as_ref().is_some_and(|blocks| {
+                blocks
+                    .iter()
+                    .any(|block| block.signature.as_deref() == Some("sig-abc"))
+            })
+        });
     assert!(signed, "the signature reaches the same delta");
 }

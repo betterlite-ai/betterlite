@@ -1,6 +1,5 @@
 use betterlite_anthropic::anthropic_capability_catalog::CatalogSources;
 use betterlite_context::bedrock_model::{get_bedrock_base_model, strip_bedrock_routing_prefix};
-use betterlite_context::chat_config_selection::tags::ChatConfigTag;
 use betterlite_core::cost::completion::lookup::NoHfConfig;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::model_capability_predicates::CapabilityEnvironment;
@@ -11,19 +10,7 @@ use betterlite_models::model_metadata_resolution::names::NameNormalizers;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::resolution::ResolutionContext;
 
-use crate::anthropic_dispatch::completion::CompletionSettings;
 use crate::anthropic_dispatch::gateway::runtime::AnthropicRuntime;
-
-pub(super) fn settings(runtime: &AnthropicRuntime) -> CompletionSettings<'_> {
-    CompletionSettings {
-        globals: &runtime.bases.globals,
-        environment: &runtime.bases.environment,
-        custom_prompt_dict: &runtime.custom_prompts,
-        disable_suffix: runtime.bases.disable_suffix,
-        // The messages surface is always the provider's own config; selected_config needs it named.
-        selection: Some(ChatConfigTag::Anthropic),
-    }
-}
 
 pub(super) fn catalogs(runtime: &AnthropicRuntime) -> CatalogSources<'_> {
     CatalogSources {

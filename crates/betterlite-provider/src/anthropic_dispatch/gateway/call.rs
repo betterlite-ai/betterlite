@@ -6,6 +6,7 @@ use betterlite_anthropic::chat_call::ChatOutcome;
 use betterlite_anthropic::request::BillingHeader;
 use betterlite_anthropic::response::wire::ResponseEnvelope;
 use betterlite_anthropic::stream_state::state::{IdSource, UuidV4};
+use betterlite_context::chat_config_selection::tags::ChatConfigTag;
 use betterlite_core::api::anthropic_beta_config::matrix::BetaMatrix;
 use betterlite_core::cost::completion::lookup::NoHfConfig;
 use betterlite_http::proxy::ProxiedClient;
@@ -117,8 +118,7 @@ async fn run(
         effort_used: parameters.effort_used,
     });
     let call = completion_call(runtime, deployment, &messages, stream, &parameters);
-    let settings = context::settings(runtime);
-    send(&mut native, call, &settings, runtime, &deployment.model).await
+    send(&mut native, call, runtime, &deployment.model).await
 }
 
 // The borrowing handler structs are built from &runtime once per call, after the parameter mapping has released them.
@@ -216,10 +216,17 @@ impl<'call> From<Deps<'call>> for Handler<'call> {
 async fn send(
     native: &mut Handler<'_>,
     call: CompletionCall<ClientHandle<ProxiedClient>, Engine>,
-    settings: &CompletionSettings<'_>,
     runtime: &AnthropicRuntime,
     model: &str,
 ) -> Result<ChatOutcome<StreamFailure, Counter>, OperationError> {
+    // The messages surface is always the provider's own config; selected_config needs it named.
+    let settings = CompletionSettings {
+        globals: &runtime.bases.globals,
+        environment: &runtime.bases.environment,
+        custom_prompt_dict: &runtime.custom_prompts,
+        disable_suffix: runtime.bases.disable_suffix,
+        selection: Some(ChatConfigTag::Anthropic),
+    };
     let call_id = Uuid::new_v4().to_string();
     let (mut state, env) = logging::state(&TracingSink, &runtime.redactor, model, &call_id)
         .map_err(|source| error::internal(source.to_string()))?;
@@ -227,7 +234,7 @@ async fn send(
         state: &mut state,
         env: &env,
     };
-    match completion::complete(Surface::Messages, call, settings, native, &mut log).await {
+    match completion::complete(Surface::Messages, call, &settings, native, &mut log).await {
         Ok(Reply::Messages(outcome)) => Ok(outcome),
         Ok(Reply::Legacy(_)) => Err(error::unsupported()),
         Err(source) => Err(error::dispatch(source)),
