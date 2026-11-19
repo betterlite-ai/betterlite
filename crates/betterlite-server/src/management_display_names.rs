@@ -140,25 +140,29 @@ impl DisplayNameStore for PrismaClient<'_> {
         &self,
         tokens: BTreeSet<String>,
     ) -> impl Future<Output = Result<BTreeMap<String, String>, DisplayNameError>> + Send {
-        async move {
-            let client = PostgresTokenClient { store: self.writer };
-            let repository = VerificationTokenRepository {
-                database: Some(WriterPinnedClient::Writer(&client)),
-            };
-            let hashes: Vec<KeyHash> = tokens.into_iter().map(KeyHash::from).collect();
-            let mut names = BTreeMap::new();
-            for row in repository.find_many_in(hashes).await? {
-                let (Some(token), Some(alias)) = (row.token, row.key_alias) else {
-                    continue;
-                };
-                if alias.is_empty() {
-                    continue;
-                }
-                names.insert(token.expose_secret().to_owned(), alias);
-            }
-            Ok(names)
+        token_names(self.writer, tokens)
+    }
+}
+
+async fn token_names(
+    store: &PostgresStore,
+    tokens: BTreeSet<String>,
+) -> Result<BTreeMap<String, String>, DisplayNameError> {
+    let client = PostgresTokenClient { store };
+    let repository = VerificationTokenRepository {
+        database: Some(WriterPinnedClient::Writer(&client)),
+    };
+    let hashes: Vec<KeyHash> = tokens.into_iter().map(KeyHash::from).collect();
+    let mut names = BTreeMap::new();
+    for row in repository.find_many_in(hashes).await? {
+        let (Some(token), Some(alias)) = (row.token, row.key_alias) else {
+            continue;
+        };
+        if !alias.is_empty() {
+            names.insert(token.expose_secret().to_owned(), alias);
         }
     }
+    Ok(names)
 }
 
 async fn table_names<T>(

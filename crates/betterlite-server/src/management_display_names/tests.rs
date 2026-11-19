@@ -71,8 +71,8 @@ impl FakeStore {
     }
 
     fn record(&self, family: Family, ids: &BTreeSet<String>) {
-        let ids = ids.iter().cloned().collect();
-        self.calls.lock().unwrap().push((family, ids));
+        let requested = ids.iter().cloned().collect();
+        self.calls.lock().unwrap().push((family, requested));
     }
 
     fn calls(&self) -> Vec<(Family, Vec<String>)> {
