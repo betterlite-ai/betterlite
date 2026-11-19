@@ -53,9 +53,15 @@ async fn walk_drops_each_full_page_before_reading_the_next() {
     assert_eq!(
         counters,
         vec![
-            vec!["spend:end_user:u1", "spend:end_user:u2"],
-            vec!["spend:end_user:u3", "spend:end_user:u4"],
-            vec!["spend:end_user:u5"],
+            vec![
+                "spend:end_user:u1".to_owned(),
+                "spend:end_user:u2".to_owned()
+            ],
+            vec![
+                "spend:end_user:u3".to_owned(),
+                "spend:end_user:u4".to_owned()
+            ],
+            vec!["spend:end_user:u5".to_owned()],
         ]
     );
     finish(fixture, store, client).await;
