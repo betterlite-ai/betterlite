@@ -139,7 +139,7 @@ macro_rules! budget_table {
                 self.including(
                     IncludingQuery::Listed {
                         filter: options.filter.and_then(|filters| filters.first()),
-                        limit: &NO_LIMIT,
+                        limit: &super::NO_LIMIT,
                     },
                     None,
                 )
