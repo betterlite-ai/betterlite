@@ -1,0 +1,75 @@
+kind: helper
+name: supplied-file-mapping
+call:
+  responses_provider_selection:
+    action: file_mapping
+    input:
+      - role: user
+        content:
+          - {type: input_file, file_id: file_global}
+    tools: []
+    model_info: {id: deployment_a}
+    mapping: {file_global: {deployment_a: file_provider_a}}
+calls:
+  - responses_provider_selection:
+      action: file_mapping
+      input:
+        - role: user
+          content:
+            - {type: input_file, file_id: file_global}
+      mapping: {file_global: {deployment_a: file_provider_a}}
+  - responses_provider_selection:
+      action: file_mapping
+      input:
+        - role: user
+          content:
+            - {type: input_file, file_id: file_global}
+      model_info: text
+      mapping: {file_global: {deployment_a: file_provider_a}}
+  - responses_provider_selection:
+      action: file_mapping
+      input:
+        - role: user
+          content:
+            - {type: input_file, file_id: file_global}
+      model_info: {id: deployment_a}
+      mapping: {file_global: {deployment_other: file_provider_other}}
+  - responses_provider_selection:
+      action: file_mapping
+      input: hello
+      tools:
+        - {type: file_search, vector_store_ids: [vs_plain]}
+      model_info: {id: deployment_a}
+      mapping: {file_global: {deployment_a: file_provider_a}}
+  - responses_provider_selection:
+      action: file_mapping
+      input: hi
+      tools:
+        - type: code_interpreter
+          container:
+            type: auto
+            file_ids: [file_global, other]
+      model_info: {id: deployment_a}
+      mapping: {file_global: {deployment_a: file_provider_a}}
+  - responses_provider_selection:
+      action: file_mapping
+      input: hi
+      model_info: {id: deployment_a}
+      mapping: {file_global: {deployment_a: file_provider_a}}
+  - responses_provider_selection:
+      action: file_mapping
+      input:
+        - role: user
+          content:
+            - {type: input_file, file_id: ""}
+      model_info: {id: deployment_a}
+      mapping: {file_global: {deployment_a: file_provider_a}}
+  - responses_provider_selection:
+      action: file_mapping
+      input:
+        - role: user
+          content:
+            - {type: input_file, file_id: file_global}
+      model_info: {id: deployment_a}
+env: {}
+compare: {ignore: []}

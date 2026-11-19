@@ -1,0 +1,67 @@
+kind: helper
+name: compatible-provider-environment
+call:
+  responses_provider_selection:
+    action: compatible
+    environment: {}
+    headers: {}
+calls:
+  - responses_provider_selection:
+      action: compatible
+      environment:
+        OPENAI_LIKE_API_KEY: sk-env
+        OPENAI_LIKE_API_BASE: https://env.test/v1
+      api_key: sk-explicit
+      api_base: https://provider.test/v1///
+      headers:
+        Authorization: Bearer caller
+  - responses_provider_selection:
+      action: compatible
+      environment:
+        OPENAI_LIKE_API_KEY: sk-env
+      api_key: ""
+      api_base: https://provider.test/v1
+      headers: {}
+  - responses_provider_selection:
+      action: compatible
+      environment: {}
+      api_base: https://provider.test/v1
+      headers:
+        Authorization: Bearer caller
+  - responses_provider_selection:
+      action: compatible
+      environment:
+        OPENAI_LIKE_API_BASE: https://env.test/v1
+      api_key: null
+      api_base: ""
+      headers: {}
+  - responses_provider_selection:
+      action: compatible
+      environment: {}
+      api_key: " "
+      api_base: " "
+      headers: {}
+  - responses_provider_selection:
+      action: compatible
+      environment: {}
+      api_base: https://provider.test/responses
+      headers: {}
+  - responses_provider_selection:
+      action: compatible
+      environment: {}
+      api_base: https://provider.test/v1?x=1
+      headers: {}
+  - responses_provider_selection:
+      action: compatible
+      environment:
+        OPENAI_LIKE_API_KEY: ""
+      api_base: https://provider.test/v1
+      headers: {}
+  - responses_provider_selection:
+      action: compatible
+      environment:
+        OPENAI_LIKE_API_KEY: " "
+      api_base: https://provider.test/v1
+      headers: {}
+env: {}
+compare: {ignore: []}

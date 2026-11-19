@@ -1,0 +1,25 @@
+kind: helper
+name: responses-provider-selection-compatible-fallback
+env: {}
+compare: {ignore: []}
+call:
+  responses_provider_selection:
+    action: selection
+    provider: openai_like
+    model: llama
+    use_chat_completions_api: false
+    model_info: {supported_endpoints: [/v1/responses]}
+    kwargs: {}
+    allowed_openai_params: []
+calls:
+  - responses_provider_selection:
+      action: compatible
+      environment:
+        OPENAI_LIKE_API_KEY: sk-env
+        OPENAI_LIKE_API_BASE: https://env.test/v1
+      headers: {}
+  - responses_provider_selection:
+      action: prefixes
+      model: openai/chat_completions/gpt-4o
+      flag_present: true
+      flag: "false"

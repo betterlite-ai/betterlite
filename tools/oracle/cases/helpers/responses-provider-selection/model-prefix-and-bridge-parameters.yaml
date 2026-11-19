@@ -1,0 +1,63 @@
+kind: helper
+name: model-prefix-and-bridge-parameters
+call:
+  responses_provider_selection:
+    action: prefixes
+    model: openai/chat_completions/gpt-4o
+    flag_present: false
+calls:
+  - responses_provider_selection:
+      action: prefixes
+      model: openai/chat_completions/
+      flag_present: false
+  - responses_provider_selection:
+      action: prefixes
+      model: openai/chat_completions/gpt-4o
+      flag_present: true
+      flag: false
+  - responses_provider_selection:
+      action: prefixes
+      model: responses/responses/gpt-4o
+      flag_present: true
+      flag: 0
+  - responses_provider_selection:
+      action: prefixes
+      model: responses/
+      flag_present: true
+      flag: ""
+  - responses_provider_selection:
+      action: prefixes
+      model: gpt-4o
+      flag_present: true
+      flag: null
+  - responses_provider_selection:
+      action: prefixes
+      model: gpt-4o
+      flag_present: true
+      flag: true
+  - responses_provider_selection:
+      action: prefixes
+      model: gpt-4o
+      flag_present: true
+      flag: "false"
+  - responses_provider_selection:
+      action: prefixes
+      model: gpt-4o
+      flag_present: true
+      flag: []
+  - responses_provider_selection:
+      action: prefixes
+      model: gpt-4o
+      flag_present: true
+      flag: {}
+  - responses_provider_selection:
+      action: prefixes
+      model: gpt-4o
+      flag_present: true
+      flag: 2
+  - responses_provider_selection:
+      action: prefixes
+      model: Responses/gpt-4o
+      flag_present: false
+env: {}
+compare: {ignore: []}
