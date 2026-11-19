@@ -124,6 +124,49 @@ fn streaming_error_display_names_the_azure_message() {
 }
 
 #[test]
+fn a_missing_messages_key_fails_before_pre_call() {
+    let source = scripted_source(ClientKind::AzureOpenAi, &[], sse_payload());
+    let sources = ScriptedSources::new(200, "{}", BTreeMap::new());
+    let mut fixture = CallFixture::default();
+    fixture.data.remove("messages");
+    let call = fixture.call();
+    let mut recorder = Recorder::default();
+    let error = block_on(streaming(
+        &source,
+        &sources,
+        &call,
+        &mut recorder,
+        runtime(),
+    ))
+    .err()
+    .expect("a missing messages key fails");
+    let failure = azure_failure(error);
+    assert_eq!(failure.class, "KeyError");
+    assert_eq!(
+        failure.message,
+        Reported::Present(Some("'messages'".to_owned()))
+    );
+    assert!(recorder.pre.is_empty());
+
+    let async_source = scripted_source(ClientKind::AsyncAzureOpenAi, &[], sse_payload());
+    let wrapped = block_on(async_streaming(
+        &async_source,
+        &call,
+        &mut recorder,
+        runtime(),
+    ))
+    .err()
+    .expect("async wraps the missing key");
+    let failure = azure_failure(wrapped);
+    assert_eq!(failure.class, "AzureOpenAIError");
+    assert_eq!(failure.status, Reported::Present(Some(500)));
+    assert_eq!(
+        failure.message,
+        Reported::Present(Some("'messages'".to_owned()))
+    );
+}
+
+#[test]
 fn azure_chat_streams_secret_safe_failure() {
     let secret = "super-secret-client-key";
     let headers = secret_headers(&[("authentication", secret), ("api-key", secret)]);
