@@ -30,14 +30,14 @@ where
     }
 }
 
-// Borrow only the backend socket, so this send future does not capture the rest of the non-Send connection state.
+// Borrow only the backend socket, so this send future carries the socket and the frame and nothing else.
 pub(super) async fn send_backend<ConfigError, CallbackError>(
     connection: &mut Option<Box<dyn RealtimeBackend>>,
     frame: RealtimeMessage,
 ) -> Result<(), RealtimeSenderError<ConfigError, CallbackError>>
 where
-    ConfigError: Error + 'static,
-    CallbackError: Error + 'static,
+    ConfigError: Error + Send + 'static,
+    CallbackError: Error + Send + 'static,
 {
     let Some(socket) = connection.as_mut() else {
         return Err(RealtimeSenderError::BackendMissing);

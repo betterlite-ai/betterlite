@@ -1,0 +1,82 @@
+kind: helper
+name: deployment-credentials-team-public-and-wildcard
+call:
+  deployment_credentials:
+    function: get_deployment_credentials_with_provider
+    model_list:
+      - model_name: first-team-model
+        litellm_params:
+          model: openai/first
+          api_key: sk-first
+        model_info:
+          id: p1
+          team_id: team-a
+          team_public_model_name: pub
+      - model_name: second-team-model
+        litellm_params:
+          model: openai/second
+          api_key: sk-second
+        model_info:
+          id: p2
+          team_id: team-a
+          team_public_model_name: pub
+    arguments:
+      model_id: pub
+      team_id: team-a
+calls:
+  - deployment_credentials:
+      function: get_deployment_credentials_with_provider
+      model_list:
+        - model_name: first-team-model
+          litellm_params:
+            model: openai/first
+            api_key: sk-first
+          model_info:
+            id: p1
+            team_id: team-a
+            team_public_model_name: pub
+      arguments:
+        model_id: pub
+        team_id: team-b
+  - deployment_credentials:
+      function: get_deployment_credentials_with_provider
+      model_list:
+        - model_name: "openai/*"
+          litellm_params:
+            model: openai/gpt-4o
+            api_key: sk-global
+          model_info:
+            id: g1
+        - model_name: team-wildcard-model
+          litellm_params:
+            model: openai/gpt-4o-mini
+            api_key: sk-team-wildcard
+          model_info:
+            id: t1
+            team_id: team-a
+            team_public_model_name: "openai/*"
+      arguments:
+        model_id: openai/gpt-4o
+        team_id: team-a
+  - deployment_credentials:
+      function: get_deployment_credentials_with_provider
+      model_list:
+        - model_name: "openai/*"
+          litellm_params:
+            model: openai/gpt-4o
+            api_key: sk-global
+          model_info:
+            id: g1
+        - model_name: team-wildcard-model
+          litellm_params:
+            model: openai/gpt-4o-mini
+            api_key: sk-team-wildcard
+          model_info:
+            id: t1
+            team_id: team-a
+            team_public_model_name: "openai/*"
+      arguments:
+        model_id: openai/gpt-4o
+        team_id: team-b
+env: {}
+compare: {ignore: []}
