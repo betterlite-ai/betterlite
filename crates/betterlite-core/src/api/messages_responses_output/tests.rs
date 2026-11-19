@@ -279,6 +279,14 @@ fn tools_translation(#[case] source: &str, #[case] expected: &str) {
     r#"{"request":{"model":"claude","messages":[],"system":[{"type":"image"}]}}"#,
     r#"{"request":{"model":"claude","input":[],"include":["reasoning.encrypted_content"],"instructions":""}}"#
 )]
+#[case::empty_system_blocks_omitted(
+    r#"{"request":{"model":"claude","messages":[],"system":[]}}"#,
+    r#"{"request":{"model":"claude","input":[],"include":["reasoning.encrypted_content"]}}"#
+)]
+#[case::developer_empty_text_dropped(
+    r#"{"request":{"model":"claude","messages":[],"system":[{"type":"text","text":"","prompt_cache_breakpoint":{"mode":"explicit"}},{"type":"text","text":"kept"}]}}"#,
+    r#"{"request":{"model":"claude","input":[{"type":"message","role":"developer","content":[{"type":"input_text","text":"kept"}]}],"include":["reasoning.encrypted_content"]}}"#
+)]
 #[case::developer_parts_replace_instructions(
     r#"{"request":{"model":"claude","messages":[{"role":"user","content":"hi"}],"system":[{"type":"text","text":"be brief","prompt_cache_breakpoint":{"mode":"explicit"}},{"type":"text","text":"second"}]}}"#,
     r#"{"request":{"model":"claude","input":[{"type":"message","role":"developer","content":[{"type":"input_text","text":"be brief","prompt_cache_breakpoint":{"mode":"explicit"}},{"type":"input_text","text":"second"}]},{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}],"include":["reasoning.encrypted_content"]}}"#
@@ -367,6 +375,14 @@ fn request_options(#[case] source: &str, #[case] expected: &str) {
 #[case::raw_function_call_item(
     r#"{"response":{"id":"resp_14","output":[{"type":"function_call","arguments":"{\"a\":1}","name":"lookup"}]}}"#,
     r#"{"response":{"id":"resp_14","type":"message","role":"assistant","model":"unknown-model","stop_sequence":null,"usage":{"input_tokens":0,"output_tokens":0},"content":[{"type":"tool_use","id":"","name":"lookup","input":{"a":1}}],"stop_reason":"tool_use","stop_details":null}}"#
+)]
+#[case::raw_message_refusal_item(
+    r#"{"response":{"id":"resp_15","output":[{"type":"message","content":[{"type":"refusal","refusal":"no"}],"role":"assistant"}]}}"#,
+    r#"{"response":{"id":"resp_15","type":"message","role":"assistant","model":"unknown-model","stop_sequence":null,"usage":{"input_tokens":0,"output_tokens":0},"content":[{"type":"text","text":"no"}],"stop_reason":"refusal","stop_details":{"type":"refusal","category":null,"explanation":"no"}}}"#
+)]
+#[case::raw_function_call_empty_call_id_falls_back(
+    r#"{"response":{"id":"resp_16","output":[{"type":"function_call","arguments":5,"call_id":"","id":"fc_raw","name":"lookup"}]}}"#,
+    r#"{"response":{"id":"resp_16","type":"message","role":"assistant","model":"unknown-model","stop_sequence":null,"usage":{"input_tokens":0,"output_tokens":0},"content":[{"type":"tool_use","id":"fc_raw","name":"lookup","input":{}}],"stop_reason":"tool_use","stop_details":null}}"#
 )]
 fn responses_function_output(#[case] source: &str, #[case] expected: &str) {
     assert_eq!(translated(source), json(expected));
