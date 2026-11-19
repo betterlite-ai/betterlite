@@ -1,12 +1,15 @@
 #![cfg(test)]
 
+use betterlite_core::api::batch_enqueued_reserve::response::BatchResponseView;
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_models::decisions::Json;
+use betterlite_openai::batches::records::BatchStatus;
 
 use crate::limiter_records::{ParallelSlotAcquisition, RateLimitType};
 use crate::post_call_settlement::success_hook::SuccessHook;
 use crate::post_call_settlement::tests::support::{
-    SettlementFixture, headers, install, number, rate_limit_response, stash_state, status,
+    BatchCall, SettlementFixture, headers, install, number, rate_limit_response, reservation,
+    stash_state, status,
 };
 use crate::request_stash::RequestStashSlot;
 
@@ -100,4 +103,40 @@ async fn leaves_the_response_alone_without_statuses() {
         .post_call_success_hook(&hook, Some(&mut target))
         .await;
     assert_eq!(target.len(), 1);
+}
+
+#[tokio::test]
+async fn keeps_going_without_a_header_target() {
+    let fixture = SettlementFixture::default();
+    let slot = RequestStashSlot::default();
+    install(&slot, |state| {
+        state.rate_limit_response = Some(rate_limit_response(vec![status(
+            "user",
+            RateLimitType::Tokens,
+            1000,
+            750,
+        )]));
+        state.batch_enqueued_reservation = Some(reservation(500, &[("api_key", "k1")]));
+    });
+    let view = BatchResponseView {
+        id: "batch-1".to_owned(),
+        status: BatchStatus::Validating,
+    };
+    let hook = SuccessHook {
+        stash: &slot,
+        call_id: None,
+        response: Some(&view),
+    };
+    fixture
+        .settlement()
+        .post_call_success_hook(&hook, None)
+        .await;
+    assert_eq!(
+        fixture.store.calls(),
+        vec![BatchCall {
+            kind: "save",
+            batch_id: Some("batch-1".to_owned()),
+            tokens: Some(500),
+        }]
+    );
 }
