@@ -45,7 +45,7 @@ pub enum RoiRoutesError {
     DbNotConnected,
 }
 
-pub fn issue(kind: &'static str, loc: Vec<&'static str>, msg: &str) -> QueryIssue {
+pub(super) fn issue(kind: &'static str, loc: Vec<&'static str>, msg: &str) -> QueryIssue {
     QueryIssue {
         kind,
         loc,

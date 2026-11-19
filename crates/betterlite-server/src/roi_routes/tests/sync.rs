@@ -79,6 +79,7 @@ async fn sync_status_propagates_a_store_failure() {
     harness.store.fail_status();
     let reply = call(harness.app(), get(SYNC_PATH, Some(&admin()))).await;
     assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(reply.text().contains("internal_server_error"));
     assert!(!recorded(&harness.calls).contains(&"manager.status".to_owned()));
 }
 

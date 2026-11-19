@@ -118,8 +118,9 @@ async fn reset_answers_a_clear_failure_after_finishing() {
     harness.seed_settings(&ready_stored());
     harness.store.fail_clear();
     let reply = call(harness.app(), post(SETUP_RESET_PATH, Some(&admin()))).await;
-    assert_eq!(reply.status, StatusCode::CONFLICT);
-    assert_eq!(reply.detail(), "the clear failed");
+    assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(reply.text().contains("internal_server_error"));
+    assert!(harness.store.cleared());
     assert!(harness.store.finished_status().is_some());
 }
 
@@ -128,6 +129,7 @@ async fn reset_answers_a_finish_failure() {
     let harness = Harness::new();
     harness.store.fail_finish();
     let reply = call(harness.app(), post(SETUP_RESET_PATH, Some(&admin()))).await;
-    assert_eq!(reply.status, StatusCode::CONFLICT);
-    assert_eq!(reply.detail(), "the finish failed");
+    assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(reply.text().contains("internal_server_error"));
+    assert!(harness.store.cleared());
 }

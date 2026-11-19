@@ -22,7 +22,7 @@ pub fn next_update(
     status: &ROISyncStatus,
     report: Option<&ROIReport>,
 ) -> Result<Option<DateTime<Utc>>, RoiRoutesError> {
-    let Some(report) = report else {
+    let Some(stored) = report else {
         return Ok(None);
     };
     if settings.repos.is_empty()
@@ -37,7 +37,7 @@ pub fn next_update(
         .as_deref()
         .filter(|text| !text.is_empty())
         .or_else(|| status.started_at.as_deref().filter(|text| !text.is_empty()))
-        .unwrap_or(&report.synced_at);
+        .unwrap_or(&stored.synced_at);
     let parsed = coerce_datetime(Some(&JsonData::String(anchor.to_owned()))).ok_or_else(|| {
         RoiRoutesError::Timestamp {
             value: anchor.to_owned(),
@@ -73,10 +73,10 @@ pub async fn run_scheduled_sync(state: &RoiRouteState) -> Result<(), RoiRoutesEr
         return Ok(());
     }
     let store = state.sync_store.store().await?;
-    let status = match store.read_status().await? {
-        Some(status) => status,
-        None => state.manager.current_status(),
-    };
+    let status = store
+        .read_status()
+        .await?
+        .unwrap_or_else(|| state.manager.current_status());
     let report = load_report(repository.as_ref()).await?;
     let Some(next) = next_update(&settings, &status, report.as_ref())? else {
         return Ok(());

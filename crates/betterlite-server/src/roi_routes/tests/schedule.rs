@@ -312,10 +312,7 @@ async fn schedule_run_propagates_a_store_failure() {
     let error = run_scheduled_sync(&harness.state())
         .await
         .expect_err("a store failure");
-    assert!(matches!(
-        error,
-        RoiRoutesError::Conflict("the store failed")
-    ));
+    assert!(matches!(error, RoiRoutesError::Store(_)));
 }
 
 #[tokio::test]

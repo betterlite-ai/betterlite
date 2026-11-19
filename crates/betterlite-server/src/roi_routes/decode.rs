@@ -39,9 +39,9 @@ fn body_issue(source: &serde_path_to_error::Error<serde_json::Error>) -> QueryIs
     let mut loc = vec!["body"];
     for segment in source.path() {
         if let Segment::Map { key } = segment
-            && let Some(field) = known_field(key)
+            && let Some(name) = known_field(key)
         {
-            loc.push(field);
+            loc.push(name);
         }
     }
     if loc.len() == 1 {

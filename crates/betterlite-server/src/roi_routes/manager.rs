@@ -65,8 +65,8 @@ where
             store,
             scheduled_interval,
         } = run;
-        let coordinator: Option<Arc<dyn SyncCoordinator>> =
-            store.map(|store| -> Arc<dyn SyncCoordinator> { Arc::new(StoreCoordinator { store }) });
+        let coordinator: Option<Arc<dyn SyncCoordinator>> = store
+            .map(|port| -> Arc<dyn SyncCoordinator> { Arc::new(StoreCoordinator { store: port }) });
         let sync_run = SyncRun {
             settings,
             repository,

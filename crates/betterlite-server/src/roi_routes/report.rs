@@ -47,7 +47,7 @@ pub(super) async fn read_report(
                 report: Some(summary),
             }))
         }
-        _mode => Err(RoiRoutesError::Request(vec![issue(
+        _ => Err(RoiRoutesError::Request(vec![issue(
             "literal_error",
             vec!["query", "mode"],
             MODE_LITERAL,

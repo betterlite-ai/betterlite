@@ -12,6 +12,7 @@ use betterlite_auth::auth_identity::records::Principal;
 use betterlite_auth::auth_identity::roles::Role;
 use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_db::postgres_store::errors::DbError;
 use betterlite_db::resource_repository::config::ConfigError;
 use betterlite_roi::records::{ROIReport, ROISyncPhase, ROISyncStatus};
 use betterlite_roi::settings::ROISettings;
@@ -279,7 +280,7 @@ impl SyncStorePort for FakeStore {
             .expect("calls lock")
             .push("store.status".to_owned());
         if self.fail_status.load(Ordering::SeqCst) {
-            return Err(RoiRoutesError::Conflict("the store failed"));
+            return Err(RoiRoutesError::Store(DbError::NoDbConnected));
         }
         Ok(self.status.lock().expect("store status lock").clone())
     }
@@ -332,7 +333,7 @@ impl SyncStorePort for FakeStore {
             .push("store.finish".to_owned());
         *self.finished.lock().expect("finished lock") = Some(status.clone());
         if self.fail_finish.load(Ordering::SeqCst) {
-            return Err(RoiRoutesError::Conflict("the finish failed"));
+            return Err(RoiRoutesError::Store(DbError::NoDbConnected));
         }
         Ok(true)
     }
@@ -344,7 +345,7 @@ impl SyncStorePort for FakeStore {
             .push("store.clear_report".to_owned());
         self.cleared.store(true, Ordering::SeqCst);
         if self.fail_clear.load(Ordering::SeqCst) {
-            return Err(RoiRoutesError::Conflict("the clear failed"));
+            return Err(RoiRoutesError::Store(DbError::NoDbConnected));
         }
         Ok(())
     }
@@ -657,10 +658,10 @@ pub(crate) fn request(
     if body.is_some() {
         builder = builder.header("content-type", "application/json");
     }
-    let request = builder
+    let built = builder
         .body(body.map_or_else(Body::empty, |text| Body::from(text.to_owned())))
         .expect("request");
-    with_caller(request, caller)
+    with_caller(built, caller)
 }
 
 pub(crate) fn get(uri: &str, caller: Option<&AuthContext>) -> Request<Body> {

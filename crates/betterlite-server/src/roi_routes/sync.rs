@@ -28,10 +28,10 @@ pub(super) async fn read_sync(
         return Err(RoiRoutesError::DbNotConnected);
     };
     let store = state.sync_store.store().await?;
-    let status = match store.read_status().await? {
-        Some(status) => status,
-        None => state.manager.current_status(),
-    };
+    let status = store
+        .read_status()
+        .await?
+        .unwrap_or_else(|| state.manager.current_status());
     let settings = load_settings(repository, state.cipher.as_ref()).await?;
     let report = load_report(repository).await?;
     let next = next_update(&settings, &status, report.as_ref())?;
@@ -87,9 +87,9 @@ pub(super) async fn cancel_sync(
     let store = state.sync_store.store().await?;
     store.cancel_sync().await?;
     state.manager.cancel_run().await;
-    let status = match store.read_status().await? {
-        Some(status) => status,
-        None => state.manager.current_status(),
-    };
+    let status = store
+        .read_status()
+        .await?
+        .unwrap_or_else(|| state.manager.current_status());
     Ok(Json(status))
 }

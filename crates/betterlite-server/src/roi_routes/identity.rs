@@ -56,11 +56,11 @@ pub(super) async fn update_identity_map(
         settings.identity_map.shift_remove(login.as_str());
     }
     save_settings(repository.as_ref(), &settings, &stored).await?;
-    let report = load_report(repository.as_ref()).await?;
-    let summary = match report.as_ref() {
-        Some(report) => Some(summarize(report, &settings.identity_map)?),
-        None => None,
-    };
+    let stored_report = load_report(repository.as_ref()).await?;
+    let summary = stored_report
+        .as_ref()
+        .map(|report| summarize(report, &settings.identity_map))
+        .transpose()?;
     Ok(Json(ROIIdentityMapResponse {
         report: summary,
         identity_map: settings.identity_map,

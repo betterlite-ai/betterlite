@@ -18,8 +18,8 @@ impl SyncStoreSource for DatabaseSyncStoreSource {
         let Some(pool) = self.store.pool.as_ref() else {
             return Err(RoiRoutesError::DbNotConnected);
         };
-        let store: Arc<dyn SyncStorePort> = Arc::new(SyncStore::open(pool).await?);
-        Ok(store)
+        let port: Arc<dyn SyncStorePort> = Arc::new(SyncStore::open(pool).await?);
+        Ok(port)
     }
 }
 

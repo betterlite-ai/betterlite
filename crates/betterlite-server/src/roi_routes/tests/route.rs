@@ -37,6 +37,54 @@ async fn route_sync_status_requires_a_caller() {
 }
 
 #[tokio::test]
+async fn route_sync_start_requires_a_caller() {
+    let harness = Harness::new();
+    let reply = call(harness.app(), post(SYNC_PATH, None)).await;
+    assert_eq!(reply.status, StatusCode::UNAUTHORIZED);
+    assert!(recorded(&harness.calls).is_empty());
+}
+
+#[tokio::test]
+async fn route_sync_cancel_requires_a_caller() {
+    let harness = Harness::new();
+    let reply = call(harness.app(), delete(SYNC_PATH, None)).await;
+    assert_eq!(reply.status, StatusCode::UNAUTHORIZED);
+    assert!(recorded(&harness.calls).is_empty());
+}
+
+#[tokio::test]
+async fn route_report_requires_a_caller() {
+    let harness = Harness::new();
+    let reply = call(harness.app(), get(REPORT_PATH, None)).await;
+    assert_eq!(reply.status, StatusCode::UNAUTHORIZED);
+    assert!(recorded(&harness.calls).is_empty());
+}
+
+#[tokio::test]
+async fn route_identity_map_requires_a_caller() {
+    let harness = Harness::new();
+    let reply = call(
+        harness.app(),
+        put(
+            IDENTITY_MAP_PATH,
+            None,
+            r#"{"github_login":"octo","email":null}"#,
+        ),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::UNAUTHORIZED);
+    assert!(recorded(&harness.calls).is_empty());
+}
+
+#[tokio::test]
+async fn route_setup_reset_requires_a_caller() {
+    let harness = Harness::new();
+    let reply = call(harness.app(), post(SETUP_RESET_PATH, None)).await;
+    assert_eq!(reply.status, StatusCode::UNAUTHORIZED);
+    assert!(recorded(&harness.calls).is_empty());
+}
+
+#[tokio::test]
 async fn route_sync_status_denies_a_member() {
     let harness = Harness::new();
     let reply = call(harness.app(), get(SYNC_PATH, Some(&member()))).await;
