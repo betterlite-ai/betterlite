@@ -3,7 +3,6 @@ use std::collections::BTreeMap;
 use betterlite_db::budget_permission_rows::JsonData;
 use rust_decimal::Decimal;
 use serde::Deserialize;
-use uuid::Uuid;
 
 use crate::endpoints::passthrough_config_reads::record::EndpointFlag;
 use crate::endpoints::passthrough_config_reads::record::PassThroughGenericEndpoint;
@@ -60,7 +59,8 @@ fn guardrail_records(
 }
 
 impl EndpointInput {
-    // model_dump(exclude_unset=True, exclude_none=True, exclude={"is_from_config"}) over the stored entry
+    // model_dump(exclude_unset=True, exclude_none=True, exclude={"is_from_config"}) over a base entry:
+    // the stored one on update, the body model's defaults on create
     pub(super) fn merge_into(
         &self,
         stored: &PassThroughGenericEndpoint,
@@ -88,24 +88,6 @@ impl EndpointInput {
                 .or_else(|| stored.guardrails.clone()),
             is_from_config: EndpointFlag(false),
             methods: self.methods.clone().or_else(|| stored.methods.clone()),
-        }
-    }
-
-    // the whole request body with every default filled, plus the id create generates when the body has none
-    pub(super) fn into_endpoint(self) -> PassThroughGenericEndpoint {
-        PassThroughGenericEndpoint {
-            id: Some(self.id.unwrap_or_else(|| Uuid::new_v4().to_string())),
-            path: self.path,
-            target: self.target,
-            headers: self.headers.unwrap_or_default(),
-            default_query_params: self.default_query_params.unwrap_or_default(),
-            include_subpath: EndpointFlag(self.include_subpath.unwrap_or_default()),
-            cost_per_request: self.cost_per_request.unwrap_or_default(),
-            timeout: self.timeout,
-            auth: EndpointFlag(self.auth.unwrap_or(true)),
-            guardrails: self.guardrails.map(guardrail_records),
-            is_from_config: EndpointFlag(false),
-            methods: self.methods,
         }
     }
 }

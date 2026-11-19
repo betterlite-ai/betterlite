@@ -365,21 +365,25 @@ pub(crate) fn admin() -> AuthContext {
 }
 
 pub(crate) fn post(uri: &str, body: &str, caller: Option<&AuthContext>) -> Request<Body> {
-    let request = Request::builder()
-        .method("POST")
-        .uri(uri)
-        .header("content-type", "application/json")
-        .body(Body::from(body.to_owned()))
-        .expect("post request");
-    with_caller(request, caller)
+    request("POST", uri, Body::from(body.to_owned()), caller)
 }
 
 pub(crate) fn delete(uri: &str, caller: Option<&AuthContext>) -> Request<Body> {
+    request("DELETE", uri, Body::empty(), caller)
+}
+
+fn request(
+    method: &'static str,
+    uri: &str,
+    body: Body,
+    caller: Option<&AuthContext>,
+) -> Request<Body> {
     let request = Request::builder()
-        .method("DELETE")
+        .method(method)
         .uri(uri)
-        .body(Body::empty())
-        .expect("delete request");
+        .header("content-type", "application/json")
+        .body(body)
+        .expect("test request");
     with_caller(request, caller)
 }
 

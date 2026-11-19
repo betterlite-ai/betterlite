@@ -31,7 +31,6 @@ use super::delete::delete_endpoint;
 use super::error::LookupKind;
 use super::error::PassthroughWriteError;
 use super::input::EndpointInput;
-use super::settings_port::ConfigFieldUpdate;
 use super::settings_port::GeneralSettingsStore;
 use super::update::update_endpoint;
 
@@ -94,29 +93,18 @@ where
     let Some(info) = settings.get_field(PASS_THROUGH_FIELD).await.ok() else {
         return Ok(None);
     };
-    match info.field_value {
+    stored_list(info.field_value)
+}
+
+// a stored field that is absent or null holds no list; any other shape cannot be a list of endpoints
+fn stored_list(field_value: JsonData) -> Result<Option<Vec<JsonData>>, PassthroughWriteError> {
+    match field_value {
         JsonData::Null => Ok(None),
         JsonData::Array(entries) => Ok(Some(entries)),
         JsonData::Bool(_) | JsonData::Number(_) | JsonData::String(_) | JsonData::Object(_) => {
             Err(PassthroughWriteError::StoredNotAList)
         }
     }
-}
-
-pub(super) async fn store_entries<Store>(
-    settings: &Store,
-    entries: Vec<JsonData>,
-) -> Result<(), PassthroughWriteError>
-where
-    Store: GeneralSettingsStore,
-{
-    settings
-        .update_field(ConfigFieldUpdate {
-            field_name: PASS_THROUGH_FIELD.to_owned(),
-            field_value: JsonData::Array(entries),
-        })
-        .await
-        .map_err(PassthroughWriteError::Settings)
 }
 
 pub(super) fn require_endpoint(

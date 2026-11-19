@@ -5,9 +5,11 @@ use axum::extract::Extension;
 use axum::extract::Query;
 use axum::extract::State;
 use axum::http::Uri;
+use betterlite_db::budget_permission_rows::JsonData;
 use serde::Deserialize;
 
 use crate::auth::auth_identity::AuthContext;
+use crate::endpoints::passthrough_config_reads::db_read::PASS_THROUGH_FIELD;
 use crate::endpoints::passthrough_config_reads::record::PassThroughEndpointResponse;
 
 use super::error::LookupKind;
@@ -17,7 +19,7 @@ use super::routes::read_entries;
 use super::routes::remove_routes;
 use super::routes::require_caller;
 use super::routes::require_endpoint;
-use super::routes::store_entries;
+use super::settings_port::ConfigFieldUpdate;
 use super::settings_port::GeneralSettingsStore;
 
 #[derive(Deserialize)]
@@ -47,7 +49,14 @@ where
     };
     let (found, index) = require_endpoint(&entries, &endpoint_id, LookupKind::Delete)?;
     entries.remove(index);
-    store_entries(state.settings.as_ref(), entries).await?;
+    state
+        .settings
+        .update_field(ConfigFieldUpdate {
+            field_name: PASS_THROUGH_FIELD.to_owned(),
+            field_value: JsonData::Array(entries),
+        })
+        .await
+        .map_err(PassthroughWriteError::Settings)?;
     remove_routes(&state.routes, &endpoint_id);
     Ok(Json(PassThroughEndpointResponse {
         endpoints: vec![found],
