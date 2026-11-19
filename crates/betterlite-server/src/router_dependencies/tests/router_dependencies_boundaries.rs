@@ -343,6 +343,9 @@ fn a_config_write_that_is_not_an_object_says_so(#[case] config: &str) {
 #[case::stall(r#"{"stall_escalation_enabled":true}"#)]
 #[case::empty_dimensions(r#"{"custom_dimensions":[],"dimension_weights":{}}"#)]
 #[case::null_dimensions(r#"{"custom_dimensions":null,"dimension_weights":null}"#)]
+#[case::tier_pool_integer_param(
+    r#"{"tiers":{"SIMPLE":["x",{"model_name":"y","litellm_params":{"temperature":1}}]}}"#
+)]
 fn a_config_write_accepts_the_edge_shapes_the_load_accepts(#[case] accepted: &str) {
     let judged = validate_config_write(Some(&json(accepted)));
     assert!(judged.is_ok(), "{accepted}: {judged:?}");
