@@ -1,10 +1,12 @@
 use std::fs::read_to_string;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread;
 
 use rstest::rstest;
 
 use crate::health_cycle::rss::{
-    RssUnit, host_rss_unit, parse_rss_mb, process_rss_mb, rss_mb, rss_mb_from,
+    RssUnit, host_rss_unit, parse_rss_mb, process_rss_mb, rss_mb, rss_mb_from, thread_count,
 };
 
 #[rstest]
@@ -73,4 +75,22 @@ fn a_live_process_reports_its_peak_from_vmhwm() {
         measured.to_bits(),
         rss_mb(raw, RssUnit::Kilobytes).to_bits()
     );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_live_thread_count_sees_the_os_threads() {
+    let release = AtomicBool::new(false);
+    thread::scope(|scope| {
+        let parked = scope.spawn(|| {
+            while !release.load(Ordering::Acquire) {
+                thread::park();
+            }
+        });
+        let counted = thread_count();
+        release.store(true, Ordering::Release);
+        parked.thread().unpark();
+        parked.join().expect("the helper thread stops");
+        assert!(counted >= 2, "the helper thread is counted: {counted}");
+    });
 }

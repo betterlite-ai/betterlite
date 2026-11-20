@@ -43,6 +43,7 @@ async fn an_empty_list_without_a_cli_model_skips_the_cycle() {
     let logs = buffer.text();
     assert!(logs.contains("health_check_cycle_skipped"), "{logs}");
     assert!(logs.contains("reason=no_models"), "{logs}");
+    assert!(!logs.contains("no_models_after_filter"), "{logs}");
     assert!(!logs.contains("health_check_cycle_start"), "{logs}");
 }
 
