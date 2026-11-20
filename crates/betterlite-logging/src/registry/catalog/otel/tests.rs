@@ -263,3 +263,43 @@ fn another_arm_does_not_start_the_phoenix_logger() {
         .expect("the legacy logger builds");
     assert!(catalog.existing("arize_phoenix").is_none());
 }
+
+#[test]
+fn otel_does_not_reuse_another_arms_logger() {
+    let catalog = catalog("", &[IN_MEMORY, ("LANGTRACE_API_KEY", "langtrace-key")]);
+    let langtrace = catalog
+        .resolve_logger("langtrace")
+        .expect("the name is available")
+        .expect("the langtrace logger builds");
+    let otel = catalog
+        .resolve_logger("otel")
+        .expect("the name is available")
+        .expect("the otel logger builds");
+    assert!(!Arc::ptr_eq(&langtrace, &otel));
+    assert_eq!(otel.callback_name(), "opentelemetry");
+    assert_eq!(catalog.in_memory_loggers().len(), 2);
+}
+
+#[test]
+fn phoenix_started_after_otel_with_the_switch_on_builds_the_v2_logger() {
+    let fixture = fixture();
+    let catalog = catalog(
+        "",
+        &[
+            ("LITELLM_OTEL_V2", "true"),
+            ("PHOENIX_API_KEY", "phoenix-key"),
+        ],
+    )
+    .with_runtime(Arc::new(fixture.runtime));
+    catalog
+        .resolve_logger("otel")
+        .expect("the name is available")
+        .expect("the V2 logger builds");
+    let names: Vec<&str> = catalog
+        .in_memory_loggers()
+        .iter()
+        .map(|logger| logger.callback_name())
+        .collect();
+    assert_eq!(names, ["otel", "arize_phoenix"]);
+    assert_eq!(fixture.constructor.records().len(), 2);
+}
