@@ -386,7 +386,7 @@ async fn token_only_still_attaches_permission() {
 }
 
 #[tokio::test]
-async fn sort_failure_runs_no_query() {
+async fn query_failures_propagate() {
     let mut invalid_sort = query(1, 10);
     invalid_sort.sort_by = Some(String::from("created"));
     let untouched = FakeSource::default();
@@ -399,34 +399,10 @@ async fn sort_failure_runs_no_query() {
         untouched.calls().is_empty(),
         "no query runs without a valid sort"
     );
-}
 
-#[tokio::test]
-async fn page_failure_stops_before_count() {
-    let mut page_failure = FakeSource::default();
-    page_failure.failure = Some(Failure::Page);
-    let request = query(1, 10);
-    let page_error = list_keys_with(&page_failure, &request).await.unwrap_err();
-    assert!(matches!(page_error, KeyQueryPlanError::MissingToken));
-    assert_eq!(page_failure.calls(), vec![String::from("page")]);
-}
+    failed_stage(Failure::Page, 0, &["page"]).await;
+    failed_stage(Failure::Count, 3, &["page", "count"]).await;
 
-#[tokio::test]
-async fn count_failure_stops_before_users() {
-    let mut count_failure = FakeSource::default();
-    count_failure.total = 3;
-    count_failure.failure = Some(Failure::Count);
-    let request = query(1, 10);
-    let count_error = list_keys_with(&count_failure, &request).await.unwrap_err();
-    assert!(matches!(count_error, KeyQueryPlanError::MissingToken));
-    assert_eq!(
-        count_failure.calls(),
-        vec![String::from("page"), String::from("count")]
-    );
-}
-
-#[tokio::test]
-async fn users_failure_stops_before_attach() {
     let mut users_failure = FakeSource::default();
     users_failure.page = vec![row(r#"{"token":"k1","user_id":"alice"}"#)];
     users_failure.total = 1;
@@ -436,13 +412,19 @@ async fn users_failure_stops_before_attach() {
     let users_error = list_keys_with(&users_failure, &expanded).await.unwrap_err();
     assert!(matches!(users_error, KeyQueryPlanError::MissingToken));
     assert!(users_failure.calls().contains(&String::from("users")));
-}
 
-#[tokio::test]
-async fn missing_database_is_typed() {
     let no_client = list_keys(None, &query(1, 10)).await.unwrap_err();
     assert!(matches!(
         no_client,
         KeyQueryPlanError::Database(DbError::NoDbConnected)
     ));
+}
+
+async fn failed_stage(stage: Failure, total: i64, expected: &[&str]) {
+    let mut source = FakeSource::default();
+    source.total = total;
+    source.failure = Some(stage);
+    let error = list_keys_with(&source, &query(1, 10)).await.unwrap_err();
+    assert!(matches!(error, KeyQueryPlanError::MissingToken));
+    assert_eq!(source.calls(), expected);
 }
