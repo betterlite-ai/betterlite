@@ -343,7 +343,8 @@ async fn run_user_spend_passes_the_database_flag(
 async fn the_pod_lock_adapter_passes_the_job_ttl() {
     let cache = Arc::new(SharedLockCache {
         granted: true,
-        ..SharedLockCache::default()
+        owner: Mutex::new(None),
+        ttls: Mutex::new(Vec::new()),
     });
     let manager = PodLockManager::new(
         Some(Arc::clone(&cache)),
@@ -362,7 +363,7 @@ async fn the_pod_lock_adapter_refuses_a_reentrant_acquisition() {
     let cache = Arc::new(SharedLockCache {
         granted: false,
         owner: Mutex::new(Some(holder.as_ref().to_owned())),
-        ..SharedLockCache::default()
+        ttls: Mutex::new(Vec::new()),
     });
     let manager = PodLockManager::new(
         Some(Arc::clone(&cache)),
