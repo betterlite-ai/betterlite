@@ -756,3 +756,22 @@ fn rerank_bedrock_watsonx_and_generic() {
         .expect_err("an unresolvable provider raises");
     assert!(error.message.starts_with("LLM Provider NOT provided."));
 }
+
+#[test]
+fn an_empty_environment_snapshot_falls_through() {
+    let ops = FakeOps::default();
+    let identity = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Known(ProviderId::Cohere),
+        None,
+        None,
+    );
+    let mut settings = defaults();
+    settings.environment.cohere_api_base = Some(String::new());
+    run_one(&identity, &ops, &settings, &[], call("cohere"))
+        .expect("the empty environment base falls through");
+    assert_eq!(
+        last(&ops).api_base.as_deref(),
+        Some("https://api.cohere.com")
+    );
+}
