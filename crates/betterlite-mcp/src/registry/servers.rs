@@ -69,10 +69,7 @@ impl ServerRegistry {
 
     #[must_use]
     pub fn is_config_declared_server(&self, server_id: &str) -> bool {
-        // contains_key is the O(1) call, but a one-line body is banned and this read stays a method
-        self.config_servers
-            .keys()
-            .any(|declared_id| declared_id == server_id)
+        self.config_servers.contains_key(server_id)
     }
 
     #[must_use]
