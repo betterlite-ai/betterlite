@@ -82,18 +82,22 @@ fn seed_row(seed: &RowSeed, current: &DbCipher) -> Result<AssertionRow, Box<Help
 }
 
 fn outcome(row: &AssertionRow, new_key: &SecretString) -> Value {
-    match decrypt_if_encrypted_with(&row.assertion_b64, new_key) {
-        Some(plaintext) => json!({
-            "kind": "rotated",
-            "user_id": row.user_id,
-            "plaintext": plaintext.expose_secret(),
-        }),
-        None => json!({
-            "kind": "skipped",
-            "user_id": row.user_id,
-            "text": row.assertion_b64,
-        }),
-    }
+    decrypt_if_encrypted_with(&row.assertion_b64, new_key).map_or_else(
+        || {
+            json!({
+                "kind": "skipped",
+                "user_id": row.user_id,
+                "text": row.assertion_b64,
+            })
+        },
+        |plaintext| {
+            json!({
+                "kind": "rotated",
+                "user_id": row.user_id,
+                "plaintext": plaintext.expose_secret(),
+            })
+        },
+    )
 }
 
 fn cipher_with(key: &str) -> DbCipher {
