@@ -526,8 +526,9 @@ fn search_leaf_failure() {
 fn search_reply_error() {
     let query = SearchInput::Single("q".to_owned());
     let optional = IndexMap::new();
+    let bearer = token("gateway-token");
     let lookup: BTreeMap<String, String> = BTreeMap::new();
-    let operation = search_operation(&query, &optional, None, None, &lookup);
+    let operation = search_operation(&query, &optional, None, Some(&bearer), &lookup);
     let transport = RecordingTransport::new(LeafReply {
         status: 200,
         headers: Vec::new(),
@@ -567,7 +568,7 @@ fn vector_operation<'call>(
         environment_region_name: None,
         environment_region: None,
         headers: BTreeMap::new(),
-        signing_params: BTreeMap::new(),
+        signing_params: serde_json::from_str(r#"{"aws_region_name":"us-east-1"}"#).unwrap(),
         api_key: None,
         configured_bearer: None,
         credentials: credentials(),
