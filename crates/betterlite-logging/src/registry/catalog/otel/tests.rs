@@ -253,3 +253,13 @@ fn without_a_phoenix_variable_no_phoenix_logger_starts(
     assert!(catalog.existing("arize_phoenix").is_none());
     assert_eq!(catalog.in_memory_loggers().len(), 1);
 }
+
+#[test]
+fn another_arm_does_not_start_the_phoenix_logger() {
+    let catalog = catalog("", &[IN_MEMORY, ("PHOENIX_API_KEY", "phoenix-key")]);
+    catalog
+        .resolve_logger("traceloop")
+        .expect("the name is available")
+        .expect("the legacy logger builds");
+    assert!(catalog.existing("arize_phoenix").is_none());
+}
