@@ -1,7 +1,7 @@
 import asyncio
-from collections.abc import Callable, Coroutine
+from collections.abc import Coroutine
 from datetime import UTC, datetime
-from typing import Final, Literal, Protocol, TypedDict
+from typing import Final, Literal, TypedDict
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -97,19 +97,7 @@ class SpeechHttpOutcome(BaseModel):
     speech_http: SpeechHttpValue
 
 
-SPEECH_CALL = Callable[..., SpeechWork]
-ASYNC_SPEECH_CALL = Callable[..., Coroutine[object, object, HttpxBinaryResponseContent]]
-
-
-class Handlers(Protocol):
-    @property
-    def text_to_speech_handler(self) -> SPEECH_CALL: ...
-
-    @property
-    def async_text_to_speech_handler(self) -> ASYNC_SPEECH_CALL: ...
-
-
-HANDLER: Handlers = BaseLLMHTTPHandler()
+HANDLER: Final = BaseLLMHTTPHandler()
 
 
 class StepConfig(BaseTextToSpeechConfig):
