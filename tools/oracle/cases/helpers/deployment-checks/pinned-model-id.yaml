@@ -1,0 +1,15 @@
+kind: helper
+name: deployment-checks-pinned-model-id
+call:
+  b8378:
+    operation: pin_model_id
+    model:
+      model_name: pinned
+      litellm_params:
+        model: auto_router/complexity_router
+        complexity_router_config:
+          classifier_type: heuristic
+    model_list: []
+    limit: null
+env: {}
+compare: {ignore: []}
