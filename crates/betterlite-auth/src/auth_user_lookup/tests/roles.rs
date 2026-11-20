@@ -50,9 +50,9 @@ fn three_role_values_only() {
     assert_eq!(parse_role("proxy_admin").unwrap(), RbacRole::ProxyAdmin);
     assert_eq!(parse_role("team").unwrap(), RbacRole::Team);
     assert_eq!(parse_role("internal_user").unwrap(), RbacRole::InternalUser);
-    assert!(parse_role("admin").is_err());
-    assert!(parse_role("Proxy_Admin").is_err());
-    assert!(parse_role("").is_err());
+    parse_role("admin").unwrap_err();
+    parse_role("Proxy_Admin").unwrap_err();
+    parse_role("").unwrap_err();
 }
 
 #[test]
@@ -79,12 +79,12 @@ fn whole_list_validated_before_match() {
         role_entry("proxy_admin", Some(&["gpt-4"]), None),
         role_entry("admin", None, None),
     ]);
-    assert!(RolePermissions::from_json(&configured).is_err());
+    RolePermissions::from_json(&configured).unwrap_err();
     let missing_role = JsonData::Array(vec![JsonData::Object(BTreeMap::from([(
         "models".to_owned(),
         strings(&["gpt-4"]),
     )]))]);
-    assert!(RolePermissions::from_json(&missing_role).is_err());
+    RolePermissions::from_json(&missing_role).unwrap_err();
 }
 
 #[test]
@@ -94,7 +94,7 @@ fn role_extras_rejected() {
     };
     entry.insert("extra".to_owned(), JsonData::Bool(true));
     let configured = JsonData::Array(vec![JsonData::Object(entry)]);
-    assert!(RolePermissions::from_json(&configured).is_err());
+    RolePermissions::from_json(&configured).unwrap_err();
 }
 
 #[test]

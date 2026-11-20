@@ -43,10 +43,10 @@ fn schedule_sso_update(lookup: &UserLookup, record: &JsonData, sso_user_id: &str
     let Some(user_id) = record_user_id(record) else {
         return;
     };
-    let sso_user_id = sso_user_id.to_owned();
+    let owned_sso_id = sso_user_id.to_owned();
     let redactor = Arc::clone(&lookup.redactor);
     lookup.tasks.spawn(async move {
-        match store.update_sso_user_id(&user_id, &sso_user_id).await {
+        match store.update_sso_user_id(&user_id, &owned_sso_id).await {
             Ok(()) => (),
             Err(error) => {
                 let cause = redactor.redact_internal_details(&error.to_string());
