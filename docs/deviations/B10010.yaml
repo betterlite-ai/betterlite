@@ -1,0 +1,12 @@
+task: B10010
+deviations:
+  - what: An UPDATE that matches no row is not an error, and the rotation moves on to the next row. LiteLLM's Prisma update raises P2025 when the row is gone, so the rotation aborts there.
+    why: The row can be deleted between find_all and update, and the rotation should not fail because a row it was about to re-encrypt no longer exists; no working setup relies on a deletion mid-rotation aborting the key change.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_store.py#L342-L345
+  - what: find_all returns rows ordered by user_id. LiteLLM's find_many has no ORDER BY, so the database decides the order.
+    why: The skip warnings and the progress line become deterministic, which the helper answer and the tests compare; the rotation's outcome does not depend on the order.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_store.py#L348
+kept_bugs:
+  - what: A stored assertion whose text decodes to no bytes, an empty string included, decrypts as the empty plaintext, so the rotation re-encrypts it instead of logging the skip warning. LiteLLM's decrypt_value returns "" for an empty buffer before it looks at the key.
+    why: Betterlite's cipher keeps PyNaCl's empty-buffer behavior from B1600, and a row like that is already unusable, so no working setup notices; the rotate-skips-undecryptable case pins the parity.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L245

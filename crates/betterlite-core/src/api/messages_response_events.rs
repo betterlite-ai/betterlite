@@ -25,6 +25,14 @@ const SUMMARY_PART_SEPARATOR: &str = "\n\n";
 #[derive(Debug, Clone, Copy, Default, serde::Serialize)]
 pub struct StreamFlag(pub bool);
 
+// The three flags __anext__ reads between pulls, taken together so the read never clones the queue, the maps or the logs.
+#[derive(Debug, Clone, Copy)]
+pub struct MessageStreamFlags {
+    pub sent_message_start: StreamFlag,
+    pub sent_message_stop: StreamFlag,
+    pub stream_failed: StreamFlag,
+}
+
 // AnthropicResponsesStreamWrapper's queue and maps, which B986 iterates and re-emits as Anthropic SSE.
 pub struct MessageStreamState {
     message_id: String,
@@ -94,6 +102,23 @@ impl MessageStreamState {
             sent_message_stop: self.sent_message_stop,
             stream_failed: self.stream_failed,
             logs: self.logs.clone(),
+        }
+    }
+
+    // Each queued chunk moves out of the state exactly once; the wrapper holds it and drops it after sending.
+    pub fn take_chunks(&mut self) -> Vec<Json> {
+        let mut chunks = Vec::with_capacity(self.chunk_queue.len());
+        chunks.extend(self.chunk_queue.drain(..));
+        chunks
+    }
+
+    // The flags alone, so __anext__ never builds a snapshot just to ask whether the stream started, stopped or failed.
+    #[must_use]
+    pub const fn stream_flags(&self) -> MessageStreamFlags {
+        MessageStreamFlags {
+            sent_message_start: self.sent_message_start,
+            sent_message_stop: self.sent_message_stop,
+            stream_failed: self.stream_failed,
         }
     }
 

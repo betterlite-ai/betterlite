@@ -1,7 +1,7 @@
 id: B322
 milestone: M2 routing
 title: Team-scoped deployment access and reserved windows
-status: todo
+status: done
 depends_on: [B016, B302, B301, B002]
 file: tasks/B322-access-windows.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/router_utils/common_utils.py"
 parent: B020
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2653

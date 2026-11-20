@@ -24,6 +24,9 @@ description: >-
   85 fixtures, 90 adapters and 30 wiring lines, 575 total within 620.
 scope:
   paths:
+  - "crates/betterlite-core/src/api/vector_store_http_write/error.rs"
+  - "crates/betterlite-core/src/api/vector_store_http_write/**"
+  - "crates/betterlite-core/src/api/vector_store_http_write"
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/responses_write_http.rs
   - crates/betterlite-core/src/api/responses_write_http/**

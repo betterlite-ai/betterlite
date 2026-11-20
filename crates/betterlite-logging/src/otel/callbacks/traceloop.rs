@@ -59,7 +59,7 @@ enum EventLevel {
 
 // tracer_wrapper's tracer is the SDK one, so the callback takes the SDK's tracer directly
 pub struct TraceloopLogger {
-    tracer: SdkTracer,
+    pub(crate) tracer: SdkTracer,
 }
 
 impl TraceloopLogger {

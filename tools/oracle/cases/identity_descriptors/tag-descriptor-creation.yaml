@@ -1,0 +1,36 @@
+kind: helper
+name: identity-descriptors-tag-descriptor-creation
+call:
+  b3039:
+    function: tag_descriptor
+    tag: tag-a
+    rpm_limit: 10
+    tpm_limit: 20
+    window_size: 60
+calls:
+  - b3039:
+      function: tag_descriptor
+      tag: tag-b
+      rpm_limit: 5
+      tpm_limit: null
+      window_size: 60
+  - b3039:
+      function: tag_descriptor
+      tag: tag-c
+      rpm_limit: null
+      tpm_limit: 7
+      window_size: 30
+  - b3039:
+      function: tag_descriptor
+      tag: tag-d
+      rpm_limit: 0
+      tpm_limit: 0
+      window_size: 60
+  - b3039:
+      function: tag_descriptor
+      tag: tag-e
+      rpm_limit: null
+      tpm_limit: null
+      window_size: 60
+env: {}
+compare: {ignore: []}

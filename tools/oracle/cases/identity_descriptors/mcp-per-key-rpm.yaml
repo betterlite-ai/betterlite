@@ -1,0 +1,79 @@
+kind: helper
+name: identity-descriptors-mcp-per-key-rpm
+call:
+  b3039:
+    function: mcp_per_key
+    auth:
+      api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      metadata:
+        mcp_rpm_limit: {server-a: 5, server-b: 9}
+    mcp_server_name: server-a
+    window_size: 60
+calls:
+  - b3039:
+      function: mcp_per_key
+      auth:
+        api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        metadata:
+          mcp_rpm_limit: {server-a: 5}
+      mcp_server_name: server-c
+      window_size: 60
+  - b3039:
+      function: mcp_per_key
+      auth:
+        api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        metadata:
+          mcp_rpm_limit: {server-a: 5}
+      mcp_server_name: null
+      window_size: 60
+  - b3039:
+      function: mcp_per_key
+      auth:
+        metadata:
+          mcp_rpm_limit: {server-a: 5}
+      mcp_server_name: server-a
+      window_size: 60
+  - b3039:
+      function: mcp_per_key
+      auth:
+        api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        team_metadata:
+          mcp_rpm_limit: {server-a: 7}
+      mcp_server_name: server-a
+      window_size: 60
+  - b3039:
+      function: mcp_per_key
+      auth:
+        api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        metadata:
+          mcp_rpm_limit: {server-b: 4}
+        team_metadata:
+          mcp_rpm_limit: {server-a: 7}
+      mcp_server_name: server-b
+      window_size: 60
+  - b3039:
+      function: mcp_per_key
+      auth:
+        api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        metadata:
+          mcp_rpm_limit: {server-b: 4}
+        team_metadata:
+          mcp_rpm_limit: {server-a: 7}
+      mcp_server_name: server-a
+      window_size: 60
+  - b3039:
+      function: mcp_per_key
+      auth:
+        api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        metadata:
+          mcp_rpm_limit: {server-a: 0}
+      mcp_server_name: server-a
+      window_size: 30
+  - b3039:
+      function: mcp_per_key
+      auth:
+        api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      mcp_server_name: server-a
+      window_size: 60
+env: {}
+compare: {ignore: []}
