@@ -236,10 +236,10 @@ fn request_data(transform: &Transform) -> AudioTranscriptionRequestData {
             })
             .collect::<AudioTranscriptionFiles>()
     });
-    let data = match &transform.raw {
-        Some(raw) => AudioTranscriptionData::Bytes(raw.as_bytes().to_vec()),
-        None => AudioTranscriptionData::Object(transform.data.clone().unwrap_or_default()),
-    };
+    let data = transform.raw.as_ref().map_or_else(
+        || AudioTranscriptionData::Object(transform.data.clone().unwrap_or_default()),
+        |raw| AudioTranscriptionData::Bytes(raw.as_bytes().to_vec()),
+    );
     AudioTranscriptionRequestData {
         data,
         files,
@@ -248,11 +248,11 @@ fn request_data(transform: &Transform) -> AudioTranscriptionRequestData {
 }
 
 fn fixture_response(configured: Option<&TranscriptionResponse>) -> TranscriptionResponse {
-    match configured {
-        Some(fixture) => fixture.clone(),
-        None => TranscriptionResponse {
+    configured.map_or_else(
+        || TranscriptionResponse {
             text: None,
             extra: Object::new(),
         },
-    }
+        Clone::clone,
+    )
 }

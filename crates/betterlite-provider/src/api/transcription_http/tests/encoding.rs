@@ -318,7 +318,7 @@ async fn assert_validation_and_url_arguments() {
 
 async fn assert_logging_input() {
     let optional = object(r#"{"query":"hello"}"#);
-    let (_request, query_fixture, _, _, _) = send(
+    let (_, query_fixture, _, _, _) = send(
         record(AudioTranscriptionData::Object(object("{}"))),
         &optional,
     )
@@ -328,14 +328,14 @@ async fn assert_logging_input() {
         Some(&Json::Text(String::from("hello")))
     );
     let bare = object("{}");
-    let (_request, bare_fixture, _, _, _) =
+    let (_, bare_fixture, _, _, _) =
         send(record(AudioTranscriptionData::Object(object("{}"))), &bare).await;
     assert_eq!(bare_fixture.input(), Some(&Json::Text(String::new())));
 }
 
 async fn assert_logging_complete_input() {
     let optional = object("{}");
-    let (_request, empty_fixture, _, _, _) = send(
+    let (_, empty_fixture, _, _, _) = send(
         record(AudioTranscriptionData::Object(Object::new())),
         &optional,
     )
@@ -344,12 +344,12 @@ async fn assert_logging_complete_input() {
     let populated = record(AudioTranscriptionData::Object(object(
         r#"{"query":"hello"}"#,
     )));
-    let (_request, object_fixture, _, _, _) = send(populated, &optional).await;
+    let (_, object_fixture, _, _, _) = send(populated, &optional).await;
     assert_eq!(
         object_fixture.complete_input(),
         Some(&json(r#"{"query":"hello"}"#))
     );
-    let (_request, text_fixture, _, _, _) = send(
+    let (_, text_fixture, _, _, _) = send(
         record(AudioTranscriptionData::Bytes(b"abc".to_vec())),
         &optional,
     )
@@ -358,14 +358,14 @@ async fn assert_logging_complete_input() {
         text_fixture.complete_input(),
         Some(&Json::Text(String::from("abc")))
     );
-    let (_request, bytes_fixture, _, _, _) =
+    let (_, bytes_fixture, _, _, _) =
         send(record(AudioTranscriptionData::Bytes(Vec::new())), &optional).await;
     assert_eq!(bytes_fixture.complete_input(), Some(&json("{}")));
 }
 
 async fn assert_logged_headers_are_masked() {
     let optional = object("{}");
-    let (_request, fixture, _, _, _) = send(
+    let (_, fixture, _, _, _) = send(
         record(AudioTranscriptionData::Object(Object::new())),
         &optional,
     )

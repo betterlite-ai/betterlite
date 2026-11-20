@@ -239,14 +239,16 @@ impl TranscriptionTransport for Wire {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(request);
-        match failure {
-            Some(error) => ready(Err(error)),
-            None => ready(Ok(UpstreamResponse {
-                status: self.reply.status,
-                headers: self.reply.headers.clone(),
-                body: self.reply.body.clone(),
-            })),
-        }
+        failure.map_or_else(
+            || {
+                ready(Ok(UpstreamResponse {
+                    status: self.reply.status,
+                    headers: self.reply.headers.clone(),
+                    body: self.reply.body.clone(),
+                }))
+            },
+            ready,
+        )
     }
 }
 
@@ -372,8 +374,8 @@ impl AudioTranscriptionConfig for RecordingConfig {
     ) -> Result<AudioTranscriptionRequestData, TranscriptionContractError> {
         {
             let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
-            calls.transforms = calls.transforms.saturating_add(1);
-        }
+            calls.transforms = calls.transforms.saturating_add(1)
+        };
         self.events.push("transform-request");
         if self.failure == StageFailure::Transform {
             return Err(TranscriptionContractError::MissingRequestTransform);
@@ -401,8 +403,8 @@ impl AudioTranscriptionConfig for RecordingConfig {
     ) -> Result<TranscriptionResponse, TranscriptionContractError> {
         {
             let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
-            calls.responses = calls.responses.saturating_add(1);
-        }
+            calls.responses = calls.responses.saturating_add(1)
+        };
         self.events.push("transform-response");
         if self.failure == StageFailure::Response {
             return Err(TranscriptionContractError::UnexpectedResponseTransform);
