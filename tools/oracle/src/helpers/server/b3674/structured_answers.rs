@@ -29,8 +29,7 @@ pub(super) fn system_conversion_answer(scenario: &Scenario) -> Value {
 
 pub(super) fn fold_answer(scenario: &Scenario) -> Value {
     let mut data = scenario.data.clone();
-    let include_existing = scenario.include_existing.unwrap_or(false);
-    fold_leading_systems(&mut data, &scenario.leading, include_existing);
+    fold_leading_systems(&mut data, &scenario.leading, scenario.include_existing);
     json!({"data": data})
 }
 
@@ -45,7 +44,7 @@ async fn write_structured(
     data: &mut Map<String, Value>,
     scenario: &Scenario,
 ) -> Result<(), Box<HelperError>> {
-    let hoisted = if scenario.compute_hoisted.unwrap_or(false) {
+    let hoisted = if scenario.compute_hoisted {
         hoisted_system_message(data).await.or_value_error()?
     } else {
         None
@@ -54,7 +53,7 @@ async fn write_structured(
         data,
         &scenario.messages,
         hoisted.as_ref(),
-        scenario.preserve_system_messages.unwrap_or(false),
+        scenario.preserve_system_messages,
     )
     .await
     .or_value_error()
