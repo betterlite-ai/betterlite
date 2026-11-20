@@ -72,8 +72,7 @@ pub trait CompactConfig: Send + Sync {
 
     fn sign_request(&self, request: &SignRequest<'_>) -> Result<Signed, ConfigFailure>;
 
-    // LiteLLM awaits sign_request_off_loop_if_aws: the AWS signing protocol overrides this to leave the loop,
-    // and every other config keeps the default, which signs on the caller's thread
+    // LiteLLM awaits sign_request_off_loop_if_aws: only the AWS signing protocol overrides this to leave the loop
     fn sign_request_off_loop(
         &self,
         request: &SignRequest<'_>,

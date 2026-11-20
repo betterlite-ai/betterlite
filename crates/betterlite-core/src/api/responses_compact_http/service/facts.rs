@@ -21,8 +21,7 @@ pub(crate) struct Sent {
     pub(crate) elapsed: Duration,
 }
 
-// httpx raises HTTPStatusError after masking the response: the text survives and content-encoding is gone,
-// with content-length recomputed for the decoded body
+// MaskedHTTPStatusError keeps the text, drops content-encoding and recomputes content-length for the decoded body
 pub(crate) fn status_facts(reply: &UpstreamResponse) -> FailureFacts {
     let text = from_utf8(&reply.body).map_or_else(
         |_| format!("{} bytes that are not UTF-8", reply.body.len()),
@@ -56,8 +55,7 @@ fn error_headers(headers: &http::HeaderMap) -> HeaderMap {
         .collect()
 }
 
-// A connect or read timeout becomes litellm.Timeout with status 408 and no headers; any other failure has
-// no status of its own, so _handle_error synthesizes a 500 from its text
+// A connect or read timeout becomes litellm.Timeout with status 408 and no headers; other failures synthesize a 500
 pub(crate) fn transport_facts(error: &TransportError, sent: &Sent) -> FailureFacts {
     if matches!(
         error,
@@ -82,8 +80,7 @@ pub(crate) fn transport_facts(error: &TransportError, sent: &Sent) -> FailureFac
     }
 }
 
-// The sync handler passes the caller's timeout alone, and the async handler passes the timeout it actually
-// used; both render the float the way Python's str does, with a missing one as None
+// The sync handler prints the caller's timeout and the async one the timeout it used, as Python's str would
 pub(crate) fn timeout_message(sent: &Sent) -> String {
     match sent.mode {
         ClientKind::Sync => {
@@ -94,8 +91,7 @@ pub(crate) fn timeout_message(sent: &Sent) -> String {
             format!("litellm.Timeout: Connection timed out after {passed} seconds.")
         }
         ClientKind::Asynchronous => {
-            // Python rounds the float to three decimals; formatting at that precision then dropping the
-            // zeros repr() would drop gives the same text without float arithmetic
+            // Python rounds to three decimals; formatting at that precision and trimming zeros gives the same text
             let rounded = format!("{:.3}", sent.elapsed.as_secs_f64());
             let trimmed = rounded.trim_end_matches('0');
             let taken = if trimmed.ends_with('.') {

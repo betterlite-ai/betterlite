@@ -16,9 +16,9 @@ use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
 use self::support::{
-    Events, FailureStage, Fixture, IMPATIENT, OpenAiConfig, ProxiedSource, RecordingConfig, Reply,
+    Events, FailureStage, Fixture, IMPATIENT, ProxiedSource, RecordingConfig, Reply, Script,
     Source, TestCall, Wire, body_bytes, body_json, caller_headers, capture_debug, extra_body,
-    items_input, keyed_params, optional_params, params, text_input,
+    items_input, keyed_params, openai_config, optional_params, params, text_input,
 };
 use crate::api::responses_compact_http::config::CompactParams;
 use crate::api::responses_compact_http::error::{CompactError, Stage};
@@ -47,7 +47,7 @@ fn logged(text: &str) -> LoggedJson {
 #[tokio::test]
 async fn compact_post_and_headers(#[case] mode: ClientKind) {
     let events = Events::new();
-    let config = OpenAiConfig::new("sk-unused", &events);
+    let config = openai_config("sk-unused", &events);
     let answer = Reply::json(200, COMPACT_OK)
         .with_header("x-request-id", "req-1")
         .with_header("x-ratelimit-remaining-requests", "9");
@@ -309,7 +309,7 @@ async fn compact_transport_errors() {
     let call = TestCall::new("gpt-4o", &input, &optional, &params);
     {
         let events = Events::new();
-        let config = OpenAiConfig::new("sk-unused", &events);
+        let config = openai_config("sk-unused", &events);
         let wire = Wire::replying(
             Reply::json(429, "slow down")
                 .with_header("retry-after", "3")
@@ -357,7 +357,7 @@ async fn compact_transport_errors() {
     }
     {
         let events = Events::new();
-        let config = OpenAiConfig::new("sk-unused", &events);
+        let config = openai_config("sk-unused", &events);
         let wire = Wire::replying(
             Reply::json(200, "{not json").with_header("retry-after", "3"),
             &events,
@@ -417,7 +417,7 @@ async fn compact_transport_errors() {
     }
     {
         let events = Events::new();
-        let config = OpenAiConfig::new("sk-unused", &events);
+        let config = openai_config("sk-unused", &events);
         let wire = Wire::replying(
             Reply::bytes(429, vec![0xff_u8, 0xfe_u8]).with_header("retry-after", "3"),
             &events,
@@ -446,8 +446,8 @@ async fn compact_transport_errors() {
     }
     {
         let events = Events::new();
-        let config =
-            RecordingConfig::failing("http://mock.test/v1/responses", &events, FailureStage::Sign);
+        let config = RecordingConfig::new("http://mock.test/v1/responses", &events)
+            .scripted(Script::Fail(FailureStage::Sign));
         let wire = Wire::replying(Reply::json(200, COMPACT_OK), &events);
         let source = Source::new(wire.clone());
         let deps = CompactDeps {
@@ -477,11 +477,8 @@ async fn compact_transport_errors() {
     }
     {
         let events = Events::new();
-        let config = RecordingConfig::failing(
-            "http://mock.test/v1/responses",
-            &events,
-            FailureStage::Validate,
-        );
+        let config = RecordingConfig::new("http://mock.test/v1/responses", &events)
+            .scripted(Script::Fail(FailureStage::Validate));
         let wire = Wire::replying(Reply::json(200, COMPACT_OK), &events);
         let source = Source::new(wire.clone());
         let deps = CompactDeps {
@@ -508,11 +505,8 @@ async fn compact_transport_errors() {
     }
     {
         let events = Events::new();
-        let config = RecordingConfig::failing(
-            "http://mock.test/v1/responses",
-            &events,
-            FailureStage::Normalize,
-        );
+        let config = RecordingConfig::new("http://mock.test/v1/responses", &events)
+            .scripted(Script::Fail(FailureStage::Normalize));
         let wire = Wire::replying(Reply::json(200, COMPACT_OK), &events);
         let source = Source::new(wire.clone());
         let deps = CompactDeps {
@@ -568,8 +562,8 @@ async fn compact_transport_errors() {
     }
     {
         let events = Events::new();
-        let config =
-            RecordingConfig::transforming_to("http://mock.test/v1/responses", &events, "not a url");
+        let config = RecordingConfig::new("http://mock.test/v1/responses", &events)
+            .scripted(Script::TransformTo(String::from("not a url")));
         let wire = Wire::replying(Reply::json(200, COMPACT_OK), &events);
         let source = Source::new(wire.clone());
         let deps = CompactDeps {
@@ -678,7 +672,7 @@ async fn compact_transport_errors() {
 async fn compact_client_timeout() {
     {
         let events = Events::new();
-        let config = OpenAiConfig::new("sk-unused", &events);
+        let config = openai_config("sk-unused", &events);
         let wire = Wire::replying(Reply::json(200, COMPACT_OK), &events);
         let source = Source::new(wire.clone());
         let deps = CompactDeps {
@@ -729,7 +723,7 @@ async fn compact_client_timeout() {
     }
     {
         let events = Events::new();
-        let config = OpenAiConfig::new("sk-unused", &events);
+        let config = openai_config("sk-unused", &events);
         let wire = Wire::replying(Reply::json(200, COMPACT_OK), &events);
         let source = Source::new(wire.clone());
         let deps = CompactDeps {
@@ -758,7 +752,7 @@ async fn compact_client_timeout() {
     }
     {
         let events = Events::new();
-        let config = OpenAiConfig::new("sk-unused", &events);
+        let config = openai_config("sk-unused", &events);
         let wire = Wire::replying(Reply::json(200, COMPACT_OK), &events);
         let source = Source::new(wire.clone());
         let deps = CompactDeps {
@@ -774,17 +768,14 @@ async fn compact_client_timeout() {
         let input = text_input("hello");
         let optional = optional_params("{}");
         let mut call = TestCall::new("gpt-4o", &input, &optional, &params);
-        call.shared_session = Some(SharedSession::from_id(7));
+        call.shared_session = Some(SharedSession(7));
         let mut fixture = Fixture::new("responses");
         let capture = capture_debug();
         fixture
             .run(&deps, ClientKind::Asynchronous, &call.call(), &events)
             .await
             .expect("the async handler builds its own client");
-        assert_eq!(
-            source.calls(),
-            vec![(Some(false), Some(SharedSession::from_id(7)))]
-        );
+        assert_eq!(source.calls(), vec![(Some(false), Some(SharedSession(7)))]);
         assert!(
             capture
                 .logs
@@ -796,7 +787,7 @@ async fn compact_client_timeout() {
     }
     {
         let events = Events::new();
-        let config = OpenAiConfig::new("sk-unused", &events);
+        let config = openai_config("sk-unused", &events);
         let wire = Wire::replying(Reply::json(200, COMPACT_OK), &events);
         let source = Source::new(wire.clone());
         let deps = CompactDeps {

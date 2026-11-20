@@ -1,5 +1,4 @@
 use std::error::Error;
-use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use http::header::{InvalidHeaderName, InvalidHeaderValue};
@@ -41,17 +40,16 @@ pub enum Stage {
     Response,
 }
 
-impl Display for Stage {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
-        let text = match self {
+impl Stage {
+    const fn text(self) -> &'static str {
+        match self {
             Self::Url => "URL resolution",
             Self::Validate => "environment validation",
             Self::Transform => "request transform",
             Self::Normalize => "request normalization",
             Self::Sign => "request signing",
             Self::Response => "response transform",
-        };
-        formatter.write_str(text)
+        }
     }
 }
 
@@ -63,7 +61,7 @@ pub enum CompactError {
     Client(#[from] ClientError),
     #[error(transparent)]
     Logging(#[from] PrePostError),
-    #[error("{stage} failed: {source}")]
+    #[error("{} failed: {source}", .stage.text())]
     Step { stage: Stage, source: ConfigFailure },
     #[error("the request URL {url} is not a URL")]
     RequestUrl {
@@ -87,15 +85,7 @@ pub enum CompactError {
     Encode(#[source] serde_json::Error),
 }
 
-impl CompactError {
-    #[must_use]
-    pub fn step(stage: Stage, source: ConfigFailure) -> Self {
-        Self::Step { stage, source }
-    }
-}
-
-// _handle_error's funnel: an HTTP status error keeps its response status, text and masked headers, another
-// exception its integer status, and anything else is a synthesized 500 the provider config names
+// _handle_error's funnel: an HTTP error keeps its status, text and masked headers; anything else becomes a synthesized 500
 #[must_use]
 pub fn provider_error<C: CompactConfig>(facts: &FailureFacts, config: &C) -> BaseLlmException {
     let fallback = handle_error(facts, None);

@@ -6,9 +6,9 @@ from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.llms.base_llm.responses.transformation import BaseResponsesAPIConfig
 from litellm.llms.custom_httpx.llm_http_handler import BaseLLMHTTPHandler
-from litellm.llms.openai.responses.transformation import OpenAIResponsesAPIConfig
 from litellm.types.llms.openai import ResponsesAPIResponse
 from litellm.types.router import GenericLiteLLMParams
+from litellm.utils import ProviderConfigManager
 from openai.types.responses.response_input_param import ResponseInputParam
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
@@ -17,7 +17,9 @@ Mode = Literal["sync", "async"]
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 INPUT: TypeAdapter[str | ResponseInputParam] = TypeAdapter(str | ResponseInputParam)
 # the handler takes dict[str, object] maps, so the JSON-facing maps bind to that shape
-OBJECTS: Final = TypeAdapter(dict[str, object] | None)
+OBJECTS: Final = TypeAdapter(dict[str, object])
+NULLABLE_OBJECTS: Final = TypeAdapter(dict[str, object] | None)
+RESPONSES_API: Final[TypeAdapter[ResponsesAPIResponse]] = TypeAdapter(ResponsesAPIResponse)
 PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
 
 
@@ -72,7 +74,11 @@ def logging_fixture() -> Logging:
 
 
 def run_transport(call: TransportCall, api_base: str) -> Outcome:
-    config: BaseResponsesAPIConfig = OpenAIResponsesAPIConfig()
+    config = ProviderConfigManager.get_provider_responses_api_config(
+        provider="openai", model=call.model
+    )
+    if config is None:
+        raise ValueError("the openai responses config is registered")
     timeout = None if call.timeout_seconds is None else float(call.timeout_seconds)
     base = api_base if call.api_query is None else f"{api_base}?{call.api_query}"
     try:
@@ -90,12 +96,24 @@ def execute(
 ) -> JsonValue:
     logging_obj = logging_fixture()
     litellm_params = GenericLiteLLMParams(api_base=api_base)
-    optional = OBJECTS.validate_python(call.optional_params)
-    optional_params: dict[str, object] = {} if optional is None else optional
-    extra_headers = OBJECTS.validate_python(call.extra_headers)
-    extra_body = OBJECTS.validate_python(call.extra_body)
-    if call.mode == "async":
-        result = asyncio.run(
+    optional_params = OBJECTS.validate_python(call.optional_params)
+    extra_headers = NULLABLE_OBJECTS.validate_python(call.extra_headers)
+    extra_body = NULLABLE_OBJECTS.validate_python(call.extra_body)
+    if call.mode == "sync":
+        work = HANDLER.compact_response_api_handler(
+            call.model,
+            INPUT.validate_python(call.input),
+            config,
+            optional_params,
+            litellm_params,
+            logging_obj,
+            "openai",
+            extra_headers,
+            extra_body,
+            timeout,
+        )
+    else:
+        work = asyncio.run(
             HANDLER.async_compact_response_api_handler(
                 call.model,
                 INPUT.validate_python(call.input),
@@ -109,20 +127,7 @@ def execute(
                 timeout,
             )
         )
-    else:
-        result = HANDLER.compact_response_api_handler(
-            call.model,
-            INPUT.validate_python(call.input),
-            config,
-            optional_params,
-            litellm_params,
-            logging_obj,
-            "openai",
-            extra_headers,
-            extra_body,
-            timeout,
-        )
-    response = ResponsesAPIResponse.model_validate(result)
+    response = RESPONSES_API.validate_python(work)
     return JSON.validate_json(response.model_dump_json())
 
 

@@ -52,7 +52,7 @@ use crate::api::responses_compact_http::config::{
 use crate::api::responses_compact_http::error::{CompactError, ConfigFailure};
 use crate::api::responses_compact_http::service::{
     ClientKind, ClientSource, CompactCall, CompactDeps, CompactRequest, CompactTransport,
-    LogContext, PreparedCompact, SharedSession, prepare, send,
+    LogContext, SharedSession, prepare, send,
 };
 use crate::api::vector_store_http_write::error::{BaseLlmException, ClientError, HeaderMap};
 
@@ -120,79 +120,6 @@ impl Fixture {
         }
     }
 
-    pub(crate) async fn prepare<'deps, C, S>(
-        &mut self,
-        deps: &'deps CompactDeps<'_, C, S>,
-        mode: ClientKind,
-        call: &CompactCall<'_>,
-        events: &Events,
-    ) -> Result<PreparedCompact<'deps, C, S>, CompactError>
-    where
-        C: CompactConfig,
-        S: ClientSource,
-    {
-        let logger = |_details: &LoggedJson| -> Result<(), PrePostError> {
-            events.push("log");
-            Ok(())
-        };
-        let env = PrePostEnv {
-            debug: DebugSettings::default(),
-            globals: GlobalFlags::default(),
-            decision: Decision {
-                content: false,
-                key_info: false,
-            },
-            redactor: &self.redactor,
-            log: &self.sink,
-            input_callbacks: &[],
-            sentry: None,
-            logger_fn: Some(&logger),
-            now: self.now,
-        };
-        prepare(
-            deps,
-            mode,
-            call,
-            &mut LogContext {
-                state: &mut self.state,
-                env: &env,
-            },
-        )
-        .await
-    }
-
-    pub(crate) async fn send<C, S>(
-        &mut self,
-        prepared: PreparedCompact<'_, C, S>,
-    ) -> Result<ResponsesReply, CompactError>
-    where
-        C: CompactConfig,
-        S: ClientSource,
-    {
-        let env = PrePostEnv {
-            debug: DebugSettings::default(),
-            globals: GlobalFlags::default(),
-            decision: Decision {
-                content: false,
-                key_info: false,
-            },
-            redactor: &self.redactor,
-            log: &self.sink,
-            input_callbacks: &[],
-            sentry: None,
-            logger_fn: None,
-            now: self.now,
-        };
-        send(
-            prepared,
-            &mut LogContext {
-                state: &mut self.state,
-                env: &env,
-            },
-        )
-        .await
-    }
-
     pub(crate) async fn run<'deps, C, S>(
         &mut self,
         deps: &'deps CompactDeps<'_, C, S>,
@@ -204,8 +131,34 @@ impl Fixture {
         C: CompactConfig,
         S: ClientSource,
     {
-        let prepared = self.prepare(deps, mode, call, events).await?;
-        self.send(prepared).await
+        let logger = |_details: &LoggedJson| -> Result<(), PrePostError> {
+            events.push("log");
+            Ok(())
+        };
+        let prepared = {
+            let env = PrePostEnv {
+                logger_fn: Some(&logger),
+                ..base_env(&self.redactor, &self.sink, self.now)
+            };
+            prepare(
+                deps,
+                mode,
+                call,
+                &mut LogContext {
+                    state: &mut self.state,
+                    env: &env,
+                },
+            )
+            .await?
+        };
+        send(
+            prepared,
+            &mut LogContext {
+                state: &mut self.state,
+                env: &base_env(&self.redactor, &self.sink, self.now),
+            },
+        )
+        .await
     }
 
     pub(crate) fn logged(&self, name: &str) -> Option<&LoggedJson> {
@@ -218,6 +171,27 @@ impl Fixture {
 
     pub(crate) fn input(&self) -> Option<&LoggedJson> {
         self.state.model_call_details.get("input")
+    }
+}
+
+fn base_env<'env>(
+    redactor: &'env Redactor,
+    log: &'env Sink,
+    now: DateTime<FixedOffset>,
+) -> PrePostEnv<'env> {
+    PrePostEnv {
+        debug: DebugSettings::default(),
+        globals: GlobalFlags::default(),
+        decision: Decision {
+            content: false,
+            key_info: false,
+        },
+        redactor,
+        log,
+        input_callbacks: &[],
+        sentry: None,
+        logger_fn: None,
+        now,
     }
 }
 
@@ -254,40 +228,49 @@ impl Reply {
     }
 }
 
+#[derive(Clone, Default)]
+struct WireState {
+    failure: Arc<Mutex<Option<TransportError>>>,
+    requests: Arc<Mutex<Vec<CompactRequest>>>,
+}
+
 #[derive(Clone)]
 pub(crate) struct Wire {
     reply: Reply,
-    failure: Arc<Mutex<Option<TransportError>>>,
-    requests: Arc<Mutex<Vec<CompactRequest>>>,
+    state: WireState,
     events: Events,
-    default_timeout: Duration,
 }
 
 impl Wire {
     pub(crate) fn replying(reply: Reply, events: &Events) -> Self {
         Self {
             reply,
-            failure: Arc::default(),
-            requests: Arc::default(),
+            state: WireState::default(),
             events: events.clone(),
-            default_timeout: Duration::from_secs(60),
         }
     }
 
     pub(crate) fn failing(error: TransportError, events: &Events) -> Self {
         let wire = Self::replying(Reply::json(200, "{}"), events);
-        *wire.failure.lock().unwrap_or_else(PoisonError::into_inner) = Some(error);
+        *wire
+            .state
+            .failure
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(error);
         wire
     }
 
     pub(crate) fn requests(&self) -> MutexGuard<'_, Vec<CompactRequest>> {
-        self.requests.lock().unwrap_or_else(PoisonError::into_inner)
+        self.state
+            .requests
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 }
 
 impl CompactTransport for Wire {
     fn default_timeout(&self) -> Duration {
-        self.default_timeout
+        Duration::from_secs(60)
     }
 
     fn send(
@@ -296,11 +279,13 @@ impl CompactTransport for Wire {
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
         self.events.push("send");
         let failure = self
+            .state
             .failure
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .take();
-        self.requests
+        self.state
+            .requests
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(request);
@@ -333,63 +318,88 @@ pub(crate) struct SignRecord {
     pub(crate) api_base: String,
     pub(crate) model: Option<String>,
     pub(crate) api_key: Option<String>,
-    pub(crate) optional_params: Object,
+    pub(crate) optional_params: CompactParams,
     pub(crate) data: Object,
     pub(crate) headers: Headers,
 }
 
-pub(crate) struct RecordingConfig {
-    pub(crate) base: String,
-    events: Events,
+struct RecordingState {
+    base: String,
     fail_at: Option<FailureStage>,
     transformed_url: Option<String>,
     signed: Mutex<VecDeque<Option<Vec<u8>>>>,
     signs: Mutex<Vec<SignRecord>>,
+}
+
+impl RecordingState {
+    fn new(base: &str) -> Self {
+        Self {
+            base: base.to_owned(),
+            fail_at: None,
+            transformed_url: None,
+            signed: Mutex::default(),
+            signs: Mutex::default(),
+        }
+    }
+}
+
+enum Backend {
+    Recording(RecordingState),
+    OpenAi { environment: Option<SecretString> },
+}
+
+pub(crate) struct RecordingConfig {
+    backend: Backend,
+    events: Events,
     models: Mutex<Vec<String>>,
     errors: Mutex<Vec<(String, u16, HeaderMap)>>,
+}
+
+pub(crate) enum Script {
+    Fail(FailureStage),
+    TransformTo(String),
 }
 
 impl RecordingConfig {
     pub(crate) fn new(base: &str, events: &Events) -> Self {
         Self {
-            base: base.to_owned(),
+            backend: Backend::Recording(RecordingState::new(base)),
             events: events.clone(),
-            fail_at: None,
-            transformed_url: None,
-            signed: Mutex::default(),
-            signs: Mutex::default(),
             models: Mutex::default(),
             errors: Mutex::default(),
         }
     }
 
-    // A transform whose URL string was never parsed, as a config that builds it by formatting would return
-    pub(crate) fn transforming_to(base: &str, events: &Events, url: &str) -> Self {
-        Self {
-            transformed_url: Some(url.to_owned()),
-            ..Self::new(base, events)
+    // A transform URL that was never parsed, as a config that builds it by formatting would return
+    pub(crate) fn scripted(mut self, script: Script) -> Self {
+        if let Backend::Recording(state) = &mut self.backend {
+            match script {
+                Script::Fail(stage) => state.fail_at = Some(stage),
+                Script::TransformTo(url) => state.transformed_url = Some(url),
+            }
         }
-    }
-
-    pub(crate) fn failing(base: &str, events: &Events, stage: FailureStage) -> Self {
-        Self {
-            fail_at: Some(stage),
-            ..Self::new(base, events)
-        }
+        self
     }
 
     pub(crate) fn queue_signed(&self, body: Option<Vec<u8>>) {
-        self.signed
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push_back(body);
+        if let Backend::Recording(state) = &self.backend {
+            state
+                .signed
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push_back(body);
+        }
     }
 
     pub(crate) fn signs(&self) -> Vec<SignRecord> {
-        self.signs
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+        match &self.backend {
+            Backend::Recording(state) => state
+                .signs
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone(),
+            Backend::OpenAi { .. } => Vec::new(),
+        }
     }
 
     pub(crate) fn models(&self) -> Vec<String> {
@@ -405,13 +415,35 @@ impl RecordingConfig {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
+}
 
-    fn fail(&self, stage: FailureStage) -> Result<(), ConfigFailure> {
-        if self.fail_at == Some(stage) {
-            return Err(ConfigFailure::new(Boom));
-        }
-        Ok(())
+pub(crate) fn openai_config(environment: &str, events: &Events) -> RecordingConfig {
+    RecordingConfig {
+        backend: Backend::OpenAi {
+            environment: Some(SecretString::from(environment)),
+        },
+        ..RecordingConfig::new("", events)
     }
+}
+
+fn fail(fail_at: Option<FailureStage>, stage: FailureStage) -> Result<(), ConfigFailure> {
+    if fail_at == Some(stage) {
+        return Err(ConfigFailure::new(Boom));
+    }
+    Ok(())
+}
+
+fn provider_transform(
+    request: &CompactTransformRequest<'_>,
+) -> Result<ResourceRequest, ConfigFailure> {
+    let provider = ProviderCompactRequest {
+        model: request.model,
+        input: request.input,
+        options: request.optional_params,
+        provider: ProviderId::Openai,
+        model_info: None,
+    };
+    compact_request(&provider, request.api_base).map_err(ConfigFailure::new)
 }
 
 impl CompactConfig for RecordingConfig {
@@ -419,28 +451,55 @@ impl CompactConfig for RecordingConfig {
         &self,
         mut headers: Headers,
         model: &str,
-        _params: &CompactParams,
+        params: &CompactParams,
     ) -> Result<Headers, ConfigFailure> {
         self.events.push("validate");
         self.models
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(model.to_owned());
-        self.fail(FailureStage::Validate)?;
-        headers.insert(
-            String::from("Authorization"),
-            String::from("Bearer sk-provider"),
-        );
-        headers.insert(
-            String::from("Content-Type"),
-            String::from("application/json"),
-        );
-        Ok(headers)
+        match &self.backend {
+            Backend::Recording(state) => {
+                fail(state.fail_at, FailureStage::Validate)?;
+                headers.insert(
+                    String::from("Authorization"),
+                    String::from("Bearer sk-provider"),
+                );
+                headers.insert(
+                    String::from("Content-Type"),
+                    String::from("application/json"),
+                );
+                Ok(headers)
+            }
+            Backend::OpenAi { environment } => {
+                let mut identity = NoIdentity;
+                Ok(openai_validate_environment(
+                    headers,
+                    ApiKeySources {
+                        litellm_params: params.api_key.as_ref(),
+                        litellm: None,
+                        openai: None,
+                        environment: environment.as_ref(),
+                    },
+                    params.api_base.as_deref(),
+                    ResponsesProvider::OpenAi,
+                    &mut identity,
+                ))
+            }
+        }
     }
 
-    fn complete_url(&self, _params: &CompactParams) -> Result<String, ConfigFailure> {
+    fn complete_url(&self, params: &CompactParams) -> Result<String, ConfigFailure> {
         self.events.push("url");
-        Ok(self.base.clone())
+        match &self.backend {
+            Backend::Recording(state) => Ok(state.base.clone()),
+            Backend::OpenAi { .. } => Ok(openai_complete_url(
+                params.api_base.as_deref(),
+                None,
+                None,
+                None,
+            )),
+        }
     }
 
     fn transform_compact_request(
@@ -448,60 +507,68 @@ impl CompactConfig for RecordingConfig {
         request: &CompactTransformRequest<'_>,
     ) -> Result<ResourceRequest, ConfigFailure> {
         self.events.push("transform");
-        self.fail(FailureStage::Transform)?;
-        if let Some(url) = &self.transformed_url {
-            return Ok(ResourceRequest {
-                url: url.clone(),
-                payload: request.optional_params.clone(),
-            });
+        if let Backend::Recording(state) = &self.backend {
+            fail(state.fail_at, FailureStage::Transform)?;
+            if let Some(url) = &state.transformed_url {
+                return Ok(ResourceRequest {
+                    url: url.clone(),
+                    payload: request.optional_params.clone(),
+                });
+            }
         }
-        let provider = ProviderCompactRequest {
-            model: request.model,
-            input: request.input,
-            options: request.optional_params,
-            provider: ProviderId::Openai,
-            model_info: None,
-        };
-        compact_request(&provider, request.api_base).map_err(ConfigFailure::new)
+        provider_transform(request)
     }
 
     fn normalize_request(&self, mut data: Object) -> Result<Object, ConfigFailure> {
         self.events.push("normalize");
-        self.fail(FailureStage::Normalize)?;
-        data.insert(String::from("normalized"), PromptJson::Bool(true));
+        if let Backend::Recording(state) = &self.backend {
+            fail(state.fail_at, FailureStage::Normalize)?;
+            data.insert(String::from("normalized"), PromptJson::Bool(true));
+        }
         Ok(data)
     }
 
     fn sign_request(&self, request: &SignRequest<'_>) -> Result<Signed, ConfigFailure> {
         self.events.push("sign");
-        self.fail(FailureStage::Sign)?;
-        self.signs
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(SignRecord {
-                api_base: request.api_base.to_owned(),
-                model: request.model.map(ToOwned::to_owned),
-                api_key: request.api_key.map(|key| key.expose_secret().to_owned()),
-                optional_params: request.optional_params.clone(),
-                data: request.request_data.clone(),
+        match &self.backend {
+            Backend::Recording(state) => {
+                fail(state.fail_at, FailureStage::Sign)?;
+                state
+                    .signs
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .push(SignRecord {
+                        api_base: request.api_base.to_owned(),
+                        model: request.model.map(ToOwned::to_owned),
+                        api_key: request.api_key.map(|key| key.expose_secret().to_owned()),
+                        optional_params: request.optional_params.clone(),
+                        data: request.request_data.clone(),
+                        headers: request.headers.clone(),
+                    });
+                let mut headers = request.headers.clone();
+                headers.insert(String::from("X-Signed"), String::from("yes"));
+                let body = state
+                    .signed
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .pop_front()
+                    .flatten();
+                Ok(Signed { headers, body })
+            }
+            Backend::OpenAi { .. } => Ok(Signed {
                 headers: request.headers.clone(),
-            });
-        let mut headers = request.headers.clone();
-        headers.insert(String::from("X-Signed"), String::from("yes"));
-        let body = self
-            .signed
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop_front()
-            .flatten();
-        Ok(Signed { headers, body })
+                body: None,
+            }),
+        }
     }
 
     fn sign_request_off_loop(
         &self,
         request: &SignRequest<'_>,
     ) -> impl Future<Output = Result<Signed, ConfigFailure>> + Send {
-        self.events.push("off_loop");
+        if let Backend::Recording(_) = &self.backend {
+            self.events.push("off_loop");
+        }
         ready(self.sign_request(request))
     }
 
@@ -512,7 +579,9 @@ impl CompactConfig for RecordingConfig {
         env: &PrePostEnv<'_>,
     ) -> Result<ResponsesReply, ConfigFailure> {
         self.events.push("response");
-        self.fail(FailureStage::Response)?;
+        if let Backend::Recording(recording) = &self.backend {
+            fail(recording.fail_at, FailureStage::Response)?;
+        }
         openai_transform_response(reply, env.now.timestamp(), state, env)
             .map_err(ConfigFailure::new)
     }
@@ -540,130 +609,6 @@ impl WorkloadIdentity for NoIdentity {
         _api_base: Option<&str>,
     ) -> Option<SecretString> {
         None
-    }
-}
-
-pub(crate) struct OpenAiConfig {
-    environment: Option<SecretString>,
-    events: Events,
-    models: Mutex<Vec<String>>,
-    errors: Mutex<Vec<(String, u16, HeaderMap)>>,
-}
-
-impl OpenAiConfig {
-    pub(crate) fn new(environment: &str, events: &Events) -> Self {
-        Self {
-            environment: Some(SecretString::from(environment)),
-            events: events.clone(),
-            models: Mutex::default(),
-            errors: Mutex::default(),
-        }
-    }
-
-    pub(crate) fn models(&self) -> Vec<String> {
-        self.models
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-
-    pub(crate) fn errors(&self) -> Vec<(String, u16, HeaderMap)> {
-        self.errors
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-}
-
-// The OpenAI responses config over B509, as B934 will wire it: the same environment, URL and reply decoding
-impl CompactConfig for OpenAiConfig {
-    fn validate_environment(
-        &self,
-        headers: Headers,
-        model: &str,
-        params: &CompactParams,
-    ) -> Result<Headers, ConfigFailure> {
-        self.events.push("validate");
-        self.models
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(model.to_owned());
-        let mut identity = NoIdentity;
-        Ok(openai_validate_environment(
-            headers,
-            ApiKeySources {
-                litellm_params: params.api_key.as_ref(),
-                litellm: None,
-                openai: None,
-                environment: self.environment.as_ref(),
-            },
-            params.api_base.as_deref(),
-            ResponsesProvider::OpenAi,
-            &mut identity,
-        ))
-    }
-
-    fn complete_url(&self, params: &CompactParams) -> Result<String, ConfigFailure> {
-        self.events.push("url");
-        Ok(openai_complete_url(
-            params.api_base.as_deref(),
-            None,
-            None,
-            None,
-        ))
-    }
-
-    fn transform_compact_request(
-        &self,
-        request: &CompactTransformRequest<'_>,
-    ) -> Result<ResourceRequest, ConfigFailure> {
-        self.events.push("transform");
-        let provider = ProviderCompactRequest {
-            model: request.model,
-            input: request.input,
-            options: request.optional_params,
-            provider: ProviderId::Openai,
-            model_info: None,
-        };
-        compact_request(&provider, request.api_base).map_err(ConfigFailure::new)
-    }
-
-    // B1114's normalize_responses_api_request_dict is a provider-side function; B934 wires it in
-    fn normalize_request(&self, data: Object) -> Result<Object, ConfigFailure> {
-        self.events.push("normalize");
-        Ok(data)
-    }
-
-    fn sign_request(&self, request: &SignRequest<'_>) -> Result<Signed, ConfigFailure> {
-        self.events.push("sign");
-        Ok(Signed {
-            headers: request.headers.clone(),
-            body: None,
-        })
-    }
-
-    fn transform_compact_response(
-        &self,
-        reply: &RawResponse<'_>,
-        state: &mut LoggingState,
-        env: &PrePostEnv<'_>,
-    ) -> Result<ResponsesReply, ConfigFailure> {
-        self.events.push("response");
-        openai_transform_response(reply, env.now.timestamp(), state, env)
-            .map_err(ConfigFailure::new)
-    }
-
-    fn error_class(&self, message: &str, status_code: u16, headers: HeaderMap) -> BaseLlmException {
-        self.errors
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((message.to_owned(), status_code, headers.clone()));
-        BaseLlmException {
-            status_code,
-            message: message.to_owned(),
-            headers,
-            status_code_is_synthesized: false,
-        }
     }
 }
 

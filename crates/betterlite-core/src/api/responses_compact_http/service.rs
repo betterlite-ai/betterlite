@@ -19,10 +19,11 @@ use url::Url;
 
 use self::facts::Sent;
 use self::request::{
-    endpoint_url, select_client, sign, transform, validated_headers, wire_body, wire_headers,
+    endpoint_url, normalized_request, select_client, sign, transform, validated_environment,
+    wire_body, wire_headers,
 };
 use super::body::signed_body_kwargs;
-use super::config::{CompactConfig, CompactParams, Headers};
+use super::config::{CompactConfig, CompactParams, Headers, SignRequest};
 use super::error::{ClientError, CompactError, ConfigFailure, Stage, provider_error};
 use crate::api::vector_store_http_write::error::header_text;
 
@@ -38,19 +39,7 @@ pub enum ClientKind {
 
 // The caller's shared client session; LiteLLM logs its identity and reuses it only in the async handler
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SharedSession(u64);
-
-impl SharedSession {
-    #[must_use]
-    pub const fn from_id(id: u64) -> Self {
-        Self(id)
-    }
-
-    #[must_use]
-    pub const fn id(self) -> u64 {
-        self.0
-    }
-}
+pub struct SharedSession(pub(crate) u64);
 
 pub struct SuppliedClient<'client, Client> {
     pub kind: ClientKind,
@@ -130,8 +119,7 @@ pub struct PreparedCompact<'deps, C: CompactConfig, S: ClientSource> {
     mode: ClientKind,
 }
 
-// The handlers' shared front half: client selection, headers, the compact URL and data, signing, the
-// body choice and the pre-call log, in LiteLLM's order
+// The handlers' shared front half: client, headers, compact URL and data, signing, body and pre-call
 pub async fn prepare<'deps, C, S>(
     deps: &'deps CompactDeps<'_, C, S>,
     mode: ClientKind,
@@ -143,17 +131,18 @@ where
     S: ClientSource,
 {
     let client = select_client(deps, mode, call)?;
-    let headers = validated_headers(deps.config, call)?;
-    let api_base = deps
-        .config
-        .complete_url(call.params)
-        .map_err(|source| CompactError::step(Stage::Url, source))?;
+    let (headers, api_base) = validated_environment(deps.config, call)?;
     let transformed = transform(deps.config, call, &api_base, &headers)?;
-    let data = deps
-        .config
-        .normalize_request(transformed.payload)
-        .map_err(|source| CompactError::step(Stage::Normalize, source))?;
-    let signed = sign(deps.config, mode, &headers, call, &data, &transformed.url).await?;
+    let data = normalized_request(deps.config, transformed.payload)?;
+    let signing = SignRequest {
+        headers: &headers,
+        optional_params: call.params,
+        request_data: &data,
+        api_base: &transformed.url,
+        api_key: call.params.api_key.as_ref(),
+        model: Some(call.model),
+    };
+    let signed = sign(deps.config, mode, &signing).await?;
     let body = wire_body(&signed_body_kwargs(signed.body.as_deref(), &data))?;
     log_pre_call(call.input, &transformed.url, &signed.headers, &data, log)?;
     let request = CompactRequest {
@@ -225,8 +214,7 @@ fn logged_json(value: &PromptJson) -> LoggedJson {
     }
 }
 
-// One send, no retry: a transport failure and a status of 400 or more go through _handle_error, and
-// only a successful status reaches the provider config's response transform
+// One send: a transport failure or a status of 400 or more goes through _handle_error, and only a success is transformed
 pub async fn send<C, S>(
     prepared: PreparedCompact<'_, C, S>,
     log: &mut LogContext<'_, '_>,
@@ -253,8 +241,10 @@ where
     };
     let answer = checked_reply(reply, &sent, config)?;
     let headers = response_headers(&answer.headers);
-    let text = from_utf8(&answer.body)
-        .map_err(|source| CompactError::step(Stage::Response, ConfigFailure::new(source)))?;
+    let text = from_utf8(&answer.body).map_err(|source| CompactError::Step {
+        stage: Stage::Response,
+        source: ConfigFailure::new(source),
+    })?;
     let raw = RawResponse {
         status: answer.status,
         headers: &headers,
@@ -262,7 +252,10 @@ where
     };
     config
         .transform_compact_response(&raw, &mut *log.state, log.env)
-        .map_err(|source| CompactError::step(Stage::Response, source))
+        .map_err(|source| CompactError::Step {
+            stage: Stage::Response,
+            source,
+        })
 }
 
 // The send catch: a transport failure and a status of 400 or more go through _handle_error

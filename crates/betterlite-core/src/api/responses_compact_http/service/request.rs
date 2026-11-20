@@ -8,7 +8,7 @@ use url::Url;
 use super::super::body::SignedBody;
 use super::super::config::{CompactConfig, CompactTransformRequest, Headers, SignRequest, Signed};
 use super::super::error::{CompactError, Stage};
-use super::{ClientKind, ClientSource, CompactCall, CompactDeps, Selected, SharedSession};
+use super::{ClientKind, ClientSource, CompactCall, CompactDeps, Selected};
 
 // The supplied client is reused only when its class matches the handler's, as isinstance does in LiteLLM
 pub(super) fn select_client<'deps, C, S>(
@@ -32,7 +32,7 @@ where
     if mode == ClientKind::Asynchronous {
         tracing::debug!(
             "Creating HTTP client for compact_response with shared_session: {}",
-            session_text(shared_session),
+            shared_session.map_or_else(|| String::from("None"), |session| session.0.to_string()),
         );
     }
     Ok(Selected::Created(
@@ -40,26 +40,31 @@ where
     ))
 }
 
-fn session_text(shared_session: Option<SharedSession>) -> String {
-    shared_session.map_or_else(|| String::from("None"), |session| session.id().to_string())
-}
-
-// validate_environment gets the caller's headers first and rewrites the same map, as LiteLLM hands it the caller's
-// own dict: the OpenAI config replaces Authorization, so a caller's Authorization does not survive
-pub(super) fn validated_headers<C>(
+// validate_environment rewrites the caller's map in place, so a caller's Authorization does not survive it
+pub(super) fn validated_environment<C>(
     config: &C,
     call: &CompactCall<'_>,
-) -> Result<Headers, CompactError>
+) -> Result<(Headers, String), CompactError>
 where
     C: CompactConfig,
 {
-    config
+    let headers = config
         .validate_environment(
             call.extra_headers.cloned().unwrap_or_default(),
             call.model,
             call.params,
         )
-        .map_err(|source| CompactError::step(Stage::Validate, source))
+        .map_err(|source| CompactError::Step {
+            stage: Stage::Validate,
+            source,
+        })?;
+    let api_base = config
+        .complete_url(call.params)
+        .map_err(|source| CompactError::Step {
+            stage: Stage::Url,
+            source,
+        })?;
+    Ok((headers, api_base))
 }
 
 pub(super) fn transform<C>(
@@ -81,34 +86,41 @@ where
     };
     config
         .transform_compact_request(&request)
-        .map_err(|source| CompactError::step(Stage::Transform, source))
+        .map_err(|source| CompactError::Step {
+            stage: Stage::Transform,
+            source,
+        })
+}
+
+pub(super) fn normalized_request<C>(config: &C, data: Object) -> Result<Object, CompactError>
+where
+    C: CompactConfig,
+{
+    config
+        .normalize_request(data)
+        .map_err(|source| CompactError::Step {
+            stage: Stage::Normalize,
+            source,
+        })
 }
 
 // The async handler awaits sign_request_off_loop_if_aws; the sync handler calls sign_request directly
 pub(super) async fn sign<C>(
     config: &C,
     mode: ClientKind,
-    headers: &Headers,
-    call: &CompactCall<'_>,
-    data: &Object,
-    url: &str,
+    request: &SignRequest<'_>,
 ) -> Result<Signed, CompactError>
 where
     C: CompactConfig,
 {
-    let request = SignRequest {
-        headers,
-        optional_params: call.params,
-        request_data: data,
-        api_base: url,
-        api_key: call.params.api_key.as_ref(),
-        model: Some(call.model),
-    };
     match mode {
-        ClientKind::Sync => config.sign_request(&request),
-        ClientKind::Asynchronous => config.sign_request_off_loop(&request).await,
+        ClientKind::Sync => config.sign_request(request),
+        ClientKind::Asynchronous => config.sign_request_off_loop(request).await,
     }
-    .map_err(|source| CompactError::step(Stage::Sign, source))
+    .map_err(|source| CompactError::Step {
+        stage: Stage::Sign,
+        source,
+    })
 }
 
 pub(super) fn endpoint_url(text: &str) -> Result<Url, CompactError> {
