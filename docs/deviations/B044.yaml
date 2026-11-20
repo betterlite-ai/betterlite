@@ -24,7 +24,7 @@ deviations:
       LiteLLM's custom branch posts once and returns the same buffered ModelResponse whatever stream says, so a
       stream caller receives a non-stream body; betterlite refuses the call instead of answering a stream request
       with a buffered body.
-    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6058-L6059"
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L4974-L4979"
   - what: An aleph_alpha request that sends max_completion_tokens puts it on the wire as max_tokens.
     why: >-
       Aleph Alpha has one token ceiling, and betterlite's parsed request carries the field; LiteLLM lists
@@ -42,3 +42,12 @@ deviations:
       Both adapters reuse the aiohttp chat response type, whose id is optional and left unset; LiteLLM's
       ModelResponse generates a fresh chatcmpl uuid per call, a value no client can predict or rely on.
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2213-L2220"
+  - what: >-
+      A litellm_proxy embedding request that sends no encoding_format posts no encoding_format even when
+      LITELLM_DEFAULT_EMBEDDING_ENCODING_FORMAT is set; a request value of none is still removed from the body.
+    why: >-
+      LiteLLM reads that default from the process environment on every call. betterlite's legacy adapter sees only the
+      resolved Deployment and passes no process settings, as this task's seam rule requires, and the loaded
+      openai_provider section reaches B006's OpenAI adapter only. The settings seam on Deployment that B10006 adds will
+      apply the default here and remove this row.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6529-L6537"
