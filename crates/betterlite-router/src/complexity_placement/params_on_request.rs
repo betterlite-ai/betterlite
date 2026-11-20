@@ -65,11 +65,8 @@ pub fn restore_client_ceiling_no_tier_pins(request_kwargs: &mut JsonMap) {
         [METADATA, LITELLM_METADATA]
             .into_iter()
             .find_map(|key| match request_kwargs.get(key) {
-                Some(Json::Object(bucket)) if bucket.contains_key(CLIENT_CEILING) => {
-                    bucket.get(CLIENT_CEILING).cloned()
-                }
-                Some(Json::Object(_))
-                | Some(
+                Some(Json::Object(bucket)) => bucket.get(CLIENT_CEILING).cloned(),
+                Some(
                     Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_),
                 )
                 | None => None,
