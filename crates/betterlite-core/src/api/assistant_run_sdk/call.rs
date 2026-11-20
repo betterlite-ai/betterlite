@@ -78,7 +78,7 @@ impl RunClient {
 }
 
 // run_thread's positional arguments: the three required ones have no default, the rest default to null
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct RunThreadCall {
     // the declared literal names plus any other string, which answers 400
     pub provider: String,

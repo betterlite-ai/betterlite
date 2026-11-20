@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::collections::{BTreeMap, VecDeque};
 use std::future::{Future, ready};
 use std::mem::take;
@@ -52,6 +54,8 @@ const COMPLETED: &str = r#"{"id":"run_1","object":"thread.run","created_at":1700
 const REQUIRES_ACTION: &str = r#"{"id":"run_1","object":"thread.run","created_at":1700000000,"assistant_id":"asst_a","thread_id":"thread_a","status":"requires_action","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"required_action":{"submit_tool_outputs":{"tool_calls":[{"id":"call_1","function":{"arguments":"{}","name":"lookup"},"type":"function"}]},"type":"submit_tool_outputs"},"tools":[{"type":"code_interpreter"}]}"#;
 const FAILED: &str = r#"{"id":"run_1","object":"thread.run","created_at":1700000000,"failed_at":1700000005,"assistant_id":"asst_a","thread_id":"thread_a","status":"failed","instructions":"base","last_error":{"code":"server_error","message":"boom"},"model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}"#;
 const NOT_FOUND: &str = r#"{"error":{"message":"no such run","type":"not_found_error","param":"thread_id","code":"run_missing"}}"#;
+const SERVER_ERROR: &str =
+    r#"{"error":{"message":"oops","type":"server_error","param":"model","code":"server_boom"}}"#;
 
 #[derive(Debug, Clone)]
 struct Seen {
@@ -557,6 +561,11 @@ async fn openai_timeout_selection() {
             Duration::from_millis(7500),
         ),
         (
+            Some(RunTimeout::Plain(TimeoutValue::String(String::new()))),
+            Some(8.0_f64),
+            Duration::from_secs(8),
+        ),
+        (
             Some(RunTimeout::Structured(StructuredTimeout {
                 connect: None,
                 read: Some(4.5_f64),
@@ -697,6 +706,24 @@ async fn arun_status_failure_maps_through_b011() {
         mapped.message,
         "litellm.NotFoundError: NotFoundError: OpenAIException - no such run"
     );
+}
+
+#[tokio::test]
+async fn a_server_error_body_reaches_the_mapped_error() {
+    let (recorder, fixture) = openai_recorder();
+    recorder.queue(500, SERVER_ERROR);
+    let sdk = fixture.sdk(ProviderRuns {
+        transport: Arc::clone(&recorder),
+    });
+    let error = sdk.arun_thread(call("openai")).await.err().unwrap();
+    let mapped = failure(&error);
+    let metadata = mapped.class.metadata();
+    assert_eq!(
+        metadata.error_type,
+        WireField::Text(String::from("internal_server_error"))
+    );
+    assert_eq!(metadata.param, WireField::Text(String::from("model")));
+    assert_eq!(metadata.openai_code.as_deref(), Some("server_boom"));
 }
 
 mod polls;

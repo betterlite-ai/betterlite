@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use secrecy::ExposeSecret as _;
 
 use super::*;
@@ -297,6 +299,26 @@ async fn azure_base_key_and_version_stay_optional_strings() {
         }
         CapturedTarget::OpenAi { .. } => panic!("the azure provider built an openai target"),
     }
+}
+
+#[tokio::test]
+async fn a_supplied_client_timeout_becomes_the_poll_deadline() {
+    let (recorder, fixture) = openai_recorder();
+    recorder.queue_twice(COMPLETED);
+    let sdk = fixture.sdk(ProviderRuns {
+        transport: Arc::clone(&recorder),
+    });
+    let mut input = call("openai");
+    input.client = Some(RunClient {
+        class: RunClientClass::OpenAi,
+        api_key: secret("client-key"),
+        base_url: Some(String::from(BASE)),
+        timeout: Some(3.0_f64),
+        ..RunClient::default()
+    });
+    let reply = polled(sdk.run_thread(input).await.unwrap()).unwrap();
+    assert_eq!(reply.status, "completed");
+    assert_eq!(recorder.requests()[0].deadline, Duration::from_secs(3));
 }
 
 #[tokio::test]

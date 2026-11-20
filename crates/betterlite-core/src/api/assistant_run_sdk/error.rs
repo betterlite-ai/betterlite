@@ -99,9 +99,9 @@ pub fn failed(
     );
     let (class_name, inner) = describe(&class);
     RunFailure {
+        message: format!("litellm.{class_name}: {inner}"),
         class,
         class_name,
-        message: format!("litellm.{class_name}: {inner}"),
     }
 }
 
