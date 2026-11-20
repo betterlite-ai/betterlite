@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 use betterlite_config::sections::content_filter_records::ContentFilterAction;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use rstest::rstest;
 
 use crate::content_filter_inputs::arguments::{
     ArgumentFilter, filter_argument_value, scan_tool_call_arguments,
@@ -361,8 +362,10 @@ fn nested_json(depth: usize) -> String {
     arguments
 }
 
-#[test]
-fn tool_call_depth_past_the_parser_limit() {
+#[rstest]
+#[case(101_usize)]
+#[case(130)]
+fn tool_call_depth_past_the_parser_limit(#[case] depth: usize) {
     let fixture = Fixture::empty();
     let source = fixture.source();
     let filter = ArgumentFilter {
@@ -375,23 +378,20 @@ fn tool_call_depth_past_the_parser_limit() {
     scan_tool_call_arguments(&filter, &mut calls, &mut detections)
         .expect("arguments nested to the cap filter");
     assert_eq!(arguments_of(&calls[0]), Some(at_the_cap.as_str()));
-    for depth in [101_usize, 130] {
-        let arguments = nested_json(depth);
-        let mut deep_calls = vec![tool_call(text(&arguments))];
-        let error =
-            scan_tool_call_arguments(&filter, &mut deep_calls, &mut detections).unwrap_err();
-        let failure = error.into_failure();
-        let GuardrailFailure::HttpObject { status, detail } = failure else {
-            panic!("depth {depth} must be a 400");
-        };
-        assert_eq!(status, 400);
-        assert_eq!(
-            detail.get("error"),
-            Some(&GuardrailValue::Text(
-                "Content blocked: tool call arguments exceed the maximum nesting depth".to_owned()
-            ))
-        );
-    }
+    let arguments = nested_json(depth);
+    let mut deep_calls = vec![tool_call(text(&arguments))];
+    let error = scan_tool_call_arguments(&filter, &mut deep_calls, &mut detections).unwrap_err();
+    let failure = error.into_failure();
+    let GuardrailFailure::HttpObject { status, detail } = failure else {
+        panic!("depth {depth} must be a 400");
+    };
+    assert_eq!(status, 400);
+    assert_eq!(
+        detail.get("error"),
+        Some(&GuardrailValue::Text(
+            "Content blocked: tool call arguments exceed the maximum nesting depth".to_owned()
+        ))
+    );
 }
 
 #[test]

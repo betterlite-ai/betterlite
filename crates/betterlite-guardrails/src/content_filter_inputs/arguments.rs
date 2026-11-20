@@ -85,7 +85,12 @@ pub fn filter_tool_call_arguments(
     arguments: &str,
     detections: &mut Vec<ContentFilterDetection>,
 ) -> Result<String, ArgumentFilterError> {
-    let Some(parsed) = parse_argument_value(arguments) else {
+    // json.loads restores every number; arbitrary_precision parks floats and wide integers in a private map instead
+    let wrapped = format!("{{\"arguments\":{arguments}}}");
+    let Some(parsed) = parse_request_data(&wrapped)
+        .ok()
+        .and_then(|mut entries| entries.remove("arguments"))
+    else {
         if nesting_past_the_parse_limit(arguments, filter.max_depth) {
             return Err(ArgumentFilterError::Depth {
                 context_label: TOOL_CALL_LABEL,
@@ -101,12 +106,6 @@ pub fn filter_tool_call_arguments(
         return Ok(arguments.to_owned());
     }
     serde_json::to_string(&filtered).map_err(|source| ArgumentFilterError::Serialize { source })
-}
-
-// json.loads restores every number; arbitrary_precision parks floats and integers past u64/i64 in a private map instead
-fn parse_argument_value(arguments: &str) -> Option<GuardrailValue> {
-    let wrapped = format!("{{\"arguments\":{arguments}}}");
-    parse_request_data(&wrapped).ok()?.remove("arguments")
 }
 
 // Past serde_json's parse limit the tree never forms, so the depth check reads the raw nesting instead
