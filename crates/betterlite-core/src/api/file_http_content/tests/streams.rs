@@ -1,3 +1,4 @@
+use std::iter::repeat_with;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -16,13 +17,14 @@ use indexmap::IndexMap;
 use rstest::rstest;
 
 use super::support::{
-    Events, Fixture, IMPATIENT, MockScenario, ProxiedSource, Source, Wire, caller_headers,
-    error_headers, gated, locked, params, provider_failure, provider_headers, recording_config,
-    request, retrieve_call, streaming,
+    Events, Fixture, HeaderPairs, IMPATIENT, MockScenario, ProxiedSource, Source, Wire,
+    caller_headers, error_headers, gated, locked, params, provider_failure, provider_headers,
+    recording_config, request, retrieve_call, streaming,
 };
 use crate::api::file_http_content::config::{Headers, QueryParams};
 use crate::api::file_http_content::error::ContentError;
 use crate::api::file_http_content::service::ContentDeps;
+use crate::api::file_http_content::service::streaming::retrieve_content_streaming;
 
 const ERROR_PAIRS: [(&str, &str); 2] = [("content-length", "4"), ("content-type", "text/plain")];
 
@@ -109,14 +111,11 @@ async fn proxied_streaming(
     let content_request = request("f", IndexMap::new());
     let mut fixture = Fixture::new("file_content");
     let call = retrieve_call(&content_request, &litellm, &headers, timeout);
-    let result = fixture
-        .fetch_stream(
-            &deps,
-            &call,
-            NonZeroUsize::new(3).expect("3 is not zero"),
-            &events,
-        )
-        .await;
+    let prepared = fixture
+        .prepare(&deps, &call, &events)
+        .expect("the request prepares");
+    let chunk = NonZeroUsize::new(3).expect("3 is not zero");
+    let result = retrieve_content_streaming(prepared, chunk, &mut fixture.state).await;
     (result, serving)
 }
 
@@ -204,6 +203,8 @@ async fn streaming_answer_within_the_client_timeout_is_read() {
 
 async fn gated_error_body(
     drops: &Arc<AtomicUsize>,
+    status: u16,
+    headers: &HeaderPairs,
     chunks: Vec<Result<Vec<u8>, HttpError>>,
 ) -> (
     MockScenario,
@@ -215,7 +216,7 @@ async fn gated_error_body(
     }
     drop(sender);
     let scenario = MockScenario::new(
-        streaming(400, &ERROR_PAIRS, body),
+        streaming(status, headers, body),
         "http://mock.test/v1/files/f/content",
         QueryParams::new(),
     );
@@ -228,7 +229,7 @@ async fn gated_error_body(
 async fn streaming_error_body_is_lossy_and_closed_once() {
     let drops = Arc::new(AtomicUsize::new(0));
     let chunks = vec![Ok(b"bad".to_vec()), Ok(vec![0xFF])];
-    let (scenario, result) = gated_error_body(&drops, chunks).await;
+    let (scenario, result) = gated_error_body(&drops, 400, &ERROR_PAIRS, chunks).await;
     let failure = provider_failure(result.err().expect("a 400 is a provider error"));
     assert_eq!(failure.status_code, 400);
     assert!(!failure.status_code_is_synthesized);
@@ -251,7 +252,7 @@ async fn streaming_error_body_is_lossy_and_closed_once() {
 async fn streaming_error_body_keeps_the_text_read_before_a_failure() {
     let drops = Arc::new(AtomicUsize::new(0));
     let chunks = vec![Ok(b"part".to_vec()), Err(HttpError::Timeout)];
-    let (_, result) = gated_error_body(&drops, chunks).await;
+    let (_, result) = gated_error_body(&drops, 400, &ERROR_PAIRS, chunks).await;
     let failure = provider_failure(result.err().expect("a 400 is a provider error"));
     assert_eq!(failure.status_code, 400);
     assert!(!failure.status_code_is_synthesized);
@@ -262,21 +263,10 @@ async fn streaming_error_body_keeps_the_text_read_before_a_failure() {
 #[tokio::test]
 async fn streaming_error_body_reads_at_most_64_kib() {
     let drops = Arc::new(AtomicUsize::new(0));
-    let (sender, body) = gated(&drops, 100);
-    for _ in 0..100_u32 {
-        sender
-            .send(Ok(vec![b'a'; 1024]))
-            .await
-            .expect("the chunk is queued");
-    }
-    drop(sender);
-    let scenario = MockScenario::new(
-        streaming(413, &[("content-length", "102400")], body),
-        "http://mock.test/v1/files/f/content",
-        QueryParams::new(),
-    );
-    let chunk = NonZeroUsize::new(3).expect("3 is not zero");
-    let (_, result) = scenario.streaming(chunk).await;
+    let chunks: Vec<Result<Vec<u8>, HttpError>> =
+        repeat_with(|| Ok(vec![b'a'; 1024])).take(100).collect();
+    let headers = [("content-length", "102400")];
+    let (_, result) = gated_error_body(&drops, 413, &headers, chunks).await;
     let failure = provider_failure(result.err().expect("a 413 is a provider error"));
     assert_eq!(failure.status_code, 413);
     assert_eq!(failure.message.len(), 0x0001_0000);
@@ -317,13 +307,11 @@ async fn stream_exit_closes_the_body_once(#[case] case: ExitCase) {
     let content_request = request("f", IndexMap::new());
     let mut fixture = Fixture::new("file_content");
     let call = retrieve_call(&content_request, &litellm, &headers, None);
-    let result = fixture
-        .fetch_stream(
-            &deps,
-            &call,
-            NonZeroUsize::new(2).expect("2 is not zero"),
-            &events,
-        )
+    let prepared = fixture
+        .prepare(&deps, &call, &events)
+        .expect("the request prepares");
+    let chunk = NonZeroUsize::new(2).expect("2 is not zero");
+    let result = retrieve_content_streaming(prepared, chunk, &mut fixture.state)
         .await
         .expect("the stream opens");
     let exit = Arc::clone(&result.exit);

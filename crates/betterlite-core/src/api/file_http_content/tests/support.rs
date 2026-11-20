@@ -178,21 +178,6 @@ impl Fixture {
         let prepared = self.prepare(deps, call, events)?;
         retrieve_file_content(prepared, &mut self.state).await
     }
-
-    pub(crate) async fn fetch_stream<'deps, C, S>(
-        &mut self,
-        deps: &'deps ContentDeps<'deps, C, S>,
-        call: &RetrieveCall<'_>,
-        chunk: NonZeroUsize,
-        events: &Events,
-    ) -> Result<FileContentStreamingResult, ContentError>
-    where
-        C: FileContentConfig,
-        S: ClientSource,
-    {
-        let prepared = self.prepare(deps, call, events)?;
-        retrieve_content_streaming(prepared, chunk, &mut self.state).await
-    }
 }
 
 pub(crate) enum Answer {
@@ -343,9 +328,11 @@ impl MockScenario {
         chunk: NonZeroUsize,
     ) -> (Fixture, Result<FileContentStreamingResult, ContentError>) {
         let mut fixture = Fixture::new("file_content");
-        let result = fixture
-            .fetch_stream(&self.deps(), &self.call(), chunk, &self.events)
-            .await;
+        let deps = self.deps();
+        let prepared = fixture
+            .prepare(&deps, &self.call(), &self.events)
+            .expect("the request prepares");
+        let result = retrieve_content_streaming(prepared, chunk, &mut fixture.state).await;
         (fixture, result)
     }
 
