@@ -197,7 +197,7 @@ fn topaz_map_openai_params_rejects_a_size_that_is_not_text() {
 fn topaz_map_openai_params_ignores_every_other_key() {
     let mapped = map_openai_params(
         &params(&[
-            ("n", Json::Number(Number::from(2))),
+            ("n", Json::Number(Number::from(2_i32))),
             ("quality", text("hd")),
             ("model", text("topaz/CGI")),
         ]),
@@ -342,8 +342,8 @@ fn topaz_reply_keeps_the_two_timing_sources_apart() {
     );
     let asynchronous = transform_response(b"pixels", TopazTiming::Measured(1500.0), 1);
 
-    assert_eq!(sync.response_ms, 2500.0);
-    assert_eq!(asynchronous.response_ms, 1500.0);
+    assert_eq!(sync.response_ms.to_bits(), 2_500.0_f64.to_bits());
+    assert_eq!(asynchronous.response_ms.to_bits(), 1_500.0_f64.to_bits());
     assert_eq!(sync.response, asynchronous.response);
 }
 

@@ -14,7 +14,7 @@ pub enum TopazTiming {
 }
 
 impl TopazTiming {
-    fn response_ms(self) -> f64 {
+    const fn response_ms(self) -> f64 {
         match self {
             Self::Elapsed(elapsed) => elapsed.as_secs_f64().mul_add(1000.0_f64, 0.0_f64),
             Self::Measured(response_ms) => response_ms,
