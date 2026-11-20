@@ -54,8 +54,6 @@ pub enum ContainerResourceHttpError {
 
 pub type RetrieveResult = Result<ContainerObject, ContainerResourceHttpError>;
 pub type DeleteResult = Result<DeleteContainerResult, ContainerResourceHttpError>;
-pub type HandledResult<Reply, Pending> =
-    Result<Handled<Reply, Pending>, ContainerResourceHttpError>;
 
 #[rustfmt::skip]
 trait Resource {
@@ -111,7 +109,10 @@ impl<Source: ClientSource, Hook: PreCallHook> ContainerResourceHandler<Source, H
         &self,
         call: &ContainerResourceCall<'_, Source>,
         is_async: bool,
-    ) -> HandledResult<ContainerObject, impl Future<Output = RetrieveResult>> {
+    ) -> Result<
+        Handled<ContainerObject, impl Future<Output = RetrieveResult>>,
+        ContainerResourceHttpError,
+    > {
         if is_async {
             return Ok(Handled::Pending(self.acontainer_retrieve_handler(call)));
         }
@@ -133,7 +134,10 @@ impl<Source: ClientSource, Hook: PreCallHook> ContainerResourceHandler<Source, H
         &self,
         call: &ContainerResourceCall<'_, Source>,
         is_async: bool,
-    ) -> HandledResult<DeleteContainerResult, impl Future<Output = DeleteResult>> {
+    ) -> Result<
+        Handled<DeleteContainerResult, impl Future<Output = DeleteResult>>,
+        ContainerResourceHttpError,
+    > {
         if is_async {
             return Ok(Handled::Pending(self.acontainer_delete_handler(call)));
         }
