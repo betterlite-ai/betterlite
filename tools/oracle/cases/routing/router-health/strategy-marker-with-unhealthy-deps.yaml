@@ -1,0 +1,25 @@
+kind: probe
+name: strategy-marker-with-unhealthy-deps
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      strategy_router_health:
+        models:
+          - model_name: outer
+            litellm_params:
+              model: auto_router/complexity_router
+              complexity_router_config:
+                tiers: {SIMPLE: bad-model}
+            model_info: {id: outer-id}
+          - model_name: bad-model
+            litellm_params:
+              model: openai/xyz
+              api_key: sk-x
+            model_info:
+              id: bad-id
+              mode: unsupported-mode
+        model_id: outer-id
+        failed: [bad-id]
+compare:
+  ignore: []
