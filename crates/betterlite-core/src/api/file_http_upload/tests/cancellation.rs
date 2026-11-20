@@ -69,7 +69,7 @@ async fn media_cancellation_closes_the_block_producer() {
     let dropped = Arc::new(AtomicBool::new(false));
     let plan = UploadPlan::Media(Box::new(MediaPlan {
         body_stream: Box::new(Endless {
-            dropped: dropped.clone(),
+            dropped: Arc::clone(&dropped),
         }),
         content_type: None,
     }));

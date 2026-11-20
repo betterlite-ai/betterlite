@@ -27,11 +27,11 @@ pub(super) fn upload_plan(spec: &Plan, origin: &str) -> UploadPlan {
 fn two_step_plan(spec: &TwoStepSpec, origin: &str) -> TwoStepPlan {
     TwoStepPlan {
         initial_method: spec.initial_request.method.clone(),
-        initial_url: resolved(&spec.initial_request.url, origin),
+        initial_url: resolved(spec.initial_request.url.as_ref(), origin),
         initial_headers: spec.initial_request.headers.clone(),
         initial_data: Json::Object(spec.initial_request.data.clone()),
         upload_method: spec.upload_request.method.clone(),
-        upload_url: resolved(&spec.upload_request.url, origin),
+        upload_url: resolved(spec.upload_request.url.as_ref(), origin),
         upload_headers: spec.upload_request.headers.clone(),
         upload_data: upload_data(&spec.upload_request.data),
         url_location: spec.upload_url_location,
@@ -77,11 +77,8 @@ fn upload_data(content: &Content) -> UploadData {
     }
 }
 
-fn resolved(url: &Option<String>, origin: &str) -> Option<String> {
-    match url {
-        Some(url) => Some(resolve(url, origin)),
-        None => None,
-    }
+fn resolved(url: Option<&String>, origin: &str) -> Option<String> {
+    url.map(|value| resolve(value, origin))
 }
 
 fn resolve(url: &str, origin: &str) -> String {

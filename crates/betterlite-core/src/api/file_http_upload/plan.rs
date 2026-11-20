@@ -144,11 +144,11 @@ fn request_json(
     data: Json,
 ) -> Json {
     let mut request = IndexMap::new();
-    if let Some(method) = method {
-        request.insert(String::from("method"), Json::Text(method.to_owned()));
+    if let Some(method_name) = method {
+        request.insert(String::from("method"), Json::Text(method_name.to_owned()));
     }
-    if let Some(url) = url {
-        request.insert(String::from("url"), Json::Text(url.to_owned()));
+    if let Some(url_text) = url {
+        request.insert(String::from("url"), Json::Text(url_text.to_owned()));
     }
     request.insert(String::from("headers"), Json::Object(headers_json(headers)));
     request.insert(String::from("data"), data);

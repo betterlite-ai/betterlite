@@ -79,7 +79,7 @@ pub struct UploadDeps<'deps, C: FileUploadConfig, S: ClientSource> {
     pub source: &'deps S,
     pub supplied: Option<SuppliedClient<'deps, S::Client>>,
     pub tasks: &'deps TaskTracker,
-    pub boundaries: &'deps dyn Fn() -> String,
+    pub boundaries: &'deps (dyn Fn() -> String + Send + Sync),
     pub limits: ApiLimits,
 }
 
@@ -117,7 +117,7 @@ pub struct PreparedUpload<'deps, 'env, C: FileUploadConfig, S: ClientSource> {
     mode: Mode,
     env: &'deps PrePostEnv<'env>,
     tasks: &'deps TaskTracker,
-    boundaries: &'deps dyn Fn() -> String,
+    boundaries: &'deps (dyn Fn() -> String + Send + Sync),
     timeout: Option<Duration>,
     limits: ApiLimits,
 }
@@ -218,15 +218,15 @@ where
     S: ClientSource,
 {
     match plan {
-        UploadPlan::TwoStep(plan) => exchange.two_step(&plan).await,
-        UploadPlan::Presigned(plan) => exchange.presigned(&plan).await,
-        UploadPlan::Media(plan) => exchange.media(*plan).await,
+        UploadPlan::TwoStep(two_step) => exchange.two_step(&two_step).await,
+        UploadPlan::Presigned(presigned) => exchange.presigned(&presigned).await,
+        UploadPlan::Media(media) => exchange.media(*media).await,
         UploadPlan::Text(text) => exchange.traditional(text.into_bytes()).await,
         UploadPlan::Bytes(bytes) => {
             let body = traditional_body(exchange.mode, &bytes)?;
             exchange.traditional(body).await
         }
-        UploadPlan::Multipart(plan) => exchange.multipart(plan.parts).await,
+        UploadPlan::Multipart(multipart) => exchange.multipart(multipart.parts).await,
         UploadPlan::Unsupported(_) => Err(UploadError::UnsupportedPlan),
     }
 }
