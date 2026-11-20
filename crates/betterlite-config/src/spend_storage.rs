@@ -11,7 +11,10 @@ use std::collections::BTreeMap;
 pub const ENV_STORE_PROMPTS: &str = "STORE_PROMPTS_IN_SPEND_LOGS";
 pub const ENV_MAX_PROMPT_LENGTH: &str = "MAX_STRING_LENGTH_PROMPT_IN_DB";
 pub const DEFAULT_MAX_PROMPT_LENGTH: i64 = 2048;
+pub const ENV_MAX_REDIS_BUFFER_DEQUEUE_COUNT: &str = "MAX_REDIS_BUFFER_DEQUEUE_COUNT";
+pub const DEFAULT_MAX_REDIS_BUFFER_DEQUEUE_COUNT: i64 = 100;
 const MISSING_SESSION_ID_PATH: &str = "general_settings.missing_session_id";
+const USE_REDIS_TRANSACTION_BUFFER_PATH: &str = "general_settings.use_redis_transaction_buffer";
 const MAX_BUDGET_PATH: &str = "litellm_settings.max_budget";
 const DISABLE_END_USER_PATH: &str = "litellm_settings.disable_end_user_cost_tracking";
 const ENABLE_PROMETHEUS_PATH: &str =
@@ -36,6 +39,7 @@ pub struct GeneralSettings {
     store_prompts_in_spend_logs: JsonValue,
     missing_session_id: JsonValue,
     disable_spend_updates: JsonValue,
+    use_redis_transaction_buffer: JsonValue,
 }
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum SpendUpdates {
@@ -58,6 +62,8 @@ pub struct Settings {
     pub max_budget: Decimal,
     pub disable_end_user_cost_tracking: Option<bool>,
     pub enable_prometheus_only: Option<bool>,
+    pub use_redis_transaction_buffer: bool,
+    pub max_redis_buffer_dequeue_count: i64,
 }
 impl Section for Raw {
     type Settings = Settings;
@@ -93,6 +99,12 @@ impl Section for Raw {
             enable_prometheus_only: optional_flag(
                 &self.litellm_settings.enable_prometheus_only,
                 ENABLE_PROMETHEUS_PATH,
+            )?,
+            use_redis_transaction_buffer: redis_transaction_buffer(
+                &general.use_redis_transaction_buffer,
+            )?,
+            max_redis_buffer_dequeue_count: initial_max_redis_buffer_dequeue_count(
+                lookup.lookup(ENV_MAX_REDIS_BUFFER_DEQUEUE_COUNT).as_deref(),
             )?,
         })
     }
@@ -142,6 +154,37 @@ fn initial_max_prompt_length(value: Option<&str>) -> Result<i64, ConfigError> {
 pub fn runtime_max_prompt_length(initial: i64, snapshot: Option<&str>) -> i64 {
     snapshot.map_or(initial, |text| {
         betterlite_env::number::<i64>(ENV_MAX_PROMPT_LENGTH, text)
+            .ok()
+            .flatten()
+            .unwrap_or(initial)
+    })
+}
+// litellm reads the setting as bool | str | None; a string goes through str_to_bool, so only true and false are on.
+fn redis_transaction_buffer(configured: &JsonValue) -> Result<bool, ConfigError> {
+    match configured {
+        JsonValue::Null => Ok(false),
+        JsonValue::Bool(flag) => Ok(*flag),
+        JsonValue::String(text) => Ok(text_to_bool(text).unwrap_or(false)),
+        JsonValue::Number(_) | JsonValue::Array(_) | JsonValue::Object(_) => {
+            Err(ConfigError::InvalidScalar {
+                path: USE_REDIS_TRANSACTION_BUFFER_PATH.to_owned(),
+                value: false,
+            })
+        }
+    }
+}
+fn initial_max_redis_buffer_dequeue_count(value: Option<&str>) -> Result<i64, ConfigError> {
+    value.map_or(Ok(DEFAULT_MAX_REDIS_BUFFER_DEQUEUE_COUNT), |text| {
+        let count = betterlite_env::number::<i64>(ENV_MAX_REDIS_BUFFER_DEQUEUE_COUNT, text)
+            .map_err(|source| ConfigError::Environment { source })?;
+        Ok(count.unwrap_or(DEFAULT_MAX_REDIS_BUFFER_DEQUEUE_COUNT))
+    })
+}
+// Zero and negative counts reach Redis unchanged, so the server's own LPOP rules apply rather than a floor of ours.
+#[must_use]
+pub fn runtime_max_redis_buffer_dequeue_count(initial: i64, snapshot: Option<&str>) -> i64 {
+    snapshot.map_or(initial, |text| {
+        betterlite_env::number::<i64>(ENV_MAX_REDIS_BUFFER_DEQUEUE_COUNT, text)
             .ok()
             .flatten()
             .unwrap_or(initial)
