@@ -180,6 +180,15 @@ fn a_deployment_map_key_prefers_the_group_then_the_base_models() {
         model_map_key_from_deployment(&bare),
         Some("gpt-4o".to_owned())
     );
+    let empty_base = deployment(
+        "",
+        &[("base_model", ""), ("model", "openai/gpt-4o")],
+        "dep-f",
+    );
+    assert_eq!(
+        model_map_key_from_deployment(&empty_base),
+        Some("gpt-4o".to_owned())
+    );
     let azure = deployment("", &[("model", "azure/deployment-name")], "dep-e");
     assert_eq!(model_map_key_from_deployment(&azure), None);
 }
