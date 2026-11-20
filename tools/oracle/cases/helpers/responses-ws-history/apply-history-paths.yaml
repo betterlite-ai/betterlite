@@ -1,0 +1,106 @@
+kind: helper
+name: apply-history-paths
+call:
+  responses_ws_history:
+    setup:
+      model: openai/gpt-4o-mini
+      custom_llm_provider: null
+      api_key: null
+      api_base: null
+      timeout: null
+      first_message: null
+      litellm_metadata: null
+      kwargs: {}
+    credentials: []
+    proxy: []
+    frames: []
+    warmup: []
+    warmup_ids: []
+    case:
+      inputs: []
+      completions: []
+      store: []
+      first: resp_missing
+      append:
+        type: message
+        role: assistant
+        content: []
+      missing: resp_missing
+      applied:
+      - previous_response_id: null
+        current:
+        - type: message
+          role: user
+          content:
+          - type: output_text
+            text: next
+        prior:
+        - type: message
+          role: user
+          content:
+          - type: output_text
+            text: prior
+      - previous_response_id: ''
+        current:
+        - type: message
+          role: user
+          content:
+          - type: output_text
+            text: next
+        prior:
+        - type: message
+          role: user
+          content:
+          - type: output_text
+            text: prior
+      - previous_response_id: raw-1
+        current:
+        - type: message
+          role: user
+          content:
+          - type: output_text
+            text: next
+        prior:
+        - type: message
+          role: user
+          content:
+          - type: output_text
+            text: prior
+      - previous_response_id: raw-1
+        current: []
+        prior:
+        - type: message
+          role: user
+          content:
+          - type: output_text
+            text: prior
+        - type: message
+          role: user
+          content:
+          - type: output_text
+            text: prior2
+      - previous_response_id: raw-2
+        current:
+        - type: message
+          role: user
+          content:
+          - type: output_text
+            text: next
+        prior: []
+      - previous_response_id: resp_warmup_0123456789abcdef0123456789abcdef
+        current:
+        - type: message
+          role: user
+          content:
+          - type: output_text
+            text: next
+        prior:
+        - type: message
+          role: user
+          content:
+          - type: output_text
+            text: prior
+      base_kwargs: []
+env: {}
+compare:
+  ignore: []

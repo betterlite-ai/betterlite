@@ -1,0 +1,19 @@
+kind: helper
+name: messages-auth-and-url
+call:
+  bedrock_mantle_settings:
+    messages_auth_and_url:
+      cases:
+        - {}
+        - {api_base: 'https://bedrock-mantle.eu-west-3.api.aws/v1'}
+        - {api_base: 'https://bedrock-mantle.eu-west-3.api.aws/openai/v1'}
+        - {api_base: 'https://bedrock-mantle.eu-west-3.api.aws/anthropic/v1/messages'}
+        - {api_base: 'https://proxy.example/'}
+        - {aws_region_name: ap-south-1}
+        - {aws_region_name: ap-south-1, api_base: 'https://bedrock-mantle.eu-west-3.api.aws/v1'}
+        - {environment: {BEDROCK_MANTLE_API_BASE: 'https://bedrock-mantle.us-west-2.api.aws/openai/v1'}}
+        - {environment: {BEDROCK_MANTLE_REGION: eu-west-1}}
+        - {api_base: 'https://bedrock-mantle.eu-west-3.api.aws/v1/'}
+        - {aws_region_name: NOT A REGION, api_base: 'https://proxy.example/v1'}
+env: {}
+compare: {ignore: []}

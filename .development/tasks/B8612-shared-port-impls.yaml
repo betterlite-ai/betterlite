@@ -28,8 +28,9 @@ description: >-
   swappable slot. `ResponseCacheSlot` holds `RwLock<Option<Arc<Cache>>>` (B4299's Cache) with `get()` and
   `replace(cache)`. `ResponseCacheReinit` implements B8502's `CacheReinit` (cache_settings_update). `init_cache(params)`
   ports ProxyConfig._init_cache (L5955-L5999): default_in_memory_ttl and default_redis_ttl in the params update the
-  cache defaults B4299 reads; the new cache comes from B8651's `build_response_cache(params, deps)` (never B4299's
-  constructor directly, so the semantic types work) and goes into the slot; then the usage Redis is resolved: the
+  cache defaults B4299 reads; the new cache comes from B4299's Cache constructor (it answers CacheTypeNotSupportedError for
+  redis-semantic, valkey-semantic and qdrant-semantic until B8651 lands, and B8651 then routes init_cache through its
+  `build_response_cache(params, deps)` and depends on this task) and goes into the slot; then the usage Redis is resolved: the
   current usage Redis when there is one, else the new cache's backend when it is a plain or cluster Redis, else B8377's
   build_from_env, which logs "Cache backend %s is not a Redis KV cache; built a standalone Redis from REDIS_*
   environment variables for usage tracking, rate limiting, and cross-pod coordination." when it builds one. A resolved
@@ -38,11 +39,10 @@ description: >-
   returns the resolved usage Redis so the startup caller can publish it, as _set_redis_usage_cache does.
   `switch_on_response_caching()` ports switch_on_llm_response_caching (L6001-L6012): when the RouterHandle (B8611) holds
   a router, the slot holds a cache and the router's cache_responses is not true, it calls enable_cache_responses and
-  logs "Set router.cache_responses=True after initializing cache" at debug. `CacheRuntime::new(deps: SemanticDeps,
+  logs "Set router.cache_responses=True after initializing cache" at debug. `CacheRuntime::new(
   usage_redis, attach targets, env)` builds the three shared values together: `slot: Arc<ResponseCacheSlot>`,
   `reinit: Arc<ResponseCacheReinit>` and `settings: Arc<CacheSettingsManager>` (B8502's one manager, whose last_params
-  B8384's reload and POST /cache/settings share). SemanticDeps is B8651's (router handle, the one LiveClientFactory, the
-  outbound HTTP client and the env map); the usage Redis cell is the value B8613 publishes; the attach targets are what
+  B8384's reload and POST /cache/settings share). B8651 adds its SemanticDeps argument when it lands; the usage Redis cell is the value B8613 publishes; the attach targets are what
   B8377's attach_usage_redis takes.
 
 
@@ -65,15 +65,15 @@ description: >-
   Agents read-through. One B8231 RegistryReadThrough per process, so every area finds a just-created agent the same
   way. `RegistryAgentSync` implements B8231's `AgentSync`: `cached(key)` is the registry's get_agent_by_id(key), then
   get_agent_by_name(key); `load_locked(key)` takes B4776's reconcile() guard, checks cached again (true when found now),
-  then reads one row with B4777's AGENT_SELECT_SQL and `WHERE a.agent_id = $1`, then by agent_name, decodes it with
-  B4777's row codec, registers it and returns true, or false when no row. `ProxyDbObjects` (pub: B9948's models read-through uses it too) implements B8231's
+  then reads one row with B10012's AGENT_SELECT_SQL and `WHERE a.agent_id = $1`, then by agent_name, decodes it with
+  B10012's row codec, registers it and returns true, or false when no row. `ProxyDbObjects` (pub: B9948's models read-through uses it too) implements B8231's
   `DbObjects`: enabled is true only when a database store exists, general_settings.store_model_in_db is exactly true,
   and B8380's should_load_db_object allows the object type. `SharedAgents` holds `registry: Arc<AgentRegistry>` and
   `read_through: Arc<RegistryReadThrough<AgentResync<RegistryAgentSync, ProxyDbObjects>>>` (read B8231 for AgentResync's
   exact shape), built with `SharedAgents::new(registry, db, proxy_config)` and B8231's default miss TTL and window.
 
 
-  Tests in shared_ports/tests.rs use in-memory stores and recording fakes for B8595's services, B8651's builder and
+  Tests in shared_ports/tests.rs use in-memory stores and recording fakes for B8595's services and
   B8377's attach step, and a test Postgres only where AGENT_SELECT_SQL runs (B8231's own tests show the fixture). Names
   start with `settings_`, `reinit_`, `switch_`, `secrets_`, `audit_` and `agents_`; a `settings_` test updates
   pass_through_endpoints through a ConfigOverlayPort fake that returns DatabaseUnavailable and gets 503 back through
@@ -98,7 +98,7 @@ references:
 dod:
   - text: ProxySettingsStore reads and updates a general setting through B8595's services and keeps their status and detail, including the 400 without a database.
     proof: [ports-tests]
-  - text: init_cache builds the cache through build_response_cache, replaces it in the slot, resolves the usage Redis in LiteLLM's order with its log lines and attaches it, switch_on_response_caching sets cache_responses only when a router and a cache exist, and CacheRuntime hands out one slot, one reinit and one CacheSettingsManager.
+  - text: init_cache builds the cache through B4299's Cache constructor, replaces it in the slot, resolves the usage Redis in LiteLLM's order with its log lines and attaches it, switch_on_response_caching sets cache_responses only when a router and a cache exist, and CacheRuntime hands out one slot, one reinit and one CacheSettingsManager.
     proof: [ports-tests]
   - text: production_secret_lookup has no manager, real OIDC HTTP, the Azure token provider and the system clock, and the OIDC GET sends the query, headers and timeouts it is given.
     proof: [ports-tests]

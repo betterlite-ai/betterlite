@@ -19,6 +19,7 @@ use super::media_providers::MediaProviders;
 use super::speech_providers::SpeechProviders;
 use super::subscription::Subscription;
 use crate::anthropic_dispatch::Anthropic;
+use crate::anthropic_dispatch::base::Surface;
 use crate::azure_dispatch::Azure;
 use crate::bedrock_dispatch_contract::Bedrock;
 use crate::compatible_providers::Compatible;
@@ -86,7 +87,12 @@ fn client() -> ProxiedClient {
 #[rstest]
 #[case::azure(Provider::Azure(Azure), "azure")]
 #[case::azure_ai(Provider::AzureAi(AzureAi), "azure_ai")]
-#[case::anthropic(Provider::Anthropic(Anthropic), "anthropic")]
+#[case::anthropic_text(
+    Provider::Anthropic(Anthropic {
+        surface: Surface::Legacy
+    }),
+    "anthropic"
+)]
 #[case::bedrock(Provider::Bedrock(Bedrock), "bedrock")]
 #[case::vertex_ai(Provider::VertexAi(VertexAi), "vertex_ai")]
 #[case::gemini(Provider::Gemini(Gemini), "gemini")]

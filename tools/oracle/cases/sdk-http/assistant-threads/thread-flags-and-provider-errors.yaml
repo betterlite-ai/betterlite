@@ -1,0 +1,27 @@
+kind: sdk_http
+name: sdk-http-assistant-threads-flags-and-provider-errors
+env:
+  OPENAI_API_KEY: sk-env
+call:
+  assistant_threads:
+    operation: get
+    mode: async
+    provider: openai
+    thread_id: thread_a
+    kwargs: {}
+upstream:
+  - status: 404
+    headers: {content-type: application/json}
+    body:
+      error:
+        message: missing
+        type: invalid_request_error
+        param: thread_id
+        code: missing
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, openai-beta]
+  ignore:
+    - pointer: /failure/message
+      why: LiteLLM prefixes the mapped exception text with its class name, betterlite reports the dispatch text.
