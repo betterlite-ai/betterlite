@@ -131,11 +131,11 @@ where
             path: path.to_owned(),
             value: false,
         }),
-        RawLimit::Number(number) => match resolve_number(Some(number), path, lookup, parser)? {
-            Some(value) => Ok(Some(value)),
+        RawLimit::Number(number) => {
             // an environment reference whose value is empty counts as unset, so the key keeps its default
-            None => Ok(Some(default)),
-        },
+            resolve_number(Some(number), path, lookup, parser)?
+                .map_or_else(|| Ok(Some(default)), |value| Ok(Some(value)))
+        }
     }
 }
 
@@ -156,7 +156,7 @@ fn seconds_duration(seconds: f64, path: &str) -> Result<Duration, ConfigError> {
 
 // a zero or negative interval cleans on every track_series call, which None already means, matching LiteLLM's _should_run_ttl_cleanup
 fn cleanup_duration(seconds: f64, path: &str) -> Result<Option<Duration>, ConfigError> {
-    if seconds <= 0.0 {
+    if seconds <= 0.0_f64 {
         return Ok(None);
     }
     seconds_duration(seconds, path).map(Some)
