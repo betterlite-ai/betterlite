@@ -135,6 +135,29 @@ async fn raw_transcription_session_created_marks_the_mode() {
 }
 
 #[tokio::test]
+async fn raw_guardrail_receives_the_completed_transcript() {
+    let fixture = Fixture::default();
+    let mut source = fixture.source.clone();
+    source.text(COMPLETED_FRAME);
+    source.close_with(1000, "");
+    let guardrail = ScriptedGuardrail::default();
+    let records = Arc::clone(&guardrail.records);
+    let guardrails: [&dyn RealtimeGuardrail<Error = Infallible>; 1] = [&guardrail];
+    let token = CancellationToken::new();
+    let (result, _state) = run(
+        &StateOptions::default(),
+        &fixture,
+        &mut source,
+        &guardrails,
+        &token,
+    )
+    .await;
+    assert_eq!(result.unwrap().code, 1000);
+    assert_eq!(lock(&records).applied.len(), 1);
+    assert_eq!(lock(&records).applied[0].texts, vec![String::from("hello")]);
+}
+
+#[tokio::test]
 async fn raw_guardrailed_session_created_disables_on_every_event() {
     let fixture = Fixture::default();
     let mut source = fixture.source.clone();
