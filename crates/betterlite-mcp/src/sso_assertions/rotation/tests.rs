@@ -2,7 +2,7 @@
 
 use std::convert::Infallible;
 use std::fmt::Debug;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_db::sso_assertion_rows::{
@@ -73,8 +73,10 @@ fn sealed_rows(entries: &[(&str, &str)]) -> Vec<AssertionRow> {
 fn memory_rows(stored: Vec<AssertionRow>, failures: MemoryFailures) -> MemoryAssertionRows {
     MemoryAssertionRows {
         rows: Mutex::new(stored),
+        id_jag: false,
         failures,
-        ..MemoryAssertionRows::default()
+        reads: AtomicUsize::new(0),
+        writes: AtomicUsize::new(0),
     }
 }
 
@@ -228,8 +230,11 @@ async fn update_failure_stops_the_rotation() {
         ("charlie", "third-payload"),
     ];
     let failures = MemoryFailures {
+        find: None,
+        find_all: None,
+        upsert: None,
         update: Some(1),
-        ..MemoryFailures::default()
+        id_jag_server_exists: None,
     };
     let rows = memory_rows(sealed_rows(&entries), failures);
     let logs = Logs::default();
@@ -281,8 +286,11 @@ async fn plaintext_never_reaches_logs_or_errors() {
     let failing = memory_rows(
         vec![row("charlie", &sealed(secret))],
         MemoryFailures {
+            find: None,
+            find_all: None,
+            upsert: None,
             update: Some(0),
-            ..MemoryFailures::default()
+            id_jag_server_exists: None,
         },
     );
     let error = rotate_assertions(&failing, &old, &key).await.unwrap_err();
