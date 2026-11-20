@@ -4,7 +4,6 @@ use betterlite_foundry::image_edits::mai::MaiEditRequest;
 use betterlite_foundry::image_edits::selection::ImageEditVariant;
 use betterlite_foundry::image_generation::params::ImageParams;
 use betterlite_openai::image_edits::file::ImageEditFile;
-use betterlite_openai::image_edits::request::ImageEditForm;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_provider::foundry_resource_dispatch::image_edit::{Call, Dispatch, Outcome};
@@ -32,12 +31,6 @@ pub(super) struct ImageField {
     text: String,
 }
 
-#[derive(Clone, Copy)]
-enum Kind {
-    Flux2,
-    Mai,
-}
-
 enum Uploads {
     Flux2(Option<Vec<ImageSource>>),
     Mai(Option<Vec<Option<ImageEditFile>>>),
@@ -46,35 +39,22 @@ enum Uploads {
 pub(super) fn run(input: &Input) -> HelperResult {
     let runtime = runtime()?;
     let mut logging = Recorder;
-    edit_row(input, &runtime, &mut logging)
-}
-
-fn edit_row(input: &Input, runtime: &Runtime, logging: &mut Recorder) -> HelperResult {
     let variant =
         ImageEditVariant::select(&input.model).map_err(|error| failure("LeafFailure", error))?;
-    let kind = kind_of(variant)?;
-    let options = options_for(input, kind, runtime, logging)?;
-    let mut uploads = uploads_of(input, kind);
+    let mut uploads = uploads_of(input, variant)?;
+    let options = options_for(input, &uploads, &runtime, &mut logging)?;
     let (call, name) = form_call(input, &options, &mut uploads);
-    form_of(run_call(call, runtime, logging), name)
-}
-
-fn kind_of(variant: ImageEditVariant) -> Result<Kind, Box<HelperError>> {
-    match variant {
-        ImageEditVariant::Flux2 => Ok(Kind::Flux2),
-        ImageEditVariant::Mai => Ok(Kind::Mai),
-        ImageEditVariant::Flux1 => Err(failure("Variant", OTHER)),
-    }
+    form_of(run_call(call, &runtime, &mut logging), name)
 }
 
 fn options_for(
     input: &Input,
-    kind: Kind,
+    uploads: &Uploads,
     runtime: &Runtime,
     logging: &mut Recorder,
 ) -> Result<ImageParams, Box<HelperError>> {
-    match kind {
-        Kind::Flux2 => match run_call(
+    match uploads {
+        Uploads::Flux2(_) => match run_call(
             Call::Flux2Params {
                 options: &input.options,
                 model: &input.model,
@@ -88,7 +68,7 @@ fn options_for(
                 Err(failure("Variant", OTHER))
             }
         },
-        Kind::Mai => Ok(input.options.clone()),
+        Uploads::Mai(_) => Ok(input.options.clone()),
     }
 }
 
@@ -119,10 +99,19 @@ fn form_call<'call>(
     }
 }
 
-fn uploads_of(input: &Input, kind: Kind) -> Uploads {
-    let bytes = bytes_of(input);
-    match kind {
-        Kind::Flux2 => Uploads::Flux2(bytes.map(|fields| {
+fn uploads_of(input: &Input, variant: ImageEditVariant) -> Result<Uploads, Box<HelperError>> {
+    let bytes: Option<Vec<Option<Vec<u8>>>> = input.images.as_ref().map(|fields| {
+        fields
+            .iter()
+            .map(|field| {
+                field
+                    .as_ref()
+                    .map(|present| present.text.clone().into_bytes())
+            })
+            .collect()
+    });
+    match variant {
+        ImageEditVariant::Flux2 => Ok(Uploads::Flux2(bytes.map(|fields| {
             fields
                 .into_iter()
                 .map(|field| {
@@ -134,8 +123,8 @@ fn uploads_of(input: &Input, kind: Kind) -> Uploads {
                     )
                 })
                 .collect()
-        })),
-        Kind::Mai => Uploads::Mai(bytes.map(|fields| {
+        }))),
+        ImageEditVariant::Mai => Ok(Uploads::Mai(bytes.map(|fields| {
             fields
                 .into_iter()
                 .map(|field| {
@@ -145,7 +134,8 @@ fn uploads_of(input: &Input, kind: Kind) -> Uploads {
                     })
                 })
                 .collect()
-        })),
+        }))),
+        ImageEditVariant::Flux1 => Err(failure("Variant", OTHER)),
     }
 }
 
@@ -166,28 +156,9 @@ fn run_call(
 }
 
 fn form_of(outcome: Result<Outcome, Box<HelperError>>, name: &str) -> HelperResult {
-    match outcome {
-        Ok(Outcome::Form(form)) => Ok(project(name, &form)),
-        Ok(_) => Err(failure("Variant", OTHER)),
-        Err(error) => Err(error),
-    }
-}
-
-fn bytes_of(input: &Input) -> Option<Vec<Option<Vec<u8>>>> {
-    let fields = input.images.as_ref()?;
-    Some(
-        fields
-            .iter()
-            .map(|field| {
-                field
-                    .as_ref()
-                    .map(|present| present.text.clone().into_bytes())
-            })
-            .collect(),
-    )
-}
-
-fn project(kind: &str, form: &ImageEditForm) -> Value {
+    let Outcome::Form(form) = outcome? else {
+        return Err(failure("Variant", OTHER));
+    };
     let files: Vec<Value> = form
         .files
         .iter()
@@ -195,5 +166,5 @@ fn project(kind: &str, form: &ImageEditForm) -> Value {
             json!({"field": field, "filename": file.filename, "content_type": file.content_type})
         })
         .collect();
-    json!({"kind": kind, "data": form.data, "files": files})
+    Ok(json!({"kind": name, "data": form.data, "files": files}))
 }
