@@ -8,6 +8,7 @@ from typing import Literal, NotRequired, TypedDict, cast
 import httpx
 from litellm.llms.custom_httpx.http_handler import httpxSpecialProvider
 from litellm.rag.ingestion import vertex_ai_ingestion
+from litellm.router import Router
 from litellm.types.llms.vertex_ai import VERTEX_CREDENTIALS_TYPES
 from litellm.types.rag import RAGIngestOptions
 from pydantic import JsonValue, TypeAdapter
@@ -141,7 +142,7 @@ def install(script: Script) -> None:
 
 class Ingestion(vertex_ai_ingestion.VertexAIRAGIngestion):
     @override
-    def __init__(self, ingest_options: RAGIngestOptions, router: object = None) -> None:
+    def __init__(self, ingest_options: RAGIngestOptions, router: Router | None = None) -> None:
         super().__init__(ingest_options, router)
         self.token_calls: list[JsonValue] = []
 
