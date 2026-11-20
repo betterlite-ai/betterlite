@@ -163,8 +163,7 @@ fn multipart(
     let boundary = boundary_from_content_type(content_type)
         .unwrap_or_else(|| Uuid::new_v4().simple().to_string());
     let body = encode(&boundary, &parts).map_err(TranscriptionHttpError::Multipart)?;
-    // The declared type is already a header, so the body variant repeats it and OutboundRequest keeps that one;
-    // going through the encoded path lets a redirected multipart post follow the way httpx does
+    // OutboundRequest keeps the declared header, and the encoded path lets a redirected multipart post follow as httpx does
     let declared_value = HeaderValue::from_str(content_type).map_err(|source| {
         TranscriptionHttpError::HeaderValue {
             name: String::from("Content-Type"),
