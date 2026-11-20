@@ -67,16 +67,10 @@ pub trait RerankOperations {
 // A failure the dispatcher raises itself: str(e) carries the text and nothing overrides it, as a ValueError does
 #[must_use]
 pub fn value_failure(message: &str, model: &str, provider: &str) -> RawException {
-    RawException {
-        model: model.to_owned(),
-        custom_llm_provider: provider.to_owned(),
-        error_str: message.to_owned(),
-        status_code: None,
-        status_code_is_synthesized: false,
-        message: None,
-        body: None,
-        exception_type: String::from("ValueError"),
-    }
+    let mut failure = provider_failure(0, message, model, provider, "ValueError");
+    failure.status_code = None;
+    failure.message = None;
+    failure
 }
 
 // A provider's exception: message is str(e) and the attribute exception_type() overrides error_str with

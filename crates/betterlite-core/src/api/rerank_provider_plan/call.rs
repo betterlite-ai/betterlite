@@ -6,7 +6,6 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 use thiserror::Error;
 
-/// LiteLLM's `return_documents: bool | None = True` argument: `Default` is the caller omitting it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReturnDocuments {
     Default,
@@ -15,7 +14,6 @@ pub enum ReturnDocuments {
 }
 
 impl ReturnDocuments {
-    /// The value the provider mapping receives: the default fills in `true`, and `Null` stays absent.
     #[must_use]
     pub const fn mapped(self) -> Option<bool> {
         match self {
@@ -26,7 +24,6 @@ impl ReturnDocuments {
     }
 }
 
-/// One call of LiteLLM's `rerank`: the declared arguments and the remaining `**kwargs` without `arerank`.
 #[derive(Debug, Clone)]
 pub struct RerankCall {
     pub model: String,
@@ -38,11 +35,9 @@ pub struct RerankCall {
     pub return_documents: ReturnDocuments,
     pub max_chunks_per_doc: Option<i64>,
     pub max_tokens_per_doc: Option<i64>,
-    /// `**kwargs` as the caller passed it; `arerank` is popped before any other use.
     pub kwargs: IndexMap<String, Json>,
 }
 
-/// The failure a malformed generic parameter raises before LiteLLM builds its parameter model.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum CallError {
     #[error("{field} must be a string")]
@@ -57,7 +52,6 @@ pub enum CallError {
     Timeout { value: String },
 }
 
-/// A timeout argument: LiteLLM keeps a string until it converts it after the provider mapping.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TimeoutArg {
     Number(f64),
@@ -65,7 +59,6 @@ pub enum TimeoutArg {
 }
 
 impl TimeoutArg {
-    /// LiteLLM's `float(optional_params.timeout)` at main.py:180.
     pub fn seconds(&self) -> Result<f64, CallError> {
         match self {
             Self::Number(value) => Ok(*value),
@@ -76,7 +69,6 @@ impl TimeoutArg {
     }
 }
 
-/// The generic parameters the dispatcher reads out of `kwargs` before it resolves the provider.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct GenericParams {
     pub api_key: Option<SecretString>,
@@ -91,75 +83,73 @@ pub struct GenericParams {
 
 impl GenericParams {
     pub fn read(kwargs: &IndexMap<String, Json>) -> Result<Self, CallError> {
-        Ok(Self {
-            api_key: text(kwargs.get("api_key"), "api_key")?.map(SecretString::from),
-            api_base: text(kwargs.get("api_base"), "api_base")?,
-            timeout: timeout(kwargs.get("timeout"))?,
-            drop_params: flag(kwargs.get("drop_params"))?,
-            user: text(kwargs.get("user"), "user")?,
-            headers: headers(kwargs.get("headers"), "headers")?.unwrap_or_default(),
-            extra_headers: headers(kwargs.get("extra_headers"), "extra_headers")?,
-            instruction: text(kwargs.get("instruction"), "instruction")?,
-        })
+        let mut params = Self::default();
+        for (name, value) in kwargs {
+            match name.as_str() {
+                "api_key" => params.api_key = string(value, "api_key")?.map(SecretString::from),
+                "api_base" => params.api_base = string(value, "api_base")?,
+                "timeout" => {
+                    params.timeout = match value {
+                        Json::Null => None,
+                        Json::Number(number) => Some(TimeoutArg::Number(
+                            number
+                                .as_f64()
+                                .ok_or(CallError::FieldTimeout { field: "timeout" })?,
+                        )),
+                        Json::Text(text) => Some(TimeoutArg::Text(text.clone())),
+                        Json::Bool(_) | Json::List(_) | Json::Object(_) => {
+                            return Err(CallError::FieldTimeout { field: "timeout" });
+                        }
+                    };
+                }
+                "drop_params" => {
+                    params.drop_params = match value {
+                        Json::Null => None,
+                        Json::Bool(flag) => Some(*flag),
+                        Json::Text(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+                            return Err(CallError::FieldFlag {
+                                field: "drop_params",
+                            });
+                        }
+                    };
+                }
+                "user" => params.user = string(value, "user")?,
+                "headers" => params.headers = header_map(value, "headers")?.unwrap_or_default(),
+                "extra_headers" => params.extra_headers = header_map(value, "extra_headers")?,
+                "instruction" => params.instruction = string(value, "instruction")?,
+                _ => {}
+            }
+        }
+        Ok(params)
     }
 }
 
-/// An absent or null value takes the field's default; a value of another type names the field.
-pub(super) fn text(value: Option<&Json>, field: &'static str) -> Result<Option<String>, CallError> {
+fn string(value: &Json, field: &'static str) -> Result<Option<String>, CallError> {
     match value {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(text)) => Ok(Some(text.clone())),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+        Json::Null => Ok(None),
+        Json::Text(text) => Ok(Some(text.clone())),
+        Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
             Err(CallError::FieldText { field })
         }
     }
 }
 
-fn flag(value: Option<&Json>) -> Result<Option<bool>, CallError> {
-    match value {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Bool(value)) => Ok(Some(*value)),
-        Some(Json::Text(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(CallError::FieldFlag {
-                field: "drop_params",
-            })
-        }
-    }
-}
-
-fn timeout(value: Option<&Json>) -> Result<Option<TimeoutArg>, CallError> {
-    match value {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Number(number)) => number
-            .as_f64()
-            .map(|seconds| Some(TimeoutArg::Number(seconds)))
-            .ok_or(CallError::FieldTimeout { field: "timeout" }),
-        Some(Json::Text(text)) => Ok(Some(TimeoutArg::Text(text.clone()))),
-        Some(Json::Bool(_) | Json::List(_) | Json::Object(_)) => {
-            Err(CallError::FieldTimeout { field: "timeout" })
-        }
-    }
-}
-
-/// Header maps keep string values only, as a dict of non-strings does before httpx sees it.
-fn headers(
-    value: Option<&Json>,
+fn header_map(
+    value: &Json,
     field: &'static str,
 ) -> Result<Option<BTreeMap<String, String>>, CallError> {
-    match value {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Object(fields)) => {
-            let mut mapped = BTreeMap::new();
-            for (name, value) in fields {
-                let Json::Text(text) = value else {
-                    return Err(CallError::FieldHeaders { field });
-                };
-                mapped.insert(name.clone(), text.clone());
-            }
-            Ok(Some(mapped))
-        }
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            Err(CallError::FieldHeaders { field })
-        }
+    if matches!(value, Json::Null) {
+        return Ok(None);
     }
+    let Json::Object(fields) = value else {
+        return Err(CallError::FieldHeaders { field });
+    };
+    let mut mapped = BTreeMap::new();
+    for (name, value) in fields {
+        let Json::Text(text) = value else {
+            return Err(CallError::FieldHeaders { field });
+        };
+        mapped.insert(name.clone(), text.clone());
+    }
+    Ok(Some(mapped))
 }

@@ -24,14 +24,6 @@ pub enum SelectedConfig {
     QwenAiPlatform,
 }
 
-impl SelectedConfig {
-    // The generic branch refuses a Cohere config for any provider that is not cohere or litellm_proxy.
-    #[must_use]
-    pub const fn is_cohere_class(self) -> bool {
-        matches!(self, Self::Cohere | Self::CohereV2)
-    }
-}
-
 // The selector chooses by provider, by the call's api_base and by the version parameters; the model decides Nvidia's shape
 #[must_use]
 pub fn selected_config(

@@ -53,6 +53,97 @@ pub struct Environment {
     pub voyage_api_base: Option<String>,
 }
 
+impl Environment {
+    // The loaded snapshot wins; a field the snapshot left empty reads the lookup, as the process env holds the same values
+    #[must_use]
+    pub fn resolve(&self, lookup: &dyn EnvironmentLookup) -> Self {
+        let read = |name: &str| lookup.lookup(name).filter(|value| !value.is_empty());
+        let secret = |name: &str| read(name).map(SecretString::from);
+        Self {
+            cohere_api_base: self
+                .cohere_api_base
+                .clone()
+                .or_else(|| read("COHERE_API_BASE")),
+            azure_ai_api_base: self
+                .azure_ai_api_base
+                .clone()
+                .or_else(|| read("AZURE_AI_API_BASE")),
+            infinity_api_base: self
+                .infinity_api_base
+                .clone()
+                .or_else(|| read("INFINITY_API_BASE")),
+            bedrock_api_base: self
+                .bedrock_api_base
+                .clone()
+                .or_else(|| read("BEDROCK_API_BASE")),
+            togetherai_api_key: self
+                .togetherai_api_key
+                .clone()
+                .or_else(|| secret("TOGETHERAI_API_KEY")),
+            jina_ai_api_key: self
+                .jina_ai_api_key
+                .clone()
+                .or_else(|| secret("JINA_AI_API_KEY")),
+            nvidia_nim_api_key: self
+                .nvidia_nim_api_key
+                .clone()
+                .or_else(|| secret("NVIDIA_NIM_API_KEY")),
+            nvidia_nim_api_base: self
+                .nvidia_nim_api_base
+                .clone()
+                .or_else(|| read("NVIDIA_NIM_API_BASE")),
+            hosted_vllm_api_key: self
+                .hosted_vllm_api_key
+                .clone()
+                .or_else(|| secret("HOSTED_VLLM_API_KEY")),
+            hosted_vllm_api_base: self
+                .hosted_vllm_api_base
+                .clone()
+                .or_else(|| read("HOSTED_VLLM_API_BASE")),
+            deepinfra_api_key: self
+                .deepinfra_api_key
+                .clone()
+                .or_else(|| secret("DEEPINFRA_API_KEY")),
+            deepinfra_api_base: self
+                .deepinfra_api_base
+                .clone()
+                .or_else(|| read("DEEPINFRA_API_BASE")),
+            fireworks_api_key: self
+                .fireworks_api_key
+                .clone()
+                .or_else(|| secret("FIREWORKS_API_KEY")),
+            fireworks_ai_api_key: self
+                .fireworks_ai_api_key
+                .clone()
+                .or_else(|| secret("FIREWORKS_AI_API_KEY")),
+            fireworksai_api_key: self
+                .fireworksai_api_key
+                .clone()
+                .or_else(|| secret("FIREWORKSAI_API_KEY")),
+            fireworks_ai_token: self
+                .fireworks_ai_token
+                .clone()
+                .or_else(|| secret("FIREWORKS_AI_TOKEN")),
+            fireworks_ai_api_base: self
+                .fireworks_ai_api_base
+                .clone()
+                .or_else(|| read("FIREWORKS_AI_API_BASE")),
+            voyage_api_key: self
+                .voyage_api_key
+                .clone()
+                .or_else(|| secret("VOYAGE_API_KEY")),
+            voyage_ai_api_key: self
+                .voyage_ai_api_key
+                .clone()
+                .or_else(|| secret("VOYAGE_AI_API_KEY")),
+            voyage_api_base: self
+                .voyage_api_base
+                .clone()
+                .or_else(|| read("VOYAGE_API_BASE")),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RerankSettings {
     pub api_key: Option<SecretString>,
@@ -85,7 +176,6 @@ impl Raw {
         if environment_flag.warned {
             tracing::warn!("LITELLM_DROP_PARAMS is not a flag value, treating it as on");
         }
-        let read = |name: &str| lookup.lookup(name).filter(|value| !value.is_empty());
         Ok(RerankSettings {
             api_base: match settings.api_base {
                 Some(text) => Some(resolve_string(text, "litellm_settings.api_base", lookup)?),
@@ -105,28 +195,7 @@ impl Raw {
                 .drop_params
                 .or(Some(environment_flag.enabled))
                 .unwrap_or(false),
-            environment: Environment {
-                cohere_api_base: read("COHERE_API_BASE"),
-                azure_ai_api_base: read("AZURE_AI_API_BASE"),
-                infinity_api_base: read("INFINITY_API_BASE"),
-                bedrock_api_base: read("BEDROCK_API_BASE"),
-                togetherai_api_key: read("TOGETHERAI_API_KEY").map(SecretString::from),
-                jina_ai_api_key: read("JINA_AI_API_KEY").map(SecretString::from),
-                nvidia_nim_api_key: read("NVIDIA_NIM_API_KEY").map(SecretString::from),
-                nvidia_nim_api_base: read("NVIDIA_NIM_API_BASE"),
-                hosted_vllm_api_key: read("HOSTED_VLLM_API_KEY").map(SecretString::from),
-                hosted_vllm_api_base: read("HOSTED_VLLM_API_BASE"),
-                deepinfra_api_key: read("DEEPINFRA_API_KEY").map(SecretString::from),
-                deepinfra_api_base: read("DEEPINFRA_API_BASE"),
-                fireworks_api_key: read("FIREWORKS_API_KEY").map(SecretString::from),
-                fireworks_ai_api_key: read("FIREWORKS_AI_API_KEY").map(SecretString::from),
-                fireworksai_api_key: read("FIREWORKSAI_API_KEY").map(SecretString::from),
-                fireworks_ai_token: read("FIREWORKS_AI_TOKEN").map(SecretString::from),
-                fireworks_ai_api_base: read("FIREWORKS_AI_API_BASE"),
-                voyage_api_key: read("VOYAGE_API_KEY").map(SecretString::from),
-                voyage_ai_api_key: read("VOYAGE_AI_API_KEY").map(SecretString::from),
-                voyage_api_base: read("VOYAGE_API_BASE"),
-            },
+            environment: Environment::default().resolve(lookup),
         })
     }
 }
