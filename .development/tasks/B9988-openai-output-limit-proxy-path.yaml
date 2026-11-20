@@ -126,6 +126,14 @@ description: >-
   global_drop_params field and its literals, plus the deviations log. Test files and oracle cases do not count.
 scope:
   paths:
+  - "tools/oracle/src/helpers/provider/openai_provider/fixtures/views.rs"
+  - "crates/betterlite-server/src/routes/completions/streaming/tests.rs"
+  - "crates/betterlite-server/src/routes/completions/streaming.rs"
+  - "crates/betterlite-server/src/routes/completions.rs"
+  - "crates/betterlite-server/src/routes/chat/tests/unknown_model_cases.rs"
+  - "crates/betterlite-server/src/routes/chat/streaming/mock.rs"
+  - "crates/betterlite-provider/src/embedding_rerank_providers/tests.rs"
+  - "crates/betterlite-provider/src/anthropic_dispatch/tests/gateway/support.rs"
   - crates/betterlite-openai/src/chat/deployment.rs
   - crates/betterlite-openai/src/chat/deployment/tests.rs
   - crates/betterlite-openai/src/chat/execution/tests.rs
