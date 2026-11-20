@@ -11,7 +11,7 @@ use betterlite_auth::auth_invalidation::error::InvalidationError;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_config::sections::team_fields::schema::MetadataSchemaField;
 use betterlite_config::sections::team_fields::{
-    DEFAULT_UNAVAILABLE_MESSAGE, Settings, ValidationTimeout,
+    DEFAULT_TIMEOUT, DEFAULT_UNAVAILABLE_MESSAGE, Settings, ValidationTimeout,
 };
 use betterlite_db::auxiliary_repository::repository::PrismaClient;
 use betterlite_db::budget_permission_rows::JsonData;
@@ -25,10 +25,10 @@ use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
 use deadpool_postgres::Manager;
 use deadpool_postgres::Pool;
+use rstest::rstest;
 use rust_decimal::Decimal;
 use secrecy::ExposeSecret as _;
 use secrecy::SecretString;
-use serde::Serialize;
 use tempfile::TempDir;
 use tokio_postgres::NoTls;
 
@@ -53,10 +53,6 @@ use super::validation::{
 
 fn data(text: &str) -> JsonData {
     serde_json::from_str(text).unwrap()
-}
-
-fn serialize<T: Serialize>(value: &T) -> JsonData {
-    serde_json::from_str(&serde_json::to_string(value).unwrap()).unwrap()
 }
 
 fn request_for(metadata: &JsonData) -> MetadataRequest<'_> {
@@ -145,6 +141,7 @@ fn schema_field(key: &str, label: Option<&str>) -> TeamMetadataFieldSchema {
 #[tokio::test]
 async fn schema_order() {
     let settings = Settings {
+        validator: None,
         schema: vec![
             MetadataSchemaField {
                 key: "second".to_owned(),
@@ -155,7 +152,8 @@ async fn schema_order() {
                 label: Some("First".to_owned()),
             },
         ],
-        ..Settings::default()
+        timeout: ValidationTimeout::Finite(DEFAULT_TIMEOUT),
+        unavailable_message: DEFAULT_UNAVAILABLE_MESSAGE.to_owned(),
     };
     let hooks = PythonHooks::new(None);
     let validators = TeamMetadataValidatorRegistry::default();
@@ -173,8 +171,14 @@ async fn schema_order() {
     );
 }
 
+#[rstest]
+#[case::number("7")]
+#[case::string("\"text\"")]
+#[case::boolean("true")]
+#[case::null("null")]
+#[case::array("[\"owner\"]")]
 #[test]
-fn metadata_dict_only() {
+fn metadata_dict_only(#[case] text: &str) {
     let object = data(r#"{"owner": "env"}"#);
     let kept = payload_for(&object, Some(&object));
     assert_eq!(
@@ -183,17 +187,10 @@ fn metadata_dict_only() {
     );
     assert_eq!(kept.existing_metadata, Some(kept.metadata.clone()));
     assert_eq!(payload_for(&object, None).existing_metadata, None);
-    for other in [
-        data("7"),
-        data("\"text\""),
-        data("true"),
-        data("null"),
-        data("[\"owner\"]"),
-    ] {
-        let payload = payload_for(&other, Some(&other));
-        assert!(payload.metadata.is_empty());
-        assert_eq!(payload.existing_metadata, None);
-    }
+    let other = data(text);
+    let payload = payload_for(&other, Some(&other));
+    assert!(payload.metadata.is_empty());
+    assert_eq!(payload.existing_metadata, None);
 }
 
 #[test]
@@ -201,7 +198,7 @@ fn requester_null_role() {
     let metadata = data("{}");
     let mut payload = payload_for(&metadata, None);
     payload.requester.user_role = None;
-    let serialized = serialize(&payload);
+    let serialized = data(&serde_json::to_string(&payload).unwrap());
     let JsonData::Object(fields) = &serialized else {
         panic!("expected a JSON object");
     };
@@ -210,7 +207,7 @@ fn requester_null_role() {
     };
     assert_eq!(requester.get("user_role").cloned(), Some(JsonData::Null));
     payload.requester.user_role = Some("team_admin".to_owned());
-    let serialized = serialize(&payload);
+    let serialized = data(&serde_json::to_string(&payload).unwrap());
     let JsonData::Object(fields) = &serialized else {
         panic!("expected a JSON object");
     };
@@ -257,7 +254,9 @@ impl Workspace {
 fn hook_settings(module: &str, function: &str) -> Settings {
     Settings {
         validator: Some(format!("{module}.{function}")),
-        ..Settings::default()
+        schema: Vec::new(),
+        timeout: ValidationTimeout::Finite(DEFAULT_TIMEOUT),
+        unavailable_message: DEFAULT_UNAVAILABLE_MESSAGE.to_owned(),
     }
 }
 

@@ -16,7 +16,10 @@ use betterlite_server::team_fields::metadata::{
 };
 use betterlite_server::team_fields::python_validator::ValidatorFailure;
 use betterlite_server::team_fields::validation::{
-    TeamMetadataValidator, TeamMetadataValidatorRegistry, validate_team_metadata_if_configured,
+    TeamMetadataValidator,
+    TeamMetadataValidatorRegistry,
+    // ast-grep-ignore: no-long-names - LiteLLM names this validate_team_metadata_if_configured
+    validate_team_metadata_if_configured,
 };
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
@@ -62,7 +65,10 @@ impl FakeValidator {
 }
 
 fn data(value: Value) -> Result<JsonData, ValidatorFailure> {
-    serde_json::from_value(value).map_err(|_error| ValidatorFailure::NotJson)
+    match serde_json::from_value(value) {
+        Ok(data) => Ok(data),
+        Err(_error) => Err(ValidatorFailure::NotJson),
+    }
 }
 
 #[async_trait]
@@ -129,7 +135,10 @@ fn settings_from(
 }
 
 fn json_data(value: &JsonValue) -> Result<JsonData, Box<HelperError>> {
-    serde_json::from_value(value.clone()).or_value_error()
+    match serde_json::from_value(value.clone()) {
+        Ok(data) => Ok(data),
+        Err(error) => Err(error).or_value_error(),
+    }
 }
 
 pub(super) fn validate_answer(call: &ValidateCall<'_>) -> HelperResult {
@@ -163,6 +172,7 @@ pub(super) fn validate_answer(call: &ValidateCall<'_>) -> HelperResult {
     let runtime = Builder::new_current_thread()
         .build()
         .map_err(|error| invalid(error.to_string()))?;
+    // ast-grep-ignore: no-long-names - LiteLLM names this validate_team_metadata_if_configured
     let outcome = runtime.block_on(validate_team_metadata_if_configured(
         request, &registry, &settings,
     ));

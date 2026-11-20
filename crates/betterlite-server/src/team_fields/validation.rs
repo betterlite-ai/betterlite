@@ -81,7 +81,9 @@ pub fn finish_validation(
             });
         }
     };
-    let parsed = match TeamMetadataValidationResult::from_data(&value) {
+    let parsed = match serde_json::to_value(&value)
+        .and_then(serde_json::from_value::<TeamMetadataValidationResult>)
+    {
         Ok(parsed) => parsed,
         Err(_) => {
             tracing::warn!(

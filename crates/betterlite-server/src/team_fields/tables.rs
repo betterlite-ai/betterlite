@@ -67,7 +67,6 @@ pub fn team_membership_table(
     PrismaTableRepository::new(client, publish, TeamMembership)
 }
 
-// ast-grep-ignore: no-one-line-functions - LiteLLM's _user_id_rows_db hands back the user table itself
 pub const fn user_table<C>(database: Option<&C>) -> UserRepository<'_, C> {
     UserRepository {
         db: database,
@@ -76,7 +75,6 @@ pub const fn user_table<C>(database: Option<&C>) -> UserRepository<'_, C> {
     }
 }
 
-// ast-grep-ignore: no-one-line-functions - LiteLLM's _org_db reads litellm_organizationtable from client.db
 pub const fn organization_table<C>(database: Option<&C>) -> OrganizationRepository<'_, C> {
     StoredRepository {
         db: database,

@@ -70,13 +70,6 @@ pub struct TeamMetadataValidationResult {
     pub error_message: Option<String>,
 }
 
-impl TeamMetadataValidationResult {
-    pub fn from_data(value: &JsonData) -> Result<Self, serde_json::Error> {
-        let json = serde_json::to_value(value)?;
-        serde_json::from_value(json)
-    }
-}
-
 #[must_use]
 pub fn build_payload(request: MetadataRequest<'_>) -> TeamMetadataValidationPayload {
     let MetadataRequest {
