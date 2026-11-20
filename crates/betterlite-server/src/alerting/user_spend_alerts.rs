@@ -24,7 +24,7 @@ mod support;
 const SECONDS_IN_AN_HOUR: u64 = 3_600;
 const MONTHLY_TTL_DAYS: u64 = 32;
 
-// LiteLLM reads these as a Postgres ::float, so to_f64 restores the binary value before each comparison and .2f text
+// LiteLLM reads these as a Postgres ::float, so as_f64 restores the binary value before each comparison and .2f text
 #[derive(Clone, Debug, PartialEq)]
 pub struct UserSpendRow {
     pub user_id: String,
@@ -177,8 +177,8 @@ fn threshold_event(
             row.monthly_spend,
         ),
     };
-    let threshold_value = threshold?.to_f64()?;
-    let spend_value = spend.to_f64()?;
+    let threshold_value = threshold?.as_f64();
+    let spend_value = spend.as_f64();
     if spend_value < threshold_value {
         return None;
     }
@@ -203,15 +203,15 @@ fn anomaly_event(
     today: NaiveDate,
     hours_in_a_day: u32,
 ) -> Option<UserSpendAlertEvent> {
-    let daily = row.daily_spend.to_f64()?;
-    let minimum = args.spend_anomaly_min_spend.to_f64()?;
+    let daily = row.daily_spend.as_f64();
+    let minimum = args.spend_anomaly_min_spend.as_f64();
     if daily < minimum {
         return None;
     }
-    let baseline = row.baseline_spend.to_f64()?;
+    let baseline = row.baseline_spend.as_f64();
     let days = f64::from(args.spend_anomaly_baseline_days);
     let average = Div::div(baseline, days);
-    let multiplier = args.spend_anomaly_multiplier.to_f64()?;
+    let multiplier = args.spend_anomaly_multiplier.as_f64();
     if baseline > 0.0 && daily <= Mul::mul(multiplier, average) {
         return None;
     }
