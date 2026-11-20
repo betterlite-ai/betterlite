@@ -123,6 +123,7 @@ fn restore_daily(
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         staging.daily.entry(queue_name).or_default().push(update);
+        drop(staging);
         return Ok(());
     };
     outcome.map_err(SpendPublishError::from)
@@ -141,6 +142,7 @@ fn restore_window(
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner);
             staging.window.push(transaction);
+            drop(staging);
             continue;
         };
         outcome?;

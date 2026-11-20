@@ -71,8 +71,8 @@ fn encode_uncommitted(cohorts: &UncommittedCohorts) -> Result<Vec<BufferPush>, R
         (SpendBufferQueue::DailyAgent, &cohorts.daily_agent),
         (SpendBufferQueue::DailyTag, &cohorts.daily_tag),
     ];
-    for (queue, daily) in dailies {
-        let Some(daily) = daily else {
+    for (queue, maybe_daily) in dailies {
+        let Some(daily) = maybe_daily else {
             continue;
         };
         if daily.is_empty() {

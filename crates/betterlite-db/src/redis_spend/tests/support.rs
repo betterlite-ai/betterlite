@@ -151,12 +151,12 @@ impl FakeLists {
         &self,
         operations: &[BufferPush],
     ) -> Result<Vec<i64>, SpendBufferListError> {
-        let fill = {
+        let pending_fill = {
             let mut state = self.lock();
             state.pushes.push(operations.to_vec());
             state.fill_on_push.take()
         };
-        if let Some(fill) = fill {
+        if let Some(fill) = pending_fill {
             fill.apply().await;
         }
         pipeline_result(&mut self.lock())

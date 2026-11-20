@@ -34,14 +34,14 @@ pub enum SpendPublishError {
 
 // The six memory queues one scheduler tick publishes, with the window queue left out when the deployment does not run one.
 #[derive(Clone, Copy)]
-pub struct SpendUpdateQueues<'a> {
-    pub entity: &'a SpendUpdateQueue,
-    pub daily_user: &'a DailySpendUpdateQueue,
-    pub daily_team: &'a DailySpendUpdateQueue,
-    pub daily_org: &'a DailySpendUpdateQueue,
-    pub daily_end_user: &'a DailySpendUpdateQueue,
-    pub daily_agent: &'a DailySpendUpdateQueue,
-    pub window: Option<&'a WindowSpendUpdateQueue>,
+pub struct SpendUpdateQueues<'tick> {
+    pub entity: &'tick SpendUpdateQueue,
+    pub daily_user: &'tick DailySpendUpdateQueue,
+    pub daily_team: &'tick DailySpendUpdateQueue,
+    pub daily_org: &'tick DailySpendUpdateQueue,
+    pub daily_end_user: &'tick DailySpendUpdateQueue,
+    pub daily_agent: &'tick DailySpendUpdateQueue,
+    pub window: Option<&'tick WindowSpendUpdateQueue>,
 }
 
 // The handle a scheduler tick publishes through: the append port, the gauge sink, and the cohorts a full memory queue could not take back.
@@ -158,10 +158,10 @@ fn drain_window(
     publisher: &RedisSpendPublisher,
     queue: Option<&WindowSpendUpdateQueue>,
 ) -> Result<Vec<WindowSpendTransaction>, SpendPublishError> {
-    let Some(queue) = queue else {
+    let Some(window_queue) = queue else {
         return Ok(Vec::new());
     };
-    let drained = queue.flush()?;
+    let drained = window_queue.flush()?;
     let staged = {
         let mut staging = publisher
             .staging
