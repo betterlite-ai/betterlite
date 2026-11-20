@@ -19,6 +19,8 @@ description: >-
 
   5. DELETE `/v1/agents/{agent_id}`, in agent_writes/remove.rs (`delete_agent`). After the common steps: existing = `agent_row(agent_id)`; None answers 404 `Agent with ID <agent_id> not found in DB.` (note the trailing `in DB.`, which PUT and PATCH do not have). Then `delete_agent(agent_id)`, then `registry.deregister_agent(existing.agent_name)`, then 200 with `{"message": "Agent <agent_id> deleted successfully"}`. DELETE builds no identity request and does not touch the card or the redaction. B4777 already retires a managed identity and removes the agent's keys inside its delete transaction; this route does nothing extra for that.
 
+  The production ProxyUrls, also in agent_writes.rs: `impl ProxyUrls for CustomUrls` (B7323's type, whose custom_url is LiteLLM's get_custom_url with route None, utils.py L8310-L8346) forwarding to that method, and `pub(crate) fn proxy_urls(config: &Config) -> CustomUrls`, built as `CustomUrls::new` over B7323's section value `config.sections.proxy_base_url.proxy_base_url` (None unset, Some("") when set but empty, never trimmed; an empty value hands out an empty base URL instead of the request one). Test it with None, Some("") and Some("https://proxy.example.com") and a root path of "/api". The agents mount part passes this value where the route state takes a ProxyUrls.
+
 scope:
   paths:
     - crates/betterlite-server/Cargo.toml
@@ -107,7 +109,7 @@ deviations:
 out_of_scope:
   - "GET /v1/agents and GET /v1/agents/{agent_id} belong to B4784, and /v1/agents/identity/providers and /v1/agents/{agent_id}/identity to B4781. The kill switch and make_public routes belong to B4786."
   - "AgentStore and its SQL belong to B4777, the redaction and restore functions to B4775, AgentRegistry to B4776, reject_legacy_identity and managed_write_fields to B4772, check_feature_access_for_user to B864 and merge_agent_card to B4811."
-  - "get_custom_url (proxy/utils.py) is owned by B7323; this task defines the ProxyUrls port only."
+  - "get_custom_url (proxy/utils.py) is owned by B7323; this task defines the ProxyUrls port and its CustomUrls implementation."
   - "Building IdentitySettings, JwtAgentSettings and the stores from config, and composing agent_write_routes into the app, is B8647's and is not built here."
 pitfalls:
   - PUT and PATCH read the existing agent and answer 404 before they check the identity request, and both 404 texts say `not found` while DELETE says `not found in DB.`.

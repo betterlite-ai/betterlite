@@ -2,7 +2,7 @@ id: B074
 milestone: M4 keys, spend and management
 title: Usage, daily activity and analytics API
 status: todo
-depends_on: [B1630, B9942, B8673, B9270]
+depends_on: [B1630, B9942, B10025, B9270]
 file: tasks/B074-usage-chat-http.yaml
 covers:
   - "litellm/proxy/management_endpoints/usage_endpoints/**"

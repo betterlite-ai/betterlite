@@ -16,8 +16,10 @@ description: >-
   committed policy write remains HTTP 500. Reuse B722/B724/B725 and B732 auth records, and
   the raw-token hashing primitive already owned by key authentication. Decode bounded policy
   bodies and override queries with decode_tool_policy(&[u8]) and fuzz tool_policy_request.
-  The B1603/B1604 tag routers and B1607 tool reports mount from their own route stubs, so do not mount them here; extend the B1607 suffix dispatcher in tool_reports.rs
-  for /overrides rather than mounting a second catch-all. B860 HTTP cases compare success and
+  The B1603/B1604 tag routers mount from their own route stubs, so do not mount them here. Tool
+  reports (B1607) are later work, so build the shared /v1/tool/{tool_name:path} suffix dispatcher
+  in tool_reports.rs yourself with only the /overrides arm and mount it from routes/tool_policy.rs;
+  B1607 adds its GET suffixes to this dispatcher later, and until then other suffixes answer 404. B860 HTTP cases compare success and
   error status/type/param/code, content-type, and slash decoding. Named Rust tests
   attach_race_cleans_orphan, delete_allocates_permission, refresh_failure_keeps_write and
   composed_paths_are_unique inspect real rows and router construction. Ownership is 222 source
@@ -70,7 +72,7 @@ oracle_cases:
   - tools/oracle/cases/management/tool-policy-routes/auth-and-missing-db.yaml
 deviations: []
 out_of_scope:
-  - B1607 owns every remaining function and declaration in tool_management_endpoints.py, including all GET routes and the shared path dispatcher.
+  - B1607 owns every remaining function and declaration in tool_management_endpoints.py, including all GET routes; this task builds the shared path dispatcher with its /overrides arm.
   - Tag mutations and request records are B1603; tag visibility and daily reports are B1604; tool records and persistence are B1605/B1606.
 pitfalls:
   - A scoped output-only update removes an existing block because the branch tests only input_policy == blocked.

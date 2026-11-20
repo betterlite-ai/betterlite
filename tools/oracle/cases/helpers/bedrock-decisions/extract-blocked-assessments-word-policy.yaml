@@ -1,0 +1,20 @@
+kind: helper
+name: extract-blocked-assessments-word-policy
+call:
+  b3722:
+    bedrock_decisions:
+      blocked_assessments:
+        response:
+          assessments:
+            - wordPolicy:
+                customWords:
+                  - match: secret
+                    action: BLOCKED
+                  - match: fine
+                    action: NONE
+                managedWordLists:
+                  - match: profane
+                    type: PROFANITY
+                    action: BLOCKED
+env: {}
+compare: {ignore: []}

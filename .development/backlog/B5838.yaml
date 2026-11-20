@@ -2,7 +2,7 @@ id: B5838
 milestone: M3 providers
 title: Eden AI provider
 status: todo
-depends_on: [B6100, B515, B1001, B1122, B525, B672, B514, B1135, B1035, B511, B997, B2202, B184]
+depends_on: [B6100, B515, B1001, B1122, B525, B672, B514, B1135, B1035, B511, B997, B2202, B184, B8311, B5360, B082, B083]
 file: tasks/B5838-edenai-media-endpoints.yaml
 covers:
   - "litellm/llms/edenai/audio_transcription/**"

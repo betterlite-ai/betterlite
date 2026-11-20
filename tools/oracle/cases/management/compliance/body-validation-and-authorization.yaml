@@ -1,0 +1,77 @@
+name: compliance-body-validation-and-authorization
+config: |
+  general_settings:
+    master_key: oracle-master
+env: {}
+upstream: []
+steps:
+  - request:
+      method: POST
+      path: /compliance/eu-ai-act
+      headers: {content-type: application/json, authorization: Bearer oracle-master}
+      body: {user_id: user-1}
+    compare:
+      headers: [content-type]
+      headers_present: []
+      upstream_headers: []
+      ignore: []
+  - request:
+      method: POST
+      path: /compliance/eu-ai-act
+      headers: {content-type: application/json, authorization: Bearer oracle-master}
+      body: {request_id: null}
+    compare:
+      headers: [content-type]
+      headers_present: []
+      upstream_headers: []
+      ignore: []
+  - request:
+      method: POST
+      path: /compliance/gdpr
+      headers: {content-type: application/json, authorization: Bearer oracle-master}
+      body: {request_id: req-1, guardrail_information: 7}
+    compare:
+      headers: [content-type]
+      headers_present: []
+      upstream_headers: []
+      ignore: []
+  - request:
+      method: POST
+      path: /compliance/gdpr
+      headers: {content-type: application/json, authorization: Bearer oracle-master}
+      body: {request_id: req-1, guardrail_information: [null]}
+    compare:
+      headers: [content-type]
+      headers_present: []
+      upstream_headers: []
+      ignore: []
+  - request:
+      method: POST
+      path: /compliance/eu-ai-act
+      headers: {content-type: application/json, authorization: Bearer oracle-master}
+      body:
+        request_id: req-1
+        user_id: user-1
+        model: gpt-4o
+        timestamp: "2026-01-02T03:04:05Z"
+        extra_top_level: 5
+        guardrail_information:
+          - guardrail_status: success
+            anything: [1, 2]
+    compare:
+      headers: [content-type]
+      headers_present: []
+      upstream_headers: []
+      ignore: []
+  - request:
+      method: POST
+      path: /compliance/gdpr
+      headers: {content-type: application/json, authorization: Bearer nope}
+      body: {request_id: req-1}
+    compare:
+      headers: [content-type]
+      headers_present: []
+      upstream_headers: []
+      ignore:
+        - pointer: /error/message
+          why: LiteLLM has no connected database in the oracle and answers No connected db, while betterlite names the invalid key
