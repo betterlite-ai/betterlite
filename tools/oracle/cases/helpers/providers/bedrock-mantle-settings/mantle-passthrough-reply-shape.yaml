@@ -1,0 +1,12 @@
+kind: helper
+name: mantle-passthrough-reply-shape
+call:
+  bedrock_mantle_settings:
+    mantle_passthrough_reply_shape:
+      cases:
+        - {custom_llm_provider: bedrock_mantle, endpoint: converse}
+        - {custom_llm_provider: bedrock_mantle, endpoint: invoke}
+        - {custom_llm_provider: bedrock_mantle, endpoint: model/invoke-with-response-stream}
+        - {custom_llm_provider: openai, endpoint: converse}
+env: {}
+compare: {ignore: []}

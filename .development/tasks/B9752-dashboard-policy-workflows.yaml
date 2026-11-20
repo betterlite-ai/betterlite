@@ -80,8 +80,11 @@ description: >-
   and error type/param/code. Capture generated IDs per gateway and normalize only those
   values, timestamps and measured durations, never whole policy/pipeline objects. All auth
   uses discovery's auth_header_name, Authorization by default, with Bearer session keys.
+
+  Browser. B148 ships the retained governance browser check (tools/dashboard-browser/tests/dashboard_governance.rs, test dashboard_governance_pages, over B144's support lifecycle) without this page, so add its steps as a spec file in tools/dashboard/browser/governance, which that test runs. Do not modify B148's test file or the shared package, config, runner or support files. Sign in against the real proxy as admin; in governance/policies.spec.ts, open the policies page, create a policy draft and an attachment, resolve its context and reload the page. Assert the displayed persisted values and the captured outgoing request shapes, with no unexpected 404 or 500 and no hydration error. Provider responses alone may be deterministic mocks.
 scope:
   paths:
+    - tools/dashboard/browser/governance/**
     - tools/oracle/cases/ui/policy-workflows/**
   lint_tables: false
 references:
@@ -110,6 +113,8 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_resolve_endpoints.py#L323-L425
     why: B3249 impact route and its consumed count/sample response.
 dod:
+  - text: The policies page creates a draft and an attachment and resolves its context in the retained governance browser check.
+    proof: [governance-browser]
   - text: Policy create, draft edits, publication, promotion and deletion preserve the actual form bodies and response records over HTTP.
     proof: [policy-transcripts, oracle]
   - text: Alias-scoped and global attachments, both preview shapes and no-force-sync resolution work with populated real databases.
@@ -119,6 +124,9 @@ dod:
 checks:
   optional: []
   commands:
+    - id: governance-browser
+      why: HTTP contracts may pass while the retained page cannot render, authenticate or submit.
+      run: bash tools/dashboard/browser-check.sh --test dashboard_governance
     - id: policy-transcripts
       why: The dependency's empty/error cases would pass without any policy-page success workflow.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/policy-workflows)"
@@ -147,5 +155,5 @@ pitfalls:
   - A model condition is under condition.model, while an attachment model scope is a models array.
 review_level: security
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 1800
   max_new_expects: 0
