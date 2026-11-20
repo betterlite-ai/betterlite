@@ -289,13 +289,13 @@ impl ScriptedSources {
         .expect("config loads")
         .sections
         .azure_oidc_exchange;
-        let environment = BTreeMap::from([
+        let variables = BTreeMap::from([
             ("AZURE_CLIENT_ID".to_owned(), "client-A".to_owned()),
             ("AZURE_TENANT_ID".to_owned(), "tenant".to_owned()),
         ]);
         let exchange = AzureOidcExchange::new(
             settings,
-            environment,
+            variables,
             Arc::new(RecordingTransport {
                 status,
                 body,
