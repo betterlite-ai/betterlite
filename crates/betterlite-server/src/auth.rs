@@ -82,6 +82,7 @@ pub(crate) async fn authenticate(
     State(master_key_state): State<Option<SecretString>>,
     request: Request<Body>,
     next: Next,
+    failure_response: fn(&StageFailure) -> Response,
 ) -> Response {
     if matches!(
         request.uri().path(),
@@ -92,7 +93,7 @@ pub(crate) async fn authenticate(
     let Some(master_key) = master_key_state.as_ref() else {
         return next.run(request).await;
     };
-    match auth_stage_loop::run_stages(request, master_key).await {
+    match auth_stage_loop::run_stages(request, master_key, failure_response).await {
         Ok((staged, authenticated, body)) => {
             auth_stage_loop::forward(staged, authenticated, body, next).await
         }
