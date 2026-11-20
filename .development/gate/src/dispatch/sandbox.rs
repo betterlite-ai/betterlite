@@ -32,8 +32,8 @@ impl Hooks {
                     command: format!(
                         "cd \"$CLAUDE_PROJECT_DIR\" && '{gate}' hook --report json-schema"
                     ),
-                    // the checks took up to 61 s on 11-16, past Claude Code's 60 s default
-                    timeout: 300,
+                    // at 300 s Claude Code killed 533 stop hooks on 11-19 and 11-20, so their failures came back as fix turns
+                    timeout: 900,
                 }],
             }],
         }

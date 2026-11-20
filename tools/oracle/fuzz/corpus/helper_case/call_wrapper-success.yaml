@@ -1,0 +1,10 @@
+kind: helper
+name: call-wrapper-success-seed
+call:
+  b5368:
+    mode: sync
+    request: {model: gpt-4o, messages: [{role: user, content: hi}]}
+    outcomes: [{kind: response, value: {id: chat-1}}]
+    observe: {values: [model], present: [litellm_call_id]}
+env: {}
+compare: {ignore: []}

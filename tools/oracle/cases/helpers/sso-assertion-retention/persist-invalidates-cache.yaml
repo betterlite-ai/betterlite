@@ -1,0 +1,42 @@
+kind: helper
+name: persist-invalidates-cache
+call:
+  b10011:
+    database: true
+    config_servers: []
+    db_servers: []
+    failure: null
+    steps:
+      - {step: cache_set, user_id: alice, assertion: {id_token: cached-alice-token}, seen_epoch: 0}
+      - {step: cache_set, user_id: bravo, assertion: {id_token: cached-bravo-token}, seen_epoch: 0}
+      - {step: cache_get, user_id: alice}
+      - {step: persist, user_id: alice, assertion: {id_token: fresh-alice-token, refresh_token: fresh-alice-refresh, issuer: 'https://idp.test', expires_at: '2031-02-03T04:05:06+00:00'}}
+      - {step: cache_get, user_id: alice}
+      - {step: cache_get, user_id: bravo}
+env: {}
+compare: {ignore: []}
+calls:
+  - b10011:
+      database: false
+      config_servers: []
+      db_servers: []
+      failure: null
+      steps:
+        - {step: cache_set, user_id: alice, assertion: {id_token: cached-alice-token}, seen_epoch: 0}
+        - {step: persist, user_id: alice, assertion: {id_token: fresh-alice-token}}
+        - {step: cache_get, user_id: alice}
+  - b10011:
+      database: true
+      config_servers: []
+      db_servers: []
+      failure: null
+      steps:
+        - {step: cache_set, user_id: alice, assertion: {id_token: first-token}, seen_epoch: 0}
+        - {step: invalidate, user_id: bravo}
+        - {step: cache_set, user_id: alice, assertion: {id_token: stale-token}, seen_epoch: 0}
+        - {step: cache_get, user_id: alice}
+        - {step: cache_set, user_id: alice, assertion: {id_token: fresh-token}, seen_epoch: 1}
+        - {step: cache_get, user_id: alice}
+        - {step: persist, user_id: alice, assertion: {id_token: persisted-token}}
+        - {step: persist, user_id: alice, assertion: {id_token: persisted-again-token}}
+        - {step: cache_get, user_id: alice}
