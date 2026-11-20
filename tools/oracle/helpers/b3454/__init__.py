@@ -175,7 +175,7 @@ def store(input_value: Input, recorder: Recorder) -> StoreView:
 
 def run(input_value: Input) -> StoreView:
     recorder = Recorder(input_value["script"])
-    gemini_ingestion.get_async_httpx_client = partial(client_factory, recorder)
+    gemini_ingestion.get_async_httpx_client = partial(client_factory, recorder)  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/gemini_ingestion.py#L13-L17
     saved = dict(os.environ)
     os.environ.clear()
     environment = input_value.get("environment")
