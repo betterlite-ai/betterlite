@@ -111,11 +111,15 @@ async fn a_primary_read_waits_for_the_lookup_gate() {
 #[rstest]
 #[case::key("spend:key:k1:window:1h")]
 #[case::team("spend:team:t1:window:30d")]
+#[case::key_id_is_the_window_segment("spend:key:window:1h")]
+#[case::team_id_is_the_window_segment("spend:team:window:1d")]
 #[tokio::test]
 async fn window_counters_are_not_primary_reads(#[case] counter_key: &str) {
     let rows = Arc::new(FakeRows::with_rows(BTreeMap::from([
         ("key:k1".to_owned(), Some(decimal("9"))),
         ("team:t1".to_owned(), Some(decimal("9"))),
+        ("key:window:1h".to_owned(), Some(decimal("9"))),
+        ("team:window:1d".to_owned(), Some(decimal("9"))),
     ])));
     let reader = reader_with(
         Some(Arc::clone(&rows)),

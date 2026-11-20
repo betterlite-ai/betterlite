@@ -55,7 +55,7 @@ pub fn decode_spend_counter_key<'key>(
 ) -> Result<SpendCounterKey<'key>, CounterKeyError> {
     let text = str::from_utf8(bytes).map_err(CounterKeyError::NotText)?;
     if let Some(token) = text.strip_prefix(KEY_PREFIX) {
-        return Ok(window_or_primary(WindowEntity::Key, token, durations));
+        return Ok(window_or_primary(WindowEntity::Key, text, token, durations));
     }
     if let Some(suffix) = text.strip_prefix(TEAM_MEMBER_PREFIX) {
         return Ok(match suffix.rsplit_once(':') {
@@ -64,7 +64,12 @@ pub fn decode_spend_counter_key<'key>(
         });
     }
     if let Some(team_id) = text.strip_prefix(TEAM_PREFIX) {
-        return Ok(window_or_primary(WindowEntity::Team, team_id, durations));
+        return Ok(window_or_primary(
+            WindowEntity::Team,
+            text,
+            team_id,
+            durations,
+        ));
     }
     if let Some(user_id) = text.strip_prefix(USER_PREFIX) {
         return Ok(SpendCounterKey::User(user_id));
@@ -81,20 +86,21 @@ pub fn decode_spend_counter_key<'key>(
     Ok(SpendCounterKey::Unknown(text))
 }
 
-// A key/team ID keeps every delimiter literally unless the last :window: suffix parses, which is what makes it a per-window counter with no primary row
+// _is_key_or_team_window_counter rpartitions the whole counter key, so spend:key:window:1h is a window counter even though its token starts with window:
 fn window_or_primary<'key>(
     entity: WindowEntity,
-    rest: &'key str,
+    counter_key: &'key str,
+    token: &'key str,
     durations: &dyn WindowDurationValidity,
 ) -> SpendCounterKey<'key> {
-    if let Some((_head, duration)) = rest.rsplit_once(WINDOW_SEPARATOR)
+    if let Some((_head, duration)) = counter_key.rsplit_once(WINDOW_SEPARATOR)
         && !duration.is_empty()
         && durations.is_valid(duration)
     {
         return SpendCounterKey::Window { entity, duration };
     }
     match entity {
-        WindowEntity::Key => SpendCounterKey::Key(rest),
-        WindowEntity::Team => SpendCounterKey::Team(rest),
+        WindowEntity::Key => SpendCounterKey::Key(token),
+        WindowEntity::Team => SpendCounterKey::Team(token),
     }
 }

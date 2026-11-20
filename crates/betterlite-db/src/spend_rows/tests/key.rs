@@ -52,6 +52,20 @@ fn decodes_every_counter_prefix(
         duration: "30d",
     }
 )]
+#[case::key_token_starts_with_the_window_segment(
+    "spend:key:window:1h",
+    SpendCounterKey::Window {
+        entity: WindowEntity::Key,
+        duration: "1h",
+    }
+)]
+#[case::team_id_starts_with_the_window_segment(
+    "spend:team:window:1d",
+    SpendCounterKey::Window {
+        entity: WindowEntity::Team,
+        duration: "1d",
+    }
+)]
 #[case::last_window_segment_wins(
     "spend:key:a:window:1h:window:2d",
     SpendCounterKey::Window {
@@ -132,6 +146,8 @@ fn expected_corpus_key(stem: &str) -> String {
     match stem {
         "key-plain" => "key:abc".to_owned(),
         "team-window" => "window:team:1d".to_owned(),
+        "window-token-key" => "window:key:1h".to_owned(),
+        "window-token-team" => "window:team:1d".to_owned(),
         "ambiguous-window" => "window:key:2d".to_owned(),
         "empty-window-duration" => "key:a:window:".to_owned(),
         "member-last-colon" => "team_member:user:with:colon:team-1".to_owned(),
