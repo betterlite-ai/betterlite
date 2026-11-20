@@ -146,24 +146,30 @@ pub(super) fn refused<Value>(
     }
 }
 
-pub(super) fn provider_error(error: ContainerResourceHttpError) -> (BaseLlmException, bool) {
+fn split_error(
+    error: ContainerResourceHttpError,
+) -> Result<(BaseLlmException, bool), ContainerFileHttpError> {
     match error {
         ContainerResourceHttpError::Provider {
             exception,
             status_code_is_synthesized,
-        } => (exception, status_code_is_synthesized),
-        ContainerResourceHttpError::Call(call) => panic!("the call failed: {call}"),
+        } => Ok((exception, status_code_is_synthesized)),
+        ContainerResourceHttpError::Call(call) => Err(call),
         ContainerResourceHttpError::QueryValue { name } => panic!("the {name} query value"),
     }
 }
 
+pub(super) fn provider_error(error: ContainerResourceHttpError) -> (BaseLlmException, bool) {
+    match split_error(error) {
+        Ok(provider) => provider,
+        Err(call) => panic!("the call failed: {call}"),
+    }
+}
+
 pub(super) fn call_error(error: ContainerResourceHttpError) -> ContainerFileHttpError {
-    match error {
-        ContainerResourceHttpError::Call(call) => call,
-        ContainerResourceHttpError::Provider { exception, .. } => {
-            panic!("the provider failed: {exception}")
-        }
-        ContainerResourceHttpError::QueryValue { name } => panic!("the {name} query value"),
+    match split_error(error) {
+        Ok((exception, _)) => panic!("the provider failed: {exception}"),
+        Err(call) => call,
     }
 }
 
@@ -188,6 +194,7 @@ pub(super) struct ErrorSeen {
     pub(super) headers: BTreeMap<String, String>,
 }
 
+#[derive(Default)]
 pub(super) struct StubConfig {
     pub(super) url: Option<String>,
     pub(super) transformed_url: Option<String>,
@@ -201,23 +208,13 @@ pub(super) struct StubConfig {
 
 impl StubConfig {
     pub(super) fn at(url: &str) -> Self {
-        Self {
-            url: Some(url.to_owned()),
-            transformed_url: None,
-            params: Object::new(),
-            fail_transform: false,
-            seen: Mutex::default(),
-            errors: Mutex::default(),
-            keys: Mutex::default(),
-            urls: Mutex::default(),
-        }
+        let mut config = Self::without_url();
+        config.url = Some(url.to_owned());
+        config
     }
 
     pub(super) fn without_url() -> Self {
-        Self {
-            url: None,
-            ..Self::at(API_BASE)
-        }
+        Self::default()
     }
 
     pub(super) fn seen(&self) -> Vec<TransformSeen> {

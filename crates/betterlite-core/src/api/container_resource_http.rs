@@ -31,6 +31,7 @@ use betterlite_openai::{
     openai_base_config::Object,
 };
 use indexmap::IndexMap;
+use serde_json::Value;
 use thiserror::Error;
 use url::Url;
 
@@ -104,55 +105,41 @@ pub struct ContainerResourceHandler<Source: ClientSource, Hook: PreCallHook> {
     pub clients: Source,
     pub logging: Hook,
 }
+// LiteLLM spells the blocking and async entry points of each endpoint out twice; one request shape serves both
+macro_rules! endpoints {
+    ($($sync:ident, $asynchronous:ident, $kind:ident, $result:ident;)+) => {
+        $(
+            pub fn $sync(
+                &self,
+                call: &ContainerResourceCall<'_, Source>,
+                is_async: bool,
+            ) -> Result<
+                Handled<<$kind as Resource>::Reply, impl Future<Output = $result>>,
+                ContainerResourceHttpError,
+            > {
+                if is_async {
+                    return Ok(Handled::Pending(self.$asynchronous(call)));
+                }
+                self.sync_call::<$kind>(call).map(Handled::Done)
+            }
+
+            pub async fn $asynchronous(
+                &self,
+                call: &ContainerResourceCall<'_, Source>,
+            ) -> $result {
+                let (client, request) = self.async_begin::<$kind>(call)?;
+                let reply = AsyncClient::send(client.get(), &request)
+                    .await
+                    .map_err(|error| transport_failure(&error, call.config, None))?;
+                decoded::<$kind>(call.config, &reply)
+            }
+        )+
+    };
+}
 impl<Source: ClientSource, Hook: PreCallHook> ContainerResourceHandler<Source, Hook> {
-    pub fn container_retrieve_handler(
-        &self,
-        call: &ContainerResourceCall<'_, Source>,
-        is_async: bool,
-    ) -> Result<
-        Handled<ContainerObject, impl Future<Output = RetrieveResult>>,
-        ContainerResourceHttpError,
-    > {
-        if is_async {
-            return Ok(Handled::Pending(self.acontainer_retrieve_handler(call)));
-        }
-        self.sync_call::<Retrieve>(call).map(Handled::Done)
-    }
-
-    pub async fn acontainer_retrieve_handler(
-        &self,
-        call: &ContainerResourceCall<'_, Source>,
-    ) -> RetrieveResult {
-        let (client, request) = self.async_begin::<Retrieve>(call)?;
-        let reply = AsyncClient::send(client.get(), &request)
-            .await
-            .map_err(|error| transport_failure(&error, call.config, None))?;
-        decoded::<Retrieve>(call.config, &reply)
-    }
-
-    pub fn container_delete_handler(
-        &self,
-        call: &ContainerResourceCall<'_, Source>,
-        is_async: bool,
-    ) -> Result<
-        Handled<DeleteContainerResult, impl Future<Output = DeleteResult>>,
-        ContainerResourceHttpError,
-    > {
-        if is_async {
-            return Ok(Handled::Pending(self.acontainer_delete_handler(call)));
-        }
-        self.sync_call::<Delete>(call).map(Handled::Done)
-    }
-
-    pub async fn acontainer_delete_handler(
-        &self,
-        call: &ContainerResourceCall<'_, Source>,
-    ) -> DeleteResult {
-        let (client, request) = self.async_begin::<Delete>(call)?;
-        let reply = AsyncClient::send(client.get(), &request)
-            .await
-            .map_err(|error| transport_failure(&error, call.config, None))?;
-        decoded::<Delete>(call.config, &reply)
+    endpoints! {
+        container_retrieve_handler, acontainer_retrieve_handler, Retrieve, RetrieveResult;
+        container_delete_handler, acontainer_delete_handler, Delete, DeleteResult;
     }
 
     fn sync_call<Kind: Resource>(
@@ -229,16 +216,13 @@ fn rendered_query(
 ) -> Result<IndexMap<String, String>, ContainerResourceHttpError> {
     let mut query = IndexMap::new();
     for (name, value) in transformed {
-        let rendered = if value.is_null() {
-            String::new()
-        } else if let Some(text) = value.as_str() {
-            text.to_owned()
-        } else if value.is_number() {
-            value.to_string()
-        } else if let Some(flag) = value.as_bool() {
-            flag.to_string()
-        } else {
-            return Err(ContainerResourceHttpError::QueryValue { name: name.clone() });
+        let rendered = match value {
+            Value::Null => String::new(),
+            Value::String(text) => text.clone(),
+            Value::Number(_) | Value::Bool(_) => value.to_string(),
+            Value::Array(_) | Value::Object(_) => {
+                return Err(ContainerResourceHttpError::QueryValue { name: name.clone() });
+            }
         };
         query.insert(name.clone(), rendered);
     }
