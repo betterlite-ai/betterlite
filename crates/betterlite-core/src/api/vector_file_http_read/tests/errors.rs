@@ -155,6 +155,36 @@ async fn a_transformed_url_that_is_not_a_url_fails_before_the_pre_call() {
 }
 
 #[tokio::test]
+async fn an_empty_file_id_fails_before_the_pre_call() {
+    let settings = openai_settings();
+    let config = openai_config(&settings, "sk-provider");
+    let events = Events::new();
+    let wire = Wire::replying(Reply::json(200, RETRIEVE_BODY), &events);
+    let transport = VectorFileReadTransport {
+        source: Source::new(wire.clone()),
+    };
+    let read_params = params("http://mock.test/v1");
+    let mut fixture = Fixture::new("vector_store_file_retrieve", &events);
+    let error = invoke(
+        &transport,
+        &config,
+        &mut fixture,
+        invocation(
+            "vs_a",
+            "",
+            &read_params,
+            Operation::Retrieve,
+            ClientKind::Sync,
+        ),
+    )
+    .await
+    .expect_err("an empty file id fails the read");
+    assert!(matches!(error, ReadError::Prepare(_)));
+    assert!(wire.requests().is_empty());
+    assert!(events.recorded().is_empty());
+}
+
+#[tokio::test]
 async fn invalid_header_names_fail_after_the_pre_call() {
     let config = RecordingConfig::new("http://mock.test/v1");
     let events = Events::new();
