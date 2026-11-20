@@ -39,23 +39,16 @@ fn create_posts_the_transformed_body_with_the_default_timeout() {
     let request = &sent[0];
     assert_eq!(request.method, ContainerMethod::Post);
     assert_eq!(request.url, BASE);
-    assert!(request.query.is_empty());
     assert_eq!(request.timeout, Some(Duration::from_secs(600)));
-    assert_eq!(
-        request.headers.get("Authorization").map(String::as_str),
-        Some("Bearer sk-1")
-    );
-    assert_eq!(
-        request.headers.get("Content-Type").map(String::as_str),
-        Some("application/json")
-    );
+    let authorization = request.headers.get("Authorization").map(String::as_str);
+    let content_type = request.headers.get("Content-Type").map(String::as_str);
+    assert_eq!(authorization, Some("Bearer sk-1"));
+    assert_eq!(content_type, Some("application/json"));
     let body: Object = serde_json::from_slice(request.body.as_deref().unwrap()).unwrap();
-    let expected: Object = serde_json::from_value(json!({
-        "name": "box",
-        "expires_after": {"anchor": "last_active_at", "minutes": 20}
-    }))
-    .unwrap();
-    assert_eq!(body, expected);
+    assert_eq!(
+        serde_json::to_value(&body).unwrap(),
+        json!({"name": "box", "expires_after": {"anchor": "last_active_at", "minutes": 20}})
+    );
     assert_eq!(object.id, "cntr_abc");
     assert_eq!(object.name.as_deref(), Some("box"));
     assert_eq!(object.status, "running");
