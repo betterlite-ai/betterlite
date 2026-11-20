@@ -1,8 +1,10 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::task::{Context, Poll};
 
 use axum::Router;
 use axum::body::{Body, Bytes, to_bytes};
@@ -174,6 +176,61 @@ async fn run_request_with(
         .expect("the response body is readable");
     let text = String::from_utf8(bytes.to_vec()).expect("the response body is UTF-8");
     (status, text, reached.load(Ordering::Acquire))
+}
+
+// A body whose stream fails on the first frame, so the middleware's body read cannot finish.
+struct BrokenBody;
+
+impl http_body::Body for BrokenBody {
+    type Data = Bytes;
+    type Error = std::io::Error;
+
+    fn poll_frame(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<http_body::Frame<Bytes>, Self::Error>>> {
+        Poll::Ready(Some(Err(std::io::Error::other("the body stream fails"))))
+    }
+}
+
+#[tokio::test]
+async fn unreadable_bodies_are_buffered_after_authentication() {
+    // a broken body under a rejected key never reaches the body read, so the master key stage answers first
+    let rejected = Request::builder()
+        .method("POST")
+        .uri(MODEL_ROUTE)
+        .header(header::AUTHORIZATION, "Bearer wrong-key")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::new(BrokenBody))
+        .expect("the request builds");
+    let reached = Arc::new(AtomicBool::new(false));
+    let response = application(&config(""), &reached)
+        .oneshot(rejected)
+        .await
+        .expect("the request reaches the router");
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert!(!reached.load(Ordering::Acquire));
+
+    // under the master key the failed read becomes the buffering 400 and the handler never runs
+    let broken = Request::builder()
+        .method("POST")
+        .uri(MODEL_ROUTE)
+        .header(header::AUTHORIZATION, "Bearer secret-master-key")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::new(BrokenBody))
+        .expect("the request builds");
+    let reached = Arc::new(AtomicBool::new(false));
+    let response = application(&config(""), &reached)
+        .oneshot(broken)
+        .await
+        .expect("the request reaches the router");
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("the response body is readable");
+    let text = String::from_utf8(body.to_vec()).expect("the response body is UTF-8");
+    assert!(text.contains("Failed to buffer the request body"), "{text}");
+    assert!(!reached.load(Ordering::Acquire));
 }
 
 #[tokio::test]
