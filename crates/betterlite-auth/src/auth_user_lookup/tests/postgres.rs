@@ -12,6 +12,7 @@ use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
+use tokio_postgres::types::{FromSql, ToSql};
 use tokio_util::task::TaskTracker;
 
 use super::tests::support::{FakeCache, FakeEnrollment, FakeReset, request_with};
@@ -104,14 +105,22 @@ async fn seed(store: &PostgresStore, sql: &str) {
     client.batch_execute(sql).await.expect("the seeded rows");
 }
 
+async fn scalar<T>(store: &PostgresStore, sql: &str, params: &[&(dyn ToSql + Sync)]) -> T
+where
+    T: for<'row> FromSql<'row>,
+{
+    let client = store.session().await.expect("the database connection");
+    client
+        .query_one(sql, params)
+        .await
+        .expect("the queried row")
+        .try_get(0)
+        .expect("the queried column")
+}
+
 async fn stored_column(store: &PostgresStore, column: &str, user_id: &str) -> Option<String> {
     let sql = format!("SELECT {column} FROM \"LiteLLM_UserTable\" WHERE user_id = $1");
-    let client = store.session().await.expect("the database connection");
-    let row = client
-        .query_one(&sql, &[&user_id])
-        .await
-        .expect("the stored user");
-    row.try_get(0).expect("the stored column")
+    scalar(store, &sql, &[&user_id]).await
 }
 
 async fn stored_email(store: &PostgresStore, user_id: &str) -> Option<String> {
@@ -123,26 +132,13 @@ async fn stored_sso(store: &PostgresStore, user_id: &str) -> Option<String> {
 }
 
 async fn stored_updated_after(store: &PostgresStore, user_id: &str, floor: &str) -> bool {
-    let client = store.session().await.expect("the database connection");
-    let row = client
-        .query_one(
-            "SELECT updated_at > $2::timestamp FROM \"LiteLLM_UserTable\" WHERE user_id = $1",
-            &[&user_id, &floor],
-        )
-        .await
-        .expect("the stored user");
-    row.try_get(0).expect("the updated_at comparison")
+    let sql = "SELECT updated_at > $2::timestamp FROM \"LiteLLM_UserTable\" WHERE user_id = $1";
+    scalar(store, sql, &[&user_id, &floor]).await
 }
 
 async fn row_text_len(store: &PostgresStore, user_id: &str) -> i64 {
     let sql = "SELECT length((to_jsonb(entry) || jsonb_build_object('organization_memberships', COALESCE((SELECT jsonb_agg(member) FROM \"LiteLLM_OrganizationMembership\" AS member WHERE member.\"user_id\" = entry.\"user_id\"), '[]'::jsonb)))::text) FROM \"LiteLLM_UserTable\" AS entry WHERE entry.\"user_id\" = $1";
-    let client = store.session().await.expect("the database connection");
-    client
-        .query_one(sql, &[&user_id])
-        .await
-        .expect("the stored user")
-        .try_get(0)
-        .expect("the row text length")
+    scalar(store, sql, &[&user_id]).await
 }
 
 async fn grow_alias_to(store: &PostgresStore, user_id: &str, target: i64) {
@@ -159,13 +155,7 @@ async fn grow_alias_to(store: &PostgresStore, user_id: &str, target: i64) {
 
 async fn user_count(store: &PostgresStore, user_id: &str) -> i64 {
     let sql = "SELECT count(*) FROM \"LiteLLM_UserTable\" WHERE user_id = $1";
-    let client = store.session().await.expect("the database connection");
-    client
-        .query_one(sql, &[&user_id])
-        .await
-        .expect("the user count")
-        .try_get(0)
-        .expect("the count column")
+    scalar(store, sql, &[&user_id]).await
 }
 
 #[tokio::test]
