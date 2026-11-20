@@ -27,7 +27,7 @@ async fn outcome(call: Call<'_>) -> Outcome {
     }
 }
 
-async fn leaf_error(call: Call<'_>) -> vector_search::Error {
+async fn leaf_error(call: Call<'_>) -> vector_search::DispatchError {
     match run(call).await {
         Err(FoundryResourceError::VectorSearch(error)) => error,
         Ok(_) | Err(_) => panic!("the vector search call fails in its leaf"),
@@ -76,7 +76,7 @@ async fn url_rows() {
     .await;
     assert!(matches!(
         missing,
-        vector_search::Error::Search(AzureSearchError::MissingServiceName)
+        vector_search::DispatchError::Search(AzureSearchError::MissingServiceName)
     ));
 }
 
@@ -98,7 +98,7 @@ async fn auth_rows() {
     .await;
     assert!(matches!(
         missing,
-        vector_search::Error::Search(AzureSearchError::MissingApiKey)
+        vector_search::DispatchError::Search(AzureSearchError::MissingApiKey)
     ));
 }
 
@@ -168,7 +168,7 @@ async fn search_missing_model_row() {
     let missing = leaf_error(Call::Search(request)).await;
     assert!(matches!(
         missing,
-        vector_search::Error::Search(AzureSearchError::MissingEmbeddingModel)
+        vector_search::DispatchError::Search(AzureSearchError::MissingEmbeddingModel)
     ));
 }
 
@@ -207,7 +207,7 @@ async fn reply_rows() {
     .await;
     assert!(matches!(
         error,
-        vector_search::Error::Search(AzureSearchError::ReplyJson { .. })
+        vector_search::DispatchError::Search(AzureSearchError::ReplyJson { .. })
     ));
 }
 

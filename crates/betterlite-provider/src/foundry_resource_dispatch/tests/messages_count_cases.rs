@@ -44,7 +44,7 @@ fn outcome(result: Result<FoundryResourceResult, FoundryResourceError>) -> Outco
 
 fn leaf_error(
     result: Result<FoundryResourceResult, FoundryResourceError>,
-) -> messages_count::Error {
+) -> messages_count::DispatchError {
     match result {
         Err(FoundryResourceError::MessagesCount(error)) => error,
         Ok(_) | Err(_) => panic!("the messages call fails in its leaf"),
@@ -99,7 +99,7 @@ async fn messages_url_rows() {
     let error = leaf_error(run_with(&handler, call).await);
     assert!(matches!(
         error,
-        messages_count::Error::Url(UrlError::MissingApiBase)
+        messages_count::DispatchError::Url(UrlError::MissingApiBase)
     ));
 }
 
@@ -198,7 +198,7 @@ async fn count_failure_row() {
     let error = leaf_error(count_outcome(&failing).await);
     assert!(matches!(
         error,
-        messages_count::Error::Count(ApiError::Upstream {
+        messages_count::DispatchError::Count(ApiError::Upstream {
             status_code: 500,
             ..
         })

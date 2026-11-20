@@ -13,7 +13,7 @@ use betterlite_openai::image_generation::reply::ImageGenerationReply;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum Error {
+pub enum DispatchError {
     #[error(transparent)]
     Edit(#[from] ImageEditError),
 }
@@ -52,7 +52,7 @@ pub enum Outcome {
 }
 
 impl Dispatch<'_> {
-    pub fn run(self) -> Result<Outcome, Error> {
+    pub fn run(self) -> Result<Outcome, DispatchError> {
         let Self { logging, call } = self;
         Ok(match call {
             Call::Select { model } => Outcome::Variant(ImageEditVariant::select(model)?),

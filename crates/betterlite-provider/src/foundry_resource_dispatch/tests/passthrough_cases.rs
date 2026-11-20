@@ -18,7 +18,7 @@ async fn answer(
     call: Call<'_>,
     plan: &FoundryPassthroughPlan,
     logging: &mut RecordingPassthrough,
-) -> Result<Outcome, passthrough::Error> {
+) -> Result<Outcome, passthrough::DispatchError> {
     let operation = FoundryResourceOperation::Passthrough(Box::new(Dispatch {
         plan,
         logging,
@@ -111,7 +111,7 @@ async fn missing_base_row() {
     };
     assert!(matches!(
         missing,
-        passthrough::Error::Passthrough(FoundryPassthroughError::MissingApiBase)
+        passthrough::DispatchError::Passthrough(FoundryPassthroughError::MissingApiBase)
     ));
 }
 

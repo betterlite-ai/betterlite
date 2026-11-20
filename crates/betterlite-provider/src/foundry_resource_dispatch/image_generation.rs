@@ -14,7 +14,7 @@ use betterlite_prompts::arguments::json::Object;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum Error {
+pub enum DispatchError {
     #[error(transparent)]
     Image(#[from] FoundryImageError),
     #[error(transparent)]
@@ -65,7 +65,7 @@ pub enum Outcome {
 }
 
 impl Dispatch<'_> {
-    pub fn run(self) -> Result<Outcome, Error> {
+    pub fn run(self) -> Result<Outcome, DispatchError> {
         let Self { logging, call } = self;
         Ok(match call {
             Call::Config { model } => {

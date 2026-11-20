@@ -49,19 +49,19 @@ pub enum FoundryResourceResult {
 #[derive(Debug, Error)]
 pub enum FoundryResourceError {
     #[error(transparent)]
-    ImageGeneration(#[from] image_generation::Error),
+    ImageGeneration(#[from] image_generation::DispatchError),
     #[error(transparent)]
-    ImageEdit(#[from] image_edit::Error),
+    ImageEdit(#[from] image_edit::DispatchError),
     #[error(transparent)]
-    Rerank(#[from] rerank::Error),
+    Rerank(#[from] rerank::DispatchError),
     #[error(transparent)]
-    ResponsesDecisions(#[from] responses_decisions::Error),
+    ResponsesDecisions(#[from] responses_decisions::DispatchError),
     #[error(transparent)]
-    VectorSearch(#[from] vector_search::Error),
+    VectorSearch(#[from] vector_search::DispatchError),
     #[error(transparent)]
-    Passthrough(#[from] passthrough::Error),
+    Passthrough(#[from] passthrough::DispatchError),
     #[error(transparent)]
-    MessagesCount(#[from] messages_count::Error),
+    MessagesCount(#[from] messages_count::DispatchError),
     #[error(
         "betterlite does not run the {operation} operation through the foundry resource provider"
     )]

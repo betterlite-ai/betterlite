@@ -12,7 +12,7 @@ use betterlite_openai::api::vector_store_records::records::vector::{
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum Error {
+pub enum DispatchError {
     #[error(transparent)]
     Search(#[from] AzureSearchError),
 }
@@ -44,7 +44,7 @@ pub enum Outcome {
 }
 
 impl Dispatch<'_> {
-    pub fn run(self) -> Result<Outcome, Error> {
+    pub fn run(self) -> Result<Outcome, DispatchError> {
         Ok(match self.call {
             Call::Endpoints => Outcome::Endpoints(endpoints_by_type()),
             Call::Url { api_base, params } => Outcome::Url(complete_url(api_base, params)?),

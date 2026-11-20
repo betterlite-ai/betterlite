@@ -14,8 +14,9 @@ use betterlite_config::sections::azure_credentials::DeploymentSettings;
 use betterlite_foundry::mai_images::reply::{ImageLogging, PostCall};
 use betterlite_foundry::passthrough::logging::FoundryPassthroughLogging;
 use betterlite_foundry::passthrough::plan::FoundryPassthroughPlan;
-use betterlite_foundry::vector_stores::embedding::{EmbeddingCallError, QueryEmbeddingExecutor};
+use betterlite_foundry::vector_stores::embedding::QueryEmbeddingExecutor;
 use betterlite_foundry::vector_stores::environment::Params as VectorParams;
+use betterlite_foundry::vector_stores::error::EmbeddingCallError;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::proxy::transport_error::TransportError;
@@ -29,7 +30,10 @@ use secrecy::SecretString;
 use serde::de::DeserializeOwned;
 use serde_json::Number;
 
-pub(super) fn parse<T: DeserializeOwned>(text: &str) -> T {
+pub(super) fn parse<T>(text: &str) -> T
+where
+    T: DeserializeOwned,
+{
     serde_json::from_str(text).unwrap()
 }
 

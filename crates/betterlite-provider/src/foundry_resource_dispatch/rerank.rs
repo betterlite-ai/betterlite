@@ -10,7 +10,7 @@ use betterlite_openai::cohere_rerank::RerankParams;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum Error {
+pub enum DispatchError {
     #[error(transparent)]
     Rerank(#[from] FoundryRerankError),
 }
@@ -25,11 +25,12 @@ pub enum Call<'call> {
         api_base: Option<&'call str>,
     },
     Request(&'call FoundryRerankRequest),
+    // the reply's two owned payloads are boxed so this variant stays within the size lint's ratio
     Reply {
         status: u16,
         body: &'call [u8],
-        limits: WireDecodeLimits,
-        hidden_params: BTreeMap<String, Json>,
+        limits: Box<WireDecodeLimits>,
+        hidden_params: Box<BTreeMap<String, Json>>,
     },
 }
 
@@ -40,7 +41,7 @@ pub enum Outcome {
 }
 
 impl Dispatch<'_> {
-    pub fn run(self) -> Result<Outcome, Error> {
+    pub fn run(self) -> Result<Outcome, DispatchError> {
         Ok(match self.call {
             Call::Url { api_base } => Outcome::Url(complete_url(api_base)?),
             Call::Request(request) => Outcome::Request(transform_request(request)?),
@@ -49,7 +50,7 @@ impl Dispatch<'_> {
                 body,
                 limits,
                 hidden_params,
-            } => Outcome::Reply(transform_reply(status, body, limits, hidden_params)?),
+            } => Outcome::Reply(transform_reply(status, body, *limits, *hidden_params)?),
         })
     }
 }

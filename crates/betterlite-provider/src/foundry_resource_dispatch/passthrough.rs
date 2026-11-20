@@ -6,7 +6,7 @@ use betterlite_openai::passthrough::transformation::types::PassthroughUrlRequest
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum Error {
+pub enum DispatchError {
     #[error(transparent)]
     Passthrough(#[from] FoundryPassthroughError),
 }
@@ -30,7 +30,7 @@ pub enum Outcome {
 }
 
 impl Dispatch<'_> {
-    pub fn run(self) -> Result<Outcome, Error> {
+    pub fn run(self) -> Result<Outcome, DispatchError> {
         let Self {
             plan,
             logging,

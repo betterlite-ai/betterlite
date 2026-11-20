@@ -7,7 +7,7 @@ use betterlite_openai::decisions::transformation::provider_config::DecisionsProv
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum Error {
+pub enum DispatchError {
     #[error(transparent)]
     Url(#[from] ResponsesUrlError),
 }
@@ -39,7 +39,7 @@ pub enum Outcome {
 }
 
 impl Dispatch<'_> {
-    pub fn run(self) -> Result<Outcome, Error> {
+    pub fn run(self) -> Result<Outcome, DispatchError> {
         Ok(match self.call {
             Call::Url {
                 accessors,

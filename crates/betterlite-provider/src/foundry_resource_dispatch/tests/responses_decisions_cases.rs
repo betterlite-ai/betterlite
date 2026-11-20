@@ -30,7 +30,7 @@ async fn outcome(call: Call<'_>) -> Outcome {
     }
 }
 
-async fn leaf_error(call: Call<'_>) -> responses_decisions::Error {
+async fn leaf_error(call: Call<'_>) -> responses_decisions::DispatchError {
     match run(call).await {
         Err(FoundryResourceError::ResponsesDecisions(error)) => error,
         Ok(_) | Err(_) => panic!("the responses call fails in its leaf"),
@@ -78,7 +78,7 @@ async fn url_rows() {
     let missing = leaf_error(request).await;
     assert!(matches!(
         missing,
-        responses_decisions::Error::Url(ResponsesUrlError::MissingApiBase)
+        responses_decisions::DispatchError::Url(ResponsesUrlError::MissingApiBase)
     ));
 }
 

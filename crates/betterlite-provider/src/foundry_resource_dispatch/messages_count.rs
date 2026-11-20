@@ -14,14 +14,15 @@ use betterlite_prompts::arguments::json::Object;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum Error {
+pub enum DispatchError {
     #[error(transparent)]
     Url(#[from] UrlError),
     #[error(transparent)]
     Count(#[from] ApiError),
 }
 
-pub type RunFuture<'call> = Pin<Box<dyn Future<Output = Result<Outcome, Error>> + Send + 'call>>;
+pub type RunFuture<'call> =
+    Pin<Box<dyn Future<Output = Result<Outcome, DispatchError>> + Send + 'call>>;
 
 // B564's native Messages endpoint and B565's token count, which runs through the handler's transport
 pub struct Dispatch<'call, T> {
@@ -70,7 +71,7 @@ impl<'call, T: CountTokensTransport> Dispatch<'call, T> {
             } => Box::pin(ready(
                 get_complete_url(api_base, environment_api_base)
                     .map(Outcome::MessagesUrl)
-                    .map_err(Error::Url),
+                    .map_err(DispatchError::Url),
             )),
             Call::Transform { request } => {
                 transform_request(&mut *request);
@@ -81,7 +82,7 @@ impl<'call, T: CountTokensTransport> Dispatch<'call, T> {
             )))),
             Call::Count(request) => {
                 let started = handler.handle_count_tokens_request(&request);
-                Box::pin(async move { started.await.map(Outcome::Count).map_err(Error::Count) })
+                Box::pin(async move { Ok(started.await.map(Outcome::Count)?) })
             }
         }
     }

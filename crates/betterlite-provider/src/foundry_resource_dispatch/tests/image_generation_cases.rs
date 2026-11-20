@@ -7,7 +7,7 @@ use betterlite_prompts::arguments::json::Object;
 use secrecy::SecretString;
 
 use super::fixture::{RecordingImageLogging, parse};
-use crate::foundry_resource_dispatch::image_generation::Error as ImageError;
+use crate::foundry_resource_dispatch::image_generation::DispatchError as ImageError;
 use crate::foundry_resource_dispatch::image_generation::{self, Call, Dispatch, Outcome};
 use crate::foundry_resource_dispatch::{
     FoundryResourceError, FoundryResourceOperation, FoundryResourceResult, dispatch,
@@ -33,7 +33,7 @@ async fn outcome(call: Call<'_>, logging: &mut RecordingImageLogging) -> Outcome
 async fn leaf_error(
     call: Call<'_>,
     logging: &mut RecordingImageLogging,
-) -> image_generation::Error {
+) -> image_generation::DispatchError {
     match run(call, logging).await {
         Err(FoundryResourceError::ImageGeneration(error)) => error,
         Ok(_) | Err(_) => panic!("the image generation call fails in its leaf"),
@@ -224,7 +224,7 @@ async fn mai_params_rows() {
     .await;
     assert!(matches!(
         error,
-        image_generation::Error::Mai(MaiImageError::CountNotOne { .. })
+        image_generation::DispatchError::Mai(MaiImageError::CountNotOne { .. })
     ));
 }
 
@@ -272,7 +272,7 @@ async fn mai_reply_error_row() {
     .await;
     assert!(matches!(
         error,
-        image_generation::Error::Mai(MaiImageError::NotJson { .. })
+        image_generation::DispatchError::Mai(MaiImageError::NotJson { .. })
     ));
 }
 

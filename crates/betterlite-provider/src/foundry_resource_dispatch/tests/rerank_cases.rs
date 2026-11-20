@@ -14,8 +14,8 @@ use crate::foundry_resource_dispatch::{
 
 fn limits() -> WireDecodeLimits {
     WireDecodeLimits {
-        max_json_bytes: 1_048_576,
-        max_event_bytes: 1_048_576,
+        max_json_bytes: 0x0010_0000,
+        max_event_bytes: 0x0010_0000,
         max_items: 64,
     }
 }
@@ -34,7 +34,7 @@ async fn outcome(call: Call<'_>) -> Outcome {
     }
 }
 
-async fn leaf_error(call: Call<'_>) -> rerank::Error {
+async fn leaf_error(call: Call<'_>) -> rerank::DispatchError {
     match run(call).await {
         Err(FoundryResourceError::Rerank(error)) => error,
         Ok(_) | Err(_) => panic!("the rerank call fails in its leaf"),
@@ -64,7 +64,7 @@ async fn url_rows() {
     let missing = leaf_error(Call::Url { api_base: None }).await;
     assert!(matches!(
         missing,
-        rerank::Error::Rerank(FoundryRerankError::MissingApiBase)
+        rerank::DispatchError::Rerank(FoundryRerankError::MissingApiBase)
     ));
 }
 
@@ -108,8 +108,8 @@ async fn reply_rows() {
     let Outcome::Reply(reply) = outcome(Call::Reply {
         status: 200,
         body: &body[..],
-        limits: limits(),
-        hidden_params: hidden,
+        limits: Box::new(limits()),
+        hidden_params: Box::new(hidden),
     })
     .await
     else {
@@ -127,13 +127,13 @@ async fn reply_rows() {
     let error = leaf_error(Call::Reply {
         status: 502,
         body: b"bad gateway",
-        limits: limits(),
-        hidden_params: BTreeMap::new(),
+        limits: Box::new(limits()),
+        hidden_params: Box::new(BTreeMap::new()),
     })
     .await;
     assert!(matches!(
         error,
-        rerank::Error::Rerank(FoundryRerankError::Cohere(_))
+        rerank::DispatchError::Rerank(FoundryRerankError::Cohere(_))
     ));
 }
 

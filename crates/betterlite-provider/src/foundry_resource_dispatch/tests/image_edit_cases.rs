@@ -34,7 +34,10 @@ async fn outcome(call: Call<'_>, logging: &mut RecordingImageLogging) -> Outcome
     }
 }
 
-async fn leaf_error(call: Call<'_>, logging: &mut RecordingImageLogging) -> image_edit::Error {
+async fn leaf_error(
+    call: Call<'_>,
+    logging: &mut RecordingImageLogging,
+) -> image_edit::DispatchError {
     match run(call, logging).await {
         Err(FoundryResourceError::ImageEdit(error)) => error,
         Ok(_) | Err(_) => panic!("the image edit call fails in its leaf"),
@@ -90,7 +93,7 @@ async fn variant_rows() {
     .await;
     assert!(matches!(
         error,
-        image_edit::Error::Edit(ImageEditError::UnsupportedModel { .. })
+        image_edit::DispatchError::Edit(ImageEditError::UnsupportedModel { .. })
     ));
 }
 
@@ -138,7 +141,7 @@ async fn flux1_url_rows() {
     let missing_version = leaf_error(Call::Url(request), &mut logging).await;
     assert!(matches!(
         missing_version,
-        image_edit::Error::Edit(ImageEditError::ApiVersionRequired)
+        image_edit::DispatchError::Edit(ImageEditError::ApiVersionRequired)
     ));
 }
 
@@ -159,7 +162,7 @@ async fn variant_url_rows() {
         url_of(request, &mut logging).await,
         "https://res.test/providers/blackforestlabs/v1/flux-2-pro?api-version=2024-10-01"
     );
-    let request = url_request(
+    let mai_request = url_request(
         "MAI-Image-2.5",
         Some("https://res.test"),
         None,
@@ -167,7 +170,7 @@ async fn variant_url_rows() {
         &environment,
     );
     assert_eq!(
-        url_of(request, &mut logging).await,
+        url_of(mai_request, &mut logging).await,
         "https://res.test/mai/v1/images/edits?api-version=2024-11-01"
     );
     let missing_base = leaf_error(
@@ -177,7 +180,7 @@ async fn variant_url_rows() {
     .await;
     assert!(matches!(
         missing_base,
-        image_edit::Error::Edit(ImageEditError::ApiBaseRequired)
+        image_edit::DispatchError::Edit(ImageEditError::ApiBaseRequired)
     ));
 }
 
@@ -211,7 +214,7 @@ async fn flux2_params_rows() {
     .await;
     assert!(matches!(
         error,
-        image_edit::Error::Edit(ImageEditError::Params(_))
+        image_edit::DispatchError::Edit(ImageEditError::Params(_))
     ));
 }
 
@@ -252,7 +255,7 @@ async fn flux2_form_rows() {
     .await;
     assert!(matches!(
         error,
-        image_edit::Error::Edit(ImageEditError::Flux2PromptRequired)
+        image_edit::DispatchError::Edit(ImageEditError::Flux2PromptRequired)
     ));
 }
 
@@ -334,7 +337,7 @@ async fn mai_reply_rows() {
     .await;
     assert!(matches!(
         error,
-        image_edit::Error::Edit(ImageEditError::Mai(_))
+        image_edit::DispatchError::Edit(ImageEditError::Mai(_))
     ));
 }
 

@@ -42,8 +42,8 @@ pub(super) fn run(input: &Input) -> HelperResult {
         call: Call::Reply {
             status: input.status,
             body: input.body.as_bytes(),
-            limits: LIMITS,
-            hidden_params: hidden_params(input.model_group.as_deref()),
+            limits: Box::new(LIMITS),
+            hidden_params: Box::new(hidden_params(input.model_group.as_deref())),
         },
     }));
     match runtime.block_on(dispatch(operation)) {
