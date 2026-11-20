@@ -1,0 +1,7 @@
+kind: helper
+name: object_permissions_tool_map
+call:
+  object_permissions:
+    raw: {"srv-a": ["t2", "t1"], "srv-b": null}
+env: {}
+compare: {ignore: []}

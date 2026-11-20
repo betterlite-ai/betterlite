@@ -1,0 +1,13 @@
+kind: helper
+name: request-body-safety-pricing-field-banned
+call:
+  request_body_safety:
+    request_body:
+      model: gpt-4o
+      input_cost_per_token: 0.1
+    general_settings: {}
+    model: gpt-4o
+    model_list: []
+env: {}
+compare:
+  ignore: []

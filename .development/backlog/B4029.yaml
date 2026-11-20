@@ -1,7 +1,7 @@
 id: B4029
 milestone: M7 observability
 title: Spend reports and per-user anomaly alerts
-status: todo
+status: done
 depends_on: [B4020, B4024, B700, B1725, B199, B1690, B4293]
 file: tasks/B4029-spend-reports.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/integrations/SlackAlerting/slack_alerting.py"
 parent: B116
 split_from: B116
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2724
