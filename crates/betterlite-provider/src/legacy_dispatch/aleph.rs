@@ -107,12 +107,12 @@ fn optional_params(params: IndexMap<String, JsonValue>) -> Result<Object, Operat
         }
         let converted =
             serde_json::to_value(value).map_err(|source| OperationError::Encode { source })?;
-        let name = if name == "max_completion_tokens" {
+        let wire_name = if name == "max_completion_tokens" {
             String::from("max_tokens")
         } else {
             name
         };
-        optional.insert(name, converted);
+        optional.insert(wire_name, converted);
     }
     Ok(optional)
 }

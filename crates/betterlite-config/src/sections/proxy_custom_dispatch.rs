@@ -43,7 +43,7 @@ impl Settings {
         global: Option<&SecretString>,
     ) -> Option<SecretString> {
         // LiteLLM's "or" chain skips an empty value, so an empty spelling leaves the next source to answer
-        let supplied = supplied.filter(|key| !key.expose_secret().is_empty());
+        let supplied_key = supplied.filter(|key| !key.expose_secret().is_empty());
         let yaml = self
             .aleph_alpha_key
             .as_ref()
@@ -56,26 +56,26 @@ impl Settings {
             .alephalpha_api_key
             .as_ref()
             .filter(|key| !key.expose_secret().is_empty());
-        let global = global.filter(|key| !key.expose_secret().is_empty());
-        supplied
+        let global_key = global.filter(|key| !key.expose_secret().is_empty());
+        supplied_key
             .or(yaml)
             .or(first_env)
             .or(second_env)
-            .or(global)
+            .or(global_key)
             .cloned()
     }
 
     // api_base, litellm.api_base, ALEPH_ALPHA_API_BASE, then the provider's own host
     #[must_use]
     pub fn resolve_aleph_alpha_base(&self, supplied: Option<&str>, global: Option<&str>) -> String {
-        let supplied = supplied.filter(|text| !text.is_empty());
-        let global = global.filter(|text| !text.is_empty());
+        let supplied_base = supplied.filter(|text| !text.is_empty());
+        let global_base = global.filter(|text| !text.is_empty());
         let environment = self
             .aleph_alpha_api_base
             .as_deref()
             .filter(|text| !text.is_empty());
-        supplied
-            .or(global)
+        supplied_base
+            .or(global_base)
             .or(environment)
             .map_or_else(|| String::from(DEFAULT_ALEPH_ALPHA_BASE), str::to_owned)
     }

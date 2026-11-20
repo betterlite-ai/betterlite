@@ -112,9 +112,9 @@ fn chat_call(
             );
         }
     }
-    let messages =
+    let messages_json =
         serde_json::to_value(messages).map_err(|source| OperationError::Encode { source })?;
-    let body = transform_request(&deployment.model, messages, &optional);
+    let body = transform_request(&deployment.model, messages_json, &optional);
     let mut headers = HeaderMap::new();
     let credential = deployment
         .credential()
