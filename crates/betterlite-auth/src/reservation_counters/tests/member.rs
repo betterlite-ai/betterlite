@@ -156,6 +156,41 @@ async fn member_skip_without_a_user_row() {
 }
 
 #[tokio::test]
+async fn member_full_budget_table_supplies_the_cap() {
+    let mut fixture = member_fixture();
+    fixture.cache.put(
+        "team_membership:user-a:team-a",
+        &membership_row(
+            r#"{"max_budget":10,"budget_id":"budget-a","created_at":"2024-01-01T00:00:00Z"}"#,
+            "2",
+        ),
+    );
+    let list = fixture.counters().await;
+    let counter = only(&list);
+    assert_eq!(counter.max_budget, dec("10"));
+    assert_eq!(counter.fallback_spend, dec("2"));
+}
+
+#[tokio::test]
+async fn member_skip_non_string_default_budget_id() {
+    let mut fixture = member_fixture();
+    fixture.team = Some(decoded_row(
+        r#"{"team_id":"team-a","metadata":{"team_member_budget_id":7}}"#,
+    ));
+    fixture.cache.put(
+        "team_membership:user-a:team-a",
+        &membership_row(r#"{"max_budget":null}"#, "0"),
+    );
+    let stored: LiteLLMBudgetTable = decoded_row(r#"{"max_budget":5}"#);
+    fixture.cache.put("team_member_default_budget:7", &stored);
+    assert!(fixture.counters().await.is_empty());
+    assert_eq!(
+        fixture.cache.read_keys(),
+        vec!["team_membership:user-a:team-a".to_owned()]
+    );
+}
+
+#[tokio::test]
 async fn member_effective_overflow_skips_the_counter() {
     let mut fixture = member_fixture();
     fixture.cache.put_encoded(
