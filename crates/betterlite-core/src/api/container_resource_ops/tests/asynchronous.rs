@@ -91,6 +91,25 @@ async fn async_errors_dispatch_with_the_callers_provider_name() {
 }
 
 #[tokio::test]
+async fn async_delete_errors_dispatch_with_the_callers_provider_name() {
+    let mut fixture = Fixture::new();
+    fixture.container_id = build_container_id(Some("azure"), Some("deployment"), CONTAINER_ID);
+    fixture.decoder =
+        StubDecoder::answering(decoding_to(CONTAINER_ID, "azure", Some("deployment")));
+    fixture.lookup = StubLookup::carrying("azure-config");
+    fixture.handler = StubHandler::failing(provider_error(401, "nope", false));
+
+    let failure = fixture.adelete().await.expect_err("the handler fails");
+
+    let ErrorClass::Authentication(details) = &failure.class else {
+        panic!("expected an authentication error, got {:?}", failure.class);
+    };
+    assert_eq!(details.provider.as_deref(), Some("openai"));
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.status.0, 401);
+}
+
+#[tokio::test]
 async fn async_prepare_errors_keep_the_decoded_provider() {
     let mut fixture = Fixture::new();
     fixture.decoder = StubDecoder::answering(decoding_to(CONTAINER_ID, "azure", None));

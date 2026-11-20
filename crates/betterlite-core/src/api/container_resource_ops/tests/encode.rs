@@ -74,6 +74,19 @@ fn encode_the_decoded_model_id_replaces_a_metadata_id_for_a_managed_input() {
     );
 }
 
+// LiteLLM mutates the caller's kwargs dict; betterlite holds a shared reference, so the map cannot change
+#[test]
+fn encode_the_callers_metadata_is_left_untouched() {
+    let mut fixture = Fixture::new();
+    fixture.container_id = build_container_id(Some("openai"), Some("old-model"), CONTAINER_ID);
+    fixture.decoder = StubDecoder::answering(decoding_to(CONTAINER_ID, "openai", Some("decoded")));
+    fixture.litellm_metadata = metadata_with_id("caller-model");
+
+    fixture.retrieve().expect("the call runs");
+
+    assert_eq!(fixture.litellm_metadata, metadata_with_id("caller-model"));
+}
+
 #[test]
 fn encode_a_decoded_model_id_is_not_written_for_a_plain_input() {
     let mut fixture = Fixture::new();
