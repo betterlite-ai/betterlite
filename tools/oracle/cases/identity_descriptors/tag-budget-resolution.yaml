@@ -1,0 +1,78 @@
+kind: helper
+name: identity-descriptors-tag-budget-resolution
+call:
+  b3039:
+    function: tag_resolution
+    tag_names: [tag-a, tag-b]
+    database: true
+    cached: []
+    rows:
+      - tag_name: tag-a
+        budget: {rpm_limit: 10, tpm_limit: 20}
+      - tag_name: tag-b
+        budget: {rpm_limit: null, tpm_limit: 5}
+calls:
+  - b3039:
+      function: tag_resolution
+      tag_names: [tag-c]
+      database: true
+      cached:
+        - tag_name: tag-c
+          budget: {rpm_limit: 4, tpm_limit: 8}
+      rows: []
+  - b3039:
+      function: tag_resolution
+      tag_names: [tag-a, tag-c]
+      database: true
+      cached:
+        - tag_name: tag-c
+          budget: {rpm_limit: 4, tpm_limit: null}
+      rows:
+        - tag_name: tag-a
+          budget: {rpm_limit: 1, tpm_limit: 2}
+  - b3039:
+      function: tag_resolution
+      tag_names: [tag-a]
+      database: false
+      cached: []
+      rows:
+        - tag_name: tag-a
+          budget: {rpm_limit: 10, tpm_limit: 20}
+  - b3039:
+      function: tag_resolution
+      tag_names: []
+      database: true
+      cached: []
+      rows:
+        - tag_name: tag-a
+          budget: {rpm_limit: 10, tpm_limit: 20}
+  - b3039:
+      function: tag_resolution
+      tag_names: [tag-a, tag-b, tag-c]
+      database: true
+      cached: []
+      rows:
+        - tag_name: tag-a
+          budget: null
+        - tag_name: tag-b
+          budget: {rpm_limit: null, tpm_limit: null}
+        - tag_name: tag-c
+          budget: {rpm_limit: null, tpm_limit: null}
+  - b3039:
+      function: tag_resolution
+      tag_names: [tag-a]
+      database: true
+      cached: []
+      rows:
+        - tag_name: tag-a
+          budget: {rpm_limit: 0, tpm_limit: null}
+  - b3039:
+      function: tag_resolution
+      tag_names: [tag-missing]
+      database: true
+      cached: []
+      rows:
+        - tag_name: tag-a
+          budget: {rpm_limit: 10, tpm_limit: 20}
+env: {}
+compare: {ignore: []}

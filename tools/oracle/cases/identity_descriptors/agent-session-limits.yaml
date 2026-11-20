@@ -1,0 +1,105 @@
+kind: helper
+name: identity-descriptors-agent-session-limits
+call:
+  b3039:
+    function: agent_descriptors
+    agent_id: agent-1
+    data:
+      metadata:
+        session_id: sess-1
+    window_size: 60
+    policy:
+      agent_id: agent-1
+      agent_name: Agent One
+      agent_card_params: {}
+      session_rpm_limit: 5
+      session_tpm_limit: 3
+    registry: []
+calls:
+  - b3039:
+      function: agent_descriptors
+      agent_id: agent-1
+      data:
+        metadata:
+          session_id: sess-1
+      window_size: 60
+      policy:
+        agent_id: agent-1
+        agent_name: Agent One
+        agent_card_params: {}
+        rpm_limit: 10
+        tpm_limit: 20
+        session_rpm_limit: 5
+        session_tpm_limit: 3
+      registry: []
+  - b3039:
+      function: agent_descriptors
+      agent_id: agent-1
+      data: {}
+      window_size: 60
+      policy:
+        agent_id: agent-1
+        agent_name: Agent One
+        agent_card_params: {}
+        session_rpm_limit: 5
+        session_tpm_limit: 3
+      registry: []
+  - b3039:
+      function: agent_descriptors
+      agent_id: agent-1
+      data:
+        litellm_session_id: top
+        metadata:
+          session_id: meta
+      window_size: 60
+      policy:
+        agent_id: agent-1
+        agent_name: Agent One
+        agent_card_params: {}
+        session_rpm_limit: 5
+        session_tpm_limit: null
+      registry: []
+  - b3039:
+      function: agent_descriptors
+      agent_id: agent-1
+      data:
+        litellm_metadata:
+          session_id: lm
+      window_size: 60
+      policy:
+        agent_id: agent-1
+        agent_name: Agent One
+        agent_card_params: {}
+        session_rpm_limit: null
+        session_tpm_limit: 3
+      registry: []
+  - b3039:
+      function: agent_descriptors
+      agent_id: agent-1
+      data:
+        metadata:
+          session_id: sess-1
+      window_size: 60
+      policy:
+        agent_id: agent-1
+        agent_name: Agent One
+        agent_card_params: {}
+        session_rpm_limit: 0
+        session_tpm_limit: 0
+      registry: []
+  - b3039:
+      function: agent_descriptors
+      agent_id: agent-2
+      data:
+        metadata:
+          session_id: sess-2
+      window_size: 30
+      policy: null
+      registry:
+        - agent_id: agent-2
+          agent_name: Agent Two
+          agent_card_params: {}
+          session_rpm_limit: 2
+          session_tpm_limit: null
+env: {}
+compare: {ignore: []}

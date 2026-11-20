@@ -1,0 +1,107 @@
+kind: helper
+name: identity-descriptors-agent-global-limits
+call:
+  b3039:
+    function: agent_descriptors
+    agent_id: agent-1
+    data: {}
+    window_size: 60
+    policy:
+      agent_id: agent-1
+      agent_name: Agent One
+      agent_card_params: {}
+      rpm_limit: 10
+      tpm_limit: 20
+    registry: []
+calls:
+  - b3039:
+      function: agent_descriptors
+      agent_id: agent-1
+      data: {}
+      window_size: 30
+      policy:
+        agent_id: agent-1
+        agent_name: Agent One
+        agent_card_params: {}
+        rpm_limit: null
+        tpm_limit: 5
+      registry: []
+  - b3039:
+      function: agent_descriptors
+      agent_id: agent-1
+      data: {}
+      window_size: 60
+      policy:
+        agent_id: agent-1
+        agent_name: Agent One
+        agent_card_params: {}
+        rpm_limit: 0
+        tpm_limit: 0
+      registry: []
+  - b3039:
+      function: agent_descriptors
+      agent_id: agent-1
+      data: {}
+      window_size: 60
+      policy:
+        agent_id: agent-1
+        agent_name: Agent One
+        agent_card_params: {}
+        rpm_limit: null
+        tpm_limit: null
+      registry:
+        - agent_id: agent-1
+          agent_name: Agent One
+          agent_card_params: {}
+          rpm_limit: 6
+          tpm_limit: 7
+  - b3039:
+      function: agent_descriptors
+      agent_id: agent-2
+      data: {}
+      window_size: 60
+      policy: null
+      registry:
+        - agent_id: agent-2
+          agent_name: Agent Two
+          agent_card_params: {}
+          rpm_limit: 6
+          tpm_limit: null
+  - b3039:
+      function: agent_descriptors
+      agent_id: agent-2
+      data: {}
+      window_size: 60
+      policy: null
+      registry:
+        - agent_id: agent-3
+          agent_name: Agent Three
+          agent_card_params: {}
+          rpm_limit: 6
+          tpm_limit: null
+  - b3039:
+      function: agent_descriptors
+      agent_id: call-agent
+      data: {}
+      window_size: 60
+      policy:
+        agent_id: policy-agent
+        agent_name: Policy Agent
+        agent_card_params: {}
+        rpm_limit: 9
+        tpm_limit: 11
+      registry: []
+  - b3039:
+      function: agent_descriptors
+      agent_id: agent-4
+      data: {}
+      window_size: 60
+      policy: null
+      registry:
+        - agent_id: agent-4
+          agent_name: Agent Four
+          agent_card_params: {}
+          rpm_limit: null
+          tpm_limit: null
+env: {}
+compare: {ignore: []}
