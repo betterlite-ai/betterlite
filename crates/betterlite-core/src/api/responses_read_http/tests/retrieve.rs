@@ -88,6 +88,7 @@ fn assert_request(wire: &Wire) {
         Some("application/json")
     );
     assert_eq!(header(&sent.headers, "x-trace"), Some("trace-a"));
+    drop(requests);
 }
 
 fn assert_logging(fixture: &Fixture) {

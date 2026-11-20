@@ -14,6 +14,7 @@ use betterlite_openai::credentials::LiteLlmGlobals;
 use betterlite_openai::error::OpenAiError;
 use betterlite_openai::response_resources::error::ResponseResourceError;
 use betterlite_openai::response_resources::request::ListInputItemsQuery;
+use betterlite_openai::response_resources::response::TypedReply;
 
 use super::super::error::SdkHttpError;
 use super::super::result::kinds::SdkResult;
@@ -101,65 +102,74 @@ fn outcome(
     result: Result<ReadOutcome, ReadError>,
 ) -> Result<RunOutcome, SdkHttpError> {
     match result {
-        Ok(ReadOutcome::Response(reply)) if operation == Operation::Retrieve => Ok(RunOutcome {
-            retrieved: Some(Retrieved {
-                id: reply.response.id.clone(),
-                created_at: reply.response.created_at,
-                status: reply.response.status.clone(),
-                model: reply.response.model.clone(),
-            }),
-            result: None,
-            failure: None,
-            validation: false,
-        }),
+        Ok(ReadOutcome::Response(reply)) if operation == Operation::Retrieve => {
+            Ok(retrieved(&reply))
+        }
         Ok(ReadOutcome::Response(_)) => Err(SdkHttpError::Invalid(
             "the input items read returned a typed response".to_owned(),
         )),
-        Ok(ReadOutcome::InputItems(value)) => Ok(RunOutcome {
-            retrieved: None,
-            result: Some(value),
-            failure: None,
-            validation: false,
-        }),
-        Err(ReadError::Provider(error)) => Ok(RunOutcome {
-            retrieved: None,
-            result: None,
-            failure: Some(Failure {
-                status: error.status_code,
-                synthesized: error.status_code_is_synthesized,
-                message: error.message,
-                headers: Some(error.headers),
-            }),
-            validation: false,
-        }),
+        Ok(ReadOutcome::InputItems(value)) => Ok(succeeded(value)),
+        Err(ReadError::Provider(error)) => Ok(failed(Failure {
+            status: error.status_code,
+            synthesized: error.status_code_is_synthesized,
+            message: error.message,
+            headers: Some(error.headers),
+        })),
         Err(ReadError::Response(ResponseResourceError::Provider(OpenAiError::Provider(
             provider,
-        )))) => Ok(RunOutcome {
-            retrieved: None,
-            result: None,
-            failure: Some(Failure {
-                status: provider.status_code,
-                synthesized: provider.status_code_is_synthesized,
-                message: provider.message,
-                headers: failure_headers(provider.headers),
+        )))) => Ok(failed(Failure {
+            status: provider.status_code,
+            synthesized: provider.status_code_is_synthesized,
+            message: provider.message,
+            headers: provider.headers.map(|pairs| {
+                pairs
+                    .into_iter()
+                    .map(|(name, value)| (name, Json::Text(value)))
+                    .collect()
             }),
-            validation: false,
-        }),
-        Err(ReadError::Response(ResponseResourceError::Record { .. })) => Ok(RunOutcome {
-            retrieved: None,
-            result: None,
-            failure: None,
-            validation: true,
-        }),
+        })),
+        Err(ReadError::Response(ResponseResourceError::Record { .. })) => Ok(invalid_record()),
         Err(other) => Err(SdkHttpError::Invalid(other.to_string())),
     }
 }
 
-fn failure_headers(headers: Option<Vec<(String, String)>>) -> Option<BTreeMap<String, Json>> {
-    headers.map(|pairs| {
-        pairs
-            .into_iter()
-            .map(|(name, value)| (name, Json::Text(value)))
-            .collect()
-    })
+fn retrieved(reply: &TypedReply) -> RunOutcome {
+    RunOutcome {
+        retrieved: Some(Retrieved {
+            id: reply.response.id.clone(),
+            created_at: reply.response.created_at,
+            status: reply.response.status.clone(),
+            model: reply.response.model.clone(),
+        }),
+        result: None,
+        failure: None,
+        validation: false,
+    }
+}
+
+const fn succeeded(value: Json) -> RunOutcome {
+    RunOutcome {
+        retrieved: None,
+        result: Some(value),
+        failure: None,
+        validation: false,
+    }
+}
+
+const fn invalid_record() -> RunOutcome {
+    RunOutcome {
+        retrieved: None,
+        result: None,
+        failure: None,
+        validation: true,
+    }
+}
+
+const fn failed(failure: Failure) -> RunOutcome {
+    RunOutcome {
+        retrieved: None,
+        result: None,
+        failure: Some(failure),
+        validation: false,
+    }
 }

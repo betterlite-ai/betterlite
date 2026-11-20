@@ -72,7 +72,7 @@ pub(crate) fn openai_config(environment: ReadEnvironment) -> OpenAiReadConfig<No
     OpenAiReadConfig::new(LiteLlmGlobals::default(), environment, NoWorkloadIdentity)
 }
 
-pub(crate) fn retrieve_call<'call>(api: &'call ReadParams) -> ReadCall<'call> {
+pub(crate) fn retrieve_call(api: &ReadParams) -> ReadCall<'_> {
     ReadCall::Retrieve(RetrieveCall {
         target: target("resp_a", api, None, None),
         extra_body: None,

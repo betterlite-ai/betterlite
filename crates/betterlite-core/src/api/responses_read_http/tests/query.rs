@@ -25,37 +25,12 @@ pub(super) async fn input_items(mode: ClientKind) {
     };
     let mut fixture = Fixture::new("responses");
     let api = params("http://mock.test/v1", "sk-provider");
-    let defaults = ListInputItemsQuery::default();
-    let overrides = ListInputItemsQuery {
-        after: Some(String::new()),
-        before: Some(String::from("b")),
-        include: Some(vec![
-            String::from("message.input_image.image_url"),
-            String::from("computer_call_output.output.image_url"),
-        ]),
-        limit: Some(3),
-        order: Some(InputItemsOrder::Asc),
-    };
-    let omitted = ListInputItemsQuery {
-        after: None,
-        before: None,
-        include: Some(Vec::new()),
-        limit: None,
-        order: None,
-    };
-    let cases = [
-        (&defaults, r#"{"limit":20,"order":"desc"}"#),
-        (
-            &overrides,
-            r#"{"after":"","before":"b","include":"message.input_image.image_url,computer_call_output.output.image_url","limit":3,"order":"asc"}"#,
-        ),
-        (&omitted, "{}"),
-    ];
+    let cases = input_item_cases();
     let reads = cases.len();
     for (query, logged) in cases {
         let call = ReadCall::InputItems(InputItemsCall {
             target: target("resp_a", &api, None, Some(Duration::from_secs(7))),
-            query,
+            query: &query,
         });
         let outcome = run(&mut fixture, &deps, mode, &call, &events)
             .await
@@ -73,6 +48,38 @@ pub(super) async fn input_items(mode: ClientKind) {
         expected.push(String::from("send"));
     }
     assert_eq!(events.recorded(), expected);
+}
+
+fn input_item_cases() -> [(ListInputItemsQuery, &'static str); 3] {
+    [
+        (
+            ListInputItemsQuery::default(),
+            r#"{"limit":20,"order":"desc"}"#,
+        ),
+        (
+            ListInputItemsQuery {
+                after: Some(String::new()),
+                before: Some(String::from("b")),
+                include: Some(vec![
+                    String::from("message.input_image.image_url"),
+                    String::from("computer_call_output.output.image_url"),
+                ]),
+                limit: Some(3),
+                order: Some(InputItemsOrder::Asc),
+            },
+            r#"{"after":"","before":"b","include":"message.input_image.image_url,computer_call_output.output.image_url","limit":3,"order":"asc"}"#,
+        ),
+        (
+            ListInputItemsQuery {
+                after: None,
+                before: None,
+                include: Some(Vec::new()),
+                limit: None,
+                order: None,
+            },
+            "{}",
+        ),
+    ]
 }
 
 // Every read sends one GET with a body-less request, and the timeout never becomes a wire argument
@@ -105,4 +112,5 @@ fn assert_requests(wire: &Wire) {
         ]
     );
     assert!(requests[2].query.is_empty());
+    drop(requests);
 }
