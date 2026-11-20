@@ -1,3 +1,4 @@
+use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
@@ -43,5 +44,5 @@ pub(crate) struct Scenario {
     pub(crate) content: Vec<Value>,
     pub(crate) responses: Vec<String>,
     pub(crate) mappings: Vec<usize>,
-    pub(crate) response: Value,
+    pub(crate) response: Option<GuardrailValue>,
 }

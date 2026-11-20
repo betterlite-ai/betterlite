@@ -1,3 +1,4 @@
+use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::guardrail_message_scope::scoped_indices::{ScanScope, ScopeFlags};
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_server::guardrails::anthropic_translation::input_scan::images::image_sources;
@@ -61,7 +62,8 @@ pub(super) fn output_apply_answer(scenario: &Scenario) -> Result<Value, Box<Help
 }
 
 pub(super) fn post_call_hook_answer(scenario: &Scenario) -> Result<Value, Box<HelperError>> {
-    let translated = post_call_hook_response(&scenario.response).or_value_error()?;
+    let response = scenario.response.as_ref().unwrap_or(&GuardrailValue::Null);
+    let translated = post_call_hook_response(response).or_value_error()?;
     Ok(json!({
         "response": translated
     }))
