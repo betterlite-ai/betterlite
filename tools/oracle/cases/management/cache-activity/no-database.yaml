@@ -2,7 +2,8 @@ name: cache-activity-no-database
 config: |
   general_settings:
     master_key: oracle-master
-env: {}
+# Fixture-less cases carry this marker so the oracle boots them as their own group.
+env: {ORACLE_CASE_GROUP: cache-activity-no-database}
 request:
   method: GET
   path: /global/activity/cache_hits?start_date=2024-01-01&end_date=2024-01-31
