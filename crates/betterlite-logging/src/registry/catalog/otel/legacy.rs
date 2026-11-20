@@ -8,6 +8,7 @@ use super::attributes::AttributeSettings;
 use super::env;
 use super::shared::SharedOtel;
 use crate::callback_logger::CallbackLogger;
+use crate::otel::legacy_exporters::tracer_cache::MAX_DYNAMIC_TRACER_PROVIDERS;
 use crate::otel::legacy_lifecycle::lifecycle::{LegacyLifecycle, LegacyLifecycleOptions};
 use crate::otel::legacy_lifecycle::logger::LegacyOtelLogger;
 use crate::otel::legacy_metrics::events::SemanticEventEmitter;
@@ -17,7 +18,8 @@ use crate::otel::legacy_policy::config::OpenTelemetryConfig;
 use crate::otel::legacy_policy::semconv_attrs::semconv_latest_experimental;
 use crate::otel::plumbing::events::SystemClock;
 use crate::otel_provider_assembly::legacy_otel_init::{
-    LegacyOtel, LegacyOtelEnvironment, LegacyOtelInit, init_legacy_otel,
+    InjectedProviders, LegacyOtel, LegacyOtelEnvironment, LegacyOtelInit, MetadataKeyOverrides,
+    init_legacy_otel,
 };
 
 // A legacy logger part-way through construction: the provider side is built, the lifecycle is not.
@@ -34,8 +36,10 @@ pub fn prepare<'shared>(
     config: OpenTelemetryConfig,
     callback_name: Option<&str>,
 ) -> Result<Prepared<'shared>, CatalogError> {
-    let view = view(inputs);
-    let _checked = MetricFilterState::new(
+    let view: Arc<dyn CallbackSettingsView> = Arc::new(AttributeSettings::from_settings(
+        &inputs.config.sections.otel_settings,
+    ));
+    MetricFilterState::new(
         config.attributes.clone(),
         callback_name.map(str::to_owned),
         Arc::clone(&view),
@@ -43,39 +47,6 @@ pub fn prepare<'shared>(
     .map_err(|source| CatalogError::Init {
         message: source.to_string(),
     })?;
-    let otel = init(inputs, shared, config, callback_name)?;
-    Ok(Prepared { otel, view, shared })
-}
-
-// B3910 builds the config and the LegacyOtel itself; the recorders and the filter are the same here.
-pub fn complete<'shared>(
-    inputs: &CatalogInputs,
-    shared: &'shared SharedOtel,
-    otel: LegacyOtel,
-) -> Result<Prepared<'shared>, CatalogError> {
-    let view = view(inputs);
-    let _checked = MetricFilterState::new(
-        otel.config.attributes.clone(),
-        otel.callback_name.clone(),
-        Arc::clone(&view),
-    )
-    .map_err(|source| CatalogError::Init {
-        message: source.to_string(),
-    })?;
-    Ok(Prepared { otel, view, shared })
-}
-
-fn view(inputs: &CatalogInputs) -> Arc<dyn CallbackSettingsView> {
-    let settings = &inputs.config.sections.otel_settings;
-    Arc::new(AttributeSettings::from_settings(settings))
-}
-
-fn init(
-    inputs: &CatalogInputs,
-    shared: &SharedOtel,
-    config: OpenTelemetryConfig,
-    callback_name: Option<&str>,
-) -> Result<LegacyOtel, CatalogError> {
     let clients = shared.clients(inputs)?;
     let environment = LegacyOtelEnvironment {
         env: &shared.env,
@@ -87,11 +58,34 @@ fn init(
     let init = LegacyOtelInit {
         config: Some(config),
         callback_name: callback_name.map(str::to_owned),
-        ..LegacyOtelInit::default()
+        overrides: MetadataKeyOverrides::default(),
+        injected: InjectedProviders::default(),
+        max_dynamic_tracer_providers: MAX_DYNAMIC_TRACER_PROVIDERS,
     };
-    init_legacy_otel(init, &environment).map_err(|source| CatalogError::Init {
+    let otel = init_legacy_otel(init, &environment).map_err(|source| CatalogError::Init {
         message: source.to_string(),
-    })
+    })?;
+    Ok(Prepared { otel, view, shared })
+}
+
+// B3910 builds the config and the LegacyOtel itself; it gets the same filter and the same lifecycle.
+pub fn complete<'shared>(
+    inputs: &CatalogInputs,
+    shared: &'shared SharedOtel,
+    otel: LegacyOtel,
+) -> Result<Arc<dyn CallbackLogger>, CatalogError> {
+    let view: Arc<dyn CallbackSettingsView> = Arc::new(AttributeSettings::from_settings(
+        &inputs.config.sections.otel_settings,
+    ));
+    MetricFilterState::new(
+        otel.config.attributes.clone(),
+        otel.callback_name.clone(),
+        Arc::clone(&view),
+    )
+    .map_err(|source| CatalogError::Init {
+        message: source.to_string(),
+    })?;
+    plain(Prepared { otel, view, shared })
 }
 
 impl Prepared<'_> {
@@ -127,16 +121,9 @@ impl Prepared<'_> {
     }
 }
 
-// The plain legacy OpenTelemetry: otel, logfire, langtrace, signoz and levo add no dynamic hooks.
+// The plain legacy lifecycle: these arms add no dynamic hooks to the OpenTelemetry it wraps.
 pub fn plain(mut prepared: Prepared<'_>) -> Result<Arc<dyn CallbackLogger>, CatalogError> {
     let options = prepared.options()?;
-    Ok(lifecycle_logger(LegacyLifecycle::from_otel(
-        prepared.otel,
-        options,
-    )))
-}
-
-pub fn lifecycle_logger(lifecycle: LegacyLifecycle) -> Arc<dyn CallbackLogger> {
-    let held = Arc::new(lifecycle);
-    Arc::new(LegacyOtelLogger::new(held))
+    let lifecycle = LegacyLifecycle::from_otel(prepared.otel, options);
+    Ok(Arc::new(LegacyOtelLogger::new(Arc::new(lifecycle))))
 }

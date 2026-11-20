@@ -5,7 +5,7 @@ pub mod maybe;
 pub mod phoenix_auto;
 pub mod shared;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, PoisonError};
 
 use betterlite_config::tls::Verification;
@@ -17,7 +17,7 @@ use self::shared::SharedOtel;
 use super::{CatalogError, CatalogInputs};
 use crate::callback_logger::CallbackLogger;
 use crate::otel::config::{OtlpHttpTls, Settings, Signal, resolve_otlp_http_tls};
-use crate::otel::legacy_policy::config::OpenTelemetryConfig;
+use crate::otel::legacy_policy::config::{Exporter, OpenTelemetryConfig, Signals};
 use crate::otel::logger_runtime::LoggerRuntime;
 use crate::otel::logger_runtime::factory::build_otel_v2_logger;
 use crate::otel::logger_runtime::types::{ConstructorSettings, InjectedProviders};
@@ -71,12 +71,38 @@ fn build_v2(
     Ok(callback)
 }
 
-// OpenTelemetry(**callback_settings.otel) with no config reaches OpenTelemetryConfig.from_env(); the
-// attribute filter is the one setting the constructor reads from the settings dict (opentelemetry.py 395)
+// the legacy constructor reads the environment; the attribute filter comes from the settings dict
 fn legacy_config(inputs: &CatalogInputs, shared: &SharedOtel) -> OpenTelemetryConfig {
     let mut config = OpenTelemetryConfig::from_env(&shared.env);
     config.normalize(&shared.env);
     config.attributes = attributes::value(inputs.config.sections.otel_settings.attributes.as_ref());
+    config
+}
+
+// the exporter, endpoint and headers a vendor arm sets; every other field keeps its default
+pub(crate) fn vendor_config(
+    exporter: Exporter,
+    endpoint: String,
+    headers: Option<String>,
+    shared: &SharedOtel,
+) -> OpenTelemetryConfig {
+    let mut config = OpenTelemetryConfig {
+        exporter,
+        endpoint: Some(endpoint),
+        headers,
+        signals: Signals::default(),
+        service_name: String::new(),
+        deployment_environment: String::new(),
+        model_id: String::new(),
+        ignore_context_propagation: false,
+        skip_set_global: false,
+        capture_message_content: None,
+        semconv_stability_opt_in: BTreeSet::new(),
+        baggage_team_metadata_keys: Vec::new(),
+        baggage_metadata_keys: Vec::new(),
+        attributes: None,
+    };
+    config.normalize(&shared.env);
     config
 }
 

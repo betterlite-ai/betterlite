@@ -14,20 +14,33 @@ pub fn value(attributes: Option<&OtelAttributes>) -> Option<OtelModelValue> {
     let attributes = attributes?;
     let mut mapping = BTreeMap::new();
     if let Some(include) = &attributes.include_list {
-        mapping.insert(INCLUDE_LIST.to_owned(), string_list(include));
+        mapping.insert(
+            INCLUDE_LIST.to_owned(),
+            OtelModelValue::Array(
+                include
+                    .iter()
+                    .cloned()
+                    .map(OtelModelValue::String)
+                    .collect(),
+            ),
+        );
     }
     if let Some(exclude) = &attributes.exclude_list {
-        mapping.insert(EXCLUDE_LIST.to_owned(), string_list(exclude));
+        mapping.insert(
+            EXCLUDE_LIST.to_owned(),
+            OtelModelValue::Array(
+                exclude
+                    .iter()
+                    .cloned()
+                    .map(OtelModelValue::String)
+                    .collect(),
+            ),
+        );
     }
     Some(OtelModelValue::Object(mapping))
 }
 
-fn string_list(items: &[String]) -> OtelModelValue {
-    OtelModelValue::Array(items.iter().cloned().map(OtelModelValue::String).collect())
-}
-
-// The production CallbackSettingsView: callback_settings.otel.attributes as the legacy metric filter reads it,
-// and the same value B110 hands to B10007's runtime.
+// the production CallbackSettingsView: otel.attributes as the legacy metric filter and B110 read it
 pub struct AttributeSettings {
     value: Option<OtelModelValue>,
 }

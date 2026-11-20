@@ -24,7 +24,9 @@ pub fn build(
     config.normalize(&shared.env);
     let prepared = legacy::prepare(inputs, shared, config, Some(CALLBACK_NAME))?;
     // the SDK tracer keeps its provider alive, so the legacy init's other halves can drop with it
-    Ok(Arc::new(TraceloopLogger::new(prepared.otel.tracer)))
+    Ok(Arc::new(TraceloopLogger {
+        tracer: prepared.otel.tracer,
+    }))
 }
 
 mod tests;

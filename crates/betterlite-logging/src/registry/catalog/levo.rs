@@ -39,14 +39,12 @@ pub(crate) fn legacy_config(
     let levo = LevoConfig::from_env(inputs.env.as_ref()).map_err(|source| CatalogError::Init {
         message: source.to_string(),
     })?;
-    let mut config = OpenTelemetryConfig {
-        exporter: Exporter::Named(levo.protocol.exporter_kind().to_owned()),
-        endpoint: Some(levo.endpoint),
-        headers: Some(levo.otlp_auth_headers.expose_secret().to_owned()),
-        ..OpenTelemetryConfig::default()
-    };
-    config.normalize(&shared.env);
-    Ok(config)
+    Ok(super::otel::vendor_config(
+        Exporter::Named(levo.protocol.exporter_kind().to_owned()),
+        levo.endpoint,
+        Some(levo.otlp_auth_headers.expose_secret().to_owned()),
+        shared,
+    ))
 }
 
 mod tests;

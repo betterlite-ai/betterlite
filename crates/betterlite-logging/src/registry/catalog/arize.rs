@@ -5,6 +5,7 @@ use super::otel::shared::SharedOtel;
 use super::otel::{legacy, maybe};
 use crate::callback_logger::CallbackLogger;
 use crate::otel::callbacks::arize_callback::{arize_lifecycle, otel_config};
+use crate::otel::legacy_lifecycle::logger::LegacyOtelLogger;
 use crate::otel::logger_runtime::LoggerRuntime;
 
 pub const CALLBACK_NAME: &str = "arize";
@@ -22,8 +23,8 @@ pub fn build(
     let config = otel_config(&shared.env);
     let mut prepared = legacy::prepare(inputs, shared, config, Some(CALLBACK_NAME))?;
     let options = prepared.options()?;
-    let logger = arize_lifecycle(prepared.otel, options);
-    Ok(legacy::lifecycle_logger(logger))
+    let lifecycle = arize_lifecycle(prepared.otel, options);
+    Ok(Arc::new(LegacyOtelLogger::new(Arc::new(lifecycle))))
 }
 
 mod tests;

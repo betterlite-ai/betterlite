@@ -69,9 +69,8 @@ fn without_the_switch_weave_otel_builds_the_legacy_logger() {
 #[test]
 fn with_the_switch_on_weave_otel_builds_through_the_runtime() {
     let fixture = fixture();
-    for (name, value) in WEAVE {
-        fixture.environment.set(name, value);
-    }
+    fixture.environment.set(WEAVE[0].0, WEAVE[0].1);
+    fixture.environment.set(WEAVE[1].0, WEAVE[1].1);
     let inputs = catalog_inputs("", &[WEAVE[0], WEAVE[1], ("LITELLM_OTEL_V2", "true")]);
     let shared = SharedOtel::new(&inputs);
     let mut in_memory = Vec::new();

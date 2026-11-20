@@ -52,14 +52,12 @@ pub(crate) fn legacy_config(
         .lookup(INGESTION_KEY_VARIABLE)
         .filter(|value| !value.is_empty())
         .map(|key| format!("signoz-ingestion-key={key}"));
-    let mut config = OpenTelemetryConfig {
-        exporter: Exporter::Named(OTLP_HTTP_EXPORTER.to_owned()),
-        endpoint: Some(endpoint),
+    Ok(super::otel::vendor_config(
+        Exporter::Named(OTLP_HTTP_EXPORTER.to_owned()),
+        endpoint,
         headers,
-        ..OpenTelemetryConfig::default()
-    };
-    config.normalize(&shared.env);
-    Ok(config)
+        shared,
+    ))
 }
 
 mod tests;

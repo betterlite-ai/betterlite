@@ -4,7 +4,6 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use betterlite_config::sections::otel_settings::OtelAttributes;
-use betterlite_config::sections::otel_settings::Settings as OtelSettings;
 use rstest::rstest;
 
 use self::support::{catalog, catalog_inputs};
@@ -58,10 +57,8 @@ fn the_event_logger_name_defaults_to_litellm(
 fn prepare_carries_the_config_and_the_callback_name_into_the_provider_state() {
     let inputs = catalog_inputs("", &[IN_MEMORY]);
     let shared = SharedOtel::new(&inputs);
-    let config = OpenTelemetryConfig {
-        endpoint: Some("http://collector.example:4318".to_owned()),
-        ..OpenTelemetryConfig::default()
-    };
+    let mut config = OpenTelemetryConfig::from_env(&shared.env);
+    config.endpoint = Some("http://collector.example:4318".to_owned());
     let prepared =
         legacy::prepare(&inputs, &shared, config, Some("arize")).expect("the provider builds");
     assert_eq!(
@@ -75,12 +72,10 @@ fn prepare_carries_the_config_and_the_callback_name_into_the_provider_state() {
 fn options_keep_the_providers_the_lifecycle_no_longer_owns() {
     let inputs = catalog_inputs("", &[IN_MEMORY]);
     let shared = SharedOtel::new(&inputs);
-    let config = OpenTelemetryConfig {
-        signals: Signals {
-            enable_metrics: true,
-            enable_events: false,
-        },
-        ..OpenTelemetryConfig::default()
+    let mut config = OpenTelemetryConfig::from_env(&shared.env);
+    config.signals = Signals {
+        enable_metrics: true,
+        enable_events: false,
     };
     let mut prepared =
         legacy::prepare(&inputs, &shared, config, None).expect("the providers build");
@@ -90,14 +85,11 @@ fn options_keep_the_providers_the_lifecycle_no_longer_owns() {
 
 #[test]
 fn the_settings_view_carries_the_configured_attribute_lists() {
-    let settings = OtelSettings {
-        attributes: Some(OtelAttributes {
-            include_list: Some(vec!["gen_ai.request.model".to_owned()]),
-            exclude_list: None,
-        }),
-        ..OtelSettings::default()
-    };
-    let view = AttributeSettings::from_settings(&settings);
+    let inputs = catalog_inputs(
+        "callback_settings:\n  otel:\n    attributes:\n      include_list:\n        - gen_ai.request.model\n",
+        &[],
+    );
+    let view = AttributeSettings::from_settings(&inputs.config.sections.otel_settings);
     let expected = OtelModelValue::Object(BTreeMap::from([(
         "include_list".to_owned(),
         OtelModelValue::Array(vec![OtelModelValue::String(

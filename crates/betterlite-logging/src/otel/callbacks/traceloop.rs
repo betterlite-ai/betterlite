@@ -59,16 +59,10 @@ enum EventLevel {
 
 // tracer_wrapper's tracer is the SDK one, so the callback takes the SDK's tracer directly
 pub struct TraceloopLogger {
-    tracer: SdkTracer,
+    pub(crate) tracer: SdkTracer,
 }
 
 impl TraceloopLogger {
-    // Traceloop.init() builds its own tracer; the catalog hands the SDK tracer the legacy path built
-    #[must_use]
-    pub fn new(tracer: SdkTracer) -> Self {
-        Self { tracer }
-    }
-
     fn log_event(&self, event: &LoggerEvent, level: EventLevel, status_message: Option<&str>) {
         let payload = &event.payload;
         // LiteLLM hands int(seconds) to start_span, whose argument is nanoseconds

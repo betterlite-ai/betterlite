@@ -5,6 +5,7 @@ use super::otel::shared::SharedOtel;
 use super::otel::{legacy, maybe};
 use crate::callback_logger::CallbackLogger;
 use crate::otel::callbacks::phoenix_callback::{otel_config, phoenix_lifecycle};
+use crate::otel::legacy_lifecycle::logger::LegacyOtelLogger;
 use crate::otel::logger_runtime::LoggerRuntime;
 
 pub const CALLBACK_NAME: &str = "arize_phoenix";
@@ -24,8 +25,8 @@ pub fn build(
     })?;
     let mut prepared = legacy::prepare(inputs, shared, config, Some(CALLBACK_NAME))?;
     let options = prepared.options()?;
-    let logger = phoenix_lifecycle(prepared.otel, options, &shared.env);
-    Ok(legacy::lifecycle_logger(logger))
+    let lifecycle = phoenix_lifecycle(prepared.otel, options, &shared.env);
+    Ok(Arc::new(LegacyOtelLogger::new(Arc::new(lifecycle))))
 }
 
 mod tests;

@@ -11,34 +11,16 @@ pub(in crate::sections::otel_settings) fn csv_values(value: &str) -> Vec<String>
         .collect()
 }
 
-pub(super) fn normalized_exclusions(value: Option<ExclusionInput>) -> Vec<String> {
-    let items = match value {
-        None => return Vec::new(),
-        Some(ExclusionInput::Csv(text)) => return csv_values(&text),
-        Some(ExclusionInput::List(items)) => items,
+// the explicit list exactly as written: absent and null stay None, an empty list stays Some(empty)
+pub(super) fn configured_exclusions(value: Option<ExclusionInput>) -> Option<Vec<String>> {
+    match value {
+        None => None,
         Some(ExclusionInput::Ignored(_)) => {
             tracing::warn!(
                 "excluded_services must be a list or comma-separated string; ignoring value"
             );
-            return Vec::new();
+            None
         }
-    };
-    items
-        .into_iter()
-        .filter_map(|item| match item {
-            ExclusionInput::Csv(text) => Some(text),
-            ExclusionInput::List(_) | ExclusionInput::Ignored(_) => {
-                tracing::warn!("excluded_services entries must be strings; ignoring entry");
-                None
-            }
-        })
-        .collect()
-}
-
-// the explicit list exactly as written: absent and null stay None, an empty list stays Some(empty)
-pub(super) fn configured_exclusions(value: Option<ExclusionInput>) -> Option<Vec<String>> {
-    match value {
-        None | Some(ExclusionInput::Ignored(_)) => None,
         Some(ExclusionInput::Csv(text)) => Some(csv_values(&text)),
         Some(ExclusionInput::List(items)) => Some(
             items
@@ -137,12 +119,13 @@ pub(super) fn resolve_exclusions<L>(raw: &RawOtel, lookup: &L) -> Vec<String>
 where
     L: EnvironmentLookup,
 {
-    normalized_exclusions(environment_or(
+    let configured = environment_or(
         lookup,
         &["LITELLM_OTEL_EXCLUDED_SERVICES"],
         raw.excluded_services.clone(),
         ExclusionInput::Csv,
-    ))
+    );
+    configured_exclusions(configured).unwrap_or_default()
 }
 
 pub(super) fn structured_setting<L, T>(

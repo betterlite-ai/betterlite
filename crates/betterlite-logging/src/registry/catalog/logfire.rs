@@ -48,14 +48,12 @@ pub(crate) fn legacy_config(
         .lookup(BASE_URL_VARIABLE)
         .unwrap_or_else(|| DEFAULT_BASE_URL.to_owned());
     let endpoint = format!("{}{TRACES_PATH}", base.trim_end_matches('/'));
-    let mut config = OpenTelemetryConfig {
-        exporter: Exporter::Named(OTLP_HTTP_EXPORTER.to_owned()),
-        endpoint: Some(endpoint),
-        headers: Some(format!("Authorization={token}")),
-        ..OpenTelemetryConfig::default()
-    };
-    config.normalize(&shared.env);
-    Ok(config)
+    Ok(super::otel::vendor_config(
+        Exporter::Named(OTLP_HTTP_EXPORTER.to_owned()),
+        endpoint,
+        Some(format!("Authorization={token}")),
+        shared,
+    ))
 }
 
 mod tests;

@@ -25,9 +25,8 @@ fn without_the_switch_langfuse_otel_builds_the_legacy_logger() {
 #[test]
 fn with_the_switch_on_langfuse_otel_builds_through_the_runtime() {
     let fixture = fixture();
-    for (name, value) in KEYS {
-        fixture.environment.set(name, value);
-    }
+    fixture.environment.set(KEYS[0].0, KEYS[0].1);
+    fixture.environment.set(KEYS[1].0, KEYS[1].1);
     let inputs = catalog_inputs("", &[KEYS[0], KEYS[1], ("LITELLM_OTEL_V2", "true")]);
     let shared = SharedOtel::new(&inputs);
     let mut in_memory = Vec::new();

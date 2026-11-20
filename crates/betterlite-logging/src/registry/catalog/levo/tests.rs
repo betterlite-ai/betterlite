@@ -60,9 +60,10 @@ fn without_the_switch_levo_builds_the_legacy_logger() {
 #[test]
 fn with_the_switch_on_levo_builds_through_the_runtime() {
     let fixture = fixture();
-    for (name, value) in LEVO {
-        fixture.environment.set(name, value);
-    }
+    fixture.environment.set(LEVO[0].0, LEVO[0].1);
+    fixture.environment.set(LEVO[1].0, LEVO[1].1);
+    fixture.environment.set(LEVO[2].0, LEVO[2].1);
+    fixture.environment.set(LEVO[3].0, LEVO[3].1);
     let inputs = catalog_inputs("", &[("LITELLM_OTEL_V2", "true")]);
     let shared = SharedOtel::new(&inputs);
     let mut in_memory = Vec::new();

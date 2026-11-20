@@ -5,9 +5,11 @@ use super::otel::shared::SharedOtel;
 use super::otel::{legacy, maybe};
 use crate::callback_logger::CallbackLogger;
 use crate::langfuse_otel::LangfuseOtelLogger;
-use crate::otel::legacy_lifecycle::lifecycle::LegacyLifecycle;
+use crate::otel::legacy_exporters::tracer_cache::MAX_DYNAMIC_TRACER_PROVIDERS;
 use crate::otel::logger_runtime::LoggerRuntime;
-use crate::otel_provider_assembly::legacy_otel_init::{LegacyOtelEnvironment, LegacyOtelInit};
+use crate::otel_provider_assembly::legacy_otel_init::{
+    InjectedProviders, LegacyOtelEnvironment, LegacyOtelInit, MetadataKeyOverrides,
+};
 
 pub const CALLBACK_NAME: &str = "langfuse_otel";
 
@@ -22,8 +24,11 @@ pub fn build(
         return Ok(logger);
     }
     let init = LegacyOtelInit {
+        config: None,
         callback_name: Some(CALLBACK_NAME.to_owned()),
-        ..LegacyOtelInit::default()
+        overrides: MetadataKeyOverrides::default(),
+        injected: InjectedProviders::default(),
+        max_dynamic_tracer_providers: MAX_DYNAMIC_TRACER_PROVIDERS,
     };
     let environment = LegacyOtelEnvironment {
         env: &shared.env,
@@ -36,10 +41,7 @@ pub fn build(
         LangfuseOtelLogger::new(init, &environment).map_err(|source| CatalogError::Init {
             message: source.to_string(),
         })?;
-    let mut prepared = legacy::complete(inputs, shared, logger.otel)?;
-    let options = prepared.options()?;
-    let lifecycle = LegacyLifecycle::from_otel(prepared.otel, options);
-    Ok(legacy::lifecycle_logger(lifecycle))
+    legacy::complete(inputs, shared, logger.otel)
 }
 
 mod tests;

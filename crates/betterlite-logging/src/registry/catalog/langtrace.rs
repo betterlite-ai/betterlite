@@ -41,14 +41,12 @@ pub(crate) fn legacy_config(
             message: MISSING_KEY.to_owned(),
         })?;
     let endpoint = langtrace_trace_endpoint(inputs.env.lookup("LANGTRACE_API_HOST").as_deref());
-    let mut config = OpenTelemetryConfig {
-        exporter: Exporter::Named(OTLP_HTTP_EXPORTER.to_owned()),
-        endpoint: Some(endpoint),
-        headers: Some(format!("x-api-key={api_key}")),
-        ..OpenTelemetryConfig::default()
-    };
-    config.normalize(&shared.env);
-    Ok(config)
+    Ok(super::otel::vendor_config(
+        Exporter::Named(OTLP_HTTP_EXPORTER.to_owned()),
+        endpoint,
+        Some(format!("x-api-key={api_key}")),
+        shared,
+    ))
 }
 
 mod tests;

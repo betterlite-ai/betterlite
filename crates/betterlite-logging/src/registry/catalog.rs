@@ -14,6 +14,7 @@ pub mod datadog_cost_management;
 pub mod datadog_llm_observability;
 pub mod datadog_metrics;
 pub mod deepeval;
+mod dispatch;
 pub mod dotprompt;
 pub mod dynamodb;
 pub mod focus;
@@ -148,7 +149,7 @@ impl LoggerCatalog {
         Self {
             inputs,
             runtime: None,
-            build: Arc::new(build_logger),
+            build: Arc::new(dispatch::build_logger),
             built: Mutex::new(BTreeMap::new()),
             in_memory: Mutex::new(Vec::new()),
             shared: Mutex::new(None),
@@ -275,130 +276,5 @@ impl LoggerResolver for LoggerCatalog {
         _params: &BTreeMap<String, String>,
     ) -> Result<Option<Arc<dyn CallbackLogger>>, RegistryError> {
         self.resolve_logger(name)
-    }
-}
-
-// LiteLLM appends every logger it builds; a V2 logger already appended by maybe_construct_otel_v2 stays once
-fn push_once(list: &mut Vec<Arc<dyn CallbackLogger>>, logger: &Arc<dyn CallbackLogger>) {
-    if !list.iter().any(|held| Arc::ptr_eq(held, logger)) {
-        list.push(Arc::clone(logger));
-    }
-}
-
-macro_rules! builder_dispatch {
-    (
-        arms { $($arm:ident => $arm_module:ident),+ $(,)? }
-        builders { $($variant:ident => $module:ident),+ $(,)? }
-        refused { $($refused:ident),+ $(,)? }
-    ) => {
-        fn build_logger(
-            callback: CallbackName,
-            inputs: &CatalogInputs,
-            runtime: Option<&LoggerRuntime>,
-            shared: &SharedOtel,
-            in_memory: &mut Vec<Arc<dyn CallbackLogger>>,
-        ) -> Result<Arc<dyn CallbackLogger>, CatalogError> {
-            match callback {
-                $(
-                    CallbackName::$arm => {
-                        let logger = $arm_module::build(inputs, runtime, shared, in_memory)?;
-                        push_once(in_memory, &logger);
-                        Ok(logger)
-                    }
-                )+
-                $(
-                    CallbackName::$variant => {
-                        let logger = $module::build(inputs)?;
-                        push_once(in_memory, &logger);
-                        Ok(logger)
-                    }
-                )+
-                $(CallbackName::$refused)|+ => Err(CatalogError::Unavailable {
-                    name: callback.as_str().to_owned(),
-                }),
-            }
-        }
-    };
-}
-
-builder_dispatch! {
-    arms {
-        Arize => arize,
-        ArizePhoenix => arize_phoenix,
-        LangfuseOtel => langfuse_otel,
-        Langtrace => langtrace,
-        Levo => levo,
-        Logfire => logfire,
-        Newrelic => newrelic,
-        Otel => otel,
-        Signoz => signoz,
-        Traceloop => traceloop,
-        WeaveOtel => weave_otel,
-    }
-    builders {
-        Agentops => agentops,
-        Argilla => argilla,
-        Athina => athina,
-        AwsSqs => aws_sqs,
-        AzureSentinel => azure_sentinel,
-        AzureStorage => azure_storage,
-        Bitbucket => bitbucket,
-        Braintrust => braintrust,
-        Clickhouse => clickhouse,
-        Cloudzero => cloudzero,
-        DatadogCostManagement => datadog_cost_management,
-        DatadogLlmObservability => datadog_llm_observability,
-        DatadogMetrics => datadog_metrics,
-        Deepeval => deepeval,
-        Dotprompt => dotprompt,
-        Dynamodb => dynamodb,
-        Focus => focus,
-        Galileo => galileo,
-        GcsBucket => gcs_bucket,
-        GcsPubsub => gcs_pubsub,
-        Gitlab => gitlab,
-        Greenscale => greenscale,
-        Helicone => helicone,
-        Humanloop => humanloop,
-        Lago => lago,
-        Langfuse => langfuse,
-        Langsmith => langsmith,
-        Literalai => literalai,
-        Lunary => lunary,
-        Mavvrik => mavvrik,
-        Mlflow => mlflow,
-        Openmeter => openmeter,
-        Opik => opik,
-        Pagerduty => pagerduty,
-        Pointfive => pointfive,
-        Posthog => posthog,
-        Promptlayer => promptlayer,
-        ResendEmail => resend_email,
-        S3 => s3,
-        S3V2 => s3_v2,
-        SendgridEmail => sendgrid_email,
-        Sentry => sentry,
-        Slack => slack,
-        SmtpEmail => smtp_email,
-        Supabase => supabase,
-        Vantage => vantage,
-        Wandb => wandb,
-        Zerobus => zerobus,
-    }
-    refused {
-        Prometheus,
-        Datadog,
-        LitellmAgent,
-        GenericApi,
-        SampleCallback,
-        Rubrik,
-        Sumologic,
-        QualifireEval,
-        Ramp,
-        DynamicRateLimiter,
-        DynamicRateLimiterV3,
-        AnthropicCacheControlHook,
-        VectorStorePreCallHook,
-        CompressionInterception,
     }
 }
