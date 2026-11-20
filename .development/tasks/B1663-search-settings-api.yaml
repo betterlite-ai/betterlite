@@ -45,6 +45,10 @@ description: >-
   replays_the_search_settings_corpus, plus config_yaml seeds for every block. The 222 owned
   model/helper/handler lines budget 280 implementation/config, 210 tests and 220 HTTP/fuzz
   additions within 775 changed lines.
+
+  Mounting. B066's settings_api composition does not mount this task's routes, so add this router to settings_api's keyed or public router yourself, keeping its public or authenticated side, and extend B066's construction test so a duplicate or missing registration fails.
+
+  This bundle also calls B1656's shared update, so take the same ConfigOverlayPort Arc that settings_api hands to the other bundles.
 scope:
   paths:
     - crates/betterlite-server/src/mcp/tool_search/settings.rs
@@ -62,6 +66,8 @@ scope:
     - tools/oracle/helpers/b1663/**
     - tools/oracle/src/helpers/server/b1663.rs
     - tools/oracle/src/helpers/server/b1663/**
+    - crates/betterlite-server/src/settings_api.rs
+    - crates/betterlite-server/src/settings_api/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L473-L582

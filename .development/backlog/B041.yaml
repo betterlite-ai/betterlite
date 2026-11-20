@@ -2,7 +2,7 @@ id: B041
 milestone: M3 providers
 title: Aggregators and hosted inference platforms
 status: todo
-depends_on: [B8311, B082, B083, B3343, B3344, B9210, B9211]
+depends_on: [B8311, B082, B083, B9210]
 file: tasks/B041-aggregator-media-http.yaml
 covers:
   - "litellm/types/llms/openrouter.py"

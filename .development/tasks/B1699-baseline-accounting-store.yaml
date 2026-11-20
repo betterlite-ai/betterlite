@@ -52,12 +52,18 @@ description: >-
   claim contention, requeue ordering, timeouts and cancellation. No route or pure adapter is
   added by this stateful task. The remaining source ranges total 300 nonblank lines;
   allocate 330 store/queue logic and 420 tests/wiring, capped at 800 changed lines.
+
+  Two callers wait for this store. Add the retire_before call at the start of B1741's session cleanup, with the remaining timeout and batch size and a warning on failure, and the flush_baseline_accounting call on B1747's empty-work pass of the spend log monitor.
 scope:
   paths:
     - crates/betterlite-db/src/baseline/store.rs
     - crates/betterlite-db/src/baseline/store/**
     - crates/betterlite-db/src/baseline/flush.rs
     - crates/betterlite-db/src/baseline/flush/**
+    - crates/betterlite-db/src/spend_retention/runner.rs
+    - crates/betterlite-db/src/spend_retention/runner/**
+    - crates/betterlite-db/src/spend_flush.rs
+    - crates/betterlite-db/src/spend_flush/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/baseline_accounting.py#L184-L240

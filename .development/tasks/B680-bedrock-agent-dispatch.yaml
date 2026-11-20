@@ -78,6 +78,8 @@ description: >-
   B010 registers the BedrockAgent variants of OperationRequest, OperationResult and PreparedRequest as stubs in
   crates/betterlite-provider/src/bedrock_agent_dispatch.rs. Fill them there and leave provider.rs, operation.rs
   and prepared.rs as they are.
+
+  Agent arm. B028's Bedrock dispatch answers the agent tag with "no Bedrock route is installed for 'agent'" and keeps agentcore on B653 and claude_platform on B656. Add the agent arm there with B652's AmazonInvokeAgentConfig, next to installing the leaves.
 scope:
   paths:
   - crates/betterlite-provider/Cargo.toml
@@ -92,6 +94,8 @@ scope:
   - tools/oracle/helpers/bedrock_agent_dispatch/**
   - tools/oracle/cases/helpers/providers/bedrock-agent-dispatch/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_agent_dispatch*
+  - crates/betterlite-provider/src/bedrock_dispatch.rs
+  - crates/betterlite-provider/src/bedrock_dispatch/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_agent/transformation.py#L49-L51

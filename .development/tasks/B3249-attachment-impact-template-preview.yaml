@@ -259,7 +259,7 @@ out_of_scope:
   - "B3250 owns resolve_policies_for_context, POST /policies/resolve (policy_resolve_endpoints.py L215-L320) and the module's router and imports."
   - "B3252 owns POST /policy/templates/enrich and its stream; B3253 owns GET /policy/templates and POST /policy/templates/suggest; B3251 and B3250 own the other endpoints.py routes (apply_policies, validate, list, info, match)."
   - "B3242 owns PolicyAttachmentCreateRequest and AttachmentImpactResponse; B722 and B724 own the key and team table handles; B700 owns find_many; B882 owns route_matches_wildcard_pattern."
-  - "The ContentFilterGuardrail constructor (content_filter.py L210-L330) and apply_guardrail (L1874-L1955) have no owner at the time of writing; B3695 owns _filter_single_text only. B8666 implements the production ContentFilterRunner over them."
+  - "The ContentFilterGuardrail constructor (content_filter.py L210-L330) and apply_guardrail (L1874-L1955) have no owner at the time of writing; B3695 owns _filter_single_text only. This task implements the production ContentFilterRunner over B8666's GuardrailClasses: build the content filter guardrail from the given ContentFilterParams through B8219's initializer arguments and the content filter class, run its apply_guardrail on the one text with empty request data and input type request, and return the texts."
   - "B865 owns management_endpoint_wrapper and B2400 owns handle_exception_on_proxy; this task calls them."
   - "PolicyAttachmentCreateRequest validation of `policy_name` existence is not done by this route: LiteLLM never looks the policy up when estimating."
 

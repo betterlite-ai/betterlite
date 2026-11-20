@@ -16,14 +16,20 @@ description: >-
   responses_stream_errors=true, using B937's emitted-event failure state. Preserve the normal
   branch's special ModifyResponseException response and the separate polling admission error path.
 
-  Assemble B1078's CreateInterception port with B955 and B2415's ContinuationExecutor with the
+  Assemble B1078's CreateInterception port with this task's own refusing interception until B955 lands. Its MCP
+  arm answers `DispatchError::NotBuilt { entry: "responses_mcp_gateway" }` when a tool's server_url starts with
+  litellm_proxy (the gate at responses/main.py L1003), and its file-search arm answers `DispatchError::NotBuilt { entry:
+  "responses_emulated_file_search" }` when the request would take emulated file search (L1075-L1079: a file_search tool
+  with no Responses config, a chat bridge or no native file search). Everything else continues. B955 replaces both arms
+  later and depends on this task. Assemble B2415's ContinuationExecutor with the
   public B932 Responses executor. B014 registers the Responses entry as a stub, so replace the stub and its not-built test in
   crates/betterlite-core/src/operation/responses.rs and crates/betterlite-core/src/dispatch/responses.rs and leave
   dispatch.rs and operation.rs as they are; recursive execution returns
   through these typed ports, never a dependency from lower services to this composer. Re-export
   B921 responses_api_bridge and B935/B936 polling exports from the small package init files.
   The empty file_search initializer has no runtime behavior. Own dispatch.py's six whole public
-  wrappers/projection functions as native signature compatibility, using B158's binding seam.
+  wrappers/projection functions as native signature compatibility in Rust. Binding them into the Python wheel is a later
+  wheel task's job, the way B158 binds completion; this task writes no wheel code.
   LiteLLM's rust_bridge accelerator is excluded by litellm.yaml and is not reimplemented.
 
   All route comparisons boot both proxies with fixed test master key sk-test-master, independent
@@ -98,8 +104,8 @@ dod:
     one upstream POST /v1/responses per request; never 404/405 or duplicate-router registration.
     x-litellm-call-id=call-a is retained. A configured chat-only deployment instead makes one
     /v1/chat/completions call and returns a Responses object through B916. Native file_search
-    tools remain on native HTTP; a gateway MCP request reaches B955's composed port and its
-    provider follow-up once. Capture actual provider sequence, not a manufactured route result.
+    tools remain on native HTTP. A gateway MCP request and its provider follow-up are B955's to add with its arm; here
+    such a request answers the NotBuilt error with no upstream call. Capture actual provider sequence, not a manufactured route result.
   proof: [route-http, oracle]
 - text: >-
     create_auth_and_required_input keeps valid model/input while omitting auth: HTTP 401,
@@ -157,7 +163,7 @@ dod:
     parameters contains every bound field except kwargs, while kwargs retains the extras. Sync
     aresponses=true bypasses accelerator selection; 1 does not. Actual valid sync and async
     public calls each make one mock POST and preserve B1078/B932 results. __wrapped__/documentation
-    signature compatibility is exposed through B158, without implementing excluded rust_bridge code.
+    signature compatibility in the Python wheel is a later wheel task's, and no excluded rust_bridge code is built.
   proof: [public-dispatch, oracle, python-sdk]
 - text: >-
     openai_provider_operation posts {model:openai/gpt-4o,input:hello} to /v1/responses with valid auth. Expect
@@ -215,12 +221,15 @@ deviations:
 - what: Polling IDs carry private trusted ownership; another owner receives 403 permission_error,param=null,code="403" on lifecycle access.
   why: The architect's existing polling-ownership decision requires B080 to supply identity before the initial cache write.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L327-L343
+- what: Until B955 lands, a create whose tools name the gateway MCP (server_url litellm_proxy) or need emulated file search answers DispatchError::NotBuilt and makes no upstream call, where LiteLLM runs the gateway MCP loop or the emulated file search.
+  why: Responses MCP waits on the MCP gateway and the file search loop on vector stores (value split, 2026-11-19); refusing keeps a gateway tool from reaching the provider as if it were native.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L967-L1124
 out_of_scope:
 - B940 owns endpoint tool/Cursor helpers and Cursor routes; B938 owns retrieve/delete/input-items/cancel routes, B939 compact/input_tokens and B941 websocket routes/helpers.
 - B3673 owns blocked-response/SSE construction, with B3663's blocked usage; B8801 owns the pre-call step of common request processing, B004 the rest, required parameters and error envelopes, B8399 failure callback dispatch.
 - B955 owns MCP and emulated file-search internals; B930 affinity is installed by its router owner B324, not by this create route.
 - Enterprise managed-file storage after the import is unreachable in this checkout; its warning-and-skip/storage-error paths are excluded with the enterprise implementation.
-- Accelerator selection in litellm/rust_bridge is excluded; B158 owns Python module binding machinery around the retained public call signature.
+- Accelerator selection in litellm/rust_bridge is excluded; the Python module binding around the retained public call signature belongs to a later wheel task, as B158 does it for completion.
 pitfalls:
 - Polling's admission exceptions do not enter the normal branch's ModifyResponseException success handler.
 - A native queued response imports the missing enterprise module before checking whether a managed-files hook exists.

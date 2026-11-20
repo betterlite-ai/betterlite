@@ -5,7 +5,7 @@ description: >-
   GET both prefixes with /{file_id}, and GET both prefixes with /{file_id}/content in
   server::api::vector_file_routes. Own the three complete handlers at endpoints.py:562-872 and the two
   complete download-header helpers at upload_security.py:278-289, which previously had no concrete task.
-  Use B003 auth, B1061 store access, B1075 resolution, B004 processing with model=null and route types
+  Use B003 auth, B10014 store access, B1061 file endpoint grants, B1075 resolution, B004 processing with model=null and route types
   avector_store_file_list/retrieve/content, then B1072/B1073 SDK methods. Pass common processor settings
   unchanged; no new setting or body decoder is added. All comparisons enter actual booted proxy HTTP.
 

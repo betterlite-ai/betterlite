@@ -1,0 +1,49 @@
+task: B1055
+deviations:
+  - what: >-
+      A structured timeout (an httpx.Timeout) reaches the OpenAI and Azure SDK clients whole in
+      LiteLLM; betterlite's client carries one deadline, so only the read phase bounds the call and
+      the connect, write and pool phases are dropped.
+    why: >-
+      B519's ClientOptions carries a single Duration and B686 resolves its deadline the same way, so
+      there is no per-phase field to fill.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L253-L268
+  - what: >-
+      A supplied SDK client is recorded by its class and never used: betterlite always builds the
+      provider client from api_base, api_key, timeout and max_retries, where LiteLLM hands the caller's
+      client straight to the SDK and that client's own options win.
+    why: >-
+      The façade takes dependency injection values rather than live SDK objects, so the class is
+      carried for the isinstance decisions and the call is constructed from the options.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L313-L353
+  - what: >-
+      LiteLLM copies the caller's timeout kwarg into get_litellm_params verbatim, so a timeout written
+      as text or as an httpx.Timeout still reaches the Azure client's litellm_params; betterlite's
+      litellm_params carries only a number, and a text or phased timeout leaves the Azure client's
+      deadline at its default.
+    why: >-
+      B686's LiteLlmParams.timeout is an Option<f64>, and the value it bounds a call with is the raw
+      number the kwargs held.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_litellm_params.py#L248-L252
+kept_bugs:
+  - what: >-
+      The unsupported-provider error says "Only 'openai' is supported." even though the azure branch
+      above it works; the message is kept word for word because callers match on it.
+    why: >-
+      A working setup that asserts on the message text relies on the wording, so the wrong sentence
+      stays.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L354-L364
+  - what: >-
+      AZURE_AD_TOKEN is read only when extra_body is present and null; an omitted extra_body or an
+      empty mapping leaves the façade token null even though the environment variable is set.
+    why: >-
+      GenericLiteLLMParams.get("extra_body", {}) turns an omitted value into {}, which skips the
+      environment branch, and a working setup can depend on that.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L326-L330
+  - what: >-
+      isinstance(client, OpenAI) discards an AzureOpenAI client along with an OpenAI one, although the
+      comment says only the Azure client should pass; both synchronous classes are discarded.
+    why: >-
+      AzureOpenAI subclasses OpenAI, so a working setup that hands one in relies on the options
+      winning over it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L340-L340

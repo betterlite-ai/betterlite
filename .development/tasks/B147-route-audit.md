@@ -47,7 +47,7 @@ For **each** E in `user,team,tag,organization,customer,agent`, the common query 
 | GET `/tag/dau`, `/tag/wau`, `/tag/mau` | `end_date`; optional `tag_filter` or **repeated** `tag_filters` array | `results[]` tag/date/period and active-user counts | B3100 (dau/wau), B3101 (mau), B8661 mount; B9742 adds the two-selected-tags forms. |
 | GET `/tag/summary` | dates, repeated `tag_filters` | tag summary results | B3101/B8661; B9742 filtered page request. |
 | GET `/tag/user-agent/per-user-analytics` | `page=1,page_size=50`, repeated `tag_filters`; **no dates** | users, email, agent, usage and pagination | B3101/B8661; B9742 exact filtered pagination. |
-| POST `/usage/ai/chat` | `{messages:[{role,content}],model}`; selected model from `/model_group/info` | SSE `chunk.content,status.message,tool_call,done,error.message` | B8271/B3103/B8673; B074's newly written `http/usage-chat/*` plans exact model/history, tool and error streams. **No duplicate in B147.** |
+| POST `/usage/ai/chat` | `{messages:[{role,content}],model}`; selected model from `/model_group/info` | SSE `chunk.content,status.message,tool_call,done,error.message` | B8271/B3103/B10025; B074's newly written `http/usage-chat/*` plans exact model/history, tool and error streams. **No duplicate in B147.** |
 
 Breakdown maps consumed by the retained adapters are `models,model_groups,mcp_servers,providers,api_keys,entities,endpoints`; nested metrics, metadata and `api_key_breakdown` must not be dropped from comparisons. Export download is a real HTTP blob; ROI CSV and CloudZero's placeholder CSV button are not export endpoints.
 
