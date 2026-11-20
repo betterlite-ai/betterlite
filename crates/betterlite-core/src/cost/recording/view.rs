@@ -105,33 +105,30 @@ pub(super) const fn cost_response<'view>(
 
 // The usage projection get_usage_object reads, rebuilt here because prepare's view stays private.
 pub(super) fn billing_response<'view>(view: &'view ResponseView<'view>) -> BillingResponse<'view> {
-    let (kind, usage, service_tier, hidden_params) = match view {
-        ResponseView::Typed(typed) => (
-            typed.kind,
-            copied_usage(&typed.usage),
-            typed.service_tier,
-            typed.hidden_params,
-        ),
-        ResponseView::Dictionary(dictionary) => (
-            ResponseKind::Other,
-            copied_usage(&dictionary.usage),
-            dictionary.service_tier,
-            None,
-        ),
-        ResponseView::Realtime { record, usage } => (
-            ResponseKind::Other,
-            BillingUsage::Chat(usage),
-            record.service_tier.as_deref(),
-            None,
-        ),
-        ResponseView::Other => (ResponseKind::Other, BillingUsage::Absent, None, None),
+    let mut billing = BillingResponse {
+        kind: ResponseKind::Other,
+        usage: BillingUsage::Absent,
+        service_tier: None,
+        hidden_params: None,
     };
-    BillingResponse {
-        kind,
-        usage,
-        service_tier,
-        hidden_params,
+    match view {
+        ResponseView::Typed(typed) => {
+            billing.kind = typed.kind;
+            billing.usage = copied_usage(&typed.usage);
+            billing.service_tier = typed.service_tier;
+            billing.hidden_params = typed.hidden_params;
+        }
+        ResponseView::Dictionary(dictionary) => {
+            billing.usage = copied_usage(&dictionary.usage);
+            billing.service_tier = dictionary.service_tier;
+        }
+        ResponseView::Realtime { record, usage } => {
+            billing.usage = BillingUsage::Chat(usage);
+            billing.service_tier = record.service_tier.as_deref();
+        }
+        ResponseView::Other => {}
     }
+    billing
 }
 
 // Rebuilding the variant keeps the reference without a Copy derive on BillingUsage.
