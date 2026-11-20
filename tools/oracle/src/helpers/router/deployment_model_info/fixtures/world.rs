@@ -175,7 +175,7 @@ pub(crate) fn summary(spec: &DeploymentSpec) -> Value {
 }
 impl From<LookupError> for Failure {
     fn from(error: LookupError) -> Self {
-        Failure(error.to_string())
+        Self(error.to_string())
     }
 }
 pub(crate) fn world_answer(
