@@ -68,7 +68,7 @@ where
             Err(ContentFilterActionError::Blocked { detail }) => {
                 return Err(ImageProcessingError::Blocked {
                     detail: Box::new(detail),
-                    description: description.clone(),
+                    text: description.clone(),
                 });
             }
             Err(error) => return Err(ImageProcessingError::Filter(error)),
