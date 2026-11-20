@@ -622,6 +622,29 @@ async fn write_transport_failures(#[case] operation: Operation) {
     );
 }
 
+// supplied kind, requested kind, ssl_verify, source calls, supplied requests, created requests
+type SelectionCase = (
+    Option<ClientKind>,
+    ClientKind,
+    Option<bool>,
+    usize,
+    usize,
+    usize,
+);
+
+const SELECTION_CASES: [SelectionCase; 3] = [
+    (Some(ClientKind::Sync), ClientKind::Sync, None, 0, 1, 0),
+    (None, ClientKind::Sync, Some(false), 1, 0, 1),
+    (
+        Some(ClientKind::Sync),
+        ClientKind::Asynchronous,
+        None,
+        2,
+        1,
+        2,
+    ),
+];
+
 #[tokio::test]
 async fn write_client_and_logging_contract() {
     let settings = openai_settings();
@@ -639,17 +662,9 @@ async fn write_client_and_logging_contract() {
         supplied,
         created,
         events,
-        unverified: params("http://mock.test/v1"),
-        verified: WriteParams {
-            api_base: Some(String::from("http://mock.test/v1")),
-            api_key: None,
-            ssl_verify: Some(false),
-        },
         fixture: Fixture::new("responses"),
     };
-    contract.reused().await;
-    contract.absent().await;
-    contract.wrong_kind().await;
+    contract.client_selection().await;
     contract.created_clients().await;
     contract.logs().await;
 }
@@ -661,86 +676,64 @@ struct ClientContract<'settings> {
     supplied: Wire,
     created: Wire,
     events: Events,
-    unverified: WriteParams,
-    verified: WriteParams,
     fixture: Fixture,
 }
 
 impl ClientContract<'_> {
-    async fn reused(&mut self) {
-        let deps = write_deps(
-            &self.config,
-            &self.source,
-            Some(SuppliedClient {
-                kind: ClientKind::Sync,
+    async fn client_selection(&mut self) {
+        for (supplied_kind, requested, ssl_verify, source_calls, supplied, created) in
+            SELECTION_CASES
+        {
+            let write_params = WriteParams {
+                api_base: Some(String::from("http://mock.test/v1")),
+                api_key: None,
+                ssl_verify,
+            };
+            let client = supplied_kind.map(|kind| SuppliedClient {
+                kind,
                 transport: &self.supplied,
-            }),
-            Some(SharedSession),
+            });
+            let deps = write_deps(&self.config, &self.source, client, Some(SharedSession));
+            let call = operation_call(Operation::Delete, "resp_a", &write_params, None, None);
+            run(&mut self.fixture, &deps, requested, &call, &self.events)
+                .await
+                .expect("the supplied client is reused or replaced as its kind requires");
+            assert_eq!(self.source.calls().len(), source_calls);
+            assert_eq!(self.supplied.requests().len(), supplied);
+            assert_eq!(self.created.requests().len(), created);
+        }
+        assert_eq!(
+            self.source.calls(),
+            vec![(Some(false), false), (None, true)]
         );
-        let call = operation_call(Operation::Delete, "resp_a", &self.unverified, None, None);
-        run(
-            &mut self.fixture,
-            &deps,
-            ClientKind::Sync,
-            &call,
-            &self.events,
-        )
-        .await
-        .expect("a matching injected client is reused");
-        assert!(self.source.calls().is_empty());
-        assert_eq!(self.supplied.requests().len(), 1);
-        assert!(self.created.requests().is_empty());
     }
 
-    async fn absent(&mut self) {
+    async fn created_clients(&mut self) {
+        let (captured, _guard) = capturing();
+        let fixture = &mut self.fixture;
+        let write_params = params("http://mock.test/v1");
         let deps = write_deps(&self.config, &self.source, None, Some(SharedSession));
-        let call = operation_call(Operation::Delete, "resp_a", &self.verified, None, None);
+        let call = operation_call(Operation::Delete, "resp_a", &write_params, None, None);
         run(
-            &mut self.fixture,
-            &deps,
-            ClientKind::Sync,
-            &call,
-            &self.events,
-        )
-        .await
-        .expect("an absent client comes from the source");
-        assert_eq!(self.source.calls(), vec![(Some(false), false)]);
-        assert_eq!(self.created.requests().len(), 1);
-    }
-
-    async fn wrong_kind(&mut self) {
-        let deps = write_deps(
-            &self.config,
-            &self.source,
-            Some(SuppliedClient {
-                kind: ClientKind::Sync,
-                transport: &self.supplied,
-            }),
-            Some(SharedSession),
-        );
-        let call = operation_call(Operation::Delete, "resp_a", &self.unverified, None, None);
-        run(
-            &mut self.fixture,
+            fixture,
             &deps,
             ClientKind::Asynchronous,
             &call,
             &self.events,
         )
         .await
-        .expect("a wrong-kind client is replaced");
-        assert_eq!(
-            self.source.calls(),
-            vec![(Some(false), false), (None, true)]
-        );
-        assert_eq!(self.supplied.requests().len(), 1);
-        assert_eq!(self.created.requests().len(), 2);
-    }
-
-    async fn created_clients(&mut self) {
-        let (captured, _guard) = capturing();
-        self.async_delete().await;
-        self.async_cancel().await;
-        self.sync_delete().await;
+        .expect("the async delete creates its client");
+        let cancel_deps = write_deps(&self.config, &self.cancel_source, None, None);
+        let cancel_call = operation_call(Operation::Cancel, "resp_a", &write_params, None, None);
+        run(
+            fixture,
+            &cancel_deps,
+            ClientKind::Asynchronous,
+            &cancel_call,
+            &self.events,
+        )
+        .await
+        .expect("the async cancel creates its client");
         let client_lines: Vec<String> = captured_messages(&captured)
             .into_iter()
             .filter(|message| message.contains("Creating HTTP client for"))
@@ -754,98 +747,35 @@ impl ClientContract<'_> {
         );
     }
 
-    async fn async_delete(&mut self) {
-        let deps = write_deps(&self.config, &self.source, None, Some(SharedSession));
-        let call = operation_call(Operation::Delete, "resp_a", &self.unverified, None, None);
-        run(
-            &mut self.fixture,
-            &deps,
-            ClientKind::Asynchronous,
-            &call,
-            &self.events,
-        )
-        .await
-        .expect("the async delete creates its client");
-    }
-
-    async fn async_cancel(&mut self) {
-        let deps = write_deps(&self.config, &self.cancel_source, None, None);
-        let call = operation_call(Operation::Cancel, "resp_a", &self.unverified, None, None);
-        run(
-            &mut self.fixture,
-            &deps,
-            ClientKind::Asynchronous,
-            &call,
-            &self.events,
-        )
-        .await
-        .expect("the async cancel creates its client");
-    }
-
-    async fn sync_delete(&mut self) {
-        let deps = write_deps(&self.config, &self.source, None, Some(SharedSession));
-        let call = operation_call(Operation::Delete, "resp_a", &self.unverified, None, None);
-        run(
-            &mut self.fixture,
-            &deps,
-            ClientKind::Sync,
-            &call,
-            &self.events,
-        )
-        .await
-        .expect("the sync delete creates its client");
-    }
-
     async fn logs(&mut self) {
         self.fixture = Fixture::new("responses");
+        let fixture = &mut self.fixture;
         let write_params = params("http://mock.test/v1");
-        self.logged_delete(&write_params).await;
-        assert_eq!(self.fixture.input(), Some(&json(r#""""#)));
+        let deps = write_deps(&self.config, &self.source, None, None);
+        let call = operation_call(Operation::Delete, "resp_a", &write_params, None, None);
+        run(fixture, &deps, ClientKind::Sync, &call, &self.events)
+            .await
+            .expect("the delete logs its call");
+        assert_eq!(fixture.input(), Some(&json(r#""""#)));
         assert_eq!(
-            self.fixture.logged("api_base"),
+            fixture.logged("api_base"),
             Some(&json(r#""http://mock.test/v1/responses""#))
         );
-        self.logged_cancel(&write_params).await;
-        assert_eq!(self.fixture.input(), Some(&json(r#""resp_a""#)));
-        assert_eq!(
-            self.fixture.logged("api_base"),
-            Some(&json(r#""http://mock.test/v1/responses/resp_a/cancel""#))
-        );
-    }
-
-    async fn logged_delete(&mut self, write_params: &WriteParams) {
-        let deps = write_deps(&self.config, &self.source, None, None);
-        let call = operation_call(Operation::Delete, "resp_a", write_params, None, None);
+        let cancel_deps = write_deps(&self.config, &self.cancel_source, None, None);
+        let cancel_call = operation_call(Operation::Cancel, "resp_a", &write_params, None, None);
         run(
-            &mut self.fixture,
-            &deps,
+            fixture,
+            &cancel_deps,
             ClientKind::Sync,
-            &call,
-            &self.events,
-        )
-        .await
-        .expect("the delete logs its call");
-    }
-
-    async fn logged_cancel(&mut self, write_params: &WriteParams) {
-        let call = WriteCall::Cancel(CancelCall {
-            target: WriteTarget {
-                response_id: "resp_a",
-                params: write_params,
-                extra_headers: None,
-                timeout: None,
-            },
-            extra_body: None,
-        });
-        let deps = write_deps(&self.config, &self.cancel_source, None, None);
-        run(
-            &mut self.fixture,
-            &deps,
-            ClientKind::Sync,
-            &call,
+            &cancel_call,
             &self.events,
         )
         .await
         .expect("the cancel logs its call");
+        assert_eq!(fixture.input(), Some(&json(r#""resp_a""#)));
+        assert_eq!(
+            fixture.logged("api_base"),
+            Some(&json(r#""http://mock.test/v1/responses/resp_a/cancel""#))
+        );
     }
 }
