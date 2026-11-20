@@ -286,6 +286,31 @@ async fn header_failure_makes_no_request() {
     assert!(wire.requests().is_empty());
 }
 
+// a base that cannot be a URL fails with its own error after the provider headers and before the pre-call
+#[tokio::test]
+async fn unparsable_base_url_makes_no_request() {
+    let events = Events::new();
+    let wire = Wire::replying(Reply::json(200, STORE), &events);
+    let source = Source::new(wire.clone());
+    let config = RecordingConfig::new("not a url", &events);
+    let deps = deps(&config, &source, None);
+    let params = params("http://unused.test");
+    let call = CreateReadCall::Retrieve(RetrieveCall {
+        target: target(&params),
+        vector_store_id: "vs_a",
+        extra_body: None,
+    });
+    let mut fixture = Fixture::new("vector_store_failure");
+    let result = run(&mut fixture, &deps, ClientKind::Sync, &call, &events).await;
+    let Err(CreateReadError::Write(WriteError::RequestUrl { url, .. })) = result else {
+        panic!("a base that cannot be a URL fails the URL step");
+    };
+    assert_eq!(url, "not a url");
+    assert_eq!(events.recorded(), vec!["client", "headers", "url"]);
+    assert!(config.errors().is_empty());
+    assert!(wire.requests().is_empty());
+}
+
 #[tokio::test]
 async fn log_failure_makes_no_request() {
     let events = Events::new();
