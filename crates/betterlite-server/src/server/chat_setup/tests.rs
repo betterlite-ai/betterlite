@@ -152,6 +152,25 @@ fn a_bedrock_mantle_deployment_still_starts_as_unsupported() {
 }
 
 #[test]
+fn a_declared_provider_goes_back_on_the_model_once() {
+    let yaml = "model_list:\n  - model_name: bare\n    litellm_params:\n      model: luminous-base-control\n      custom_llm_provider: aleph_alpha\n      api_key: k\n      api_base: https://api.aleph-alpha.com/complete\n  - model_name: prefixed\n    litellm_params:\n      model: aleph_alpha/luminous-base-control\n      custom_llm_provider: aleph_alpha\n      api_key: k\n      api_base: https://api.aleph-alpha.com/complete\n";
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(yaml)
+    .unwrap();
+    let chat = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).unwrap();
+    let [bare, prefixed] = chat.deployments.as_slice() else {
+        panic!("both deployments start");
+    };
+    let expected = Provider::Unsupported {
+        model: String::from("aleph_alpha/luminous-base-control"),
+    };
+    assert_eq!(bare.provider, expected);
+    assert_eq!(prefixed.provider, expected);
+}
+
+#[test]
 fn a_non_openai_deployment_keeps_only_its_configured_credentials() {
     let yaml = "model_list:\n  - model_name: g\n    litellm_params:\n      model: groq/llama\n";
     let config = ConfigLoader {
