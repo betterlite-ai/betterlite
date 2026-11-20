@@ -288,6 +288,30 @@ fn create_plan_sends_the_upload_bytes() {
 }
 
 #[test]
+fn create_plan_carries_the_tuple3_file_the_upload_service_sends() {
+    let file = FileData::Tuple3 {
+        filename: Some(String::from("report.csv")),
+        content: FileBody::Bytes(b"a,b\n1,2\n".to_vec()),
+        content_type: Some(String::from("text/csv")),
+    };
+    let plan = create_file_plan(Some(&file), UPLOAD_URL, 7).expect("the plan builds");
+    let UploadData::Text(body) = &plan.initial_request.data else {
+        panic!("the start request carries JSON text");
+    };
+    assert_eq!(body, r#"{"file":{"display_name":"report.csv"}}"#);
+    assert_eq!(
+        plan.initial_request
+            .headers
+            .get("X-Goog-Upload-Header-Content-Type"),
+        Some(&String::from("text/csv"))
+    );
+    let UploadData::Bytes(bytes) = &plan.upload_request.data else {
+        panic!("the upload request carries bytes");
+    };
+    assert_eq!(bytes, b"a,b\n1,2\n");
+}
+
+#[test]
 fn create_plan_lets_extracted_headers_override_the_start_headers() {
     let file = file_data(
         Some("notes.txt"),
