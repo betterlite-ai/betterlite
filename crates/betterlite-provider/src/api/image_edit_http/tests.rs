@@ -92,10 +92,8 @@ async fn edit_json_and_unused_arguments() {
     let call = edit_call(Some("change"), None, &options, &litellm, None);
 
     let mut fixture = Fixture::new();
-    let outcome = fixture
-        .run(ClientKind::Sync, &deps, &call)
-        .await
-        .expect("the JSON edit succeeds");
+    let pending = fixture.run(ClientKind::Sync, &deps, &call);
+    let outcome = pending.await.expect("the JSON edit succeeds");
     assert_eq!(outcome.response, image_response());
     assert_eq!(source.calls(), vec![Some(false)]);
     assert_eq!(
@@ -267,7 +265,7 @@ async fn a_send_timeout_is_litellm_408() {
         .expect("the async message ends with its seconds");
     let taken: f64 = elapsed.parse().expect("the elapsed renders as a number");
     assert!(
-        taken >= 0.05,
+        taken >= 0.05_f64,
         "the message carries the waited time, got {taken}"
     );
 }
