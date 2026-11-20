@@ -1,5 +1,7 @@
 import asyncio
+import traceback
 from collections.abc import Coroutine
+from pathlib import Path
 from typing import Literal, NotRequired, Protocol, TypeAlias, TypedDict, cast
 
 import httpx
@@ -9,8 +11,7 @@ from litellm.fine_tuning import main as fine_tuning_main
 from litellm.integrations.gcs_bucket import gcs_bucket_mock_client
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
 from litellm.types.utils import LiteLLMFineTuningJob
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
-from pydantic import JsonValue as Json
+from pydantic import BaseModel, ConfigDict, Field, JsonValue as Json, TypeAdapter
 from typing_extensions import override
 
 from openai_chat import Failure, project_failure
@@ -171,11 +172,9 @@ def request_options(run: Run, api_base: str) -> CreateOptions:
 def invoke(run: Run, api_base: str) -> LiteLLMFineTuningJob:
     options = request_options(run, api_base)
     if run.is_async:
-        held: Coroutine[None, None, LiteLLMFineTuningJob] = acreate_fine_tuning_job(
-            **options
-        )
+        held: Coroutine[None, None, LiteLLMFineTuningJob] = acreate_fine_tuning_job(**options)
         return asyncio.run(held)
-    answer: CreateAnswer = create_fine_tuning_job(**options)
+    answer: CreateAnswer = create_fine_tuning_job(**options)  # pyright: ignore[reportAssignmentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L163
     if asyncio.iscoroutine(answer):
         return asyncio.run(answer)
     return TypeAdapter(LiteLLMFineTuningJob).validate_python(answer)
@@ -197,6 +196,8 @@ def run_one(run: Run, api_base: str) -> RunOutcome:
         job = TypeAdapter(JobView).validate_json(response.model_dump_json())
         failure = None
     finally:
+        Path(".git/betterlite/B1052/gate").mkdir(parents=True, exist_ok=True)  # temporary diagnostic
+        Path(".git/betterlite/B1052/gate/diagnostic.txt").write_text(traceback.format_exc())  # temporary diagnostic
         fine_tuning_main.vertex_fine_tuning_apis_instance.async_handler = previous
     return {"job": job, "failure": failure, "request_url": urls[0] if urls else None}
 
