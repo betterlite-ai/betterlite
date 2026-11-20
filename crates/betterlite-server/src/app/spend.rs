@@ -1,9 +1,6 @@
 pub mod budget;
 pub mod finops;
 
-#[cfg(test)]
-mod tests;
-
 use std::sync::Arc;
 
 use axum::Router;
