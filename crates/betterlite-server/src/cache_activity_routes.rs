@@ -26,7 +26,7 @@ use crate::tracing_routes::router::unauthenticated;
 
 use self::error::CacheActivityError;
 use self::model::CacheActivityResponse;
-use self::query::CacheActivityQuery;
+use self::query::{CacheActivityQuery, decode};
 use self::store::CacheActivityStore;
 
 pub const CACHE_ACTIVITY_PATH: &str = "/global/activity/cache_hits";
@@ -49,7 +49,7 @@ async fn cache_activity(
     if caller.is_none() {
         return unauthenticated();
     }
-    let requested = match CacheActivityQuery::decode(raw_query.as_deref()) {
+    let requested = match decode(raw_query.as_deref()) {
         Ok(requested) => requested,
         Err(parameters) => return CacheActivityError::MissingDates(parameters).into_response(),
     };
