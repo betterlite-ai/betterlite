@@ -30,7 +30,7 @@ async fn commit_team_resets(store: &PostgresStore, writes: &[ResetWrite]) -> Res
         || SpendResetBatch {
             store: store.clone(),
         },
-        async move |unit: &SpendResetUnitOfWork| -> Result<(), Infallible> {
+        async move |unit: &mut SpendResetUnitOfWork| -> Result<(), Infallible> {
             for write in writes {
                 unit.teams.queue_spend_reset(
                     &write.identifier,
