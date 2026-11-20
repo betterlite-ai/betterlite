@@ -26,8 +26,8 @@ fn rejects_an_unknown_input_field() {
     let input = serde_json::json!({
         "row": {"user_id": "user-1", "daily_spend": 1.0, "monthly_spend": 1.0, "baseline_spend": 0.0},
         "settings": {
-            "daily_spend_per_user_threshold": null,
-            "monthly_spend_per_user_threshold": null,
+            "daily_threshold": null,
+            "monthly_threshold": null,
             "spend_anomaly_multiplier": 3.0,
             "spend_anomaly_baseline_days": 7,
             "spend_anomaly_min_spend": 10.0,

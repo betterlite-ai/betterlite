@@ -8,8 +8,8 @@ call:
       monthly_spend: 25.0
       baseline_spend: 14.0
     settings:
-      daily_spend_per_user_threshold: null
-      monthly_spend_per_user_threshold: 25.0
+      daily_threshold: null
+      monthly_threshold: 25.0
       spend_anomaly_multiplier: 2.5
       spend_anomaly_baseline_days: 7
       spend_anomaly_min_spend: 5.0

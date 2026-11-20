@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use betterlite_db::postgres_store::errors::{DbError, backend};
 use betterlite_db::postgres_store::session::PostgresStore;
 use chrono::{Days, NaiveDate};
+use rust_decimal::Decimal;
 use tokio_postgres::Row;
 use tokio_postgres::types::{FromSql, ToSql};
 
@@ -26,6 +27,8 @@ pub enum UserSpendQueryError {
     Database(#[from] DbError),
     #[error("the user spend window starts before the calendar supports")]
     Window,
+    #[error("the {name} column holds a value betterlite cannot represent")]
+    Unrepresentable { name: &'static str },
 }
 
 pub struct PgUserSpendSource {
@@ -62,12 +65,28 @@ impl UserSpendSource for PgUserSpendSource {
     }
 }
 
+// a Postgres ::float can be NaN or an infinity, and Decimal::from_f64_retain holds neither
 fn decode(row: &Row) -> Result<UserSpendRow, UserSpendQueryError> {
+    let daily: f64 = column(row, "daily_spend")?;
+    let monthly: f64 = column(row, "monthly_spend")?;
+    let baseline: f64 = column(row, "baseline_spend")?;
     Ok(UserSpendRow {
         user_id: column(row, "user_id")?,
-        daily_spend: column(row, "daily_spend")?,
-        monthly_spend: column(row, "monthly_spend")?,
-        baseline_spend: column(row, "baseline_spend")?,
+        daily_spend: Decimal::from_f64_retain(daily).ok_or(
+            UserSpendQueryError::Unrepresentable {
+                name: "daily_spend",
+            },
+        )?,
+        monthly_spend: Decimal::from_f64_retain(monthly).ok_or(
+            UserSpendQueryError::Unrepresentable {
+                name: "monthly_spend",
+            },
+        )?,
+        baseline_spend: Decimal::from_f64_retain(baseline).ok_or(
+            UserSpendQueryError::Unrepresentable {
+                name: "baseline_spend",
+            },
+        )?,
     })
 }
 

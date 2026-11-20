@@ -18,8 +18,8 @@ class RowInput(TypedDict):
 
 
 class SettingsInput(TypedDict):
-    daily_spend_per_user_threshold: float | None
-    monthly_spend_per_user_threshold: float | None
+    daily_threshold: float | None
+    monthly_threshold: float | None
     spend_anomaly_multiplier: float
     spend_anomaly_baseline_days: int
     spend_anomaly_min_spend: float
@@ -38,8 +38,8 @@ ARGS: Final = TypeAdapter(SlackAlertingArgs)
 
 def settings_for(settings: SettingsInput) -> SlackAlertingArgs:
     values: dict[str, float | int | None] = {
-        "daily_spend_per_user_threshold": settings["daily_spend_per_user_threshold"],
-        "monthly_spend_per_user_threshold": settings["monthly_spend_per_user_threshold"],
+        "daily_spend_per_user_threshold": settings["daily_threshold"],
+        "monthly_spend_per_user_threshold": settings["monthly_threshold"],
         "spend_anomaly_multiplier": settings["spend_anomaly_multiplier"],
         "spend_anomaly_baseline_days": settings["spend_anomaly_baseline_days"],
         "spend_anomaly_min_spend": settings["spend_anomaly_min_spend"],

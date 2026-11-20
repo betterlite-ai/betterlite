@@ -195,9 +195,9 @@ pub(super) fn decimal(value: &str) -> Decimal {
 pub(super) fn row(user_id: &str, daily: f64, monthly: f64, baseline: f64) -> UserSpendRow {
     UserSpendRow {
         user_id: user_id.to_owned(),
-        daily_spend: daily,
-        monthly_spend: monthly,
-        baseline_spend: baseline,
+        daily_spend: Decimal::from_f64_retain(daily).unwrap(),
+        monthly_spend: Decimal::from_f64_retain(monthly).unwrap(),
+        baseline_spend: Decimal::from_f64_retain(baseline).unwrap(),
     }
 }
 
@@ -221,11 +221,10 @@ pub(super) fn args() -> SlackAlertingArgs {
     }
 }
 
-pub(super) fn service(
+pub(super) fn reporting(
     cache: FakeCache,
     sender: FakeSender,
     source: FakeSource,
-    clock: FakeClock,
 ) -> UserSpendAlerts<FakeCache, FakeSender, FakeSource, FakeClock> {
     UserSpendAlerts {
         alerting: Some(vec![AlertDestination::Slack]),
@@ -238,22 +237,9 @@ pub(super) fn service(
         cache,
         sender,
         source,
-        clock,
-    }
-}
-
-pub(super) fn reporting(
-    cache: FakeCache,
-    sender: FakeSender,
-    source: FakeSource,
-) -> UserSpendAlerts<FakeCache, FakeSender, FakeSource, FakeClock> {
-    service(
-        cache,
-        sender,
-        source,
-        FakeClock {
+        clock: FakeClock {
             local: date("1999-12-31"),
             utc: date("2026-01-15"),
         },
-    )
+    }
 }

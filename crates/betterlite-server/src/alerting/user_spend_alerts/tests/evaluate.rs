@@ -59,15 +59,24 @@ fn evaluate_daily_threshold_fires_at_equal_spend() {
 }
 
 #[rstest]
-#[case::below_the_threshold(Some("10"), 9.999)]
-#[case::no_threshold(None, 1_000.0)]
-fn evaluate_daily_threshold_skips_below_and_unset(
+#[case::daily_below(false, Some("10"), 9.999)]
+#[case::daily_unset(false, None, 1_000.0)]
+#[case::monthly_below(true, Some("25"), 24.999)]
+#[case::monthly_unset(true, None, 1_000.0)]
+fn evaluate_thresholds_skip_below_and_unset(
+    #[case] monthly: bool,
     #[case] threshold: Option<&str>,
-    #[case] daily: f64,
+    #[case] spend: f64,
 ) {
     let mut settings = args();
-    settings.daily_user_spend_threshold = threshold.map(decimal);
-    let events = evaluate(&row("user-1", daily, 0.0, 0.0), &settings, threshold_only());
+    let spend_row = if monthly {
+        settings.monthly_user_spend_threshold = threshold.map(decimal);
+        row("user-3", 0.0, spend, 0.0)
+    } else {
+        settings.daily_user_spend_threshold = threshold.map(decimal);
+        row("user-1", spend, 0.0, 0.0)
+    };
+    let events = evaluate(&spend_row, &settings, threshold_only());
     assert!(events.is_empty());
 }
 
@@ -88,23 +97,6 @@ fn evaluate_monthly_threshold_fires_at_equal_spend() {
         "user_spend_alert_monthly_user-3_2026-01"
     );
     assert_eq!(events[0].cache_ttl, 2_764_800);
-}
-
-#[rstest]
-#[case::below_the_threshold(Some("25"), 24.999)]
-#[case::no_threshold(None, 1_000.0)]
-fn evaluate_monthly_threshold_skips_below_and_unset(
-    #[case] threshold: Option<&str>,
-    #[case] monthly: f64,
-) {
-    let mut settings = args();
-    settings.monthly_user_spend_threshold = threshold.map(decimal);
-    let events = evaluate(
-        &row("user-3", 0.0, monthly, 0.0),
-        &settings,
-        threshold_only(),
-    );
-    assert!(events.is_empty());
 }
 
 #[test]
@@ -244,18 +236,16 @@ fn evaluate_uses_hours_in_a_day_for_the_event_ttls() {
 }
 
 #[rstest]
-#[case::fractional("2.5", "2.5x")]
-#[case::whole("3", "3.0x")]
+#[case::integer_text("3", "3.0")]
+#[case::fractional_text("2.5", "2.5")]
 fn evaluate_prints_the_multiplier_like_python(#[case] multiplier: &str, #[case] shown: &str) {
     let mut settings = args();
     settings.spend_anomaly_multiplier = decimal(multiplier);
     let events = evaluate(&row("user-1", 100.0, 100.0, 0.0), &settings, anomaly_only());
-    assert_eq!(events.len(), 1);
-    assert!(
-        events[0]
-            .message
-            .contains(&format!("spend above `{shown}` the daily average"))
+    let expected = format!(
+        "User Spend Anomaly Detected:\nUser: `user-1`\nSpend Today: `$100.00`\nDaily Average (last 7 days): `$0.00`\nTrigger: spend above `{shown}x` the daily average (minimum `$10.00`)"
     );
+    assert_eq!(events[0].message, expected);
 }
 
 #[test]
