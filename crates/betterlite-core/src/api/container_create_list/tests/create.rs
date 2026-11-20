@@ -371,10 +371,10 @@ fn create_extra_query_never_reaches_the_handler_or_the_logging() {
     fixture.create(&call).expect("the handler answers");
 
     let creates = fixture.handler.creates();
-    for name in ["api-version", "z"] {
-        assert!(creates[0].params.get(name).is_none());
-        assert!(creates[0].base.litellm_params.get(name).is_none());
-    }
+    assert!(creates[0].params.get("api-version").is_none());
+    assert!(creates[0].params.get("z").is_none());
+    assert!(creates[0].base.litellm_params.get("api-version").is_none());
+    assert!(creates[0].base.litellm_params.get("z").is_none());
     let state = fixture.state();
     assert!(state.litellm_params.get("api-version").is_none());
     assert!(state.litellm_params.get("z").is_none());
