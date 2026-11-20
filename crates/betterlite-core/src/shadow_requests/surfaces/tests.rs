@@ -1,9 +1,9 @@
 #![cfg(test)]
 
-use betterlite_models::full_model_metadata::parameters::SupportedParameterSource;
+use betterlite_models::full_model_metadata::parameters::SupportedParameterSource as _;
 use rstest::rstest;
 
-use crate::api::responses_chat_options::capabilities::CompletionBridgeProbe;
+use crate::api::responses_chat_options::capabilities::CompletionBridgeProbe as _;
 use crate::responses_bridge::BridgeRequest;
 use crate::shadow_requests::Object;
 use crate::shadow_requests::error::ShadowRequestError;

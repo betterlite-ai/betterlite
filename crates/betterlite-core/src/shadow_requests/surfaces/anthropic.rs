@@ -37,10 +37,10 @@ pub fn chat_request<'request>(
         }
         request.insert(MODEL.to_owned(), Json::Text(model(kwargs)?));
         request.insert(MESSAGES.to_owned(), Json::List(messages(kwargs)?));
-        let system = or_value(kwargs.get(SYSTEM), wire_body.get(SYSTEM))?
+        let system_value = or_value(kwargs.get(SYSTEM), wire_body.get(SYSTEM))?
             .filter(|value| !matches!(value, Json::Null))
             .cloned();
-        if let Some(system) = system {
+        if let Some(system) = system_value {
             request.insert(SYSTEM.to_owned(), system);
         }
         let encoded = serde_json::to_string(&request)?;

@@ -67,10 +67,10 @@ fn responses_params(kwargs: &Object) -> Result<ResponsesApiRequestParams, Shadow
             request.insert(name.clone(), value.clone());
         }
     }
-    let instructions = or_value(kwargs.get(INSTRUCTIONS), wire_body.get(INSTRUCTIONS))?
+    let instructions_value = or_value(kwargs.get(INSTRUCTIONS), wire_body.get(INSTRUCTIONS))?
         .filter(|value| !matches!(value, Json::Null))
         .cloned();
-    if let Some(instructions) = instructions {
+    if let Some(instructions) = instructions_value {
         request.insert(INSTRUCTIONS.to_owned(), instructions);
     }
     request.insert(

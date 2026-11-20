@@ -24,16 +24,16 @@ pub fn post_guardrail_kwargs(
     surface: Surface,
     snapshot: Option<&GuardrailRequestSnapshot>,
 ) -> Option<Object> {
-    let snapshot = snapshot?;
+    let verified_snapshot = snapshot?;
     let fingerprint = request_guardrail_fingerprint(request_metadata)?;
-    if snapshot.fingerprint != fingerprint {
+    if verified_snapshot.fingerprint != fingerprint {
         return None;
     }
     let messages_key = match surface {
         Surface::Responses => INPUT,
         Surface::Chat | Surface::AnthropicMessages => MESSAGES,
     };
-    let body = &snapshot.body;
+    let body = &verified_snapshot.body;
     let messages = body.get(messages_key).cloned().unwrap_or(Json::Null);
     let system = body.get(SYSTEM).cloned().unwrap_or(Json::Null);
     let instructions = body.get(INSTRUCTIONS).cloned().unwrap_or(Json::Null);
@@ -43,7 +43,10 @@ pub fn post_guardrail_kwargs(
     result.insert(INSTRUCTIONS.to_owned(), instructions);
     let mut parameters = object_or_empty(result.get(LITELLM_PARAMS));
     let mut request = object_or_empty(parameters.get(PROXY_SERVER_REQUEST));
-    request.insert(BODY.to_owned(), Json::Object(snapshot.body.clone()));
+    request.insert(
+        BODY.to_owned(),
+        Json::Object(verified_snapshot.body.clone()),
+    );
     parameters.insert(PROXY_SERVER_REQUEST.to_owned(), Json::Object(request));
     result.insert(LITELLM_PARAMS.to_owned(), Json::Object(parameters));
     Some(result)
