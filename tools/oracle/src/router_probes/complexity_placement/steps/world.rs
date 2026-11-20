@@ -13,10 +13,7 @@ use serde_json::Number;
 use super::super::wire::DeploymentInput;
 
 pub(super) fn tier(name: &str) -> Tier {
-    match ComplexityTier::built_in(name) {
-        Some(built_in) => Tier::BuiltIn(built_in),
-        None => Tier::Named(name.to_owned()),
-    }
+    ComplexityTier::built_in(name).map_or_else(|| Tier::Named(name.to_owned()), Tier::BuiltIn)
 }
 
 pub(super) fn tier_set(tiers: &IndexMap<String, WireTierPool>) -> TierSet {

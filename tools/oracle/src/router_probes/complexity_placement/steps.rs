@@ -82,19 +82,17 @@ impl ParamSupport for Probe<'_> {
         model: &str,
         custom_llm_provider: Option<&str>,
     ) -> Option<ResolvedProvider> {
-        match custom_llm_provider {
-            Some(provider) => Some(ResolvedProvider {
+        if let Some(provider) = custom_llm_provider {
+            return Some(ResolvedProvider {
                 model: model.to_owned(),
                 custom_llm_provider: provider.to_owned(),
-            }),
-            None => {
-                let (provider, bare) = model.split_once('/')?;
-                Some(ResolvedProvider {
-                    model: bare.to_owned(),
-                    custom_llm_provider: provider.to_owned(),
-                })
-            }
+            });
         }
+        let (provider, bare) = model.split_once('/')?;
+        Some(ResolvedProvider {
+            model: bare.to_owned(),
+            custom_llm_provider: provider.to_owned(),
+        })
     }
 
     fn supported_openai_params(
@@ -144,20 +142,9 @@ impl Probe<'_> {
         service: &TierPlacement<'_>,
         random: &mut InjectedRandom<'_>,
     ) -> Result<Output, OperationError> {
-        let no_provider = |_name: &str| -> Option<String> { None };
-        let lookup = CatalogLookup {
-            catalog: &self.deployments,
-            model_group_alias: &self.aliases,
-            routing_groups: &self.routing_groups,
-            inferred_provider: &no_provider,
-        };
-        let target = TierTarget {
-            lookup: &lookup,
-            support: self,
-        };
         let mut steps = Vec::with_capacity(self.input.steps.len());
         for step in &self.input.steps {
-            steps.push(step_output(service, &target, step, random).await?);
+            steps.push(step_output(self, service, step, random).await?);
         }
         if random.exhausted {
             return Err(OperationError::SamplesExhausted {
@@ -182,8 +169,8 @@ where
 
 // the hook's own order: the raw-name marker, the tier's model and pin, then the tier's params
 async fn step_output(
+    probe: &Probe<'_>,
     service: &TierPlacement<'_>,
-    target: &TierTarget<'_, Probe<'_>>,
     step: &StepInput,
     random: &mut InjectedRandom<'_>,
 ) -> Result<StepOutput, OperationError> {
@@ -199,8 +186,20 @@ async fn step_output(
         .place_tier(&choice, &mut kwargs, random)
         .await
         .map_err(invalid)?;
+    // the lookup's dyn Fn provider is not Send, so it is built only after the placement's await
+    let no_provider = |_name: &str| -> Option<String> { None };
+    let lookup = CatalogLookup {
+        catalog: &probe.deployments,
+        model_group_alias: &probe.aliases,
+        routing_groups: &probe.routing_groups,
+        inferred_provider: &no_provider,
+    };
+    let target = TierTarget {
+        lookup: &lookup,
+        support: probe,
+    };
     let pinned = pin_tier_params_onto_request(
-        target,
+        &target,
         &placed.model,
         &placed.params,
         &mut kwargs,
