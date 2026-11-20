@@ -46,8 +46,7 @@ pub(super) enum ConfigError {
     UnsupportedProvider,
 }
 
-// The adapter over betterlite-vertex that the handler calls: B3483's request transform, the native auth and the
-// transformation, plus the base config's error class that _handle_error raises
+// The adapter over betterlite-vertex: B3483's transform, the native auth, the transformation and the error class
 pub(super) struct NativeConfig {
     catalog: Arc<ModelCatalog>,
     provider: NativeProvider,
@@ -110,8 +109,11 @@ impl GenerateContentHttpConfig for NativeConfig {
                 stream: call.stream,
                 params: VertexParams {
                     project: call.params.vertex_project.as_deref(),
+                    ai_project: None,
                     location: call.params.vertex_location.as_deref(),
-                    ..VertexParams::default()
+                    ai_location: None,
+                    credentials: None,
+                    ai_credentials: None,
                 },
                 vertex: &vertex,
                 studio: &studio,

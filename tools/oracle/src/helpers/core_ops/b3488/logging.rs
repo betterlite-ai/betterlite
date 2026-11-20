@@ -25,10 +25,6 @@ impl LogSink for Sink {
     fn emit(&self, _record: LogRecord) {}
 }
 
-pub(super) fn clock() -> Result<DateTime<FixedOffset>, Box<HelperError>> {
-    DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00").or_value_error()
-}
-
 // The environment pre_call reads: no callbacks, no debug output and no redaction of the content the case carries
 pub(super) fn pre_post_env<'env>(
     redactor: &'env Redactor,

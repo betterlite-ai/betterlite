@@ -7,11 +7,11 @@ use betterlite_core::api::genai_http::service::{
 };
 use betterlite_core::api::vector_store_http_write::service::LogContext;
 use betterlite_core::genai_setup::params::GenerateContentLiteLLMParams;
-use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::catalog::BundledCatalog;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_vertex::google_native_content::response::GenerateContentResponse;
+use chrono::DateTime;
 use indexmap::IndexMap;
 use serde::Deserialize;
 use tokio::runtime::Builder;
@@ -20,8 +20,8 @@ use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use self::config::{ConfigError, NativeConfig};
-use self::logging::{Sink, clock, logging_state, pre_post_env};
-use self::report::{async_stream_report, helper_error, sync_stream_report, unary_report};
+use self::logging::{Sink, logging_state, pre_post_env};
+use self::report::{Run, helper_error};
 use self::wire::Source;
 
 mod config;
@@ -117,7 +117,8 @@ async fn call(input: &Input) -> HelperResult {
     };
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).or_value_error()?;
     let sink = Sink;
-    let env = pre_post_env(&redactor, &sink, clock()?);
+    let now = DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00").or_value_error()?;
+    let env = pre_post_env(&redactor, &sink, now);
     let mut state = logging_state(input, &redactor)?;
     let mut log = LogContext {
         state: &mut state,
@@ -127,28 +128,28 @@ async fn call(input: &Input) -> HelperResult {
         Mode::Sync => Outcome::Sync(generate_content(&deps, &request, &mut log).await),
         Mode::Async => Outcome::Async(async_generate_content(&deps, &request, &mut log).await),
     };
+    let run = Run {
+        source: &source,
+        state: &state,
+    };
     match outcome {
-        Outcome::Sync(result) => sync_report(result, &source, &state),
-        Outcome::Async(result) => async_report(result, &source, &state).await,
+        Outcome::Sync(result) => sync_report(result, &run),
+        Outcome::Async(result) => async_report(result, &run).await,
     }
 }
 
-fn sync_report(outcome: SyncResult, source: &Source, state: &LoggingState) -> HelperResult {
+fn sync_report(outcome: SyncResult, run: &Run<'_>) -> HelperResult {
     match outcome {
-        Ok(GenerateContentOutcome::Response(response)) => unary_report(source, state, &response),
-        Ok(GenerateContentOutcome::Stream(stream)) => sync_stream_report(source, state, *stream),
+        Ok(GenerateContentOutcome::Response(response)) => run.unary(&response),
+        Ok(GenerateContentOutcome::Stream(stream)) => run.sync_stream(*stream),
         Err(error) => Err(helper_error(error)),
     }
 }
 
-async fn async_report(outcome: AsyncResult, source: &Source, state: &LoggingState) -> HelperResult {
+async fn async_report(outcome: AsyncResult, run: &Run<'_>) -> HelperResult {
     match outcome {
-        Ok(AsyncGenerateContentOutcome::Response(response)) => {
-            unary_report(source, state, &response)
-        }
-        Ok(AsyncGenerateContentOutcome::Stream(stream)) => {
-            async_stream_report(source, state, *stream).await
-        }
+        Ok(AsyncGenerateContentOutcome::Response(response)) => run.unary(&response),
+        Ok(AsyncGenerateContentOutcome::Stream(stream)) => run.async_stream(*stream).await,
         Err(error) => Err(helper_error(error)),
     }
 }

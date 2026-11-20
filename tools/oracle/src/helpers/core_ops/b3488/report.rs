@@ -4,7 +4,9 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use betterlite_core::api::genai_http::error::GenAiHttpError;
 use betterlite_core::api::genai_http::service::{AsyncStream, SyncStream};
+use betterlite_core::google_genai::streaming::{AsyncGoogleGenAiStream, GoogleGenAiStream};
 use betterlite_logging::logging_state::LoggingState;
+use betterlite_models::decisions::HiddenParams;
 use betterlite_vertex::google_native_content::response::GenerateContentResponse;
 use serde_json::{Value, json};
 
@@ -13,69 +15,73 @@ use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::wire::Source;
 
-// The answer the Python helper builds from the same call: the recorded request, the pre-call log, the response or its
-// iterator's pre-stream metadata, the stored httpx reply, and one base64 event per chunk
-pub(super) fn unary_report(
-    source: &Source,
-    state: &LoggingState,
-    response: &GenerateContentResponse,
-) -> HelperResult {
-    Ok(json!({
-        "request": source.view()?,
-        "pre_call": pre_call_view(state)?,
-        "response": serde_json::to_value(response).or_value_error()?,
-        "httpx_response": http_view(state),
-        "hidden_params": Value::Null,
-        "events": Vec::<String>::new(),
-    }))
+// The answer the Python helper builds: the request, pre-call, response or iterator metadata, and base64 events
+pub(super) struct Run<'run> {
+    pub(super) source: &'run Source,
+    pub(super) state: &'run LoggingState,
 }
 
-// LiteLLM reads the pre-stream metadata before it hands the iterator out, so the answer reads it before consuming it
-pub(super) fn sync_stream_report(
-    source: &Source,
-    state: &LoggingState,
-    mut stream: SyncStream,
-) -> HelperResult {
-    let pre_call = pre_call_view(state)?;
-    let http = http_view(state);
-    let hidden = serde_json::to_value(&stream.metadata.hidden_params).or_value_error()?;
+impl Run<'_> {
+    pub(super) fn unary(&self, response: &GenerateContentResponse) -> HelperResult {
+        let pre_call = pre_call_view(self.state)?;
+        Ok(json!({
+            "request": self.source.view()?,
+            "pre_call": pre_call,
+            "response": serde_json::to_value(response).or_value_error()?,
+            "httpx_response": http_view(self.state),
+            "hidden_params": Value::Null,
+            "events": Vec::<String>::new(),
+        }))
+    }
+
+    pub(super) fn sync_stream(&self, mut stream: SyncStream) -> HelperResult {
+        let pre_call = pre_call_view(self.state)?;
+        let http = http_view(self.state);
+        let events = sync_events(&mut stream.iterator)?;
+        self.stream(pre_call, http, &stream.metadata.hidden_params, events)
+    }
+
+    pub(super) async fn async_stream(&self, mut stream: AsyncStream) -> HelperResult {
+        let pre_call = pre_call_view(self.state)?;
+        let http = http_view(self.state);
+        let events = async_events(&mut stream.iterator).await?;
+        self.stream(pre_call, http, &stream.metadata.hidden_params, events)
+    }
+
+    fn stream(
+        &self,
+        pre_call: Value,
+        http: Value,
+        hidden: &HiddenParams,
+        events: Vec<String>,
+    ) -> HelperResult {
+        Ok(json!({
+            "request": self.source.view()?,
+            "pre_call": pre_call,
+            "response": Value::Null,
+            "httpx_response": http,
+            "hidden_params": serde_json::to_value(hidden).or_value_error()?,
+            "events": events,
+        }))
+    }
+}
+
+fn sync_events(iterator: &mut GoogleGenAiStream) -> Result<Vec<String>, Box<HelperError>> {
     let mut events = Vec::new();
-    for event in stream.iterator.by_ref() {
+    for event in iterator.by_ref() {
         events.push(BASE64.encode(event.or_value_error()?));
     }
-    stream_report(source, pre_call, http, hidden, events)
+    Ok(events)
 }
 
-pub(super) async fn async_stream_report(
-    source: &Source,
-    state: &LoggingState,
-    mut stream: AsyncStream,
-) -> HelperResult {
-    let pre_call = pre_call_view(state)?;
-    let http = http_view(state);
-    let hidden = serde_json::to_value(&stream.metadata.hidden_params).or_value_error()?;
+async fn async_events(
+    iterator: &mut AsyncGoogleGenAiStream,
+) -> Result<Vec<String>, Box<HelperError>> {
     let mut events = Vec::new();
-    while let Some(event) = stream.iterator.next_event().await.or_value_error()? {
+    while let Some(event) = iterator.next_event().await.or_value_error()? {
         events.push(BASE64.encode(event));
     }
-    stream_report(source, pre_call, http, hidden, events)
-}
-
-fn stream_report(
-    source: &Source,
-    pre_call: Value,
-    http: Value,
-    hidden: Value,
-    events: Vec<String>,
-) -> HelperResult {
-    Ok(json!({
-        "request": source.view()?,
-        "pre_call": pre_call,
-        "response": Value::Null,
-        "httpx_response": http,
-        "hidden_params": hidden,
-        "events": events,
-    }))
+    Ok(events)
 }
 
 fn pre_call_view(state: &LoggingState) -> Result<Value, Box<HelperError>> {
