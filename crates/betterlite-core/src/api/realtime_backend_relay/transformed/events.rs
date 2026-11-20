@@ -8,17 +8,15 @@ use crate::api::realtime_guardrail_policy::guardrails_run_for_hooks;
 use crate::api::realtime_sender::RealtimeSender;
 use crate::api::realtime_session_state::TRANSCRIPTION_COMPLETED;
 use crate::api::realtime_session_state::store::SessionMessage;
-use crate::api::realtime_setup_buffer::SetupBuffer as _;
-use crate::api::realtime_setup_buffer::SetupFlush as _;
 
 use super::super::RESPONSE_CREATE;
 use super::super::RealtimeBackendRelay;
 use super::super::error::RealtimeRelayError;
 use super::super::event_type;
 use super::guardrails::run_guardrails;
-use super::send::maybe_disable_auto_response;
-use super::send::send_event;
-use super::send::send_to_backend;
+use super::send::Outbound;
+use super::send::send;
+use super::setup::complete_deferred_setup;
 
 // One transformed event: the session-ready flush and guardrail turns run before the plain store-and-forward
 pub(super) async fn provider_event<Config, CallbackError>(
@@ -62,8 +60,8 @@ where
             .state
             .store_message(SessionMessage::Text(&event_str))
             .map_err(RealtimeRelayError::State)?;
-        send_event(relay, &event, &event_str).await?;
-        maybe_disable_auto_response(relay).await?;
+        send(relay, Outbound::Event(&event, &event_str)).await?;
+        send(relay, Outbound::DisableAutoResponse).await?;
         return Ok(());
     }
     if event_type(&event) == Some(TRANSCRIPTION_COMPLETED) {
@@ -74,7 +72,7 @@ where
         .state
         .store_message(SessionMessage::Text(&event_str))
         .map_err(RealtimeRelayError::State)?;
-    send_event(relay, &event, &event_str).await
+    send(relay, Outbound::Event(&event, &event_str)).await
 }
 
 // A completed transcript is logged and forwarded before the guardrails see it, and only a clean conversational turn asks for a reply
@@ -106,54 +104,10 @@ where
         .store_message(SessionMessage::Text(event_str))
         .map_err(RealtimeRelayError::State)?;
     relay.state.capture_transcription_usage(fields);
-    send_event(relay, event, event_str).await?;
+    send(relay, Outbound::Event(event, event_str)).await?;
     let blocked = run_guardrails(relay, &transcript, item_id).await?;
     if !blocked && !relay.state.is_transcription_session.0 {
-        send_to_backend(relay, RESPONSE_CREATE).await?;
-    }
-    Ok(())
-}
-
-// LiteLLM drains the pre-setup buffer until it is empty or a send fails, and always clears the flushing flag afterwards
-async fn complete_deferred_setup<Config, CallbackError>(
-    relay: &mut RealtimeBackendRelay<'_, Config, CallbackError>,
-) -> Result<(), RealtimeRelayError<Config::Error, CallbackError>>
-where
-    Config: BaseRealtimeConfig,
-    CallbackError: Error + Send + 'static,
-{
-    if !relay.state.uses_deferred_backend_setup() || relay.state.setup.backend_setup_complete.0 {
-        return Ok(());
-    }
-    relay.state.setup.backend_setup_complete.0 = true;
-    relay.state.setup.flushing_pending_messages.0 = true;
-    let drained = drain_pending_until_setup(relay).await;
-    relay.state.setup.flushing_pending_messages.0 = false;
-    drained
-}
-
-async fn drain_pending_until_setup<Config, CallbackError>(
-    relay: &mut RealtimeBackendRelay<'_, Config, CallbackError>,
-) -> Result<(), RealtimeRelayError<Config::Error, CallbackError>>
-where
-    Config: BaseRealtimeConfig,
-    CallbackError: Error + Send + 'static,
-{
-    while !relay.state.setup.pending_messages_until_setup.is_empty() {
-        let flushed = {
-            let mut sender = RealtimeSender {
-                state: &mut *relay.state,
-                provider: relay.provider,
-                guardrails: &relay.callbacks,
-            };
-            sender
-                .flush_pending_messages()
-                .await
-                .map_err(RealtimeRelayError::SetupBuffer)?
-        };
-        if !flushed {
-            break;
-        }
+        send(relay, Outbound::Backend(RESPONSE_CREATE)).await?;
     }
     Ok(())
 }

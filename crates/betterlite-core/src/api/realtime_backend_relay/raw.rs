@@ -1,6 +1,5 @@
 use std::error::Error;
 
-use async_trait::async_trait;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
@@ -17,13 +16,17 @@ use crate::api::realtime_session_state::error::SessionStateError;
 use crate::api::realtime_session_state::records::LOGGING_FRAME_LIMITS;
 use crate::api::realtime_session_state::store::SessionMessage;
 
+mod store;
+
+use self::store::store_and_forward_raw;
 use super::RESPONSE_CREATE;
 use super::RealtimeBackendRelay;
 use super::error::RealtimeRelayError;
 use super::event_type;
 use super::send_client_text;
 use super::transformed::guardrails::run_guardrails;
-use super::transformed::send::send_to_backend;
+use super::transformed::send::Outbound;
+use super::transformed::send::send;
 
 // LiteLLM parses once and keeps only an object: non-JSON text, an array and a scalar all fall back to the raw frame
 #[must_use]
@@ -35,80 +38,39 @@ pub fn parse_backend_event(raw_response: &str) -> Option<Json> {
     }
 }
 
-#[async_trait]
-pub(crate) trait HandleRawBackendMessage<Config, CallbackError>
-where
-    Config: BaseRealtimeConfig,
-    CallbackError: Error + Send + 'static,
-{
-    async fn handle_raw_backend_message(
-        &mut self,
-        event: &Json,
-    ) -> Result<bool, RealtimeRelayError<Config::Error, CallbackError>>;
-}
-
-#[async_trait]
-impl<Config, CallbackError> HandleRawBackendMessage<Config, CallbackError>
-    for RealtimeBackendRelay<'_, Config, CallbackError>
-where
-    Config: BaseRealtimeConfig,
-    CallbackError: Error + Send + 'static,
-{
-    async fn handle_raw_backend_message(
-        &mut self,
-        event: &Json,
-    ) -> Result<bool, RealtimeRelayError<Config::Error, CallbackError>> {
-        let Json::Object(fields) = event else {
-            return Ok(false);
-        };
-        let kind = event_type(event);
-        self.state.detect_transcription_session(fields);
-        if kind == Some("session.created")
-            && guardrails_run_for_hooks(
-                &self.callbacks,
-                &self.state.request_data,
-                &TRANSCRIPTION_EVENT_HOOKS,
-            )
-            .map_err(RealtimeRelayError::Predicate)?
-        {
-            raw_session_created(self, fields).await?;
-            return Ok(true);
-        }
-        if kind == Some(TRANSCRIPTION_COMPLETED) {
-            raw_transcription_turn(self, fields).await?;
-            return Ok(true);
-        }
-        Ok(false)
-    }
-}
-
-// The client sees session.created first, then the disable update goes out on every such event without the one-time flag
-async fn raw_session_created<Config, CallbackError>(
+// LiteLLM forwards a session.created only when a transcription guardrail is configured, then injects the auto-response disable
+async fn handle_raw_backend_message<Config, CallbackError>(
     relay: &mut RealtimeBackendRelay<'_, Config, CallbackError>,
-    fields: &IndexMap<String, Json>,
-) -> Result<(), RealtimeRelayError<Config::Error, CallbackError>>
+    event: &Json,
+) -> Result<bool, RealtimeRelayError<Config::Error, CallbackError>>
 where
     Config: BaseRealtimeConfig,
     CallbackError: Error + Send + 'static,
 {
-    relay
-        .state
-        .store_message(SessionMessage::Record(fields))
-        .map_err(RealtimeRelayError::State)?;
-    let encoded = {
-        let sender = RealtimeSender {
-            state: &mut *relay.state,
-            provider: relay.provider,
-            guardrails: &relay.callbacks,
-        };
-        sender
-            .event_to_client_json(Json::Object(fields.clone()))
-            .map_err(RealtimeRelayError::Send)?
+    let Json::Object(fields) = event else {
+        return Ok(false);
     };
-    send_client_text(relay, &encoded).await?;
-    let message = disable_auto_response_message(relay.state.backend_uses_beta_protocol.0)
-        .map_err(|source| RealtimeRelayError::Send(RealtimeSenderError::Disable(source)))?;
-    send_to_backend(relay, &message).await
+    let kind = event_type(event);
+    relay.state.detect_transcription_session(fields);
+    if kind == Some("session.created")
+        && guardrails_run_for_hooks(
+            &relay.callbacks,
+            &relay.state.request_data,
+            &TRANSCRIPTION_EVENT_HOOKS,
+        )
+        .map_err(RealtimeRelayError::Predicate)?
+    {
+        store_and_forward_raw(relay, fields).await?;
+        let message = disable_auto_response_message(relay.state.backend_uses_beta_protocol.0)
+            .map_err(|source| RealtimeRelayError::Send(RealtimeSenderError::Disable(source)))?;
+        send(relay, Outbound::Backend(&message)).await?;
+        return Ok(true);
+    }
+    if kind == Some(TRANSCRIPTION_COMPLETED) {
+        raw_transcription_turn(relay, fields).await?;
+        return Ok(true);
+    }
+    Ok(false)
 }
 
 // A transcription-only session bills the usage and never runs guardrails or asks for an assistant turn
@@ -131,21 +93,7 @@ where
         | None => None,
     };
     relay.state.collect_backend_input(fields);
-    relay
-        .state
-        .store_message(SessionMessage::Record(fields))
-        .map_err(RealtimeRelayError::State)?;
-    let encoded = {
-        let sender = RealtimeSender {
-            state: &mut *relay.state,
-            provider: relay.provider,
-            guardrails: &relay.callbacks,
-        };
-        sender
-            .event_to_client_json(Json::Object(fields.clone()))
-            .map_err(RealtimeRelayError::Send)?
-    };
-    send_client_text(relay, &encoded).await?;
+    store_and_forward_raw(relay, fields).await?;
     if relay.state.is_transcription_session.0 {
         relay.state.capture_transcription_usage(fields);
         return Ok(());
@@ -154,7 +102,7 @@ where
     if blocked {
         return Ok(());
     }
-    send_to_backend(relay, RESPONSE_CREATE).await
+    send(relay, Outbound::Backend(RESPONSE_CREATE)).await
 }
 
 // Without a provider LiteLLM forwards the frame as-is, dropping only normalizer-rejected events, and beta clients get the translated form
@@ -180,7 +128,7 @@ where
     if dropped {
         return Ok(());
     }
-    if relay.handle_raw_backend_message(&event).await? {
+    if handle_raw_backend_message(relay, &event).await? {
         return Ok(());
     }
     let normalized = {

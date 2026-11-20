@@ -273,22 +273,6 @@ pub(super) struct ScriptedResponse {
     pub(super) session_configuration_request: Option<String>,
 }
 
-impl Default for ScriptedResponse {
-    fn default() -> Self {
-        Self {
-            fail: false,
-            response: Json::Null,
-            current_output_item_id: None,
-            current_response_id: None,
-            current_delta_chunks: None,
-            current_conversation_id: None,
-            current_item_chunks: None,
-            current_delta_type: None,
-            session_configuration_request: None,
-        }
-    }
-}
-
 impl ScriptedResponse {
     pub(super) fn new(response: Json) -> Self {
         Self {
@@ -336,13 +320,11 @@ impl ScriptedResponse {
 }
 
 pub(super) fn message_types(messages: &[IndexMap<String, Json>]) -> Vec<String> {
-    let mut types = Vec::new();
-    for record in messages {
-        if let Some(Json::Text(kind)) = record.get("type") {
-            types.push(kind.clone());
-        }
-    }
-    types
+    let frames: Vec<Json> = messages
+        .iter()
+        .map(|record| Json::Object(record.clone()))
+        .collect();
+    json_types(&frames)
 }
 
 pub(super) fn json_types(frames: &[Json]) -> Vec<String> {
@@ -833,12 +815,12 @@ impl Sockets {
     }
 
     fn backend(self, fixture: &Fixture) -> Option<Box<dyn RealtimeBackend>> {
-        match self {
-            Self::Both | Self::BackendOnly => Some(Box::new(MockBackend {
-                log: fixture.backend.clone(),
-            })),
-            Self::ClientOnly => None,
+        if self == Self::ClientOnly {
+            return None;
         }
+        Some(Box::new(MockBackend {
+            log: fixture.backend.clone(),
+        }))
     }
 }
 

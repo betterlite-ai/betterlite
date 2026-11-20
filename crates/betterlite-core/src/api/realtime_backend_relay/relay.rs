@@ -16,7 +16,7 @@ use super::raw::relay_raw_frame;
 use super::source::BackendRefusal;
 use super::source::RealtimeBackendSource;
 use super::source::RelayReceiveError;
-use super::transformed::ProviderConfigRelay as _;
+use super::transformed::handle_provider_config_message;
 
 pub const FAILURE_LOGGED_KEY: &str = "realtime_session_failure_logged";
 
@@ -100,11 +100,8 @@ where
         source: &mut (dyn RealtimeBackendSource + '_),
         cancellation: &CancellationToken,
     ) -> Result<BackendClose, RealtimeRelayError<Config::Error, CallbackError>> {
-        match self.relay_backend_messages(source, cancellation).await {
-            RelayExit::Closed(closed) => finish_closed(self, closed),
-            RelayExit::Cancelled => finish_cancelled(self),
-            RelayExit::Failed(error) => finish_failed(self, error),
-        }
+        let exit = self.relay_backend_messages(source, cancellation).await;
+        finish(self, exit)
     }
 
     fn backend_refused_session(&self, close: &BackendClose) -> bool {
@@ -177,7 +174,7 @@ where
         },
     };
     if let Some(provider) = relay.provider {
-        if let Err(error) = relay.handle_provider_config_message(provider, &text).await {
+        if let Err(error) = handle_provider_config_message(relay, provider, &text).await {
             tracing::error!("Error processing backend message, skipping: {error}");
         }
         return Ok(());
@@ -186,59 +183,48 @@ where
 }
 
 // LiteLLM logs every close at error level, flushes unbilled usage, then classifies a pre-frame non-1000 close as a refusal
-fn finish_closed<Config, CallbackError>(
+fn finish<Config, CallbackError>(
     relay: &mut RealtimeBackendRelay<'_, Config, CallbackError>,
-    closed: ConnectionClosed,
+    exit: RelayExit<Config::Error, CallbackError>,
 ) -> Result<BackendClose, RealtimeRelayError<Config::Error, CallbackError>>
 where
     Config: BaseRealtimeConfig,
     CallbackError: Error + Send + 'static,
 {
-    tracing::error!("Connection closed in backend to client send messages - {closed}");
-    let close = backend_close_from(&closed);
-    relay
-        .state
-        .flush_unbilled_usage()
-        .map_err(RealtimeRelayError::State)?;
-    if relay.backend_refused_session(&close) {
-        relay.log_backend_refusal(&closed);
-    } else {
-        let _logged = relay.state.log_messages();
+    match exit {
+        RelayExit::Closed(closed) => {
+            tracing::error!("Connection closed in backend to client send messages - {closed}");
+            let close = backend_close_from(&closed);
+            relay
+                .state
+                .flush_unbilled_usage()
+                .map_err(RealtimeRelayError::State)?;
+            if relay.backend_refused_session(&close) {
+                relay.log_backend_refusal(&closed);
+            } else {
+                let _logged = relay.state.log_messages();
+            }
+            Ok(close)
+        }
+        RelayExit::Cancelled => {
+            relay
+                .state
+                .flush_unbilled_usage()
+                .map_err(RealtimeRelayError::State)?;
+            let _logged = relay.state.log_messages();
+            Err(RealtimeRelayError::Cancelled)
+        }
+        RelayExit::Failed(error) => {
+            tracing::error!("Error in backend to client send messages: {error}");
+            relay
+                .state
+                .flush_unbilled_usage()
+                .map_err(RealtimeRelayError::State)?;
+            let _logged = relay.state.log_messages();
+            Ok(BackendClose {
+                code: 1011,
+                reason: String::from(PROXY_RELAY_FAILURE_REASON),
+            })
+        }
     }
-    Ok(close)
-}
-
-fn finish_cancelled<Config, CallbackError>(
-    relay: &mut RealtimeBackendRelay<'_, Config, CallbackError>,
-) -> Result<BackendClose, RealtimeRelayError<Config::Error, CallbackError>>
-where
-    Config: BaseRealtimeConfig,
-    CallbackError: Error + Send + 'static,
-{
-    relay
-        .state
-        .flush_unbilled_usage()
-        .map_err(RealtimeRelayError::State)?;
-    let _logged = relay.state.log_messages();
-    Err(RealtimeRelayError::Cancelled)
-}
-
-fn finish_failed<Config, CallbackError>(
-    relay: &mut RealtimeBackendRelay<'_, Config, CallbackError>,
-    error: RealtimeRelayError<Config::Error, CallbackError>,
-) -> Result<BackendClose, RealtimeRelayError<Config::Error, CallbackError>>
-where
-    Config: BaseRealtimeConfig,
-    CallbackError: Error + Send + 'static,
-{
-    tracing::error!("Error in backend to client send messages: {error}");
-    relay
-        .state
-        .flush_unbilled_usage()
-        .map_err(RealtimeRelayError::State)?;
-    let _logged = relay.state.log_messages();
-    Ok(BackendClose {
-        code: 1011,
-        reason: String::from(PROXY_RELAY_FAILURE_REASON),
-    })
 }

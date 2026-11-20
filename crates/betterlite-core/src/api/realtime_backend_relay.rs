@@ -15,6 +15,7 @@ use crate::api::realtime_contracts::config::BaseRealtimeConfig;
 use crate::api::realtime_guardrail_policy::RealtimeGuardrailCallback;
 use crate::api::realtime_guardrails::callback::RealtimeGuardrail;
 use crate::api::realtime_session_state::RealtimeStreaming;
+use crate::api::realtime_session_state::records;
 
 use error::RealtimeRelayError;
 use source::RealtimeFailureDispatch;
@@ -67,14 +68,8 @@ where
 
 // LiteLLM reads the type only from an object event and treats every other shape as untyped
 pub(crate) fn event_type(event: &Json) -> Option<&str> {
-    match event {
-        Json::Object(fields) => match fields.get("type") {
-            Some(Json::Text(kind)) => Some(kind.as_str()),
-            Some(
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_),
-            )
-            | None => None,
-        },
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
-    }
+    let Json::Object(fields) = event else {
+        return None;
+    };
+    records::event_type(fields)
 }
