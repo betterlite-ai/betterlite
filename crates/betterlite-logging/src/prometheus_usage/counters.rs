@@ -9,7 +9,7 @@ use crate::prometheus_helpers::bounded_series_tracker::{
     BoundedPrometheusSeriesTracker, RemovableMetric, SeriesLimits,
 };
 use crate::prometheus_label_projection::label_factory_context::PrometheusLabelFactoryContext;
-use crate::prometheus_label_projection::prometheus_label_factory::LabelSource;
+use crate::prometheus_label_projection::prometheus_label_factory::{LabelSource, ProjectedLabels};
 use crate::prometheus_label_schema::PrometheusLabelSettings;
 
 use super::error::PrometheusUsageError;
@@ -18,7 +18,7 @@ use super::metric::UsageMetric;
 // prometheus_client renders every label value with str(), and Python renders None as "None"
 pub(super) const MISSING_LABEL_VALUE: &str = "None";
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct UsageLabels<'labels> {
     pub values: &'labels UserApiKeyLabelValues,
     pub context: &'labels PrometheusLabelFactoryContext,
@@ -39,7 +39,7 @@ pub trait UsageCounters {
         labels: UsageLabels<'_>,
         amount: MetricValue,
         now: Instant,
-    ) -> Result<(), PrometheusUsageError<Self::Counter::Error>> {
+    ) -> Result<(), PrometheusUsageError<<Self::Counter as RemovableMetric>::Error>> {
         if let MetricValue::Finite(amount) = amount
             && amount < Decimal::ZERO
         {
@@ -61,4 +61,16 @@ pub trait UsageCounters {
         )?;
         Ok(())
     }
+}
+
+pub(super) fn label_pairs(labels: &ProjectedLabels) -> Vec<(&str, &str)> {
+    labels
+        .iter()
+        .map(|(name, value)| {
+            (
+                name.as_str(),
+                value.as_deref().unwrap_or(MISSING_LABEL_VALUE),
+            )
+        })
+        .collect()
 }

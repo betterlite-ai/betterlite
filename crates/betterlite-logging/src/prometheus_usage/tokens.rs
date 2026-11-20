@@ -9,13 +9,17 @@ use super::metric::UsageMetric;
 use super::sparse::{SparseValue, inc_sparse_usage_counters};
 use super::usage_object::{object, resolve_cache_write_tokens};
 use crate::fields::payload::StandardLoggingPayload;
+use crate::prometheus_helpers::bounded_series_tracker::RemovableMetric;
 
-pub fn increment_token_metrics<C: UsageCounters>(
+pub fn increment_token_metrics<C>(
     counters: &C,
     payload: &StandardLoggingPayload,
     labels: UsageLabels<'_>,
     now: Instant,
-) -> Result<(), PrometheusUsageError<C::Counter::Error>> {
+) -> Result<(), PrometheusUsageError<<C::Counter as RemovableMetric>::Error>>
+where
+    C: UsageCounters,
+{
     counters.inc(
         UsageMetric::TotalTokens,
         labels,
@@ -37,12 +41,15 @@ pub fn increment_token_metrics<C: UsageCounters>(
     increment_token_detail_metrics(counters, payload, labels, now)
 }
 
-pub fn increment_token_detail_metrics<C: UsageCounters>(
+pub fn increment_token_detail_metrics<C>(
     counters: &C,
     payload: &StandardLoggingPayload,
     labels: UsageLabels<'_>,
     now: Instant,
-) -> Result<(), PrometheusUsageError<C::Counter::Error>> {
+) -> Result<(), PrometheusUsageError<<C::Counter as RemovableMetric>::Error>>
+where
+    C: UsageCounters,
+{
     let Some(usage) = object(payload.metadata.usage_object.as_ref()) else {
         return Ok(());
     };

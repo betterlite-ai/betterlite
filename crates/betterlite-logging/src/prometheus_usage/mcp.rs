@@ -12,27 +12,25 @@ use super::metric::UsageMetric;
 use super::usage_object::object;
 use crate::fields::payload::StandardLoggingPayload;
 use crate::prometheus::failure::text_field;
+use crate::prometheus_helpers::bounded_series_tracker::RemovableMetric;
 use crate::prometheus_label_projection::label_factory_context::PrometheusLabelFactoryContext;
 use crate::prometheus_label_projection::prometheus_label_factory::LabelFactoryError;
 use betterlite_models::decisions::Json;
 
-pub fn increment_mcp_tool_calls<C: UsageCounters>(
+pub fn increment_mcp_tool_calls<C>(
     counters: &C,
     payload: &StandardLoggingPayload,
     labels: UsageLabels<'_>,
     response_cost: Decimal,
     now: Instant,
-) -> Result<(), PrometheusUsageError<C::Counter::Error>> {
+) -> Result<(), PrometheusUsageError<<C::Counter as RemovableMetric>::Error>>
+where
+    C: UsageCounters,
+{
     let Some(metadata) = object(payload.metadata.mcp_tool_call_metadata.as_ref()) else {
         return Ok(());
     };
-    let values = mcp_values(metadata, labels.values);
-    let context = PrometheusLabelFactoryContext::with_resolver(
-        &values,
-        labels.settings,
-        Arc::clone(&labels.context.resolver),
-    )
-    .map_err(LabelFactoryError::from)?;
+    let (values, context) = mcp_label_context(metadata, labels)?;
     let mcp_labels = UsageLabels {
         values: &values,
         context: &context,
@@ -53,6 +51,20 @@ pub fn increment_mcp_tool_calls<C: UsageCounters>(
         )?;
     }
     Ok(())
+}
+
+fn mcp_label_context(
+    metadata: &IndexMap<String, Json>,
+    labels: UsageLabels<'_>,
+) -> Result<(UserApiKeyLabelValues, PrometheusLabelFactoryContext), LabelFactoryError> {
+    let values = mcp_values(metadata, labels.values);
+    let context = PrometheusLabelFactoryContext::with_resolver(
+        &values,
+        labels.settings,
+        Arc::clone(&labels.context.resolver),
+    )
+    .map_err(LabelFactoryError::from)?;
+    Ok((values, context))
 }
 
 fn mcp_values(

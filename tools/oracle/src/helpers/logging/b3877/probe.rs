@@ -4,7 +4,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 use betterlite_logging::prometheus_helpers::bounded_series_tracker::{
     BoundedPrometheusSeriesTracker, ChildRemoval, RemovableMetric, SeriesLimits,
 };
-use betterlite_logging::prometheus_usage::{UsageCounters, UsageMetric};
+use betterlite_logging::prometheus_usage::counters::UsageCounters;
+use betterlite_logging::prometheus_usage::metric::UsageMetric;
 use betterlite_prometheus::collector_factory::collector::{Collector, MetricUpdate, MetricValue};
 
 #[derive(Debug, thiserror::Error)]

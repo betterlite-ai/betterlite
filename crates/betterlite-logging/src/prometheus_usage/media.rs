@@ -6,13 +6,17 @@ use super::metric::UsageMetric;
 use super::sparse::{SparseValue, inc_sparse_usage_counters};
 use super::usage_object::object;
 use crate::fields::payload::StandardLoggingPayload;
+use crate::prometheus_helpers::bounded_series_tracker::RemovableMetric;
 
-pub fn increment_media_metrics<C: UsageCounters>(
+pub fn increment_media_metrics<C>(
     counters: &C,
     payload: &StandardLoggingPayload,
     labels: UsageLabels<'_>,
     now: Instant,
-) -> Result<(), PrometheusUsageError<C::Counter::Error>> {
+) -> Result<(), PrometheusUsageError<<C::Counter as RemovableMetric>::Error>>
+where
+    C: UsageCounters,
+{
     let Some(usage) = object(payload.metadata.usage_object.as_ref()) else {
         return Ok(());
     };

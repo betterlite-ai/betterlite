@@ -4,9 +4,16 @@ use std::time::Instant;
 use betterlite_logging::end_user::EndUserCostTrackingSettings;
 use betterlite_logging::prometheus_label_projection::label_factory_context::PrometheusLabelFactoryContext;
 use betterlite_logging::prometheus_label_schema::PrometheusLabelSettings;
-use betterlite_logging::prometheus_usage::{
-    UsageLabels, increment_cache_metrics, increment_media_metrics, increment_request_and_spend,
-    increment_token_detail_metrics, increment_token_metrics, increment_zero_cost_requests,
+use betterlite_logging::prometheus_usage::cache::increment_cache_metrics;
+use betterlite_logging::prometheus_usage::counters::UsageLabels;
+use betterlite_logging::prometheus_usage::media::increment_media_metrics;
+use betterlite_logging::prometheus_usage::request_spend::{
+    increment_request_and_spend, increment_zero_cost_requests,
+};
+use betterlite_logging::prometheus_usage::tokens::{
+    increment_token_detail_metrics, increment_token_metrics,
+};
+use betterlite_logging::prometheus_usage::usage_object::{
     resolve_cache_write_tokens, resolve_provider_cache_tokens,
 };
 use betterlite_models::decisions::Json;

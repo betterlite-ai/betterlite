@@ -1,25 +1,29 @@
 use std::time::Instant;
 
 use betterlite_models::zero_cost::ZeroCostDiagnostic;
-use betterlite_prometheus::collector_factory::collector::MetricValue;
+use betterlite_prometheus::collector_factory::collector::{Collector as _, MetricValue};
 use betterlite_prometheus::label_names_catalog::ZERO_COST_REASON_LABEL;
 use rust_decimal::Decimal;
 
+use crate::prometheus_helpers::bounded_series_tracker::RemovableMetric;
 use crate::prometheus_label_projection::prometheus_label_factory::{
-    LabelSource, ProjectedLabels, prometheus_label_factory,
+    LabelSource, prometheus_label_factory,
 };
 
-use super::counters::{MISSING_LABEL_VALUE, UsageCounters, UsageLabels};
+use super::counters::{UsageCounters, UsageLabels, label_pairs};
 use super::error::PrometheusUsageError;
 use super::metric::UsageMetric;
 use crate::fields::payload::StandardLoggingPayload;
 
-pub fn increment_request_and_spend<C: UsageCounters>(
+pub fn increment_request_and_spend<C>(
     counters: &C,
     payload: &StandardLoggingPayload,
     labels: UsageLabels<'_>,
     now: Instant,
-) -> Result<(), PrometheusUsageError<C::Counter::Error>> {
+) -> Result<(), PrometheusUsageError<<C::Counter as RemovableMetric>::Error>>
+where
+    C: UsageCounters,
+{
     counters.inc(
         UsageMetric::Requests,
         labels,
@@ -34,11 +38,14 @@ pub fn increment_request_and_spend<C: UsageCounters>(
     )
 }
 
-pub fn increment_zero_cost_requests<C: UsageCounters>(
+pub fn increment_zero_cost_requests<C>(
     counters: &C,
     diagnostic: Option<&ZeroCostDiagnostic>,
     labels: UsageLabels<'_>,
-) -> Result<(), PrometheusUsageError<C::Counter::Error>> {
+) -> Result<(), PrometheusUsageError<<C::Counter as RemovableMetric>::Error>>
+where
+    C: UsageCounters,
+{
     let Some(diagnostic) = diagnostic else {
         return Ok(());
     };
@@ -63,16 +70,4 @@ pub fn increment_zero_cost_requests<C: UsageCounters>(
         .labels(&pairs)
         .inc(MetricValue::Finite(Decimal::ONE));
     Ok(())
-}
-
-fn label_pairs(labels: &ProjectedLabels) -> Vec<(&str, &str)> {
-    labels
-        .iter()
-        .map(|(name, value)| {
-            (
-                name.as_str(),
-                value.as_deref().unwrap_or(MISSING_LABEL_VALUE),
-            )
-        })
-        .collect()
 }

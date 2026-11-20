@@ -8,6 +8,7 @@ use super::counters::{UsageCounters, UsageLabels};
 use super::error::PrometheusUsageError;
 use super::metric::UsageMetric;
 use super::usage_object::positive_value;
+use crate::prometheus_helpers::bounded_series_tracker::RemovableMetric;
 
 #[derive(Clone, Copy, Debug)]
 pub enum SparseValue<'value> {
@@ -27,12 +28,15 @@ impl SparseValue<'_> {
     }
 }
 
-pub fn inc_sparse_usage_counters<C: UsageCounters>(
+pub fn inc_sparse_usage_counters<C>(
     counters: &C,
     entries: &[(UsageMetric, Option<SparseValue<'_>>)],
     labels: UsageLabels<'_>,
     now: Instant,
-) -> Result<(), PrometheusUsageError<C::Counter::Error>> {
+) -> Result<(), PrometheusUsageError<<C::Counter as RemovableMetric>::Error>>
+where
+    C: UsageCounters,
+{
     for (metric, value) in entries {
         let Some(amount) = value.and_then(SparseValue::amount) else {
             continue;
