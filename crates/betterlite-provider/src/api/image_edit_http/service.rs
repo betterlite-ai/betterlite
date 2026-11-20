@@ -67,27 +67,12 @@ pub struct ImageEditOutcome {
     pub provider_headers: ProviderHeaderProjection,
 }
 
-pub(super) async fn run<C, S>(
+// The front half both handlers share: client selection, the environment headers and their explicit override, and the resolved URL the transform runs against
+pub(super) fn prepare<'borrow, 'call, C, S>(
     mode: ClientKind,
-    deps: &ImageEditDeps<'_, C, S>,
-    call: &ImageEditCall<'_>,
-    log: &mut LogContext<'_, '_>,
-) -> Result<ImageEditOutcome, ImageEditHttpError<C::Error>>
-where
-    C: BaseImageEditConfig,
-    S: ClientSource,
-{
-    let (client, request) = prepare(mode, deps, call, log).await?;
-    send(deps.config, &client, request, mode, call.model).await
-}
-
-// Client selection, the environment headers and their explicit override, the resolved URL before the transform, the finalizer over its exact output, the pre-call, then the wire request
-async fn prepare<C, S>(
-    mode: ClientKind,
-    deps: &ImageEditDeps<'_, C, S>,
-    call: &ImageEditCall<'_>,
-    log: &mut LogContext<'_, '_>,
-) -> Result<(S::Client, WriteRequest), ImageEditHttpError<C::Error>>
+    deps: &'borrow ImageEditDeps<'borrow, C, S>,
+    call: &'borrow ImageEditCall<'call>,
+) -> Result<Prepared<'borrow, 'call, C, S::Client>, ImageEditHttpError<C::Error>>
 where
     C: BaseImageEditConfig,
     S: ClientSource,
@@ -102,35 +87,82 @@ where
     let resolved = deps
         .config
         .get_complete_url(call.model, fields.api_base.as_deref(), call.litellm_params)
-        .map_err(|source| ImageEditHttpError::Config(source))?;
-    let (data, files) = transform(deps.config, mode, call, &headers).await?;
-    let finalized = deps
-        .config
-        .finalize_image_edit_request_data(data, &resolved);
-    let logged = Logged {
-        prompt: call.prompt,
-        api_base: &resolved,
-        headers: &headers,
-        data: &finalized,
-        files: &files,
-    };
-    request::log_pre_call(logged, mode, log)?;
-    let body = if deps.config.use_multipart_form_data() {
-        RequestBody::Multipart {
-            boundary: Uuid::new_v4().to_string(),
-            parts: request::multipart_parts(&finalized, &files)?,
+        .map_err(ImageEditHttpError::Config)?;
+    Ok(Prepared {
+        config: deps.config,
+        call,
+        client,
+        headers,
+        resolved,
+        mode,
+    })
+}
+
+// What a handler holds after preparing: the chosen client, the request's headers and resolved URL, and the mode that picks the logging payload and the timeout message
+pub(super) struct Prepared<'borrow, 'call, C: BaseImageEditConfig, Client> {
+    config: &'borrow C,
+    call: &'borrow ImageEditCall<'call>,
+    client: Client,
+    headers: ImageHeaders,
+    resolved: String,
+    mode: ClientKind,
+}
+
+impl<C: BaseImageEditConfig, Client: WriteTransport> Prepared<'_, '_, C, Client> {
+    // The transform's input: the handler's fields and the headers the environment hook completed
+    pub(super) fn request(&self) -> ImageEditRequest<'_> {
+        ImageEditRequest {
+            model: self.call.model,
+            prompt: self.call.prompt,
+            image: self.call.image,
+            optional_params: self.call.optional_params.clone(),
+            litellm_params: self.call.litellm_params,
+            headers: self.headers.clone(),
         }
-    } else {
-        RequestBody::Json(serde_json::to_vec(&finalized).map_err(RequestError::Encode)?)
-    };
-    let request = WriteRequest {
-        method: Method::POST,
-        url: request::endpoint(&resolved)?,
-        headers: request::wire_headers(&headers)?,
-        body,
-        timeout: Some(call.timeout),
-    };
-    Ok((client, request))
+    }
+
+    // The finalizer over the transform's exact output, the pre-call, the wire request, then the send and the reply's transformation
+    pub(super) async fn finish(
+        self,
+        transformed: Result<(ImageParams, ImageFiles), C::Error>,
+        log: &mut LogContext<'_, '_>,
+    ) -> Result<ImageEditOutcome, ImageEditHttpError<C::Error>> {
+        let (data, files) = transformed.map_err(ImageEditHttpError::Config)?;
+        let finalized = self
+            .config
+            .finalize_image_edit_request_data(data, &self.resolved);
+        let logged = Logged {
+            prompt: self.call.prompt,
+            api_base: &self.resolved,
+            headers: &self.headers,
+            data: &finalized,
+            files: &files,
+        };
+        request::log_pre_call(logged, self.mode, log)?;
+        let body = if self.config.use_multipart_form_data() {
+            RequestBody::Multipart {
+                boundary: Uuid::new_v4().to_string(),
+                parts: request::multipart_parts(&finalized, &files)?,
+            }
+        } else {
+            RequestBody::Json(serde_json::to_vec(&finalized).map_err(RequestError::Encode)?)
+        };
+        let request = WriteRequest {
+            method: Method::POST,
+            url: request::endpoint(&self.resolved)?,
+            headers: request::wire_headers(&self.headers)?,
+            body,
+            timeout: Some(self.call.timeout),
+        };
+        send(
+            self.config,
+            &self.client,
+            request,
+            self.mode,
+            self.call.model,
+        )
+        .await
+    }
 }
 
 // The environment hook completes the caller's own headers, and the explicit map overwrites what it returns
@@ -148,28 +180,6 @@ fn environment_headers<C: BaseImageEditConfig>(
         api_base: fields.api_base.as_deref(),
     });
     request::merge(validated, call.extra_headers)
-}
-
-// The mode picks the transform: the sync hook or the awaited async one over the same request
-async fn transform<C: BaseImageEditConfig>(
-    config: &C,
-    mode: ClientKind,
-    call: &ImageEditCall<'_>,
-    headers: &ImageHeaders,
-) -> Result<(ImageParams, ImageFiles), ImageEditHttpError<C::Error>> {
-    let edit = ImageEditRequest {
-        model: call.model,
-        prompt: call.prompt,
-        image: call.image,
-        optional_params: call.optional_params.clone(),
-        litellm_params: call.litellm_params,
-        headers: headers.clone(),
-    };
-    let transformed = match mode {
-        ClientKind::Sync => config.transform_image_edit_request(edit),
-        ClientKind::Asynchronous => config.async_transform_image_edit_request(edit).await,
-    };
-    transformed.map_err(|source| ImageEditHttpError::Config(source))
 }
 
 // One send, no retry: a transport failure becomes a provider error, and a status of 400 or more becomes one too
@@ -213,7 +223,7 @@ where
             model,
             raw_response: &raw,
         })
-        .map_err(|source| ImageEditHttpError::Config(source))?;
+        .map_err(ImageEditHttpError::Config)?;
     let provider_headers = set_provider_response_headers(
         &AdditionalHeaders::default(),
         &facts::provider_headers(&answer.headers),

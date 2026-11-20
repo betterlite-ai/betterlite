@@ -134,6 +134,7 @@ impl BaseImageEditConfig for FixtureConfig {
         Ok(format!("{base}/images/edits"))
     }
 
+    // ast-grep-ignore: no-long-names
     fn finalize_image_edit_request_data(
         &self,
         mut data: ImageParams,

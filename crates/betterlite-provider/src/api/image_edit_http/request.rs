@@ -42,25 +42,26 @@ pub(super) fn fields(params: &ImageParams) -> Result<Fields, RequestError> {
 
 // The header map the environment hook is asked to complete: only the caller's own extra_headers entries
 pub(super) fn caller_headers(optional: &ImageParams) -> Result<ImageHeaders, RequestError> {
+    let mut headers = ImageHeaders::new();
     match optional.get("extra_headers") {
-        None | Some(Json::Null) => Ok(ImageHeaders::new()),
-        Some(Json::Object(entries)) => entries
-            .iter()
-            .map(|(name, value)| match value {
-                Json::Text(text) => Ok((name.clone(), text.clone())),
-                Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-                    Err(RequestError::FieldType {
+        None | Some(Json::Null) => return Ok(headers),
+        Some(Json::Object(entries)) => {
+            for (name, value) in entries {
+                let Json::Text(text) = value else {
+                    return Err(RequestError::FieldType {
                         field: String::from("optional_params.extra_headers"),
-                    })
-                }
-            })
-            .collect(),
+                    });
+                };
+                headers.insert(name.clone(), text.clone());
+            }
+        }
         Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            Err(RequestError::FieldType {
+            return Err(RequestError::FieldType {
                 field: String::from("optional_params.extra_headers"),
-            })
+            });
         }
     }
+    Ok(headers)
 }
 
 pub(super) fn merge(mut validated: ImageHeaders, explicit: Option<&ImageHeaders>) -> ImageHeaders {
@@ -73,28 +74,28 @@ pub(super) fn merge(mut validated: ImageHeaders, explicit: Option<&ImageHeaders>
 }
 
 pub(super) fn endpoint(resolved: &str) -> Result<Url, RequestError> {
-    let url = resolved.to_owned();
-    Url::parse(resolved).map_err(|source| RequestError::Url { url, source })
+    Url::parse(resolved).map_err(|source| RequestError::Url {
+        url: resolved.to_owned(),
+        source,
+    })
 }
 
 pub(super) fn wire_headers(headers: &ImageHeaders) -> Result<HeaderMap, RequestError> {
-    headers
-        .iter()
-        .map(|(name, value)| {
-            let header_name = HeaderName::from_bytes(name.as_bytes()).map_err(|source| {
-                RequestError::HeaderName {
-                    name: name.clone(),
-                    source,
-                }
+    let mut map = HeaderMap::new();
+    for (name, value) in headers {
+        let header_name =
+            HeaderName::from_bytes(name.as_bytes()).map_err(|source| RequestError::HeaderName {
+                name: name.clone(),
+                source,
             })?;
-            let header_value =
-                HeaderValue::from_str(value).map_err(|source| RequestError::HeaderValue {
-                    name: name.clone(),
-                    source,
-                })?;
-            Ok((header_name, header_value))
-        })
-        .collect()
+        let header_value =
+            HeaderValue::from_str(value).map_err(|source| RequestError::HeaderValue {
+                name: name.clone(),
+                source,
+            })?;
+        map.insert(header_name, header_value);
+    }
+    Ok(map)
 }
 
 // The finalized data as form fields, then the transform's files; a list repeats its field, and a nested value has no form spelling
@@ -197,23 +198,29 @@ fn file_mapping(files: &ImageFiles) -> IndexMap<String, Json> {
     let mut mapping = IndexMap::new();
     for (name, file) in files {
         let mut record = IndexMap::new();
-        let content = std::str::from_utf8(&file.content);
         record.insert(
             String::from("filename"),
-            text_or_null(file.filename.as_deref()),
+            file.filename
+                .as_deref()
+                .map_or(Json::Null, |filename| Json::Text(filename.to_owned())),
         );
-        record.insert(String::from("content"), text_or_null(content));
+        record.insert(
+            String::from("content"),
+            std::str::from_utf8(&file.content)
+                .ok()
+                .map_or(Json::Null, |content| Json::Text(content.to_owned())),
+        );
         record.insert(
             String::from("content_type"),
-            text_or_null(file.content_type.as_deref()),
+            file.content_type
+                .as_deref()
+                .map_or(Json::Null, |content_type| {
+                    Json::Text(content_type.to_owned())
+                }),
         );
         mapping.insert(name.clone(), Json::Object(record));
     }
     mapping
-}
-
-fn text_or_null(value: Option<&str>) -> Json {
-    value.map_or(Json::Null, |text| Json::Text(text.to_owned()))
 }
 
 fn text(params: &ImageParams, name: &str) -> Result<Option<String>, RequestError> {
@@ -229,10 +236,13 @@ fn text(params: &ImageParams, name: &str) -> Result<Option<String>, RequestError
 }
 
 fn flag(params: &ImageParams) -> Result<Option<bool>, RequestError> {
-    match params.get("ssl_verify") {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Bool(verify)) => Ok(Some(*verify)),
-        Some(Json::Text(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+    let Some(value) = params.get("ssl_verify") else {
+        return Ok(None);
+    };
+    match value {
+        Json::Null => Ok(None),
+        Json::Bool(verify) => Ok(Some(*verify)),
+        Json::Text(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
             Err(RequestError::FieldType {
                 field: String::from("litellm_params.ssl_verify"),
             })

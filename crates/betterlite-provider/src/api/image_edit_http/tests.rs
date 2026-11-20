@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::time::Duration;
 
 use betterlite_core::api::vector_store_http_write::error::{
@@ -18,8 +20,8 @@ use serde_json::Number;
 
 use self::support::{
     CALL_TIMEOUT, Event, Fixture, FixtureError, RecordingConfig, Reply, Source, Transport,
-    body_json, deps, edit_call, headers, json, params, pre_post_error, provider_error,
-    request_error,
+    body_json, deps, edit_call, fact_headers, headers, json, params, pre_post_error,
+    provider_error, request_error,
 };
 use super::error::{ImageEditHttpError, RequestError};
 use super::facts::{self, SendError, Sent};
@@ -71,13 +73,6 @@ fn file_part(
         content_type: content_type.map(str::to_owned),
         data: data.to_vec(),
     }
-}
-
-fn fact_headers(pairs: &[(&str, &str)]) -> FactsHeaders {
-    pairs
-        .iter()
-        .map(|(name, value)| ((*name).to_owned(), Json::Text((*value).to_owned())))
-        .collect()
 }
 
 // DoD: the finalizer sees the resolved URL, the multipart body carries the finalized fields and the caller's header, and the hidden headers and the pre-call are recorded per mode

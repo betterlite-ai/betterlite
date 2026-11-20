@@ -1,6 +1,5 @@
 import asyncio
-from datetime import UTC, datetime
-from typing import Any, Final, Literal, override
+from typing import Final, Literal, TypeAlias
 from urllib.parse import urlsplit
 
 import httpx
@@ -13,19 +12,18 @@ from litellm.llms.base_llm.image_edit.transformation import BaseImageEditConfig
 from litellm.llms.custom_httpx.llm_http_handler import BaseLLMHTTPHandler
 from litellm.types.images.main import ImageEditOptionalRequestParams
 from litellm.types.router import GenericLiteLLMParams
-from litellm.types.utils import FileTypes
-from litellm.utils import ImageResponse
+from litellm.types.utils import FileTypes, ImageResponse
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
+from typing_extensions import override
 
 Mode = Literal["sync", "async"]
-FilePart = tuple[str | None, bytes, str | None]
-FileEntry = tuple[str, Any]
-CompletedFiles = list[tuple[str, FilePart]]
+CompletedFiles: TypeAlias = list[tuple[str, tuple[str | None, bytes, str | None]]]
+CompleteInput: TypeAlias = dict[str, JsonValue] | CompletedFiles
 
 JSON: Final = TypeAdapter(JsonValue)
 OBJECTS: Final = TypeAdapter(dict[str, object] | None)
-DETAILS: Final = TypeAdapter(dict[str, object])
-COMPLETE: Final = TypeAdapter(dict[str, JsonValue] | CompletedFiles)
+DATA: Final = TypeAdapter(dict[str, JsonValue])
+FILES: Final = TypeAdapter(CompletedFiles)
 IMAGE_RESPONSE: Final = TypeAdapter(ImageResponse)
 PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
 
@@ -56,6 +54,14 @@ class EditCall(BaseModel):
     timeout_seconds: int
 
 
+# The handler's pre_call arguments and the prompt it logged; sync files keep the image's bytes
+class PreCall(BaseModel):
+    input: JsonValue = None
+    complete_input_dict: CompleteInput
+    api_base: str
+    headers: dict[str, JsonValue]
+
+
 class Failure(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -66,8 +72,6 @@ class Failure(BaseModel):
 
 
 class LoggedCall(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
     input: JsonValue = None
     complete_input_dict: JsonValue = None
     header_names: list[str]
@@ -75,26 +79,19 @@ class LoggedCall(BaseModel):
 
 
 class Outcome(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
     result: JsonValue = None
     provider_headers: dict[str, str] | None = None
     failure: Failure | None = None
     logged: LoggedCall | None = None
 
 
-class EditValue(BaseModel):
-    value: Outcome
-
-
 class EditEnvelope(BaseModel):
-    image_edit_http: EditValue
+    image_edit_http: dict[str, Outcome]
 
 
 class FixtureConfig(BaseImageEditConfig):
     def __init__(self, *, multipart: bool) -> None:
-        super().__init__()
-        self.multipart: bool = multipart
+        self.multipart = multipart
 
     @override
     def get_supported_openai_params(self, model: str) -> list[str]:
@@ -106,16 +103,16 @@ class FixtureConfig(BaseImageEditConfig):
         image_edit_optional_params: ImageEditOptionalRequestParams,
         model: str,
         drop_params: bool,
-    ) -> dict[str, object]:
+    ) -> dict[str, JsonValue]:
         return {}
 
     @override
     def validate_environment(
         self,
-        headers: dict[str, object],
+        headers: dict[str, JsonValue],
         model: str,
         api_key: str | None = None,
-        litellm_params: dict[str, object] | None = None,
+        litellm_params: dict[str, JsonValue] | None = None,
         api_base: str | None = None,
     ) -> dict[str, str]:
         validated: dict[str, str] = {"x": "validated"}
@@ -128,7 +125,7 @@ class FixtureConfig(BaseImageEditConfig):
         self,
         model: str,
         api_base: str | None,
-        litellm_params: dict[str, object],
+        litellm_params: dict[str, JsonValue],
     ) -> str:
         if api_base is None:
             raise ValueError("api_base is required")
@@ -140,19 +137,21 @@ class FixtureConfig(BaseImageEditConfig):
         model: str,
         prompt: str | None,
         image: FileTypes | None,
-        image_edit_optional_request_params: dict[str, object],
+        # ast-grep-ignore: no-long-names
+        image_edit_optional_request_params: dict[str, JsonValue],
         litellm_params: GenericLiteLLMParams,
         headers: dict[str, str],
-    ) -> tuple[dict[str, str], list[FileEntry]]:
+    ) -> tuple[dict[str, str], list[tuple[str, FileTypes]]]:
         data: dict[str, str] = {}
         if prompt is not None:
             data["prompt"] = prompt
-        files: list[FileEntry] = []
+        files: list[tuple[str, FileTypes]] = []
         if image is not None:
             files.append(("image", image))
         return data, files
 
     @override
+    # ast-grep-ignore: no-long-names
     def finalize_image_edit_request_data(
         self,
         data: dict[str, str],
@@ -172,22 +171,22 @@ class FixtureConfig(BaseImageEditConfig):
         raw_response: httpx.Response,
         logging_obj: Logging,
     ) -> ImageResponse:
-        return IMAGE_RESPONSE.validate_python(JSON.validate_python(raw_response.json()))
+        return IMAGE_RESPONSE.validate_python(JSON.validate_json(raw_response.content))
 
 
 HANDLER: Final = BaseLLMHTTPHandler()
 
 
-def logging_fixture() -> Logging:
-    return Logging(
-        model="",
-        messages="",
-        stream=False,
-        call_type="image_edit",
-        start_time=datetime(2026, 1, 1, tzinfo=UTC),
-        litellm_call_id="image-edit-http",
-        function_id="image-edit-http",
-    )
+# The request's pre-call, kept as it was handed over instead of LiteLLM's untyped details dict
+class RecordingLogging(Logging):
+    def __init__(self) -> None:
+        self.logged: PreCall | None = None
+
+    @override
+    def pre_call(self, *args: JsonValue, **values: JsonValue) -> None:
+        record = PreCall.model_validate(values["additional_args"])
+        record.input = args[0] if args else values["input"]
+        self.logged = record
 
 
 def text_or_none(content: bytes) -> str | None:
@@ -197,49 +196,39 @@ def text_or_none(content: bytes) -> str | None:
         return None
 
 
-def complete_value(value: object) -> JsonValue:
-    completed = COMPLETE.validate_python(value)
-    if isinstance(completed, dict):
-        return JSON.validate_python(completed)
-    return JSON.validate_python(
-        {
-            name: {
-                "filename": part[0],
-                "content": text_or_none(part[1]),
-                "content_type": part[2],
-            }
-            for name, part in completed
-        },
-    )
+def files_mapping(files: CompletedFiles) -> dict[str, JsonValue]:
+    mapping: dict[str, JsonValue] = {}
+    for name, part in files:
+        mapping[name] = {
+            "filename": part[0],
+            "content": text_or_none(part[1]),
+            "content_type": part[2],
+        }
+    return mapping
 
 
-def logged_call(logging_obj: Logging) -> LoggedCall | None:
-    details = DETAILS.validate_python(logging_obj.model_call_details)
-    args = OBJECTS.validate_python(details.get("additional_args"))
-    if args is None:
+def complete_value(value: CompleteInput, mode: Mode) -> JsonValue:
+    if mode == "sync":
+        return JSON.validate_python(files_mapping(FILES.validate_python(value)))
+    return JSON.validate_python(DATA.validate_python(value))
+
+
+def logged_call(record: PreCall | None, mode: Mode) -> LoggedCall | None:
+    if record is None:
         return None
-    headers = OBJECTS.validate_python(args.get("headers"))
-    api_base = args.get("api_base")
     return LoggedCall(
-        input=JSON.validate_python(details.get("input")),
-        complete_input_dict=complete_value(args.get("complete_input_dict")),
-        header_names=sorted(headers) if headers is not None else [],
-        api_base_path=urlsplit(api_base).path if isinstance(api_base, str) else "",
+        input=record.input,
+        complete_input_dict=complete_value(record.complete_input_dict, mode),
+        header_names=sorted(record.headers),
+        api_base_path=urlsplit(record.api_base).path,
     )
 
 
 def run_edit(call: EditCall, api_base: str) -> Outcome:
-    logging_obj = logging_fixture()
+    logging_obj = RecordingLogging()
     config = FixtureConfig(multipart=call.multipart)
-    # ssl_verify is an extra field the handler reads through GenericLiteLLMParams' extra="allow" config
-    litellm_params = GenericLiteLLMParams.model_validate(
-        {"api_base": api_base, "api_key": call.api_key, "ssl_verify": call.ssl_verify},
-    )
-    image: FileTypes = (
-        call.image.filename,
-        call.image.content.encode(),
-        call.image.content_type,
-    )
+    litellm_params = GenericLiteLLMParams(api_base=api_base, api_key=call.api_key)
+    image: FileTypes = (call.image.filename, call.image.content.encode(), call.image.content_type)
     extra_headers = OBJECTS.validate_python(call.extra_headers)
     extra_body = OBJECTS.validate_python(call.extra_body)
     litellm_metadata = OBJECTS.validate_python(call.litellm_metadata)
@@ -265,35 +254,35 @@ def run_edit(call: EditCall, api_base: str) -> Outcome:
                 ),
             )
         else:
-            answer = asyncio.run(
-                HANDLER.async_image_edit_handler(
-                    model=call.model,
-                    image=image,
-                    prompt=call.prompt,
-                    image_edit_provider_config=config,
-                    image_edit_optional_request_params=optional,
-                    custom_llm_provider="openai",
-                    litellm_params=litellm_params,
-                    logging_obj=logging_obj,
-                    timeout=float(call.timeout_seconds),
-                    extra_headers=extra_headers,
-                    extra_body=extra_body,
-                    fake_stream=call.fake_stream,
-                    litellm_metadata=litellm_metadata,
+            answer = IMAGE_RESPONSE.validate_python(
+                asyncio.run(
+                    HANDLER.async_image_edit_handler(
+                        model=call.model,
+                        image=image,
+                        prompt=call.prompt,
+                        image_edit_provider_config=config,
+                        image_edit_optional_request_params=optional,
+                        custom_llm_provider="openai",
+                        litellm_params=litellm_params,
+                        logging_obj=logging_obj,
+                        timeout=float(call.timeout_seconds),
+                        extra_headers=extra_headers,
+                        extra_body=extra_body,
+                        fake_stream=call.fake_stream,
+                        litellm_metadata=litellm_metadata,
+                    ),
                 ),
             )
     except PROVIDER_ERROR as error:
         return Outcome(
             failure=Failure.model_validate(error),
-            logged=logged_call(logging_obj),
+            logged=logged_call(logging_obj.logged, call.mode),
         )
     stored = get_provider_response_headers_from_hidden_params(answer)
     return Outcome(
-        result=JSON.validate_python(
-            answer.model_dump(mode="json", exclude_none=True, exclude={"usage"}),
-        ),
+        result=JSON.validate_json(answer.model_dump_json(exclude_none=True, exclude={"usage"})),
         provider_headers=None if stored is None else dict(stored),
-        logged=logged_call(logging_obj),
+        logged=logged_call(logging_obj.logged, call.mode),
     )
 
 
@@ -304,5 +293,4 @@ class ImageEditHttpRequest(BaseModel):
 
     def serialize(self, api_base: str) -> str:
         outcome = run_edit(self.image_edit_http, api_base)
-        value = EditValue(value=outcome)
-        return EditEnvelope(image_edit_http=value).model_dump_json(by_alias=True)
+        return EditEnvelope(image_edit_http={"value": outcome}).model_dump_json(by_alias=True)

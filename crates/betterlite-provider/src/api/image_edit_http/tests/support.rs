@@ -4,7 +4,9 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use betterlite_core::api::vector_store_http_write::error::ClientError;
+use betterlite_core::api::vector_store_http_write::error::{
+    ClientError, HeaderMap as FactsHeaders,
+};
 use betterlite_core::api::vector_store_http_write::service::{WriteRequest, WriteTransport};
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::RequestBody;
@@ -54,6 +56,13 @@ pub(super) fn headers(pairs: &[(&str, &str)]) -> ImageHeaders {
     pairs
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect()
+}
+
+pub(super) fn fact_headers(pairs: &[(&str, &str)]) -> FactsHeaders {
+    pairs
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), Json::Text((*value).to_owned())))
         .collect()
 }
 
@@ -581,26 +590,26 @@ pub(super) const fn edit_call<'call>(
 pub(super) fn provider_error<ConfigError: Error + 'static>(
     error: ImageEditHttpError<ConfigError>,
 ) -> ProviderError {
-    match error {
-        ImageEditHttpError::Provider(error) => *error,
-        other => panic!("the call failed outside the provider answer: {other}"),
-    }
+    let ImageEditHttpError::Provider(provider) = error else {
+        panic!("the call failed outside the provider answer: {error}");
+    };
+    *provider
 }
 
 pub(super) fn request_error<ConfigError: Error + 'static>(
     error: ImageEditHttpError<ConfigError>,
 ) -> RequestError {
-    match error {
-        ImageEditHttpError::Request(error) => error,
-        other => panic!("the call failed outside the request build: {other}"),
+    if let ImageEditHttpError::Request(request) = error {
+        return request;
     }
+    panic!("the call failed outside the request build: {error}")
 }
 
 pub(super) fn pre_post_error<ConfigError: Error + 'static>(
     error: ImageEditHttpError<ConfigError>,
 ) -> PrePostError {
     match error {
-        ImageEditHttpError::Logging(error) => error,
+        ImageEditHttpError::Logging(logging) => logging,
         other => panic!("the call failed outside the pre-call logging: {other}"),
     }
 }
