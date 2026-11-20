@@ -28,16 +28,12 @@ use http::HeaderMap as HttpHeaders;
 use indexmap::IndexMap;
 
 use crate::api::genai_http::config::{AuthCall, AuthTarget, GenerateContentHttpConfig};
-use crate::api::genai_http::error::GenAiHttpError;
 use crate::api::genai_http::service::{
-    AsyncGenerateContentOutcome, ClientSource, GenAiRequest, GenAiTransport, GenerateContentCall,
-    GenerateContentDeps, GenerateContentOutcome, StreamReply, WireReply, async_generate_content,
-    generate_content,
+    ClientSource, GenAiRequest, GenAiTransport, StreamReply, WireReply,
 };
 use crate::api::vector_store_http_write::error::{
     BaseLlmException, ClientError, HeaderMap, header_map,
 };
-use crate::api::vector_store_http_write::service::LogContext;
 use crate::genai_setup::config::{GenerateContentProviderConfig, GenerateContentRequest};
 use crate::genai_setup::params::GenerateContentLiteLLMParams;
 
@@ -70,13 +66,19 @@ impl LogSink for Sink {
     fn emit(&self, _record: LogRecord) {}
 }
 
+// The one way a test runs a handler: the entry and the events it records are the macro's parameters
 macro_rules! recorded_call {
     ($fixture:expr, $events:expr, $entry:path, $deps:expr, $call:expr) => {{
         let logger = |_details: &DecisionJson| -> Result<(), PrePostError> {
             $events.push("log");
             Ok(())
         };
-        let env = pre_post_env(&$fixture.redactor, &$fixture.sink, $fixture.now, &logger);
+        let env = $crate::api::genai_http::tests::support::pre_post_env(
+            &$fixture.redactor,
+            &$fixture.sink,
+            $fixture.now,
+            &logger,
+        );
         $entry(
             $deps,
             $call,
@@ -89,11 +91,13 @@ macro_rules! recorded_call {
     }};
 }
 
+pub(crate) use recorded_call;
+
 pub(crate) struct Fixture {
-    redactor: Redactor,
-    sink: Sink,
+    pub(crate) redactor: Redactor,
+    pub(crate) sink: Sink,
     pub(crate) state: LoggingState,
-    now: DateTime<FixedOffset>,
+    pub(crate) now: DateTime<FixedOffset>,
 }
 
 impl Fixture {
@@ -124,32 +128,6 @@ impl Fixture {
         }
     }
 
-    pub(crate) async fn sync_call<C, S>(
-        &mut self,
-        deps: &GenerateContentDeps<'_, C, S>,
-        call: &GenerateContentCall<'_>,
-        events: &Events,
-    ) -> Result<GenerateContentOutcome<C::Response>, GenAiHttpError<C::Error>>
-    where
-        C: GenerateContentHttpConfig,
-        S: ClientSource,
-    {
-        recorded_call!(self, events, generate_content, deps, call)
-    }
-
-    pub(crate) async fn async_call<C, S>(
-        &mut self,
-        events: Events,
-        deps: &GenerateContentDeps<'_, C, S>,
-        call: &GenerateContentCall<'_>,
-    ) -> Result<AsyncGenerateContentOutcome<C::Response>, GenAiHttpError<C::Error>>
-    where
-        C: GenerateContentHttpConfig,
-        S: ClientSource,
-    {
-        recorded_call!(self, events, async_generate_content, deps, call)
-    }
-
     pub(crate) fn logged(&self, name: &str) -> Option<&DecisionJson> {
         let DecisionJson::Object(details) = self.state.model_call_details.get("additional_args")?
         else {
@@ -164,7 +142,7 @@ impl Fixture {
 }
 
 // Built from the fixture's fields rather than through a method, so the call can still borrow the state mutably
-fn pre_post_env<'env>(
+pub(crate) fn pre_post_env<'env>(
     redactor: &'env Redactor,
     sink: &'env Sink,
     now: DateTime<FixedOffset>,

@@ -5,17 +5,20 @@ mod support;
 
 use std::time::Duration;
 
+use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_models::decisions::Json as DecisionJson;
 use betterlite_prompts::arguments::json::{Json, Object};
 use indexmap::IndexMap;
 
-use self::support::{AuthRecord, Events, Fixture, Reply, Source, TestConfig, Wire, kwargs};
+use self::support::{
+    AuthRecord, Events, Fixture, Reply, Source, TestConfig, Wire, kwargs, recorded_call,
+};
 use crate::api::genai_http::service::{
     AsyncGenerateContentOutcome, AsyncStream, GenerateContentCall, GenerateContentDeps,
-    GenerateContentOutcome, SyncStream,
+    GenerateContentOutcome, SyncStream, async_generate_content, generate_content,
 };
 use crate::api::genai_http::stream::StreamSettings;
-use crate::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
+use crate::api::vector_store_http_write::service::{ClientKind, LogContext, SuppliedClient};
 use crate::genai_setup::params::GenerateContentLiteLLMParams;
 
 const MODEL: &str = "gemini-2.0-flash";
@@ -90,9 +93,7 @@ async fn a_sync_unary_call_sends_the_authenticated_request_and_records_it() {
     let target = call(&contents, &generation, &params, false, None);
     let mut fixture = Fixture::new("generate_content");
 
-    let outcome = fixture
-        .sync_call(&deps, &target, &events)
-        .await
+    let outcome = recorded_call!(fixture, &events, generate_content, &deps, &target)
         .expect("the call succeeds");
 
     let GenerateContentOutcome::Response(response) = outcome else {
@@ -170,9 +171,7 @@ async fn an_async_unary_call_sends_the_authenticated_request() {
     let target = call(&contents, &generation, &params, false, None);
     let mut fixture = Fixture::new("agenerate_content");
 
-    let outcome = fixture
-        .async_call(events.clone(), &deps, &target)
-        .await
+    let outcome = recorded_call!(fixture, &events, async_generate_content, &deps, &target)
         .expect("the call succeeds");
 
     let AsyncGenerateContentOutcome::Response(response) = outcome else {
@@ -214,10 +213,7 @@ async fn pre_call_logging_finishes_before_the_transport_is_called() {
     let target = call(&contents, &generation, &params, false, None);
     let mut fixture = Fixture::new("generate_content");
 
-    fixture
-        .sync_call(&deps, &target, &events)
-        .await
-        .expect("the call succeeds");
+    recorded_call!(fixture, &events, generate_content, &deps, &target).expect("the call succeeds");
 
     assert_eq!(
         events.recorded(),
@@ -247,10 +243,7 @@ async fn the_callers_extra_headers_beat_the_provider_headers() {
     target.extra_headers = Some(&headers);
     let mut fixture = Fixture::new("generate_content");
 
-    fixture
-        .sync_call(&deps, &target, &events)
-        .await
-        .expect("the call succeeds");
+    recorded_call!(fixture, &events, generate_content, &deps, &target).expect("the call succeeds");
 
     let requests = wire.requests();
     assert_eq!(
@@ -297,10 +290,7 @@ async fn the_callers_extra_body_beats_the_transformed_body() {
     target.extra_body = Some(&extra);
     let mut fixture = Fixture::new("generate_content");
 
-    fixture
-        .sync_call(&deps, &target, &events)
-        .await
-        .expect("the call succeeds");
+    recorded_call!(fixture, &events, generate_content, &deps, &target).expect("the call succeeds");
 
     let requests = wire.requests();
     assert_eq!(
@@ -341,9 +331,7 @@ async fn a_sync_stream_returns_the_iterator_and_its_metadata_before_the_first_ev
     let target = call(&contents, &generation, &params, true, None);
     let mut fixture = Fixture::new("generate_content");
 
-    let outcome = fixture
-        .sync_call(&deps, &target, &events)
-        .await
+    let outcome = recorded_call!(fixture, &events, generate_content, &deps, &target)
         .expect("the stream starts");
 
     let GenerateContentOutcome::Stream(stream) = outcome else {
@@ -419,9 +407,7 @@ async fn an_async_stream_returns_the_iterator_and_its_metadata_before_the_first_
     let target = call(&contents, &generation, &params, true, None);
     let mut fixture = Fixture::new("agenerate_content");
 
-    let outcome = fixture
-        .async_call(events.clone(), &deps, &target)
-        .await
+    let outcome = recorded_call!(fixture, &events, async_generate_content, &deps, &target)
         .expect("the stream starts");
 
     let AsyncGenerateContentOutcome::Stream(stream) = outcome else {
@@ -479,9 +465,7 @@ async fn an_async_stream_over_a_buffered_reply_still_yields_its_events() {
     let target = call(&contents, &generation, &params, true, None);
     let mut fixture = Fixture::new("agenerate_content");
 
-    let outcome = fixture
-        .async_call(events.clone(), &deps, &target)
-        .await
+    let outcome = recorded_call!(fixture, &events, async_generate_content, &deps, &target)
         .expect("the stream starts");
 
     let AsyncGenerateContentOutcome::Stream(stream) = outcome else {
@@ -517,9 +501,7 @@ async fn stream_metadata_falls_back_to_the_request_model() {
     let target = call(&contents, &generation, &params, true, None);
     let mut fixture = Fixture::new("generate_content");
 
-    let outcome = fixture
-        .sync_call(&deps, &target, &events)
-        .await
+    let outcome = recorded_call!(fixture, &events, generate_content, &deps, &target)
         .expect("the stream starts");
 
     let GenerateContentOutcome::Stream(stream) = outcome else {
@@ -553,10 +535,7 @@ async fn a_supplied_client_of_the_callers_mode_is_used() {
     let target = call(&contents, &generation, &params, false, None);
     let mut fixture = Fixture::new("generate_content");
 
-    fixture
-        .sync_call(&deps, &target, &events)
-        .await
-        .expect("the call succeeds");
+    recorded_call!(fixture, &events, generate_content, &deps, &target).expect("the call succeeds");
 
     assert_eq!(
         events.recorded(),
@@ -587,9 +566,7 @@ async fn a_supplied_client_of_the_other_mode_is_ignored() {
     let target = call(&contents, &generation, &params, false, None);
     let mut fixture = Fixture::new("agenerate_content");
 
-    fixture
-        .async_call(events.clone(), &deps, &target)
-        .await
+    recorded_call!(fixture, &events, async_generate_content, &deps, &target)
         .expect("the call succeeds");
 
     assert_eq!(
@@ -617,10 +594,7 @@ async fn the_client_source_receives_ssl_verify() {
     let target = call(&contents, &generation, &params, false, None);
     let mut fixture = Fixture::new("generate_content");
 
-    fixture
-        .sync_call(&deps, &target, &events)
-        .await
-        .expect("the call succeeds");
+    recorded_call!(fixture, &events, generate_content, &deps, &target).expect("the call succeeds");
 
     assert_eq!(source.calls(), vec![Some(json("false"))]);
 }

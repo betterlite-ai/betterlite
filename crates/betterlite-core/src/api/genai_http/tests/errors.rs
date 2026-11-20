@@ -6,7 +6,7 @@ use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::serve;
 use rstest::rstest;
 
-use super::support::{IMPATIENT, ProxiedSource};
+use super::support::{IMPATIENT, ProxiedSource, recorded_call};
 use super::*;
 use crate::api::genai_http::error::GenAiHttpError;
 use crate::api::vector_store_http_write::error::HeaderMap;
@@ -35,7 +35,7 @@ async fn a_status_error_goes_through_the_shared_error_handler() {
     let target = call(&contents, &generation, &params, false, None);
     let mut fixture = Fixture::new("generate_content");
 
-    let outcome = fixture.sync_call(&deps, &target, &events).await;
+    let outcome = recorded_call!(fixture, &events, generate_content, &deps, &target);
 
     let Err(GenAiHttpError::Provider(error)) = outcome else {
         panic!("a 429 is a provider error");
@@ -77,7 +77,8 @@ async fn an_error_body_that_is_empty_or_not_utf8_keeps_its_shape() {
             supplied: None,
             stream: StreamSettings::default(),
         };
-        let Err(GenAiHttpError::Provider(error)) = fixture.sync_call(&deps, &target, &events).await
+        let Err(GenAiHttpError::Provider(error)) =
+            recorded_call!(fixture, &events, generate_content, &deps, &target)
         else {
             panic!("a 500 is a provider error");
         };
@@ -96,7 +97,8 @@ async fn an_error_body_that_is_empty_or_not_utf8_keeps_its_shape() {
             supplied: None,
             stream: StreamSettings::default(),
         };
-        let Err(GenAiHttpError::Provider(error)) = fixture.sync_call(&deps, &target, &events).await
+        let Err(GenAiHttpError::Provider(error)) =
+            recorded_call!(fixture, &events, generate_content, &deps, &target)
         else {
             panic!("a 500 is a provider error");
         };
@@ -129,7 +131,7 @@ async fn a_transport_failure_becomes_a_synthesized_500() {
     let target = call(&contents, &generation, &params, false, None);
     let mut fixture = Fixture::new("generate_content");
 
-    let outcome = fixture.sync_call(&deps, &target, &events).await;
+    let outcome = recorded_call!(fixture, &events, generate_content, &deps, &target);
 
     let Err(GenAiHttpError::Provider(error)) = outcome else {
         panic!("a transport failure is a provider error");
@@ -170,7 +172,7 @@ async fn a_sync_timeout_carries_408_and_the_timeout_it_was_given(
     let target = call(&contents, &generation, &params, false, timeout);
     let mut fixture = Fixture::new("generate_content");
 
-    let outcome = fixture.sync_call(&deps, &target, &Events::new()).await;
+    let outcome = recorded_call!(fixture, &Events::new(), generate_content, &deps, &target);
 
     let Err(GenAiHttpError::Provider(error)) = outcome else {
         panic!("a timeout is a provider error");
@@ -202,7 +204,13 @@ async fn an_async_timeout_carries_408_and_the_client_timeout() {
     let target = call(&contents, &generation, &params, false, None);
     let mut fixture = Fixture::new("agenerate_content");
 
-    let outcome = fixture.async_call(Events::new(), &deps, &target).await;
+    let outcome = recorded_call!(
+        fixture,
+        &Events::new(),
+        async_generate_content,
+        &deps,
+        &target
+    );
 
     let Err(GenAiHttpError::Provider(error)) = outcome else {
         panic!("a timeout is a provider error");
@@ -238,7 +246,7 @@ async fn a_transform_failure_is_returned_as_the_provider_error() {
     let target = call(&contents, &generation, &params, false, None);
     let mut fixture = Fixture::new("generate_content");
 
-    let outcome = fixture.sync_call(&deps, &target, &events).await;
+    let outcome = recorded_call!(fixture, &events, generate_content, &deps, &target);
 
     assert!(matches!(outcome, Err(GenAiHttpError::Transform(_))));
     assert!(events.recorded().is_empty());
@@ -262,7 +270,7 @@ async fn an_auth_failure_is_returned_as_the_provider_error() {
     let target = call(&contents, &generation, &params, false, None);
     let mut fixture = Fixture::new("generate_content");
 
-    let outcome = fixture.sync_call(&deps, &target, &events).await;
+    let outcome = recorded_call!(fixture, &events, generate_content, &deps, &target);
 
     assert!(matches!(outcome, Err(GenAiHttpError::Auth(_))));
     assert!(events.recorded().is_empty());
@@ -286,7 +294,7 @@ async fn a_body_that_is_not_an_object_is_reported() {
     let target = call(&contents, &generation, &params, false, None);
     let mut fixture = Fixture::new("generate_content");
 
-    let outcome = fixture.sync_call(&deps, &target, &events).await;
+    let outcome = recorded_call!(fixture, &events, generate_content, &deps, &target);
 
     assert!(matches!(outcome, Err(GenAiHttpError::BodyNotObject)));
 }
@@ -309,7 +317,7 @@ async fn a_reply_the_provider_cannot_decode_is_returned_as_the_provider_error() 
     let target = call(&contents, &generation, &params, false, None);
     let mut fixture = Fixture::new("generate_content");
 
-    let outcome = fixture.sync_call(&deps, &target, &events).await;
+    let outcome = recorded_call!(fixture, &events, generate_content, &deps, &target);
 
     let Err(GenAiHttpError::Provider(error)) = outcome else {
         panic!("a decode failure is a provider error");
@@ -338,7 +346,7 @@ async fn an_async_open_stream_for_a_call_that_did_not_stream_is_reported() {
     let target = call(&contents, &generation, &params, false, None);
     let mut fixture = Fixture::new("agenerate_content");
 
-    let outcome = fixture.async_call(events.clone(), &deps, &target).await;
+    let outcome = recorded_call!(fixture, &events, async_generate_content, &deps, &target);
 
     assert!(matches!(outcome, Err(GenAiHttpError::UnexpectedStream)));
 }
@@ -361,7 +369,7 @@ async fn an_open_stream_for_a_call_that_did_not_stream_is_reported() {
     let target = call(&contents, &generation, &params, false, None);
     let mut fixture = Fixture::new("generate_content");
 
-    let outcome = fixture.sync_call(&deps, &target, &events).await;
+    let outcome = recorded_call!(fixture, &events, generate_content, &deps, &target);
 
     assert!(matches!(outcome, Err(GenAiHttpError::UnexpectedStream)));
 }
@@ -384,7 +392,7 @@ async fn a_sync_stream_that_receives_an_open_stream_is_reported() {
     let target = call(&contents, &generation, &params, true, None);
     let mut fixture = Fixture::new("generate_content");
 
-    let outcome = fixture.sync_call(&deps, &target, &events).await;
+    let outcome = recorded_call!(fixture, &events, generate_content, &deps, &target);
 
     assert!(matches!(outcome, Err(GenAiHttpError::UnexpectedStream)));
 }
@@ -407,7 +415,7 @@ async fn a_400_reply_is_a_provider_error() {
     let target = call(&contents, &generation, &params, false, None);
     let mut fixture = Fixture::new("generate_content");
 
-    let outcome = fixture.sync_call(&deps, &target, &events).await;
+    let outcome = recorded_call!(fixture, &events, generate_content, &deps, &target);
 
     let Err(GenAiHttpError::Provider(error)) = outcome else {
         panic!("the smallest error status is a provider error");
@@ -444,7 +452,7 @@ async fn a_streaming_call_with_an_error_reply_reports_the_provider_error(
     let target = call(&contents, &generation, &params, true, None);
     let mut fixture = Fixture::new("generate_content");
 
-    let outcome = fixture.sync_call(&deps, &target, &Events::new()).await;
+    let outcome = recorded_call!(fixture, &Events::new(), generate_content, &deps, &target);
 
     let Err(GenAiHttpError::Provider(error)) = outcome else {
         panic!("an error status is a provider error even when the call streams");
@@ -474,7 +482,7 @@ async fn a_unary_call_through_the_pooled_client_returns_the_response() {
     let target = call(&contents, &generation, &params, false, None);
     let mut fixture = Fixture::new("generate_content");
 
-    let outcome = fixture.sync_call(&deps, &target, &Events::new()).await;
+    let outcome = recorded_call!(fixture, &Events::new(), generate_content, &deps, &target);
 
     let Ok(GenerateContentOutcome::Response(response)) = outcome else {
         panic!("a 200 reply through the pooled client is a response");
@@ -510,7 +518,13 @@ async fn an_async_stream_that_receives_an_error_reply_reports_the_provider_error
     let target = call(&contents, &generation, &params, true, None);
     let mut fixture = Fixture::new("agenerate_content");
 
-    let outcome = fixture.async_call(Events::new(), &deps, &target).await;
+    let outcome = recorded_call!(
+        fixture,
+        &Events::new(),
+        async_generate_content,
+        &deps,
+        &target
+    );
 
     let Err(GenAiHttpError::Provider(error)) = outcome else {
         panic!("an error status is a provider error even when the call streams");
@@ -540,7 +554,7 @@ async fn a_request_header_that_is_not_a_header_name_is_reported() {
     target.extra_headers = Some(&headers);
     let mut fixture = Fixture::new("generate_content");
 
-    let outcome = fixture.sync_call(&deps, &target, &events).await;
+    let outcome = recorded_call!(fixture, &events, generate_content, &deps, &target);
 
     let Err(GenAiHttpError::Provider(error)) = outcome else {
         panic!("a header the wire cannot carry is a provider error");

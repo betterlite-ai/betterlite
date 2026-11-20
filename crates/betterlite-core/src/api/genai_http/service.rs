@@ -14,7 +14,7 @@ use indexmap::IndexMap;
 use url::Url;
 
 use self::facts::{Attempt, status_facts, transport_facts};
-use self::outcome::{async_stream, sync_stream};
+use self::outcome::{async_stream, sync_outcome};
 use self::prepare::prepare;
 use super::config::GenerateContentHttpConfig;
 use super::error::{GenAiHttpError, classed};
@@ -139,8 +139,9 @@ struct Wire<'borrow, 'call, C: GenerateContentHttpConfig> {
     settings: &'borrow StreamSettings,
 }
 
-enum Sent<'borrow, 'call, C: GenerateContentHttpConfig> {
-    Unary(Wire<'borrow, 'call, C>, UpstreamResponse),
+// Where an exchange ends: the transformed response, or the reply the mode's streaming path iterates
+enum Answer<'borrow, 'call, C: GenerateContentHttpConfig> {
+    Response(C::Response),
     SyncEvents(Wire<'borrow, 'call, C>, UpstreamResponse),
     AsyncEvents(Wire<'borrow, 'call, C>, StreamReply),
 }
@@ -154,15 +155,9 @@ where
     C: GenerateContentHttpConfig,
     S: ClientSource,
 {
-    match send(prepare(deps, ClientKind::Sync, call, log).await?).await? {
-        Sent::Unary(wire, answer) => {
-            unary(wire.config, answer, log.state).map(GenerateContentOutcome::Response)
-        }
-        Sent::SyncEvents(wire, answer) => Ok(GenerateContentOutcome::Stream(Box::new(
-            sync_stream(&wire.inputs, wire.settings, answer),
-        ))),
-        Sent::AsyncEvents(_, _) => Err(GenAiHttpError::UnexpectedStream),
-    }
+    let prepared = prepare(deps, ClientKind::Sync, call, log).await?;
+    let answer = send(prepared, log.state).await?;
+    sync_outcome(answer)
 }
 
 pub async fn async_generate_content<Client, Source>(
@@ -174,30 +169,27 @@ where
     Client: GenerateContentHttpConfig,
     Source: ClientSource,
 {
-    let staged = prepare(deps, ClientKind::Asynchronous, call, log).await?;
-    let answered = send(staged).await?;
-    match answered {
-        Sent::Unary(wire, reply) => {
-            unary(wire.config, reply, log.state).map(AsyncGenerateContentOutcome::Response)
+    let prepared = prepare(deps, ClientKind::Asynchronous, call, log).await?;
+    let answer = send(prepared, log.state).await?;
+    match answer {
+        Answer::Response(response) => Ok(AsyncGenerateContentOutcome::Response(response)),
+        Answer::SyncEvents(wire, reply) => {
+            let body = stream::once(ready(Ok::<Vec<u8>, HttpError>(reply.body))).boxed();
+            let iterator = async_stream(&wire.inputs, wire.settings, &reply.headers, body);
+            Ok(AsyncGenerateContentOutcome::Stream(Box::new(iterator)))
         }
-        Sent::SyncEvents(wire, reply) => {
-            Ok(AsyncGenerateContentOutcome::Stream(Box::new(async_stream(
-                &wire.inputs,
-                wire.settings,
-                &reply.headers,
-                stream::once(ready(Ok::<Vec<u8>, HttpError>(reply.body))).boxed(),
-            ))))
+        Answer::AsyncEvents(wire, reply) => {
+            let iterator = async_stream(&wire.inputs, wire.settings, &reply.headers, reply.body);
+            Ok(AsyncGenerateContentOutcome::Stream(Box::new(iterator)))
         }
-        Sent::AsyncEvents(wire, reply) => Ok(AsyncGenerateContentOutcome::Stream(Box::new(
-            async_stream(&wire.inputs, wire.settings, &reply.headers, reply.body),
-        ))),
     }
 }
 
 // One POST, no retry: a transport failure becomes a provider error, and a status of 400 or more becomes one too
 async fn send<'borrow, 'call, C, S>(
     prepared: Prepared<'borrow, 'call, C, S>,
-) -> Result<Sent<'borrow, 'call, C>, GenAiHttpError<C::Error>>
+    state: &mut LoggingState,
+) -> Result<Answer<'borrow, 'call, C>, GenAiHttpError<C::Error>>
 where
     C: GenerateContentHttpConfig,
     S: ClientSource,
@@ -233,14 +225,15 @@ where
         inputs,
         settings,
     };
-    answered(wire, reply, stream)
+    answered(wire, reply, stream, state)
 }
 
 fn answered<'borrow, 'call, C>(
     wire: Wire<'borrow, 'call, C>,
     reply: WireReply,
     stream: bool,
-) -> Result<Sent<'borrow, 'call, C>, GenAiHttpError<C::Error>>
+    state: &mut LoggingState,
+) -> Result<Answer<'borrow, 'call, C>, GenAiHttpError<C::Error>>
 where
     C: GenerateContentHttpConfig,
 {
@@ -248,12 +241,13 @@ where
         WireReply::Buffered(answer) => {
             let answer = successful(wire.config, answer)?;
             if stream {
-                Ok(Sent::SyncEvents(wire, answer))
+                Ok(Answer::SyncEvents(wire, answer))
             } else {
-                Ok(Sent::Unary(wire, answer))
+                let response = unary(wire.config, answer, state)?;
+                Ok(Answer::Response(response))
             }
         }
-        WireReply::Streaming(answer) if stream => Ok(Sent::AsyncEvents(wire, answer)),
+        WireReply::Streaming(answer) if stream => Ok(Answer::AsyncEvents(wire, answer)),
         WireReply::Streaming(_) => Err(GenAiHttpError::UnexpectedStream),
     }
 }

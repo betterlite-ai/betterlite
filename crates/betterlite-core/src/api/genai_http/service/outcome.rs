@@ -6,9 +6,25 @@ use betterlite_http::proxy::UpstreamResponse;
 use futures_util::stream::BoxStream;
 use http::HeaderMap as HttpHeaders;
 
+use super::super::config::GenerateContentHttpConfig;
+use super::super::error::GenAiHttpError;
 use super::super::stream::{StreamInputs, StreamSettings, stream_metadata};
-use super::{AsyncStream, SyncStream};
+use super::{Answer, AsyncStream, GenerateContentOutcome, SyncStream};
 use crate::google_genai::streaming::{AsyncGoogleGenAiStream, GoogleGenAiStream};
+
+// The sync handler's outcome: the response it already transformed, or the iterator over a buffered reply
+pub(super) fn sync_outcome<C: GenerateContentHttpConfig>(
+    answer: Answer<'_, '_, C>,
+) -> Result<GenerateContentOutcome<C::Response>, GenAiHttpError<C::Error>> {
+    match answer {
+        Answer::Response(response) => Ok(GenerateContentOutcome::Response(response)),
+        Answer::SyncEvents(wire, reply) => {
+            let iterator = sync_stream(&wire.inputs, wire.settings, reply);
+            Ok(GenerateContentOutcome::Stream(Box::new(iterator)))
+        }
+        Answer::AsyncEvents(_, _) => Err(GenAiHttpError::UnexpectedStream),
+    }
+}
 
 // The sync iterator reads the buffered body as one chunk and finds the events in it
 pub(super) fn sync_stream(
