@@ -9,7 +9,7 @@ deviations:
   - what: A 200 body that is not valid JSON becomes HTTP 500 with the decoder's message and no record; LiteLLM lets httpx_response.json() raise an uncaught JSONDecodeError out of make_bedrock_api_request.
     why: betterlite reports a failed guardrail response through its typed HTTP failure path, so the proxy answers with a JSON 500 instead of unwinding on an exception the caller does not catch.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1247
-  - what: A connection-level transport failure becomes HTTP 500 whose detail is the innermost exception message; LiteLLM logs {"error": str(e)} without usage and re-raises the raw transport exception.
+  - what: A connection-level transport failure becomes HTTP 500 whose detail is the innermost exception message; LiteLLM logs an error object holding str(e) without usage and re-raises the raw transport exception.
     why: betterlite surfaces every guardrail call failure as a JSON HTTP failure, while the record it writes (status guardrail_failed_to_respond, no usage, the exception text) matches what LiteLLM logs for that branch.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1794-L1815
   - what: A record that cannot be written is logged as a warning and the guardrail outcome is unchanged; LiteLLM lets the logging exception replace the block, success or failure it was recording.
