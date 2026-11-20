@@ -13,7 +13,7 @@ use betterlite_http::error::HttpError;
 use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use betterlite_http_fixture::reply::reply as http_reply;
 use betterlite_http_fixture::request::Request;
-use betterlite_http_fixture::server::serve;
+use betterlite_http_fixture::server::{Serving, serve};
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
 };
@@ -623,6 +623,66 @@ fn supplied_sent(bench: &Bench) -> MutexGuard<'_, Vec<Sent>> {
     bench.supplied.sent()
 }
 
+struct Payload {
+    serving: Serving,
+    base: String,
+    config: RecordingConfig,
+    events: Events,
+    optional: Params,
+    key: SecretString,
+    model_response: RerankResponse,
+    fixture: Fixture,
+    logging: RerankLogging,
+    answer: Option<RerankResponse>,
+}
+
+impl Payload {
+    fn new(serving: Serving, events: Events) -> Self {
+        let base = format!("http://{}/v1/rerank", serving.address);
+        Self {
+            config: RecordingConfig::new(&base, &events),
+            optional: params(r#"{"query": "é", "documents": ["a"]}"#),
+            key: SecretString::from(String::from("sk-caller")),
+            model_response: response(
+                r#"{"id": "caller", "results": [{"index": 3, "relevance_score": 0.25}]}"#,
+            ),
+            fixture: Fixture::default(),
+            logging: RerankLogging::default(),
+            answer: None,
+            serving,
+            base,
+            events,
+        }
+    }
+
+    async fn run(&mut self) {
+        let source = ProxiedSource { client: proxied() };
+        let call = RerankCall {
+            model: "rerank-test",
+            optional_params: &self.optional,
+            api_base: None,
+            api_key: Some(&self.key),
+            litellm_params: None,
+            headers: None,
+            timeout: None,
+            is_async: Json::Bool(false),
+            model_response: self.model_response.clone(),
+            logging: &mut self.logging,
+        };
+        let deps = RerankDeps {
+            config: &self.config,
+            source: &source,
+            supplied: None,
+        };
+        let answer = self
+            .fixture
+            .rerank(deps, call, &self.events)
+            .await
+            .expect("the rerank succeeds");
+        self.answer = Some(answer);
+    }
+}
+
 #[tokio::test]
 async fn rerank_http_payload() {
     let serving = serve(
@@ -637,53 +697,21 @@ async fn rerank_http_payload() {
         Duration::ZERO,
     )
     .expect("the fixture server starts");
-    let base = format!("http://{}/v1/rerank", serving.address);
-    let events = Events::default();
-    let config = RecordingConfig::new(&base, &events);
-    let optional = params(r#"{"query": "é", "documents": ["a"]}"#);
-    let key = SecretString::from(String::from("sk-caller"));
-    let model_response =
-        response(r#"{"id": "caller", "results": [{"index": 3, "relevance_score": 0.25}]}"#);
-    let client = proxied();
-    let source = ProxiedSource {
-        client: client.clone(),
-    };
-    let mut logging = RerankLogging::default();
-    let call = RerankCall {
-        model: "rerank-test",
-        optional_params: &optional,
-        api_base: None,
-        api_key: Some(&key),
-        litellm_params: None,
-        headers: None,
-        timeout: None,
-        is_async: Json::Bool(false),
-        model_response: model_response.clone(),
-        logging: &mut logging,
-    };
-    let mut fixture = Fixture::default();
-    let deps = RerankDeps {
-        config: &config,
-        source: &source,
-        supplied: Some(SuppliedClient {
-            kind: ClientKind::Sync,
-            transport: &client,
-        }),
-    };
-    let answer = fixture
-        .rerank(deps, call, &events)
-        .await
-        .expect("the rerank succeeds");
-    let request = serving.finish().expect("the server saw the request");
+    let mut payload = Payload::new(serving, Events::default());
+    payload.run().await;
+    let request = payload
+        .serving
+        .finish()
+        .expect("the server saw the request");
     assert_eq!(request.line, "POST /v1/rerank HTTP/1.1");
     assert_eq!(
         request.body,
         "{\"documents\": [\"a\"], \"query\": \"\\u00e9\"}"
     );
     assert_eq!(wire_headers(&request), only_api_key());
-    assert_eq!(answer, model_response);
-    assert_payload_transform(&config, &events);
-    assert_payload_callback(&fixture, &logging, &base);
+    assert_eq!(payload.answer.as_ref(), Some(&payload.model_response));
+    assert_payload_transform(&payload.config, &payload.events);
+    assert_payload_callback(&payload.fixture, &payload.logging, &payload.base);
 }
 
 fn wire_headers(request: &Request) -> BTreeMap<String, String> {
