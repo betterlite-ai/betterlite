@@ -293,40 +293,35 @@ async fn speech_http_request_data_headers_win() {
     );
 }
 
+#[rstest]
+#[case::sync_reuses_supplied(Mode::Sync, Mode::Sync, true)]
+#[case::async_reuses_supplied(Mode::Asynchronous, Mode::Asynchronous, true)]
+#[case::sync_replaces_async(Mode::Sync, Mode::Asynchronous, false)]
+#[case::async_replaces_sync(Mode::Asynchronous, Mode::Sync, false)]
 #[tokio::test]
-async fn speech_http_client_selection() {
+async fn speech_http_client_selection(
+    #[case] handler: Mode,
+    #[case] kind: Mode,
+    #[case] reused: bool,
+) {
     let harness = Harness::new(Reply::bytes(200, b"audio"));
+    let supplied = Wire::replying(Reply::bytes(200, b"audio"));
     let call = harness.call();
+    let deps = SpeechDeps {
+        config: &harness.config,
+        source: &harness.source,
+        supplied: Some(SuppliedClient {
+            kind,
+            transport: &supplied,
+        }),
+    };
     let mut fixture = Fixture::new();
-    let supplied = SpeechDeps {
-        config: &harness.config,
-        source: &harness.source,
-        supplied: Some(SuppliedClient {
-            kind: Mode::Sync,
-            transport: &harness.wire,
-        }),
-    };
-    run(&mut fixture, &supplied, Mode::Sync, &call)
+    run(&mut fixture, &deps, handler, &call)
         .await
-        .expect("the supplied client sends");
-    assert_eq!(harness.wire.requests().len(), 1);
-    assert!(harness.source.calls().is_empty());
-
-    let wrong = Wire::replying(Reply::bytes(200, b"audio"));
-    let fallback = SpeechDeps {
-        config: &harness.config,
-        source: &harness.source,
-        supplied: Some(SuppliedClient {
-            kind: Mode::Asynchronous,
-            transport: &wrong,
-        }),
-    };
-    run(&mut fixture, &fallback, Mode::Sync, &call)
-        .await
-        .expect("the wrong-kind client falls back to the pool");
-    assert!(wrong.requests().is_empty());
-    assert_eq!(harness.wire.requests().len(), 2);
-    assert_eq!(harness.source.calls(), vec![None]);
+        .expect("the handler sends");
+    assert_eq!(supplied.requests().len(), usize::from(reused));
+    assert_eq!(harness.wire.requests().len(), usize::from(!reused));
+    assert_eq!(harness.source.calls().len(), usize::from(!reused));
 }
 
 #[tokio::test]
