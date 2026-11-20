@@ -140,6 +140,34 @@ fn a_bridged_request_carries_the_signal_only_during_the_hook() {
 }
 
 #[test]
+fn a_passthrough_deployment_hands_the_hook_no_carry_signal() {
+    let lookup = configs(&[]);
+    let resolver = resolver(&[]);
+    let hook = manager(HookBehavior::Answer(hook_answer("gpt-4o", &[], &[])));
+    let model_info = json(r#"{"supported_endpoints":["/v1/responses"]}"#);
+    let mut kwargs = parameters(&[("model_info", model_info.clone())]);
+    let mut local_vars = ParameterMap::new();
+    let outcome = apply_prompt_management(
+        PromptRequest {
+            input: json(r#""hello""#),
+            model: "gpt-4o",
+            custom_llm_provider: Some("xai"),
+            use_chat_completions_api: false,
+            kwargs: &mut kwargs,
+            local_vars: &mut local_vars,
+        },
+        Some(&hook),
+        &lookup,
+        &resolver,
+    )
+    .expect("the hook answer applies");
+    let calls = hook.calls();
+    assert_eq!(calls[0].signal, None);
+    assert_eq!(outcome.deployment_model_info, Some(model_info));
+    assert!(!kwargs.contains_key(CARRY_UNMATCHED_MESSAGE_POINTS));
+}
+
+#[test]
 fn a_failing_hook_still_removes_the_signal() {
     let lookup = configs(&[]);
     let resolver = resolver(&[]);
