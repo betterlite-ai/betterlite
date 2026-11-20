@@ -90,6 +90,8 @@ description: >-
   70 non-blank LiteLLM lines (the two config blocks and the three database loaders); the ports are betterlite glue.
   No oracle case: B8620's MCP area parts mount the routes that read this registry, and B124's local-tool cases boot a
   config with mcp_tools and mcp_servers through it.
+
+  Loader proof from B124. Also assert in crates/betterlite/src/lifespan/proxy_remainder.rs tests that BootRegistries::mcp_tools uses B8871's loader and that two area mounts do not load the configured tools twice.
 scope:
   paths:
     - crates/betterlite-server/Cargo.toml

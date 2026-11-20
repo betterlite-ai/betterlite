@@ -21,6 +21,8 @@ description: >-
   complete error metadata; error prose alone is ignored. The route/helper block has 317 source
   lines plus 77 declarations/options; allow 390 product, 180 tests, 110 fuzz and 70 wiring lines.
   B1100 registers routes/tool_reports.rs as a stub, so fill only crates/betterlite-server/src/routes/tool_reports.rs and leave routes.rs as it is.
+
+  Dispatcher. B062 builds the shared /v1/tool/{tool_name:path} suffix dispatcher in crates/betterlite-server/src/tool_reports.rs with only its /overrides arm and mounts it. Add this task's GET suffixes to that dispatcher instead of mounting a second catch-all.
 scope:
   paths:
     - crates/betterlite-server/src/routes/tool_reports.rs
