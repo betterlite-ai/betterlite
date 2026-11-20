@@ -1,0 +1,31 @@
+task: B4082
+deviations:
+  - what: >-
+      request_has_hosted_web_search mirrors B4111's is_web_search_tool_responses (type exactly web_search,
+      or any type starting with web_search_) inside betterlite-core instead of calling the function from
+      betterlite-websearch.
+    why: >-
+      betterlite-websearch declares betterlite-core as a dependency (crates/betterlite-websearch/Cargo.toml:13,
+      used at websearch_request_hooks.rs:8), so adding the edge the task asks for makes core depend on itself
+      and cargo metadata exits 101 with a cyclic package dependency. betterlite-websearch's
+      websearch_request_hooks/tool_rewrite.rs:106 mirrors the same predicate for the same reason. Only B4111's
+      non-function branch is mirrored; the type == "function" exclusion stays in the caller, as in LiteLLM,
+      so a function tool is never hosted search.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/tools.py#L126-L160
+  - what: >-
+      The Anthropic row treats only a missing or null kwargs.messages as an empty conversation; any other
+      value that is not an array of objects, including "", 0, false and {}, is a rejected shape
+      (ShadowRequestError::MessagesNotObjects, so the sample is skipped).
+    why: >-
+      LiteLLM writes kwargs.get("messages") or (), so every falsy value becomes the empty tuple; betterlite
+      follows docs/compatibility.md, where a value of the wrong type is an error that names the field, and the
+      task text keeps null and missing as the empty conversation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L93-L168
+  - what: >-
+      A model that is present but not text is a rejected shape (ShadowRequestError::ModelNotText, so the
+      sample is skipped) instead of str(kwargs.get("model") or ""); a missing or null model is the empty string.
+    why: >-
+      LiteLLM stringifies whatever value it finds, so the number 7 becomes "7"; betterlite follows
+      docs/compatibility.md, where a wrong-typed field is an error, and a working setup sends a string model.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L93-L168
+kept_bugs: []
