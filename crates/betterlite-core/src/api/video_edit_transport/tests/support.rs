@@ -31,9 +31,11 @@ use crate::api::video_edit_transport::config::{
     BaseVideoConfig, Headers, Params, RequestFiles, VideoEditInput, VideoEnvironment,
     VideoExtensionInput, VideoLogging, VideoReply, VideoRequestContext,
 };
+use crate::api::video_edit_transport::edits::VideoEditHandlers as _;
 use crate::api::video_edit_transport::error::{
     BoxError, VideoClientError, VideoEditTransportError,
 };
+use crate::api::video_edit_transport::extensions::VideoExtensionHandlers as _;
 use crate::api::video_edit_transport::handler::VideoTransport;
 use crate::api::video_edit_transport::seams::{
     SharedErrorConvert, VideoClientSource, VideoLoggingHandle, VideoPreCall,
@@ -685,6 +687,13 @@ macro_rules! call_request {
     };
 }
 
+// Which of the two calls a fixture makes when it exercises them the same way
+#[derive(Clone, Copy)]
+pub(crate) enum CallKind {
+    Edit,
+    Extension,
+}
+
 // One call's inputs and its recording collaborators; a case changes only the fields it exercises
 pub(crate) struct Harness<Client> {
     pub(crate) source: FakeSource<Client>,
@@ -752,6 +761,51 @@ impl<Client: WriteTransport + Clone> Harness<Client> {
 
     pub(crate) fn extension_request(&self) -> VideoExtensionRequest<'_, Client> {
         call_request!(self, VideoExtensionRequest, seconds: &self.seconds)
+    }
+
+    pub(crate) fn call_error(&self, kind: CallKind) -> VideoEditTransportError {
+        let transport = self.transport();
+        let handled = match kind {
+            CallKind::Edit => transport.video_edit(self.edit_request(), &self.config),
+            CallKind::Extension => {
+                transport.video_extension(self.extension_request(), &self.config)
+            }
+        };
+        expect_failure(handled)
+    }
+
+    fn plan_refusal(&mut self, kind: CallKind) -> &mut Option<String> {
+        match kind {
+            CallKind::Edit => {
+                &mut self
+                    .config
+                    .edit
+                    .as_mut()
+                    .expect("the fixture has an edit plan")
+                    .refusal
+            }
+            CallKind::Extension => {
+                &mut self
+                    .config
+                    .extension
+                    .as_mut()
+                    .expect("the fixture has an extension plan")
+                    .refusal
+            }
+        }
+    }
+
+    // The call's error when the request transform refuses, then when the pre_call refuses
+    pub(crate) fn refusal_errors(
+        &mut self,
+        kind: CallKind,
+        transform_message: &str,
+    ) -> [VideoEditTransportError; 2] {
+        *self.plan_refusal(kind) = Some(transform_message.to_owned());
+        let transform_error = self.call_error(kind);
+        *self.plan_refusal(kind) = None;
+        self.log.refusal = Some("the pre_call refused".to_owned());
+        [transform_error, self.call_error(kind)]
     }
 
     fn supplied_client(&self) -> Option<SuppliedClient<'_, Client>> {

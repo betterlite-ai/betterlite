@@ -5,7 +5,8 @@ use rstest::rstest;
 use tokio::runtime::Builder;
 
 use super::support::{
-    EditPlan, Events, Harness, Reply, Wire, expect_failure, headers, object, provider_error,
+    CallKind, EditPlan, Events, Harness, Reply, Wire, expect_failure, headers, object,
+    provider_error,
 };
 use crate::api::video_edit_transport::calls::Handled;
 use crate::api::video_edit_transport::config::RequestFile;
@@ -32,55 +33,17 @@ fn dod_7_extension_unconverted() {
     let events = Events::new();
     let wire = Wire::new(Vec::new(), &events);
     let mut harness = Harness::new(&events, wire.clone());
-    harness
-        .config
-        .extension
-        .as_mut()
-        .expect("the fixture has an extension plan")
-        .refusal = Some("the extension transform refused".to_owned());
-    let transform_transport = harness.transport();
-    let transform_error = expect_failure(
-        transform_transport.video_extension(harness.extension_request(), &harness.config),
-    );
-    match transform_error {
-        VideoEditTransportError::Config(source) => {
-            assert_eq!(source.to_string(), "the extension transform refused");
-        }
-        other @ (VideoEditTransportError::Provider(_)
-        | VideoEditTransportError::Logging(_)
-        | VideoEditTransportError::Client(_)
-        | VideoEditTransportError::PrefetchDecode(_)
-        | VideoEditTransportError::FieldType(_)
-        | VideoEditTransportError::SyncInRuntime { .. }
-        | VideoEditTransportError::Runtime(_)) => {
-            panic!("the transform error was converted: {other:?}")
-        }
-    }
-    harness
-        .config
-        .extension
-        .as_mut()
-        .expect("the fixture has an extension plan")
-        .refusal = None;
-    harness.log.refusal = Some("the pre_call refused".to_owned());
-    let log_transport = harness.transport();
-    let log_error =
-        expect_failure(log_transport.video_extension(harness.extension_request(), &harness.config));
-    match log_error {
-        VideoEditTransportError::Logging(PrePostError::CallbackFailed { message }) => {
-            assert_eq!(message, "the pre_call refused");
-        }
-        other @ (VideoEditTransportError::Provider(_)
-        | VideoEditTransportError::Config(_)
-        | VideoEditTransportError::Logging(_)
-        | VideoEditTransportError::Client(_)
-        | VideoEditTransportError::PrefetchDecode(_)
-        | VideoEditTransportError::FieldType(_)
-        | VideoEditTransportError::SyncInRuntime { .. }
-        | VideoEditTransportError::Runtime(_)) => {
-            panic!("the pre_call error was converted: {other:?}")
-        }
-    }
+    let [transform_error, log_error] =
+        harness.refusal_errors(CallKind::Extension, "the extension transform refused");
+    let VideoEditTransportError::Config(source) = &transform_error else {
+        panic!("the transform error was converted: {transform_error:?}");
+    };
+    assert_eq!(source.to_string(), "the extension transform refused");
+    let VideoEditTransportError::Logging(PrePostError::CallbackFailed { message }) = &log_error
+    else {
+        panic!("the pre_call error was converted: {log_error:?}");
+    };
+    assert_eq!(message, "the pre_call refused");
     assert!(harness.config.errors().is_empty());
     assert!(harness.log.calls().is_empty());
     assert!(wire.requests().is_empty());
@@ -90,26 +53,9 @@ fn dod_7_edit_converted() {
     let events = Events::new();
     let wire = Wire::new(Vec::new(), &events);
     let mut harness = Harness::new(&events, wire.clone());
-    harness
-        .config
-        .edit
-        .as_mut()
-        .expect("the fixture has an edit plan")
-        .refusal = Some("the edit transform refused".to_owned());
-    let transform_transport = harness.transport();
-    let transform_error =
-        expect_failure(transform_transport.video_edit(harness.edit_request(), &harness.config));
+    let [transform_error, log_error] =
+        harness.refusal_errors(CallKind::Edit, "the edit transform refused");
     assert_synthesized_error(transform_error, "the edit transform refused");
-    harness
-        .config
-        .edit
-        .as_mut()
-        .expect("the fixture has an edit plan")
-        .refusal = None;
-    harness.log.refusal = Some("the pre_call refused".to_owned());
-    let log_transport = harness.transport();
-    let log_error =
-        expect_failure(log_transport.video_edit(harness.edit_request(), &harness.config));
     assert_synthesized_error(log_error, "the pre_call refused");
     assert_eq!(
         harness.config.errors(),
@@ -132,7 +78,7 @@ fn dod_8_prefetch_status() {
         "https://upstream.test/prefetch".to_owned(),
         object("{\"video_id\":\"video-77\"}"),
     ));
-    let provider = provider_error(edit_error(&harness));
+    let provider = provider_error(harness.call_error(CallKind::Edit));
     assert_eq!(provider.status_code, 500);
     assert!(!provider.status_code_is_synthesized);
     assert_eq!(provider.message, "prefetch failed");
@@ -178,7 +124,10 @@ fn dod_8_status() {
         &events,
     );
     let harness = Harness::new(&events, wire.clone());
-    for error in [edit_error(&harness), extension_error(&harness)] {
+    for error in [
+        harness.call_error(CallKind::Edit),
+        harness.call_error(CallKind::Extension),
+    ] {
         assert_reply_error(error, 404, "gone");
     }
     assert!(harness.config.edit_reply_seen().is_none());
@@ -210,16 +159,6 @@ fn assert_synthesized_error(error: VideoEditTransportError, message: &str) {
     assert_eq!(provider.message, message);
 }
 
-fn edit_error(harness: &Harness<Wire>) -> VideoEditTransportError {
-    let transport = harness.transport();
-    expect_failure(transport.video_edit(harness.edit_request(), &harness.config))
-}
-
-fn extension_error(harness: &Harness<Wire>) -> VideoEditTransportError {
-    let transport = harness.transport();
-    expect_failure(transport.video_extension(harness.extension_request(), &harness.config))
-}
-
 fn dod_8_response_transform() {
     let body = "the reply body";
     let events = Events::new();
@@ -229,8 +168,8 @@ fn dod_8_response_transform() {
     );
     let mut harness = Harness::new(&events, wire);
     harness.config.response_refusal = Some("cannot read the reply".to_owned());
-    assert_reply_error(edit_error(&harness), 200, body);
-    assert_reply_error(extension_error(&harness), 200, body);
+    assert_reply_error(harness.call_error(CallKind::Edit), 200, body);
+    assert_reply_error(harness.call_error(CallKind::Extension), 200, body);
     let length = body.len().to_string();
     let expected = headers(&[("content-length", length.as_str())]);
     assert_eq!(
