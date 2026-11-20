@@ -1,19 +1,14 @@
 use std::collections::BTreeMap;
-use std::future::Future;
 use std::time::{Duration, Instant};
 
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::RequestBody;
-use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
-use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
-use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_openai::vector_stores::Headers as OpenAiHeaders;
 use betterlite_openai::vector_stores::store::CreateParams;
-use http::header::{HeaderName, HeaderValue};
-use http::{HeaderMap as HttpHeaders, Method};
+use http::Method;
 use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
 use url::Url;
@@ -23,16 +18,18 @@ use self::request::{
     call_timeout, create_endpoint, list_endpoint, list_params, retrieve_endpoint, select_client,
     validated_headers,
 };
+use self::wire::wire_headers;
 use super::config::CreateReadConfig;
 use super::error::CreateReadError;
 use crate::api::vector_store_http_write::config::{WriteConfig, WriteParams};
-use crate::api::vector_store_http_write::error::{ClientError, WriteError, handle_error};
+use crate::api::vector_store_http_write::error::{WriteError, handle_error};
 use crate::api::vector_store_http_write::service::{
     ClientKind, ClientSource, LogContext, SuppliedClient, WriteRequest, WriteTransport,
 };
 
 mod facts;
 mod request;
+mod wire;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Operation {
@@ -150,7 +147,7 @@ where
         request: WriteRequest {
             method: operation.http_method(),
             url,
-            headers: wire_headers(&headers)?,
+            headers: wire_headers(&headers, target.extra_headers)?,
             body: wire_body(payload.as_ref())?,
             timeout: call_timeout(mode, operation, target.timeout),
         },
@@ -214,25 +211,6 @@ fn log_pre_call(
         .map(drop)
         .map_err(WriteError::Logging)?;
     Ok(())
-}
-
-fn wire_headers(headers: &OpenAiHeaders) -> Result<HttpHeaders, WriteError> {
-    let mut map = HttpHeaders::new();
-    for (name, value) in headers {
-        let header_name =
-            HeaderName::from_bytes(name.as_bytes()).map_err(|source| WriteError::HeaderName {
-                name: name.clone(),
-                source,
-            })?;
-        let header_value = HeaderValue::from_str(value.expose_secret()).map_err(|source| {
-            WriteError::HeaderValue {
-                name: name.clone(),
-                source,
-            }
-        })?;
-        map.insert(header_name, header_value);
-    }
-    Ok(map)
 }
 
 fn wire_body(body: Option<&IndexMap<String, Json>>) -> Result<RequestBody, WriteError> {

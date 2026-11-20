@@ -109,6 +109,44 @@ async fn create_read_header_and_logging() {
     check_request_headers(&requests[2]);
 }
 
+// httpx keeps a caller header whose case differs from the provider's as a second line, with the caller's value first
+#[tokio::test]
+async fn case_variant_caller_headers_keep_both_values() {
+    let settings = openai_settings();
+    let config = openai_config(&settings, "sk-p");
+    let events = Events::new();
+    let wire = Wire::replying(Reply::json(200, STORE), &events);
+    let source = Source::new(wire.clone());
+    let deps = deps(&config, &source, None);
+    let params = params("http://mock.test/v1");
+    let caller = caller_headers(&[("authorization", "Bearer caller"), ("openai-beta", "x")]);
+    let mut fixture = Fixture::new("vector_store_retrieve");
+    run(
+        &mut fixture,
+        &deps,
+        ClientKind::Sync,
+        &retrieve_call(with_headers(&params, &caller)),
+        &events,
+    )
+    .await
+    .expect("the retrieve succeeds");
+    let requests = wire.requests();
+    let authorization: Vec<&str> = requests[0]
+        .headers
+        .get_all("authorization")
+        .iter()
+        .map(|value| value.to_str().expect("the header value is ASCII"))
+        .collect();
+    assert_eq!(authorization, vec!["Bearer caller", "Bearer sk-p"]);
+    let beta: Vec<&str> = requests[0]
+        .headers
+        .get_all("openai-beta")
+        .iter()
+        .map(|value| value.to_str().expect("the header value is ASCII"))
+        .collect();
+    assert_eq!(beta, vec!["x", "assistants=v2"]);
+}
+
 // An absent header map and an empty one both leave the provider's own beta value in place
 #[tokio::test]
 async fn absent_and_empty_headers_use_the_provider_defaults() {
