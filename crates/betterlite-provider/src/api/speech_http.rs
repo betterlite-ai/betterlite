@@ -237,22 +237,31 @@ fn wire_body(
     }
 }
 
-// ast-grep-ignore: no-padded-one-line-functions - the public sync entry point prepares the request and sends it, with no state of its own
+// ast-grep-ignore: no-padded-one-line-functions - both public entry points forward here, and this body is the pipeline itself
+async fn execute<S: ClientSource>(
+    deps: &SpeechDeps<'_, S>,
+    mode: Mode,
+    call: &SpeechCall<'_>,
+    log: &mut LogContext<'_, '_>,
+) -> Result<SpeechBinaryResponse, SpeechError> {
+    let prepared = prepare(deps, mode, call, log)?;
+    send(prepared, call.model).await
+}
+
+// ast-grep-ignore: no-one-line-functions - the public sync entry point forwards to the shared pipeline with its client class
 pub async fn text_to_speech_handler<S: ClientSource>(
     deps: &SpeechDeps<'_, S>,
     call: &SpeechCall<'_>,
     log: &mut LogContext<'_, '_>,
 ) -> Result<SpeechBinaryResponse, SpeechError> {
-    let prepared = prepare(deps, Mode::Sync, call, log)?;
-    send(prepared, call.model).await
+    execute(deps, Mode::Sync, call, log).await
 }
 
-// ast-grep-ignore: no-padded-one-line-functions - the public async entry point prepares the request and sends it, with no state of its own
+// ast-grep-ignore: no-one-line-functions - the public async entry point forwards to the shared pipeline with its client class
 pub async fn async_text_to_speech_handler<S: ClientSource>(
     deps: &SpeechDeps<'_, S>,
     call: &SpeechCall<'_>,
     log: &mut LogContext<'_, '_>,
 ) -> Result<SpeechBinaryResponse, SpeechError> {
-    let prepared = prepare(deps, Mode::Asynchronous, call, log)?;
-    send(prepared, call.model).await
+    execute(deps, Mode::Asynchronous, call, log).await
 }

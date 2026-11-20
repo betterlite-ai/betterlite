@@ -30,8 +30,8 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::api::speech_http::error::{ClientError, SpeechError};
 use crate::api::speech_http::{
-    ClientSource, LogContext, Mode, PreparedSpeech, SpeechBinaryResponse, SpeechCall, SpeechDeps,
-    SpeechParams, SpeechTransport, SpeechWireRequest, prepare, send,
+    ClientSource, LogContext, Mode, SpeechBinaryResponse, SpeechCall, SpeechDeps, SpeechParams,
+    SpeechTransport, SpeechWireRequest, prepare, send,
 };
 use crate::api::speech_provider_contract::{
     BaseLlmException, ClassAttribute, SpeechContractError, SpeechHeaders, SpeechMappingOptions,
@@ -80,37 +80,6 @@ impl Fixture {
         }
     }
 
-    pub(crate) fn prepare<'deps, S: ClientSource>(
-        &mut self,
-        deps: &'deps SpeechDeps<'deps, S>,
-        mode: Mode,
-        call: &SpeechCall<'_>,
-    ) -> Result<PreparedSpeech<'deps, S>, SpeechError> {
-        let env = PrePostEnv {
-            debug: DebugSettings::default(),
-            globals: GlobalFlags::default(),
-            decision: Decision {
-                content: false,
-                key_info: false,
-            },
-            redactor: &self.redactor,
-            log: &self.sink,
-            input_callbacks: &[],
-            sentry: None,
-            logger_fn: None,
-            now: self.now,
-        };
-        prepare(
-            deps,
-            mode,
-            call,
-            &mut LogContext {
-                state: &mut self.state,
-                env: &env,
-            },
-        )
-    }
-
     pub(crate) fn logged(&self, name: &str) -> Option<&Json> {
         let Json::Object(details) = self.state.model_call_details.get("additional_args")? else {
             return None;
@@ -129,7 +98,29 @@ pub(crate) async fn run<'deps, S: ClientSource>(
     mode: Mode,
     call: &SpeechCall<'_>,
 ) -> Result<SpeechBinaryResponse, SpeechError> {
-    let prepared = fixture.prepare(deps, mode, call)?;
+    let env = PrePostEnv {
+        debug: DebugSettings::default(),
+        globals: GlobalFlags::default(),
+        decision: Decision {
+            content: false,
+            key_info: false,
+        },
+        redactor: &fixture.redactor,
+        log: &fixture.sink,
+        input_callbacks: &[],
+        sentry: None,
+        logger_fn: None,
+        now: fixture.now,
+    };
+    let prepared = prepare(
+        deps,
+        mode,
+        call,
+        &mut LogContext {
+            state: &mut fixture.state,
+            env: &env,
+        },
+    )?;
     send(prepared, call.model).await
 }
 
