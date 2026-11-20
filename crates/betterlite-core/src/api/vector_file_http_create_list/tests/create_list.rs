@@ -120,7 +120,7 @@ fn assert_cleaned(overlay: AttributeOverlay, body: &Json) {
             assert_eq!(attributes.keys().last().map(String::as_str), Some("k03"));
         }
         AttributeOverlay::Listed => {
-            assert_eq!(body, &json(r#"{"file_id":"old","attributes":["a","b"]}"#))
+            assert_eq!(body, &json(r#"{"file_id":"old","attributes":["a","b"]}"#));
         }
         AttributeOverlay::Empty => assert_eq!(body, &json(r#"{"file_id":"old","attributes":{}}"#)),
     }

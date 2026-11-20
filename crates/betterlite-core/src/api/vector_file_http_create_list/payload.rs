@@ -64,11 +64,9 @@ pub(crate) fn query_pairs(
     for (name, value) in fields {
         let items: &[Json] = match value {
             Json::List(items) => items.as_slice(),
-            single @ Json::Null
-            | single @ Json::Bool(_)
-            | single @ Json::Number(_)
-            | single @ Json::Text(_)
-            | single @ Json::Object(_) => from_ref(single),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
+                from_ref(value)
+            }
         };
         for item in items {
             pairs.push((name.clone(), query_text(name, item)?));
