@@ -17,17 +17,17 @@ use http::header::{HeaderMap as HttpHeaders, HeaderValue};
 use serde_json::Number;
 
 use self::support::{
-    API_BASE, EDITS_URL, Event, Fixture, FixtureError, MODEL, PartFacts, RESPONSE_BODY,
+    API_BASE, EDITS_URL, Event, Fixture, FixtureError, MODEL, PartFacts, PoolSource, RESPONSE_BODY,
     RecordingConfig, Reply, Source, Transport, assert_async_matches_sync,
     assert_async_transform_once, assert_sync_logging, assert_sync_request, assert_sync_result,
     assert_validation_never_selects, body_json, call_deps, edit_call, edit_transport, fact_headers,
-    headers, image, image_response, json, litellm_params, params, params_json, part_facts,
-    recorded_events, validated_transform_event, with_requests,
+    headers, image, image_response, json, listener, litellm_params, params, params_json,
+    part_facts, recorded_events, stall_once, validated_transform_event, with_requests,
 };
 use super::error::{ImageEditHttpError, RequestError};
 use super::facts::{self, Failure, SendError, Sent};
 use super::request::{caller_headers, endpoint, merge, multipart_parts};
-use super::service::{ClientKind, SuppliedClient};
+use super::service::{ClientKind, ImageEditDeps, SuppliedClient};
 use crate::api::image_contracts::error::ImageContractError;
 
 mod support;
@@ -67,7 +67,7 @@ async fn edit_finalization_and_multipart() {
     };
     assert_eq!(
         config.events(),
-        recorded_events(headers(&[("x", "option")]), transform)
+        recorded_events(headers(&[("x", "option")]), litellm.clone(), transform)
     );
     assert_sync_request(&transport);
     assert_sync_logging(&fixture);
@@ -102,6 +102,7 @@ async fn edit_json_and_unused_arguments() {
         config.events(),
         recorded_events(
             ImageHeaders::new(),
+            litellm.clone(),
             validated_transform_event(ClientKind::Sync)
         )
     );
@@ -239,6 +240,68 @@ async fn a_send_failure_is_a_synthesized_500() {
     );
     assert_eq!(answer.headers, Some(Vec::new()));
     assert_eq!(transport.requests().len(), 1);
+}
+
+// A send that times out becomes LiteLLM's own 408 in either mode, with the message built from the caller's timeout
+#[tokio::test]
+async fn a_send_timeout_is_litellm_408() {
+    let sync = timeout_failure(ClientKind::Sync, Duration::from_secs(1)).await;
+    assert_eq!(sync.status_code, 408);
+    assert!(!sync.status_code_is_synthesized);
+    assert_eq!(sync.headers, Some(Vec::new()));
+    assert_eq!(
+        sync.message,
+        "litellm.Timeout: Connection timed out after 1.0 seconds."
+    );
+
+    let asynchronous = timeout_failure(ClientKind::Asynchronous, Duration::from_millis(50)).await;
+    assert_eq!(asynchronous.status_code, 408);
+    assert!(!asynchronous.status_code_is_synthesized);
+    assert_eq!(asynchronous.headers, Some(Vec::new()));
+    let waited = asynchronous
+        .message
+        .strip_prefix("litellm.Timeout: Connection timed out. Timeout passed=0.05, time taken=")
+        .expect("the async message names the caller's timeout");
+    let elapsed = waited
+        .strip_suffix(" seconds")
+        .expect("the async message ends with its seconds");
+    let taken: f64 = elapsed.parse().expect("the elapsed renders as a number");
+    assert!(
+        taken >= 0.05,
+        "the message carries the waited time, got {taken}"
+    );
+}
+
+async fn timeout_failure(kind: ClientKind, timeout: Duration) -> Box<ProviderError> {
+    let (listener, base) = listener().await;
+    let config = RecordingConfig::new(&base);
+    let mut litellm = litellm_params();
+    litellm.insert(String::from("api_base"), Json::Text(base));
+    let options = ImageParams::new();
+    let mut call = edit_call(Some("change"), None, &options, &litellm, None);
+    call.timeout = timeout;
+    let source = PoolSource::new();
+    let deps = ImageEditDeps {
+        config: &config,
+        source: &source,
+        supplied: None,
+    };
+    let mut fixture = Fixture::new();
+    let hold = timeout.saturating_add(Duration::from_millis(200));
+    let (result, ()) = tokio::join!(fixture.run(kind, &deps, &call), stall_once(&listener, hold));
+    assert_eq!(source.seen(), vec![None]);
+    let Err(error) = result else {
+        panic!("a stalled send times out");
+    };
+    let ImageEditHttpError::Provider(answer) = error else {
+        panic!("a timeout is the provider's answer: {error}");
+    };
+    assert!(config.events().contains(&Event::Classify {
+        message: answer.message.clone(),
+        status_code: 408,
+        headers: ImageHeaders::new(),
+    }));
+    answer
 }
 
 #[test]

@@ -1,16 +1,19 @@
+use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::types::ProxyTrust;
 use betterlite_core::api::vector_store_http_write::error::{
     ClientError, HeaderMap as FactsHeaders,
 };
 use betterlite_core::api::vector_store_http_write::service::{WriteRequest, WriteTransport};
-use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::multipart::MultipartPart;
 use betterlite_http::proxy::outbound::RequestBody;
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
 };
@@ -30,6 +33,9 @@ use http::{HeaderMap, HeaderValue};
 use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
 use thiserror::Error;
+use tokio::io::AsyncReadExt as _;
+use tokio::net::TcpListener;
+use tokio::time::sleep;
 
 use super::super::asynchronous::async_image_edit_handler;
 use super::super::error::{ImageEditHttpError, RequestError};
@@ -73,9 +79,11 @@ pub(super) enum Event {
         api_key: Option<String>,
         api_base: Option<String>,
         model: String,
+        litellm_params: Option<ImageParams>,
         headers: ImageHeaders,
     },
     Url {
+        model: String,
         api_base: Option<String>,
         api_key: Option<String>,
     },
@@ -248,6 +256,7 @@ impl BaseImageEditConfig for RecordingConfig {
             api_key: request.api_key.map(|key| key.expose_secret().to_owned()),
             api_base: request.api_base.map(str::to_owned),
             model: request.model.to_owned(),
+            litellm_params: request.litellm_params.cloned(),
             headers: request.headers.clone(),
         });
         headers(&[("x", "validated")])
@@ -255,7 +264,7 @@ impl BaseImageEditConfig for RecordingConfig {
 
     fn get_complete_url(
         &self,
-        _model: &str,
+        model: &str,
         api_base: Option<&str>,
         litellm_params: &ImageParams,
     ) -> Result<String, Self::Error> {
@@ -267,6 +276,7 @@ impl BaseImageEditConfig for RecordingConfig {
             ) => None,
         };
         self.record(Event::Url {
+            model: model.to_owned(),
             api_base: api_base.map(str::to_owned),
             api_key,
         });
@@ -448,6 +458,60 @@ impl ClientSource for Source {
             .unwrap_or_else(PoisonError::into_inner)
             .push(ssl_verify);
         Ok(self.transport.clone())
+    }
+}
+
+pub(super) async fn listener() -> (TcpListener, String) {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the listener");
+    let address = listener.local_addr().expect("the address");
+    (listener, format!("http://{address}/v1"))
+}
+
+// Holds the connection open past the client's deadline without ever answering
+pub(super) async fn stall_once(listener: &TcpListener, hold: Duration) {
+    let (mut stream, _) = listener.accept().await.expect("the connection");
+    let mut chunk = [0_u8; 4096];
+    let _read = stream.read(&mut chunk).await.expect("the request bytes");
+    sleep(hold).await;
+}
+
+// A pooled client built the way production builds it, recording the ssl_verify each call asked for
+pub(super) struct PoolSource {
+    client: ProxiedClient,
+    seen: Mutex<Vec<Option<bool>>>,
+}
+
+impl PoolSource {
+    pub(super) fn new() -> Self {
+        let policy = Arc::new(
+            ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new())
+                .expect("the proxy policy"),
+        );
+        Self {
+            client: ProxiedClient::outbound(&policy).expect("the outbound client"),
+            seen: Mutex::default(),
+        }
+    }
+
+    pub(super) fn seen(&self) -> Vec<Option<bool>> {
+        self.seen
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
+impl ClientSource for PoolSource {
+    type Client = ProxiedClient;
+
+    fn client(&self, ssl_verify: Option<bool>) -> Result<ProxiedClient, ClientError> {
+        self.seen
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(ssl_verify);
+        Ok(self.client.clone())
     }
 }
 
@@ -633,15 +697,21 @@ pub(super) fn edit_transport() -> Transport {
     Transport::replying(Reply::json(200, RESPONSE_BODY).with_header("x-request-id", "edit_1"))
 }
 
-pub(super) fn recorded_events(environment_headers: ImageHeaders, transform: Event) -> Vec<Event> {
+pub(super) fn recorded_events(
+    environment_headers: ImageHeaders,
+    litellm: ImageParams,
+    transform: Event,
+) -> Vec<Event> {
     vec![
         Event::Environment {
             api_key: Some(String::from("key")),
             api_base: Some(String::from(API_BASE)),
             model: String::from(MODEL),
+            litellm_params: Some(litellm),
             headers: environment_headers,
         },
         Event::Url {
+            model: String::from(MODEL),
             api_base: Some(String::from(API_BASE)),
             api_key: Some(String::from("key")),
         },
