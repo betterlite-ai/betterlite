@@ -11,7 +11,8 @@ from litellm.fine_tuning import main as fine_tuning_main
 from litellm.integrations.gcs_bucket import gcs_bucket_mock_client
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
 from litellm.types.utils import LiteLLMFineTuningJob
-from pydantic import BaseModel, ConfigDict, Field, JsonValue as Json, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import JsonValue as Json
 from typing_extensions import override
 
 from openai_chat import Failure, project_failure
@@ -135,8 +136,7 @@ class VertexRecorder(httpx.AsyncBaseTransport):
             url=request.url.copy_with(
                 scheme=self.origin.scheme, host=self.origin.host, port=self.origin.port
             ),
-            headers=request.headers,
-            content=request.content,
+            headers=request.headers, content=request.content,
         )
         return await self.inner.handle_async_request(forwarded)
 
