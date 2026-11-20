@@ -98,7 +98,6 @@ where
     })
 }
 
-// What a handler holds after preparing: the chosen client, the request's headers and resolved URL, and the mode that picks the logging payload and the timeout message
 pub(super) struct Prepared<'borrow, 'call, C: BaseImageEditConfig, Client> {
     config: &'borrow C,
     call: &'borrow ImageEditCall<'call>,
@@ -109,7 +108,6 @@ pub(super) struct Prepared<'borrow, 'call, C: BaseImageEditConfig, Client> {
 }
 
 impl<C: BaseImageEditConfig, Client: WriteTransport> Prepared<'_, '_, C, Client> {
-    // The transform's input: the handler's fields and the headers the environment hook completed
     pub(super) fn request(&self) -> ImageEditRequest<'_> {
         ImageEditRequest {
             model: self.call.model,
@@ -154,14 +152,8 @@ impl<C: BaseImageEditConfig, Client: WriteTransport> Prepared<'_, '_, C, Client>
             body,
             timeout: Some(self.call.timeout),
         };
-        send(
-            self.config,
-            &self.client,
-            request,
-            self.mode,
-            self.call.model,
-        )
-        .await
+        let model = self.call.model;
+        send(self.config, &self.client, request, self.mode, model).await
     }
 }
 

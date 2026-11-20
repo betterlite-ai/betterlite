@@ -54,7 +54,6 @@ class EditCall(BaseModel):
     timeout_seconds: int
 
 
-# The handler's pre_call arguments and the prompt it logged; sync files keep the image's bytes
 class PreCall(BaseModel):
     input: JsonValue = None
     complete_input_dict: CompleteInput
@@ -177,7 +176,6 @@ class FixtureConfig(BaseImageEditConfig):
 HANDLER: Final = BaseLLMHTTPHandler()
 
 
-# The request's pre-call, kept as it was handed over instead of LiteLLM's untyped details dict
 class RecordingLogging(Logging):
     def __init__(self) -> None:
         self.logged: PreCall | None = None

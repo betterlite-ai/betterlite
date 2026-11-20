@@ -15,14 +15,12 @@ use url::Url;
 use super::error::RequestError;
 use super::service::{ClientKind, LogContext};
 
-// The typed litellm_params values the handler reads before it selects a client
 pub(super) struct Fields {
     pub(super) api_key: Option<SecretString>,
     pub(super) api_base: Option<String>,
     pub(super) ssl_verify: Option<bool>,
 }
 
-// The pre-call the handler logs before the send: the prompt, the resolved URL, the headers, and the body each mode logs
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Logged<'logged> {
     pub(super) prompt: Option<&'logged str>,
