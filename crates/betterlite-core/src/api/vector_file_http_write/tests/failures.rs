@@ -64,6 +64,35 @@ async fn file_write_failure_scope(#[case] operation: Operation) {
     assert_eq!(wire.requests().len(), 1, "the handler never retries");
 }
 
+// raise_for_status rejects a 400 inside the send, so the first failing status never reaches the response transform
+#[tokio::test]
+async fn status_400_is_a_provider_error() {
+    let config = RecordingConfig::new("http://mock.test/v1");
+    let events = Events::new();
+    let wire = Wire::replying(Reply::json(400, "{}"), &events);
+    let source = Source::new(wire.clone());
+    let deps = WriteDeps {
+        config: &config,
+        source: &source,
+        supplied: None,
+    };
+    let params = params("http://unused.test");
+    let request = update_request(r#"{"attributes":{}}"#);
+    let call = update_call(
+        target("vs_a", "file_a", &params, None, None),
+        &request,
+        None,
+    );
+    let mut fixture = Fixture::new("vector_store_file_update");
+    let result = run(&mut fixture, &deps, ClientKind::Sync, &call, &events).await;
+    let Err(FileWriteError::Provider(error)) = result else {
+        panic!("a 400 is a provider error, not a transformed reply");
+    };
+    assert_eq!(error.status_code, 400);
+    assert!(!error.status_code_is_synthesized);
+    assert_eq!(wire.requests().len(), 1);
+}
+
 // The response transform runs after the send catch: its own error class answers at the reply's status and sees the raw reply headers
 #[rstest]
 #[case::update(Operation::Update)]
