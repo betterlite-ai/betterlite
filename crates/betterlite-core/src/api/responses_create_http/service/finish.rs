@@ -56,17 +56,19 @@ where
     })?;
     match (stream, answer) {
         (true, SentReply::Streaming(response)) => Ok(SentReply::Streaming(response)),
-        (false, SentReply::Buffered(response)) => {
+        (false, SentReply::Streaming(_)) => Err(CreateError::StreamContract),
+        (_, SentReply::Buffered(response)) => {
+            // A streamed error answer is buffered like a nonstream one, so its status fails here too
             if !(200..=299).contains(&response.status) {
                 return Err(CreateError::Provider(provider_error(
                     &status_facts(&response),
                     config,
                 )));
             }
+            if stream {
+                return Err(CreateError::StreamContract);
+            }
             Ok(SentReply::Buffered(response))
-        }
-        (true, SentReply::Buffered(_)) | (false, SentReply::Streaming(_)) => {
-            Err(CreateError::StreamContract)
         }
     }
 }

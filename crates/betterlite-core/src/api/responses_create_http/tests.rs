@@ -695,12 +695,14 @@ fn check_agentic(expect: AgenticExpect, outcome: CreateOutcome) {
 #[derive(Clone, Copy)]
 enum FailureCase {
     Status,
+    StreamingStatus,
     Step(FailStage),
     ContextUpdate,
 }
 
 #[rstest]
 #[case::status(FailureCase::Status)]
+#[case::streaming_status(FailureCase::StreamingStatus)]
 #[case::transform(FailureCase::Step(FailStage::Transform))]
 #[case::normalize(FailureCase::Step(FailStage::Normalize))]
 #[case::sign(FailureCase::Step(FailStage::Sign))]
@@ -714,7 +716,11 @@ async fn create_transport_failure(#[case] scenario: FailureCase) {
     let dispatcher = Dispatcher::quiet();
     match scenario {
         FailureCase::Status => {
-            status_failure(&input, &empty, &call_params, &dispatcher).await;
+            status_failure(&input, &empty, &call_params, &dispatcher, false).await;
+        }
+        FailureCase::StreamingStatus => {
+            let streaming = object(r#"{"stream":true}"#);
+            status_failure(&input, &streaming, &call_params, &dispatcher, true).await;
         }
         FailureCase::Step(stage) => {
             step_failure(stage, &input, &empty, &call_params, &dispatcher).await;
@@ -723,19 +729,21 @@ async fn create_transport_failure(#[case] scenario: FailureCase) {
     }
 }
 
-// HTTP 429 text=slow down with Retry-After=3 becomes B2402's 429 with the header preserved
+// HTTP 429 text=slow down with Retry-After=3 becomes B2402's 429 with the header preserved,
+// whether the call asked for a stream or not: the buffered error answer fails the same way
 async fn status_failure(
     input: &ResponsesInput,
-    empty: &Object,
+    optional: &Object,
     call_params: &CreateParams,
     dispatcher: &Dispatcher,
+    stream: bool,
 ) {
     let config = Config::default();
     let wire = Wire::new(vec![Answer::Json(
         Reply::json(429, "slow down").with_header("retry-after", "3"),
     )]);
     let source = Source::with(wire.clone());
-    let call = create_call(input, empty, call_params);
+    let call = create_call(input, optional, call_params);
     let create_hooks = hooks(NO_CALLBACKS, dispatcher, &NO_RESOLVER);
     let deps = create_deps(&config, &source);
     let error = match execute(&deps, ClientKind::Sync, &call, &create_hooks).await {
@@ -749,7 +757,9 @@ async fn status_failure(
     assert!(!provider.status_code_is_synthesized);
     assert_eq!(provider.message, "slow down");
     assert_eq!(provider.headers.get("retry-after"), Some(&models("\"3\"")));
-    assert_eq!(wire.requests().len(), 1);
+    let sent = wire.requests();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].stream, stream);
 }
 
 // transform, normalize and sign fail before the send catch and send nothing; the response transform runs after it
