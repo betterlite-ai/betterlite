@@ -1,0 +1,38 @@
+kind: helper
+name: access-group-models-absent-or-db-sibling
+call:
+  access_group_models:
+    function: config_sourced_sibling
+    model_list:
+      - model_name: gpt-4o
+        litellm_params:
+          model: azure/gpt-4o
+        model_info:
+          id: db-1
+          db_model: true
+    deployment_id: db-1
+    model_id: dep-1
+calls:
+  - access_group_models:
+      function: config_sourced_sibling
+      model_list:
+        - model_name: gpt-4o
+          litellm_params:
+            model: azure/gpt-4o
+          model_info:
+            id: db-1
+            db_model: true
+      deployment_id: missing
+      model_id: dep-1
+  - access_group_models:
+      function: config_sourced_sibling
+      model_list:
+        - model_name: gpt-4o
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: config-1
+      deployment_id: config-1
+      model_id: dep-1
+env: {}
+compare: {ignore: []}

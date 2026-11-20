@@ -67,6 +67,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "request_body_safety"
+path = "fuzz_targets/request_body_safety.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "resource_hint"
 path = "fuzz_targets/resource_hint.rs"
 test = false

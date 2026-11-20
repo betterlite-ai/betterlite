@@ -38,6 +38,11 @@ pub(crate) async fn stage(
     if check_configured_public_routes(&route, Ok(&settings.routes.public_routes)) {
         next.run(request).await
     } else {
-        super::authenticate(State(settings.master_key), request, next).await
+        Box::pin(super::authenticate(
+            State(settings.master_key),
+            request,
+            next,
+        ))
+        .await
     }
 }
