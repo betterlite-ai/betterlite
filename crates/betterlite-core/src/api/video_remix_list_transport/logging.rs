@@ -67,7 +67,6 @@ pub(super) fn record_pre_call(
             input: Json::Text(String::new()),
             model: None,
             additional_args: AdditionalArgs {
-                complete_input_dict: None,
                 passthrough: IndexMap::from([(
                     String::from("params"),
                     Json::Object(call.params.clone()),
