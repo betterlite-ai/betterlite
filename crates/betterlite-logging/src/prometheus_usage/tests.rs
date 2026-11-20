@@ -684,6 +684,27 @@ fn provider_cache_skips_zero_and_negative_counts() {
 }
 
 #[test]
+fn provider_cache_skips_zero_creation_tokens() {
+    let fixture = Fixture::with_end_user("alice");
+    let counters = FakeCounters::with_labels(&[]);
+    let usage = object(vec![
+        ("cache_read_input_tokens", number("3")),
+        ("cache_creation_input_tokens", number("0")),
+    ]);
+    increment_cache_metrics(
+        &counters,
+        &with_usage(payload(Decimal::ZERO), usage),
+        fixture.labels(),
+        Instant::now(),
+    )
+    .unwrap();
+    assert_eq!(
+        increments(&counters),
+        [(UsageMetric::ProviderCacheReadTokens, finite("3"))]
+    );
+}
+
+#[test]
 fn mcp_tool_calls_use_reduced_label_values() {
     let fixture = Fixture::new(&[
         ("model", "gpt-4o"),
