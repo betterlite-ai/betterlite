@@ -1,0 +1,24 @@
+task: B157
+deviations:
+  - what: The model cost map is the pinned text bundled in the wheel, so betterlite fetches nothing at import whatever LITELLM_LOCAL_MODEL_COST_MAP says.
+    why: A network call during import is slow and breaks offline use, and register_model covers runtime changes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L380-L390
+  - what: CALLBACK_TYPES, in_memory_llm_clients_cache, _key_management_settings and vertexAITextEmbeddingConfig keep their names and hold None, where LiteLLM holds a type alias, an LLMClientCache instance, a KeyManagementSettings instance and a VertexAITextEmbeddingConfig instance.
+    why: Those classes arrive with the tasks that build them, and the test names each placeholder with its reason.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L114
+  - what: A .env file is read from the process working folder, where LiteLLM calls load_dotenv() with no path and python-dotenv searches upward from the installed litellm package directory.
+    why: The task's doD names the working folder, which is where a setup keeps the .env it starts the proxy from.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L22-L29
+  - what: mark_litellm_import_complete() is not built and _AGENT_EXPORTS is not exported.
+    why: Nothing fetches a cost map at import here, the top-level __getattr__ is out of this task's scope, and the agent functions arrive under their own names with B158 and B166.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L2314
+  - what: modify_integration("supabase", {"table_name": name}) stores the name in callback_settings["supabase"]["table_name"], where LiteLLM assigns it to Supabase.supabase_table_name.
+    why: The Supabase logger and its table setting belong to B3979, and the task names callback_settings as the place it reads the table name from.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L6867-L6871
+  - what: This task has no helper oracle cases.
+    why: The test imports both packages and compares the module-level names and defaults directly, which covers more than a helper call would.
+    link: ""
+kept_bugs:
+  - what: clarifai_models keeps LiteLLM's merged entry "clarifai/qwen.qwenLM.Qwen3-30B-A3B-Thinking-2507clarifai/openai.chat-completion.gpt-5-nano" instead of two model names.
+    why: A setup that counts the set or matches the concatenated name sees the same value after the switch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1103
