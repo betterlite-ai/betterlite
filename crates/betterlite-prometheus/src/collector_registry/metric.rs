@@ -5,7 +5,7 @@ use rust_decimal::Decimal;
 
 use crate::collector_factory::collector::{Collector, MetricUpdate, MetricValue};
 
-use sample::{Sample, added, within};
+use sample::{Sample, added};
 
 pub mod sample;
 
@@ -62,7 +62,7 @@ pub fn prepare_buckets(source: &[Bucket]) -> Result<Vec<Bucket>, BucketError> {
             Bucket::Seconds(seconds) if seconds.is_infinite() && seconds.is_sign_positive() => {
                 Bucket::Infinite
             }
-            other => *other,
+            other @ (Bucket::Seconds(_) | Bucket::Infinite) => *other,
         })
         .collect();
     let unordered = prepared
@@ -104,8 +104,8 @@ pub enum SeriesRemoval {
 #[derive(Clone, Debug)]
 pub struct PrometheusMetric {
     pub description: Arc<CollectorDescription>,
-    label_values: Vec<String>,
-    samples: Arc<Mutex<BTreeMap<Vec<String>, Sample>>>,
+    pub label_values: Vec<String>,
+    pub samples: Arc<Mutex<BTreeMap<Vec<String>, Sample>>>,
 }
 
 impl PrometheusMetric {
@@ -118,12 +118,12 @@ impl PrometheusMetric {
         label_names: &[&str],
         buckets: Vec<Bucket>,
     ) -> Self {
-        let name = match kind {
+        let registered_name = match kind {
             CollectorKind::Counter => name.strip_suffix("_total").unwrap_or(name),
             CollectorKind::Gauge | CollectorKind::Histogram => name,
         };
         let description = CollectorDescription {
-            name: name.to_owned(),
+            name: registered_name.to_owned(),
             kind,
             help: help.to_owned(),
             label_names: label_names
@@ -166,11 +166,16 @@ impl PrometheusMetric {
         if label_values.is_empty() || self.description.label_names.len() != label_values.len() {
             return SeriesRemoval::Unsupported;
         }
-        let mut samples = self.samples.lock().unwrap_or_else(PoisonError::into_inner);
-        if samples.remove(&label_key(label_values)).is_some() {
-            return SeriesRemoval::Removed;
+        let removed = self
+            .samples
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&label_key(label_values));
+        if removed.is_some() {
+            SeriesRemoval::Removed
+        } else {
+            SeriesRemoval::Absent
         }
-        SeriesRemoval::Absent
     }
 
     #[must_use]
@@ -215,7 +220,7 @@ impl Collector for PrometheusMetric {
 
     fn update(&self, update: MetricUpdate) {
         let mut samples = self.samples.lock().unwrap_or_else(PoisonError::into_inner);
-        if let MetricUpdate::Remove = update {
+        if update == MetricUpdate::Remove {
             samples.remove(&self.label_values);
             return;
         }
@@ -235,15 +240,7 @@ impl Collector for PrometheusMetric {
                 sample.total = value;
             }
             (CollectorKind::Histogram, MetricUpdate::Observe(value)) => {
-                sample.total = added(sample.total, value);
-                sample.count = sample.count.saturating_add(1);
-                for (index, bound) in bounds.iter().enumerate() {
-                    if within(value, *bound)
-                        && let Some(entry) = sample.buckets.get_mut(index)
-                    {
-                        *entry = entry.saturating_add(1);
-                    }
-                }
+                sample.observe(value, bounds);
             }
             (CollectorKind::Counter | CollectorKind::Gauge, MetricUpdate::Observe(_))
             | (CollectorKind::Histogram, MetricUpdate::Inc(_) | MetricUpdate::Set(_))
@@ -252,5 +249,6 @@ impl Collector for PrometheusMetric {
                 MetricUpdate::Remove,
             ) => {}
         }
+        drop(samples);
     }
 }

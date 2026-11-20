@@ -41,6 +41,7 @@ impl CollectorRegistry {
             state.samples.insert(name, collector.clone());
         }
         state.collectors.push(collector);
+        drop(state);
         Ok(())
     }
 

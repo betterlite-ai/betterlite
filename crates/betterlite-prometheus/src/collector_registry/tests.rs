@@ -3,7 +3,7 @@
 use rstest::rstest;
 use rust_decimal::Decimal;
 
-use crate::collector_factory::collector::{Collector, MetricValue};
+use crate::collector_factory::collector::{Collector as _, MetricValue};
 use crate::collector_registry::metric::sample::added;
 use crate::collector_registry::metric::{
     Bucket, BucketError, CollectorKind, PrometheusMetric, SeriesRemoval, prepare_buckets,
@@ -456,6 +456,43 @@ fn remove_through_the_collector_trait_drops_the_current_series() {
     labelled.set(finite(4));
     labelled.remove();
     assert!(metric.series(&[Some("a".to_owned())]).is_none());
+}
+
+#[test]
+fn a_total_past_the_decimal_range_becomes_an_infinity() {
+    let positive = PrometheusMetric::new(
+        CollectorKind::Counter,
+        "requests",
+        "requests",
+        &[],
+        Vec::new(),
+    );
+    positive.labels(&[]).set(MetricValue::Finite(Decimal::MAX));
+    positive.labels(&[]).inc(finite(1));
+    assert_eq!(
+        positive.series(&[]).unwrap().total,
+        MetricValue::PositiveInfinity
+    );
+    let negative = PrometheusMetric::new(
+        CollectorKind::Counter,
+        "requests",
+        "requests",
+        &[],
+        Vec::new(),
+    );
+    negative.labels(&[]).set(MetricValue::Finite(Decimal::MIN));
+    negative.labels(&[]).inc(finite(-1));
+    assert_eq!(
+        negative.series(&[]).unwrap().total,
+        MetricValue::NegativeInfinity
+    );
+}
+
+#[test]
+fn kinds_report_the_prometheus_type_names() {
+    assert_eq!(CollectorKind::Counter.as_str(), "counter");
+    assert_eq!(CollectorKind::Gauge.as_str(), "gauge");
+    assert_eq!(CollectorKind::Histogram.as_str(), "histogram");
 }
 
 #[test]
