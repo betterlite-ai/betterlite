@@ -1,6 +1,11 @@
 task: B3013
 deviations:
   - what: >-
+      Stored budget_limits text is decoded by betterlite-db's bounded parser, which refuses text above 1 MiB and JSON nested deeper than 64 levels, where LiteLLM's json.loads accepts a row of any size or depth.
+    why: >-
+      Every stored-row decoder in betterlite-db applies the same 1 MiB and depth-64 limits through team_rows::decoder::parse_data, so a corrupt or oversized budget_limits row is refused with the row's typed error before it can exhaust memory.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L1535
+  - what: >-
       Window carry-over is Decimal arithmetic: the counter read, the cap and the value written to both cache levels stay exact Decimals, where LiteLLM reads the counter as float and computes max(0.0, current - cap) in floating point.
     why: >-
       betterlite keeps spend and budgets in rust_decimal from the row read (docs/compatibility.md), so the carried overage and the counter it overwrites have no binary rounding, while the counter key and the overage formula are unchanged.

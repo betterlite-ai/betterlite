@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_postgres_fixture::connection::PostgresFixture;
-use chrono::{DateTime, NaiveDateTime, TimeZone as _, Utc};
+use chrono::{DateTime, NaiveDateTime, TimeDelta, TimeZone as _, Utc};
 use clap::Parser;
 use deadpool_postgres::{Client, Manager, Pool, Runtime, Timeouts};
 use rust_decimal::Decimal;
@@ -128,7 +128,9 @@ pub(crate) async fn finish(fixture: PostgresFixture, store: PostgresStore, clien
 }
 
 pub(crate) fn moment(second: u32) -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, second).unwrap()
+    let base = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+    let offset = TimeDelta::try_seconds(i64::from(second)).unwrap();
+    base.checked_add_signed(offset).unwrap()
 }
 
 pub(crate) fn naive(second: u32) -> NaiveDateTime {
@@ -182,9 +184,8 @@ pub(crate) async fn insert_windows(
     id: &str,
     windows: &[JsonData],
 ) {
-    let sql =
-        format!("INSERT INTO \"{table}\" ({id_column}, budget_limits) VALUES ($1, $2::jsonb)");
-    let payload = serde_json::to_string(windows).expect("the windows json");
+    let sql = format!("INSERT INTO \"{table}\" ({id_column}, budget_limits) VALUES ($1, $2)");
+    let payload = JsonData::Array(windows.to_vec());
     client
         .execute(sql.as_str(), &[&id, &payload])
         .await

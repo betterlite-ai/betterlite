@@ -11,6 +11,7 @@ use crate::database_faults::{DbError, ErrorType};
 use crate::identity_budget_reset::faults::read_fault;
 use crate::postgres_store::errors::backend;
 use crate::postgres_store::session::PostgresStore;
+use crate::team_rows::decoder::{TeamRowError, parse_data};
 
 use super::source::WindowSource;
 
@@ -20,7 +21,7 @@ pub enum WindowJsonError {
     Unreadable {
         row: String,
         #[source]
-        source: serde_json::Error,
+        source: TeamRowError,
     },
     #[error("the budget_limits value on row {row} is not a list of windows")]
     NotAList { row: String },
@@ -79,7 +80,7 @@ fn serialized_windows(row: &str, inner: &str) -> Result<Vec<JsonData>, WindowJso
 }
 
 fn parse(row: &str, text: &str) -> Result<JsonData, WindowJsonError> {
-    serde_json::from_str(text).map_err(|source| WindowJsonError::Unreadable {
+    parse_data(text.as_bytes()).map_err(|source| WindowJsonError::Unreadable {
         row: row.to_owned(),
         source,
     })

@@ -121,7 +121,7 @@ struct PageRequest<'page> {
 
 struct WindowRow {
     id: String,
-    budget_limits: Option<String>,
+    budget_limits: String,
 }
 
 async fn fetch_page(
@@ -147,7 +147,7 @@ fn decode_row(row: &Row) -> Result<WindowRow, DbError> {
     let id: String = row
         .try_get("row_id")
         .map_err(|error| read_fault(&backend(error)))?;
-    let budget_limits: Option<String> = row
+    let budget_limits: String = row
         .try_get("budget_limits")
         .map_err(|error| read_fault(&backend(error)))?;
     Ok(WindowRow { id, budget_limits })
@@ -164,10 +164,7 @@ where
     Cache: WindowCounterCache,
     Durations: WindowDurationSeconds + Sync,
 {
-    let Some(raw) = row.budget_limits.as_deref() else {
-        return Ok(None);
-    };
-    let mut windows = decode_budget_limits(&row.id, raw)?;
+    let mut windows = decode_budget_limits(&row.id, &row.budget_limits)?;
     let mut changed = false;
     for window in &mut windows {
         changed |= resetter
