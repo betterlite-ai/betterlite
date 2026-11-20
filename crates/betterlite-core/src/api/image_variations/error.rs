@@ -1,4 +1,4 @@
-use betterlite_error::dispatch::{DispatchInput, RawException, RawExceptionBody, dispatch};
+use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
 use betterlite_error::error::ErrorClass;
 use betterlite_models::resolution::ResolutionError;
 use betterlite_openai::image_variations::error::{ImageVariationSource, OpenAiImageVariationError};
@@ -62,12 +62,9 @@ impl VariationException {
                 )
             }
             ImageVariationError::OpenAi(source) => {
-                let (error_str, body) = openai_projection(source);
+                let error_str = openai_projection(source);
                 project(
-                    RawException {
-                        body,
-                        ..raw_exception(&error_str, Some(source.status_code), model, provider)
-                    },
+                    raw_exception(&error_str, Some(source.status_code), model, provider),
                     &source.message,
                     redactor,
                 )
@@ -93,13 +90,12 @@ impl VariationException {
     }
 }
 
-// exception_type reads the SDK's "Error code: {status} - {body}" text, while the raised message stays the body's own
-fn openai_projection(source: &OpenAiImageVariationError) -> (String, Option<RawExceptionBody>) {
+// the handler wraps the SDK failure in OpenAIError(status_code, message, headers), whose only text is this
+fn openai_projection(source: &OpenAiImageVariationError) -> String {
     match source.source.as_ref() {
-        ImageVariationSource::Status { .. } => (
-            format!("Error code: {} - {}", source.status_code, source.message),
-            status_body(&source.message),
-        ),
+        ImageVariationSource::Status { .. } => {
+            format!("Error code: {} - {}", source.status_code, source.message)
+        }
         ImageVariationSource::MissingConfig { .. }
         | ImageVariationSource::MissingData
         | ImageVariationSource::MaxRetries
@@ -112,35 +108,8 @@ fn openai_projection(source: &OpenAiImageVariationError) -> (String, Option<RawE
         | ImageVariationSource::Transport(_)
         | ImageVariationSource::Logging(_)
         | ImageVariationSource::Reply(_)
-        | ImageVariationSource::Header(_) => (source.message.clone(), None),
+        | ImageVariationSource::Header(_) => source.message.clone(),
     }
-}
-
-// the openai SDK's APIStatusError: e.body is the response's error object, or the whole body when it has none
-fn status_body(text: &str) -> Option<RawExceptionBody> {
-    let RawExceptionBody {
-        kind,
-        param,
-        code,
-        message,
-        error,
-    } = serde_json::from_str::<RawExceptionBody>(text).ok()?;
-    let Some(detail) = error else {
-        return Some(RawExceptionBody {
-            kind,
-            param,
-            code,
-            message,
-            error: None,
-        });
-    };
-    Some(RawExceptionBody {
-        kind: detail.kind,
-        param: detail.param,
-        code: detail.code,
-        message: detail.message,
-        error: None,
-    })
 }
 
 // the attributes exception_type reads off the original exception before any provider branch runs

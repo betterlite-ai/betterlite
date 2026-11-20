@@ -15,4 +15,5 @@ compare:
   headers_present: []
   upstream_headers: [authorization, content-type]
   ignore:
+    - {pointer: /upstream/0/body, why: a multipart boundary is random on each side so the captured body bytes never match}
     - {pointer: /image_variations/value/failure/message, why: LiteLLM prefixes its exception text and betterlite writes its own}

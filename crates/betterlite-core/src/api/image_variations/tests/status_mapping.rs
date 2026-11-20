@@ -10,7 +10,7 @@ use super::support::{
 };
 
 #[tokio::test]
-async fn openai_error_bodies_supply_the_class_message() {
+async fn openai_error_text_supplies_the_class_message() {
     let fixture = Fixture::new();
     let context = fixture.context();
     let settings = settings(SOURCE, &[("OPENAI_API_KEY", "sk-test")]);
@@ -28,8 +28,11 @@ async fn openai_error_bodies_supply_the_class_message() {
     let ErrorClass::BadRequest(details) = &error.class else {
         panic!("a 400 body projects as a bad request");
     };
-    // the SDK's body carries the provider's own message, unlike the "Error code: ..." text exception_type reads
-    assert_eq!(details.message, "OpenAIException - nope");
+    // the handler's OpenAIError has no body, so the class message falls back to the SDK's error text
+    assert_eq!(
+        details.message,
+        "OpenAIException - Error code: 400 - {\"error\":{\"message\":\"nope\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":null}}"
+    );
 }
 
 #[tokio::test]

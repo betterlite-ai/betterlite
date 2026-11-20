@@ -726,11 +726,8 @@ async fn bad_request_variations_project_a_bad_request() {
         .expect_err("the provider refuses the request");
     let metadata = error.class.metadata();
     assert_eq!(metadata.status_code, 400);
-    // the SDK's APIStatusError.body is the response's error object, so openai.APIError reads its type
-    assert_eq!(
-        metadata.error_type,
-        WireField::Text("invalid_request_error".to_owned())
-    );
+    // the handler's OpenAIError carries no body, so the mapped exception's type stays unset
+    assert_eq!(metadata.error_type, WireField::Null);
     assert_eq!(metadata.param, WireField::Null);
     assert_eq!(metadata.openai_code, None);
     assert!(matches!(&error.class, ErrorClass::BadRequest(_)));
