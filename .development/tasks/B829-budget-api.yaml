@@ -44,8 +44,9 @@ description: >-
   admin-view). Delete by data.id and return the deleted row. Keep database foreign-key and unknown-row
   failures; do not invent linked-row cleanup. All explicit errors above are HTTPException detail
   bodies, without error.type/param/code. There is no handle_exception_on_proxy call. Compare status,
-  content-type and body through the booted HTTP servers; ignore only diagnostic wording. B8591's
-  server exception handlers govern propagated repository errors, including service unavailability.
+  content-type and body through the booted HTTP servers; ignore only diagnostic wording. Repository errors this
+  task does not convert keep their type and propagate. Their HTTP answer belongs to B8591's server exception handlers,
+  so this task tests them below the HTTP layer only.
 
   B860 supplies separate pinned Postgres fixtures using POSTGRES_TEST_URL in CI or testcontainers
   locally; failure to provision fails tests. postgres_budget_rows verifies create defaults, actor
@@ -129,8 +130,6 @@ oracle_cases:
   - tools/oracle/cases/management/budget-api/list-ordinary-user.yaml
   - tools/oracle/cases/management/budget-api/delete-returned-row.yaml
   - tools/oracle/cases/management/budget-api/delete-viewer-denied.yaml
-  - tools/oracle/cases/management/budget-api/delete-linked-row.yaml
-  - tools/oracle/cases/management/budget-api/delete-unknown-row.yaml
   - tools/oracle/cases/management/budget-api/new-no-database.yaml
   - tools/oracle/cases/management/budget-api/update-no-database.yaml
   - tools/oracle/cases/management/budget-api/info-no-database.yaml

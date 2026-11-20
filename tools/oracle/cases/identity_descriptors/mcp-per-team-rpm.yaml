@@ -1,0 +1,63 @@
+kind: helper
+name: identity-descriptors-mcp-per-team-rpm
+call:
+  b3039:
+    function: mcp_per_team
+    auth:
+      api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      team_id: team-a
+      team_metadata:
+        mcp_rpm_limit: {server-a: 7, server-b: 3}
+    mcp_server_name: server-a
+    source_team_rpm_limits: null
+    window_size: 60
+calls:
+  - b3039:
+      function: mcp_per_team
+      auth:
+        api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        team_id: team-a
+        team_metadata:
+          mcp_rpm_limit: {server-a: 7}
+      mcp_server_name: server-b
+      source_team_rpm_limits: null
+      window_size: 60
+  - b3039:
+      function: mcp_per_team
+      auth:
+        api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        team_id: team-a
+      mcp_server_name: server-a
+      source_team_rpm_limits: null
+      window_size: 60
+  - b3039:
+      function: mcp_per_team
+      auth:
+        api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        team_id: team-a
+        team_metadata:
+          mcp_rpm_limit: {server-a: 7}
+      mcp_server_name: null
+      source_team_rpm_limits: null
+      window_size: 60
+  - b3039:
+      function: mcp_per_team
+      auth:
+        api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        team_metadata:
+          mcp_rpm_limit: {server-a: 7}
+      mcp_server_name: server-a
+      source_team_rpm_limits: null
+      window_size: 60
+  - b3039:
+      function: mcp_per_team
+      auth:
+        api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        team_id: team-a
+        team_metadata:
+          mcp_rpm_limit: {server-a: 0}
+      mcp_server_name: server-a
+      source_team_rpm_limits: null
+      window_size: 30
+env: {}
+compare: {ignore: []}

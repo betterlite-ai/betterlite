@@ -2,11 +2,13 @@ use betterlite_models::decisions::{Extra, Json};
 use betterlite_openai::text_completion_transport::logging::StreamDefaults;
 use betterlite_openai::text_completion_transport::sdk::ByteStream;
 use betterlite_openai::text_completion_transport::stream::{
-    CompletionStream, StreamSetup, completion_stream,
+    CompletionStream, StreamSetup, TEXT_COMPLETION_PROVIDER, provider_stream, text_completion_error,
 };
 use betterlite_streaming::stream_chunk_shaping::creation::StreamInstant;
 use betterlite_streaming::stream_chunk_shaping::records::{JsonValue, StreamOptions};
 use uuid::Uuid;
+
+use crate::azure_stream_errors::stream as chat_stream;
 
 pub const AZURE_TEXT_PROVIDER: &str = "azure_text";
 // LiteLLM's REPEATED_STREAMING_CHUNK_LIMIT default
@@ -20,20 +22,23 @@ pub struct StreamInput<'stream> {
     pub next_id: fn() -> Uuid,
 }
 
-// CustomStreamWrapper(completion_stream=response, model=model, custom_llm_provider="azure_text")
+// The Azure text adapter reads an explicit empty object as include_usage off, so that is its fallback.
 pub(super) fn requested_stream_options(
     data: &Extra,
     defaults: Option<StreamOptions>,
 ) -> Option<StreamOptions> {
-    match data.get("stream_options") {
-        Some(Json::Object(fields)) => Some(StreamOptions {
-            include_usage: matches!(fields.get("include_usage"), Some(Json::Bool(true))),
-        }),
-        None
-        | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            defaults
-        }
-    }
+    let empty_object = matches!(
+        data.get("stream_options"),
+        Some(Json::Object(fields)) if fields.is_empty()
+    );
+    let fallback = if empty_object {
+        Some(StreamOptions {
+            include_usage: false,
+        })
+    } else {
+        defaults
+    };
+    chat_stream::requested_stream_options(data, fallback)
 }
 
 #[must_use]
@@ -53,5 +58,10 @@ pub fn wrap(bytes: ByteStream, input: StreamInput<'_>) -> CompletionStream {
         now: input.now,
         next_id: input.next_id,
     };
-    completion_stream(bytes, setup)
+    provider_stream(
+        TEXT_COMPLETION_PROVIDER,
+        bytes,
+        setup,
+        text_completion_error,
+    )
 }

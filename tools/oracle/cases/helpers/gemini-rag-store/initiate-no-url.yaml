@@ -1,0 +1,17 @@
+kind: helper
+name: gemini-rag-store-initiate-no-url
+call:
+  b3454:
+    script:
+      - status: 200
+        body: '{}'
+    options:
+      vector_store:
+        custom_llm_provider: gemini
+        vector_store_id: fileSearchStores/s
+    environment:
+      GEMINI_API_KEY: gemini-key
+    file_content_base64: aGk=
+    filename: a.txt
+env: {}
+compare: {ignore: []}
