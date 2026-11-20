@@ -1,0 +1,64 @@
+use betterlite_models::decisions::Json;
+use betterlite_models::model_registration::JsonObject;
+
+use crate::request_body_safety::{
+    DecodeError, MAX_METADATA_BYTES, MAX_METADATA_DEPTH, SafetyError, decode_request_metadata,
+};
+
+use super::Fixture;
+
+fn metadata_body(value: Json) -> JsonObject {
+    let mut body = JsonObject::new();
+    body.insert("metadata".to_owned(), value);
+    body
+}
+
+#[test]
+fn metadata_byte_limit() {
+    let oversized = format!("\"{}\"", "a".repeat(MAX_METADATA_BYTES));
+    assert!(oversized.len() > MAX_METADATA_BYTES);
+    assert!(matches!(
+        decode_request_metadata(oversized.as_bytes()),
+        Err(DecodeError::TooLarge { .. })
+    ));
+    // exactly at the bound the decoder still parses
+    let at_limit = format!("\"{}\"", "a".repeat(MAX_METADATA_BYTES - 2));
+    decode_request_metadata(at_limit.as_bytes()).expect("the byte bound itself parses");
+
+    let fixture = Fixture::default();
+    let error = fixture
+        .check(&metadata_body(Json::Text(oversized)), "model")
+        .expect_err("an oversized stringified metadata is refused");
+    assert!(matches!(
+        error,
+        SafetyError::MetadataLimit { ref error } if matches!(**error, DecodeError::TooLarge { .. })
+    ));
+}
+
+#[test]
+fn metadata_depth_limit() {
+    let deep = format!(
+        "{}1{}",
+        "[".repeat(MAX_METADATA_DEPTH + 1),
+        "]".repeat(MAX_METADATA_DEPTH + 1)
+    );
+    assert!(matches!(
+        decode_request_metadata(deep.as_bytes()),
+        Err(DecodeError::TooDeep { .. })
+    ));
+    let at_limit = format!(
+        "{}1{}",
+        "[".repeat(MAX_METADATA_DEPTH),
+        "]".repeat(MAX_METADATA_DEPTH)
+    );
+    decode_request_metadata(at_limit.as_bytes()).expect("the depth bound itself parses");
+
+    let fixture = Fixture::default();
+    let error = fixture
+        .check(&metadata_body(Json::Text(deep)), "model")
+        .expect_err("too-deep stringified metadata is refused");
+    assert!(matches!(
+        error,
+        SafetyError::MetadataLimit { ref error } if matches!(**error, DecodeError::TooDeep { .. })
+    ));
+}
