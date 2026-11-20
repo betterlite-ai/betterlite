@@ -91,7 +91,7 @@ pub(crate) fn multipart_boundary(headers: &HeaderMap) -> Option<&str> {
     for section in text.split(';') {
         let trimmed = section.trim();
         let head = trimmed.get(.."boundary=".len());
-        if head.is_some_and(|head| head.eq_ignore_ascii_case("boundary=")) {
+        if head.is_some_and(|prefix| prefix.eq_ignore_ascii_case("boundary=")) {
             return trimmed
                 .get("boundary=".len()..)
                 .map(|rest| rest.trim_matches('"'));

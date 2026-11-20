@@ -132,8 +132,7 @@ where
         None => CharacterBody::Empty,
         Some(parts) => {
             let chosen = multipart_boundary(&wire_headers)
-                .map(str::to_owned)
-                .unwrap_or_else(|| boundary.to_owned());
+                .map_or_else(|| boundary.to_owned(), str::to_owned);
             if !wire_headers.contains_key(CONTENT_TYPE) {
                 let content_type = format!("multipart/form-data; boundary={chosen}");
                 let value = HeaderValue::from_bytes(content_type.as_bytes())
