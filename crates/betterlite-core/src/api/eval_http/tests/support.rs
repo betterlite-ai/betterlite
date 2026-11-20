@@ -509,15 +509,15 @@ pub(crate) enum Call<'call> {
 pub(crate) async fn run(bench: &mut Bench, call: Call<'_>) -> Result<Answer, EvalHttpError> {
     let env = bench.fixture.env.pre_post();
     let connection = EvalConnection { config: &bench.config, client: &bench.client, url: &bench.url, headers: &bench.headers };
-    let log = EvalLogging { state: &mut bench.fixture.state, env: &env };
+    let mut log = EvalLogging { state: &mut bench.fixture.state, env: &env };
     match call {
-        Call::Create { timeout, body } => Ok(Answer::Eval(Box::new(create_eval_handler(&connection, log, timeout, &body).await?))),
-        Call::List { query } => Ok(Answer::Page(Box::new(list_evals_handler(&connection, log, &query).await?))),
-        Call::Get => Ok(Answer::Eval(Box::new(get_eval_handler(&connection, log).await?))),
-        Call::Update { timeout, body } => Ok(Answer::Eval(Box::new(update_eval_handler(&connection, log, timeout, &body).await?))),
-        Call::Delete { timeout } => Ok(Answer::Deleted(Box::new(delete_eval_handler(&connection, log, timeout).await?))),
-        Call::Cancel { timeout } => Ok(Answer::Cancelled(Box::new(cancel_eval_handler(&connection, log, timeout).await?))),
-        Call::Exchange(exchange) => Ok(Answer::Reply(eval_exchange(&connection, exchange, log).await?)),
+        Call::Create { timeout, body } => Ok(Answer::Eval(Box::new(create_eval_handler(&connection, &mut log, timeout, &body).await?))),
+        Call::List { query } => Ok(Answer::Page(Box::new(list_evals_handler(&connection, &mut log, &query).await?))),
+        Call::Get => Ok(Answer::Eval(Box::new(get_eval_handler(&connection, &mut log).await?))),
+        Call::Update { timeout, body } => Ok(Answer::Eval(Box::new(update_eval_handler(&connection, &mut log, timeout, &body).await?))),
+        Call::Delete { timeout } => Ok(Answer::Deleted(Box::new(delete_eval_handler(&connection, &mut log, timeout).await?))),
+        Call::Cancel { timeout } => Ok(Answer::Cancelled(Box::new(cancel_eval_handler(&connection, &mut log, timeout).await?))),
+        Call::Exchange(exchange) => Ok(Answer::Reply(eval_exchange(&connection, exchange, &mut log).await?)),
     }
 }
 

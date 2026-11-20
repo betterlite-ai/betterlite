@@ -107,7 +107,7 @@ async fn send(
 pub async fn eval_exchange(
     connection: &EvalConnection<'_>,
     exchange: &EvalExchange<'_>,
-    log: EvalLogging<'_, '_>,
+    log: &mut EvalLogging<'_, '_>,
 ) -> Result<EvalReply, EvalHttpError> {
     logging::record_pre_call(connection, exchange, log)?;
     let started = Instant::now();

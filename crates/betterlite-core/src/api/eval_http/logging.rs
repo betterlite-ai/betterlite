@@ -26,7 +26,7 @@ fn complete_input_dict(fields: &Object) -> Result<RawBody, EvalHttpError> {
 pub(super) fn record_pre_call(
     connection: &EvalConnection<'_>,
     exchange: &EvalExchange<'_>,
-    log: EvalLogging<'_, '_>,
+    log: &mut EvalLogging<'_, '_>,
 ) -> Result<(), EvalHttpError> {
     let record = PreCall {
         input: Json::Text(exchange.input.to_owned()),
