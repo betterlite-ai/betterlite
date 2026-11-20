@@ -37,7 +37,7 @@ macro_rules! lifecycle_entries {
         ) -> Result<$output, ResponsesLifecycleWriteError> {
             match self.write(call, state, env).await? {
                 WriteOutcome::$outcome(answer) => Ok(*answer),
-                WriteOutcome::$other(_) => Err(self.wrong_answer(call)),
+                WriteOutcome::$other(_) => Err(Self::wrong_answer(call)),
             }
         }
 
@@ -54,7 +54,7 @@ macro_rules! lifecycle_entries {
     };
 }
 
-impl<'deps, C, S> ResponsesLifecycleWrite<'deps, C, S>
+impl<C, S> ResponsesLifecycleWrite<'_, C, S>
 where
     C: ResponsesConfig,
     S: ClientSource,
@@ -149,7 +149,7 @@ where
         }
     }
 
-    fn wrong_answer(&self, call: &ResponsesLifecycleWriteCall) -> ResponsesLifecycleWriteError {
+    fn wrong_answer(call: &ResponsesLifecycleWriteCall) -> ResponsesLifecycleWriteError {
         let resolved = resolve(call);
         boundary(
             LifecycleWriteError::WrongAnswer {
@@ -160,10 +160,10 @@ where
     }
 }
 
-fn validated(
+fn validated<'call>(
     operation: LifecycleOperation,
-    resolved: &Resolved<'_>,
-) -> Result<&str, LifecycleWriteError> {
+    resolved: &'call Resolved<'_>,
+) -> Result<&'call str, LifecycleWriteError> {
     let Some(provider) = resolved.provider.as_deref() else {
         return Err(LifecycleWriteError::MissingProvider);
     };

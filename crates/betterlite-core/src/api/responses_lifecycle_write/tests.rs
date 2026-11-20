@@ -219,13 +219,19 @@ async fn delete_and_cancel_encoded_provider(#[case] asynchronous: bool) {
     let plain_source = Source::new(plain_wire.clone());
     let plain_service = writing(&config, &plain_source, configured(&[]));
     let mut plain_state = logging_state("gpt-5", "call-3");
-    let env = harness.pre_post();
+    let plain_env = harness.pre_post();
     let mut plain_call = configured_call(LifecycleOperation::Delete, "resp_a");
     plain_call.custom_llm_provider = Some(String::from("openai"));
-    answered(&plain_service, &plain_call, &mut plain_state, &env, false)
-        .await
-        .expect("a raw id with an explicit openai provider succeeds")
-        .into_deleted();
+    answered(
+        &plain_service,
+        &plain_call,
+        &mut plain_state,
+        &plain_env,
+        false,
+    )
+    .await
+    .expect("a raw id with an explicit openai provider succeeds")
+    .into_deleted();
     assert_wire(&plain_wire.requests()[0], Method::DELETE, "resp_a");
     let empty_provider = build_response_id(Some(""), Some("model-a"), "resp_b");
     let mut provider_call = configured_call(LifecycleOperation::Delete, &empty_provider);
@@ -234,7 +240,7 @@ async fn delete_and_cancel_encoded_provider(#[case] asynchronous: bool) {
         &plain_service,
         &provider_call,
         &mut plain_state,
-        &env,
+        &plain_env,
         false,
     )
     .await
@@ -244,10 +250,16 @@ async fn delete_and_cancel_encoded_provider(#[case] asynchronous: bool) {
     let empty_id = build_response_id(Some("openai"), Some("model-a"), "");
     let mut id_call = configured_call(LifecycleOperation::Delete, &empty_id);
     id_call.custom_llm_provider = Some(String::from("openai"));
-    answered(&plain_service, &id_call, &mut plain_state, &env, false)
-        .await
-        .expect("an empty decoded id falls back to the argument")
-        .into_deleted();
+    answered(
+        &plain_service,
+        &id_call,
+        &mut plain_state,
+        &plain_env,
+        false,
+    )
+    .await
+    .expect("an empty decoded id falls back to the argument")
+    .into_deleted();
     let expected = resource_request(
         &empty_id,
         &format!("{BASE}/responses"),
@@ -355,20 +367,20 @@ async fn lifecycle_write_rejections(#[case] operation: LifecycleOperation) {
 
     let mut unsupported_call = configured_call(operation, "resp_a");
     unsupported_call.custom_llm_provider = Some(String::from("anthropic"));
-    let error = answered(&service, &unsupported_call, &mut state, &env, false)
+    let unsupported_error = answered(&service, &unsupported_call, &mut state, &env, false)
         .await
         .map(drop)
         .expect_err("an unsupported provider is refused");
     assert!(matches!(
-        &error.error,
+        &unsupported_error.error,
         LifecycleWriteError::Unsupported { provider, .. } if provider.as_str() == "anthropic"
     ));
     let refusal = match operation {
         LifecycleOperation::Delete => "DELETE responses is not supported for anthropic",
         LifecycleOperation::Cancel => "CANCEL responses is not supported for anthropic",
     };
-    assert_eq!(error.error.to_string(), refusal);
-    assert_api_connection(&harness.class(&error));
+    assert_eq!(unsupported_error.error.to_string(), refusal);
+    assert_api_connection(&harness.class(&unsupported_error));
     assert!(wire.requests().is_empty());
     assert_eq!(state.optional_params.len(), 0);
     assert_eq!(state.litellm_params.len(), 0);
@@ -382,7 +394,7 @@ async fn lifecycle_write_rejections(#[case] operation: LifecycleOperation) {
     let mut not_found_state = logging_state("gpt-5", "call-1");
     let mut not_found_call = configured_call(LifecycleOperation::Delete, "resp_a");
     not_found_call.custom_llm_provider = Some(String::from("openai"));
-    let error = answered(
+    let not_found_error = answered(
         &not_found_service,
         &not_found_call,
         &mut not_found_state,
@@ -392,11 +404,13 @@ async fn lifecycle_write_rejections(#[case] operation: LifecycleOperation) {
     .await
     .map(drop)
     .expect_err("a 404 is a provider failure");
-    let LifecycleWriteError::Transport(WriteError::Provider(provider_error)) = &error.error else {
+    let LifecycleWriteError::Transport(WriteError::Provider(provider_error)) =
+        &not_found_error.error
+    else {
         panic!("the provider's own exception reaches the boundary");
     };
     assert_eq!(provider_error.status_code, 404);
-    let class = harness.class(&error);
+    let class = harness.class(&not_found_error);
     let ErrorClass::NotFound(_) = &class else {
         panic!("the 404 maps to the SDK's NotFoundError");
     };
@@ -473,11 +487,11 @@ async fn lifecycle_write_context(
     let rejected_source = Source::new(rejected_wire.clone());
     let rejected_service = writing(&config, &rejected_source, configured(&[]));
     let mut rejected_state = logging_state("gpt-5", "call-1");
-    let env = harness.pre_post();
+    let rejected_env = harness.pre_post();
     let mut rejected_call = configured_call(LifecycleOperation::Delete, "resp_a");
     rejected_call.params.litellm_call_id = Some(String::from("call-a"));
     rejected_service
-        .delete_responses(&rejected_call, &mut rejected_state, &env)
+        .delete_responses(&rejected_call, &mut rejected_state, &rejected_env)
         .await
         .expect_err("the provider is missing");
     assert_eq!(rejected_state.optional_params.len(), 0);

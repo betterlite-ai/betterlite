@@ -78,7 +78,7 @@ pub enum ResponsesLifecycleProvider {
 }
 
 impl ResponsesLifecycleProvider {
-    pub(super) const fn resolve(name: &str) -> Option<Self> {
+    pub(super) fn resolve(name: &str) -> Option<Self> {
         match name {
             "openai" => Some(Self::OpenAi),
             _ => None,
