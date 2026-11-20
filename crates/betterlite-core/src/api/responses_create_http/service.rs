@@ -11,6 +11,7 @@ use betterlite_openai::api::responses_objects::ResponsesApiResponse;
 use betterlite_openai::response_input::ResponsesInput;
 use betterlite_prompts::arguments::json::Object;
 use http::{HeaderMap as HttpHeaders, Method};
+use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use url::Url;
 
@@ -104,6 +105,7 @@ pub struct CreateRequest {
 }
 
 // What the iterator B927 builds needs from the send, plus the context the handler preserved for it
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StreamSetup {
     pub model: String,
     pub custom_llm_provider: String,

@@ -3,6 +3,7 @@ use std::future::Future;
 
 use betterlite_core::api::responses_compact_http::service::ClientKind;
 use betterlite_core::api::responses_create_http::config::Params;
+use betterlite_core::api::responses_create_http::service::StreamSetup;
 use betterlite_models::decisions::Json;
 use betterlite_openai::response_input::ResponsesInput;
 use betterlite_prompts::arguments::json::Object;
@@ -57,22 +58,11 @@ pub enum StreamKind {
     Synthetic,
 }
 
-// The iterator's constructor arguments, plus the context the handler kept for its callbacks
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Setup {
-    pub model: String,
-    pub custom_llm_provider: String,
-    pub litellm_metadata: Option<Params>,
-    pub request_data: Option<Params>,
-    pub call_type: Option<String>,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Stream {
     pub kind: StreamKind,
-    pub setup: Setup,
+    pub setup: StreamSetup,
     // The completed response a synthetic iterator rebuilds its events from
     pub response: Option<Json>,
 }

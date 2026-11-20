@@ -20,7 +20,7 @@ use super::super::result::kinds::SdkResult;
 use super::config::OpenAiCreateConfig;
 use super::hooks::{Dispatcher, NoContinuation, NoResolver, Scripted};
 use super::support::{Fixture, source};
-use super::{Call, Outcome, Setup, Stream, StreamKind};
+use super::{Call, Outcome, Stream, StreamKind};
 
 const PROVIDER: &str = "openai";
 
@@ -187,18 +187,8 @@ fn streamed(kind: StreamKind, setup: StreamSetup, response: Option<Json>) -> Out
         failure: None,
         stream: Some(Stream {
             kind,
-            setup: setup_of(setup),
+            setup,
             response,
         }),
-    }
-}
-
-fn setup_of(setup: StreamSetup) -> Setup {
-    Setup {
-        model: setup.model,
-        custom_llm_provider: setup.custom_llm_provider,
-        litellm_metadata: setup.litellm_metadata,
-        request_data: setup.request_data,
-        call_type: setup.call_type,
     }
 }

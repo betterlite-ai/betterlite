@@ -7,7 +7,6 @@ import litellm
 from litellm.integrations.custom_logger import CustomLogger
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.base_llm.anthropic_messages.transformation import BaseAnthropicMessagesConfig
-from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.llms.base_llm.responses.transformation import BaseResponsesAPIConfig
 from litellm.llms.custom_httpx.llm_http_handler import BaseLLMHTTPHandler
 from litellm.responses.streaming_iterator import BaseResponsesAPIStreamingIterator as StreamingBase
@@ -16,23 +15,19 @@ from litellm.types.llms.openai import ResponseCompletedEvent, ResponsesAPIRespon
 from litellm.types.router import GenericLiteLLMParams
 from litellm.types.utils import CallTypes
 from litellm.utils import ProviderConfigManager
-from openai.types.responses.response_input_param import ResponseInputParam
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 from typing_extensions import override
 
-Mode = Literal["sync", "async"]
+from responses_compact_transport import Failure, INPUT, JSON, Mode, OBJECTS
+from responses_compact_transport import NULLABLE_OBJECTS, PROVIDER_ERROR, RESPONSES_API
+from responses_compact_transport import TransportEnvelope, TransportValue
+
 StreamKind = Literal["live", "synthetic"]
 
-INPUT: TypeAdapter[str | ResponseInputParam] = TypeAdapter(str | ResponseInputParam)
-JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
-OBJECTS: Final = TypeAdapter(dict[str, object])
-NULLABLE_OBJECTS: Final = TypeAdapter(dict[str, object] | None)
 JSON_MAP: Final = TypeAdapter(dict[str, JsonValue])
 NULLABLE_JSON: Final = TypeAdapter(dict[str, JsonValue] | None)
-RESPONSES_API: Final[TypeAdapter[ResponsesAPIResponse]] = TypeAdapter(ResponsesAPIResponse)
 COMPLETED: Final[TypeAdapter[ResponseCompletedEvent]] = TypeAdapter(ResponseCompletedEvent)
 LITELLM_PARAMS: Final[TypeAdapter[GenericLiteLLMParams]] = TypeAdapter(GenericLiteLLMParams)
-PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
 
 CreateWork = (
     ResponsesAPIResponse
@@ -75,15 +70,6 @@ class TransportCall(BaseModel):
     agentic_result: JsonValue = None
 
 
-class Failure(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    status_code: int = Field(serialization_alias="status")
-    status_code_is_synthesized: bool = Field(serialization_alias="synthesized")
-    message: str
-    headers: dict[str, str]
-
-
 class SetupView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -106,14 +92,6 @@ class Outcome(BaseModel):
     result: JsonValue = None
     failure: Failure | None = None
     stream: StreamView | None = None
-
-
-class TransportValue(BaseModel):
-    value: Outcome
-
-
-class TransportEnvelope(BaseModel):
-    responses_create_transport: TransportValue
 
 
 # The sync handler's _run_sync_responses_pre_call_deployment_hook, over the case's patch
