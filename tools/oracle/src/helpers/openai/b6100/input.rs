@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
 use betterlite_openai::embedding::EmbeddingInput;
-use betterlite_openai::openai_base_config::{Headers, Object};
+use betterlite_openai::openai_base_config::{Headers, Object as OpenAiObject};
+use betterlite_prompts::arguments::json::Object as PromptObject;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -51,7 +52,7 @@ pub(crate) struct ChatParams {
 pub(crate) struct ChatRequest {
     pub(crate) model: String,
     #[serde(default)]
-    pub(crate) optional_params: Object,
+    pub(crate) optional_params: PromptObject,
     #[serde(default)]
     pub(crate) environment: BTreeMap<String, String>,
 }
@@ -75,9 +76,9 @@ pub(crate) struct EmbeddingPlan {
     pub(crate) model: String,
     pub(crate) input: EmbeddingInput,
     #[serde(default)]
-    pub(crate) optional_params: Object,
+    pub(crate) optional_params: OpenAiObject,
     #[serde(default)]
-    pub(crate) non_default_params: Object,
+    pub(crate) non_default_params: OpenAiObject,
     #[serde(default)]
     pub(crate) headers: Headers,
     pub(crate) api_key: Option<String>,
