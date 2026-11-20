@@ -319,7 +319,11 @@ async fn scope_skip_tool_drops_the_tool_row_and_its_texts() {
     .await
     .unwrap();
     let recording = guardrail.recording();
-    assert_eq!(recording.inputs.texts, Some(vec!["next".to_owned()]));
+    // The tool result text goes, but the mid-turn system row and the plain user text stay in the scan.
+    assert_eq!(
+        recording.inputs.texts,
+        Some(vec!["mid".to_owned(), "next".to_owned()])
+    );
     let rows = recording
         .inputs
         .structured_messages
@@ -602,7 +606,7 @@ async fn text_path_rewrites_tool_use_inputs() {
 }
 
 #[tokio::test]
-async fn text_path_shorter_texts_rewrite_only_the_prefix() {
+async fn mismatch_shorter_non_empty_texts_are_unappliable() {
     let mut data = body(json!({
         "model": "claude-sonnet-4-5",
         "messages": [{"role": "user", "content": [
@@ -615,12 +619,10 @@ async fn text_path_shorter_texts_rewrite_only_the_prefix() {
         ..NO_INPUTS
     };
     let guardrail = ScriptedGuardrail::new(answer);
-    process_input_messages(&mut data, &guardrail, &context(), None)
+    let error = process_input_messages(&mut data, &guardrail, &context(), None)
         .await
-        .unwrap();
-    let message = message_json(&data, 0);
-    assert_eq!(message["content"][0]["text"].as_str(), Some("x"));
-    assert_eq!(message["content"][1]["text"].as_str(), Some("b"));
+        .unwrap_err();
+    assert!(matches!(error, ProcessInputError::Unappliable(_)));
 }
 
 #[tokio::test]
