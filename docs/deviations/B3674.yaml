@@ -18,6 +18,9 @@ deviations:
   - what: A missing message row in apply_guardrail_tool_calls_to_input is ApplyError::MessageMissing, not Python's IndexError, and nothing is written before it is returned.
     why: Rust has no exceptions; the caller classifies the failure the same way it classifies TargetMissing.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1117-L1118
+  - what: A structured row whose image URL has to be downloaded fails the write-back with the conversion error. The structured write-back converts with a fetcher that refuses every remote URL, so a bedrock invoke/ model that forces base64 images gets an error. LiteLLM downloads the image and sends its base64 data.
+    why: The task scopes this module to no guardrail, provider or network call, and B180's conversion takes its fetcher as an injected dependency; this write-back has no client to fetch with, so it fails the request rather than sending a URL the provider rejects.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L2424-L2433
 kept_bugs:
   - what: A returned tool call list whose length differs from the pre-guardrail list is ignored, not rejected, so the guardrail's rewrites are dropped and the scanned calls are written back unchanged.
     why: A working guardrail returns one call per call it was given, so this only fires on a broken guardrail, and the task's pitfalls require the ignore. betterlite keeps it rather than turning it into an error LiteLLM never raises.
