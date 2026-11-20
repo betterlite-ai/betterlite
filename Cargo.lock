@@ -2601,6 +2601,7 @@ dependencies = [
  "betterlite-streaming",
  "betterlite-tokenizer",
  "betterlite-transcribe",
+ "betterlite-vertex",
  "betterlite-websearch",
  "bytes",
  "chrono",
