@@ -9,7 +9,7 @@ use betterlite_models::decisions::{HiddenParams, Json as HiddenJson};
 use indexmap::IndexMap;
 use rstest::rstest;
 use rust_decimal::Decimal;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Number, Value, json};
 
 use super::{
@@ -67,22 +67,13 @@ fn resolve_api_base_reads_explicit_then_environment_then_default(
 fn resolve_api_key_reads_the_explicit_key_then_the_environment() {
     let explicit = key("explicit");
     let environment = env(Some("environment"), None, None);
-    assert_eq!(
-        resolve_api_key(Some(&explicit), &environment),
-        Some(key("explicit"))
-    );
-    assert_eq!(
-        resolve_api_key(None, &environment),
-        Some(key("environment"))
-    );
-    assert_eq!(
-        resolve_api_key(None, &env(None, None, Some("global"))),
-        None
-    );
-    assert_eq!(
-        resolve_api_key(Some(&key("")), &environment),
-        Some(key("environment"))
-    );
+    let provided = resolve_api_key(Some(&explicit), &environment).unwrap();
+    assert_eq!(provided.expose_secret(), "explicit");
+    let from_environment = resolve_api_key(None, &environment).unwrap();
+    assert_eq!(from_environment.expose_secret(), "environment");
+    assert!(resolve_api_key(None, &env(None, None, Some("global"))).is_none());
+    let empty_explicit = resolve_api_key(Some(&key("")), &environment).unwrap();
+    assert_eq!(empty_explicit.expose_secret(), "environment");
 }
 
 #[rstest]
@@ -105,7 +96,7 @@ fn require_api_key_reads_explicit_then_global_then_environment(
     let explicit = explicit.or(beside);
     let provided = explicit.map(key);
     let resolved = require_api_key(provided.as_ref(), "gpt-4o", &environment).unwrap();
-    assert_eq!(resolved, key(expected));
+    assert_eq!(resolved.expose_secret(), expected);
 }
 
 #[test]

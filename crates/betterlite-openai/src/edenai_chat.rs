@@ -17,8 +17,9 @@ use crate::chat::response::ChatResponse;
 use crate::chat_choices::stream::{self, StreamError};
 use crate::chat_choices::wire::StreamReply;
 use crate::chat_content::{ChatContent, ChatContentError, Mode, UrlDownloader};
+use crate::compatible_wire::error::CompatibleWireError;
 use crate::compatible_wire::{
-    CompatibleWireError, LogInput, ReplyOptions, transform_response as openai_transform_response,
+    LogInput, ReplyOptions, transform_response as openai_transform_response,
 };
 use crate::edenai_common::{
     EdenAiEnv, EdenAiError, PROVIDER, catalog_reply_error, parse_model_catalog, reported_cost,

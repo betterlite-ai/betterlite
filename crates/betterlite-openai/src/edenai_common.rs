@@ -4,8 +4,6 @@ use betterlite_error::error::details::ResponseDetails;
 use betterlite_error::error::{ErrorClass, ErrorContext};
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_models::decisions::{HiddenParams, Json as HiddenJson};
-use betterlite_models::price_fields::decimal_lexeme::parse_decimal_lexeme;
-use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Number, Value};
@@ -57,7 +55,7 @@ pub fn catalog_reply_error(error: CatalogError, headers: &Headers) -> EdenAiErro
 }
 
 // the caller fills these from EDENAI_API_KEY, EDENAI_API_BASE and litellm.api_key
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default)]
 pub struct EdenAiEnv {
     pub api_key: Option<SecretString>,
     pub api_base: Option<String>,
@@ -204,7 +202,7 @@ pub fn reported_cost_from_bytes(bytes: &[u8]) -> Option<Decimal> {
 pub fn reported_cost_from_headers(headers: &Headers) -> Option<Decimal> {
     let value =
         header_value(headers, COST).or_else(|| header_value(headers, EDENAI_COST_HEADER))?;
-    cost_value(&Value::String(value))
+    cost_value(&Value::String(value.clone()))
 }
 
 fn header_value<'headers>(headers: &'headers Headers, name: &str) -> Option<&'headers String> {

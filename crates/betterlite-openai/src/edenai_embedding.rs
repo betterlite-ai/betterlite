@@ -6,8 +6,9 @@ use thiserror::Error;
 
 use crate::edenai_common::{
     CONTENT_TYPE, EdenAiEnv, JSON_CONTENT_TYPE, MissingApiKey, authorized_headers, endpoint_url,
-    pick, reported_cost_from_bytes, set_response_cost, with_header,
+    pick, reported_cost, set_response_cost, with_header,
 };
+use crate::embedding::reply_error::reply_error;
 use crate::embedding::{EmbeddingInput, EmbeddingRecord, EmbeddingResponse, EmbeddingUsage};
 use crate::openai_base_config::{Headers, Object};
 
@@ -17,6 +18,8 @@ mod tests;
 pub const SUPPORTED_PARAMS: [&str; 3] = ["dimensions", "encoding_format", "user"];
 
 const EMBEDDINGS_PATH: &str = "embeddings";
+// LiteLLM's text for an error object that carries no message of its own
+const DEFAULT_ERROR: &str = "Error in response object";
 
 #[derive(Debug, Error)]
 pub enum EdenAiEmbeddingError {
@@ -27,6 +30,9 @@ pub enum EdenAiEmbeddingError {
         #[source]
         source: serde_json::Error,
     },
+    // a meaningful error object inside a successful reply, as convert_to_model_response_object raises it
+    #[error("{message}")]
+    ReplyError { status_code: u16, message: String },
     #[error("the Eden AI embeddings reply is not an embeddings response: {source}")]
     Reply {
         #[source]
@@ -39,6 +45,7 @@ impl EdenAiEmbeddingError {
     pub const fn status_code(&self) -> u16 {
         match self {
             Self::MissingKey(error) => error.status_code,
+            Self::ReplyError { status_code, .. } => *status_code,
             Self::Encode { .. } | Self::Reply { .. } => 500,
         }
     }
@@ -62,6 +69,7 @@ pub struct TransformInput<'request> {
     pub env: &'request EdenAiEnv,
 }
 
+#[derive(Debug)]
 pub struct EmbeddingPlan {
     pub url: String,
     pub headers: Headers,
@@ -115,15 +123,27 @@ struct WireUsage {
     total_tokens: u32,
 }
 
+#[derive(Debug)]
 pub struct EmbeddingReply {
     pub response: EmbeddingResponse,
     pub hidden_params: HiddenParams,
 }
 
-// the body as an embedding response with Eden's cost lifted into the hidden params
+// the body as an embedding response with Eden's cost lifted into the hidden params; a meaningful error object is raised first
 pub fn transform_response(body: &[u8]) -> Result<EmbeddingReply, EdenAiEmbeddingError> {
-    let reply: WireReply =
+    let payload: Value =
         serde_json::from_slice(body).map_err(|source| EdenAiEmbeddingError::Reply { source })?;
+    if let Some(failure) = reply_error(&payload) {
+        return Err(EdenAiEmbeddingError::ReplyError {
+            status_code: failure.status,
+            message: failure
+                .message
+                .unwrap_or_else(|| String::from(DEFAULT_ERROR)),
+        });
+    }
+    let cost = reported_cost(&payload);
+    let reply: WireReply =
+        serde_json::from_value(payload).map_err(|source| EdenAiEmbeddingError::Reply { source })?;
     let usage = reply.usage.unwrap_or_default();
     let response = EmbeddingResponse {
         object: reply.object.unwrap_or_else(|| String::from("list")),
@@ -138,7 +158,7 @@ pub fn transform_response(body: &[u8]) -> Result<EmbeddingReply, EdenAiEmbedding
         },
     };
     let mut hidden_params = HiddenParams::new();
-    set_response_cost(&mut hidden_params, reported_cost_from_bytes(body));
+    set_response_cost(&mut hidden_params, cost);
     Ok(EmbeddingReply {
         response,
         hidden_params,

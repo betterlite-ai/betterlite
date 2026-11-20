@@ -312,3 +312,40 @@ fn transform_response_rejects_bytes_that_are_not_json() {
     assert!(matches!(&error, EdenAiEmbeddingError::Reply { .. }));
     assert_eq!(error.status_code(), 500);
 }
+
+#[rstest]
+#[case::numeric_code(
+    br#"{"data":[{"object":"embedding","embedding":[0.1],"index":0}],"error":{"message":"rate limited","code":429}}"#,
+    429,
+    "rate limited"
+)]
+#[case::missing_code(br#"{"data":[],"error":{"message":"bad model"}}"#, 422, "bad model")]
+#[case::string_error(
+    br#"{"data":[],"error":"rate limited"}"#,
+    422,
+    "Error in response object"
+)]
+#[case::missing_message(br#"{"error":{"code":500}}"#, 500, "Error in response object")]
+fn transform_response_raises_a_meaningful_error_object(
+    #[case] body: &[u8],
+    #[case] status: u16,
+    #[case] message: &str,
+) {
+    let error = transform_response(body).unwrap_err();
+    let EdenAiEmbeddingError::ReplyError {
+        status_code,
+        message: text,
+    } = &error
+    else {
+        panic!("a meaningful error object is the reply error");
+    };
+    assert_eq!((*status_code, text.as_str()), (status, message));
+    assert_eq!(error.status_code(), status);
+    assert_eq!(error.to_string(), message);
+}
+
+#[test]
+fn transform_response_ignores_an_empty_error_object() {
+    let reply = transform_response(br#"{"data":[],"error":{}}"#).unwrap();
+    assert!(reply.response.data.is_empty());
+}

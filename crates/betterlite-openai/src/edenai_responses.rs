@@ -26,6 +26,7 @@ pub struct PrepareInput<'request> {
     pub env: &'request EdenAiEnv,
 }
 
+#[derive(Debug)]
 pub struct Prepared {
     pub url: String,
     pub headers: Headers,

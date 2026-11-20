@@ -9,7 +9,9 @@ use betterlite_openai::edenai_chat::{
     ReplyRequest, chunk_parser, transform_response as chat_transform_response,
 };
 use betterlite_openai::edenai_common::RESPONSE_COST_HEADER;
-use betterlite_openai::edenai_embedding::transform_response as embedding_transform_response;
+use betterlite_openai::edenai_embedding::{
+    EdenAiEmbeddingError, transform_response as embedding_transform_response,
+};
 use betterlite_openai::edenai_responses::{
     ReplyRequest as ResponsesRequest, transform_response as responses_transform_response,
 };
@@ -34,6 +36,19 @@ fn hidden_cost(hidden: &HiddenParams) -> Option<f64> {
         return None;
     };
     number.as_f64()
+}
+
+// LiteLLM raises a meaningful error object with its status, so the runner compares it as the call's failure
+fn embedding_failure(error: EdenAiEmbeddingError) -> Box<HelperError> {
+    let meaningful = matches!(&error, EdenAiEmbeddingError::ReplyError { .. });
+    Box::new(HelperError {
+        class: String::from("Exception"),
+        status: meaningful.then_some(error.status_code()),
+        error_type: None,
+        param: None,
+        code: None,
+        message: error.to_string(),
+    })
 }
 
 // the five replies carry their cost in their own place, so each branch reads it where that reply puts it
@@ -90,7 +105,7 @@ pub(super) fn reply_value(input: &Input) -> Result<Option<Value>, Box<HelperErro
     if !input.embedding_replies.is_empty() {
         let mut steps = Vec::with_capacity(input.embedding_replies.len());
         for body in &input.embedding_replies {
-            let reply = embedding_transform_response(body.as_bytes()).or_value_error()?;
+            let reply = embedding_transform_response(body.as_bytes()).map_err(embedding_failure)?;
             steps.push(json!({"cost": hidden_cost(&reply.hidden_params)}));
         }
         return Ok(Some(json!({"steps": steps})));
