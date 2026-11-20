@@ -6,6 +6,7 @@ use betterlite_db::budget_permission_rows::JsonData;
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
 
+use crate::scim_records::lax_bool::ScimBool;
 use crate::team_request_contracts::metadata::TeamMetadataFieldSchema;
 
 pub const DEFAULT_REJECTED_MESSAGE: &str = "Team metadata failed validation.";
@@ -99,7 +100,7 @@ fn bool_field(value: &JsonData) -> Option<bool> {
     match value {
         JsonData::Bool(flag) => Some(*flag),
         JsonData::Number(number) => number_bool(number),
-        JsonData::String(text) => text_bool(text),
+        JsonData::String(text) => scim_bool(text),
         JsonData::Null | JsonData::Array(_) | JsonData::Object(_) => None,
     }
 }
@@ -115,20 +116,12 @@ fn number_bool(number: &Number) -> Option<bool> {
     None
 }
 
-fn text_bool(text: &str) -> Option<bool> {
-    if ["0", "off", "f", "false", "n", "no"]
-        .into_iter()
-        .any(|token| text.eq_ignore_ascii_case(token))
-    {
-        return Some(false);
-    }
-    if ["1", "on", "t", "true", "y", "yes"]
-        .into_iter()
-        .any(|token| text.eq_ignore_ascii_case(token))
-    {
-        return Some(true);
-    }
-    None
+// ScimBool is betterlite's pydantic-lax bool, so the accepted spellings come from one place.
+fn scim_bool(text: &str) -> Option<bool> {
+    let value = serde_json::to_value(text).ok()?;
+    serde_json::from_value::<ScimBool>(value)
+        .ok()
+        .map(|flag| flag.0)
 }
 
 #[must_use]

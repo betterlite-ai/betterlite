@@ -488,60 +488,56 @@ async fn malformed_result_503() {
     assert_eq!(second_error.status(), 503);
 }
 
-#[test]
-fn validation_result_coercions() {
-    let accepted = [
-        (r#"{"valid": "1"}"#, true, None),
-        (r#"{"valid": "on"}"#, true, None),
-        (r#"{"valid": "T"}"#, true, None),
-        (r#"{"valid": "true"}"#, true, None),
-        (r#"{"valid": "y"}"#, true, None),
-        (r#"{"valid": "yes"}"#, true, None),
-        (r#"{"valid": "0"}"#, false, None),
-        (r#"{"valid": "off"}"#, false, None),
-        (r#"{"valid": "F"}"#, false, None),
-        (r#"{"valid": "false"}"#, false, None),
-        (r#"{"valid": "n"}"#, false, None),
-        (r#"{"valid": "NO"}"#, false, None),
-        (r#"{"valid": 1}"#, true, None),
-        (r#"{"valid": 0.0}"#, false, None),
-        (r#"{"valid": 1.0}"#, true, None),
-        (
-            r#"{"valid": true, "error_message": null, "extra": 1}"#,
-            true,
-            None,
-        ),
-        (
-            r#"{"valid": "TRUE", "error_message": "ignored"}"#,
-            true,
-            Some("ignored"),
-        ),
-    ];
-    for (text, valid, message) in accepted {
-        let parsed = TeamMetadataValidationResult::parse(&data(text)).unwrap();
-        assert_eq!(
-            parsed,
-            TeamMetadataValidationResult {
-                valid,
-                error_message: message.map(str::to_owned),
-            }
-        );
-    }
-    let rejected = [
-        r#"{"valid": "not-a-bool"}"#,
-        r#"{"valid": " yes"}"#,
-        r#"{"valid": "yes "}"#,
-        r#"{"valid": ""}"#,
-        r#"{"valid": 2}"#,
-        r#"{"valid": 0.5}"#,
-        r#"{"valid": null}"#,
-        r#"{"valid": true, "error_message": 5}"#,
-        r#"{}"#,
-        r#""ok""#,
-    ];
-    for text in rejected {
-        assert!(TeamMetadataValidationResult::parse(&data(text)).is_none());
-    }
+#[rstest]
+#[case::text_one(r#"{"valid": "1"}"#, true, None)]
+#[case::text_on(r#"{"valid": "on"}"#, true, None)]
+#[case::text_upper_t(r#"{"valid": "T"}"#, true, None)]
+#[case::text_true(r#"{"valid": "true"}"#, true, None)]
+#[case::text_y(r#"{"valid": "y"}"#, true, None)]
+#[case::text_yes(r#"{"valid": "yes"}"#, true, None)]
+#[case::text_zero(r#"{"valid": "0"}"#, false, None)]
+#[case::text_off(r#"{"valid": "off"}"#, false, None)]
+#[case::text_upper_f(r#"{"valid": "F"}"#, false, None)]
+#[case::text_false(r#"{"valid": "false"}"#, false, None)]
+#[case::text_n(r#"{"valid": "n"}"#, false, None)]
+#[case::text_upper_no(r#"{"valid": "NO"}"#, false, None)]
+#[case::number_one(r#"{"valid": 1}"#, true, None)]
+#[case::number_zero_float(r#"{"valid": 0.0}"#, false, None)]
+#[case::number_one_float(r#"{"valid": 1.0}"#, true, None)]
+#[case::extra_key_ignored(r#"{"valid": true, "error_message": null, "extra": 1}"#, true, None)]
+#[case::message_kept(
+    r#"{"valid": "TRUE", "error_message": "ignored"}"#,
+    true,
+    Some("ignored")
+)]
+fn validation_result_coercions(
+    #[case] text: &str,
+    #[case] valid: bool,
+    #[case] message: Option<&str>,
+) {
+    let parsed = TeamMetadataValidationResult::parse(&data(text)).unwrap();
+    assert_eq!(
+        parsed,
+        TeamMetadataValidationResult {
+            valid,
+            error_message: message.map(str::to_owned),
+        }
+    );
+}
+
+#[rstest]
+#[case::not_a_bool(r#"{"valid": "not-a-bool"}"#)]
+#[case::leading_space(r#"{"valid": " yes"}"#)]
+#[case::trailing_space(r#"{"valid": "yes "}"#)]
+#[case::empty_text(r#"{"valid": ""}"#)]
+#[case::number_two(r#"{"valid": 2}"#)]
+#[case::fraction(r#"{"valid": 0.5}"#)]
+#[case::null(r#"{"valid": null}"#)]
+#[case::message_number(r#"{"valid": true, "error_message": 5}"#)]
+#[case::missing_valid(r#"{}"#)]
+#[case::not_an_object(r#""ok""#)]
+fn validation_result_rejections(#[case] text: &str) {
+    assert!(TeamMetadataValidationResult::parse(&data(text)).is_none());
 }
 
 #[tokio::test]
