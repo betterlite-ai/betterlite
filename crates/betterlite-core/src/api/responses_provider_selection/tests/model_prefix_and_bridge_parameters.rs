@@ -117,7 +117,7 @@ fn a_resolved_config_keeps_only_forwarded_parameter_names() {
         ("client_metadata", json("{}")),
         ("custom_option", json("1")),
     ]);
-    let allowed = vec![String::from("custom_option")];
+    let allowed = vec![String::from("custom_option"), String::from(NEVER_BRIDGED)];
     let kept = bridge_kwargs(&kwargs, Some(&ResponsesApiConfig::OpenAiLike), &allowed);
     assert_eq!(
         kept.keys().cloned().collect::<Vec<_>>(),
