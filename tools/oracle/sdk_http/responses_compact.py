@@ -1,11 +1,10 @@
 import asyncio
 import json
-from collections.abc import Callable, Coroutine
-from typing import Final, Literal, TypeAlias
+from collections.abc import Coroutine
+from typing import Final, Literal, Protocol, TypeAlias, cast
 
 import litellm
 import openai
-from litellm.exceptions import APIConnectionError as LiteLlmConnectionError
 from litellm.types.llms.openai import ResponsesAPIResponse
 from openai.types.responses.response_input_param import ResponseInputParam
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
@@ -16,10 +15,16 @@ JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 INPUT: TypeAdapter[str | ResponseInputParam] = TypeAdapter(str | ResponseInputParam)
 
 CompactResult: TypeAlias = ResponsesAPIResponse | Coroutine[object, object, ResponsesAPIResponse]
-# the two wrappers are checked by their own cases; the ellipsis keeps litellm's kwargs open
-CompactCall: TypeAlias = Callable[..., CompactResult]
-COMPACT: Final[CompactCall] = litellm.compact_responses
-ACOMPACT: Final[CompactCall] = litellm.acompact_responses
+
+
+# litellm's @client decorator erases both wrapper signatures, so the protocol names the calls
+class CompactCalls(Protocol):
+    def compact_responses(self, **kwargs: JsonValue) -> CompactResult: ...
+
+    def acompact_responses(self, **kwargs: JsonValue) -> CompactResult: ...
+
+
+COMPACTS: Final[CompactCalls] = cast(CompactCalls, litellm)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L2080-L2159
 
 
 class CompactRun(BaseModel):
@@ -31,11 +36,11 @@ class CompactRun(BaseModel):
     instructions: str | None = None
     previous_response_id: str | None = None
     custom_llm_provider: str | None = None
-    extra_headers: dict[str, object] | None = None
-    extra_query: dict[str, object] | None = None
-    extra_body: dict[str, object] | None = None
+    extra_headers: dict[str, JsonValue] | None = None
+    extra_query: dict[str, JsonValue] | None = None
+    extra_body: dict[str, JsonValue] | None = None
     timeout_seconds: float | None = None
-    kwargs: dict[str, object] = Field(default_factory=dict)
+    kwargs: dict[str, JsonValue] = Field(default_factory=dict)
 
 
 class ResponsesCompactCall(BaseModel):
@@ -44,9 +49,9 @@ class ResponsesCompactCall(BaseModel):
     runs: list[CompactRun]
 
 
-def call_kwargs(run: CompactRun, api_base: str) -> dict[str, object]:
-    values: dict[str, object] = {
-        "input": INPUT.validate_python(run.input),
+def call_kwargs(run: CompactRun, api_base: str) -> dict[str, JsonValue]:
+    values: dict[str, JsonValue] = {
+        "input": JSON.validate_python(INPUT.validate_python(run.input)),
         "model": run.model,
         "instructions": run.instructions,
         "previous_response_id": run.previous_response_id,
@@ -64,8 +69,8 @@ def call_kwargs(run: CompactRun, api_base: str) -> dict[str, object]:
 def called(run: CompactRun, api_base: str) -> CompactResult:
     kwargs = call_kwargs(run, api_base)
     if run.mode == "async":
-        return ACOMPACT(**kwargs)
-    return COMPACT(**kwargs)
+        return COMPACTS.acompact_responses(**kwargs)
+    return COMPACTS.compact_responses(**kwargs)
 
 
 def settle(result: CompactResult) -> JsonValue:
@@ -82,8 +87,8 @@ def status_code(error: Exception) -> int:
     match error:
         case openai.APIStatusError():
             return error.status_code
-        case LiteLlmConnectionError():
-            return error.status_code
+        case openai.APIConnectionError():
+            return 500
         case object():
             return 0
 
