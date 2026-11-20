@@ -187,6 +187,49 @@ async fn malformed_reply_fails_outside_handle_error() {
     assert_eq!(wire.requests().len(), 2);
 }
 
+// the decoder refuses a reply over its byte limit before parsing, where LiteLLM hands any size to response.json()
+#[tokio::test]
+async fn oversized_reply_fails_before_parsing() {
+    let settings = openai_settings();
+    let config = openai_config(&settings, "sk-provider");
+    let events = Events::new();
+    let filler = "a".repeat(0x0100_0001);
+    let big = format!("\"{filler}\"");
+    let wire = Wire::replying(
+        Reply::json(200, &big).with_header("retry-after", "3"),
+        &events,
+    );
+    let source = Source::new(wire.clone());
+    let deps = FileDeps {
+        config: &config,
+        source: &source,
+        supplied: None,
+    };
+    let files = params("http://mock.test/v1");
+    let request = CallRequest::new("vs_a", &files);
+    let original = file_params(r#"{"file_id":"file_a"}"#);
+    let mut fixture = Fixture::new("vector_store_file_create");
+    let result = run(
+        &mut fixture,
+        &deps,
+        ClientKind::Sync,
+        &create_call(&request, &original),
+        &events,
+    )
+    .await;
+    let Err(FileTransportError::Provider(error)) = result else {
+        panic!("an oversized reply is a provider error");
+    };
+    assert_eq!(error.status_code, 200);
+    assert!(!error.status_code_is_synthesized);
+    assert_eq!(error.message, "vector store reply exceeds the byte limit");
+    assert_eq!(
+        error.headers.get("retry-after"),
+        Some(&Json::Text("3".to_owned()))
+    );
+    assert_eq!(wire.requests().len(), 1);
+}
+
 #[tokio::test]
 async fn preparation_failures_send_nothing() {
     let events = Events::new();
