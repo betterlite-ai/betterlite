@@ -1,0 +1,43 @@
+task: B1737
+deviations:
+  - what: >-
+      A buffered spend record larger than 64 MiB is refused with a typed limit failure before it
+      is parsed, for every kind of record. The source decodes whatever Redis returns.
+    why: >-
+      These bytes come from Redis and a decode must not allocate without a bound; the ceiling is
+      checked before any JSON is read and surfaces as SpendBufferError::TooLarge.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/redis_update_buffer.py#L923-L933
+  - what: >-
+      A spend log row whose integer column leaves the i64 range, or whose number leaves the
+      decimal range, fails the decode with a typed error. The source keeps an arbitrary-precision
+      integer or a float infinity.
+    why: >-
+      A row value is stored and re-encoded as an i64 or an exact decimal, so a value the column
+      type cannot hold fails where it is decoded instead of reaching the parking encoder.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/redis_update_buffer.py#L108-L110
+  - what: >-
+      A scalar reply to a daily or window pop fails with a typed ScalarReply. The source treats the
+      reply as a list of strings and raises a JSON decode error per character.
+    why: >-
+      Both refuse a reply the typed pipeline cannot produce; betterlite names the shape it got
+      instead of leaking a per-character parse error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/redis_update_buffer.py#L742-L758
+  - what: >-
+      A spend log row carries JSON values plus instants: a datetime column is written as its
+      isoformat text, and a value of any other foreign type is supplied by the caller as text.
+      The source stringifies every non-datetime value in json.dumps' default hook, and formats a
+      naive datetime without an offset.
+    why: >-
+      betterlite's row model has no catch-all value, and an instant it formats is DateTime<Utc>,
+      which always carries an offset.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/redis_update_buffer.py#L100-L106
+kept_bugs:
+  - what: >-
+      A record that fails to decode is gone: the pipeline and the spend log drain pop
+      destructively before they parse, so malformed JSON loses the whole popped batch. The source
+      pops the same way.
+    why: >-
+      The task requires the decode error to propagate after the pop; restoring the popped entries
+      would need an rpush whose payload the source never shows, and the error still reaches the
+      scheduler.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/redis_update_buffer.py#L728-L758
