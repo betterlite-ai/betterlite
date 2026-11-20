@@ -1,5 +1,6 @@
 import asyncio
-from collections.abc import Coroutine
+import inspect
+from collections.abc import Awaitable
 from typing import Final, Literal, NotRequired, TypedDict
 from urllib.parse import parse_qsl, urlsplit, urlunsplit
 
@@ -78,19 +79,19 @@ EXTENSIONS: Final = TypeAdapter(dict[str, JsonValue])
 TIMEOUT: Final = TypeAdapter(TimeoutView)
 
 
-def settled_object(
-    outcome: ContainerObject | Coroutine[object, object, ContainerObject],
+async def resolved_object(
+    outcome: ContainerObject | Awaitable[ContainerObject],
 ) -> ContainerObject:
-    if asyncio.iscoroutine(outcome):
-        return asyncio.run(outcome)
+    if inspect.isawaitable(outcome):
+        return await outcome
     return outcome
 
 
-def settled_page(
-    outcome: ContainerListResponse | Coroutine[object, object, ContainerListResponse],
+async def resolved_page(
+    outcome: ContainerListResponse | Awaitable[ContainerListResponse],
 ) -> ContainerListResponse:
-    if asyncio.iscoroutine(outcome):
-        return asyncio.run(outcome)
+    if inspect.isawaitable(outcome):
+        return await outcome
     return outcome
 
 
@@ -238,36 +239,50 @@ def answer(
         case "create":
             timeout = call.get("timeout")
             seconds = 600 if timeout is None else timeout
-            outcome = handler.container_create_handler(  # pyright: ignore[reportUnknownMemberType]  # LiteLLM types the create params as a bare dict, so the handler's type is partially unknown  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L8801-L8888
-                name=call["name"],
-                container_create_request_params=call["create_params"],
-                container_provider_config=config,
-                litellm_params=litellm_params,
-                logging_obj=log,
-                timeout=float(seconds),
-                client=handler_client(wire),
+            name = call.get("name")
+            if name is None:
+                name = ""
+            create_params = call.get("create_params")
+            if create_params is None:
+                create_params = {}
+            created = asyncio.run(
+                resolved_object(
+                    handler.container_create_handler(  # pyright: ignore[reportUnknownMemberType]  # LiteLLM types the create params as a bare dict, so the handler's type is partially unknown  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L8801-L8888
+                        name=name,
+                        container_create_request_params=create_params,
+                        container_provider_config=config,
+                        litellm_params=litellm_params,
+                        logging_obj=log,
+                        timeout=float(seconds),
+                        client=handler_client(wire),
+                    )
+                )
             )
-            created = settled_object(outcome)
-            view = CONTAINER.validate_json(created.model_dump_json())
-            return {"response": container_fields(view)}
+            container_view = CONTAINER.validate_json(created.model_dump_json())
+            return {"response": container_fields(container_view)}
         case "list":
-            outcome = handler.container_list_handler(
-                container_provider_config=config,
-                litellm_params=litellm_params,
-                logging_obj=log,
-                after=call.get("after"),
-                limit=call.get("limit"),
-                order=call.get("order"),
-                client=handler_client(wire),
+            page = asyncio.run(
+                resolved_page(
+                    handler.container_list_handler(
+                        container_provider_config=config,
+                        litellm_params=litellm_params,
+                        logging_obj=log,
+                        after=call.get("after"),
+                        limit=call.get("limit"),
+                        order=call.get("order"),
+                        client=handler_client(wire),
+                    )
+                )
             )
-            page = PAGE.validate_json(settled_page(outcome).model_dump_json())
-            return {"response": page_fields(page)}
+            page_view = PAGE.validate_json(page.model_dump_json())
+            return {"response": page_fields(page_view)}
 
 
 def run(input_value: Call) -> JsonValue:
     config = container_config()
     log = RecordingLogging()
     wire = Wire(input_value)
+    payload: dict[str, JsonValue]
     try:
         payload = answer(BaseLLMHTTPHandler(), input_value, config, log, wire)
     except BaseLLMException as failure:  # type: ignore[misc]  # LiteLLM's class annotates headers and body as bare dicts, so the type carries Any  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L41-L51
