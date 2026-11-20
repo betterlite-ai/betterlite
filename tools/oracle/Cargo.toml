@@ -21,6 +21,7 @@ betterlite-core = { path = "../../crates/betterlite-core" }
 betterlite-db = { path = "../../crates/betterlite-db" }
 betterlite-env = { path = "../../crates/betterlite-env" }
 betterlite-error = { path = "../../crates/betterlite-error" }
+betterlite-foundry = { path = "../../crates/betterlite-foundry" }
 betterlite-guardrails = { path = "../../crates/betterlite-guardrails" }
 betterlite-http = { path = "../../crates/betterlite-http" }
 betterlite-logging = { path = "../../crates/betterlite-logging" }
@@ -46,6 +47,7 @@ bytes = "1.12.1"
 chrono.workspace = true
 clap = { version = "4.6.7", features = ["derive", "env"] }
 cookie_store = "0.22.0"
+futures-executor = "0.3.34"
 futures-util = { version = "0.3.34", default-features = false }
 hex = "0.4.3"
 http = "1.5.0"
