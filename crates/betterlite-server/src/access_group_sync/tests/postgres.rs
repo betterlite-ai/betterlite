@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::Mutex;
+use std::sync::atomic::Ordering;
 
 use betterlite_db::auxiliary_repository::repository::PrismaClient;
 use betterlite_db::database_replica::availability::Availability;
@@ -322,6 +323,30 @@ pub(super) async fn commit_then_cache_failure(pool: &Pool) {
     assert_eq!(team_ids(pool, "g1").await, Some(vec!["t1".to_owned()]));
     assert_eq!(team_ids(pool, "g2").await, Some(Vec::new()));
     assert_eq!(team_ids(pool, "g4").await, Some(vec!["t1".to_owned()]));
+}
+
+pub(super) async fn key_degraded_writer_writes(pool: &Pool) {
+    let writer = PostgresStore {
+        pool: Some(pool.clone()),
+    };
+    let reader = PostgresStore {
+        pool: Some(pool.clone()),
+    };
+    let availability = Availability::default();
+    availability
+        .writer_unavailable
+        .store(true, Ordering::SeqCst);
+    let membership = key_membership(&writer, &reader, &availability);
+    let groups = vec!["g1".to_owned()];
+    let moved = membership
+        .move_key_membership(KeyMembershipStatement::Attach, "tok", &groups)
+        .await
+        .unwrap();
+    assert_eq!(moved_names(&moved), vec!["g1".to_owned()]);
+    assert_eq!(
+        key_ids(pool, "g1").await,
+        Some(vec!["old".to_owned(), "old".to_owned(), "tok".to_owned()])
+    );
 }
 
 pub(super) async fn concurrent_team_appends(pool: &Pool) {

@@ -489,6 +489,14 @@ async fn team_retry_invalidates_desired() {
 }
 
 #[tokio::test]
+async fn key_writes_ignore_degraded_writer() {
+    let (fixture, pool) = postgres::database().await;
+    postgres::seed_groups(&pool).await;
+    postgres::key_degraded_writer_writes(&pool).await;
+    postgres::close(fixture, pool).await;
+}
+
+#[tokio::test]
 async fn concurrent_team_appends() {
     let (fixture, pool) = postgres::database().await;
     postgres::concurrent_team_appends(&pool).await;
