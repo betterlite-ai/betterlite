@@ -214,7 +214,6 @@ fn provider_failure(error: &ProviderError) -> Failure {
         message: error.message.clone(),
         headers: error.headers.clone(),
         synthesized: Some(error.status_code_is_synthesized),
-        ..Failure::default()
     }
 }
 
