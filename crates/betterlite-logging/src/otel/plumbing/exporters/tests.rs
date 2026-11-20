@@ -118,6 +118,8 @@ pub(crate) fn config(kind: &str) -> OtelConfig {
         legacy_compat: false,
         langfuse_span_scope: String::new(),
         excluded_services: Vec::new(),
+        configured_excluded_services: None,
+        attributes: None,
         exporters: Vec::new(),
         mapper_names: Vec::new(),
         resource_attributes: BTreeMap::new(),
