@@ -73,14 +73,10 @@ impl<E: Error> ImageProcessingError<E> {
     }
 
     fn other_failure(&self) -> GuardrailFailure {
-        GuardrailFailure::Other(self.other_message())
-    }
-
-    fn other_message(&self) -> String {
         match self {
-            Self::Completion { source } => source.to_string(),
-            Self::Filter(source) => source.to_string(),
-            Self::NoChoices | Self::Blocked { .. } => self.to_string(),
+            Self::Completion { source } => GuardrailFailure::Other(source.to_string()),
+            Self::Filter(source) => GuardrailFailure::Other(source.to_string()),
+            Self::NoChoices | Self::Blocked { .. } => GuardrailFailure::Other(self.to_string()),
         }
     }
 }
