@@ -217,36 +217,33 @@ fn calls_extra_headers_override_the_ephemeral_authorization() {
     assert!(!lower.contains("authorization: bearer ep-test"));
 }
 
-#[test]
-fn invalid_or_oversized_sdp_fails_before_the_pre_call() {
+#[rstest]
+#[case::invalid_utf8(b"\xff\xfe")]
+#[case::over_the_cap(b"v=0\r\n")]
+fn invalid_or_oversized_sdp_fails_before_the_pre_call(#[case] sdp: &[u8]) {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let mut state = logging_state(&redactor);
     let envelope = logging_env(&redactor);
     let source = test_source();
-    let answers = runtime().block_on(async {
+    let answer = runtime().block_on(async {
         let deps = fallback_deps(&source, None, TINY);
-        let mut answers = Vec::new();
-        for sdp in [b"\xff\xfe".as_slice(), b"v=0\r\n".as_slice()] {
-            let call = CallsCall {
-                api_base: "http://127.0.0.1:9",
-                ephemeral_key: "ep-test",
-                sdp,
-                model: None,
-                session: None,
-                extra_headers: None,
-                api_version: None,
-                timeout: None,
-            };
-            let mut log = LogContext {
-                state: &mut state,
-                env: &envelope,
-            };
-            answers.push(calls_post(&deps, &call, &mut log).await);
-        }
-        answers
+        let call = CallsCall {
+            api_base: "http://127.0.0.1:9",
+            ephemeral_key: "ep-test",
+            sdp,
+            model: None,
+            session: None,
+            extra_headers: None,
+            api_version: None,
+            timeout: None,
+        };
+        let mut log = LogContext {
+            state: &mut state,
+            env: &envelope,
+        };
+        calls_post(&deps, &call, &mut log).await
     });
-    assert!(matches!(answers[0], Err(RealtimeHttpError::Sdp(_))));
-    assert!(matches!(answers[1], Err(RealtimeHttpError::Sdp(_))));
+    assert!(matches!(answer, Err(RealtimeHttpError::Sdp(_))));
     assert!(input_untouched(&state));
     assert!(!state.model_call_details.contains_key("additional_args"));
 }

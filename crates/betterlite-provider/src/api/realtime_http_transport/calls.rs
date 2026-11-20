@@ -52,8 +52,10 @@ pub async fn calls_post<C: BaseRealtimeHttpConfig>(
         additional_args: AdditionalArgs {
             api_base: Some(url.clone()),
             headers: Some(headers.clone().into_iter().collect()),
+            complete_input_dict: None,
+            request_str: None,
+            openai_sdk: None,
             passthrough: IndexMap::from([(String::from("session"), Json::Object(session))]),
-            ..AdditionalArgs::default()
         },
     };
     pre_call(log.state, &record, log.env).map(drop)?;

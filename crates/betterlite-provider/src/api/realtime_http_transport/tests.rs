@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::collections::BTreeMap;
 use std::fs;
 use std::net::TcpListener as StdListener;
@@ -33,6 +35,7 @@ use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::DateTime;
 use indexmap::IndexMap;
+use rstest::rstest;
 use serde_json::Number;
 use thiserror::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -325,7 +328,10 @@ async fn serve(std_listener: StdListener, replies: &[Reply]) -> Vec<Request> {
     requests
 }
 
-fn exchange<T>(replies: &[Reply], run: impl FnOnce(&str) -> T) -> (String, Vec<Request>, T) {
+fn exchange<T, F>(replies: &[Reply], run: F) -> (String, Vec<Request>, T)
+where
+    F: FnOnce(&str) -> T,
+{
     let std_listener = StdListener::bind("127.0.0.1:0").unwrap();
     std_listener.set_nonblocking(true).unwrap();
     let address = std_listener.local_addr().unwrap();
@@ -339,7 +345,10 @@ fn exchange<T>(replies: &[Reply], run: impl FnOnce(&str) -> T) -> (String, Vec<R
 }
 
 // A server that accepts and never answers, so the client's own deadline is what ends the send
-fn held<T>(run: impl FnOnce(&str) -> T) -> T {
+fn held<T, F>(run: F) -> T
+where
+    F: FnOnce(&str) -> T,
+{
     let std_listener = StdListener::bind("127.0.0.1:0").unwrap();
     std_listener.set_nonblocking(true).unwrap();
     let address = std_listener.local_addr().unwrap();
@@ -526,40 +535,38 @@ fn session_config_names_the_url_headers_and_extra_headers_win() {
     assert!(!lower.contains("api-key: configured"));
 }
 
-#[test]
-fn client_selection_reuses_an_async_client_and_replaces_a_sync_one() {
+// The supplied client is fetched once (created=1), then an async one is reused and a sync or absent one reaches the pool again
+#[rstest]
+#[case::async_client(Some(ClientKind::Asynchronous), 1)]
+#[case::sync_client(Some(ClientKind::Sync), 2)]
+#[case::no_client(None, 2)]
+fn client_selection_reuses_an_async_client_and_replaces_a_sync_one(
+    #[case] kind: Option<ClientKind>,
+    #[case] created: usize,
+) {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let mut state = logging_state(&redactor);
     let envelope = logging_env(&redactor);
     let source = test_source();
     let supplied = source.client().unwrap();
     let data = session_request();
-    let replies = vec![ok_reply(), ok_reply(), ok_reply()];
-    let (_, _, answers) = exchange(&replies, |api_base| {
+    let (_, _, answers) = exchange(&[ok_reply()], |api_base| {
         runtime().block_on(async {
-            let mut answers = Vec::new();
-            for kind in [Some(ClientKind::Asynchronous), Some(ClientKind::Sync), None] {
-                let supplied_client = kind.map(|kind| SuppliedClient {
-                    kind,
-                    transport: &supplied,
-                });
-                let deps = fallback_deps(&source, supplied_client, ApiLimits::default());
-                let call = session_call(SessionEndpoint::ClientSecrets, api_base, &data);
-                let mut log = LogContext {
-                    state: &mut state,
-                    env: &envelope,
-                };
-                answers.push(session_post(&deps, &call, &mut log).await);
-            }
-            answers
+            let supplied_client = kind.map(|kind| SuppliedClient {
+                kind,
+                transport: &supplied,
+            });
+            let deps = fallback_deps(&source, supplied_client, ApiLimits::default());
+            let call = session_call(SessionEndpoint::ClientSecrets, api_base, &data);
+            let mut log = LogContext {
+                state: &mut state,
+                env: &envelope,
+            };
+            session_post(&deps, &call, &mut log).await
         })
     });
-    assert!(
-        answers
-            .iter()
-            .all(|answer| answer.as_ref().unwrap().status == 200)
-    );
-    assert_eq!(source.created.load(Ordering::SeqCst), 3);
+    assert_eq!(answers.unwrap().status, 200);
+    assert_eq!(source.created.load(Ordering::SeqCst), created);
     assert_eq!(source.pool.client_count(), 1);
 }
 
@@ -858,7 +865,8 @@ fn a_config_error_happens_before_the_pre_call_and_the_send() {
     let data = session_request();
     let refusing = TestConfig {
         fail: true,
-        ..TestConfig::default()
+        header: HeaderKind::Text,
+        url: UrlKind::Good,
     };
     let answer = runtime().block_on(async {
         let deps = TransportDeps {
@@ -887,8 +895,9 @@ fn a_non_text_config_header_fails_the_wire_build() {
     let source = test_source();
     let data = session_request();
     let numeric = TestConfig {
+        fail: false,
         header: HeaderKind::Numeric,
-        ..TestConfig::default()
+        url: UrlKind::Good,
     };
     let answer = runtime().block_on(async {
         let deps = TransportDeps {
@@ -946,18 +955,17 @@ fn replays_corpus() {
         max_event_bytes: 32,
         max_items: 32,
     };
-    let mut seen = 0_usize;
-    for entry in fs::read_dir(corpus()).unwrap() {
-        let path = entry.unwrap().path();
-        if !path.is_file() {
-            continue;
-        }
-        seen += 1;
-        let bytes = fs::read(&path).unwrap();
-        let _whole = decode_realtime_sdp(&bytes, ApiLimits::default());
-        let _capped = decode_realtime_sdp(&bytes, tiny);
-    }
-    assert!(seen > 0_usize);
+    let replayed = fs::read_dir(corpus())
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.is_file())
+        .map(|path| {
+            let bytes = fs::read(path).unwrap();
+            let _whole = decode_realtime_sdp(&bytes, ApiLimits::default());
+            let _capped = decode_realtime_sdp(&bytes, tiny);
+        })
+        .count();
+    assert!(replayed > 0_usize);
 }
 
 #[test]

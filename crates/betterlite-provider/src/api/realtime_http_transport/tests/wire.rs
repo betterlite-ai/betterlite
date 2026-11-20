@@ -2,8 +2,7 @@ use std::sync::atomic::Ordering;
 
 use super::*;
 
-// A session POST against a config whose URL, header name or header value HTTP cannot carry: the pre-call has run,
-// the send was never reached, and the typed error names the piece that was unusable
+// A config naming a URL or header HTTP cannot carry: the pre-call has run, no send was reached, and the typed error names the piece
 fn session_with(config: &TestConfig, source: &Source) -> (RealtimeHttpError, LoggingState) {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let mut state = logging_state(&redactor);
@@ -33,8 +32,9 @@ fn session_with(config: &TestConfig, source: &Source) -> (RealtimeHttpError, Log
 fn a_base_that_is_not_a_url_fails_the_wire_build() {
     let source = test_source();
     let config = TestConfig {
+        fail: false,
+        header: HeaderKind::Text,
         url: UrlKind::Broken,
-        ..TestConfig::default()
     };
     let (error, state) = session_with(&config, &source);
     let RealtimeHttpError::RequestUrl { url, .. } = error else {
@@ -52,8 +52,9 @@ fn a_base_that_is_not_a_url_fails_the_wire_build() {
 fn a_bad_header_name_fails_the_wire_build() {
     let source = test_source();
     let config = TestConfig {
+        fail: false,
         header: HeaderKind::BadName,
-        ..TestConfig::default()
+        url: UrlKind::Good,
     };
     let (error, state) = session_with(&config, &source);
     let RealtimeHttpError::HeaderName { name, .. } = error else {
@@ -71,8 +72,9 @@ fn a_bad_header_name_fails_the_wire_build() {
 fn a_bad_header_value_fails_the_wire_build() {
     let source = test_source();
     let config = TestConfig {
+        fail: false,
         header: HeaderKind::BadValue,
-        ..TestConfig::default()
+        url: UrlKind::Good,
     };
     let (error, state) = session_with(&config, &source);
     let RealtimeHttpError::HeaderValue { name, .. } = error else {

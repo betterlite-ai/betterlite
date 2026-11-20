@@ -223,7 +223,7 @@ fn status_failure(error: &StatusFailure) -> Failure {
         status: Some(error.status_code),
         message: error.message.clone(),
         headers: error.headers.clone(),
-        ..Failure::default()
+        synthesized: None,
     }
 }
 
@@ -238,8 +238,10 @@ fn sdp_failure(error: &SdpError, whole: &RealtimeHttpError) -> Result<Failure, S
 fn plain(class: &str, message: String) -> Failure {
     Failure {
         class: String::from(class),
+        status: None,
         message,
-        ..Failure::default()
+        headers: BTreeMap::new(),
+        synthesized: None,
     }
 }
 

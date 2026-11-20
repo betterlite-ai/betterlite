@@ -64,7 +64,9 @@ pub async fn session_post<C: BaseRealtimeHttpConfig>(
             api_base: Some(url.clone()),
             headers: Some(headers.clone().into_iter().collect()),
             complete_input_dict: Some(RawBody::Object(call.request_data.clone())),
-            ..AdditionalArgs::default()
+            request_str: None,
+            openai_sdk: None,
+            passthrough: IndexMap::new(),
         },
     };
     pre_call(log.state, &record, log.env).map(drop)?;
