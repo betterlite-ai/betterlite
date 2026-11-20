@@ -231,3 +231,36 @@ async fn file_write_header_empty_maps() {
     );
     assert_eq!(events.recorded(), ["log", "send", "log", "send"]);
 }
+
+// A base carrying a query string gets the collection path and the file id appended after it, as LiteLLM's f-strings do
+#[tokio::test]
+async fn query_base_keeps_the_appended_segments() {
+    let settings = openai_settings();
+    let config = openai_config(&settings, "sk-provider");
+    let events = Events::new();
+    let wire = Wire::replying(Reply::json(200, FILE), &events);
+    let source = Source::new(wire.clone());
+    let deps = WriteDeps {
+        config: &config,
+        source: &source,
+        supplied: None,
+    };
+    let params = params("http://mock.test/v1?key=k");
+    let request = update_request(r#"{"attributes":{}}"#);
+    let mut fixture = Fixture::new("vector_store_file_update");
+    let call = update_call(
+        target("vs_a", "file_a", &params, None, None),
+        &request,
+        None,
+    );
+    run(&mut fixture, &deps, ClientKind::Sync, &call, &events)
+        .await
+        .expect("the update succeeds");
+    let requests = wire.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].url.path(), "/v1");
+    assert_eq!(
+        requests[0].url.query(),
+        Some("key=k/vector_stores/vs_a/files/file_a")
+    );
+}
