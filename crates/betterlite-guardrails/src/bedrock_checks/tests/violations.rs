@@ -67,6 +67,19 @@ fn unconfigured_check_is_not_evaluated() {
 }
 
 #[test]
+fn results_of_an_unconfigured_check_are_not_evaluated() {
+    let response = checks_response(
+        r#"{"results":{"promptAttack":{"results":[{"category":"PROMPT_INJECTION","severityScore":1.0}]},"sensitiveInformation":{"results":[{"type":"EMAIL","confidenceScore":0.9}]}}}"#,
+    );
+    let found = collect(
+        Some(&response),
+        &checks_named(&["contentFilter"]),
+        thresholds(None, Some(0.5), Some(0.5)),
+    );
+    assert!(found.is_empty());
+}
+
+#[test]
 fn prompt_attack_threshold_match_is_a_violation() {
     let response = checks_response(
         r#"{"results":{"promptAttack":{"results":[{"category":"PROMPT_INJECTION","severityScore":1.0}]}}}"#,
@@ -136,6 +149,21 @@ fn truncated_sensitive_information_without_a_threshold_is_ignored() {
         thresholds(None, None, None),
     );
     assert!(found.is_empty());
+}
+
+#[test]
+fn truncated_false_adds_no_violation_of_its_own() {
+    let response = checks_response(
+        r#"{"results":{"sensitiveInformation":{"truncated":false,"results":[{"type":"EMAIL","confidenceScore":0.9}]}}}"#,
+    );
+    let found = collect(
+        Some(&response),
+        &checks_named(&["sensitiveInformation"]),
+        thresholds(None, None, Some(0.9)),
+    );
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].truncated, None);
+    assert_eq!(found[0].type_name.as_deref(), Some("EMAIL"));
 }
 
 #[test]

@@ -1,0 +1,1 @@
+{"results":{"contentFilter":{"results":[{"category":"VIOLENCE","severityScore":0.8}]},"promptAttack":{"results":[{"category":"PROMPT_INJECTION","severityScore":0.4}]},"sensitiveInformation":{"truncated":true,"results":[{"type":"EMAIL","confidenceScore":0.9,"messageIndex":0,"contentIndex":1,"beginOffset":3,"endOffset":12}]}},"usage":{"contentFilter":{"textUnits":3}}}

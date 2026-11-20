@@ -1,0 +1,31 @@
+kind: helper
+name: unconfigured-checks-are-skipped
+call:
+  b3725:
+    source: INPUT
+    messages:
+      - {role: user, content: hello}
+    response: null
+    logging_event_type: null
+    checks: {contentFilter: {}}
+    content_filter_threshold: 0.5
+    prompt_attack_threshold: 0.5
+    pii_confidence_threshold: 0.5
+    disable_exception_on_block: false
+    data: {model: gpt-4o}
+    reply:
+      status: 200
+      body:
+        results:
+          promptAttack:
+            results:
+              - {category: PROMPT_INJECTION, severityScore: 1.0}
+          sensitiveInformation:
+            results:
+              - {type: EMAIL, confidenceScore: 0.9}
+      raw: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/requests/0/authorization
+      why: "Each side signs its own request at its own clock time, so the SigV4 signature differs"
