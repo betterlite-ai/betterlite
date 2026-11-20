@@ -73,6 +73,18 @@ fn a_three_model_draw_switches_at_each_third(#[case] sample: u64, #[case] expect
 }
 
 #[test]
+fn a_one_entry_list_still_draws() {
+    let mut world = World::new();
+    world.set_pool("MEDIUM", pool(&["only"]));
+    let context = world.context();
+    let service = world.service(&context);
+    let mut random = ScriptedRng::new(&[LAST_SAMPLE]);
+    let chosen = service.model_for_tier(&MEDIUM, &mut random).unwrap();
+    assert_eq!(chosen, "only");
+    assert_eq!(random.draws, 1);
+}
+
+#[test]
 fn an_empty_pool_names_the_requested_tier() {
     let mut no_draw = NoDraw;
     let error = pick_from_pool(&TierPool::Pool(Vec::new()), "SIMPLE", &mut no_draw).unwrap_err();
