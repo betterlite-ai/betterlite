@@ -9,24 +9,49 @@ use tracing::subscriber::DefaultGuard;
 use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::util::SubscriberInitExt as _;
 
+use crate::daily_spend_sql::values::SpendColumnValue;
 use crate::redis_spend::buffer::RedisUpdateBuffer;
 use crate::redis_spend::codec::decode_log_record;
 use crate::redis_spend::events::{RedisBufferEvent, RedisBufferEventSink};
 use crate::redis_spend::lists::{
-    BufferPop, BufferReply, SpendBufferListError, SpendBufferLists, SpendListFuture,
+    BufferPop, BufferPush, BufferReply, SpendBufferListError, SpendBufferLists, SpendBufferPush,
+    SpendListFuture,
 };
 use crate::redis_spend::log_row::SpendLogRow;
-use crate::spend_queues::entity::{SpendAmount, SpendUpdateTransactions};
+use crate::redis_spend::publication::{RedisSpendPublisher, SpendStaging};
+use crate::spend_queues::daily::{DailySpendUpdate, DailySpendUpdateQueue};
+use crate::spend_queues::entity::{
+    EntityType, SpendAmount, SpendUpdateQueue, SpendUpdateQueueItem, SpendUpdateTransactions,
+};
+use crate::spend_queues::events::NoSpendQueueEventSink;
+use crate::window_queue::{WindowSpendTransaction, WindowSpendUpdateQueue};
 
 #[derive(Debug, Clone, Default)]
-pub(super) struct Pushed {
+pub(crate) struct Pushed {
     pub key: String,
     pub values: Vec<String>,
     pub max_len: i64,
 }
 
+// A producer that refills its bounded queue while the buffer is publishing, so the restore that follows meets a queue that is full again.
+pub(crate) enum FillOnPush {
+    Daily(Arc<DailySpendUpdateQueue>, DailySpendUpdate),
+    Window(Arc<WindowSpendUpdateQueue>, WindowSpendTransaction),
+}
+
+impl FillOnPush {
+    async fn apply(&self) {
+        match self {
+            Self::Daily(queue, update) => queue.add_update(update.clone()).await.unwrap(),
+            Self::Window(queue, transaction) => {
+                queue.add_update(transaction.clone()).await.unwrap()
+            }
+        }
+    }
+}
+
 #[derive(Default)]
-pub(super) struct FakeLists {
+pub(crate) struct FakeLists {
     state: Mutex<State>,
 }
 
@@ -40,6 +65,12 @@ struct State {
     popped: Vec<(String, Option<i64>)>,
     piped: Vec<Vec<BufferPop>>,
     pushed: Vec<Pushed>,
+    pushes: Vec<Vec<BufferPush>>,
+    singles: Vec<(String, Vec<String>)>,
+    push_lengths: VecDeque<Vec<i64>>,
+    single_length: i64,
+    fail_push: bool,
+    fill_on_push: Option<FillOnPush>,
 }
 
 impl FakeLists {
@@ -47,36 +78,64 @@ impl FakeLists {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    pub(super) fn script_pop(&self, reply: BufferReply) {
+    pub(crate) fn script_pop(&self, reply: BufferReply) {
         self.lock().pops.push_back(reply);
     }
 
-    pub(super) fn script_pipeline(&self, replies: Vec<BufferReply>) {
+    pub(crate) fn script_pipeline(&self, replies: Vec<BufferReply>) {
         self.lock().pipelines.push_back(replies);
     }
 
-    pub(super) fn fail_reads(&self) {
+    pub(crate) fn fail_reads(&self) {
         self.lock().fail_reads = true;
     }
 
-    pub(super) fn fail_trim(&self) {
+    pub(crate) fn fail_trim(&self) {
         self.lock().fail_trim = true;
     }
 
-    pub(super) fn trim_size(&self, size: i64) {
+    pub(crate) fn trim_size(&self, size: i64) {
         self.lock().trim_size = size;
     }
 
-    pub(super) fn popped(&self) -> Vec<(String, Option<i64>)> {
+    pub(crate) fn script_push_lengths(&self, lengths: Vec<i64>) {
+        self.lock().push_lengths.push_back(lengths);
+    }
+
+    pub(crate) fn single_length(&self, length: i64) {
+        self.lock().single_length = length;
+    }
+
+    pub(crate) fn fail_push(&self) {
+        self.lock().fail_push = true;
+    }
+
+    pub(crate) fn allow_push(&self) {
+        self.lock().fail_push = false;
+    }
+
+    pub(crate) fn fill_on_push(&self, fill: FillOnPush) {
+        self.lock().fill_on_push = Some(fill);
+    }
+
+    pub(crate) fn popped(&self) -> Vec<(String, Option<i64>)> {
         self.lock().popped.clone()
     }
 
-    pub(super) fn piped(&self) -> Vec<Vec<BufferPop>> {
+    pub(crate) fn piped(&self) -> Vec<Vec<BufferPop>> {
         self.lock().piped.clone()
     }
 
-    pub(super) fn pushed(&self) -> Vec<Pushed> {
+    pub(crate) fn pushed(&self) -> Vec<Pushed> {
         self.lock().pushed.clone()
+    }
+
+    pub(crate) fn pushed_pipelines(&self) -> Vec<Vec<BufferPush>> {
+        self.lock().pushes.clone()
+    }
+
+    pub(crate) fn single_pushes(&self) -> Vec<(String, Vec<String>)> {
+        self.lock().singles.clone()
     }
 }
 
@@ -124,6 +183,44 @@ impl SpendBufferLists for FakeLists {
     }
 }
 
+impl SpendBufferPush for FakeLists {
+    fn rpush<'call>(
+        &'call self,
+        key: &'call str,
+        values: &'call [String],
+    ) -> SpendListFuture<'call, i64> {
+        Box::pin(async move {
+            let mut state = self.lock();
+            state.singles.push((key.to_owned(), values.to_vec()));
+            if state.fail_push {
+                return Err(list_failure("async_rpush"));
+            }
+            Ok(state.single_length)
+        })
+    }
+
+    fn rpush_pipeline<'call>(
+        &'call self,
+        operations: &'call [BufferPush],
+    ) -> SpendListFuture<'call, Vec<i64>> {
+        Box::pin(async move {
+            let fill = {
+                let mut state = self.lock();
+                state.pushes.push(operations.to_vec());
+                state.fill_on_push.take()
+            };
+            if let Some(fill) = fill {
+                fill.apply().await;
+            }
+            let mut state = self.lock();
+            if state.fail_push {
+                return Err(list_failure("async_rpush_pipeline"));
+            }
+            Ok(state.push_lengths.pop_front().unwrap_or_default())
+        })
+    }
+}
+
 fn pop_once(
     state: &mut State,
     key: &str,
@@ -145,10 +242,10 @@ fn list_failure(operation: &'static str) -> SpendBufferListError {
 }
 
 #[derive(Default)]
-pub(super) struct RecordingEvents(Mutex<Vec<RedisBufferEvent>>);
+pub(crate) struct RecordingEvents(Mutex<Vec<RedisBufferEvent>>);
 
 impl RecordingEvents {
-    pub(super) fn events(&self) -> Vec<RedisBufferEvent> {
+    pub(crate) fn events(&self) -> Vec<RedisBufferEvent> {
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -166,10 +263,10 @@ impl RedisBufferEventSink for RecordingEvents {
 }
 
 #[derive(Clone, Default)]
-pub(super) struct CapturedLogs(Arc<Mutex<String>>);
+pub(crate) struct CapturedLogs(Arc<Mutex<String>>);
 
 impl CapturedLogs {
-    pub(super) fn text(&self) -> String {
+    pub(crate) fn text(&self) -> String {
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -201,7 +298,7 @@ impl MakeWriter<'_> for CapturedLogs {
     }
 }
 
-pub(super) fn captured_logs() -> (CapturedLogs, DefaultGuard) {
+pub(crate) fn captured_logs() -> (CapturedLogs, DefaultGuard) {
     let logs = CapturedLogs::default();
     let guard = tracing_subscriber::fmt()
         .with_writer(logs.clone())
@@ -211,7 +308,7 @@ pub(super) fn captured_logs() -> (CapturedLogs, DefaultGuard) {
     (logs, guard)
 }
 
-pub(super) fn attached(lists: &Arc<FakeLists>) -> RedisUpdateBuffer {
+pub(crate) fn attached(lists: &Arc<FakeLists>) -> RedisUpdateBuffer {
     let owned: Arc<FakeLists> = Arc::clone(lists);
     let port: Arc<dyn SpendBufferLists> = owned;
     RedisUpdateBuffer {
@@ -222,7 +319,7 @@ pub(super) fn attached(lists: &Arc<FakeLists>) -> RedisUpdateBuffer {
     }
 }
 
-pub(super) fn detached() -> RedisUpdateBuffer {
+pub(crate) fn detached() -> RedisUpdateBuffer {
     RedisUpdateBuffer {
         lists: None,
         enabled: true,
@@ -231,7 +328,7 @@ pub(super) fn detached() -> RedisUpdateBuffer {
     }
 }
 
-pub(super) fn buffer_with_sink(events: Arc<dyn RedisBufferEventSink>) -> RedisUpdateBuffer {
+pub(crate) fn buffer_with_sink(events: Arc<dyn RedisBufferEventSink>) -> RedisUpdateBuffer {
     RedisUpdateBuffer {
         lists: None,
         enabled: false,
@@ -240,11 +337,85 @@ pub(super) fn buffer_with_sink(events: Arc<dyn RedisBufferEventSink>) -> RedisUp
     }
 }
 
-pub(super) fn amount(value: &str) -> SpendAmount {
+pub(crate) fn publisher(lists: &Arc<FakeLists>) -> RedisSpendPublisher {
+    let owned: Arc<FakeLists> = Arc::clone(lists);
+    let port: Arc<dyn SpendBufferPush> = owned;
+    RedisSpendPublisher {
+        lists: Some(port),
+        events: Arc::new(RecordingEvents::default()),
+        staging: SpendStaging::default(),
+    }
+}
+
+pub(crate) fn publisher_recording(
+    lists: &Arc<FakeLists>,
+) -> (RedisSpendPublisher, Arc<RecordingEvents>) {
+    let events = Arc::new(RecordingEvents::default());
+    let owned: Arc<FakeLists> = Arc::clone(lists);
+    let port: Arc<dyn SpendBufferPush> = owned;
+    let sink: Arc<dyn RedisBufferEventSink> = Arc::clone(&events);
+    let publisher = RedisSpendPublisher {
+        lists: Some(port),
+        events: sink,
+        staging: SpendStaging::default(),
+    };
+    (publisher, events)
+}
+
+pub(crate) fn detached_publisher() -> RedisSpendPublisher {
+    RedisSpendPublisher {
+        lists: None,
+        events: Arc::new(RecordingEvents::default()),
+        staging: SpendStaging::default(),
+    }
+}
+
+// The queues a scheduler tick publishes from, each unbounded enough that only a test asking for a full one gets one.
+pub(crate) fn entity_queue(capacity: i64, threshold: i64, flush_count: i64) -> SpendUpdateQueue {
+    SpendUpdateQueue::new(
+        capacity,
+        threshold,
+        flush_count,
+        Arc::new(NoSpendQueueEventSink),
+    )
+    .unwrap()
+}
+
+pub(crate) fn daily_queue(
+    capacity: i64,
+    threshold: i64,
+    flush_count: i64,
+) -> DailySpendUpdateQueue {
+    DailySpendUpdateQueue::new(
+        capacity,
+        threshold,
+        flush_count,
+        Arc::new(NoSpendQueueEventSink),
+    )
+    .unwrap()
+}
+
+pub(crate) fn window_queue(
+    capacity: i64,
+    threshold: i64,
+    flush_count: i64,
+) -> WindowSpendUpdateQueue {
+    WindowSpendUpdateQueue::new(capacity, threshold, flush_count).unwrap()
+}
+
+pub(crate) fn amount(value: &str) -> SpendAmount {
     SpendAmount(value.parse::<Decimal>().unwrap())
 }
 
-pub(super) fn transactions(user: &[(&str, &str)]) -> SpendUpdateTransactions {
+pub(crate) fn queue_item(kind: EntityType, id: &str, value: &str) -> SpendUpdateQueueItem {
+    SpendUpdateQueueItem {
+        entity_type: Some(kind),
+        entity_id: Some(id.to_owned()),
+        response_cost: Some(amount(value)),
+    }
+}
+
+pub(crate) fn transactions(user: &[(&str, &str)]) -> SpendUpdateTransactions {
     SpendUpdateTransactions {
         user_list_transactions: user
             .iter()
@@ -263,10 +434,60 @@ pub(super) fn transactions(user: &[(&str, &str)]) -> SpendUpdateTransactions {
     }
 }
 
-pub(super) fn decoded_row(json: &str) -> SpendLogRow {
+// One daily aggregation key with the six required metrics the merge insists on; the request counters stay zero so a fixture can be summed with itself without the test restating the totals.
+pub(crate) fn daily_row(day: &str, spend: &str, prompt_tokens: i64) -> DailySpendUpdate {
+    let mut row = BTreeMap::new();
+    row.insert(
+        "spend".to_owned(),
+        SpendColumnValue::Decimal(spend.parse::<Decimal>().unwrap()),
+    );
+    row.insert(
+        "prompt_tokens".to_owned(),
+        SpendColumnValue::Int(prompt_tokens),
+    );
+    row.insert("completion_tokens".to_owned(), SpendColumnValue::Int(0));
+    row.insert("api_requests".to_owned(), SpendColumnValue::Int(0));
+    row.insert("successful_requests".to_owned(), SpendColumnValue::Int(0));
+    row.insert("failed_requests".to_owned(), SpendColumnValue::Int(0));
+    DailySpendUpdate::from([(day.to_owned(), row)])
+}
+
+// What aggregate_daily_rows makes of two daily_row payloads for the same day: the six required metrics summed and the nine optional ones the merge writes as zero.
+pub(crate) fn merged_daily_row(day: &str, spend: &str, prompt_tokens: i64) -> DailySpendUpdate {
+    let mut merged = daily_row(day, spend, prompt_tokens);
+    if let Some(row) = merged.get_mut(day) {
+        for metric in [
+            "cache_read_input_tokens",
+            "cache_creation_input_tokens",
+            "compression_saved_tokens",
+            "compression_savings_spend",
+            "prompt_caching_savings_spend",
+            "gateway_injected_caching_savings_spend",
+            "autorouter_savings_spend",
+            "total_response_time_ms",
+            "timed_requests",
+        ] {
+            row.insert(metric.to_owned(), SpendColumnValue::Int(0));
+        }
+    }
+    merged
+}
+
+pub(crate) fn window_transaction(kind: &str, id: &str, spend: &str) -> WindowSpendTransaction {
+    WindowSpendTransaction {
+        entity_type: kind.to_owned(),
+        entity_id: id.to_owned(),
+        window_duration: "1h".to_owned(),
+        window_start: "2024-01-01T00:00:00+00:00".to_owned(),
+        spend: amount(spend),
+        started_at: None,
+    }
+}
+
+pub(crate) fn decoded_row(json: &str) -> SpendLogRow {
     decode_log_record(json.as_bytes()).unwrap().unwrap()
 }
 
-pub(super) fn bytes(value: &str) -> Vec<u8> {
+pub(crate) fn bytes(value: &str) -> Vec<u8> {
     value.as_bytes().to_vec()
 }

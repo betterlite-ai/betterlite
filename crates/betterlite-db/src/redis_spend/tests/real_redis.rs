@@ -23,8 +23,9 @@ use crate::redis_spend::keys::{
     REDIS_DAILY_TAG_BUFFER_KEY, REDIS_DAILY_USER_BUFFER_KEY, REDIS_SPEND_LOGS_BUFFER_KEY,
     REDIS_SPEND_LOGS_MAX_ROWS, REDIS_UPDATE_BUFFER_KEY, REDIS_WINDOW_BUFFER_KEY,
 };
-use crate::redis_spend::lists::{RedisSpendLists, SpendBufferLists};
+use crate::redis_spend::lists::{RedisSpendLists, SpendBufferLists, SpendBufferPush};
 use crate::redis_spend::log_row::{SpendLogRow, SpendLogValue};
+use crate::redis_spend::publication::{RedisSpendPublisher, SpendStaging};
 
 use super::support::{amount, captured_logs, decoded_row, transactions};
 
@@ -64,7 +65,7 @@ fn numbered_row(index: i64) -> SpendLogRow {
     SpendLogRow::from([("index".to_owned(), SpendLogValue::Whole(index))])
 }
 
-async fn cache_for(fixture: &RedisFixture) -> Arc<RedisCache> {
+pub(crate) async fn cache_for(fixture: &RedisFixture) -> Arc<RedisCache> {
     let url = serde_json::to_string(fixture.as_ref()).unwrap();
     let overrides: RedisOverrides = serde_json::from_str(&format!(r#"{{"url":{url}}}"#)).unwrap();
     let options = RedisCacheOptions {
@@ -83,7 +84,7 @@ async fn cache_for(fixture: &RedisFixture) -> Arc<RedisCache> {
     Arc::new(connect(options, &env).await.unwrap())
 }
 
-fn buffer(cache: &Arc<RedisCache>) -> RedisUpdateBuffer {
+pub(crate) fn buffer(cache: &Arc<RedisCache>) -> RedisUpdateBuffer {
     let lists = RedisSpendLists {
         cache: Arc::clone(cache),
     };
@@ -96,7 +97,19 @@ fn buffer(cache: &Arc<RedisCache>) -> RedisUpdateBuffer {
     }
 }
 
-async fn raw(fixture: &RedisFixture) -> MultiplexedConnection {
+pub(crate) fn publisher(cache: &Arc<RedisCache>) -> RedisSpendPublisher {
+    let lists = RedisSpendLists {
+        cache: Arc::clone(cache),
+    };
+    let port: Arc<dyn SpendBufferPush> = Arc::new(lists);
+    RedisSpendPublisher {
+        lists: Some(port),
+        events: Arc::new(NoRedisBufferEventSink),
+        staging: SpendStaging::default(),
+    }
+}
+
+pub(crate) async fn raw(fixture: &RedisFixture) -> MultiplexedConnection {
     Client::open(fixture.as_ref())
         .unwrap()
         .get_multiplexed_async_connection()
@@ -104,7 +117,7 @@ async fn raw(fixture: &RedisFixture) -> MultiplexedConnection {
         .unwrap()
 }
 
-async fn push(connection: &mut MultiplexedConnection, key: &str, values: &[String]) {
+pub(crate) async fn push(connection: &mut MultiplexedConnection, key: &str, values: &[String]) {
     let mut command = cmd("RPUSH");
     command.arg(key);
     for value in values {
@@ -113,11 +126,11 @@ async fn push(connection: &mut MultiplexedConnection, key: &str, values: &[Strin
     let _length: i64 = command.query_async(connection).await.unwrap();
 }
 
-async fn length(connection: &mut MultiplexedConnection, key: &str) -> i64 {
+pub(crate) async fn length(connection: &mut MultiplexedConnection, key: &str) -> i64 {
     cmd("LLEN").arg(key).query_async(connection).await.unwrap()
 }
 
-async fn range(
+pub(crate) async fn range(
     connection: &mut MultiplexedConnection,
     key: &str,
     start: i64,
