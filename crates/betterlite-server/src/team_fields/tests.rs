@@ -491,11 +491,21 @@ async fn malformed_result_503() {
 #[test]
 fn validation_result_coercions() {
     let accepted = [
-        (r#"{"valid": "yes"}"#, true, None),
-        (r#"{"valid": "OFF"}"#, false, None),
         (r#"{"valid": "1"}"#, true, None),
+        (r#"{"valid": "on"}"#, true, None),
+        (r#"{"valid": "T"}"#, true, None),
+        (r#"{"valid": "true"}"#, true, None),
+        (r#"{"valid": "y"}"#, true, None),
+        (r#"{"valid": "yes"}"#, true, None),
+        (r#"{"valid": "0"}"#, false, None),
+        (r#"{"valid": "off"}"#, false, None),
+        (r#"{"valid": "F"}"#, false, None),
+        (r#"{"valid": "false"}"#, false, None),
+        (r#"{"valid": "n"}"#, false, None),
+        (r#"{"valid": "NO"}"#, false, None),
         (r#"{"valid": 1}"#, true, None),
         (r#"{"valid": 0.0}"#, false, None),
+        (r#"{"valid": 1.0}"#, true, None),
         (
             r#"{"valid": true, "error_message": null, "extra": 1}"#,
             true,
@@ -520,6 +530,8 @@ fn validation_result_coercions() {
     let rejected = [
         r#"{"valid": "not-a-bool"}"#,
         r#"{"valid": " yes"}"#,
+        r#"{"valid": "yes "}"#,
+        r#"{"valid": ""}"#,
         r#"{"valid": 2}"#,
         r#"{"valid": 0.5}"#,
         r#"{"valid": null}"#,
