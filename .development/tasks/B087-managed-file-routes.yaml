@@ -23,6 +23,8 @@ description: >-
   plus decorators has 191 nonblank/non-comment lines. Budget 190 implementation, 145 tests,
   195 cases and 40 composition/wiring lines, totaling 570.
   B1100 registers routes/managed_file.rs as a stub, so fill only crates/betterlite-server/src/routes/managed_file.rs and leave routes.rs and state.rs as they are.
+
+  Booted case from B036. B036 binds the xAI, Mistral and Codestral leaves but no longer runs their files case, since it needs these composed routes. Add providers/xai-mistral/native-files-lifecycle: the native files lifecycle of B036's providers through /{provider}/v1/files, /v1/files and /files (list and create at the root, retrieve and delete at /{file_id:path}, content at /{file_id:path}/content), with B900's multipart fixtures and B1139's ordered steps, comparing the upstream URL, auth and body, the status and headers, and the error type, param and code.
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
@@ -39,6 +41,7 @@ scope:
   - tools/oracle/helpers/b087/**
   - tools/oracle/src/helpers/server/b087.rs
   - tools/oracle/src/helpers/server/b087/**
+  - tools/oracle/cases/providers/xai-mistral/native-files-lifecycle.yaml
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L1434-L1649
@@ -89,6 +92,8 @@ dod:
     "litellm.proxy.proxy_server.delete_file(): Exception occured - <error>". Model success logs DEBUG
     "Deleted file using model: m" plus ", original_id: f" when original id is truthy.
   proof: [delete-tests, oracle, new-cases]
+- text: "B036's native files bindings answer upload, list, retrieve, content and delete through every composed file route alias as LiteLLM does."
+  proof: [oracle]
 checks:
   optional: []
   commands:
@@ -104,6 +109,7 @@ oracle_cases:
 - tools/oracle/cases/api/managed-file-routes/delete-managed-gate.yaml
 - tools/oracle/cases/api/managed-file-routes/delete-credential-routing.yaml
 - tools/oracle/cases/api/managed-file-routes/delete-status-headers-and-failures.yaml
+- tools/oracle/cases/providers/xai-mistral/native-files-lifecycle.yaml
 deviations:
 - what: Legacy managed deletion without model routing returns 500 internal_server_error/code="500", message="Managed files hook not found", and leaves stored rows/content untouched.
   why: Max's managed files and batches decision is open; preserve the absent-hook MIT behavior without importing enterprise code or imposing a license check.
