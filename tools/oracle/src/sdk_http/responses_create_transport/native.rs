@@ -12,8 +12,7 @@ use betterlite_core::api::responses_hook_policy::callbacks::{
 };
 use betterlite_models::decisions::Json;
 use secrecy::SecretString;
-use serde::Serialize;
-use serde_json::value::RawValue;
+use serde_json::value::{RawValue, to_raw_value};
 
 use super::super::error::SdkHttpError;
 use super::super::responses_compact_transport::Failure;
@@ -155,16 +154,19 @@ fn scripted_result(result: Option<&Json>) -> Result<Option<Box<RawValue>>, SdkHt
 fn outcome(result: Result<CreateOutcome, CreateError>) -> Result<Outcome, SdkHttpError> {
     match result {
         Ok(CreateOutcome::Value(raw)) => Ok(Outcome {
-            result: Some(parse_json(raw.get())?),
+            result: Some(serde_json::from_str(raw.get()).map_err(SdkHttpError::ResultParse)?),
             failure: None,
             stream: None,
         }),
         Ok(CreateOutcome::Live(live)) => Ok(streamed(StreamKind::Live, live.setup, None)),
-        Ok(CreateOutcome::Synthetic(synthetic)) => Ok(streamed(
-            StreamKind::Synthetic,
-            synthetic.setup,
-            Some(json_of(&synthetic.response)?),
-        )),
+        Ok(CreateOutcome::Synthetic(synthetic)) => {
+            let response = to_raw_value(&synthetic.response).map_err(SdkHttpError::Serialize)?;
+            Ok(streamed(
+                StreamKind::Synthetic,
+                synthetic.setup,
+                Some(serde_json::from_str(response.get()).map_err(SdkHttpError::ResultParse)?),
+            ))
+        }
         Err(CreateError::Provider(error)) => Ok(Outcome {
             result: None,
             failure: Some(Failure {
@@ -199,16 +201,4 @@ fn setup_of(setup: StreamSetup) -> Setup {
         request_data: setup.request_data,
         call_type: setup.call_type,
     }
-}
-
-fn parse_json(text: &str) -> Result<Json, SdkHttpError> {
-    serde_json::from_str(text).map_err(SdkHttpError::ResultParse)
-}
-
-fn json_of<T>(value: &T) -> Result<Json, SdkHttpError>
-where
-    T: Serialize,
-{
-    let raw = serde_json::to_value(value).map_err(SdkHttpError::Serialize)?;
-    serde_json::from_value(raw).map_err(SdkHttpError::ResultParse)
 }

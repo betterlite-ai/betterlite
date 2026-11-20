@@ -10,10 +10,8 @@ from litellm.llms.base_llm.anthropic_messages.transformation import BaseAnthropi
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.llms.base_llm.responses.transformation import BaseResponsesAPIConfig
 from litellm.llms.custom_httpx.llm_http_handler import BaseLLMHTTPHandler
-from litellm.responses.streaming_iterator import (
-    BaseResponsesAPIStreamingIterator as StreamingBase,
-    MockResponsesAPIStreamingIterator as MockSynthetic,
-)
+from litellm.responses.streaming_iterator import BaseResponsesAPIStreamingIterator as StreamingBase
+from litellm.responses.streaming_iterator import MockResponsesAPIStreamingIterator as MockSynthetic
 from litellm.types.llms.openai import ResponseCompletedEvent, ResponsesAPIResponse
 from litellm.types.router import GenericLiteLLMParams
 from litellm.types.utils import CallTypes
@@ -33,6 +31,7 @@ JSON_MAP: Final = TypeAdapter(dict[str, JsonValue])
 NULLABLE_JSON: Final = TypeAdapter(dict[str, JsonValue] | None)
 RESPONSES_API: Final[TypeAdapter[ResponsesAPIResponse]] = TypeAdapter(ResponsesAPIResponse)
 COMPLETED: Final[TypeAdapter[ResponseCompletedEvent]] = TypeAdapter(ResponseCompletedEvent)
+LITELLM_PARAMS: Final[TypeAdapter[GenericLiteLLMParams]] = TypeAdapter(GenericLiteLLMParams)
 PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
 HANDLER: Final = BaseLLMHTTPHandler()
 
@@ -110,11 +109,11 @@ class PatchHook(CustomLogger):
     @override
     async def async_pre_call_deployment_hook(
         self,
-        # ast-grep-ignore: no-loose-types
         kwargs: dict[str, object],
         call_type: CallTypes | None,
     ) -> dict[str, JsonValue] | None:
-        return JSON_MAP.validate_python({**kwargs, **self.patch})
+        merged: dict[str, object] = {**kwargs, **self.patch}
+        return JSON_MAP.validate_python(merged)
 
 
 # The scripted async_should_run_agentic_loop and async_run_agentic_loop pair
@@ -125,32 +124,28 @@ class ScriptedAgentic(CustomLogger):
     @override
     async def async_should_run_agentic_loop(
         self,
-        # ast-grep-ignore: no-loose-types
         response: object,
         model: str,
-        messages: list[dict[str, Json]],
-        tools: list[dict[str, Json]] | None,
+        messages: list[dict[str, JsonValue]],
+        tools: list[dict[str, JsonValue]] | None,
         stream: bool,
         custom_llm_provider: str,
-        kwargs: dict[str, Json],
-    ) -> tuple[bool, dict[str, Json]]:
+        kwargs: dict[str, JsonValue],
+    ) -> tuple[bool, dict[str, JsonValue]]:
         return True, {}
 
     @override
     async def async_run_agentic_loop(
         self,
-        tools: dict[str, Json],
+        tools: dict[str, JsonValue],
         model: str,
-        messages: list[dict[str, Json]],
-        # ast-grep-ignore: no-loose-types
+        messages: list[dict[str, JsonValue]],
         response: object,
-        # ast-grep-ignore: no-long-names
         anthropic_messages_provider_config: BaseAnthropicMessagesConfig | None,
-        # ast-grep-ignore: no-long-names
-        anthropic_messages_optional_request_params: dict[str, Json],
+        anthropic_messages_optional_request_params: dict[str, JsonValue],
         logging_obj: Logging,
         stream: bool,
-        kwargs: dict[str, Json],
+        kwargs: dict[str, JsonValue],
     ) -> ResponsesAPIResponse | None:
         if self.result is None:
             return None
@@ -158,12 +153,12 @@ class ScriptedAgentic(CustomLogger):
 
 
 def install(call: TransportCall) -> None:
-    callbacks: list[CustomLogger | str] = []
+    callbacks: list[CustomLogger] = []
     if call.pre_hook is not None:
         callbacks.append(PatchHook(call.pre_hook))
     if call.agentic:
         callbacks.append(ScriptedAgentic(call.agentic_result))
-    litellm.callbacks = callbacks
+    litellm.callbacks = [*callbacks]
 
 
 def logging_fixture(model: str) -> Logging:
@@ -193,36 +188,33 @@ def invoke(
     response_input = INPUT.validate_python(call.input)
     if call.mode == "sync":
         return HANDLER.response_api_handler(
-            call.model,
-            response_input,
-            config,
-            optional_params,
-            "openai",
-            litellm_params,
-            logging_obj,
-            extra_headers,
-            extra_body,
-            timeout,
-            None,
-            False,
-            fake_stream,
-            metadata,
+            model=call.model,
+            input=response_input,
+            responses_api_provider_config=config,
+            response_api_optional_request_params=optional_params,
+            custom_llm_provider="openai",
+            litellm_params=litellm_params,
+            logging_obj=logging_obj,
+            extra_headers=extra_headers,
+            extra_body=extra_body,
+            timeout=timeout,
+            fake_stream=fake_stream,
+            litellm_metadata=metadata,
         )
     return asyncio.run(
         HANDLER.async_response_api_handler(
-            call.model,
-            response_input,
-            config,
-            optional_params,
-            "openai",
-            litellm_params,
-            logging_obj,
-            extra_headers,
-            extra_body,
-            timeout,
-            None,
-            fake_stream,
-            metadata,
+            model=call.model,
+            input=response_input,
+            responses_api_provider_config=config,
+            response_api_optional_request_params=optional_params,
+            custom_llm_provider="openai",
+            litellm_params=litellm_params,
+            logging_obj=logging_obj,
+            extra_headers=extra_headers,
+            extra_body=extra_body,
+            timeout=timeout,
+            fake_stream=fake_stream,
+            litellm_metadata=metadata,
         )
     )
 
@@ -251,13 +243,13 @@ def stream_view(kind: StreamKind, iterator: StreamingBase) -> StreamView:
 
 def observed(work: CreateWork) -> Outcome:
     match work:
-        case ResponsesAPIResponse():
-            return Outcome(result=JSON.validate_json(work.model_dump_json()))
         case MockSynthetic():
             return Outcome(stream=stream_view("synthetic", work))
         case StreamingBase():
             return Outcome(stream=stream_view("live", work))
-    raise TypeError("the create handler answered a type this adapter does not project")
+        case object():
+            response = RESPONSES_API.validate_python(work)
+            return Outcome(result=JSON.validate_json(response.model_dump_json()))
 
 
 def run_transport(call: TransportCall, api_base: str) -> Outcome:
@@ -267,7 +259,8 @@ def run_transport(call: TransportCall, api_base: str) -> Outcome:
     if config is None:
         raise ValueError("the openai responses config is registered")
     install(call)
-    litellm_params = GenericLiteLLMParams(**{**call.litellm_params, "api_base": api_base})
+    params: dict[str, JsonValue] = {**call.litellm_params, "api_base": api_base}
+    litellm_params = LITELLM_PARAMS.validate_python(params)
     try:
         work = invoke(call, config, litellm_params, logging_fixture(call.model))
     except PROVIDER_ERROR as error:
