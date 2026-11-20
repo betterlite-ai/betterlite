@@ -142,6 +142,7 @@ impl ResponsesFixture {
                 request: false,
             },
             bundled: BundledReasoningModels::default(),
+            deadline: shared::DEADLINE,
         }
     }
 }

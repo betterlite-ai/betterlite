@@ -24,27 +24,16 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         let rows = match input {
-            Input::Responses { runs } => runs
-                .iter()
-                .map(runs::responses_run::responses_row)
-                .collect::<Result<Vec<Value>, Box<HelperError>>>()?,
-            Input::Passthrough { runs } => runs
-                .iter()
-                .map(runs::passthrough_run::passthrough_row)
-                .collect::<Result<Vec<Value>, Box<HelperError>>>()?,
-            Input::Search { runs } => runs
-                .iter()
-                .map(runs::search_run::search_row)
-                .collect::<Result<Vec<Value>, Box<HelperError>>>()?,
-            Input::VectorRetrieve { runs } => runs
-                .iter()
-                .map(runs::vector_run::vector_row)
-                .collect::<Result<Vec<Value>, Box<HelperError>>>()?,
-            Input::RealtimeBridge { runs } => runs
-                .iter()
-                .map(runs::realtime_run::realtime_row)
-                .collect::<Result<Vec<Value>, Box<HelperError>>>()?,
+            Input::Responses { runs } => rows(runs, runs::responses_run::responses_row)?,
+            Input::Passthrough { runs } => rows(runs, runs::passthrough_run::passthrough_row)?,
+            Input::Search { runs } => rows(runs, runs::search_run::search_row)?,
+            Input::VectorRetrieve { runs } => rows(runs, runs::vector_run::vector_row)?,
+            Input::RealtimeBridge { runs } => rows(runs, runs::realtime_run::realtime_row)?,
         };
         Ok(json!({ "runs": rows }))
     }
+}
+
+fn rows<T>(runs: &[T], row: fn(&T) -> HelperResult) -> Result<Vec<Value>, Box<HelperError>> {
+    runs.iter().map(row).collect()
 }

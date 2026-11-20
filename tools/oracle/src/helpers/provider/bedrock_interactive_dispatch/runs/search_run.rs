@@ -42,6 +42,7 @@ impl SearchFixture {
             credentials: shared::credentials(),
             lookup: &EMPTY_LOOKUP,
             now: shared::fixture_time(),
+            deadline: shared::DEADLINE,
         }
     }
 }

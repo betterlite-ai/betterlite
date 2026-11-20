@@ -20,6 +20,7 @@ pub(crate) const GATEWAY: &str = "https://gateway.example.com/mcp";
 pub(crate) const VECTOR_ID: &str = "KB123";
 pub(crate) const PASSTHROUGH_MODEL: &str = "anthropic.claude-3";
 pub(crate) const REALTIME_MODEL: &str = "amazon.nova-sonic-v1:0";
+pub(crate) const DEADLINE: Duration = Duration::from_mins(10);
 const ACCESS: &str = "AKIDBETTERLITEFIXTURE";
 const SECRET: &str = "fixture/secret/key/+EXAMPLEKEY0000";
 pub(crate) const CATALOG: &str =
@@ -99,7 +100,7 @@ pub(crate) fn error_row(kind: &str, status: Option<u16>) -> Value {
 
 pub(crate) fn request_row(request: &LeafRequest) -> Value {
     json!({
-        "method": "POST",
+        "method": request.method,
         "url": request.url,
         "auth": auth_view(&request.headers),
         "body": body_json(&request.body),

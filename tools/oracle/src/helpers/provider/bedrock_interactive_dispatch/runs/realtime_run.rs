@@ -20,7 +20,6 @@ use betterlite_core::api::realtime_session_state::logging::{
     RealtimeLogging, SessionInput, SuccessWork,
 };
 use betterlite_models::decisions::Json;
-use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_provider::bedrock_interactive_dispatch::realtime_bridge;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
@@ -156,41 +155,30 @@ pub(crate) fn realtime_row(run: &RealtimeRun) -> shared::HelperResult {
     };
     let result = shared::block_on(realtime_bridge::session(&runtime, &resolver, call))?;
     let mut row = shared::empty_row();
-    row.insert("response".to_owned(), realtime_response(result, &scope)?);
+    row.insert("response".to_owned(), realtime_response(result, &scope));
     Ok(shared::Value::Object(row))
 }
 
 fn realtime_response(
-    result: Result<realtime_bridge::Outcome, realtime_bridge::Error>,
+    result: Result<
+        realtime_bridge::Outcome,
+        realtime_bridge::Error<RealtimeTransportError<Failing, io::Error>>,
+    >,
     scope: &EventScope,
-) -> Result<shared::Value, Box<HelperError>> {
+) -> shared::Value {
     let committed = matches!(&scope.session_committed, Json::Bool(true));
     match result {
-        Ok(_) => Ok(shared::json!({
+        Ok(_) => shared::json!({
             "outcome": "ok",
             "error_kind": shared::Value::Null,
             "status_code": shared::Value::Null,
             "committed": committed,
-        })),
-        Err(realtime_bridge::Error::Session { source }) => {
-            let transport = source
-                .downcast_ref::<RealtimeTransportError<Failing, io::Error>>()
-                .ok_or_else(|| {
-                    Box::new(HelperError {
-                        class: "ValueError".to_owned(),
-                        status: None,
-                        error_type: Some(None),
-                        param: Some(None),
-                        code: Some(None),
-                        message: "the realtime session error is not a transport error".to_owned(),
-                    })
-                })?;
-            Ok(shared::json!({
-                "outcome": "error",
-                "error_kind": transport_kind(transport),
-                "status_code": transport.status_code(),
-                "committed": committed,
-            }))
-        }
+        }),
+        Err(realtime_bridge::Error::Session { source }) => shared::json!({
+            "outcome": "error",
+            "error_kind": transport_kind(&source),
+            "status_code": source.status_code(),
+            "committed": committed,
+        }),
     }
 }

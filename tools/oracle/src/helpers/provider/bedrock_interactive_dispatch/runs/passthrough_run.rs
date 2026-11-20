@@ -19,6 +19,7 @@ use betterlite_provider::bedrock_interactive_dispatch::passthrough;
 use betterlite_streaming::stream_base_assembly::provider_metadata::ChatConfigSelection;
 use betterlite_streaming::stream_chunk_shaping::creation::StreamInstant;
 use betterlite_streaming::stream_chunk_shaping::records::StreamChunk;
+use http::Method;
 
 use super::{PassthroughRun, shared};
 
@@ -34,16 +35,21 @@ impl ChatConfigSelection for Selector {
     }
 }
 
-struct Transform {
-    result: Json,
-}
+// The reply the plan would transform, echoed so both adapters compare what the hook was handed
+struct Transform;
 
 impl NativeReplyTransform for Transform {
-    fn transform(&self, _request: &NativeReplyRequest<'_>) -> Result<Json, Box<ProviderError>> {
-        Ok(self.result.clone())
+    fn transform(&self, request: &NativeReplyRequest<'_>) -> Result<Json, Box<ProviderError>> {
+        let reply = shared::json!({
+            "status_code": request.status_code,
+            "body": String::from_utf8_lossy(request.body),
+            "request_data": request.request_data
+        });
+        Ok(serde_json::from_value(reply).unwrap_or(Json::Null))
     }
 }
 
+// The decoded stream as the logged reply: its assistant text and the stop reason it ended on
 struct Assembler;
 
 impl StreamLogAssembler for Assembler {
@@ -52,7 +58,20 @@ impl StreamLogAssembler for Assembler {
         chunks: &[StreamChunk],
         _logging_obj: &mut dyn PassthroughLogging,
     ) -> Option<Json> {
-        (!chunks.is_empty()).then_some(shared::json!({"id": "assembled"}))
+        if chunks.is_empty() {
+            return None;
+        }
+        let content: String = chunks
+            .iter()
+            .flat_map(|chunk| chunk.choices.iter())
+            .filter_map(|choice| choice.delta.content.as_deref())
+            .collect();
+        let finish = chunks
+            .iter()
+            .flat_map(|chunk| chunk.choices.iter())
+            .find_map(|choice| choice.finish_reason.clone());
+        let view = shared::json!({"content": content, "finish_reason": finish});
+        Some(serde_json::from_value(view).unwrap_or(Json::Null))
     }
 }
 
@@ -66,9 +85,25 @@ struct PassthroughServices {
     selector: Selector,
     transform: Transform,
     assembler: Assembler,
+    params: Object,
+    data: Option<Object>,
 }
 
 impl PassthroughServices {
+    fn new(run: &PassthroughRun) -> Result<Self, Box<shared::HelperError>> {
+        Ok(Self {
+            selector: Selector,
+            transform: Transform,
+            assembler: Assembler,
+            params: Object::new(),
+            data: run
+                .data
+                .clone()
+                .map(serde_json::from_value::<Object>)
+                .transpose()?,
+        })
+    }
+
     fn plan<'call>(&'call self, run: &'call PassthroughRun) -> BedrockPassthroughPlan<'call> {
         BedrockPassthroughPlan {
             environment: PassthroughEnvironment {
@@ -114,37 +149,19 @@ fn passthrough_url_request<'call>(
     }
 }
 
-fn passthrough_transport(
-    run: &PassthroughRun,
-) -> Result<shared::Scripted, Box<shared::HelperError>> {
-    let mut scripted = shared::reply(run.status, &run.reply);
-    for chunk in &run.chunks {
-        scripted.chunks.push(hex::decode(chunk).or_value_error()?);
-    }
-    Ok(shared::Scripted(scripted))
-}
-
 pub(crate) fn passthrough_row(run: &PassthroughRun) -> shared::HelperResult {
-    let services = PassthroughServices {
-        selector: Selector,
-        transform: Transform { result: Json::Null },
-        assembler: Assembler,
-    };
+    let services = PassthroughServices::new(run)?;
+    let method_name = run.method.as_deref().unwrap_or("POST");
+    let method = Method::from_bytes(method_name.as_bytes()).or_value_error()?;
     let plan = services.plan(run);
-    let params = Object::new();
-    let url_request = passthrough_url_request(&params, &run.endpoint);
+    let url_request = passthrough_url_request(&services.params, &run.endpoint);
     let Ok((url, endpoint_url)) = plan.get_complete_url(&url_request) else {
         return Ok(shared::error_row("leaf", None));
     };
     let signed_base = url.to_string();
-    let data = run
-        .data
-        .clone()
-        .map(serde_json::from_value::<Object>)
-        .transpose()?;
     let signing = PassthroughSigning {
-        litellm_params: &params,
-        request_data: data.as_ref(),
+        litellm_params: &services.params,
+        request_data: services.data.as_ref(),
         api_base: &signed_base,
         model: Some(shared::PASSTHROUGH_MODEL),
     };
@@ -154,22 +171,33 @@ pub(crate) fn passthrough_row(run: &PassthroughRun) -> shared::HelperResult {
         url_request,
         signing,
         headers: Headers::new(),
+        method,
+        deadline: shared::DEADLINE,
         logging: &mut logging,
     };
-    let transport = passthrough_transport(run)?;
+    let mut transport = shared::Scripted(shared::reply(run.status, &run.reply));
+    for chunk in &run.chunks {
+        transport
+            .0
+            .chunks
+            .push(hex::decode(chunk).or_value_error()?);
+    }
     match shared::block_on(operation.run(&transport))? {
-        Ok(outcome) => Ok(success(&outcome, &endpoint_url)),
+        Ok(outcome) => success(&outcome, &endpoint_url),
         Err(error) => Ok(failure(&error)),
     }
 }
 
-fn success(outcome: &passthrough::Outcome, endpoint_url: &str) -> shared::Value {
+fn success(outcome: &passthrough::Outcome, endpoint_url: &str) -> shared::HelperResult {
     let mut row = shared::success_row(&outcome.request);
     row.insert("endpoint_url".to_owned(), shared::json!(endpoint_url));
     row.insert("streaming".to_owned(), shared::json!(outcome.streaming));
     row.insert("status".to_owned(), shared::json!(outcome.status));
-    row.insert("logged".to_owned(), shared::json!(outcome.logged.is_some()));
-    shared::Value::Object(row)
+    row.insert(
+        "logged".to_owned(),
+        serde_json::to_value(&outcome.logged).or_value_error()?,
+    );
+    Ok(shared::Value::Object(row))
 }
 
 fn failure(error: &passthrough::Error) -> shared::Value {

@@ -52,6 +52,7 @@ impl VectorFixture {
             credentials: shared::credentials(),
             region_inputs: RegionInputs::default(),
             now: shared::fixture_time(),
+            deadline: shared::DEADLINE,
         }
     }
 }

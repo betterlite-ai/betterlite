@@ -29,6 +29,8 @@ pub(crate) struct ResponsesRun {
 pub(crate) struct PassthroughRun {
     endpoint: String,
     #[serde(default)]
+    method: Option<String>,
+    #[serde(default)]
     data: Option<Value>,
     #[serde(default)]
     region: Option<String>,
