@@ -16,6 +16,7 @@ use betterlite_provider::nvidia_nim_rerank::{NvidiaNimRerankSelection, select_re
 use betterlite_redact::secret::Redactor;
 use chrono::{DateTime, FixedOffset};
 use std::collections::BTreeMap;
+use std::future::Future;
 pub(super) struct Operations<'call> {
     pub(super) environment: &'call BTreeMap<String, String>,
     pub(super) config: &'call Config,
@@ -24,7 +25,7 @@ pub(super) struct Operations<'call> {
     pub(super) now: DateTime<FixedOffset>,
 }
 impl RerankOperations for Operations<'_> {
-    fn map_options(&self, request: OptionsRequest<'_>) -> Result<Params, RawException> {
+    fn map_options(&self, request: OptionsRequest<'_>) -> Result<Params, Box<RawException>> {
         let (params, config, model, provider) = optional_params(request);
         match family_choice(config) {
             FamilyChoice::Family(kind) => map_with(
@@ -41,54 +42,45 @@ impl RerankOperations for Operations<'_> {
                     map_with(&selected, params, model, provider)
                 }
             },
-            FamilyChoice::Unsupported => Err(not_wired(model, provider)),
+            FamilyChoice::Unsupported => Err(Box::new(not_wired(model, provider))),
         }
     }
-    async fn send(
+    fn send(
         &self,
         request: SendRequest<'_>,
         logging: &mut LoggingState,
-    ) -> Result<RerankResponse, RawException> {
-        let kind = match request.config {
-            SelectedConfig::Cohere => RerankConfig::Cohere,
-            SelectedConfig::CohereV2 => RerankConfig::CohereV2,
-            SelectedConfig::Infinity => RerankConfig::Infinity,
-            SelectedConfig::JinaAi => RerankConfig::JinaAi,
-            SelectedConfig::Voyage => RerankConfig::Voyage,
-            SelectedConfig::NvidiaRetrieval | SelectedConfig::NvidiaRanking => {
-                return match select_rerank_config(request.model) {
-                    NvidiaNimRerankSelection::Retrieval(selected) => {
-                        self.send_config(&selected, request, logging).await
-                    }
-                    NvidiaNimRerankSelection::Ranking(selected) => {
-                        self.send_config(&selected, request, logging).await
-                    }
-                };
-            }
-            SelectedConfig::AzureAi
-            | SelectedConfig::HostedVllm
-            | SelectedConfig::HuggingFace
-            | SelectedConfig::Deepinfra
-            | SelectedConfig::VertexAi
-            | SelectedConfig::FireworksAi
-            | SelectedConfig::Watsonx
-            | SelectedConfig::Dashscope
-            | SelectedConfig::Qwencloud
-            | SelectedConfig::QwenAiPlatform => {
-                return Err(not_wired(request.model, request.provider));
-            }
-        };
-        let config = family(kind, self.config, self.environment);
-        self.send_config(&config, request, logging).await
+    ) -> impl Future<Output = Result<RerankResponse, Box<RawException>>> + Send {
+        self.send_config(request, logging)
     }
 }
 impl Operations<'_> {
-    async fn send_config<'call, C>(
+    async fn send_config(
+        &self,
+        request: SendRequest<'_>,
+        logging: &mut LoggingState,
+    ) -> Result<RerankResponse, Box<RawException>> {
+        match family_choice(request.config) {
+            FamilyChoice::Family(kind) => {
+                let config = family(kind, self.config, self.environment);
+                self.send_family(&config, request, logging).await
+            }
+            FamilyChoice::Nvidia => match select_rerank_config(request.model) {
+                NvidiaNimRerankSelection::Retrieval(selected) => {
+                    self.send_family(&selected, request, logging).await
+                }
+                NvidiaNimRerankSelection::Ranking(selected) => {
+                    self.send_family(&selected, request, logging).await
+                }
+            },
+            FamilyChoice::Unsupported => Err(Box::new(not_wired(request.model, request.provider))),
+        }
+    }
+    async fn send_family<C>(
         &self,
         config: &C,
-        request: SendRequest<'call>,
+        request: SendRequest<'_>,
         logging: &mut LoggingState,
-    ) -> Result<RerankResponse, RawException>
+    ) -> Result<RerankResponse, Box<RawException>>
     where
         C: BaseRerankConfig,
     {
@@ -106,7 +98,7 @@ enum FamilyChoice {
     Nvidia,
     Unsupported,
 }
-fn family_choice(config: SelectedConfig) -> FamilyChoice {
+const fn family_choice(config: SelectedConfig) -> FamilyChoice {
     match config {
         SelectedConfig::Cohere => FamilyChoice::Family(RerankConfig::Cohere),
         SelectedConfig::CohereV2 => FamilyChoice::Family(RerankConfig::CohereV2),
@@ -144,11 +136,6 @@ fn optional_params(
         instruction,
         non_default_params,
     } = request;
-    let mapped_documents = match return_documents {
-        CoreReturnDocuments::Default => ProviderReturnDocuments::Default,
-        CoreReturnDocuments::Null => ProviderReturnDocuments::Null,
-        CoreReturnDocuments::Value(value) => ProviderReturnDocuments::Value(value),
-    };
     let params = OptionalRerankParams {
         model,
         drop_params,
@@ -157,7 +144,7 @@ fn optional_params(
         custom_llm_provider,
         top_n,
         rank_fields,
-        return_documents: mapped_documents,
+        return_documents: mapped_documents(return_documents),
         max_chunks_per_doc,
         max_tokens_per_doc,
         instruction,
@@ -169,4 +156,11 @@ fn optional_params(
         model,
         custom_llm_provider.unwrap_or_default(),
     )
+}
+const fn mapped_documents(return_documents: CoreReturnDocuments) -> ProviderReturnDocuments {
+    match return_documents {
+        CoreReturnDocuments::Default => ProviderReturnDocuments::Default,
+        CoreReturnDocuments::Null => ProviderReturnDocuments::Null,
+        CoreReturnDocuments::Value(value) => ProviderReturnDocuments::Value(value),
+    }
 }

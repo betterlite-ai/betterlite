@@ -25,6 +25,7 @@ use betterlite_provider::embedding_rerank_providers::rerank::FamilyRerankConfig;
 use betterlite_redact::secret::Redactor;
 use chrono::{DateTime, FixedOffset};
 use std::collections::BTreeMap;
+use std::error::Error;
 use std::sync::Arc;
 use std::time::Duration;
 // The client the handler would build; the case env carries the proxy settings
@@ -48,7 +49,7 @@ pub(super) struct HttpState<'visit> {
     pub(super) redactor: &'visit Redactor,
     pub(super) now: DateTime<FixedOffset>,
 }
-pub(super) fn family<'settings>(
+pub(super) const fn family<'settings>(
     family: RerankConfig,
     config: &'settings Config,
     environment: &'settings (dyn EnvironmentLookup + Send + Sync),
@@ -65,12 +66,12 @@ pub(super) fn map_with<C>(
     request: OptionalRerankParams<'_>,
     model: &str,
     provider: &str,
-) -> Result<Params, RawException>
+) -> Result<Params, Box<RawException>>
 where
     C: BaseRerankConfig,
 {
     get_optional_rerank_params(config, request)
-        .map_err(|error| value_failure(&error.to_string(), model, provider))
+        .map_err(|error| Box::new(value_failure(&error.to_string(), model, provider)))
 }
 pub(super) fn not_wired(model: &str, provider: &str) -> RawException {
     value_failure(
@@ -84,7 +85,7 @@ pub(super) async fn send_with<C>(
     request: SendRequest<'_>,
     logging: &mut LoggingState,
     http: &HttpState<'_>,
-) -> Result<RerankResponse, RawException>
+) -> Result<RerankResponse, Box<RawException>>
 where
     C: BaseRerankConfig,
 {
@@ -114,18 +115,26 @@ where
     };
     match rerank_http(call, deps, &mut log).await {
         Ok(response) => Ok(response),
-        Err(RerankHttpError::Provider(error)) => Err(provider_failure(
+        Err(error) => Err(http_failure(error, request.model, request.provider)),
+    }
+}
+fn http_failure<Failure>(
+    error: RerankHttpError<Failure>,
+    model: &str,
+    provider: &str,
+) -> Box<RawException>
+where
+    Failure: Error + Send + Sync + 'static,
+{
+    match error {
+        RerankHttpError::Provider(error) => Box::new(provider_failure(
             error.status_code,
             &error.message,
-            request.model,
-            request.provider,
+            model,
+            provider,
             "BaseLLMException",
         )),
-        Err(other) => Err(value_failure(
-            &other.to_string(),
-            request.model,
-            request.provider,
-        )),
+        other => Box::new(value_failure(&other.to_string(), model, provider)),
     }
 }
 fn timeout_seconds(value: Option<f64>) -> Option<Duration> {

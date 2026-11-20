@@ -4,7 +4,7 @@ use super::super::result::kinds::SdkResult;
 use super::input::{core_call, settings_document};
 use super::providers::direct;
 use super::report::{Diagnostics, failure, logging_state};
-use super::{Call, Failure, MOCK, Outcome};
+use super::{Call, MOCK, Outcome};
 use betterlite_config::api::rerank_provider_plan::{RerankSettings, loads_rerank_settings};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
@@ -21,8 +21,10 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::DateTime;
 use operations::Operations;
 use std::collections::{BTreeMap, BTreeSet};
+use std::mem;
 use std::sync::PoisonError;
 use tracing::subscriber::set_default;
+use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::registry;
 mod operations;
 const FIXTURE_NOW: &str = "2026-01-01T00:00:05+00:00";
@@ -62,9 +64,8 @@ pub(super) async fn execute(
     let subscription = set_default(registry().with(diagnostics.clone()));
     let outcome = rerank(&plan, core_call(call, api_base)?, &mut state).await;
     drop(subscription);
-    let diagnostics =
-        std::mem::take(&mut *diagnostics.0.lock().unwrap_or_else(PoisonError::into_inner));
-    let value = to_outcome(outcome, diagnostics)?;
+    let captured = mem::take(&mut *diagnostics.0.lock().unwrap_or_else(PoisonError::into_inner));
+    let value = to_outcome(outcome, captured)?;
     Ok(SdkResult::RerankProviderPlan {
         value: Box::new(value),
     })
@@ -90,12 +91,12 @@ fn build_operations<'settings>(
             .map_err(|error| SdkHttpError::Invalid(error.to_string()))?,
     })
 }
-fn build_plan<'a, Identity>(
-    identity: &'a Identity,
-    operations: &'a Operations<'a>,
-    settings: &'a RerankSettings,
-    environment: &'a BTreeMap<String, String>,
-) -> RerankPlan<'a, Identity, Operations<'a>> {
+fn build_plan<'borrow, Identity>(
+    identity: &'borrow Identity,
+    operations: &'borrow Operations<'borrow>,
+    settings: &'borrow RerankSettings,
+    environment: &'borrow BTreeMap<String, String>,
+) -> RerankPlan<'borrow, Identity, Operations<'borrow>> {
     RerankPlan {
         identity,
         operations,
@@ -110,7 +111,12 @@ fn to_outcome(
 ) -> Result<Outcome, SdkHttpError> {
     let (value, raised) = match result {
         Ok(response) => (
-            Some(serde_json::to_value(&response).map_err(SdkHttpError::Serialize)?),
+            Some(
+                serde_json::from_value(
+                    serde_json::to_value(&response).map_err(SdkHttpError::Serialize)?,
+                )
+                .map_err(SdkHttpError::Serialize)?,
+            ),
             None,
         ),
         Err(exception) => (None, Some(failure(&exception)?)),
