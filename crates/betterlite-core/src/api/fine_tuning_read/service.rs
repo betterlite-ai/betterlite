@@ -84,12 +84,13 @@ where
             max_retries: params.max_retries,
         };
         let Some(target) = read_target(provider_name, values, &settings, &options) else {
-            let provider = provider_name.to_owned();
             return Err(match operation {
-                ReadOperation::List { .. } => FineTuningReadError::UnsupportedList { provider },
-                ReadOperation::Retrieve { .. } => {
-                    FineTuningReadError::UnsupportedRetrieve { provider }
-                }
+                ReadOperation::List { .. } => FineTuningReadError::UnsupportedList {
+                    provider: provider_name.to_owned(),
+                },
+                ReadOperation::Retrieve { .. } => FineTuningReadError::UnsupportedRetrieve {
+                    provider: provider_name.to_owned(),
+                },
             });
         };
         let is_azure = matches!(target, ReadTarget::Azure(_));
