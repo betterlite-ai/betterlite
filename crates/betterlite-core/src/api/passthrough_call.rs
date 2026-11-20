@@ -1,1 +1,244 @@
+mod auth;
+mod config;
+mod logging;
+mod params;
+mod send;
+mod urls;
+mod wire;
 
+mod tests;
+
+pub use config::PassthroughCallConfig;
+pub use logging::RelayLogging;
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::future::Future;
+use std::time::Duration;
+
+use betterlite_config::sections::settings::JsonValue;
+use betterlite_context::resource_config_selection::passthrough::{
+    PassthroughConfigTag, select_passthrough_config,
+};
+use betterlite_http::interactions::base::{
+    CallFailure, RequestFailure, ResponseHeaders, handle_error,
+};
+use betterlite_http::proxy::ProxiedClient;
+use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_logging::logging_state::LoggingState;
+use betterlite_models::catalog::ModelCatalog;
+use betterlite_models::json_provider_registry::JSONProviderRegistry;
+use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
+use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
+use betterlite_models::resolution::{
+    ProviderIdentity, ResolutionContext, ResolutionError, ResolutionRequest, ResolvedModel, resolve,
+};
+use betterlite_openai::error::{ProviderError, ProviderErrorParts};
+use betterlite_openai::openai_base_config::Object;
+use bytes::Bytes;
+use indexmap::IndexMap;
+use secrecy::SecretString;
+use thiserror::Error;
+
+use self::config::ConfigError;
+use self::send::{Failure, Fault, run};
+use crate::passthrough_stream::async_lifecycle::AsyncPassthroughStream;
+use crate::passthrough_stream::spend_collection::OwnedProviderSpend;
+
+// One body field of a multipart pass-through upload
+#[derive(Debug)]
+pub struct PassthroughUpload {
+    pub field: String,
+    pub filename: String,
+    pub content_type: Option<String>,
+    pub bytes: Bytes,
+}
+
+// The timeouts the call resolves when the caller hands over its own client settings
+#[derive(Debug, Clone, Copy)]
+pub struct PassthroughClient {
+    pub timeout: Duration,
+    pub connect_timeout: Duration,
+}
+
+// The arguments of litellm.allm_passthrough_route, one field per named parameter
+#[derive(Debug)]
+pub struct PassthroughCallArgs {
+    pub method: String,
+    pub endpoint: String,
+    pub model: String,
+    pub custom_llm_provider: Option<String>,
+    pub api_base: Option<String>,
+    pub api_key: Option<SecretString>,
+    pub request_query_params: Option<IndexMap<String, String>>,
+    pub request_headers: Option<Vec<(String, String)>>,
+    pub content: Option<Bytes>,
+    pub data: Option<Object>,
+    pub files: Option<Vec<PassthroughUpload>>,
+    pub json: Option<JsonValue>,
+    pub params: Option<Vec<(String, String)>>,
+    pub cookies: Option<Vec<(String, String)>>,
+    pub client: Option<PassthroughClient>,
+    pub extra: Object,
+}
+
+// The B3572 relay the streaming answer is carried by
+pub type PassthroughRelay =
+    AsyncPassthroughStream<OwnedProviderSpend<PassthroughCallConfig>, RelayLogging>;
+
+pub enum PassthroughBody {
+    Full(Box<Bytes>),
+    Stream(Box<PassthroughRelay>),
+}
+
+pub struct PassthroughReply {
+    pub status: u16,
+    pub headers: Vec<(String, String)>,
+    pub body: PassthroughBody,
+}
+
+#[derive(Debug, Error)]
+pub enum PassthroughCallError {
+    #[error("the upstream answered with status {status}")]
+    UpstreamStatus {
+        status: u16,
+        headers: Vec<(String, String)>,
+        body: Bytes,
+    },
+    #[error("Provider {0} not found")]
+    ProviderNotFound(String),
+    #[error(transparent)]
+    Resolution(#[from] ResolutionError),
+    #[error("{}", .0.message)]
+    Mapped(Box<ProviderError>),
+    #[error(transparent)]
+    Transport(#[from] TransportError),
+    #[error("the pass-through call was refused with status {status}: {message}")]
+    Routing { status: u16, message: String },
+}
+
+// The router's side of the call; the SDK implements it over the shared route table
+pub trait PassthroughRouterCalls: Send + Sync {
+    fn allm_passthrough_route(
+        &self,
+        args: PassthroughCallArgs,
+    ) -> impl Future<Output = Result<PassthroughReply, PassthroughCallError>> + Send;
+}
+
+// litellm.allm_passthrough_route: resolve the provider, pick its config, then run the SDK call
+pub async fn allm_passthrough_route(
+    mut args: PassthroughCallArgs,
+    logging: &mut LoggingState,
+    http: &ProxiedClient,
+) -> Result<PassthroughReply, PassthroughCallError> {
+    args.extra
+        .insert("allm_passthrough_route".to_owned(), JsonValue::Bool(true));
+    let resolved = match resolve_provider(&args) {
+        Ok(resolved) => resolved,
+        Err(error) => return Err(PassthroughCallError::Resolution(error)),
+    };
+    let Some(tag) = config_tag(&resolved) else {
+        return Err(not_found(&resolved));
+    };
+    match run(&args, &resolved, tag, logging, http).await {
+        Ok(reply) => Ok(reply),
+        Err(Failure::Upstream(status)) => Err(PassthroughCallError::UpstreamStatus {
+            status: status.status,
+            headers: status.headers,
+            body: status.body,
+        }),
+        Err(Failure::Fault(fault)) => Err(map_fault(&args, fault)),
+    }
+}
+
+fn not_found(resolved: &ResolvedModel) -> PassthroughCallError {
+    PassthroughCallError::ProviderNotFound(resolved.provider.slug().to_owned())
+}
+
+// get_llm_provider: the catalog, the registered names and the credentials all come from outside the call
+fn resolve_provider(args: &PassthroughCallArgs) -> Result<ResolvedModel, ResolutionError> {
+    let catalog = ModelCatalog::default();
+    let known_model_names = BTreeSet::new();
+    let custom_providers = BTreeSet::new();
+    let environment = BTreeMap::new();
+    resolve(
+        &ResolutionRequest {
+            model: &args.model,
+            custom_llm_provider: args.custom_llm_provider.as_deref(),
+            api_base: args.api_base.as_deref(),
+            api_key: args.api_key.as_ref(),
+        },
+        &ResolutionContext {
+            catalog: &catalog,
+            known_model_names: &known_model_names,
+            custom_providers: &custom_providers,
+            environment: &environment,
+            registry: JSONProviderRegistry::default(),
+            policies: ProviderPolicies::default(),
+            globals: GlobalCredentials::default(),
+        },
+    )
+}
+
+// ProviderConfigManager.get_provider_passthrough_config, through B5360's tag
+fn config_tag(resolved: &ResolvedModel) -> Option<PassthroughConfigTag> {
+    match &resolved.provider {
+        ProviderIdentity::Known(provider) => select_passthrough_config(&resolved.model, *provider),
+        ProviderIdentity::Anyscale | ProviderIdentity::Custom(_) => None,
+    }
+}
+
+// The except block: resolve again, then let _handle_error map the original failure
+fn map_fault(args: &PassthroughCallArgs, fault: Fault) -> PassthroughCallError {
+    let resolved = match resolve_provider(args) {
+        Ok(resolved) => resolved,
+        Err(error) => return PassthroughCallError::Resolution(error),
+    };
+    let Some(tag) = config_tag(&resolved) else {
+        return match fault {
+            Fault::Send(error) => PassthroughCallError::Transport(*error),
+            Fault::Failure(_) => not_found(&resolved),
+        };
+    };
+    let (status, synthesized, message) = match fault {
+        Fault::Failure(detail) => (detail.status, detail.synthesized, detail.message),
+        Fault::Send(error) => (500, true, error.to_string()),
+    };
+    let failure = RequestFailure::Status {
+        status_code: status,
+        headers: ResponseHeaders::default(),
+        body: message,
+    };
+    let config = PassthroughCallConfig::new(tag);
+    match handle_error(&config, failure) {
+        CallFailure::Provider(error) => {
+            PassthroughCallError::Mapped(Box::new(provider_error(error, synthesized)))
+        }
+        CallFailure::PassedThrough(failure) => PassthroughCallError::Mapped(Box::new(
+            provider_error(ConfigError::value_error(failure.to_string()), synthesized),
+        )),
+    }
+}
+
+// _handle_error's provider_error: ProviderError's own flag is overwritten when the status was synthesized
+fn provider_error(error: ConfigError, synthesized: bool) -> ProviderError {
+    let (status, message) = match error {
+        ConfigError::Provider(mut provider) => {
+            if synthesized {
+                provider.status_code_is_synthesized = true;
+            }
+            return *provider;
+        }
+        ConfigError::Message { status, message } => (status, message),
+        ConfigError::ValueError { message } => (500, message),
+        ConfigError::Passthrough(error) => (500, error.to_string()),
+    };
+    ProviderError::from(ProviderErrorParts {
+        status_code: status,
+        message,
+        headers: Some(ResponseHeaders::new()),
+        request: None,
+        response: None,
+        body: None,
+        status_code_is_synthesized: synthesized,
+    })
+}
