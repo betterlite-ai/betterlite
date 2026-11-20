@@ -56,7 +56,7 @@ fn call_sts_url_follows_the_partition_suffix() {
 
 #[test]
 fn call_caller_identity_reads_account_and_arn() {
-    let body = br#"<GetCallerIdentityResponse><GetCallerIdentityResult><Arn>arn:aws:iam::123456789012:role/kb</Arn><UserId>AIDA</UserId><Account>123456789012</Account></GetCallerIdentityResult></GetCallerIdentityResponse>"#;
+    let body = b"<GetCallerIdentityResponse><GetCallerIdentityResult><Arn>arn:aws:iam::123456789012:role/kb</Arn><UserId>AIDA</UserId><Account>123456789012</Account></GetCallerIdentityResult></GetCallerIdentityResponse>";
     let identity = caller_identity_from(body).unwrap();
     assert_eq!(
         identity,
@@ -70,7 +70,7 @@ fn call_caller_identity_reads_account_and_arn() {
 #[test]
 fn call_caller_identity_reports_a_missing_element() {
     let body =
-        br#"<GetCallerIdentityResult><Account>123456789012</Account></GetCallerIdentityResult>"#;
+        b"<GetCallerIdentityResult><Account>123456789012</Account></GetCallerIdentityResult>";
     assert!(caller_identity_from(body).is_err());
 }
 
@@ -133,7 +133,7 @@ fn call_iso_iam_endpoints_are_global_per_partition() {
 
 #[test]
 fn call_create_role_reads_the_role_arn() {
-    let body = br#"<CreateRoleResponse><CreateRoleResult><Role><Path>/</Path><Arn>arn:aws:iam::123456789012:role/litellm-bedrock-kb-0123abcd</Arn></Role></CreateRoleResult></CreateRoleResponse>"#;
+    let body = b"<CreateRoleResponse><CreateRoleResult><Role><Path>/</Path><Arn>arn:aws:iam::123456789012:role/litellm-bedrock-kb-0123abcd</Arn></Role></CreateRoleResult></CreateRoleResponse>";
     assert_eq!(
         child_text(body, "Role", "Arn", CREATE_ROLE).unwrap(),
         "arn:aws:iam::123456789012:role/litellm-bedrock-kb-0123abcd"
@@ -142,7 +142,7 @@ fn call_create_role_reads_the_role_arn() {
 
 #[test]
 fn call_role_arn_reports_a_missing_element() {
-    let body = br#"<CreateRoleResponse><CreateRoleResult><Role><Path>/</Path></Role></CreateRoleResult></CreateRoleResponse>"#;
+    let body = b"<CreateRoleResponse><CreateRoleResult><Role><Path>/</Path></Role></CreateRoleResult></CreateRoleResponse>";
     assert!(child_text(body, "Role", "Arn", CREATE_ROLE).is_err());
 }
 
@@ -184,7 +184,7 @@ fn call_form_values_encode_reserved_characters() {
 
 #[test]
 fn call_xml_entities_are_decoded() {
-    let body = br#"<Role><Arn>arn:aws:iam::1:role/a&amp;b</Arn></Role>"#;
+    let body = b"<Role><Arn>arn:aws:iam::1:role/a&amp;b</Arn></Role>";
     assert_eq!(
         child_text(body, "Role", "Arn", CREATE_ROLE).unwrap(),
         "arn:aws:iam::1:role/a&b"
@@ -193,7 +193,7 @@ fn call_xml_entities_are_decoded() {
 
 #[test]
 fn call_xml_cdata_is_read() {
-    let body = br#"<Role><Arn><![CDATA[arn:aws:iam::1:role/c]]></Arn></Role>"#;
+    let body = b"<Role><Arn><![CDATA[arn:aws:iam::1:role/c]]></Arn></Role>";
     assert_eq!(
         child_text(body, "Role", "Arn", CREATE_ROLE).unwrap(),
         "arn:aws:iam::1:role/c"
@@ -202,6 +202,6 @@ fn call_xml_cdata_is_read() {
 
 #[test]
 fn call_xml_without_the_parent_element_is_missing() {
-    let body = br#"<Role><Arn>arn:aws:iam::1:role/a</Arn></Role>"#;
+    let body = b"<Role><Arn>arn:aws:iam::1:role/a</Arn></Role>";
     assert!(caller_identity_from(body).is_err());
 }

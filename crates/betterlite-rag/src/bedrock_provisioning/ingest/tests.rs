@@ -80,7 +80,7 @@ async fn store_trims_every_trailing_slash_from_the_prefix() {
 #[rstest]
 #[case(None, Some("file.txt"))]
 #[case(Some(&b""[..]), Some("file.txt"))]
-#[case(Some(b"hello"), None)]
+#[case(Some(&b"hello"[..]), None)]
 #[case(Some(b"hello"), Some(""))]
 #[tokio::test(start_paused = true)]
 async fn store_returns_the_id_and_none_without_content_or_filename(

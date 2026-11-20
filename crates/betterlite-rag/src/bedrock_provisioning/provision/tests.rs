@@ -13,13 +13,13 @@ use crate::bedrock_provisioning::provision::error::ProvisionError;
 
 pub(crate) mod support;
 
-const STS: &str = r#"<GetCallerIdentityResponse><GetCallerIdentityResult><Arn>arn:aws:iam::123456789012:role/caller</Arn><UserId>AIDA</UserId><Account>123456789012</Account></GetCallerIdentityResult></GetCallerIdentityResponse>"#;
+const STS: &str = "<GetCallerIdentityResponse><GetCallerIdentityResult><Arn>arn:aws:iam::123456789012:role/caller</Arn><UserId>AIDA</UserId><Account>123456789012</Account></GetCallerIdentityResult></GetCallerIdentityResponse>";
 const CREATED_COLLECTION: &str =
     r#"{"createCollectionDetail":{"id":"abc","name":"litellm-kb-0123abcd","status":"CREATING"}}"#;
 const ACTIVE_BY_ID: &str = r#"{"collectionDetails":[{"id":"abc","status":"ACTIVE","arn":"arn:aws:aoss:us-west-2:123456789012:collection/abc"}]}"#;
 const CREATING_BY_ID: &str = r#"{"collectionDetails":[{"id":"abc","status":"CREATING","arn":"arn:aws:aoss:us-west-2:123456789012:collection/abc"}]}"#;
 const ACTIVE_BY_NAME: &str = r#"{"collectionDetails":[{"id":"abc","status":"ACTIVE","arn":"arn:aws:aoss:us-west-2:123456789012:collection/abc","collectionEndpoint":"https://abc.us-west-2.aoss.amazonaws.com"}]}"#;
-const CREATED_ROLE: &str = r#"<CreateRoleResponse><CreateRoleResult><Role><Arn>arn:aws:iam::123456789012:role/litellm-bedrock-kb-0123abcd</Arn></Role></CreateRoleResult></CreateRoleResponse>"#;
+const CREATED_ROLE: &str = "<CreateRoleResponse><CreateRoleResult><Role><Arn>arn:aws:iam::123456789012:role/litellm-bedrock-kb-0123abcd</Arn></Role></CreateRoleResult></CreateRoleResponse>";
 const CREATED_KNOWLEDGE_BASE: &str =
     r#"{"knowledgeBase":{"knowledgeBaseId":"kb1","status":"CREATING"}}"#;
 const ACTIVE_KNOWLEDGE_BASE: &str =

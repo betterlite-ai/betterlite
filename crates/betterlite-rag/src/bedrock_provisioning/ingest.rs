@@ -7,6 +7,7 @@ use tokio::sync::Mutex;
 use tokio::time::{Instant, sleep};
 
 use crate::bedrock_ingestion::client::AwsRagTransport;
+use crate::bedrock_ingestion::error::BedrockIngestionError;
 use crate::bedrock_provisioning::calls::error::CallError;
 use crate::bedrock_provisioning::calls::{agent, s3};
 use crate::bedrock_provisioning::provision::BedrockProvisioner;
@@ -25,6 +26,8 @@ where
     Provision(#[from] ProvisionError<TransportFailure>),
     #[error(transparent)]
     Call(#[from] CallError),
+    #[error(transparent)]
+    Ingestion(#[from] BedrockIngestionError<TransportFailure>),
     #[error("an S3 bucket is required to store a file and none is known yet")]
     MissingBucket,
     #[error("a data source id is required to start an ingestion job and none is known yet")]

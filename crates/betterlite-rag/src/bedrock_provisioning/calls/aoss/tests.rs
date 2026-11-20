@@ -88,8 +88,10 @@ fn call_create_security_policy_sends_the_document_and_a_uuid_token() {
     assert_eq!(body.name, "kb-enc");
     assert_eq!(body.policy_type, "encryption");
     assert!(uuid::Uuid::parse_str(&body.client_token).is_ok());
-    let document: plan::EncryptionPolicy = serde_json::from_str(&body.policy).unwrap();
-    assert_eq!(document, plan::encryption_policy("kb"));
+    assert_eq!(
+        body.policy,
+        serde_json::to_string(&plan::encryption_policy("kb")).unwrap()
+    );
 }
 
 #[test]

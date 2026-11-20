@@ -184,7 +184,7 @@ where
                 ],
             )
             .await?;
-        query::child_text(&body, "Role", "Arn", query::CREATE_ROLE)
+        Ok(query::child_text(&body, "Role", "Arn", query::CREATE_ROLE)?)
     }
 
     async fn attach_role_policy(
@@ -219,14 +219,17 @@ where
         Ok(response.body)
     }
 
-    async fn create_policy<Policy: Serialize>(
+    async fn create_policy<Policy>(
         &self,
         region: &str,
         operation: &'static str,
         name: &str,
         kind: &str,
         policy: &Policy,
-    ) -> Result<(), ProvisionError<Transport::Error>> {
+    ) -> Result<(), ProvisionError<Transport::Error>>
+    where
+        Policy: Serialize,
+    {
         let call = aoss::create_policy(region, operation, name, kind, policy)?;
         self.send(&call).await?.require_success(call.operation)?;
         Ok(())
@@ -242,10 +245,10 @@ where
             let response = self.send(&call).await?.require_success(call.operation)?;
             let detail = aoss::first_collection(&response.body, aoss::BATCH_GET_COLLECTION)?;
             if detail.status.as_deref() == Some(ACTIVE) {
-                return detail.arn.ok_or(CallError::MissingEntry {
+                return Ok(detail.arn.ok_or(CallError::MissingEntry {
                     operation: aoss::BATCH_GET_COLLECTION,
                     field: "arn",
-                });
+                })?);
             }
             sleep(COLLECTION_POLL_INTERVAL).await;
         }

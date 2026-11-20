@@ -86,13 +86,16 @@ pub fn aoss_url(region: &str) -> String {
     format!("https://aoss.{region}.{suffix}/")
 }
 
-pub fn create_policy<Policy: Serialize>(
+pub fn create_policy<Policy>(
     region: &str,
     operation: &'static str,
     name: &str,
     kind: &str,
     policy: &Policy,
-) -> Result<CallRequest, CallError> {
+) -> Result<CallRequest, CallError>
+where
+    Policy: Serialize,
+{
     let document = serde_json::to_string(policy)
         .map_err(|source| CallError::Serialize { operation, source })?;
     let request = PolicyRequest {
@@ -152,11 +155,14 @@ pub fn first_collection(
         })
 }
 
-fn json_request<Body: Serialize>(
+fn json_request<Body>(
     region: &str,
     operation: &'static str,
     body: &Body,
-) -> Result<CallRequest, CallError> {
+) -> Result<CallRequest, CallError>
+where
+    Body: Serialize,
+{
     let encoded =
         serde_json::to_vec(body).map_err(|source| CallError::Serialize { operation, source })?;
     Ok(CallRequest {
