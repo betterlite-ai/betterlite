@@ -220,7 +220,20 @@ async fn unreadable_bodies_are_buffered_after_authentication() {
         .oneshot(rejected)
         .await
         .expect("the request reaches the router");
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let rejected_body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("the response body is readable");
+    let rejected_text =
+        String::from_utf8(rejected_body.to_vec()).expect("the response body is UTF-8");
+    assert!(
+        rejected_text.contains("no_db_connection"),
+        "{rejected_text}"
+    );
+    assert!(
+        !rejected_text.contains("Failed to buffer the request body"),
+        "{rejected_text}"
+    );
     assert!(!reached.load(Ordering::Acquire));
 
     // under the master key the failed read becomes the buffering 400 and the handler never runs
