@@ -1,7 +1,6 @@
-use indexmap::IndexMap;
 use thiserror::Error;
 
-use crate::azure_content_policy::JsonValue;
+use crate::azure_content_policy::{JsonValue, extract_azure_error};
 
 pub const CONTENT_FILTER: &str = "content_filter";
 pub const CONTENT_POLICY_VIOLATION: &str = "content_policy_violation";
@@ -37,14 +36,18 @@ fn text_of(value: Option<&JsonValue>) -> Option<String> {
     }
 }
 
-fn inner_error_code(error: &IndexMap<String, JsonValue>) -> Option<String> {
-    let inner = error
-        .get("innererror")
-        .or_else(|| error.get("inner_error"))?;
-    let JsonValue::Object(fields) = inner else {
-        return None;
-    };
-    text_of(fields.get("code"))
+fn inner_error_code(inner: Option<&JsonValue>) -> Option<String> {
+    match inner {
+        Some(JsonValue::Object(fields)) => text_of(fields.get("code")),
+        Some(
+            JsonValue::Null
+            | JsonValue::Bool(_)
+            | JsonValue::Number(_)
+            | JsonValue::String(_)
+            | JsonValue::Array(_),
+        )
+        | None => None,
+    }
 }
 
 #[must_use]
@@ -60,23 +63,10 @@ pub fn decode_content_filter_error(
     body: &[u8],
 ) -> Result<Option<ContentFilterError>, ContentFilterDecodeError> {
     let value: JsonValue = serde_json::from_slice(body)?;
-    let JsonValue::Object(fields) = &value else {
-        return Ok(None);
-    };
-    let error = match fields.get("error") {
-        Some(JsonValue::Object(inner)) => inner,
-        Some(
-            JsonValue::Null
-            | JsonValue::Bool(_)
-            | JsonValue::Number(_)
-            | JsonValue::String(_)
-            | JsonValue::Array(_),
-        )
-        | None => fields,
-    };
+    let (error, inner) = extract_azure_error(&value);
     let code = text_of(error.get("code")).unwrap_or_default();
     let error_type = text_of(error.get("type")).unwrap_or_default();
-    let inner_code = inner_error_code(error);
+    let inner_code = inner_error_code(inner.as_ref());
     if !is_content_filter(&code, &error_type, inner_code.as_deref()) {
         return Ok(None);
     }
