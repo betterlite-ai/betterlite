@@ -40,6 +40,8 @@ description: >-
   answer once this task mounts them. Write each listed case from its route task's description, DoD and case names
   (.development/tasks/B4720-mcp-catalog-health-views.yaml and B4722-mcp-submission-review.yaml), with the config, key
   and ignore rules each describes.
+
+  Booted case from B9695: ui/chat-app/mcp-apps-connect-mode lists GET /v1/mcp/server?connected_app_view=true in connect mode for a session caller and checks connected_app_reachable, as the /ui/chat MCPAppsPanel sends it (B9695's MCP apps paragraph). Its tools list step, GET /mcp-rest/tools/list?server_id=<id>, needs B8626's mount.
 scope:
   paths:
     - crates/betterlite-server/src/app/mcp.rs
@@ -47,6 +49,7 @@ scope:
     - crates/betterlite-server/src/app/mcp/catalog/**
     - tools/oracle/cases/http/mcp-catalog/**
     - tools/oracle/cases/http/mcp-review/**
+    - tools/oracle/cases/ui/chat-app/mcp-apps-connect-mode.yaml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L994-L1372
@@ -60,6 +63,8 @@ dod:
     proof: [catalog-route-tests]
   - text: The moved B4720 and B4722 cases match LiteLLM through the booted proxy.
     proof: [catalog-route-cases, oracle]
+  - text: "The chat app MCP server list in connect mode answers with connected_app_reachable as LiteLLM does."
+    proof: [oracle]
 checks:
   optional: []
   commands:
@@ -101,6 +106,7 @@ oracle_cases:
   - tools/oracle/cases/http/mcp-review/reject-no-database-500.yaml
   - tools/oracle/cases/http/mcp-review/reject-null-notes-no-database-500.yaml
   - tools/oracle/cases/http/mcp-review/reject-notes-wrong-type-422.yaml
+  - tools/oracle/cases/ui/chat-app/mcp-apps-connect-mode.yaml
 deviations: []
 out_of_scope:
   - "Route behavior: B4720 and B4722."

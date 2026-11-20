@@ -1,0 +1,14 @@
+kind: helper
+name: key-policy-fields-regeneration-patch-fields
+call:
+  key_policy_fields:
+    calls:
+      - {function: regenerate, key: target, body: {}}
+      - {function: regenerate, key: target, body: {duration: "", budget_duration: ""}}
+      - {function: regenerate, key: target, body: {duration: "", budget_duration: "", metadata: null}}
+      - {function: regenerate, key: target, body: {new_key: fresh, key_type: management, send_invite_email: true, new_master_key: master, grace_period: 1h}}
+      - {function: regenerate, key: target, body: {spend: 5.0, metadata: {team: x}}}
+      - {function: regenerate, key: target, body: {key: caller, spend: 2.0}}
+      - {function: regenerate, key: target, body: {auto_rotate: false, rotation_interval: "", organization_id: "", project_id: null}}
+env: {}
+compare: {ignore: []}

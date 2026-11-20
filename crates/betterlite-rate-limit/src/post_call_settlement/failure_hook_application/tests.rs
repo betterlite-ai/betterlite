@@ -1,0 +1,65 @@
+#![cfg(test)]
+
+use betterlite_config::sections::rate_limit_usage::TokenRateLimitType;
+
+use crate::limiter_records::ReservationBackend;
+use crate::post_call_settlement::failure_hook::FailureHook;
+use crate::post_call_settlement::tests::support::{
+    SettlementFixture, WINDOW, install, operation_tuples, pipeline_tuples, scopes, stash_state,
+    token_usage, window_identity,
+};
+use crate::request_stash::RequestStashSlot;
+
+fn install_combined_and_both_projects(slot: &RequestStashSlot) {
+    install(slot, |state| {
+        state.reserved_tokens = 1000;
+        state.reserved_scopes = scopes(&[("user", "alice")]);
+        state.itpm_reserved_tokens = 200;
+        state.itpm_reserved_scopes = scopes(&[("project", "p1")]);
+        state.itpm_reserved_windows.insert(window_identity(
+            "{project:p1}:tokens",
+            ReservationBackend::Redis,
+        ));
+        state.otpm_reserved_tokens = 300;
+        state.otpm_reserved_scopes = scopes(&[("project", "p2")]);
+    });
+}
+
+#[tokio::test]
+async fn applies_the_combined_refund_and_each_project_side_on_its_own_path() {
+    let fixture = SettlementFixture::default();
+    let slot = RequestStashSlot::default();
+    install_combined_and_both_projects(&slot);
+    let usage = token_usage(250, 10, 260);
+    let event = FailureHook {
+        stash: &slot,
+        combined_usage: Some(&usage),
+        rate_limit_type: TokenRateLimitType::Total,
+        window_size: WINDOW,
+    };
+    fixture.settlement().post_call_failure_hook(&event).await;
+    assert_eq!(
+        pipeline_tuples(&fixture.usage.pipelines()),
+        vec![
+            vec![(
+                "{user:alice}:tokens".to_owned(),
+                (-740.0_f64).to_bits(),
+                Some(WINDOW),
+            )],
+            vec![(
+                "{project:p2}:tokens".to_owned(),
+                (-290.0_f64).to_bits(),
+                Some(WINDOW),
+            )],
+        ]
+    );
+    assert_eq!(
+        operation_tuples(&fixture.usage.increments()),
+        vec![(
+            "{project:p1}:tokens".to_owned(),
+            50.0_f64.to_bits(),
+            Some(WINDOW),
+        )]
+    );
+    assert!(stash_state(&slot).reservation_released);
+}
