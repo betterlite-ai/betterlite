@@ -1,0 +1,13 @@
+id: B10009
+milestone: M4 keys, spend and management
+title: Public discovery config section
+status: todo
+depends_on: [B002]
+file: tasks/B10009-public-discovery-settings.yaml
+covers: []
+parent: B077
+split_from: B9300
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
