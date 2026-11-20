@@ -21,13 +21,6 @@ deviations:
       The team table defaults models to an empty list, so a NULL row comes from a manual insert; betterlite
       reads it as empty rather than failing the delete.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1900
-  - what: >-
-      The cleanup reads the alias rows, sibling deployments and team row through the primary connection,
-      while LiteLLM's prisma wrapper can route those reads to a replica.
-    why: >-
-      The cleanup runs after the deployment row is deleted, so a lagging replica could still report the
-      deleted deployment as a sibling or miss the surviving one; the writer keeps the check correct.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1749
 kept_bugs:
   - what: >-
       Only the first aliases key whose value equals the deleted model name is removed; a second key with

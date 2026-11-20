@@ -139,6 +139,21 @@ async fn an_empty_public_name_is_removed_as_given() {
 }
 
 #[tokio::test]
+async fn no_candidate_leaves_the_team_row_alone() {
+    let store = FakeStore::new("t1", Some(names(&["pub"])), Vec::new(), Vec::new());
+    let cache = FakeCache::default();
+    let updated = remove_unbacked_team_models(
+        &deleted("pub", Some("t1"), None),
+        &context(&store, &cache, None),
+    )
+    .await
+    .unwrap();
+    assert!(updated.is_none());
+    assert!(store.saved_models.lock().unwrap().is_empty());
+    assert!(cache.stored().is_empty());
+}
+
+#[tokio::test]
 async fn a_missing_team_row_keeps_the_alias_cleanup() {
     let aliases = vec![alias_row(1, Some("t1"), Some(r#"{"role":"pub"}"#))];
     let store = FakeStore::new("t1", None, aliases, Vec::new());
