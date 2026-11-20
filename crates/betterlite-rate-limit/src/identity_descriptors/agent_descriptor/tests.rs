@@ -18,17 +18,29 @@ impl AgentPolicyRegistry for Fixed {
     }
 }
 
+#[derive(serde::Serialize)]
+struct PolicyWire {
+    agent_id: &'static str,
+    agent_name: &'static str,
+    agent_card_params: BTreeMap<String, String>,
+    rpm_limit: Option<i64>,
+    tpm_limit: Option<i64>,
+    session_rpm_limit: Option<i64>,
+    session_tpm_limit: Option<i64>,
+}
+
 fn policy(limits: [Option<i64>; 4]) -> AgentResponse {
-    let wire = serde_json::json!({
-        "agent_id": "agent-1",
-        "agent_name": "agent-one",
-        "agent_card_params": {},
-        "rpm_limit": limits[0],
-        "tpm_limit": limits[1],
-        "session_rpm_limit": limits[2],
-        "session_tpm_limit": limits[3],
+    let [rpm_limit, tpm_limit, session_rpm_limit, session_tpm_limit] = limits;
+    let wire = serde_json::to_string(&PolicyWire {
+        agent_id: "agent-1",
+        agent_name: "agent-one",
+        agent_card_params: BTreeMap::new(),
+        rpm_limit,
+        tpm_limit,
+        session_rpm_limit,
+        session_tpm_limit,
     })
-    .to_string();
+    .expect("the policy fixture serializes");
     serde_json::from_str(&wire).expect("the policy fixture decodes")
 }
 

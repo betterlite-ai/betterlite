@@ -11,15 +11,16 @@ mod fakes;
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
 pub(crate) enum Input {
-    TagDescriptor(answers::TagDescriptorCase),
-    TagCreate(answers::TagCreateCase),
-    TagResolution(answers::TagResolutionCase),
-    TagPerKey(answers::TagPerKeyCase),
-    McpPerKey(answers::McpPerKeyCase),
-    McpPerTeam(answers::McpPerTeamCase),
-    AgentDescriptors(answers::AgentCase),
-    AgentResolution(answers::AgentResolutionCase),
-    SessionResolution(answers::SessionCase),
+    // boxed so every variant carries a pointer, well within the 3x variant_size_differences enforces
+    TagDescriptor(Box<answers::TagDescriptorCase>),
+    TagCreate(Box<answers::TagCreateCase>),
+    TagResolution(Box<answers::TagResolutionCase>),
+    TagPerKey(Box<answers::TagPerKeyCase>),
+    McpPerKey(Box<answers::McpPerKeyCase>),
+    McpPerTeam(Box<answers::McpPerTeamCase>),
+    AgentDescriptors(Box<answers::AgentCase>),
+    AgentResolution(Box<answers::AgentResolutionCase>),
+    SessionResolution(Box<answers::SessionCase>),
 }
 
 pub(crate) struct Op;

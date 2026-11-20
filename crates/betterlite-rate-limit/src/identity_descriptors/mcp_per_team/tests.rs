@@ -119,7 +119,7 @@ fn skips_source_teams_without_the_server() {
 
 #[test]
 fn skips_the_key_team_without_a_configured_limit() {
-    let auth = team_keyed("team-a", r#"{}"#);
+    let auth = team_keyed("team-a", "{}");
     assert!(built(&auth, Some("server-a"), None).is_empty());
 }
 

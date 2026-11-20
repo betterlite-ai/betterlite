@@ -75,7 +75,7 @@ fn adds_nothing_without_an_api_key() {
 
 #[test]
 fn adds_nothing_without_a_configured_limit() {
-    let auth = keyed(r#"{}"#);
+    let auth = keyed("{}");
     assert!(built(&auth, Some("server-a")).is_empty());
 }
 

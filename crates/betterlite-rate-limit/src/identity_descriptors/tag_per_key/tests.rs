@@ -75,7 +75,7 @@ fn adds_nothing_without_an_api_key() {
 
 #[test]
 fn adds_nothing_without_key_tag_limits() {
-    let auth = keyed(r#"{}"#);
+    let auth = keyed("{}");
     assert!(built(&auth, r#"{"tags": ["tag-a"]}"#).is_empty());
 }
 

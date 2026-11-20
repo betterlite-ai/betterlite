@@ -2,6 +2,8 @@ use betterlite_core::api::request_destination::RequestData;
 
 use super::request_fields::text_field;
 
+mod tests;
+
 // LiteLLM's _get_resolved_agent_id: the key's own agent assignment wins over request metadata
 #[must_use]
 pub fn resolved_agent_id<'input>(

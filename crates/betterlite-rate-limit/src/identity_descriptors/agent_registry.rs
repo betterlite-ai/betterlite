@@ -1,6 +1,8 @@
 use betterlite_auth::agent_policy::AgentResponse;
 use betterlite_auth::agent_registry::AgentRegistryApi;
 
+mod tests;
+
 // B4776's registry behind the one lookup the limiter needs; a case can supply its own mapping
 pub trait AgentPolicyRegistry: Send + Sync {
     #[must_use]

@@ -14,7 +14,7 @@ use betterlite_auth::auth_tag_budgets::rows::{BudgetRows, TagBudgetRowsFailure};
 use betterlite_db::managed_resource_rows::tag::TagTable;
 use betterlite_models::decisions::Json;
 
-use crate::limiter_records::{TagRateLimit, TagRateLimitResolver};
+use crate::limiter_records::{TagRateLimit, TagRateLimitResolver as _};
 
 use super::{DbTagRateLimitResolver, resolve_tag_rate_limits};
 
@@ -122,11 +122,21 @@ fn payload_error() -> PayloadError {
     PayloadError::Json(serde_json::from_str::<i64>("not a number").expect_err("the invalid json"))
 }
 
+#[derive(serde::Serialize)]
+struct BudgetWire {
+    rpm_limit: Option<i64>,
+    tpm_limit: Option<i64>,
+}
+
 fn tag(name: &str, budget: Option<(Option<i64>, Option<i64>)>) -> TagTable {
     let litellm_budget_table = match budget {
         None => String::new(),
         Some((rpm_limit, tpm_limit)) => {
-            let table = serde_json::json!({"rpm_limit": rpm_limit, "tpm_limit": tpm_limit});
+            let table = serde_json::to_string(&BudgetWire {
+                rpm_limit,
+                tpm_limit,
+            })
+            .expect("the budget fixture serializes");
             format!(r#","litellm_budget_table":{table}"#)
         }
     };
@@ -248,9 +258,9 @@ async fn resolver_returns_the_resolved_limits() {
         cache: &cache,
         rows: &rows,
     };
-    let resolved = resolver.resolve(&names(&["tag-a"])).await;
+    let answer = resolver.resolve(&names(&["tag-a"])).await;
     assert_eq!(
-        limits(&resolved),
+        limits(&answer),
         BTreeMap::from([("tag-a".to_owned(), (Some(10), None))])
     );
 }

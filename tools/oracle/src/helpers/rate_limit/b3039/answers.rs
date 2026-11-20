@@ -19,8 +19,8 @@ use serde::Deserialize;
 use serde_json::json;
 use tokio::runtime::Builder;
 
-use betterlite_oracle_helper_api::error::OrHelperError as _;
-use betterlite_oracle_helper_api::helper::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::fakes::{FixedRegistry, FixtureRows, MapResolver, TokenCache};
 

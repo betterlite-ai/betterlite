@@ -1,6 +1,8 @@
 use betterlite_core::api::request_destination::RequestData;
 use betterlite_models::decisions::Json;
 
+mod tests;
+
 // LiteLLM str()s whatever it finds, so a numeric id names the same session bucket a text id would
 fn session_text(value: &Json) -> Option<String> {
     match value {

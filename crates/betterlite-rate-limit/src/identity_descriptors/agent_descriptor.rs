@@ -38,8 +38,8 @@ impl AgentDescriptorBuilder<'_> {
                 self.window_size,
             ));
         }
-        let session_id = session_id_from_data(data);
-        if let Some(session_id) = session_id
+        let resolved_session = session_id_from_data(data);
+        if let Some(session_id) = resolved_session
             && (agent.session_rpm_limit.is_some() || agent.session_tpm_limit.is_some())
         {
             descriptors.push(rate_limit_descriptor(
