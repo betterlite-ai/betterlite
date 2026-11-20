@@ -460,8 +460,13 @@ async fn a_first_frame_error_body_carries_the_refreshed_call_id_last() {
         true,
     )
     .await;
+    let response = plain(produced);
     assert_eq!(
-        body(plain(produced)).await,
+        header(response.headers(), "x-litellm-call-id").as_deref(),
+        Some("call-2")
+    );
+    assert_eq!(
+        body(response).await,
         Bytes::from_static(br#"{"error":{"code":400,"litellm_call_id":"call-2"}}"#)
     );
 }
