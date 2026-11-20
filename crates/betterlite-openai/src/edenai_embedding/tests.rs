@@ -326,6 +326,9 @@ fn transform_response_rejects_bytes_that_are_not_json() {
     "Error in response object"
 )]
 #[case::unrepresentable_code(br#"{"data":[],"error":{"message":"bad","code":"429"}}"#, 422, "bad")]
+#[case::negative_code(br#"{"data":[],"error":{"message":"bad","code":-1}}"#, 422, "bad")]
+#[case::fractional_code(br#"{"data":[],"error":{"message":"bad","code":429.5}}"#, 422, "bad")]
+#[case::out_of_range_code(br#"{"data":[],"error":{"message":"bad","code":70000}}"#, 422, "bad")]
 #[case::missing_message(br#"{"error":{"code":500}}"#, 500, "Error in response object")]
 fn transform_response_raises_a_meaningful_error_object(
     #[case] body: &[u8],

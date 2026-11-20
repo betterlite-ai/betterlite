@@ -23,13 +23,13 @@ deviations:
       per name, and a caller value must not override the resolved key.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/edenai/common_utils.py#L61-L72
   - what: >-
-      A meaningful error object whose code is not a JSON integer (a string, a fraction or an
-      explicit null) reports status 422.
+      A meaningful error object whose code is not a JSON unsigned integer that fits 16 bits (a
+      string, a fraction, a negative number or an explicit null) reports status 422.
     why: >-
       LiteLLM copies the raw code into its exception's status_code, so the client sees a value such
-      as "429" or None instead of an HTTP status; 422 is LiteLLM's own default for an error object
-      without a usable code.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L610-L614
+      as "429", 4.5 or None instead of an HTTP status; 422 is LiteLLM's own default for an error
+      object without a usable code.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L603-L617
   - what: >-
       A cost larger than the decimal cost type holds, or a non-finite one, reads as no cost.
     why: >-
