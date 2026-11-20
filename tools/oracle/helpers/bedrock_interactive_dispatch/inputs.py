@@ -76,7 +76,7 @@ class ResponsesRun(TypedDict):
 
 class PassthroughRun(TypedDict):
     endpoint: str
-    method: NotRequired[str]
+    method: str
     data: JsonObject
     region: NotRequired[str | None]
     status: int
@@ -157,7 +157,3 @@ def authorization_view(headers: dict[str, str]) -> JsonValue:
         "kind": "sigv4", "access_key": access_key, "region": region,
         "service": service, "token": None,
     }
-
-
-def request_view(method: str, url: str, headers: dict[str, str], body: JsonValue) -> JsonValue:
-    return {"method": method, "url": url, "auth": authorization_view(headers), "body": body}

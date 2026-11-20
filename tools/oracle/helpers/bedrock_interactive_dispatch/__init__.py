@@ -64,17 +64,20 @@ def responses_row(run: inputs.ResponsesRun) -> JsonValue:
         payload: JsonValue = [{"params": run["params"], "drop_params": False}]
         validated = inputs.MAPPED_RESULT.validate_python(option_cases(calls, payload))
         mapped = validated["results"][0]["params"]
-        url = calls.get_complete_url(RESPONSES_HOST, {})
+        url = calls.get_complete_url(RESPONSES_HOST, {})  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/responses/transformation.py#L196-L216
         params = GenericLiteLLMParams(api_key=run.get("api_key"))
-        headers = calls.validate_environment({}, run["model"], params)
-        body = asyncio.run(
-            calls.async_transform_responses_api_request(run["model"], source, mapped, params, {})
+        headers = calls.validate_environment({}, run["model"], params)  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/responses/transformation.py#L221-L231
+        body = asyncio.run(  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/responses/transformation.py#L307-L323
+            calls.async_transform_responses_api_request(run["model"], source, mapped, params, {})  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/responses/transformation.py#L307-L323
         )
     except (KeyError, TypeError, ValueError):
         return error_row("leaf", None)
-    signed, _body = calls.sign_request(dict(headers), {}, body, url, api_key=run.get("api_key"))
+    signed, _body = calls.sign_request(dict(headers), {}, body, url, api_key=run.get("api_key"))  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/responses/transformation.py#L233-L256
     row: inputs.JsonObject = dict[str, JsonValue].fromkeys(inputs.KEYS)
-    row["request"] = inputs.request_view("POST", url, signed, body)
+    row["request"] = {
+        "method": "POST", "url": url, "auth": inputs.authorization_view(signed),  # pyright: ignore[reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/responses/transformation.py#L233-L256
+        "body": body
+    }
     row["status"] = run["status"]
     row["reply"] = JsonAdapter.validate_json(run["reply"])
     return row
@@ -98,9 +101,10 @@ def passthrough_row(run: inputs.PassthroughRun) -> JsonValue:
     )
     text = b"{}" if body is None else body
     row: inputs.JsonObject = dict[str, JsonValue].fromkeys(inputs.KEYS)
-    row["request"] = inputs.request_view(
-        run.get("method", "POST"), view["url"], signed, JsonAdapter.validate_json(text)
-    )
+    row["request"] = {
+        "method": run["method"], "url": view["url"],
+        "auth": inputs.authorization_view(signed), "body": JsonAdapter.validate_json(text)
+    }
     row["endpoint_url"] = view["endpoint_url"]
     row["streaming"] = view["streaming"]
     row["status"] = run["status"]
@@ -150,7 +154,10 @@ def search_row(run: inputs.SearchRun) -> JsonValue:
         for name in SEARCH_ENVIRONMENT:
             os.environ.pop(name, None)
     row: inputs.JsonObject = dict[str, JsonValue].fromkeys(inputs.KEYS)
-    row["request"] = inputs.request_view("POST", GATEWAY, signed, JsonAdapter.validate_python(body))
+    row["request"] = {
+        "method": "POST", "url": GATEWAY, "auth": inputs.authorization_view(signed),
+        "body": JsonAdapter.validate_python(body)
+    }
     try:
         row["response"] = JsonAdapter.validate_python(
             search_reply({"status": run["status"], "headers": [], "body": run["reply"]})
@@ -179,9 +186,10 @@ def vector_row(run: inputs.VectorRun) -> JsonValue:
         return error_row("leaf", None)
     call = calls["calls"][0]
     row: inputs.JsonObject = dict[str, JsonValue].fromkeys(inputs.KEYS)
-    row["request"] = inputs.request_view(
-        "POST", call["url"], {}, JsonAdapter.validate_python(call["body"])
-    )
+    row["request"] = {
+        "method": "POST", "url": call["url"], "auth": inputs.authorization_view({}),
+        "body": JsonAdapter.validate_python(call["body"])
+    }
     decoded = inputs.VECTOR_RESULT.validate_python(
         decoded_responses(BedrockVectorStoreConfig(), VectorInput(
             operation="attributes_and_scores",
