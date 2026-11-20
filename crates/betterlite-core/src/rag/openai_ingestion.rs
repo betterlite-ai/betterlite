@@ -101,6 +101,85 @@ impl OpenAiIngestion {
     pub const fn embed(&self, _chunks: &[String]) -> Option<Vec<Vec<f64>>> {
         None
     }
+
+    // LiteLLM names an unnamed ingest "litellm-rag-ingest" and expires it at last_active_at after ttl_days
+    async fn create_vector_store(
+        &self,
+        ttl_days: Option<i64>,
+        api_key: Option<&SecretString>,
+        api_base: Option<&str>,
+    ) -> Result<Option<String>, OpenAiIngestionError> {
+        let created = self
+            .vector_store
+            .create_store(CreateStore {
+                name: self
+                    .state
+                    .ingest_name
+                    .as_deref()
+                    .filter(|name| !name.is_empty())
+                    .unwrap_or("litellm-rag-ingest"),
+                expires_after: ttl_days.map(|days| ExpiresAfter {
+                    anchor: "last_active_at",
+                    days,
+                }),
+                api_key,
+                api_base,
+            })
+            .await?;
+        Ok(created)
+    }
+
+    // the existing-file path and the upload path both attach through this one call
+    async fn attach_file(
+        &self,
+        store_id: &str,
+        file_id: &str,
+        api_key: Option<&SecretString>,
+        api_base: Option<&str>,
+    ) -> Result<(), OpenAiIngestionError> {
+        self.vector_file
+            .attach(AttachFile {
+                vector_store_id: store_id,
+                file_id,
+                chunking_strategy: &self.state.chunking_strategy,
+                api_key,
+                api_base,
+            })
+            .await?;
+        Ok(())
+    }
+
+    async fn upload_and_attach(
+        &self,
+        store_id: &str,
+        request: &StoreRequest<'_>,
+        api_key: Option<&SecretString>,
+        api_base: Option<&str>,
+    ) -> Result<StoreResult, OpenAiIngestionError> {
+        let Some(content) = request.file_content else {
+            return Ok((Some(store_id.to_owned()), None));
+        };
+        let Some(filename) = request.filename.filter(|name| !name.is_empty()) else {
+            return Ok((Some(store_id.to_owned()), None));
+        };
+        let uploaded = self
+            .file_upload
+            .upload(UploadFile {
+                filename,
+                content,
+                content_type: request
+                    .content_type
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or(DEFAULT_CONTENT_TYPE),
+                purpose: "assistants",
+                api_key,
+                api_base,
+            })
+            .await?;
+        self.attach_file(store_id, &uploaded, api_key, api_base)
+            .await?;
+        Ok((Some(store_id.to_owned()), Some(uploaded)))
+    }
 }
 
 #[async_trait]
@@ -120,27 +199,11 @@ impl RagStore for OpenAiIngestion {
         if existing_file_id.is_some() && vector_store_id.is_none() {
             return Err(OpenAiIngestionError::MissingVectorStoreId);
         }
-
         if vector_store_id.is_none() {
             vector_store_id = self
-                .vector_store
-                .create_store(CreateStore {
-                    name: self
-                        .state
-                        .ingest_name
-                        .as_deref()
-                        .filter(|name| !name.is_empty())
-                        .unwrap_or("litellm-rag-ingest"),
-                    expires_after: ttl_days.map(|days| ExpiresAfter {
-                        anchor: "last_active_at",
-                        days,
-                    }),
-                    api_key: api_key.as_ref(),
-                    api_base: api_base.as_deref(),
-                })
+                .create_vector_store(ttl_days, api_key.as_ref(), api_base.as_deref())
                 .await?;
         }
-
         let Some(store_id) = vector_store_id
             .as_deref()
             .filter(|id| !id.is_empty())
@@ -148,50 +211,13 @@ impl RagStore for OpenAiIngestion {
         else {
             return Ok((vector_store_id, None));
         };
-
         if let Some(file_id) = existing_file_id {
-            self.vector_file
-                .attach(AttachFile {
-                    vector_store_id: &store_id,
-                    file_id,
-                    chunking_strategy: &self.state.chunking_strategy,
-                    api_key: api_key.as_ref(),
-                    api_base: api_base.as_deref(),
-                })
+            self.attach_file(&store_id, file_id, api_key.as_ref(), api_base.as_deref())
                 .await?;
             return Ok((Some(store_id), Some(file_id.to_owned())));
         }
-
-        let Some(content) = request.file_content else {
-            return Ok((Some(store_id), None));
-        };
-        let Some(filename) = request.filename.filter(|name| !name.is_empty()) else {
-            return Ok((Some(store_id), None));
-        };
-        let uploaded = self
-            .file_upload
-            .upload(UploadFile {
-                filename,
-                content,
-                content_type: request
-                    .content_type
-                    .filter(|value| !value.is_empty())
-                    .unwrap_or(DEFAULT_CONTENT_TYPE),
-                purpose: "assistants",
-                api_key: api_key.as_ref(),
-                api_base: api_base.as_deref(),
-            })
-            .await?;
-        self.vector_file
-            .attach(AttachFile {
-                vector_store_id: &store_id,
-                file_id: &uploaded,
-                chunking_strategy: &self.state.chunking_strategy,
-                api_key: api_key.as_ref(),
-                api_base: api_base.as_deref(),
-            })
-            .await?;
-        Ok((Some(store_id), Some(uploaded)))
+        self.upload_and_attach(&store_id, &request, api_key.as_ref(), api_base.as_deref())
+            .await
     }
 }
 

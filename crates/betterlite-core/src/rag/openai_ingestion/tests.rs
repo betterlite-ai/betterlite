@@ -291,16 +291,17 @@ fn request<'request>(
 
 #[test]
 fn flags_support_existing_files_and_embed_nothing() {
-    let harness = harness(r#"{}"#);
+    let harness = harness("{}");
     let chunks = vec!["one".to_owned(), "two".to_owned()];
-    assert!(OpenAiIngestion::SUPPORTS_EXISTING_FILE_ID);
+    let supported = OpenAiIngestion::SUPPORTS_EXISTING_FILE_ID;
+    assert!(supported);
     assert!(harness.ingestion.embed(&chunks).is_none());
     assert!(harness.ingestion.embed(&[]).is_none());
 }
 
 #[tokio::test]
 async fn existing_file_without_store_id_is_rejected() {
-    let harness = harness(r#"{}"#);
+    let harness = harness("{}");
     let error = harness
         .ingestion
         .store(request(None, None, None, Some("file_1")))
@@ -352,7 +353,7 @@ async fn existing_file_attaches_with_chunking_and_skips_upload() {
 
 #[tokio::test]
 async fn existing_file_with_an_empty_id_creates_a_store() {
-    let harness = harness(r#"{}"#);
+    let harness = harness("{}");
     let (store_id, file_id) = harness
         .ingestion
         .store(request(None, None, None, Some("")))
@@ -373,7 +374,7 @@ async fn existing_file_with_an_empty_id_creates_a_store() {
 
 #[tokio::test]
 async fn store_create_defaults_the_name_and_sends_no_expiry() {
-    let harness = harness(r#"{}"#);
+    let harness = harness("{}");
     let (store_id, file_id) = harness
         .ingestion
         .store(request(None, None, None, None))
@@ -517,7 +518,7 @@ async fn store_create_without_an_id_uploads_nothing() {
         attach_failure: None,
         upload_failure: None,
     };
-    let harness = harness_with(script, r#"{}"#);
+    let harness = harness_with(script, "{}");
     let (store_id, file_id) = harness
         .ingestion
         .store(request(Some(b"hello"), Some("a.txt"), None, None))
@@ -544,7 +545,7 @@ async fn store_create_with_an_empty_id_uploads_nothing() {
         attach_failure: None,
         upload_failure: None,
     };
-    let harness = harness_with(script, r#"{}"#);
+    let harness = harness_with(script, "{}");
     let (store_id, file_id) = harness
         .ingestion
         .store(request(Some(b"hello"), Some("a.txt"), None, None))
@@ -787,7 +788,7 @@ async fn port_error_stops_at_the_failing_create() {
         attach_failure: None,
         upload_failure: None,
     };
-    let harness = harness_with(script, r#"{}"#);
+    let harness = harness_with(script, "{}");
     let error = harness
         .ingestion
         .store(request(Some(b"hello"), Some("a.txt"), None, None))
@@ -806,7 +807,7 @@ async fn port_error_keeps_the_created_store_and_skips_attach() {
         attach_failure: None,
         upload_failure: Some("upload failed".to_owned()),
     };
-    let harness = harness_with(script, r#"{}"#);
+    let harness = harness_with(script, "{}");
     let error = harness
         .ingestion
         .store(request(Some(b"hello"), Some("a.txt"), None, None))

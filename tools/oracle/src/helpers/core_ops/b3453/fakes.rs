@@ -14,27 +14,33 @@ use betterlite_oracle_helper_api::error::HelperError;
 use serde_json::{Value, json};
 
 pub(super) enum RecordedCall {
-    Create {
-        name: String,
-        expires_after: Option<ExpiresAfter>,
-        api_key: bool,
-        api_base: Option<String>,
-    },
-    Attach {
-        vector_store_id: String,
-        file_id: String,
-        chunking_strategy: String,
-        api_key: bool,
-        api_base: Option<String>,
-    },
-    Upload {
-        filename: String,
-        size_bytes: usize,
-        content_type: String,
-        purpose: String,
-        api_key: bool,
-        api_base: Option<String>,
-    },
+    Create(CreateCall),
+    Attach(AttachCall),
+    Upload(UploadCall),
+}
+
+pub(super) struct CreateCall {
+    name: String,
+    expires_after: Option<ExpiresAfter>,
+    api_key: bool,
+    api_base: Option<String>,
+}
+
+pub(super) struct AttachCall {
+    vector_store_id: String,
+    file_id: String,
+    chunking_strategy: String,
+    api_key: bool,
+    api_base: Option<String>,
+}
+
+pub(super) struct UploadCall {
+    filename: String,
+    size_bytes: usize,
+    content_type: String,
+    purpose: String,
+    api_key: bool,
+    api_base: Option<String>,
 }
 
 #[derive(Default)]
@@ -53,54 +59,34 @@ impl CallRecorder {
 
 pub(super) fn call_json(call: &RecordedCall) -> Result<Value, Box<HelperError>> {
     match call {
-        RecordedCall::Create {
-            name,
-            expires_after,
-            api_key,
-            api_base,
-        } => {
-            let expires = expires_after
-                .map(|expires| json!({"anchor": expires.anchor, "days": expires.days}));
-            Ok(json!({
-                "port": "vector_store_create",
-                "name": name,
-                "expires_after": expires,
-                "api_base": api_base,
-                "api_key": api_key,
-            }))
-        }
-        RecordedCall::Attach {
-            vector_store_id,
-            file_id,
-            chunking_strategy,
-            api_key,
-            api_base,
-        } => {
-            let strategy: Value = serde_json::from_str(chunking_strategy)?;
+        RecordedCall::Create(created) => Ok(json!({
+            "port": "vector_store_create",
+            "name": created.name,
+            "expires_after": created.expires_after.map(|expires| {
+                json!({"anchor": expires.anchor, "days": expires.days})
+            }),
+            "api_base": created.api_base,
+            "api_key": created.api_key,
+        })),
+        RecordedCall::Attach(attached) => {
+            let strategy: Value = serde_json::from_str(&attached.chunking_strategy)?;
             Ok(json!({
                 "port": "vector_file_attach",
-                "vector_store_id": vector_store_id,
-                "file_id": file_id,
+                "vector_store_id": attached.vector_store_id,
+                "file_id": attached.file_id,
                 "chunking_strategy": strategy,
-                "api_base": api_base,
-                "api_key": api_key,
+                "api_base": attached.api_base,
+                "api_key": attached.api_key,
             }))
         }
-        RecordedCall::Upload {
-            filename,
-            size_bytes,
-            content_type,
-            purpose,
-            api_key,
-            api_base,
-        } => Ok(json!({
+        RecordedCall::Upload(uploaded) => Ok(json!({
             "port": "file_upload",
-            "filename": filename,
-            "size_bytes": size_bytes,
-            "content_type": content_type,
-            "purpose": purpose,
-            "api_base": api_base,
-            "api_key": api_key,
+            "filename": uploaded.filename,
+            "size_bytes": uploaded.size_bytes,
+            "content_type": uploaded.content_type,
+            "purpose": uploaded.purpose,
+            "api_base": uploaded.api_base,
+            "api_key": uploaded.api_key,
         })),
     }
 }
@@ -151,12 +137,12 @@ scripted_port!(
     request: CreateStore<'_>,
     Result<Option<String>, PortError>,
     store_reply,
-    RecordedCall::Create {
+    RecordedCall::Create(CreateCall {
         name: request.name.to_owned(),
         expires_after: request.expires_after,
         api_key: request.api_key.is_some(),
         api_base: request.api_base.map(str::to_owned),
-    }
+    })
 );
 
 pub(super) struct ScriptedFile {
@@ -180,13 +166,13 @@ scripted_port!(
     request: AttachFile<'_>,
     Result<(), PortError>,
     file_reply,
-    RecordedCall::Attach {
+    RecordedCall::Attach(AttachCall {
         vector_store_id: request.vector_store_id.to_owned(),
         file_id: request.file_id.to_owned(),
         chunking_strategy: request.chunking_strategy.get().to_owned(),
         api_key: request.api_key.is_some(),
         api_base: request.api_base.map(str::to_owned),
-    }
+    })
 );
 
 pub(super) struct ScriptedUpload {
@@ -211,14 +197,14 @@ scripted_port!(
     request: UploadFile<'_>,
     Result<String, PortError>,
     upload_reply,
-    RecordedCall::Upload {
+    RecordedCall::Upload(UploadCall {
         filename: request.filename.to_owned(),
         size_bytes: request.content.len(),
         content_type: request.content_type.to_owned(),
         purpose: request.purpose.to_owned(),
         api_key: request.api_key.is_some(),
         api_base: request.api_base.map(str::to_owned),
-    }
+    })
 );
 
 pub(super) struct NoOcr;
