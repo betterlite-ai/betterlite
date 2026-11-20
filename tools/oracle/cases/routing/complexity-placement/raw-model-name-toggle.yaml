@@ -1,0 +1,41 @@
+kind: probe
+name: raw-model-name-toggle
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_placement:
+        return_raw_model_name: true
+        max_tokens_from_tier_model: true
+        tiers:
+          SIMPLE: fast
+        default_model: null
+        deployment_pin: false
+        deployments:
+          - {group: fast, model: openai/gpt-4o-mini, custom_llm_provider: null, max_output_tokens: null, allowed_openai_params: []}
+        supported_params:
+          gpt-4o-mini: [temperature]
+        steps:
+          - {tier: SIMPLE, allowed_models: null, responses_call: false, request_kwargs: {}}
+          - {tier: SIMPLE, allowed_models: null, responses_call: false, request_kwargs: {metadata: {session_id: s1}}}
+          - {tier: SIMPLE, allowed_models: null, responses_call: false, request_kwargs: {metadata: {session_id: s1}, litellm_metadata: {trace: keep}}}
+          - {tier: SIMPLE, allowed_models: null, responses_call: false, request_kwargs: {metadata: stale}}
+          - {tier: SIMPLE, allowed_models: null, responses_call: false, request_kwargs: {metadata: null}}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_placement:
+        return_raw_model_name: false
+        max_tokens_from_tier_model: true
+        tiers:
+          SIMPLE: fast
+        default_model: null
+        deployment_pin: false
+        deployments:
+          - {group: fast, model: openai/gpt-4o-mini, custom_llm_provider: null, max_output_tokens: null, allowed_openai_params: []}
+        supported_params:
+          gpt-4o-mini: [temperature]
+        steps:
+          - {tier: SIMPLE, allowed_models: null, responses_call: false, request_kwargs: {metadata: {session_id: s1}}}
+compare:
+  ignore: []
