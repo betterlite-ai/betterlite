@@ -27,13 +27,6 @@ pub enum Operation {
 }
 
 impl Operation {
-    const fn method(self) -> Method {
-        match self {
-            Self::Retrieve | Self::List => Method::GET,
-            Self::Delete => Method::DELETE,
-        }
-    }
-
     // LiteLLM hands the per-call timeout to the async delete and to both listing sends, and to no other send
     const fn sends_timeout(self, mode: ClientKind) -> bool {
         matches!(
@@ -99,8 +92,7 @@ enum Selected<'client, Client> {
 impl<Client> Selected<'_, Client> {
     const fn get(&self) -> &Client {
         match self {
-            Self::Supplied(client) => client,
-            Self::Created(client) => client,
+            Self::Supplied(client) | Self::Created(client) => client,
         }
     }
 }
@@ -148,7 +140,10 @@ where
         attempt: Attempt { mode, operation },
         litellm_params: litellm_params.clone(),
         request: WriteRequest {
-            method: operation.method(),
+            method: match operation {
+                Operation::Retrieve | Operation::List => Method::GET,
+                Operation::Delete => Method::DELETE,
+            },
             url: request_url(&base, &query_pairs(&query)?)?,
             headers: wire_headers(&validated)?,
             body: RequestBody::Empty,

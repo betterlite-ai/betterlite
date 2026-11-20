@@ -21,12 +21,11 @@ pub(super) async fn execute(
     api_base: &str,
     env: &BTreeMap<String, String>,
 ) -> Result<SdkResult, SdkHttpError> {
-    let loader = ConfigLoader {
+    let config = ConfigLoader {
         lookup: env.clone(),
-    };
-    let config = loader
-        .load("model_list: []")
-        .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
+    }
+    .load("model_list: []")
+    .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
     let origin = source(&config, env)?;
     let provider = XaiFilesConfig {
         settings: &config.sections.xai_identity,

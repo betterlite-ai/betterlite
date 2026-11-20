@@ -80,10 +80,9 @@ where
         optional_params,
         litellm_params,
     };
-    let validated = config
+    config
         .validate_environment(environment)
-        .map_err(MetadataError::Provider)?;
-    Ok(validated)
+        .map_err(MetadataError::Provider)
 }
 
 pub(super) fn log_pre_call(

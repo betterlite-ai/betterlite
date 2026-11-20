@@ -117,14 +117,13 @@ pub(super) fn status_facts(reply: &UpstreamResponse) -> FailureFacts {
 
 // The sync delete client catches httpx.TimeoutException and raises litellm.Timeout(408); every other send lets the raw error out
 pub(super) fn transport_facts(error: &TransportError, attempt: Attempt) -> FailureFacts {
-    let timed_out = matches!(
+    if matches!(
         error,
         TransportError::ConnectTimeout(_) | TransportError::Deadline(_)
     ) && matches!(
         (attempt.operation, attempt.mode),
         (Operation::Delete, ClientKind::Sync)
-    );
-    if timed_out {
+    ) {
         return FailureFacts {
             response_status: None,
             status: Some(Json::Number(Number::from(408_u16))),
