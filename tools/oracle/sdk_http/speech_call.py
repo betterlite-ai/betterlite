@@ -10,7 +10,8 @@ from litellm.types.llms.openai import HttpxBinaryResponseContent
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic import JsonValue as Json
 
-from openai_chat import Failure, project_failure as chat_failure
+from openai_chat import Failure
+from openai_chat import project_failure as chat_failure
 
 SENTINEL: Final = "$API_BASE"
 NO_RETRIES: Final = 0
@@ -134,7 +135,8 @@ def speak(step: Step, api_base: str) -> HttpxBinaryResponseContent:
     match answer:
         case HttpxBinaryResponseContent():
             return answer
-    raise StreamedSpeechError
+        case Coroutine():
+            raise StreamedSpeechError
 
 
 def project_failure(error: BaseException) -> StepOutcome:
@@ -151,15 +153,16 @@ def run_step(step: Step, api_base: str) -> StepOutcome:
     with ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(speak, step, api_base)
     raised = future.exception()
+    if raised is None:
+        answer = future.result()
+        return StepOutcome(
+            value=BinaryValue(status=answer.response.status_code, body=list(answer.content))
+        )
     match raised:
         case StreamedSpeechError():
             raise raised
         case BaseException():
             return project_failure(raised)
-    answer = future.result()
-    return StepOutcome(
-        value=BinaryValue(status=answer.response.status_code, body=list(answer.content))
-    )
 
 
 def run_speech(call: SpeechCallCall, api_base: str) -> str:
