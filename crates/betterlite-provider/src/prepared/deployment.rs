@@ -32,6 +32,8 @@ pub struct Deployment {
     pub timeout: Duration,
     pub max_retries: Option<u32>,
     pub drop_params: Option<DropParams>,
+    // litellm.drop_params; a call's own drop_params never turns the 422 resend on
+    pub global_drop_params: bool,
     pub provider_affinity_header: Option<String>,
     pub anthropic: Option<Arc<AnthropicRuntime>>,
 }
@@ -53,6 +55,7 @@ impl Deployment {
             timeout: deployment.timeout,
             max_retries: None,
             drop_params: None,
+            global_drop_params: deployment.global_drop_params,
             provider_affinity_header: None,
             anthropic: None,
         }
@@ -88,6 +91,8 @@ impl Deployment {
             timeout,
             max_retries,
             drop_params,
+            // the params carry no proxy-wide setting
+            global_drop_params: false,
             provider_affinity_header,
             anthropic: None,
         })

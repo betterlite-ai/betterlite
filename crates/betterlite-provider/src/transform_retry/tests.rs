@@ -17,6 +17,7 @@ use tokio::time::timeout;
 use url::Url;
 
 use super::{TransformOnUnprocessable, TransformRetry, send_with_retry};
+use crate::operation::OperationError;
 use crate::prepared::deployment::Deployment;
 use crate::prepared::{PreparedChat, PreparedHttp, PreparedRequest, Upstream};
 
@@ -28,11 +29,28 @@ struct Always;
 
 struct Declines;
 
+struct Refuses;
+
 impl TransformOnUnprocessable for Declines {}
 
 impl TransformOnUnprocessable for Always {
     fn should_retry(&self, _response: &UpstreamResponse, _deployment: &Deployment) -> bool {
         true
+    }
+}
+
+impl TransformOnUnprocessable for Refuses {
+    fn should_retry(&self, response: &UpstreamResponse, _deployment: &Deployment) -> bool {
+        response.status == 422
+    }
+
+    fn transform_request(
+        &self,
+        _prepared: &mut PreparedRequest,
+        _response: &UpstreamResponse,
+        _deployment: &Deployment,
+    ) -> Result<(), OperationError> {
+        Err(OperationError::MissingApiKey)
     }
 }
 
@@ -46,10 +64,11 @@ impl TransformOnUnprocessable for Rewrite {
         prepared: &mut PreparedRequest,
         _response: &UpstreamResponse,
         _deployment: &Deployment,
-    ) {
+    ) -> Result<(), OperationError> {
         if let PreparedRequest::Chat(chat) = prepared {
             chat.http.body = b"rewritten".to_vec();
         }
+        Ok(())
     }
 }
 
@@ -140,6 +159,25 @@ async fn provider_framework_tests_behavior(
     };
     assert_eq!(response.status, last);
     assert_eq!(bodies, sent);
+}
+
+#[tokio::test]
+async fn a_failing_transform_fails_the_call() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = Url::parse(&format!(
+        "http://{}/v1/chat/completions",
+        listener.local_addr().unwrap()
+    ))
+    .unwrap();
+    let client = client();
+    let request = prepared(url, TransformRetry::bounded(2).unwrap());
+    let inputs = deployment();
+    let (bodies, answer) = tokio::join!(
+        serve(listener, vec![422, 200]),
+        send_with_retry(&client, &request, &inputs, &Refuses)
+    );
+    assert!(matches!(answer, Err(OperationError::MissingApiKey)));
+    assert_eq!(bodies, vec!["original"]);
 }
 
 #[test]

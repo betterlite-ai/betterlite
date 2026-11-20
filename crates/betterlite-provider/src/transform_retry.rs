@@ -41,7 +41,8 @@ pub trait TransformOnUnprocessable: Send + Sync {
         _prepared: &mut PreparedRequest,
         _response: &UpstreamResponse,
         _deployment: &Deployment,
-    ) {
+    ) -> Result<(), OperationError> {
+        Ok(())
     }
 }
 
@@ -61,7 +62,7 @@ pub(crate) async fn send_with_retry(
             && attempt < retry.max_attempts
             && hook.should_retry(response, deployment)
         {
-            hook.transform_request(&mut current, response, deployment);
+            hook.transform_request(&mut current, response, deployment)?;
             attempt = attempt.saturating_add(1);
             continue;
         }
