@@ -455,31 +455,12 @@ fn recorded(request: &InterceptorRequest<'_>) -> IndexMap<String, Json> {
     record
 }
 
-// Every argument first_matching_interceptor_wins forwards, asserted against the expected values
+// Every argument first_matching_interceptor_wins forwards, as the one record the interceptor sees
 pub(super) fn assert_forwarded_arguments(sent: &IndexMap<String, Json>) {
-    assert_eq!(sent["model"], json(r#""claude-sonnet-4-20250514""#));
-    assert_eq!(sent["max_tokens"], json("64"));
-    assert_eq!(sent["stream"], Json::Bool(true));
-    assert_eq!(sent["tools"], json(r#"[{"name":"Bash"}]"#));
-    assert_eq!(sent["custom_llm_provider"], json(r#""anthropic""#));
-    assert_eq!(sent["api_key"], json(r#""sk-test""#));
-    assert_eq!(sent["api_base"], json(r#""https://api.example""#));
-    assert_eq!(sent["metadata"], json(r#"{"user_id":"u1"}"#));
-    assert_eq!(sent["stop_sequences"], json(r#"["stop"]"#));
-    assert_eq!(sent["system"], json(r#""sys""#));
-    assert_eq!(sent["temperature"], json("0.5"));
-    assert_eq!(
-        sent["thinking"],
-        json(r#"{"type":"enabled","budget_tokens":1024}"#)
+    let expected = json(
+        r#"{"model":"claude-sonnet-4-20250514","messages":[{"role":"user","content":"hi"}],"tools":[{"name":"Bash"}],"stream":true,"max_tokens":64,"custom_llm_provider":"anthropic","api_key":"sk-test","api_base":"https://api.example","metadata":{"user_id":"u1"},"stop_sequences":["stop"],"system":"sys","temperature":0.5,"thinking":{"type":"enabled","budget_tokens":1024},"tool_choice":{"type":"auto"},"top_k":5,"top_p":0.9,"kwargs":{"custom":1}}"#,
     );
-    assert_eq!(sent["tool_choice"], json(r#"{"type":"auto"}"#));
-    assert_eq!(sent["top_k"], json("5"));
-    assert_eq!(sent["top_p"], json("0.9"));
-    assert_eq!(sent["kwargs"], json(r#"{"custom":1}"#));
-    assert_eq!(
-        sent["messages"],
-        json(r#"[{"role":"user","content":"hi"}]"#)
-    );
+    assert_eq!(Json::Object(sent.clone()), expected);
 }
 
 #[async_trait]
