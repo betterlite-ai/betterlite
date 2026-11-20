@@ -24,7 +24,8 @@ use self::support::{
     Bench, CallKind, CallMode, Events, Fixture, IMPATIENT, Reply, Setup, Source, Wire, failing,
     fake_bench, json_params, proxied_bench, run, transport,
 };
-use crate::api::video_remix_list_transport::convert::{SendFacts, SendMode, timeout_message};
+use crate::api::vector_store_http_write::error::timeout_facts;
+use crate::api::vector_store_http_write::service::ClientKind;
 use crate::api::video_remix_list_transport::error::{Operation, VideoRemixListTransportError};
 
 #[rstest]
@@ -150,33 +151,30 @@ async fn transport_error_behavior(#[case] case: ErrorCase) {
             assert_timeout(&bench, &error, "0.05");
         }
         ErrorCase::SyncTimeoutText => {
-            let sync_none = SendFacts {
-                operation: Operation::Remix,
-                mode: SendMode::Sync,
-                timeout: None,
-                elapsed: Duration::from_millis(50),
-            };
+            let sync_none = timeout_facts(ClientKind::Sync, None, Duration::from_millis(50));
             assert_eq!(
-                timeout_message(&sync_none),
-                "litellm.Timeout: Connection timed out after None seconds."
+                sync_none.text.as_deref(),
+                Some("litellm.Timeout: Connection timed out after None seconds.")
             );
-            let sync_whole = SendFacts {
-                timeout: Some(Duration::from_secs(2)),
-                ..sync_none
-            };
-            assert_eq!(
-                timeout_message(&sync_whole),
-                "litellm.Timeout: Connection timed out after 2 seconds."
+            let sync_whole = timeout_facts(
+                ClientKind::Sync,
+                Some(Duration::from_secs(2)),
+                Duration::from_millis(50),
             );
-            let asynchronous = SendFacts {
-                mode: SendMode::Asynchronous,
-                timeout: Some(Duration::from_secs(2)),
-                elapsed: Duration::from_millis(250),
-                ..sync_none
-            };
             assert_eq!(
-                timeout_message(&asynchronous),
-                "litellm.Timeout: Connection timed out. Timeout passed=2, time taken=0.250 seconds"
+                sync_whole.text.as_deref(),
+                Some("litellm.Timeout: Connection timed out after 2 seconds.")
+            );
+            let asynchronous = timeout_facts(
+                ClientKind::Asynchronous,
+                Some(Duration::from_secs(2)),
+                Duration::from_millis(250),
+            );
+            assert_eq!(
+                asynchronous.text.as_deref(),
+                Some(
+                    "litellm.Timeout: Connection timed out. Timeout passed=2, time taken=0.250 seconds"
+                )
             );
         }
         ErrorCase::RemixResponseConversion => {

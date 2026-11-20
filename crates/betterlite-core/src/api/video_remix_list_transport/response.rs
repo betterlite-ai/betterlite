@@ -1,5 +1,6 @@
 use betterlite_http::proxy::UpstreamResponse;
 
+use crate::api::vector_store_http_write::error::status_facts;
 use crate::api::video_records::VideoObject;
 
 use super::LogContext;
@@ -66,5 +67,5 @@ where
         },
     );
     log.state.model_call_details = logging.model_call_details;
-    outcome.map_err(|_failure| convert::failure(config, &convert::status_facts(answer)))
+    outcome.map_err(|_failure| convert::failure(config, &status_facts(answer)))
 }

@@ -1,8 +1,11 @@
 use std::collections::BTreeMap;
 use std::error::Error;
+use std::str::from_utf8;
+use std::time::Duration;
 
 use betterlite_config::tls::TlsPolicyError;
 use betterlite_http::error::HttpError;
+use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::pool::PoolError;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_models::decisions::Json;
@@ -11,6 +14,7 @@ use serde_json::Number;
 use thiserror::Error;
 
 use super::config::WriteConfig;
+use super::service::ClientKind;
 
 pub type HeaderMap = BTreeMap<String, Json>;
 
@@ -150,4 +154,91 @@ pub fn handle_error(facts: &FailureFacts, config: Option<&dyn WriteConfig>) -> B
         error.status_code_is_synthesized = true;
     }
     error
+}
+
+// An httpx.HTTPStatusError carries the masked response: its text and its headers less content-encoding, with content-length recomputed
+#[must_use]
+pub(crate) fn status_facts(reply: &UpstreamResponse) -> FailureFacts {
+    let text = body_text(&reply.body);
+    let mut headers = header_map(&reply.headers);
+    headers.remove("content-encoding");
+    headers.remove("content-length");
+    // httpx re-encodes the decoded body into the masked response, so a non-empty one carries a new content-length
+    if !reply.body.is_empty() {
+        let length = reply.body.len().to_string();
+        headers.insert(String::from("content-length"), Json::Text(length));
+    }
+    FailureFacts {
+        response_status: Some(i64::from(reply.status)),
+        status: Some(Json::Number(Number::from(reply.status))),
+        text: Some(text.clone()),
+        headers: None,
+        response: Some(ResponseFacts {
+            status_code: i64::from(reply.status),
+            text: Some(text),
+            headers: Some(headers),
+        }),
+        display: String::new(),
+    }
+}
+
+// A caught failure with no response behind it: the text is the failure's own, and a missing status becomes a synthesized 500
+#[must_use]
+pub(crate) const fn display_facts(display: String) -> FailureFacts {
+    FailureFacts {
+        response_status: None,
+        status: None,
+        text: None,
+        headers: None,
+        response: None,
+        display,
+    }
+}
+
+// A caught httpx.TimeoutException becomes litellm.Timeout: status 408 and the HTTP client's own message
+#[must_use]
+pub(crate) fn timeout_facts(
+    mode: ClientKind,
+    timeout: Option<Duration>,
+    elapsed: Duration,
+) -> FailureFacts {
+    let message = match mode {
+        ClientKind::Sync => format!(
+            "litellm.Timeout: Connection timed out after {} seconds.",
+            timeout_text(timeout)
+        ),
+        ClientKind::Asynchronous => format!(
+            "litellm.Timeout: Connection timed out. Timeout passed={}, time taken={}.{:03} seconds",
+            timeout_text(timeout),
+            elapsed.as_secs(),
+            elapsed.subsec_millis(),
+        ),
+    };
+    FailureFacts {
+        response_status: None,
+        status: Some(Json::Number(Number::from(408_u16))),
+        text: Some(message),
+        headers: Some(HeaderMap::new()),
+        response: None,
+        display: String::new(),
+    }
+}
+
+// A binary body is named by its byte count, as httpx's text decoding fails on it
+fn body_text(body: &[u8]) -> String {
+    from_utf8(body).map_or_else(
+        |_| format!("{} bytes that are not UTF-8", body.len()),
+        ToOwned::to_owned,
+    )
+}
+
+// The sync and async HTTP clients word the same timeout differently, and the sync one shows the argument as it was given
+fn timeout_text(timeout: Option<Duration>) -> String {
+    let Some(given) = timeout else {
+        return String::from("None");
+    };
+    if given.subsec_nanos() == 0 {
+        return given.as_secs().to_string();
+    }
+    given.as_secs_f64().to_string()
 }

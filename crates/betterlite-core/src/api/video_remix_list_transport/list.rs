@@ -4,9 +4,10 @@ use std::time::{Duration, Instant};
 use betterlite_http::proxy::UpstreamResponse;
 use tokio::runtime::{Builder, Handle};
 
-use super::client::{
-    VideoAsyncClient as _, VideoClient, VideoClientSource, VideoRequest, choose_async,
-};
+use crate::api::vector_store_http_write::error::display_facts;
+use crate::api::vector_store_http_write::service::ClientKind;
+
+use super::client::{VideoAsyncClient, VideoClient, VideoClientSource, VideoRequest, choose_async};
 use super::config::VideoRemixListConfig;
 use super::convert;
 use super::error::{Operation, VideoRemixListTransportError};
@@ -135,25 +136,25 @@ fn list_wire_request(
     prepared: &PreparedList,
 ) -> Result<VideoRequest, VideoRemixListTransportError> {
     wire::query_get(&prepared.url, &prepared.headers, &prepared.params)
-        .map_err(|error| convert::failure(config, &convert::display_facts(error.to_string())))
+        .map_err(|error| convert::failure(config, &display_facts(error.to_string())))
 }
 
 // The try block's send on the async path: one GET with no timeout, and the caller's timeout only in a timeout message
-async fn send_list<Source>(
+async fn send_list<Client>(
     config: &dyn VideoRemixListConfig,
-    client: &Source::AsyncClient,
+    client: &Client,
     prepared: &PreparedList,
     timeout: Option<Duration>,
 ) -> Result<UpstreamResponse, VideoRemixListTransportError>
 where
-    Source: VideoClientSource,
+    Client: VideoAsyncClient,
 {
     let request = list_wire_request(config, prepared)?;
     let started = Instant::now();
     let sent = client.send(request).await;
     let facts = convert::SendFacts {
         operation: Operation::List,
-        mode: convert::SendMode::Asynchronous,
+        mode: ClientKind::Asynchronous,
         timeout,
         elapsed: started.elapsed(),
     };

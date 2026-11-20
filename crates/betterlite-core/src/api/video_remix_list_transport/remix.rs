@@ -4,11 +4,13 @@ use std::time::{Duration, Instant};
 use betterlite_http::proxy::UpstreamResponse;
 use secrecy::SecretString;
 
+use crate::api::vector_store_http_write::error::display_facts;
+use crate::api::vector_store_http_write::service::ClientKind;
 use crate::api::video_records::VideoObject;
 
 use super::client::{
-    Chosen, VideoAsyncClient as _, VideoClient, VideoClientSource, VideoRequest,
-    VideoSyncClient as _, choose_async,
+    Chosen, VideoAsyncClient as _, VideoClient, VideoClientSource, VideoRequest, VideoSyncClient,
+    choose_async,
 };
 use super::config::VideoRemixListConfig;
 use super::convert;
@@ -92,7 +94,7 @@ impl<Source: VideoClientSource> VideoRemixListTransport<Source> {
         let sent = chosen.get().send(request).await;
         let facts = convert::SendFacts {
             operation: Operation::Remix,
-            mode: convert::SendMode::Asynchronous,
+            mode: ClientKind::Asynchronous,
             timeout: Some(timeout),
             elapsed: started.elapsed(),
         };
@@ -169,7 +171,7 @@ fn remix_wire_request(
         &prepared.data,
         prepared.timeout,
     )
-    .map_err(|error| convert::failure(config, &convert::display_facts(error.to_string())))
+    .map_err(|error| convert::failure(config, &display_facts(error.to_string())))
 }
 
 // Everything before the try block: the environment, the base URL, the request transform and the pre-call
@@ -209,20 +211,20 @@ where
 }
 
 // The try block's send: the wire form, one POST with the timeout, and the status check before the response transform
-fn send_remix<Source>(
+fn send_remix<Client>(
     config: &dyn VideoRemixListConfig,
-    client: &Source::SyncClient,
+    client: &Client,
     prepared: &PreparedRemix,
 ) -> Result<UpstreamResponse, VideoRemixListTransportError>
 where
-    Source: VideoClientSource,
+    Client: VideoSyncClient,
 {
     let request = remix_wire_request(config, prepared)?;
     let started = Instant::now();
     let sent = client.send(request);
     let facts = convert::SendFacts {
         operation: Operation::Remix,
-        mode: convert::SendMode::Sync,
+        mode: ClientKind::Sync,
         timeout: prepared.timeout,
         elapsed: started.elapsed(),
     };
