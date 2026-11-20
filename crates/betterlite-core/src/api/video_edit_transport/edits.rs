@@ -9,10 +9,12 @@ use super::config::{BaseVideoConfig, Params, VideoEditInput, VideoReply};
 use super::error::{StepFailure, VideoEditTransportError};
 use super::handler::{PrepareFields, Prepared, VideoTransport};
 use super::seams::{VideoClientSource, VideoErrorConvert, VideoLoggingHandle, VideoPreCall};
-use super::wire::{
-    SUCCESS_LIMIT, SendAttempt, display_facts, send_facts, status_facts, video_request,
+use super::wire::{SUCCESS_LIMIT, video_request};
+use crate::api::vector_store_http_write::error::{display_facts, status_facts};
+use crate::api::vector_store_http_write::service::facts::{Sent, transport_facts};
+use crate::api::vector_store_http_write::service::{
+    ClientKind, Operation, WriteRequest, WriteTransport as _,
 };
-use crate::api::vector_store_http_write::service::{ClientKind, WriteRequest, WriteTransport as _};
 use crate::api::video_records::VideoObject;
 
 // The workspace denies multiple_inherent_impl, so the edit handler pair is a trait on the transport
@@ -124,7 +126,7 @@ where
             .begin(&prepared, &request, prefetched.as_ref())
             .map_err(|cause| {
                 self.transport
-                    .provider_error(self.config, &display_facts(&cause.to_string()))
+                    .provider_error(self.config, &display_facts(cause.to_string()))
             })?;
         self.deliver(prepared.client.get(), request.provider, ready, mode)
             .await
@@ -145,9 +147,8 @@ where
         ) else {
             return Ok(None);
         };
-        let wire = video_request(&url, &prepared.headers, &body, None, request.timeout).map_err(
-            |cause| transport.provider_error(config, &display_facts(&cause.to_string())),
-        )?;
+        let wire = video_request(&url, &prepared.headers, &body, None, request.timeout)
+            .map_err(|cause| transport.provider_error(config, &display_facts(cause.to_string())))?;
         let reply = self.post(prepared.client.get(), wire, mode).await?;
         let data: Params =
             serde_json::from_slice(&reply.body).map_err(VideoEditTransportError::PrefetchDecode)?;
@@ -221,12 +222,13 @@ where
         let timeout = wire.timeout;
         let started = Instant::now();
         let reply = client.send(wire).await.map_err(|cause| {
-            let attempt = SendAttempt {
+            let sent = Sent {
                 mode,
+                operation: Operation::Update,
                 timeout,
                 elapsed: started.elapsed(),
             };
-            transport.provider_error(config, &send_facts(&cause, attempt))
+            transport.provider_error(config, &transport_facts(&cause, &sent))
         })?;
         if reply.status >= SUCCESS_LIMIT {
             return Err(transport.provider_error(config, &status_facts(&reply)));

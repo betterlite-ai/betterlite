@@ -6,13 +6,13 @@ use betterlite_http::proxy::transport_error::TransportError;
 use super::super::error::{FailureFacts, display_facts, timeout_facts};
 use super::{ClientKind, Operation};
 
-// What the timeout message needs from the send that just failed
+// What the timeout message needs from the send that just failed; operation only picks the async delete exemption
 #[derive(Debug, Clone, Copy)]
-pub(super) struct Sent {
-    pub(super) mode: ClientKind,
-    pub(super) operation: Operation,
-    pub(super) timeout: Duration,
-    pub(super) elapsed: Duration,
+pub(crate) struct Sent {
+    pub(crate) mode: ClientKind,
+    pub(crate) operation: Operation,
+    pub(crate) timeout: Option<Duration>,
+    pub(crate) elapsed: Duration,
 }
 
 pub(super) fn http_response(reply: &UpstreamResponse) -> http::Response<Vec<u8>> {
@@ -23,14 +23,9 @@ pub(super) fn http_response(reply: &UpstreamResponse) -> http::Response<Vec<u8>>
     response
 }
 
-pub(super) fn transport_facts(error: &TransportError, sent: &Sent) -> FailureFacts {
+pub(crate) fn transport_facts(error: &TransportError, sent: &Sent) -> FailureFacts {
     if caught_timeout(error, sent.mode, sent.operation) {
-        // the sync handlers pass no timeout, so their message shows none; the async one shows the deadline it ran with
-        let timeout = match sent.mode {
-            ClientKind::Sync => None,
-            ClientKind::Asynchronous => Some(sent.timeout),
-        };
-        return timeout_facts(sent.mode, timeout, sent.elapsed);
+        return timeout_facts(sent.mode, sent.timeout, sent.elapsed);
     }
     display_facts(error.to_string())
 }

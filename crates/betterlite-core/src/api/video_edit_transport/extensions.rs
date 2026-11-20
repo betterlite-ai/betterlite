@@ -8,10 +8,12 @@ use super::config::{BaseVideoConfig, VideoExtensionInput, VideoLogging, VideoRep
 use super::error::VideoEditTransportError;
 use super::handler::{PrepareFields, Prepared, VideoTransport};
 use super::seams::{VideoClientSource, VideoErrorConvert, VideoLoggingHandle, VideoPreCall};
-use super::wire::{
-    SUCCESS_LIMIT, SendAttempt, display_facts, send_facts, status_facts, video_request,
+use super::wire::{SUCCESS_LIMIT, video_request};
+use crate::api::vector_store_http_write::error::{display_facts, status_facts};
+use crate::api::vector_store_http_write::service::facts::{Sent, transport_facts};
+use crate::api::vector_store_http_write::service::{
+    ClientKind, Operation, WriteRequest, WriteTransport as _,
 };
-use crate::api::vector_store_http_write::service::{ClientKind, WriteRequest, WriteTransport as _};
 use crate::api::video_records::VideoObject;
 
 // The workspace denies multiple_inherent_impl, so the extension handler pair is a trait on the transport
@@ -153,9 +155,8 @@ where
                 video_id: request.video_id,
             })
             .map_err(VideoEditTransportError::Logging)?;
-        let wire = video_request(&url, &prepared.headers, &data, None, request.timeout).map_err(
-            |cause| transport.provider_error(config, &display_facts(&cause.to_string())),
-        )?;
+        let wire = video_request(&url, &prepared.headers, &data, None, request.timeout)
+            .map_err(|cause| transport.provider_error(config, &display_facts(cause.to_string())))?;
         Ok(ExtensionReady {
             wire,
             object: transport.logging.logging_object(),
@@ -175,12 +176,13 @@ where
         let timeout = ready.wire.timeout;
         let started = Instant::now();
         let reply = client.send(ready.wire).await.map_err(|cause| {
-            let attempt = SendAttempt {
+            let sent = Sent {
                 mode,
+                operation: Operation::Update,
                 timeout,
                 elapsed: started.elapsed(),
             };
-            transport.provider_error(config, &send_facts(&cause, attempt))
+            transport.provider_error(config, &transport_facts(&cause, &sent))
         })?;
         if reply.status >= SUCCESS_LIMIT {
             return Err(transport.provider_error(config, &status_facts(&reply)));

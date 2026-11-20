@@ -23,7 +23,7 @@ use super::config::{WriteConfig, WriteParams};
 use super::error::{ClientError, WriteError, handle_error, status_facts};
 use super::params::UpdateParams;
 
-mod facts;
+pub(crate) mod facts;
 mod proxied;
 mod request;
 
@@ -242,10 +242,15 @@ where
         .unwrap_or_else(|| client.get().default_timeout());
     let started = Instant::now();
     let reply = client.get().send(request).await;
+    // the sync handlers pass no timeout, so their message shows none; the async one shows the deadline it ran with
+    let shown_timeout = match mode {
+        ClientKind::Sync => None,
+        ClientKind::Asynchronous => Some(timeout),
+    };
     let sent = Sent {
         mode,
         operation,
-        timeout,
+        timeout: shown_timeout,
         elapsed: started.elapsed(),
     };
     let answer = reply.map_err(|error| {

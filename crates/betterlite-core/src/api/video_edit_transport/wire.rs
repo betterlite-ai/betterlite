@@ -1,24 +1,18 @@
-use std::str::from_utf8;
 use std::time::Duration;
 
-use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::multipart::MultipartPart;
 use betterlite_http::proxy::outbound::RequestBody;
-use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json;
 use http::header::{HeaderName, HeaderValue};
 use http::{HeaderMap as HttpHeaders, Method};
 use secrecy::SecretString;
-use serde_json::Number;
 use url::Url;
 use uuid::Uuid;
 
 use super::config::{Headers, Params, RequestFile, RequestFiles};
 use super::error::{FieldTypeError, WireFailure};
-use crate::api::vector_store_http_write::error::{
-    FailureFacts, HeaderMap as ErrorHeaders, ResponseFacts, header_text,
-};
-use crate::api::vector_store_http_write::service::{ClientKind, WriteRequest};
+use crate::api::vector_store_http_write::error::HeaderMap as ErrorHeaders;
+use crate::api::vector_store_http_write::service::WriteRequest;
 
 // httpx's raise_for_status raises for any status from 400 up
 pub(crate) const SUCCESS_LIMIT: u16 = 400;
@@ -72,92 +66,6 @@ const fn flag_type(field: &'static str) -> FieldTypeError {
         field,
         expected: "a boolean",
     }
-}
-
-// An exception that carries no response: _handle_error synthesizes a 500 and uses the exception's text; B2402's builders are pub(super) in vector_store_http_write::service, outside this task's scope.paths, so this module mirrors them
-pub(crate) fn display_facts(text: &str) -> FailureFacts {
-    FailureFacts {
-        response_status: None,
-        status: None,
-        text: None,
-        headers: None,
-        response: None,
-        display: text.to_owned(),
-    }
-}
-
-// One send's timing, which LiteLLM's timeout message spells out
-#[derive(Clone, Copy)]
-pub(crate) struct SendAttempt {
-    pub(crate) mode: ClientKind,
-    pub(crate) timeout: Option<Duration>,
-    pub(crate) elapsed: Duration,
-}
-
-// A failed send carries the exception's text, unless it timed out: that is litellm.Timeout, which _handle_error keeps as a 408 with no response, mirroring B2402's transport_facts, whose pub(super) builder sits outside this task's scope.paths
-pub(crate) fn send_facts(error: &TransportError, attempt: SendAttempt) -> FailureFacts {
-    let mut facts = display_facts(&error.to_string());
-    if matches!(
-        error,
-        TransportError::ConnectTimeout(_) | TransportError::Deadline(_)
-    ) {
-        facts.status = Some(Json::Number(Number::from(408_u16)));
-        facts.text = Some(timeout_message(attempt));
-    }
-    facts
-}
-
-// httpx's two post handlers spell the timeout differently, and each shows the one the caller passed, None included
-fn timeout_message(attempt: SendAttempt) -> String {
-    let timeout = attempt.timeout.map_or_else(
-        || "None".to_owned(),
-        |timeout| timeout.as_secs_f64().to_string(),
-    );
-    match attempt.mode {
-        ClientKind::Sync => {
-            format!("litellm.Timeout: Connection timed out after {timeout} seconds.")
-        }
-        ClientKind::Asynchronous => format!(
-            "litellm.Timeout: Connection timed out. Timeout passed={timeout}, time taken={}.{:03} seconds",
-            attempt.elapsed.as_secs(),
-            attempt.elapsed.subsec_millis(),
-        ),
-    }
-}
-
-// An httpx.HTTPStatusError carries the response: its status, its text and its headers with content-length recomputed, the same facts as B2402's status_facts, whose pub(super) builder sits outside this task's scope.paths
-pub(crate) fn status_facts(reply: &UpstreamResponse) -> FailureFacts {
-    let text = from_utf8(&reply.body).map_or_else(
-        |_| format!("{} bytes that are not UTF-8", reply.body.len()),
-        ToOwned::to_owned,
-    );
-    let mut headers = text_headers(&reply.headers);
-    if !reply.body.is_empty() {
-        headers.insert(
-            "content-length".to_owned(),
-            Json::Text(reply.body.len().to_string()),
-        );
-    }
-    FailureFacts {
-        response_status: Some(i64::from(reply.status)),
-        status: Some(Json::Number(Number::from(reply.status))),
-        text: Some(text.clone()),
-        headers: None,
-        response: Some(ResponseFacts {
-            status_code: i64::from(reply.status),
-            text: Some(text),
-            headers: Some(headers),
-        }),
-        display: String::new(),
-    }
-}
-
-fn text_headers(headers: &HttpHeaders) -> ErrorHeaders {
-    headers
-        .iter()
-        .filter(|(name, _)| !matches!(name.as_str(), "content-encoding" | "content-length"))
-        .map(|(name, value)| (name.as_str().to_owned(), Json::Text(header_text(value))))
-        .collect()
 }
 
 // get_error_class takes typed name/value pairs, and every header the converter carries is text
