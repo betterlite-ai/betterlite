@@ -31,7 +31,6 @@ pub(crate) fn answer(input: &Input) -> Result<Value, Failure> {
         inferred_provider: &no_inferred,
     };
     let sources = GroupSources {
-        lookup: &lookup,
         deployment_info: &info,
         providers: &provider,
         parameters: &parameters,
@@ -41,6 +40,7 @@ pub(crate) fn answer(input: &Input) -> Result<Value, Failure> {
     let mut keys = ModelCostKeys::default();
     let runtime = tokio::runtime::Builder::new_current_thread().build()?;
     let group = runtime.block_on(get_model_group_info(
+        &lookup,
         &sources,
         &input.model_group,
         &mut keys,
