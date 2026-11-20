@@ -154,8 +154,8 @@ fn cause(source: &str) -> FailureCause {
 fn event(source: &str) -> ResponsesEvent {
     match json(source) {
         Json::Object(fields) => ResponsesEvent {
+            attributes: ProviderEvent::default(),
             mapping: Some(fields),
-            ..ResponsesEvent::default()
         },
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
             ResponsesEvent::default()
@@ -173,13 +173,6 @@ fn scripted_events(events: Vec<ResponsesEvent>) -> Scripted {
         failure: None,
         pulls: Arc::default(),
         closed: Arc::default(),
-    }
-}
-
-fn provider_event(event_type: &str) -> ProviderEvent {
-    ProviderEvent {
-        event_type: Some(Json::Text(event_type.to_owned())),
-        ..ProviderEvent::default()
     }
 }
 
@@ -464,6 +457,11 @@ async fn duplicate_completed_events_are_reemitted() {
 async fn attribute_response_decides_the_terminal_pair() {
     let completed = ResponsesEvent {
         attributes: ProviderEvent {
+            event_type: Some(Json::Text("response.completed".to_owned())),
+            item: None,
+            item_id: None,
+            delta: None,
+            summary_index: None,
             response: Some(ProviderResponse {
                 output: vec![json(
                     r#"{"type":"function_call","call_id":"call_a","name":"lookup","arguments":"{}"}"#,
@@ -472,9 +470,8 @@ async fn attribute_response_decides_the_terminal_pair() {
                 usage: Some(usage_fixture()),
                 error: None,
             }),
-            ..provider_event("response.completed")
         },
-        ..ResponsesEvent::default()
+        mapping: None,
     };
     let mut stream = stream(scripted_events(vec![completed]));
     assert_eq!(next(&mut stream).await, message_start());
@@ -495,36 +492,55 @@ async fn attribute_response_decides_the_terminal_pair() {
 async fn attribute_events_carry_the_item_fields() {
     let thinking = ResponsesEvent {
         attributes: ProviderEvent {
+            event_type: Some(Json::Text(
+                "response.reasoning_summary_text.delta".to_owned(),
+            )),
+            item: None,
             item_id: Some(Json::Text("item_r".to_owned())),
             delta: Some(Json::Text("why".to_owned())),
-            ..provider_event("response.reasoning_summary_text.delta")
+            summary_index: None,
+            response: None,
         },
-        ..ResponsesEvent::default()
+        mapping: None,
     };
     let part = ResponsesEvent {
         attributes: ProviderEvent {
+            event_type: Some(Json::Text(
+                "response.reasoning_summary_part.added".to_owned(),
+            )),
+            item: None,
             item_id: Some(Json::Text("item_r".to_owned())),
+            delta: None,
             summary_index: Some(Json::Number(Number::from(1_u8))),
-            ..provider_event("response.reasoning_summary_part.added")
+            response: None,
         },
-        ..ResponsesEvent::default()
+        mapping: None,
     };
     let tool = ResponsesEvent {
         attributes: ProviderEvent {
+            event_type: Some(Json::Text("response.output_item.added".to_owned())),
             item: Some(json(
                 r#"{"type":"function_call","id":"item_tool","call_id":"call_a","name":"lookup"}"#,
             )),
-            ..provider_event("response.output_item.added")
+            item_id: None,
+            delta: None,
+            summary_index: None,
+            response: None,
         },
-        ..ResponsesEvent::default()
+        mapping: None,
     };
     let arguments = ResponsesEvent {
         attributes: ProviderEvent {
+            event_type: Some(Json::Text(
+                "response.function_call_arguments.delta".to_owned(),
+            )),
+            item: None,
             item_id: Some(Json::Text("item_tool".to_owned())),
             delta: Some(Json::Text("1}".to_owned())),
-            ..provider_event("response.function_call_arguments.delta")
+            summary_index: None,
+            response: None,
         },
-        ..ResponsesEvent::default()
+        mapping: None,
     };
     let events = vec![thinking, part, tool, arguments, event(COMPLETED)];
     let mut stream = stream(scripted_events(events));
@@ -555,17 +571,23 @@ async fn attribute_failed_events_carry_their_error() {
     let (guard, captured) = capture();
     let failed = ResponsesEvent {
         attributes: ProviderEvent {
+            event_type: Some(Json::Text("response.failed".to_owned())),
+            item: None,
+            item_id: None,
+            delta: None,
+            summary_index: None,
             response: Some(ProviderResponse {
+                output: Vec::new(),
+                status: None,
+                usage: None,
                 error: Some(ProviderError {
                     message: Some(Json::Text("busy".to_owned())),
                     error_type: Some(Json::Text("rate_limit_error".to_owned())),
                     code: None,
                 }),
-                ..ProviderResponse::default()
             }),
-            ..provider_event("response.failed")
         },
-        ..ResponsesEvent::default()
+        mapping: None,
     };
     let mut stream = stream(scripted_events(vec![failed]));
     assert_eq!(next(&mut stream).await, message_start());
@@ -589,15 +611,21 @@ async fn attribute_failed_events_carry_their_error() {
 async fn attribute_output_items_decide_the_stop_reason() {
     let completed = ResponsesEvent {
         attributes: ProviderEvent {
+            event_type: Some(Json::Text("response.completed".to_owned())),
+            item: None,
+            item_id: None,
+            delta: None,
+            summary_index: None,
             response: Some(ProviderResponse {
                 output: vec![json(
                     r#"{"type":"function_call","call_id":"call_a","name":"lookup","arguments":"{}"}"#,
                 )],
-                ..ProviderResponse::default()
+                status: None,
+                usage: None,
+                error: None,
             }),
-            ..provider_event("response.completed")
         },
-        ..ResponsesEvent::default()
+        mapping: None,
     };
     let mut stream = stream(scripted_events(vec![completed]));
     assert_eq!(next(&mut stream).await, message_start());

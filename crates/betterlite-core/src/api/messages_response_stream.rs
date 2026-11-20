@@ -25,7 +25,7 @@ use crate::api::responses_stream_errors::failure::{FailureCause, FailureKind};
 use crate::api::responses_stream_primitives::error_fields::StreamErrorAttributes;
 
 use error::MessagesResponseStreamError;
-use source::{ProviderEvent, ProviderResponse, ResponsesEvent, ResponsesEventSource};
+use source::{ProviderEvent, ResponsesEvent, ResponsesEventSource};
 
 // The wrapper's constructor arguments: the model it stamps on every chunk, the redactor B1119 applies and the wire bounds B1087 resolved.
 pub struct MessagesResponseStreamInput {
@@ -103,9 +103,10 @@ impl<S> MessagesResponseStream<S> {
     where
         S: ResponsesEventSource,
     {
-        match self.next_chunk().await? {
-            MessagesResponseStreamResult::End => Ok(None),
+        let result = self.next_chunk().await?;
+        match result {
             MessagesResponseStreamResult::Chunk(chunk) => sse::frame(chunk).map(Some),
+            MessagesResponseStreamResult::End => Ok(None),
         }
     }
 
@@ -114,7 +115,7 @@ impl<S> MessagesResponseStream<S> {
     where
         S: ResponsesEventSource,
     {
-        loop {
+        while self.pending.is_empty() {
             let event = match self.source.next_event().await {
                 Ok(Some(event)) => event,
                 Ok(None) => return self.exhausted(),
@@ -122,10 +123,8 @@ impl<S> MessagesResponseStream<S> {
             };
             self.process(&event)?;
             self.collect();
-            if !self.pending.is_empty() {
-                return Ok(());
-            }
         }
+        Ok(())
     }
 
     // One pulled event: the attributes getattr reads decide a provider event, and a dict-shaped event also passes its mapping through.
@@ -228,36 +227,29 @@ fn provider_attributes<'event>(
     prepared: &'event ProviderEvent,
     output: &'event [OutputItem<'event>],
 ) -> EventAttributes<'event> {
+    let response = prepared.response.as_ref().map(|response| {
+        let error = response.error.as_ref().map(|failure| {
+            ErrorAttribute::Attributes(StreamErrorAttributes {
+                message: failure.message.as_ref(),
+                error_type: failure.error_type.as_ref(),
+                code: failure.code.as_ref(),
+            })
+        });
+        ResponseAttribute::Object(ResponseAttributes {
+            output,
+            status: response.status.as_deref(),
+            usage: response.usage.as_ref(),
+            error,
+        })
+    });
     EventAttributes {
         event_type: prepared.event_type.as_ref(),
         item: prepared.item.as_ref(),
         item_id: prepared.item_id.as_ref(),
         delta: prepared.delta.as_ref(),
         summary_index: prepared.summary_index.as_ref(),
-        response: prepared
-            .response
-            .as_ref()
-            .map(|response| provider_response(response, output)),
+        response,
     }
-}
-
-fn provider_response<'event>(
-    response: &'event ProviderResponse,
-    output: &'event [OutputItem<'event>],
-) -> ResponseAttribute<'event> {
-    let error = response.error.as_ref().map(|failure| {
-        ErrorAttribute::Attributes(StreamErrorAttributes {
-            message: failure.message.as_ref(),
-            error_type: failure.error_type.as_ref(),
-            code: failure.code.as_ref(),
-        })
-    });
-    ResponseAttribute::Object(ResponseAttributes {
-        output,
-        status: response.status.as_deref(),
-        usage: response.usage.as_ref(),
-        error,
-    })
 }
 
 // A rejected event is an exception in __anext__, so its text becomes the status-500 failure message.
