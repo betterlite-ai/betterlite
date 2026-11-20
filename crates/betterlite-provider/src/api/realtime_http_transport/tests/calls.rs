@@ -75,6 +75,7 @@ fn calls_send_the_sdp_as_unnamed_multipart_parts() {
         status: 200,
         headers: "content-type: application/sdp",
         body: b"v=0\r\n",
+        hold: false,
     }];
     let (_, requests, answers) = exchange(&replies, |api_base| {
         runtime().block_on(async {

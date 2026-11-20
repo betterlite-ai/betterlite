@@ -8,60 +8,53 @@ from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.llms.base_llm.realtime.http_transformation import BaseRealtimeHTTPConfig
 from litellm.llms.custom_httpx.llm_http_handler import BaseLLMHTTPHandler
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
+from typing_extensions import override
 
 Handler = Literal["client_secrets", "transcription_sessions", "calls"]
 
 HANDLER: Final = BaseLLMHTTPHandler()
+PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 OBJECTS: Final = TypeAdapter(dict[str, object] | None)
 REQUEST: Final = TypeAdapter(dict[str, object])
-TEXT: Final = TypeAdapter(str)
+TEXT: TypeAdapter[str] = TypeAdapter(str)
 
 # the echo provider names its own endpoints, so the URL proves which config member ran
 REFUSED: Final = "the echo config refuses this model"
 
 
 class EchoConfig(BaseRealtimeHTTPConfig):
-    def get_api_base(self, api_base: str | None, **_kwargs: object) -> str:
-        return api_base or ""
+    @override
+    def get_api_base(self, api_base: str | None, **_kwargs: JsonValue) -> str:
+        return "" if api_base is None else api_base
 
-    def get_api_key(self, api_key: str | None, **_kwargs: object) -> str:
-        return api_key or ""
+    @override
+    def get_api_key(self, api_key: str | None, **_kwargs: JsonValue) -> str:
+        return "" if api_key is None else api_key
 
-    def get_complete_url(
-        self,
-        api_base: str | None,
-        model: str,
-        api_version: str | None = None,
-    ) -> str:
-        return (api_base or "") + "/custom/" + model + "/" + (api_version or "none")
+    @override
+    def get_complete_url(self, api_base: str | None, model: str, api_version: str | None = None) -> str:
+        base = "" if api_base is None else api_base
+        return f"{base}/custom/{model}/{'none' if api_version is None else api_version}"
 
-    def get_transcription_session_url(
-        self,
-        api_base: str | None,
-        model: str,
-        api_version: str | None = None,
-    ) -> str:
-        return (api_base or "") + "/transcription/" + model + "/" + (api_version or "none")
+    @override
+    def get_transcription_session_url(self, api_base: str | None, model: str, api_version: str | None = None) -> str:
+        base = "" if api_base is None else api_base
+        return f"{base}/transcription/{model}/{'none' if api_version is None else api_version}"
 
-    def validate_environment(
-        self,
-        headers: dict[str, str],
-        model: str,
-        api_key: str | None = None,
-    ) -> dict[str, str]:
+    @override
+    def validate_environment(self, headers: dict[str, str], model: str, api_key: str | None = None) -> dict[str, str]:
         if model == "refuse":
             raise ValueError(REFUSED)
-        return {**headers, "api-key": api_key or "", "Content-Type": "application/json"}
+        key = "" if api_key is None else api_key
+        return {**headers, "api-key": key, "Content-Type": "application/json"}
 
-    def get_realtime_calls_url(
-        self,
-        api_base: str | None,
-        model: str,
-        api_version: str | None = None,
-    ) -> str:
-        return (api_base or "").rstrip("/") + "/calls/" + model + "/" + (api_version or "none")
+    @override
+    def get_realtime_calls_url(self, api_base: str | None, model: str, api_version: str | None = None) -> str:
+        base = ("" if api_base is None else api_base).rstrip("/")
+        return f"{base}/calls/{model}/{'none' if api_version is None else api_version}"
 
+    @override
     def get_realtime_calls_headers(self, ephemeral_key: str) -> dict[str, str]:
         return {"x-ephemeral": ephemeral_key}
 
@@ -143,7 +136,7 @@ def logging_fixture() -> Logging:
     )
 
 
-def provider_failure(error: BaseLLMException) -> Failure:
+def provider_failure(error: Exception) -> Failure:
     details = ProviderError.model_validate(error)
     return Failure(
         cls=type(error).__name__,
@@ -163,10 +156,6 @@ def masked_failure(error: httpx.HTTPStatusError) -> Failure:
     )
 
 
-def raw_failure(error: ValueError) -> Failure:
-    return Failure(cls=type(error).__name__, message=str(error), headers={})
-
-
 def answer(response: httpx.Response) -> Answer:
     return Answer(
         status=response.status_code,
@@ -177,7 +166,7 @@ def answer(response: httpx.Response) -> Answer:
 
 # The shared redaction masks the header values betterlite records, so the projection compares names
 def logged(log: Logging) -> Logged | None:
-    details = OBJECTS.validate_python(log.model_call_details)
+    details = OBJECTS.validate_python(log.model_call_details)  # type: ignore[misc]  # pyright: ignore[reportAny, reportUnknownArgumentType]  # LiteLLM types model_call_details as dict[str, Any]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L707
     if details is None:
         return None
     args = OBJECTS.validate_python(details.get("additional_args"))
@@ -233,12 +222,13 @@ def run_transport(call: TransportCall, api_base: str) -> Outcome:
     log = logging_fixture()
     try:
         response = asyncio.run(post(call, api_base, log))
-    except BaseLLMException as error:
+    except PROVIDER_ERROR as error:
         return Outcome(failure=provider_failure(error), logged=logged(log))
     except httpx.HTTPStatusError as error:
         return Outcome(failure=masked_failure(error), logged=logged(log))
     except ValueError as error:
-        return Outcome(failure=raw_failure(error), logged=logged(log))
+        failure = Failure(cls=type(error).__name__, message=str(error), headers={})
+        return Outcome(failure=failure, logged=logged(log))
     return Outcome(result=answer(response), logged=logged(log))
 
 

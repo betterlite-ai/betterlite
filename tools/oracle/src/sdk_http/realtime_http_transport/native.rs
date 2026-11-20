@@ -6,34 +6,22 @@ use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::vector_store_http_write::error::header_map;
 use betterlite_core::api::vector_store_http_write::service::LogContext;
 use betterlite_http::proxy::UpstreamResponse;
-use betterlite_logging::logging_pre_post::env::{
-    DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
-};
-use betterlite_logging::logging_privacy::request::Decision;
-use betterlite_logging::logging_state::correlation::{
-    CorrelationContext, CorrelationSettings, CorrelationSetup,
-};
-use betterlite_logging::logging_state::{LoggingInit, LoggingState};
+use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_provider::api::realtime_http_transport::TransportDeps;
 use betterlite_provider::api::realtime_http_transport::calls::{CallsCall, calls_post};
 use betterlite_provider::api::realtime_http_transport::decode::SdpError;
-use betterlite_provider::api::realtime_http_transport::error::{
-    ProviderError, RealtimeHttpError, StatusFailure,
-};
+use betterlite_provider::api::realtime_http_transport::error::RealtimeHttpError;
 use betterlite_provider::api::realtime_http_transport::session::{
     SessionCall, SessionEndpoint, session_post,
 };
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 
 use super::super::error::SdkHttpError;
 use super::super::result::kinds::SdkResult;
-use super::support::{AdapterConfig, source};
+use super::support::{AdapterConfig, Sink, logging_state, now, recording_env, source};
 use super::{Answer, Call, Failure, Handler, Logged, Outcome};
-
-const INIT: &str = r#"{"model":"realtime","call_type":"realtime","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
 
 // The production handlers over the mock's base: the same provider config, pooled client and pre-call a request runs
 pub(super) async fn execute(
@@ -75,26 +63,10 @@ pub(super) async fn execute(
     })
 }
 
-// The recording environment: the defaults a case brings, with content and key info off and the fixed clock
-fn recording_env<'env>(
-    redactor: &'env Redactor,
-    sink: &'env Sink,
-    now: DateTime<FixedOffset>,
-) -> PrePostEnv<'env> {
-    PrePostEnv {
-        debug: DebugSettings::default(),
-        globals: GlobalFlags::default(),
-        decision: Decision {
-            content: false,
-            key_info: false,
-        },
-        redactor,
-        log: sink,
-        input_callbacks: &[],
-        sentry: None,
-        logger_fn: None,
-        now,
-    }
+// The handler's one POST, with the provider config, pooled client and pre-call the production paths see
+enum Prepared<'call> {
+    Session(SessionCall<'call>),
+    Calls(CallsCall<'call>),
 }
 
 async fn exchange(
@@ -104,64 +76,47 @@ async fn exchange(
     caller_headers: &BTreeMap<String, String>,
     log: &mut LogContext<'_, '_>,
 ) -> Result<UpstreamResponse, RealtimeHttpError> {
-    if call.handler == Handler::Calls {
-        return calls(call, api_base, deps, caller_headers, log).await;
-    }
-    session(call, api_base, deps, caller_headers, log).await
-}
-
-async fn session(
-    call: &Call,
-    api_base: &str,
-    deps: &TransportDeps<'_, AdapterConfig>,
-    caller_headers: &BTreeMap<String, String>,
-    log: &mut LogContext<'_, '_>,
-) -> Result<UpstreamResponse, RealtimeHttpError> {
-    let endpoint = if call.handler == Handler::ClientSecrets {
-        SessionEndpoint::ClientSecrets
-    } else {
-        SessionEndpoint::TranscriptionSessions
-    };
     let data = call.request_data.clone().unwrap_or_default();
-    session_post(
-        deps,
-        &SessionCall {
-            endpoint,
-            api_base,
-            api_key: &call.api_key,
-            request_data: &data,
-            model: call.model.as_deref(),
-            extra_headers: Some(caller_headers),
-            api_version: call.api_version.as_deref(),
-            timeout: Some(Duration::from_secs(call.timeout_seconds)),
-        },
-        log,
-    )
-    .await
+    match prepare(call, &data, api_base, caller_headers) {
+        Prepared::Calls(inner) => calls_post(deps, &inner, log).await,
+        Prepared::Session(inner) => session_post(deps, &inner, log).await,
+    }
 }
 
-async fn calls(
-    call: &Call,
-    api_base: &str,
-    deps: &TransportDeps<'_, AdapterConfig>,
-    caller_headers: &BTreeMap<String, String>,
-    log: &mut LogContext<'_, '_>,
-) -> Result<UpstreamResponse, RealtimeHttpError> {
-    calls_post(
-        deps,
-        &CallsCall {
+fn prepare<'call>(
+    call: &'call Call,
+    data: &'call IndexMap<String, Json>,
+    api_base: &'call str,
+    headers: &'call BTreeMap<String, String>,
+) -> Prepared<'call> {
+    let timeout = Some(Duration::from_secs(call.timeout_seconds));
+    if call.handler == Handler::Calls {
+        return Prepared::Calls(CallsCall {
             api_base,
             ephemeral_key: call.ephemeral_key.as_deref().unwrap_or_default(),
             sdp: call.sdp.as_slice(),
             model: call.model.as_deref(),
             session: call.session.as_ref(),
-            extra_headers: Some(caller_headers),
+            extra_headers: Some(headers),
             api_version: call.api_version.as_deref(),
-            timeout: Some(Duration::from_secs(call.timeout_seconds)),
-        },
-        log,
-    )
-    .await
+            timeout,
+        });
+    }
+    let endpoint = if call.handler == Handler::ClientSecrets {
+        SessionEndpoint::ClientSecrets
+    } else {
+        SessionEndpoint::TranscriptionSessions
+    };
+    Prepared::Session(SessionCall {
+        endpoint,
+        api_base,
+        api_key: &call.api_key,
+        request_data: data,
+        model: call.model.as_deref(),
+        extra_headers: Some(headers),
+        api_version: call.api_version.as_deref(),
+        timeout,
+    })
 }
 
 // What both sides hand back: the raw answer, or the exception a caller would catch, plus the recorded pre-call
@@ -191,8 +146,20 @@ fn outcome(
 // A provider failure is the exception class a caller catches; anything betterlite alone produces is not a parity answer
 fn failure(error: &RealtimeHttpError) -> Result<Failure, SdkHttpError> {
     match error {
-        RealtimeHttpError::Provider(inner) => Ok(provider_failure(inner)),
-        RealtimeHttpError::Status(inner) => Ok(status_failure(inner)),
+        RealtimeHttpError::Provider(inner) => Ok(Failure {
+            class: String::from("BaseLLMException"),
+            status: Some(inner.status_code),
+            message: inner.message.clone(),
+            headers: inner.headers.clone(),
+            synthesized: Some(inner.status_code_is_synthesized),
+        }),
+        RealtimeHttpError::Status(inner) => Ok(Failure {
+            class: String::from("MaskedHTTPStatusError"),
+            status: Some(inner.status_code),
+            message: inner.message.clone(),
+            headers: inner.headers.clone(),
+            synthesized: None,
+        }),
         RealtimeHttpError::Sdp(inner) => sdp_failure(inner, error),
         RealtimeHttpError::Config(inner) => Ok(plain("ValueError", inner.to_string())),
         RealtimeHttpError::Timeout(_)
@@ -204,26 +171,6 @@ fn failure(error: &RealtimeHttpError) -> Result<Failure, SdkHttpError> {
         | RealtimeHttpError::HeaderValue { .. }
         | RealtimeHttpError::HeaderNotText { .. }
         | RealtimeHttpError::Encode(_) => Err(SdkHttpError::Invalid(error.to_string())),
-    }
-}
-
-fn provider_failure(error: &ProviderError) -> Failure {
-    Failure {
-        class: String::from("BaseLLMException"),
-        status: Some(error.status_code),
-        message: error.message.clone(),
-        headers: error.headers.clone(),
-        synthesized: Some(error.status_code_is_synthesized),
-    }
-}
-
-fn status_failure(error: &StatusFailure) -> Failure {
-    Failure {
-        class: String::from("MaskedHTTPStatusError"),
-        status: Some(error.status_code),
-        message: error.message.clone(),
-        headers: error.headers.clone(),
-        synthesized: None,
     }
 }
 
@@ -287,31 +234,4 @@ fn text(fields: &IndexMap<String, Json>, name: &str) -> Result<String, SdkHttpEr
         )));
     };
     Ok(value.clone())
-}
-
-struct Sink;
-
-impl LogSink for Sink {
-    fn emit(&self, _record: LogRecord) {}
-}
-
-fn now() -> Result<DateTime<FixedOffset>, SdkHttpError> {
-    DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00")
-        .map_err(|error| SdkHttpError::Invalid(error.to_string()))
-}
-
-fn logging_state(redactor: &Redactor) -> Result<LoggingState, SdkHttpError> {
-    let init: LoggingInit =
-        serde_json::from_str(INIT).map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
-    LoggingState::new(
-        init,
-        CorrelationSetup {
-            context: &mut CorrelationContext::default(),
-            settings: CorrelationSettings::default(),
-        },
-        redactor,
-        || String::from("generated"),
-        Duration::default,
-    )
-    .map_err(SdkHttpError::LoggingState)
 }

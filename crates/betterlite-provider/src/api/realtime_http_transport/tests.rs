@@ -203,6 +203,7 @@ struct Reply {
     status: u16,
     headers: &'static str,
     body: &'static [u8],
+    hold: bool,
 }
 
 fn ok_reply() -> Reply {
@@ -210,6 +211,7 @@ fn ok_reply() -> Reply {
         status: 200,
         headers: "",
         body: b"{}",
+        hold: false,
     }
 }
 
@@ -219,33 +221,38 @@ fn runtime() -> Runtime {
 }
 
 fn logging_state(redactor: &Redactor) -> LoggingState {
+    let init: LoggingInit = serde_json::from_str(INIT).unwrap();
+    let mut context = CorrelationContext::default();
+    let setup = CorrelationSetup {
+        context: &mut context,
+        settings: CorrelationSettings::default(),
+    };
     LoggingState::new(
-        serde_json::from_str::<LoggingInit>(INIT).unwrap(),
-        CorrelationSetup {
-            context: &mut CorrelationContext::default(),
-            settings: CorrelationSettings::default(),
-        },
+        init,
+        setup,
         redactor,
         || String::from("generated"),
-        Duration::default,
+        Duration::default(),
     )
     .unwrap()
 }
 
 fn logging_env(redactor: &Redactor) -> PrePostEnv<'_> {
+    let now = DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00").unwrap();
+    let decision = Decision {
+        content: false,
+        key_info: false,
+    };
     PrePostEnv {
         debug: DebugSettings::default(),
         globals: GlobalFlags::default(),
-        decision: Decision {
-            content: false,
-            key_info: false,
-        },
+        decision,
+        now,
         redactor,
         log: &SINK,
         input_callbacks: &[],
         sentry: None,
         logger_fn: None,
-        now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00").unwrap(),
     }
 }
 
@@ -311,6 +318,11 @@ async fn serve(std_listener: StdListener, replies: &[Reply]) -> Vec<Request> {
     for reply in replies {
         let (mut stream, _) = listener.accept().await.unwrap();
         let request = read_request(&mut stream).await;
+        requests.push(request);
+        if reply.hold {
+            sleep(Duration::from_millis(150)).await;
+            continue;
+        }
         let mut head = format!(
             "HTTP/1.1 {} X\r\ncontent-length: {}\r\n",
             reply.status,
@@ -323,7 +335,6 @@ async fn serve(std_listener: StdListener, replies: &[Reply]) -> Vec<Request> {
         head.push_str("connection: close\r\n\r\n");
         stream.write_all(head.as_bytes()).await.unwrap();
         stream.write_all(reply.body).await.unwrap();
-        requests.push(request);
     }
     requests
 }
@@ -344,28 +355,14 @@ where
     (api_base, output.0, output.1)
 }
 
-// A server that accepts and never answers, so the client's own deadline is what ends the send
-fn held<T, F>(run: F) -> T
-where
-    F: FnOnce(&str) -> T,
-{
-    let std_listener = StdListener::bind("127.0.0.1:0").unwrap();
-    std_listener.set_nonblocking(true).unwrap();
-    let address = std_listener.local_addr().unwrap();
-    thread::scope(|scope| {
-        let server = scope.spawn(move || {
-            runtime().block_on(async move {
-                let listener = TcpListener::from_std(std_listener).unwrap();
-                let (mut stream, _) = listener.accept().await.unwrap();
-                let mut chunk = [0_u8; 1024];
-                let _read = stream.read(&mut chunk).await;
-                sleep(Duration::from_millis(150)).await;
-            })
-        });
-        let output = run(&format!("http://{address}"));
-        server.join().unwrap();
-        output
-    })
+// A server that reads the request and never answers, so the client's own deadline is what ends the send
+fn held_reply() -> Reply {
+    Reply {
+        status: 200,
+        headers: "",
+        body: b"",
+        hold: true,
+    }
 }
 
 fn session_call<'call>(
@@ -443,6 +440,7 @@ fn session_posts_to_the_client_secrets_fallback() {
         status: 201,
         headers: "content-type: application/json\r\nx-test: kept",
         body: b"not json",
+        hold: false,
     }];
     let (_, requests, answers) = exchange(&replies, |base| {
         let trimmed = format!("{base}/v1/");
@@ -577,7 +575,7 @@ fn the_supplied_timeout_reaches_the_deadline() {
     let envelope = logging_env(&redactor);
     let source = test_source();
     let data = session_request();
-    let answer = held(|api_base| {
+    let (_, _, answer) = exchange(&[held_reply()], |api_base| {
         runtime().block_on(async {
             let deps = fallback_deps(&source, None, ApiLimits::default());
             let mut call = session_call(SessionEndpoint::ClientSecrets, api_base, &data);
@@ -621,6 +619,7 @@ fn a_status_without_a_config_is_the_masked_response() {
         status: 429,
         headers: "content-type: text/plain\r\nretry-after: 2\r\ncontent-encoding: gzip",
         body: b"slow",
+        hold: false,
     }];
     let (_, _, answers) = exchange(&replies, |api_base| {
         runtime().block_on(async {
@@ -666,6 +665,7 @@ fn a_bad_request_status_is_rejected() {
         status: 400,
         headers: "content-type: text/plain",
         body: b"bad",
+        hold: false,
     }];
     let (_, _, answers) = exchange(&replies, |api_base| {
         runtime().block_on(async {
@@ -697,6 +697,7 @@ fn a_masked_reply_body_that_is_not_utf8_is_counted() {
         status: 429,
         headers: "content-type: application/octet-stream",
         body: b"\xff\xfe",
+        hold: false,
     }];
     let (_, _, answers) = exchange(&replies, |api_base| {
         runtime().block_on(async {
@@ -734,6 +735,7 @@ fn a_reply_body_over_the_transport_limit_is_a_transport_error() {
         status: 200,
         headers: "content-type: text/plain",
         body: b"12345",
+        hold: false,
     }];
     let (_, _, answers) = exchange(&replies, |api_base| {
         runtime().block_on(async {
@@ -790,7 +792,7 @@ fn a_timeout_with_a_config_is_a_provider_timeout() {
     let source = test_source();
     let config = TestConfig::default();
     let data = session_request();
-    let answer = held(|api_base| {
+    let (_, _, answer) = exchange(&[held_reply()], |api_base| {
         runtime().block_on(async {
             let deps = TransportDeps {
                 config: Some(&config),
@@ -827,6 +829,7 @@ fn a_status_with_a_config_is_the_provider_error_class() {
         status: 429,
         headers: "content-type: text/plain\r\nretry-after: 2",
         body: b"slow",
+        hold: false,
     }];
     let (_, _, answers) = exchange(&replies, |api_base| {
         runtime().block_on(async {

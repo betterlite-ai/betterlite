@@ -2,6 +2,7 @@ use std::time::{Duration, Instant};
 
 use betterlite_core::api::realtime_contracts::config::BaseRealtimeHttpConfig;
 use betterlite_core::api::realtime_contracts::error::HeaderMap;
+use betterlite_core::api::vector_store_http_write::error::{FailureFacts, ResponseFacts};
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
@@ -9,11 +10,11 @@ use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json;
 use http::header::{HeaderName, HeaderValue};
 use http::{HeaderMap as HttpHeaders, Method};
+use serde_json::Number;
 use url::Url;
 
 use super::error::{
-    RealtimeHttpError, display_facts, provider_failure, status_facts, status_failure,
-    timeout_facts, timeout_failure,
+    RealtimeHttpError, display_facts, provider_failure, status_failure, timeout_failure,
 };
 
 pub(crate) struct WireRequest<'wire> {
@@ -93,7 +94,19 @@ fn rejected<C: BaseRealtimeHttpConfig>(
     let Some(provider) = config else {
         return RealtimeHttpError::Status(failure);
     };
-    RealtimeHttpError::Provider(provider_failure(provider, &status_facts(&failure)))
+    let facts = FailureFacts {
+        response_status: Some(i64::from(failure.status_code)),
+        status: Some(Json::Number(Number::from(failure.status_code))),
+        text: Some(failure.message.clone()),
+        headers: None,
+        response: Some(ResponseFacts {
+            status_code: i64::from(failure.status_code),
+            text: Some(failure.message.clone()),
+            headers: Some(failure.headers.clone()),
+        }),
+        display: String::new(),
+    };
+    RealtimeHttpError::Provider(provider_failure(provider, &facts))
 }
 
 fn failed<C: BaseRealtimeHttpConfig>(
@@ -119,5 +132,13 @@ fn failed<C: BaseRealtimeHttpConfig>(
     let Some(provider) = config else {
         return RealtimeHttpError::Timeout(failure);
     };
-    RealtimeHttpError::Provider(provider_failure(provider, &timeout_facts(&failure.message)))
+    let facts = FailureFacts {
+        response_status: None,
+        status: Some(Json::Number(Number::from(408_u16))),
+        text: Some(failure.message.clone()),
+        headers: Some(HeaderMap::new()),
+        response: None,
+        display: String::new(),
+    };
+    RealtimeHttpError::Provider(provider_failure(provider, &facts))
 }

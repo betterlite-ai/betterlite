@@ -5,14 +5,13 @@ use std::time::Duration;
 use betterlite_core::api::realtime_contracts::config::{BaseRealtimeHttpConfig, ErrorInfo};
 use betterlite_core::api::realtime_contracts::error::HeaderMap;
 use betterlite_core::api::vector_store_http_write::error::{
-    ClientError, FailureFacts, ResponseFacts, handle_error, header_map,
+    ClientError, FailureFacts, handle_error, header_map,
 };
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_models::decisions::Json;
 use http::header::{InvalidHeaderName, InvalidHeaderValue};
-use serde_json::Number;
 use thiserror::Error;
 
 use super::decode::SdpError;
@@ -119,32 +118,6 @@ pub(crate) fn status_failure(answer: &UpstreamResponse) -> StatusFailure {
         status_code: answer.status,
         message: body_text(&answer.body),
         headers,
-    }
-}
-
-pub(crate) fn status_facts(failure: &StatusFailure) -> FailureFacts {
-    FailureFacts {
-        response_status: Some(i64::from(failure.status_code)),
-        status: Some(Json::Number(Number::from(failure.status_code))),
-        text: Some(failure.message.clone()),
-        headers: None,
-        response: Some(ResponseFacts {
-            status_code: i64::from(failure.status_code),
-            text: Some(failure.message.clone()),
-            headers: Some(failure.headers.clone()),
-        }),
-        display: String::new(),
-    }
-}
-
-pub(crate) fn timeout_facts(message: &str) -> FailureFacts {
-    FailureFacts {
-        response_status: None,
-        status: Some(Json::Number(Number::from(408_u16))),
-        text: Some(message.to_owned()),
-        headers: Some(HeaderMap::new()),
-        response: None,
-        display: String::new(),
     }
 }
 
