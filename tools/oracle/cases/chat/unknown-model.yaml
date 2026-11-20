@@ -14,6 +14,4 @@ compare:
   headers: [content-type, x-litellm-call-id]
   headers_present: []
   upstream_headers: []
-  ignore:
-    - {pointer: /error/message, why: betterlite writes its own message}
-    - {pointer: /error/provider_specific_fields/error, why: LiteLLM repeats its own message there}
+  ignore: []

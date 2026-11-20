@@ -1,0 +1,9 @@
+task: B1224
+deviations:
+  - what: Nonempty valid model_max_budget maps work without an enterprise license.
+    why: README no-paid-tier decision; the MIT build runs the same BudgetConfig validation LiteLLM only reaches for premium_user, and model_budget_without_license_is_allowed proves that branch without the license gate.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L7817-L7838
+  - what: Key alias validation rejects ASCII spaces, even when no alias pattern and no format toggle would otherwise restrict the alias.
+    why: The always-on unsafe-name check is B4410's raise_if_unsafe_secret_name, and B4410 rejects spaces by requirement; this component calls it unchanged, so the alias path inherits that rule.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/base_secret_manager.py#L9-L21
+kept_bugs: []
