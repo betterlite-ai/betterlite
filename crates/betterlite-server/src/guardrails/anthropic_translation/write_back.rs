@@ -52,7 +52,7 @@ pub fn write_back_message_text(
     match target {
         MessageTextTarget::MessageContent { .. } => {
             if let Value::String(slot) = content {
-                *slot = response.to_owned();
+                response.clone_into(slot);
             }
         }
         MessageTextTarget::ContentBlockText { content_idx, .. } => {

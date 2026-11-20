@@ -1,4 +1,8 @@
 #![cfg(test)]
+#![expect(
+    clippy::disallowed_methods,
+    reason = "serde_json test fixtures built with json! are concise and type-directed"
+)]
 
 use rstest::rstest;
 use serde_json::{Map, Value, json};
@@ -325,12 +329,7 @@ fn responses_to_input_errors_when_the_message_is_missing(#[case] mut data: Value
     }];
     let error =
         apply_responses_to_input(fields(&mut data), &["X".to_owned()], &scanned).unwrap_err();
-    assert_eq!(
-        error,
-        WriteBackError::TargetMissing {
-            target: target.clone()
-        }
-    );
+    assert_eq!(error, WriteBackError::TargetMissing { target });
 }
 
 #[test]

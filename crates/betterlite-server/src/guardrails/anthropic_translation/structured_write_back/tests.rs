@@ -1,4 +1,8 @@
 #![cfg(test)]
+#![expect(
+    clippy::disallowed_methods,
+    reason = "serde_json test fixtures built with json! are concise and type-directed"
+)]
 
 use rstest::rstest;
 use serde_json::{Map, Value, json};
@@ -41,8 +45,8 @@ fn user_turn(text: &str) -> Value {
     json!({"role": "user", "content": [{"type": "text", "text": text}]})
 }
 
-fn anthropic_row(message: Value) -> Option<Value> {
-    system_row_to_anthropic(&message).map(Value::Object)
+fn anthropic_row(message: &Value) -> Option<Value> {
+    system_row_to_anthropic(message).map(Value::Object)
 }
 
 #[tokio::test]
@@ -84,7 +88,7 @@ async fn hoisting_returns_none_for_a_missing_or_empty_system(#[case] raw: &str) 
 #[test]
 fn system_conversion_keeps_a_non_empty_string() {
     assert_eq!(
-        anthropic_row(json!({"role": "system", "content": "keep"})),
+        anthropic_row(&json!({"role": "system", "content": "keep"})),
         Some(json!({"role": "system", "content": "keep"}))
     );
 }
@@ -92,7 +96,7 @@ fn system_conversion_keeps_a_non_empty_string() {
 #[test]
 fn system_conversion_returns_none_for_an_empty_string() {
     assert_eq!(
-        anthropic_row(json!({"role": "system", "content": ""})),
+        anthropic_row(&json!({"role": "system", "content": ""})),
         None
     );
 }
@@ -104,7 +108,7 @@ fn system_conversion_returns_none_for_an_empty_string() {
 #[case::object(json!({"role": "system", "content": {"text": "x"}}))]
 #[test]
 fn system_conversion_returns_none_for_content_of_another_type(#[case] message: Value) {
-    assert_eq!(anthropic_row(message), None);
+    assert_eq!(anthropic_row(&message), None);
 }
 
 #[test]
@@ -117,7 +121,7 @@ fn system_conversion_keeps_only_text_blocks_and_copies_cache_control() {
         {"type": "text"}
     ]});
     assert_eq!(
-        anthropic_row(message),
+        anthropic_row(&message),
         Some(json!({"role": "system", "content": [
             {"type": "text", "text": "keep", "cache_control": {"type": "ephemeral"}}
         ]}))
@@ -130,7 +134,7 @@ fn system_conversion_returns_none_when_no_block_survives() {
         {"type": "image", "source": {"type": "url", "url": "https://example.test/i.png"}},
         {"type": "text", "text": ""}
     ]});
-    assert_eq!(anthropic_row(message), None);
+    assert_eq!(anthropic_row(&message), None);
 }
 
 #[test]
@@ -148,7 +152,7 @@ fn system_conversion_judges_cache_control_by_truthiness() {
         {"type": "text", "text": "true", "cache_control": true}
     ]});
     assert_eq!(
-        anthropic_row(message),
+        anthropic_row(&message),
         Some(json!({"role": "system", "content": [
             {"type": "text", "text": "one", "cache_control": 1_i64},
             {"type": "text", "text": "number", "cache_control": 2.5_f64},
