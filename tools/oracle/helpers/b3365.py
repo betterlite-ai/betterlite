@@ -1,7 +1,7 @@
 import asyncio
 import datetime as dt
-from collections.abc import Awaitable, Coroutine
-from typing import Final, Literal, TypeAlias, TypedDict, TypeVar
+from collections.abc import Coroutine
+from typing import Final, Literal, TypeAlias, TypedDict
 
 import httpx
 import litellm
@@ -90,7 +90,10 @@ class Scripted:
 
 
 Client: TypeAlias = HTTPHandler | AsyncHTTPHandler
-Record = TypeVar("Record", ContainerObject, DeleteContainerResult)
+ContainerAnswer: TypeAlias = ContainerObject | Coroutine[object, object, ContainerObject]
+DeletionAnswer: TypeAlias = (
+    DeleteContainerResult | Coroutine[object, object, DeleteContainerResult]
+)
 
 
 class HandlerArguments(TypedDict):
@@ -131,15 +134,6 @@ def make_logging() -> RecordingLogging:
     )
 
 
-def settle(answer: Record | Awaitable[Record]) -> Record:
-    match answer:
-        case Coroutine():
-            with asyncio.Runner() as runner:
-                return runner.run(answer)
-        case object():
-            return answer
-
-
 def container_arguments(call: Input, logging: Logging, client: Client) -> HandlerArguments:
     return {
         "container_id": call["container_id"],
@@ -159,10 +153,20 @@ def container_arguments(call: Input, logging: Logging, client: Client) -> Handle
 def container_result(call: Input, logging: Logging, client: Client) -> JsonValue:
     arguments = container_arguments(call, logging, client)
     if call["operation"] == "retrieve":
-        retrieved = settle(HANDLER.container_retrieve_handler(**arguments))
-        return ok_outcome(container_json(retrieved))
-    deleted = settle(HANDLER.container_delete_handler(**arguments))
-    return ok_outcome(deletion_json(deleted))
+        retrieved: ContainerAnswer = HANDLER.container_retrieve_handler(**arguments)
+        match retrieved:
+            case Coroutine():
+                with asyncio.Runner() as runner:
+                    return ok_outcome(container_json(runner.run(retrieved)))
+            case object():
+                return ok_outcome(container_json(retrieved))
+    deleted: DeletionAnswer = HANDLER.container_delete_handler(**arguments)
+    match deleted:
+        case Coroutine():
+            with asyncio.Runner() as runner:
+                return ok_outcome(deletion_json(runner.run(deleted)))
+        case object():
+            return ok_outcome(deletion_json(deleted))
 
 
 def ok_outcome(record: JsonValue) -> JsonValue:
