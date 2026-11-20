@@ -180,6 +180,7 @@ fn plan_uses_seven_days_by_default(#[case] frequency: Option<&str>) {
 #[case::one_day("1d", 1, 82_800)]
 #[case::two_days("2d", 2, 169_200)]
 #[case::uppercase_unit("7D", 7, 601_200)]
+#[case::plus_sign("+7d", 7, 601_200)]
 fn plan_computes_the_weekly_lock_ttl(
     #[case] frequency: &str,
     #[case] days: u32,

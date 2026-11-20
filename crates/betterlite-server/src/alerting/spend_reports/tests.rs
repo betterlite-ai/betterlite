@@ -484,6 +484,7 @@ async fn weekly_report_logs_an_invalid_time_range_and_sends_nothing(#[case] time
 #[rstest]
 #[case::lowercase("7d", 7)]
 #[case::uppercase("7D", 7)]
+#[case::plus_sign("+7d", 7)]
 #[case::zero("0d", 0)]
 #[case::padded("007d", 7)]
 fn weekly_time_range_parses_the_day_count(#[case] text: &str, #[case] days: u32) {
