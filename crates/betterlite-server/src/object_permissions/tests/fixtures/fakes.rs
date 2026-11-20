@@ -1,5 +1,6 @@
 use std::future::{Future, ready};
 use std::sync::Mutex;
+use std::sync::PoisonError;
 use std::time::Duration;
 
 use betterlite_auth::auth_pubsub::endpoint::{
@@ -29,7 +30,7 @@ impl LocalEviction for RecordingEviction {
     fn apply(&self, invalidation: Invalidation) -> Result<(), CacheError> {
         self.keys
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(PoisonError::into_inner)
             .push(invalidation.cache_key.clone());
         if !self.fail {
             return Ok(());
