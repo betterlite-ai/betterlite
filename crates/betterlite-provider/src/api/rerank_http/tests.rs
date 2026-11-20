@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+mod failures;
+
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -16,10 +18,10 @@ use betterlite_logging::logging_pre_post::env::{
 };
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_logging::logging_privacy::request::Decision;
+use betterlite_logging::logging_state::LoggingState;
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
-use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::rerank_contracts::records::RerankResponse;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
@@ -96,30 +98,30 @@ struct Fixture {
     now: DateTime<FixedOffset>,
 }
 
-impl Fixture {
-    fn new() -> Self {
-        let init: LoggingInit = parses(INIT);
+impl Default for Fixture {
+    fn default() -> Self {
         let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds");
-        let state = LoggingState::new(
-            init,
-            CorrelationSetup {
-                context: &mut CorrelationContext::default(),
-                settings: CorrelationSettings::default(),
-            },
-            &redactor,
-            || String::from("generated"),
-            Duration::default,
-        )
-        .expect("the logging state builds");
         Self {
+            state: LoggingState::new(
+                parses(INIT),
+                CorrelationSetup {
+                    context: &mut CorrelationContext::default(),
+                    settings: CorrelationSettings::default(),
+                },
+                &redactor,
+                || String::from("generated"),
+                Duration::default,
+            )
+            .expect("the logging state builds"),
             redactor,
             sink: Sink,
-            state,
             now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00")
                 .expect("the clock parses"),
         }
     }
+}
 
+impl Fixture {
     async fn rerank<C, S>(
         &mut self,
         deps: RerankDeps<'_, C, S>,
@@ -178,6 +180,24 @@ enum Refusal {
     Validate,
     Transform,
     Response,
+    Url,
+    Header,
+    PreCall,
+}
+
+impl Refusal {
+    // only the response transformer refuses after the send; every other refusal stops the call before one
+    fn sent(self) -> usize {
+        match self {
+            Refusal::Response => 1,
+            Refusal::None
+            | Refusal::Validate
+            | Refusal::Transform
+            | Refusal::Url
+            | Refusal::Header
+            | Refusal::PreCall => 0,
+        }
+    }
 }
 
 #[derive(Debug, Error)]
@@ -517,7 +537,7 @@ impl Bench {
             supplied,
             pooled,
             events,
-            fixture: Fixture::new(),
+            fixture: Fixture::default(),
             optional: params(r#"{"query": "hi", "documents": ["a"]}"#),
             key: SecretString::from(String::from("sk-caller")),
             model_response: response(
@@ -526,6 +546,19 @@ impl Bench {
             supplied_kind: ClientKind::Sync,
             use_supplied: true,
         }
+    }
+
+    // each refusal injects its failure where the matching production hook would hit it
+    fn refusing(refusal: Refusal) -> Self {
+        let mut bench = Self::new();
+        bench.config.refusal = refusal;
+        match refusal {
+            Refusal::Url => bench.config.base = String::from("not a url"),
+            Refusal::Header => bench.config.bad_header = true,
+            Refusal::PreCall => bench.fixture.state.request_logging.raw_request_only = true,
+            Refusal::None | Refusal::Validate | Refusal::Transform | Refusal::Response => {}
+        }
+        bench
     }
 
     async fn run(
@@ -600,7 +633,7 @@ async fn rerank_http_payload() {
         model_response: model_response.clone(),
         logging: &mut logging,
     };
-    let mut fixture = Fixture::new();
+    let mut fixture = Fixture::default();
     let deps = RerankDeps {
         config: &config,
         source: &source,
@@ -730,7 +763,7 @@ async fn rerank_http_execution_order() {
     client_selection().await;
     timeout_forwarding().await;
     missing_query_logs_empty().await;
-    failures_before_the_send().await;
+    failures::before_the_send().await;
 }
 
 async fn execution_order(is_async: Json) {
@@ -816,173 +849,6 @@ async fn missing_query_logs_empty() {
         .await
         .expect("the rerank succeeds");
     assert_eq!(bench.fixture.input(), Some(&Json::Text(String::new())));
-}
-
-async fn failures_before_the_send() {
-    validate_failure().await;
-    transform_failure().await;
-    pre_call_failure().await;
-    invalid_base_before_the_send().await;
-    invalid_header_before_the_send().await;
-}
-
-// LiteLLM lets httpx reject a bad URL or header and turns the exception into a synthesized 500 provider error
-async fn invalid_base_before_the_send() {
-    let mut bench = Bench::new();
-    bench.config.base = String::from("not a url");
-    let mut logging = RerankLogging::default();
-    let outcome = bench.run(Json::Bool(false), None, &mut logging).await;
-    assert!(matches!(outcome, Err(RerankHttpError::RequestUrl { .. })));
-    assert_eq!(supplied_sent(&bench).len(), 0);
-    assert!(bench.config.errors().is_empty());
-}
-
-async fn invalid_header_before_the_send() {
-    let mut bench = Bench::new();
-    bench.config.bad_header = true;
-    let mut logging = RerankLogging::default();
-    let outcome = bench.run(Json::Bool(false), None, &mut logging).await;
-    assert!(matches!(outcome, Err(RerankHttpError::HeaderValue { .. })));
-    assert_eq!(supplied_sent(&bench).len(), 0);
-    assert!(bench.config.errors().is_empty());
-}
-
-async fn validate_failure() {
-    let mut bench = Bench::new();
-    bench.config.refusal = Refusal::Validate;
-    let mut logging = RerankLogging::default();
-    let outcome = bench.run(Json::Bool(false), None, &mut logging).await;
-    assert!(matches!(
-        outcome,
-        Err(RerankHttpError::Config(ConfigError::Validate))
-    ));
-    assert_eq!(supplied_sent(&bench).len(), 0);
-    assert!(bench.config.errors().is_empty());
-}
-
-async fn transform_failure() {
-    let mut bench = Bench::new();
-    bench.config.refusal = Refusal::Transform;
-    let mut logging = RerankLogging::default();
-    let outcome = bench.run(Json::Bool(false), None, &mut logging).await;
-    assert!(matches!(
-        outcome,
-        Err(RerankHttpError::Config(ConfigError::Transform))
-    ));
-    assert_eq!(supplied_sent(&bench).len(), 0);
-    assert!(bench.config.errors().is_empty());
-}
-
-async fn pre_call_failure() {
-    let mut bench = Bench::new();
-    bench.fixture.state.request_logging.raw_request_only = true;
-    let mut logging = RerankLogging::default();
-    let outcome = bench.run(Json::Bool(false), None, &mut logging).await;
-    assert!(matches!(
-        outcome,
-        Err(RerankHttpError::Logging(PrePostError::RawRequestCaptured))
-    ));
-    assert_eq!(supplied_sent(&bench).len(), 0);
-    assert!(bench.config.errors().is_empty());
-}
-
-#[tokio::test]
-async fn rerank_http_provider_failure() {
-    let mut bench = Bench::new();
-    bench.supplied.reply = Reply::json(429, "slow").with_header("retry-after", "2");
-    let mut logging = RerankLogging::default();
-    let outcome = bench.run(Json::Bool(false), None, &mut logging).await;
-    let Err(RerankHttpError::Provider(error)) = outcome else {
-        panic!("the 429 becomes the provider error the config builds");
-    };
-    assert_eq!(error.status_code, 429);
-    assert_eq!(error.message, "rerank:slow");
-    let expected = HeaderMap::from([
-        ("content-length".to_owned(), Json::Text(String::from("4"))),
-        ("retry-after".to_owned(), Json::Text(String::from("2"))),
-    ]);
-    assert_eq!(error.headers, expected);
-    assert_eq!(
-        bench.config.errors(),
-        vec![(String::from("slow"), 429, expected)]
-    );
-    assert_eq!(supplied_sent(&bench).len(), 1);
-    assert_eq!(
-        bench.events.recorded(),
-        vec!["validate", "url", "transform", "pre_call", "post"]
-    );
-    response_transform_outside_conversion().await;
-    send_failure_conversion().await;
-}
-
-async fn response_transform_outside_conversion() {
-    let mut bench = Bench::new();
-    bench.config.refusal = Refusal::Response;
-    let mut logging = RerankLogging::default();
-    let outcome = bench.run(Json::Bool(false), None, &mut logging).await;
-    assert!(matches!(
-        outcome,
-        Err(RerankHttpError::Config(ConfigError::Response))
-    ));
-    assert_eq!(supplied_sent(&bench).len(), 1);
-    assert!(bench.config.errors().is_empty());
-}
-
-async fn send_failure_conversion() {
-    let mut bench = Bench::new();
-    bench.supplied.fail(RerankSendError::Failed {
-        message: String::from("connection refused"),
-    });
-    let mut logging = RerankLogging::default();
-    let outcome = bench.run(Json::Bool(false), None, &mut logging).await;
-    let Err(RerankHttpError::Provider(error)) = outcome else {
-        panic!("a failed send becomes the provider error");
-    };
-    assert_eq!(error.status_code, 500);
-    assert_eq!(error.message, "rerank:connection refused");
-    assert_eq!(
-        bench.config.errors(),
-        vec![(String::from("connection refused"), 500, HeaderMap::new())]
-    );
-    assert!(
-        !bench
-            .events
-            .recorded()
-            .contains(&String::from("response_transform"))
-    );
-}
-
-async fn timeout_conversion(is_async: Json, expected: &str) {
-    let mut bench = Bench::new();
-    bench.supplied_kind = if is_async == Json::Bool(true) {
-        ClientKind::Asynchronous
-    } else {
-        ClientKind::Sync
-    };
-    bench.supplied.fail(RerankSendError::Timeout);
-    let mut logging = RerankLogging::default();
-    let outcome = bench
-        .run(is_async, Some(Duration::from_secs(5)), &mut logging)
-        .await;
-    let Err(RerankHttpError::Provider(error)) = outcome else {
-        panic!("a timeout becomes the provider error");
-    };
-    assert_eq!(error.status_code, 408);
-    assert!(error.message.starts_with(expected));
-}
-
-#[tokio::test]
-async fn rerank_http_timeout_messages() {
-    timeout_conversion(
-        Json::Bool(false),
-        "rerank:litellm.Timeout: Connection timed out after 5 seconds.",
-    )
-    .await;
-    timeout_conversion(
-        Json::Bool(true),
-        "rerank:litellm.Timeout: Connection timed out. Timeout passed=5, time taken=",
-    )
-    .await;
 }
 
 #[test]
