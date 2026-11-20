@@ -9,7 +9,6 @@ pub mod decode;
 pub mod error;
 pub(crate) mod send;
 pub mod session;
-#[cfg(test)]
 mod tests;
 
 // The HTTP client the handlers reach, the provider config that names the endpoint, and the API body cap the SDP decoder enforces
