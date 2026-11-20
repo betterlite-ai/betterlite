@@ -62,12 +62,31 @@ pub(crate) struct Fixture {
     pub(crate) providers: JSONProviderRegistry,
     pub(crate) generalizations: CatalogGeneralizations,
 }
+// LiteLLM's model_cost dict keeps an explicit null price, while the typed catalog rejects one; the raw registry and cost map still see what the case supplies.
+fn catalog_view(cost: &JsonObject) -> JsonObject {
+    let mut stripped = JsonObject::new();
+    for (name, entry) in cost {
+        let Json::Object(fields) = entry else {
+            stripped.insert(name.clone(), entry.clone());
+            continue;
+        };
+        let kept: JsonObject = fields
+            .iter()
+            .filter(|(_, value)| !matches!(value, Json::Null))
+            .map(|(field, value)| (field.clone(), value.clone()))
+            .collect();
+        stripped.insert(name.clone(), Json::Object(kept));
+    }
+    stripped
+}
 impl Fixture {
     pub(crate) fn new(cost: &JsonObject) -> Result<Self, Failure> {
         let bytes = serde_json::to_vec(cost).map_err(|error| Failure(error.to_string()))?;
+        let catalog_bytes =
+            serde_json::to_vec(&catalog_view(cost)).map_err(|error| Failure(error.to_string()))?;
         let (generalizations, _warnings) = CatalogGeneralizations::install(Vec::new());
         let map = ModelCostMap::parse(&bytes).map_err(|error| Failure(error.to_string()))?;
-        let catalog = ModelCatalog::parse(&bytes, UnknownFields::Warn)
+        let catalog = ModelCatalog::parse(&catalog_bytes, UnknownFields::Warn)
             .map_err(|error| Failure(error.to_string()))?;
         let registry = ModelRegistry {
             model_cost: cost.clone(),
