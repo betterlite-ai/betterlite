@@ -49,32 +49,49 @@ pub fn decode_request_metadata(bytes: &[u8]) -> Result<TypedValue, DecodeError> 
             limit: MAX_METADATA_BYTES,
         });
     }
-    let json = serde_json::from_slice::<Json>(bytes)
-        .map_err(|source| DecodeError::Malformed { source })?;
-    if container_depth(&json) > MAX_METADATA_DEPTH {
+    if byte_depth(bytes) > MAX_METADATA_DEPTH {
         return Err(DecodeError::TooDeep {
             limit: MAX_METADATA_DEPTH,
         });
     }
+    let json = serde_json::from_slice::<Json>(bytes)
+        .map_err(|source| DecodeError::Malformed { source })?;
     Ok(TypedValue { json })
 }
 
-// Counts container nesting only, so a scalar at the innermost level does not push the document over the bound
-fn container_depth(value: &Json) -> usize {
-    let mut pending = vec![(value, 0_usize)];
-    let mut deepest = 0;
-    while let Some((node, depth)) = pending.pop() {
-        let next = depth.saturating_add(1);
-        match node {
-            Json::List(items) => {
-                pending.extend(items.iter().map(|item| (item, next)));
-                deepest = deepest.max(next);
+// Counts container nesting in the raw bytes, so a document past the bound is refused before the parser
+// recurses into it; brackets inside a JSON string are text, and an escaped quote does not end the string.
+fn byte_depth(bytes: &[u8]) -> usize {
+    let mut depth = 0_usize;
+    let mut deepest = 0_usize;
+    let mut quoted = false;
+    let mut escaped = false;
+    for &byte in bytes {
+        if quoted {
+            if escaped {
+                escaped = false;
+                continue;
             }
-            Json::Object(fields) => {
-                pending.extend(fields.values().map(|field| (field, next)));
-                deepest = deepest.max(next);
+            if byte == b'\\' {
+                escaped = true;
+                continue;
             }
-            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => {}
+            if byte == b'"' {
+                quoted = false;
+            }
+            continue;
+        }
+        if byte == b'"' {
+            quoted = true;
+            continue;
+        }
+        if byte == b'[' || byte == b'{' {
+            depth = depth.saturating_add(1);
+            deepest = deepest.max(depth);
+            continue;
+        }
+        if byte == b']' || byte == b'}' {
+            depth = depth.saturating_sub(1);
         }
     }
     deepest

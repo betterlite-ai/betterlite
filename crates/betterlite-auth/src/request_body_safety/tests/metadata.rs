@@ -53,6 +53,24 @@ fn metadata_depth_limit() {
     );
     decode_request_metadata(at_limit.as_bytes()).expect("the depth bound itself parses");
 
+    // brackets inside a string are text, and an escaped quote does not end the string early
+    let quoted = format!(
+        r#"{{"value": "a\"b", "note": "{}"}}"#,
+        "[".repeat(MAX_METADATA_DEPTH + 1)
+    );
+    decode_request_metadata(quoted.as_bytes())
+        .expect("brackets inside a string are not containers");
+    // a string does not hide the container nesting that follows it
+    let after_string = format!(
+        r#"{{"value": "a\"b", "nested": {}1{}}}"#,
+        "[".repeat(MAX_METADATA_DEPTH + 1),
+        "]".repeat(MAX_METADATA_DEPTH + 1)
+    );
+    assert!(matches!(
+        decode_request_metadata(after_string.as_bytes()),
+        Err(DecodeError::TooDeep { .. })
+    ));
+
     let fixture = Fixture::default();
     let error = fixture
         .check(&metadata_body(Json::Text(deep)), "model")
