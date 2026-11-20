@@ -1,17 +1,14 @@
 use std::collections::BTreeMap;
-use std::future;
+use std::future::ready;
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::sections::openai_credentials::Settings as OpenAiCredentialsSettings;
 use betterlite_config::tls::TlsPolicy;
 use betterlite_config::types::{Config, ProxyTrust};
 use betterlite_context::resource_config_selection::vector_stores::VectorStoresConfigTag;
-use betterlite_core::api::vector_search_execution::config::{
-    EmbeddingEntry, Params, QueryEmbeddingExecutor, SearchConfig, StoreFailure,
-};
+use betterlite_core::api::vector_search_execution::config::{Params, SearchConfig};
 use betterlite_core::api::vector_search_execution::openai::OpenAiSearchConfig;
 use betterlite_core::api::vector_search_execution::service::signing::{
     SignFuture, SignInput, SignedSearch, SigningSeam,
@@ -23,9 +20,6 @@ use betterlite_core::api::vector_store_http_write::error::ClientError;
 use betterlite_core::api::vector_store_http_write::service::ClientSource;
 use betterlite_core::api::vector_store_registry::store::{
     VectorStoreCredentials, VectorStoreRegistry,
-};
-use betterlite_core::api::vector_store_search::executor::{
-    EmbeddingExecutorSource, SelectedExecutor,
 };
 use betterlite_core::api::vector_store_search::service::{
     OptionalParamFilters, VectorStoreConfigs,
@@ -43,20 +37,10 @@ use betterlite_logging::logging_state::correlation::{
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
-use betterlite_openai::api::vector_store_records::records::vector::{
-    LiteLlmManagedVectorStore, VectorStoreCreateResponse, VectorStoreSearchResponse,
-};
+use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
 use betterlite_openai::credentials::LiteLlmGlobals;
-use betterlite_openai::embedding::EmbeddingResponse;
-use betterlite_provider::api::vector_store_contracts::config::{
-    AuthCredentials, EndpointsByType, PreparedRequest, SearchRequest, VectorStoreConfig,
-    VectorStoreLogging, VectorStoreResponse,
-};
-use betterlite_provider::api::vector_store_contracts::error::VectorStoreContractError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use betterlite_transcribe::vector_store_contracts::filters::{
-    requested_create_params, requested_search_params,
-};
+use betterlite_transcribe::vector_store_contracts::filters::requested_create_params;
 use chrono::{DateTime, FixedOffset};
 use secrecy::SecretString;
 
@@ -96,26 +80,9 @@ pub(super) fn source(
     })
 }
 
-pub(super) struct Sink;
-
-impl LogSink for Sink {
-    fn emit(&self, _record: LogRecord) {}
-}
-
-// OpenAIVectorStoreConfig doesn't sign with AWS, so the async handler's seam signs inline as the sync handler does
-pub(super) struct Inline;
-
-impl SigningSeam for Inline {
-    fn sign(&self, config: Arc<dyn SearchConfig>, request: SignInput) -> SignFuture<'_> {
-        let signed: SignedSearch = config.sign_request(request.request());
-        Box::pin(future::ready(Ok(signed)))
-    }
-}
-
-// The pre-call a production request runs: the same state a request would log through, with nothing attached to it
+// The pre-call a production request runs, and OpenAIVectorStoreConfig's inline signing, over one case
 pub(super) struct Assets {
-    redactor: Redactor,
-    sink: Sink,
+    pub(super) redactor: Redactor,
     now: DateTime<FixedOffset>,
 }
 
@@ -124,15 +91,7 @@ impl Assets {
         let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SdkHttpError::Redactor)?;
         let now = DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00")
             .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
-        Ok(Self {
-            redactor,
-            sink: Sink,
-            now,
-        })
-    }
-
-    pub(super) fn redactor(&self) -> &Redactor {
-        &self.redactor
+        Ok(Self { redactor, now })
     }
 
     // LiteLLM always starts the SDK call from model "vector-store" and the operation's call_type
@@ -164,12 +123,23 @@ impl Assets {
                 key_info: false,
             },
             redactor: &self.redactor,
-            log: &self.sink,
+            log: self,
             input_callbacks: &[],
             sentry: None,
             logger_fn: None,
             now: self.now,
         }
+    }
+}
+
+impl LogSink for Assets {
+    fn emit(&self, _record: LogRecord) {}
+}
+
+impl SigningSeam for Assets {
+    fn sign(&self, config: Arc<dyn SearchConfig>, request: SignInput) -> SignFuture<'_> {
+        let signed: SignedSearch = config.sign_request(request.request());
+        Box::pin(ready(Ok(signed)))
     }
 }
 
@@ -190,53 +160,37 @@ impl Configs {
 
 impl VectorStoreConfigs for Configs {
     fn create_config(&self, tag: VectorStoresConfigTag) -> Option<Box<dyn CreateReadConfig + '_>> {
-        match tag {
-            VectorStoresConfigTag::OpenAI => Some(Box::new(OpenAiCreateReadConfig::new(
-                &self.credentials,
-                LiteLlmGlobals::default(),
-                self.env_api_key.clone(),
-                None,
-            ))),
-            VectorStoresConfigTag::AzureOpenAI
-            | VectorStoresConfigTag::Vertex
-            | VectorStoresConfigTag::VertexSearchAPI
-            | VectorStoresConfigTag::Bedrock
-            | VectorStoresConfigTag::PGVector
-            | VectorStoresConfigTag::AzureAI
-            | VectorStoresConfigTag::Milvus
-            | VectorStoresConfigTag::Gemini
-            | VectorStoresConfigTag::RAGFlow
-            | VectorStoresConfigTag::S3Vectors
-            | VectorStoresConfigTag::Valkey
-            | VectorStoresConfigTag::MongoDB => None,
+        if !matches!(tag, VectorStoresConfigTag::OpenAI) {
+            return None;
         }
+        Some(Box::new(OpenAiCreateReadConfig::new(
+            &self.credentials,
+            LiteLlmGlobals::default(),
+            self.env_api_key.clone(),
+            None,
+        )))
     }
 
     fn search_config(&self, tag: VectorStoresConfigTag) -> Option<Arc<dyn SearchConfig>> {
-        match tag {
-            VectorStoresConfigTag::OpenAI => Some(Arc::new(OpenAiSearchConfig::new(
-                self.credentials.clone(),
-                LiteLlmGlobals::default(),
-                self.env_api_key.clone(),
-                None,
-            ))),
-            VectorStoresConfigTag::AzureOpenAI
-            | VectorStoresConfigTag::Vertex
-            | VectorStoresConfigTag::VertexSearchAPI
-            | VectorStoresConfigTag::Bedrock
-            | VectorStoresConfigTag::PGVector
-            | VectorStoresConfigTag::AzureAI
-            | VectorStoresConfigTag::Milvus
-            | VectorStoresConfigTag::Gemini
-            | VectorStoresConfigTag::RAGFlow
-            | VectorStoresConfigTag::S3Vectors
-            | VectorStoresConfigTag::Valkey
-            | VectorStoresConfigTag::MongoDB => None,
+        if !matches!(tag, VectorStoresConfigTag::OpenAI) {
+            return None;
         }
+        Some(Arc::new(self.search_mapper()))
     }
 }
 
-// B1058 over the key set the case sends, and an identity mapper: the case's provider is openai
+impl Configs {
+    fn search_mapper(&self) -> OpenAiSearchConfig {
+        OpenAiSearchConfig::new(
+            self.credentials.clone(),
+            LiteLlmGlobals::default(),
+            self.env_api_key.clone(),
+            None,
+        )
+    }
+}
+
+// B1058 over the key set the case sends: the declared keys whose values are not null, and no mapper keys
 pub(super) struct Filters;
 
 impl OptionalParamFilters for Filters {
@@ -245,87 +199,25 @@ impl OptionalParamFilters for Filters {
     }
 
     fn search_params(&self, params: &Params, _tag: VectorStoresConfigTag) -> Params {
-        requested_search_params(params, &Identity)
+        let declared = [
+            "filters",
+            "max_num_results",
+            "ranking_options",
+            "rewrite_query",
+        ];
+        params
+            .iter()
+            .filter(|(name, value)| {
+                declared.contains(&name.as_str()) && !matches!(value, Json::Null)
+            })
+            .map(|(name, value)| (name.clone(), value.clone()))
+            .collect()
     }
 }
 
-// map_params is the base identity, so the mapper never adds a key the caller didn't send
-pub(super) struct Identity;
+mod executors;
 
-impl VectorStoreConfig for Identity {
-    type Error = VectorStoreContractError;
-
-    fn auth_credentials(&self, _litellm_params: &Params) -> AuthCredentials {
-        AuthCredentials::default()
-    }
-
-    fn endpoints_by_type(&self) -> EndpointsByType {
-        EndpointsByType::default()
-    }
-
-    fn transform_search_request(
-        &self,
-        _request: SearchRequest<'_>,
-    ) -> Result<PreparedRequest, Self::Error> {
-        Err(VectorStoreContractError::ApiBaseRequired)
-    }
-
-    fn transform_search_response(
-        &self,
-        _response: &VectorStoreResponse,
-        _logging: &mut VectorStoreLogging,
-    ) -> Result<VectorStoreSearchResponse, Self::Error> {
-        Err(VectorStoreContractError::ApiBaseRequired)
-    }
-
-    fn transform_create_request(
-        &self,
-        _optional_params: &Params,
-        _api_base: &str,
-    ) -> Result<PreparedRequest, Self::Error> {
-        Err(VectorStoreContractError::ApiBaseRequired)
-    }
-
-    fn transform_create_response(
-        &self,
-        _response: &VectorStoreResponse,
-    ) -> Result<VectorStoreCreateResponse, Self::Error> {
-        Err(VectorStoreContractError::ApiBaseRequired)
-    }
-}
-
-// B1059 with no router: the built executor is never reached by the OpenAI config
-pub(super) struct Executors;
-
-impl EmbeddingExecutorSource for Executors {
-    fn select<'selection>(
-        &'selection self,
-        supplied: Option<&'selection dyn QueryEmbeddingExecutor>,
-        _request_kwargs: &Params,
-    ) -> SelectedExecutor<'selection> {
-        match supplied {
-            Some(executor) => SelectedExecutor::Supplied(executor),
-            None => SelectedExecutor::Built(Box::new(UnusedExecutor)),
-        }
-    }
-}
-
-struct UnusedExecutor;
-
-#[async_trait]
-impl QueryEmbeddingExecutor for UnusedExecutor {
-    async fn embed(
-        &self,
-        _entry: EmbeddingEntry,
-        _model: &str,
-        _query: &str,
-        _configuration: &Params,
-    ) -> Result<EmbeddingResponse, StoreFailure> {
-        Err(StoreFailure::from(
-            "the oracle supplies no query embedding executor",
-        ))
-    }
-}
+pub(super) use executors::Executors;
 
 // The credential accessor: the case hands the name and its values, and no other name answers
 pub(super) struct CaseCredentials {
@@ -346,8 +238,18 @@ pub(super) fn registry_of(registry: &Registry) -> VectorStoreRegistry {
     let mut built = VectorStoreRegistry::default();
     built.stores.push(LiteLlmManagedVectorStore {
         vector_store_id: Some(registry.vector_store_id.clone()),
+        custom_llm_provider: None,
+        vector_store_name: None,
+        vector_store_description: None,
+        vector_store_metadata: None,
+        created_at: None,
+        updated_at: None,
         litellm_credential_name: Some(registry.credential_name.clone()),
-        ..LiteLlmManagedVectorStore::default()
+        litellm_params: None,
+        team_id: None,
+        user_id: None,
+        is_config: None,
+        extra: BTreeMap::new(),
     });
     built.credentials = Arc::new(CaseCredentials {
         name: registry.credential_name.clone(),

@@ -1,48 +1,34 @@
 import asyncio
+import json
 from collections.abc import Coroutine
 from datetime import UTC, datetime
-from typing import Literal, Protocol, TypeVar, TypedDict, Unpack
+from functools import partial
+from typing import Literal, Protocol, TypeAlias, TypedDict, Unpack, cast
 
 import litellm
 import openai
-from litellm.integrations.custom_logger import CustomLogger
 from litellm.litellm_core_utils.litellm_logging import Logging
-from litellm.models.credentials import CredentialItem
-from litellm.types.vector_stores import LiteLLM_ManagedVectorStore
 from litellm.vector_stores import main as vector_stores
 from litellm.vector_stores.vector_store_registry import VectorStoreRegistry
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
-from typing_extensions import override
 
-from openai_chat import Failure, project_failure as chat_failure
+from openai_chat import Failure
+from openai_chat import project_failure as chat_failure
+
+LITELLM = "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm"
 
 Operation = Literal["create", "search"]
 Mode = Literal["sync", "async"]
-Work = object | Coroutine[object, object, object]
+Answer: TypeAlias = JsonValue | Coroutine[None, None, JsonValue]
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
-T = TypeVar("T")
 
-
-class MissingArgumentsError(ValueError):
-    def __init__(self, operation: str) -> None:
-        super().__init__(f"a {operation} run carries no {operation} arguments")
-
-
-class UnexpectedAnswerError(TypeError):
-    def __init__(self, operation: str) -> None:
-        super().__init__(f"vector store {operation} returned a coroutine for a sync call")
-
-
-class ProjectedFailureError(TypeError):
-    def __init__(self) -> None:
-        super().__init__("the projected exception carries no failure")
-
-
-class OptionalFields(BaseModel):
+class Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+
+class CreateFields(Strict):
     name: str | None = None
     file_ids: list[str] | None = None
     expires_after: dict[str, JsonValue] | None = None
@@ -50,9 +36,7 @@ class OptionalFields(BaseModel):
     metadata: dict[str, str] | None = None
 
 
-class SearchFields(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class SearchFields(Strict):
     vector_store_id: str
     query: str | list[str]
     filters: dict[str, JsonValue] | None = None
@@ -61,28 +45,22 @@ class SearchFields(BaseModel):
     rewrite_query: bool | None = None
 
 
-class RunOptions(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class RunOptions(Strict):
     api_key: str | None = None
     litellm_call_id: str
     mock_response: JsonValue = None
 
 
-class Registry(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class Registry(Strict):
     vector_store_id: str
     credential_name: str
     credential_values: dict[str, JsonValue] = Field(default_factory=dict)
 
 
-class Run(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class Run(Strict):
     operation: Operation
     mode: Mode
-    create: OptionalFields | None = None
+    create: CreateFields | None = None
     search: SearchFields | None = None
     options: RunOptions
     extra_headers: dict[str, str] | None = None
@@ -92,16 +70,12 @@ class Run(BaseModel):
     custom_llm_provider: str | None = None
 
 
-class Call(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class Call(Strict):
     runs: list[Run]
     registry: Registry | None = None
 
 
-class Context(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class Context(Strict):
     model: str
     optional_params: dict[str, JsonValue]
     custom_llm_provider: str
@@ -109,32 +83,12 @@ class Context(BaseModel):
     vector_store_id: JsonValue
 
 
-class RunOutcome(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class RunOutcome(Strict):
     operation: Operation
     mode: Mode
     result: JsonValue = None
     failure: Failure | None = None
     context: Context | None = None
-
-
-class Outcome(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    runs: list[RunOutcome]
-
-
-class Value(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    value: Outcome
-
-
-class Envelope(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    vector_store_search_create: Value
 
 
 class SeenParams(TypedDict, total=False):
@@ -147,38 +101,6 @@ class SeenDetails(TypedDict, total=False):
     optional_params: dict[str, JsonValue]
     custom_llm_provider: str
     litellm_params: SeenParams
-
-
-DETAILS: TypeAdapter[SeenDetails] = TypeAdapter(SeenDetails)
-STORE: TypeAdapter[LiteLLM_ManagedVectorStore] = TypeAdapter(
-    LiteLLM_ManagedVectorStore
-)
-
-
-class ContextRecorder(CustomLogger):
-    def __init__(self) -> None:
-        self.seen: Context | None = None
-
-    @override
-    def log_pre_api_call(
-        self,
-        model: str,
-        messages: list[dict[str, str]],
-        kwargs: dict[str, JsonValue],
-    ) -> None:
-        details = DETAILS.validate_python(kwargs)
-        params = details["litellm_params"] if "litellm_params" in details else {}
-        self.seen = Context(
-            model=details["model"],
-            optional_params=details["optional_params"],
-            custom_llm_provider=details["custom_llm_provider"],
-            litellm_call_id=params["litellm_call_id"]
-            if "litellm_call_id" in params
-            else None,
-            vector_store_id=params["vector_store_id"]
-            if "vector_store_id" in params
-            else None,
-        )
 
 
 class GenericOptions(TypedDict, total=False):
@@ -213,40 +135,20 @@ class SearchOptions(GenericOptions, total=False):
 
 # both entries are unannotated **kwargs functions, so the calls go through the options they read
 class VectorStores(Protocol):
-    def create(self, **kwargs: Unpack[CreateOptions]) -> Work: ...
+    def create(self, **kwargs: Unpack[CreateOptions]) -> Answer: ...
 
-    async def acreate(self, **kwargs: Unpack[CreateOptions]) -> object: ...
+    async def acreate(self, **kwargs: Unpack[CreateOptions]) -> JsonValue: ...
 
-    def search(self, **kwargs: Unpack[SearchOptions]) -> Work: ...
+    def search(self, **kwargs: Unpack[SearchOptions]) -> Answer: ...
 
-    async def asearch(self, **kwargs: Unpack[SearchOptions]) -> object: ...
-
-
-FACADE: VectorStores = vector_stores
+    async def asearch(self, **kwargs: Unpack[SearchOptions]) -> JsonValue: ...
 
 
-def logging_fixture(operation: Operation) -> Logging:
-    return Logging(
-        model="vector-store",
-        messages=None,
-        stream=False,
-        call_type=f"vector_store_{operation}",
-        start_time=datetime(2026, 1, 1, tzinfo=UTC),
-        litellm_call_id="call-1",
-        function_id="fn-1",
-    )
+FACADE: VectorStores = vector_stores  # type: ignore  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py
 
 
-def required(held: T | None, operation: str) -> T:
-    if held is None:
-        raise MissingArgumentsError(operation)
-    return held
-
-
-def generic_options(
-    run: Run, api_base: str, logging_obj: Logging
-) -> GenericOptions:
-    return GenericOptions(
+def optionals(run: Run, api_base: str, logging_obj: Logging) -> GenericOptions:
+    options = GenericOptions(
         api_base=api_base,
         api_key=run.options.api_key,
         litellm_call_id=run.options.litellm_call_id,
@@ -258,11 +160,15 @@ def generic_options(
         extra_body=run.extra_body,
         timeout=run.timeout_seconds,
     )
+    return options
 
 
 def create_options(run: Run, api_base: str, logging_obj: Logging) -> CreateOptions:
-    args = required(run.create, "create")
-    options = CreateOptions(**generic_options(run, api_base, logging_obj))
+    args = run.create
+    if args is None:
+        raise ValueError("a create run carries no create arguments")
+    options: CreateOptions = {}
+    options.update(optionals(run, api_base, logging_obj))
     options["name"] = args.name
     options["file_ids"] = args.file_ids
     options["expires_after"] = args.expires_after
@@ -272,105 +178,102 @@ def create_options(run: Run, api_base: str, logging_obj: Logging) -> CreateOptio
 
 
 def search_options(run: Run, api_base: str, logging_obj: Logging) -> SearchOptions:
-    args = required(run.search, "search")
-    options = SearchOptions(**generic_options(run, api_base, logging_obj))
-    options["vector_store_id"] = args.vector_store_id
-    options["query"] = args.query
-    options["filters"] = args.filters
-    options["max_num_results"] = args.max_num_results
-    options["ranking_options"] = args.ranking_options
-    options["rewrite_query"] = args.rewrite_query
-    return options
+    args = run.search
+    if args is None:
+        raise ValueError("a search run carries no search arguments")
+    return {
+        "api_base": api_base,
+        "api_key": run.options.api_key,
+        "litellm_call_id": run.options.litellm_call_id,
+        "litellm_logging_obj": logging_obj,
+        "mock_response": run.options.mock_response,
+        "custom_llm_provider": run.custom_llm_provider,
+        "extra_headers": run.extra_headers,
+        "extra_query": run.extra_query,
+        "extra_body": run.extra_body,
+        "timeout": run.timeout_seconds,
+        "vector_store_id": args.vector_store_id,
+        "query": args.query,
+        "filters": args.filters,
+        "max_num_results": args.max_num_results,
+        "ranking_options": args.ranking_options,
+        "rewrite_query": args.rewrite_query,
+    }
 
 
-def create_result(run: Run, api_base: str, logging_obj: Logging) -> JsonValue:
-    options = create_options(run, api_base, logging_obj)
+def answer(run: Run, api_base: str, logging_obj: Logging) -> JsonValue:
+    if run.operation == "create":
+        options = create_options(run, api_base, logging_obj)
+        if run.mode == "async":
+            return JSON.validate_python(asyncio.run(FACADE.acreate(**options)))
+        return JSON.validate_python(FACADE.create(**options))
+    search = search_options(run, api_base, logging_obj)
     if run.mode == "async":
-        return JSON.validate_python(asyncio.run(FACADE.acreate(**options)))
-    work = FACADE.create(**options)
-    match work:
-        case Coroutine():
-            raise UnexpectedAnswerError("create")
-        case object():
-            return JSON.validate_python(work)
+        return JSON.validate_python(asyncio.run(FACADE.asearch(**search)))
+    return JSON.validate_python(FACADE.search(**search))
 
 
-def search_result(run: Run, api_base: str, logging_obj: Logging) -> JsonValue:
-    options = search_options(run, api_base, logging_obj)
-    if run.mode == "async":
-        return JSON.validate_python(asyncio.run(FACADE.asearch(**options)))
-    work = FACADE.search(**options)
-    match work:
-        case Coroutine():
-            raise UnexpectedAnswerError("search")
-        case object():
-            return JSON.validate_python(work)
+def logging_fixture(run: Run) -> Logging:
+    return Logging(
+        model="vector-store",
+        messages=None,
+        stream=False,
+        call_type=f"vector_store_{run.operation}",
+        start_time=datetime(2026, 1, 1, tzinfo=UTC),
+        litellm_call_id="call-1",
+        function_id="fn-1",
+    )
 
 
-def project_failure(error: openai.APIError) -> Failure:
-    failure = chat_failure(error).failure
-    if failure is None:
-        raise ProjectedFailureError
-    return failure
+def context_of(logging_obj: Logging) -> Context | None:
+    details = cast(SeenDetails, logging_obj.model_call_details)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py
+    provider = details.get("custom_llm_provider")
+    if provider is None:
+        return None
+    params = details.get("litellm_params", {})
+    return Context(
+        model=details["model"],
+        optional_params=details["optional_params"],
+        custom_llm_provider=provider,
+        litellm_call_id=params.get("litellm_call_id", None),
+        vector_store_id=params.get("vector_store_id", None),
+    )
 
 
 def run_once(run: Run, api_base: str) -> RunOutcome:
-    logging_obj = logging_fixture(run.operation)
-    recorder = ContextRecorder()
-    logging_obj.add_dynamic_callback(recorder)
+    logging_obj = logging_fixture(run)
     try:
-        if run.operation == "create":
-            result = create_result(run, api_base, logging_obj)
-        else:
-            result = search_result(run, api_base, logging_obj)
+        result = answer(run, api_base, logging_obj)
     except openai.APIError as error:
+        failure = chat_failure(error).failure
+        if failure is None:
+            raise ValueError("the projected exception carries no failure") from error
         return RunOutcome(
             operation=run.operation,
             mode=run.mode,
             result=None,
-            failure=project_failure(error),
-            context=recorder.seen,
+            failure=failure,
+            context=context_of(logging_obj),
         )
     return RunOutcome(
         operation=run.operation,
         mode=run.mode,
         result=result,
         failure=None,
-        context=recorder.seen,
+        context=context_of(logging_obj),
     )
 
 
-def apply_registry(registry: Registry) -> None:
-    litellm.vector_store_registry = VectorStoreRegistry(
-        vector_stores=[
-            STORE.validate_python(
-                {
-                    "vector_store_id": registry.vector_store_id,
-                    "litellm_credential_name": registry.credential_name,
-                }
-            )
-        ]
-    )
-    litellm.credential_list = [
-        CredentialItem(
-            credential_name=registry.credential_name,
-            credential_info={},
-            credential_values=registry.credential_values,
-        )
-    ]
+def credentials_for(case: Registry, vector_store_id: str) -> dict[str, JsonValue]:
+    if vector_store_id == case.vector_store_id:
+        return dict(case.credential_values)
+    return {}
 
 
-def run_call(call: Call, api_base: str) -> Envelope:
-    held_registry = litellm.vector_store_registry
-    held_credentials = litellm.credential_list
-    try:
-        if call.registry is not None:
-            apply_registry(call.registry)
-        runs = [run_once(run, api_base) for run in call.runs]
-    finally:
-        litellm.vector_store_registry = held_registry
-        litellm.credential_list = held_credentials
-    return Envelope(vector_store_search_create=Value(value=Outcome(runs=runs)))
+def apply_registry(case: Registry) -> None:
+    registry = VectorStoreRegistry(vector_stores=[])
+    registry.get_credentials_for_vector_store = partial(credentials_for, case)  # type: ignore  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py
+    litellm.vector_store_registry = registry
 
 
 class VectorStoreSearchCreateRequest(BaseModel):
@@ -379,6 +282,16 @@ class VectorStoreSearchCreateRequest(BaseModel):
     vector_store_search_create: Call
 
     def serialize(self, api_base: str) -> str:
-        return run_call(self.vector_store_search_create, api_base).model_dump_json(
-            by_alias=True, exclude_unset=True
-        )
+        held = litellm.vector_store_registry
+        try:
+            if self.vector_store_search_create.registry is not None:
+                apply_registry(self.vector_store_search_create.registry)
+            runs = [run_once(run, api_base) for run in self.vector_store_search_create.runs]
+        finally:
+            litellm.vector_store_registry = held
+        payload: dict[str, JsonValue] = {
+            "vector_store_search_create": {
+                "value": {"runs": [JSON.validate_json(run.model_dump_json()) for run in runs]}
+            }
+        }
+        return json.dumps(payload, separators=(",", ":"))

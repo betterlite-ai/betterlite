@@ -9,21 +9,23 @@ use betterlite_core::api::vector_store_search::error::{
     SdkFailure, VectorStoreSearchError, failure as project_failure,
 };
 use betterlite_core::api::vector_store_search::service::{
-    CreateCall, SdkDeps, SearchCall, create as create_vector_store, search as search_vector_store,
+    CreateCall, SdkDeps, create as create_vector_store,
 };
 use betterlite_error::envelope::WireField;
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
 
+use self::search::search_run;
 use super::super::error::SdkHttpError;
 use super::super::result::kinds::SdkResult;
 use super::super::result::{Failure, Nullable};
 use super::support::{
-    Assets, Configs, Executors, Filters, Inline, Source, into_index, registry_of, search_optionals,
-    source,
+    Assets, Configs, Executors, Filters, Source, into_index, registry_of, source,
 };
-use super::{Call, Context, CreateArgs, Mode, Operation, Outcome, Run, RunOutcome};
+use super::{Call, Context, CreateArgs, Operation, Outcome, Run, RunOutcome};
+
+mod search;
 
 // The production service over the mock's base: the same config sections, filters and pooled client a request would build
 pub(super) async fn execute(
@@ -38,19 +40,18 @@ pub(super) async fn execute(
     .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
     let settings = Settings::load(env).map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
     let origin = source(&config, env)?;
-    let shared = Shared {
+    let fixtures = Fixtures {
         configs: Configs::new(&config),
         filters: Filters,
         executors: Executors,
-        signing: Inline,
         source: &origin,
         registry: call.registry.as_ref().map(registry_of),
         settings,
+        assets: Assets::new()?,
     };
-    let assets = Assets::new()?;
     let mut runs = Vec::with_capacity(call.runs.len());
     for run in &call.runs {
-        runs.push(run_once(run, api_base, &assets, &shared).await?);
+        runs.push(run_once(run, api_base, &fixtures).await?);
     }
     Ok(SdkResult::VectorStoreSearchCreate {
         value: Box::new(Outcome { runs }),
@@ -58,46 +59,51 @@ pub(super) async fn execute(
 }
 
 // The parts a run lends to the core service, built once for the whole call
-struct Shared<'source> {
+struct Fixtures<'source> {
     configs: Configs,
     filters: Filters,
     executors: Executors,
-    signing: Inline,
     source: &'source Source,
     registry: Option<VectorStoreRegistry>,
     settings: Settings,
+    assets: Assets,
 }
 
 async fn run_once(
     run: &Run,
     api_base: &str,
-    assets: &Assets,
-    shared: &Shared<'_>,
+    fixtures: &Fixtures<'_>,
 ) -> Result<RunOutcome, SdkHttpError> {
     let call_type = match run.operation {
         Operation::Create => "vector_store_create",
         Operation::Search => "vector_store_search",
     };
-    let mut state = assets.state(call_type)?;
-    let pre_post = assets.env();
+    let mut state = fixtures.assets.state(call_type)?;
+    let pre_post = fixtures.assets.env();
     let mut log = LogContext {
         state: &mut state,
         env: &pre_post,
     };
     let deps = SdkDeps {
-        configs: &shared.configs,
-        filters: &shared.filters,
-        executors: &shared.executors,
-        signing: &shared.signing,
-        registry: shared.registry.as_ref(),
-        source: shared.source,
+        configs: &fixtures.configs,
+        filters: &fixtures.filters,
+        executors: &fixtures.executors,
+        signing: &fixtures.assets,
+        registry: fixtures.registry.as_ref(),
+        source: fixtures.source,
         supplied: None,
-        settings: shared.settings,
+        settings: fixtures.settings,
     };
     let kwargs = kwargs_of(run, api_base);
     let answer = match run.operation {
-        Operation::Create => create_run(run, &deps, &kwargs, &mut log).await,
-        Operation::Search => search_run(run, &deps, &kwargs, &mut log).await,
+        Operation::Create => {
+            let args = run.create.as_ref().ok_or_else(|| missing("create"))?;
+            create_run(run, args, &deps, &kwargs, &mut log).await
+        }
+        Operation::Search => {
+            let args = run.search.as_ref().ok_or_else(|| missing("search"))?;
+            search_run(run, args, &deps, &kwargs, &mut log).await
+        }
     };
     // update_from_kwargs is what names the provider; a call that failed before it has no context to record
     let context = state.custom_llm_provider.as_ref().map(|provider| Context {
@@ -119,32 +125,26 @@ async fn run_once(
             .cloned()
             .unwrap_or(Json::Null),
     });
-    let outcome = match answer {
-        Ok(value) => RunOutcome {
-            operation: run.operation,
-            mode: run.mode,
-            result: Some(value),
-            failure: None,
-            context,
-        },
-        Err(error) => RunOutcome {
-            operation: run.operation,
-            mode: run.mode,
-            result: None,
-            failure: Some(sdk_failure(&error, assets.redactor())?),
-            context,
-        },
+    let failure = match &answer {
+        Ok(_) => None,
+        Err(error) => Some(sdk_failure(error, &fixtures.assets.redactor)?),
     };
-    Ok(outcome)
+    Ok(RunOutcome {
+        operation: run.operation,
+        mode: run.mode,
+        result: answer.ok(),
+        failure,
+        context,
+    })
 }
 
 async fn create_run(
     run: &Run,
+    args: &CreateArgs,
     deps: &SdkDeps<'_, Source>,
     kwargs: &Params,
     log: &mut LogContext<'_, '_>,
 ) -> Result<Json, VectorStoreSearchError> {
-    let args = missing(run.create.as_ref(), "create")?;
     let optional = create_optionals(args);
     let extra_body: Option<IndexMap<String, Json>> = run.extra_body.as_ref().map(into_index);
     let call = CreateCall {
@@ -154,46 +154,20 @@ async fn create_run(
         extra_body: extra_body.as_ref(),
         timeout: run.timeout_seconds,
         custom_llm_provider: run.custom_llm_provider.as_deref(),
-        entry: run.mode.entry(),
+        entry: run.mode,
     };
     create_vector_store(deps, &call, log).await
 }
 
-async fn search_run(
-    run: &Run,
-    deps: &SdkDeps<'_, Source>,
-    kwargs: &Params,
-    log: &mut LogContext<'_, '_>,
-) -> Result<Json, VectorStoreSearchError> {
-    let args = missing(run.search.as_ref(), "search")?;
-    let optional = search_optionals(args);
-    let call = SearchCall {
-        vector_store_id: &args.vector_store_id,
-        query: &args.query,
-        optional: &optional,
-        kwargs,
-        extra_headers: run.extra_headers.as_ref(),
-        extra_body: run.extra_body.as_ref(),
-        timeout: run.timeout_seconds,
-        custom_llm_provider: run.custom_llm_provider.as_deref(),
-        executor: None,
-        entry: run.mode.entry(),
-    };
-    search_vector_store(deps, &call, log).await
-}
-
-fn missing<'args, T>(held: Option<&'args T>, operation: &str) -> Result<&'args T, SdkHttpError> {
-    held.ok_or_else(|| {
-        SdkHttpError::Invalid(format!(
-            "a {operation} run carries the {operation} arguments"
-        ))
-    })
+fn missing(operation: &str) -> SdkHttpError {
+    SdkHttpError::Invalid(format!(
+        "a {operation} run carries the {operation} arguments"
+    ))
 }
 
 // GenericLiteLLMParams(**kwargs) plus the base the mock answered on
 fn kwargs_of(run: &Run, api_base: &str) -> Params {
-    let mut kwargs = Params::new();
-    kwargs.insert("api_base".to_owned(), Json::Text(api_base.to_owned()));
+    let mut kwargs = Params::from([("api_base".to_owned(), Json::Text(api_base.to_owned()))]);
     if let Some(key) = &run.options.api_key {
         kwargs.insert("api_key".to_owned(), Json::Text(key.clone()));
     }
@@ -231,17 +205,15 @@ fn create_optionals(args: &CreateArgs) -> Params {
     if let Some(metadata) = &args.metadata {
         optional.insert(
             "metadata".to_owned(),
-            Json::Object(metadata_index(metadata)),
+            Json::Object(
+                metadata
+                    .iter()
+                    .map(|(name, value)| (name.clone(), Json::Text(value.clone())))
+                    .collect(),
+            ),
         );
     }
     optional
-}
-
-fn metadata_index(metadata: &BTreeMap<String, String>) -> IndexMap<String, Json> {
-    metadata
-        .iter()
-        .map(|(name, value)| (name.clone(), Json::Text(value.clone())))
-        .collect()
 }
 
 // The exception exception_type raises, as its callers can observe it

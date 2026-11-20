@@ -21,24 +21,6 @@ pub enum Operation {
     Search,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Mode {
-    Sync,
-    #[serde(rename = "async")]
-    Asynchronous,
-}
-
-impl Mode {
-    // The sync entry and the async one differ only in the handler's selected client
-    pub(super) const fn entry(self) -> Entry {
-        match self {
-            Self::Sync => Entry::Sync,
-            Self::Asynchronous => Entry::Asynchronous,
-        }
-    }
-}
-
 // vector_store_create's five named optional arguments
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -87,7 +69,7 @@ pub struct RunOptions {
 #[serde(deny_unknown_fields)]
 pub struct Run {
     pub operation: Operation,
-    pub mode: Mode,
+    pub mode: Entry,
     #[serde(default)]
     pub create: Option<CreateArgs>,
     #[serde(default)]
@@ -139,7 +121,7 @@ pub struct Context {
 #[serde(deny_unknown_fields)]
 pub struct RunOutcome {
     pub operation: Operation,
-    pub mode: Mode,
+    pub mode: Entry,
     pub result: Option<Json>,
     pub failure: Option<super::result::Failure>,
     pub context: Option<Context>,
@@ -186,10 +168,9 @@ fn validate_run(run: &Run) -> Result<(), SdkHttpError> {
         Operation::Search => run.search.is_some(),
     };
     if valid {
-        Ok(())
-    } else {
-        Err(SdkHttpError::Invalid(
-            "a run carries the arguments of its operation".to_owned(),
-        ))
+        return Ok(());
     }
+    Err(SdkHttpError::Invalid(
+        "a run carries the arguments of its operation".to_owned(),
+    ))
 }
