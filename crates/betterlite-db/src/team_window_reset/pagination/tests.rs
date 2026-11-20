@@ -177,7 +177,7 @@ async fn rewrites_the_whole_list_keeping_the_fresh_window() {
     let stored = windows_text(&client, KEY_TABLE, KEY_COLUMN, "k1").await;
     assert_eq!(stored.len(), 2_usize);
     let hourly = stored.first().unwrap();
-    let daily = stored.get(1).unwrap();
+    let daily = &stored[1];
     assert_eq!(
         window_text(hourly, "budget_duration"),
         Some("1h".to_owned())

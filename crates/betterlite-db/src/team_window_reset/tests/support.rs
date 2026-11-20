@@ -858,7 +858,7 @@ impl<Cache, Durations, Reconnect> WindowHarness<Cache, Durations, Reconnect> {
         reconnect: Reconnect,
     ) -> Self {
         let window_spend = WindowSpendStore::from_store(store.clone());
-        let reconnect = Some(reconnect);
+        let pending_reconnect = Some(reconnect);
         let clock = TestClock::fixed(moment(0));
         Self {
             store,
@@ -869,11 +869,11 @@ impl<Cache, Durations, Reconnect> WindowHarness<Cache, Durations, Reconnect> {
             cache,
             durations,
             clock,
-            reconnect,
+            reconnect: pending_reconnect,
         }
     }
 
-    pub(crate) fn resetter(&mut self) -> WindowResetter<'_, TestSchedule, Cache, Durations> {
+    pub(crate) fn resetter(&self) -> WindowResetter<'_, TestSchedule, Cache, Durations> {
         let now = self.clock.now();
         let store = &self.window_spend;
         let schedule = &self.schedule;

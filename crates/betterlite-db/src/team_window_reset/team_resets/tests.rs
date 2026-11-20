@@ -43,7 +43,7 @@ fn number_of(event_metadata: &EventMetadata, key: &str) -> Option<u64> {
 #[tokio::test]
 async fn resets_every_due_team_and_reports_the_counts() {
     let (fixture, store, client) = schema().await;
-    insert_team(&client, "a", 10.0, Some(20.0), Some("1h"), Some(past())).await;
+    insert_team(&client, "a", 10.0, Some(20.0_f64), Some("1h"), Some(past())).await;
     insert_team(&client, "b", 4.5, None, Some("1d"), Some(past())).await;
     let mut harness = TeamHarness::new(
         store,
@@ -109,7 +109,7 @@ async fn leaves_a_team_whose_reset_time_is_ahead_alone() {
 #[tokio::test]
 async fn invalidates_each_reset_teams_counter() {
     let (fixture, store, client) = schema().await;
-    insert_team(&client, "a", 10.0, Some(20.0), Some("1h"), Some(past())).await;
+    insert_team(&client, "a", 10.0, Some(20.0_f64), Some("1h"), Some(past())).await;
     insert_team(&client, "b", 4.5, None, Some("1d"), Some(past())).await;
     let mut harness = TeamHarness::new(
         store,
@@ -135,7 +135,7 @@ async fn invalidates_each_reset_teams_counter() {
 #[tokio::test]
 async fn rollover_keeps_the_spend_above_the_cap() {
     let (fixture, store, client) = schema().await;
-    insert_team(&client, "a", 12.5, Some(10.0), Some("1h"), Some(past())).await;
+    insert_team(&client, "a", 12.5, Some(10.0_f64), Some("1h"), Some(past())).await;
     let mut harness = TeamHarness::new(
         store,
         TestSchedule::fixed(moment(3600)),
@@ -156,7 +156,15 @@ async fn rollover_keeps_the_spend_above_the_cap() {
 #[tokio::test]
 async fn one_refused_team_does_not_stop_the_chunk() {
     let (fixture, store, client) = schema().await;
-    insert_team(&client, "bad", 10.0, Some(20.0), Some("1h"), Some(past())).await;
+    insert_team(
+        &client,
+        "bad",
+        10.0,
+        Some(20.0_f64),
+        Some("1h"),
+        Some(past()),
+    )
+    .await;
     insert_team(&client, "good", 4.0, None, Some("1d"), Some(past())).await;
     let mut harness = TeamHarness::new(
         store,
@@ -189,7 +197,7 @@ async fn one_refused_team_does_not_stop_the_chunk() {
 #[tokio::test]
 async fn a_chunk_where_every_team_fails_reports_them_without_writing() {
     let (fixture, store, client) = schema().await;
-    insert_team(&client, "a", 10.0, Some(20.0), Some("1h"), Some(past())).await;
+    insert_team(&client, "a", 10.0, Some(20.0_f64), Some("1h"), Some(past())).await;
     insert_team(&client, "b", 4.0, None, Some("1h"), Some(past())).await;
     let mut harness = TeamHarness::new(
         store,
@@ -241,7 +249,7 @@ async fn a_failed_read_reports_the_phase_without_writing() {
 #[tokio::test]
 async fn a_failed_write_reports_the_phase_and_stops() {
     let (fixture, store, client) = provision(vec![TABLES.to_owned(), TRIGGER.to_owned()]).await;
-    insert_team(&client, "a", 10.0, Some(20.0), Some("1h"), Some(past())).await;
+    insert_team(&client, "a", 10.0, Some(20.0_f64), Some("1h"), Some(past())).await;
     insert_team(&client, "b", 4.0, None, Some("1d"), Some(past())).await;
     let mut harness = TeamHarness::new(
         store,

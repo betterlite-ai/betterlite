@@ -11,12 +11,12 @@ use crate::team_window_reset::tests::support::{
 #[tokio::test]
 async fn team_reads_pick_up_due_durations_and_missing_reset_times() {
     let (fixture, store, client) = schema().await;
-    insert_team(&client, "due", 1.0, Some(5.0), Some("1h"), Some(past())).await;
+    insert_team(&client, "due", 1.0, Some(5.0_f64), Some("1h"), Some(past())).await;
     insert_team(
         &client,
         "fresh",
         1.0,
-        Some(5.0),
+        Some(5.0_f64),
         Some("1h"),
         Some(moment(600).naive_utc()),
     )
@@ -38,7 +38,7 @@ async fn team_reads_pick_up_due_durations_and_missing_reset_times() {
 #[tokio::test]
 async fn team_reads_decode_spend_cap_duration_and_reset_time() {
     let (fixture, store, client) = schema().await;
-    insert_team(&client, "due", 4.5, Some(9.5), Some("2h"), Some(past())).await;
+    insert_team(&client, "due", 4.5, Some(9.5_f64), Some("2h"), Some(past())).await;
     let due = read_due_teams(&store, moment(0), 10, None::<&mut CountingReconnect>)
         .await
         .unwrap();

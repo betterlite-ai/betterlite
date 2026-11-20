@@ -59,7 +59,7 @@ async fn team_windows_use_the_team_counter_prefix() {
     )
     .await;
     seed_window_spend(&client, "team", "t1", "2h", past(), 7.0).await;
-    let mut harness = WindowHarness::new(
+    let harness = WindowHarness::new(
         store,
         TestSchedule::fixed(moment(7200)),
         FakeCounterCache::default(),
@@ -90,7 +90,7 @@ async fn window_with_a_future_reset_time_is_untouched() {
     let mut window = window_json("1h", Some("10"), Some(FRESH_TEXT));
     insert_windows(&client, KEY_TABLE, KEY_COLUMN, "k1", &[window.clone()]).await;
     seed_window_spend(&client, "key", "k1", "1h", past(), 99.0).await;
-    let mut harness = WindowHarness::new(
+    let harness = WindowHarness::new(
         store,
         TestSchedule::fixed(moment(3600)),
         FakeCounterCache::with_counter("spend:key:k1:window:1h", Some(decimal("12"))),
@@ -128,7 +128,7 @@ async fn window_without_a_reset_time_is_untouched() {
         &[window_json("1h", Some("10"), None)],
     )
     .await;
-    let mut harness = WindowHarness::new(
+    let harness = WindowHarness::new(
         store,
         TestSchedule::fixed(moment(3600)),
         FakeCounterCache::with_counter("spend:key:k1:window:1h", Some(decimal("12"))),
@@ -199,7 +199,7 @@ async fn redis_failure_keeps_the_reset_and_the_memory_counter() {
         &[window_json("1h", Some("10"), Some(PAST_TEXT))],
     )
     .await;
-    let mut harness = WindowHarness::new(
+    let harness = WindowHarness::new(
         store,
         TestSchedule::fixed(moment(3600)),
         FakeCounterCache::failing_redis(),
@@ -235,7 +235,7 @@ async fn unparsable_duration_skips_only_the_roll() {
     )
     .await;
     seed_window_spend(&client, "key", "k1", "1h", past(), 99.0).await;
-    let mut harness = WindowHarness::new(
+    let harness = WindowHarness::new(
         store,
         TestSchedule::fixed(moment(3600)),
         FakeCounterCache::default(),
@@ -270,7 +270,7 @@ async fn calendar_overflow_skips_only_the_roll() {
     )
     .await;
     seed_window_spend(&client, "key", "k1", "1h", past(), 99.0).await;
-    let mut harness = WindowHarness::new(
+    let harness = WindowHarness::new(
         store,
         TestSchedule::fixed(moment(3600)),
         FakeCounterCache::default(),
@@ -303,7 +303,7 @@ async fn refused_reset_time_leaves_the_window_unchanged() {
         &[window_json("1h", Some("10"), Some(PAST_TEXT))],
     )
     .await;
-    let mut harness = WindowHarness::new(
+    let harness = WindowHarness::new(
         store,
         TestSchedule::failing_for(moment(3600), "1h", "no such unit"),
         FakeCounterCache::default(),

@@ -24,7 +24,7 @@ fn write(identifier: &str, reset_at: Option<DateTime<Utc>>, decrement: &str) -> 
 #[tokio::test]
 async fn team_writes_apply_every_reset_in_one_chunk() {
     let (fixture, store, client) = schema().await;
-    insert_team(&client, "a", 10.0, Some(20.0), Some("1h"), Some(past())).await;
+    insert_team(&client, "a", 10.0, Some(20.0_f64), Some("1h"), Some(past())).await;
     insert_team(&client, "b", 2.5, None, Some("1d"), Some(past())).await;
     let writes = vec![
         write("a", Some(moment(3600)), "10"),
@@ -69,7 +69,7 @@ async fn team_writes_report_a_team_that_no_longer_exists() {
 #[tokio::test]
 async fn team_writes_leave_rows_alone_when_nothing_is_due() {
     let (fixture, store, client) = schema().await;
-    insert_team(&client, "a", 10.0, Some(20.0), Some("1h"), Some(past())).await;
+    insert_team(&client, "a", 10.0, Some(20.0_f64), Some("1h"), Some(past())).await;
     write_team_resets(&store, Vec::new(), None::<&mut CountingReconnect>)
         .await
         .unwrap();
@@ -84,7 +84,7 @@ async fn team_writes_leave_rows_alone_when_nothing_is_due() {
 #[tokio::test]
 async fn team_writes_retry_a_pool_timeout_after_reconnecting() {
     let (fixture, store, client) = schema().await;
-    insert_team(&client, "a", 10.0, Some(20.0), Some("1h"), Some(past())).await;
+    insert_team(&client, "a", 10.0, Some(20.0_f64), Some("1h"), Some(past())).await;
     let serial = PostgresStore {
         pool: Some(serial_pool(&fixture.options.url)),
     };
