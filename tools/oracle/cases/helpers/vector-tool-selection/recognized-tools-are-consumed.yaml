@@ -1,0 +1,58 @@
+kind: helper
+name: vector-tool-selection-recognized-tools-are-consumed
+call:
+  vector_tool_selection:
+    operation: consumed
+    stores:
+      - vector_store_id: vs_a
+        custom_llm_provider: openai
+      - vector_store_id: vs_b
+        custom_llm_provider: openai
+    tools:
+      - type: custom
+        vector_store_ids: [vs_a]
+        max_num_results: 2
+      - type: file_search
+        vector_store_ids: [vs_a, unknown]
+      - type: file_search
+        vector_store_ids: []
+    ids: [vs_request]
+calls:
+  - vector_tool_selection:
+      operation: consumed
+      stores:
+        - vector_store_id: vs_a
+          custom_llm_provider: openai
+      tools: []
+      ids: [vs_a]
+  - vector_tool_selection:
+      operation: consumed
+      stores:
+        - vector_store_id: vs_a
+          custom_llm_provider: openai
+      ids: [vs_a]
+  - vector_tool_selection:
+      operation: consumed
+      stores:
+        - vector_store_id: vs_a
+          custom_llm_provider: openai
+      tools:
+        - type: file_search
+          vector_store_ids: [vs_a]
+          max_num_results: 2
+        - type: file_search
+          vector_store_ids: [vs_a]
+          filters:
+            tool: x
+      ids: [vs_b]
+  - vector_tool_selection:
+      operation: consumed
+      stores:
+        - vector_store_id: vs_a
+          custom_llm_provider: openai
+      tools:
+        - type: function
+          name: weather
+      ids: [vs_a]
+env: {}
+compare: {ignore: []}

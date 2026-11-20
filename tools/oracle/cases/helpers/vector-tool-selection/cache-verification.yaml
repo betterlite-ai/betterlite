@@ -1,0 +1,109 @@
+kind: helper
+name: vector-tool-selection-cache-verification
+call:
+  vector_tool_selection:
+    operation: fallback
+    stores:
+      - vector_store_id: vs_a
+        custom_llm_provider: openai
+        vector_store_description: memory
+    non_default_params:
+      model: gpt-4o
+      vector_store_ids: [vs_a]
+    database:
+      rows:
+        - vector_store_id: vs_a
+          custom_llm_provider: bedrock
+          vector_store_description: from-database
+      verified:
+        - vector_store_id: vs_a
+          custom_llm_provider: bedrock
+          vector_store_description: from-database
+calls:
+  - vector_tool_selection:
+      operation: fallback
+      stores:
+        - vector_store_id: vs_a
+          custom_llm_provider: openai
+          is_config: true
+      non_default_params:
+        vector_store_ids: [vs_a]
+      database:
+        verify_failed: true
+        read_failed: true
+  - vector_tool_selection:
+      operation: fallback
+      stores:
+        - vector_store_id: vs_a
+          custom_llm_provider: openai
+          vector_store_description: memory
+          is_config: false
+      non_default_params:
+        vector_store_ids: [vs_a]
+      database:
+        rows:
+          - vector_store_id: vs_a
+            custom_llm_provider: bedrock
+            vector_store_description: from-database
+  - vector_tool_selection:
+      operation: fallback
+      stores:
+        - vector_store_id: vs_a
+          custom_llm_provider: openai
+      non_default_params:
+        vector_store_ids: [vs_a]
+      database:
+        rows:
+          - vector_store_id: vs_b
+            custom_llm_provider: openai
+          - vector_store_id: vs_a
+            custom_llm_provider: bedrock
+  - vector_tool_selection:
+      operation: fallback
+      stores:
+        - vector_store_id: vs_a
+          custom_llm_provider: openai
+      non_default_params:
+        vector_store_ids: [vs_a]
+      database:
+        verify_failed: true
+        rows:
+          - vector_store_id: vs_a
+            custom_llm_provider: bedrock
+  - vector_tool_selection:
+      operation: fallback
+      non_default_params:
+        vector_store_ids: [vs_a]
+      database:
+        read_failed: true
+  - vector_tool_selection:
+      operation: fallback
+      stores:
+        - vector_store_id: vs_a
+          custom_llm_provider: openai
+      non_default_params:
+        vector_store_ids: [vs_a, vs_missing]
+  - vector_tool_selection:
+      operation: fallback
+      stores:
+        - vector_store_id: vs_a
+          custom_llm_provider: openai
+      non_default_params:
+        vector_store_ids: [vs_a, vs_a]
+      database:
+        verified:
+          - vector_store_id: vs_a
+            custom_llm_provider: openai
+  - vector_tool_selection:
+      operation: fallback
+      stores:
+        - vector_store_id: vs_a
+          custom_llm_provider: openai
+      non_default_params:
+        vector_store_ids: [vs_a]
+      database:
+        rows:
+          - vector_store_id: vs_b
+            custom_llm_provider: openai
+env: {}
+compare: {ignore: []}

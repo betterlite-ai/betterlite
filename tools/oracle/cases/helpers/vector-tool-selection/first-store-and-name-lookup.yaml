@@ -1,0 +1,54 @@
+kind: helper
+name: vector-tool-selection-first-store-and-name-lookup
+call:
+  vector_tool_selection:
+    operation: lookup
+    stores:
+      - vector_store_id: vs_a
+        custom_llm_provider: openai
+        vector_store_name: notes
+      - vector_store_id: vs_b
+        custom_llm_provider: bedrock
+        vector_store_name: first
+    non_default_params:
+      model: gpt-4o
+      vector_store_ids: [unknown, vs_b, vs_a]
+    tools:
+      - type: file_search
+        vector_store_ids: [vs_a]
+        max_num_results: 2
+    name: notes
+calls:
+  - vector_tool_selection:
+      operation: lookup
+      stores:
+        - vector_store_id: vs_a
+          custom_llm_provider: openai
+          vector_store_name: notes
+        - vector_store_id: vs_c
+          custom_llm_provider: openai
+          vector_store_name: notes
+      non_default_params:
+        vector_store_ids: [vs_c, vs_a]
+      name: notes
+  - vector_tool_selection:
+      operation: lookup
+      stores:
+        - vector_store_id: vs_a
+          custom_llm_provider: openai
+          vector_store_name: notes
+      non_default_params:
+        model: gpt-4o
+      name: absent
+  - vector_tool_selection:
+      operation: lookup
+      stores:
+        - vector_store_id: vs_t
+          custom_llm_provider: openai
+      non_default_params:
+        model: gpt-4o
+      tools:
+        - type: file_search
+          vector_store_ids: [vs_missing, vs_t]
+env: {}
+compare: {ignore: []}
