@@ -348,9 +348,11 @@ impl BaseEvalsAPIConfig for RecordingConfig {
         _context: &EvalsRequestContext<'_>,
     ) -> Result<(String, Headers, Object), EvalsError> {
         self.events.push("cancel_request");
-        let mut body = Object::new();
-        body.insert("dropped".to_owned(), serde_json::json!("not on the wire"));
-        Ok((String::new(), Headers::new(), body))
+        Ok((
+            String::new(),
+            Headers::new(),
+            object(r#"{"dropped":"not on the wire"}"#),
+        ))
     }
 
     delegated_responses! {
