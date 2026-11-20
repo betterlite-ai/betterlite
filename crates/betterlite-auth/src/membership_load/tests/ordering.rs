@@ -44,7 +44,10 @@ async fn empty_ids_are_used() {
     );
     expect_present(subject.get_team_membership(Some(""), Some("")).await);
     assert_eq!(rows.last_call(), Some((String::new(), String::new())));
-    assert_eq!(cache.reads(), vec![(key("", ""), true)]);
+    assert_eq!(
+        cache.reads(),
+        vec![(key("", ""), true), (key("", ""), false)]
+    );
     drain(&tasks).await;
 }
 
