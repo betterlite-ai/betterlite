@@ -1,0 +1,132 @@
+kind: helper
+name: azure-stream-errors-http-failure
+call:
+  azure_stream_errors:
+    function: streaming
+    cases:
+      - model: deployment
+        api_base: https://unit.test
+        api_version: "2024-02-01"
+        api_key: call-key
+        max_retries: 0
+        data:
+          model: deployment
+          messages:
+            - role: user
+              content: Hello
+          stream: true
+        supplied:
+          kind: azure_sync
+          api_key: client-key
+        get_error:
+          text: socket closed
+calls:
+  - azure_stream_errors:
+      function: async_streaming
+      cases:
+        - model: deployment
+          api_base: https://unit.test
+          api_version: "2024-02-01"
+          api_key: call-key
+          max_retries: 0
+          data:
+            model: deployment
+            messages:
+              - role: user
+                content: Hello
+            stream: true
+          supplied:
+            kind: azure_async
+            api_key: client-key
+          get_error:
+            text: socket closed
+        - model: deployment
+          api_base: https://unit.test
+          api_version: "2024-02-01"
+          api_key: call-key
+          max_retries: 0
+          data:
+            model: deployment
+            messages:
+              - role: user
+                content: Hello
+            stream: true
+          supplied:
+            kind: azure_async
+            api_key: client-key
+          get_error:
+            text: sent
+            status: {present: true, value: null}
+            message: {present: true, value: null}
+        - model: deployment
+          api_base: https://unit.test
+          api_version: "2024-02-01"
+          api_key: call-key
+          max_retries: 0
+          data:
+            model: deployment
+            messages:
+              - role: user
+                content: Hello
+            stream: true
+          supplied:
+            kind: azure_async
+            api_key: client-key
+          get_error:
+            text: sent
+            response: {present: true, value: {retry-after: "9"}}
+        - model: deployment
+          api_base: https://unit.test
+          api_version: "2024-02-01"
+          api_key: call-key
+          max_retries: 0
+          data:
+            model: deployment
+            messages:
+              - role: user
+                content: Hello
+            stream: true
+          supplied:
+            kind: azure_async
+            api_key: client-key
+          get_error:
+            text: sent
+            headers: {present: true, value: {}}
+            response: {present: true, value: {retry-after: "9"}}
+        - model: deployment
+          api_base: https://unit.test
+          api_version: "2024-02-01"
+          api_key: call-key
+          max_retries: 0
+          data:
+            model: deployment
+            messages:
+              - role: user
+                content: Hello
+            stream: true
+          supplied:
+            kind: azure_async
+            api_key: client-key
+          get_error:
+            text: sent
+            headers: {present: true, value: {x-error: "yes"}}
+            body: {present: true, value: {code: "bad"}}
+        - model: deployment
+          api_base: https://unit.test
+          api_version: "2024-02-01"
+          api_key: call-key
+          max_retries: 0
+          data:
+            model: deployment
+            messages:
+              - role: user
+                content: Hello
+            stream: true
+          supplied:
+            kind: azure_async
+            api_key: client-key
+          get_error:
+            text: sent
+            body: {present: true, value: null}
+env: {}
+compare: {ignore: []}

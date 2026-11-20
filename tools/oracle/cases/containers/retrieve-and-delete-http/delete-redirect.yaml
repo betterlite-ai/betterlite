@@ -1,0 +1,21 @@
+kind: helper
+name: delete-redirect
+call:
+  b3365:
+    operation: delete
+    asynchronous: false
+    container_id: cntr_1
+    api_key: sk-test
+    api_base: https://api.example/v1
+    extra_headers: {}
+    extra_query: {}
+    reply:
+      status: 302
+      headers: {x-request-id: req_1}
+      body: '{"id":"cntr_1","object":"container.deleted","deleted":true}'
+    failure: answer
+env: {}
+compare:
+  ignore:
+    - pointer: /value/outcome/message
+      why: "LiteLLM masks the body text of the raised status error, and betterlite reads the body raw, see docs/deviations/B3365.yaml"

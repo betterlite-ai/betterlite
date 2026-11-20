@@ -1,0 +1,47 @@
+task: B3454
+deviations:
+  - what: >-
+      Every HTTP call (create, initiate, finalize) runs through an injected GeminiTransport
+      port, not through get_async_httpx_client, and a failure to get any reply is a typed
+      TransportError that keeps the lower error as its source.
+    why: >-
+      The module stays testable without HTTP and keeps the crate graph acyclic. B3460
+      builds the port on the shared pool, so timeouts, size caps and TLS policy are the
+      pool's, and a non-2xx status stays a reply the module checks rather than an
+      exception raised by the HTTP handler.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/gemini_ingestion.py#L125-L141
+  - what: >-
+      The API key and base defaults come from an injected GeminiDefaults, not from
+      GeminiModelInfo.get_api_key() and get_api_base() reading os.environ at call time.
+    why: >-
+      betterlite reads environment variables once at startup (see betterlite-env), so the
+      store never calls getenv; B3460 builds these defaults from the Studio identity
+      settings.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/common_utils.py#L374-L380
+  - what: >-
+      A reply body that is not UTF-8 is described in the error text as its byte count
+      ("N bytes that are not UTF-8"). LiteLLM's response.text decodes with replacement
+      characters and puts that text in the message.
+    why: >-
+      from_utf8_lossy is denied in this workspace, and a mangled body helps nobody: the
+      typed error carries the byte count instead. The status codes and the error kind are
+      unchanged, and the oracle cases send UTF-8 bodies.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/gemini_ingestion.py#L158-L161
+kept_bugs:
+  - what: >-
+      A finalize reply that cannot be decoded (bad JSON, a body that is not an object, or
+      a null or non-object file) is swallowed at warning level and becomes the file id
+      "uploaded", while an unreadable create reply fails the whole call.
+    why: >-
+      Both halves are what LiteLLM does at the pin, and the placeholder is the value a
+      working setup sees for a Gemini reply it cannot read, so the asymmetry is copied
+      rather than made consistent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/gemini_ingestion.py#L318-L332
+  - what: >-
+      The upload URL drops every occurrence of "/v1beta" from the base with a plain
+      replace-all, so a configured base such as https://host/v1beta/proxy loses that
+      segment too.
+    why: >-
+      LiteLLM uses str.replace here and the resulting URL is what a working setup sends,
+      so the replace-all is copied instead of stripping only a trailing version segment.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/gemini_ingestion.py#L223-L226

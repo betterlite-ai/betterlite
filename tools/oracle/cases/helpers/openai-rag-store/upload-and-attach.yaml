@@ -1,0 +1,14 @@
+kind: helper
+name: openai-rag-store-upload-and-attach
+call:
+  b3453:
+    options:
+      vector_store:
+        vector_store_id: vs_existing
+    file_content_base64: aGVsbG8=
+    filename: notes.md
+    content_type: text/markdown
+    upload_id: file-new
+env: {}
+compare:
+  ignore: []

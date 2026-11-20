@@ -1,0 +1,20 @@
+task: B8378
+deviations:
+  - what: >-
+      A malformed model_info.access_windows is refused with betterlite's typed window errors, so the text
+      after "invalid model_info.access_windows:" differs from pydantic's validation text: for example
+      "0.start: must be a time like 09:00" where LiteLLM prints "0.start: Input should be in a valid time
+      format, input is too short".
+    why: >-
+      The check calls B322's access_windows_config_error, which renders the typed WindowError the deployment
+      build raises. The refusal, the model name prefix and the field location match; docs/compatibility.md
+      leaves pydantic's rendered validation text outside the contract.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/access_windows.py#L23-L32
+  - what: >-
+      A max_agentic_loops value above u32::MAX is refused as "must be an integer" where LiteLLM accepts any
+      positive Python integer.
+    why: >-
+      The check applies B4110's validated_max_agentic_loops, whose u32 bound B4110 already documents as a
+      deviation; a ceiling of more than four billion loops is not a reachable agentic loop.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/agentic_loop_settings.py#L48-L59
+kept_bugs: []
