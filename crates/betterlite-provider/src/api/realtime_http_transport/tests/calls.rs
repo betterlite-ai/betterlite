@@ -13,8 +13,8 @@ use crate::api::realtime_http_transport::calls::{CallsCall, calls_post, session_
 use crate::api::realtime_http_transport::error::RealtimeHttpError;
 
 use super::{
-    BOUNDARY, Reply, Request, exchange, fallback_deps, input_untouched, json_object, logging_env,
-    logging_state, ok_reply, runtime, test_source,
+    BOUNDARY, OK_REPLY, Reply, Request, exchange, fallback_deps, input_untouched, json_object,
+    logging_env, logging_state, runtime, test_source,
 };
 
 // Three bytes of every cap: the SDP text is longer than the JSON body cap the decoder enforces
@@ -107,7 +107,7 @@ fn calls_record_the_offer_the_url_and_the_session() {
     let envelope = logging_env(&redactor);
     let source = test_source();
     let session = alloy_session();
-    let (api_base, _, answers) = exchange(&[ok_reply()], |api_base| {
+    let (api_base, _, answers) = exchange(&[OK_REPLY], |api_base| {
         runtime().block_on(async {
             let deps = fallback_deps(&source, None, ApiLimits::default());
             let call = CallsCall {
@@ -191,7 +191,7 @@ fn calls_extra_headers_override_the_ephemeral_authorization() {
         String::from("Authorization"),
         String::from("Bearer caller-token"),
     )]);
-    let replies = [ok_reply()];
+    let replies = [OK_REPLY];
     let (_, requests, answers) = exchange(&replies, |api_base| {
         runtime().block_on(async {
             let deps = fallback_deps(&source, None, ApiLimits::default());
