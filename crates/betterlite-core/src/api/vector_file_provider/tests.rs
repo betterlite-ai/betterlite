@@ -137,7 +137,7 @@ fn registry_failure_keeps_arguments(#[case] registry: Registry, #[case] expected
     prepare_registry_credentials("vs_a", &mut kwargs, lookup.as_ref());
     assert_eq!(kwargs, original);
     assert_eq!(
-        lookup.map_or(0, |lookup| lookup.calls().len()),
+        lookup.as_ref().map_or(0, |scripted| scripted.calls().len()),
         expected_calls
     );
 }

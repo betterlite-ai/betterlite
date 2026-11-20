@@ -60,10 +60,10 @@ pub fn prepare_registry_credentials<L>(
 ) where
     L: CredentialLookup + ?Sized,
 {
-    let Some(registry) = registry else {
+    let Some(found) = registry else {
         return;
     };
-    let Ok(credentials) = registry.lookup_credentials(vector_store_id) else {
+    let Ok(credentials) = found.lookup_credentials(vector_store_id) else {
         return;
     };
     kwargs.0.extend(credentials.0);
