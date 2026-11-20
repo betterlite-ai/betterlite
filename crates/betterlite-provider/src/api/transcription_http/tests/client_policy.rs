@@ -115,31 +115,32 @@ async fn assert_only_a_matching_supplied_client_is_reused() {
     );
 }
 
-async fn fallback_calls(entry: Entry) -> Vec<ClientCall> {
+async fn fallback_calls(entry: Entry, litellm_json: &str) -> Vec<ClientCall> {
     let harness = Harness::new();
     let mut fixture = Fixture::new("transcription");
-    run(
-        &harness,
-        &mut fixture,
-        None,
-        r#"{"ssl_verify":false}"#,
-        entry,
-    )
-    .await
-    .expect("the fallback sends");
+    run(&harness, &mut fixture, None, litellm_json, entry)
+        .await
+        .expect("the fallback sends");
     harness.source.calls()
 }
 
 async fn assert_fallback_client_reads_verification() {
     assert_eq!(
-        fallback_calls(Entry::Async).await,
+        fallback_calls(Entry::Async, r#"{"ssl_verify":false}"#).await,
         vec![ClientCall {
             ssl_verify: Some(SslVerify::Enabled(false)),
             shared_session: true,
         }]
     );
     assert_eq!(
-        fallback_calls(Entry::Audio).await,
+        fallback_calls(Entry::Async, r#"{"ssl_verify":true}"#).await,
+        vec![ClientCall {
+            ssl_verify: Some(SslVerify::Enabled(true)),
+            shared_session: true,
+        }]
+    );
+    assert_eq!(
+        fallback_calls(Entry::Audio, r#"{"ssl_verify":false}"#).await,
         vec![ClientCall {
             ssl_verify: None,
             shared_session: false,
