@@ -230,6 +230,11 @@ fn an_unreadable_local_flag_names_its_variable() {
 
 #[test]
 fn default_settings_carry_litellm_defaults() {
+    assert_eq!(
+        DEFAULT_BLOG_POSTS_URL,
+        "https://docs.litellm.ai/blog/rss.xml"
+    );
+    assert_eq!(DEFAULT_DOCS_TITLE, "LiteLLM API");
     let settings = Settings::default();
     assert_eq!(settings.blog_posts_url, DEFAULT_BLOG_POSTS_URL);
     assert!(!settings.local_blog_posts);
