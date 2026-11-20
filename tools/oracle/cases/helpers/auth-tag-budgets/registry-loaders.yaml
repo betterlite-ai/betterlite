@@ -1,0 +1,26 @@
+kind: helper
+name: auth-tag-budgets-registry-loaders
+call:
+  auth_tag_budgets:
+    function: group_registry
+    database: true
+    names: []
+    cached: []
+    rows:
+      - access_group_name: group-b
+        spend: 0.0
+    fail_query: false
+calls:
+  - auth_tag_budgets:
+      function: tag_registry
+      database: true
+      names: []
+      cached: []
+      rows:
+        - tag_name: tag-1
+          models: []
+          spend: 0.0
+      fail_query: false
+env: {}
+compare:
+  ignore: []
