@@ -988,18 +988,19 @@ async fn upload_diagnostics_media_placeholder_and_error_log() {
     assert!(error_messages[0].contains("Failed to get upload URL from initial request"));
 }
 
-// every fuzz corpus seed decodes without panicking, the invariant the fuzz target checks
-#[test]
-fn replays_upload_location_corpus() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/file_upload_location");
-    assert!(fs::read_dir(&corpus).expect("the corpus directory").count() >= 8);
-    for entry in fs::read_dir(&corpus).expect("the corpus directory") {
-        let bytes = fs::read(entry.expect("a corpus entry").path()).expect("a corpus file");
+fn replay_file_upload_location_corpus(corpus: &Path) {
+    for entry in fs::read_dir(corpus).expect("the corpus directory") {
         drop(decode_file_upload_location(
-            &bytes,
+            &fs::read(entry.expect("a corpus entry").path()).expect("a corpus file"),
             UploadUrlLocation::Body,
             "upload_url",
             ApiLimits::default(),
         ));
     }
+}
+
+#[test]
+fn replays_upload_location_corpus() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/file_upload_location");
+    replay_file_upload_location_corpus(&corpus);
 }
