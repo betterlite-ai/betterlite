@@ -48,7 +48,7 @@ pub(super) fn resolve(response_id: &str, explicit_provider: Option<&str>) -> Res
 }
 
 // `aget_responses=True` is the only flag value that selects the async client, as Python's `is True`
-pub(super) fn mode_flag(flag: Option<&Json>) -> ClientKind {
+pub(super) const fn mode_flag(flag: Option<&Json>) -> ClientKind {
     if matches!(flag, Some(Json::Bool(true))) {
         ClientKind::Asynchronous
     } else {
@@ -76,22 +76,26 @@ pub(super) fn timeout_deadline(
 
 // an httpx.Timeout stands for the read phase, and a phases object without one keeps the configured default
 fn phase_deadline(phases: &LifecyclePhases, fallback: Duration) -> Option<Duration> {
-    match phases.read.as_ref().and_then(Number::as_f64) {
-        None => Some(fallback),
-        Some(seconds) if seconds == 0.0_f64 => Some(fallback),
-        Some(seconds) => Duration::try_from_secs_f64(seconds).ok(),
+    let Some(seconds) = phases.read.as_ref().and_then(Number::as_f64) else {
+        return Some(fallback);
+    };
+    if seconds == 0.0_f64 {
+        return Some(fallback);
     }
+    Duration::try_from_secs_f64(seconds).ok()
 }
 
 // litellm_metadata.model_info.id and encrypted_content_affinity_enabled, where absent and null take the defaults
 pub(super) fn affinity(
     litellm_metadata: Option<&IndexMap<String, Json>>,
 ) -> Result<AffinityMetadata, LifecycleError> {
-    match litellm_metadata {
-        None => Ok(AffinityMetadata::default()),
-        Some(fields) => transcode::<IndexMap<String, Json>, AffinityMetadata>(fields)
-            .map_err(LifecycleError::Rewrite),
-    }
+    litellm_metadata.map_or_else(
+        || Ok(AffinityMetadata::default()),
+        |fields| {
+            transcode::<IndexMap<String, Json>, AffinityMetadata>(fields)
+                .map_err(LifecycleError::Rewrite)
+        },
+    )
 }
 
 // the wrapper's decode: a nonempty encoded id and provider replace the raw ones, and the wrapper replays with them
@@ -106,40 +110,31 @@ pub(super) fn decode(identity: &ReadIdentity) -> ReadIdentity {
     decoded
 }
 
-// the decoded id, the provider the id or the caller names, and the config tag behind the provider
 pub(super) fn select(
     response_id: &str,
     explicit_provider: Option<&str>,
     operation: LifecycleOperation,
-    facts: &ResponsesModelFacts,
+    facts: ResponsesModelFacts,
     redactor: &Redactor,
-) -> Result<ReadCallPlan, LifecycleFailure> {
+) -> Result<ReadCallPlan, Box<LifecycleFailure>> {
     let resolved = resolve(response_id, explicit_provider);
     let Some(provider) = resolved.provider else {
-        return Err(LifecycleFailure::new(
+        return Err(Box::new(LifecycleFailure::new(
             LifecycleError::MissingProvider,
             None,
             redactor,
-        ));
-    };
-    let unsupported = match operation {
-        LifecycleOperation::Retrieve => LifecycleError::UnsupportedRetrieve {
-            provider: provider.clone(),
-        },
-        LifecycleOperation::InputItems => LifecycleError::UnsupportedInputItems {
-            provider: provider.clone(),
-        },
+        )));
     };
     let Some(tag) = provider
         .parse::<ProviderId>()
         .ok()
-        .and_then(|id| select_responses_config(Some(id), None, facts))
+        .and_then(|id| select_responses_config(Some(id), None, &facts))
     else {
-        return Err(LifecycleFailure::new(
-            unsupported,
+        return Err(Box::new(LifecycleFailure::new(
+            unsupported(operation, &provider),
             Some(&provider),
             redactor,
-        ));
+        )));
     };
     Ok(ReadCallPlan {
         response_id: resolved.response_id,
@@ -148,13 +143,65 @@ pub(super) fn select(
     })
 }
 
+// the ValueError text LiteLLM raises when the provider has no config for this read
+fn unsupported(operation: LifecycleOperation, provider: &str) -> LifecycleError {
+    match operation {
+        LifecycleOperation::Retrieve => LifecycleError::UnsupportedRetrieve {
+            provider: provider.to_owned(),
+        },
+        LifecycleOperation::InputItems => LifecycleError::UnsupportedInputItems {
+            provider: provider.to_owned(),
+        },
+    }
+}
+
 // update_from_kwargs(kwargs=local_vars, model=None, optional_params, litellm_params, custom_llm_provider)
 pub(super) fn log_call(
     state: &mut LoggingState,
     plan: &ReadCallPlan,
     identity: &ReadIdentity,
     redactor: &Redactor,
-) -> Result<(), LifecycleFailure> {
+) -> Result<(), Box<LifecycleFailure>> {
+    let litellm_params = IndexMap::from([(
+        String::from("litellm_call_id"),
+        identity
+            .litellm_call_id
+            .clone()
+            .map_or(Json::Null, Json::Text),
+    )]);
+    update_from_kwargs(
+        state,
+        &call_kwargs(identity),
+        Some(&litellm_params),
+        call_update(plan),
+    )
+    .map_err(|error| {
+        Box::new(LifecycleFailure::new(
+            LifecycleError::Logging(error),
+            Some(&plan.provider),
+            redactor,
+        ))
+    })
+}
+
+// the optional and additional params the read records: the decoded id and the selected provider
+fn call_update(plan: &ReadCallPlan) -> CallUpdate {
+    CallUpdate {
+        model: None,
+        user: None,
+        optional_params: IndexMap::from([(
+            String::from("response_id"),
+            Json::Text(plan.response_id.clone()),
+        )]),
+        additional_params: IndexMap::from([(
+            String::from("custom_llm_provider"),
+            Json::Text(plan.provider.clone()),
+        )]),
+    }
+}
+
+// the caller's metadata fields as update_from_kwargs reads them off the local variables
+fn call_kwargs(identity: &ReadIdentity) -> IndexMap<String, Json> {
     let mut kwargs = IndexMap::new();
     if let Some(metadata) = &identity.metadata {
         kwargs.insert(String::from("metadata"), Json::Object(metadata.clone()));
@@ -165,40 +212,5 @@ pub(super) fn log_call(
             Json::Object(litellm_metadata.clone()),
         );
     }
-    let mut litellm_params = IndexMap::new();
-    litellm_params.insert(
-        String::from("litellm_call_id"),
-        identity
-            .litellm_call_id
-            .as_ref()
-            .map_or(Json::Null, |id| Json::Text(id.clone())),
-    );
-    let mut optional_params = IndexMap::new();
-    optional_params.insert(
-        String::from("response_id"),
-        Json::Text(plan.response_id.clone()),
-    );
-    let mut additional_params = IndexMap::new();
-    additional_params.insert(
-        String::from("custom_llm_provider"),
-        Json::Text(plan.provider.clone()),
-    );
-    update_from_kwargs(
-        state,
-        &kwargs,
-        Some(&litellm_params),
-        CallUpdate {
-            model: None,
-            user: None,
-            optional_params,
-            additional_params,
-        },
-    )
-    .map_err(|error| {
-        LifecycleFailure::new(
-            LifecycleError::Logging(error),
-            Some(&plan.provider),
-            redactor,
-        )
-    })
+    kwargs
 }

@@ -7,6 +7,7 @@ use secrecy::zeroize::Zeroize;
 use secrecy::{CloneableSecret, ExposeSecret as _, SecretBox, SecretString, SerializableSecret};
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
+use serde_with::rust::double_option;
 
 use crate::api::responses_read_http::config::ReadParams;
 
@@ -28,7 +29,6 @@ pub(super) enum LifecycleOperation {
     InputItems,
 }
 
-// what both reads carry: the id, the provider it may encode, and the kwargs the handler passes on
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct ReadIdentity {
     pub response_id: String,
@@ -64,8 +64,7 @@ impl ReadIdentity {
         }
     }
 
-    // the read this call describes, with the operation's own extras
-    pub(super) fn sdk_read<'read>(&'read self, extras: ReadExtras<'read>) -> SdkRead<'read> {
+    pub(super) const fn sdk_read<'read>(&'read self, extras: ReadExtras<'read>) -> SdkRead<'read> {
         SdkRead {
             identity: self,
             extras,
@@ -73,7 +72,6 @@ impl ReadIdentity {
     }
 }
 
-// one SDK read as the shared path needs it: the call's identity and the operation's own extras
 pub(super) struct SdkRead<'call> {
     pub(super) identity: &'call ReadIdentity,
     pub(super) extras: ReadExtras<'call>,
@@ -86,14 +84,13 @@ pub(super) enum ReadExtras<'call> {
         flag: Option<&'call Json>,
     },
     InputItems {
-        query: ListInputItemsQuery,
+        query: &'call ListInputItemsQuery,
         flag: Option<&'call Json>,
     },
 }
 
 impl ReadExtras<'_> {
-    // the SDK operation the extras belong to
-    pub(super) fn operation(&self) -> LifecycleOperation {
+    pub(super) const fn operation(&self) -> LifecycleOperation {
         match self {
             ReadExtras::Retrieve { .. } => LifecycleOperation::Retrieve,
             ReadExtras::InputItems { .. } => LifecycleOperation::InputItems,
@@ -106,7 +103,7 @@ impl ReadExtras<'_> {
 #[serde(untagged)]
 pub enum LifecycleTimeout {
     Seconds(Number),
-    Phases(LifecyclePhases),
+    Phases(Box<LifecyclePhases>),
 }
 
 // httpx.Timeout's four phases, each a number of seconds
@@ -144,33 +141,32 @@ pub struct ResponsesInputItemsCall {
     pub before: Option<String>,
     #[serde(default)]
     pub include: Option<Vec<String>>,
-    #[serde(default = "default_limit")]
-    pub limit: Option<i64>,
-    #[serde(default = "default_order")]
-    pub order: Option<InputItemsOrder>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "double_option"
+    )]
+    pub limit: Option<Option<i64>>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "double_option"
+    )]
+    pub order: Option<Option<InputItemsOrder>>,
     #[serde(skip)]
     pub alist_input_items: Option<Json>,
 }
 
 impl ResponsesInputItemsCall {
-    // the five pagination arguments as the query the provider GET carries
     pub(super) fn query(&self) -> ListInputItemsQuery {
         ListInputItemsQuery {
             after: self.after.clone(),
             before: self.before.clone(),
             include: self.include.clone(),
-            limit: self.limit,
-            order: self.order,
+            limit: self.limit.unwrap_or(Some(20)),
+            order: self.order.unwrap_or(Some(InputItemsOrder::Desc)),
         }
     }
-}
-
-const fn default_limit() -> Option<i64> {
-    Some(20)
-}
-
-const fn default_order() -> Option<InputItemsOrder> {
-    Some(InputItemsOrder::Desc)
 }
 
 mod tests;

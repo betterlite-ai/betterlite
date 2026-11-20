@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_context::resource_config_selection::responses::ResponsesConfigTag;
@@ -10,10 +11,12 @@ use betterlite_openai::response_resources::response::TypedReply;
 use serde_json::Number;
 
 use self::support::{
-    Answer, DEFAULT_TIMEOUT, Fixture, caller_headers, input_items, json, map, retrieve,
+    Answer, DEFAULT_TIMEOUT, Fixture, Recorded, caller_headers, input_items, json, map, retrieve,
 };
 use super::error::{LifecycleError, LifecycleFailure};
-use super::input::{LifecyclePhases, LifecycleTimeout};
+use super::input::{
+    LifecyclePhases, LifecycleTimeout, ResponsesInputItemsCall, ResponsesRetrieveCall,
+};
 use crate::api::response_id_codecs::response::{build_response_id, decode_response_id};
 use crate::api::responses_read_http::error::ReadError;
 use crate::api::responses_read_http::service::ClientKind;
@@ -51,7 +54,7 @@ fn retrieved(reply: TypedReply, model_id: &str, response_id: &str) -> TypedReply
 }
 
 // checks that the exception's flat fields read as null rather than absent, and hands it back
-fn null_fields(failure: LifecycleFailure) -> LifecycleFailure {
+fn null_fields(failure: Box<LifecycleFailure>) -> Box<LifecycleFailure> {
     assert_eq!(failure.kind, WireField::Null);
     assert_eq!(failure.param, WireField::Null);
     assert_eq!(failure.code, WireField::Null);
@@ -75,14 +78,24 @@ async fn retrieve_routes_encoded_id() {
             header: None,
         },
     ]);
-    let encoded = build_response_id(Some("openai"), Some("deployment-a"), "resp/a");
-    let mut call = retrieve(CALL);
-    call.identity.response_id = encoded;
-    call.identity.custom_llm_provider = Some(String::from("anthropic"));
+    let call = encoded_retrieve();
+    assert_encoded_retrievals(&mut fixture, &call).await;
+    assert_raw_retrieval(&mut fixture).await;
+    assert_retrieval_records(&fixture.service.executor.records());
+}
 
+// the encoded id names openai in its payload while the explicit provider says anthropic; the id wins
+fn encoded_retrieve() -> ResponsesRetrieveCall {
+    let mut call = retrieve(CALL);
+    call.identity.response_id = build_response_id(Some("openai"), Some("deployment-a"), "resp/a");
+    call.identity.custom_llm_provider = Some(String::from("anthropic"));
+    call
+}
+
+async fn assert_encoded_retrievals(fixture: &mut Fixture, call: &ResponsesRetrieveCall) {
     let reply = retrieved(
         fixture
-            .retrieve(&call)
+            .retrieve(call)
             .await
             .expect("the encoded retrieve succeeds"),
         "deployment-a",
@@ -95,7 +108,7 @@ async fn retrieve_routes_encoded_id() {
 
     let awaited = retrieved(
         fixture
-            .aretrieve(&call)
+            .aretrieve(call)
             .await
             .expect("the awaited retrieve succeeds"),
         "deployment-a",
@@ -105,7 +118,9 @@ async fn retrieve_routes_encoded_id() {
         awaited.headers.get("x-request-id").map(String::as_str),
         Some("req_b")
     );
+}
 
+async fn assert_raw_retrieval(fixture: &mut Fixture) {
     let plain = retrieved(
         fixture
             .retrieve(&retrieve(CALL))
@@ -115,8 +130,9 @@ async fn retrieve_routes_encoded_id() {
         "resp_a",
     );
     assert!(plain.headers.is_empty());
+}
 
-    let records = fixture.service.executor.records();
+fn assert_retrieval_records(records: &[Recorded]) {
     assert_eq!(records.len(), 3);
     assert_eq!(records[0].response_id, "resp/a");
     assert_eq!(records[0].tag, ResponsesConfigTag::OpenAi);
@@ -145,43 +161,52 @@ async fn input_items_sdk_pagination() {
         Answer::Items(ITEMS),
         Answer::Items(ITEMS),
     ]);
-    let defaults = input_items(CALL);
-    let page = fixture
-        .list(&defaults)
+    let default_page = fixture
+        .list(&input_items(CALL))
         .await
         .expect("the default listing succeeds");
-    assert_eq!(page, json(ITEMS));
+    assert_eq!(default_page, json(ITEMS));
+    let explicit_page = fixture
+        .list(&explicit_listing())
+        .await
+        .expect("the explicit listing succeeds");
+    assert_eq!(explicit_page, json(ITEMS));
+    let empty_page = fixture
+        .list(&empty_listing())
+        .await
+        .expect("the empty listing succeeds");
+    assert_eq!(empty_page, json(ITEMS));
+    let awaited = fixture
+        .alist(&input_items(CALL))
+        .await
+        .expect("the awaited listing succeeds");
+    assert_eq!(awaited, json(ITEMS));
+    let records = fixture.service.executor.records();
+    assert_pagination_queries(&records);
+    assert_listing_records(&records);
+}
 
+// after and before travel as given, and an explicit limit and order replace the defaults
+fn explicit_listing() -> ResponsesInputItemsCall {
     let mut explicit = input_items(CALL);
     explicit.after = Some(String::new());
     explicit.before = Some(String::from("item_b"));
     explicit.include = Some(vec![String::from("message.input_image.image_url")]);
-    explicit.limit = Some(2);
-    explicit.order = Some(InputItemsOrder::Asc);
-    let page = fixture
-        .list(&explicit)
-        .await
-        .expect("the explicit listing succeeds");
-    assert_eq!(page, json(ITEMS));
+    explicit.limit = Some(Some(2));
+    explicit.order = Some(Some(InputItemsOrder::Asc));
+    explicit
+}
 
+// an empty include list stays an empty list, and an explicit null limit and order are not the defaults
+fn empty_listing() -> ResponsesInputItemsCall {
     let mut empty = input_items(CALL);
     empty.include = Some(Vec::new());
-    empty.limit = None;
-    empty.order = None;
-    let page = fixture
-        .list(&empty)
-        .await
-        .expect("the empty listing succeeds");
-    assert_eq!(page, json(ITEMS));
+    empty.limit = Some(None);
+    empty.order = Some(None);
+    empty
+}
 
-    let awaited = fixture
-        .alist(&defaults)
-        .await
-        .expect("the awaited listing succeeds");
-    assert_eq!(awaited, json(ITEMS));
-
-    let records = fixture.service.executor.records();
-    assert_eq!(records.len(), 4);
+fn assert_pagination_queries(records: &[Recorded]) {
     let Some(default_query) = &records[0].query else {
         panic!("the default listing sends a query");
     };
@@ -207,6 +232,10 @@ async fn input_items_sdk_pagination() {
     assert_eq!(empty_query.include, Some(Vec::new()));
     assert_eq!(empty_query.limit, None);
     assert_eq!(empty_query.order, None);
+}
+
+fn assert_listing_records(records: &[Recorded]) {
+    assert_eq!(records.len(), 4);
     assert_eq!(records[3].query, records[0].query);
     assert_eq!(records[3].mode, ClientKind::Asynchronous);
     assert_eq!(records[3].response_id, "resp_a");
@@ -221,160 +250,207 @@ async fn input_items_sdk_pagination() {
 // extra_query never reaches the read seam, the timeout default follows the configured value, and only a JSON true flag is async
 #[tokio::test]
 async fn read_ignored_extras_and_context() {
-    let mut fixture = Fixture::new(vec![
-        Answer::Retrieved {
-            body: BODY,
-            header: None,
-        },
-        Answer::Retrieved {
-            body: BODY,
-            header: None,
-        },
-        Answer::Retrieved {
-            body: BODY,
-            header: None,
-        },
-        Answer::Retrieved {
-            body: BODY,
-            header: None,
-        },
-        Answer::Retrieved {
-            body: BODY,
-            header: None,
-        },
-        Answer::Retrieved {
-            body: BODY,
-            header: None,
-        },
-        Answer::Retrieved {
-            body: BODY,
-            header: None,
-        },
-        Answer::Retrieved {
-            body: BODY,
-            header: None,
-        },
-        Answer::Items(ITEMS),
-        Answer::Items(ITEMS),
-        Answer::Retrieved {
-            body: BODY,
-            header: None,
-        },
-    ]);
+    let mut fixture = extras_fixture();
+    let headers = assert_ignored_extras(&mut fixture).await;
+    assert_timeout_variants(&mut fixture).await;
+    assert_mode_flags(&mut fixture).await;
+    assert_zero_phases(&mut fixture).await;
+    assert_read_records(&fixture.service.executor.records(), &headers);
+    assert_eq!(fixture.state().model, "responses");
+    assert_eq!(
+        fixture.state().custom_llm_provider.as_deref(),
+        Some("openai")
+    );
+    assert_injected_timeout().await;
+}
+
+// eleven queued answers, one per read the test makes, in the order it makes them
+fn extras_fixture() -> Fixture {
+    let answer = Answer::Retrieved {
+        body: BODY,
+        header: None,
+    };
+    let mut answers = vec![answer; 8];
+    answers.extend([Answer::Items(ITEMS), Answer::Items(ITEMS)]);
+    answers.push(Answer::Retrieved {
+        body: BODY,
+        header: None,
+    });
+    Fixture::new(answers)
+}
+
+// the caller's headers and body reach the seam, while extra_query stays off the query
+async fn assert_ignored_extras(fixture: &mut Fixture) -> BTreeMap<String, String> {
     let mut extras = retrieve(CALL);
     let headers = caller_headers(&[("X-Trace", "trace-a")]);
     assert_eq!(headers.get("X-Trace").map(String::as_str), Some("trace-a"));
     extras.identity.extra_headers = Some(headers.clone());
     extras.extra_query = Some(map(r#"{"after":"ignored"}"#));
     extras.extra_body = Some(map(r#"{"ignored":true}"#));
-    extras.identity.timeout = Some(LifecycleTimeout::Seconds(Number::from(7)));
+    extras.identity.timeout = Some(LifecycleTimeout::Seconds(Number::from(7_i32)));
     extras.identity.metadata = Some(map(r#"{"request_id":"r1"}"#));
-    let _ = fixture
-        .retrieve(&extras)
-        .await
-        .expect("the extras retrieve succeeds");
+    drop(
+        fixture
+            .retrieve(&extras)
+            .await
+            .expect("the extras retrieve succeeds"),
+    );
+    headers
+}
 
-    let _ = fixture
-        .retrieve(&retrieve(NO_CALL_ID))
-        .await
-        .expect("the default-timeout retrieve succeeds");
+async fn assert_timeout_variants(fixture: &mut Fixture) {
+    assert_scalar_timeouts(fixture).await;
+    assert_phase_timeouts(fixture).await;
+}
+
+// an absent timeout and an explicit zero both take the configured default
+async fn assert_scalar_timeouts(fixture: &mut Fixture) {
+    drop(
+        fixture
+            .retrieve(&retrieve(NO_CALL_ID))
+            .await
+            .expect("the default-timeout retrieve succeeds"),
+    );
     let mut zero = retrieve(NO_CALL_ID);
-    zero.identity.timeout = Some(LifecycleTimeout::Seconds(Number::from(0)));
-    let _ = fixture
-        .retrieve(&zero)
-        .await
-        .expect("the zero-timeout retrieve succeeds");
+    zero.identity.timeout = Some(LifecycleTimeout::Seconds(Number::from(0_i32)));
+    drop(
+        fixture
+            .retrieve(&zero)
+            .await
+            .expect("the zero-timeout retrieve succeeds"),
+    );
+}
+
+// a phases object uses its read phase, and a phases object without one keeps the default
+async fn assert_phase_timeouts(fixture: &mut Fixture) {
     let mut phases = retrieve(NO_CALL_ID);
-    phases.identity.timeout = Some(LifecycleTimeout::Phases(LifecyclePhases {
+    phases.identity.timeout = Some(LifecycleTimeout::Phases(Box::new(LifecyclePhases {
         connect: None,
-        read: Some(Number::from(9)),
+        read: Some(Number::from(9_i32)),
         write: None,
         pool: None,
-    }));
-    let _ = fixture
-        .retrieve(&phases)
-        .await
-        .expect("the phased retrieve succeeds");
+    })));
+    drop(
+        fixture
+            .retrieve(&phases)
+            .await
+            .expect("the phased retrieve succeeds"),
+    );
     let mut no_read = retrieve(NO_CALL_ID);
-    no_read.identity.timeout = Some(LifecycleTimeout::Phases(LifecyclePhases {
-        connect: Some(Number::from(3)),
+    no_read.identity.timeout = Some(LifecycleTimeout::Phases(Box::new(LifecyclePhases {
+        connect: Some(Number::from(3_i32)),
         read: None,
         write: None,
         pool: None,
-    }));
-    let _ = fixture
-        .retrieve(&no_read)
-        .await
-        .expect("the connect-only retrieve succeeds");
+    })));
+    drop(
+        fixture
+            .retrieve(&no_read)
+            .await
+            .expect("the connect-only retrieve succeeds"),
+    );
+}
 
+async fn assert_mode_flags(fixture: &mut Fixture) {
+    assert_retrieve_flags(fixture).await;
+    assert_list_flags(fixture).await;
+}
+
+// a number or a text flag stays on the sync client, and only a JSON true selects the async one
+async fn assert_retrieve_flags(fixture: &mut Fixture) {
     let mut number_flag = retrieve(NO_CALL_ID);
     number_flag.aget_responses = Some(json("1"));
-    let _ = fixture
-        .retrieve(&number_flag)
-        .await
-        .expect("the number-flagged retrieve succeeds");
+    drop(
+        fixture
+            .retrieve(&number_flag)
+            .await
+            .expect("the number-flagged retrieve succeeds"),
+    );
     let mut text_flag = retrieve(NO_CALL_ID);
     text_flag.aget_responses = Some(Json::Text(String::from("true")));
-    let _ = fixture
-        .retrieve(&text_flag)
-        .await
-        .expect("the text-flagged retrieve succeeds");
+    drop(
+        fixture
+            .retrieve(&text_flag)
+            .await
+            .expect("the text-flagged retrieve succeeds"),
+    );
     let mut bool_flag = retrieve(NO_CALL_ID);
     bool_flag.aget_responses = Some(Json::Bool(true));
-    let _ = fixture
-        .retrieve(&bool_flag)
-        .await
-        .expect("the bool-flagged retrieve succeeds");
+    drop(
+        fixture
+            .retrieve(&bool_flag)
+            .await
+            .expect("the bool-flagged retrieve succeeds"),
+    );
+}
+
+async fn assert_list_flags(fixture: &mut Fixture) {
     let mut items_number = input_items(NO_CALL_ID);
     items_number.alist_input_items = Some(json("1"));
-    let _ = fixture
-        .list(&items_number)
-        .await
-        .expect("the number-flagged listing succeeds");
+    drop(
+        fixture
+            .list(&items_number)
+            .await
+            .expect("the number-flagged listing succeeds"),
+    );
     let mut items_bool = input_items(NO_CALL_ID);
     items_bool.alist_input_items = Some(Json::Bool(true));
-    let _ = fixture
-        .alist(&items_bool)
-        .await
-        .expect("the bool-flagged listing succeeds");
+    drop(
+        fixture
+            .alist(&items_bool)
+            .await
+            .expect("the bool-flagged listing succeeds"),
+    );
+}
 
+// a phases read of zero seconds falls back to the default, like a whole-number zero timeout
+async fn assert_zero_phases(fixture: &mut Fixture) {
     let mut zero_read = retrieve(NO_CALL_ID);
-    zero_read.identity.timeout = Some(LifecycleTimeout::Phases(LifecyclePhases {
+    zero_read.identity.timeout = Some(LifecycleTimeout::Phases(Box::new(LifecyclePhases {
         connect: None,
-        read: Some(Number::from(0)),
+        read: Some(Number::from(0_i32)),
         write: None,
         pool: None,
-    }));
-    let _ = fixture
-        .retrieve(&zero_read)
-        .await
-        .expect("the zero-read retrieve succeeds");
-
-    let records = fixture.service.executor.records();
-    assert_eq!(records.len(), 11);
-    assert_eq!(records[0].extra_headers, Some(headers));
-    assert_eq!(records[0].extra_body, Some(map(r#"{"ignored":true}"#)));
-    assert!(records[0].query.is_none());
-    assert_eq!(records[0].timeout, Some(Duration::from_secs(7)));
-    assert_eq!(records[0].mode, ClientKind::Sync);
-    assert_eq!(
-        records[0].logged_optional,
-        map(r#"{"response_id":"resp_a"}"#)
+    })));
+    drop(
+        fixture
+            .retrieve(&zero_read)
+            .await
+            .expect("the zero-read retrieve succeeds"),
     );
+}
+
+fn assert_read_records(records: &[Recorded], headers: &BTreeMap<String, String>) {
+    assert_eq!(records.len(), 11);
+    assert_extras_record(&records[0], headers);
+    assert_timeout_records(records);
+    assert_mode_records(records);
+}
+
+fn assert_extras_record(record: &Recorded, headers: &BTreeMap<String, String>) {
+    assert_eq!(record.extra_headers.as_ref(), Some(headers));
+    assert_eq!(record.extra_body, Some(map(r#"{"ignored":true}"#)));
+    assert!(record.query.is_none());
+    assert_eq!(record.timeout, Some(Duration::from_secs(7)));
+    assert_eq!(record.mode, ClientKind::Sync);
+    assert_eq!(record.logged_optional, map(r#"{"response_id":"resp_a"}"#));
     assert_eq!(
-        records[0].logged_litellm.get("litellm_call_id"),
+        record.logged_litellm.get("litellm_call_id"),
         Some(&Json::Text(String::from("call-a")))
     );
     assert_eq!(
-        records[0].logged_litellm.get("metadata"),
+        record.logged_litellm.get("metadata"),
         Some(&Json::Object(map(r#"{"request_id":"r1"}"#)))
     );
     assert_eq!(
-        records[0].logged_litellm.get("litellm_metadata"),
+        record.logged_litellm.get("litellm_metadata"),
         Some(&Json::Object(map(
             r#"{"model_info":{"id":"deployment-a"}}"#
         )))
     );
+}
+
+fn assert_timeout_records(records: &[Recorded]) {
     assert_eq!(records[1].timeout, Some(DEFAULT_TIMEOUT));
     assert_eq!(
         records[1].logged_litellm.get("litellm_call_id"),
@@ -383,6 +459,13 @@ async fn read_ignored_extras_and_context() {
     assert_eq!(records[2].timeout, Some(DEFAULT_TIMEOUT));
     assert_eq!(records[3].timeout, Some(Duration::from_secs(9)));
     assert_eq!(records[4].timeout, Some(DEFAULT_TIMEOUT));
+    assert_eq!(records[10].timeout, Some(DEFAULT_TIMEOUT));
+    assert_eq!(records[10].mode, ClientKind::Sync);
+    assert!(records[10].query.is_none());
+    assert!(records.iter().take(8).all(|record| record.query.is_none()));
+}
+
+fn assert_mode_records(records: &[Recorded]) {
     assert_eq!(records[5].mode, ClientKind::Sync);
     assert_eq!(records[6].mode, ClientKind::Sync);
     assert_eq!(records[7].mode, ClientKind::Asynchronous);
@@ -392,16 +475,10 @@ async fn read_ignored_extras_and_context() {
     );
     assert_eq!(records[8].mode, ClientKind::Sync);
     assert_eq!(records[9].mode, ClientKind::Asynchronous);
-    assert_eq!(records[10].timeout, Some(DEFAULT_TIMEOUT));
-    assert_eq!(records[10].mode, ClientKind::Sync);
-    assert!(records[10].query.is_none());
-    assert!(records.iter().take(8).all(|record| record.query.is_none()));
-    assert_eq!(fixture.state().model, "responses");
-    assert_eq!(
-        fixture.state().custom_llm_provider.as_deref(),
-        Some("openai")
-    );
+}
 
+// the injected default replaces the imported REQUEST_TIMEOUT when the caller passes no timeout
+async fn assert_injected_timeout() {
     let mut injected = Fixture::with_timeout(
         vec![Answer::Retrieved {
             body: BODY,
@@ -409,10 +486,12 @@ async fn read_ignored_extras_and_context() {
         }],
         Duration::from_secs(17),
     );
-    let _ = injected
-        .retrieve(&retrieve(NO_CALL_ID))
-        .await
-        .expect("the injected-default retrieve succeeds");
+    drop(
+        injected
+            .retrieve(&retrieve(NO_CALL_ID))
+            .await
+            .expect("the injected-default retrieve succeeds"),
+    );
     assert_eq!(
         injected.service.executor.records()[0].timeout,
         Some(Duration::from_secs(17))
@@ -422,7 +501,19 @@ async fn read_ignored_extras_and_context() {
 // every locally raised and provider error keeps its class, status and flat fields, and the source cause survives
 #[tokio::test]
 async fn read_provider_errors() {
-    let mut fixture = Fixture::new(vec![
+    let mut fixture = error_fixture();
+    assert_missing_provider(&mut fixture).await;
+    assert_unsupported_providers(&mut fixture).await;
+    assert!(fixture.service.executor.records().is_empty());
+    assert_dod_failure(&mut fixture).await;
+    assert_plain_failure(&mut fixture).await;
+    assert_server_failure(&mut fixture).await;
+    assert_auth_failure(&mut fixture).await;
+    assert_eq!(fixture.service.executor.records().len(), 4);
+}
+
+fn error_fixture() -> Fixture {
+    Fixture::new(vec![
         Answer::Provider {
             status: 404,
             message: DOD_404,
@@ -439,7 +530,10 @@ async fn read_provider_errors() {
             status: 401,
             message: "unauthorized",
         },
-    ]);
+    ])
+}
+
+async fn assert_missing_provider(fixture: &mut Fixture) {
     let missing = null_fields(
         fixture
             .retrieve(&retrieve(MISSING_PROVIDER))
@@ -466,7 +560,9 @@ async fn read_provider_errors() {
     assert_eq!(awaited.class, missing.class);
     assert_eq!(awaited.status, missing.status);
     assert_eq!(awaited.message, missing.message);
+}
 
+async fn assert_unsupported_providers(fixture: &mut Fixture) {
     let unsupported = null_fields(
         fixture
             .retrieve(&retrieve(ANTHROPIC))
@@ -493,8 +589,9 @@ async fn read_provider_errors() {
         .expect_err("the awaited unsupported listing fails before HTTP");
     assert_eq!(unsupported_awaited.class, unsupported_items.class);
     assert_eq!(unsupported_awaited.message, unsupported_items.message);
-    assert!(fixture.service.executor.records().is_empty());
+}
 
+async fn assert_dod_failure(fixture: &mut Fixture) {
     let bad = null_fields(
         fixture
             .retrieve(&retrieve(CALL))
@@ -504,12 +601,17 @@ async fn read_provider_errors() {
     assert_eq!(bad.class, "BadRequestError");
     assert_eq!(bad.status, 404);
     assert_eq!(bad.message, format!("OpenAIException - {DOD_404}"));
-    let LifecycleError::Read(ReadError::Provider(source)) = &bad.error else {
+    let LifecycleError::Read(error) = &bad.error else {
+        panic!("the provider cause is kept, got {:?}", bad.error);
+    };
+    let ReadError::Provider(source) = &**error else {
         panic!("the provider cause is kept, got {:?}", bad.error);
     };
     assert_eq!(source.status_code, 404);
     assert_eq!(source.message, DOD_404);
+}
 
+async fn assert_plain_failure(fixture: &mut Fixture) {
     let plain = null_fields(
         fixture
             .retrieve(&retrieve(CALL))
@@ -522,7 +624,9 @@ async fn read_provider_errors() {
         plain.message,
         format!("NotFoundError: OpenAIException - {PLAIN_404}")
     );
+}
 
+async fn assert_server_failure(fixture: &mut Fixture) {
     let server = fixture
         .retrieve(&retrieve(CALL))
         .await
@@ -539,7 +643,9 @@ async fn read_provider_errors() {
         server.message,
         "InternalServerError: OpenAIException - not json"
     );
+}
 
+async fn assert_auth_failure(fixture: &mut Fixture) {
     let auth = null_fields(
         fixture
             .retrieve(&retrieve(CALL))
@@ -552,5 +658,4 @@ async fn read_provider_errors() {
         auth.message,
         "AuthenticationError: OpenAIException - unauthorized"
     );
-    assert_eq!(fixture.service.executor.records().len(), 4);
 }

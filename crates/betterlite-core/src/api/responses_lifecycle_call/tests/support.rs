@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, VecDeque};
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::future::Future;
+use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_context::resource_config_selection::responses::{
@@ -30,7 +31,7 @@ use crate::api::responses_read_http::error::ReadError;
 use crate::api::responses_read_http::service::{ClientKind, ReadOutcome};
 use crate::api::vector_store_http_write::error::BaseLlmException;
 
-pub(crate) const DEFAULT_TIMEOUT: Duration = Duration::from_secs(6000);
+pub(crate) const DEFAULT_TIMEOUT: Duration = Duration::from_mins(100);
 
 // the logging state a request starts from, before the lifecycle call writes its own fields
 const INIT: &str = r#"{"model":"responses","call_type":"responses","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
@@ -58,6 +59,7 @@ pub(crate) fn input_items(text: &str) -> ResponsesInputItemsCall {
     serde_json::from_str(text).expect("the input-items fixture parses")
 }
 
+#[derive(Clone)]
 pub(crate) enum Answer {
     Retrieved {
         body: &'static str,
@@ -70,12 +72,12 @@ pub(crate) enum Answer {
     },
 }
 
+#[derive(Clone)]
 pub(crate) struct Recorded {
     pub(crate) tag: ResponsesConfigTag,
     pub(crate) response_id: String,
     pub(crate) api_base: Option<String>,
     pub(crate) api_key: Option<String>,
-    pub(crate) ssl_verify: Option<bool>,
     pub(crate) extra_headers: Option<BTreeMap<String, String>>,
     pub(crate) extra_body: Option<IndexMap<String, Json>>,
     pub(crate) query: Option<ListInputItemsQuery>,
@@ -99,13 +101,19 @@ impl FakeExecutor {
         }
     }
 
-    pub(crate) fn records(&self) -> MutexGuard<'_, Vec<Recorded>> {
-        self.records.lock().unwrap_or_else(PoisonError::into_inner)
+    pub(crate) fn records(&self) -> Vec<Recorded> {
+        self.records
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 }
 
 impl ResponsesReadExecutor for FakeExecutor {
-    async fn read(&self, request: ReadRequest<'_, '_, '_>) -> Result<ReadOutcome, ReadError> {
+    fn read(
+        &self,
+        request: ReadRequest<'_, '_, '_>,
+    ) -> impl Future<Output = Result<ReadOutcome, ReadError>> + Send {
         let answer = self
             .answers
             .lock()
@@ -124,7 +132,6 @@ impl ResponsesReadExecutor for FakeExecutor {
                     .api_key
                     .as_ref()
                     .map(|key| key.expose_secret().to_owned()),
-                ssl_verify: request.params.ssl_verify,
                 extra_headers: request.extra_headers.cloned(),
                 extra_body: request.extra_body.cloned(),
                 query: request.query.cloned(),
@@ -133,29 +140,29 @@ impl ResponsesReadExecutor for FakeExecutor {
                 logged_optional: request.log.state.optional_params.clone(),
                 logged_litellm: request.log.state.litellm_params.clone(),
             });
-        reply(answer)
+        std::future::ready(reply(&answer))
     }
 }
 
-fn reply(answer: Answer) -> Result<ReadOutcome, ReadError> {
+fn reply(answer: &Answer) -> Result<ReadOutcome, ReadError> {
     match answer {
         Answer::Retrieved { body, header } => {
             let mut headers = IndexMap::new();
             if let Some((name, value)) = header {
-                headers.insert(name.to_owned(), value.to_owned());
+                headers.insert((*name).to_owned(), (*value).to_owned());
             }
             let raw = RawResponse {
                 status: 200,
                 headers: &headers,
-                text: body,
+                text: *body,
             };
             let typed = response_reply(&raw).map_err(ReadError::Response)?;
             Ok(ReadOutcome::Response(Box::new(typed)))
         }
-        Answer::Items(body) => Ok(ReadOutcome::InputItems(json(body))),
+        Answer::Items(body) => Ok(ReadOutcome::InputItems(json(*body))),
         Answer::Provider { status, message } => Err(ReadError::Provider(BaseLlmException {
-            status_code: status,
-            message: message.to_owned(),
+            status_code: *status,
+            message: (*message).to_owned(),
             headers: BTreeMap::new(),
             status_code_is_synthesized: false,
         })),
@@ -250,7 +257,7 @@ impl Fixture {
     pub(crate) async fn retrieve(
         &mut self,
         call: &ResponsesRetrieveCall,
-    ) -> Result<TypedReply, LifecycleFailure> {
+    ) -> Result<TypedReply, Box<LifecycleFailure>> {
         let log = log_of(&self.service, &self.sink, &mut self.state, self.now);
         self.service.get_responses(call, log).await
     }
@@ -258,7 +265,7 @@ impl Fixture {
     pub(crate) async fn aretrieve(
         &mut self,
         call: &ResponsesRetrieveCall,
-    ) -> Result<TypedReply, LifecycleFailure> {
+    ) -> Result<TypedReply, Box<LifecycleFailure>> {
         let log = log_of(&self.service, &self.sink, &mut self.state, self.now);
         self.service.aget_responses(call, log).await
     }
@@ -266,7 +273,7 @@ impl Fixture {
     pub(crate) async fn list(
         &mut self,
         call: &ResponsesInputItemsCall,
-    ) -> Result<Json, LifecycleFailure> {
+    ) -> Result<Json, Box<LifecycleFailure>> {
         let log = log_of(&self.service, &self.sink, &mut self.state, self.now);
         self.service.list_input_items(call, log).await
     }
@@ -274,7 +281,7 @@ impl Fixture {
     pub(crate) async fn alist(
         &mut self,
         call: &ResponsesInputItemsCall,
-    ) -> Result<Json, LifecycleFailure> {
+    ) -> Result<Json, Box<LifecycleFailure>> {
         let log = log_of(&self.service, &self.sink, &mut self.state, self.now);
         self.service.alist_input_items(call.clone(), log).await
     }

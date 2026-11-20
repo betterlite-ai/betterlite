@@ -17,7 +17,7 @@ pub enum LifecycleError {
     #[error("list_input_items is not supported for {provider}")]
     UnsupportedInputItems { provider: String },
     #[error(transparent)]
-    Read(#[from] ReadError),
+    Read(Box<ReadError>),
     #[error(transparent)]
     Logging(#[from] LoggingStateError),
     #[error(transparent)]
@@ -63,7 +63,9 @@ impl LifecycleFailure {
 
 // exception_type()'s original_exception: the read handler's BaseLLMException, or the locally raised ValueError
 fn raw_exception(error: &LifecycleError, provider: &str) -> RawException {
-    if let LifecycleError::Read(ReadError::Provider(provider_error)) = error {
+    if let LifecycleError::Read(read) = error
+        && let ReadError::Provider(provider_error) = &**read
+    {
         return RawException {
             model: String::new(),
             custom_llm_provider: provider.to_owned(),

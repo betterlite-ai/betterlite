@@ -21,11 +21,9 @@ use super::call_plan::{
 use super::error::{LifecycleError, LifecycleFailure};
 use super::executor::{ReadRequest, ResponsesReadExecutor};
 use super::input::{
-    LifecycleOperation, ReadExtras, ReadIdentity, ResponsesInputItemsCall, ResponsesRetrieveCall,
-    SdkRead,
+    ReadExtras, ReadIdentity, ResponsesInputItemsCall, ResponsesRetrieveCall, SdkRead,
 };
 
-// the state and the pre-call environment the read logs through, owned for one call
 pub struct LifecycleLog<'borrow, 'env> {
     pub state: &'borrow mut LoggingState,
     pub env: PrePostEnv<'env>,
@@ -38,9 +36,7 @@ pub struct ResponsesLifecycle<Executor> {
     pub redactor: Redactor,
 }
 
-// the per-call pieces a read request carries besides the resolved plan and its params
 struct ReadSpec<'call> {
-    provider: Option<&'call str>,
     extra_headers: Option<&'call BTreeMap<String, String>>,
     extra_body: Option<&'call IndexMap<String, Json>>,
     query: Option<&'call ListInputItemsQuery>,
@@ -57,7 +53,7 @@ where
         &self,
         call: &ResponsesRetrieveCall,
         log: LifecycleLog<'_, '_>,
-    ) -> Result<TypedReply, LifecycleFailure> {
+    ) -> Result<TypedReply, Box<LifecycleFailure>> {
         let extras = ReadExtras::Retrieve {
             extra_body: call.extra_body.as_ref(),
             flag: call.aget_responses.as_ref(),
@@ -71,7 +67,7 @@ where
         &self,
         call: &ResponsesRetrieveCall,
         log: LifecycleLog<'_, '_>,
-    ) -> Result<TypedReply, LifecycleFailure> {
+    ) -> Result<TypedReply, Box<LifecycleFailure>> {
         let mut inner = call.clone();
         inner.identity = decode(&call.identity);
         inner.aget_responses = Some(Json::Bool(true));
@@ -86,10 +82,10 @@ where
         &self,
         call: &ResponsesInputItemsCall,
         log: LifecycleLog<'_, '_>,
-    ) -> Result<Json, LifecycleFailure> {
+    ) -> Result<Json, Box<LifecycleFailure>> {
         let query = call.query();
         let extras = ReadExtras::InputItems {
-            query,
+            query: &query,
             flag: call.alist_input_items.as_ref(),
         };
         let read = call.identity.sdk_read(extras);
@@ -102,28 +98,10 @@ where
         &self,
         mut call: ResponsesInputItemsCall,
         log: LifecycleLog<'_, '_>,
-    ) -> Result<Json, LifecycleFailure> {
+    ) -> Result<Json, Box<LifecycleFailure>> {
         call.identity = decode(&call.identity);
         call.alist_input_items = Some(Json::Bool(true));
         self.list_input_items(&call, log).await
-    }
-
-    // the plan, the pre-call and the read params both sync entries settle before the request is built
-    fn start(
-        &self,
-        identity: &ReadIdentity,
-        operation: LifecycleOperation,
-        log: &mut LifecycleLog<'_, '_>,
-    ) -> Result<(ReadCallPlan, ReadParams), LifecycleFailure> {
-        let plan = select(
-            &identity.response_id,
-            identity.custom_llm_provider.as_deref(),
-            operation,
-            &self.facts,
-            &self.redactor,
-        )?;
-        log_call(&mut *log.state, &plan, identity, &self.redactor)?;
-        Ok((plan, identity.read_params()))
     }
 
     // the shared sync path: resolve the plan, log the pre-call, build the request and run it
@@ -131,18 +109,25 @@ where
         &self,
         read: SdkRead<'_>,
         mut log: LifecycleLog<'_, '_>,
-    ) -> Result<(ReadOutcome, ReadCallPlan), LifecycleFailure> {
+    ) -> Result<(ReadOutcome, ReadCallPlan), Box<LifecycleFailure>> {
         let operation = read.extras.operation();
         let (extra_body, query, flag) = match read.extras {
             ReadExtras::Retrieve { extra_body, flag } => (extra_body, None, flag),
             ReadExtras::InputItems { query, flag } => (None, Some(query), flag),
         };
-        let (plan, params) = self.start(read.identity, operation, &mut log)?;
+        let plan = select(
+            &read.identity.response_id,
+            read.identity.custom_llm_provider.as_deref(),
+            operation,
+            self.facts,
+            &self.redactor,
+        )?;
+        log_call(&mut *log.state, &plan, read.identity, &self.redactor)?;
+        let params = read.identity.read_params();
         let spec = ReadSpec {
-            provider: Some(&plan.provider),
             extra_headers: read.identity.extra_headers.as_ref(),
             extra_body,
-            query: query.as_ref(),
+            query,
             timeout: timeout_deadline(read.identity.timeout.as_ref(), self.default_timeout),
             mode: mode_flag(flag),
         };
@@ -156,26 +141,30 @@ where
         outcome: ReadOutcome,
         plan: &ReadCallPlan,
         identity: &ReadIdentity,
-    ) -> Result<TypedReply, LifecycleFailure> {
+    ) -> Result<TypedReply, Box<LifecycleFailure>> {
         let ReadOutcome::Response(mut reply) = outcome else {
-            return Err(LifecycleFailure::new(
+            return Err(Box::new(LifecycleFailure::new(
                 LifecycleError::UnexpectedInputItems,
                 Some(&plan.provider),
                 &self.redactor,
-            ));
+            )));
         };
         self.rewrite(&mut reply.response, Some(&plan.provider), identity)?;
         Ok(*reply)
     }
 
     // the item list is the provider's own JSON: no id rewrite touches it
-    fn item_page(&self, outcome: ReadOutcome, provider: &str) -> Result<Json, LifecycleFailure> {
+    fn item_page(
+        &self,
+        outcome: ReadOutcome,
+        provider: &str,
+    ) -> Result<Json, Box<LifecycleFailure>> {
         let ReadOutcome::InputItems(items) = outcome else {
-            return Err(LifecycleFailure::new(
+            return Err(Box::new(LifecycleFailure::new(
                 LifecycleError::UnexpectedResponse,
                 Some(provider),
                 &self.redactor,
-            ));
+            )));
         };
         Ok(items)
     }
@@ -187,7 +176,7 @@ where
         params: &ReadParams,
         spec: ReadSpec<'_>,
         log: LifecycleLog<'_, '_>,
-    ) -> Result<ReadOutcome, LifecycleFailure> {
+    ) -> Result<ReadOutcome, Box<LifecycleFailure>> {
         let request = ReadRequest {
             tag: &plan.tag,
             response_id: &plan.response_id,
@@ -203,7 +192,11 @@ where
             },
         };
         self.executor.read(request).await.map_err(|error| {
-            LifecycleFailure::new(LifecycleError::Read(error), spec.provider, &self.redactor)
+            Box::new(LifecycleFailure::new(
+                LifecycleError::Read(Box::new(error)),
+                Some(plan.provider.as_str()),
+                &self.redactor,
+            ))
         })
     }
 
@@ -212,11 +205,15 @@ where
         response: &mut ResponsesApiResponse,
         provider: Option<&str>,
         identity: &ReadIdentity,
-    ) -> Result<(), LifecycleFailure> {
+    ) -> Result<(), Box<LifecycleFailure>> {
         let metadata = affinity(identity.litellm_metadata.as_ref())
-            .map_err(|error| LifecycleFailure::new(error, provider, &self.redactor))?;
+            .map_err(|error| Box::new(LifecycleFailure::new(error, provider, &self.redactor)))?;
         rewrite_typed_response(response, provider, &metadata).map_err(|error| {
-            LifecycleFailure::new(LifecycleError::Rewrite(error), provider, &self.redactor)
+            Box::new(LifecycleFailure::new(
+                LifecycleError::Rewrite(error),
+                provider,
+                &self.redactor,
+            ))
         })
     }
 }
