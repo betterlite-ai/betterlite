@@ -104,7 +104,7 @@ fn guardrail(args: &Args) -> Result<BedrockGuardrail, Box<HelperError>> {
     for (key, value) in pairs {
         params.insert(key.to_owned(), GuardrailValue::Text(value.to_owned()));
     }
-    BedrockGuardrail::__init(BedrockGuardrailInit {
+    BedrockGuardrail::__init__(BedrockGuardrailInit {
         guardrail_identifier: None,
         guardrail_version: None,
         disable_exception_on_block: Some(args.disable_exception_on_block),
@@ -129,7 +129,9 @@ fn guardrail(args: &Args) -> Result<BedrockGuardrail, Box<HelperError>> {
 
 fn base_settings() -> GuardrailSettings {
     let mut settings = GuardrailSettings::default();
-    settings.guardrail_name = Some(GUARDRAIL_NAME.to_owned());
+    settings
+        .guardrail_name
+        .clone_from(&Some(GUARDRAIL_NAME.to_owned()));
     settings
 }
 
