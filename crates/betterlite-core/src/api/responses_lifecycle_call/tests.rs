@@ -29,7 +29,8 @@ const NO_CALL_ID: &str = r#"{"response_id":"resp_a","custom_llm_provider":"opena
 const MISSING_PROVIDER: &str = r#"{"response_id":"resp_a"}"#;
 const ANTHROPIC: &str = r#"{"response_id":"resp_a","custom_llm_provider":"anthropic"}"#;
 
-fn assert_retrieved(reply: &TypedReply, model_id: &str, response_id: &str) {
+// checks the rewritten id and the response's own fields, and hands the reply back for the header checks
+fn retrieved(reply: TypedReply, model_id: &str, response_id: &str) -> TypedReply {
     assert_eq!(
         reply.response.id,
         build_response_id(Some("openai"), Some(model_id), response_id)
@@ -44,12 +45,15 @@ fn assert_retrieved(reply: &TypedReply, model_id: &str, response_id: &str) {
     assert_eq!(reply.response.created_at, 9_i64);
     assert_eq!(reply.response.status.as_deref(), Some("completed"));
     assert_eq!(reply.response.model.as_deref(), Some("gpt-4o"));
+    reply
 }
 
-fn assert_null_fields(failure: &LifecycleFailure) {
+// checks that the exception's flat fields read as null rather than absent, and hands it back
+fn null_fields(failure: LifecycleFailure) -> LifecycleFailure {
     assert_eq!(failure.kind, WireField::Null);
     assert_eq!(failure.param, WireField::Null);
     assert_eq!(failure.code, WireField::Null);
+    failure
 }
 
 // the encoded id reaches the provider decoded, and the rewrite encodes the answered id exactly once
@@ -74,31 +78,41 @@ async fn retrieve_routes_encoded_id() {
     call.response_id = encoded;
     call.custom_llm_provider = Some(String::from("anthropic"));
 
-    let reply = fixture
-        .retrieve(&call)
-        .await
-        .expect("the encoded retrieve succeeds");
-    assert_retrieved(&reply, "deployment-a", "resp/a");
+    let reply = retrieved(
+        fixture
+            .retrieve(&call)
+            .await
+            .expect("the encoded retrieve succeeds"),
+        "deployment-a",
+        "resp/a",
+    );
     assert_eq!(
         reply.headers.get("x-request-id").map(String::as_str),
         Some("req_a")
     );
 
-    let awaited = fixture
-        .aretrieve(&call)
-        .await
-        .expect("the awaited retrieve succeeds");
-    assert_retrieved(&awaited, "deployment-a", "resp/a");
+    let awaited = retrieved(
+        fixture
+            .aretrieve(&call)
+            .await
+            .expect("the awaited retrieve succeeds"),
+        "deployment-a",
+        "resp/a",
+    );
     assert_eq!(
         awaited.headers.get("x-request-id").map(String::as_str),
         Some("req_b")
     );
 
-    let plain = fixture
-        .retrieve(&retrieve(CALL))
-        .await
-        .expect("the raw retrieve succeeds");
-    assert_retrieved(&plain, "deployment-a", "resp_a");
+    let plain = retrieved(
+        fixture
+            .retrieve(&retrieve(CALL))
+            .await
+            .expect("the raw retrieve succeeds"),
+        "deployment-a",
+        "resp_a",
+    );
+    assert!(plain.headers.is_empty());
 
     let records = fixture.service.executor.records();
     assert_eq!(records.len(), 3);
@@ -240,9 +254,15 @@ async fn read_ignored_extras_and_context() {
         },
         Answer::Items(ITEMS),
         Answer::Items(ITEMS),
+        Answer::Retrieved {
+            body: BODY,
+            header: None,
+        },
     ]);
     let mut extras = retrieve(CALL);
-    extras.extra_headers = Some(caller_headers(&[("X-Trace", "trace-a")]));
+    let headers = caller_headers(&[("X-Trace", "trace-a")]);
+    assert_eq!(headers.get("X-Trace").map(String::as_str), Some("trace-a"));
+    extras.extra_headers = Some(headers.clone());
     extras.extra_query = Some(map(r#"{"after":"ignored"}"#));
     extras.extra_body = Some(map(r#"{"ignored":true}"#));
     extras.timeout = Some(LifecycleTimeout::Seconds(Number::from(7)));
@@ -316,12 +336,21 @@ async fn read_ignored_extras_and_context() {
         .await
         .expect("the bool-flagged listing succeeds");
 
+    let mut zero_read = retrieve(NO_CALL_ID);
+    zero_read.timeout = Some(LifecycleTimeout::Phases(LifecyclePhases {
+        connect: None,
+        read: Some(Number::from(0)),
+        write: None,
+        pool: None,
+    }));
+    let _ = fixture
+        .retrieve(&zero_read)
+        .await
+        .expect("the zero-read retrieve succeeds");
+
     let records = fixture.service.executor.records();
-    assert_eq!(records.len(), 10);
-    assert_eq!(
-        records[0].extra_headers,
-        Some(caller_headers(&[("X-Trace", "trace-a")]))
-    );
+    assert_eq!(records.len(), 11);
+    assert_eq!(records[0].extra_headers, Some(headers));
     assert_eq!(records[0].extra_body, Some(map(r#"{"ignored":true}"#)));
     assert!(records[0].query.is_none());
     assert_eq!(records[0].timeout, Some(Duration::from_secs(7)));
@@ -361,6 +390,9 @@ async fn read_ignored_extras_and_context() {
     );
     assert_eq!(records[8].mode, ClientKind::Sync);
     assert_eq!(records[9].mode, ClientKind::Asynchronous);
+    assert_eq!(records[10].timeout, Some(DEFAULT_TIMEOUT));
+    assert_eq!(records[10].mode, ClientKind::Sync);
+    assert!(records[10].query.is_none());
     assert!(records.iter().take(8).all(|record| record.query.is_none()));
     assert_eq!(fixture.state().model, "responses");
     assert_eq!(
@@ -406,13 +438,14 @@ async fn read_provider_errors() {
             message: "unauthorized",
         },
     ]);
-    let missing = fixture
-        .retrieve(&retrieve(MISSING_PROVIDER))
-        .await
-        .expect_err("the missing provider fails before HTTP");
+    let missing = null_fields(
+        fixture
+            .retrieve(&retrieve(MISSING_PROVIDER))
+            .await
+            .expect_err("the missing provider fails before HTTP"),
+    );
     assert_eq!(missing.class, "APIConnectionError");
     assert_eq!(missing.status, 500);
-    assert_null_fields(&missing);
     assert_eq!(
         missing.message,
         "Exception - custom_llm_provider is required but passed as None"
@@ -422,22 +455,24 @@ async fn read_provider_errors() {
         "custom_llm_provider is required but passed as None"
     );
 
-    let awaited = fixture
-        .aretrieve(&retrieve(MISSING_PROVIDER))
-        .await
-        .expect_err("the awaited missing provider fails the same way");
+    let awaited = null_fields(
+        fixture
+            .aretrieve(&retrieve(MISSING_PROVIDER))
+            .await
+            .expect_err("the awaited missing provider fails the same way"),
+    );
     assert_eq!(awaited.class, missing.class);
     assert_eq!(awaited.status, missing.status);
     assert_eq!(awaited.message, missing.message);
-    assert_null_fields(&awaited);
 
-    let unsupported = fixture
-        .retrieve(&retrieve(ANTHROPIC))
-        .await
-        .expect_err("the unsupported provider fails before HTTP");
+    let unsupported = null_fields(
+        fixture
+            .retrieve(&retrieve(ANTHROPIC))
+            .await
+            .expect_err("the unsupported provider fails before HTTP"),
+    );
     assert_eq!(unsupported.class, "APIConnectionError");
     assert_eq!(unsupported.status, 500);
-    assert_null_fields(&unsupported);
     assert_eq!(
         unsupported.message,
         "AnthropicException - GET responses is not supported for anthropic"
@@ -458,13 +493,14 @@ async fn read_provider_errors() {
     assert_eq!(unsupported_awaited.message, unsupported_items.message);
     assert!(fixture.service.executor.records().is_empty());
 
-    let bad = fixture
-        .retrieve(&retrieve(CALL))
-        .await
-        .expect_err("the 404 fails");
+    let bad = null_fields(
+        fixture
+            .retrieve(&retrieve(CALL))
+            .await
+            .expect_err("the 404 fails"),
+    );
     assert_eq!(bad.class, "BadRequestError");
     assert_eq!(bad.status, 404);
-    assert_null_fields(&bad);
     assert_eq!(bad.message, format!("OpenAIException - {DOD_404}"));
     let LifecycleError::Read(ReadError::Provider(source)) = &bad.error else {
         panic!("the provider cause is kept, got {:?}", bad.error);
@@ -472,13 +508,14 @@ async fn read_provider_errors() {
     assert_eq!(source.status_code, 404);
     assert_eq!(source.message, DOD_404);
 
-    let plain = fixture
-        .retrieve(&retrieve(CALL))
-        .await
-        .expect_err("the plain 404 fails");
+    let plain = null_fields(
+        fixture
+            .retrieve(&retrieve(CALL))
+            .await
+            .expect_err("the plain 404 fails"),
+    );
     assert_eq!(plain.class, "NotFoundError");
     assert_eq!(plain.status, 404);
-    assert_null_fields(&plain);
     assert_eq!(
         plain.message,
         format!("NotFoundError: OpenAIException - {PLAIN_404}")
@@ -501,13 +538,14 @@ async fn read_provider_errors() {
         "InternalServerError: OpenAIException - not json"
     );
 
-    let auth = fixture
-        .retrieve(&retrieve(CALL))
-        .await
-        .expect_err("the 401 fails");
+    let auth = null_fields(
+        fixture
+            .retrieve(&retrieve(CALL))
+            .await
+            .expect_err("the 401 fails"),
+    );
     assert_eq!(auth.class, "AuthenticationError");
     assert_eq!(auth.status, 401);
-    assert_null_fields(&auth);
     assert_eq!(
         auth.message,
         "AuthenticationError: OpenAIException - unauthorized"

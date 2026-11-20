@@ -119,3 +119,5 @@ const fn default_limit() -> Option<i64> {
 const fn default_order() -> Option<InputItemsOrder> {
     Some(InputItemsOrder::Desc)
 }
+
+mod tests;
