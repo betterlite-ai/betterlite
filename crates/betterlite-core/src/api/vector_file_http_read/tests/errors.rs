@@ -86,7 +86,10 @@ async fn a_malformed_reply_is_a_transform_error() {
         panic!("a reply that is not JSON is a transform error");
     };
     assert_eq!(failure.status_code, 200);
-    assert_eq!(failure.message, "invalid vector store reply (status 200)");
+    assert_eq!(
+        failure.message,
+        "invalid vector store reply (status 200 OK)"
+    );
     assert_eq!(wire.requests().len(), 1);
 }
 

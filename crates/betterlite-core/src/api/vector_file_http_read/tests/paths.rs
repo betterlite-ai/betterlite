@@ -91,8 +91,8 @@ async fn an_array_reply_stays_parsed_json(#[case] operation: Operation) {
 }
 
 #[rstest]
-#[case::retrieve(Operation::Retrieve, "retrieve", "/v1/files/file_b")]
-#[case::content(Operation::Content, "content", "/v1/files/file_b/content")]
+#[case::retrieve(Operation::Retrieve, "retrieve", "/v1/files/file/b")]
+#[case::content(Operation::Content, "content", "/v1/files/file/b/content")]
 #[tokio::test]
 async fn each_operation_uses_its_own_transforms(
     #[case] operation: Operation,
