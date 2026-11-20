@@ -38,7 +38,7 @@ pub(super) fn upload_name(body: &[u8]) -> Result<String, ReplyError> {
     else {
         return Err(ReplyError::NotObject);
     };
-    if let Some(name) = top_name(fields) {
+    if let Some(name) = top_name(&fields) {
         return Ok(name);
     }
     match fields.get("file") {

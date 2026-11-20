@@ -254,8 +254,10 @@ fn text_field(
     let Some(raw) = config.get(field) else {
         return Ok(None);
     };
-    serde_json::from_str(raw.get()).map_err(|_source| GeminiIngestionError::Setting {
-        field,
-        expected: "a string",
+    serde_json::from_str::<Option<String>>(raw.get()).map_err(|_source| {
+        GeminiIngestionError::Setting {
+            field,
+            expected: "a string",
+        }
     })
 }

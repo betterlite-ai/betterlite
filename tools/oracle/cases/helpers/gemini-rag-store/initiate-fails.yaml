@@ -4,7 +4,11 @@ call:
   b3454:
     script:
       - status: 202
+        headers:
+          x-goog-upload-url: https://upload.test/session
         body: boom
+      - status: 200
+        body: '{"name":"files/1"}'
     options:
       vector_store:
         custom_llm_provider: gemini

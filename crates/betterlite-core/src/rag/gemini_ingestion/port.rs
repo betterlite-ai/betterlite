@@ -1,4 +1,5 @@
 use std::error::Error as StdError;
+use std::fmt::{Debug, Formatter, Result as FmtResult};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -53,13 +54,30 @@ impl TransportBody {
     }
 }
 
-#[derive(Debug)]
 pub struct TransportRequest {
     pub method: TransportMethod,
     pub url: String,
     pub headers: HeaderMap,
     pub body: TransportBody,
     pub timeout: Duration,
+}
+
+// The headers carry the API key, so a request prints their names and a body size, never a value
+impl Debug for TransportRequest {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
+        let body_bytes = match &self.body {
+            TransportBody::Json(value) => serde_json::to_vec(value).ok().map(|bytes| bytes.len()),
+            TransportBody::Bytes(bytes) => Some(bytes.len()),
+        };
+        formatter
+            .debug_struct("TransportRequest")
+            .field("method", &self.method)
+            .field("url", &self.url)
+            .field("header_names", &self.headers.keys().collect::<Vec<_>>())
+            .field("body_bytes", &body_bytes)
+            .field("timeout", &self.timeout)
+            .finish()
+    }
 }
 
 // The one call a Gemini store or upload makes; B3460 builds this on betterlite-http

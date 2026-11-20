@@ -4,6 +4,7 @@ mod codec;
 mod transport;
 
 use std::collections::BTreeMap;
+use std::fmt::Debug;
 use std::future::Future;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -12,6 +13,7 @@ use async_trait::async_trait;
 use betterlite_config::credentials::CredentialValues;
 use betterlite_models::decisions::Json;
 use http::HeaderMap;
+use http::header::HeaderValue;
 use secrecy::SecretString;
 use serde_json::value::{RawValue, to_raw_value};
 use tracing::field::{Field, Visit};
@@ -21,7 +23,7 @@ use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
 use self::transport::{Scripted, ScriptedReply, Sent, reply};
-use super::port::GeminiTransport;
+use super::port::{GeminiTransport, TransportBody, TransportMethod, TransportRequest};
 use super::{EmbedStep, GeminiDefaults, GeminiIngestion, GeminiIngestionError};
 use crate::rag::ingestion::config::IngestionOptions;
 use crate::rag::ingestion::credentials::{CredentialLookup, CredentialLookupError};
@@ -91,7 +93,7 @@ fn fixtures(
         },
     )
     .unwrap();
-    let port: Arc<dyn GeminiTransport> = transport.clone();
+    let port: Arc<dyn GeminiTransport> = Arc::clone(&transport);
     Fixture {
         ingestion: GeminiIngestion {
             state,
@@ -145,7 +147,10 @@ fn with_chunking(mut options: IngestionOptions, strategy: &str) -> IngestionOpti
     options
 }
 
-fn block_on<F: Future>(future: F) -> F::Output {
+fn block_on<F>(future: F) -> F::Output
+where
+    F: Future,
+{
     tokio::runtime::Builder::new_current_thread()
         .build()
         .unwrap()
@@ -299,6 +304,53 @@ async fn credentials_empty_config_base_falls_back_to_the_default() {
 }
 
 #[tokio::test]
+async fn credentials_null_config_key_falls_back_to_the_default() {
+    let fixture = fixtures(
+        options(
+            Some("notes"),
+            r#"{"custom_llm_provider":"gemini","api_key":null}"#,
+        ),
+        defaults(),
+        vec![created_store()],
+    );
+    store(&fixture, None, None, None).await.unwrap();
+    let sent = fixture.transport.take_sent();
+    assert_eq!(header(&sent[0].headers, "x-goog-api-key"), KEY);
+}
+
+#[tokio::test]
+async fn credentials_null_config_base_falls_back_to_the_default() {
+    let fixture = fixtures(
+        options(
+            Some("notes"),
+            r#"{"custom_llm_provider":"gemini","api_base":null}"#,
+        ),
+        defaults(),
+        vec![created_store()],
+    );
+    store(&fixture, None, None, None).await.unwrap();
+    let sent = fixture.transport.take_sent();
+    assert_eq!(sent[0].url, "https://gemini.test/v1beta/fileSearchStores");
+}
+
+#[test]
+fn credentials_request_debug_shows_header_names_only() {
+    let mut headers = HeaderMap::new();
+    headers.insert("x-goog-api-key", HeaderValue::from_static(KEY));
+    let request = TransportRequest {
+        method: TransportMethod::Post,
+        url: "https://gemini.test/v1beta/fileSearchStores".to_owned(),
+        headers,
+        body: TransportBody::Bytes(b"hello".to_vec()),
+        timeout: Duration::from_secs(60),
+    };
+    let shown = format!("{request:?}");
+    assert!(!shown.contains(KEY));
+    assert!(shown.contains("x-goog-api-key"));
+    assert!(shown.contains("body_bytes: Some(5)"));
+}
+
+#[tokio::test]
 async fn credentials_key_never_reaches_debug_or_error_text() {
     let configured = defaults();
     assert!(!format!("{configured:?}").contains(KEY));
@@ -382,6 +434,26 @@ async fn create_store_without_a_name_leaves_an_empty_store_id() {
         .unwrap();
     assert_eq!(result, (Some(String::new()), None));
     assert_eq!(fixture.transport.take_sent().len(), 1);
+}
+
+#[rstest::rstest]
+#[case::empty("\"\"")]
+#[case::null("null")]
+#[tokio::test]
+async fn create_store_when_the_config_store_id_is_empty_or_null(#[case] store_id: &str) {
+    let fixture = fixtures(
+        options(
+            Some("notes"),
+            &format!(r#"{{"custom_llm_provider":"gemini","vector_store_id":{store_id}}}"#),
+        ),
+        defaults(),
+        vec![created_store()],
+    );
+    let result = store(&fixture, None, None, None).await.unwrap();
+    assert_eq!(result, (Some(STORE.to_owned()), None));
+    let sent = fixture.transport.take_sent();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].url, "https://gemini.test/v1beta/fileSearchStores");
 }
 
 #[rstest::rstest]
@@ -497,6 +569,23 @@ async fn initiate_uses_the_given_content_type() {
 }
 
 #[tokio::test]
+async fn initiate_defaults_an_empty_content_type() {
+    let fixture = fixtures(
+        options(None, with_store_id()),
+        defaults(),
+        vec![upload_url(), finalized("files/1")],
+    );
+    store(&fixture, Some(b"hello"), Some("a.txt"), Some(""))
+        .await
+        .unwrap();
+    let sent = fixture.transport.take_sent();
+    assert_eq!(
+        header(&sent[0].headers, "x-goog-upload-header-content-type"),
+        "application/octet-stream"
+    );
+}
+
+#[tokio::test]
 async fn initiate_strips_every_version_segment() {
     let fixture = fixtures(
         options(
@@ -558,6 +647,29 @@ async fn initiate_defaults_the_token_limits() {
         body_json(&sent[0]),
         json(
             r#"{"displayName":"a.txt","chunkingConfig":{"whiteSpaceConfig":{"maxTokensPerChunk":800,"maxOverlapTokens":7}}}"#
+        )
+    );
+}
+
+#[tokio::test]
+async fn initiate_passes_through_present_null_token_limits() {
+    let chunked = with_chunking(
+        options(None, with_store_id()),
+        r#"{"white_space_config":{"max_tokens_per_chunk":null,"max_overlap_tokens":null}}"#,
+    );
+    let fixture = fixtures(
+        chunked,
+        defaults(),
+        vec![upload_url(), finalized("files/1")],
+    );
+    store(&fixture, Some(b"hello"), Some("a.txt"), None)
+        .await
+        .unwrap();
+    let sent = fixture.transport.take_sent();
+    assert_eq!(
+        body_json(&sent[0]),
+        json(
+            r#"{"displayName":"a.txt","chunkingConfig":{"whiteSpaceConfig":{"maxTokensPerChunk":null,"maxOverlapTokens":null}}}"#
         )
     );
 }
@@ -777,6 +889,19 @@ async fn finalize_uses_the_placeholder_for_a_null_file() {
         .await
         .unwrap();
     assert_eq!(result.1, Some("uploaded".to_owned()));
+}
+
+#[test]
+fn finalize_uses_the_placeholder_for_a_non_object_reply() {
+    let fixture = fixtures(
+        options(None, with_store_id()),
+        defaults(),
+        vec![upload_url(), reply(200, &[], b"[]")],
+    );
+    let (result, logs) = capture(|| block_on(store(&fixture, Some(b"hello"), Some("a.txt"), None)));
+    assert_eq!(result.unwrap().1, Some("uploaded".to_owned()));
+    assert!(logs.iter().any(|(level, message)| *level == Level::WARN
+        && message.starts_with("Could not parse upload response")));
 }
 
 #[tokio::test]
