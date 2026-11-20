@@ -602,6 +602,67 @@ async fn warm_failure_partial_effects_default_vs_required() {
 }
 
 #[tokio::test]
+async fn warm_reread_failure_returns_the_database_amount_unless_required() {
+    let rows = Arc::new(FakeRows::with_row(spend_row("2.5")));
+    let counter = reseed_with(Some(Arc::clone(&rows)), services(25), 5.0);
+    let batch = FakeBatch::new(None);
+    // the first failure is the recheck read, the second the losing seeder's reread
+    let cache = FakeCache::new(true)
+        .answer(RedisAnswer::Fail)
+        .answer(RedisAnswer::Fail)
+        .with_set_answer(SetAnswer::Taken);
+    let defaulted = counter
+        .coalesced(&cache, &batch, "spend:key:t", false)
+        .await;
+    assert_eq!(answered(defaulted), Some(decimal("2.5")));
+    assert!(cache.memory_sets().is_empty());
+    assert!(batch.recorded().is_empty());
+
+    let strict_cache = FakeCache::new(true)
+        .answer(RedisAnswer::Fail)
+        .answer(RedisAnswer::Fail)
+        .with_set_answer(SetAnswer::Taken);
+    let strict = counter
+        .coalesced(&strict_cache, &batch, "spend:key:t", true)
+        .await;
+    assert!(matches!(strict, Err(CoalescedError::Cache(FakeError))));
+}
+
+#[tokio::test]
+async fn warm_memory_failures_without_redis_return_the_database_amount() {
+    let rows = Arc::new(FakeRows::with_row(spend_row("2.5")));
+    let counter = reseed_with(Some(Arc::clone(&rows)), services(25), 5.0);
+    let miss_batch = FakeBatch::new(Some(CounterValue::Missing));
+    let read_failed = FakeCache::new(false);
+    read_failed.memory_get_fails.store(true, Ordering::Relaxed);
+    let read_answer = counter
+        .coalesced(&read_failed, &miss_batch, "spend:key:t", false)
+        .await;
+    assert_eq!(answered(read_answer), Some(decimal("2.5")));
+    assert!(read_failed.memory_sets().is_empty());
+    let strict_read = counter
+        .coalesced(&read_failed, &miss_batch, "spend:key:t", true)
+        .await;
+    assert!(matches!(strict_read, Err(CoalescedError::Cache(FakeError))));
+
+    let write_failed = FakeCache::new(false);
+    write_failed.memory_set_fails.store(true, Ordering::Relaxed);
+    let write_batch = FakeBatch::new(None);
+    let write_answer = counter
+        .coalesced(&write_failed, &write_batch, "spend:key:t", false)
+        .await;
+    assert_eq!(answered(write_answer), Some(decimal("2.5")));
+    assert!(write_failed.memory_sets().is_empty());
+    let strict_write = counter
+        .coalesced(&write_failed, &write_batch, "spend:key:t", true)
+        .await;
+    assert!(matches!(
+        strict_write,
+        Err(CoalescedError::Cache(FakeError))
+    ));
+}
+
+#[tokio::test]
 async fn warm_failure_keeps_an_ordered_redis_set() {
     let partial_rows = Arc::new(FakeRows::with_row(spend_row("2.5")));
     let partial = reseed_with(Some(Arc::clone(&partial_rows)), services(25), 5.0);
