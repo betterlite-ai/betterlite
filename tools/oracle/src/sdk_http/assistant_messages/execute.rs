@@ -69,21 +69,21 @@ async fn run_once(
         Operation::List => ServiceOperation::List,
     };
     match service::message_call(&request, &context, operation, run.mode == Mode::Async).await {
-        Ok(reply) => {
-            let encoded = match reply {
-                Reply::Message(message) => serde_json::to_value(&message),
-                Reply::Page(page) => serde_json::to_value(&page),
-            }
-            .map_err(SdkHttpError::Serialize)?;
-            Ok(super::RunOutcome {
-                value: Some(encoded),
-                failure: None,
-            })
-        }
+        Ok(reply) => Ok(super::RunOutcome {
+            value: Some(encoded_reply(reply).map_err(SdkHttpError::Serialize)?),
+            failure: None,
+        }),
         Err(failure) => match run.mode {
             Mode::Sync => failure::sync(&failure.error).map(super::RunOutcome::from),
             Mode::Async => Ok(super::RunOutcome::from(failure::mapped(&failure))),
         },
+    }
+}
+
+fn encoded_reply(reply: Reply) -> serde_json::Result<serde_json::Value> {
+    match reply {
+        Reply::Message(message) => serde_json::to_value(message),
+        Reply::Page(page) => serde_json::to_value(page),
     }
 }
 

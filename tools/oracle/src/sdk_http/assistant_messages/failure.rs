@@ -35,7 +35,7 @@ fn provider_failure(error: &MessageError) -> Result<Failure, SdkHttpError> {
         code,
         message: format!(
             "Error code: {status} - {}",
-            std::str::from_utf8(body).unwrap_or("")
+            String::from_utf8(body.to_vec()).unwrap_or_default()
         ),
     })
 }
@@ -46,7 +46,7 @@ fn setup_failure(setup: &SetupError) -> Result<Failure, SdkHttpError> {
         SetupError::Options(options) if !matches!(options, OptionError::MalformedAttachment) => {
             Ok(Failure {
                 class: options.exception_name().to_owned(),
-                status: options.status().map_or(400, |status| status),
+                status: options.status().unwrap_or(400),
                 // litellm.UnsupportedParamsError never reaches openai.APIError.__init__, so type stays unset
                 kind: None,
                 param: Some(None),
