@@ -1,13 +1,16 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::fs;
+use std::path::Path;
 
+use betterlite_config::sections::content_filter_inputs::DEFAULT_RECURSE_DEPTH;
 use betterlite_config::sections::content_filter_records::{BlockedWord, ContentFilterAction};
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use rstest::rstest;
 
 use crate::content_filter_inputs::arguments::{
-    ArgumentFilter, filter_argument_value, scan_tool_call_arguments,
+    ArgumentFilter, filter_argument_value, filter_tool_call_arguments, scan_tool_call_arguments,
 };
 use crate::content_filter_inputs::error::ArgumentFilterError;
 use crate::guardrail_base::failure::GuardrailFailure;
@@ -500,4 +503,29 @@ fn tool_call_depth_limit_starts_at_zero() {
             context_label: "tool call"
         }
     ));
+}
+
+#[test]
+fn replays_the_content_filter_arguments_corpus() {
+    let fixture = Fixture::with_patterns(vec![regex_pattern(
+        "digit",
+        "\\d",
+        ContentFilterAction::Mask,
+    )]);
+    let source = fixture.source();
+    let filter = ArgumentFilter {
+        source: &source,
+        max_depth: DEFAULT_RECURSE_DEPTH,
+    };
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/content_filter_arguments");
+    let mut detections = Vec::new();
+    let outcomes: Vec<_> = fs::read_dir(corpus)
+        .expect("the content filter arguments corpus")
+        .map(|entry| {
+            let arguments = fs::read_to_string(entry.expect("a corpus entry").path())
+                .expect("a utf-8 corpus entry");
+            filter_tool_call_arguments(&filter, &arguments, &mut detections)
+        })
+        .collect();
+    assert!(!outcomes.is_empty());
 }
