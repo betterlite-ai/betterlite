@@ -1,7 +1,7 @@
 id: B3873
 milestone: M7 observability
 title: Prometheus request labels and custom metadata
-status: todo
+status: done
 depends_on: [B3870, B367, B1716, B002]
 file: tasks/B3873-prometheus-label-projection.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/integrations/prometheus_helpers/__init__.py"
 parent: B111
 split_from: B111
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2670

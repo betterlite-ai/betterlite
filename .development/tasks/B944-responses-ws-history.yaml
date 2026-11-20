@@ -255,10 +255,10 @@ checks:
     run: test -f tools/oracle/helpers/responses_ws_history.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
     why: The helper has no newly added tagged seed or its shared corpus replay fails.
-    run: test -n "$(git diff --name-only --diff-filter=A \"$GATE_BASE\" -- tools/oracle/fuzz/corpus/helper_case/responses_ws_history-*)" && grep -qE "^[[:space:]]+responses_ws_history:" tools/oracle/fuzz/corpus/helper_case/responses_ws_history-* && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-core-ops --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_ws_history-*)" && grep -qE "^[[:space:]]+responses_ws_history:" tools/oracle/fuzz/corpus/helper_case/responses_ws_history-* && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-core-ops --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: new-oracle-cases
     why: No B944 parity case was added on this branch.
-    run: test -n "$(git diff --name-only --diff-filter=A \"$GATE_BASE\" -- tools/oracle/cases/helpers/responses-ws-history)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-ws-history)"
 oracle_cases:
 - tools/oracle/cases/helpers/responses-ws-history/constructor-defaults-and-passthrough.yaml
 - tools/oracle/cases/helpers/responses-ws-history/serialization-and-error-drop.yaml

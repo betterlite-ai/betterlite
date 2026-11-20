@@ -1,0 +1,47 @@
+kind: helper
+name: compression-retrieval-loop-gate
+call:
+  b3544:
+    function: gate
+    model: claude-3-sonnet
+    enabled: false
+    response:
+      content:
+        - {type: tool_use, id: call-1, name: litellm_content_retrieve, input: {key: k}}
+    tools:
+      - {type: custom, name: litellm_content_retrieve}
+calls:
+  - b3544:
+      function: gate
+      model: claude-3-sonnet
+      response:
+        content:
+          - {type: tool_use, id: call-1, name: litellm_content_retrieve, input: {key: k}}
+  - b3544:
+      function: gate
+      model: claude-3-sonnet
+      response:
+        content:
+          - {type: tool_use, id: call-1, name: litellm_content_retrieve, input: {key: k}}
+      tools:
+        - {type: custom, name: other_tool}
+  - b3544:
+      function: gate
+      model: claude-3-sonnet
+      response:
+        content:
+          - {type: text, text: hello}
+      tools:
+        - {type: function, function: {name: litellm_content_retrieve}}
+  - b3544:
+      function: gate
+      model: claude-3-sonnet
+      response:
+        content:
+          - {type: thinking, thinking: hm, signature: sig}
+          - {type: tool_use, id: call-1, name: litellm_content_retrieve, input: {key: k}, cache_control: {type: ephemeral}}
+          - {type: tool_use, id: call-2, name: other_tool, input: {}}
+      tools:
+        - {type: custom, name: litellm_content_retrieve}
+env: {}
+compare: {ignore: []}

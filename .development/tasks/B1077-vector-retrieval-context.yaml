@@ -5,7 +5,11 @@ description: >-
   constructor, async_get_chat_completion_prompt, _scanned_context_messages, _scan_through, _augment_messages
   and _search_one, plus the runtime/outcome/augmentation records at source lines 69-348. B2483 owns the
   seven pure query/context/failure-policy helpers, B1063 selects stores with database fallback, B1064
-  executes searches and B8666 supplies guardrail decisions/scans through the injected seam. Runtime router/database handles are
+  executes searches and guardrail decisions/scans come through the injected seam. This task also writes the seam's
+  production implementation over B8666's GuardrailClasses in betterlite-server's vector_retrieval_guardrails module
+  (crates/betterlite-server/src/vector_retrieval_guardrails.rs): the callbacks in order, each asked through
+  B3665's should_run_guardrail with event pre_call and the scan request, and each one that runs gets apply_guardrail on
+  the retrieved context; a failure is returned, not swallowed. Runtime router/database handles are
   injected; absent proxy runtime/import leaves each handle null. A router search handle is supplied by
   the caller when available, so this hook does not import the router that consumes it.
 
@@ -38,6 +42,9 @@ scope:
   - tools/oracle/helpers/b1077/**
   - tools/oracle/src/helpers/core_ops/b1077.rs
   - tools/oracle/src/helpers/core_ops/b1077/**
+  - crates/betterlite-server/src/vector_retrieval_guardrails.rs
+  - crates/betterlite-server/src/vector_retrieval_guardrails/**
+  - crates/betterlite-server/Cargo.toml
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py#L69-L348

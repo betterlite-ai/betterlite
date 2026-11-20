@@ -81,7 +81,7 @@ description: >-
   DELETE /cloudzero/delete, GET/PUT /vantage/settings, POST /vantage/init,
   POST /vantage/dry-run, POST /vantage/export and DELETE /vantage/delete. There are no
   /v1, /openai/v1 or provider-prefixed aliases. Neither B8610's area aggregator nor the
-  existing MCP mounts registers these paths; B8662's spend-area hook calls this mount.
+  existing MCP mounts registers these paths; B8662 builds the spend-area mount in app/spend.rs first; add the one call to this mount inside it, since no other app task mounts FinOps routes.
   Register only the two new routes in vantage_exports::routes, never repeat a child's
   .route call in mount. The skeleton declares the two modules; parent module files and
   the area hook are not this task's scope.
@@ -140,6 +140,21 @@ description: >-
   owners; there is no new HTTP endpoint for a scheduler tick. Allow roughly 450-650
   production/decoder/composition lines plus adjacent tests and case files, within the
   fixed 1500-line source budget. No oracle helper may call these global-state handlers.
+
+  Dashboard CloudZero cases. B9743 patches the CloudZero modal and lands the other cost page cases. Write these two in
+  tools/oracle/cases/ui/cost/ once this task's routes are mounted.
+  cloudzero-modal-and-settings.yaml begins with GET /cloudzero/settings returning unconfigured
+  null fields, then POST /cloudzero/init with the modal's api_key,connection_id,timezone UTC.
+  GET settings, PUT /cloudzero/settings with the standalone form's connection/timezone but
+  omitted empty api_key, and GET again to prove the key is preserved and still masked. On an
+  empty daily table send both POST /cloudzero/export forms: {operation:replace_hourly} from
+  the settings card, and {limit:100000,operation:replace_hourly} from the usage modal. Follow
+  this task's initialization/cleanup contract and DELETE /cloudzero/delete at the end.
+  No rows means the manual exports complete before external delivery. Do not introduce a fake
+  configurable CloudZero URL or call a real billing account. cloudzero-preview-ten.yaml uses
+  B9260's daily rows and POST /cloudzero/dry-run with {limit:10}, without credentials; compare
+  the preview and summary, not only its status. This task's generic CRUD, role and
+  empty-export cases stay; these exact omission/limit forms are the page contract.
 scope:
   paths:
     - crates/betterlite-server/src/finops/vantage_exports.rs
@@ -149,6 +164,8 @@ scope:
     - crates/betterlite-server/fuzz/fuzz_targets/vantage_export_body.rs
     - crates/betterlite-server/fuzz/corpus/vantage_export_body/**
     - tools/oracle/cases/http/finops-composition/**
+    - tools/oracle/cases/ui/cost/cloudzero-modal-and-settings.yaml
+    - tools/oracle/cases/ui/cost/cloudzero-preview-ten.yaml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/vantage_endpoints.py#L56-L63
@@ -202,6 +219,8 @@ dod:
     proof: [callback-integration-tests, new-http-cases, oracle]
   - text: The production preview/export body decoder rejects malformed bytes without panics and replays newly committed valid and invalid inputs.
     proof: [decoder-tests, export-body-corpus]
+  - text: "The CloudZero modal and settings card requests, the key-preserving settings update, both export forms and the ten-row preview match LiteLLM through the booted proxy."
+    proof: [oracle]
 checks:
   optional: []
   commands:
@@ -259,6 +278,8 @@ oracle_cases:
   - tools/oracle/cases/http/finops-composition/lago-success-and-delivery-failure.yaml
   - tools/oracle/cases/http/finops-composition/openmeter-subject-and-streaming.yaml
   - tools/oracle/cases/http/finops-composition/pointfive-success-failure-and-background-flush.yaml
+  - tools/oracle/cases/ui/cost/cloudzero-modal-and-settings.yaml
+  - tools/oracle/cases/ui/cost/cloudzero-preview-ten.yaml
 deviations: []
 out_of_scope:
   - "vantage_endpoints.py _VantageConfigRow.param_value, _config_table, _set_vantage_settings, _get_vantage_settings, is_vantage_setup_in_db, is_vantage_setup_in_config and is_vantage_setup are B3075; that entry covers this file."
@@ -273,6 +294,7 @@ out_of_scope:
   - "BillingMetricsRecorder is B3078; B8680 owns the edge middleware and gateway accumulator handoff, and B8374 owns recorder shutdown; no enterprise-package branch or paid-license mechanism is added here."
   - "B8610 owns Shared and the area aggregator, B8662 owns app/spend.rs, and B9260 owns the daily-spend fixture extension; the architect installs shared field/call-site glue, module declarations and fuzz-target registration recorded in the planner report."
 pitfalls:
+  - "The usage modal sends limit 100000 while the standalone export omits limit entirely."
   - "The real FOCUS SELECT omits total_tokens, so adding prompt_tokens and completion_tokens would silently change /vantage/dry-run's total_tokens from zero."
   - "Vantage preview never calls FocusLogger.dry_run_export_usage_data or FocusExportEngine.dry_run_export_usage_data and must work without VANTAGE_API_KEY or VANTAGE_INTEGRATION_TOKEN."
   - "The 500 preview limit is a default query limit, the 50 sample size is a response bound, and neither caps an explicitly supplied positive limit."

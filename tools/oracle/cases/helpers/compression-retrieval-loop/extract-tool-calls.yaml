@@ -1,0 +1,42 @@
+kind: helper
+name: compression-retrieval-loop-extract-tool-calls
+call:
+  b3544:
+    function: gate
+    model: claude-3-sonnet
+    response:
+      content:
+        - {type: thinking, thinking: plan, signature: sig-1}
+        - {type: redacted_thinking, data: sealed}
+        - {type: tool_use, id: call-1, name: litellm_content_retrieve, input: {key: message_1}, cache_control: {type: ephemeral}}
+        - {type: tool_use, id: call-2, name: other_tool, input: {key: x}}
+        - {type: text, text: one moment}
+        - {type: tool_use, name: litellm_content_retrieve, input: {key: message_2}}
+    tools:
+      - {type: custom, name: litellm_content_retrieve}
+calls:
+  - b3544:
+      function: gate
+      model: claude-3-sonnet
+      response:
+        content: []
+      tools:
+        - {type: custom, name: litellm_content_retrieve}
+  - b3544:
+      function: gate
+      model: claude-3-sonnet
+      response: {type: message}
+      tools:
+        - {type: custom, name: litellm_content_retrieve}
+  - b3544:
+      function: gate
+      model: claude-3-sonnet
+      response:
+        content:
+          - {type: text, text: hello}
+          - {type: tool_use, id: call-1, name: other_tool, input: {}}
+          - {type: tool_use, id: call-2, input: {}}
+      tools:
+        - {type: custom, name: litellm_content_retrieve}
+env: {}
+compare: {ignore: []}

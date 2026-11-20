@@ -1,0 +1,130 @@
+id: B10011
+title: SSO assertion cache, persistence and retention
+description: >-
+  After an SSO login LiteLLM keeps the user's IdP id_token, but only while some MCP server uses auth_type oauth2_id_jag, so that server can later spend it as an RFC 8693 subject_token. The dashboard login (B1624) and the CLI login (B1614) call retain_sso_identity_assertion_for_ema, and B1617's post-login diagnostics ask ema_assertion_retention_enabled. This task builds that write side of sso_assertion_store.py, so those logins don't wait on the MCP egress work: the assertion cache, the store struct with persist, the retention gate and retain, and the config section for the cache. B4663 adds the reads and the SsoAssertionStore port on the same struct.
+
+
+  Layout. crates/betterlite-mcp/src/sso_assertions/cache.rs and sso_assertions/store.rs, each with a tests.rs in its folder, and the section crates/betterlite-config/src/sections/mcp_sso_assertion_cache.rs. All three are empty stubs on main. This task uses B10003's SsoIdentityAssertion and encode_payload as they are, B10010's AssertionRows and its shared MemoryAssertionRows fake, and B1600's DbCipher. Names stop at 30 characters, so ema_assertion_retention_enabled is retention_enabled, persist_sso_identity_assertion is persist and retain_sso_identity_assertion_for_ema is retain; B1617 and B1624 use the LiteLLM names in their text.
+
+
+  sso_assertions::cache. SsoAssertionCache has the shape of ByokCredentialCache in credential_contracts::byok_cache: pub fields ttl, max_size, clock: Box<dyn Clock> (that file's trait) and a Mutex over the entries and one u64 epoch. Callers build it with a struct literal and share one Arc. epoch() reads the counter. get clones a live entry; an expired one is removed and reads as a miss. set_if_unchanged(user_id, assertion, seen_epoch) writes only if the epoch still equals seen_epoch. invalidate(user_id) adds one to the epoch and then removes the entry. InMemoryCache's limits carry over: a write first drops expired entries, then drops the entries with the earliest expiry until the cache is below max_size, max_size 0 stores nothing, and rewriting a live key replaces the value and keeps the first expiry. The cache never judges an assertion's own expires_at.
+
+
+  sso_assertions::store. DbSsoAssertionStore<R: AssertionRows> has pub fields rows: Option<R>, cipher: DbCipher, cache: Arc<SsoAssertionCache> and config_declares_id_jag: bool. rows None stands for LiteLLM's prisma_client None. B8620 builds the one cache and computes config_declares_id_jag from the config file's mcp_servers, and B8622 builds the store. The fields stay pub because B4663 adds fetch and fetch_uncached in its own module. persist(user_id, assertion) with no rows returns Ok and does nothing else; otherwise it encodes with encode_payload, encrypts under the current key, upserts and then invalidates the cache. An encrypt or upsert failure returns this module's error enum, which B4664 wraps as the source of its AssertionStoreUnavailable. retention_enabled is true when config_declares_id_jag is true (no query), false with no rows, otherwise id_jag_server_exists. retain(user_id, assertion: Option<&SsoIdentityAssertion>) returns unit: None does nothing, a false gate does nothing, and a failure in the gate or in persist logs the warning "Failed to persist the SSO identity assertion for EMA egress (user_id=%s): %s" and is swallowed, because the login must not fail on this write.
+
+
+  Config. The section mcp_sso_assertion_cache reads two env vars with betterlite_env::number and no YAML key: MCP_SSO_ASSERTION_CACHE_TTL_SECONDS (default 60) and MCP_OAUTH2_TOKEN_CACHE_MAX_SIZE (default 200). Settings has ttl_seconds: u64 and max_size: usize. Its tests are sections::mcp_sso_assertion_cache::tests::uses_litellm_defaults, reads_both_env_vars and rejects_a_non_number.
+
+
+  This task parses no outside bytes of its own; the payload JSON is B10003's encode_payload.
+
+
+  Oracle. Helper cases on the b10011 operation; no route reaches this code yet, and the SSO callback tasks add the HTTP cases. The Python adapter imports the Prisma double from B10010's tools/oracle/helpers/b10010/prisma_double.py, sets LITELLM_SALT_KEY to a fixed value, patches litellm.proxy.proxy_server.prisma_client and global_mcp_server_manager as LiteLLM's test_sso_assertion_store.py does, and runs the pinned SSOAssertionCache, persist_sso_identity_assertion, ema_assertion_retention_enabled and retain_sso_identity_assertion_for_ema. The Rust side runs the same steps over MemoryAssertionRows. A case is a list of steps (cache_set with the current epoch, cache_get, invalidate, persist, retention, retain) and the answer is each step's result, the decrypted fields of the stored row, the warning lines and the read and write counts, never ciphertext, because the nonce differs per run. Cache expiry stays in native tests, since LiteLLM's cache takes no clock here.
+scope:
+  paths:
+    - crates/betterlite-mcp/src/sso_assertions/cache.rs
+    - crates/betterlite-mcp/src/sso_assertions/cache/**
+    - crates/betterlite-mcp/src/sso_assertions/store.rs
+    - crates/betterlite-mcp/src/sso_assertions/store/**
+    - crates/betterlite-mcp/Cargo.toml
+    - crates/betterlite-config/src/sections/mcp_sso_assertion_cache.rs
+    - crates/betterlite-config/src/sections/mcp_sso_assertion_cache/**
+    - Cargo.lock
+    - tools/oracle/cases/helpers/sso-assertion-retention/**
+    - tools/oracle/fuzz/corpus/helper_case/sso-assertion-retention-*
+    - tools/oracle/helpers/b10011.py
+    - tools/oracle/helpers/b10011/**
+    - tools/oracle/src/helpers/mcp/b10011.rs
+    - tools/oracle/src/helpers/mcp/b10011/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_store.py#L82-L119
+    why: Owned. SSOAssertionCache with its epoch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_store.py#L178-L223
+    why: Owned. The retention gate and the persist step with its write order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_store.py#L293-L300
+    why: DbSSOAssertionStore's constructor and the cache it shares; B4663 owns its two methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_store.py#L357-L370
+    why: Owned. The retain hook the SSO callbacks call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L106-L177
+    why: The eviction and expiry rules the assertion cache keeps.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L180-L182
+    why: The two env vars and their defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L3676-L3678
+    why: Call site. The dashboard login retains the assertion after Microsoft enrollment and before the capture warning, in B1624's code.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1673-L1694
+    why: Call site. B1617's diagnostic asks the retention gate and swallows its failure with a debug line.
+dod:
+  - text: get returns a live entry and reads an expired one as a miss, and rewriting a live key keeps its first expiry.
+    proof: [cache-tests]
+  - text: set_if_unchanged writes nothing after an invalidate for this user or any other user, and writes when the epoch is unchanged.
+    proof: [cache-tests, oracle, helper-python]
+  - text: A full cache drops expired entries first and then the earliest expiry, and max_size 0 stores nothing.
+    proof: [cache-tests]
+  - text: persist upserts the encrypted payload and then invalidates the cache, leaves the cache alone when the upsert fails, and does nothing with no database.
+    proof: [store-tests, oracle, helper-python]
+  - text: retention_enabled is true from the config flag without a query, false with no database, and otherwise follows the row lookup.
+    proof: [store-tests, oracle, helper-python]
+  - text: retain does nothing for None or a false gate, and logs the fixed warning and returns normally when the gate or the write fails.
+    proof: [store-tests, oracle, helper-python]
+  - text: The token and refresh token text appear in no Debug output, log line or error text of persist, retain or the cache.
+    proof: [store-tests]
+  - text: The section gives 60 and 200 with no env vars, reads both env vars, and fails the load naming the variable for a value that isn't a number.
+    proof: [settings-tests]
+  - text: The b10011 adapter passes the strict Python checks and a new helper seed names the operation.
+    proof: [helper-python, helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: cache-tests
+      why: The epoch, expiry or eviction tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^sso_assertions::cache::tests::/)'
+    - id: store-tests
+      why: The persist, retention or retain tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^sso_assertions::store::tests::/)'
+    - id: settings-tests
+      why: The env var tests for the cache section are missing or fail.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::mcp_sso_assertion_cache::tests::/)'
+    - id: helper-python
+      why: The b10011 adapter is missing or fails the strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10011.py tools/oracle/helpers/b10011)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b10011 seed reaches the shared helper case parser.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/sso-assertion-retention-*")" &&
+        grep -lE 'b10011"?:' tools/oracle/fuzz/corpus/helper_case/sso-assertion-retention-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-mcp --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/sso-assertion-retention/persist-invalidates-cache.yaml
+  - tools/oracle/cases/helpers/sso-assertion-retention/retention-gate.yaml
+  - tools/oracle/cases/helpers/sso-assertion-retention/retain-swallows-failure.yaml
+deviations:
+  - what: The cache is one instance B8620 builds and shares, not the module global _ASSERTION_CACHE, so the epoch lives on that instance.
+    why: betterlite keeps no module state. A reader sees the same behavior as long as every store shares the one Arc.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_store.py#L119
+  - what: A negative MCP_SSO_ASSERTION_CACHE_TTL_SECONDS or MCP_OAUTH2_TOKEN_CACHE_MAX_SIZE fails the config load naming the variable. LiteLLM's int() takes it, a negative TTL then expires entries at once, and a negative size makes eviction pop an empty heap.
+    why: Neither value has a meaning below zero, so the mistake surfaces at startup instead of in a login.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L180-L182
+out_of_scope:
+  - "SSOAssertionCache.flush: no caller at the pin; only LiteLLM's tests call it."
+  - "AssertionRows, PostgresAssertionRows, MemoryAssertionRows, the Prisma double and rotate_sso_identity_assertions_master_key: B10010."
+  - "_read_assertion_from_db, fetch_sso_identity_assertion, AssertionStoreUnavailable, the SSOAssertionStore protocol and DbSSOAssertionStore's fetch and fetch_uncached: B4663."
+  - "SSOIdentityAssertion, assertion_from_sso_login, assertion_expired and the payload encode and decode: B10003."
+  - "Calling retain from the logins: B1624 (dashboard) and B1614 (CLI). Building the assertion from the token response: B1623. The capture-gap warnings over retention_enabled: B1617."
+  - "Building the one cache and config_declares_id_jag: B8620. Building the store and handing it to the credential resolver: B8622. Renewing a stale assertion: B4664."
+pitfalls:
+  - "The epoch is one counter for the whole cache, so a login by user A also stops user B's in-flight fetch from caching; that lost write is LiteLLM's behavior, so don't key the epoch by user."
+  - "persist invalidates only after the upsert returns; invalidating first opens a gap for a reader to cache the old row."
+  - "invalidate bumps the epoch before removing the entry, so a concurrent reader can't see a gap where the entry is gone and the old epoch still holds."
+  - "The cache keeps assertions past their exp; B4667 and B4664 judge expiry, so a filter here would silently stop the refresher from seeing a stale token."
+  - "retention_enabled must ask the database row and never the in-memory server registry, because that registry can be stale in both directions across pods."
+  - "retain is the only swallow: persist returns its error, and B4664 relies on seeing it."
+  - "MCP_SSO_ASSERTION_CACHE_TTL_SECONDS=0 expires entries at once here; LiteLLM's default_ttl or 600 turns it into ten minutes, and docs/compatibility.md says an explicit 0 is used as given."
+  - "MCP_OAUTH2_TOKEN_CACHE_MAX_SIZE is shared with LiteLLM's OAuth token caches; read the env var, and don't add a new name for this cache."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

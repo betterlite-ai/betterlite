@@ -1,0 +1,18 @@
+kind: helper
+name: key-policy-fields-alias-pattern
+call:
+  key_policy_fields:
+    calls:
+      - {function: alias, pattern: null, enabled: false, alias: any_alias}
+      - {function: alias, pattern: null, enabled: false, alias: null}
+      - {function: alias, pattern: null, enabled: true, alias: ab}
+      - {function: alias, pattern: null, enabled: true, alias: a}
+      - {function: alias, pattern: null, enabled: true, alias: "-leading"}
+      - {function: alias, pattern: null, enabled: true, alias: "a/b.c@d-e_f"}
+      - {function: alias, pattern: null, enabled: true, alias: "aéb"}
+      - {function: alias, pattern: "key[+]v[0-9]+", enabled: true, alias: key+v1}
+      - {function: alias, pattern: "key[+]v[0-9]+", enabled: false, alias: key+v1}
+      - {function: alias, pattern: "a|bc", enabled: false, alias: abc}
+      - {function: alias, pattern: "", enabled: false, alias: ""}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,15 @@
+task: B1062
+deviations:
+  - what: The debug diagnostic "all loaded vector stores = %s" redacts credential values rather than serializing raw api_key fields from litellm_params.
+    why: Repository secret-redaction rules forbid exposing credential material in logs; registry selection and returned execution credentials are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L433-L436
+kept_bugs:
+  - what: A config entry that fails conversion leaves the entries before it in the registry, because each record is appended inside the load loop instead of the list being rolled back.
+    why: LiteLLM appends per entry and the load fails loudly; a working proxy relies on the error, and the partially filled list is dropped with the failed startup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L431
+  - what: Deleting a vector store removes config-owned records too, although updating one leaves it untouched.
+    why: A working setup can delete a config-defined id and expects it gone until the next config load, which reloads it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L472-L480
+  - what: A file_search tool carrying rewrite_query is rejected rather than dropped, because VECTOR_STORE_OPENAI_PARAMS lists rewrite_query as a supported search parameter while VectorStoreToolParams never accepts it.
+    why: LiteLLM builds VectorStoreToolParams from those names with a dataclass constructor that lacks rewrite_query, so any request carrying it fails; no working setup can send one, and betterlite keeps that failure with its own message instead of Python's TypeError text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L317-L322

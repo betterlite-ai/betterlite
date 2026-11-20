@@ -1,0 +1,154 @@
+id: B10007
+title: Production OTel logger runtime and the request trace slot
+description: >-
+  B8910 built the OTel logger runtime (LoggerRuntime in otel::logger_runtime), but nothing outside its tests builds one,
+  and three of the ports it holds have only test impls: RequestTraceSource (B3852), RequestScopeSource (B3849) and
+  RootSpanSource (B8250). B8746's catalog arms, B110's startup, B8680's server span layer and B8870's tenant destinations
+  all need the real values. Build them once, in betterlite-logging, in otel::proxy_runtime (otel/proxy_runtime.rs and
+  otel/proxy_runtime/), with its own ProxyRuntimeError. Two more ports keep their owners and come in as inputs: B110
+  builds the StreamOutputAssembler (LangfuseStreamAssembler, over B3669 and B2227, which sit in crates above this one),
+  and B8746 builds the CallbackSettingsView over callback_settings.otel.attributes.
+
+
+  The request slot. LiteLLM keeps the request's root span (plumbing/context.py L44-L64) and its tenant destinations
+  (L395-L412) in ContextVars that ride the request task and the asyncio tasks it starts. Here a `RequestSlot` holds B3847's
+  RequestTraceContext and the live root span as an opentelemetry Context that carries it, each behind a std Mutex.
+  `request_slot_scope(future)` runs a request inside a fresh slot through a tokio task_local; called again inside a slot,
+  it joins the outer one, the way betterlite-redis's request_redis_batch_scope does. The task_local macro keeps its
+  value in a RefCell, so the module carries the same `expect(clippy::disallowed_types)` with its reason as
+  betterlite-redis/src/request_batch/scope.rs; that is the one expect the budget allows. `current_request_slot()` gives the
+  active slot's Arc, `enter_request_slot(slot, future)` runs a future inside a given slot, and
+  `enter_request_slot_sync(slot, f)` does the same for a closure through the task_local's sync_scope.
+  `anchor_request_root(span: AnchoredSpan, live: Context)` goes through
+  RequestTraceContext::anchor_request_root, which ignores a span with an invalid context, and keeps the live Context only
+  when the anchor took. `set_destinations(Vec<OtelDestination>)` replaces the request's destinations. Outside a slot both
+  do nothing, since there is no request to write to.
+
+
+  The sources. One `ProxyTraceSources` value implements the three ports over the active slot. RequestTraceSource returns
+  a clone of the slot's RequestTraceContext, and the empty default outside a slot, which makes B3852's pre_call defer.
+  RequestScopeSource returns RequestOtelScope with the slot's destinations and the additive flag. RootSpanSource returns
+  the live root as an `Arc<dyn RootSpanSink>` whose is_recording and set_attribute go through the Context's span, so the
+  layer that ends the span and Langfuse's root stamping write the same span. The additive flag is B3847's
+  destinations_are_additive(None, env), read once when the value is built from LITELLM_OTEL_TENANT_DESTINATION_MODE
+  through the injected environment; no config section reads litellm_settings.otel_tenant_destination_mode yet.
+
+
+  Handler re-entry. LiteLLM starts the async success handler with asyncio.create_task (utils.py L1371-L1408) and its
+  logging worker runs each job in contextvars.copy_context() taken at enqueue (logging_worker.py L258), so the callbacks
+  of a Logging object always see their request. A tokio task_local does not follow tokio::spawn, a streamed body
+  finishes after the handler future has returned, and outside a slot the sources answer the empty default, so a handler
+  that runs off the request task would drop the parent span without any error. Make the re-entry part of the logging
+  object, not a rule every spawner has to remember. B247's LoggingState (crates/betterlite-logging/src/logging_state.rs)
+  gains `pub request_slot: Option<Arc<RequestSlot>>`, which LoggingState::new fills once with current_request_slot();
+  ::new is the only place the struct is built. B250's success_handler and async_success_handler
+  (logging_success/handler.rs) and B251's failure_handler and async_failure_handler (logging_failure/handlers.rs) each
+  run their whole body inside that slot: the async two through enter_request_slot, the sync two through
+  enter_request_slot_sync. With no captured slot (an SDK call, a background job) they run exactly as today. Nothing
+  else in those files changes, and every dispatcher and spawner, B5368's scheduling and the stream iterators included,
+  gets the slot through these four functions.
+
+
+  The runtime. `build_proxy_runtime(inputs: ProxyRuntimeInputs) -> Result<Arc<LoggerRuntime>, ProxyRuntimeError>` fills
+  every LoggerRuntime field. The inputs are the loaded Config, the environment lookup the config loader used, the
+  exporter HttpClients (B8746's otlp_http_clients builds them), the `Arc<dyn CallbackSettingsView>`, the configured
+  exclusions (B8746's explicit callback_settings.otel.excluded_services, None when the key is absent), the
+  `Arc<dyn StreamOutputAssembler>`, the UTC offset the metric records use and the `Arc<ProxyTraceSources>`. The rest is
+  built here. One new V2Registry serves as both `registered` and `hooks`, since V2Registry implements RuntimeHooks.
+  sdk_provider is a tracer provider with no span processor, the SDK default LiteLLM's trace.get_tracer_provider() gives
+  before anything publishes. The redactor is `Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)` from betterlite-redact, as the
+  server's chat setup builds it, since LiteLLM's get_error_information always redacts the message and traceback. base is B3842's
+  otel::config::Settings::from_config. v2_enabled is B3842's otel_settings::FeatureFlag over the environment
+  (LITELLM_OTEL_V2, default false). factories is ExporterFactories::new over the clients with no custom kinds. trace,
+  scope and the constructor's roots are the same ProxyTraceSources. The constructor is B8910's CallbackConstructor:
+  raw_config is config.sections.otel_settings, allowed_hosts is config.sections.provider_url_destination.allowed_hosts,
+  log_client_error_tracebacks is false (litellm.log_client_error_tracebacks' default, a key the config refuses today), and
+  attribute_limit is the span attribute count limit LiteLLM reads through the SDK's SpanLimits (emitter.py L87-L90):
+  OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT, else OTEL_ATTRIBUTE_COUNT_LIMIT, else 128. An empty value means no limit (None), and
+  a value that is not a non-negative integer is a ProxyRuntimeError naming the variable, where the SDK raises ValueError.
+  A Settings::from_config error comes back as a ProxyRuntimeError too. The loggers, fan-out, generic and published
+  fields start empty.
+
+
+  Callers. B8680's span layer wraps each request in request_slot_scope and anchors its SERVER span there. B8870's
+  adapter writes the tenant destinations with set_destinations. B110 calls build_proxy_runtime at startup with its
+  assembler and B8746's settings view and hands the runtime to B8746's LoggerCatalog::with_runtime. None of those call
+  sites is in this task.
+
+
+  Tests in otel/proxy_runtime/tests.rs and tests/, in three modules. slot: two concurrent requests each anchor and set
+  destinations and never see the other's, a nested scope joins the outer slot, a spawned future entered with the
+  captured slot sees it, and code outside any slot reads the empty context. sources: the scope carries the destinations
+  with additive true only for LITELLM_OTEL_TENANT_DESTINATION_MODE=additive (any case, trimmed), the root sink writes
+  string attributes onto a span recorded by an in-memory exporter, and an invalid anchor keeps the earlier root.
+  runtime: a runtime built from a parsed config has v2_enabled from LITELLM_OTEL_V2, the configured exclusions passed
+  through, the limit from each of the two variables and 128 without them, an error for a negative limit, and a
+  langfuse_otel config with content capture builds the Langfuse content logger with the passed assembler. One more
+  test, in logging_success/tests/request_slot.rs (declared in logging_success/tests.rs, so it reuses that module's
+  support fixtures), proves the re-entry: inside request_slot_scope it anchors a root span, builds the state through
+  LoggingState::new, then runs async_success_handler in a tokio::spawn task with a logger whose async_log_success_event
+  reads ProxyTraceSources; the test, a_handler_spawned_off_the_request_keeps_the_parent_span, checks that the logger sees the anchored root's span context, not the empty default. No LiteLLM
+  function is ported here, so there are no oracle cases; B110's HTTP cases run through this runtime. No decoder of
+  outside bytes is added.
+scope:
+  paths:
+    - crates/betterlite-logging/src/otel/proxy_runtime.rs
+    - crates/betterlite-logging/src/otel/proxy_runtime/**
+    - crates/betterlite-logging/src/logging_state.rs
+    - crates/betterlite-logging/src/logging_success/handler.rs
+    - crates/betterlite-logging/src/logging_failure/handlers.rs
+    - crates/betterlite-logging/src/logging_success/tests/request_slot.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/context.py#L44-L64
+    why: The request root span ContextVar, inherited by the logging tasks; the slot plays its part.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/context.py#L395-L430
+    why: The request destinations ContextVar and the additive mode switch the scope source reads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/emitter.py#L87-L90
+    why: The span attribute count limit comes from the SDK's SpanLimits and its two variables.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L911-L922
+    why: The explicit callback_settings.otel.excluded_services beats the logger's own list, so the runtime takes it apart from the env merge.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1371-L1408
+    why: The async success handler starts in asyncio.create_task, which copies the request's ContextVars; the handlers re-enter the captured slot instead.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_worker.py#L250-L262
+    why: The logging worker captures the context at enqueue and runs the job in it, the same capture LoggingState::new makes.
+dod:
+  - text: Concurrent requests never see each other's anchor or destinations, a nested scope joins the outer slot, a future entered with the captured slot sees it, and code outside a slot reads the empty context.
+    proof: [slot-tests]
+  - text: The trace, scope and root sources read the active slot, the additive flag follows LITELLM_OTEL_TENANT_DESTINATION_MODE, and the root sink writes onto the anchored live span while an invalid anchor keeps the earlier one.
+    proof: [source-tests]
+  - text: build_proxy_runtime fills the runtime from the config and its inputs, with the V2 switch, the configured exclusions, the span attribute limit and the assembler each reaching the logger it builds.
+    proof: [runtime-tests]
+  - text: A success handler run in a task spawned off the request still reads the request's anchored root, because LoggingState::new captured the slot and the four success and failure handlers run inside it.
+    proof: [reentry-tests]
+checks:
+  optional: []
+  commands:
+    - id: slot-tests
+      why: the request slot leaks between requests, loses the outer slot or cannot be carried into spawned work
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::proxy_runtime::tests::slot::/)'
+    - id: source-tests
+      why: a source reads the wrong slot, ignores the additive mode or stamps a span the children do not parent under
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::proxy_runtime::tests::sources::/)'
+    - id: runtime-tests
+      why: the constructor drops an input, reads the V2 switch or the limit wrongly, or builds no Langfuse content logger
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::proxy_runtime::tests::runtime::/)'
+    - id: reentry-tests
+      why: a handler that runs off the request task loses the parent span because the logging state never captured the slot or the handler never entered it
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^logging_success::tests::request_slot::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "LoggerRuntime, CallbackConstructor, the factory, selection and publication: B8910. RequestTraceContext and its anchor rule: B3847. The ports themselves: B3849, B3852, B3857 and B8250."
+  - "LangfuseStreamAssembler and the startup call to build_proxy_runtime: B110. The CallbackSettingsView over callback_settings.otel.attributes, the explicit excluded_services field, otlp_http_clients and LoggerCatalog::with_runtime: B8746."
+  - "The rest of plumbing/context.py: B3847. The rest of logging_worker.py: B191. Everything else the success and failure handlers do: B250 and B251, and B5368 schedules them."
+  - "Entering the slot per request and anchoring the SERVER span: B8680. Writing tenant destinations during auth: B8870. The MCP message scopes keep B8971's MessageTraceScope over the slot's context."
+pitfalls:
+  - A tokio task_local is not inherited by tokio::spawn the way a ContextVar copies into asyncio.create_task. The handlers re-enter the slot LoggingState captured, so a spawner needs nothing; what still loses the span is a LoggingState built outside any slot, so never build one before the request enters its slot.
+  - Share the live root as the opentelemetry Context that holds the span; a copied span would let Langfuse stamp a span the layer never ends.
+  - Destinations carry tenant exporter credentials, so never log them, and the concurrent test must show one request's destinations never reach another request's scope.
+  - LITELLM_OTEL_TENANT_DESTINATION_MODE is compared trimmed and case-insensitively against "additive"; any other value is override mode.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

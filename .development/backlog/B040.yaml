@@ -2,7 +2,7 @@ id: B040
 milestone: M3 providers
 title: Self-hosted inference servers
 status: todo
-depends_on: [B001, B024, B080, B082, B083, B085, B900, B3343, B8157, B8634, B8636]
+depends_on: [B001, B024, B080, B082, B083, B085, B900, B8157, B8636]
 file: tasks/B040-self-hosted-http.yaml
 covers:
   - "litellm/llms/hosted_vllm/embedding/README.md"
