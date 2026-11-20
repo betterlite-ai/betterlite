@@ -127,20 +127,6 @@ def output(
     }
 
 
-def http_error(raised: StarletteHTTPException) -> Json:
-    detail: Json = JSON.validate_python(raised.detail)
-    return {"kind": "http", "status": raised.status_code, "detail": detail}
-
-
-def passthrough_error(raised: ModifyResponseException) -> Json:
-    return {
-        "kind": "passthrough",
-        "message": raised.message,
-        "model": raised.model,
-        "guardrail_name": raised.guardrail_name,
-    }
-
-
 async def guardrail_error(
     guardrail: ContentFilterGuardrail,
     inputs: Inputs,
@@ -149,9 +135,15 @@ async def guardrail_error(
     try:
         await guardrail.apply_guardrail(inputs, request_data, "request")  # type: ignore[arg-type, misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4536-L4547
     except StarletteHTTPException as raised:
-        return http_error(raised)
+        detail: Json = JSON.validate_python(raised.detail)
+        return {"kind": "http", "status": raised.status_code, "detail": detail}
     except ModifyResponseException as raised:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L1201-L1233
-        return passthrough_error(raised)
+        return {
+            "kind": "passthrough",
+            "message": raised.message,
+            "model": raised.model,
+            "guardrail_name": raised.guardrail_name,
+        }
     return None
 
 
@@ -173,10 +165,7 @@ def tool_call_tag(call: ChatCompletionMessageToolCall) -> Json:
 
 
 def filtered_texts(inputs: Inputs) -> list[Json]:
-    texts = inputs.get("texts")
-    if texts is None:
-        return []
-    return list[Json](texts)
+    return list[Json](inputs.get("texts", []))
 
 
 async def run_images(request: ImagesInput) -> Json:

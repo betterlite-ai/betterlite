@@ -19,16 +19,16 @@ fn detection(item: &ContentFilterDetection) -> Value {
 
 fn tool_call(call: &GuardrailValue) -> Value {
     let GuardrailValue::Object(entries) = call else {
-        return value_or_null(Some(call));
+        return json!(call);
     };
     let Some(GuardrailValue::Object(function)) = entries.get("function") else {
-        return value_or_null(Some(call));
+        return json!(call);
     };
     json!({
-        "id": value_or_null(entries.get("id")),
-        "type": value_or_null(entries.get("type")),
+        "id": entries.get("id"),
+        "type": entries.get("type"),
         "function": {
-            "name": value_or_null(function.get("name")),
+            "name": function.get("name"),
             "arguments": function.get("arguments").map_or(Value::Null, parsed_arguments),
         },
     })
@@ -37,7 +37,7 @@ fn tool_call(call: &GuardrailValue) -> Value {
 // The Python helper reads the argument text as JSON too, so a rewritten tree compares as a tree
 fn parsed_arguments(arguments: &GuardrailValue) -> Value {
     let GuardrailValue::Text(text) = arguments else {
-        return value_or_null(Some(arguments));
+        return json!(arguments);
     };
     serde_json::from_str::<Value>(text).unwrap_or_else(|_error| Value::String(text.clone()))
 }
@@ -54,8 +54,8 @@ pub(super) fn output(
         "detections": Value::Array(detections.iter().map(detection).collect()),
         "tool_calls": Value::Array(tool_calls.iter().map(tool_call).collect()),
         "request_data": {
-            "mcp_arguments": value_or_null(request_data.get("mcp_arguments")),
-            "modified_arguments": value_or_null(request_data.get("modified_arguments")),
+            "mcp_arguments": request_data.get("mcp_arguments"),
+            "modified_arguments": request_data.get("modified_arguments"),
         },
         "error": error,
     })
@@ -64,13 +64,7 @@ pub(super) fn output(
 pub(super) fn failure(failure: &GuardrailFailure) -> Value {
     match failure {
         GuardrailFailure::HttpObject { status, detail } => {
-            let detail_value = Value::Object(
-                detail
-                    .iter()
-                    .map(|(key, entry)| (key.clone(), value_or_null(Some(entry))))
-                    .collect(),
-            );
-            json!({"kind": "http", "status": status, "detail": detail_value})
+            json!({"kind": "http", "status": status, "detail": detail})
         }
         GuardrailFailure::ModifyResponse(modified) => json!({
             "kind": "passthrough",
@@ -95,8 +89,4 @@ pub(super) fn action_failure(error: &ContentFilterActionError) -> Value {
         return json!({"kind": "other", "message": error.to_string()});
     };
     json!({"kind": "http", "status": 400, "detail": detail})
-}
-
-fn value_or_null(entry: Option<&GuardrailValue>) -> Value {
-    serde_json::to_value(entry).unwrap_or(Value::Null)
 }

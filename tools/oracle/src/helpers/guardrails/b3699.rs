@@ -7,6 +7,7 @@ use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_guardrails::content_filter_actions::ContentFilterSource;
 use betterlite_guardrails::guardrail_base::GuardrailBase;
 use betterlite_guardrails::guardrail_base::settings::GuardrailSettings;
+use betterlite_guardrails::guardrail_base::settings::GuardrailSwitches;
 use betterlite_guardrails::pattern_matching::{CompiledPattern, compile};
 use serde::Deserialize;
 use tokio::runtime::{Builder, Runtime};
@@ -130,8 +131,23 @@ fn guardrail(event_hook: &str) -> GuardrailBase {
     GuardrailBase {
         settings: GuardrailSettings {
             guardrail_name: Some(GUARDRAIL_NAME.to_owned()),
+            supported_event_hooks: None,
             event_hook: Some(LitellmParamsMode::One(event_hook.to_owned())),
-            ..GuardrailSettings::default()
+            default_on: false,
+            mask_request_content: false,
+            mask_response_content: false,
+            violation_message_template: None,
+            end_session_after_n_fails: None,
+            on_violation: None,
+            realtime_violation_message: None,
+            on_sensitive_data: None,
+            sensitive_data_route_to_model: None,
+            sticky_session_routing: true,
+            run_in_parallel: false,
+            scan_raw_request: false,
+            only_scan_new_messages: false,
+            timeout: None,
+            switches: GuardrailSwitches::default(),
         },
         mode: None,
     }

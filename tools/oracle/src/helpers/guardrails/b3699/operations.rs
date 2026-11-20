@@ -51,24 +51,21 @@ impl ImageDescriptionCompletion for ScriptedDescriptions {
 }
 
 fn filtered_error(outcome: Result<(), ArgumentFilterError>) -> Value {
-    match outcome {
-        Ok(()) => Value::Null,
-        Err(failure) => projection::failure(&failure.into_failure()),
-    }
+    outcome.map_or(Value::Null, |failure| {
+        projection::failure(&failure.into_failure())
+    })
 }
 
 pub(super) fn run_images(input: &ImagesInput) -> HelperResult {
-    let completion = ScriptedDescriptions(input.image_description.clone());
     let mut detections = Vec::new();
     let fixture = Fixture::new(&input.patterns, &input.blocked_words)?;
-    let source = fixture.source();
     let error = match runtime()?.block_on(process_images(
         &ImageScan {
             images: &input.images,
             image_model: Some(input.image_model.as_str()),
-            source: &source,
+            source: &fixture.source(),
         },
-        Some(&completion),
+        Some(&ScriptedDescriptions(input.image_description.clone())),
         &mut detections,
     )) {
         Ok(()) => Value::Null,
@@ -78,6 +75,7 @@ pub(super) fn run_images(input: &ImagesInput) -> HelperResult {
 }
 
 fn airline_settings(config: &CompetitorConfigInput) -> AirlineSettings {
+    let defaults = CompetitorSettings::default();
     AirlineSettings {
         base: CompetitorSettings {
             brand_self: config.brand_self.clone(),
@@ -90,7 +88,8 @@ fn airline_settings(config: &CompetitorConfigInput) -> AirlineSettings {
             threshold_low: config.threshold_low.unwrap_or(0.30_f64),
             reframe_message_template: config.reframe_message_template.clone(),
             refuse_message_template: config.refuse_message_template.clone(),
-            ..CompetitorSettings::default()
+            comparison_words: defaults.comparison_words,
+            domain_words: defaults.domain_words,
         },
         other_meaning_signals: Vec::new(),
         competitor_signals: Vec::new(),

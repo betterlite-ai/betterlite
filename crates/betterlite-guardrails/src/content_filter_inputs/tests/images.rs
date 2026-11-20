@@ -32,7 +32,7 @@ fn reply(content: Option<&str>) -> ImageDescriptionResponse {
 }
 
 struct Scripted {
-    content: Option<String>,
+    response: ImageDescriptionResponse,
     requests: Mutex<Vec<ImageDescriptionRequest>>,
 }
 
@@ -52,7 +52,7 @@ impl ImageDescriptionCompletion for Scripted {
         request: &ImageDescriptionRequest,
     ) -> Result<ImageDescriptionResponse, Self::Error> {
         self.record_request(request);
-        Ok(reply(self.content.as_deref()))
+        Ok(self.response.clone())
     }
 }
 
@@ -76,49 +76,6 @@ impl ImageDescriptionCompletion for Concurrent {
             .push(request.clone());
         self.barrier.wait().await;
         Ok(reply(Some(&self.description)))
-    }
-}
-
-struct TwoChoices;
-
-fn two_choices() -> ImageDescriptionResponse {
-    ImageDescriptionResponse {
-        choices: vec![
-            ImageDescriptionReply {
-                content: Some("first alpha".to_owned()),
-            },
-            ImageDescriptionReply {
-                content: Some("second beta".to_owned()),
-            },
-        ],
-    }
-}
-
-#[async_trait]
-impl ImageDescriptionCompletion for TwoChoices {
-    type Error = ScriptedError;
-
-    async fn describe(
-        &self,
-        _request: &ImageDescriptionRequest,
-    ) -> Result<ImageDescriptionResponse, Self::Error> {
-        Ok(two_choices())
-    }
-}
-
-struct NoChoices;
-
-#[async_trait]
-impl ImageDescriptionCompletion for NoChoices {
-    type Error = ScriptedError;
-
-    async fn describe(
-        &self,
-        _request: &ImageDescriptionRequest,
-    ) -> Result<ImageDescriptionResponse, Self::Error> {
-        Ok(ImageDescriptionResponse {
-            choices: Vec::new(),
-        })
     }
 }
 
@@ -208,7 +165,7 @@ async fn image_description_filtering_blocks_with_the_description() {
     let source = fixture.source();
     let images = ["img-1".to_owned()];
     let completion = Scripted {
-        content: Some("an alpha scene".to_owned()),
+        response: reply(Some("an alpha scene")),
         requests: Mutex::new(Vec::new()),
     };
     let scan = ImageScan {
@@ -245,7 +202,7 @@ async fn image_processing_skips_without_a_model_or_completion() {
     )]);
     let source = fixture.source();
     let completion = Scripted {
-        content: Some("an alpha scene".to_owned()),
+        response: reply(Some("an alpha scene")),
         requests: Mutex::new(Vec::new()),
     };
     let images = ["img-1".to_owned()];
@@ -281,7 +238,7 @@ async fn image_processing_skips_an_empty_image_list() {
     let fixture = Fixture::empty();
     let source = fixture.source();
     let completion = Scripted {
-        content: Some("an alpha scene".to_owned()),
+        response: reply(Some("an alpha scene")),
         requests: Mutex::new(Vec::new()),
     };
     let no_images: [String; 0] = [];
@@ -318,8 +275,21 @@ async fn image_description_uses_the_first_choice_only() {
         image_model: Some("vision-model"),
         source: &source,
     };
+    let completion = Scripted {
+        response: ImageDescriptionResponse {
+            choices: vec![
+                ImageDescriptionReply {
+                    content: Some("first alpha".to_owned()),
+                },
+                ImageDescriptionReply {
+                    content: Some("second beta".to_owned()),
+                },
+            ],
+        },
+        requests: Mutex::new(Vec::new()),
+    };
     let mut detections = Vec::new();
-    process_images(&scan, Some(&TwoChoices), &mut detections)
+    process_images(&scan, Some(&completion), &mut detections)
         .await
         .expect("the first choice filters");
     assert_eq!(pattern_names(&detections), ["alpha"]);
@@ -335,8 +305,14 @@ async fn image_processing_without_choices_fails() {
         image_model: Some("vision-model"),
         source: &source,
     };
+    let completion = Scripted {
+        response: ImageDescriptionResponse {
+            choices: Vec::new(),
+        },
+        requests: Mutex::new(Vec::new()),
+    };
     let mut detections = Vec::new();
-    let error = process_images(&scan, Some(&NoChoices), &mut detections)
+    let error = process_images(&scan, Some(&completion), &mut detections)
         .await
         .unwrap_err();
     assert!(matches!(&error, ImageProcessingError::NoChoices));
@@ -382,14 +358,14 @@ async fn image_processing_skips_empty_descriptions() {
     };
     let mut detections = Vec::new();
     let missing = Scripted {
-        content: None,
+        response: reply(None),
         requests: Mutex::new(Vec::new()),
     };
     process_images(&scan, Some(&missing), &mut detections)
         .await
         .expect("a missing description is skipped");
     let blank = Scripted {
-        content: Some(String::new()),
+        response: reply(Some("")),
         requests: Mutex::new(Vec::new()),
     };
     process_images(&scan, Some(&blank), &mut detections)
