@@ -59,10 +59,23 @@ async fn the_limit_caps_the_probes_in_flight() {
         deployment("d", "d-id", r#"{"model":"openai/d"}"#),
     ];
     let prepared = prepare_all(&rows);
-    let provider = FakeProvider::new().with_reply(
-        "openai/a",
-        Reply::DelayedSuccess(Duration::from_millis(100)),
-    );
+    let provider = FakeProvider::new()
+        .with_reply(
+            "openai/a",
+            Reply::DelayedSuccess(Duration::from_millis(100)),
+        )
+        .with_reply(
+            "openai/b",
+            Reply::DelayedSuccess(Duration::from_millis(100)),
+        )
+        .with_reply(
+            "openai/c",
+            Reply::DelayedSuccess(Duration::from_millis(100)),
+        )
+        .with_reply(
+            "openai/d",
+            Reply::DelayedSuccess(Duration::from_millis(100)),
+        );
     let (outcomes, mode, peak) = run_probes(&prepared, &provider, Some(2)).await;
     assert_eq!(mode, DispatchMode::Bounded);
     assert_eq!(peak, 2);
