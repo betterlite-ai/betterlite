@@ -207,15 +207,15 @@ fn requester_null_role() {
     };
     assert_eq!(requester.get("user_role").cloned(), Some(JsonData::Null));
     payload.requester.user_role = Some("team_admin".to_owned());
-    let serialized = data(&serde_json::to_string(&payload).unwrap());
-    let JsonData::Object(fields) = &serialized else {
+    let updated = data(&serde_json::to_string(&payload).unwrap());
+    let JsonData::Object(updated_fields) = &updated else {
         panic!("expected a JSON object");
     };
-    let JsonData::Object(requester) = &fields["requester"] else {
+    let JsonData::Object(updated_requester) = &updated_fields["requester"] else {
         panic!("expected a JSON object");
     };
     assert_eq!(
-        requester.get("user_role").cloned(),
+        updated_requester.get("user_role").cloned(),
         Some(JsonData::String("team_admin".to_owned()))
     );
 }
@@ -473,16 +473,16 @@ async fn malformed_result_503() {
         }
     );
     let second = install_hook(hook_settings(&module, "not_an_object"), &hooks).await;
-    let error = check(&second, &data("{}"), &Settings::default())
+    let second_error = check(&second, &data("{}"), &Settings::default())
         .await
         .unwrap_err();
     assert_eq!(
-        error,
+        second_error,
         TeamMetadataError::Unavailable {
             message: DEFAULT_UNAVAILABLE_MESSAGE.to_owned(),
         }
     );
-    assert_eq!(error.status(), 503);
+    assert_eq!(second_error.status(), 503);
 }
 
 #[tokio::test]
@@ -554,10 +554,10 @@ async fn missing_validator_bridge() {
     assert!(matches!(error, InstallError::Load { .. }));
     assert!(validators.get().is_none());
     let missing_attribute = hook_settings(&module, "validate");
-    let error = install_team_metadata(&hooks, &missing_attribute, &validators, &schemas)
+    let attribute_error = install_team_metadata(&hooks, &missing_attribute, &validators, &schemas)
         .await
         .unwrap_err();
-    assert!(matches!(error, InstallError::Load { .. }));
+    assert!(matches!(attribute_error, InstallError::Load { .. }));
     assert!(validators.get().is_none());
 }
 
@@ -673,10 +673,10 @@ async fn cache_refresh_error() {
     let record = TeamRecord::parse(br#"{"team_id": "team-1"}"#)
         .unwrap()
         .unwrap();
-    let error = refresh_cached_team(&record, &FailingCache)
+    let cache_error = refresh_cached_team(&record, &FailingCache)
         .await
         .unwrap_err();
-    assert!(matches!(error, RefreshError::Cache(_)));
+    assert!(matches!(cache_error, RefreshError::Cache(_)));
 }
 
 fn settings_map(text: &str) -> GeneralSettingsMap {
@@ -875,8 +875,13 @@ async fn team_table_selects_the_read_store() {
     availability
         .reader_unavailable
         .store(true, Ordering::SeqCst);
-    let teams = team_table(Some(client)).unwrap();
-    let record = teams.table().find_unique("team-1").await.unwrap().unwrap();
+    let available_teams = team_table(Some(client)).unwrap();
+    let record = available_teams
+        .table()
+        .find_unique("team-1")
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(
         record.fields.get("team_id").cloned(),
         Some(JsonData::String("team-1".to_owned()))

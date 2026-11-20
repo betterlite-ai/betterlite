@@ -149,7 +149,7 @@ pub(super) fn validate_answer(call: &ValidateCall<'_>) -> HelperResult {
     let fake = found
         .map(|(behaviour, asynchronous)| Arc::new(FakeValidator::new(behaviour, asynchronous)));
     if let Some(installed) = &fake {
-        let validator: Arc<dyn TeamMetadataValidator> = Arc::clone(installed);
+        let validator: Arc<dyn TeamMetadataValidator> = Arc::<FakeValidator>::clone(installed);
         registry.set(Some(validator));
     }
     let operation: TeamMetadataOperation =
@@ -178,7 +178,7 @@ pub(super) fn validate_answer(call: &ValidateCall<'_>) -> HelperResult {
     let outcome = runtime.block_on(validate_team_metadata_if_configured(
         request, &registry, &settings,
     ));
-    let payload = fake.as_ref().and_then(|fake| fake.recorded());
+    let payload = fake.as_ref().and_then(|recorder| recorder.recorded());
     Ok(validation_answer(outcome, payload))
 }
 

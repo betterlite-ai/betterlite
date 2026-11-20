@@ -73,7 +73,7 @@ pub fn finish_validation(
     unavailable_message: &str,
 ) -> Result<(), TeamMetadataError> {
     let value = match result {
-        Ok(value) => value,
+        Ok(validated) => validated,
         Err(failure) => {
             tracing::warn!(error = %failure, "team metadata validation failed");
             return Err(TeamMetadataError::Unavailable {

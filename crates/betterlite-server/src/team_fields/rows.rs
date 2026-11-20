@@ -29,7 +29,7 @@ impl GeneralSettingsMap {
         Ok(Self {
             entries: entries
                 .iter()
-                .map(|(name, value)| (name.clone(), value.clone()))
+                .map(|(name, setting)| (name.clone(), setting.clone()))
                 .collect(),
         })
     }
@@ -45,8 +45,8 @@ pub enum LogValue<'value> {
 #[must_use]
 pub fn sanitize_for_log(value: LogValue<'_>) -> String {
     let text = match value {
-        LogValue::Display(value) => value.to_string(),
-        LogValue::Debug(value) => format!("{value:?}"),
+        LogValue::Display(line) => line.to_string(),
+        LogValue::Debug(line) => format!("{line:?}"),
     };
     text.replace(['\r', '\n'], "")
 }

@@ -41,11 +41,11 @@ impl From<CallError> for ValidatorFailure {
         match source {
             CallError::TimedOut { after } => Self::TimedOut { after },
             CallError::Work(WorkError::TimedOut { after }) => Self::TimedOut { after },
-            CallError::Python(source) => Self::Raised {
-                source: CallError::Python(source),
+            CallError::Python(cause) => Self::Raised {
+                source: CallError::Python(cause),
             },
-            CallError::Value(source) => Self::Raised {
-                source: CallError::Value(source),
+            CallError::Value(cause) => Self::Raised {
+                source: CallError::Value(cause),
             },
             CallError::Work(
                 work @ (WorkError::ShuttingDown

@@ -72,14 +72,14 @@ fn parse_field(index: usize, value: &JsonValue) -> Result<MetadataSchemaField, S
 }
 
 fn required_key(index: usize, configured: Option<&JsonValue>) -> Result<&str, SchemaError> {
-    let Some(configured) = configured else {
+    let Some(value) = configured else {
         return Err(SchemaError::Field {
             index,
             field: "key",
             message: "Field required",
         });
     };
-    let JsonValue::String(key) = configured else {
+    let JsonValue::String(key) = value else {
         return Err(SchemaError::Field {
             index,
             field: "key",
