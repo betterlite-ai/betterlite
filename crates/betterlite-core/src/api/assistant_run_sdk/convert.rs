@@ -10,11 +10,11 @@ use crate::api::resource_sdk_settings::timeout::{
 };
 use crate::api::resource_sdk_settings::{ResourceSdkRequestOptions, ResourceSdkSettings};
 
-use super::call::{RunClient, RunParams, RunThreadCall, RunTimeout};
+use super::call::{RunParams, RunThreadCall, RunTimeout};
 use super::error::AssistantRunError;
 
 // the supplied client's class wins over the arun switch: a sync client stays sync even under arun_thread
-pub(super) fn client_kind(call: &RunThreadCall, arun: bool) -> ClientKind {
+pub(super) const fn client_kind(call: &RunThreadCall, arun: bool) -> ClientKind {
     match call.client.as_ref() {
         Some(client) => client.kind(),
         None if arun => ClientKind::Async,

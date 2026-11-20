@@ -35,7 +35,7 @@ use futures_util::stream::iter;
 use futures_util::{Stream, StreamExt as _};
 use http::HeaderMap;
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 use tokio::sync::mpsc;
 
 use crate::api::assistant_run_sdk::call::{
@@ -303,13 +303,16 @@ struct CaptureRuns {
 impl CaptureRuns {
     fn capture(&self, target: RunTarget<'_>) {
         let captured = match target {
-            RunTarget::OpenAi(run) => CapturedTarget::OpenAi {
-                kind: run.kind,
-                handler: run.handler.is_some(),
-                request: run.request,
-                options: run.options,
-                supplied: run.supplied,
-            },
+            RunTarget::OpenAi(run) => {
+                let run = *run;
+                CapturedTarget::OpenAi {
+                    kind: run.kind,
+                    handler: run.handler.is_some(),
+                    request: run.request,
+                    options: run.options,
+                    supplied: run.supplied,
+                }
+            }
             RunTarget::Azure(run) => {
                 let run = *run;
                 CapturedTarget::Azure {
@@ -654,9 +657,7 @@ async fn azure_extra_body_token_choices(
     match sdk.operations.targets().remove(0) {
         CapturedTarget::Azure { azure_ad_token, .. } => {
             assert_eq!(
-                azure_ad_token
-                    .as_ref()
-                    .map(|value| value.expose_secret().as_str()),
+                azure_ad_token.as_ref().map(ExposeSecret::expose_secret),
                 expected
             );
         }

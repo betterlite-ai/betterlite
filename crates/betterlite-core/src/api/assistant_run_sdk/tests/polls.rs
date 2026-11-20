@@ -1,7 +1,6 @@
 #![cfg(test)]
 
 use rstest::rstest;
-use secrecy::ExposeSecret as _;
 
 use super::*;
 
@@ -306,7 +305,7 @@ async fn azure_base_key_and_version_stay_optional_strings() {
             assert_eq!(api_base.as_deref(), Some(BASE));
             assert_eq!(api_version.as_deref(), Some("2024-02-15-preview"));
             assert_eq!(
-                api_key.as_ref().map(|key| key.expose_secret().as_str()),
+                api_key.as_ref().map(ExposeSecret::expose_secret),
                 Some("az-key")
             );
         }
@@ -405,7 +404,7 @@ async fn litellm_params_reach_only_the_azure_branch() {
                 params
                     .azure_ad_token
                     .as_ref()
-                    .map(|value| value.expose_secret().as_str()),
+                    .map(ExposeSecret::expose_secret),
                 Some("raw-token")
             );
         }

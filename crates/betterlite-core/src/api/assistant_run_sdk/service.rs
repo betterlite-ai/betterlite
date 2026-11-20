@@ -52,8 +52,9 @@ pub struct AzureRun<'data> {
     pub supplied_timeout: Option<Duration>,
 }
 
+// both payloads are boxed: openai's run dwarfs the pointer the enum would otherwise carry
 pub enum RunTarget<'data> {
-    OpenAi(OpenAiRun),
+    OpenAi(Box<OpenAiRun>),
     Azure(Box<AzureRun<'data>>),
 }
 
@@ -178,17 +179,17 @@ where
             None => call.provider.as_str() == "azure",
         };
         if azure {
-            let run = self.azure_run(call, kind, handler, timeout, client_timeout)?;
+            let run = self.azure_run(call, kind, handler, timeout)?;
             return Ok(RunTarget::Azure(Box::new(run)));
         }
-        Ok(RunTarget::OpenAi(OpenAiRun {
+        Ok(RunTarget::OpenAi(Box::new(OpenAiRun {
             request: run_request(call),
             kind,
             handler,
             options: openai_options(call, self.settings, timeout),
             supplied: call.client.clone(),
             supplied_timeout: client_timeout,
-        }))
+        })))
     }
 
     // the azure provider branch is the only one that reads extra_body, stringifies and forwards litellm_params
@@ -198,8 +199,8 @@ where
         kind: ClientKind,
         handler: Option<Arc<dyn RunEventHandler>>,
         timeout: Duration,
-        client_timeout: Option<Duration>,
     ) -> Result<AzureRun<'data>, AssistantRunError> {
+        let client_timeout = supplied_timeout(call)?;
         let options = ResourceSdkRequestOptions::from(&call.params);
         Ok(AzureRun {
             request: run_request(call),
