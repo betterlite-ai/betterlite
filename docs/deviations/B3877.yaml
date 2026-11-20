@@ -12,6 +12,9 @@ deviations:
   - what: Sparse usage amounts are incremented as the exact JSON decimal, where LiteLLM converts them with float() first and so loses precision above 2^53 and on values with more fraction digits than a double holds.
     why: betterlite parses the number text into a Decimal and increments that, which keeps the amount the provider reported instead of the nearest double.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1712-L1734
+  - what: An mcp_tool_call_metadata name or mcp_server_name that is not a JSON string yields no label value (the label renders "None"), where LiteLLM's untyped dict lookup passes the value through and prometheus_client renders its str().
+    why: betterlite reads those metadata fields at their declared text type, so a number or object there reads as no tool name instead of becoming a label such as "5".
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1850-L1865
   - what: A usage number whose magnitude is outside Decimal's range (above roughly 7.9e28) is incremented as a positive infinity, where LiteLLM converts it to a finite float and increments that.
     why: betterlite falls back to an explicit infinity when the number text cannot be held as a Decimal, the same fallback prometheus_client applies to an infinite float value.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1724-L1734
