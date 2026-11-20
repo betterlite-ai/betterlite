@@ -4,13 +4,13 @@ use std::collections::BTreeMap;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use secrecy::SecretString;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::api::response_id_codecs::response::decode_response_id;
 use crate::api::responses_write_http::service::ClientKind;
 
 // Which of the pair a call is; the two entries read different async kwargs flags and word their refusal differently
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LifecycleOperation {
     Delete,
