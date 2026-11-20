@@ -1,0 +1,33 @@
+task: B3365
+deviations:
+  - what: The call carries the timeout and never hands it to the client's send method. The selected client keeps its own deadline.
+    why: LiteLLM's container handlers call client.get and client.delete without a timeout, so a caller's timeout never reaches httpx. Forwarding it would promise behavior the source does not have.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L9210-L9214
+  - what: container_retrieve_handler and container_delete_handler return Handled::Done(reply) or Handled::Pending(future), where LiteLLM returns a Union of the reply and a coroutine.
+    why: Rust cannot return one of two shapes from one function. The fixed names stay, the async entry points are acontainer_retrieve_handler and acontainer_delete_handler, and the caller matches Done or Pending and awaits the latter.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L9151-L9162
+  - what: The blocking and async clients are separate associated types of a ClientSource, and a supplied client of the wanted kind is used while a missing one is built from the call's ssl_verify.
+    why: LiteLLM's isinstance check plus client factory exists because Python has one untyped client slot. In Rust a client of the wrong kind cannot be passed, so the check has nothing to do; the default stays a client built from ssl_verify.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L9164-L9168
+  - what: Caller extra headers are laid over the provider's validate_environment answer, so an extra Authorization replaces the provider's. In LiteLLM the same overlay is a self-update because validate_environment mutates the caller's dict, so the provider's Authorization survives.
+    why: docs/compatibility.md leaves changes made to the caller's dict out of parity. The handler's stated order, validate then overlay, is what betterlite keeps, and an explicit caller header is the only way to change the Authorization the provider wrote.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L9170-L9177
+  - what: A transport failure that carried no status is marked status_code_is_synthesized. LiteLLM's container configs raise from get_error_class, so the assignment after that call never runs and the flag stays false even though the status is the synthesized 500.
+    why: betterlite's _handle_error port models get_error_class as returning the exception and applies the flag the code intends. The flag is what a caller reads to tell a provider status from a made-up one, and LiteLLM's value here is an artifact of the raise.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6104-L6111
+  - what: A retrieve or delete response with an error status is read through raise_for_error_status, so a JSON body's error.message becomes the message and the response's own headers are kept. LiteLLM's HTTPHandler.delete raises from raise_for_status first, so the handler sees a MaskedHTTPStatusError whose message is the raw body text and whose headers lost content-encoding and content-length.
+    why: The task asks both handlers to go through raise_for_error_status before transformation, and betterlite's client returns status, headers and body instead of raising. The container_handler also reads the structured error.message, which is the message a container caller sees from GET in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L512-L529
+  - what: A failed async delete is reported as a failure. LiteLLM's AsyncHTTPHandler.delete retries a RemoteProtocolError or ConnectError by sending the same request as a POST.
+    why: single_connection_post_request sends POST under a DELETE call, so a connection error can turn a delete into a request of the wrong method, and a 2xx would look like the container was deleted. No working setup can rely on a delete being retried as a POST, so betterlite does not copy it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1044-L1059
+  - what: The request is built with the query carried beside the URL. An empty query leaves the URL untouched, a GET query is merged into the URL's own by the client, and a DELETE query replaces it.
+    why: httpx merges GET params with the URL's query and replaces the query for other methods, and LiteLLM's HTTPHandler.get merges with the URL's values winning. The same rule is documented for the create and upload handlers in docs/deviations/B3363.yaml; this handler only follows it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1445-L1454
+  - what: A transformed query value that is not a string, number, boolean or null is refused with an error that names the key.
+    why: LiteLLM passes whatever the transform produced to httpx, which encodes a list as a repeated name. The handler's query has one string per name, and inventing a repeated or stringified form for a value no container transform produces would be behavior the source does not define.
+    link: ""
+kept_bugs:
+  - what: The timeout message of a sync delete says "Connection timed out after None seconds." because the handler passed no timeout to the client.
+    why: LiteLLM formats the local timeout argument, which is None since the handler never forwarded it. A caller that logs the message today sees this text, and the message is the only place the missing timeout shows.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1671-L1676
