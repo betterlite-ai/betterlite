@@ -163,7 +163,10 @@ async fn drive(input: &Input, captured: &Captured) -> Result<Output, Box<HelperE
                 let value = next_value(&mut stream).await?;
                 output.chunks.push(value.unwrap_or(Json::Null));
             }
-            Step::Drain => drain(&mut stream, &mut output.chunks).await?,
+            Step::Drain => {
+                drain(&mut stream, &mut output.chunks).await?;
+                output.chunks.push(Json::Null);
+            }
             Step::Sse => output.frames.push(next_frame(&mut stream).await?),
         }
     }
