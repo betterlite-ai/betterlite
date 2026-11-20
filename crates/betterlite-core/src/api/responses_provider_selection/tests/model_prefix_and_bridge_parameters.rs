@@ -11,13 +11,11 @@ use crate::api::responses_provider_selection::bridging::{NEVER_BRIDGED, bridge_k
 use crate::api::responses_provider_selection::prefixes::{
     normalize_openai_chat_model, pop_use_chat_completions_api, strip_responses_routing_prefix,
 };
-use crate::api::responses_provider_selection::prompting::bridge::{
+use crate::api::responses_provider_selection::prompting::{
     ProvisionalBridge, api_base_kwarg, will_use_chat_bridge,
 };
 use crate::api::responses_provider_selection::provider_config::ResponsesApiConfig;
-use crate::api::responses_provider_selection::resolution::{
-    ProviderResolution, resolve_model_provider,
-};
+use crate::api::responses_provider_selection::resolution::resolve_model_provider;
 
 fn empty_params() -> CallParams {
     CallParams {
@@ -234,12 +232,14 @@ fn an_explicit_provider_fills_an_empty_parameter() {
     let resolver = resolver(&[("gpt-4o", resolution("gpt-4o", "azure"))]);
     let mut params = CallParams::default();
     let mut local_vars = ParameterMap::new();
-    let request = ProviderResolution {
-        model: "gpt-4o",
-        custom_llm_provider: Some("azure"),
-    };
-    let outcome = resolve_model_provider(&resolver, &request, &mut params, &mut local_vars)
-        .expect("resolution succeeds");
+    let outcome = resolve_model_provider(
+        &resolver,
+        "gpt-4o",
+        Some("azure"),
+        &mut params,
+        &mut local_vars,
+    )
+    .expect("resolution succeeds");
     assert_eq!(outcome, (String::from("gpt-4o"), String::from("azure")));
     assert_eq!(params.custom_llm_provider.as_deref(), Some("azure"));
     assert_eq!(
@@ -257,12 +257,14 @@ fn an_existing_parameter_beats_the_request_provider() {
     let mut params = empty_params();
     params.custom_llm_provider = Some(String::from("openai"));
     let mut local_vars = ParameterMap::new();
-    let request = ProviderResolution {
-        model: "gpt-4o",
-        custom_llm_provider: Some("azure"),
-    };
-    resolve_model_provider(&resolver, &request, &mut params, &mut local_vars)
-        .expect("resolution succeeds");
+    resolve_model_provider(
+        &resolver,
+        "gpt-4o",
+        Some("azure"),
+        &mut params,
+        &mut local_vars,
+    )
+    .expect("resolution succeeds");
     assert_eq!(params.custom_llm_provider.as_deref(), Some("openai"));
     let calls = resolver.calls();
     assert_eq!(calls[0].custom_llm_provider.as_deref(), Some("openai"));
@@ -274,12 +276,14 @@ fn an_empty_parameter_is_filled_by_the_request_provider() {
     let mut params = empty_params();
     params.custom_llm_provider = Some(String::new());
     let mut local_vars = ParameterMap::new();
-    let request = ProviderResolution {
-        model: "gpt-4o",
-        custom_llm_provider: Some("azure"),
-    };
-    resolve_model_provider(&resolver, &request, &mut params, &mut local_vars)
-        .expect("resolution succeeds");
+    resolve_model_provider(
+        &resolver,
+        "gpt-4o",
+        Some("azure"),
+        &mut params,
+        &mut local_vars,
+    )
+    .expect("resolution succeeds");
     assert_eq!(params.custom_llm_provider.as_deref(), Some("azure"));
 }
 
@@ -298,11 +302,7 @@ fn a_dynamic_credential_replaces_the_callers() {
     params.api_key = Some(SecretString::from("sk-caller"));
     params.api_base = Some(String::from("https://caller.test/v1"));
     let mut local_vars = ParameterMap::new();
-    let request = ProviderResolution {
-        model: "gpt-4o",
-        custom_llm_provider: None,
-    };
-    let outcome = resolve_model_provider(&resolver, &request, &mut params, &mut local_vars)
+    let outcome = resolve_model_provider(&resolver, "gpt-4o", None, &mut params, &mut local_vars)
         .expect("resolution succeeds");
     assert_eq!(outcome, (String::from("gpt-4o"), String::from("openai")));
     assert_eq!(
@@ -324,11 +324,7 @@ fn an_unresolved_credential_keeps_the_callers() {
     params.api_key = Some(SecretString::from("sk-caller"));
     params.api_base = Some(String::from("https://caller.test/v1"));
     let mut local_vars = ParameterMap::new();
-    let request = ProviderResolution {
-        model: "gpt-4o",
-        custom_llm_provider: None,
-    };
-    let outcome = resolve_model_provider(&resolver, &request, &mut params, &mut local_vars)
+    let outcome = resolve_model_provider(&resolver, "gpt-4o", None, &mut params, &mut local_vars)
         .expect("resolution succeeds");
     assert_eq!(
         outcome,
@@ -349,11 +345,13 @@ fn an_unresolvable_model_is_an_error() {
     let resolver = resolver(&[]);
     let mut params = CallParams::default();
     let mut local_vars = ParameterMap::new();
-    let request = ProviderResolution {
-        model: "unknown/model",
-        custom_llm_provider: None,
-    };
-    let error = resolve_model_provider(&resolver, &request, &mut params, &mut local_vars)
-        .expect_err("an unregistered model names no provider");
+    let error = resolve_model_provider(
+        &resolver,
+        "unknown/model",
+        None,
+        &mut params,
+        &mut local_vars,
+    )
+    .expect_err("an unregistered model names no provider");
     assert!(matches!(error, ResolutionError::MissingProvider { .. }));
 }

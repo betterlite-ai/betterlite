@@ -8,7 +8,7 @@ use crate::api::responses_provider_selection::error::{
     ENCRYPTED_TASK_MESSAGE, compatibility_failure,
 };
 use crate::api::responses_provider_selection::provider_config::{
-    CompatibilityFailure, ConfigLookup, ConfigRequest, NativeConfig, ResponsesApiConfig,
+    CompatibilityFailure, ConfigLookup, NativeConfig, ResponsesApiConfig,
     bridges_to_chat_completions, encrypted_task_support_failure, passes_responses_through,
     resolve_provider_config,
 };
@@ -103,14 +103,8 @@ fn supported_endpoints_opt_into_the_compatible_config(
 fn the_registry_lookup_wins_over_the_endpoint_marker() {
     let lookup = configs(&[("openai", capable_native())]);
     let model_info = json(r#"{"supported_endpoints":["/v1/responses"]}"#);
-    let request = ConfigRequest {
-        model: "gpt-4o",
-        provider: "openai",
-        model_info: &model_info,
-        api_base: None,
-    };
     assert_eq!(
-        resolve_provider_config(&lookup, &request),
+        resolve_provider_config(&lookup, "gpt-4o", "openai", &model_info, None),
         Some(ResponsesApiConfig::Native(capable_native()))
     );
 }
@@ -119,61 +113,61 @@ fn the_registry_lookup_wins_over_the_endpoint_marker() {
 fn only_the_endpoint_marker_selects_the_compatible_config() {
     let lookup = configs(&[("azure", capable_native())]);
     let supported = json(r#"{"supported_endpoints":["/v1/responses"]}"#);
-    let request = ConfigRequest {
-        model: "gpt-4o",
-        provider: "openai",
-        model_info: &supported,
-        api_base: None,
-    };
     assert_eq!(
-        resolve_provider_config(&lookup, &request),
+        resolve_provider_config(&lookup, "gpt-4o", "openai", &supported, None),
         Some(ResponsesApiConfig::OpenAiLike)
     );
     let unsupported = json("{}");
-    let request = ConfigRequest {
-        model: "gpt-4o",
-        provider: "openai",
-        model_info: &unsupported,
-        api_base: None,
-    };
-    assert_eq!(resolve_provider_config(&lookup, &request), None);
+    assert_eq!(
+        resolve_provider_config(&lookup, "gpt-4o", "openai", &unsupported, None),
+        None
+    );
 }
 
 #[test]
 fn the_lookup_receives_the_whole_request() {
     let lookup = BaseReadingConfigs;
     let model_info = json("{}");
-    let matching = ConfigRequest {
-        model: "gpt-4o",
-        provider: "openai",
-        model_info: &model_info,
-        api_base: Some("https://base.test/v1"),
-    };
     assert_eq!(
-        resolve_provider_config(&lookup, &matching),
+        resolve_provider_config(
+            &lookup,
+            "gpt-4o",
+            "openai",
+            &model_info,
+            Some("https://base.test/v1")
+        ),
         Some(ResponsesApiConfig::Native(capable_native()))
     );
-    let other_model = ConfigRequest {
-        model: "gpt-4o-mini",
-        provider: "openai",
-        model_info: &model_info,
-        api_base: Some("https://base.test/v1"),
-    };
-    assert_eq!(resolve_provider_config(&lookup, &other_model), None);
-    let other_provider = ConfigRequest {
-        model: "gpt-4o",
-        provider: "azure",
-        model_info: &model_info,
-        api_base: Some("https://base.test/v1"),
-    };
-    assert_eq!(resolve_provider_config(&lookup, &other_provider), None);
-    let other_base = ConfigRequest {
-        model: "gpt-4o",
-        provider: "openai",
-        model_info: &model_info,
-        api_base: Some("https://other.test/v1"),
-    };
-    assert_eq!(resolve_provider_config(&lookup, &other_base), None);
+    assert_eq!(
+        resolve_provider_config(
+            &lookup,
+            "gpt-4o-mini",
+            "openai",
+            &model_info,
+            Some("https://base.test/v1")
+        ),
+        None
+    );
+    assert_eq!(
+        resolve_provider_config(
+            &lookup,
+            "gpt-4o",
+            "azure",
+            &model_info,
+            Some("https://base.test/v1")
+        ),
+        None
+    );
+    assert_eq!(
+        resolve_provider_config(
+            &lookup,
+            "gpt-4o",
+            "openai",
+            &model_info,
+            Some("https://other.test/v1")
+        ),
+        None
+    );
 }
 
 #[test]

@@ -1,21 +1,15 @@
 use betterlite_models::controls::json_value::JsonValue;
-
-use super::ParameterMap;
-
 pub const PASSTHROUGH_ENDPOINT: &str = "/v1/responses";
 pub const ASYNC_PROMPT_MERGED_PARAMS: &str = "_async_prompt_merged_params";
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeConfig {
     pub encrypted_agent_messages: bool,
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResponsesApiConfig {
     Native(NativeConfig),
     OpenAiLike,
 }
-
 impl ResponsesApiConfig {
     #[must_use]
     pub const fn supports_encrypted_tasks(self) -> bool {
@@ -25,12 +19,10 @@ impl ResponsesApiConfig {
         }
     }
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompatibilityFailure {
     EncryptedTaskUnsupported,
 }
-
 impl CompatibilityFailure {
     #[must_use]
     pub const fn wire_name(self) -> &'static str {
@@ -39,8 +31,6 @@ impl CompatibilityFailure {
         }
     }
 }
-
-// LiteLLM's _bridges_to_chat_completions: no resolved config, or an explicit chat-completions request
 #[must_use]
 pub const fn bridges_to_chat_completions(
     config: Option<&ResponsesApiConfig>,
@@ -51,8 +41,6 @@ pub const fn bridges_to_chat_completions(
         Some(_native) => use_chat_completions_api,
     }
 }
-
-// LiteLLM's _encrypted_task_support_failure: every route but a capable native deployment refuses the task
 #[must_use]
 pub const fn encrypted_task_support_failure(
     config: Option<&ResponsesApiConfig>,
@@ -66,8 +54,6 @@ pub const fn encrypted_task_support_failure(
     }
     Some(CompatibilityFailure::EncryptedTaskUnsupported)
 }
-
-// LiteLLM's _deployment_passes_through_responses: only a list carrying the exact endpoint opts in
 #[must_use]
 pub fn passes_responses_through(model_info: &JsonValue) -> bool {
     let JsonValue::Object(fields) = model_info else {
@@ -87,8 +73,6 @@ pub fn passes_responses_through(model_info: &JsonValue) -> bool {
         | None => false,
     }
 }
-
-// B157's typed provider config lookup, injected so this module never reaches the provider registry
 pub trait ConfigLookup {
     fn responses_api_config(
         &self,
@@ -97,31 +81,16 @@ pub trait ConfigLookup {
         api_base: Option<&str>,
     ) -> Option<NativeConfig>;
 }
-
-pub struct ConfigRequest<'request> {
-    pub model: &'request str,
-    pub provider: &'request str,
-    pub model_info: &'request JsonValue,
-    pub api_base: Option<&'request str>,
-}
-
-// LiteLLM's _resolve_responses_api_provider_config: the lookup wins; supported_endpoints then opts into OpenAI-like
 #[must_use]
 pub fn resolve_provider_config(
     lookup: &dyn ConfigLookup,
-    request: &ConfigRequest<'_>,
+    model: &str,
+    provider: &str,
+    model_info: &JsonValue,
+    api_base: Option<&str>,
 ) -> Option<ResponsesApiConfig> {
-    if let Some(native) =
-        lookup.responses_api_config(request.model, request.provider, request.api_base)
-    {
+    if let Some(native) = lookup.responses_api_config(model, provider, api_base) {
         return Some(ResponsesApiConfig::Native(native));
     }
-    passes_responses_through(request.model_info).then_some(ResponsesApiConfig::OpenAiLike)
-}
-
-// LiteLLM's _AsyncPromptManagementOutcome: an async prompt pass hands its result forward through kwargs
-#[derive(Debug, Clone, PartialEq)]
-pub struct AsyncPromptManagementOutcome {
-    pub merged_optional_params: ParameterMap,
-    pub deployment_model_info: Option<JsonValue>,
+    passes_responses_through(model_info).then_some(ResponsesApiConfig::OpenAiLike)
 }

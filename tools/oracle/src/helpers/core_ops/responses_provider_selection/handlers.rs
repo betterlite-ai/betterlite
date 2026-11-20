@@ -1,3 +1,5 @@
+use super::scripted::{ModelNames, Registry, ScriptedManager};
+use super::{Compatible, CredentialBoundary, FileMapping, Prefixes, PromptCall, Selection};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_core::api::responses_provider_selection::ParameterMap;
 use betterlite_core::api::responses_provider_selection::bridging::bridge_kwargs;
@@ -5,17 +7,15 @@ use betterlite_core::api::responses_provider_selection::file_ids::apply_managed_
 use betterlite_core::api::responses_provider_selection::prefixes::{
     normalize_openai_chat_model, pop_use_chat_completions_api, strip_responses_routing_prefix,
 };
-use betterlite_core::api::responses_provider_selection::prompting::bridge::{
-    ProvisionalBridge, api_base_kwarg, will_use_chat_bridge,
-};
 use betterlite_core::api::responses_provider_selection::prompting::swap::{
     PromptSwapError, SwapRequest, model_info_after_swap, resolve_swapped_provider,
 };
 use betterlite_core::api::responses_provider_selection::prompting::{
-    PromptError, PromptManager, PromptRequest, apply_prompt_management,
+    PromptError, PromptManager, PromptRequest, ProvisionalBridge, api_base_kwarg,
+    apply_prompt_management, will_use_chat_bridge,
 };
 use betterlite_core::api::responses_provider_selection::provider_config::{
-    ASYNC_PROMPT_MERGED_PARAMS, ConfigRequest, ResponsesApiConfig, bridges_to_chat_completions,
+    ASYNC_PROMPT_MERGED_PARAMS, ResponsesApiConfig, bridges_to_chat_completions,
     encrypted_task_support_failure, passes_responses_through, resolve_provider_config,
 };
 use betterlite_models::controls::json_value::JsonValue;
@@ -24,11 +24,16 @@ use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
 use secrecy::SecretString;
 use serde_json::{Value, json};
-
-use super::scripted::{ModelNames, Registry, ScriptedManager};
-use super::{Compatible, CredentialBoundary, FileMapping, Prefixes, PromptCall, Selection};
-
-fn failure(class: &str, status: Option<u16>, message: String) -> Box<HelperError> {
+fn prompt_error(error: PromptError) -> Box<HelperError> {
+    let (class, status, message) = match error {
+        PromptError::Swap(PromptSwapError::CredentialBoundary(boundary)) => {
+            ("BadRequestError", Some(400), boundary.message)
+        }
+        PromptError::Swap(other) => ("ValueError", None, other.to_string()),
+        PromptError::Merge(error) => ("ValueError", None, error.to_string()),
+        PromptError::Manager(error) => ("ValueError", None, error.to_string()),
+        PromptError::AsyncOutcome(error) => ("ValueError", None, error.to_string()),
+    };
     Box::new(HelperError {
         class: String::from(class),
         status,
@@ -38,30 +43,14 @@ fn failure(class: &str, status: Option<u16>, message: String) -> Box<HelperError
         message,
     })
 }
-
-fn prompt_error(error: PromptError) -> Box<HelperError> {
-    match error {
-        PromptError::Swap(PromptSwapError::CredentialBoundary(boundary)) => {
-            failure("BadRequestError", Some(400), boundary.message)
-        }
-        PromptError::Swap(other) => failure("ValueError", None, other.to_string()),
-        PromptError::Merge(error) => failure("ValueError", None, error.to_string()),
-        PromptError::Manager(error) => failure("ValueError", None, error.to_string()),
-        PromptError::AsyncOutcome(error) => failure("ValueError", None, error.to_string()),
-    }
-}
-
 pub(super) fn selection(case: &Selection) -> HelperResult {
-    let lookup = Registry;
     let api_base = api_base_kwarg(&case.kwargs);
     let config = resolve_provider_config(
-        &lookup,
-        &ConfigRequest {
-            model: &case.model,
-            provider: &case.provider,
-            model_info: &case.model_info,
-            api_base,
-        },
+        &Registry,
+        &case.model,
+        &case.provider,
+        &case.model_info,
+        api_base,
     );
     let config_kind = match &config {
         None => Value::Null,
@@ -73,7 +62,7 @@ pub(super) fn selection(case: &Selection) -> HelperResult {
             Value::String(String::from(failure.wire_name()))
         });
     let will_bridge = will_use_chat_bridge(
-        &lookup,
+        &Registry,
         &ProvisionalBridge {
             model: &case.model,
             custom_llm_provider: Some(&case.provider),
@@ -93,7 +82,6 @@ pub(super) fn selection(case: &Selection) -> HelperResult {
         "will_bridge": will_bridge,
     }))
 }
-
 pub(super) fn prefixes(case: &Prefixes) -> HelperResult {
     let mut kwargs = ParameterMap::new();
     if case.flag_present {
@@ -111,20 +99,15 @@ pub(super) fn prefixes(case: &Prefixes) -> HelperResult {
         "remaining": kwargs,
     }))
 }
-
-fn compatible_config(case: &Compatible) -> Result<OpenAiLikeResponsesConfig, Box<HelperError>> {
+pub(super) fn compatible(case: &Compatible) -> HelperResult {
     let loaded = ConfigLoader {
         lookup: case.environment.clone(),
     }
     .load("")
     .or_config_error()?;
-    Ok(OpenAiLikeResponsesConfig {
+    let config = OpenAiLikeResponsesConfig {
         settings: loaded.sections.openai_like_settings.clone(),
-    })
-}
-
-pub(super) fn compatible(case: &Compatible) -> HelperResult {
-    let config = compatible_config(case)?;
+    };
     let explicit_key = case
         .api_key
         .as_ref()
@@ -140,7 +123,6 @@ pub(super) fn compatible(case: &Compatible) -> HelperResult {
         "url": url,
     }))
 }
-
 pub(super) fn credential_boundary(case: &CredentialBoundary) -> HelperResult {
     let provider = resolve_swapped_provider(
         &SwapRequest {
@@ -153,14 +135,11 @@ pub(super) fn credential_boundary(case: &CredentialBoundary) -> HelperResult {
         &ModelNames,
     )
     .map_err(prompt_error)?;
-    let model_info = model_info_after_swap(
-        case.provider.as_deref(),
-        Some(provider.as_str()),
-        case.model_info.clone(),
-    );
-    Ok(json!({"provider": provider, "model_info": model_info}))
+    Ok(json!({
+        "provider": provider,
+        "model_info": model_info_after_swap(case.provider.as_deref(), Some(provider.as_str()), case.model_info.clone()),
+    }))
 }
-
 pub(super) fn prompt_call(case: &PromptCall) -> HelperResult {
     let mut kwargs = case.kwargs.clone();
     if let Some(outcome) = &case.async_outcome {
@@ -186,11 +165,9 @@ pub(super) fn prompt_call(case: &PromptCall) -> HelperResult {
         &ModelNames,
     )
     .map_err(prompt_error)?;
-    let (requests, calls) = manager
+    let (calls, requests) = manager
         .as_ref()
-        .map_or((Vec::new(), Vec::new()), |scripted| {
-            (scripted.requests(), scripted.calls())
-        });
+        .map_or((Vec::new(), Vec::new()), |scripted| scripted.records());
     Ok(json!({
         "input": outcome.input,
         "model": outcome.model,
@@ -202,7 +179,6 @@ pub(super) fn prompt_call(case: &PromptCall) -> HelperResult {
         "calls": calls,
     }))
 }
-
 pub(super) fn file_mapping(case: &FileMapping) -> HelperResult {
     let mut local_vars = ParameterMap::new();
     let outcome = apply_managed_file_id_mapping(

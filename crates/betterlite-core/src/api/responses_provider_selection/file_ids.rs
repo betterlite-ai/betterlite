@@ -1,3 +1,4 @@
+use super::ParameterMap;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_prompts::file_ids::limits::FileIdsError;
 use betterlite_prompts::file_ids::mapping::FileIdMapping;
@@ -5,9 +6,6 @@ use betterlite_prompts::file_ids::responses::{ResponsesInput, update_responses_f
 use betterlite_prompts::file_ids::tools::{ResponsesTool, update_tools_with_file_ids};
 use serde::Deserialize as _;
 use thiserror::Error;
-
-use super::ParameterMap;
-
 #[derive(Debug, Error)]
 pub enum FileMappingError {
     #[error(transparent)]
@@ -15,13 +13,10 @@ pub enum FileMappingError {
     #[error("the mapped value could not be encoded: {message}")]
     Encode { message: String },
 }
-
 pub struct FileMappingOutcome {
     pub input: ResponsesInput,
     pub tools: Option<Vec<ResponsesTool>>,
 }
-
-// LiteLLM's _apply_managed_file_id_mapping: deployment metadata names the provider ID when it has one
 pub fn apply_managed_file_id_mapping(
     input: &ResponsesInput,
     tools: Option<&[ResponsesTool]>,
@@ -49,7 +44,6 @@ pub fn apply_managed_file_id_mapping(
         tools: Some(updated_tools),
     })
 }
-
 #[must_use]
 pub fn model_info_id(model_info: Option<&JsonValue>) -> Option<String> {
     let Some(JsonValue::Object(fields)) = model_info else {
@@ -67,14 +61,11 @@ pub fn model_info_id(model_info: Option<&JsonValue>) -> Option<String> {
         | None => None,
     }
 }
-
-fn json_value<T>(value: &T) -> Result<JsonValue, FileMappingError>
-where
-    T: serde::Serialize,
-{
-    let encode_error = |source: serde_json::Error| FileMappingError::Encode {
+fn json_value<T: serde::Serialize>(value: &T) -> Result<JsonValue, FileMappingError> {
+    let raw = serde_json::to_value(value).map_err(|source| FileMappingError::Encode {
         message: source.to_string(),
-    };
-    let raw = serde_json::to_value(value).map_err(encode_error)?;
-    JsonValue::deserialize(raw).map_err(encode_error)
+    })?;
+    JsonValue::deserialize(raw).map_err(|source| FileMappingError::Encode {
+        message: source.to_string(),
+    })
 }

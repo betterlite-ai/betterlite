@@ -24,42 +24,12 @@ HookCase = TypedDict("HookCase", {"mode": Literal["answer", "skip", "throw"], "m
 AsyncOutcomeCase = TypedDict("AsyncOutcomeCase", {"merged_optional_params": dict[str, JsonValue], "deployment_model_info": JsonValue})  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L505-L508
 PromptCallCase = TypedDict("PromptCallCase", {"action": Literal["prompt_call"], "input": JsonValue, "model": str, "provider": NotRequired[str | None], "use_chat_completions_api": bool, "logging": bool, "hook": NotRequired[HookCase | None], "async_outcome": NotRequired[AsyncOutcomeCase | None], "kwargs": dict[str, JsonValue]})  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L793-L880
 FileMappingCase = TypedDict("FileMappingCase", {"action": Literal["file_mapping"], "input": JsonValue, "tools": NotRequired[list[JsonValue] | None], "model_info": NotRequired[JsonValue], "mapping": NotRequired[JsonValue]})  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L934-L964
-CompatibleAnswer = TypedDict("CompatibleAnswer", {"identity": str, "native_file_search": bool, "encrypted": bool, "headers": dict[str, str], "url": str})  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/responses/transformation.py#L26-L51
 
 Input: TypeAlias = SelectionCase | PrefixesCase | CompatibleCase | CredentialCase | PromptCallCase | FileMappingCase  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L427-L545
-
-PromptApply: TypeAlias = Callable[
-    [JsonValue, str, str | None, Logging | None, dict[str, JsonValue], dict[str, JsonValue], bool],
-    tuple[JsonValue, str, str | None, JsonValue],
-]
-FilesApply: TypeAlias = Callable[
-    [JsonValue, JsonValue, dict[str, JsonValue], dict[str, JsonValue]], tuple[JsonValue, JsonValue]
-]
 
 
 class ConfigView(Protocol):
     custom_llm_provider: str
-
-
-ResolveConfig: TypeAlias = Callable[[str, str, JsonValue, str | None], ConfigView | None]
-Bridges: TypeAlias = Callable[[ConfigView | None, bool], bool]
-EncryptedFailure: TypeAlias = Callable[[ConfigView | None, bool], str | None]
-PassesThrough: TypeAlias = Callable[[JsonValue], bool]
-ApiBase: TypeAlias = Callable[[dict[str, JsonValue]], str | None]
-BridgeKwargs: TypeAlias = Callable[
-    [dict[str, JsonValue], ConfigView | None, list[str]], dict[str, JsonValue]
-]
-WillBridge: TypeAlias = Callable[[str, str | None, bool, JsonValue, str | None], bool]
-Normalize: TypeAlias = Callable[[str], tuple[str, bool]]
-PopFlag: TypeAlias = Callable[[dict[str, JsonValue]], bool]
-StripPrefix: TypeAlias = Callable[[str], str]
-Swapped: TypeAlias = Callable[[str, str, str | None, dict[str, JsonValue], str | None], str]
-InfoAfterSwap: TypeAlias = Callable[[str | None, str | None, JsonValue], JsonValue]
-AsyncOutcomeFactory: TypeAlias = Callable[..., JsonValue]
-ValidateEnvironment: TypeAlias = Callable[
-    [dict[str, str], str, GenericLiteLLMParams], dict[str, str]
-]
-CompleteUrl: TypeAlias = Callable[[str | None, dict[str, JsonValue]], str]
 
 
 class ScriptedLogging(Logging):
@@ -124,23 +94,25 @@ class ScriptedLogging(Logging):
 
 CONFIG = OpenAILikeResponsesConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/responses/transformation.py#L17-L51
 
-RESOLVE_CONFIG = cast(ResolveConfig, selection._resolve_responses_api_provider_config)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L510-L519
-BRIDGES = cast(Bridges, selection._bridges_to_chat_completions)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L427-L431
-ENCRYPTED_FAILURE = cast(EncryptedFailure, selection._encrypted_task_support_failure)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L461-L471
-PASSES_THROUGH = cast(PassesThrough, selection._deployment_passes_through_responses)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L489-L495
-API_BASE = cast(ApiBase, selection._api_base_kwarg)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L521-L524
-BRIDGE_KWARGS = cast(BridgeKwargs, selection._bridge_kwargs)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L437-L458
-WILL_BRIDGE = cast(WillBridge, selection._will_bridge_to_chat_completions)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L526-L545
-NORMALIZE = cast(Normalize, selection._normalize_openai_chat_completions_responses_model)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L881-L892
-POP_FLAG = cast(PopFlag, selection._pop_use_chat_completions_api_kw)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L894-L897
-STRIP_PREFIX = cast(StripPrefix, selection._strip_responses_routing_prefix)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L903-L906
-SWAPPED = cast(Swapped, selection._resolve_prompt_swapped_provider)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L764-L790
-INFO_AFTER_SWAP = cast(InfoAfterSwap, selection._deployment_model_info_after_prompt_swap)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L497-L502
-ASYNC_OUTCOME = cast(AsyncOutcomeFactory, selection._AsyncPromptManagementOutcome)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L505-L508
-APPLY_PROMPT = cast(PromptApply, selection._apply_prompt_management_to_responses_call)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L793-L880
-APPLY_FILES = cast(FilesApply, selection._apply_managed_file_id_mapping)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L934-L964
-VALIDATE_ENVIRONMENT = cast(ValidateEnvironment, CONFIG.validate_environment)  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/responses/transformation.py#L30-L39
-COMPLETE_URL = cast(CompleteUrl, CONFIG.get_complete_url)  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/responses/transformation.py#L41-L51
+RESOLVE_CONFIG = cast(Callable[[str, str, JsonValue, str | None], ConfigView | None], selection._resolve_responses_api_provider_config)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L510-L519
+BRIDGES = cast(Callable[[ConfigView | None, bool], bool], selection._bridges_to_chat_completions)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L427-L431
+ENCRYPTED_FAILURE = cast(Callable[[ConfigView | None, bool], str | None], selection._encrypted_task_support_failure)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L461-L471
+PASSES_THROUGH = cast(Callable[[JsonValue], bool], selection._deployment_passes_through_responses)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L489-L495
+API_BASE = cast(Callable[[dict[str, JsonValue]], str | None], selection._api_base_kwarg)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L521-L524
+BRIDGE_KWARGS = cast(Callable[[dict[str, JsonValue], ConfigView | None, list[str]], dict[str, JsonValue]], selection._bridge_kwargs)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L437-L458
+WILL_BRIDGE = cast(Callable[[str, str | None, bool, JsonValue, str | None], bool], selection._will_bridge_to_chat_completions)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L526-L545
+NORMALIZE = cast(Callable[[str], tuple[str, bool]], selection._normalize_openai_chat_completions_responses_model)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L881-L892
+POP_FLAG = cast(Callable[[dict[str, JsonValue]], bool], selection._pop_use_chat_completions_api_kw)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L894-L897
+STRIP_PREFIX = cast(Callable[[str], str], selection._strip_responses_routing_prefix)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L903-L906
+SWAPPED = cast(Callable[[str, str, str | None, dict[str, JsonValue], str | None], str], selection._resolve_prompt_swapped_provider)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L764-L790
+INFO_AFTER_SWAP = cast(Callable[[str | None, str | None, JsonValue], JsonValue], selection._deployment_model_info_after_prompt_swap)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L497-L502
+ASYNC_OUTCOME = cast(Callable[..., JsonValue], selection._AsyncPromptManagementOutcome)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L505-L508
+APPLY_PROMPT = cast(Callable[[JsonValue, str, str | None, Logging | None, dict[str, JsonValue], dict[str, JsonValue], bool], tuple[JsonValue, str, str | None, JsonValue]], selection._apply_prompt_management_to_responses_call)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L793-L880
+APPLY_FILES = cast(Callable[[JsonValue, JsonValue, dict[str, JsonValue], dict[str, JsonValue]], tuple[JsonValue, JsonValue]], selection._apply_managed_file_id_mapping)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L934-L964
+VALIDATE_ENVIRONMENT = cast(Callable[[dict[str, str], str, GenericLiteLLMParams], dict[str, str]], CONFIG.validate_environment)  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/responses/transformation.py#L30-L39
+COMPLETE_URL = cast(Callable[[str | None, dict[str, JsonValue]], str], CONFIG.get_complete_url)  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/responses/transformation.py#L41-L51
+
+
 def selection_answer(case: SelectionCase) -> JsonValue:
     api_base = API_BASE(case["kwargs"])
     config = RESOLVE_CONFIG(case["model"], case["provider"], case["model_info"], api_base)
@@ -185,14 +157,13 @@ def compatible_answer(case: CompatibleCase) -> JsonValue:
     params = GenericLiteLLMParams(api_key=case.get("api_key"))
     headers = VALIDATE_ENVIRONMENT(dict(case["headers"]), "", params)
     url = COMPLETE_URL(case.get("api_base"), {})
-    answer = CompatibleAnswer(
-        identity=CONFIG.custom_llm_provider,
-        native_file_search=CONFIG.supports_native_file_search(),
-        encrypted=CONFIG.supports_encrypted_agent_messages(),
-        headers=headers,
-        url=url,
-    )
-    return JSON.validate_python(answer)
+    return JSON.validate_python({
+        "identity": CONFIG.custom_llm_provider,
+        "native_file_search": CONFIG.supports_native_file_search(),
+        "encrypted": CONFIG.supports_encrypted_agent_messages(),
+        "headers": headers,
+        "url": url,
+    })
 
 
 def credential_answer(case: CredentialCase) -> JsonValue:
@@ -226,11 +197,6 @@ def prompt_answer(case: PromptCallCase) -> JsonValue:
         local_vars,
         case["use_chat_completions_api"],
     )
-    requests: list[JsonValue] = []
-    calls: list[JsonValue] = []
-    if manager is not None:
-        requests = manager.requests
-        calls = manager.calls
     return JSON.validate_python({
         "input": input_value,
         "model": model,
@@ -238,8 +204,8 @@ def prompt_answer(case: PromptCallCase) -> JsonValue:
         "deployment_model_info": deployment,
         "locals": local_vars,
         "kwargs": kwargs,
-        "requests": requests,
-        "calls": calls,
+        "requests": [] if manager is None else manager.requests,
+        "calls": [] if manager is None else manager.calls,
     })
 
 
