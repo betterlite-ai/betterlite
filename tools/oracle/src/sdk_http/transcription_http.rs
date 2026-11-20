@@ -12,6 +12,7 @@ use super::call_kind::CallKind;
 use super::error::SdkHttpError;
 use super::result::kinds::SdkResult;
 
+#[path = "transcription_http/fixtures/source.rs"]
 mod fixtures;
 mod native;
 
