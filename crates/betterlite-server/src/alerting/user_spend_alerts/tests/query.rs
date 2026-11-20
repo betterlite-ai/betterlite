@@ -154,15 +154,13 @@ async fn query_errors_on_a_row_that_does_not_decode() {
 #[tokio::test]
 async fn query_errors_on_a_non_finite_spend(#[case] spend: &str) {
     let (fixture, pool, client) = database(vec![READ_SPEND_TABLES.to_owned()]).await;
-    client
-        .batch_execute(&format!(
-            r#"
+    let insert = format!(
+        r#"
         INSERT INTO "LiteLLM_DailyUserSpend" (user_id, date, spend, api_requests) VALUES
             ('user-1', '2026-01-15', '{spend}'::float8, 1);
     "#
-        ))
-        .await
-        .unwrap();
+    );
+    client.batch_execute(&insert).await.unwrap();
     drop(client);
     let error = source(&pool).rows(date("2026-01-15"), 7).await.unwrap_err();
     assert!(matches!(
