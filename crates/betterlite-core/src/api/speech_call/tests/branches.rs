@@ -145,18 +145,17 @@ fn minimax_selects_the_first_truthy_voice(#[case] source: &str, #[case] expected
     );
 }
 
-#[test]
-fn minimax_keeps_a_string_voice() {
+#[rstest]
+#[case("minimax/speech-02-hd", "string-voice")]
+#[case("mistral/mistral-small", "alice")]
+fn the_generic_families_keep_a_string_voice(#[case] model: &str, #[case] voice: &str) {
     let harness = branch_harness(Configs::absent(), ScriptedOperations::ok(b"audio"));
     let native = SpeechCall {
-        voice: named_voice("string-voice"),
-        ..base_call("minimax/speech-02-hd")
+        voice: named_voice(voice),
+        ..base_call(model)
     };
     harness.run_ok(&native);
-    assert_eq!(
-        harness.operations.take()[0].voice,
-        named_voice("string-voice")
-    );
+    assert_eq!(harness.operations.take()[0].voice, named_voice(voice));
 }
 
 #[rstest]
@@ -174,17 +173,6 @@ fn mistral_and_edenai_take_only_string_voices(#[case] model: &str) {
         None,
         "voice for {model}"
     );
-}
-
-#[test]
-fn mistral_keeps_a_string_voice() {
-    let harness = branch_harness(Configs::absent(), ScriptedOperations::ok(b"audio"));
-    let native = SpeechCall {
-        voice: named_voice("alice"),
-        ..base_call("mistral/mistral-small")
-    };
-    harness.run_ok(&native);
-    assert_eq!(harness.operations.take()[0].voice, named_voice("alice"));
 }
 
 #[test]
