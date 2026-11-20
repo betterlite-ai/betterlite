@@ -2,6 +2,7 @@ use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_logging::logging_state::updates::{CallUpdate, update_environment_variables};
 use betterlite_models::decisions::Json;
+use betterlite_models::resolution::ResolvedModel;
 use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::speech::logging::{SpeechLogRecord, SpeechLogger};
 use indexmap::IndexMap;
@@ -44,23 +45,25 @@ impl SpeechLogger for SpeechLoggerAdapter<'_> {
 pub(crate) fn record_call(
     logging: &mut dyn SpeechCallLogging,
     call: &SpeechCall,
-    model: &str,
-    provider: &str,
+    resolved: &ResolvedModel,
     optional_params: &Object,
     kwargs: &Object,
 ) -> Result<(), SpeechCallError> {
     let params = values::json_object(&log_params(call, kwargs))?;
     let options = values::json_object(optional_params)?;
-    let user = values::text(kwargs, "user").map(str::to_owned);
+    let user = kwargs
+        .get("user")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
     let additional = IndexMap::from([(
         String::from("custom_llm_provider"),
-        Json::Text(provider.to_owned()),
+        Json::Text(resolved.provider.slug().to_owned()),
     )]);
     update_environment_variables(
         logging.state(),
         &params,
         CallUpdate {
-            model: Some(model.to_owned()),
+            model: Some(resolved.model.clone()),
             user,
             optional_params: options,
             additional_params: additional,

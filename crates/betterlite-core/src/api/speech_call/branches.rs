@@ -15,7 +15,13 @@ use super::operations::{
     SpeechConfigSource, SpeechOperation, SpeechOperationKind, SpeechOperations,
 };
 use super::service::{BranchCall, SpeechDispatch};
-use super::values;
+
+pub(crate) mod families;
+
+use self::families::{
+    VoiceRule, carries_base, first_voice, kind, overwrite_credentials, overwrites_credentials,
+    required_config, string_voice, voice_rule,
+};
 
 impl<'service, Transport, Completions, Configs, Operations>
     SpeechDispatch<'service, Transport, Completions, Configs, Operations>
@@ -42,7 +48,11 @@ where
             optional_params: branch.optional_params.clone(),
             litellm_params: branch.litellm_params.clone(),
             timeout_seconds: branch.call.timeout_seconds(self.settings),
-            extra_headers: values::object(&branch.kwargs, "extra_headers").cloned(),
+            extra_headers: branch
+                .kwargs
+                .get("extra_headers")
+                .and_then(Value::as_object)
+                .cloned(),
             api_base: branch.resolved.api_base.clone(),
             api_key: branch.call.api_key.clone(),
             api_version: branch.call.api_version.clone(),
@@ -56,20 +66,38 @@ where
         }
     }
 
-    pub(crate) async fn edenai(
+    // the rules table: the one branch shape the simple provider families share
+    pub(crate) async fn generic(
         &self,
         branch: BranchCall<'service, '_>,
+        family: Rules,
     ) -> Result<BinaryContent, SpeechCallError> {
-        let mut operation = self.operation(&branch, SpeechOperationKind::Generic);
-        operation.voice = string_voice(&branch.voice);
-        operation.litellm_params.insert(
-            String::from("api_base"),
-            branch
-                .resolved
-                .api_base
-                .clone()
-                .map_or(Value::Null, Value::String),
-        );
+        if let Some(message) = required_config(family)
+            && branch.selected.and_then(|(_, config)| config).is_none()
+        {
+            return Err(SpeechCallError::BadRequest {
+                message: message.to_owned(),
+            });
+        }
+        let mut operation = self.operation(&branch, kind(family));
+        operation.voice = match voice_rule(family) {
+            VoiceRule::Keep => operation.voice,
+            VoiceRule::String => string_voice(branch.voice.as_ref()),
+            VoiceRule::FirstOf(names) => first_voice(branch.voice.as_ref(), names),
+        };
+        if carries_base(family) {
+            operation.litellm_params.insert(
+                String::from("api_base"),
+                branch
+                    .resolved
+                    .api_base
+                    .clone()
+                    .map_or(Value::Null, Value::String),
+            );
+        }
+        if overwrites_credentials(family) {
+            overwrite_credentials(&mut operation.litellm_params, &branch);
+        }
         self.operations.execute(operation).await
     }
 
@@ -113,52 +141,17 @@ where
         self.operations.execute(operation).await
     }
 
-    pub(crate) async fn minimax(
-        &self,
-        branch: BranchCall<'service, '_>,
-    ) -> Result<BinaryContent, SpeechCallError> {
-        let mut operation = self.operation(&branch, SpeechOperationKind::Generic);
-        operation.voice = match &branch.voice {
-            None => None,
-            Some(SpeechVoice::Name(name)) => Some(SpeechVoice::Name(name.clone())),
-            Some(SpeechVoice::Options(options)) => {
-                values::first_text(options, &["voice_id", "id", "name"])
-                    .map(|voice_id| SpeechVoice::Name(voice_id.to_owned()))
-            }
-        };
-        overwrite_credentials(&mut operation.litellm_params, &branch);
-        self.operations.execute(operation).await
-    }
-
-    pub(crate) async fn mistral(
-        &self,
-        branch: BranchCall<'service, '_>,
-    ) -> Result<BinaryContent, SpeechCallError> {
-        let mut operation = self.operation(&branch, SpeechOperationKind::Generic);
-        operation.voice = string_voice(&branch.voice);
-        overwrite_credentials(&mut operation.litellm_params, &branch);
-        self.operations.execute(operation).await
-    }
-
     pub(crate) async fn azure(
         &self,
         branch: BranchCall<'service, '_>,
     ) -> Result<BinaryContent, SpeechCallError> {
         if branch.resolved.model.starts_with("speech/") {
-            if branch.selected.and_then(|(_, config)| config).is_none() {
-                return Err(SpeechCallError::BadRequest {
-                    message: String::from("Azure Speech Service configuration not found"),
-                });
-            }
-            let mut operation = self.operation(&branch, SpeechOperationKind::Dispatch);
-            operation.api_base = branch.resolved.api_base.clone();
-            operation.api_key = branch.call.api_key.clone();
-            return self.operations.execute(operation).await;
+            return self.generic(branch, Rules::AzureSpeech).await;
         }
         self.azure_openai(branch).await
     }
 
-    // Azure OpenAI: the voice check, the Azure credential chains and the azure_ad_token handoff
+    // Azure OpenAI: the voice check, then the Azure credential chains on the shared operation
     async fn azure_openai(
         &self,
         branch: BranchCall<'service, '_>,
@@ -168,40 +161,52 @@ where
                 message: String::from("'voice' is required to be passed as a string for Azure TTS"),
             });
         };
+        let mut operation = self.operation(&branch, SpeechOperationKind::AzureOpenAi);
+        self.azure_credentials(&branch, &mut operation);
+        self.operations.execute(operation).await
+    }
+
+    // the credential tiers and the azure_ad_token handoff Azure the SDK's config supplies
+    fn azure_credentials(
+        &self,
+        branch: &BranchCall<'service, '_>,
+        operation: &mut SpeechOperation<'service>,
+    ) {
         let settings = self.settings;
-        let base = first_text([
+        operation.api_base = first_text([
             branch.resolved.api_base.as_deref(),
             settings.api_base.as_deref(),
             settings.azure_api_base.as_deref(),
             None,
-        ]);
-        let version = first_text([
+        ])
+        .map(str::to_owned);
+        operation.api_version = first_text([
             branch.call.api_version.as_deref(),
             settings.api_version.as_deref(),
             settings.azure_api_version.as_deref(),
             None,
-        ]);
-        let key = first_secret([
+        ])
+        .map(str::to_owned);
+        operation.api_key = first_secret([
             branch.call.api_key.as_ref(),
             settings.api_key.as_ref(),
             settings.azure_key.as_ref(),
             settings.azure_openai_api_key.as_ref(),
             settings.azure_api_key.as_ref(),
-        ]);
-        let mut optional_params = branch.optional_params.clone();
-        let azure_ad_token = take_azure_ad_token(&mut optional_params, settings);
-        if let Some(headers) = values::object(&branch.kwargs, "extra_headers").cloned()
+        ])
+        .cloned();
+        operation.azure_ad_token = take_azure_ad_token(&mut operation.optional_params, settings);
+        if let Some(headers) = branch
+            .kwargs
+            .get("extra_headers")
+            .and_then(Value::as_object)
+            .cloned()
             && !headers.is_empty()
         {
-            optional_params.insert(String::from("extra_headers"), Value::Object(headers));
+            operation
+                .optional_params
+                .insert(String::from("extra_headers"), Value::Object(headers));
         }
-        let mut operation = self.operation(&branch, SpeechOperationKind::AzureOpenAi);
-        operation.optional_params = optional_params;
-        operation.api_base = base.map(str::to_owned);
-        operation.api_version = version.map(str::to_owned);
-        operation.api_key = key.cloned();
-        operation.azure_ad_token = azure_ad_token;
-        self.operations.execute(operation).await
     }
 
     pub(crate) async fn vertex(
@@ -221,48 +226,6 @@ where
             operation.litellm_params.insert(name.to_owned(), value);
         }
         self.operations.execute(operation).await
-    }
-
-    pub(crate) async fn runwayml(
-        &self,
-        branch: BranchCall<'service, '_>,
-    ) -> Result<BinaryContent, SpeechCallError> {
-        if branch.selected.and_then(|(_, config)| config).is_none() {
-            return Err(SpeechCallError::BadRequest {
-                message: String::from("RunwayML Text-to-Speech configuration not found"),
-            });
-        }
-        let operation = self.operation(&branch, SpeechOperationKind::Dispatch);
-        self.operations.execute(operation).await
-    }
-
-    pub(crate) async fn aws_polly(
-        &self,
-        branch: BranchCall<'service, '_>,
-    ) -> Result<BinaryContent, SpeechCallError> {
-        let operation = self.operation(&branch, SpeechOperationKind::Dispatch);
-        self.operations.execute(operation).await
-    }
-}
-
-// the generic handler takes the voice only when it is a string
-fn string_voice(voice: &Option<SpeechVoice>) -> Option<SpeechVoice> {
-    match voice {
-        Some(SpeechVoice::Name(name)) => Some(SpeechVoice::Name(name.clone())),
-        Some(SpeechVoice::Options(_)) | None => None,
-    }
-}
-
-// an explicit non-None base or key overwrites the litellm_params entry, empty strings included
-fn overwrite_credentials(params: &mut Object, branch: &BranchCall<'_, '_>) {
-    if let Some(api_base) = &branch.resolved.api_base {
-        params.insert(String::from("api_base"), Value::String(api_base.clone()));
-    }
-    if let Some(api_key) = &branch.call.api_key {
-        params.insert(
-            String::from("api_key"),
-            Value::String(api_key.expose_secret().to_owned()),
-        );
     }
 }
 

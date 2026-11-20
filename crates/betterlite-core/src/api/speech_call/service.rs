@@ -4,6 +4,7 @@ use betterlite_config::sections::speech_call::Settings;
 use betterlite_context::media_config_selection::text_to_speech::{
     TextToSpeechConfigTag, select_text_to_speech,
 };
+use betterlite_context::non_default_params::names::is_openai_compatible_provider;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_models::resolution::{
     ProviderIdentity, ResolutionContext, ResolutionRequest, ResolvedModel, resolve,
@@ -18,16 +19,19 @@ use serde_json::Value;
 
 use crate::api::speech_chat_bridge::SpeechCompletions;
 
+use super::branches::families::{Rules, rules};
 use super::call::SpeechCall;
-use super::error::{SpeechCallError, SpeechException, exception};
+use super::error::{SpeechCallError, SpeechException, exception, unmapped_message};
 use super::logging::{SpeechCallLogging, record_call};
 use super::operations::{
     SpeechConfigOperation, SpeechConfigSource, SpeechMappingOptions, SpeechOperations,
 };
-use super::providers::openai_compatible;
 
 // the audio reply betterlite reads in full; anything larger is refused instead of buffered
 pub(crate) const SPEECH_BODY_LIMIT: usize = TransportLimits::DEFAULT.body_bytes;
+
+// the kwargs get_litellm_params copies into its dict, the slots speech and its providers read
+const OPTIONAL_KWARGS: &str = "azure_ad_token tenant_id client_id client_secret azure_username azure_password azure_scope timeout client_side_timeout ssl_verify vertex_credentials vertex_project vertex_location vertex_ai_project vertex_ai_location vertex_ai_credentials aws_region_name aws_access_key_id aws_secret_access_key aws_session_token aws_session_name aws_profile_name aws_role_name aws_web_identity_token aws_sts_endpoint aws_external_id aws_session_tags aws_bedrock_runtime_endpoint aws_bedrock_project_id provider_affinity_header litellm_call_id proxy_server_request model_info azure_ad_token_provider";
 
 // speech() over the services it composes; every provider family arrives through one of the seams
 pub struct SpeechDispatch<'service, Transport, Completions, Configs, Operations> {
@@ -53,8 +57,8 @@ pub(crate) struct BranchCall<'service, 'call> {
     )>,
 }
 
-impl<Transport, Completions, Configs, Operations>
-    SpeechDispatch<'_, Transport, Completions, Configs, Operations>
+impl<'service, Transport, Completions, Configs, Operations>
+    SpeechDispatch<'service, Transport, Completions, Configs, Operations>
 where
     Transport: SpeechTransport + Sync,
     Completions: SpeechCompletions<Error = SpeechCallError> + Sync,
@@ -68,18 +72,14 @@ where
         logging: &mut dyn SpeechCallLogging,
         redactor: &Redactor,
     ) -> Result<BinaryContent, SpeechException> {
-        let resolved = match self.resolve(call) {
-            Ok(resolved) => resolved,
-            Err(error) => {
-                let provider = call.custom_llm_provider.as_deref().unwrap_or_default();
-                return Err(exception(&error, &call.model, provider, redactor));
-            }
-        };
-        let provider = resolved.provider.slug().to_owned();
-        match self.dispatch(call, &resolved, logging).await {
-            Ok(content) => Ok(content),
-            Err(error) => Err(exception(&error, &resolved.model, &provider, redactor)),
-        }
+        let resolved = self.resolve(call).map_err(|error| {
+            let provider = call.custom_llm_provider.as_deref().unwrap_or_default();
+            exception(&error, &call.model, provider, redactor)
+        })?;
+        let provider = resolved.provider.slug();
+        self.dispatch(call, &resolved, logging)
+            .await
+            .map_err(|error| exception(&error, &resolved.model, provider, redactor))
     }
 
     fn resolve(&self, call: &SpeechCall) -> Result<ResolvedModel, SpeechCallError> {
@@ -108,11 +108,21 @@ where
                 });
             }
         }
+        let branch = self.prepare(call, resolved, logging)?;
+        self.route(resolved.provider.slug(), branch, logging).await
+    }
+
+    // tags drop, the options map, the call logs, and then the branch record every provider reads
+    fn prepare<'call>(
+        &self,
+        call: &'call SpeechCall,
+        resolved: &'call ResolvedModel,
+        logging: &mut dyn SpeechCallLogging,
+    ) -> Result<BranchCall<'service, 'call>, SpeechCallError> {
         let mut kwargs = call.kwargs.clone();
         kwargs.remove("tags");
         let mut optional_params = call.initial_optional_params()?;
         let mut voice = call.voice.clone();
-        let provider = resolved.provider.slug().to_owned();
         let selected = self.select_config(&resolved.model, &resolved.provider);
         if let Some((_, Some(config))) = &selected {
             let options = SpeechMappingOptions {
@@ -125,40 +135,41 @@ where
             voice = mapped_voice;
             optional_params = mapped_params;
         }
-        record_call(
-            &mut *logging,
-            call,
-            &resolved.model,
-            &provider,
-            &optional_params,
-            &kwargs,
-        )?;
-        let litellm_params = self.litellm_params(call, resolved);
-        let branch = BranchCall {
+        record_call(logging, call, resolved, &optional_params, &kwargs)?;
+        Ok(BranchCall {
             call,
             resolved,
             voice,
             optional_params,
-            litellm_params,
+            litellm_params: self.litellm_params(call, resolved),
             kwargs,
             selected,
-        };
-        match provider.as_str() {
-            "edenai" => self.edenai(branch).await,
+        })
+    }
+
+    async fn route(
+        &self,
+        provider: &str,
+        branch: BranchCall<'service, '_>,
+        logging: &mut dyn SpeechCallLogging,
+    ) -> Result<BinaryContent, SpeechCallError> {
+        match provider {
             "openai" => self.openai_branch(branch, logging).await,
             "azure" | "azure_ai" => self.azure(branch).await,
             "elevenlabs" => self.elevenlabs(branch).await,
             "vertex_ai" | "vertex_ai_beta" => self.vertex(branch, logging).await,
             "gemini" => self.bridge(branch, logging).await,
-            "runwayml" => self.runwayml(branch).await,
-            "minimax" => self.minimax(branch).await,
-            "mistral" => self.mistral(branch).await,
-            "aws_polly" => self.aws_polly(branch).await,
-            other if openai_compatible(other) => self.openai_branch(branch, logging).await,
-            other => Err(SpeechCallError::Unmapped {
-                provider: other.to_owned(),
-                message: super::error::unmapped_message(other),
-            }),
+            // the generic provider families, then every remaining OpenAI-compatible name
+            other => match rules(other) {
+                Some(family) => self.generic(branch, family).await,
+                None if is_openai_compatible_provider(other) => {
+                    self.openai_branch(branch, logging).await
+                }
+                None => Err(SpeechCallError::Unmapped {
+                    provider: other.to_owned(),
+                    message: unmapped_message(other),
+                }),
+            },
         }
     }
 
@@ -200,17 +211,9 @@ where
             String::from("stream_response"),
             Value::Object(Object::new()),
         );
-        for name in ["litellm_call_id", "proxy_server_request", "model_info"] {
+        for name in OPTIONAL_KWARGS.split_whitespace() {
             if let Some(value) = call.kwargs.get(name) {
                 params.insert(name.to_owned(), value.clone());
-            }
-        }
-        if let Some(provider) = call.kwargs.get("azure_ad_token_provider") {
-            params.insert(String::from("azure_ad_token_provider"), provider.clone());
-        }
-        for name in super::providers::OPTIONAL_KWARGS_KEYS {
-            if let Some(value) = call.kwargs.get(*name) {
-                params.insert((*name).to_owned(), value.clone());
             }
         }
         params
