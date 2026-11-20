@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, VecDeque};
-use std::future::{self, Future};
+use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -159,7 +159,7 @@ impl KillSwitchHttpClient for FakeClient {
             timeout: request.timeout,
             options,
         });
-        future::ready(self.send_error.as_ref().map_or_else(
+        ready(self.send_error.as_ref().map_or_else(
             || {
                 Ok(FakeResponse {
                     status: self.status,
@@ -192,14 +192,14 @@ impl KillSwitchResponse for FakeResponse {
         let read = probe.chunks_read.saturating_add(1);
         probe.chunks_read = read;
         drop(probe);
-        future::ready(chunk.map(|result| result.map_err(|message| FakeError { message })))
+        ready(chunk.map(|result| result.map_err(|message| FakeError { message })))
     }
 
     fn close(&mut self) -> impl Future<Output = Result<(), FakeError>> + Send {
         let mut probe = lock(&self.probe);
         probe.closed = true;
         drop(probe);
-        future::ready(
+        ready(
             self.close_error
                 .take()
                 .map_or(Ok(()), |message| Err(FakeError { message })),
