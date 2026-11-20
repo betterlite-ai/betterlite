@@ -72,6 +72,8 @@ description: >-
   transformations in native behavior tests, and test every route and provider
   call through the booted HTTP oracle with a mock provider.
   B1100 registers routes/cursor_responses_compat.rs as a stub, so fill only crates/betterlite-server/src/routes/cursor_responses_compat.rs and leave routes.rs and state.rs as they are. The stream generator reaches cursor_data_generator through a port in the route state (B7324's AsyncDataGenerator): routes/cursor_responses_compat.rs builds B8604's SseDataGenerator with pass-through hooks and a cleanup that does nothing, and B8636 later replaces that one construction with app::inference::stream_generator(state, cleanup).
+
+  Router view. B8611's RouterView in betterlite-server implements the other catalog ports but not ServedModelLookup. Add that impl next to them in crates/betterlite-server/src/router_views: is_recognized_model, is_team_public_model and matches_model_pattern over the same three router services RequestedModelCatalog uses (CatalogQueries, B302's team public names, the global and team pattern catalogs), answering the team public name and the pattern match separately.
 scope:
   paths:
   - crates/betterlite-server/Cargo.toml
@@ -92,6 +94,8 @@ scope:
   - tools/oracle/helpers/b940/**
   - tools/oracle/src/helpers/server/b940.rs
   - tools/oracle/src/helpers/server/b940/**
+  - crates/betterlite-server/src/router_views.rs
+  - crates/betterlite-server/src/router_views/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L68-L127

@@ -17,7 +17,9 @@ description: 'Implement POST /auto_router/validate_complexity_router_config and 
   through the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
   instead of separate ports. Bound the preview_config outside-byte parser to 1048576 bytes before decoding;
   on excess use its typed invalid-input outcome (classifier/observation consumers keep their pinned warning/fallback
-  path). B1100 registers routes/router_preview_validation.rs as a stub, so fill only crates/betterlite-server/src/routes/router_preview_validation.rs and leave routes.rs and state.rs as they are. The availability route reads saved routers through `AutoRouterCatalog`, a trait this task declares in crates/betterlite-server/src/router_preview_validation.rs: `trait AutoRouterCatalog: Send + Sync { fn catalog(&self) -> Option<Arc<Vec<AutoRouterCatalogEntry>>>; }`, where the row is the type build_auto_router_catalog returns (LiteLLM''s AutoRouterCatalogEntry). None is LiteLLM''s proxy_config.auto_router_db_catalog being None, so the route answers 503 "Auto-router availability is unavailable", the same answer it gives without a router. The handler takes an injected `Arc<dyn AutoRouterCatalog>` from state; B8381 implements it, and B8676 puts that implementation in state. Until then routes() passes a catalog whose catalog() always answers None, so availability answers the 503.'
+  path). B1100 registers routes/router_preview_validation.rs as a stub, so fill only crates/betterlite-server/src/routes/router_preview_validation.rs and leave routes.rs and state.rs as they are. The availability route reads saved routers through `AutoRouterCatalog`, a trait this task declares in crates/betterlite-server/src/router_preview_validation.rs: `trait AutoRouterCatalog: Send + Sync { fn catalog(&self) -> Option<Arc<Vec<AutoRouterCatalogEntry>>>; }`, where the row is the type build_auto_router_catalog returns (LiteLLM''s AutoRouterCatalogEntry). None is LiteLLM''s proxy_config.auto_router_db_catalog being None, so the route answers 503 "Auto-router availability is unavailable", the same answer it gives without a router. The handler takes an injected `Arc<dyn AutoRouterCatalog>` from state; B8381 implements it, and B8676 puts that implementation in state. Until then routes() passes a catalog whose catalog() always answers None, so availability answers the 503.
+
+  Booted case from B9691: ui/model-forms/availability-and-validation replays the auto-router form requests POST /auto_router/availability with a missing tier model and POST /auto_router/validate_complexity_router_config with a failing and a passing config, with the request shapes from the B9691 task file.'
 scope:
   paths:
   - crates/betterlite-server/src/router_preview_validation.rs
@@ -37,6 +39,7 @@ scope:
   - tools/oracle/helpers/b379/**
   - tools/oracle/src/helpers/server/b379.rs
   - tools/oracle/src/helpers/server/b379/**
+  - tools/oracle/cases/ui/model-forms/availability-and-validation.yaml
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L211-L435
@@ -72,6 +75,8 @@ dod:
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
+- text: "The model form availability call and both validation calls answer as LiteLLM does."
+  proof: [oracle]
 checks:
   optional:
   - mutants
@@ -104,6 +109,7 @@ oracle_cases:
 - tools/oracle/cases/routing/router-preview-validation/catalog-unavailable-503.yaml
 - tools/oracle/cases/routing/router-preview-validation/unlimited-allowances.yaml
 - tools/oracle/cases/routing/router-preview-validation/parser-byte-bound.yaml
+- tools/oracle/cases/ui/model-forms/availability-and-validation.yaml
 deviations:
 - what: The preview_config byte parser rejects inputs over 1048576 bytes before allocation.
   why: The source has no equivalent byte bound at this parser boundary; bounded-inputs requires a finite
