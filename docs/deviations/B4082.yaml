@@ -28,4 +28,12 @@ deviations:
       LiteLLM stringifies whatever value it finds, so the number 7 becomes "7"; betterlite follows
       docs/compatibility.md, where a wrong-typed field is an error, and a working setup sends a string model.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L93-L168
+  - what: >-
+      Every request normalization failure (a wrong-typed JSON value, a transform error, an encode error)
+      is a typed ShadowRequestError that skips the sample with a debug log, where LiteLLM wraps its
+      lenient adapters in a blanket except Exception.
+    why: >-
+      The skip outcome is the same and no panic is caught; the log line names the typed cause instead of
+      the exception text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L420-L439
 kept_bugs: []
