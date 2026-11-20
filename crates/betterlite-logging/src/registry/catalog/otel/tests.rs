@@ -162,6 +162,22 @@ fn otel_with_v2_builds_through_the_runtime_constructor() {
     assert_eq!(catalog.in_memory_loggers().len(), 1);
 }
 
+// LiteLLM returns the OpenTelemetryV2 already in the runtime before it builds another one
+#[test]
+fn a_second_v2_build_reuses_the_runtime_logger() {
+    let fixture = fixture();
+    let inputs = catalog_inputs("", &[("LITELLM_OTEL_V2", "true")]);
+    let shared = SharedOtel::new(&inputs);
+    let runtime = Arc::new(fixture.runtime);
+    let mut in_memory = Vec::new();
+    let first = build(&inputs, Some(runtime.as_ref()), &shared, &mut in_memory)
+        .expect("the V2 logger builds");
+    let second = build(&inputs, Some(runtime.as_ref()), &shared, &mut in_memory)
+        .expect("the V2 logger builds");
+    assert!(Arc::ptr_eq(&first, &second));
+    assert_eq!(fixture.constructor.records().len(), 1);
+}
+
 #[test]
 fn otel_with_v2_reads_the_message_flags_from_the_callback_settings() {
     let fixture = fixture();
