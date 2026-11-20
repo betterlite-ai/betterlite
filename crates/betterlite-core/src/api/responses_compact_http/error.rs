@@ -87,7 +87,10 @@ pub enum CompactError {
 
 // _handle_error's funnel: an HTTP error keeps its status, text and masked headers; anything else becomes a synthesized 500
 #[must_use]
-pub fn provider_error<C: CompactConfig>(facts: &FailureFacts, config: &C) -> BaseLlmException {
+pub fn provider_error<C>(facts: &FailureFacts, config: &C) -> BaseLlmException
+where
+    C: CompactConfig,
+{
     let fallback = handle_error(facts, None);
     let mut error = config.error_class(&fallback.message, fallback.status_code, fallback.headers);
     if fallback.status_code_is_synthesized {

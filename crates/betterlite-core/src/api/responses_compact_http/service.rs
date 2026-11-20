@@ -24,8 +24,8 @@ use self::request::{
 };
 use super::body::signed_body_kwargs;
 use super::config::{CompactConfig, CompactParams, Headers, SignRequest};
-use super::error::{ClientError, CompactError, ConfigFailure, Stage, provider_error};
-use crate::api::vector_store_http_write::error::header_text;
+use super::error::{CompactError, ConfigFailure, Stage, provider_error};
+use crate::api::vector_store_http_write::error::{ClientError, header_text};
 
 pub(crate) mod facts;
 mod proxied;
@@ -259,11 +259,14 @@ where
 }
 
 // The send catch: a transport failure and a status of 400 or more go through _handle_error
-fn checked_reply<C: CompactConfig>(
+fn checked_reply<C>(
     reply: Result<UpstreamResponse, TransportError>,
     sent: &Sent,
     config: &C,
-) -> Result<UpstreamResponse, CompactError> {
+) -> Result<UpstreamResponse, CompactError>
+where
+    C: CompactConfig,
+{
     let answer = reply.map_err(|error| {
         CompactError::Provider(provider_error(
             &facts::transport_facts(&error, sent),
