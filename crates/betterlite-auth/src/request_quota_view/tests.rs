@@ -69,7 +69,8 @@ fn copies_the_user_team_team_member_and_end_user_limits() {
 
 #[test]
 fn an_absent_throttle_percentage_stays_unset() {
-    let view = auth("{}").request_quota_view();
+    let auth = auth("{}");
+    let view = auth.request_quota_view();
     assert_eq!(view.throttle_pct, None);
 }
 
@@ -100,14 +101,16 @@ fn a_limit_type_that_is_not_a_string_reads_as_none(#[case] value: &str) {
 
 #[test]
 fn a_key_without_metadata_has_no_limit_types() {
-    let view = auth("{}").request_quota_view();
+    let auth = auth("{}");
+    let view = auth.request_quota_view();
     assert_eq!(view.rpm_limit_type, None);
     assert_eq!(view.tpm_limit_type, None);
 }
 
 #[test]
 fn an_auth_without_attached_server_fields_reads_them_as_none() {
-    let view = auth(r#"{"agent_id": "key-agent"}"#).request_quota_view();
+    let auth = auth(r#"{"agent_id": "key-agent"}"#);
+    let view = auth.request_quota_view();
     assert_eq!(view.invoked_agent_id, None);
     assert!(view.managed_agent_policy.is_none());
     assert!(view.invoked_agent_policy.is_none());

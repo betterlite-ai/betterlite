@@ -32,7 +32,7 @@ pub async fn build_request_rate_limit_descriptors(
     };
     let mut descriptors = create_rate_limit_descriptors(
         builder,
-        ScopeInputs {
+        &ScopeInputs {
             auth,
             data,
             rpm_limit_type: view.rpm_limit_type,

@@ -68,12 +68,12 @@ impl<'request> IdentityScope<'request> {
 // LiteLLM's _create_rate_limit_descriptors: every key-owned descriptor, appended in the handler's order
 pub fn create_rate_limit_descriptors(
     builder: &RequestScopeBuilder<'_>,
-    inputs: ScopeInputs<'_>,
+    inputs: &ScopeInputs<'_>,
 ) -> Result<Vec<RateLimitDescriptor>, KeyScopesError> {
     let view = inputs.auth.request_quota_view();
     let mut descriptors = Vec::new();
-    push_key_limit(builder, &view, &inputs, &mut descriptors);
-    let identities = identity_scopes(&view, &inputs);
+    push_key_limit(builder, &view, inputs, &mut descriptors);
+    let identities = identity_scopes(&view, inputs);
     push_identity_limits(builder, &identities, &mut descriptors);
     let model = body_text(inputs.data, "model");
     builder
@@ -85,7 +85,7 @@ pub fn create_rate_limit_descriptors(
         builder.window_size,
         &mut descriptors,
     );
-    push_tail_limits(builder, &view, &inputs, model, &mut descriptors);
+    push_tail_limits(builder, &view, inputs, model, &mut descriptors);
     Ok(descriptors)
 }
 

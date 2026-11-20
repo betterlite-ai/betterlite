@@ -58,7 +58,7 @@ fn create(
 ) -> Vec<RateLimitDescriptor> {
     create_rate_limit_descriptors(
         builder,
-        inputs(auth, data, (None, None), model_has_failures, None),
+        &inputs(auth, data, (None, None), model_has_failures, None),
     )
     .expect("the key scopes build")
 }
@@ -172,7 +172,7 @@ fn a_dynamic_key_keeps_its_descriptor_when_the_model_is_healthy() {
     let data = support::data("{}");
     let descriptors = create_rate_limit_descriptors(
         &builder,
-        inputs(&auth, &data, (Some("dynamic"), None), false, None),
+        &inputs(&auth, &data, (Some("dynamic"), None), false, None),
     )
     .expect("the key scopes build");
     let descriptor = only(&descriptors);
@@ -188,13 +188,13 @@ fn a_dynamic_tpm_type_drops_the_tokens_when_the_model_is_healthy() {
     let data = support::data("{}");
     let healthy = create_rate_limit_descriptors(
         &builder,
-        inputs(&auth, &data, (None, Some("dynamic")), false, None),
+        &inputs(&auth, &data, (None, Some("dynamic")), false, None),
     )
     .expect("the key scopes build");
     assert_eq!(limits(only(&healthy)).tokens_per_unit, None);
     let failing = create_rate_limit_descriptors(
         &builder,
-        inputs(&auth, &data, (None, Some("dynamic")), true, None),
+        &inputs(&auth, &data, (None, Some("dynamic")), true, None),
     )
     .expect("the key scopes build");
     assert_eq!(limits(only(&failing)).tokens_per_unit, Some(20));
@@ -210,13 +210,13 @@ fn the_throttle_applies_before_the_dynamic_policy() {
     let data = support::data("{}");
     let healthy = create_rate_limit_descriptors(
         &builder,
-        inputs(&auth, &data, (Some("dynamic"), None), false, None),
+        &inputs(&auth, &data, (Some("dynamic"), None), false, None),
     )
     .expect("the key scopes build");
     assert_eq!(limits(only(&healthy)).requests_per_unit, None);
     let failing = create_rate_limit_descriptors(
         &builder,
-        inputs(&auth, &data, (Some("dynamic"), None), true, None),
+        &inputs(&auth, &data, (Some("dynamic"), None), true, None),
     )
     .expect("the key scopes build");
     assert_eq!(limits(only(&failing)).requests_per_unit, Some(5));
@@ -230,7 +230,7 @@ fn a_guaranteed_throughput_type_is_enforced_without_failures() {
     let data = support::data("{}");
     let descriptors = create_rate_limit_descriptors(
         &builder,
-        inputs(
+        &inputs(
             &auth,
             &data,
             (Some("guaranteed_throughput"), None),
@@ -437,7 +437,7 @@ fn every_builder_runs_in_the_handlers_order() {
     );
     let descriptors = create_rate_limit_descriptors(
         &builder,
-        inputs(&auth, &data, (None, None), false, MCP_TOOL),
+        &inputs(&auth, &data, (None, None), false, MCP_TOOL),
     )
     .expect("the key scopes build");
     assert_every_builder_order(&descriptors);
@@ -452,7 +452,7 @@ fn the_mcp_builders_are_skipped_when_the_body_names_a_server_id() {
     let data = support::data(r#"{"server_id": "srv-1", "mcp_server_name": "server"}"#);
     let descriptors = create_rate_limit_descriptors(
         &builder,
-        inputs(&auth, &data, (None, None), false, MCP_TOOL),
+        &inputs(&auth, &data, (None, None), false, MCP_TOOL),
     )
     .expect("the key scopes build");
     assert!(descriptors.is_empty());
@@ -468,7 +468,7 @@ fn the_mcp_builders_are_skipped_for_other_call_types(#[case] call_type: Option<&
     let data = support::data(r#"{"mcp_server_name": "server"}"#);
     let descriptors = create_rate_limit_descriptors(
         &builder,
-        inputs(&auth, &data, (None, None), false, call_type),
+        &inputs(&auth, &data, (None, None), false, call_type),
     )
     .expect("the key scopes build");
     assert!(descriptors.is_empty());
@@ -482,7 +482,7 @@ fn the_mcp_builders_need_a_server_name() {
     let data = support::data(r#"{"mcp_server_name": 5}"#);
     let descriptors = create_rate_limit_descriptors(
         &builder,
-        inputs(&auth, &data, (None, None), false, MCP_TOOL),
+        &inputs(&auth, &data, (None, None), false, MCP_TOOL),
     )
     .expect("the key scopes build");
     assert!(descriptors.is_empty());

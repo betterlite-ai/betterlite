@@ -69,15 +69,15 @@ impl DeploymentHealthPolicy<'_> {
         model: &str,
         deployment_id: Option<&str>,
     ) -> Result<bool, DeploymentHealthError> {
-        let Some(deployment_id) = deployment_id.filter(|id| !id.is_empty()) else {
+        let Some(id) = deployment_id.filter(|value| !value.is_empty()) else {
             return Ok(false);
         };
-        let failure_count = self.source.failures_this_minute(deployment_id).await?;
+        let failure_count = self.source.failures_this_minute(id).await?;
         if failure_count <= self.error_threshold_per_minute {
             return Ok(false);
         }
         tracing::debug!(
-            "[Dynamic Rate Limit] Deployment {deployment_id} has {failure_count} failures in current minute - enforcing rate limits for model {model}"
+            "[Dynamic Rate Limit] Deployment {id} has {failure_count} failures in current minute - enforcing rate limits for model {model}"
         );
         Ok(true)
     }
