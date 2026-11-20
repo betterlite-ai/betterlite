@@ -156,13 +156,13 @@ pub(super) fn app(store: Option<Arc<FakeStore>>) -> Router {
     app_at(store, now())
 }
 
-fn erased(store: &Arc<FakeStore>) -> Arc<dyn UserAgentAnalyticsStore> {
-    Arc::<FakeStore>::clone(store)
+fn erased(store: Arc<FakeStore>) -> Arc<dyn UserAgentAnalyticsStore> {
+    store
 }
 
 pub(super) fn app_at(store: Option<Arc<FakeStore>>, instant: DateTime<Utc>) -> Router {
     routes(UserAgentAnalyticsState {
-        store: store.as_ref().map(erased),
+        store: store.map(erased),
         clock: fixed_clock(instant),
     })
 }
