@@ -16,6 +16,7 @@ use rstest::rstest;
 use secrecy::ExposeSecret as _;
 use serde_json::Number;
 use thiserror::Error;
+use tokio::time::timeout;
 
 use super::error::ImageGenerationError;
 use super::facts;
@@ -103,6 +104,8 @@ enum FixtureError {
     Refused,
     #[error("the reply body is not the fixture's JSON")]
     Reply(#[source] serde_json::Error),
+    #[error("the response object handed to the transform was not zeroed")]
+    NotZeroed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -180,10 +183,9 @@ impl BaseImageGenerationConfig for Fixture {
 
     fn get_complete_url(&self, request: ImageUrlRequest<'_>) -> String {
         let key = request.api_key.map(|key| key.expose_secret().to_owned());
-        {
-            let mut recorded = self.recorded();
-            recorded.url_api_key = key;
-        }
+        let mut recorded = self.recorded();
+        recorded.url_api_key = key;
+        drop(recorded);
         match self.endpoint {
             Endpoint::Base => request.api_base.unwrap_or_default().to_owned(),
             Endpoint::Broken => String::from("://not a URL"),
@@ -191,12 +193,11 @@ impl BaseImageGenerationConfig for Fixture {
     }
 
     fn validate_environment(&self, request: ImageEnvironment<'_>) -> ImageHeaders {
-        {
-            let mut recorded = self.recorded();
-            recorded.validate_api_key = request.api_key.map(|key| key.expose_secret().to_owned());
-            recorded.validate_headers = Some(request.headers.clone());
-            recorded.validate_messages = Some(request.messages.len());
-        }
+        let mut recorded = self.recorded();
+        recorded.validate_api_key = request.api_key.map(|key| key.expose_secret().to_owned());
+        recorded.validate_headers = Some(request.headers.clone());
+        recorded.validate_messages = Some(request.messages.len());
+        drop(recorded);
         self.validated.clone()
     }
 
@@ -225,15 +226,17 @@ impl BaseImageGenerationConfig for Fixture {
         match self.response {
             Step::Fail => Err(FixtureError::Refused),
             Step::Work => {
-                assert_eq!(reply.model_response.created, 0);
-                assert_eq!(reply.model_response.data, Some(Vec::new()));
-                assert_eq!(reply.model_response.usage, Some(ImageUsage::default()));
+                if reply.model_response.created != 0
+                    || reply.model_response.data != Some(Vec::new())
+                    || reply.model_response.usage != Some(ImageUsage::default())
+                {
+                    return Err(FixtureError::NotZeroed);
+                }
                 let parsed: ImageResponse = serde_json::from_slice(&reply.raw_response.body)
                     .map_err(FixtureError::Reply)?;
-                {
-                    let mut recorded = self.recorded();
-                    recorded.request_data = Some(reply.request_data.clone());
-                }
+                let mut recorded = self.recorded();
+                recorded.request_data = Some(reply.request_data.clone());
+                drop(recorded);
                 reply.model_response.created = parsed.created;
                 reply.model_response.data = parsed.data;
                 Ok(mem::take(reply.model_response))
@@ -305,6 +308,7 @@ async fn json_generation() -> JsonRun {
         IMAGE_REPLY,
     );
     let (outcome, captured) = tokio::join!(send(prepared), serve_once(&listener, &served));
+    assert_eq!(source.seen(), vec![None]);
     JsonRun {
         captured,
         outcome: outcome.expect("the image response"),
@@ -563,10 +567,10 @@ fn generation_refuses_object_form_fields(#[case] echo: ImageParams, #[case] expe
         &mut Recorder::default(),
     )
     .expect_err("the form value failure");
-    match error {
-        ImageGenerationError::FormValue { field } => assert_eq!(field, expected),
-        other => panic!("expected the form value failure, got {other}"),
-    }
+    let ImageGenerationError::FormValue { field } = error else {
+        panic!("expected the form value failure, got {error}");
+    };
+    assert_eq!(field, expected);
 }
 
 struct FailureRun {
@@ -590,7 +594,7 @@ async fn failing_send(fixture: &Fixture, served: &[u8]) -> FailureRun {
     let prepared =
         prepare(&deps, ClientKind::Sync, &call, &mut recorder).expect("the prepared request");
     let (outcome, captured) = tokio::join!(send(prepared), serve_once(&listener, served));
-    let second_request = tokio::time::timeout(Duration::from_millis(50), listener.accept())
+    let second_request = timeout(Duration::from_millis(50), listener.accept())
         .await
         .is_ok();
     FailureRun {
@@ -619,6 +623,7 @@ async fn generation_send_failure() {
     assert_response_failure().await;
     assert_field_failures();
     assert_assembly_failures();
+    assert_header_failures();
     assert_response_header_failure().await;
 }
 
@@ -699,10 +704,11 @@ async fn assert_response_header_failure() {
     let fixture = Fixture::working(ImageHeaders::new());
     let served = reply("200 OK", &[("x-opaque", b"\xff")], IMAGE_REPLY);
     let run = failing_send(&fixture, &served).await;
-    match run.outcome.expect_err("the response header failure") {
-        ImageGenerationError::HeaderText { name } => assert_eq!(name, "x-opaque"),
-        other => panic!("expected the header text failure, got {other}"),
-    }
+    let error = run.outcome.expect_err("the response header failure");
+    let ImageGenerationError::HeaderText { name } = error else {
+        panic!("expected the header text failure, got {error}");
+    };
+    assert_eq!(name, "x-opaque");
 }
 
 fn prepare_error(
@@ -726,12 +732,12 @@ fn prepare_error(
 
 fn field_error(fixture: &Fixture, params: &ImageParams) -> String {
     let options = caller_options(None);
-    match prepare_error(fixture, params, &options, &mut Recorder::default())
-        .expect_err("the field type failure")
-    {
-        ImageGenerationError::FieldType { field, .. } => field.to_owned(),
-        other => panic!("expected a field type error, got {other}"),
-    }
+    let error = prepare_error(fixture, params, &options, &mut Recorder::default())
+        .expect_err("the field type failure");
+    let ImageGenerationError::FieldType { field, .. } = error else {
+        panic!("expected a field type error, got {error}");
+    };
+    field.to_owned()
 }
 
 fn assert_field_failures() {
@@ -761,69 +767,79 @@ fn assert_field_failures() {
     );
     let mut text_options = caller_options(None);
     text_options.insert(String::from("extra_headers"), Json::Text(String::from("x")));
-    let error = prepare_error(&fixture, &good, &text_options, &mut Recorder::default())
+    let headers_error = prepare_error(&fixture, &good, &text_options, &mut Recorder::default())
         .expect_err("the headers type failure");
-    assert!(matches!(error, ImageGenerationError::HeadersType));
+    assert!(matches!(headers_error, ImageGenerationError::HeadersType));
     let mut value_options = caller_options(None);
     let bad = fields(&[("x", Json::Bool(true))]);
     value_options.insert(String::from("extra_headers"), Json::Object(bad));
-    let error = prepare_error(&fixture, &good, &value_options, &mut Recorder::default())
+    let header_error = prepare_error(&fixture, &good, &value_options, &mut Recorder::default())
         .expect_err("the header type failure");
-    match error {
-        ImageGenerationError::HeaderType { name } => assert_eq!(name, "x"),
-        other => panic!("expected a header value error, got {other}"),
-    }
+    let ImageGenerationError::HeaderType { name } = header_error else {
+        panic!("expected a header value error, got {header_error}");
+    };
+    assert_eq!(name, "x");
 }
 
 fn assert_assembly_failures() {
     let good = litellm_params("http://127.0.0.1:9/v1", None, None);
     let mut failing = Fixture::working(ImageHeaders::new());
     failing.request = Step::Fail;
-    let error = prepare_error(
+    let transform_error = prepare_error(
         &failing,
         &good,
         &caller_options(None),
         &mut Recorder::default(),
     )
     .expect_err("the transform request failure");
-    assert!(matches!(error, ImageGenerationError::Config(_)));
+    assert!(matches!(transform_error, ImageGenerationError::Config(_)));
     let mut broken = Fixture::working(ImageHeaders::new());
     broken.endpoint = Endpoint::Broken;
-    let mut recorder = Recorder::default();
-    let error = prepare_error(&broken, &good, &caller_options(None), &mut recorder)
+    let mut url_recorder = Recorder::default();
+    let url_error = prepare_error(&broken, &good, &caller_options(None), &mut url_recorder)
         .expect_err("the URL failure");
-    assert!(matches!(error, ImageGenerationError::RequestUrl { .. }));
-    assert!(recorder.api_key.is_none());
+    assert!(matches!(url_error, ImageGenerationError::RequestUrl { .. }));
+    assert!(url_recorder.api_key.is_none());
+    let fixture = Fixture::working(ImageHeaders::new());
+    let source = FailingSource;
+    let options = caller_options(None);
+    let call = generation(&options, &good);
+    let mut client_recorder = Recorder::default();
+    let deps = ImageGenerationDeps {
+        config: &fixture,
+        source: &source,
+        supplied: None,
+    };
+    let client_error = match prepare(&deps, ClientKind::Sync, &call, &mut client_recorder) {
+        Ok(_prepared) => panic!("the client failure must fail the prepare"),
+        Err(error) => error,
+    };
+    assert!(matches!(client_error, ImageGenerationError::Client(_)));
+}
+
+fn assert_header_failures() {
+    let good = litellm_params("http://127.0.0.1:9/v1", None, None);
     let bad_name = Fixture::working(header_map(&[("bad name", "value")]));
     let mut recorder = Recorder::default();
-    let error = prepare_error(&bad_name, &good, &caller_options(None), &mut recorder)
+    let name_error = prepare_error(&bad_name, &good, &caller_options(None), &mut recorder)
         .expect_err("the header name failure");
-    assert!(matches!(error, ImageGenerationError::HeaderName { .. }));
+    assert!(matches!(
+        name_error,
+        ImageGenerationError::HeaderName { .. }
+    ));
     assert_eq!(recorder.api_key.as_deref(), Some(""));
     let bad_value = Fixture::working(header_map(&[("x", "line\nbreak")]));
-    let error = prepare_error(
+    let value_error = prepare_error(
         &bad_value,
         &good,
         &caller_options(None),
         &mut Recorder::default(),
     )
     .expect_err("the header value failure");
-    assert!(matches!(error, ImageGenerationError::HeaderValue { .. }));
-    let fixture = Fixture::working(ImageHeaders::new());
-    let source = FailingSource;
-    let options = caller_options(None);
-    let call = generation(&options, &good);
-    let mut recorder = Recorder::default();
-    let deps = ImageGenerationDeps {
-        config: &fixture,
-        source: &source,
-        supplied: None,
-    };
-    let error = match prepare(&deps, ClientKind::Sync, &call, &mut recorder) {
-        Ok(_prepared) => panic!("the client failure must fail the prepare"),
-        Err(error) => error,
-    };
-    assert!(matches!(error, ImageGenerationError::Client(_)));
+    assert!(matches!(
+        value_error,
+        ImageGenerationError::HeaderValue { .. }
+    ));
 }
 
 #[tokio::test]
@@ -908,22 +924,20 @@ fn generation_masks_error_headers() {
         headers,
         body: b"slow".to_vec(),
     };
-    let error = facts::status_error(&reply, &fixture);
-    match error {
-        ImageGenerationError::Provider(error) => {
-            assert_eq!(error.message, "slow");
-            let masked = error.headers.expect("the masked headers");
-            assert!(
-                !masked
-                    .iter()
-                    .any(|(name, _)| name.as_str() == "content-encoding")
-            );
-            let length = masked
-                .iter()
-                .find(|(name, _)| name.as_str() == "content-length")
-                .map(|(_, value)| value.as_str());
-            assert_eq!(length, Some("4"));
-        }
-        other => panic!("expected the provider error, got {other}"),
-    }
+    let provider_error = facts::status_error(&reply, &fixture);
+    let ImageGenerationError::Provider(error) = provider_error else {
+        panic!("expected the provider error, got {provider_error}");
+    };
+    assert_eq!(error.message, "slow");
+    let masked = error.headers.expect("the masked headers");
+    assert!(
+        !masked
+            .iter()
+            .any(|(name, _)| name.as_str() == "content-encoding")
+    );
+    let length = masked
+        .iter()
+        .find(|(name, _)| name.as_str() == "content-length")
+        .map(|(_, value)| value.as_str());
+    assert_eq!(length, Some("4"));
 }

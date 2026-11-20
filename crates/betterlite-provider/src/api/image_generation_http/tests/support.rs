@@ -2,7 +2,8 @@
 
 use std::collections::BTreeMap;
 use std::convert::Infallible;
-use std::future::Future;
+use std::future::{Future, ready};
+use std::str::from_utf8;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -15,6 +16,7 @@ use betterlite_openai::image_generation::transport::ImageGenerationTransport;
 use http::HeaderMap;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::time::sleep;
 
 use crate::api::image_generation_http::ClientSource;
 
@@ -35,7 +37,7 @@ fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 }
 
 fn content_length(head: &[u8]) -> Option<usize> {
-    let text = std::str::from_utf8(head).ok()?;
+    let text = from_utf8(head).ok()?;
     text.lines().find_map(|line| {
         let (name, value) = line.split_once(':')?;
         if name.eq_ignore_ascii_case("content-length") {
@@ -95,8 +97,7 @@ pub(super) struct Captured {
 impl Captured {
     fn head(&self) -> &str {
         let end = find(&self.raw, HEADER_END).expect("the header terminator");
-        std::str::from_utf8(self.raw.get(..end).expect("the header bytes"))
-            .expect("the header text")
+        from_utf8(self.raw.get(..end).expect("the header bytes")).expect("the header text")
     }
 
     pub(super) fn body(&self) -> &[u8] {
@@ -150,7 +151,7 @@ pub(super) async fn stall_once(listener: &TcpListener, hold: Duration) {
     let (mut stream, _) = listener.accept().await.expect("the connection");
     let mut chunk = [0_u8; 4096];
     let _read = stream.read(&mut chunk).await.expect("the request bytes");
-    tokio::time::sleep(hold).await;
+    sleep(hold).await;
 }
 
 #[derive(Clone)]
@@ -186,7 +187,7 @@ impl ImageGenerationTransport for StubClient {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(request);
-        std::future::ready(Ok(UpstreamResponse {
+        ready(Ok(UpstreamResponse {
             status: self.status,
             headers: HeaderMap::new(),
             body: self.body.to_vec(),
@@ -280,7 +281,7 @@ impl ImageGenerationTransport for ClosedClient {
         &self,
         _request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        std::future::ready(Err(TransportError::Closed))
+        ready(Err(TransportError::Closed))
     }
 }
 

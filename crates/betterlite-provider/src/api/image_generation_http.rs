@@ -137,7 +137,7 @@ where
     let timeout = request.deadline;
     let started = Instant::now();
     let transport: &S::Client = match &client {
-        Selected::Supplied(supplied) => *supplied,
+        Selected::Supplied(supplied) => supplied,
         Selected::Created(supplied) => supplied,
     };
     let reply = transport.generate(request).await;

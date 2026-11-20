@@ -28,7 +28,7 @@ pub(super) struct Sent {
 }
 
 // Every failure starts from these facts, then fills in the status or the display text it has
-fn failure_facts(display: String) -> FailureFacts {
+const fn failure_facts(display: String) -> FailureFacts {
     FailureFacts {
         response_status: None,
         status: None,
@@ -157,12 +157,12 @@ pub(super) fn http_response(
 fn text_headers(headers: &http::HeaderMap) -> Result<ImageHeaders, ImageGenerationError> {
     let mut text = ImageHeaders::new();
     for (name, value) in headers {
-        let value = value
+        let readable = value
             .to_str()
             .map_err(|_source| ImageGenerationError::HeaderText {
                 name: name.as_str().to_owned(),
             })?;
-        text.insert(name.as_str().to_owned(), value.to_owned());
+        text.insert(name.as_str().to_owned(), readable.to_owned());
     }
     Ok(text)
 }
