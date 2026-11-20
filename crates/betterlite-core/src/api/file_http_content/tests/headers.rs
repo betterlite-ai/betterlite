@@ -42,8 +42,8 @@ fn decoded_headers_drop_stale_transfer_headers(#[case] stale: &[(&'static str, &
     headers.append("content-length", HeaderValue::from_static("11"));
     headers.append("x-repeat", HeaderValue::from_static("two"));
     let decoded = decoded_body_headers(&headers);
-    assert!(matches!(decoded.get("content-encoding"), None));
-    assert!(matches!(decoded.get("content-length"), None));
+    assert!(decoded.get("content-encoding").is_none());
+    assert!(decoded.get("content-length").is_none());
     assert_eq!(
         decoded
             .get("content-disposition")

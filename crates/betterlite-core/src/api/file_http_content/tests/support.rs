@@ -42,11 +42,15 @@ use crate::api::file_http_content::config::{
     StreamContext,
 };
 use crate::api::file_http_content::error::ContentError;
+use crate::api::file_http_content::service::buffered::retrieve_file_content;
+use crate::api::file_http_content::service::streaming::retrieve_content_streaming;
 use crate::api::file_http_content::service::{
     BufferedReply, ClientSource, ContentDeps, ContentRequest, ContentTransport, LogContext,
     PreparedContent, RetrieveCall, StreamedReply, prepare,
 };
-use crate::api::vector_store_http_write::error::{BaseLlmException, ClientError};
+use crate::api::vector_store_http_write::error::{
+    BaseLlmException, ClientError, HeaderMap as ErrorHeaders,
+};
 
 #[derive(Clone, Default)]
 pub(crate) struct Events(Arc<Mutex<Vec<String>>>);
@@ -160,6 +164,35 @@ impl Fixture {
     pub(crate) fn input(&self) -> Option<&Json> {
         self.state.model_call_details.get("input")
     }
+
+    pub(crate) async fn fetch<'deps, C, S>(
+        &mut self,
+        deps: &'deps ContentDeps<'deps, C, S>,
+        call: &RetrieveCall<'_>,
+        events: &Events,
+    ) -> Result<BinaryContent, ContentError>
+    where
+        C: FileContentConfig,
+        S: ClientSource,
+    {
+        let prepared = self.prepare(deps, call, events)?;
+        retrieve_file_content(prepared, &mut self.state).await
+    }
+
+    pub(crate) async fn fetch_stream<'deps, C, S>(
+        &mut self,
+        deps: &'deps ContentDeps<'deps, C, S>,
+        call: &RetrieveCall<'_>,
+        chunk: NonZeroUsize,
+        events: &Events,
+    ) -> Result<FileContentStreamingResult, ContentError>
+    where
+        C: FileContentConfig,
+        S: ClientSource,
+    {
+        let prepared = self.prepare(deps, call, events)?;
+        retrieve_content_streaming(prepared, chunk, &mut self.state).await
+    }
 }
 
 pub(crate) enum Answer {
@@ -168,6 +201,7 @@ pub(crate) enum Answer {
     Failure(TransportError),
 }
 
+// The wire answers one shape: a send that meets the other shape reads as a closed body
 impl TryFrom<(Url, Answer)> for BufferedReply {
     type Error = TransportError;
 
@@ -175,7 +209,7 @@ impl TryFrom<(Url, Answer)> for BufferedReply {
         match answer {
             Answer::Buffered(status, headers, body) => Ok(Self::new(status, url, headers, body)),
             Answer::Failure(error) => Err(error),
-            Answer::Stream(..) => panic!("a buffered send needs a buffered answer"),
+            Answer::Stream(..) => Err(TransportError::Closed),
         }
     }
 }
@@ -187,7 +221,7 @@ impl TryFrom<(Url, Answer)> for StreamedReply {
         match answer {
             Answer::Stream(status, headers, body) => Ok(Self::new(status, url, headers, body)),
             Answer::Failure(error) => Err(error),
-            Answer::Buffered(..) => panic!("a streaming send needs a stream answer"),
+            Answer::Buffered(..) => Err(TransportError::Closed),
         }
     }
 }
@@ -265,6 +299,65 @@ impl ClientSource for Source {
 
     fn client(&self) -> Result<Wire, ClientError> {
         Ok(self.wire.clone())
+    }
+}
+
+// One mock request end to end: the recording config, the wire that answers it once and the call's inputs
+pub(crate) struct MockScenario {
+    pub(crate) events: Events,
+    pub(crate) wire: Wire,
+    pub(crate) config: RecordingConfig,
+    source: Source,
+    pub(crate) params: ContentParams,
+    pub(crate) headers: Headers,
+    pub(crate) request: FileContentRequest,
+    pub(crate) timeout: Option<Duration>,
+}
+
+impl MockScenario {
+    pub(crate) fn new(answer: Answer, base: &str, query: QueryParams) -> Self {
+        let events = Events::new();
+        let wire = Wire::answering(answer, &events);
+        Self {
+            config: recording_config(base, query, provider_headers(), &events),
+            source: Source::new(wire.clone()),
+            wire,
+            events,
+            params: params("http://mock.test/v1"),
+            headers: Headers::new(),
+            request: request("f", IndexMap::new()),
+            timeout: None,
+        }
+    }
+
+    pub(crate) async fn buffered(&self) -> (Fixture, Result<BinaryContent, ContentError>) {
+        let mut fixture = Fixture::new("file_content");
+        let content = fixture
+            .fetch(&self.deps(), &self.call(), &self.events)
+            .await;
+        (fixture, content)
+    }
+
+    pub(crate) async fn streaming(
+        &self,
+        chunk: NonZeroUsize,
+    ) -> (Fixture, Result<FileContentStreamingResult, ContentError>) {
+        let mut fixture = Fixture::new("file_content");
+        let result = fixture
+            .fetch_stream(&self.deps(), &self.call(), chunk, &self.events)
+            .await;
+        (fixture, result)
+    }
+
+    const fn deps(&self) -> ContentDeps<'_, RecordingConfig, Source> {
+        ContentDeps {
+            config: &self.config,
+            source: &self.source,
+        }
+    }
+
+    fn call(&self) -> RetrieveCall<'_> {
+        retrieve_call(&self.request, &self.params, &self.headers, self.timeout)
     }
 }
 
@@ -598,6 +691,20 @@ pub(crate) fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+pub(crate) fn provider_failure(error: ContentError) -> BaseLlmException {
+    let ContentError::Provider(failure) = error else {
+        panic!("the request fails with a provider error");
+    };
+    failure
+}
+
+pub(crate) fn error_headers(pairs: &[(&str, &str)]) -> ErrorHeaders {
+    pairs
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), Json::Text((*value).to_owned())))
+        .collect()
+}
+
 pub(crate) fn retrieve_call<'call>(
     request: &'call FileContentRequest,
     params: &'call ContentParams,
@@ -616,8 +723,6 @@ pub(crate) fn wire_header<'request>(
     request: &'request ContentRequest,
     name: &str,
 ) -> Option<&'request str> {
-    request
-        .headers
-        .get(name)
-        .and_then(|value| value.to_str().ok())
+    let value = request.headers.get(name)?;
+    value.to_str().ok()
 }
