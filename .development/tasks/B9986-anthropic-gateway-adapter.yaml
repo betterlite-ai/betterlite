@@ -378,6 +378,6 @@ pitfalls:
   and Deployment.global_drop_params. Keep its arms in chat_error and its embedding twin, add the two arms here beside
   them, and set every field B9988 added in the Deployment literals.
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2000
   max_new_expects: 0
 review_level: security

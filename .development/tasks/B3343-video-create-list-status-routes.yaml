@@ -8,7 +8,7 @@ description: >-
   /videos/extensions (B3345 and B6360) are not registered here. axum matches the literal
   /videos/characters path before /videos/{video_id}, so the order of the merges does not matter.
 
-  Every handler builds a data map, runs B8801's PreCall step on it (keep `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state, built with `PreCallStep::standalone` in routes(state), which B8804 swaps for the production step) and hands it to B004's common request processor with a fixed route_type and passes the
+  Every handler builds a data map, runs B8801's PreCall step on it (keep `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state, built with B8802's `app::inference::pre_call_step(state)` in routes(state); B8804 swaps the step in the core route modules and lands first, so never build `PreCallStep::standalone`) and hands it to B004's common request processor with a fixed route_type and passes the
   server's user_model, user_temperature, user_request_timeout, user_max_tokens, user_api_base and version. Failures go
   through B004's handle-exception step, so the error envelope, status, x-litellm-call-id and the other x-litellm-*
   headers are B004's. model is always passed as None to the processor.
@@ -50,6 +50,8 @@ description: >-
   (three handlers, the status provider rule and the dispatch). Budget 300 implementation, 260 tests and 220 oracle
   fixtures, 780 in all. B1100 registers the route stub video_create. Fill only
   crates/betterlite-server/src/routes/video_create.rs and leave routes.rs and state.rs as they are.
+
+  Booted cases from B040 and B041, which no longer run them since they need these routes. self-hosted-compatible/media/video sends prompt, width, height, num_frames, generate_sound=false and structured extra_params to POST /v1/videos for B040's hosted_vllm video config and checks the form serialization, including the literal false string and the structured JSON field. self-hosted-compatible/media/video-unsafe sends a structured image_reference with image_url=http://127.0.0.1/private and expects the pinned provider's rejection with no media fetch and no video request (B8151's validation rule). http/aggregator-media/edenai-video follows create, status, list and content for edenai/pruna/p-video with EDENAI_API_KEY and EDENAI_API_BASE at the mock /v3 base: create with a mapping input_reference kept in the provider JSON, check usage.provider_reported_cost_usd after create and status, capture the returned id on each side, send the custom_llm_provider hint for list with its query_params nesting, and follow content with mock 404 replies for status, list and content so error bytes never become a video response (content is B3344's route).
 scope:
   paths:
     - crates/betterlite-server/src/api/video_routes.rs
@@ -74,6 +76,9 @@ scope:
     - tools/oracle/helpers/b3343/**
     - tools/oracle/src/helpers/server/b3343.rs
     - tools/oracle/src/helpers/server/b3343/**
+    - tools/oracle/cases/self-hosted-compatible/media/video.yaml
+    - tools/oracle/cases/self-hosted-compatible/media/video-unsafe.yaml
+    - tools/oracle/cases/http/aggregator-media/edenai-video.yaml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/video_endpoints/endpoints.py#L33-L119
@@ -109,6 +114,10 @@ dod:
     proof: [auth-failures, oracle]
   - text: The branch adds HTTP oracle cases for these routes.
     proof: [new-cases, oracle]
+  - text: "B040's hosted_vllm video request serializes its form fields as LiteLLM does, and the unsafe image reference is rejected with no media fetch or upstream call."
+    proof: [oracle]
+  - text: "Eden AI video create, status, list and content keep input_reference and reported usage, and failed status, list and content stay HTTP errors."
+    proof: [oracle]
 checks:
   optional: []
   commands:
@@ -147,6 +156,9 @@ oracle_cases:
   - tools/oracle/cases/api/video-create-routes/video-status-model.yaml
   - tools/oracle/cases/api/video-create-routes/video-route-errors.yaml
   - tools/oracle/cases/api/video-create-routes/video-route-auth.yaml
+  - tools/oracle/cases/self-hosted-compatible/media/video.yaml
+  - tools/oracle/cases/self-hosted-compatible/media/video-unsafe.yaml
+  - tools/oracle/cases/http/aggregator-media/edenai-video.yaml
 deviations: []
 out_of_scope:
   - "video_content, video_remix (endpoints.py 308-514) and their HTTP cases, including the /videos/{video_id}/content cases B3339 left for later: B3344."

@@ -1,0 +1,268 @@
+kind: helper
+name: constructor-defaults-and-passthrough
+call:
+  responses_ws_history:
+    setup:
+      model: openai/gpt-4o-mini
+      custom_llm_provider: null
+      api_key: null
+      api_base: null
+      timeout: null
+      first_message: null
+      litellm_metadata: null
+      kwargs:
+        extra_headers:
+          X-Test: 'yes'
+        litellm_call_id: drop
+        aresponses: drop
+        litellm_logging_obj: drop
+        _aresponses_websocket: drop
+        user_api_key_dict: drop
+    credentials: []
+    proxy: []
+    frames: []
+    warmup: []
+    warmup_ids: []
+    case:
+      inputs: []
+      completions: []
+      store: []
+      first: resp_missing
+      append:
+        type: message
+        role: assistant
+        content: []
+      missing: resp_missing
+      applied: []
+      base_kwargs: []
+calls:
+- responses_ws_history:
+    setup:
+      model: openai/gpt-4o-mini
+      custom_llm_provider: null
+      api_key: null
+      api_base: null
+      timeout: null
+      first_message: null
+      litellm_metadata:
+        model_group: router-alias
+        deployment_model_name: deployment-alias
+      kwargs: {}
+    credentials: []
+    proxy: []
+    frames: []
+    warmup: []
+    warmup_ids: []
+    case:
+      inputs: []
+      completions: []
+      store: []
+      first: resp_missing
+      append:
+        type: message
+        role: assistant
+        content: []
+      missing: resp_missing
+      applied: []
+      base_kwargs: []
+- responses_ws_history:
+    setup:
+      model: openai/gpt-4o-mini
+      custom_llm_provider: null
+      api_key: null
+      api_base: null
+      timeout: null
+      first_message: null
+      litellm_metadata:
+        model_group: ''
+        deployment_model_name: deployment-alias
+      kwargs: {}
+    credentials: []
+    proxy: []
+    frames: []
+    warmup: []
+    warmup_ids: []
+    case:
+      inputs: []
+      completions: []
+      store: []
+      first: resp_missing
+      append:
+        type: message
+        role: assistant
+        content: []
+      missing: resp_missing
+      applied: []
+      base_kwargs: []
+- responses_ws_history:
+    setup:
+      model: openai/gpt-4o-mini
+      custom_llm_provider: null
+      api_key: null
+      api_base: null
+      timeout: null
+      first_message: null
+      litellm_metadata:
+        model_group: 7
+        deployment_model_name: deployment-alias
+      kwargs: {}
+    credentials: []
+    proxy: []
+    frames: []
+    warmup: []
+    warmup_ids: []
+    case:
+      inputs: []
+      completions: []
+      store: []
+      first: resp_missing
+      append:
+        type: message
+        role: assistant
+        content: []
+      missing: resp_missing
+      applied: []
+      base_kwargs: []
+- responses_ws_history:
+    setup:
+      model: openai/gpt-4o-mini
+      custom_llm_provider: null
+      api_key: null
+      api_base: null
+      timeout: null
+      first_message: null
+      litellm_metadata:
+        model_group: router-alias
+        deployment_model_name: 7
+      kwargs: {}
+    credentials: []
+    proxy: []
+    frames: []
+    warmup: []
+    warmup_ids: []
+    case:
+      inputs: []
+      completions: []
+      store: []
+      first: resp_missing
+      append:
+        type: message
+        role: assistant
+        content: []
+      missing: resp_missing
+      applied: []
+      base_kwargs: []
+- responses_ws_history:
+    setup:
+      model: openai/gpt-4o-mini
+      custom_llm_provider: null
+      api_key: null
+      api_base: null
+      timeout: null
+      first_message: null
+      litellm_metadata:
+        model_group: router-alias
+        deployment_model_name: deployment-alias
+        trace_id: t1
+      kwargs: {}
+    credentials: []
+    proxy: []
+    frames: []
+    warmup: []
+    warmup_ids: []
+    case:
+      inputs: []
+      completions: []
+      store: []
+      first: resp_missing
+      append:
+        type: message
+        role: assistant
+        content: []
+      missing: resp_missing
+      applied: []
+      base_kwargs: []
+- responses_ws_history:
+    setup:
+      model: not-a-real-provider/model
+      custom_llm_provider: proxy
+      api_key: null
+      api_base: null
+      timeout: null
+      first_message: null
+      litellm_metadata: null
+      kwargs: {}
+    credentials: []
+    proxy: []
+    frames: []
+    warmup: []
+    warmup_ids: []
+    case:
+      inputs: []
+      completions: []
+      store: []
+      first: resp_missing
+      append:
+        type: message
+        role: assistant
+        content: []
+      missing: resp_missing
+      applied: []
+      base_kwargs: []
+- responses_ws_history:
+    setup:
+      model: ''
+      custom_llm_provider: vertex_ai
+      api_key: null
+      api_base: null
+      timeout: null
+      first_message: null
+      litellm_metadata: null
+      kwargs: {}
+    credentials: []
+    proxy: []
+    frames: []
+    warmup: []
+    warmup_ids: []
+    case:
+      inputs: []
+      completions: []
+      store: []
+      first: resp_missing
+      append:
+        type: message
+        role: assistant
+        content: []
+      missing: resp_missing
+      applied: []
+      base_kwargs: []
+- responses_ws_history:
+    setup:
+      model: openai/gpt-4o-mini
+      custom_llm_provider: null
+      api_key: null
+      api_base: null
+      timeout: null
+      first_message: null
+      litellm_metadata: {}
+      kwargs: {}
+    credentials: []
+    proxy: []
+    frames: []
+    warmup: []
+    warmup_ids: []
+    case:
+      inputs: []
+      completions: []
+      store: []
+      first: resp_missing
+      append:
+        type: message
+        role: assistant
+        content: []
+      missing: resp_missing
+      applied: []
+      base_kwargs: []
+env: {}
+compare:
+  ignore: []
