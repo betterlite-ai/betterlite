@@ -8,7 +8,6 @@ use betterlite_config::sections::{azure_endpoints, resource_sdk_settings};
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::assistant_read_delete::sdk_dispatch::NoSources;
 use betterlite_core::api::assistant_run_sdk::service::RunOutcome;
-use betterlite_error::envelope::WireField;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::decisions::Json;
@@ -19,90 +18,27 @@ use betterlite_models::resolution::ResolutionContext;
 use betterlite_openai::thread_runs::stream::RunStream;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_server::api::assistant_dispatch::{
-    AssistantDispatchError, AssistantDispatcher, AssistantOperation, AssistantOutcome,
-    AssistantRequest,
+    AssistantDispatchError, AssistantDispatcher, AssistantOutcome, AssistantRequest,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use super::call_kind::CallKind;
 use super::error::SdkHttpError;
+use super::result::Failure;
 use super::result::kinds::SdkResult;
-use super::result::{Failure, Nullable};
 use super::vector_query_embedding::outbound_client;
 
-// The proxy route's body, typed per field; params carries whatever the payload does not name.
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct Payload {
-    pub assistant_id: Option<String>,
-    pub model: Option<String>,
-    pub name: Option<String>,
-    pub role: Option<String>,
-    pub content: Option<Json>,
-    pub attachments: Option<Json>,
-    pub messages: Option<Json>,
-    pub metadata: Option<Json>,
-    pub tool_resources: Option<Json>,
-    pub instructions: Option<String>,
-    pub additional_instructions: Option<String>,
-    pub stream: Option<Json>,
-    pub tools: Option<Json>,
-    #[serde(default)]
-    pub params: BTreeMap<String, Json>,
-}
+mod model;
+mod projection;
 
-// assistants_config as Router receives it, plus whether the proxy startup block builds it from YAML.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct ConfigProjection {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub custom_llm_provider: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub litellm_params: Option<BTreeMap<String, Json>>,
-}
+pub use model::{Call, ConfigProjection, OperationCall, Outcome, Payload, Step};
+
+use projection::{named, nullable, record};
 
 // the assistant_settings mapping the startup block reads
 #[derive(Serialize)]
 struct SettingsRoot<'config> {
     assistant_settings: &'config ConfigProjection,
-}
-
-// One call of one installed wrapper: the operation, its body, the provider and path argument.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct OperationCall {
-    pub operation: AssistantOperation,
-    #[serde(default)]
-    pub payload: Payload,
-    pub provider: Option<String>,
-    pub thread_id: Option<String>,
-    pub assistant_id: Option<String>,
-    pub config: Option<ConfigProjection>,
-    #[serde(default)]
-    pub startup: bool,
-}
-
-// A case runs the installed wrappers under one assistants_config each, in order.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct Call {
-    pub runs: Vec<OperationCall>,
-}
-
-// The ids the wrapper returned, the status a polled run carries, the events a consumed stream yielded.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Step {
-    pub ids: Vec<String>,
-    pub status: Option<String>,
-    pub events: Option<Vec<String>>,
-    pub failure: Option<Failure>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Outcome {
-    pub results: Vec<Step>,
 }
 
 // The loaded config and the borrowed services every run shares.
@@ -316,15 +252,6 @@ async fn project(
     }
 }
 
-const fn record(ids: Vec<String>, status: Option<String>) -> Step {
-    Step {
-        ids,
-        status,
-        events: None,
-        failure: None,
-    }
-}
-
 // The factory's own errors have no status, type, param or code; the async wrapper's classes do.
 fn dropped(error: AssistantDispatchError) -> Result<Step, SdkHttpError> {
     let failure = match error {
@@ -363,23 +290,4 @@ fn dropped(error: AssistantDispatchError) -> Result<Step, SdkHttpError> {
         events: None,
         failure: Some(failure),
     })
-}
-
-fn named(class: &str, message: String) -> Failure {
-    Failure {
-        class: class.to_owned(),
-        status: 0,
-        kind: None,
-        param: None,
-        code: None,
-        message,
-    }
-}
-
-fn nullable(field: WireField) -> Nullable {
-    match field {
-        WireField::Missing(_) => None,
-        WireField::Null => Some(None),
-        WireField::Text(text) => Some(Some(text)),
-    }
 }
