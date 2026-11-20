@@ -1,0 +1,38 @@
+task: B1230
+deviations:
+  - what: >-
+      An alias row whose aliases column is NULL is skipped, while LiteLLM calls .values() on None and the
+      delete fails with an AttributeError.
+    why: >-
+      Team creation only stores a dict in that column, so a NULL row comes from a manual insert and no
+      working setup depends on the crash; betterlite treats the row as having no aliases.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L2334
+  - what: >-
+      An aliases column holding JSON that is not an object fails the cleanup with an error naming the row,
+      while LiteLLM raises AttributeError from .values() on the list and fails the delete.
+    why: >-
+      Both fail the operation, and betterlite's documented rule for a value of the wrong type is an error
+      that names the field instead of a Python attribute error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L2334
+  - what: >-
+      A team row whose models column is NULL keeps no models and is written back as an empty list, while
+      LiteLLM iterates the NULL and fails with a TypeError.
+    why: >-
+      The team table defaults models to an empty list, so a NULL row comes from a manual insert; betterlite
+      reads it as empty rather than failing the delete.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1900
+  - what: >-
+      The cleanup reads the alias rows, sibling deployments and team row through the primary connection,
+      while LiteLLM's prisma wrapper can route those reads to a replica.
+    why: >-
+      The cleanup runs after the deployment row is deleted, so a lagging replica could still report the
+      deleted deployment as a sibling or miss the surviving one; the writer keeps the check correct.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1749
+kept_bugs:
+  - what: >-
+      Only the first aliases key whose value equals the deleted model name is removed; a second key with
+      the same value survives and still points at the deleted deployment.
+    why: >-
+      LiteLLM removes one key per row, so betterlite copies the single-key removal rather than guessing
+      that a working setup wants every duplicate key scrubbed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L2335-L2338
