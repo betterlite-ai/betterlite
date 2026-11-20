@@ -59,11 +59,12 @@ pub(super) struct Fixture {
 
 impl Fixture {
     pub(super) fn with_environment(variables: &[(&str, &str)]) -> Self {
+        let environment = map(variables);
         Self {
             catalog: ModelCatalog::parse(b"{}", UnknownFields::Reject)
                 .expect("the empty catalog parses"),
             names: BTreeSet::new(),
-            environment: map(variables),
+            environment,
         }
     }
 
@@ -88,13 +89,11 @@ fn map(variables: &[(&str, &str)]) -> BTreeMap<String, String> {
 }
 
 pub(super) fn loaded_settings(source: &str, variables: &[(&str, &str)]) -> Settings {
-    ConfigLoader {
-        lookup: map(variables),
-    }
-    .load(source)
-    .expect("the settings load")
-    .sections
-    .speech_call
+    let lookup = map(variables);
+    let loaded = ConfigLoader { lookup }
+        .load(source)
+        .expect("the settings load");
+    loaded.sections.speech_call
 }
 
 pub(super) fn redactor() -> Redactor {
@@ -174,24 +173,31 @@ pub(super) struct RecordingTransport {
 
 impl RecordingTransport {
     pub(super) fn ok(content_type: &str, body: &[u8]) -> Self {
-        Self {
-            status: 200,
-            headers: vec![
+        Self::building(
+            200,
+            vec![
                 (String::from("content-type"), content_type.to_owned()),
                 (String::from("x-request-id"), String::from("req-1")),
             ],
-            body: body.to_vec(),
-            sent: Mutex::new(Vec::new()),
-        }
+            body,
+        )
     }
 
     pub(super) fn error(status: u16, body: &[u8]) -> Self {
-        Self {
+        Self::building(
             status,
-            headers: vec![(
+            vec![(
                 String::from("content-type"),
                 String::from("application/json"),
             )],
+            body,
+        )
+    }
+
+    fn building(status: u16, headers: Vec<(String, String)>, body: &[u8]) -> Self {
+        Self {
+            status,
+            headers,
             body: body.to_vec(),
             sent: Mutex::new(Vec::new()),
         }
@@ -412,21 +418,14 @@ impl From<&SpeechOperation<'_>> for OperationRecord {
 }
 
 pub(super) struct ScriptedOperations {
-    reply: BinaryContent,
+    body: Vec<u8>,
     executed: Mutex<Vec<OperationRecord>>,
 }
 
 impl ScriptedOperations {
     pub(super) fn ok(body: &[u8]) -> Self {
         Self {
-            reply: BinaryContent {
-                status: 200,
-                headers: IndexMap::from([(
-                    String::from("content-type"),
-                    String::from("audio/wav"),
-                )]),
-                body: body.to_vec(),
-            },
+            body: body.to_vec(),
             executed: Mutex::new(Vec::new()),
         }
     }
@@ -446,7 +445,11 @@ impl SpeechOperations for ScriptedOperations {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(OperationRecord::from(&operation));
-        ready(Ok(self.reply.clone()))
+        ready(Ok(BinaryContent {
+            status: 200,
+            headers: IndexMap::from([(String::from("content-type"), String::from("audio/wav"))]),
+            body: self.body.clone(),
+        }))
     }
 }
 

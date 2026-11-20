@@ -128,13 +128,25 @@ impl Section for Raw {
                 lookup,
             )?,
             headers: settings.headers,
-            openai_base_url: environment(lookup, "OPENAI_BASE_URL"),
-            openai_api_base: environment(lookup, "OPENAI_API_BASE"),
+            openai_base_url: lookup
+                .lookup("OPENAI_BASE_URL")
+                .filter(|value| !value.is_empty()),
+            openai_api_base: lookup
+                .lookup("OPENAI_API_BASE")
+                .filter(|value| !value.is_empty()),
             openai_api_key: environment_secret(lookup, "OPENAI_API_KEY"),
-            openai_organization: environment(lookup, "OPENAI_ORGANIZATION"),
-            openai_project: environment(lookup, "OPENAI_PROJECT"),
-            azure_api_base: environment(lookup, "AZURE_API_BASE"),
-            azure_api_version: environment(lookup, "AZURE_API_VERSION"),
+            openai_organization: lookup
+                .lookup("OPENAI_ORGANIZATION")
+                .filter(|value| !value.is_empty()),
+            openai_project: lookup
+                .lookup("OPENAI_PROJECT")
+                .filter(|value| !value.is_empty()),
+            azure_api_base: lookup
+                .lookup("AZURE_API_BASE")
+                .filter(|value| !value.is_empty()),
+            azure_api_version: lookup
+                .lookup("AZURE_API_VERSION")
+                .filter(|value| !value.is_empty()),
             azure_openai_api_key: environment_secret(lookup, "AZURE_OPENAI_API_KEY"),
             azure_api_key: environment_secret(lookup, "AZURE_API_KEY"),
             azure_ad_token: environment_secret(lookup, "AZURE_AD_TOKEN"),
@@ -156,16 +168,12 @@ where
 }
 
 // get_secret treats an empty variable as unset, so the chain never sees ""
-fn environment<L>(lookup: &L, name: &str) -> Option<String>
-where
-    L: EnvironmentLookup,
-{
-    lookup.lookup(name).filter(|value| !value.is_empty())
-}
-
 fn environment_secret<L>(lookup: &L, name: &str) -> Option<SecretString>
 where
     L: EnvironmentLookup,
 {
-    environment(lookup, name).map(SecretString::from)
+    lookup
+        .lookup(name)
+        .filter(|value| !value.is_empty())
+        .map(SecretString::from)
 }
