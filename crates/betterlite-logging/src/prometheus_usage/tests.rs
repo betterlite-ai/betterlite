@@ -220,6 +220,27 @@ fn token_detail_counters_increment_sparse_values_in_order() {
 }
 
 #[test]
+fn token_detail_counters_keep_exact_sparse_decimals() {
+    let fixture = Fixture::with_end_user("alice");
+    let counters = FakeCounters::with_labels(&[]);
+    let usage = object(vec![(
+        "prompt_tokens_details",
+        object(vec![("cached_tokens", number("9007199254740993.5"))]),
+    )]);
+    increment_token_detail_metrics(
+        &counters,
+        &with_usage(payload(Decimal::ZERO), usage),
+        fixture.labels(),
+        Instant::now(),
+    )
+    .unwrap();
+    assert_eq!(
+        increments(&counters),
+        [(UsageMetric::InputCachedTokens, finite("9007199254740993.5"))]
+    );
+}
+
+#[test]
 fn token_detail_counters_skip_non_positive_and_non_numeric() {
     let fixture = Fixture::with_end_user("alice");
     let counters = FakeCounters::with_labels(&[]);
@@ -633,6 +654,18 @@ fn provider_cache_bool_is_not_an_integer() {
 }
 
 #[test]
+fn provider_cache_integer_outside_i64_is_absent() {
+    let usage = object(vec![(
+        "cache_read_input_tokens",
+        number("9223372036854775808"),
+    )]);
+    let Json::Object(fields) = usage else {
+        panic!("the fixture is not an object");
+    };
+    assert_eq!(resolve_provider_cache_tokens(&fields), (0, 0));
+}
+
+#[test]
 fn provider_cache_skips_zero_and_negative_counts() {
     let fixture = Fixture::with_end_user("alice");
     let counters = FakeCounters::with_labels(&[]);
@@ -685,6 +718,33 @@ fn mcp_tool_calls_use_reduced_label_values() {
     assert_eq!(
         labels.get("mcp_server_name").map(String::as_str),
         Some("server")
+    );
+}
+
+#[test]
+fn mcp_tool_calls_non_string_name_renders_none() {
+    let fixture = Fixture::with_end_user("alice");
+    let counters = FakeCounters::with_labels(&MCP_LABELS);
+    let metadata = object(vec![("name", number("5")), ("mcp_server_name", Json::Null)]);
+    increment_mcp_tool_calls(
+        &counters,
+        &mcp_payload(Some(metadata)),
+        fixture.labels(),
+        Decimal::ZERO,
+        Instant::now(),
+    )
+    .unwrap();
+    let events = counters.events();
+    let Recorded::Increment { labels, .. } = &events[0] else {
+        panic!("the MCP tool call counter did not increment");
+    };
+    assert_eq!(
+        labels.get("mcp_tool_name").map(String::as_str),
+        Some("None")
+    );
+    assert_eq!(
+        labels.get("mcp_server_name").map(String::as_str),
+        Some("None")
     );
 }
 
