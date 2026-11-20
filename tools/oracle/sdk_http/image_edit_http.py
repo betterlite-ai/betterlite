@@ -140,14 +140,14 @@ class FixtureConfig(BaseImageEditConfig):
         image_edit_optional_request_params: dict[str, JsonValue],
         litellm_params: GenericLiteLLMParams,
         headers: dict[str, str],
-    ) -> tuple[dict[str, str], list[tuple[str, FileTypes]]]:
+    ) -> tuple[dict[str, str], CompletedFiles]:
         data: dict[str, str] = {}
         if prompt is not None:
             data["prompt"] = prompt
         files: list[tuple[str, FileTypes]] = []
         if image is not None:
             files.append(("image", image))
-        return data, files
+        return data, FILES.validate_python(files)
 
     @override
     # ast-grep-ignore: no-long-names
