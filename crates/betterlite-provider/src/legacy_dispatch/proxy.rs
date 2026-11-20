@@ -285,7 +285,8 @@ pub(super) fn decode(call: &Call, upstream: Upstream) -> Result<OperationResult,
             }
             Ok(OperationResult::Embedding(Box::new(decoded)))
         }
-        (Kind::Chat | Kind::Embedding, Upstream::Streaming(_)) => {
+        (Kind::Chat | Kind::Embedding, Upstream::Streaming(_))
+        | (Kind::Chat | Kind::Stream | Kind::Embedding, Upstream::Anthropic(_)) => {
             Err(OperationError::UnsupportedOperation {
                 provider: String::from(Legacy::LitellmProxy.slug()),
                 operation: String::from("provider endpoint"),

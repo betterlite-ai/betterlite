@@ -285,5 +285,6 @@ pub(super) fn decode(call: &Call, upstream: Upstream) -> Result<OperationResult,
             )))
         }
         Upstream::Streaming(_) => Err(unsupported("stream")),
+        Upstream::Anthropic(_) => Err(unsupported("provider endpoint")),
     }
 }
