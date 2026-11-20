@@ -309,6 +309,18 @@ fn decision_falls_back_to_the_name_for_an_empty_or_missing_id() {
         &latest,
         now
     ));
+    // a stored row with an empty model_id is keyed by its name, as the result is
+    let empty_id = latest_map(vec![latest_row(
+        "model-a",
+        Some(""),
+        "healthy",
+        ago(now, 1),
+    )]);
+    assert!(!should_persist(
+        &result_of("model-a", Some(""), (1, 0)),
+        &empty_id,
+        now
+    ));
 }
 
 #[tokio::test]
