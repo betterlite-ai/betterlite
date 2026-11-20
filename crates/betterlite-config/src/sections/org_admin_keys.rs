@@ -3,7 +3,6 @@ use serde::Deserialize;
 use serde::de::IgnoredAny;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
-use crate::resolve::resolve_string;
 use crate::sections::Section;
 
 mod tests;
@@ -48,7 +47,7 @@ pub struct Settings {
 }
 
 // LiteLLM keeps the org admin switch off unless Python's bool() of the runtime value is true
-fn flag_value<L>(flag: RawFlag, path: &str, lookup: &L) -> Result<bool, ConfigError>
+fn flag_value<L>(flag: RawFlag, lookup: &L) -> Result<bool, ConfigError>
 where
     L: EnvironmentLookup,
 {
@@ -56,13 +55,14 @@ where
         RawFlag::Boolean(value) => value,
         RawFlag::Integer(value) => value != 0,
         RawFlag::Float(value) => value != 0.0,
-        RawFlag::Text(text) => {
-            // LiteLLM resolves an unset os.environ reference to None, which bool() reads as false
-            let unset = text
-                .strip_prefix("os.environ/")
-                .is_some_and(|variable| lookup.lookup(variable).is_none());
-            !unset && !resolve_string(text, path, lookup)?.is_empty()
-        }
+        // an os.environ/ reference reads through the shared parser, an unset or empty one as the false default
+        RawFlag::Text(text) => match text.strip_prefix("os.environ/") {
+            Some(variable) => {
+                betterlite_env::flag(variable, &lookup.lookup(variable).unwrap_or_default())?
+                    .unwrap_or(false)
+            }
+            None => !text.is_empty(),
+        },
         RawFlag::List(items) => !items.is_empty(),
         RawFlag::Mapping(entries) => !entries.is_empty(),
     })
@@ -75,10 +75,9 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let path = "general_settings.disable_key_generate_for_org_admin";
         let disabled = match self.general_settings.key_generation_disabled {
             Entry::Absent | Entry::Null(()) => false,
-            Entry::Value(flag) => flag_value(flag, path, lookup)?,
+            Entry::Value(flag) => flag_value(flag, lookup)?,
         };
         Ok(Settings {
             key_generation_disabled: disabled,
