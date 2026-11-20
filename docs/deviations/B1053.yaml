@@ -1,69 +1,24 @@
 task: B1053
 deviations:
-  - what: >-
-      An unparsable timeout string answers ValueError with betterlite's own text,
-      "timeout is not a valid number: ...", where LiteLLM raises Python's float() ValueError
-      "could not convert string to float: 'bad'".
-    why: >-
-      The exception class, the zero requests and the absent status, type, param and code match;
-      docs/compatibility.md keeps Python's runtime str text out of betterlite and names the field
-      instead.
+  - what: "A timeout or provider error message carries betterlite's own text, where LiteLLM reports Python's float() text for an unparsable timeout and the openai client's \"Error code: 404 - {...}\" body repr for a provider error."
+    why: The class, the status and the type, param and code read from the body all match; docs/compatibility.md keeps Python's runtime str text out of betterlite.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L552-L553
-  - what: >-
-      A provider HTTP error reports the body's error.message, while LiteLLM's openai client raises
-      a NotFoundError whose message is "Error code: 404 - {...}" with the whole body repr.
-    why: >-
-      The class, status and the type, param and code read from the body all match; the message text
-      is the openai client's repr of the response body, which docs/compatibility.md does not port.
-    link: ""
-  - what: >-
-      The unsupported-provider error carries the provider and the message but no synthetic
-      httpx response, where LiteLLM builds one with body "Unsupported provider" and method
-      "create_thread" or "retrieve_fine_tuning_job".
-    why: >-
-      A locally raised error never reached a provider, so betterlite has no response to attach;
-      the error kind maps to the same 400 the proxy returns.
+  - what: The unsupported-provider error carries the provider and the message but no synthetic httpx response, where LiteLLM builds one with body "Unsupported provider" and method "create_thread" or "retrieve_fine_tuning_job".
+    why: A locally raised error never reached a provider, so betterlite has no response to attach; the error kind maps to the same 400 the proxy returns.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L624-L634
-  - what: >-
-      An OpenAI read given an api_version sends its request with no version, where LiteLLM
-      passes the field into the OpenAI client's constructor and answers TypeError before any
-      request; with a supplied client LiteLLM ignores the field, as betterlite does.
-    why: >-
-      The TypeError names a constructor keyword rather than a declared read parameter, so no
-      working setup can rely on it; betterlite keeps the declared field and drops it from the
-      request instead of copying a Python signature into its contract.
+  - what: An OpenAI read given an api_version sends its request with no version, where LiteLLM passes the field into the OpenAI client's constructor and answers TypeError before any request; with a supplied client LiteLLM ignores the field, as betterlite does.
+    why: The TypeError names a constructor keyword rather than a declared read parameter, so no working setup can rely on it; betterlite keeps the declared field and drops it from the request instead of copying a Python signature into its contract.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/fine_tuning/handler.py#L77-L91
-  - what: >-
-      A plain or per-phase timeout no finite f64 can hold, such as the number 1e400 or the
-      string "inf", answers betterlite's Timeout error before any request, where LiteLLM parses
-      it as +inf and hands it to httpx, whose deadline arithmetic fails with OverflowError and
-      surfaces as APIConnectionError "Connection error.".
-    why: >-
-      The failure happens inside httpx on a value no declared timeout bounds, so no setup can
-      rely on the class; betterlite names the timeout as invalid where it reads it, and the
-      request is never sent either way.
+  - what: A plain or per-phase timeout no finite f64 can hold, such as the number 1e400 or the string "inf", answers betterlite's Timeout error before any request, where LiteLLM parses it as +inf and hands it to httpx, whose deadline arithmetic fails with OverflowError and surfaces as APIConnectionError "Connection error.".
+    why: The failure happens inside httpx on a value no declared timeout bounds, so no setup can rely on the class; betterlite names the timeout as invalid where it reads it, and the request is never sent either way.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L552-L553
-  - what: >-
-      A listed job's grader its declared type can't hold, such as a text_similarity grader with no
-      evaluation_metric or a multi grader whose graders is a list, is shaped by the type it names,
-      where the openai SDK's union construction validates each member strictly, finds none and
-      writes the union's first member's StringCheckGrader keys with the raw value kept as extras.
-    why: >-
-      The value is outside the grader types the SDK declares, which docs/compatibility.md leaves
-      to pydantic's runtime; a provider sends a grader of its declared type, and betterlite takes
-      the type the value names instead of re-running the SDK's validation over it.
+  - what: A listed job's grader its declared type can't hold, such as a text_similarity grader with no evaluation_metric or a multi grader whose graders is a list, is shaped by the type it names, where the openai SDK's union construction validates each member strictly, finds none and writes the union's first member's StringCheckGrader keys with the raw value kept as extras.
+    why: The value is outside the grader types the SDK declares, which docs/compatibility.md leaves to pydantic's runtime; a provider sends a grader of its declared type, and betterlite takes the type the value names instead of re-running the SDK's validation over it.
     link: https://github.com/openai/openai-python/blob/v2.54.0/src/openai/_models.py#L588
 kept_bugs:
-  - what: >-
-      The list call's unsupported-provider message names 'create_batch' instead of the list
-      operation.
-    why: >-
-      Callers and tests match the text LiteLLM raises, and it is the string a working setup sees.
+  - what: The list call's unsupported-provider message names 'create_batch' instead of the list operation.
+    why: Callers and tests match the text LiteLLM raises, and it is the string a working setup sees.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L624-L634
-  - what: >-
-      Azure read calls accept an organization and never send it; only the api-key header reaches
-      the provider.
-    why: >-
-      The azure branch forwards organization into a handler that never reads it, and Azure
-      authenticates with api-key, so a setup depends on the silent drop rather than an error.
+  - what: Azure read calls accept an organization and never send it; only the api-key header reaches the provider.
+    why: The azure branch forwards organization into a handler that never reads it, and Azure authenticates with api-key, so a setup depends on the silent drop rather than an error.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L613-L623
