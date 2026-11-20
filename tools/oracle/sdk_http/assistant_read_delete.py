@@ -6,7 +6,6 @@ from typing import Literal, NotRequired, TypeAlias, TypedDict, cast
 import litellm
 import openai
 from litellm import adelete_assistant, aget_assistants, delete_assistant, get_assistants  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L38-L73
-from litellm.exceptions import APIConnectionError as LiteLlmAPIConnectionError
 from openai import AsyncAzureOpenAI, AsyncOpenAI, AzureOpenAI, OpenAI
 from openai.pagination import AsyncCursorPage, SyncCursorPage
 from openai.types.beta import AssistantDeleted
@@ -26,7 +25,7 @@ class Strict(BaseModel):
 
 
 class Params(Strict):
-    model_config = ConfigDict(extra="ignore")  # the wire carries Azure credential kwargs the entry points never take
+    model_config = ConfigDict(extra="ignore")  # the wire carries Azure credential kwargs
     api_key: str | None = None
     api_base: str | None = None
     api_version: str | None = None
@@ -125,6 +124,11 @@ class FailureView(BaseModel):
     param: str | None = None
     code: str | None = None
     message: str
+
+
+class RaisedStatus(BaseModel):
+    # mapped LiteLLM exceptions carry status_code; a raw openai error leaves the default
+    status_code: int | None = None
 
 
 class Mode(BaseModel):
@@ -281,7 +285,7 @@ def failure_view(error: BaseException) -> FailureView:
         case openai.APIError():
             return FailureView(
                 class_name=type(error).__name__,
-                status=500 if isinstance(error, LiteLlmAPIConnectionError) else None,
+                status=RaisedStatus.model_validate(error, from_attributes=True).status_code,
                 kind=error.type,
                 param=error.param,
                 code=error.code,
