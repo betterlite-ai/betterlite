@@ -3,8 +3,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use indexmap::IndexMap;
 use tokio::sync::Notify;
 
-// one per-counter operation slot: the state says whether a reseed or increment owns it, the
-// notification wakes the callers waiting for that owner to finish
+// each counter's operation slot: the state names its owner, the notification wakes the waiters
 pub struct KeyOperation {
     state: Mutex<OperationState>,
     released: Notify,

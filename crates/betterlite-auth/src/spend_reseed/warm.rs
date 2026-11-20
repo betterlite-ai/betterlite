@@ -82,8 +82,7 @@ where
     Ok(())
 }
 
-// coalesced_window's warm contract differs from the primary one: a lost SET NX whose winner
-// vanished adds the window amount instead of reseeding it, and every failure propagates
+// a lost SET NX with a vanished winner adds the window amount, and window warm failures propagate
 pub(super) async fn warm_window<Cache, Batch>(
     cache: &Cache,
     batch: &Batch,

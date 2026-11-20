@@ -148,8 +148,7 @@ impl<Rows: SpendCounterRows> SpendCounterReseed<Rows> {
         warm(cache, batch, counter_key, db_spend, require_cache_warm).await
     }
 
-    // the same read precedence as coalesced, but the warm step adds a vanished winner's amount
-    // and every warm failure propagates: there is no require_cache_warm at this admission point
+    // same read precedence as coalesced, but a vanished winner's amount is added and warm failures propagate
     pub async fn coalesced_window<Cache, Batch>(
         &self,
         cache: &Cache,

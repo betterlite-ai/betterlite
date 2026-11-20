@@ -43,8 +43,7 @@ pub trait ReseedCache: Send + Sync {
     ) -> impl Future<Output = Result<Option<Decimal>, Self::Error>> + Send;
 }
 
-// coalesced_window needs one Redis operation the primary path never makes: INCRBYFLOAT on a lost
-// SET NX, so a cache that only serves primary reseeds does not have to implement it
+// INCRBYFLOAT after a lost SET NX is the one Redis operation only the window warm path needs
 pub trait WindowReseedCache: ReseedCache {
     fn redis_increment(
         &self,

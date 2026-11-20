@@ -479,6 +479,8 @@ async fn window_lost_nx_reads_the_winner_without_incrementing() {
     let counter = reseed_with(Some(Arc::clone(&rows)), services(25), 5.0);
     let cache = FakeCache::new(true)
         .with_redis(ReseedCacheValue::Number(decimal("5")))
+        // the recheck misses first; the winner is only visible to the losing seeder's reread
+        .answer(RedisAnswer::Miss)
         .with_set_answer(SetAnswer::Taken);
     let batch = FakeBatch::new(None);
     let answer = coalesced_window(&counter, &cache, &batch, Some("1h")).await;
@@ -498,8 +500,9 @@ async fn window_lost_nx_reads_the_winner_without_incrementing() {
 async fn window_memory_keeps_the_higher_local_spend_and_records_nothing() {
     let high_rows = window_rows_with("2.5");
     let high = reseed_with(Some(Arc::clone(&high_rows)), services(25), 5.0);
-    let high_cache =
-        FakeCache::new(false).with_memory(WINDOW_KEY, ReseedCacheValue::Number(decimal("9")));
+    // the recheck misses, so only the warm step's read sees the local value
+    let high_cache = FakeCache::new(false)
+        .with_memory_answers([None, Some(ReseedCacheValue::Number(decimal("9")))]);
     let high_batch = FakeBatch::new(None);
     let high_answer = coalesced_window(&high, &high_cache, &high_batch, Some("1h")).await;
     assert_eq!(answered(high_answer), Some(decimal("9")));
@@ -511,8 +514,8 @@ async fn window_memory_keeps_the_higher_local_spend_and_records_nothing() {
 
     let low_rows = window_rows_with("2.5");
     let low = reseed_with(Some(Arc::clone(&low_rows)), services(25), 5.0);
-    let low_cache =
-        FakeCache::new(false).with_memory(WINDOW_KEY, ReseedCacheValue::Number(decimal("1")));
+    let low_cache = FakeCache::new(false)
+        .with_memory_answers([None, Some(ReseedCacheValue::Number(decimal("1")))]);
     let low_batch = FakeBatch::new(None);
     let low_answer = coalesced_window(&low, &low_cache, &low_batch, Some("1h")).await;
     assert_eq!(answered(low_answer), Some(decimal("2.5")));
@@ -535,6 +538,8 @@ async fn window_warm_failures_always_propagate() {
     assert!(logs.contains("coalesced_window: failed to warm the counter"));
 
     let reread_failed = FakeCache::new(true)
+        // the recheck fails first, then the losing seeder's reread fails
+        .answer(RedisAnswer::Fail)
         .answer(RedisAnswer::Fail)
         .with_set_answer(SetAnswer::Taken);
     let reread = coalesced_window(&counter, &reread_failed, &batch, Some("1h")).await;
