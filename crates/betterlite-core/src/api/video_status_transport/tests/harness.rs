@@ -12,8 +12,8 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use secrecy::SecretString;
 
 use super::support::{
-    COMPLETE_URL, Event, FakeAsyncClient, FakeConfig, FakeConverter, FakeFactories, FakeSyncClient,
-    Fixture, OK, Owner, PROVIDER, Recorder, Supply, VIDEO_ID, object, observed, recorder,
+    COMPLETE_URL, FakeAsyncClient, FakeConfig, FakeConverter, FakeFactories, FakeSyncClient,
+    Fixture, Journal, OK, Owner, PROVIDER, Recorder, Supply, VIDEO_ID, object, observed, recorder,
 };
 use crate::api::video_records::VideoObject;
 use crate::api::video_status_transport::error::VideoStatusError;
@@ -164,7 +164,7 @@ impl<'call> Call<'call> {
 }
 
 impl Harness {
-    pub(crate) fn events(&self) -> Vec<Event> {
+    pub(crate) fn events(&self) -> Journal {
         observed(&self.deps.events)
     }
 
@@ -184,19 +184,14 @@ impl Harness {
         &mut self,
         call: Call<'_>,
     ) -> Result<VideoObject, VideoStatusError> {
-        let env = self.fixture.environment();
-        let handler = self.deps.handler(&env);
-        let request = call.status(&mut self.state, &self.supplied_sync, &self.supplied_async);
-        handler
-            .async_video_status_handler(&self.deps.config, request)
-            .await
+        self.flagged(call).await.1
     }
 
     // The flagged entry point, with what it recorded before the future is awaited
     pub(crate) async fn flagged(
         &mut self,
         call: Call<'_>,
-    ) -> (Vec<Event>, Result<VideoObject, VideoStatusError>) {
+    ) -> (Journal, Result<VideoObject, VideoStatusError>) {
         let env = self.fixture.environment();
         let handler = self.deps.handler(&env);
         let request = call.status(&mut self.state, &self.supplied_sync, &self.supplied_async);

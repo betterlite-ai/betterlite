@@ -69,69 +69,18 @@ pub(crate) enum Supply {
     Async,
 }
 
+// the two response forms, whose fakes differ only in the journal list and marker they use
+#[derive(Clone, Copy, Debug)]
+enum Form {
+    Sync,
+    Async,
+}
+
 // what B249's logger fn gets from pre_call: the input and the additional args it recorded
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct RecordedPreCall {
     pub(crate) input: Json,
     pub(crate) additional_args: Json,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum Event {
-    ValidateEnvironment {
-        headers: Headers,
-        model: String,
-        api_key: Option<String>,
-        params: Option<Params>,
-    },
-    CompleteUrl {
-        model: String,
-        api_base: Option<String>,
-        params: Params,
-    },
-    RequestTransform {
-        video_id: String,
-        api_base: String,
-        params: Params,
-        headers: Headers,
-    },
-    PreCall(RecordedPreCall),
-    SyncBuild {
-        ssl_verify: Option<bool>,
-    },
-    AsyncBuild {
-        provider: ProviderId,
-        ssl_verify: Option<bool>,
-    },
-    SyncSend {
-        owner: Owner,
-        request: StatusRequest,
-    },
-    AsyncSend {
-        owner: Owner,
-        request: StatusRequest,
-    },
-    SyncResponse {
-        owner: Option<Owner>,
-        provider: Option<String>,
-        status: u16,
-        body: Vec<u8>,
-        header: Option<String>,
-    },
-    AsyncResponse {
-        owner: Option<Owner>,
-        provider: Option<String>,
-        status: u16,
-        body: Vec<u8>,
-        header: Option<String>,
-    },
-    ErrorClass {
-        message: String,
-        status_code: u16,
-    },
-    Converted {
-        caught: String,
-    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -150,39 +99,40 @@ pub(crate) enum Kind {
     Converted,
 }
 
-impl Event {
-    pub(crate) const fn kind(&self) -> Kind {
-        match self {
-            Self::ValidateEnvironment { .. } => Kind::ValidateEnvironment,
-            Self::CompleteUrl { .. } => Kind::CompleteUrl,
-            Self::RequestTransform { .. } => Kind::RequestTransform,
-            Self::PreCall(_) => Kind::PreCall,
-            Self::SyncBuild { .. } => Kind::SyncBuild,
-            Self::AsyncBuild { .. } => Kind::AsyncBuild,
-            Self::SyncSend { .. } => Kind::SyncSend,
-            Self::AsyncSend { .. } => Kind::AsyncSend,
-            Self::SyncResponse { .. } => Kind::SyncResponse,
-            Self::AsyncResponse { .. } => Kind::AsyncResponse,
-            Self::ErrorClass { .. } => Kind::ErrorClass,
-            Self::Converted { .. } => Kind::Converted,
-        }
-    }
+// One call's observations in order, with each kind's payload kept beside the sequence
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Journal {
+    pub(crate) kinds: Vec<Kind>,
+    pub(crate) validations: Vec<Validation>,
+    pub(crate) urls: Vec<UrlRecord>,
+    pub(crate) transforms: Vec<TransformRecord>,
+    pub(crate) pre_calls: Vec<RecordedPreCall>,
+    pub(crate) sync_builds: Vec<Option<bool>>,
+    pub(crate) async_builds: Vec<(ProviderId, Option<bool>)>,
+    pub(crate) sync_sends: Vec<(Owner, StatusRequest)>,
+    pub(crate) async_sends: Vec<(Owner, StatusRequest)>,
+    pub(crate) sync_responses: Vec<ResponseRecord>,
+    pub(crate) async_responses: Vec<ResponseRecord>,
+    pub(crate) error_classes: Vec<(String, u16)>,
+    pub(crate) conversions: Vec<String>,
 }
 
-pub(crate) type Recorder = Arc<Mutex<Vec<Event>>>;
+pub(crate) type Recorder = Arc<Mutex<Journal>>;
 
 pub(crate) fn recorder() -> Recorder {
-    Arc::new(Mutex::new(Vec::new()))
+    Arc::new(Mutex::new(Journal::default()))
 }
 
-pub(crate) fn record(events: &Recorder, event: Event) {
-    events
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .push(event);
+pub(crate) fn record<Update>(events: &Recorder, kind: Kind, update: Update)
+where
+    Update: FnOnce(&mut Journal),
+{
+    let mut journal = events.lock().unwrap_or_else(PoisonError::into_inner);
+    journal.kinds.push(kind);
+    update(&mut journal);
 }
 
-pub(crate) fn observed(events: &Recorder) -> Vec<Event> {
+pub(crate) fn observed(events: &Recorder) -> Journal {
     events
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
@@ -221,13 +171,11 @@ impl VideoErrorClasses for FakeConfig {
         status_code: u16,
         headers: &Headers,
     ) -> BaseLlmException {
-        record(
-            &self.events,
-            Event::ErrorClass {
-                message: error_message.to_owned(),
-                status_code,
-            },
-        );
+        record(&self.events, Kind::ErrorClass, |journal| {
+            journal
+                .error_classes
+                .push((error_message.to_owned(), status_code));
+        });
         BaseLlmException {
             status_code,
             message: format!("fake error class: {error_message}"),
@@ -246,15 +194,14 @@ impl VideoStatusConfig for FakeConfig {
         &self,
         request: VideoEnvironment<'_>,
     ) -> Result<Headers, ProviderFailure> {
-        record(
-            &self.events,
-            Event::ValidateEnvironment {
+        record(&self.events, Kind::ValidateEnvironment, |journal| {
+            journal.validations.push(Validation {
                 headers: request.headers.clone(),
                 model: request.model.to_owned(),
                 api_key: request.api_key.map(|key| key.expose_secret().to_owned()),
                 params: request.litellm_params.cloned(),
-            },
-        );
+            });
+        });
         self.environment.clone()
     }
 
@@ -264,14 +211,13 @@ impl VideoStatusConfig for FakeConfig {
         api_base: Option<&str>,
         litellm_params: &Params,
     ) -> Result<String, ProviderFailure> {
-        record(
-            &self.events,
-            Event::CompleteUrl {
+        record(&self.events, Kind::CompleteUrl, |journal| {
+            journal.urls.push(UrlRecord {
                 model: model.to_owned(),
                 api_base: api_base.map(ToOwned::to_owned),
                 params: litellm_params.clone(),
-            },
-        );
+            });
+        });
         self.complete_url.clone()
     }
 
@@ -280,15 +226,14 @@ impl VideoStatusConfig for FakeConfig {
         video_id: &str,
         context: VideoRequestContext<'_>,
     ) -> Result<(String, Params), ProviderFailure> {
-        record(
-            &self.events,
-            Event::RequestTransform {
+        record(&self.events, Kind::RequestTransform, |journal| {
+            journal.transforms.push(TransformRecord {
                 video_id: video_id.to_owned(),
                 api_base: context.api_base.to_owned(),
                 params: context.litellm_params.clone(),
                 headers: context.headers.clone(),
-            },
-        );
+            });
+        });
         self.transformed.clone()
     }
 
@@ -297,21 +242,7 @@ impl VideoStatusConfig for FakeConfig {
         reply: VideoReply<'_>,
         client: Option<&FakeSyncClient>,
     ) -> Result<VideoObject, ProviderFailure> {
-        record(
-            &self.events,
-            Event::SyncResponse {
-                owner: client.map(|used| used.owner),
-                provider: reply.custom_llm_provider.map(ToOwned::to_owned),
-                status: reply.raw_response.status,
-                body: reply.raw_response.body.clone(),
-                header: reply_header(reply.raw_response),
-            },
-        );
-        reply
-            .logging_obj
-            .model_call_details
-            .insert("sync_transform".to_owned(), Json::Bool(true));
-        self.response.clone()
+        self.finish(reply, client.map(|used| used.owner), Form::Sync)
     }
 
     async fn async_transform_video_status_retrieve_response(
@@ -319,21 +250,41 @@ impl VideoStatusConfig for FakeConfig {
         reply: VideoReply<'_>,
         client: Option<&FakeAsyncClient>,
     ) -> Result<VideoObject, ProviderFailure> {
-        record(
-            &self.events,
-            Event::AsyncResponse {
-                owner: client.map(|used| used.owner),
-                provider: reply.custom_llm_provider.map(ToOwned::to_owned),
-                status: reply.raw_response.status,
-                body: reply.raw_response.body.clone(),
-                header: reply_header(reply.raw_response),
-            },
-        );
+        self.finish(reply, client.map(|used| used.owner), Form::Async)
+    }
+}
+
+impl FakeConfig {
+    fn finish(
+        &self,
+        reply: VideoReply<'_>,
+        owner: Option<Owner>,
+        form: Form,
+    ) -> Result<VideoObject, ProviderFailure> {
+        let recorded = ResponseRecord {
+            owner,
+            provider: reply.custom_llm_provider.map(ToOwned::to_owned),
+            status: reply.raw_response.status,
+            body: reply.raw_response.body.clone(),
+            header: reply_header(reply.raw_response),
+        };
+        let (mark, outcome) = match form {
+            Form::Sync => ("sync_transform", self.response.clone()),
+            Form::Async => ("async_transform", self.asynchronous_response.clone()),
+        };
+        match form {
+            Form::Sync => record(&self.events, Kind::SyncResponse, |journal| {
+                journal.sync_responses.push(recorded);
+            }),
+            Form::Async => record(&self.events, Kind::AsyncResponse, |journal| {
+                journal.async_responses.push(recorded);
+            }),
+        }
         reply
             .logging_obj
             .model_call_details
-            .insert("async_transform".to_owned(), Json::Bool(true));
-        self.asynchronous_response.clone()
+            .insert(mark.to_owned(), Json::Bool(true));
+        outcome
     }
 }
 
@@ -350,15 +301,7 @@ impl ClientFactories for FakeFactories {
     type Asynchronous = FakeAsyncClient;
 
     fn sync_client(&self, ssl_verify: Option<bool>) -> Result<Self::Synchronous, PoolError> {
-        record(&self.events, Event::SyncBuild { ssl_verify });
-        if self.refuse_sync {
-            return Err(PoolError::Closed);
-        }
-        Ok(FakeSyncClient {
-            events: Arc::clone(&self.events),
-            owner: Owner::Built,
-            reply: self.sync,
-        })
+        self.sync_or_closed(ssl_verify)
     }
 
     fn async_client(
@@ -366,22 +309,51 @@ impl ClientFactories for FakeFactories {
         provider: ProviderId,
         ssl_verify: Option<bool>,
     ) -> Result<Self::Asynchronous, PoolError> {
-        record(
-            &self.events,
-            Event::AsyncBuild {
-                provider,
-                ssl_verify,
-            },
-        );
-        if self.refuse_async {
-            return Err(PoolError::Closed);
+        self.async_or_closed(provider, ssl_verify)
+    }
+}
+
+impl FakeFactories {
+    fn sync_or_closed(&self, ssl_verify: Option<bool>) -> Result<FakeSyncClient, PoolError> {
+        record(&self.events, Kind::SyncBuild, |journal| {
+            journal.sync_builds.push(ssl_verify);
+        });
+        allowed(self.refuse_sync, self.sync_built())
+    }
+
+    fn async_or_closed(
+        &self,
+        provider: ProviderId,
+        ssl_verify: Option<bool>,
+    ) -> Result<FakeAsyncClient, PoolError> {
+        record(&self.events, Kind::AsyncBuild, |journal| {
+            journal.async_builds.push((provider, ssl_verify));
+        });
+        allowed(self.refuse_async, self.async_built())
+    }
+
+    fn sync_built(&self) -> FakeSyncClient {
+        FakeSyncClient {
+            events: Arc::clone(&self.events),
+            owner: Owner::Built,
+            reply: self.sync,
         }
-        Ok(FakeAsyncClient {
+    }
+
+    fn async_built(&self) -> FakeAsyncClient {
+        FakeAsyncClient {
             events: Arc::clone(&self.events),
             owner: Owner::Built,
             reply: self.asynchronous,
-        })
+        }
     }
+}
+
+const fn allowed<T>(refuse: bool, value: T) -> Result<T, PoolError> {
+    if refuse {
+        return Err(PoolError::Closed);
+    }
+    Ok(value)
 }
 
 pub(crate) struct FakeSyncClient {
@@ -390,16 +362,28 @@ pub(crate) struct FakeSyncClient {
     pub(crate) reply: FakeReply,
 }
 
+fn send_with(
+    events: &Recorder,
+    owner: Owner,
+    request: &StatusRequest,
+    form: Form,
+    reply: FakeReply,
+) -> Result<UpstreamResponse, TransportError> {
+    let sent = request.clone();
+    match form {
+        Form::Sync => record(events, Kind::SyncSend, |journal| {
+            journal.sync_sends.push((owner, sent));
+        }),
+        Form::Async => record(events, Kind::AsyncSend, |journal| {
+            journal.async_sends.push((owner, sent));
+        }),
+    }
+    answer(reply)
+}
+
 impl SyncClient for FakeSyncClient {
     fn send(&self, request: &StatusRequest) -> Result<UpstreamResponse, TransportError> {
-        record(
-            &self.events,
-            Event::SyncSend {
-                owner: self.owner,
-                request: request.clone(),
-            },
-        );
-        answer(self.reply)
+        send_with(&self.events, self.owner, request, Form::Sync, self.reply)
     }
 }
 
@@ -412,14 +396,7 @@ pub(crate) struct FakeAsyncClient {
 #[async_trait]
 impl AsyncClient for FakeAsyncClient {
     async fn send(&self, request: &StatusRequest) -> Result<UpstreamResponse, TransportError> {
-        record(
-            &self.events,
-            Event::AsyncSend {
-                owner: self.owner,
-                request: request.clone(),
-            },
-        );
-        answer(self.reply)
+        send_with(&self.events, self.owner, request, Form::Async, self.reply)
     }
 }
 
@@ -469,7 +446,10 @@ impl Fixture {
             redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor compiles"),
             sink: Sink,
             logger: Box::new(move |details: &Json| -> Result<(), PrePostError> {
-                record(&events, Event::PreCall(recorded_pre_call(details)));
+                let recorded = recorded_pre_call(details);
+                record(&events, Kind::PreCall, |journal| {
+                    journal.pre_calls.push(recorded);
+                });
                 Ok(())
             }),
             now: moment(),
@@ -522,7 +502,9 @@ impl ErrorConverter for FakeConverter {
             StatusFailure::Send(_) => "send".to_owned(),
             StatusFailure::Transform(error) => format!("transform: {}", error.message),
         };
-        record(&self.events, Event::Converted { caught });
+        record(&self.events, Kind::Converted, |journal| {
+            journal.conversions.push(caught);
+        });
         let probe = config.get_error_class("probe", PROBE_STATUS, &Headers::new());
         BaseLlmException {
             status_code: probe.status_code,
@@ -648,223 +630,50 @@ pub(crate) struct ResponseRecord {
     pub(crate) header: Option<String>,
 }
 
-pub(crate) fn validate_calls(events: &[Event]) -> Vec<Validation> {
-    events
-        .iter()
-        .filter(|event| event.kind() == Kind::ValidateEnvironment)
-        .map(|event| {
-            let Event::ValidateEnvironment {
-                headers,
-                model,
-                api_key,
-                params,
-            } = event
-            else {
-                panic!("the kind matches the variant")
-            };
-            Validation {
-                headers: headers.clone(),
-                model: model.clone(),
-                api_key: api_key.clone(),
-                params: params.clone(),
-            }
-        })
-        .collect()
+pub(crate) fn validate_calls(journal: &Journal) -> Vec<Validation> {
+    journal.validations.clone()
 }
 
-pub(crate) fn complete_urls(events: &[Event]) -> Vec<UrlRecord> {
-    events
-        .iter()
-        .filter(|event| event.kind() == Kind::CompleteUrl)
-        .map(|event| {
-            let Event::CompleteUrl {
-                model,
-                api_base,
-                params,
-            } = event
-            else {
-                panic!("the kind matches the variant")
-            };
-            UrlRecord {
-                model: model.clone(),
-                api_base: api_base.clone(),
-                params: params.clone(),
-            }
-        })
-        .collect()
+pub(crate) fn complete_urls(journal: &Journal) -> Vec<UrlRecord> {
+    journal.urls.clone()
 }
 
-pub(crate) fn request_transforms(events: &[Event]) -> Vec<TransformRecord> {
-    events
-        .iter()
-        .filter(|event| event.kind() == Kind::RequestTransform)
-        .map(|event| {
-            let Event::RequestTransform {
-                video_id,
-                api_base,
-                params,
-                headers,
-            } = event
-            else {
-                panic!("the kind matches the variant")
-            };
-            TransformRecord {
-                video_id: video_id.clone(),
-                api_base: api_base.clone(),
-                params: params.clone(),
-                headers: headers.clone(),
-            }
-        })
-        .collect()
+pub(crate) fn request_transforms(journal: &Journal) -> Vec<TransformRecord> {
+    journal.transforms.clone()
 }
 
-pub(crate) fn pre_calls(events: &[Event]) -> Vec<RecordedPreCall> {
-    events
-        .iter()
-        .filter(|event| event.kind() == Kind::PreCall)
-        .map(|event| {
-            let Event::PreCall(record) = event else {
-                panic!("the kind matches the variant")
-            };
-            record.clone()
-        })
-        .collect()
+pub(crate) fn pre_calls(journal: &Journal) -> Vec<RecordedPreCall> {
+    journal.pre_calls.clone()
 }
 
-pub(crate) fn sync_builds(events: &[Event]) -> Vec<Option<bool>> {
-    events
-        .iter()
-        .filter(|event| event.kind() == Kind::SyncBuild)
-        .map(|event| {
-            let Event::SyncBuild { ssl_verify } = event else {
-                panic!("the kind matches the variant")
-            };
-            *ssl_verify
-        })
-        .collect()
+pub(crate) fn sync_builds(journal: &Journal) -> Vec<Option<bool>> {
+    journal.sync_builds.clone()
 }
 
-pub(crate) fn async_builds(events: &[Event]) -> Vec<(ProviderId, Option<bool>)> {
-    events
-        .iter()
-        .filter(|event| event.kind() == Kind::AsyncBuild)
-        .map(|event| {
-            let Event::AsyncBuild {
-                provider,
-                ssl_verify,
-            } = event
-            else {
-                panic!("the kind matches the variant")
-            };
-            (*provider, *ssl_verify)
-        })
-        .collect()
+pub(crate) fn async_builds(journal: &Journal) -> Vec<(ProviderId, Option<bool>)> {
+    journal.async_builds.clone()
 }
 
-pub(crate) fn sync_sends(events: &[Event]) -> Vec<(Owner, StatusRequest)> {
-    events
-        .iter()
-        .filter(|event| event.kind() == Kind::SyncSend)
-        .map(|event| {
-            let Event::SyncSend { owner, request } = event else {
-                panic!("the kind matches the variant")
-            };
-            (*owner, request.clone())
-        })
-        .collect()
+pub(crate) fn sync_sends(journal: &Journal) -> Vec<(Owner, StatusRequest)> {
+    journal.sync_sends.clone()
 }
 
-pub(crate) fn async_sends(events: &[Event]) -> Vec<(Owner, StatusRequest)> {
-    events
-        .iter()
-        .filter(|event| event.kind() == Kind::AsyncSend)
-        .map(|event| {
-            let Event::AsyncSend { owner, request } = event else {
-                panic!("the kind matches the variant")
-            };
-            (*owner, request.clone())
-        })
-        .collect()
+pub(crate) fn async_sends(journal: &Journal) -> Vec<(Owner, StatusRequest)> {
+    journal.async_sends.clone()
 }
 
-pub(crate) fn sync_responses(events: &[Event]) -> Vec<ResponseRecord> {
-    events
-        .iter()
-        .filter(|event| event.kind() == Kind::SyncResponse)
-        .map(|event| {
-            let Event::SyncResponse {
-                owner,
-                provider,
-                status,
-                body,
-                header,
-            } = event
-            else {
-                panic!("the kind matches the variant")
-            };
-            ResponseRecord {
-                owner: *owner,
-                provider: provider.clone(),
-                status: *status,
-                body: body.clone(),
-                header: header.clone(),
-            }
-        })
-        .collect()
+pub(crate) fn sync_responses(journal: &Journal) -> Vec<ResponseRecord> {
+    journal.sync_responses.clone()
 }
 
-pub(crate) fn async_responses(events: &[Event]) -> Vec<ResponseRecord> {
-    events
-        .iter()
-        .filter(|event| event.kind() == Kind::AsyncResponse)
-        .map(|event| {
-            let Event::AsyncResponse {
-                owner,
-                provider,
-                status,
-                body,
-                header,
-            } = event
-            else {
-                panic!("the kind matches the variant")
-            };
-            ResponseRecord {
-                owner: *owner,
-                provider: provider.clone(),
-                status: *status,
-                body: body.clone(),
-                header: header.clone(),
-            }
-        })
-        .collect()
+pub(crate) fn async_responses(journal: &Journal) -> Vec<ResponseRecord> {
+    journal.async_responses.clone()
 }
 
-pub(crate) fn error_classes(events: &[Event]) -> Vec<(String, u16)> {
-    events
-        .iter()
-        .filter(|event| event.kind() == Kind::ErrorClass)
-        .map(|event| {
-            let Event::ErrorClass {
-                message,
-                status_code,
-            } = event
-            else {
-                panic!("the kind matches the variant")
-            };
-            (message.clone(), *status_code)
-        })
-        .collect()
+pub(crate) fn error_classes(journal: &Journal) -> Vec<(String, u16)> {
+    journal.error_classes.clone()
 }
 
-pub(crate) fn conversions(events: &[Event]) -> Vec<String> {
-    events
-        .iter()
-        .filter(|event| event.kind() == Kind::Converted)
-        .map(|event| {
-            let Event::Converted { caught } = event else {
-                panic!("the kind matches the variant")
-            };
-            caught.clone()
-        })
-        .collect()
+pub(crate) fn conversions(journal: &Journal) -> Vec<String> {
+    journal.conversions.clone()
 }

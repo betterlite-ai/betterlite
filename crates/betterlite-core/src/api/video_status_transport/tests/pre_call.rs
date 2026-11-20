@@ -4,7 +4,7 @@ use betterlite_models::decisions::Json;
 
 use super::harness::{Call, harness};
 use super::support::{
-    API_BASE, COMPLETE_URL, Event, Kind, base_params, conversions, json, operation, plain_headers,
+    API_BASE, COMPLETE_URL, Kind, base_params, conversions, json, operation, plain_headers,
     pre_calls, sync_sends,
 };
 use crate::api::video_status_transport::error::VideoStatusError;
@@ -51,8 +51,7 @@ fn pre_call_runs_once_before_the_send() {
     let params = Params::new();
     run.sync(Call::new(&params))
         .expect("the status call succeeds");
-    let events = run.events();
-    let kinds = events.iter().map(Event::kind).collect::<Vec<Kind>>();
+    let kinds = run.events().kinds;
     assert_eq!(
         kinds.iter().filter(|kind| **kind == Kind::PreCall).count(),
         1

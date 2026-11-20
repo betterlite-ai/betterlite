@@ -37,7 +37,7 @@ async fn async_flag_returns_future_before_choosing_a_client() {
     let mut run = configured();
     let params = ssl_params(true);
     let (before, outcome) = run.flagged(Call::new(&params)).await;
-    assert!(before.is_empty());
+    assert!(before.kinds.is_empty());
     assert_eq!(
         outcome.expect("the flagged call succeeds"),
         object(VIDEO_ID)
@@ -74,7 +74,7 @@ async fn async_flag_returns_future_forwarding_every_argument() {
     let (before, flagged_outcome) = flagged_run
         .flagged(full_call(&params, &headers, &body, &key))
         .await;
-    assert!(before.is_empty());
+    assert!(before.kinds.is_empty());
     let direct_outcome = direct_run
         .asynchronous(full_call(&params, &headers, &body, &key))
         .await;
