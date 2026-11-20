@@ -14,10 +14,10 @@ impl Catalog {
         let records = entries
             .iter()
             .map(|(model, fields)| {
-                let mut record = PriceRecord::new();
-                for (name, value) in fields {
-                    record.insert(name.clone(), scalar(value));
-                }
+                let mut record: PriceRecord = fields
+                    .iter()
+                    .map(|(name, value)| (name.clone(), scalar(value)))
+                    .collect();
                 record.insert("key".to_owned(), Scalar::Text(model.clone()));
                 (model.clone(), record)
             })

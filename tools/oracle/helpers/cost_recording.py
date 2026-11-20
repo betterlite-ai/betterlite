@@ -121,11 +121,13 @@ class CalculatorKwargs(TypedDict):
 
 
 class HiddenCarrier(BaseModel):
-    _hidden_params: dict[str, JsonValue] = PrivateAttr(default_factory=dict)
+    _hidden_params: dict[str, object] = PrivateAttr(default_factory=dict)
 
-    def __init__(self, hidden: dict[str, JsonValue]) -> None:
+    def __init__(self, hidden: dict[str, JsonValue] | None) -> None:
         super().__init__()
-        self._hidden_params = hidden
+        if hidden is not None:
+            for name, value in hidden.items():
+                self._hidden_params[name] = value
 
 
 class CalculatorState:
@@ -138,8 +140,10 @@ class CalculatorState:
 _CALCULATOR: Final[TypeAdapter[CalculatorKwargs]] = TypeAdapter(CalculatorKwargs)
 _JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 _AMOUNT: Final[TypeAdapter[float | None]] = TypeAdapter(float | None)
-_CANDIDATES: Final[TypeAdapter[list[dict[str, JsonValue]]]] = TypeAdapter(list[dict[str, JsonValue]])
 _METADATA: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
+_CANDIDATES: Final[TypeAdapter[list[dict[str, JsonValue]]]] = TypeAdapter(
+    list[dict[str, JsonValue]]
+)
 _STATE: Final[CalculatorState] = CalculatorState()
 
 
@@ -158,7 +162,9 @@ def _observe(fields: CalculatorKwargs) -> dict[str, JsonValue]:
     usage = get_usage_object(fields["response_object"])
     counts: JsonValue = None
     if usage is not None:
-        counts = _JSON.validate_python([usage.prompt_tokens, usage.completion_tokens])
+        prompt: JsonValue = usage.prompt_tokens
+        completion: JsonValue = usage.completion_tokens
+        counts = _JSON.validate_python([prompt, completion])
     return {
         "model": fields["model"],
         "cache_hit": fields["cache_hit"],
@@ -206,26 +212,19 @@ def _hidden_seed(hidden: dict[str, JsonValue]) -> dict[str, JsonValue]:
     return seed
 
 
-def _typed_response(spec: TypedResponseFields) -> SubjectResponse:
-    return SubjectResponse(
-        spec["model"],
-        _usage_fields(spec["usage"]),
-        background=spec["background"],
-        hidden=_hidden_seed(spec["hidden_params"]),
-    )
-
-
-def _native_response(spec: GenerateResponseFields) -> NativeBody:
-    body = spec["body"]
-    candidates = _CANDIDATES.validate_python(body.get("candidates"))
-    metadata = _METADATA.validate_python(body.get("usageMetadata"))
-    return NativeBody(candidates, metadata)
-
-
 def _response_of(spec: ResponseSpec) -> SubjectResponse | NativeBody:
     if spec["kind"] == "typed":
-        return _typed_response(spec)
-    return _native_response(spec)
+        return SubjectResponse(
+            spec["model"],
+            _usage_fields(spec["usage"]),
+            background=spec["background"],
+            hidden=_hidden_seed(spec["hidden_params"]),
+        )
+    body = spec["body"]
+    return NativeBody(
+        _CANDIDATES.validate_python(body.get("candidates")),
+        _METADATA.validate_python(body.get("usageMetadata")),
+    )
 
 
 def _logging(case: LogFields) -> Logging:
@@ -238,55 +237,36 @@ def _logging(case: LogFields) -> Logging:
         litellm_call_id="cost-recording-case",
         function_id="cost-recording-case",
     )
-    log.update_environment_variables(
+    log.update_environment_variables(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L910
         litellm_params=case["litellm_params"],
         optional_params=case["optional_params"],
     )
-    log.model_call_details.update(case["details"])
+    details: dict[str, JsonValue] = log.model_call_details
+    details.update(case["details"])
     return log
-
-
-def _json_out(value: JsonValue) -> JsonValue:
-    return _JSON.validate_python(_JSON.dump_python(value, mode="json"))
 
 
 def _record_call(log: Logging, call: CallFields) -> dict[str, JsonValue]:
     _load(call["calculator"])
     response = _response_of(call["response"])
-    ResponseMetadata(response).set_hidden_params(
-        log,
-        call["litellm_model_name"],
-        {"model_info": {"id": call["router_model_id"]}},
+    kwargs: dict[str, JsonValue] = {"model_info": {"id": call["router_model_id"]}}
+    ResponseMetadata(response).set_hidden_params(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/response_metadata.py#L118
+        log, call["litellm_model_name"], kwargs
     )
     details: dict[str, JsonValue] = log.model_call_details
     return {
         "amount": _AMOUNT.validate_python(response.hidden_params().get("response_cost")),
-        "failure": _json_out(details.get("response_cost_failure_debug_information")),
-        "diagnostic": _json_out(details.get("zero_cost_diagnostic")),
+        "failure": _JSON.validate_json(
+            _JSON.dump_json(details.get("response_cost_failure_debug_information"))
+        ),
+        "diagnostic": _JSON.validate_json(_JSON.dump_json(details.get("zero_cost_diagnostic"))),
         "warned": log.zero_cost_warned,
         "observed": _take_observed(),
     }
 
 
-def _log_case(case: LogCase) -> JsonValue:
-    log = _logging(case["log"])
-    calls: list[JsonValue] = [_record_call(log, call) for call in case["calls"]]
-    return {"calls": calls}
-
-
-def _record(input_value: Input) -> list[JsonValue]:
-    entries: dict[str, dict[str, JsonValue]] = {}
-    for name, fields in input_value["model_cost"].items():
-        entries[name] = dict(fields)
-    litellm.model_cost = entries
-    litellm.vertex_location = input_value["vertex_location"]
-    return [_log_case(case) for case in input_value["logs"]]
-
-
 def _set_cost(input_value: Input) -> JsonValue:
-    raw = input_value["hidden_params"]
-    hidden = _METADATA.validate_python({} if raw is None else raw)
-    carrier = HiddenCarrier(hidden)
+    carrier = HiddenCarrier(input_value["hidden_params"])
     set_response_cost_in_hidden_params(carrier, input_value["cost"])
     return _JSON.validate_python(get_hidden_params_dict(carrier))
 
@@ -294,5 +274,14 @@ def _set_cost(input_value: Input) -> JsonValue:
 def run(input_value: Input) -> dict[str, JsonValue]:
     if input_value["function"] == "set_response_cost":
         return {"hidden_params": _set_cost(input_value)}
-    logs = _record(input_value)
+    entries: dict[str, dict[str, JsonValue]] = {
+        name: dict(fields) for name, fields in input_value["model_cost"].items()
+    }
+    litellm.model_cost = entries
+    litellm.vertex_location = input_value["vertex_location"]
+    logs: list[JsonValue] = []
+    for case in input_value["logs"]:
+        log = _logging(case["log"])
+        calls: list[JsonValue] = [_record_call(log, call) for call in case["calls"]]
+        logs.append({"calls": calls})
     return {"logs": logs}

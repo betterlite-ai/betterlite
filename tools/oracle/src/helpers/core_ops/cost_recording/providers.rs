@@ -1,5 +1,3 @@
-use std::error::Error;
-use std::fmt;
 use std::sync::Arc;
 
 use betterlite_bedrock::mantle_inputs::records::MantleGlobals;
@@ -31,22 +29,15 @@ impl ProviderInference for Inference {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
+#[error("{0}")]
 pub(super) struct FailureText(pub(super) String);
-
-impl fmt::Display for FailureText {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.0)
-    }
-}
-
-impl Error for FailureText {}
 
 pub(super) struct Conversion;
 
 impl GenerateContentConversion for Conversion {
     fn convert(&self, body: &Json, model: &str) -> Result<Json, PortFailure> {
-        let bytes = serde_json::to_vec(body).map_err(|error| Box::new(error) as PortFailure)?;
+        let bytes = serde_json::to_vec(body).map_err(PortFailure::from)?;
         let headers = HeaderMap::new();
         let raw = RawResponse {
             headers: &headers,
@@ -58,8 +49,7 @@ impl GenerateContentConversion for Conversion {
             call_mode: CallMode::LegacyFunction,
         };
         let mut ids = || Uuid::nil();
-        let completed = transform_response(&raw, &request, &mut ids)
-            .map_err(|error| Box::new(error) as PortFailure)?;
+        let completed = transform_response(&raw, &request, &mut ids).map_err(PortFailure::from)?;
         Ok(json!({
             "model": completed.model,
             "usage": {
@@ -77,9 +67,8 @@ pub(super) struct Regions {
 
 impl Regions {
     pub(super) fn new() -> Self {
-        let mut bundled = BundledCatalog::default();
         Self {
-            catalog: bundled.get(),
+            catalog: BundledCatalog::default().get(),
         }
     }
 }
@@ -107,7 +96,7 @@ impl MantleRegionResolver for Mantle {
             text(litellm_params.get("api_base")),
             &globals,
         )
-        .map_err(|error| Box::new(error) as PortFailure)
+        .map_err(PortFailure::from)
     }
 }
 

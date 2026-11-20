@@ -6,6 +6,7 @@ use betterlite_config::sections::vertex_credential_sources::vertex_settings::Adc
 use betterlite_core::cost::prepare::TypedResponse;
 use betterlite_core::cost::recording::{CostRecorder, RecordInput, RecordResponse};
 use betterlite_core::cost::usage::{BillingUsage, ResponseKind};
+// ast-grep-ignore: no-long-names
 use betterlite_core::helpers::set_response_cost_in_hidden_params;
 use betterlite_logging::fields::usage::Usage;
 use betterlite_logging::logging_state::LoggingInit;
@@ -28,7 +29,7 @@ mod catalog;
 mod input;
 mod providers;
 
-use calculator::{Calculator, Observed};
+use calculator::Calculator;
 use catalog::Catalog;
 use input::{CallFields, Function, Input, LogCase, ResponseSpec, UsageFields};
 use providers::{Conversion, Inference, Mantle, Regions};
@@ -68,19 +69,16 @@ fn record_calls(input: &Input) -> HelperResult {
 }
 
 async fn record_logs(input: &Input) -> HelperResult {
-    let catalog = Catalog::new(&input.model_cost);
-    let regions = Regions::new();
-    let vertex = VertexSettings {
-        project: None,
-        location: input.vertex_location.clone(),
-        credentials: None,
-        adc: AdcEnvironment::default(),
-        default_video_duration_seconds: 8,
-    };
     let services = Services {
-        catalog,
-        regions,
-        vertex,
+        catalog: Catalog::new(&input.model_cost),
+        regions: Regions::new(),
+        vertex: VertexSettings {
+            project: None,
+            location: input.vertex_location.clone(),
+            credentials: None,
+            adc: AdcEnvironment::default(),
+            default_video_duration_seconds: 8,
+        },
         ptu_cost_attribution: input.ptu_cost_attribution,
     };
     let mut logs = Vec::new();
@@ -115,20 +113,25 @@ async fn record_case(services: &Services, case: &LogCase) -> Result<Json, Box<He
         let amount = record_response(&recorder, &mut log, call).await;
         calls.push(json!({
             "amount": amount.map(|cost| cost.to_f64()),
-            "failure": log.model_call_details.get(FAILURE_KEY).cloned(),
-            "diagnostic": log.model_call_details.get(DIAGNOSTIC_KEY).cloned(),
+            "failure": log.model_call_details.get(FAILURE_KEY),
+            "diagnostic": log.model_call_details.get(DIAGNOSTIC_KEY),
             "warned": log.cost.zero_cost_warned,
-            "observed": observed_json(calculator.observe()),
+            "observed": calculator.observe(),
         }));
     }
     Ok(json!({ "calls": calls }))
 }
 
-struct TypedCall<'call> {
-    model: &'call str,
-    usage: &'call UsageFields,
-    hidden_params: &'call IndexMap<String, Json>,
-    background: bool,
+fn record_input<'call>(
+    call: &'call CallFields,
+    response: RecordResponse<'call>,
+) -> RecordInput<'call> {
+    RecordInput {
+        response,
+        cache_hit: call.cache_hit,
+        litellm_model_name: call.litellm_model_name.as_deref(),
+        router_model_id: call.router_model_id.as_deref(),
+    }
 }
 
 async fn record_response(
@@ -136,87 +139,31 @@ async fn record_response(
     log: &mut LoggingState,
     call: &CallFields,
 ) -> Option<Decimal> {
-    let names = Names {
-        cache_hit: call.cache_hit,
-        litellm_model_name: call.litellm_model_name.as_deref(),
-        router_model_id: call.router_model_id.as_deref(),
-    };
-    match &call.response {
+    let built;
+    let response = match &call.response {
         ResponseSpec::Typed {
             model,
             usage,
             hidden_params,
             background,
         } => {
-            let typed = TypedCall {
-                model: model.as_str(),
-                usage,
-                hidden_params,
+            built = usage.to_usage();
+            RecordResponse::Typed {
+                response: TypedResponse {
+                    kind: ResponseKind::Chat,
+                    model: Some(model.as_str()),
+                    usage: BillingUsage::Chat(&built),
+                    service_tier: None,
+                    hidden_params: Some(hidden_params),
+                },
                 background: *background,
-            };
-            record_typed(recorder, log, typed, &names).await
+            }
         }
-        ResponseSpec::Json { body } => {
-            recorder
-                .record(log, names.input(RecordResponse::Json(body)))
-                .await
-        }
-        ResponseSpec::GenerateContent { body } => {
-            recorder
-                .record(log, names.input(RecordResponse::GenerateContent(body)))
-                .await
-        }
-        ResponseSpec::Absent => {
-            recorder
-                .record(log, names.input(RecordResponse::Absent))
-                .await
-        }
-    }
-}
-
-async fn record_typed(
-    recorder: &CostRecorder<'_, Inference>,
-    log: &mut LoggingState,
-    call: TypedCall<'_>,
-    names: &Names<'_>,
-) -> Option<Decimal> {
-    let built = call.usage.to_usage();
-    let typed = TypedResponse {
-        kind: ResponseKind::Chat,
-        model: Some(call.model),
-        usage: BillingUsage::Chat(&built),
-        service_tier: None,
-        hidden_params: Some(call.hidden_params),
+        ResponseSpec::Json { body } => RecordResponse::Json(body),
+        ResponseSpec::GenerateContent { body } => RecordResponse::GenerateContent(body),
+        ResponseSpec::Absent => RecordResponse::Absent,
     };
-    let response = RecordResponse::Typed {
-        response: typed,
-        background: call.background,
-    };
-    recorder.record(log, names.input(response)).await
-}
-
-struct Names<'names> {
-    cache_hit: Option<bool>,
-    litellm_model_name: Option<&'names str>,
-    router_model_id: Option<&'names str>,
-}
-
-impl<'names> Names<'names> {
-    fn input<'response>(&self, response: RecordResponse<'response>) -> RecordInput<'response>
-    where
-        'names: 'response,
-    {
-        RecordInput {
-            response,
-            cache_hit: self.cache_hit,
-            litellm_model_name: self.litellm_model_name,
-            router_model_id: self.router_model_id,
-        }
-    }
-}
-
-fn observed_json(observed: Vec<Observed>) -> Vec<Json> {
-    observed.iter().map(Observed::json).collect()
+    recorder.record(log, record_input(call, response)).await
 }
 
 fn log_state(case: &LogCase) -> Result<LoggingState, Box<HelperError>> {
@@ -262,6 +209,7 @@ fn set_cost(input: &Input) -> HelperResult {
             return Err(failure("the cost must be a number".to_owned()));
         }
     };
+    // ast-grep-ignore: no-long-names
     set_response_cost_in_hidden_params(&mut hidden, cost);
     Ok(json!({ "hidden_params": Json::Object(hidden) }))
 }

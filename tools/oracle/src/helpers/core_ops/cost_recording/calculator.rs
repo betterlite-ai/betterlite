@@ -7,12 +7,12 @@ use betterlite_core::cost::recording::{CostCalculation, CostRequest, PortFailure
 use betterlite_core::cost::usage::{BillingResponse, BillingUsage, ResponseKind, get_usage_object};
 use betterlite_models::decisions::Json;
 use rust_decimal::Decimal;
-use serde_json::json;
+use serde::Serialize;
 
 use super::input::CalculatorSpec;
 use super::providers::FailureText;
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, Serialize)]
 pub(super) struct Observed {
     model: String,
     cache_hit: Option<bool>,
@@ -26,25 +26,6 @@ pub(super) struct Observed {
     vertex_location: Option<String>,
     region_name: Option<String>,
     usage: Option<(i64, i64)>,
-}
-
-impl Observed {
-    pub(super) fn json(&self) -> Json {
-        json!({
-            "model": self.model,
-            "cache_hit": self.cache_hit,
-            "provider": self.provider,
-            "base_model": self.base_model,
-            "call_type": self.call_type,
-            "custom_pricing": self.custom_pricing,
-            "prompt": self.prompt,
-            "router_model_id": self.router_model_id,
-            "data_residency": self.data_residency,
-            "vertex_location": self.vertex_location,
-            "region_name": self.region_name,
-            "usage": self.usage.map(|(prompt, completion)| json!([prompt, completion])),
-        })
-    }
 }
 
 pub(super) struct Calculator {
@@ -74,11 +55,10 @@ impl Calculator {
 
 fn cost_value(value: Option<&Json>) -> Result<Decimal, FailureText> {
     match value {
-        None => Ok(Decimal::ZERO),
+        None | Some(Json::Null) => Ok(Decimal::ZERO),
         Some(Json::Number(number)) => {
             Decimal::from_str(&number.to_string()).map_err(|error| FailureText(error.to_string()))
         }
-        Some(Json::Null) => Ok(Decimal::ZERO),
         Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => Err(FailureText(
             "the calculator cost must be a number".to_owned(),
         )),
@@ -109,10 +89,10 @@ impl CostCalculation for Calculator {
                 usage,
             });
         }
-        match &self.result {
-            Ok(cost) => Ok(*cost),
-            Err(error) => Err(Box::new(error.clone())),
-        }
+        self.result
+            .as_ref()
+            .map(|cost| *cost)
+            .map_err(|error| PortFailure::from(error.clone()))
     }
 }
 
