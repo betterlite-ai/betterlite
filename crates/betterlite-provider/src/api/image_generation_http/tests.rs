@@ -96,6 +96,18 @@ const fn generation<'call>(
     }
 }
 
+// The deps of every case whose call lets the source's shared client answer
+const fn shared_deps<'deps>(
+    config: &'deps Fixture,
+    source: &'deps PoolSource,
+) -> ImageGenerationDeps<'deps, Fixture, PoolSource> {
+    ImageGenerationDeps {
+        config,
+        source,
+        supplied: None,
+    }
+}
+
 #[derive(Debug, Error)]
 enum FixtureError {
     #[error(transparent)]
@@ -292,11 +304,7 @@ async fn json_generation() -> JsonRun {
     call.litellm_metadata = Some(&metadata);
     let mut recorder = Recorder::default();
     let source = PoolSource::new();
-    let deps = ImageGenerationDeps {
-        config: &fixture,
-        source: &source,
-        supplied: None,
-    };
+    let deps = shared_deps(&fixture, &source);
     let prepared =
         prepare(&deps, ClientKind::Sync, &call, &mut recorder).expect("the prepared request");
     let served = reply(
@@ -406,11 +414,7 @@ async fn multipart_send(fixture: Fixture, kind: ClientKind) -> Captured {
     let call = generation(&options, &params);
     let mut recorder = Recorder::default();
     let source = PoolSource::new();
-    let deps = ImageGenerationDeps {
-        config: &fixture,
-        source: &source,
-        supplied: None,
-    };
+    let deps = shared_deps(&fixture, &source);
     let prepared = prepare(&deps, kind, &call, &mut recorder).expect("the prepared request");
     let served = reply(
         "200 OK",
@@ -586,11 +590,7 @@ async fn failing_send(fixture: &Fixture, served: &[u8]) -> FailureRun {
     let call = generation(&options, &params);
     let mut recorder = Recorder::default();
     let source = PoolSource::new();
-    let deps = ImageGenerationDeps {
-        config: fixture,
-        source: &source,
-        supplied: None,
-    };
+    let deps = shared_deps(fixture, &source);
     let prepared =
         prepare(&deps, ClientKind::Sync, &call, &mut recorder).expect("the prepared request");
     let (outcome, captured) = tokio::join!(send(prepared), serve_once(&listener, served));
@@ -719,11 +719,7 @@ fn prepare_error(
 ) -> Result<(), ImageGenerationError> {
     let call = generation(options, params);
     let source = PoolSource::new();
-    let deps = ImageGenerationDeps {
-        config: fixture,
-        source: &source,
-        supplied: None,
-    };
+    let deps = shared_deps(fixture, &source);
     match prepare(&deps, ClientKind::Sync, &call, recorder) {
         Ok(_prepared) => Ok(()),
         Err(error) => Err(error),
@@ -773,10 +769,10 @@ fn assert_field_failures() {
     let mut value_options = caller_options(None);
     let bad = fields(&[("x", Json::Bool(true))]);
     value_options.insert(String::from("extra_headers"), Json::Object(bad));
-    let header_error = prepare_error(&fixture, &good, &value_options, &mut Recorder::default())
+    let value_failure = prepare_error(&fixture, &good, &value_options, &mut Recorder::default())
         .expect_err("the header type failure");
-    let ImageGenerationError::HeaderType { name } = header_error else {
-        panic!("expected a header value error, got {header_error}");
+    let ImageGenerationError::HeaderType { name } = value_failure else {
+        panic!("expected a header value error, got {value_failure}");
     };
     assert_eq!(name, "x");
 }
@@ -867,11 +863,7 @@ async fn timeout_message(kind: ClientKind, timeout: Duration) -> String {
     call.timeout = timeout;
     let mut recorder = Recorder::default();
     let source = PoolSource::new();
-    let deps = ImageGenerationDeps {
-        config: &fixture,
-        source: &source,
-        supplied: None,
-    };
+    let deps = shared_deps(&fixture, &source);
     let prepared = prepare(&deps, kind, &call, &mut recorder).expect("the prepared request");
     let hold = timeout.saturating_add(Duration::from_millis(200));
     let (outcome, ()) = tokio::join!(send(prepared), stall_once(&listener, hold));
