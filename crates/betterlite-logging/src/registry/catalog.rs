@@ -292,17 +292,17 @@ macro_rules! dispatch_logger {
             shared: &SharedOtel,
             in_memory: &mut Vec<Arc<dyn CallbackLogger>>,
         ) -> Result<Arc<dyn CallbackLogger>, CatalogError> {
-            match callback {
-                $(CallbackName::$arm => {
-                    let logger = $arm_builder::build(inputs, runtime, shared, in_memory)?;
-                    push_once(in_memory, &logger);
-                    Ok(logger)
-                })+
-                $(CallbackName::$builder => $builder_fn::build(inputs),)+
-                $(CallbackName::$refused)|+ => Err(CatalogError::Unavailable {
-                    name: callback.as_str().to_owned(),
-                }),
-            }
+            let logger = match callback {
+                $(CallbackName::$arm => $arm_builder::build(inputs, runtime, shared, in_memory)?,)+
+                $(CallbackName::$builder => $builder_fn::build(inputs)?,)+
+                $(CallbackName::$refused)|+ => {
+                    return Err(CatalogError::Unavailable {
+                        name: callback.as_str().to_owned(),
+                    })
+                }
+            };
+            push_once(in_memory, &logger);
+            Ok(logger)
         }
     };
 }
