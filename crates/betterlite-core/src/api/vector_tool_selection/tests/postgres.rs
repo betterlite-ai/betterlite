@@ -51,6 +51,30 @@ VALUES
      '2026-02-01 00:00:00', '2026-02-01 00:00:00', 'cred', NULL);
 "#;
 
+const INDEXES_TABLE: &str = r#"
+CREATE TABLE "LiteLLM_ManagedVectorStoreIndexTable" (
+    "id" TEXT NOT NULL,
+    "index_name" TEXT NOT NULL,
+    "litellm_params" JSONB NOT NULL,
+    "index_info" JSONB,
+    "created_at" TIMESTAMP(3) NOT NULL,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+    CONSTRAINT "LiteLLM_ManagedVectorStoreIndexTable_pkey" PRIMARY KEY ("id")
+);
+"#;
+
+const INDEX_ROWS: &str = r#"
+INSERT INTO "LiteLLM_ManagedVectorStoreIndexTable"
+    ("id", "index_name", "litellm_params", "created_at", "updated_at")
+VALUES
+    ('i_new', 'notes',
+     '{"vector_store_index": "idx-new", "vector_store_name": "notes"}'::jsonb,
+     '2026-02-04 00:00:00', '2026-02-04 00:00:00'),
+    ('i_old', 'archive',
+     '{"vector_store_index": "idx-old", "vector_store_name": "archive"}'::jsonb,
+     '2026-02-02 00:00:00', '2026-02-02 00:00:00');
+"#;
+
 #[derive(Parser)]
 struct Environment {
     #[arg(long, env = "POSTGRES_TEST_URL")]
@@ -64,7 +88,12 @@ fn test_url() -> Option<SecretString> {
 }
 
 fn statements() -> Vec<String> {
-    vec![STORES_TABLE.to_owned(), STORE_ROWS.to_owned()]
+    vec![
+        STORES_TABLE.to_owned(),
+        STORE_ROWS.to_owned(),
+        INDEXES_TABLE.to_owned(),
+        INDEX_ROWS.to_owned(),
+    ]
 }
 
 async fn started_fixture() -> PostgresFixture {
@@ -140,6 +169,10 @@ async fn assert_seeded_rows(writer: &PostgresStore) {
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].vector_store_id.as_deref(), Some("vs_known"));
     assert_eq!(rows[1].vector_store_id.as_deref(), Some("vs_other"));
+    let indexes = database.indexes().await.unwrap();
+    assert_eq!(indexes.len(), 2);
+    assert_eq!(indexes[0].id, "i_new");
+    assert_eq!(indexes[1].index_name, "archive");
 }
 
 async fn assert_absent_client() {
