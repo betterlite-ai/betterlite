@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use rstest::rstest;
+
 use super::*;
 
 #[tokio::test]
@@ -127,7 +129,12 @@ async fn a_supplied_client_class_decides_the_manager_kind() {
     input.client = Some(RunClient {
         class: RunClientClass::OpenAi,
         api_key: secret("client-key"),
-        ..RunClient::default()
+        base_url: None,
+        api_version: None,
+        azure_ad_token: None,
+        timeout: None,
+        max_retries: None,
+        organization: None,
     });
     let stream = sdk.arun_thread_stream(input).unwrap();
     assert_eq!(stream.kind, ClientKind::Sync);
@@ -180,24 +187,24 @@ async fn cancelling_the_entry_releases_the_transport() {
     drop(sender);
 }
 
+#[rstest]
+#[case::true_value(flag(true))]
+#[case::null(Some(None))]
 #[tokio::test]
-async fn run_thread_stream_rejects_a_present_stream() {
-    let values = [flag(true), Some(None)];
-    for value in values {
-        let (recorder, fixture) = openai_recorder();
-        let sdk = fixture.sdk(ProviderRuns {
-            transport: Arc::clone(&recorder),
-        });
-        let mut input = call("openai");
-        input.stream = value;
-        let error = sdk.run_thread_stream(input).err().unwrap();
-        assert!(matches!(error, AssistantRunError::DuplicateStream));
-        assert_eq!(
-            error.to_string(),
-            "litellm.assistants.main.run_thread() got multiple values for keyword argument 'stream'"
-        );
-        assert!(recorder.requests().is_empty());
-    }
+async fn run_thread_stream_rejects_a_present_stream(#[case] value: Option<Option<RunFlag>>) {
+    let (recorder, fixture) = openai_recorder();
+    let sdk = fixture.sdk(ProviderRuns {
+        transport: Arc::clone(&recorder),
+    });
+    let mut input = call("openai");
+    input.stream = value;
+    let error = sdk.run_thread_stream(input).err().unwrap();
+    assert!(matches!(error, AssistantRunError::DuplicateStream));
+    assert_eq!(
+        error.to_string(),
+        "litellm.assistants.main.run_thread() got multiple values for keyword argument 'stream'"
+    );
+    assert!(recorder.requests().is_empty());
 }
 
 #[tokio::test]

@@ -63,11 +63,10 @@ pub trait RunDispatchError: Error + Send + Sync + 'static {
 
 // LiteLLM's exception_type(model="", custom_llm_provider=..., original_exception=..., completion_kwargs={})
 #[must_use]
-pub fn map_failure(
-    provider: &str,
-    error: &(impl RunDispatchError + ?Sized),
-    redactor: &Redactor,
-) -> RunFailure {
+pub fn map_failure<E>(provider: &str, error: &E, redactor: &Redactor) -> RunFailure
+where
+    E: RunDispatchError + ?Sized,
+{
     let text = error.message();
     let response = error.status_and_body();
     let status = response.as_ref().map(|(status, _)| *status);

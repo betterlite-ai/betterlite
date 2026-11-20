@@ -88,11 +88,11 @@ fn handler_view(recorder: &RecordingHandler) -> HandlerView {
 pub(super) fn failure_outcome(error: &AssistantRunError) -> Outcome {
     match error {
         AssistantRunError::Unsupported { .. } => unsupported(error),
-        AssistantRunError::DuplicateStream => plain("TypeError", error.to_string()),
+        AssistantRunError::DuplicateStream => named("TypeError", 0, None, error.to_string()),
         AssistantRunError::Timeout(_)
         | AssistantRunError::InvalidTimeout { .. }
         | AssistantRunError::InvalidTimeoutText { .. }
-        | AssistantRunError::InvalidExtraBody => plain("ValueError", error.to_string()),
+        | AssistantRunError::InvalidExtraBody => named("ValueError", 0, None, error.to_string()),
         AssistantRunError::Dispatch(error) => raw_failure(error),
         AssistantRunError::Mapped(failure) => mapped_failure(failure),
     }
@@ -115,7 +115,7 @@ fn unsupported(error: &AssistantRunError) -> Outcome {
 
 fn raw_failure(error: &AssistantsRunError) -> Outcome {
     let Some((status, body)) = error.status_and_body() else {
-        return plain("Exception", error.message());
+        return named("Exception", 0, None, error.message());
     };
     let response = UpstreamResponse {
         status,
@@ -124,7 +124,7 @@ fn raw_failure(error: &AssistantsRunError) -> Outcome {
     };
     match sdk_failure("", &response) {
         Ok(failure) => outcome(failure),
-        Err(unprojected) => plain("Exception", unprojected.to_string()),
+        Err(unprojected) => named("Exception", 0, None, unprojected.to_string()),
     }
 }
 
@@ -159,10 +159,6 @@ fn named(class: &str, status: u16, field: Nullable, message: String) -> Outcome 
         code: field,
         message,
     })
-}
-
-fn plain(class: &str, message: String) -> Outcome {
-    named(class, 0, None, message)
 }
 
 fn outcome(failure: Failure) -> Outcome {

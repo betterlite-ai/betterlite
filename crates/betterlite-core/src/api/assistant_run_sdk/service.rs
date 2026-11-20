@@ -128,30 +128,29 @@ where
         let provider = call.provider.clone();
         match self.run_thread(call).await {
             Ok(outcome) => Ok(outcome),
-            Err(AssistantRunError::Dispatch(error)) => Err(AssistantRunError::Mapped(map_failure(
-                &provider,
-                &error,
-                self.redactor,
-            ))),
-            // an already-raised ValueError reaches the except block, which maps it like any other
-            Err(
-                error @ (AssistantRunError::Timeout(_)
-                | AssistantRunError::InvalidTimeout { .. }
-                | AssistantRunError::InvalidTimeoutText { .. }
-                | AssistantRunError::InvalidExtraBody),
-            ) => Err(AssistantRunError::Mapped(failed(
-                &provider,
+            Err(error) => Err(self.map_arun_error(&provider, error)),
+        }
+    }
+
+    // arun_thread's except block: provider and wrapper failures are mapped, a litellm error passes through
+    fn map_arun_error(&self, provider: &str, error: AssistantRunError) -> AssistantRunError {
+        match error {
+            AssistantRunError::Dispatch(dispatch) => {
+                AssistantRunError::Mapped(map_failure(provider, &dispatch, self.redactor))
+            }
+            AssistantRunError::Timeout(_)
+            | AssistantRunError::InvalidTimeout { .. }
+            | AssistantRunError::InvalidTimeoutText { .. }
+            | AssistantRunError::InvalidExtraBody => AssistantRunError::Mapped(failed(
+                provider,
                 error.to_string(),
                 None,
                 None,
                 self.redactor,
-            ))),
-            // an already-raised litellm error passes through exception_type untouched
-            Err(
-                error @ (AssistantRunError::Unsupported { .. }
-                | AssistantRunError::Mapped(_)
-                | AssistantRunError::DuplicateStream),
-            ) => Err(error),
+            )),
+            mapped @ (AssistantRunError::Unsupported { .. }
+            | AssistantRunError::Mapped(_)
+            | AssistantRunError::DuplicateStream) => mapped,
         }
     }
 
@@ -214,7 +213,7 @@ where
                     azure_ad_token: call.params.azure_ad_token.clone(),
                     auth: AuthParams::default(),
                     max_retries: call.params.max_retries,
-                    timeout: azure_timeout(call)?,
+                    timeout: azure_timeout(&call.params)?,
                 },
                 provider: None,
                 api_key: self.settings.azure_api_key(&options).cloned(),

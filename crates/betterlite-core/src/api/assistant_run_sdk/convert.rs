@@ -86,28 +86,37 @@ pub(super) fn facade_timeout(
 pub(super) fn supplied_timeout(
     call: &RunThreadCall,
 ) -> Result<Option<Duration>, AssistantRunError> {
-    call.client
-        .as_ref()
-        .and_then(|client| client.timeout)
-        .map(|seconds| {
-            Duration::try_from_secs_f64(seconds)
-                .map_err(|_error| AssistantRunError::InvalidTimeout { seconds })
-        })
-        .transpose()
+    match call.client.as_ref().and_then(|client| client.timeout) {
+        None => Ok(None),
+        Some(seconds) => {
+            let duration = Duration::try_from_secs_f64(seconds)
+                .map_err(|_error| AssistantRunError::InvalidTimeout { seconds })?;
+            Ok(Some(duration))
+        }
+    }
 }
 
 // litellm_params["timeout"] is the raw kwarg, which the Azure client turns into its own deadline
-pub(super) fn azure_timeout(call: &RunThreadCall) -> Result<Option<f64>, AssistantRunError> {
-    match call.params.timeout.as_ref() {
-        None => Ok(None),
-        Some(RunTimeout::Plain(TimeoutValue::Number(seconds))) => Ok(Some(*seconds)),
-        Some(RunTimeout::Plain(TimeoutValue::String(text))) => text
-            .trim()
-            .parse::<f64>()
-            .map(Some)
-            .map_err(|_invalid| AssistantRunError::InvalidTimeoutText { text: text.clone() }),
-        Some(RunTimeout::Structured(timeout)) => Ok(Some(timeout.read.unwrap_or(600.0_f64))),
+pub(super) fn azure_timeout(params: &RunParams) -> Result<Option<f64>, AssistantRunError> {
+    let Some(timeout) = params.timeout.as_ref() else {
+        return Ok(None);
+    };
+    match timeout {
+        RunTimeout::Plain(TimeoutValue::Number(seconds)) => Ok(Some(*seconds)),
+        RunTimeout::Plain(TimeoutValue::String(text)) => parse_timeout_text(text),
+        RunTimeout::Structured(structured) => Ok(Some(structured.read.unwrap_or(600.0_f64))),
     }
+}
+
+// float(" 7.5 ") is 7.5, and a non-numeric string raises ValueError before the provider call
+fn parse_timeout_text(text: &str) -> Result<Option<f64>, AssistantRunError> {
+    let seconds =
+        text.trim()
+            .parse::<f64>()
+            .map_err(|_invalid| AssistantRunError::InvalidTimeoutText {
+                text: text.to_owned(),
+            })?;
+    Ok(Some(seconds))
 }
 
 // azure_ad_token = extra_body.pop("azure_ad_token", None), or the AZURE_AD_TOKEN secret when extra_body is null
@@ -115,17 +124,21 @@ pub(super) fn facade_token(
     call: &RunThreadCall,
     settings: &ResourceSdkSettings,
 ) -> Result<Option<SecretString>, AssistantRunError> {
-    match call.params.extra_body.as_ref() {
-        None => Ok(None),
-        Some(JsonValue::Null) => Ok(settings
-            .azure_ad_token
-            .as_ref()
-            .filter(|token| !token.expose_secret().is_empty())
-            .cloned()),
-        Some(JsonValue::Object(body)) => Ok(body.get("azure_ad_token").and_then(token_text)),
-        Some(
-            JsonValue::Array(_) | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::String(_),
-        ) => Err(AssistantRunError::InvalidExtraBody),
+    let Some(extra_body) = call.params.extra_body.as_ref() else {
+        return Ok(None);
+    };
+    match extra_body {
+        JsonValue::Null => {
+            let token = settings
+                .azure_ad_token
+                .as_ref()
+                .filter(|token| !token.expose_secret().is_empty());
+            Ok(token.cloned())
+        }
+        JsonValue::Object(body) => Ok(body.get("azure_ad_token").and_then(token_text)),
+        JsonValue::Array(_) | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::String(_) => {
+            Err(AssistantRunError::InvalidExtraBody)
+        }
     }
 }
 

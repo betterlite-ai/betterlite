@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
 use super::*;
@@ -84,50 +85,44 @@ async fn queued_then_completed_polls_again_with_the_same_deadline() {
     assert_eq!(seen[1].deadline, Duration::from_secs(600));
 }
 
+#[rstest]
+#[case::null(Some(None))]
+#[case::false_value(flag(false))]
+#[case::number(Some(Some(RunFlag::Number(1.0_f64))))]
+#[case::text(Some(Some(RunFlag::Text(String::from("true")))))]
 #[tokio::test]
-async fn only_the_literal_true_streams() {
-    let values = [
-        Some(None),
-        flag(false),
-        Some(Some(RunFlag::Number(1.0_f64))),
-        Some(Some(RunFlag::Text(String::from("true")))),
-    ];
-    for stream in values {
-        let (recorder, fixture) = openai_recorder();
-        recorder.queue_twice(COMPLETED);
-        let sdk = fixture.sdk(ProviderRuns {
-            transport: Arc::clone(&recorder),
-        });
-        let mut input = call("openai");
-        input.stream = stream;
-        let reply = polled(sdk.run_thread(input).await.unwrap()).unwrap();
-        assert_eq!(reply.status, "completed");
-        assert_eq!(
-            recorder.requests()[0].body.clone().unwrap()["stream"],
-            false
-        );
-    }
+async fn only_the_literal_true_streams(#[case] stream: Option<Option<RunFlag>>) {
+    let (recorder, fixture) = openai_recorder();
+    recorder.queue_twice(COMPLETED);
+    let sdk = fixture.sdk(ProviderRuns {
+        transport: Arc::clone(&recorder),
+    });
+    let mut input = call("openai");
+    input.stream = stream;
+    let reply = polled(sdk.run_thread(input).await.unwrap()).unwrap();
+    assert_eq!(reply.status, "completed");
+    assert_eq!(
+        recorder.requests()[0].body.clone().unwrap()["stream"],
+        false
+    );
 }
 
+#[rstest]
+#[case::null(None)]
+#[case::false_value(Some(RunFlag::Bool(false)))]
+#[case::number(Some(RunFlag::Number(1.0_f64)))]
+#[case::text(Some(RunFlag::Text(String::from("true"))))]
 #[tokio::test]
-async fn arun_thread_flag_values_keep_sync_dispatch() {
-    let values = [
-        None,
-        Some(RunFlag::Bool(false)),
-        Some(RunFlag::Number(1.0_f64)),
-        Some(RunFlag::Text(String::from("true"))),
-    ];
-    for value in values {
-        let fixture = Fixture::new();
-        let operations = CaptureRuns::default();
-        let sdk = fixture.sdk(operations);
-        let mut input = call("openai");
-        input.arun_thread = value;
-        assert!(polled_outcome(sdk.run_thread(input).await.unwrap()).is_none());
-        match sdk.operations.targets().remove(0) {
-            CapturedTarget::OpenAi { kind, .. } => assert_eq!(kind, ClientKind::Sync),
-            CapturedTarget::Azure { .. } => panic!("the openai provider built an azure target"),
-        }
+async fn arun_thread_flag_values_keep_sync_dispatch(#[case] value: Option<RunFlag>) {
+    let fixture = Fixture::new();
+    let operations = CaptureRuns::default();
+    let sdk = fixture.sdk(operations);
+    let mut input = call("openai");
+    input.arun_thread = value;
+    assert!(polled_outcome(sdk.run_thread(input).await.unwrap()).is_none());
+    match sdk.operations.targets().remove(0) {
+        CapturedTarget::OpenAi { kind, .. } => assert_eq!(kind, ClientKind::Sync),
+        CapturedTarget::Azure { .. } => panic!("the openai provider built an azure target"),
     }
 }
 
@@ -331,8 +326,11 @@ async fn a_supplied_client_timeout_becomes_the_poll_deadline() {
         class: RunClientClass::OpenAi,
         api_key: secret("client-key"),
         base_url: Some(String::from(BASE)),
+        api_version: None,
+        azure_ad_token: None,
         timeout: Some(3.0_f64),
-        ..RunClient::default()
+        max_retries: None,
+        organization: None,
     });
     let reply = polled(sdk.run_thread(input).await.unwrap()).unwrap();
     assert_eq!(reply.status, "completed");
@@ -355,7 +353,8 @@ async fn a_supplied_azure_client_reaches_the_request() {
         api_version: Some(String::from("2024-02-15-preview")),
         azure_ad_token: secret("client-token"),
         timeout: Some(5.0_f64),
-        ..RunClient::default()
+        max_retries: None,
+        organization: None,
     });
     let reply = polled(sdk.run_thread(input).await.unwrap()).unwrap();
     assert_eq!(reply.status, "completed");

@@ -9,8 +9,7 @@ use serde::Serialize;
 
 use crate::api::resource_sdk_settings::timeout::{StructuredTimeout, TimeoutValue};
 
-// LiteLLM tests stream and arun_thread with `is True`, so only a JSON true selects the async or
-// streaming branch; a present 1, "true" or false stays on the sync polling branch without a type error.
+// both switches test `is True`: only a JSON true selects the async or streaming branch
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum RunFlag {

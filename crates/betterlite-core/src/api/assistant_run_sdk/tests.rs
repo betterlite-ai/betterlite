@@ -34,6 +34,7 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use futures_util::stream::iter;
 use futures_util::{Stream, StreamExt as _};
 use http::HeaderMap;
+use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::sync::mpsc;
 
@@ -300,7 +301,7 @@ struct CaptureRuns {
 }
 
 impl CaptureRuns {
-    fn record(&self, target: RunTarget<'_>) {
+    fn capture(&self, target: RunTarget<'_>) {
         let captured = match target {
             RunTarget::OpenAi(run) => CapturedTarget::OpenAi {
                 kind: run.kind,
@@ -341,13 +342,13 @@ impl RunOperations for CaptureRuns {
         &self,
         target: RunTarget<'_>,
     ) -> impl Future<Output = Result<Option<RunReply>, AssistantsRunError>> + Send {
-        self.record(target);
+        self.capture(target);
         let reply = self.reply.lock().unwrap().clone();
         ready(Ok(reply))
     }
 
     fn stream(&self, target: RunTarget<'_>) -> Result<(), AssistantsRunError> {
-        self.record(target);
+        self.capture(target);
         Ok(())
     }
 }
@@ -510,17 +511,19 @@ fn secret_text(value: &str) -> Option<String> {
     Some(value.to_owned())
 }
 
+#[rstest]
+#[case::completed(COMPLETED)]
+#[case::requires_action(REQUIRES_ACTION)]
+#[case::failed(FAILED)]
 #[tokio::test]
-async fn terminal_runs_return_unchanged() {
-    for body in [COMPLETED, REQUIRES_ACTION, FAILED] {
-        let (recorder, fixture) = openai_recorder();
-        recorder.queue_twice(body);
-        let sdk = fixture.sdk(ProviderRuns {
-            transport: Arc::clone(&recorder),
-        });
-        let reply = polled(sdk.run_thread(call("openai")).await.unwrap()).unwrap();
-        assert_eq!(reply, run_reply(body));
-    }
+async fn terminal_runs_return_unchanged(#[case] body: &str) {
+    let (recorder, fixture) = openai_recorder();
+    recorder.queue_twice(body);
+    let sdk = fixture.sdk(ProviderRuns {
+        transport: Arc::clone(&recorder),
+    });
+    let reply = polled(sdk.run_thread(call("openai")).await.unwrap()).unwrap();
+    assert_eq!(reply, run_reply(body));
 }
 
 #[tokio::test]
@@ -546,53 +549,54 @@ async fn requires_action_and_failed_keep_their_details() {
     assert_eq!(failed.last_error.unwrap()["code"], "server_error");
 }
 
+#[rstest]
+#[case::default(None, None, Duration::from_secs(600))]
+#[case::zero_falls_back(
+    Some(RunTimeout::Plain(TimeoutValue::Number(0.0_f64))),
+    Some(6.0_f64),
+    Duration::from_secs(6)
+)]
+#[case::number(
+    Some(RunTimeout::Plain(TimeoutValue::Number(2.5_f64))),
+    None,
+    Duration::from_millis(2500)
+)]
+#[case::text(
+    Some(RunTimeout::Plain(TimeoutValue::String(String::from("7.5")))),
+    None,
+    Duration::from_millis(7500)
+)]
+#[case::empty_text_falls_back(
+    Some(RunTimeout::Plain(TimeoutValue::String(String::new()))),
+    Some(8.0_f64),
+    Duration::from_secs(8)
+)]
+#[case::structured(
+    Some(RunTimeout::Structured(StructuredTimeout {
+        connect: None,
+        read: Some(4.5_f64),
+        write: None,
+        pool: None,
+    })),
+    None,
+    Duration::from_millis(4500)
+)]
 #[tokio::test]
-async fn openai_timeout_selection() {
-    let cases = [
-        (None, None, Duration::from_secs(600)),
-        (
-            Some(RunTimeout::Plain(TimeoutValue::Number(0.0_f64))),
-            Some(6.0_f64),
-            Duration::from_secs(6),
-        ),
-        (
-            Some(RunTimeout::Plain(TimeoutValue::Number(2.5_f64))),
-            None,
-            Duration::from_millis(2500),
-        ),
-        (
-            Some(RunTimeout::Plain(TimeoutValue::String(String::from("7.5")))),
-            None,
-            Duration::from_millis(7500),
-        ),
-        (
-            Some(RunTimeout::Plain(TimeoutValue::String(String::new()))),
-            Some(8.0_f64),
-            Duration::from_secs(8),
-        ),
-        (
-            Some(RunTimeout::Structured(StructuredTimeout {
-                connect: None,
-                read: Some(4.5_f64),
-                write: None,
-                pool: None,
-            })),
-            None,
-            Duration::from_millis(4500),
-        ),
-    ];
-    for (timeout, request_timeout, expected) in cases {
-        let fixture = Fixture::new();
-        let operations = CaptureRuns::default();
-        let sdk = fixture.sdk(operations);
-        let mut input = call("openai");
-        input.params.timeout = timeout;
-        input.params.request_timeout = request_timeout;
-        sdk.run_thread(input).await.unwrap();
-        match sdk.operations.targets().remove(0) {
-            CapturedTarget::OpenAi { options, .. } => assert_eq!(options.timeout, Some(expected)),
-            CapturedTarget::Azure { .. } => panic!("the openai provider built an azure target"),
-        }
+async fn openai_timeout_selection(
+    #[case] timeout: Option<RunTimeout>,
+    #[case] request_timeout: Option<f64>,
+    #[case] expected: Duration,
+) {
+    let fixture = Fixture::new();
+    let operations = CaptureRuns::default();
+    let sdk = fixture.sdk(operations);
+    let mut input = call("openai");
+    input.params.timeout = timeout;
+    input.params.request_timeout = request_timeout;
+    sdk.run_thread(input).await.unwrap();
+    match sdk.operations.targets().remove(0) {
+        CapturedTarget::OpenAi { options, .. } => assert_eq!(options.timeout, Some(expected)),
+        CapturedTarget::Azure { .. } => panic!("the openai provider built an azure target"),
     }
 }
 
@@ -608,7 +612,11 @@ async fn an_openai_client_under_azure_keeps_the_openai_protocol() {
         class: RunClientClass::OpenAi,
         api_key: secret("client-key"),
         base_url: Some(String::from(BASE)),
-        ..RunClient::default()
+        api_version: None,
+        azure_ad_token: None,
+        timeout: None,
+        max_retries: None,
+        organization: None,
     });
     sdk.run_thread(input).await.unwrap();
     match sdk.operations.targets().remove(0) {
@@ -622,37 +630,37 @@ async fn an_openai_client_under_azure_keeps_the_openai_protocol() {
     }
 }
 
+#[rstest]
+#[case::absent(None, None)]
+#[case::empty_object(Some(serde_json::json!({})), None)]
+#[case::null_uses_the_env(Some(JsonValue::Null), Some("env-token"))]
+#[case::body_token(
+    Some(serde_json::json!({"azure_ad_token": "body-token"})),
+    Some("body-token")
+)]
+#[case::body_null(Some(serde_json::json!({"azure_ad_token": null})), None)]
 #[tokio::test]
-async fn azure_extra_body_token_choices() {
-    let cases = [
-        (None, None),
-        (Some(serde_json::json!({})), None),
-        (Some(JsonValue::Null), Some("env-token")),
-        (
-            Some(serde_json::json!({"azure_ad_token": "body-token"})),
-            Some("body-token"),
-        ),
-        (Some(serde_json::json!({"azure_ad_token": null})), None),
-    ];
-    for (extra_body, expected) in cases {
-        let mut fixture = Fixture::new();
-        fixture.settings.azure_ad_token = secret("env-token");
-        let operations = CaptureRuns::default();
-        let sdk = fixture.sdk(operations);
-        let mut params = RunParams::default();
-        params.extra_body = extra_body;
-        sdk.run_thread(azure_call(params)).await.unwrap();
-        match sdk.operations.targets().remove(0) {
-            CapturedTarget::Azure { azure_ad_token, .. } => {
-                assert_eq!(
-                    azure_ad_token
-                        .as_ref()
-                        .map(|value| value.expose_secret().as_str()),
-                    expected
-                );
-            }
-            CapturedTarget::OpenAi { .. } => panic!("the azure provider built an openai target"),
+async fn azure_extra_body_token_choices(
+    #[case] extra_body: Option<JsonValue>,
+    #[case] expected: Option<&str>,
+) {
+    let mut fixture = Fixture::new();
+    fixture.settings.azure_ad_token = secret("env-token");
+    let operations = CaptureRuns::default();
+    let sdk = fixture.sdk(operations);
+    let mut params = RunParams::default();
+    params.extra_body = extra_body;
+    sdk.run_thread(azure_call(params)).await.unwrap();
+    match sdk.operations.targets().remove(0) {
+        CapturedTarget::Azure { azure_ad_token, .. } => {
+            assert_eq!(
+                azure_ad_token
+                    .as_ref()
+                    .map(|value| value.expose_secret().as_str()),
+                expected
+            );
         }
+        CapturedTarget::OpenAi { .. } => panic!("the azure provider built an openai target"),
     }
 }
 

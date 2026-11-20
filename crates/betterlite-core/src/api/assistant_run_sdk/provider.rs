@@ -131,14 +131,17 @@ fn azure_supplied<T>(
     transport: Arc<T>,
     timeout: Option<Duration>,
 ) -> AzureAssistantsClient<'static, T> {
+    let endpoint = client.base_url.clone().unwrap_or_default();
+    let version = client.api_version.clone().unwrap_or_default();
+    let deadline = timeout.unwrap_or(DEFAULT_TIMEOUT);
     AzureAssistantsClient {
         kind: client.kind(),
         inputs: None,
         transport,
-        base_url: client.base_url.clone().unwrap_or_default(),
-        api_version: client.api_version.clone().unwrap_or_default(),
+        base_url: endpoint,
+        api_version: version,
         key: client.api_key.clone(),
         token: client.azure_ad_token.clone(),
-        deadline: timeout.unwrap_or(DEFAULT_TIMEOUT),
+        deadline,
     }
 }
