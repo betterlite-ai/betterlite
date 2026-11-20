@@ -28,7 +28,7 @@ use super::{PassthroughCallArgs, PassthroughReply};
 use crate::passthrough_stream::async_passthrough_request::{
     AsyncPassthroughReply, PassthroughSend, PassthroughSender, async_passthrough_request,
 };
-use crate::passthrough_stream::error::{PassthroughStreamError, UpstreamStatus};
+use crate::passthrough_stream::error::PassthroughStreamError;
 
 mod reply;
 

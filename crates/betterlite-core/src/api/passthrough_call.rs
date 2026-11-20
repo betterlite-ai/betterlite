@@ -1,15 +1,12 @@
 mod auth;
-mod config;
-mod logging;
+pub mod config;
+pub mod logging;
 mod params;
 mod send;
 mod urls;
 mod wire;
 
 mod tests;
-
-pub use config::{ConfigError, PassthroughCallConfig};
-pub use logging::RelayLogging;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
@@ -39,7 +36,9 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 use thiserror::Error;
 
-use self::send::{Failure, Fault, run};
+use self::config::{ConfigError, Fault, PassthroughCallConfig};
+use self::logging::RelayLogging;
+use self::send::{Failure, run};
 use crate::passthrough_stream::async_lifecycle::AsyncPassthroughStream;
 use crate::passthrough_stream::spend_collection::OwnedProviderSpend;
 

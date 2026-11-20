@@ -7,10 +7,11 @@ use betterlite_openai::error::{ProviderError, ProviderErrorParts};
 use betterlite_openai::gigachat_passthrough::GigachatPassthroughConfig;
 use betterlite_openai::nvidia_nim_passthrough::NvidiaNimPassthroughConfig;
 use betterlite_openai::openai_base_config::{Headers, Object};
-use betterlite_openai::passthrough::transformation::BasePassthroughConfig;
 use betterlite_openai::passthrough::transformation::types::{
-    PassthroughError, PassthroughSigning, PassthroughStreamCollector, PassthroughTarget,
-    PassthroughUrlRequest,
+    PassthroughError, PassthroughSigning, PassthroughTarget, PassthroughUrlRequest,
+};
+use betterlite_openai::passthrough::transformation::{
+    BasePassthroughConfig, PassthroughStreamCollector,
 };
 use betterlite_openai::watsonx_auth::environment::WatsonxEnvironment;
 use betterlite_openai::watsonx_passthrough::WatsonxPassthroughConfig;
