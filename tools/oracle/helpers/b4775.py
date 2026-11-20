@@ -51,8 +51,8 @@ def parsed_text(text: str) -> JsonValue:
 
 
 def parsed_params(value: JsonValue) -> JsonValue:
-    parsed: dict[str, object] = dict(agent_registry.parse_agent_litellm_params(value))
-    return JSON.validate_json(json.dumps(parsed))
+    parsed = agent_registry.parse_agent_litellm_params(value)
+    return JSON.validate_json(json.dumps(parsed, default=dict))
 
 
 def restored(incoming: dict[str, JsonValue], existing: dict[str, JsonValue]) -> JsonValue:
