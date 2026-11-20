@@ -60,6 +60,8 @@ description: >-
   picked by id from LiteLLM's PROVIDERS and compares the returned text. The worker writes them under
   tools/oracle/cases/helpers/setup-wizard/: openai-with-key, anthropic-without-key-skipped, azure-with-deployment,
   azure-without-deployment-skipped, bedrock-extra-keys, ollama-fixed-base and master-key-escaping (a key with a quote and a backslash).
+
+  CLI flag. B8375's run_cli answers --setup with "the setup wizard is not installed" and exit 1. Replace that arm in crates/betterlite/src/proxy_cli.rs with a call to this task's run_setup_wizard, at the same place in run_server's order.
 scope:
   paths:
     - crates/betterlite/Cargo.toml
@@ -71,6 +73,8 @@ scope:
     - tools/oracle/helpers/b8542/**
     - tools/oracle/src/helpers/server/b8542.rs
     - tools/oracle/src/helpers/server/b8542/**
+    - crates/betterlite/src/proxy_cli.rs
+    - crates/betterlite/src/proxy_cli/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/setup_wizard.py#L216-L256

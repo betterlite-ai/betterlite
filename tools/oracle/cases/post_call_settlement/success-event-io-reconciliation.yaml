@@ -1,0 +1,20 @@
+kind: helper
+name: post-call-settlement-success-event-io-reconciliation
+call:
+  b3046:
+    function: success_event
+    usage:
+      prompt_tokens: 100
+      completion_tokens: 50
+      total_tokens: 150
+    stash:
+      itpm_reserved_tokens: 60
+      itpm_reserved_scopes:
+        - [project, p1]
+      itpm_reserved_windows:
+        - {counter_key: "{project:p1}:tokens", window_start: "100", backend: redis}
+      otpm_reserved_tokens: 30
+      otpm_reserved_scopes:
+        - [project, p1]
+env: {}
+compare: {ignore: []}

@@ -156,7 +156,7 @@ out_of_scope:
   - "B5842 retains every audio/rerank method and decoder; B5970 retains every credential, IAM and URL helper; B5980 retains every Databricks Responses/auth method, with B507's inherited Responses transformation."
   - "B5360 retains every media/resource selector, B1082 the SDK transcription facade, B1122 its contract, B2453 its HTTP executor, B1079/B1014 the rerank facade and B2454 its executor."
   - "B080, B083 and B085 retain every route handler, auth layer and alias registration; B8610 composes the application and B8636 supplies Responses stream and rerank router ports."
-  - "B3627 and B8609 own /watsonx passthrough and its mounted HTTP cases; this task adds no passthrough mount."
+  - "B3627 and B10026 own /watsonx passthrough and its mounted HTTP cases; this task adds no passthrough mount."
   - "B1686's broad provider-price handoff is already assigned to B5980 for Databricks cost_per_token and B1689 for Replicate timing; B1687 selects no cloud-ML image or grounding formula at this pin."
 pitfalls:
   - "B5360's AudioTranscriptionConfigTag::IBMWatsonX is metadata until a production operation actually constructs and calls watsonx_audio."

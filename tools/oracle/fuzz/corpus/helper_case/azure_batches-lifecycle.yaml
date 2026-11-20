@@ -1,0 +1,23 @@
+kind: helper
+name: azure-batches-lifecycle
+call:
+  azure_batches:
+    steps:
+    - action: retrieve
+      args: {api_key: seed-3, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      query: {batch_id: batch_seed}
+      reply: {status: 200, body: {id: batch_seed, completion_window: 24h, created_at: 1, endpoint: /v1/chat/completions, input_file_id: file_seed, object: batch, status: completed, cancelled_at: null, cancelling_at: null, completed_at: 2, error_file_id: null, errors: null, expired_at: null, expires_at: null, failed_at: null, finalizing_at: null, in_progress_at: null, metadata: null, model: null, output_file_id: file_out, request_counts: {completed: 1, failed: 0, total: 1}, usage: null}}
+    - action: cancel
+      is_async: true
+      args: {api_key: seed-4, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      query: {batch_id: batch_seed}
+      reply: {status: 200, body: {id: batch_seed, completion_window: 24h, created_at: 1, endpoint: /v1/chat/completions, input_file_id: file_seed, object: batch, status: cancelling, cancelled_at: null, cancelling_at: 2, completed_at: null, error_file_id: null, errors: null, expired_at: null, expires_at: null, failed_at: null, finalizing_at: null, in_progress_at: null, metadata: null, model: null, output_file_id: null, request_counts: null, usage: null}}
+    - action: list
+      after: batch_seed
+      limit: 2
+      args: {api_key: seed-5, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      reply: {status: 200, body: {object: list, data: [], has_more: false}}
+    - action: project
+      args: {api_key: seed-6, api_base: "https://fixture.test", api_version: latest, timeout: 7.5, max_retries: 7, organization: org-x}
+env: {}
+compare: {ignore: []}
