@@ -1,5 +1,6 @@
 use betterlite_error::envelope::WireField;
 use betterlite_error::error::ErrorClass;
+use rstest::rstest;
 
 use super::super::error::{MessageError, SetupError};
 use super::super::options::OptionError;
@@ -89,31 +90,32 @@ fn azure_attachment_drop_and_content_drops_invalid_attachments_with_drop_params(
     );
 }
 
-#[test]
-fn azure_attachment_drop_and_content_rejects_non_list_attachments() {
+#[rstest]
+#[case::dict("{}", "dict")]
+#[case::float("5.5", "float")]
+#[case::int("-5", "int")]
+fn azure_attachment_drop_and_content_rejects_non_list_attachments(raw: &str, kind: &str) {
     let fixture = Fixture::new();
-    for (raw, kind) in [("{}", "dict"), ("5.5", "float"), ("-5", "int")] {
-        let message = data(&format!(
-            r#"{{"role":"user","content":"hello","attachments":{raw}}}"#
-        ));
-        let failure = call(
-            &fixture,
-            &request("azure", Some(&message), &params("azure")),
-            Operation::Append,
-            false,
+    let message = data(&format!(
+        r#"{{"role":"user","content":"hello","attachments":{raw}}}"#
+    ));
+    let failure = call(
+        &fixture,
+        &request("azure", Some(&message), &params("azure")),
+        Operation::Append,
+        false,
+    )
+    .unwrap_err();
+    assert_eq!(
+        failure.to_string(),
+        format!(
+            "Invalid param. attachments should always be a list. Got=<class '{kind}'>, Expected=List. Raw value={raw}"
         )
-        .unwrap_err();
-        assert_eq!(
-            failure.to_string(),
-            format!(
-                "Invalid param. attachments should always be a list. Got=<class '{kind}'>, Expected=List. Raw value={raw}"
-            )
-        );
-        assert!(matches!(
-            failure.error,
-            MessageError::Setup(SetupError::Options(OptionError::AttachmentsNotList { .. }))
-        ));
-    }
+    );
+    assert!(matches!(
+        failure.error,
+        MessageError::Setup(SetupError::Options(OptionError::AttachmentsNotList { .. }))
+    ));
 }
 
 #[test]
