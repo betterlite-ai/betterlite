@@ -1,0 +1,181 @@
+kind: helper
+name: prompt-hook-mutation-order
+call:
+  responses_provider_selection:
+    action: prompt_call
+    input: hello
+    model: openai/gpt-4o-mini
+    provider: openai
+    use_chat_completions_api: false
+    logging: true
+    hook:
+      mode: answer
+      model: openai/gpt-4o-mini
+      messages:
+        - {role: system, content: be nice}
+        - {role: user, content: hello}
+      optional_params: {temperature: 0.2}
+    kwargs:
+      prompt_id: p
+      prompt_label: production
+      prompt_version: 2
+      prompt_variables: {name: Ada}
+      model_info: {id: dep-1}
+calls:
+  - responses_provider_selection:
+      action: prompt_call
+      input: hello
+      model: m
+      provider: unknown_provider
+      use_chat_completions_api: false
+      logging: true
+      hook:
+        mode: answer
+        model: m
+        messages:
+          - {role: user, content: hello}
+        optional_params: {}
+      kwargs:
+        prompt_id: p
+  - responses_provider_selection:
+      action: prompt_call
+      input: hello
+      model: m
+      provider: unknown_provider
+      use_chat_completions_api: false
+      logging: true
+      hook:
+        mode: throw
+        model: m
+        messages:
+          - {role: user, content: hello}
+        optional_params: {}
+      kwargs:
+        prompt_id: p
+  - responses_provider_selection:
+      action: prompt_call
+      input: hello
+      model: openai/gpt-4o
+      provider: openai
+      use_chat_completions_api: false
+      logging: true
+      hook:
+        mode: answer
+        model: openai/gpt-4o
+        messages:
+          - {role: user, content: hello}
+        optional_params: {}
+      kwargs:
+        prompt_id: p
+        _litellm_carry_unmatched_cache_control_points: true
+  - responses_provider_selection:
+      action: prompt_call
+      input: hello
+      model: openai/gpt-4o
+      provider: openai
+      use_chat_completions_api: false
+      logging: false
+      kwargs:
+        prompt_id: p
+        model_info: {id: dep-1}
+  - responses_provider_selection:
+      action: prompt_call
+      input: hello
+      model: openai/gpt-4o
+      provider: openai
+      use_chat_completions_api: false
+      logging: true
+      kwargs:
+        prompt_id: p
+  - responses_provider_selection:
+      action: prompt_call
+      input: hello
+      model: openai/gpt-4o
+      provider: openai
+      use_chat_completions_api: false
+      logging: true
+      hook:
+        mode: skip
+        model: openai/gpt-4o
+        messages:
+          - {role: user, content: hello}
+        optional_params: {}
+      kwargs:
+        prompt_id: p
+  - responses_provider_selection:
+      action: prompt_call
+      input: hello
+      model: openai/gpt-4o
+      provider: openai
+      use_chat_completions_api: false
+      logging: true
+      async_outcome:
+        merged_optional_params: {temperature: 0.2}
+        deployment_model_info: {id: dep-async}
+      kwargs:
+        prompt_id: p
+  - responses_provider_selection:
+      action: prompt_call
+      input: hello
+      model: openai/gpt-4o
+      provider: openai
+      use_chat_completions_api: false
+      logging: true
+      hook:
+        mode: answer
+        model: anthropic/claude-3-5-sonnet
+        messages:
+          - {role: user, content: hello}
+        optional_params: {}
+      kwargs:
+        prompt_id: p
+  - responses_provider_selection:
+      action: prompt_call
+      input: hello
+      model: openai/gpt-4o
+      provider: openai
+      use_chat_completions_api: false
+      logging: true
+      hook:
+        mode: answer
+        model: openai/gpt-4o-mini
+        messages:
+          - {role: user, content: hello}
+        optional_params: {}
+      kwargs:
+        prompt_id: p
+        api_key: sk-test
+        model_info: {id: dep-1}
+  - responses_provider_selection:
+      action: prompt_call
+      input:
+        - {role: user, content: hello}
+      model: openai/gpt-4o
+      provider: openai
+      use_chat_completions_api: false
+      logging: true
+      hook:
+        mode: answer
+        model: openai/gpt-4o
+        messages:
+          - {role: system, content: be nice}
+          - {role: user, content: hello}
+        optional_params: {}
+      kwargs:
+        prompt_id: p
+  - responses_provider_selection:
+      action: prompt_call
+      input: hello
+      model: openai/gpt-4o
+      use_chat_completions_api: false
+      logging: true
+      hook:
+        mode: answer
+        model: openai/gpt-4o
+        messages:
+          - {role: user, content: hello}
+        optional_params: {}
+      kwargs:
+        prompt_id: p
+env: {}
+compare: {ignore: []}

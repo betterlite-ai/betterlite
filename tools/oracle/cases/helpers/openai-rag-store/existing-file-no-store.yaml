@@ -1,0 +1,12 @@
+kind: helper
+name: openai-rag-store-existing-file-no-store
+call:
+  b3453:
+    options:
+      name: ingest-name
+      vector_store:
+        api_key: sk-test
+    existing_file_id: file-existing
+env: {}
+compare:
+  ignore: []

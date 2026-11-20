@@ -1,0 +1,17 @@
+kind: helper
+name: edenai-wire-costs-seed
+call:
+  b6100:
+    costs:
+      - {cost: 1.5}
+      - {x-edenai-cost: "2"}
+      - {cost: null}
+      - {cost: [1]}
+    cost_bodies:
+      - '{"cost": 0.25}'
+      - "not json"
+    cost_headers:
+      - {x-edenai-cost: "0.5"}
+      - {cost: "abc"}
+env: {}
+compare: {ignore: []}
