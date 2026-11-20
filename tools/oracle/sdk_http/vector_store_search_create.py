@@ -3,7 +3,7 @@ import json
 from collections.abc import Coroutine
 from datetime import UTC, datetime
 from functools import partial
-from typing import Literal, Protocol, TypeAlias, TypedDict, Unpack, cast
+from typing import Literal, NotRequired, Protocol, TypeAlias, TypedDict, Unpack, cast
 
 import litellm
 import openai
@@ -63,9 +63,9 @@ class Run(Strict):
     create: CreateFields | None = None
     search: SearchFields | None = None
     options: RunOptions
-    extra_headers: dict[str, str] | None = None
-    extra_body: dict[str, JsonValue] | None = None
-    extra_query: dict[str, JsonValue] | None = None
+    extra_headers: dict[str, object] | None = None
+    extra_body: dict[str, object] | None = None
+    extra_query: dict[str, object] | None = None
     timeout_seconds: float | None = None
     custom_llm_provider: str | None = None
 
@@ -96,10 +96,10 @@ class SeenParams(TypedDict, total=False):
     vector_store_id: JsonValue
 
 
-class SeenDetails(TypedDict, total=False):
+class SeenDetails(TypedDict):
     model: str
     optional_params: dict[str, JsonValue]
-    custom_llm_provider: str
+    custom_llm_provider: NotRequired[str]
     litellm_params: SeenParams
 
 
@@ -110,9 +110,9 @@ class GenericOptions(TypedDict, total=False):
     litellm_logging_obj: Logging
     mock_response: JsonValue
     custom_llm_provider: str | None
-    extra_headers: dict[str, str] | None
-    extra_query: dict[str, JsonValue] | None
-    extra_body: dict[str, JsonValue] | None
+    extra_headers: dict[str, object] | None
+    extra_query: dict[str, object] | None
+    extra_body: dict[str, object] | None
     timeout: float | None
 
 
@@ -144,7 +144,7 @@ class VectorStores(Protocol):
     async def asearch(self, **kwargs: Unpack[SearchOptions]) -> JsonValue: ...
 
 
-FACADE: VectorStores = vector_stores  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py
+FACADE: VectorStores = cast(VectorStores, vector_stores)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py
 
 
 def optionals(run: Run, api_base: str, logging_obj: Logging) -> CreateOptions:

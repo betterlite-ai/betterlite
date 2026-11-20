@@ -109,7 +109,7 @@ impl Assets {
             },
             &self.redactor,
             || String::from("generated"),
-            Duration::default(),
+            Duration::default,
         )
         .map_err(SdkHttpError::LoggingState)
     }
@@ -215,7 +215,7 @@ impl OptionalParamFilters for Filters {
     }
 }
 
-mod executors;
+pub(crate) mod executors;
 
 pub(super) use executors::Executors;
 

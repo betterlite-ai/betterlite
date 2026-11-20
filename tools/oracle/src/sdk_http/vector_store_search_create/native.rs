@@ -6,7 +6,7 @@ use betterlite_core::api::vector_search_execution::config::Params;
 use betterlite_core::api::vector_store_http_write::service::LogContext;
 use betterlite_core::api::vector_store_registry::store::VectorStoreRegistry;
 use betterlite_core::api::vector_store_search::error::{
-    SdkFailure, VectorStoreSearchError, failure as project_failure,
+    SdkRaise, VectorStoreSearchError, failure as project_failure,
 };
 use betterlite_core::api::vector_store_search::service::{
     CreateCall, SdkDeps, create_call::create as create_vector_store,
@@ -225,23 +225,26 @@ fn create_optionals(args: &CreateArgs) -> Params {
     optional
 }
 
-// The exception exception_type raises, as its callers can observe it
+// The exception a caller observes: exception_type's SDK error, or the bare TypeError raised before its try block
 fn sdk_failure(
     error: &VectorStoreSearchError,
     redactor: &Redactor,
 ) -> Result<Failure, SdkHttpError> {
-    let projected: SdkFailure = project_failure(error, redactor);
-    let status = projected.status.ok_or_else(|| {
-        SdkHttpError::Invalid("the mapped failure carries no status code".to_owned())
-    })?;
-    Ok(Failure {
-        class: projected.class,
-        status,
-        kind: field(projected.kind),
-        param: field(projected.param),
-        code: field(projected.code),
-        message: projected.message,
-    })
+    match project_failure(error, redactor) {
+        SdkRaise::Exception(projected) => Ok(Failure {
+            class: projected.class,
+            status: projected.status,
+            kind: field(projected.kind),
+            param: field(projected.param),
+            code: field(projected.code),
+            message: projected.message,
+        }),
+        // a TypeError carries no status, and no SDK case can hand the adapter an executor object to reject
+        SdkRaise::TypeError(invalid) => Err(SdkHttpError::Invalid(format!(
+            "the pinned LiteLLM raises a TypeError here: {}",
+            invalid.message
+        ))),
+    }
 }
 
 // mirrors getattr(e, field, "None"): absent, present and null, or text

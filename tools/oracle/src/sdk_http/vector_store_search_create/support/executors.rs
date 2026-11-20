@@ -8,7 +8,7 @@ use betterlite_core::api::vector_store_search::executor::{
 use betterlite_openai::embedding::EmbeddingResponse;
 
 // B1059 with no router: the built executor is never reached by the OpenAI config
-pub(super) struct Executors;
+pub(crate) struct Executors;
 
 impl EmbeddingExecutorSource for Executors {
     fn select<'selection>(
