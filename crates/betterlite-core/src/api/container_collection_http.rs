@@ -161,7 +161,7 @@ async fn create_body<Client: CollectionTransport>(
     let api_key = params.api_key.as_ref().map(ExposeSecret::expose_secret);
     // the JSON content type goes in after validate_environment and before the overlay, so an extra header of that name wins
     let mut headers = config.validate_environment(&extra, api_key);
-    headers.insert("Content-Type".to_owned(), JSON_CONTENT_TYPE.to_owned());
+    headers.insert("Content-Type".to_owned(), "application/json".to_owned());
     for (name, value) in &extra {
         headers.insert(name.clone(), value.clone());
     }
