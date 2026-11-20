@@ -15,6 +15,7 @@ use super::postgres::PostgresAllowlists;
 use super::statement::{AllowlistKind, AllowlistRewrite, TouchedRow};
 use super::{ModelAllowlistError, sync_model_allowlists_for_renamed_model};
 
+mod adapter;
 mod postgres;
 
 fn names(values: &[&str]) -> Vec<String> {
