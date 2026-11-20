@@ -35,14 +35,36 @@ pub(super) struct Calculator {
 
 impl Calculator {
     pub(super) fn new(spec: &CalculatorSpec) -> Self {
-        let result = match &spec.error {
-            Some(message) => Err(FailureText(message.clone())),
-            None => cost_value(spec.cost.as_ref()),
-        };
+        let result = spec.error.as_ref().map_or_else(
+            || cost_value(spec.cost.as_ref()),
+            |message| Err(FailureText(message.clone())),
+        );
         Self {
             result,
             observed: Mutex::new(Vec::new()),
         }
+    }
+
+    fn observe_call(&self, request: &CostRequest<'_>) {
+        let usage = usage_counts(request);
+        let mut observed = match self.observed.lock() {
+            Ok(found) => found,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        observed.push(Observed {
+            model: request.model.to_owned(),
+            cache_hit: request.cache_hit,
+            provider: request.custom_llm_provider.map(str::to_owned),
+            base_model: request.base_model.map(str::to_owned),
+            call_type: request.call_type.to_owned(),
+            custom_pricing: request.custom_pricing,
+            prompt: request.prompt.to_owned(),
+            router_model_id: request.router_model_id.map(str::to_owned),
+            data_residency: request.data_residency.map(str::to_owned),
+            vertex_location: request.vertex_location.map(str::to_owned),
+            region_name: request.region_name.map(str::to_owned),
+            usage,
+        });
     }
 
     pub(super) fn observe(&self) -> Vec<Observed> {
@@ -68,27 +90,7 @@ fn cost_value(value: Option<&Json>) -> Result<Decimal, FailureText> {
 #[async_trait::async_trait]
 impl CostCalculation for Calculator {
     async fn calculate(&self, request: &CostRequest<'_>) -> Result<Decimal, PortFailure> {
-        let usage = usage_counts(request);
-        {
-            let mut observed = match self.observed.lock() {
-                Ok(found) => found,
-                Err(poisoned) => poisoned.into_inner(),
-            };
-            observed.push(Observed {
-                model: request.model.to_owned(),
-                cache_hit: request.cache_hit,
-                provider: request.custom_llm_provider.map(str::to_owned),
-                base_model: request.base_model.map(str::to_owned),
-                call_type: request.call_type.to_owned(),
-                custom_pricing: request.custom_pricing,
-                prompt: request.prompt.to_owned(),
-                router_model_id: request.router_model_id.map(str::to_owned),
-                data_residency: request.data_residency.map(str::to_owned),
-                vertex_location: request.vertex_location.map(str::to_owned),
-                region_name: request.region_name.map(str::to_owned),
-                usage,
-            });
-        }
+        self.observe_call(request);
         self.result
             .as_ref()
             .map(|cost| *cost)
@@ -128,13 +130,13 @@ const fn reborrow<'usage>(usage: &BillingUsage<'usage>) -> BillingUsage<'usage> 
     match usage {
         BillingUsage::Absent => BillingUsage::Absent,
         BillingUsage::Null => BillingUsage::Null,
-        BillingUsage::Chat(inner) => BillingUsage::Chat(*inner),
-        BillingUsage::Response(inner) => BillingUsage::Response(*inner),
-        BillingUsage::Transcription(inner) => BillingUsage::Transcription(*inner),
-        BillingUsage::DecisionsIr(inner) => BillingUsage::DecisionsIr(*inner),
-        BillingUsage::DecisionsOpenAi(inner) => BillingUsage::DecisionsOpenAi(*inner),
-        BillingUsage::Interactions(inner) => BillingUsage::Interactions(*inner),
-        BillingUsage::Mapping(inner) => BillingUsage::Mapping(*inner),
-        BillingUsage::TypedRecord(inner) => BillingUsage::TypedRecord(*inner),
+        BillingUsage::Chat(inner) => BillingUsage::Chat(inner),
+        BillingUsage::Response(inner) => BillingUsage::Response(inner),
+        BillingUsage::Transcription(inner) => BillingUsage::Transcription(inner),
+        BillingUsage::DecisionsIr(inner) => BillingUsage::DecisionsIr(inner),
+        BillingUsage::DecisionsOpenAi(inner) => BillingUsage::DecisionsOpenAi(inner),
+        BillingUsage::Interactions(inner) => BillingUsage::Interactions(inner),
+        BillingUsage::Mapping(inner) => BillingUsage::Mapping(inner),
+        BillingUsage::TypedRecord(inner) => BillingUsage::TypedRecord(inner),
     }
 }

@@ -189,7 +189,7 @@ fn log_state(case: &LogCase) -> Result<LoggingState, Box<HelperError>> {
         Duration::default,
     )
     .map_err(|error| failure(error.to_string()))?;
-    state.optional_params = case.log.optional_params.clone();
+    state.optional_params.clone_from(&case.log.optional_params);
     for (name, value) in &case.log.details {
         state.model_call_details.insert(name.clone(), value.clone());
     }
@@ -215,11 +215,11 @@ fn set_cost(input: &Input) -> HelperResult {
 impl UsageFields {
     fn to_usage(&self) -> Usage {
         Usage {
-            prompt_tokens: self.prompt_tokens,
-            completion_tokens: self.completion_tokens,
+            prompt_tokens: self.prompt,
+            completion_tokens: self.completion,
             total_tokens: self
-                .total_tokens
-                .unwrap_or(self.prompt_tokens.saturating_add(self.completion_tokens)),
+                .total
+                .unwrap_or_else(|| self.prompt.saturating_add(self.completion)),
             prompt_tokens_details: None,
             completion_tokens_details: None,
             server_tool_use: None,

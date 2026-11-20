@@ -90,8 +90,10 @@ pub(crate) enum ResponseSpec {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct UsageFields {
-    pub(crate) prompt_tokens: i64,
-    pub(crate) completion_tokens: i64,
-    #[serde(default)]
-    pub(crate) total_tokens: Option<i64>,
+    #[serde(rename = "prompt_tokens")]
+    pub(crate) prompt: i64,
+    #[serde(rename = "completion_tokens")]
+    pub(crate) completion: i64,
+    #[serde(default, rename = "total_tokens")]
+    pub(crate) total: Option<i64>,
 }

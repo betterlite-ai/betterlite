@@ -12,11 +12,11 @@ pub(super) struct Catalog {
 
 impl Catalog {
     pub(super) fn new(entries: &BTreeMap<String, BTreeMap<String, Json>>) -> Self {
-        let entries = entries
+        let priced = entries
             .iter()
             .map(|(model, fields)| (model.clone(), priced_model(model, fields)))
             .collect();
-        Self { entries }
+        Self { entries: priced }
     }
 }
 
