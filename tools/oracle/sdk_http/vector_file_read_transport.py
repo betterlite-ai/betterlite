@@ -21,7 +21,7 @@ Mode = Literal["sync", "async"]
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
-# the handlers are keyword-only and their returns carry Any-bearing fields, so the calls go through these shapes
+# the handlers are keyword-only and their returns carry Any, so these shapes type the calls
 ReadHandler = Callable[..., object]
 AsyncReadHandler = Callable[..., Coroutine[object, object, object]]
 
@@ -166,7 +166,7 @@ async def run_async_operations(call: ReadCall, api_base: str) -> Outcome:
     return Outcome(results=results)
 
 
-# One event loop for every read of an async call: the cached httpx client belongs to the loop that created it
+# One event loop for every read of an async call: the cached client belongs to its creating loop
 def run_read(call: ReadCall, api_base: str) -> Outcome:
     if call.mode == "async":
         return asyncio.run(run_async_operations(call, api_base))
