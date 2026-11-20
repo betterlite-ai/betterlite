@@ -59,7 +59,7 @@ fn rerank_result_fits(fields: &Object) -> bool {
     let document_fits = fields.get("document").is_none_or(|document| {
         document
             .as_object()
-            .is_some_and(|document| document.get("text").is_some_and(|text| text.is_string()))
+            .is_some_and(|fields| fields.get("text").is_some_and(|text| text.is_string()))
     });
     index_fits && score_fits && document_fits
 }
@@ -72,13 +72,9 @@ fn image_response(body: &Object) -> Option<Object> {
     let data_fits = body.get("data").is_none_or(|value| {
         value.is_null()
             || value.as_array().is_some_and(|entries| {
-                entries.iter().all(|entry| {
-                    entry.as_object().is_some_and(|fields| {
-                        optional_text(fields, "b64_json")
-                            && optional_text(fields, "revised_prompt")
-                            && optional_text(fields, "url")
-                    })
-                })
+                entries
+                    .iter()
+                    .all(|entry| entry.as_object().is_some_and(image_entry_fits))
             })
     });
     (created_is_integer && data_fits).then(|| body.clone())
@@ -101,4 +97,10 @@ fn optional_text(fields: &Object, name: &str) -> bool {
     fields
         .get(name)
         .is_none_or(|value| value.is_null() || value.is_string())
+}
+
+fn image_entry_fits(fields: &Object) -> bool {
+    optional_text(fields, "b64_json")
+        && optional_text(fields, "revised_prompt")
+        && optional_text(fields, "url")
 }

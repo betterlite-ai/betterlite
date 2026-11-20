@@ -67,11 +67,11 @@ pub fn relay_query_params(
         .filter(|version| !version.is_empty())
         .map(str::to_owned)
         .or(base_version);
-    let Some(version) = version else {
+    let Some(effective_version) = version else {
         return Ok(request_query_params.cloned());
     };
     let mut merged = request_query_params.cloned().unwrap_or_default();
-    merged.insert(API_VERSION.to_owned(), serde_json::json!(version));
+    merged.insert(API_VERSION.to_owned(), serde_json::json!(effective_version));
     Ok(Some(merged))
 }
 
