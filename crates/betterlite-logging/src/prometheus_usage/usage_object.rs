@@ -5,13 +5,6 @@ use betterlite_prometheus::collector_factory::collector::MetricValue;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
-use crate::fields::payload::StandardLoggingPayload;
-
-#[must_use]
-pub fn usage_object(payload: &StandardLoggingPayload) -> Option<&IndexMap<String, Json>> {
-    object(payload.metadata.usage_object.as_ref())
-}
-
 #[must_use]
 pub fn object(value: Option<&Json>) -> Option<&IndexMap<String, Json>> {
     match value {

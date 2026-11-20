@@ -15,9 +15,18 @@ pub(super) fn payload(
     let mut fields = base_document();
     let cost = response_cost.map_or_else(|| Json::Number(Number::from(0_i64)), Json::clone);
     fields.insert("response_cost".to_owned(), cost);
-    fields.insert("total_tokens".to_owned(), number(counts.0));
-    fields.insert("prompt_tokens".to_owned(), number(counts.1));
-    fields.insert("completion_tokens".to_owned(), number(counts.2));
+    fields.insert(
+        "total_tokens".to_owned(),
+        Json::Number(Number::from(counts.0)),
+    );
+    fields.insert(
+        "prompt_tokens".to_owned(),
+        Json::Number(Number::from(counts.1)),
+    );
+    fields.insert(
+        "completion_tokens".to_owned(),
+        Json::Number(Number::from(counts.2)),
+    );
     if let Some(hit) = cache_hit {
         fields.insert("cache_hit".to_owned(), Json::Bool(hit));
     }
@@ -33,21 +42,21 @@ pub(super) fn payload(
 
 fn base_document() -> IndexMap<String, Json> {
     let entries = [
-        ("id", text("payload")),
-        ("trace_id", text("trace")),
-        ("session_id", text("session")),
-        ("call_type", text("completion")),
-        ("status", text("success")),
+        ("id", Json::Text("payload".to_owned())),
+        ("trace_id", Json::Text("trace".to_owned())),
+        ("session_id", Json::Text("session".to_owned())),
+        ("call_type", Json::Text("completion".to_owned())),
+        ("status", Json::Text("success".to_owned())),
         ("status_fields", status_fields()),
-        ("startTime", number(0)),
-        ("endTime", number(0)),
-        ("completionStartTime", number(0)),
-        ("response_time", number(0)),
+        ("startTime", Json::Number(Number::from(0_i64))),
+        ("endTime", Json::Number(Number::from(0_i64))),
+        ("completionStartTime", Json::Number(Number::from(0_i64))),
+        ("response_time", Json::Number(Number::from(0_i64))),
         ("model_map_information", Json::Object(IndexMap::new())),
-        ("model", text("gpt-4o")),
-        ("api_base", text("")),
+        ("model", Json::Text("gpt-4o".to_owned())),
+        ("api_base", Json::Text(String::new())),
         ("metadata", Json::Object(IndexMap::new())),
-        ("saved_cache_cost", number(0)),
+        ("saved_cache_cost", Json::Number(Number::from(0_i64))),
         ("request_tags", Json::List(Vec::new())),
         ("model_parameters", Json::Object(IndexMap::new())),
         ("hidden_params", Json::Object(IndexMap::new())),
@@ -60,15 +69,13 @@ fn base_document() -> IndexMap<String, Json> {
 
 fn status_fields() -> Json {
     Json::Object(IndexMap::from([
-        ("llm_api_status".to_owned(), text("success")),
-        ("guardrail_status".to_owned(), text("not_run")),
+        (
+            "llm_api_status".to_owned(),
+            Json::Text("success".to_owned()),
+        ),
+        (
+            "guardrail_status".to_owned(),
+            Json::Text("not_run".to_owned()),
+        ),
     ]))
-}
-
-fn number(value: i64) -> Json {
-    Json::Number(Number::from(value))
-}
-
-fn text(value: &str) -> Json {
-    Json::Text(value.to_owned())
 }

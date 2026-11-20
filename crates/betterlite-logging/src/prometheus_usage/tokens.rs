@@ -7,7 +7,7 @@ use super::counters::{UsageCounters, UsageLabels};
 use super::error::PrometheusUsageError;
 use super::metric::UsageMetric;
 use super::sparse::{SparseValue, inc_sparse_usage_counters};
-use super::usage_object::{object, resolve_cache_write_tokens, usage_object};
+use super::usage_object::{object, resolve_cache_write_tokens};
 use crate::fields::payload::StandardLoggingPayload;
 
 pub fn increment_token_metrics<C: UsageCounters>(
@@ -43,7 +43,7 @@ pub fn increment_token_detail_metrics<C: UsageCounters>(
     labels: UsageLabels<'_>,
     now: Instant,
 ) -> Result<(), PrometheusUsageError<C::Counter::Error>> {
-    let Some(usage) = usage_object(payload) else {
+    let Some(usage) = object(payload.metadata.usage_object.as_ref()) else {
         return Ok(());
     };
     let prompt_details = usage.get("prompt_tokens_details");

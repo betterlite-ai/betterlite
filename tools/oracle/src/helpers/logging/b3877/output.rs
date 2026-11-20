@@ -6,10 +6,7 @@ use super::probe::{ProbeCounters, ProbeEvent};
 
 pub(super) fn events_value(counters: &ProbeCounters) -> Value {
     let events: Vec<Value> = {
-        let log = counters
-            .log()
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+        let log = counters.log.lock().unwrap_or_else(PoisonError::into_inner);
         log.events.iter().map(event_value).collect()
     };
     json!({ "events": events })

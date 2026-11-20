@@ -76,7 +76,7 @@ pub(super) struct ProbeCounters {
     supported: BTreeMap<String, Vec<String>>,
     tracker: BoundedPrometheusSeriesTracker,
     limits: SeriesLimits,
-    log: Arc<Mutex<ProbeLog>>,
+    pub(super) log: Arc<Mutex<ProbeLog>>,
 }
 
 impl ProbeCounters {
@@ -87,10 +87,6 @@ impl ProbeCounters {
             limits: SeriesLimits::default(),
             log: Arc::new(Mutex::new(ProbeLog::default())),
         }
-    }
-
-    pub(super) fn log(&self) -> &Arc<Mutex<ProbeLog>> {
-        &self.log
     }
 }
 

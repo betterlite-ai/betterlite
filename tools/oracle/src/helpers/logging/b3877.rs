@@ -45,85 +45,82 @@ pub(crate) struct Input {
     prompt_details: Option<Json>,
 }
 
+#[derive(Clone, Copy)]
+enum Emit {
+    RequestAndSpend,
+    ZeroCost,
+    TokenMetrics,
+    TokenDetail,
+    Media,
+    Cache,
+}
+
 impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
         match input.function.as_str() {
-            "request_and_spend" => request_and_spend(input),
-            "zero_cost" => zero_cost(input),
-            "token_metrics" => token_metrics(input),
-            "token_detail" => token_detail(input),
-            "media" => media(input),
-            "cache" => cache(input),
+            "request_and_spend" => emit(input, Emit::RequestAndSpend),
+            "zero_cost" => emit(input, Emit::ZeroCost),
+            "token_metrics" => emit(input, Emit::TokenMetrics),
+            "token_detail" => emit(input, Emit::TokenDetail),
+            "media" => emit(input, Emit::Media),
+            "cache" => emit(input, Emit::Cache),
             "provider_cache_tokens" => provider_cache_tokens(input),
-            "cache_write_tokens" => cache_write_tokens(input),
+            "cache_write_tokens" => Ok(json!({
+                "cache_write_tokens": resolve_cache_write_tokens(input.prompt_details.as_ref()),
+            })),
             _ => Err(helper_error("InvalidInput", "unknown function")),
         }
     }
 }
 
-fn request_and_spend(input: &Input) -> HelperResult {
-    let counters = ProbeCounters::new(&input.supported_labels);
-    let payload = payload::payload(input.response_cost.as_ref(), (0, 0, 0), None, None)?;
-    let labels = labels_for(input)?;
-    increment_request_and_spend(&counters, &payload, labels.usage_labels(), Instant::now())
-        .map_err(|error| helper_error("RuntimeError", &error.to_string()))?;
-    Ok(events_value(&counters))
-}
-
-fn zero_cost(input: &Input) -> HelperResult {
+fn emit(input: &Input, function: Emit) -> HelperResult {
     let counters = ProbeCounters::new(&input.supported_labels);
     let labels = labels_for(input)?;
-    let diagnostic = ZeroCostDiagnostic {
-        reason: ZeroCostReason::MissingPricingKey,
-        pricing_model: String::new(),
-        missing_pricing_keys: Vec::new(),
+    let outcome = match function {
+        Emit::RequestAndSpend => {
+            let payload = payload::payload(input.response_cost.as_ref(), (0, 0, 0), None, None)?;
+            increment_request_and_spend(&counters, &payload, labels.usage_labels(), Instant::now())
+        }
+        Emit::ZeroCost => {
+            let diagnostic = ZeroCostDiagnostic {
+                reason: ZeroCostReason::MissingPricingKey,
+                pricing_model: String::new(),
+                missing_pricing_keys: Vec::new(),
+            };
+            increment_zero_cost_requests(&counters, Some(&diagnostic), labels.usage_labels())
+        }
+        Emit::TokenMetrics => {
+            let counts = (
+                input.total_tokens,
+                input.prompt_tokens,
+                input.completion_tokens,
+            );
+            let payload = payload::payload(None, counts, None, input.usage_object.as_ref())?;
+            increment_token_metrics(&counters, &payload, labels.usage_labels(), Instant::now())
+        }
+        Emit::TokenDetail => {
+            let payload = payload::payload(None, (0, 0, 0), None, input.usage_object.as_ref())?;
+            increment_token_detail_metrics(
+                &counters,
+                &payload,
+                labels.usage_labels(),
+                Instant::now(),
+            )
+        }
+        Emit::Media => {
+            let payload = payload::payload(None, (0, 0, 0), None, input.usage_object.as_ref())?;
+            increment_media_metrics(&counters, &payload, labels.usage_labels(), Instant::now())
+        }
+        Emit::Cache => {
+            let counts = (input.total_tokens, 0, 0);
+            let payload =
+                payload::payload(None, counts, input.cache_hit, input.usage_object.as_ref())?;
+            increment_cache_metrics(&counters, &payload, labels.usage_labels(), Instant::now())
+        }
     };
-    increment_zero_cost_requests(&counters, Some(&diagnostic), labels.usage_labels())
-        .map_err(|error| helper_error("RuntimeError", &error.to_string()))?;
-    Ok(events_value(&counters))
-}
-
-fn token_metrics(input: &Input) -> HelperResult {
-    let counters = ProbeCounters::new(&input.supported_labels);
-    let counts = (
-        input.total_tokens,
-        input.prompt_tokens,
-        input.completion_tokens,
-    );
-    let payload = payload::payload(None, counts, None, input.usage_object.as_ref())?;
-    let labels = labels_for(input)?;
-    increment_token_metrics(&counters, &payload, labels.usage_labels(), Instant::now())
-        .map_err(|error| helper_error("RuntimeError", &error.to_string()))?;
-    Ok(events_value(&counters))
-}
-
-fn token_detail(input: &Input) -> HelperResult {
-    let counters = ProbeCounters::new(&input.supported_labels);
-    let payload = payload::payload(None, (0, 0, 0), None, input.usage_object.as_ref())?;
-    let labels = labels_for(input)?;
-    increment_token_detail_metrics(&counters, &payload, labels.usage_labels(), Instant::now())
-        .map_err(|error| helper_error("RuntimeError", &error.to_string()))?;
-    Ok(events_value(&counters))
-}
-
-fn media(input: &Input) -> HelperResult {
-    let counters = ProbeCounters::new(&input.supported_labels);
-    let payload = payload::payload(None, (0, 0, 0), None, input.usage_object.as_ref())?;
-    let labels = labels_for(input)?;
-    increment_media_metrics(&counters, &payload, labels.usage_labels(), Instant::now())
-        .map_err(|error| helper_error("RuntimeError", &error.to_string()))?;
-    Ok(events_value(&counters))
-}
-
-fn cache(input: &Input) -> HelperResult {
-    let counters = ProbeCounters::new(&input.supported_labels);
-    let counts = (input.total_tokens, 0, 0);
-    let payload = payload::payload(None, counts, input.cache_hit, input.usage_object.as_ref())?;
-    let labels = labels_for(input)?;
-    increment_cache_metrics(&counters, &payload, labels.usage_labels(), Instant::now())
-        .map_err(|error| helper_error("RuntimeError", &error.to_string()))?;
+    outcome.map_err(|error| helper_error("RuntimeError", &error.to_string()))?;
     Ok(events_value(&counters))
 }
 
@@ -136,11 +133,6 @@ fn provider_cache_tokens(input: &Input) -> HelperResult {
     };
     let (read, creation) = resolve_provider_cache_tokens(usage);
     Ok(json!({ "read": read, "creation": creation }))
-}
-
-fn cache_write_tokens(input: &Input) -> HelperResult {
-    let tokens = resolve_cache_write_tokens(input.prompt_details.as_ref());
-    Ok(json!({ "cache_write_tokens": tokens }))
 }
 
 struct LabelFixture {

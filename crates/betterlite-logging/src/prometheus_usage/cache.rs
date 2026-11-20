@@ -8,7 +8,7 @@ use rust_decimal::Decimal;
 use super::counters::{UsageCounters, UsageLabels};
 use super::error::PrometheusUsageError;
 use super::metric::UsageMetric;
-use super::usage_object::{resolve_provider_cache_tokens, usage_object};
+use super::usage_object::{object, resolve_provider_cache_tokens};
 use crate::fields::payload::StandardLoggingPayload;
 
 pub fn increment_cache_metrics<C: UsageCounters>(
@@ -44,7 +44,7 @@ pub fn increment_cache_metrics<C: UsageCounters>(
         }
         None => {}
     }
-    if let Some(usage) = usage_object(payload) {
+    if let Some(usage) = object(payload.metadata.usage_object.as_ref()) {
         increment_provider_cache(counters, usage, labels, now)?;
     }
     Ok(())
