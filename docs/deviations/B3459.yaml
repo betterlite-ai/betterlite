@@ -18,6 +18,9 @@ deviations:
   - what: A failing embedding call surfaces as WorkflowError::Embed carrying the model and the error message; LiteLLM lets the provider exception propagate unchanged.
     why: The injected RagEmbedder reports EmbedError, and the workflow keeps the failure typed instead of erasing it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L423-L428
+  - what: A failing bucket, index or put_vectors call surfaces as WorkflowError::Api carrying B3458's typed S3VectorsError (operation, status, body text); LiteLLM raises its httpx exception and ValueError with the status in the text.
+    why: AWS failures stay typed the way B3458 reports them, and the wrapper only tags which step raised.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L390-L397
 kept_bugs:
   - what: A probe answer whose first embedding is empty resolves the dimension to 0, and the index is created with dimension 0, which AWS refuses.
     why: LiteLLM takes len() of whatever vector comes back, and no embedding provider in a working setup returns an empty vector here; the resolved value stays the one LiteLLM reports.
