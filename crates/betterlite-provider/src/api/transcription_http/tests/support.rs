@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use betterlite_core::api::vector_store_http_write::error::ClientError;
+use betterlite_core::api::vector_store_http_write::service::LogContext;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::RequestBody;
@@ -34,11 +35,10 @@ use crate::api::transcription_http::config::{
 use crate::api::transcription_http::error::TranscriptionHttpError;
 use crate::api::transcription_http::reply::TranscriptionReply;
 use crate::api::transcription_http::wire::{
-    ClientKind, SuppliedClient, TranscriptionBody, TranscriptionRequest, TranscriptionTransport,
+    TranscriptionBody, TranscriptionRequest, TranscriptionTransport,
 };
 use crate::api::transcription_http::{
-    LogContext, TranscriptionCall, TranscriptionDeps, async_audio_transcriptions,
-    audio_transcriptions,
+    TranscriptionCall, TranscriptionDeps, async_audio_transcriptions, audio_transcriptions,
 };
 
 #[derive(Clone, Default)]
@@ -334,13 +334,14 @@ pub(crate) struct RecordingConfig {
 
 impl RecordingConfig {
     pub(crate) fn new(data: AudioTranscriptionRequestData, events: &Events) -> Self {
+        let response = TranscriptionResponse {
+            text: Some(String::from("hi")),
+            extra: Object::new(),
+        };
         Self {
             data,
             subtitles: false,
-            response: TranscriptionResponse {
-                text: Some(String::from("hi")),
-                extra: Object::new(),
-            },
+            response,
             failure: StageFailure::None,
             events: events.clone(),
             calls: Mutex::default(),
@@ -456,54 +457,6 @@ impl TranscriptionHttpConfig for RecordingConfig {
     }
 }
 
-// A config that leaves TranscriptionHttpConfig::complete_transcription_url at its default
-pub(crate) struct DefaultUrlConfig(pub(crate) RecordingConfig);
-
-impl AudioTranscriptionConfig for DefaultUrlConfig {
-    fn supported_openai_params(&self, model: &str) -> Vec<String> {
-        self.0.supported_openai_params(model)
-    }
-
-    fn transform_audio_request(
-        &self,
-        model: &str,
-        audio_file: &AudioFile<'_>,
-        optional_params: &Object,
-        litellm_params: &Object,
-    ) -> Result<AudioTranscriptionRequestData, TranscriptionContractError> {
-        self.0
-            .transform_audio_request(model, audio_file, optional_params, litellm_params)
-    }
-
-    fn supports_subtitle_synthesis(&self) -> bool {
-        self.0.supports_subtitle_synthesis()
-    }
-
-    fn complete_url(
-        &self,
-        api_base: Option<&str>,
-        model: &str,
-        optional_params: &Object,
-        litellm_params: &Object,
-    ) -> String {
-        self.0
-            .complete_url(api_base, model, optional_params, litellm_params)
-    }
-
-    fn transform_audio_response(
-        &self,
-        raw_response: &UpstreamResponse,
-    ) -> Result<TranscriptionResponse, TranscriptionContractError> {
-        self.0.transform_audio_response(raw_response)
-    }
-}
-
-impl TranscriptionHttpConfig for DefaultUrlConfig {
-    fn validate_environment(&self, input: &Validation<'_>) -> Result<Headers, ConfigFailure> {
-        self.0.validate_environment(input)
-    }
-}
-
 pub(crate) struct ProxiedSource {
     pub(crate) client: ProxiedClient,
 }
@@ -572,19 +525,6 @@ pub(crate) fn deps<'deps>(
         config: Some(config),
         source,
         supplied: None,
-    }
-}
-
-pub(crate) fn supplied<'deps>(
-    config: &'deps RecordingConfig,
-    source: &'deps Source,
-    transport: &'deps Wire,
-    kind: ClientKind,
-) -> TranscriptionDeps<'deps, RecordingConfig, Source> {
-    TranscriptionDeps {
-        config: Some(config),
-        source,
-        supplied: Some(SuppliedClient { kind, transport }),
     }
 }
 

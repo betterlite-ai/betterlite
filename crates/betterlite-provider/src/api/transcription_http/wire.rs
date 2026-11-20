@@ -1,6 +1,7 @@
 use std::future::Future;
 use std::time::Duration;
 
+use betterlite_core::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::multipart::{MultipartPart, encode};
 use betterlite_http::proxy::outbound::RequestBody;
@@ -19,17 +20,6 @@ use uuid::Uuid;
 use super::config::{ClientRequest, ClientSource, Headers, TranscriptionHttpConfig};
 use super::error::TranscriptionHttpError;
 use super::{Prepared, TranscriptionDeps};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ClientKind {
-    Sync,
-    Asynchronous,
-}
-
-pub struct SuppliedClient<'client, Client> {
-    pub kind: ClientKind,
-    pub transport: &'client Client,
-}
 
 pub struct TranscriptionRequest {
     pub url: Url,

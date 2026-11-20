@@ -18,8 +18,7 @@ const WORDS: &str = r#"{"word":"Hello","start":0,"end":1}"#;
 async fn transcription_subtitle_reply() {
     assert_srt_document().await;
     assert_vtt_document().await;
-    assert_invalid_timings_keep_text().await;
-    assert_missing_timings_keep_text().await;
+    assert_unusable_timings_keep_text().await;
     assert_missing_words_keep_text().await;
     assert_disabled_synthesis_keeps_words().await;
     assert_other_formats_keep_words().await;
@@ -95,22 +94,16 @@ async fn assert_vtt_document() {
     assert_eq!(extra_words(&reply.response), None);
 }
 
-async fn assert_invalid_timings_keep_text() {
-    let response = r#"{"text":"old","words":[{"word":"Hello","start":"nope","end":1}]}"#;
-    let reply = run_reply(response, Json::Text(String::from("srt")), true)
-        .await
-        .expect("an unusable timing is not an error");
-    assert_eq!(reply.response.text.as_deref(), Some("old"));
-    assert_eq!(extra_words(&reply.response), None);
-}
-
-async fn assert_missing_timings_keep_text() {
-    let response = r#"{"text":"old","words":[{"word":"Hello"}]}"#;
-    let reply = run_reply(response, Json::Text(String::from("srt")), true)
-        .await
-        .expect("a missing timing is not an error");
-    assert_eq!(reply.response.text.as_deref(), Some("old"));
-    assert_eq!(extra_words(&reply.response), None);
+async fn assert_unusable_timings_keep_text() {
+    let invalid = r#"{"text":"old","words":[{"word":"Hello","start":"nope","end":1}]}"#;
+    let missing = r#"{"text":"old","words":[{"word":"Hello"}]}"#;
+    for response in [invalid, missing] {
+        let reply = run_reply(response, Json::Text(String::from("srt")), true)
+            .await
+            .expect("an unusable timing is not an error");
+        assert_eq!(reply.response.text.as_deref(), Some("old"));
+        assert_eq!(extra_words(&reply.response), None);
+    }
 }
 
 async fn assert_missing_words_keep_text() {

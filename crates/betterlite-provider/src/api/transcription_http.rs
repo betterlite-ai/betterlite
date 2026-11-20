@@ -7,10 +7,11 @@ use std::str;
 use std::time::{Duration, Instant};
 
 use betterlite_core::api::vector_store_http_write::error::handle_error;
+use betterlite_core::api::vector_store_http_write::service::{
+    ClientKind, LogContext, SuppliedClient,
+};
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
-use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
-use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::transcription_contract::{
     AudioTranscriptionData, AudioTranscriptionRequestData,
@@ -25,7 +26,6 @@ use crate::api::transcription_contract::AudioFile;
 use self::config::{ClientSource, Headers, TranscriptionHttpConfig, UrlInput, Validation};
 use self::error::{TranscriptionHttpError, send_failure_facts, status_facts};
 use self::reply::TranscriptionReply;
-use self::wire::{ClientKind, SuppliedClient};
 
 // The arguments llm_http_handler.py's audio_transcriptions hands its two helpers
 pub struct TranscriptionCall<'call> {
@@ -50,11 +50,6 @@ pub struct TranscriptionDeps<'deps, C: TranscriptionHttpConfig, S: ClientSource>
     pub supplied: Option<SuppliedClient<'deps, S::Client>>,
 }
 
-pub struct LogContext<'borrow, 'env> {
-    pub state: &'borrow mut LoggingState,
-    pub env: &'borrow PrePostEnv<'env>,
-}
-
 pub(super) struct Prepared {
     pub(super) url: Url,
     pub(super) headers: Headers,
@@ -72,14 +67,17 @@ where
 {
     let config = require_config(deps.config, call.model, call.custom_llm_provider)?;
     // `atranscription is True`, so only a boolean selects the async client and an integer does not
-    if matches!(call.atranscription, Json::Bool(true)) {
-        return exchange(deps, config, call, ClientKind::Asynchronous, log).await;
-    }
-    exchange(deps, config, call, ClientKind::Sync, log).await
+    let asynchronous = matches!(call.atranscription, Json::Bool(true));
+    let mode = if asynchronous {
+        ClientKind::Asynchronous
+    } else {
+        ClientKind::Sync
+    };
+    exchange(deps, config, call, mode, log).await
 }
 
-pub async fn async_audio_transcriptions<C, S>(
-    deps: &TranscriptionDeps<'_, C, S>,
+pub async fn async_audio_transcriptions<'deps, C, S>(
+    deps: &'deps TranscriptionDeps<'deps, C, S>,
     call: &TranscriptionCall<'_>,
     log: &mut LogContext<'_, '_>,
 ) -> Result<TranscriptionReply, TranscriptionHttpError>
@@ -87,8 +85,14 @@ where
     C: TranscriptionHttpConfig,
     S: ClientSource,
 {
-    let config = require_config(deps.config, call.model, call.custom_llm_provider)?;
-    exchange(deps, config, call, ClientKind::Asynchronous, log).await
+    exchange(
+        deps,
+        require_config(deps.config, call.model, call.custom_llm_provider)?,
+        call,
+        ClientKind::Asynchronous,
+        log,
+    )
+    .await
 }
 
 // _prepare_audio_transcription_request, then both posts, then _transform_audio_transcription_response

@@ -52,12 +52,5 @@ pub trait TranscriptionHttpConfig: AudioTranscriptionConfig {
     fn validate_environment(&self, input: &Validation<'_>) -> Result<Headers, ConfigFailure>;
 
     // The base config omits api_key from complete_url; an override that needs it reads the input
-    fn complete_transcription_url(&self, input: &UrlInput<'_>) -> Result<String, ConfigFailure> {
-        Ok(self.complete_url(
-            input.api_base,
-            input.model,
-            input.optional_params,
-            input.litellm_params,
-        ))
-    }
+    fn complete_transcription_url(&self, input: &UrlInput<'_>) -> Result<String, ConfigFailure>;
 }

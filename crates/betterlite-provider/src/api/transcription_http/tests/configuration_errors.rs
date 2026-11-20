@@ -9,8 +9,8 @@ use betterlite_openai::transcription::client::SharedSession;
 use serde_json::Number;
 
 use super::support::{
-    ClientCall, DefaultUrlConfig, Entry, Events, Fixture, RecordingConfig, Reply, Source, Wire,
-    call, deps, object, record,
+    ClientCall, Entry, Events, Fixture, RecordingConfig, Reply, Source, Wire, call, deps, object,
+    record,
 };
 use crate::api::transcription_http::TranscriptionDeps;
 use crate::api::transcription_http::error::TranscriptionHttpError;
@@ -18,68 +18,43 @@ use crate::api::transcription_http::error::TranscriptionHttpError;
 #[tokio::test]
 async fn transcription_http_configuration_errors() {
     assert_missing_config_is_a_value_error().await;
-    assert_missing_config_async().await;
     assert_boolean_atranscription_selects_async().await;
     assert_integer_atranscription_stays_sync().await;
     assert_max_retries_sends_once().await;
     assert_status_failure_keeps_status_body_and_headers().await;
     assert_status_failure_with_an_empty_body_has_no_length().await;
-    assert_default_complete_url().await;
-    assert_sync_timeout_reports_the_timeout().await;
-    assert_async_timeout_reports_the_fraction().await;
+    assert_timeouts_report_the_timeout().await;
     assert_whole_second_timeouts_print_exactly().await;
 }
 
 async fn assert_missing_config_is_a_value_error() {
-    let events = Events::new();
-    let wire = Wire::replying(Reply::json(200, "{}"), &events);
-    let source = Source::new(wire.clone());
-    let optional = object("{}");
-    let litellm = object("{}");
-    let request_call = call(&optional, &litellm);
-    let deps: TranscriptionDeps<'_, RecordingConfig, Source> = TranscriptionDeps {
-        config: None,
-        source: &source,
-        supplied: None,
-    };
-    let mut fixture = Fixture::new("transcription");
-    let error = fixture
-        .run(&events, &deps, &request_call, Entry::Audio)
-        .await
-        .expect_err("a missing config fails");
-    assert!(matches!(
-        error,
-        TranscriptionHttpError::MissingProviderConfig { .. }
-    ));
-    assert_eq!(
-        error.to_string(),
-        "No provider config found for model: m and provider: openai"
-    );
-    assert_no_http(&source, &wire, &events);
-}
-
-async fn assert_missing_config_async() {
-    let events = Events::new();
-    let wire = Wire::replying(Reply::json(200, "{}"), &events);
-    let source = Source::new(wire.clone());
-    let optional = object("{}");
-    let litellm = object("{}");
-    let request_call = call(&optional, &litellm);
-    let deps: TranscriptionDeps<'_, RecordingConfig, Source> = TranscriptionDeps {
-        config: None,
-        source: &source,
-        supplied: None,
-    };
-    let mut fixture = Fixture::new("transcription");
-    let error = fixture
-        .run(&events, &deps, &request_call, Entry::Async)
-        .await
-        .expect_err("a missing config fails");
-    assert_eq!(
-        error.to_string(),
-        "No provider config found for model: m and provider: openai"
-    );
-    assert_no_http(&source, &wire, &events);
+    for entry in [Entry::Audio, Entry::Async] {
+        let events = Events::new();
+        let wire = Wire::replying(Reply::json(200, "{}"), &events);
+        let source = Source::new(wire.clone());
+        let optional = object("{}");
+        let litellm = object("{}");
+        let request_call = call(&optional, &litellm);
+        let deps: TranscriptionDeps<'_, RecordingConfig, Source> = TranscriptionDeps {
+            config: None,
+            source: &source,
+            supplied: None,
+        };
+        let mut fixture = Fixture::new("transcription");
+        let error = fixture
+            .run(&events, &deps, &request_call, entry)
+            .await
+            .expect_err("a missing config fails");
+        assert!(matches!(
+            error,
+            TranscriptionHttpError::MissingProviderConfig { .. }
+        ));
+        assert_eq!(
+            error.to_string(),
+            "No provider config found for model: m and provider: openai"
+        );
+        assert_no_http(&source, &wire, &events);
+    }
 }
 
 fn assert_no_http(source: &Source, wire: &Wire, events: &Events) {
@@ -242,39 +217,6 @@ async fn assert_status_failure_with_an_empty_body_has_no_length() {
     assert_eq!(error.headers.get("content-length"), None);
 }
 
-async fn assert_default_complete_url() {
-    let events = Events::new();
-    let wire = Wire::replying(Reply::json(200, r#"{"text":"hi"}"#), &events);
-    let source = Source::new(wire.clone());
-    let config = DefaultUrlConfig(RecordingConfig::new(
-        record(AudioTranscriptionData::Object(Object::new())),
-        &events,
-    ));
-    let optional = object("{}");
-    let litellm = object("{}");
-    let request_call = call(&optional, &litellm);
-    let mut fixture = Fixture::new("transcription");
-    fixture
-        .run(
-            &events,
-            &TranscriptionDeps {
-                config: Some(&config),
-                source: &source,
-                supplied: None,
-            },
-            &request_call,
-            Entry::Audio,
-        )
-        .await
-        .expect("the default URL reaches the fixture");
-    let requests = wire.requests();
-    assert_eq!(requests.len(), 1);
-    assert_eq!(
-        requests[0].url.as_str(),
-        "https://fixture.test/v1/audio/transcriptions"
-    );
-}
-
 async fn failing_call(
     error: TransportError,
     timeout: Option<Duration>,
@@ -298,37 +240,34 @@ async fn failing_call(
         .expect_err("the send fails")
 }
 
-async fn assert_sync_timeout_reports_the_timeout() {
-    let error = failing_call(
+async fn assert_timeouts_report_the_timeout() {
+    let sync = failing_call(
         TransportError::Rejected(HttpError::Timeout),
         Some(Duration::from_secs(30)),
         Entry::Audio,
     )
     .await;
-    let TranscriptionHttpError::Provider(error) = error else {
+    let TranscriptionHttpError::Provider(sync) = sync else {
         panic!("a timeout is converted");
     };
-    assert_eq!(error.status_code, 408);
-    assert!(!error.status_code_is_synthesized);
+    assert_eq!(sync.status_code, 408);
+    assert!(!sync.status_code_is_synthesized);
     assert_eq!(
-        error.message,
+        sync.message,
         "litellm.Timeout: Connection timed out after 30 seconds."
     );
-}
-
-async fn assert_async_timeout_reports_the_fraction() {
-    let error = failing_call(
+    let asynchronous = failing_call(
         TransportError::Rejected(HttpError::Timeout),
         Some(Duration::from_millis(1500)),
         Entry::Async,
     )
     .await;
-    let TranscriptionHttpError::Provider(error) = error else {
+    let TranscriptionHttpError::Provider(asynchronous) = asynchronous else {
         panic!("a timeout is converted");
     };
-    assert_eq!(error.status_code, 408);
+    assert_eq!(asynchronous.status_code, 408);
     assert!(
-        error
+        asynchronous
             .message
             .starts_with("litellm.Timeout: Connection timed out. Timeout passed=1.5, time taken=")
     );

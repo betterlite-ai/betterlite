@@ -1,3 +1,4 @@
+use betterlite_core::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::api::transcription_contract::AudioTranscriptionData;
 use betterlite_openai::openai_base_config::Object;
@@ -5,21 +6,18 @@ use betterlite_openai::transcription::client::SharedSession;
 
 use super::support::{
     ClientCall, Entry, Events, Fixture, RecordingConfig, Reply, Source, StageFailure, Wire, call,
-    deps, object, record, supplied,
+    deps, object, record,
 };
 use crate::api::transcription_contract::TranscriptionContractError;
 use crate::api::transcription_http::TranscriptionDeps;
 use crate::api::transcription_http::config::ConfigFailure;
 use crate::api::transcription_http::error::TranscriptionHttpError;
 use crate::api::transcription_http::reply::TranscriptionReply;
-use crate::api::transcription_http::wire::ClientKind;
 
 #[tokio::test]
 async fn transcription_http_client_policy() {
-    assert_matching_supplied_client_is_reused().await;
-    assert_wrong_kind_supplied_client_is_ignored().await;
-    assert_async_fallback_receives_verification().await;
-    assert_sync_fallback_receives_neither().await;
+    assert_only_a_matching_supplied_client_is_reused().await;
+    assert_fallback_client_reads_verification().await;
     assert_prepare_failures_bypass_the_error_converter().await;
     assert_logging_failure_bypasses_the_error_converter().await;
     assert_response_transform_failure_bypasses_the_error_converter().await;
@@ -63,7 +61,10 @@ async fn run(
     let mut request_call = call(&optional, &litellm);
     request_call.shared_session = Some(&session);
     let deps: TranscriptionDeps<'_, RecordingConfig, Source> = match reused {
-        Some((transport, kind)) => supplied(&harness.config, &harness.source, transport, kind),
+        Some((transport, kind)) => TranscriptionDeps {
+            supplied: Some(SuppliedClient { kind, transport }),
+            ..deps(&harness.config, &harness.source)
+        },
         None => deps(&harness.config, &harness.source),
     };
     fixture
@@ -71,36 +72,32 @@ async fn run(
         .await
 }
 
-async fn assert_matching_supplied_client_is_reused() {
+async fn assert_only_a_matching_supplied_client_is_reused() {
     let harness = Harness::new();
-    let supplied_wire = Wire::replying(Reply::json(200, r#"{"text":"hi"}"#), &harness.events);
+    let matching = Wire::replying(Reply::json(200, r#"{"text":"hi"}"#), &harness.events);
     let mut fixture = Fixture::new("transcription");
     run(
         &harness,
         &mut fixture,
-        Some((&supplied_wire, ClientKind::Sync)),
+        Some((&matching, ClientKind::Sync)),
         Entry::Audio,
     )
     .await
     .expect("the supplied client sends");
-    assert_eq!(supplied_wire.requests().len(), 1);
+    assert_eq!(matching.requests().len(), 1);
     assert!(harness.source_wire.requests().is_empty());
     assert!(harness.source.calls().is_empty());
-}
-
-async fn assert_wrong_kind_supplied_client_is_ignored() {
-    let harness = Harness::new();
-    let supplied_wire = Wire::replying(Reply::json(200, r#"{"text":"hi"}"#), &harness.events);
+    let wrong_kind = Wire::replying(Reply::json(200, r#"{"text":"hi"}"#), &harness.events);
     let mut fixture = Fixture::new("transcription");
     run(
         &harness,
         &mut fixture,
-        Some((&supplied_wire, ClientKind::Asynchronous)),
+        Some((&wrong_kind, ClientKind::Asynchronous)),
         Entry::Audio,
     )
     .await
     .expect("the fallback sends");
-    assert!(supplied_wire.requests().is_empty());
+    assert!(wrong_kind.requests().is_empty());
     assert_eq!(harness.source_wire.requests().len(), 1);
     assert_eq!(
         harness.source.calls(),
@@ -120,21 +117,16 @@ async fn fallback_calls(entry: Entry) -> Vec<ClientCall> {
     harness.source.calls()
 }
 
-async fn assert_async_fallback_receives_verification() {
-    let calls = fallback_calls(Entry::Async).await;
+async fn assert_fallback_client_reads_verification() {
     assert_eq!(
-        calls,
+        fallback_calls(Entry::Async).await,
         vec![ClientCall {
             ssl_verify: Some(false),
             shared_session: true,
         }]
     );
-}
-
-async fn assert_sync_fallback_receives_neither() {
-    let calls = fallback_calls(Entry::Audio).await;
     assert_eq!(
-        calls,
+        fallback_calls(Entry::Audio).await,
         vec![ClientCall {
             ssl_verify: None,
             shared_session: false,

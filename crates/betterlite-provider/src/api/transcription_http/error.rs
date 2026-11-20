@@ -4,6 +4,7 @@ use std::time::Duration;
 use betterlite_core::api::vector_store_http_write::error::{
     BaseLlmException, ClientError, FailureFacts, HeaderMap, ResponseFacts, header_map,
 };
+use betterlite_core::api::vector_store_http_write::service::ClientKind;
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::transport_error::TransportError;
@@ -17,7 +18,6 @@ use serde_json::Number;
 use thiserror::Error;
 
 use super::config::ConfigFailure;
-use super::wire::ClientKind;
 
 #[derive(Debug, Error)]
 pub enum TranscriptionHttpError {
