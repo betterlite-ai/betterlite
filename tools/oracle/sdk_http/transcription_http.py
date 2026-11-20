@@ -172,9 +172,7 @@ class FixtureConfig(WhisperConfig):
         response = TranscriptionResponse()
         if self.call.response is None:
             return response
-        for name, value in self.call.response.items():
-            setattr(response, name, value)
-        return response
+        return response.model_copy(update=self.call.response)
 
     @property
     @override
