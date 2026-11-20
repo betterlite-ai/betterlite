@@ -369,6 +369,66 @@ fn media_counters_skip_non_positive_and_non_numeric() {
 }
 
 #[test]
+fn media_counters_emit_infinity_above_decimal_range() {
+    let fixture = Fixture::with_end_user("alice");
+    let counters = FakeCounters::with_labels(&[]);
+    let usage = object(vec![("duration_seconds", number("1e40"))]);
+    increment_media_metrics(
+        &counters,
+        &with_usage(payload(Decimal::ZERO), usage),
+        fixture.labels(),
+        Instant::now(),
+    )
+    .unwrap();
+    assert_eq!(
+        increments(&counters),
+        [(
+            UsageMetric::VideoDurationSeconds,
+            MetricValue::PositiveInfinity
+        )]
+    );
+}
+
+#[test]
+fn media_counters_skip_number_underflowing_to_zero() {
+    let fixture = Fixture::with_end_user("alice");
+    let counters = FakeCounters::with_labels(&[]);
+    let usage = object(vec![
+        ("duration_seconds", number("1e-999999")),
+        ("output_image_count", number("1e40")),
+    ]);
+    increment_media_metrics(
+        &counters,
+        &with_usage(payload(Decimal::ZERO), usage),
+        fixture.labels(),
+        Instant::now(),
+    )
+    .unwrap();
+    assert_eq!(
+        increments(&counters),
+        [(UsageMetric::ImagesGenerated, MetricValue::PositiveInfinity)]
+    );
+}
+
+#[test]
+fn token_detail_counters_skip_zero_cache_creation_tokens() {
+    let fixture = Fixture::with_end_user("alice");
+    let counters = FakeCounters::with_labels(&[]);
+    let usage = object(vec![(
+        "prompt_tokens_details",
+        object(vec![("cache_creation_tokens", number("0"))]),
+    )]);
+    increment_token_detail_metrics(
+        &counters,
+        &with_usage(payload(Decimal::ZERO), usage),
+        fixture.labels(),
+        Instant::now(),
+    )
+    .unwrap();
+    assert!(counters.events().is_empty());
+}
+
+#[test]
 fn media_counters_skip_without_usage_object() {
     let fixture = Fixture::with_end_user("alice");
     let counters = FakeCounters::with_labels(&[]);
