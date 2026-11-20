@@ -24,8 +24,7 @@ pub fn build_key_filter_conditions(filters: &KeyFilters, now: DateTime<Utc>) -> 
     if globals.is_empty() {
         return combined;
     }
-    let children = std::iter::once(combined).chain(globals).collect();
-    vec![Where::And(children)]
+    vec![Where::And([combined].into_iter().chain(globals).collect())]
 }
 
 fn global_filters(filters: &KeyFilters, now: DateTime<Utc>) -> Vec<WhereClause> {

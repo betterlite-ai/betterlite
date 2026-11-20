@@ -3,7 +3,8 @@ use betterlite_db::identity_rows::key::Expiry;
 use crate::key_query_plan::filters::globals::build_key_filter_conditions;
 use crate::key_query_plan::filters::visibility::visibility_arms;
 use crate::key_query_plan::filters::{
-    KeyColumn, KeyScalar, TextMatching, Where, build_key_search_where, filter_out_ui_session_tokens,
+    KeyColumn, KeyFilters, KeyScalar, TextMatching, Where, WhereClause, build_key_search_where,
+    filter_out_ui_session_tokens,
 };
 use crate::key_query_plan::status::{
     KeyStatus, KeyStatusSource, build_expires_where_clause, build_status_where_clause,
@@ -80,47 +81,50 @@ fn creator_none_empty_current_teams() {
     base.include_created_by_keys = true;
     let own = equals(KeyColumn::UserId, "alice");
     let created = equals(KeyColumn::CreatedBy, "alice");
-    let ui = filter_out_ui_session_tokens();
     // two arms OR together under the UI-session exclusion
-    let expected = clause_of(vec![and_of(vec![
-        ui.clone(),
-        clause_of(vec![or_of(vec![own.clone(), created.clone()])]),
-    ])]);
-    assert_eq!(build_key_filter_conditions(&base, now()), expected);
+    assert_eq!(
+        build_key_filter_conditions(&base, now()),
+        two_arm_clause(own.clone(), created.clone())
+    );
 
     let mut no_teams = base.clone();
     no_teams.member_team_ids = Some(Vec::new());
     let empty_created = clause_of(vec![and_of(vec![
-        created.clone(),
+        created,
         vec![Where::IsNull(KeyColumn::TeamId)],
-    ])]);
-    let empty_expected = clause_of(vec![and_of(vec![
-        ui.clone(),
-        clause_of(vec![or_of(vec![own.clone(), empty_created])]),
     ])]);
     assert_eq!(
         build_key_filter_conditions(&no_teams, now()),
-        empty_expected
+        two_arm_clause(own.clone(), empty_created)
     );
 
     let mut current = base;
     current.member_team_ids = Some(vec![String::from("team-a"), String::from("team-b")]);
-    let scoped_teams = clause_of(vec![or_of(vec![
+    let scoped_created = clause_of(vec![and_of(vec![
+        equals(KeyColumn::CreatedBy, "alice"),
+        scoped_teams(),
+    ])]);
+    assert_eq!(
+        build_key_filter_conditions(&current, now()),
+        two_arm_clause(own, scoped_created)
+    );
+}
+
+fn two_arm_clause(own: WhereClause, created: WhereClause) -> WhereClause {
+    clause_of(vec![and_of(vec![
+        filter_out_ui_session_tokens(),
+        clause_of(vec![or_of(vec![own, created])]),
+    ])])
+}
+
+fn scoped_teams() -> WhereClause {
+    clause_of(vec![or_of(vec![
         vec![Where::In(
             KeyColumn::TeamId,
             vec![String::from("team-a"), String::from("team-b")],
         )],
         vec![Where::IsNull(KeyColumn::TeamId)],
-    ])]);
-    let scoped_created = clause_of(vec![and_of(vec![created, scoped_teams])]);
-    let scoped_expected = clause_of(vec![and_of(vec![
-        ui,
-        clause_of(vec![or_of(vec![own, scoped_created])]),
-    ])]);
-    assert_eq!(
-        build_key_filter_conditions(&current, now()),
-        scoped_expected
-    );
+    ])])
 }
 
 #[test]
@@ -203,38 +207,40 @@ fn exact_token_or_alias_substring_search() {
     ])]);
     assert_eq!(build_key_search_where("abc"), expected);
 
-    let mut substring = key_filters();
-    substring.user_id = Some(String::from("alice"));
-    substring.key_alias = Some(String::from("Ali"));
-    substring.user_matching = TextMatching::Substring;
-    substring.key_alias_matching = TextMatching::Substring;
-    let mut own_entries = filter_out_ui_session_tokens();
-    own_entries.push(Where::ContainsInsensitive(
-        KeyColumn::UserId,
-        String::from("alice"),
-    ));
-    let expected_substring = clause_of(vec![and_of(vec![
-        clause_of(own_entries),
-        vec![Where::ContainsInsensitive(
-            KeyColumn::KeyAlias,
-            String::from("Ali"),
-        )],
-    ])]);
     assert_eq!(
-        build_key_filter_conditions(&substring, now()),
-        expected_substring
+        build_key_filter_conditions(&substring_filters(), now()),
+        scoped_expected(
+            Where::ContainsInsensitive(KeyColumn::UserId, String::from("alice")),
+            Where::ContainsInsensitive(KeyColumn::KeyAlias, String::from("Ali")),
+        )
     );
 
     let mut exact = key_filters();
     exact.user_id = Some(String::from("alice"));
     exact.key_alias = Some(String::from("Ali"));
-    let mut exact_entries = filter_out_ui_session_tokens();
-    exact_entries.push(Where::Equals(KeyColumn::UserId, text("alice")));
-    let expected_exact = clause_of(vec![and_of(vec![
-        clause_of(exact_entries),
-        equals(KeyColumn::KeyAlias, "Ali"),
-    ])]);
-    assert_eq!(build_key_filter_conditions(&exact, now()), expected_exact);
+    assert_eq!(
+        build_key_filter_conditions(&exact, now()),
+        scoped_expected(
+            Where::Equals(KeyColumn::UserId, text("alice")),
+            Where::Equals(KeyColumn::KeyAlias, text("Ali")),
+        )
+    );
+}
+
+fn substring_filters() -> KeyFilters {
+    let mut substring = key_filters();
+    substring.user_id = Some(String::from("alice"));
+    substring.key_alias = Some(String::from("Ali"));
+    substring.user_matching = TextMatching::Substring;
+    substring.key_alias_matching = TextMatching::Substring;
+    substring
+}
+
+// the caller's own-key clause, then one global clause outside it
+fn scoped_expected(user_entry: Where, alias_entry: Where) -> WhereClause {
+    let mut entries = filter_out_ui_session_tokens();
+    entries.push(user_entry);
+    clause_of(vec![and_of(vec![clause_of(entries), vec![alias_entry]])])
 }
 
 #[test]
@@ -303,30 +309,9 @@ fn expiry_before_equal_after() {
 
 #[test]
 fn blocked_null_false_true() {
-    let unblocked = KeyStatusSource {
-        blocked: Some(false),
-        expires: None,
-    };
-    let missing = KeyStatusSource {
-        blocked: None,
-        expires: None,
-    };
-    let blocked = KeyStatusSource {
-        blocked: Some(true),
-        expires: None,
-    };
-    assert_eq!(
-        derive_key_status(&missing, now()).unwrap(),
-        KeyStatus::Active
-    );
-    assert_eq!(
-        derive_key_status(&unblocked, now()).unwrap(),
-        KeyStatus::Active
-    );
-    assert_eq!(
-        derive_key_status(&blocked, now()).unwrap(),
-        KeyStatus::Revoked
-    );
+    assert_eq!(status_with(None), KeyStatus::Active);
+    assert_eq!(status_with(Some(false)), KeyStatus::Active);
+    assert_eq!(status_with(Some(true)), KeyStatus::Revoked);
 
     assert_eq!(
         not_blocked_where_clause(),
@@ -342,6 +327,14 @@ fn blocked_null_false_true() {
             KeyScalar::Bool(true),
         )])
     );
+}
+
+fn status_with(blocked: Option<bool>) -> KeyStatus {
+    let source = KeyStatusSource {
+        blocked,
+        expires: None,
+    };
+    derive_key_status(&source, now()).unwrap()
 }
 
 #[test]

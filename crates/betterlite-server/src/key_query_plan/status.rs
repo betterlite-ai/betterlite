@@ -64,9 +64,8 @@ fn parse_utc(text: &str) -> Option<DateTime<Utc>> {
     if let Ok(value) = DateTime::parse_from_rfc3339(text) {
         return Some(value.with_timezone(&Utc));
     }
-    NaiveDateTime::parse_from_str(text, "%Y-%m-%dT%H:%M:%S%.f")
-        .ok()
-        .map(NaiveDateTime::and_utc)
+    let naive = NaiveDateTime::parse_from_str(text, "%Y-%m-%dT%H:%M:%S%.f").ok()?;
+    Some(DateTime::from_naive_utc_and_offset(naive, Utc))
 }
 
 #[must_use]

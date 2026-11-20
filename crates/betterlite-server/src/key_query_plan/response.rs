@@ -86,7 +86,7 @@ fn non_empty_text(value: Option<&JsonData>) -> Option<&str> {
     let Some(JsonData::String(text)) = value else {
         return None;
     };
-    Some(text).filter(|entry| !entry.is_empty())
+    Some(text.as_str()).filter(|entry| !entry.is_empty())
 }
 
 fn optional_text(value: &Option<String>) -> JsonData {

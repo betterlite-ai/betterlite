@@ -151,7 +151,18 @@ async fn postgres_visibility_matrix() {
 
     let counted = list_keys(Some(client), &query(1, 50)).await.unwrap();
     assert_eq!(counted.total_count, Some(12));
+    assert_budget_join(client).await;
+    assert_default_visibility(client).await;
+    assert_team_visibility(client).await;
+    assert_unscoped_creator(client).await;
+    assert_scoped_creators(client).await;
+    assert_global_filters(client).await;
+    assert_status_filters(client).await;
+    pool.close();
+    fixture.close_async().await.unwrap();
+}
 
+async fn assert_budget_join(client: PrismaClient<'_>) {
     let mut own_full = key_filters();
     own_full.user_id = Some(String::from("alice"));
     let mut full_request = query(1, 50);
@@ -168,7 +179,9 @@ async fn postgres_visibility_matrix() {
         budget.get("budget_id"),
         Some(&JsonData::String(String::from("budget-1")))
     );
+}
 
+async fn assert_default_visibility(client: PrismaClient<'_>) {
     let all = tokens(client, key_filters()).await;
     assert_eq!(
         all,
@@ -187,7 +200,9 @@ async fn postgres_visibility_matrix() {
             "team-b-sa",
         ]
     );
+}
 
+async fn assert_team_visibility(client: PrismaClient<'_>) {
     let mut own_admin_member = key_filters();
     own_admin_member.user_id = Some(String::from("alice"));
     own_admin_member.admin_team_ids = Some(vec![String::from("team-a")]);
@@ -207,7 +222,9 @@ async fn postgres_visibility_matrix() {
         ],
         "own keys, all admin-team keys and member-team service accounts; another member's team-b key stays hidden"
     );
+}
 
+async fn assert_unscoped_creator(client: PrismaClient<'_>) {
     let mut unscoped_creator = key_filters();
     unscoped_creator.user_id = Some(String::from("alice"));
     unscoped_creator.include_created_by_keys = true;
@@ -223,7 +240,9 @@ async fn postgres_visibility_matrix() {
             "team-b-sa",
         ]
     );
+}
 
+async fn assert_scoped_creators(client: PrismaClient<'_>) {
     let mut personal_creator = key_filters();
     personal_creator.user_id = Some(String::from("alice"));
     personal_creator.member_team_ids = Some(Vec::new());
@@ -250,7 +269,9 @@ async fn postgres_visibility_matrix() {
     service_accounts.member_team_ids = Some(vec![String::from("team-b")]);
     let service_found = tokens(client, service_accounts).await;
     assert_eq!(service_found, vec!["team-b-sa"]);
+}
 
+async fn assert_global_filters(client: PrismaClient<'_>) {
     let mut global_team = key_filters();
     global_team.team_id = Some(String::from("team-a"));
     let team_found = tokens(client, global_team).await;
@@ -274,7 +295,9 @@ async fn postgres_visibility_matrix() {
     globals.agent_id = Some(String::from("agent-1"));
     let globals_found = tokens(client, globals).await;
     assert_eq!(globals_found, vec!["project-key"]);
+}
 
+async fn assert_status_filters(client: PrismaClient<'_>) {
     let mut active = key_filters();
     active.status_filter = Some(String::from("active"));
     let active_tokens = tokens(client, active).await;
@@ -293,9 +316,6 @@ async fn postgres_visibility_matrix() {
     let mut archived = key_filters();
     archived.status_filter = Some(String::from("deleted"));
     assert_eq!(tokens(client, archived).await, vec!["gone-1", "gone-2"]);
-
-    pool.close();
-    fixture.close_async().await.unwrap();
 }
 
 #[tokio::test]

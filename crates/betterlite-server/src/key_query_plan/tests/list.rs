@@ -144,7 +144,8 @@ impl KeyListSource for FakeSource {
         _row: &mut KeyRow,
     ) -> impl Future<Output = Result<(), KeyQueryPlanError>> + Send {
         self.record("attach");
-        *self.attach_calls.lock().unwrap() += 1;
+        let mut count = self.attach_calls.lock().unwrap();
+        *count = count.saturating_add(1);
         async move { self.answer(Failure::Attach, ()) }
     }
 }
@@ -204,9 +205,7 @@ fn full_live_vs_archived_rows() {
     let live_entry = entry_for_row(live, KeyTable::Live, true).unwrap();
     assert!(matches!(live_entry, KeyListEntry::Auth(_)));
 
-    let archived = row(
-        r#"{"id":"d1","token":"del-1","deleted_at":"2025-01-01T00:00:00","deleted_by":"admin","deleted_by_api_key":"op-hash","litellm_changed_by":null}"#,
-    );
+    let archived = archived_row();
     let archived_entry = entry_for_row(archived.clone(), KeyTable::Deleted, true).unwrap();
     let fields = entry_fields(&archived_entry);
     assert_eq!(
@@ -225,6 +224,12 @@ fn full_live_vs_archived_rows() {
         entry_for_row(archived, KeyTable::Deleted, false).unwrap(),
         KeyListEntry::Token(token) if token == "del-1"
     ));
+}
+
+fn archived_row() -> KeyRow {
+    row(
+        r#"{"id":"d1","token":"del-1","deleted_at":"2025-01-01T00:00:00","deleted_by":"admin","deleted_by_api_key":"op-hash","litellm_changed_by":null}"#,
+    )
 }
 
 #[derive(Clone)]
@@ -366,7 +371,7 @@ async fn token_only_still_attaches_permission() {
 }
 
 #[tokio::test]
-async fn query_failures_propagate() {
+async fn sort_failure_runs_no_query() {
     let mut invalid_sort = query(1, 10);
     invalid_sort.sort_by = Some(String::from("created"));
     let untouched = FakeSource::default();
@@ -379,24 +384,34 @@ async fn query_failures_propagate() {
         untouched.calls().is_empty(),
         "no query runs without a valid sort"
     );
+}
 
-    let request = query(1, 10);
+#[tokio::test]
+async fn page_failure_stops_before_count() {
     let mut page_failure = FakeSource::default();
     page_failure.failure = Some(Failure::Page);
+    let request = query(1, 10);
     let page_error = list_keys_with(&page_failure, &request).await.unwrap_err();
     assert!(matches!(page_error, KeyQueryPlanError::MissingToken));
     assert_eq!(page_failure.calls(), vec![String::from("page")]);
+}
 
+#[tokio::test]
+async fn count_failure_stops_before_users() {
     let mut count_failure = FakeSource::default();
     count_failure.total = 3;
     count_failure.failure = Some(Failure::Count);
+    let request = query(1, 10);
     let count_error = list_keys_with(&count_failure, &request).await.unwrap_err();
     assert!(matches!(count_error, KeyQueryPlanError::MissingToken));
     assert_eq!(
         count_failure.calls(),
         vec![String::from("page"), String::from("count")]
     );
+}
 
+#[tokio::test]
+async fn users_failure_stops_before_attach() {
     let mut users_failure = FakeSource::default();
     users_failure.page = vec![row(r#"{"token":"k1","user_id":"alice"}"#)];
     users_failure.total = 1;
@@ -406,8 +421,11 @@ async fn query_failures_propagate() {
     let users_error = list_keys_with(&users_failure, &expanded).await.unwrap_err();
     assert!(matches!(users_error, KeyQueryPlanError::MissingToken));
     assert!(users_failure.calls().contains(&String::from("users")));
+}
 
-    let no_client = list_keys(None, &request).await.unwrap_err();
+#[tokio::test]
+async fn missing_database_is_typed() {
+    let no_client = list_keys(None, &query(1, 10)).await.unwrap_err();
     assert!(matches!(
         no_client,
         KeyQueryPlanError::Database(DbError::NoDbConnected)
