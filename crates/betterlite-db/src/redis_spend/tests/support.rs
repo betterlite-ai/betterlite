@@ -45,7 +45,7 @@ impl FillOnPush {
         match self {
             Self::Daily(queue, update) => queue.add_update(update.clone()).await.unwrap(),
             Self::Window(queue, transaction) => {
-                queue.add_update(transaction.clone()).await.unwrap()
+                queue.add_update(transaction.clone()).await.unwrap();
             }
         }
     }
