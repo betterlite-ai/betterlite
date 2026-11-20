@@ -1,7 +1,7 @@
 id: B801
 milestone: M4 keys, spend and management
 title: Team metadata validation and shared row access
-status: todo
+status: done
 depends_on: [B002, B003, B165, B171, B722, B723, B724, B725, B726, B732, B734, B856, B859, B1200, B1231]
 file: tasks/B801-team-fields.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/proxy/management_endpoints/team_endpoints.py"
 parent: B057
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2704
