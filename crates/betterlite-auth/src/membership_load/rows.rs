@@ -7,7 +7,6 @@ use betterlite_db::auxiliary_repository::repository::{PrismaClient, PrismaTableR
 use betterlite_db::database_failures::gate::{DbLookupStallTracker, LookupClock, SystemClock};
 use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::postgres_store::diagnostics::DriverError;
-use betterlite_db::postgres_store::errors::DbError;
 use betterlite_db::postgres_store::rows::{
     FindMany, Key, KeyAction, KeyColumn, Query, RowCodec, Table,
 };
@@ -244,8 +243,14 @@ impl TeamMembershipRows for DatabaseTeamMembership {
             redis_config_change_publisher(None),
             TeamMembership,
         );
-        let access = repository.access().map_err(read_fault)?;
-        let session = access.read.session().await.map_err(read_fault)?;
+        let access = repository
+            .access()
+            .map_err(|source| MembershipReadFailure::Access(Box::new(source)))?;
+        let session = access
+            .read
+            .session()
+            .await
+            .map_err(|source| MembershipReadFailure::Access(Box::new(source)))?;
         let table = RepositoryTable {
             client: Some(Arc::new(session)),
             table: MembershipRows,
@@ -262,9 +267,4 @@ impl TeamMembershipRows for DatabaseTeamMembership {
         )
         .await
     }
-}
-
-// The access or session fault is B700's repository error and never a row failure.
-fn read_fault(source: DbError) -> MembershipReadFailure {
-    MembershipReadFailure::Access(Box::new(source))
 }
