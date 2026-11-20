@@ -1,0 +1,33 @@
+task: B3002
+deviations:
+  - what: >-
+      The warning for a budget window whose duration cannot be parsed records the entity type and the
+      budget_duration as fields and leaves the entity id out, and a budget_duration that is not a
+      string gets its own warning line. LiteLLM writes "for %s=%s" with the entity id, and for a key
+      window that id is the API key token.
+    why: >-
+      A key token is a credential, and the secret-redaction rules keep it out of the log stream. The
+      counter list is the same on both sides: a window without a parseable duration or a positive
+      budget is skipped either way, so only the warning text differs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L871-L878
+  - what: >-
+      A cached project row whose litellm_budget_table.max_budget rust_decimal cannot hold, such as
+      1e40, does not decode, so the request collects no project counter. LiteLLM keeps any finite
+      float below that ceiling and reserves against it. The organization, team membership and team
+      member default budget rows this task reads get the same treatment.
+    why: >-
+      Budget amounts are decimals, and an undecodable cached row is a cache miss in betterlite's
+      cache layer. B3000 records the rule that out-of-range numbers yield None; this task reads its
+      rows through it, so a value stored past the decimal range drops the counter instead of
+      reserving against it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L839-L841
+  - what: >-
+      A team membership whose effective_max_budget overflows rust_decimal's range collects no
+      team-member counter, where LiteLLM adds the active temp increase to its float budget and
+      reserves against the sum.
+    why: >-
+      The sum has no decimal to carry it, and the same rule that drops an out-of-range cached number
+      drops an out-of-range computed one. Only a membership budget at the top of the decimal range
+      with an active temp increase reaches the branch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/budget.py#L49-L52
+kept_bugs: []
