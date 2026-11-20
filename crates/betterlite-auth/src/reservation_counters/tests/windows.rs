@@ -92,6 +92,21 @@ async fn window_start_accepts_a_reset_before_the_epoch() {
 }
 
 #[tokio::test]
+async fn window_start_accepts_a_year_one_reset() {
+    let mut fixture = Fixture::new();
+    fixture.token = auth(concat!(
+        r#"{"token":"tok","budget_limits":["#,
+        r#"{"budget_duration":"1d","max_budget":5,"reset_at":"0001-01-01T00:00:00Z"}]}"#,
+    ));
+    let list = fixture.counters().await;
+    let counter = only(&list);
+    let expected = UNIX_EPOCH
+        .checked_sub(Duration::from_secs(62_135_683_200))
+        .expect("the year-one start");
+    assert_eq!(counter.window_start, Some(expected));
+}
+
+#[tokio::test]
 async fn window_skip_invalid_duration_warns_and_stays_out() {
     let (logs, _guard) = Logs::capture();
     let mut fixture = Fixture::new();

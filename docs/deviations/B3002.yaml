@@ -31,13 +31,12 @@ deviations:
       with an active temp increase reaches the branch.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/budget.py#L49-L52
   - what: >-
-      A budget window whose computed start falls outside the range of std::time::SystemTime is skipped
-      with a warning. LiteLLM subtracts the duration from the reset time with datetime arithmetic,
-      which raises OverflowError for a stored reset_at near the edge of the datetime range and fails
-      the whole request.
+      A budget window start outside Python's datetime range is kept. A stored reset_at of 0001-01-01
+      minus the duration raises OverflowError in LiteLLM and fails the whole request; betterlite
+      computes the start wherever chrono can, and skips the one window with a warning only where
+      std::time::SystemTime cannot hold the result.
     why: >-
-      A reset time that cannot become a SystemTime leaves no window start to hand the admission
-      engine. Skipping that one window keeps the rest of the counter list intact instead of failing the
-      reservation.
+      A reset time at the edge of the range should not turn a budgeted request into a 500. The counter
+      list is otherwise unchanged: LiteLLM has no start to reserve against because the request dies.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1283
 kept_bugs: []
