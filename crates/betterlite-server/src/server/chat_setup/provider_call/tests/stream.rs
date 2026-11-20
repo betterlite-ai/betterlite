@@ -16,6 +16,7 @@ use tokio::task::JoinSet;
 use tokio::time::timeout;
 
 use crate::routes::chat::chat_routes_with_call_id;
+use crate::routes::chat::streaming::ChatCalls;
 use crate::server::chat_setup::chat_executor;
 
 const FIRST: &str = "data: {\"id\":\"c\",\"object\":\"chat.completion.chunk\",\"created\":7,\"model\":\"g\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"first\"}}]}\n\n";
@@ -68,6 +69,7 @@ async fn gateway(upstream: &TcpListener, tasks: &mut JoinSet<()>) -> (ProxiedCli
     .load(&source)
     .unwrap();
     let executor = chat_executor(&config, &environment, StdRng::seed_from_u64(3)).unwrap();
+    let calls = ChatCalls::new(&config, Arc::new(executor)).unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!(
         "http://{}/v1/chat/completions",
@@ -76,7 +78,7 @@ async fn gateway(upstream: &TcpListener, tasks: &mut JoinSet<()>) -> (ProxiedCli
     tasks.spawn(async move {
         axum::serve(
             listener,
-            chat_routes_with_call_id(Arc::new(executor), false).unwrap(),
+            chat_routes_with_call_id(Arc::new(calls), false).unwrap(),
         )
         .await
         .unwrap();

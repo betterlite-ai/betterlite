@@ -9,6 +9,7 @@ use std::sync::atomic::AtomicBool;
 use tokio::task::JoinSet;
 
 use crate::routes::chat::chat_routes_with_call_id;
+use crate::routes::chat::streaming::ChatCalls;
 use crate::server::chat_setup::chat_executor;
 use axum::body::{Body, to_bytes};
 use axum::http::{HeaderMap, Request};
@@ -111,11 +112,12 @@ async fn exchange(
         };
         let config = loader.load(&source).unwrap();
         let executor = chat_executor(&config, &environment, StdRng::seed_from_u64(3)).unwrap();
+        let calls = ChatCalls::new(&config, Arc::new(executor)).unwrap();
         let mut builder = Request::post(path).header("content-type", "application/json");
         if !call_id.is_empty() {
             builder = builder.header("x-litellm-call-id", call_id);
         }
-        chat_routes_with_call_id(Arc::new(executor), false)
+        chat_routes_with_call_id(Arc::new(calls), false)
             .unwrap()
             .oneshot(builder.body(Body::from(request.to_owned())).unwrap())
     };
@@ -210,12 +212,13 @@ async fn mock_calls_behavior_tests_behavior() {
     .load(&source)
     .unwrap();
     let executor = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(3)).unwrap();
+    let calls = ChatCalls::new(&config, Arc::new(executor)).unwrap();
     let request = Request::post("/v1/chat/completions")
         .header("content-type", "application/json")
         .header("x-litellm-call-id", "mock-call")
         .body(Body::from(r#"{"model":"g","messages":[]}"#))
         .unwrap();
-    let response = chat_routes_with_call_id(Arc::new(executor), false)
+    let response = chat_routes_with_call_id(Arc::new(calls), false)
         .unwrap()
         .oneshot(request)
         .await
@@ -243,19 +246,20 @@ async fn mock_calls_behavior_tests_behavior() {
 
 async fn mock_reply(source: &str, path: &str, body: &str) -> (StatusCode, Vec<u8>, HeaderMap) {
     // the loaded config would otherwise live across the await below, and every new config section grows this future past clippy's large_futures limit
-    let executor = {
+    let calls = {
         let config = ConfigLoader {
             lookup: BTreeMap::new(),
         }
         .load(source)
         .unwrap();
-        chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(3)).unwrap()
+        let executor = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(3)).unwrap();
+        ChatCalls::new(&config, Arc::new(executor)).unwrap()
     };
     let request = Request::post(path)
         .header("content-type", "application/json")
         .body(Body::from(body.to_owned()))
         .unwrap();
-    let response = chat_routes_with_call_id(Arc::new(executor), false)
+    let response = chat_routes_with_call_id(Arc::new(calls), false)
         .unwrap()
         .oneshot(request)
         .await

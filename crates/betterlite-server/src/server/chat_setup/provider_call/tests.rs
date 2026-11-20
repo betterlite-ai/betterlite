@@ -17,6 +17,7 @@ use tokio::time::timeout;
 use tower::ServiceExt as _;
 
 use crate::routes::chat::chat_routes_with_call_id;
+use crate::routes::chat::streaming::ChatCalls;
 use crate::server::chat_setup::chat_executor;
 
 mod defaults;
@@ -84,15 +85,16 @@ async fn call(
     let loader = ConfigLoader {
         lookup: environment.clone(),
     };
-    let executor = {
+    let calls = {
         let config = loader.load(&source).unwrap();
-        chat_executor(&config, &environment, StdRng::seed_from_u64(3)).unwrap()
+        let executor = chat_executor(&config, &environment, StdRng::seed_from_u64(3)).unwrap();
+        ChatCalls::new(&config, Arc::new(executor)).unwrap()
     };
     let request = Request::post("/v1/chat/completions")
         .header("content-type", "application/json")
         .body(Body::from(sent_body))
         .unwrap();
-    let router = chat_routes_with_call_id(Arc::new(executor), false).unwrap();
+    let router = chat_routes_with_call_id(Arc::new(calls), false).unwrap();
     let (sent, answered) = tokio::join!(upstream(listener, reply), router.oneshot(request));
     let response = answered.unwrap();
     let status = response.status().as_u16();

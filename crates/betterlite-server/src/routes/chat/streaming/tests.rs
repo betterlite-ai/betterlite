@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use axum::body::{Body, Bytes, to_bytes};
 use axum::http::{HeaderMap, Request, StatusCode};
 use betterlite_config::loader::ConfigLoader;
+use betterlite_config::types::Config;
 use betterlite_core::dispatch::error::DispatchError;
 use betterlite_core::operation::chat::{ChatFailure, ChatResult, TextCallMode};
 use betterlite_http::error::HttpError;
@@ -32,17 +33,21 @@ use uuid::Uuid;
 use super::answered_result;
 use super::completion_failure;
 use super::relay::{RelaySource, TextSource};
+use crate::routes::chat::streaming::ChatCalls;
 use crate::routes::chat::{CallContext, ErrorLayer, chat_routes_with_call_id, dispatch_failure};
 use crate::routes::completions::streaming::pump::{Pump, next_frame};
 use crate::server::chat_setup::chat_executor;
 
-fn executor_for(source: &str) -> ChatExecutor {
-    let config = ConfigLoader {
+fn config_for(source: &str) -> Config {
+    ConfigLoader {
         lookup: BTreeMap::new(),
     }
     .load(source)
-    .expect("config");
-    chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(3)).expect("executor")
+    .expect("config")
+}
+
+fn executor_for(config: &Config) -> ChatExecutor {
+    chat_executor(config, &BTreeMap::new(), StdRng::seed_from_u64(3)).expect("executor")
 }
 
 async fn mock_call(source: &str, body: &str) -> (StatusCode, Vec<u8>) {
@@ -50,19 +55,26 @@ async fn mock_call(source: &str, body: &str) -> (StatusCode, Vec<u8>) {
 }
 
 async fn mock_call_at(path: &str, source: &str, body: &str) -> (StatusCode, Vec<u8>) {
-    routed_at(path, executor_for(source), body).await
+    let config = config_for(source);
+    routed_at(path, &config, executor_for(&config), body).await
 }
 
-async fn routed(executor: ChatExecutor, body: &str) -> (StatusCode, Vec<u8>) {
-    routed_at("/v1/chat/completions", executor, body).await
+async fn routed(config: &Config, executor: ChatExecutor, body: &str) -> (StatusCode, Vec<u8>) {
+    routed_at("/v1/chat/completions", config, executor, body).await
 }
 
-async fn routed_at(path: &str, executor: ChatExecutor, body: &str) -> (StatusCode, Vec<u8>) {
+async fn routed_at(
+    path: &str,
+    config: &Config,
+    executor: ChatExecutor,
+    body: &str,
+) -> (StatusCode, Vec<u8>) {
     let request = Request::post(path)
         .header("content-type", "application/json")
         .body(Body::from(body.to_owned()))
         .expect("request");
-    let response = chat_routes_with_call_id(Arc::new(executor), false)
+    let calls = ChatCalls::new(config, Arc::new(executor)).expect("calls");
+    let response = chat_routes_with_call_id(Arc::new(calls), false)
         .expect("router")
         .oneshot(request)
         .await
@@ -106,10 +118,16 @@ struct FrameDelta {
 #[tokio::test]
 async fn mock_stream_frames_use_the_injected_id_and_clock() {
     let source = "model_list:\n  - {model_name: g, litellm_params: {model: openai/up, api_base: 'http://127.0.0.1:1', api_key: k, mock_response: abcdefg, timeout: 0.1}}\n";
-    let mut executor = executor_for(source);
+    let config = config_for(source);
+    let mut executor = executor_for(&config);
     executor.clock = fixed_clock;
     executor.next_id = fixed_id;
-    let (status, body) = routed(executor, r#"{"model":"g","messages":[],"stream":true}"#).await;
+    let (status, body) = routed(
+        &config,
+        executor,
+        r#"{"model":"g","messages":[],"stream":true}"#,
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     let text = String::from_utf8(body).expect("utf-8 SSE");
     let first = text
@@ -457,7 +475,8 @@ const TEXT_CALL_RESPONSE: &str = r#"{"id":"cmpl-1","object":"text_completion","c
 // The text endpoint's answer arrives in the shape the text call asked for; a crossed shape is a dispatch bug.
 #[tokio::test]
 async fn answered_result_takes_the_buffered_conversion_and_the_stream() {
-    let executor = executor_for(TEXT_CALL_CONFIG);
+    let config = config_for(TEXT_CALL_CONFIG);
+    let executor = executor_for(&config);
     let request = ChatRequest::parse(TEXT_CALL_REQUEST).expect("chat request");
     let response: CompletionResponse =
         serde_json::from_str(TEXT_CALL_RESPONSE).expect("completion response");

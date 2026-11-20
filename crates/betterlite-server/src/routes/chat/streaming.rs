@@ -5,21 +5,18 @@ use async_trait::async_trait;
 use axum::body::Body;
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse as _, Response};
-use betterlite_config::sections::mock_response::failure::MockError;
-use betterlite_config::sections::mock_response::selection::{MockPlan, resolve_mock};
-use betterlite_core::dispatch::chat::mock_stream::mock_frames;
-use betterlite_core::mock::chat::{ChatAnswer, answer};
-use betterlite_core::mock::stream::StreamSpec;
+use betterlite_config::sections::mock_response::selection::resolve_mock;
+use betterlite_config::types::Config;
 use betterlite_core::operation::chat::{
     ChatCall, ChatCallInput, ChatCompletionAnswer, ChatFailure, ChatResult, ChatStreamAnswer,
     TextCallMode,
 };
 use betterlite_error::envelope::{ErrorObject, ErrorResponse, WireField};
 use betterlite_http::proxy::UpstreamResponse;
+use betterlite_models::catalog::BundledCatalog;
 use betterlite_models::controls::control_options::ControlOptions;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
-use betterlite_openai::chat::mock_failure;
 use betterlite_openai::chat::{ChatRequest, RequestError, client_mock};
 use betterlite_openai::completion_chat_bridge::{
     ChatEndpoint, answer, chat_endpoint, text_endpoint_model, text_request,
@@ -30,6 +27,10 @@ use betterlite_openai::text_completion_execution::{
     CompletionAnswer, CompletionCallAnswer, CompletionExecutor, CompletionSend,
     CompletionStreamAnswer,
 };
+use betterlite_provider::operation::OperationResult;
+use betterlite_tokenizer::count::Counter;
+use betterlite_tokenizer::count::error::CountError;
+use betterlite_tokenizer::count::runtime::runtime_counter;
 use futures_util::StreamExt as _;
 use futures_util::stream;
 use tokio::sync::OnceCell;
@@ -40,11 +41,24 @@ use crate::routes::completions::streaming::pump::{Pump, next_frame};
 use crate::routes::completions::streaming::{StreamUsage, provider_stream};
 use crate::server::chat_setup::provider_call::{CallError, answer_chat, control_options};
 
+use self::mock::mock_stream;
 use self::relay::{TextSource, relay_bytes};
 
 // the existing chat implementation, reached through the dispatch pipeline's port
-pub(super) struct ChatCalls {
-    pub(super) executor: Arc<ChatExecutor>,
+pub(crate) struct ChatCalls {
+    pub(crate) executor: Arc<ChatExecutor>,
+    pub(crate) counter: Counter,
+}
+
+impl ChatCalls {
+    pub(crate) fn new(config: &Config, executor: Arc<ChatExecutor>) -> Result<Self, CountError> {
+        let counter = runtime_counter(
+            config,
+            &Arc::new(executor.client.clone()),
+            &BundledCatalog::default().get(),
+        )?;
+        Ok(Self { executor, counter })
+    }
 }
 
 fn chat_failure(error: CallError<ChatError>) -> ChatFailure {
@@ -68,10 +82,20 @@ impl ChatCall for ChatCalls {
         call: ChatCallInput<'_>,
         control: ControlOptions,
     ) -> Result<ChatCompletionAnswer, ChatFailure> {
-        let (completion, upstream_headers, upstream_time) =
+        let (result, upstream_headers, upstream_time) =
             answer_chat(&self.executor, call.request, &call.deployment, control)
                 .await
                 .map_err(chat_failure)?;
+        let (completion, upstream_headers) = if let OperationResult::OutputLimit { sent } = &result
+        {
+            recovery::completion(self, sent, upstream_headers, call.request.model.as_deref())
+                .await?
+        } else {
+            let OperationResult::Chat(completion) = result else {
+                return Err(ChatFailure::Mismatched);
+            };
+            (completion, upstream_headers)
+        };
         let body = serde_json::to_vec(&completion)
             .map_err(|source| ChatFailure::Route(ChatError::Encode { source }))?;
         Ok(ChatCompletionAnswer {
@@ -101,7 +125,7 @@ impl ChatCall for ChatCalls {
             return mock_stream(executor, &call.deployment, call.request, &plan);
         }
         let started = Instant::now();
-        let upstream = provider_stream(
+        let (result, upstream_headers) = provider_stream(
             executor,
             &call.deployment,
             call.request,
@@ -111,9 +135,14 @@ impl ChatCall for ChatCalls {
         .await
         .map_err(chat_failure)?;
         let upstream_time = started.elapsed();
-        let upstream_headers = upstream.response.headers().clone();
+        if let OperationResult::OutputLimit { sent } = &result {
+            return recovery::stream(self, sent, upstream_headers, upstream_time).await;
+        }
+        let OperationResult::Stream(stream) = result else {
+            return Err(ChatFailure::Mismatched);
+        };
         Ok(ChatStreamAnswer {
-            body: upstream.body_stream(),
+            body: stream.body_stream(),
             upstream_headers,
             upstream_time,
         })
@@ -262,34 +291,7 @@ pub(super) fn render_stream(
     (headers, stream_body).into_response()
 }
 
-fn mock_stream(
-    executor: &ChatExecutor,
-    deployment: &ChatDeployment,
-    request: &ChatRequest,
-    plan: &MockPlan<'_>,
-) -> Result<ChatStreamAnswer, ChatFailure> {
-    let answer = answer(plan).map_err(|error| ChatFailure::Route(mock_failure(error)))?;
-    let ChatAnswer::Content(content) = answer else {
-        // LiteLLM answers a 500 attribute error here; a 400 names the misuse instead
-        return Err(ChatFailure::Route(mock_failure(MockError::ObjectStream)));
-    };
-    let id = format!("chatcmpl-{}", (executor.next_id)());
-    let spec = StreamSpec {
-        content,
-        choice_count: plan.choice_count,
-        model: request.model.as_deref().unwrap_or(&deployment.model_group),
-        id: &id,
-        created: (executor.clock)(),
-    };
-    let frames = mock_frames(&spec, request, plan.prompt_tokens, executor.mock.usage)
-        .map_err(|source| ChatFailure::Route(ChatError::Encode { source }))?;
-    let body = stream::iter(frames.into_iter().map(Ok)).boxed();
-    Ok(ChatStreamAnswer {
-        body,
-        upstream_headers: HeaderMap::new(),
-        upstream_time: Duration::ZERO,
-    })
-}
-
+mod mock;
+mod recovery;
 mod relay;
 mod tests;
