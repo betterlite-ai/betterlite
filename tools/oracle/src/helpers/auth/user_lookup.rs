@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::io::Error as IoError;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -36,7 +37,7 @@ pub(crate) enum Input {
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
-enum CadenceOperation {
+pub(crate) enum CadenceOperation {
     ShouldCheck {
         key: String,
         expiry: i64,
@@ -49,7 +50,7 @@ enum CadenceOperation {
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-enum ErrorCase {
+pub(crate) enum ErrorCase {
     Message { message: String },
     Io { message: String },
 }
@@ -123,13 +124,16 @@ fn cadence_report(max_size: usize, times_ms: &[u64], operations: &[CadenceOperat
 
 fn role_report(role: RbacRole, configured: Option<&JsonData>) -> Value {
     let absent = JsonData::Null;
-    let configured = configured.unwrap_or(&absent);
-    match RolePermissions::from_json(configured) {
-        Ok(permissions) => json!({
-            "valid": true,
-            "models": permissions.models(role),
-            "routes": permissions.routes(role),
-        }),
+    let supplied = configured.unwrap_or(&absent);
+    match RolePermissions::from_json(supplied) {
+        Ok(permissions) => {
+            let selected = permissions.selected(role);
+            json!({
+                "valid": true,
+                "models": selected.and_then(|entry| entry.models.as_deref()),
+                "routes": selected.and_then(|entry| entry.routes.as_deref()),
+            })
+        }
         Err(_error) => json!({"valid": false}),
     }
 }
@@ -151,16 +155,16 @@ fn classification_report(errors: &[ErrorCase]) -> Value {
     json!({"errors": reports})
 }
 
-fn classification(error: &ErrorCase) -> Value {
-    let failure = match error {
+fn classification(case: &ErrorCase) -> Value {
+    let store_error = match case {
         ErrorCase::Message { message } => {
             UserStoreError::Other(Box::new(NamedFailure(message.clone())))
         }
         ErrorCase::Io { message } => {
-            UserStoreError::Other(Box::new(std::io::Error::other(message.clone())))
+            UserStoreError::Other(Box::new(IoError::other(message.clone())))
         }
     };
-    match user_read_failure("u1", Box::new(failure)) {
+    match user_read_failure("u1", Box::new(store_error)) {
         UserLookupError::Unavailable(cause) => {
             json!({"kind": "unavailable", "message": cause.to_string()})
         }

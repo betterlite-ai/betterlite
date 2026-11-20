@@ -34,15 +34,25 @@ fn parse_role(role: &str) -> Result<RbacRole, serde_json::Error> {
     serde_json::from_str(&format!("\"{role}\""))
 }
 
+fn models(permissions: &RolePermissions, role: RbacRole) -> Option<&[String]> {
+    let entry = permissions.selected(role)?;
+    entry.models.as_deref()
+}
+
+fn routes(permissions: &RolePermissions, role: RbacRole) -> Option<&[String]> {
+    let entry = permissions.selected(role)?;
+    entry.routes.as_deref()
+}
+
 #[test]
 fn role_defaults_none() {
     let empty = RolePermissions::default();
-    assert_eq!(empty.models(RbacRole::ProxyAdmin), None);
-    assert_eq!(empty.routes(RbacRole::Team), None);
+    assert_eq!(models(&empty, RbacRole::ProxyAdmin), None);
+    assert_eq!(routes(&empty, RbacRole::Team), None);
     let null = RolePermissions::from_json(&JsonData::Null).unwrap();
-    assert_eq!(null.models(RbacRole::InternalUser), None);
-    assert_eq!(null.routes(RbacRole::ProxyAdmin), None);
-    assert_eq!(empty.models(RbacRole::Team), None);
+    assert_eq!(models(&null, RbacRole::InternalUser), None);
+    assert_eq!(routes(&null, RbacRole::ProxyAdmin), None);
+    assert_eq!(models(&empty, RbacRole::Team), None);
 }
 
 #[test]
@@ -65,12 +75,12 @@ fn first_match_including_none_or_empty() {
     ]);
     let roles = RolePermissions::from_json(&configured).unwrap();
     assert_eq!(
-        owned(roles.models(RbacRole::ProxyAdmin)),
+        owned(models(&roles, RbacRole::ProxyAdmin)),
         Some(vec!["gpt-4".to_owned()])
     );
-    assert_eq!(owned(roles.routes(RbacRole::ProxyAdmin)), None);
-    assert_eq!(owned(roles.models(RbacRole::Team)), None);
-    assert_eq!(owned(roles.routes(RbacRole::Team)), Some(Vec::new()));
+    assert_eq!(owned(routes(&roles, RbacRole::ProxyAdmin)), None);
+    assert_eq!(owned(models(&roles, RbacRole::Team)), None);
+    assert_eq!(owned(routes(&roles, RbacRole::Team)), Some(Vec::new()));
 }
 
 #[test]
@@ -105,8 +115,8 @@ fn role_no_match() {
         Some(&["/team/info"]),
     )]);
     let roles = RolePermissions::from_json(&configured).unwrap();
-    assert_eq!(owned(roles.models(RbacRole::ProxyAdmin)), None);
-    assert_eq!(owned(roles.routes(RbacRole::InternalUser)), None);
+    assert_eq!(owned(models(&roles, RbacRole::ProxyAdmin)), None);
+    assert_eq!(owned(routes(&roles, RbacRole::InternalUser)), None);
 }
 
 #[test]
@@ -118,7 +128,7 @@ fn permission_order_duplicates_and_empty_strings() {
     )]);
     let roles = RolePermissions::from_json(&configured).unwrap();
     assert_eq!(
-        owned(roles.models(RbacRole::InternalUser)),
+        owned(models(&roles, RbacRole::InternalUser)),
         Some(vec![
             "b".to_owned(),
             "a".to_owned(),
@@ -127,7 +137,7 @@ fn permission_order_duplicates_and_empty_strings() {
         ])
     );
     assert_eq!(
-        owned(roles.routes(RbacRole::InternalUser)),
+        owned(routes(&roles, RbacRole::InternalUser)),
         Some(vec!["/b".to_owned(), "/b".to_owned(), String::new()])
     );
 }
@@ -141,15 +151,15 @@ fn models_routes_select_independently() {
     ]);
     let roles = RolePermissions::from_json(&configured).unwrap();
     assert_eq!(
-        owned(roles.models(RbacRole::ProxyAdmin)),
+        owned(models(&roles, RbacRole::ProxyAdmin)),
         Some(vec!["gpt-4".to_owned()])
     );
-    assert_eq!(owned(roles.routes(RbacRole::ProxyAdmin)), None);
-    assert_eq!(owned(roles.models(RbacRole::Team)), None);
+    assert_eq!(owned(routes(&roles, RbacRole::ProxyAdmin)), None);
+    assert_eq!(owned(models(&roles, RbacRole::Team)), None);
     assert_eq!(
-        owned(roles.routes(RbacRole::Team)),
+        owned(routes(&roles, RbacRole::Team)),
         Some(vec!["/team/info".to_owned()])
     );
-    assert_eq!(owned(roles.models(RbacRole::InternalUser)), None);
-    assert_eq!(owned(roles.routes(RbacRole::InternalUser)), None);
+    assert_eq!(owned(models(&roles, RbacRole::InternalUser)), None);
+    assert_eq!(owned(routes(&roles, RbacRole::InternalUser)), None);
 }

@@ -132,13 +132,14 @@ async fn stored_sso(store: &PostgresStore, user_id: &str) -> Option<String> {
     stored_column(store, "sso_user_id", user_id).await
 }
 
-async fn stored_updated_after(store: &PostgresStore, user_id: &str, floor: &str) -> bool {
-    let sql = "SELECT updated_at > $2::timestamp FROM \"LiteLLM_UserTable\" WHERE user_id = $1";
-    scalar(store, sql, &[&user_id, &floor]).await
+async fn stored_updated_after(store: &PostgresStore, user_id: &str) -> bool {
+    let sql =
+        "SELECT updated_at > TIMESTAMP '2000-01-02' FROM \"LiteLLM_UserTable\" WHERE user_id = $1";
+    scalar(store, sql, &[&user_id]).await
 }
 
 async fn row_text_len(store: &PostgresStore, user_id: &str) -> i64 {
-    let sql = "SELECT length((to_jsonb(entry) || jsonb_build_object('organization_memberships', COALESCE((SELECT jsonb_agg(member) FROM \"LiteLLM_OrganizationMembership\" AS member WHERE member.\"user_id\" = entry.\"user_id\"), '[]'::jsonb)))::text) FROM \"LiteLLM_UserTable\" AS entry WHERE entry.\"user_id\" = $1";
+    let sql = "SELECT length((to_jsonb(entry) || jsonb_build_object('organization_memberships', COALESCE((SELECT jsonb_agg(member) FROM \"LiteLLM_OrganizationMembership\" AS member WHERE member.\"user_id\" = entry.\"user_id\"), '[]'::jsonb)))::text)::bigint FROM \"LiteLLM_UserTable\" AS entry WHERE entry.\"user_id\" = $1";
     scalar(store, sql, &[&user_id]).await
 }
 
@@ -147,10 +148,11 @@ async fn grow_alias_to(store: &PostgresStore, user_id: &str, target: i64) {
     let delta = target
         .checked_sub(length)
         .expect("the seeded row starts below the target");
+    let repeat_count = i32::try_from(delta).expect("the growth fits a repeat count");
     let sql = "UPDATE \"LiteLLM_UserTable\" SET user_alias = COALESCE(user_alias, '') || repeat('a', $2) WHERE user_id = $1";
     let client = store.session().await.expect("the database connection");
     client
-        .execute(sql, &[&user_id, &delta])
+        .execute(sql, &[&user_id, &repeat_count])
         .await
         .expect("the row growth");
 }
@@ -160,7 +162,8 @@ async fn user_count(store: &PostgresStore, user_id: &str) -> i64 {
     scalar(store, sql, &[&user_id]).await
 }
 
-async fn lookup_email(lookup: &UserLookup, user_id: &str) -> Option<String> {
+async fn lookup_email(store: &Arc<DatabaseUserStore>, user_id: &str) -> Option<String> {
+    let lookup = lookup_for(store, Arc::new(FakeCache::new(60.0)));
     let user = lookup
         .get_user_object(request_with(Some(user_id), None, Some("new@example.com")))
         .await
@@ -192,19 +195,18 @@ async fn email_case_insensitive_first() {
 async fn backfill_only_null_email() {
     let (fixture, store) = database().await;
     seed(&store.reader, SEED_BACKFILL).await;
-    let lookup = lookup_for(&store, Arc::new(FakeCache::new(60.0)));
 
-    let filled = lookup_email(&lookup, "filled-user").await;
+    let filled = lookup_email(&store, "filled-user").await;
     assert_eq!(filled.as_deref(), Some("stored@example.com"));
     let filled_stored = stored_email(&store.reader, "filled-user").await;
     assert_eq!(filled_stored.as_deref(), Some("stored@example.com"));
 
-    let empty = lookup_email(&lookup, "empty-user").await;
+    let empty = lookup_email(&store, "empty-user").await;
     assert_eq!(empty.as_deref(), Some(""));
     let empty_stored = stored_email(&store.reader, "empty-user").await;
     assert_eq!(empty_stored.as_deref(), Some(""));
 
-    let null = lookup_email(&lookup, "null-user").await;
+    let null = lookup_email(&store, "null-user").await;
     assert_eq!(null.as_deref(), Some("new@example.com"));
     let null_stored = stored_email(&store.reader, "null-user").await;
     assert_eq!(null_stored.as_deref(), Some("new@example.com"));
@@ -233,7 +235,7 @@ async fn sso_update_overwrite_reaches_rows() {
         Some("new-sso")
     );
     assert!(
-        stored_updated_after(&store.reader, "sso-user", "2000-01-02").await,
+        stored_updated_after(&store.reader, "sso-user").await,
         "the update stamps updated_at like Prisma's @updatedAt"
     );
     close(fixture, store).await;

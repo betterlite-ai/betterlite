@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_db::budget_permission_rows::{JsonData, Timestamp};
 
 use super::support::{
     Harness, cadence_entry, defaults, harness_with_defaults, membership, request, user_with,
@@ -216,10 +216,20 @@ async fn explicit_reset_preserved() {
         .expect("the created user");
     assert!(harness.reset.calls.lock().unwrap().is_empty());
     let fields = harness.store.create_fields().unwrap();
-    assert_eq!(
-        fields.get("budget_reset_at"),
-        Some(&JsonData::String("2025-05-05T00:00:00+00:00".to_owned()))
-    );
+    let stored_json = fields
+        .get("budget_reset_at")
+        .cloned()
+        .expect("the explicit reset reaches the create fields");
+    let stored = serde_json::from_value::<Timestamp>(
+        serde_json::to_value(stored_json).expect("the create field is JSON"),
+    )
+    .expect("the stored reset is a timestamp");
+    let explicit_json = JsonData::String("2025-05-05T00:00:00+00:00".to_owned());
+    let explicit = serde_json::from_value::<Timestamp>(
+        serde_json::to_value(explicit_json).expect("the configured reset is JSON"),
+    )
+    .expect("the configured reset is a timestamp");
+    assert_eq!(stored, explicit);
 }
 
 #[tokio::test]
@@ -231,14 +241,12 @@ async fn create_before_default_enrollment() {
         .await
         .expect("the upsert")
         .expect("the created user");
-    assert_eq!(
-        harness.store.methods(),
-        vec!["find_by_id", "create", "enroll"]
-    );
+    assert_eq!(harness.store.methods(), vec!["find_by_id", "create"]);
     let events = harness.events.lock().unwrap().clone();
     let create = events.iter().position(|event| event == "create").unwrap();
     let enroll = events.iter().position(|event| event == "enroll").unwrap();
     assert!(create < enroll, "the row exists before the enrollment runs");
+    assert_eq!(harness.enrollment.calls.lock().unwrap().len(), 1);
 }
 
 #[tokio::test]
@@ -282,10 +290,8 @@ async fn enrollment_port_error_keeps_created_user() {
         ),
         other => panic!("an enrollment failure is classified like the create path: {other:?}"),
     }
-    assert_eq!(
-        harness.store.methods(),
-        vec!["find_by_id", "create", "enroll"]
-    );
+    assert_eq!(harness.store.methods(), vec!["find_by_id", "create"]);
+    assert_eq!(harness.enrollment.calls.lock().unwrap().len(), 1);
     assert!(harness.cache.writes.lock().unwrap().is_empty());
     assert_eq!(cadence_entry(&harness.cadence, "user_id:u1"), None);
 }
