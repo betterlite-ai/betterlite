@@ -738,6 +738,18 @@ async fn frames_escape_non_ascii() {
     assert_eq!(frames[1], NON_ASCII_FRAME);
 }
 
+// async_anthropic_sse_wrapper's non-dict branch: a chunk that is not an object has no frame, and B1119 never queues one.
+#[test]
+fn a_non_object_chunk_has_no_frame() {
+    assert!(
+        matches!(
+            super::sse::frame(Json::Null),
+            Err(super::error::MessagesResponseStreamError::ChunkNotObject)
+        ),
+        "a null chunk is not an SSE event"
+    );
+}
+
 // Dropping the wrapper releases the upstream it was given, which cancels the provider stream.
 #[tokio::test]
 async fn dropping_the_stream_drops_the_upstream() {
