@@ -25,6 +25,16 @@ async fn chat_request(
     (ops.chat_request)(kwargs, model_parameters).await
 }
 
+fn message_role(message: &Json) -> Option<&str> {
+    let Json::Object(fields) = message else {
+        return None;
+    };
+    match fields.get("role")? {
+        Json::Text(role) => Some(role.as_str()),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
+    }
+}
+
 #[rstest]
 #[case::completion("completion", false, Surface::Chat)]
 #[case::acompletion("acompletion", false, Surface::Chat)]
@@ -277,15 +287,7 @@ async fn anthropic_row_converts_a_mid_conversation_system_turn_without_model_met
     let Some(Json::List(messages)) = request.get("messages") else {
         panic!("messages is not a list");
     };
-    let roles: Vec<Option<&str>> = messages
-        .iter()
-        .map(|message| {
-            message
-                .as_object()
-                .and_then(|fields| fields.get("role"))
-                .and_then(Json::as_str)
-        })
-        .collect();
+    let roles: Vec<Option<&str>> = messages.iter().map(message_role).collect();
     assert_eq!(roles, [Some("user"), Some("user"), Some("user")]);
 }
 
