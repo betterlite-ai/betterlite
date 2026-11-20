@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::convert::Infallible;
 use std::future::{Future, ready};
 use std::pin::Pin;
 use std::sync::{Mutex, PoisonError};
@@ -8,28 +9,16 @@ use std::time::{Duration, SystemTime};
 
 use betterlite_bedrock::aws_settings::sources::Credentials;
 use betterlite_bedrock::model_routes::ParamMap;
-use betterlite_bedrock::passthrough::error::PassthroughFailure;
-use betterlite_bedrock::passthrough::url::PassthroughEnvironment;
-use betterlite_bedrock::passthrough::{
-    BedrockPassthroughPlan, CollectorClock, PassthroughIdentity,
-};
 use betterlite_bedrock::search::error::SearchError;
 use betterlite_bedrock::signing::target::RegionInputs;
 use betterlite_bedrock::vector_stores::error::VectorStoreError;
 use betterlite_bedrock::vector_stores::request::{SearchOptionalParams, SearchQuery};
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::bedrock_services_search::DEFAULT_SEARCH_TOOL_NAME;
-use betterlite_context::chat_config_selection::selection::ChatConfigError;
-use betterlite_context::chat_config_selection::tags::ChatConfigTag;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json;
-use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_models::model_capability_predicates::CapabilityRequest;
-use betterlite_openai::error::ProviderError;
 use betterlite_openai::openai_base_config::{Headers, Object};
-use betterlite_openai::passthrough::transformation::types::{
-    PassthroughLogging, PassthroughSigning, PassthroughTarget, PassthroughUrlRequest, RelayCallType,
-};
 use betterlite_openai::reasoning_models::{DropParams, ReasoningCapabilities};
 use betterlite_openai::response_input::ResponsesInput;
 use betterlite_openai::response_params::bundled::BundledReasoningModels;
@@ -38,16 +27,13 @@ use betterlite_openai::response_params::params::ResponsesParams;
 use betterlite_openai::search::provider::SearchQuery as SearchInput;
 use betterlite_prompts::media::inline::RemoteMediaFetcher;
 use betterlite_prompts::media_fetch::error::ImageFetchError;
-use betterlite_streaming::stream_base_assembly::provider_metadata::ChatConfigSelection;
-use betterlite_streaming::stream_chunk_shaping::creation::StreamInstant;
-use betterlite_streaming::stream_chunk_shaping::records::StreamChunk;
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::SecretString;
 
 use super::error::BedrockInteractiveError;
 use super::http::{LeafReply, LeafRequest, LeafTransport};
-use super::{passthrough, responses, search, vector_retrieve};
+use super::{responses, search, vector_retrieve};
 use dispatch_support::dispatched;
 
 const HOST: &str = "https://bedrock-runtime.us-east-1.amazonaws.com";
@@ -56,8 +42,8 @@ const RESPONSES_MODEL: &str = "openai.gpt-oss-120b";
 const GATEWAY: &str = "https://gateway.example.com/mcp";
 const ACCESS: &str = "AKIDBETTERLITEFIXTURE";
 const SECRET: &str = "fixture/secret/key/+EXAMPLEKEY0000";
+const DEADLINE: Duration = Duration::from_secs(600);
 const SESSION_UPDATE: &str = r#"{"type":"session.update","session":{}}"#;
-const CONVERSE_FRAMES: &str = "0000009300000057068b46fe0b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74610d3a636f6e74656e742d747970650700106170706c69636174696f6e2f6a736f6e0d3a6d6573736167652d747970650700056576656e747b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a2261227d7d13198e870000009300000057068b46fe0b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74610d3a636f6e74656e742d747970650700106170706c69636174696f6e2f6a736f6e0d3a6d6573736167652d747970650700056576656e747b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a2262227d7d01ac21690000007a00000051ca2c46650b3a6576656e742d7479706507000b6d65737361676553746f700d3a636f6e74656e742d747970650700106170706c69636174696f6e2f6a736f6e0d3a6d6573736167652d747970650700056576656e747b2273746f70526561736f6e223a22656e645f7475726e227d5fbf09fc000000b40000004e11011d2a0b3a6576656e742d747970650700086d657461646174610d3a636f6e74656e742d747970650700106170706c69636174696f6e2f6a736f6e0d3a6d6573736167652d747970650700056576656e747b226d657472696373223a7b226c6174656e63794d73223a317d2c227573616765223a7b22696e707574546f6b656e73223a332c226f7574707574546f6b656e73223a342c22746f74616c546f6b656e73223a377d7d6ac04a01";
 
 fn fixture_time() -> SystemTime {
     SystemTime::UNIX_EPOCH
@@ -161,6 +147,7 @@ impl LeafTransport for RecordingTransport {
         &self,
         request: LeafRequest,
     ) -> Pin<Box<dyn Future<Output = Result<LeafReply, TransportError>> + Send + '_>> {
+        assert_eq!(request.deadline, DEADLINE);
         self.requests
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -273,6 +260,7 @@ fn responses_operation<'call>(
             request: false,
         },
         bundled: BundledReasoningModels::default(),
+        deadline: DEADLINE,
     }
 }
 
@@ -426,297 +414,6 @@ fn responses_unsupported_model() {
     }
 }
 
-struct TestLogging {
-    calls: Mutex<Vec<RelayCallType>>,
-}
-
-impl TestLogging {
-    fn new() -> Self {
-        Self {
-            calls: Mutex::new(Vec::new()),
-        }
-    }
-}
-
-impl PassthroughLogging for TestLogging {
-    fn set_call_type(&mut self, call_type: RelayCallType) {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(call_type);
-    }
-}
-
-struct TestSelector {
-    tag: Option<ChatConfigTag>,
-}
-
-impl ChatConfigSelection for TestSelector {
-    fn select_chat_config(
-        &self,
-        _model: &str,
-        _provider: ProviderId,
-    ) -> Result<Option<ChatConfigTag>, ChatConfigError> {
-        Ok(self.tag)
-    }
-}
-
-struct TestTransform {
-    result: Json,
-}
-
-impl betterlite_bedrock::passthrough::reply::NativeReplyTransform for TestTransform {
-    fn transform(
-        &self,
-        _request: &betterlite_bedrock::passthrough::reply::NativeReplyRequest<'_>,
-    ) -> Result<Json, Box<ProviderError>> {
-        Ok(self.result.clone())
-    }
-}
-
-struct TestAssembler {
-    chunks: Mutex<Vec<StreamChunk>>,
-}
-
-impl TestAssembler {
-    fn new() -> Self {
-        Self {
-            chunks: Mutex::new(Vec::new()),
-        }
-    }
-
-    fn count(&self) -> usize {
-        self.chunks
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .len()
-    }
-}
-
-impl betterlite_bedrock::passthrough::collector::StreamLogAssembler for TestAssembler {
-    fn assemble(
-        &self,
-        chunks: &[StreamChunk],
-        _logging_obj: &mut dyn PassthroughLogging,
-    ) -> Option<Json> {
-        *self.chunks.lock().unwrap_or_else(PoisonError::into_inner) = chunks.to_vec();
-        if chunks.is_empty() {
-            return None;
-        }
-        Some(json(r#"{"id":"assembled"}"#))
-    }
-}
-
-fn fixture_instant() -> StreamInstant {
-    StreamInstant {
-        seconds: 1_767_225_600,
-        timestamp: 1_767_225_600.0,
-    }
-}
-
-fn passthrough_plan<'services>(
-    selector: &'services TestSelector,
-    transform: &'services TestTransform,
-    assembler: &'services TestAssembler,
-    credentials: Option<Credentials>,
-) -> BedrockPassthroughPlan<'services> {
-    BedrockPassthroughPlan {
-        environment: PassthroughEnvironment {
-            region_name: Some("us-east-1".to_owned()),
-            region: None,
-            session_region: None,
-            runtime_endpoint: None,
-        },
-        identity: PassthroughIdentity {
-            credentials,
-            bearer_token: None,
-            now: fixture_time(),
-        },
-        selector,
-        transform,
-        assembler,
-        clock: CollectorClock {
-            next_id: || uuid::Uuid::from_u128(7),
-            now: || 1_767_225_600,
-            instant: fixture_instant,
-        },
-    }
-}
-
-fn invoke_target() -> PassthroughTarget<'static> {
-    PassthroughTarget {
-        model: "anthropic.claude-3",
-        custom_llm_provider: "bedrock",
-        endpoint: "model/anthropic.claude-3/invoke",
-    }
-}
-
-fn invoke_url() -> String {
-    format!("{HOST}/model/anthropic.claude-3/invoke")
-}
-
-fn passthrough_operation<'call>(
-    plan: BedrockPassthroughPlan<'call>,
-    url_request: PassthroughUrlRequest<'call>,
-    signing: PassthroughSigning<'call>,
-    logging: &'call mut TestLogging,
-) -> passthrough::Operation<'call> {
-    passthrough::Operation {
-        plan,
-        url_request,
-        signing,
-        headers: Headers::new(),
-        logging,
-    }
-}
-
-fn passthrough_buffered() {
-    let selector = TestSelector {
-        tag: Some(ChatConfigTag::Anthropic),
-    };
-    let transform = TestTransform {
-        result: json(r#"{"id":"logged"}"#),
-    };
-    let assembler = TestAssembler::new();
-    let plan = passthrough_plan(&selector, &transform, &assembler, Some(credentials()));
-    let params = object("{}");
-    let data = object(r#"{"input":"hi"}"#);
-    let signed_base = invoke_url();
-    let url_request = PassthroughUrlRequest {
-        api_base: None,
-        api_key: None,
-        target: invoke_target(),
-        request_query_params: None,
-        litellm_params: &params,
-    };
-    let signing = PassthroughSigning {
-        litellm_params: &params,
-        request_data: Some(&data),
-        api_base: &signed_base,
-        model: Some("anthropic.claude-3"),
-    };
-    let mut logging = TestLogging::new();
-    let operation = passthrough_operation(plan, url_request, signing, &mut logging);
-    let transport = RecordingTransport::new(LeafReply {
-        status: 200,
-        headers: Vec::new(),
-        body: br#"{"id":"native"}"#.to_vec(),
-        chunks: Vec::new(),
-    });
-    let outcome = dispatched!(Passthrough, operation.run(&transport)).unwrap();
-    assert_buffered(&outcome);
-}
-
-fn assert_buffered(outcome: &passthrough::Outcome) {
-    assert_eq!(outcome.endpoint_url, HOST);
-    assert_eq!(outcome.request.url, invoke_url());
-    assert!(!outcome.streaming);
-    assert_eq!(outcome.status, 200);
-    assert_eq!(outcome.logged, Some(json(r#"{"id":"logged"}"#)));
-    assert_eq!(outcome.request.body, br#"{"input": "hi"}"#.to_vec());
-    let authorization = header(&outcome.request.headers, "Authorization").unwrap();
-    assert!(authorization.starts_with("AWS4-HMAC-SHA256 Credential=AKIDBETTERLITEFIXTURE/"));
-    assert!(authorization.contains("/us-east-1/bedrock/aws4_request"));
-}
-
-fn passthrough_streaming() {
-    let selector = TestSelector {
-        tag: Some(ChatConfigTag::Anthropic),
-    };
-    let transform = TestTransform {
-        result: json("null"),
-    };
-    let assembler = TestAssembler::new();
-    let plan = passthrough_plan(&selector, &transform, &assembler, Some(credentials()));
-    let params = object("{}");
-    let data = object(r#"{"stream":true}"#);
-    let endpoint = "model/anthropic.claude-3/converse-stream";
-    let signed_base = format!("{HOST}/{endpoint}");
-    let url_request = PassthroughUrlRequest {
-        api_base: None,
-        api_key: None,
-        target: PassthroughTarget {
-            model: "anthropic.claude-3",
-            custom_llm_provider: "bedrock",
-            endpoint,
-        },
-        request_query_params: None,
-        litellm_params: &params,
-    };
-    let signing = PassthroughSigning {
-        litellm_params: &params,
-        request_data: Some(&data),
-        api_base: &signed_base,
-        model: Some("anthropic.claude-3"),
-    };
-    let mut logging = TestLogging::new();
-    let operation = passthrough_operation(plan, url_request, signing, &mut logging);
-    let transport = converse_transport();
-    let outcome = dispatched!(Passthrough, operation.run(&transport)).unwrap();
-    assert_streaming(&outcome, &assembler);
-}
-
-fn converse_transport() -> RecordingTransport {
-    RecordingTransport::new(LeafReply {
-        status: 200,
-        headers: Vec::new(),
-        body: Vec::new(),
-        chunks: vec![hex::decode(CONVERSE_FRAMES).unwrap()],
-    })
-}
-
-fn assert_streaming(outcome: &passthrough::Outcome, assembler: &TestAssembler) {
-    assert!(outcome.streaming);
-    assert_eq!(outcome.logged, Some(json(r#"{"id":"assembled"}"#)));
-    assert!(assembler.count() > 0);
-}
-
-fn passthrough_missing_credentials() {
-    let selector = TestSelector {
-        tag: Some(ChatConfigTag::Anthropic),
-    };
-    let transform = TestTransform {
-        result: json("null"),
-    };
-    let assembler = TestAssembler::new();
-    let plan = passthrough_plan(&selector, &transform, &assembler, None);
-    let params = object("{}");
-    let signed_base = invoke_url();
-    let url_request = PassthroughUrlRequest {
-        api_base: None,
-        api_key: None,
-        target: invoke_target(),
-        request_query_params: None,
-        litellm_params: &params,
-    };
-    let signing = PassthroughSigning {
-        litellm_params: &params,
-        request_data: None,
-        api_base: &signed_base,
-        model: Some("anthropic.claude-3"),
-    };
-    let mut logging = TestLogging::new();
-    let operation = passthrough_operation(plan, url_request, signing, &mut logging);
-    let transport = RecordingTransport::new(LeafReply {
-        status: 200,
-        headers: Vec::new(),
-        body: Vec::new(),
-        chunks: Vec::new(),
-    });
-    let error = dispatched!(Passthrough, operation.run(&transport)).unwrap_err();
-    match error {
-        passthrough::Error::Leaf(PassthroughFailure::Signing(_)) => {}
-        other => panic!("expected a signing failure, got {other}"),
-    }
-    assert!(transport.requests().is_empty());
-}
-
-fn passthrough_case() {
-    passthrough_buffered();
-    passthrough_streaming();
-    passthrough_missing_credentials();
-}
-
 const SEARCH_REPLY: &str = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"[{\\\"title\\\":\\\"Docs\\\",\\\"url\\\":\\\"https://docs.example.com\\\",\\\"text\\\":\\\"snippet\\\",\\\"publishedDate\\\":\\\"2026-01-01\\\"}]\"}]}}";
 
 fn search_operation<'call>(
@@ -739,6 +436,7 @@ fn search_operation<'call>(
         credentials: credentials(),
         lookup,
         now: fixture_time(),
+        deadline: DEADLINE,
     }
 }
 
@@ -855,6 +553,7 @@ fn vector_operation<'call>(
         credentials: credentials(),
         region_inputs: RegionInputs::default(),
         now: fixture_time(),
+        deadline: DEADLINE,
     }
 }
 
@@ -953,9 +652,34 @@ fn vector_leaf_failure() {
     assert!(transport.requests().is_empty());
 }
 
+#[test]
+fn bedrock_interactive_dispatch_leaf_request_debug_names_headers_without_values() {
+    let request = LeafRequest {
+        method: "POST".to_owned(),
+        url: "https://bedrock-runtime.example/model/x/invoke".to_owned(),
+        headers: vec![
+            (
+                "Authorization".to_owned(),
+                Some("AWS4-HMAC-SHA256 secret".to_owned()),
+            ),
+            ("X-Trace".to_owned(), None),
+        ],
+        body: b"hello".to_vec(),
+        deadline: DEADLINE,
+    };
+    let rendered = format!("{request:?}");
+    assert_eq!(
+        rendered,
+        r#"LeafRequest { method: "POST", url: "https://bedrock-runtime.example/model/x/invoke", header_names: ["Authorization", "X-Trace"], body_length: 5 }"#
+    );
+    assert!(!rendered.contains("AWS4-HMAC-SHA256"));
+}
+
 mod dispatch_support;
+mod passthrough_support;
 mod realtime_support;
 
+use passthrough_support::passthrough_case;
 use realtime_support::realtime_case;
 
 #[derive(Debug, Clone, Copy)]
@@ -985,11 +709,11 @@ fn bedrock_interactive_dispatch_cases(#[case] scenario: Scenario) {
 
 #[test]
 fn bedrock_interactive_dispatch_unsupported_operation() {
-    let error = block_on(super::dispatch(
-        super::BedrockInteractiveOperation::Unsupported {
-            operation: "embedding",
-        },
-    ))
+    let error = block_on(super::dispatch(super::BedrockInteractiveOperation::<
+        Infallible,
+    >::Unsupported {
+        operation: "embedding",
+    }))
     .expect_err("an operation this task does not own is refused");
     assert_eq!(
         error.to_string(),

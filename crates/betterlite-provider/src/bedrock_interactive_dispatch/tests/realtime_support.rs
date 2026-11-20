@@ -33,7 +33,7 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
 
 use super::super::realtime_bridge;
-use super::dispatch_support::dispatched;
+use super::dispatch_support::dispatched_realtime;
 use super::{SESSION_UPDATE, block_on, credentials};
 
 #[derive(Debug, thiserror::Error)]
@@ -69,7 +69,6 @@ struct Shared {
 struct TestRuntime {
     shared: Arc<Shared>,
     fail_connect: bool,
-    configs: Mutex<Vec<RuntimeConfig>>,
 }
 
 impl TestRuntime {
@@ -77,7 +76,6 @@ impl TestRuntime {
         Self {
             shared,
             fail_connect,
-            configs: Mutex::new(Vec::new()),
         }
     }
 }
@@ -87,14 +85,10 @@ impl RealtimeRuntime for TestRuntime {
 
     fn connect(
         &self,
-        config: RuntimeConfig,
+        _config: RuntimeConfig,
     ) -> impl Future<
         Output = Result<Box<dyn RealtimeClient<Error = TestError>>, StreamError<TestError>>,
     > + Send {
-        self.configs
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(config);
         let outcome: Result<Box<dyn RealtimeClient<Error = TestError>>, StreamError<TestError>> =
             if self.fail_connect {
                 Err(StreamError {
@@ -356,8 +350,8 @@ fn pending_scope() -> EventScope {
 fn realtime_pending_preface() {
     let fixture = SessionFixture::new(false);
     let mut scope = pending_scope();
-    let outcome = dispatched!(
-        RealtimeBridge,
+    let outcome = dispatched_realtime!(
+        RealtimeTransportError<TestError, io::Error>,
         realtime_bridge::session(
             &fixture.runtime,
             &fixture.resolver,
@@ -395,8 +389,8 @@ fn realtime_pending_preface() {
 fn realtime_connect_failure() {
     let fixture = SessionFixture::new(true);
     let mut scope = pending_scope();
-    let error = dispatched!(
-        RealtimeBridge,
+    let error = dispatched_realtime!(
+        RealtimeTransportError<TestError, io::Error>,
         realtime_bridge::session(
             &fixture.runtime,
             &fixture.resolver,
@@ -404,14 +398,11 @@ fn realtime_connect_failure() {
         )
     )
     .unwrap_err();
-    let realtime_bridge::Error::Session { source } = error else {
-        panic!("expected a session failure");
+    let source = match error {
+        realtime_bridge::Error::Session { source } => source,
     };
-    let transport = source
-        .downcast_ref::<RealtimeTransportError<TestError, io::Error>>()
-        .expect("the transport error is preserved");
-    assert!(matches!(transport, RealtimeTransportError::Stream(_)));
-    assert_eq!(transport.status_code(), None);
+    assert!(matches!(&source, RealtimeTransportError::Stream(_)));
+    assert_eq!(source.status_code(), None);
     assert!(fixture.socket.sent().is_empty());
     assert!(!fixture.shared.runtime_closed.load(Ordering::SeqCst));
     assert_eq!(
