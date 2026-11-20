@@ -10,7 +10,7 @@ use crate::api::responses_parameters::error::ResponsesParametersError;
 use crate::api::responses_parameters::prompt_merge::{
     ClientMessage, ReturnedMessage, input_to_chat_messages,
 };
-use apply::{FinishRequest, finish, merge_request, present, text_value};
+use apply::{FinishRequest, finish, merge_request, text_value};
 use betterlite_models::controls::json_value::JsonValue;
 use swap::PromptSwapError;
 use thiserror::Error;
@@ -156,14 +156,15 @@ pub fn apply_prompt_management(
         return Ok(untouched(input, model, custom_llm_provider, model_info));
     }
     let client_input = input_to_chat_messages(Some(&input))?;
-    let model_info = present(kwargs, "model_info").cloned();
+    let model_info = kwargs.get("model_info");
+    let info = model_info.filter(|item| **item != JsonValue::Null).cloned();
     let hook = HookRequest {
         prompt_id: text_value(kwargs, "prompt_id"),
         non_default_params: kwargs,
     };
     let prompt_manager = match manager {
         Some(prompt_manager) if prompt_manager.runs_prompt_hooks(&hook) => prompt_manager,
-        None | Some(_) => return Ok(untouched(input, model, custom_llm_provider, model_info)),
+        None | Some(_) => return Ok(untouched(input, model, custom_llm_provider, info)),
     };
     let call = HookCall {
         model,
@@ -171,13 +172,13 @@ pub fn apply_prompt_management(
         use_chat_completions_api,
     };
     let Some(answer) = run_hook(prompt_manager, &call, kwargs, &client_input, lookup)? else {
-        return Ok(untouched(input, model, custom_llm_provider, model_info));
+        return Ok(untouched(input, model, custom_llm_provider, info));
     };
     finish(FinishRequest {
         input,
         model,
         custom_llm_provider,
-        deployment_model_info: model_info,
+        deployment_model_info: info,
         answer,
         kwargs,
         local_vars,
@@ -191,11 +192,13 @@ fn run_hook(
     client_input: &[ClientMessage],
     lookup: &dyn ConfigLookup,
 ) -> Result<Option<MergeAnswer>, PromptError> {
+    let model_info = kwargs.get("model_info");
+    let info = model_info.filter(|value| **value != JsonValue::Null);
     let bridge = ProvisionalBridge {
         model: call.model,
         custom_llm_provider: call.custom_llm_provider,
         use_chat_completions_api: call.use_chat_completions_api,
-        model_info: present(kwargs, "model_info").unwrap_or(&JsonValue::Null),
+        model_info: info.unwrap_or(&JsonValue::Null),
         api_base: api_base_kwarg(kwargs),
     };
     let bridged = will_use_chat_bridge(lookup, &bridge);

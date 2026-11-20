@@ -1,5 +1,4 @@
 use super::PromptError;
-use super::apply::present;
 use crate::api::responses_provider_selection::ParameterMap;
 use crate::api::responses_provider_selection::error::CredentialBoundaryError;
 use crate::api::responses_provider_selection::resolution::ModelResolver;
@@ -28,7 +27,15 @@ pub fn resolve_swapped_provider(
         Ok(provider) => provider,
         Err(error) => return Err(PromptError::Swap(PromptSwapError::Resolution(error))),
     };
-    if present(kwargs, "api_key").is_none() && present(kwargs, "api_base").is_none() {
+    let key_absent = kwargs
+        .get("api_key")
+        .filter(|value| **value != JsonValue::Null)
+        .is_none();
+    let base_absent = kwargs
+        .get("api_base")
+        .filter(|value| **value != JsonValue::Null)
+        .is_none();
+    if key_absent && base_absent {
         return Ok(swapped_provider);
     }
     let original_provider = match request.custom_llm_provider {

@@ -7,10 +7,6 @@ use crate::api::responses_provider_selection::ParameterMap;
 use crate::api::responses_provider_selection::resolution::ModelResolver;
 use betterlite_models::controls::json_value::JsonValue;
 #[must_use]
-pub(super) fn present<'map>(kwargs: &'map ParameterMap, name: &str) -> Option<&'map JsonValue> {
-    kwargs.get(name).filter(|value| **value != JsonValue::Null)
-}
-#[must_use]
 pub(super) fn text_value<'map>(kwargs: &'map ParameterMap, name: &str) -> Option<&'map str> {
     match kwargs.get(name) {
         Some(JsonValue::Text(text)) => Some(text),
@@ -44,9 +40,13 @@ pub(super) fn merge_request<'request>(
         messages,
         non_default_params: kwargs,
         prompt_id: text_value(kwargs, "prompt_id"),
-        prompt_variables: present(kwargs, "prompt_variables"),
+        prompt_variables: kwargs
+            .get("prompt_variables")
+            .filter(|value| **value != JsonValue::Null),
         prompt_label: text_value(kwargs, "prompt_label"),
-        prompt_version: present(kwargs, "prompt_version"),
+        prompt_version: kwargs
+            .get("prompt_version")
+            .filter(|value| **value != JsonValue::Null),
         request_kwargs: kwargs,
     }
 }
