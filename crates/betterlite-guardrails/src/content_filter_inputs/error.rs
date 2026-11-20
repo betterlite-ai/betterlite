@@ -41,7 +41,10 @@ impl ArgumentFilterError {
             Self::Filter(source) => return GuardrailFailure::Other(source.to_string()),
             Self::Serialize { source } => return GuardrailFailure::Other(source.to_string()),
         };
-        blocked_failure(detail)
+        GuardrailFailure::HttpObject {
+            status: BLOCKED_STATUS,
+            detail,
+        }
     }
 }
 
@@ -63,10 +66,7 @@ pub enum ImageProcessingError<E> {
     Filter(ContentFilterActionError),
 }
 
-impl<E> ImageProcessingError<E>
-where
-    E: Error,
-{
+impl<E: Error> ImageProcessingError<E> {
     #[must_use]
     pub fn into_failure(self) -> GuardrailFailure {
         if let Self::Blocked {
@@ -74,10 +74,10 @@ where
             description,
         } = &self
         {
-            return blocked_failure(block_detail_map(
-                detail.as_ref(),
-                Some(description.as_str()),
-            ));
+            return GuardrailFailure::HttpObject {
+                status: BLOCKED_STATUS,
+                detail: block_detail_map(detail.as_ref(), Some(description.as_str())),
+            };
         }
         GuardrailFailure::Other(self.other_message())
     }
@@ -154,18 +154,11 @@ fn blocked_word_map(
     let mut map = detail_map_entries(&[("error", error), ("keyword", keyword)]);
     map.insert(
         "description".to_owned(),
-        description.map_or(GuardrailValue::Null, |text| {
-            GuardrailValue::Text(text.to_owned())
+        description.map_or(GuardrailValue::Null, |value| {
+            GuardrailValue::Text(value.to_owned())
         }),
     );
     map
-}
-
-const fn blocked_failure(detail: IndexMap<String, GuardrailValue>) -> GuardrailFailure {
-    GuardrailFailure::HttpObject {
-        status: BLOCKED_STATUS,
-        detail,
-    }
 }
 
 fn detail_map_entries(entries: &[(&str, &str)]) -> IndexMap<String, GuardrailValue> {

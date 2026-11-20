@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use betterlite_config::sections::content_filter_records::ContentFilterAction;
+use betterlite_config::sections::content_filter_records::{BlockedWord, ContentFilterAction};
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use rstest::rstest;
 
@@ -141,6 +141,32 @@ fn tool_call_text_fallback_blocks_on_a_blocking_pattern() {
         detail.get("error"),
         Some(&text("Content blocked: leak pattern detected"))
     );
+}
+
+#[test]
+fn tool_call_blocked_word_detail_carries_the_keyword_and_description() {
+    let fixture = Fixture::from_parts(
+        Vec::new(),
+        vec![BlockedWord {
+            keyword: "leak".to_owned(),
+            action: ContentFilterAction::Block,
+            description: None,
+        }],
+    );
+    let source = fixture.source();
+    let filter = ArgumentFilter {
+        source: &source,
+        max_depth: 100,
+    };
+    let mut calls = vec![tool_call(text("a leak"))];
+    let mut detections = Vec::new();
+    let error = scan_tool_call_arguments(&filter, &mut calls, &mut detections).unwrap_err();
+    let GuardrailFailure::HttpObject { status, detail } = error.into_failure() else {
+        panic!("a blocked argument must raise the HTTP detail");
+    };
+    assert_eq!(status, 400);
+    assert_eq!(detail.get("keyword"), Some(&text("leak")));
+    assert_eq!(detail.get("description"), Some(&GuardrailValue::Null));
 }
 
 #[test]

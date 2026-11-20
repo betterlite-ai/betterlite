@@ -62,7 +62,19 @@ where
         return Ok(());
     }
     let descriptions = describe_images(scan, image_model, describer).await?;
-    filter_image_descriptions(scan, &descriptions, detections)
+    for description in &descriptions {
+        match filter_single_text(scan.source, description, Some(detections)) {
+            Ok(_filtered) => {}
+            Err(ContentFilterActionError::Blocked { detail }) => {
+                return Err(ImageProcessingError::Blocked {
+                    detail: Box::new(detail),
+                    description: description.clone(),
+                });
+            }
+            Err(error) => return Err(ImageProcessingError::Filter(error)),
+        }
+    }
+    Ok(())
 }
 
 async fn describe_images<C>(
@@ -104,24 +116,4 @@ where
         "content filter applying guardrail to image descriptions"
     );
     Ok(descriptions)
-}
-
-fn filter_image_descriptions<E>(
-    scan: &ImageScan<'_, '_>,
-    descriptions: &[String],
-    detections: &mut Vec<ContentFilterDetection>,
-) -> Result<(), ImageProcessingError<E>> {
-    for description in descriptions {
-        match filter_single_text(scan.source, description, Some(detections)) {
-            Ok(_filtered) => {}
-            Err(ContentFilterActionError::Blocked { detail }) => {
-                return Err(ImageProcessingError::Blocked {
-                    detail: Box::new(detail),
-                    description: description.clone(),
-                });
-            }
-            Err(error) => return Err(ImageProcessingError::Filter(error)),
-        }
-    }
-    Ok(())
 }
