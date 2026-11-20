@@ -15,6 +15,8 @@ from litellm.llms.base_llm.image_generation.transformation import (
 from litellm.llms.custom_httpx.llm_http_handler import BaseLLMHTTPHandler
 from litellm.types.llms.openai import (
     AllMessageValues,
+)
+from litellm.types.llms.openai import (
     OpenAIImageGenerationOptionalParams as ImageOptions,
 )
 from litellm.types.utils import ImageResponse
@@ -27,8 +29,7 @@ TEXT: TypeAdapter[str] = TypeAdapter(str)
 FIELDS: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 STRINGS: TypeAdapter[dict[str, str]] = TypeAdapter(dict[str, str])
 IMAGE: TypeAdapter[ImageResponse] = TypeAdapter(ImageResponse)
-# the handlers take dict[str, object] maps, so the JSON-facing maps bind to that shape
-OBJECTS: Final = TypeAdapter(dict[str, object] | None)
+OBJECTS: Final = TypeAdapter(dict[str, object] | None)  # the handlers take dict[str, object] maps
 PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
 HANDLER: Final = BaseLLMHTTPHandler()
 
@@ -184,7 +185,7 @@ class RecordingConfig(BaseImageGenerationConfig):
         return f"{base}/images"
 
     @override
-    def transform_image_generation_request(
+    def transform_image_generation_request(  # ast-grep-ignore: no-long-names
         self,
         model: str,
         prompt: str,
@@ -195,7 +196,7 @@ class RecordingConfig(BaseImageGenerationConfig):
         return {"model": model, "prompt": prompt}
 
     @override
-    def transform_image_generation_response(
+    def transform_image_generation_response(  # ast-grep-ignore: no-long-names
         self,
         model: str,
         raw_response: httpx.Response,
