@@ -32,55 +32,14 @@ where
     relay.state.setup.flushing_pending_messages.0 = true;
     let mut drained = Ok(());
     while drained.is_ok() && !relay.state.setup.pending_messages_until_setup.is_empty() {
-        let flushed = relay
-            .sender()
-            .flush_pending_messages()
-            .await
-            .map_err(RealtimeRelayError::SetupBuffer);
-        match flushed {
-            Ok(true) => {}
+        drained = match relay.sender().flush_pending_messages().await {
+            Ok(true) => Ok(()),
             Ok(false) => break,
-            Err(error) => drained = Err(error),
-        }
+            Err(error) => Err(RealtimeRelayError::SetupBuffer(error)),
+        };
     }
     relay.state.setup.flushing_pending_messages.0 = false;
     drained
-}
-
-// The first session.created completes deferred setup; a later one is re-emitted as session.updated because the client already has one
-async fn prepare_session_event<Config, CallbackError>(
-    relay: &mut RealtimeBackendRelay<'_, Config, CallbackError>,
-    mut event: Json,
-) -> Result<Json, RealtimeRelayError<Config::Error, CallbackError>>
-where
-    Config: BaseRealtimeConfig,
-    CallbackError: Error + Send + 'static,
-{
-    complete_deferred_setup(relay).await?;
-    if relay.state.setup.session_created_sent_to_client.0 {
-        event = retype_as_session_updated(event);
-    } else {
-        relay.state.setup.session_created_sent_to_client.0 = true;
-    }
-    Ok(event)
-}
-
-// A guardrailed session.created is stored and forwarded before the one-time auto-response disable is attempted
-async fn relay_guardrailed_session_created<Config, CallbackError>(
-    relay: &mut RealtimeBackendRelay<'_, Config, CallbackError>,
-    event: &Json,
-    event_str: &str,
-) -> Result<(), RealtimeRelayError<Config::Error, CallbackError>>
-where
-    Config: BaseRealtimeConfig,
-    CallbackError: Error + Send + 'static,
-{
-    relay
-        .state
-        .store_message(SessionMessage::Text(event_str))
-        .map_err(RealtimeRelayError::State)?;
-    relay.send(Outbound::Event(event, event_str)).await?;
-    relay.send(Outbound::DisableAutoResponse).await
 }
 
 // A completed transcript is logged and forwarded before the guardrails see it, and only a clean conversational turn asks for a reply
@@ -125,7 +84,12 @@ where
     }
     let session_created = event_type(&event) == Some("session.created");
     if session_created {
-        event = prepare_session_event(relay, event).await?;
+        complete_deferred_setup(relay).await?;
+        if relay.state.setup.session_created_sent_to_client.0 {
+            event = retype_as_session_updated(event);
+        } else {
+            relay.state.setup.session_created_sent_to_client.0 = true;
+        }
     }
     let event_str = serde_json::to_string(&event).map_err(RealtimeRelayError::Encode)?;
     if session_created
@@ -136,16 +100,14 @@ where
         )
         .map_err(RealtimeRelayError::Predicate)?
     {
-        return relay_guardrailed_session_created(relay, &event, &event_str).await;
+        relay.store_and_forward_event(&event, &event_str).await?;
+        relay.send(Outbound::DisableAutoResponse).await?;
+        return Ok(());
     }
     if event_type(&event) == Some(TRANSCRIPTION_COMPLETED) {
         return relay_completed_transcript(relay, &event, &event_str).await;
     }
-    relay
-        .state
-        .store_message(SessionMessage::Text(&event_str))
-        .map_err(RealtimeRelayError::State)?;
-    relay.send(Outbound::Event(&event, &event_str)).await
+    relay.store_and_forward_event(&event, &event_str).await
 }
 
 // LiteLLM re-emits the provider's real session.created as session.updated once a synthetic one reached the client

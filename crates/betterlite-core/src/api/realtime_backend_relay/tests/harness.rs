@@ -408,12 +408,12 @@ impl BaseRealtimeConfig for ScriptedProvider {
         _model: &str,
         input: &RealtimeResponseTransformInput,
     ) -> Result<RealtimeResponseTypedDict, ScriptedFailure> {
-        let next = {
+        let popped = {
             let mut script = lock(&self.script);
             script.inputs.push(input.clone());
             script.responses.pop_front()
         };
-        let Some(next) = next else {
+        let Some(next) = popped else {
             return Err(ScriptedFailure::Transform);
         };
         if next.fail {

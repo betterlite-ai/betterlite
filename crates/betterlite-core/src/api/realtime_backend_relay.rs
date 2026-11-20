@@ -21,6 +21,7 @@ use crate::api::realtime_sender::RealtimeSend as _;
 use crate::api::realtime_sender::RealtimeSender;
 use crate::api::realtime_session_state::RealtimeStreaming;
 use crate::api::realtime_session_state::records;
+use crate::api::realtime_session_state::store::SessionMessage;
 
 use error::RealtimeRelayError;
 use source::RealtimeFailureDispatch;
@@ -110,6 +111,18 @@ where
             Outbound::DisableAutoResponse => sender.maybe_disable_auto_response().await,
         };
         result.map_err(RealtimeRelayError::Send)
+    }
+
+    // The transformed path stores the session's text before forwarding the same frame, on plain and guardrailed events alike
+    pub(crate) async fn store_and_forward_event(
+        &mut self,
+        event: &Json,
+        event_str: &str,
+    ) -> Result<(), RealtimeRelayError<Config::Error, CallbackError>> {
+        self.state
+            .store_message(SessionMessage::Text(event_str))
+            .map_err(RealtimeRelayError::State)?;
+        self.send(Outbound::Event(event, event_str)).await
     }
 
     // B1007's runner on the provider path: the transcription hook set, no pre-block frame and no explicit hooks
