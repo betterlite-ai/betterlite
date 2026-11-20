@@ -1,0 +1,55 @@
+kind: helper
+name: messages-response-stream-terminal-failed-to-error
+call:
+  messages_response_stream:
+    model: model_a
+    events:
+      - {type: response.created}
+      - {type: response.failed, response: {error: {type: rate_limit_error, message: busy}}}
+    failure: null
+    logging: false
+    redaction: enabled
+    steps: [next, next, next]
+calls:
+  - messages_response_stream:
+      model: model_a
+      events:
+        - {type: response.created}
+        - {type: response.failed, response: {error: {type: rate_limit_error, message: "sk-1234567890abcdef boom"}}}
+      failure: null
+      logging: true
+      redaction: enabled
+      steps: [next, next, next]
+  - messages_response_stream:
+      model: model_a
+      events:
+        - {type: response.created}
+        - {type: response.failed, response: {error: {type: rate_limit_error, message: busy}}}
+        - {type: response.failed, response: {error: {type: rate_limit_error, message: ignored}}}
+      failure: null
+      logging: false
+      redaction: enabled
+      steps: [next, next, next, next]
+  - messages_response_stream:
+      model: model_a
+      events: [{type: response.created}]
+      failure: {text: "dial tcp: refused"}
+      logging: false
+      redaction: enabled
+      steps: [next, drain]
+  - messages_response_stream:
+      model: model_a
+      events: []
+      failure: {text: boom, status_code: 200}
+      logging: false
+      redaction: enabled
+      steps: [drain]
+  - messages_response_stream:
+      model: model_a
+      events: []
+      failure: {text: boom, message: busy, status_code: 429}
+      logging: false
+      redaction: enabled
+      steps: [next, next, drain]
+env: {}
+compare: {ignore: []}

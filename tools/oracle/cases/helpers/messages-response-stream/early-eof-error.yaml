@@ -1,0 +1,60 @@
+kind: helper
+name: messages-response-stream-early-eof-error
+call:
+  messages_response_stream:
+    model: model_a
+    events: []
+    failure: null
+    logging: false
+    redaction: disabled
+    steps: [next, next, next]
+calls:
+  - messages_response_stream:
+      model: model_a
+      events: []
+      failure: null
+      logging: true
+      redaction: disabled
+      steps: [next, next, next]
+  - messages_response_stream:
+      model: model_a
+      events:
+        - {type: response.created}
+        - {type: response.output_item.added, item: {type: message, id: item_a}}
+        - {type: response.output_text.delta, item_id: item_a, delta: ahead}
+      failure: null
+      logging: false
+      redaction: disabled
+      steps: [next, drain]
+  - messages_response_stream:
+      model: model_a
+      events:
+        - {type: response.created}
+        - {type: response.completed}
+      failure: null
+      logging: false
+      redaction: disabled
+      steps: [next, drain]
+  - messages_response_stream:
+      model: model_a
+      events:
+        - {type: response.created}
+        - {type: response.completed}
+        - {type: response.completed}
+      failure: null
+      logging: false
+      redaction: disabled
+      steps: [drain]
+  - messages_response_stream:
+      model: model_a
+      events:
+        - {type: response.created}
+        - {type: response.created}
+        - {type: response.output_item.added, item: {type: message, id: item_a}}
+        - {type: response.output_text.delta, item_id: item_a, delta: "héllo"}
+      failure: null
+      logging: false
+      redaction: disabled
+      steps: [sse, sse, sse, sse, sse, sse]
+env: {LITELLM_DISABLE_REDACT_SECRETS: "true"}
+compare: {ignore: []}
