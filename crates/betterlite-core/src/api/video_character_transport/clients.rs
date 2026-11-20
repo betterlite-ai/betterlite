@@ -1,34 +1,26 @@
 use std::future::Future;
-use std::io::Read as _;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use betterlite_http::interactions::base::clients::{HttpClients, async_client};
-use betterlite_http::interactions::base::{
-    ClientError, MAX_RESPONSE_BYTES, Params, RequestFailure,
-};
+use betterlite_http::interactions::base::clients::HttpClients;
+use betterlite_http::interactions::base::{ClientError, Params, RequestFailure};
 use betterlite_http::proxy::UpstreamResponse;
-use betterlite_http::proxy::limits::read_bounded;
 use http::Method;
 use http::header::HeaderMap;
 use url::Url;
+
+mod asynchronous;
+mod synchronous;
+
+use self::asynchronous::async_sender;
+use self::synchronous::sync_sender;
 
 // the body a character call carries: a lookup sends none, and a creation sends the encoded parts its Content-Type names
 #[derive(Debug)]
 pub enum CharacterBody {
     Empty,
     Multipart(Vec<u8>),
-}
-
-impl CharacterBody {
-    // the bytes to send, when the call carries a body
-    fn into_data(self) -> Option<Vec<u8>> {
-        match self {
-            Self::Empty => None,
-            Self::Multipart(data) => Some(data),
-        }
-    }
 }
 
 // the wire request both client kinds send
@@ -114,27 +106,7 @@ impl CharacterClients for HttpClients {
         params: &Params,
         supplied: Option<&SyncSender>,
     ) -> Result<SyncSender, ClientError> {
-        if let Some(client) = supplied {
-            return Ok(client.clone());
-        }
-        let client = self.sync_client(params, None)?;
-        Ok(SyncSender(Arc::new(
-            move |request: CharacterRequest| -> Answer {
-                let mut builder = client
-                    .request(request.method, request.url)
-                    .headers(request.headers);
-                if let Some(timeout) = request.timeout {
-                    builder = builder.timeout(timeout);
-                }
-                if let Some(data) = request.body.into_data() {
-                    builder = builder.body(data);
-                }
-                let sent = builder.send().map_err(RequestFailure::Transport)?;
-                let status = sent.status().as_u16();
-                let headers = sent.headers().clone();
-                finish_blocking(sent, status, headers)
-            },
-        )))
+        supplied.map_or_else(|| sync_sender(self, params), |client| Ok(client.clone()))
     }
 
     fn select_async(
@@ -142,55 +114,6 @@ impl CharacterClients for HttpClients {
         params: &Params,
         supplied: Option<&AsyncSender>,
     ) -> Result<AsyncSender, ClientError> {
-        if let Some(client) = supplied {
-            return Ok(client.clone());
-        }
-        let client = async_client(self, params, None)?;
-        Ok(AsyncSender(Arc::new(
-            move |request: CharacterRequest| -> AsyncAnswer {
-                let client = client.clone();
-                Box::pin(async move {
-                    let mut builder = client
-                        .request(request.method, request.url)
-                        .headers(request.headers);
-                    if let Some(timeout) = request.timeout {
-                        builder = builder.timeout(timeout);
-                    }
-                    if let Some(data) = request.body.into_data() {
-                        builder = builder.body(data);
-                    }
-                    let mut sent = builder.send().await.map_err(RequestFailure::Transport)?;
-                    let status = sent.status().as_u16();
-                    let headers = sent.headers().clone();
-                    let body = read_bounded(&mut sent, MAX_RESPONSE_BYTES)
-                        .await
-                        .map_err(RequestFailure::from)?;
-                    Ok(UpstreamResponse {
-                        status,
-                        headers,
-                        body,
-                    })
-                })
-            },
-        )))
+        supplied.map_or_else(|| async_sender(self, params), |client| Ok(client.clone()))
     }
-}
-
-// the blocking answer, read up to the shared cap so a provider answer cannot grow without bound
-fn finish_blocking(sent: impl Read, status: u16, headers: HeaderMap) -> Answer {
-    let cap = u64::try_from(MAX_RESPONSE_BYTES.saturating_add(1)).unwrap_or(u64::MAX);
-    let mut body = Vec::new();
-    sent.take(cap)
-        .read_to_end(&mut body)
-        .map_err(RequestFailure::Body)?;
-    if body.len() > MAX_RESPONSE_BYTES {
-        return Err(RequestFailure::BodyTooLarge {
-            limit: MAX_RESPONSE_BYTES,
-        });
-    }
-    Ok(UpstreamResponse {
-        status,
-        headers,
-        body,
-    })
 }
