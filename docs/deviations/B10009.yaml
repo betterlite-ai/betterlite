@@ -12,4 +12,10 @@ deviations:
       The section keeps every member of a useful link as written, so a link string or an entry member that spells an os.environ/ reference is stored unchanged.
       LiteLLM resolves such references anywhere in the loaded config, these strings included, so a setup that relied on one there would serve the literal text instead of the value.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5782-L5786
+  - what: >-
+      An os.environ/ reference in litellm_settings.blog_posts_url that names an unset variable fails the load with MissingEnvironment.
+    why: >-
+      LiteLLM's proxy resolver stores None for an unset reference, so litellm.blog_posts_url becomes None and the public blog endpoint fails when it fetches the feed.
+      betterlite resolves the key through the shared loader, so a mistyped variable is named at startup instead of breaking that endpoint after boot.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5782-L5787
 kept_bugs: []
