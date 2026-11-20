@@ -1,5 +1,6 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use rstest::rstest;
 use rust_decimal::Decimal;
 use serde_json::Number;
 
@@ -11,64 +12,70 @@ use super::support::{
 
 const ROUTER_METADATA: &str = r#"{"model":"gpt-4o","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_params":{"metadata":{"model_info":{"id":"deployment-metadata","input_cost_per_token":1}}}}"#;
 
-#[test]
-fn an_explicit_router_id_wins_and_an_empty_one_falls_back() {
-    for (explicit, expected) in [("explicit-id", "explicit-id"), ("", "deployment-metadata")] {
-        let fakes = Fakes::default();
-        let mut log = state(ROUTER_METADATA);
-        openai(&mut log);
-        let usage = chat_usage();
-        let hidden = IndexMap::new();
-        let cost = run(fakes.recorder().record(
+#[rstest]
+#[case::explicit_id("explicit-id", "explicit-id")]
+#[case::empty_falls_back("", "deployment-metadata")]
+fn an_explicit_router_id_wins_and_an_empty_one_falls_back(
+    #[case] explicit: &str,
+    #[case] expected: &str,
+) {
+    let fakes = Fakes::default();
+    let mut log = state(ROUTER_METADATA);
+    openai(&mut log);
+    let usage = chat_usage();
+    let hidden = IndexMap::new();
+    let cost = run(fakes.recorder().record(
+        &mut log,
+        RecordInput {
+            response: typed(typed_response(&usage, &hidden)),
+            cache_hit: None,
+            litellm_model_name: None,
+            router_model_id: Some(explicit),
+        },
+    ));
+    assert_eq!(cost, Some(Decimal::ZERO));
+    let observed = fakes.observe();
+    assert_eq!(observed[0].router_model_id.as_deref(), Some(expected));
+    assert_eq!(
+        stored_diagnostic(&log),
+        Some(json_text(&format!(
+            r#"{{"reason":"missing_pricing_key","pricing_model":"{expected}","missing_pricing_keys":["output_cost_per_token"]}}"#
+        )))
+    );
+}
+
+#[rstest]
+#[case::named_model("named-model", "named-model")]
+#[case::empty_falls_back("", "gpt-4o")]
+fn an_explicit_model_name_wins_and_an_empty_one_falls_back(
+    #[case] named: &str,
+    #[case] expected: &str,
+) {
+    let fakes = Fakes::default().with_catalog(FakeCatalog::with_entry(
+        "gpt-4o",
+        &[("input_cost_per_image", a_price(1))],
+    ));
+    let mut log = state(INIT);
+    openai(&mut log);
+    let usage = chat_usage();
+    let hidden = IndexMap::new();
+    let recorder = fakes.recorder();
+    let (cost, warnings) = capture(|| {
+        run(recorder.record(
             &mut log,
             RecordInput {
                 response: typed(typed_response(&usage, &hidden)),
                 cache_hit: None,
-                litellm_model_name: None,
-                router_model_id: Some(explicit),
+                litellm_model_name: Some(named),
+                router_model_id: None,
             },
-        ));
-        assert_eq!(cost, Some(Decimal::ZERO));
-        let observed = fakes.observe();
-        assert_eq!(observed[0].router_model_id.as_deref(), Some(expected));
-        assert_eq!(
-            stored_diagnostic(&log),
-            Some(json_text(&format!(
-                r#"{{"reason":"missing_pricing_key","pricing_model":"{expected}","missing_pricing_keys":["output_cost_per_token"]}}"#
-            )))
-        );
-    }
-}
-
-#[test]
-fn an_explicit_model_name_wins_and_an_empty_one_falls_back() {
-    for (named, expected) in [("named-model", "named-model"), ("", "gpt-4o")] {
-        let fakes = Fakes::default().with_catalog(FakeCatalog::with_entry(
-            "gpt-4o",
-            &[("input_cost_per_image", a_price(1))],
-        ));
-        let mut log = state(INIT);
-        openai(&mut log);
-        let usage = chat_usage();
-        let hidden = IndexMap::new();
-        let recorder = fakes.recorder();
-        let (cost, warnings) = capture(|| {
-            run(recorder.record(
-                &mut log,
-                RecordInput {
-                    response: typed(typed_response(&usage, &hidden)),
-                    cache_hit: None,
-                    litellm_model_name: Some(named),
-                    router_model_id: None,
-                },
-            ))
-        });
-        assert_eq!(cost, Some(Decimal::ZERO));
-        let observed = fakes.observe();
-        assert_eq!(observed[0].model.as_str(), expected);
-        assert_eq!(warnings.len(), 1);
-        assert!(warnings[0].contains(format!("model={expected}").as_str()));
-    }
+        ))
+    });
+    assert_eq!(cost, Some(Decimal::ZERO));
+    let observed = fakes.observe();
+    assert_eq!(observed[0].model.as_str(), expected);
+    assert_eq!(warnings.len(), 1);
+    assert!(warnings[0].contains(format!("model={expected}").as_str()));
 }
 
 #[test]

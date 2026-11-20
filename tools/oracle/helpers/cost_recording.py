@@ -122,7 +122,7 @@ class CalculatorKwargs(TypedDict):
 
 class HiddenCarrier:
     def __init__(self, hidden: dict[str, JsonValue] | None) -> None:
-        self._hidden_params: dict[str, object] = {}  # ast-grep-ignore: no-loose-types
+        self._hidden_params: dict[str, object] = {}
         if hidden is not None:
             self._hidden_params.update(hidden)
 
