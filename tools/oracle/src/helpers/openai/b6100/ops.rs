@@ -67,7 +67,7 @@ pub(super) fn run(input: &Input) -> HelperResult {
         return Ok(json!({"steps": values}));
     }
     if !input.models.is_empty() {
-        return steps(&input.models, model_step);
+        return Ok(json!({"steps": input.models.iter().map(model_step).collect::<Vec<Value>>()}));
     }
     if !input.embedding_plans.is_empty() {
         return steps(&input.embedding_plans, embedding_step);
@@ -104,9 +104,7 @@ fn cost_steps<Costs>(costs: Costs) -> Value
 where
     Costs: Iterator<Item = Option<Decimal>>,
 {
-    let steps: Vec<Option<f64>> = costs
-        .map(|cost| cost.and_then(|value| value.to_f64()))
-        .collect();
+    let steps: Vec<Option<f64>> = costs.map(|cost| cost?.to_f64()).collect();
     json!({"steps": steps})
 }
 
@@ -153,7 +151,7 @@ fn chat_input(case: &ChatRequest) -> TransformInput<'_> {
 }
 
 // the catalog reply: a failed status keeps the status, and a good one carries the prefixed ids
-fn model_step(case: &CatalogCase) -> Result<Value, Box<HelperError>> {
+fn model_step(case: &CatalogCase) -> Value {
     let env = env_with(&case.environment, None);
     let url = models_url(case.api_base.as_deref(), &env);
     let reply = CatalogReply {
@@ -161,10 +159,10 @@ fn model_step(case: &CatalogCase) -> Result<Value, Box<HelperError>> {
         headers: &case.headers,
         text: &case.text,
     };
-    Ok(match get_models(&reply) {
+    match get_models(&reply) {
         Ok(models) => json!({"url": url, "models": models}),
         Err(error) => json!({"url": url, "status": error.status_code}),
-    })
+    }
 }
 
 fn embedding_step(case: &EmbeddingPlan) -> Result<Value, Box<HelperError>> {
@@ -197,7 +195,7 @@ enum CallFamily {
 fn call_step(case: &Call, family: CallFamily) -> Result<Value, Box<HelperError>> {
     let env = env_with(&case.environment, case.global_api_key.as_deref());
     let explicit = case.api_key.clone().map(SecretString::from);
-    if let CallFamily::Messages = family {
+    if matches!(family, CallFamily::Messages) {
         return messages_answer(case, &env, explicit.as_ref());
     }
     let prepared = prepare(&PrepareInput {

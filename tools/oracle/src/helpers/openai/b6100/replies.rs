@@ -55,8 +55,8 @@ fn cost_number(held: Option<&HiddenJson>) -> Option<f64> {
 }
 
 // LiteLLM raises a meaningful error object with its status, so the runner compares it as the call's failure
-fn embedding_failure(error: EdenAiEmbeddingError) -> Box<HelperError> {
-    let meaningful = matches!(&error, EdenAiEmbeddingError::ReplyError { .. });
+fn embedding_failure(error: &EdenAiEmbeddingError) -> Box<HelperError> {
+    let meaningful = matches!(error, EdenAiEmbeddingError::ReplyError { .. });
     Box::new(HelperError {
         class: String::from("Exception"),
         status: meaningful.then_some(error.status_code()),
@@ -78,7 +78,8 @@ pub(super) fn reply_value(input: &Input) -> Result<Option<Value>, Box<HelperErro
     if !input.embedding_replies.is_empty() {
         let mut values = Vec::with_capacity(input.embedding_replies.len());
         for body in &input.embedding_replies {
-            let reply = embedding_transform_response(body.as_bytes()).map_err(embedding_failure)?;
+            let reply = embedding_transform_response(body.as_bytes())
+                .map_err(|error| embedding_failure(&error))?;
             values.push(json!({"cost": hidden_cost(&reply.hidden_params)}));
         }
         return Ok(Some(json!({"steps": values})));
@@ -114,7 +115,7 @@ fn fixture_cost(body: &str, family: ReplyFamily) -> Result<Value, Box<HelperErro
     let fixture = Fixture::new()?;
     let mut state = fixture.state()?;
     let env = fixture.env();
-    if let ReplyFamily::Responses = family {
+    if matches!(family, ReplyFamily::Responses) {
         let transformed = responses_transform_response(ResponsesRequest {
             reply: &RawResponse {
                 status: 200,
