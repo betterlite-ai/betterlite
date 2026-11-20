@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::io::Write as _;
 use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -134,7 +134,7 @@ fn record(
 // The IAM exchange a token in the environment must never reach
 pub(crate) struct Iam {
     answer: Option<&'static str>,
-    pub(crate) calls: Arc<Mutex<usize>>,
+    pub(crate) calls: Arc<AtomicUsize>,
 }
 
 impl Iam {
@@ -158,9 +158,7 @@ impl WatsonxTransport for Iam {
         &self,
         _request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
-        *calls = calls.saturating_add(1);
-        drop(calls);
+        self.calls.fetch_add(1, Ordering::SeqCst);
         let answer = self.answer.map(|text| text.as_bytes().to_vec());
         ready(answer.map_or_else(
             || Err(TransportError::Closed),
@@ -311,7 +309,7 @@ impl Run {
         Outcome {
             requests: recorder.finish(),
             result,
-            iam_calls: *calls.lock().unwrap_or_else(PoisonError::into_inner),
+            iam_calls: calls.load(Ordering::SeqCst),
         }
     }
 
