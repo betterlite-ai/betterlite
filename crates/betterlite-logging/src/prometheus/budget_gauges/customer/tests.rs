@@ -3,7 +3,7 @@
 use std::time::Instant;
 
 use betterlite_prometheus::collector_factory::collector::MetricValue;
-use chrono::{DateTime, Utc};
+use chrono::DateTime;
 
 use super::{BudgetGaugeClock, CustomerGaugeContext, set_customer_budget_metrics};
 use crate::end_user::EndUserCostTrackingSettings;
@@ -23,7 +23,7 @@ const HOURS: &str = "litellm_customer_budget_remaining_hours_metric";
 fn customer(end_user: &str, spend: &str, max: Option<&str>) -> CustomerBudgetGaugeInput {
     CustomerBudgetGaugeInput {
         end_user_id: end_user.to_owned(),
-        spend: Some(decimal(spend)),
+        spend: decimal(spend),
         max_budget: max.map(decimal),
         budget_reset_at: Some(DateTime::from_timestamp(7200, 0).unwrap()),
     }

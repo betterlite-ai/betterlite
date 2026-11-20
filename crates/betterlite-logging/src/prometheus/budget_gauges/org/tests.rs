@@ -15,11 +15,11 @@ const REMAINING: &str = "litellm_remaining_org_budget_metric";
 const MAX: &str = "litellm_org_max_budget_metric";
 const HOURS: &str = "litellm_org_budget_remaining_hours_metric";
 
-fn org(alias: &str, spend: Option<&str>, max: Option<&str>) -> OrgBudgetGaugeInput {
+fn org(alias: &str, spend: &str, max: Option<&str>) -> OrgBudgetGaugeInput {
     OrgBudgetGaugeInput {
         org_id: "o1".to_owned(),
         org_alias: alias.to_owned(),
-        spend: spend.map(decimal),
+        spend: decimal(spend),
         max_budget: max.map(decimal),
         budget_reset_at: Some(DateTime::from_timestamp(7200, 0).unwrap()),
     }
@@ -29,7 +29,7 @@ fn org(alias: &str, spend: Option<&str>, max: Option<&str>) -> OrgBudgetGaugeInp
 fn all_three_gauges_are_written() {
     let settings = PrometheusLabelSettings::with_defaults();
     let (gauges, log) = rig(REMAINING, MAX, HOURS, &["org_id", "org_alias"]);
-    let input = org("Org", Some("4"), Some("10"));
+    let input = org("Org", "4", Some("10"));
     set_org_budget_metrics(
         &gauges,
         &input,
@@ -52,7 +52,7 @@ fn all_three_gauges_are_written() {
 fn no_budget_limits_write_only_the_remaining_gauge() {
     let settings = PrometheusLabelSettings::with_defaults();
     let (gauges, log) = rig(REMAINING, MAX, HOURS, &["org_id", "org_alias"]);
-    let mut input = org("", Some("4"), None);
+    let mut input = org("", "4", None);
     input.budget_reset_at = None;
     set_org_budget_metrics(
         &gauges,
@@ -72,10 +72,10 @@ fn no_budget_limits_write_only_the_remaining_gauge() {
 }
 
 #[test]
-fn a_max_budget_without_spend_keeps_the_whole_limit() {
+fn a_zero_spend_keeps_the_whole_limit() {
     let settings = PrometheusLabelSettings::with_defaults();
     let (gauges, log) = rig(REMAINING, MAX, HOURS, &["org_id"]);
-    let mut input = org("Org", None, Some("10"));
+    let mut input = org("Org", "0", Some("10"));
     input.budget_reset_at = None;
     set_org_budget_metrics(
         &gauges,
@@ -98,7 +98,7 @@ fn a_max_budget_without_spend_keeps_the_whole_limit() {
 fn a_past_reset_time_writes_a_negative_hours_value() {
     let settings = PrometheusLabelSettings::with_defaults();
     let (gauges, log) = rig(REMAINING, MAX, HOURS, &["org_id"]);
-    let mut input = org("Org", Some("1"), None);
+    let mut input = org("Org", "1", None);
     input.budget_reset_at = Some(DateTime::from_timestamp(0, 0).unwrap());
     set_org_budget_metrics(
         &gauges,

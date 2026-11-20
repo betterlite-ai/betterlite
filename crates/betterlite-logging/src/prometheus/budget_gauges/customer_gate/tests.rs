@@ -65,11 +65,18 @@ fn three_noop_customer_gauges_are_noop() {
 fn one_real_customer_gauge_is_not_noop() {
     let log = new_log();
     let mut gauges = noop_gauges();
-    gauges.remaining_hours = field(
-        "litellm_customer_budget_remaining_hours_metric",
-        &["end_user"],
-        &log,
-    );
+    gauges.remaining_hours = GaugeField {
+        metric_name: "litellm_customer_budget_remaining_hours_metric",
+        supported_labels: words(&["end_user"]),
+        collector: MetricLike::Real(
+            field(
+                "litellm_customer_budget_remaining_hours_metric",
+                &["end_user"],
+                &log,
+            )
+            .collector,
+        ),
+    };
     assert!(!budget_gauges_are_noop(&gauges));
 }
 

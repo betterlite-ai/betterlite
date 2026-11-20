@@ -59,7 +59,7 @@ where
         .remaining
         .collector
         .labels(&label_pairs(&labels))
-        .set(remaining_budget(input.max_budget, input.spend).metric_value());
+        .set(remaining_budget(input.max_budget, Some(input.spend)).metric_value());
     track_end_user_series(&gauges.remaining, &labels, context)?;
     if let Some(max_budget) = input.max_budget {
         gauges

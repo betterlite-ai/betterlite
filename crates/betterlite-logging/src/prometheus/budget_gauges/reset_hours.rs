@@ -14,3 +14,5 @@ pub fn hours_until_reset(reset_at: DateTime<Utc>, now: DateTime<Utc>) -> f64 {
     let fraction = f64::from(remaining.subsec_nanos()).div(NANOS_PER_SECOND);
     seconds.add(fraction).div(SECONDS_PER_HOUR)
 }
+
+mod tests;

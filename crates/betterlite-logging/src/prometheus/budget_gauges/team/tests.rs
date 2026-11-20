@@ -5,9 +5,10 @@ use chrono::DateTime;
 
 use super::set_team_budget_metrics;
 use crate::end_user::EndUserCostTrackingSettings;
+use crate::prometheus::budget_gauges::gauge::EntityBudgetGauges;
 use crate::prometheus::budget_gauges::inputs::TeamBudgetGaugeInput;
 use crate::prometheus::budget_gauges::test_support::{
-    decimal, events, finite, hours_value, rig, set, source,
+    decimal, events, field, finite, hours_value, new_log, rig, set, source,
 };
 use crate::prometheus_label_schema::PrometheusLabelSettings;
 
@@ -115,5 +116,32 @@ fn an_absent_alias_is_written_as_an_empty_label() {
             &[("team", "t1"), ("team_alias", "")],
             MetricValue::PositiveInfinity,
         )]
+    );
+}
+
+#[test]
+fn each_gauge_builds_its_labels_from_its_own_list() {
+    let settings = PrometheusLabelSettings::with_defaults();
+    let log = new_log();
+    let gauges = EntityBudgetGauges {
+        remaining: field(REMAINING, &["team"], &log),
+        max: field(MAX, &["team_alias"], &log),
+        remaining_hours: field(HOURS, &["team_alias"], &log),
+    };
+    let input = team(Some("Alpha"), Some("4"), Some("10"));
+    set_team_budget_metrics(
+        &gauges,
+        &input,
+        source(&settings, EndUserCostTrackingSettings::default()),
+        DateTime::from_timestamp(0, 0).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        events(&log),
+        vec![
+            set(REMAINING, &[("team", "t1")], finite("6")),
+            set(MAX, &[("team_alias", "Alpha")], finite("10")),
+            set(HOURS, &[("team_alias", "Alpha")], hours_value(2.0)),
+        ]
     );
 }

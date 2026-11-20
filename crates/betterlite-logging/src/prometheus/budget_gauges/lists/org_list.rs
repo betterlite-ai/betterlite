@@ -33,7 +33,7 @@ where
         let input = OrgBudgetGaugeInput {
             org_id: org.organization_id.clone().unwrap_or_default(),
             org_alias: org.organization_alias.clone().unwrap_or_default(),
-            spend: Some(org.spend.unwrap_or_default()),
+            spend: org.spend.unwrap_or_default(),
             max_budget: budget.and_then(|table| table.max_budget),
             budget_reset_at: budget.and_then(|table| table.budget_reset_at),
         };

@@ -32,7 +32,7 @@ where
     ]);
     let amounts = BudgetGaugeAmounts {
         max_budget: input.max_budget,
-        spend: input.spend,
+        spend: Some(input.spend),
         reset_at: input.budget_reset_at,
     };
     set_entity_budget_gauges(gauges, &values, amounts, source, now)

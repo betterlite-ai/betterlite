@@ -14,7 +14,7 @@ pub struct TeamBudgetGaugeInput {
 pub struct OrgBudgetGaugeInput {
     pub org_id: String,
     pub org_alias: String,
-    pub spend: Option<Decimal>,
+    pub spend: Decimal,
     pub max_budget: Option<Decimal>,
     pub budget_reset_at: Option<DateTime<Utc>>,
 }
@@ -33,7 +33,7 @@ pub struct UserBudgetGaugeInput {
     pub user_id: String,
     pub user_email: Option<String>,
     pub user_alias: Option<String>,
-    pub spend: Option<Decimal>,
+    pub spend: Decimal,
     pub max_budget: Option<Decimal>,
     pub budget_reset_at: Option<DateTime<Utc>>,
 }
@@ -41,7 +41,7 @@ pub struct UserBudgetGaugeInput {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CustomerBudgetGaugeInput {
     pub end_user_id: String,
-    pub spend: Option<Decimal>,
+    pub spend: Decimal,
     pub max_budget: Option<Decimal>,
     pub budget_reset_at: Option<DateTime<Utc>>,
 }

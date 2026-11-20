@@ -29,7 +29,7 @@ where
     let budget = customer.budget.as_ref().or(default_budget);
     let input = CustomerBudgetGaugeInput {
         end_user_id: customer.user_id.clone(),
-        spend: Some(customer.spend),
+        spend: customer.spend,
         max_budget: budget.and_then(|table| table.max_budget),
         budget_reset_at: budget.and_then(|table| table.budget_reset_at),
     };

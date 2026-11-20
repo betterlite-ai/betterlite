@@ -8,14 +8,14 @@ use super::input::Input;
 
 #[test]
 fn remaining_budget_reports_infinity_without_a_limit() {
-    let input = json!({"function": "remaining_budget", "max_budget": null, "spend": 4});
+    let input = json!({"function": "remaining_budget", "max_budget": null, "spend": 4_i32});
     let parsed = serde_json::from_value::<Input>(input).unwrap();
     assert_eq!(Op::run(&parsed).unwrap(), json!({"remaining": "inf"}));
 }
 
 #[test]
 fn remaining_budget_subtracts_the_spend() {
-    let input = json!({"function": "remaining_budget", "max_budget": 10, "spend": 4});
+    let input = json!({"function": "remaining_budget", "max_budget": 10_i32, "spend": 4_i32});
     let parsed = serde_json::from_value::<Input>(input).unwrap();
     assert_eq!(Op::run(&parsed).unwrap(), json!({"remaining": "6.000000"}));
 }
@@ -37,8 +37,8 @@ fn the_team_setter_writes_all_three_samples() {
         "function": "team",
         "team_id": "t1",
         "team_alias": "Alpha",
-        "spend": 4,
-        "max_budget": 10,
+        "spend": 4_i32,
+        "max_budget": 10_i32,
         "budget_reset_at": "2026-11-20T02:00:00Z",
         "now": "2026-11-20T00:00:00Z",
         "labels_by_metric": {
@@ -75,8 +75,8 @@ fn a_suppressed_customer_writes_no_samples() {
     let input = json!({
         "function": "customer",
         "end_user_id": "e1",
-        "spend": 4,
-        "max_budget": 10,
+        "spend": 4_i32,
+        "max_budget": 10_i32,
         "budget_reset_at": null,
         "now": "2026-11-20T00:00:00Z",
         "enable_end_user_tracking": false,

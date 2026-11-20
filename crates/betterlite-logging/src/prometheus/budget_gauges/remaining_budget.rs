@@ -26,3 +26,5 @@ pub fn remaining_budget(max_budget: Option<Decimal>, spend: Option<Decimal>) -> 
         (Some(limit), Some(used)) => RemainingBudget::Amount(limit.saturating_sub(used)),
     }
 }
+
+mod tests;

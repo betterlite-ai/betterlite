@@ -122,12 +122,12 @@ fn the_team_list_setter_sets_each_team_in_order() {
     );
 }
 
-fn user(user_id: &str, spend: Option<&str>, max: Option<&str>) -> UserBudgetGaugeInput {
+fn user(user_id: &str, spend: &str, max: Option<&str>) -> UserBudgetGaugeInput {
     UserBudgetGaugeInput {
         user_id: user_id.to_owned(),
         user_email: None,
         user_alias: None,
-        spend: spend.map(decimal),
+        spend: decimal(spend),
         max_budget: max.map(decimal),
         budget_reset_at: None,
     }
@@ -137,7 +137,7 @@ fn user(user_id: &str, spend: Option<&str>, max: Option<&str>) -> UserBudgetGaug
 fn the_user_list_setter_sets_each_user_in_order() {
     let settings = PrometheusLabelSettings::with_defaults();
     let (gauges, log) = rig(USER_REMAINING, USER_MAX, USER_HOURS, &["user"]);
-    let users = [user("u1", None, None), user("u2", Some("1"), Some("3"))];
+    let users = [user("u1", "0", None), user("u2", "1", Some("3"))];
     set_user_list_budget_metrics(
         &gauges,
         &users,
