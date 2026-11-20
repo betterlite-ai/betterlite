@@ -99,11 +99,10 @@ impl<S> MessagesResponseStream<S> {
     where
         S: ResponsesEventSource,
     {
-        let result = self.next_chunk().await?;
-        match result {
-            MessagesResponseStreamResult::Chunk(chunk) => sse::frame(chunk).map(Some),
-            MessagesResponseStreamResult::End => Ok(None),
-        }
+        let MessagesResponseStreamResult::Chunk(chunk) = self.next_chunk().await? else {
+            return Ok(None);
+        };
+        sse::frame(chunk).map(Some)
     }
 
     // The async for / next() loop: events are processed until one queues a chunk or the upstream raises or ends.
