@@ -11,7 +11,7 @@ use betterlite_provider::api::transcription_http::{TranscriptionCall, Transcript
 
 use super::super::error::SdkHttpError;
 use super::super::result::kinds::SdkResult;
-use super::support::{Fixture, FixtureConfig, source};
+use super::fixtures::{Fixture, FixtureConfig, source};
 use super::{Call, Failure, Outcome, ProviderConfig, Raised, View};
 
 // The production handlers over the mock's base: the same logging state and pooled client a request would build
@@ -44,7 +44,7 @@ pub(super) async fn execute(
         api_key: call.api_key.as_deref(),
         api_base: Some(api_base),
         custom_llm_provider: "openai",
-        headers: call.headers.as_ref(),
+        headers: None,
         atranscription: Json::Bool(call.atranscription),
         timeout: call.timeout_seconds.map(Duration::from_secs),
         max_retries: call.max_retries,

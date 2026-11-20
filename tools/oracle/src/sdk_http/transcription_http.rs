@@ -4,7 +4,6 @@ use std::future::Future;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::transcription_contract::TranscriptionResponse;
 use betterlite_openai::openai_base_config::Object;
-use betterlite_provider::api::transcription_http::config::Headers;
 use serde::{Deserialize, Serialize};
 
 use super::OracleLimits;
@@ -13,8 +12,8 @@ use super::call_kind::CallKind;
 use super::error::SdkHttpError;
 use super::result::kinds::SdkResult;
 
+mod fixtures;
 mod native;
-mod support;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -32,7 +31,6 @@ pub enum ProviderConfig {
     Missing,
 }
 
-// The fixture config's request transform: raw bytes, or a dict and whether a files map was handed over
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Transform {
@@ -46,7 +44,7 @@ pub struct Transform {
     pub content_type: Option<String>,
 }
 
-// What a caller hands audio_transcriptions: both handler modes, the fixture provider config and its transform
+// Both handler modes over the fixture provider config, with the request and response a real provider would answer
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Call {
@@ -58,8 +56,6 @@ pub struct Call {
     pub optional_params: Object,
     #[serde(default)]
     pub litellm_params: Object,
-    #[serde(default)]
-    pub headers: Option<Headers>,
     #[serde(default)]
     pub transform: Transform,
     #[serde(default)]
