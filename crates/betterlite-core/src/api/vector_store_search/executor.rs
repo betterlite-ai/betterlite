@@ -33,7 +33,7 @@ impl SelectedExecutor<'_> {
 }
 
 // _direct_vector_store_embedding_executor: the value is type-checked before the registry, the mocks or any HTTP
-pub fn direct_vector_store_embedding_executor<'selection>(
+pub fn direct_executor<'selection>(
     value: Option<DirectExecutor<'selection>>,
     source: &'selection dyn EmbeddingExecutorSource,
     request_kwargs: &Params,

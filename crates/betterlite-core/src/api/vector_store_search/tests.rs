@@ -33,13 +33,11 @@ use chrono::{DateTime, FixedOffset, Utc};
 use http::HeaderMap;
 use secrecy::ExposeSecret as _;
 
+use self::search::SearchConfigFake;
 use super::error::{SdkFailure, VectorStoreSearchError, failure};
 use super::executor::{DirectExecutor, EmbeddingExecutorSource, SelectedExecutor};
 use super::provider::resolve_provider;
-use super::service::{
-    CreateCall, Entry, OptionalParamFilters, SdkDeps, SearchCall, VectorStoreConfigs, create,
-    entry_from_flag, search,
-};
+use super::service::{Entry, OptionalParamFilters, SdkDeps, VectorStoreConfigs, entry_from_flag};
 use crate::api::vector_search_execution::config::{
     EmbeddingEntry, Params, QueryEmbeddingExecutor, SearchConfig, SearchQuery, SearchRequest,
     StoreFailure, VectorStoreLogging, VectorStoreResponse,
@@ -51,12 +49,15 @@ use crate::api::vector_search_execution::service::signing::{
 use crate::api::vector_store_http_create_read::config::{CapabilityError, CreateReadConfig};
 use crate::api::vector_store_http_write::config::{WriteConfig, WriteParams};
 use crate::api::vector_store_http_write::error::{
-    BaseLlmException, ClientError, HeaderMap as ErrorHeaderMap, UrlFailure,
+    BaseLlmException, ClientError, HeaderMap as WireHeaders, UrlFailure,
 };
 use crate::api::vector_store_http_write::service::{
-    ClientKind, ClientSource, LogContext, SuppliedClient, WriteRequest, WriteTransport,
+    ClientKind, ClientSource, SuppliedClient, WriteRequest, WriteTransport,
 };
 use crate::api::vector_store_registry::store::{VectorStoreCredentials, VectorStoreRegistry};
+
+mod create;
+mod search;
 
 const CREATE_RESULT: &str = r#"{"id":"vs_a","object":"vector_store"}"#;
 const SEARCH_RESULT: &str =
@@ -102,7 +103,10 @@ struct Seen {
 struct Shared(Arc<Mutex<Seen>>);
 
 impl Shared {
-    fn with<R>(&self, read: impl FnOnce(&mut Seen) -> R) -> R {
+    fn with<R, F>(&self, read: F) -> R
+    where
+        F: FnOnce(&mut Seen) -> R,
+    {
         read(&mut self.0.lock().unwrap_or_else(PoisonError::into_inner))
     }
 }
@@ -172,43 +176,21 @@ struct Configs {
 
 impl VectorStoreConfigs for Configs {
     fn create_config(&self, tag: VectorStoresConfigTag) -> Option<Box<dyn CreateReadConfig + '_>> {
-        match tag {
-            VectorStoresConfigTag::OpenAI => Some(Box::new(CreateConfig {
-                seen: self.seen.clone(),
-            })),
-            VectorStoresConfigTag::AzureOpenAI
-            | VectorStoresConfigTag::Vertex
-            | VectorStoresConfigTag::VertexSearchAPI
-            | VectorStoresConfigTag::Bedrock
-            | VectorStoresConfigTag::PGVector
-            | VectorStoresConfigTag::AzureAI
-            | VectorStoresConfigTag::Milvus
-            | VectorStoresConfigTag::Gemini
-            | VectorStoresConfigTag::RAGFlow
-            | VectorStoresConfigTag::S3Vectors
-            | VectorStoresConfigTag::Valkey
-            | VectorStoresConfigTag::MongoDB => None,
+        if !matches!(tag, VectorStoresConfigTag::OpenAI) {
+            return None;
         }
+        Some(Box::new(CreateConfig {
+            seen: self.seen.clone(),
+        }))
     }
 
     fn search_config(&self, tag: VectorStoresConfigTag) -> Option<Arc<dyn SearchConfig>> {
-        match tag {
-            VectorStoresConfigTag::OpenAI => Some(Arc::new(SearchConfigFake {
-                seen: self.seen.clone(),
-            })),
-            VectorStoresConfigTag::AzureOpenAI
-            | VectorStoresConfigTag::Vertex
-            | VectorStoresConfigTag::VertexSearchAPI
-            | VectorStoresConfigTag::Bedrock
-            | VectorStoresConfigTag::PGVector
-            | VectorStoresConfigTag::AzureAI
-            | VectorStoresConfigTag::Milvus
-            | VectorStoresConfigTag::Gemini
-            | VectorStoresConfigTag::RAGFlow
-            | VectorStoresConfigTag::S3Vectors
-            | VectorStoresConfigTag::Valkey
-            | VectorStoresConfigTag::MongoDB => None,
+        if !matches!(tag, VectorStoresConfigTag::OpenAI) {
+            return None;
         }
+        Some(Arc::new(SearchConfigFake {
+            seen: self.seen.clone(),
+        }))
     }
 }
 
@@ -254,7 +236,7 @@ impl WriteConfig for CreateConfig {
             self.error_class(
                 &source.to_string(),
                 response.status().as_u16(),
-                ErrorHeaderMap::new(),
+                WireHeaders::new(),
             )
         })
     }
@@ -263,84 +245,18 @@ impl WriteConfig for CreateConfig {
         &self,
         message: &str,
         status_code: u16,
-        headers: ErrorHeaderMap,
+        headers: WireHeaders,
     ) -> BaseLlmException {
-        BaseLlmException {
-            status_code,
-            message: message.to_owned(),
-            headers,
-            status_code_is_synthesized: false,
-        }
+        exception(message, status_code, headers)
     }
 }
 
-struct SearchConfigFake {
-    seen: Shared,
-}
-
-#[async_trait]
-impl SearchConfig for SearchConfigFake {
-    fn validate_environment(
-        &self,
-        headers: OpenAiHeaders,
-        _litellm_params: &Params,
-    ) -> Result<OpenAiHeaders, SearchError> {
-        Ok(headers)
-    }
-
-    fn complete_url(&self, litellm_params: &Params) -> Result<String, SearchError> {
-        match litellm_params.get("api_base") {
-            Some(Json::Text(base)) => Ok(base.clone()),
-            Some(
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_),
-            )
-            | None => Ok(String::from("https://mock.invalid/v1")),
-        }
-    }
-
-    fn transform_search_request(
-        &self,
-        request: SearchRequest<'_>,
-    ) -> Result<(String, Params), SearchError> {
-        self.seen.with(|seen| {
-            seen.search_litellm_params
-                .push(request.litellm_params.clone());
-            seen.search_optionals.push(request.optional_params.clone());
-        });
-        Ok((
-            String::from("https://mock.invalid/v1/vector_stores/vs_a/search"),
-            request.litellm_params.clone(),
-        ))
-    }
-
-    fn transform_search_response(
-        &self,
-        response: &VectorStoreResponse,
-        _logging: &mut VectorStoreLogging,
-    ) -> Result<VectorStoreSearchResponse, SearchError> {
-        serde_json::from_slice(&response.body)
-            .map_err(|source| {
-                self.error_class(
-                    &source.to_string(),
-                    response.status_code,
-                    ErrorHeaderMap::new(),
-                )
-            })
-            .map_err(SearchError::Provider)
-    }
-
-    fn error_class(
-        &self,
-        message: &str,
-        status_code: u16,
-        headers: ErrorHeaderMap,
-    ) -> BaseLlmException {
-        BaseLlmException {
-            status_code,
-            message: message.to_owned(),
-            headers,
-            status_code_is_synthesized: false,
-        }
+fn exception(message: &str, status_code: u16, headers: WireHeaders) -> BaseLlmException {
+    BaseLlmException {
+        status_code,
+        message: message.to_owned(),
+        headers,
+        status_code_is_synthesized: false,
     }
 }
 
@@ -476,46 +392,6 @@ impl Logs {
         }
     }
 
-    async fn run_create<S>(
-        &mut self,
-        deps: &SdkDeps<'_, S>,
-        call: &CreateCall<'_>,
-    ) -> Result<Json, VectorStoreSearchError>
-    where
-        S: ClientSource,
-    {
-        let env = pre_post_env(&self.redactor, &self.sink, self.now);
-        create(
-            deps,
-            call,
-            &mut LogContext {
-                state: &mut self.state,
-                env: &env,
-            },
-        )
-        .await
-    }
-
-    async fn run_search<S>(
-        &mut self,
-        deps: &SdkDeps<'_, S>,
-        call: &SearchCall<'_>,
-    ) -> Result<Json, VectorStoreSearchError>
-    where
-        S: ClientSource,
-    {
-        let env = pre_post_env(&self.redactor, &self.sink, self.now);
-        search(
-            deps,
-            call,
-            &mut LogContext {
-                state: &mut self.state,
-                env: &env,
-            },
-        )
-        .await
-    }
-
     fn detail(&self, key: &str) -> Json {
         self.state
             .model_call_details
@@ -542,8 +418,18 @@ impl VectorStoreCredentials for FixedCredentials {
 fn managed_store(credential_name: Option<&str>) -> LiteLlmManagedVectorStore {
     LiteLlmManagedVectorStore {
         vector_store_id: Some(String::from("vs_a")),
+        custom_llm_provider: None,
+        vector_store_name: None,
+        vector_store_description: None,
+        vector_store_metadata: None,
+        created_at: None,
+        updated_at: None,
         litellm_credential_name: credential_name.map(str::to_owned),
-        ..LiteLlmManagedVectorStore::default()
+        litellm_params: None,
+        team_id: None,
+        user_id: None,
+        is_config: None,
+        extra: BTreeMap::new(),
     }
 }
 
@@ -595,314 +481,6 @@ impl Fakes {
             settings: settings(),
         }
     }
-}
-
-fn search_call<'call>(
-    query: &'call SearchQuery,
-    optional: &'call Params,
-    kwargs: &'call Params,
-    entry: Entry,
-) -> SearchCall<'call> {
-    SearchCall {
-        vector_store_id: "vs_a",
-        query,
-        optional,
-        kwargs,
-        extra_headers: None,
-        extra_body: None,
-        timeout: None,
-        custom_llm_provider: None,
-        executor: None,
-        entry,
-    }
-}
-
-fn create_call<'call>(
-    optional: &'call Params,
-    kwargs: &'call Params,
-    entry: Entry,
-) -> CreateCall<'call> {
-    CreateCall {
-        optional,
-        kwargs,
-        extra_headers: None,
-        extra_body: None,
-        timeout: None,
-        custom_llm_provider: None,
-        entry,
-    }
-}
-
-#[tokio::test]
-async fn create_optional_fields() {
-    for entry in [Entry::Sync, Entry::Asynchronous] {
-        let fakes = Fakes::new();
-        let source = fakes.source(CREATE_RESULT);
-        let mut logs = Logs::new("vector_store_create");
-        let optional = params(CREATE_OPTIONALS);
-        let kwargs = params(r#"{"api_key":"sk-client","api_base":"https://mock.invalid/v1"}"#);
-        let call = create_call(&optional, &kwargs, entry);
-        let deps = fakes.deps(&source, None);
-        let result = logs.run_create(&deps, &call).await;
-        assert_eq!(
-            result.expect("the mock provider answers"),
-            json(CREATE_RESULT)
-        );
-        fakes.seen.with(|seen| {
-            assert_eq!(
-                seen.bodies.last().expect("the create posted"),
-                &json(CREATE_OPTIONALS)
-            );
-            assert_eq!(seen.create_api_keys, vec![Some(String::from("sk-client"))]);
-        });
-        assert_eq!(logs.detail("optional_params"), json(CREATE_OPTIONALS));
-        assert_eq!(
-            logs.detail("custom_llm_provider"),
-            Json::Text(String::from("openai"))
-        );
-        assert_eq!(
-            logs.detail("model"),
-            Json::Text(String::from("vector-store"))
-        );
-        let Json::Object(litellm_params) = logs.detail("litellm_params") else {
-            panic!("the logged litellm params are an object");
-        };
-        assert_eq!(litellm_params.get("litellm_call_id"), Some(&Json::Null));
-    }
-}
-
-#[tokio::test]
-async fn search_optional_fields() {
-    let fakes = Fakes::new();
-    let source = fakes.source(SEARCH_RESULT);
-    let mut logs = Logs::new("vector_store_search");
-    let optional = params(SEARCH_OPTIONALS);
-    let kwargs = params(
-        r#"{"api_key":"sk-client","api_base":"https://mock.invalid/v1","litellm_call_id":null}"#,
-    );
-    let query = SearchQuery::Sequence(vec![String::from("one"), String::from("two")]);
-    let call = search_call(&query, &optional, &kwargs, Entry::Asynchronous);
-    let deps = fakes.deps(&source, None);
-    let result = logs.run_search(&deps, &call).await;
-    assert_eq!(
-        result.expect("the mock provider answers"),
-        json(SEARCH_RESULT)
-    );
-    fakes.seen.with(|seen| {
-        assert_eq!(
-            seen.search_optionals.last().expect("the transform ran"),
-            &params(SEARCH_OPTIONALS)
-        );
-        assert_eq!(
-            seen.search_timeouts,
-            vec![Some(Duration::from_secs_f64(6000.0))]
-        );
-    });
-    assert_eq!(
-        logs.detail("optional_params"),
-        json(
-            r#"{"vector_store_id":"vs_a","query":["one","two"],"filters":{"type":"eq","key":"tag","value":"x"},"max_num_results":0,"ranking_options":{"ranker":"auto"},"rewrite_query":false}"#
-        )
-    );
-    let Json::Object(litellm_params) = logs.detail("litellm_params") else {
-        panic!("the logged litellm params are an object");
-    };
-    assert_eq!(litellm_params.get("litellm_call_id"), Some(&Json::Null));
-    assert_eq!(
-        litellm_params.get("vector_store_id"),
-        Some(&Json::Text(String::from("vs_a")))
-    );
-    assert_eq!(
-        litellm_params.get("use_litellm_proxy"),
-        Some(&Json::Bool(false))
-    );
-    assert_eq!(
-        logs.detail("custom_llm_provider"),
-        Json::Text(String::from("openai"))
-    );
-    assert_eq!(
-        logs.detail("model"),
-        Json::Text(String::from("vector-store"))
-    );
-}
-
-#[tokio::test]
-async fn search_timeout_follows_request_timeout() {
-    for (given, expected) in [
-        (None, Duration::from_secs_f64(6000.0)),
-        (Some(0.0), Duration::from_secs_f64(6000.0)),
-        (Some(3.0), Duration::from_secs(3)),
-    ] {
-        let fakes = Fakes::new();
-        let source = fakes.source(SEARCH_RESULT);
-        let mut logs = Logs::new("vector_store_search");
-        let optional = Params::new();
-        let kwargs = params(r#"{"api_base":"https://mock.invalid/v1"}"#);
-        let query = SearchQuery::Text(String::from("one"));
-        let mut call = search_call(&query, &optional, &kwargs, Entry::Sync);
-        call.timeout = given;
-        let deps = fakes.deps(&source, None);
-        logs.run_search(&deps, &call)
-            .await
-            .expect("the mock provider answers");
-        fakes
-            .seen
-            .with(|seen| assert_eq!(seen.search_timeouts, vec![Some(expected)]));
-    }
-}
-
-#[tokio::test]
-async fn registry_overlays_search_credentials() {
-    let mut fakes = Fakes::new();
-    let credentials = JsonObject::from([(
-        String::from("api_key"),
-        Json::Text(String::from("sk-registry")),
-    )]);
-    fakes.registry = VectorStoreRegistry {
-        stores: vec![managed_store(Some("store-credential"))],
-        clock: Arc::new(Utc::now),
-        credentials: Arc::new(FixedCredentials(credentials)),
-    };
-    let source = fakes.source(SEARCH_RESULT);
-    let mut logs = Logs::new("vector_store_search");
-    let query = SearchQuery::Text(String::from("one"));
-    let kwargs = params(
-        r#"{"api_key":"sk-client","api_base":"https://mock.invalid/v1","litellm_call_id":null}"#,
-    );
-    let optional = params(r#"{"name":"notes"}"#);
-    let call = search_call(&query, &optional, &kwargs, Entry::Sync);
-    let deps = fakes.deps(&source, None);
-    logs.run_search(&deps, &call)
-        .await
-        .expect("the mock provider answers");
-    fakes.seen.with(|seen| {
-        assert_eq!(
-            seen.search_litellm_params
-                .last()
-                .expect("the transform ran")
-                .get("api_key"),
-            Some(&Json::Text(String::from("sk-registry")))
-        );
-    });
-    // create never reads the registry, so the caller's key is the one it uses
-    let create_source = fakes.source(CREATE_RESULT);
-    let create_optional = params(r#"{"name":"notes"}"#);
-    let create_kwargs = params(r#"{"api_key":"sk-client","api_base":"https://mock.invalid/v1"}"#);
-    let create_invocation = create_call(&create_optional, &create_kwargs, Entry::Sync);
-    let create_deps = fakes.deps(&create_source, None);
-    logs.run_create(&create_deps, &create_invocation)
-        .await
-        .expect("the mock provider answers");
-    fakes.seen.with(|seen| {
-        assert_eq!(
-            seen.create_api_keys.last(),
-            Some(&Some(String::from("sk-client")))
-        );
-    });
-    // a non-executor fails before the registry, the mocks or any HTTP
-    let count = fakes.seen.with(|seen| seen.clients.len());
-    let mut invalid = search_call(&query, &optional, &kwargs, Entry::Sync);
-    invalid.executor = Some(DirectExecutor::Invalid);
-    let error = logs
-        .run_search(&deps, &invalid)
-        .await
-        .expect_err("a non-executor is refused");
-    assert_eq!(
-        error.to_string(),
-        "Invalid direct vector store embedding executor"
-    );
-    assert_eq!(fakes.seen.with(|seen| seen.clients.len()), count);
-}
-
-#[tokio::test]
-async fn supplied_executor_reaches_the_embedding_source() {
-    let fakes = Fakes::new();
-    let source = fakes.source(SEARCH_RESULT);
-    let executor = RecordingExecutor {
-        _request_kwargs: Params::new(),
-    };
-    let mut logs = Logs::new("vector_store_search");
-    let kwargs = params(r#"{"api_base":"https://mock.invalid/v1"}"#);
-    let optional = Params::new();
-    let query = SearchQuery::Text(String::from("one"));
-    let mut call = search_call(&query, &optional, &kwargs, Entry::Sync);
-    call.executor = Some(DirectExecutor::Executor(&executor));
-    let deps = fakes.deps(&source, None);
-    logs.run_search(&deps, &call)
-        .await
-        .expect("the mock provider answers");
-    fakes
-        .seen
-        .with(|seen| assert_eq!(seen.executor_supplied, vec![true]));
-}
-
-#[tokio::test]
-async fn vector_mock_truthiness() {
-    let fakes = Fakes::new();
-    let source = fakes.source(SEARCH_RESULT);
-    let mut logs = Logs::new("vector_store_search");
-    let query = SearchQuery::Text(String::from("one"));
-    let optional = Params::new();
-    let cases = [
-        (r#"{"mock_response":"yes"}"#, Some(SAMPLE_SEARCH)),
-        (
-            r#"{"mock_response":[{"score":0.5,"content":[{"text":"hit","type":"text"}]}]}"#,
-            Some(
-                r#"{"object":"vector_store.search_results.page","search_query":"sample query","data":[{"score":0.5,"content":[{"text":"hit","type":"text"}]}]}"#,
-            ),
-        ),
-        (r#"{"mock_response":""}"#, None),
-        (r#"{"mock_response":[]}"#, None),
-        (r#"{"mock_response":{"anything":"goes"}}"#, None),
-    ];
-    for (mock, expected) in cases {
-        let kwargs = params(mock);
-        let call = search_call(&query, &optional, &kwargs, Entry::Sync);
-        let deps = fakes.deps(&source, None);
-        let result = logs
-            .run_search(&deps, &call)
-            .await
-            .expect("the search answers");
-        match expected {
-            Some(text) => assert_eq!(result, json(text)),
-            None => assert_eq!(result, json(SEARCH_RESULT)),
-        }
-    }
-    // an empty create dict proceeds to HTTP, and a nonempty one comes back unchanged
-    for (mock, posted) in [
-        (
-            r#"{"api_base":"https://mock.invalid/v1","mock_response":{}}"#,
-            true,
-        ),
-        (
-            r#"{"api_base":"https://mock.invalid/v1","mock_response":{"id":"vs_a","object":"vector_store"}}"#,
-            false,
-        ),
-    ] {
-        let kwargs = params(mock);
-        let call = create_call(&optional, &kwargs, Entry::Sync);
-        let deps = fakes.deps(&source, None);
-        let before = fakes.seen.with(|seen| seen.clients.len());
-        let result = logs
-            .run_create(&deps, &call)
-            .await
-            .expect("the create answers");
-        assert_eq!(result, json(CREATE_RESULT));
-        let after = fakes.seen.with(|seen| seen.clients.len());
-        assert_eq!(after > before, posted);
-    }
-    // a null mock takes LiteLLM's sample, and a list replaces the data it carries
-    assert_eq!(super::mock::mock_search_response(None), json(SAMPLE_SEARCH));
-    assert_eq!(
-        super::mock::mock_search_response(Some(&Json::List(Vec::new()))),
-        json(SEARCH_RESULT)
-    );
-    assert_eq!(
-        super::mock::mock_create_response(None),
-        json(
-            r#"{"id":"vs_mock123","object":"vector_store","created_at":1699061776,"name":"Mock Vector Store","bytes":0,"file_counts":{"in_progress":0,"completed":0,"failed":0,"cancelled":0,"total":0},"status":"completed","expires_after":null,"expires_at":null,"last_active_at":null,"metadata":null}"#
-        )
-    );
 }
 
 #[test]
@@ -984,7 +562,7 @@ fn local_errors_map_to_api_connection() {
             source: SearchError::Provider(BaseLlmException {
                 status_code: 404,
                 message: String::from("missing"),
-                headers: ErrorHeaderMap::new(),
+                headers: WireHeaders::new(),
                 status_code_is_synthesized: false,
             }),
         },
@@ -995,69 +573,4 @@ fn local_errors_map_to_api_connection() {
     assert_eq!(provider.kind, WireField::Null);
     assert_eq!(provider.param, WireField::Null);
     assert_eq!(provider.code, WireField::Null);
-}
-
-#[tokio::test]
-async fn supplied_client_reaches_the_transport() {
-    let fakes = Fakes::new();
-    let source = fakes.source(CREATE_RESULT);
-    let supplied = FakeClient {
-        name: String::from("supplied"),
-        answer: (200, HeaderMap::new(), SEARCH_RESULT.as_bytes().to_vec()),
-        seen: Shared::default(),
-    };
-    let mut logs = Logs::new("vector_store_search");
-    let optional = Params::new();
-    let kwargs = params(r#"{"api_base":"https://mock.invalid/v1"}"#);
-    let query = SearchQuery::Text(String::from("one"));
-    let call = search_call(&query, &optional, &kwargs, Entry::Asynchronous);
-    let deps = fakes.deps(
-        &source,
-        Some(SuppliedClient {
-            kind: ClientKind::Asynchronous,
-            transport: &supplied,
-        }),
-    );
-    logs.run_search(&deps, &call)
-        .await
-        .expect("the supplied client answers");
-    supplied
-        .seen
-        .with(|seen| assert_eq!(seen.clients, vec![String::from("supplied")]));
-    fakes
-        .seen
-        .with(|seen| assert_eq!(seen.clients, Vec::<String>::new()));
-}
-
-// a create with no optionals sends the five declared fields as nulls
-#[tokio::test]
-async fn create_sends_the_declared_fields() {
-    let fakes = Fakes::new();
-    let source = fakes.source(CREATE_RESULT);
-    let mut logs = Logs::new("vector_store_create");
-    let optional = Params::new();
-    let kwargs = params(r#"{"api_base":"https://mock.invalid/v1"}"#);
-    let mut headers = BTreeMap::new();
-    headers.insert("X-Caller".to_owned(), "yes".to_owned());
-    let mut call = create_call(&optional, &kwargs, Entry::Sync);
-    call.extra_headers = Some(&headers);
-    let deps = fakes.deps(&source, None);
-    logs.run_create(&deps, &call)
-        .await
-        .expect("the mock provider answers");
-    fakes.seen.with(|seen| {
-        assert_eq!(
-            seen.bodies.last().expect("the create posted"),
-            &json(
-                r#"{"name":null,"file_ids":null,"expires_after":null,"chunking_strategy":null,"metadata":null}"#
-            )
-        );
-        let sent = seen.requests.last().expect("the request was recorded");
-        assert_eq!(
-            sent.headers
-                .get("X-Caller")
-                .map(|value| value.to_str().expect("the header is text")),
-            Some("yes")
-        );
-    });
 }
