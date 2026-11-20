@@ -43,6 +43,7 @@ impl<Factories: ClientFactories> VideoStatusHandler<'_, Factories> {
         }
     }
 
+    // ast-grep-ignore: no-one-line-functions
     pub async fn async_video_status_handler<'call>(
         &'call self,
         config: &'call StatusConfig<'call, Factories>,
