@@ -1,0 +1,32 @@
+kind: helper
+name: shadow-responses-max-output-tokens
+call:
+  b4082:
+    operation: chat_request
+    call_type: aresponses
+    kwargs:
+      model: gpt-4o
+      messages: hello
+      litellm_params:
+        proxy_server_request:
+          body:
+            max_output_tokens: 25
+            made_up_key: x
+            instructions: inner
+            previous_response_id: resp_1
+    model_parameters: {}
+calls:
+  - b4082:
+      operation: chat_request
+      call_type: responses
+      kwargs:
+        model: gpt-4o
+        messages: hello
+        litellm_params:
+          proxy_server_request:
+            body:
+              temperature: 0.2
+              top_p: 0.9
+      model_parameters: {}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,32 @@
+kind: helper
+name: shadow-chat-messages-filtered
+call:
+  b4082:
+    operation: chat_request
+    call_type: completion
+    kwargs:
+      messages:
+        - role: user
+          content: hi
+        - text
+        - 7
+        - null
+    model_parameters:
+      model: gpt-4o
+      temperature: 0.5
+      stop: []
+calls:
+  - b4082:
+      operation: chat_request
+      call_type: acompletion
+      kwargs:
+        messages: hi
+      model_parameters: {}
+  - b4082:
+      operation: chat_request
+      call_type: completion
+      kwargs: {}
+      model_parameters:
+        model: gpt-4o
+env: {}
+compare: {ignore: []}

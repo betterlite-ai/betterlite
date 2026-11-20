@@ -1,0 +1,45 @@
+kind: helper
+name: shadow-anthropic-system-from-kwargs
+call:
+  b4082:
+    operation: chat_request
+    call_type: anthropic_messages
+    kwargs:
+      model: claude-3-5-sonnet
+      messages:
+        - role: user
+          content: hi
+      system: be brief
+      litellm_params:
+        proxy_server_request:
+          body:
+            system: inner
+    model_parameters: {}
+calls:
+  - b4082:
+      operation: chat_request
+      call_type: anthropic_messages
+      kwargs:
+        model: claude-3-5-sonnet
+        messages:
+          - role: user
+            content: hi
+        system: be brief
+      model_parameters: {}
+  - b4082:
+      operation: chat_request
+      call_type: anthropic_messages
+      kwargs:
+        model: claude-3-5-sonnet
+        messages: hi
+      model_parameters: {}
+  - b4082:
+      operation: chat_request
+      call_type: anthropic_messages
+      kwargs:
+        model: claude-3-5-sonnet
+        messages:
+          - 1
+      model_parameters: {}
+env: {}
+compare: {ignore: []}

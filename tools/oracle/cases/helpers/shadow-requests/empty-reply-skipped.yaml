@@ -1,0 +1,71 @@
+kind: helper
+name: shadow-empty-reply-skipped
+call:
+  b4082:
+    operation: sample
+    call_type: completion
+    kwargs:
+      model: gpt-4o
+      messages:
+        - role: user
+          content: hi
+    model_parameters: {}
+    response:
+      choices:
+        - message:
+            role: assistant
+            content: ""
+calls:
+  - b4082:
+      operation: sample
+      call_type: completion
+      kwargs:
+        model: gpt-4o
+        messages:
+          - role: user
+            content: hi
+      model_parameters: {}
+      response:
+        choices: []
+  - b4082:
+      operation: sample
+      call_type: responses
+      kwargs:
+        model: gpt-4o
+        messages: hello
+      model_parameters: {}
+      response:
+        output: []
+  - b4082:
+      operation: sample
+      call_type: completion
+      kwargs:
+        model: gpt-4o
+        messages: []
+      model_parameters: {}
+      response:
+        choices:
+          - message:
+              role: assistant
+              content: answer
+  - b4082:
+      operation: sample
+      call_type: responses
+      kwargs:
+        model: gpt-4o
+        messages: hello
+      model_parameters: {}
+      response:
+        id: resp_1
+        created_at: 1
+        output:
+          - type: message
+            id: msg_1
+            status: completed
+            role: assistant
+            content:
+              - type: output_text
+                text: ""
+                annotations: []
+env: {}
+compare: {ignore: []}

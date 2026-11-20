@@ -1,0 +1,63 @@
+kind: helper
+name: shadow-anthropic-system-from-wire-body
+call:
+  b4082:
+    operation: chat_request
+    call_type: anthropic_messages
+    kwargs:
+      model: claude-3-5-sonnet
+      messages:
+        - role: user
+          content: hi
+      litellm_params:
+        proxy_server_request:
+          body:
+            system: inner
+            max_tokens: 64
+            temperature: 0.0
+    model_parameters: {}
+calls:
+  - b4082:
+      operation: chat_request
+      call_type: anthropic_messages
+      kwargs:
+        model: claude-3-5-sonnet
+        messages:
+          - role: user
+            content: hi
+        litellm_params:
+          proxy_server_request:
+            body:
+              system: null
+      model_parameters: {}
+  - b4082:
+      operation: chat_request
+      call_type: anthropic_messages
+      kwargs:
+        model: claude-3-5-sonnet
+        messages:
+          - role: user
+            content: hi
+        system: ""
+        litellm_params:
+          proxy_server_request:
+            body:
+              system: inner
+      model_parameters: {}
+  - b4082:
+      operation: chat_request
+      call_type: anthropic_messages
+      kwargs:
+        model: claude-3-5-sonnet
+        messages:
+          - role: user
+            content: hi
+        litellm_params:
+          proxy_server_request:
+            body:
+              max_tokens: 64
+              made_up_key: x
+              system: inner
+      model_parameters: {}
+env: {}
+compare: {ignore: []}

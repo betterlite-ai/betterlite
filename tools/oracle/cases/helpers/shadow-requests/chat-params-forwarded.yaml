@@ -1,0 +1,56 @@
+kind: helper
+name: shadow-chat-params-forwarded
+call:
+  b4082:
+    operation: sample
+    call_type: acompletion
+    kwargs:
+      model: gpt-4o
+      messages:
+        - role: user
+          content: hi
+    model_parameters:
+      temperature: 0.5
+      stop: []
+      top_p: null
+      user: u
+      tools: []
+    response:
+      choices:
+        - message:
+            role: assistant
+            content: answer
+calls:
+  - b4082:
+      operation: sample
+      call_type: completion
+      kwargs:
+        model: gpt-4o
+        messages:
+          - role: user
+            content: hi
+      model_parameters:
+        web_search_options: null
+      response:
+        choices:
+          - message:
+              role: assistant
+              content: answer
+  - b4082:
+      operation: sample
+      call_type: completion
+      kwargs:
+        model: gpt-4o
+        messages:
+          - role: user
+            content: hi
+      model_parameters:
+        response_format: {}
+        user: ""
+      response:
+        choices:
+          - message:
+              role: assistant
+              content: answer
+env: {}
+compare: {ignore: []}

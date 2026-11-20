@@ -1,0 +1,57 @@
+kind: helper
+name: shadow-hosted-web-search-skipped
+call:
+  b4082:
+    operation: sample
+    call_type: anthropic_messages
+    kwargs:
+      model: claude-3-5-sonnet
+      messages:
+        - role: user
+          content: hi
+      litellm_params:
+        proxy_server_request:
+          body:
+            tools:
+              - type: web_search
+    model_parameters: {}
+    response:
+      choices:
+        - message:
+            role: assistant
+            content: answer
+calls:
+  - b4082:
+      operation: sample
+      call_type: completion
+      kwargs:
+        model: gpt-4o
+        messages:
+          - role: user
+            content: hi
+      model_parameters:
+        web_search_options: {}
+      response:
+        choices:
+          - message:
+              role: assistant
+              content: answer
+  - b4082:
+      operation: hosted_web_search
+      request:
+        web_search_options: {}
+  - b4082:
+      operation: hosted_web_search
+      request:
+        tools:
+          - type: web_search_preview_2025_03_11
+  - b4082:
+      operation: hosted_web_search
+      request:
+        tools: web_search
+  - b4082:
+      operation: hosted_web_search
+      request:
+        web_search_options: null
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,102 @@
+kind: helper
+name: shadow-snapshot-replaces-request-body
+call:
+  b4082:
+    operation: post_guardrail_kwargs
+    call_type: anthropic_messages
+    kwargs:
+      model: m
+      litellm_params:
+        api_key: k
+        proxy_server_request:
+          method: POST
+          body:
+            messages:
+              - role: user
+                content: old
+    metadata:
+      standard_logging_guardrail_information:
+        - guardrail_mode: pre_call
+          guardrail_name: g
+    snapshot_body:
+      messages:
+        - role: user
+          content: new
+    snapshot_metadata:
+      standard_logging_guardrail_information:
+        - guardrail_mode: pre_call
+          guardrail_name: g
+calls:
+  - b4082:
+      operation: post_guardrail_kwargs
+      call_type: responses
+      kwargs:
+        model: m
+        messages: raw input
+      metadata:
+        standard_logging_guardrail_information:
+          - guardrail_mode: pre_call
+            guardrail_name: g
+      snapshot_body:
+        input:
+          - role: user
+            content: new
+        messages:
+          - role: user
+            content: old
+        system: s
+        instructions: i
+      snapshot_metadata:
+        standard_logging_guardrail_information:
+          - guardrail_mode: pre_call
+            guardrail_name: g
+  - b4082:
+      operation: post_guardrail_kwargs
+      call_type: completion
+      kwargs:
+        model: m
+      metadata:
+        standard_logging_guardrail_information:
+          - guardrail_mode: pre_call
+            guardrail_name: g
+      snapshot_body: {}
+      snapshot_metadata:
+        standard_logging_guardrail_information:
+          - guardrail_mode: pre_call
+            guardrail_name: g
+  - b4082:
+      operation: post_guardrail_kwargs
+      call_type: completion
+      kwargs:
+        model: m
+        litellm_params: x
+      metadata:
+        standard_logging_guardrail_information:
+          - guardrail_mode: pre_call
+            guardrail_name: g
+      snapshot_body: {}
+      snapshot_metadata:
+        standard_logging_guardrail_information:
+          - guardrail_mode: pre_call
+            guardrail_name: g
+  - b4082:
+      operation: post_guardrail_kwargs
+      call_type: anthropic_messages
+      kwargs:
+        model: m
+        system: old
+      metadata:
+        standard_logging_guardrail_information:
+          - guardrail_mode: pre_call
+            guardrail_name: g
+      snapshot_body:
+        messages:
+          - role: user
+            content: new
+        system: rewritten
+      snapshot_metadata:
+        standard_logging_guardrail_information:
+          - guardrail_mode: pre_call
+            guardrail_name: g
+env: {}
+compare: {ignore: []}

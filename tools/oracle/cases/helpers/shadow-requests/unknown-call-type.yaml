@@ -1,0 +1,30 @@
+kind: helper
+name: shadow-unknown-call-type
+call:
+  b4082:
+    operation: surface_ops
+    call_type: completion
+calls:
+  - b4082:
+      operation: surface_ops
+      call_type: acompletion
+  - b4082:
+      operation: surface_ops
+      call_type: anthropic_messages
+  - b4082:
+      operation: surface_ops
+      call_type: aresponses
+  - b4082:
+      operation: surface_ops
+      call_type: responses
+  - b4082:
+      operation: surface_ops
+      call_type: embedding
+  - b4082:
+      operation: surface_ops
+      call_type: ""
+  - b4082:
+      operation: surface_ops
+      call_type: Completion
+env: {}
+compare: {ignore: []}

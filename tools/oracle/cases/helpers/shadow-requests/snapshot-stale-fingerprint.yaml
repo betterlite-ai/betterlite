@@ -1,0 +1,45 @@
+kind: helper
+name: shadow-snapshot-stale-fingerprint
+call:
+  b4082:
+    operation: post_guardrail_kwargs
+    call_type: anthropic_messages
+    kwargs:
+      model: m
+    metadata:
+      standard_logging_guardrail_information:
+        - guardrail_mode: pre_call
+          guardrail_name: g2
+    snapshot_body:
+      messages: []
+    snapshot_metadata:
+      standard_logging_guardrail_information:
+        - guardrail_mode: pre_call
+          guardrail_name: g1
+calls:
+  - b4082:
+      operation: post_guardrail_kwargs
+      call_type: anthropic_messages
+      kwargs:
+        model: m
+      metadata: {}
+      snapshot_body:
+        messages: []
+      snapshot_metadata: {}
+  - b4082:
+      operation: post_guardrail_kwargs
+      call_type: anthropic_messages
+      kwargs:
+        model: m
+      metadata:
+        standard_logging_guardrail_information:
+          - guardrail_mode: during_call
+            guardrail_name: g
+      snapshot_body:
+        messages: []
+      snapshot_metadata:
+        standard_logging_guardrail_information:
+          - guardrail_mode: during_call
+            guardrail_name: g
+env: {}
+compare: {ignore: []}
