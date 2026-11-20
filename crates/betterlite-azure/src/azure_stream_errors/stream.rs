@@ -162,8 +162,8 @@ fn streaming_error(error: PumpError) -> StreamingError {
     match error {
         PumpError::Chunk(chunk) => StreamingError::Chunk(chunk),
         PumpError::Usage(usage) => StreamingError::Usage(usage),
-        PumpError::Sdk(error) => {
-            StreamingError::Azure(Box::new(AzureStreamFailure::raised(Raised::sdk(&error))))
+        PumpError::Sdk(source) => {
+            StreamingError::Azure(Box::new(AzureStreamFailure::raised(Raised::sdk(&source))))
         }
     }
 }
