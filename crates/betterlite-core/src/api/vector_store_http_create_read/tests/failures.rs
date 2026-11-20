@@ -333,7 +333,8 @@ async fn unparsable_base_url_makes_no_request() {
     let Err(CreateReadError::Write(WriteError::RequestUrl { url, .. })) = result else {
         panic!("a base that cannot be a URL fails the URL step");
     };
-    assert_eq!(url, "not a url");
+    // the retrieve URL appends the encoded id, so the error names the complete text it could not parse
+    assert_eq!(url, "not a url/vs_a");
     assert_eq!(events.recorded(), vec!["client", "headers", "url"]);
     assert!(config.errors().is_empty());
     assert!(wire.requests().is_empty());
