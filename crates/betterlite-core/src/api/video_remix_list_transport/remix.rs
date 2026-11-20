@@ -3,7 +3,6 @@ use std::time::{Duration, Instant};
 
 use betterlite_http::proxy::UpstreamResponse;
 use secrecy::SecretString;
-use tokio::runtime::{Builder, Handle};
 
 use crate::api::vector_store_http_write::error::display_facts;
 use crate::api::vector_store_http_write::service::ClientKind;
@@ -17,7 +16,7 @@ use super::config::VideoRemixListConfig;
 use super::convert;
 use super::error::{Operation, VideoRemixListTransportError};
 use super::fields;
-use super::list::{prepare_list, send_list};
+use super::list::{prepare_list, run_list_now, send_list};
 use super::logging::{PreCallSource, RemixPreCall, record_pre_call};
 use super::records::{Headers, Params, VideoEnvironment, VideoRequestContext};
 use super::response::{ListResponse, RemixResponse, transform_response};
@@ -123,20 +122,8 @@ impl<Source: VideoClientSource> VideoRemixListTransport<Source> {
         if is_async {
             return Ok(Handled::Pending(self.async_list(config, call, log)));
         }
-        if Handle::try_current().is_ok() {
-            return Err(VideoRemixListTransportError::RunningRuntime { status_code: 500 });
-        }
-        let runtime = Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|source| VideoRemixListTransportError::Runtime { source })?;
-        let async_call = ListCall {
-            api_key: None,
-            ..call
-        };
-        runtime
-            .block_on(self.async_list(config, async_call, log))
-            .map(Handled::Done)
+        let params = run_list_now(self, config, call, log)?;
+        Ok(Handled::Done(params))
     }
 
     // async_video_list_handler: validate_environment sees only the api_key argument, never the params' one

@@ -1,6 +1,7 @@
 use std::time::{Duration, Instant};
 
 use betterlite_http::proxy::UpstreamResponse;
+use tokio::runtime::{Builder, Handle};
 
 use crate::api::vector_store_http_write::error::display_facts;
 use crate::api::vector_store_http_write::service::ClientKind;
@@ -13,7 +14,7 @@ use super::fields;
 use super::logging::{ListPreCall, PreCallSource, record_pre_call};
 use super::records::{Headers, Params, VideoEnvironment, VideoListQuery, VideoRequestContext};
 use super::wire;
-use super::{ListCall, LogContext};
+use super::{ListCall, LogContext, VideoRemixListTransport};
 
 pub(super) struct PreparedList {
     url: String,
@@ -134,4 +135,28 @@ where
         headers,
         params,
     })
+}
+
+// The sync entry point's run to completion: a private current-thread runtime drives the async handler
+pub(super) fn run_list_now<Source>(
+    transport: &VideoRemixListTransport<Source>,
+    config: &dyn VideoRemixListConfig,
+    call: ListCall<'_, Source>,
+    log: LogContext<'_, '_>,
+) -> Result<Params, VideoRemixListTransportError>
+where
+    Source: VideoClientSource,
+{
+    if Handle::try_current().is_ok() {
+        return Err(VideoRemixListTransportError::RunningRuntime { status_code: 500 });
+    }
+    let runtime = Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|source| VideoRemixListTransportError::Runtime { source })?;
+    let async_call = ListCall {
+        api_key: None,
+        ..call
+    };
+    runtime.block_on(transport.async_list(config, async_call, log))
 }
