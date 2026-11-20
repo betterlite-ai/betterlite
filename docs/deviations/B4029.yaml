@@ -1,0 +1,33 @@
+task: B4029
+deviations:
+  - what: The cache, the sender, the report source, the user spend source, the pod lock, the clock and the random first-run offsets are injected traits instead of the proxy logging object's internal_usage_cache, send_alert, proxy_server's prisma_client and the module level scheduler.
+    why: betterlite has no module state, and B8656 wires the real implementations from ProxyLogging's internal usage cache (B4293), B4024, B1725, B700 and B1690.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1855-L1892
+  - what: send_user_spend_alerts takes a has_database flag, and the real query source is built only when a database is connected.
+    why: LiteLLM reads the global prisma_client from proxy_server, which betterlite does not have.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1973-L1977
+  - what: Job rules are returned as plain job settings by plan_spend_jobs and the runners, with no scheduler started in this task.
+    why: LiteLLM registers them on APScheduler inside proxy_server.py, and B8372 registers the jobs on the server task tracker, with B8656 supplying the ports and events. The alerting and prisma_client guard around the registration belongs to that wiring, so plan_spend_jobs takes only the frequency and the args.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11237-L11320
+  - what: HOURS_IN_A_DAY is a constructor value that defaults to 24, not read here from the environment.
+    why: No backlog task owns that constant, so the caller reads the env var.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L432
+  - what: A weekly time range the producer accepts but duration_in_seconds rejects, such as "7D" or "+7d", is accepted and its marker is set with 7 days in seconds. LiteLLM sends the report first and then duration_in_seconds raises ("Unsupported duration unit" for the uppercase D, "Invalid duration format" for the plus sign), so it logs "Invalid time range format" and never marks the report as sent, and the next run sends it again.
+    why: duration_in_seconds matches the unit with [smhdw] and the digits at the start of the text, so the forms send_weekly_spend_report itself accepts fail only after the message went out; a range the producer accepts should not re-send the report every run.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/duration_parser.py#L51-L106
+  - what: plan_spend_jobs accepts a spend_report_frequency that duration_in_seconds rejects, such as "7D" or "+7d", and plans the weekly job. LiteLLM's own check passes both and then duration_in_seconds raises ("Unsupported duration unit", "Invalid duration format") while the jobs are registered, so the proxy fails to start.
+    why: the frequency the producer accepts should be the frequency the plan accepts, and a config whose unit or sign is a different spelling is not a different schedule.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11245-L11250
+  - what: The weekly time range and the planned spend_report_frequency take a digits-only day count before the unit, so " 7d", "7_0d" and "-7d" are errors here.
+    why: LiteLLM's int() strips whitespace, accepts a sign and underscores, so the producer sends a 7-day report for " 7d", a 70-day one for "7_0d" and a window that starts tomorrow for "-7d" before duration_in_seconds fails on the same text and leaves the marker unset, and the job setup only refuses a negative day count before failing at startup. A punctuated day count is a config typo, and refusing it before the query or at plan time is the same refusal without a half-done run.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1845-L1847
+  - what: evaluate_user_spend takes a UserSpendChecks struct with the thresholds and anomalies flags, where LiteLLM passes the two booleans as separate parameters.
+    why: The workspace allows one bool parameter per function, and grouping the two flags keeps the call sites and the oracle adapter readable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/user_spend_alerts.py#L121-L127
+  - what: The monthly report's catch-all logs "Error sending monthly spend report", where LiteLLM logs the weekly wording from the monthly handler.
+    why: LiteLLM's message is a copy-paste slip; an operator reading the log of a failed monthly report needs the monthly name, and no working setup matches on the text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1960-L1961
+  - what: A user spend row whose daily, monthly or baseline value is a NaN or an infinity fails the whole pass with an error and sends nothing, where LiteLLM keeps the float and alerts with `$nan` or `$inf` in the text.
+    why: betterlite keeps the row's spend as rust_decimal::Decimal, which cannot hold a NaN or an infinity, and a spend line of `$nan` or `$inf` tells an operator nothing about the user. Postgres ranks NaN above every number, so the HAVING keeps the row and `Decimal::from_f64_retain` returns None for it, which fails the pass; LiteLLM keeps the float and alerts with `$nan`.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/user_spend_alerts.py#L31-L36
+kept_bugs: []

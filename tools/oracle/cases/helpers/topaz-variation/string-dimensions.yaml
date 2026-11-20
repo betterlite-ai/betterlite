@@ -1,0 +1,31 @@
+kind: helper
+name: topaz-variation-string-dimensions
+call:
+  topaz_variation:
+    calls:
+      - function: map
+        non_default_params: {response_format: url, size: "1024x768", quality: hd, n: 2}
+        optional_params: {output_format: png}
+        drop_params: false
+      - function: map
+        non_default_params: {response_format: b64_json, size: "007x99"}
+        optional_params: {}
+        drop_params: true
+      - function: map
+        non_default_params: {size: "1024"}
+        optional_params: {}
+        drop_params: false
+      - function: map
+        non_default_params: {size: "1024x1024x2"}
+        optional_params: {}
+        drop_params: true
+      - function: map
+        non_default_params: {size: "x"}
+        optional_params: {}
+        drop_params: false
+      - function: map
+        non_default_params: {}
+        optional_params: {keep: me}
+        drop_params: false
+env: {}
+compare: {ignore: []}
