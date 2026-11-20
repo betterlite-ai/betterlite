@@ -1,0 +1,30 @@
+kind: sdk_http
+name: file-http-metadata-eager-file-pages
+env: {}
+call:
+  file_http_metadata:
+    operation: list
+    mode: sync
+    purpose: batch
+    api_key: sk-xai
+    timeout_seconds: 5
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      data:
+        - {id: fa, bytes: 1, created_at: 1700000001, filename: a.jsonl}
+        - {id: fb, bytes: 2, created_at: 1700000002, filename: b.jsonl}
+      pagination_token: t1
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      data:
+        - {id: fa, bytes: 3, created_at: 1700000003, filename: a2.jsonl}
+        - {id: fc, bytes: 4, created_at: 1700000004, filename: c.jsonl}
+      pagination_token: ""
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization]
+  ignore: []
