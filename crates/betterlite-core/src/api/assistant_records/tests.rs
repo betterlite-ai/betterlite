@@ -198,26 +198,26 @@ fn input<Fields>(extra: Fields) -> AssistantCreateInput
 where
     Fields: serde::Serialize,
 {
-    let mut base = serde_json::to_value(BTreeMap::from([
+    let mut base = to_value(BTreeMap::from([
         ("provider", "openai"),
         ("model", "gpt-4o-mini"),
     ]))
     .expect("the base input");
-    let fields = serde_json::to_value(extra).expect("the extra fields are JSON");
+    let fields = to_value(extra).expect("the extra fields are JSON");
     if let (Some(target), Some(source)) = (base.as_object_mut(), fields.as_object()) {
         for (key, value) in source {
             target.insert(key.clone(), value.clone());
         }
     }
-    serde_json::from_value(base).expect("an assistant create input")
+    from_value(base).expect("an assistant create input")
 }
 
 fn create_body<Fields>(fields: Fields) -> AssistantCreate
 where
     Fields: serde::Serialize,
 {
-    let value = serde_json::to_value(fields).expect("the expected fields are JSON");
-    serde_json::from_value(value).expect("an assistant create body")
+    let value = to_value(fields).expect("the expected fields are JSON");
+    from_value(value).expect("an assistant create body")
 }
 
 // a config with nothing set, so a test that sets two values says which two
