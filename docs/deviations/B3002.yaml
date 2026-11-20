@@ -30,4 +30,14 @@ deviations:
       drops an out-of-range computed one. Only a membership budget at the top of the decimal range
       with an active temp increase reaches the branch.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/budget.py#L49-L52
+  - what: >-
+      A budget window whose computed start falls outside the range of std::time::SystemTime is skipped
+      with a warning. LiteLLM subtracts the duration from the reset time with datetime arithmetic,
+      which raises OverflowError for a stored reset_at near the edge of the datetime range and fails
+      the whole request.
+    why: >-
+      A reset time that cannot become a SystemTime leaves no window start to hand the admission
+      engine. Skipping that one window keeps the rest of the counter list intact instead of failing the
+      reservation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1283
 kept_bugs: []
