@@ -4148,6 +4148,8 @@ dependencies = [
  "betterlite-bedrock",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-core",
+ "betterlite-env",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-provider",
