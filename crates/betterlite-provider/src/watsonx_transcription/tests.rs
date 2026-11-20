@@ -131,6 +131,7 @@ async fn project_before_space() {
         )
         .await;
     outcome.result.expect("the form call succeeds");
+    assert_eq!(outcome.requests.len(), 1, "the form call sends once");
     let body = &outcome.requests[0].body;
     assert!(body.contains("name=\"project_id\"\r\n\r\np"));
     assert!(!body.contains("name=\"space_id\""), "the project wins");
@@ -165,6 +166,7 @@ async fn legacy_project_name() {
         )
         .await;
     outcome.result.expect("the legacy project name is accepted");
+    assert_eq!(outcome.requests.len(), 1, "the legacy call sends once");
     let body = &outcome.requests[0].body;
     assert!(body.contains("name=\"project_id\"\r\n\r\nwp"));
     assert!(!body.contains("name=\"space_id\""), "the project wins");
@@ -180,6 +182,7 @@ async fn space_only() {
         )
         .await;
     outcome.result.expect("a space-only call succeeds");
+    assert_eq!(outcome.requests.len(), 1, "the space call sends once");
     let body = &outcome.requests[0].body;
     assert!(body.contains("name=\"space_id\"\r\n\r\ns"));
     assert!(!body.contains("name=\"project_id\""));
@@ -199,6 +202,7 @@ async fn no_project() {
         )
         .await;
     outcome.result.expect("both ids may be absent");
+    assert_eq!(outcome.requests.len(), 1, "the id-less call sends once");
     let body = &outcome.requests[0].body;
     assert!(
         !body.contains("name=\"project_id\""),
@@ -225,6 +229,7 @@ async fn explicit_version() {
         outcome.iam_calls, 1,
         "the explicit key performs one exchange"
     );
+    assert_eq!(outcome.requests.len(), 1, "the keyed call sends once");
     assert_eq!(
         outcome.requests[0].line,
         "POST /ml/v1/audio/transcriptions?version=2024-11-01 HTTP/1.1"

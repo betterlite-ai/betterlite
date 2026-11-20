@@ -72,10 +72,10 @@ impl Recorder {
         let stop: Arc<AtomicBool> = Arc::default();
         let recorded = Arc::clone(&requests);
         let ending = Arc::clone(&stop);
-        let answer = Arc::new(answer);
+        let shared = Arc::new(answer);
         let handle = thread::Builder::new()
             .name(String::from("watsonx-transcription"))
-            .spawn(move || record(&listener, &answer, pause, &recorded, &ending))
+            .spawn(move || record(&listener, &shared, pause, &recorded, &ending))
             .expect("the recorder starts");
         Self {
             address,
@@ -103,8 +103,8 @@ fn record(
     requests: &Mutex<Vec<Request>>,
     stop: &AtomicBool,
 ) {
-    for stream in listener.incoming() {
-        let Ok(mut stream) = stream else {
+    for connection in listener.incoming() {
+        let Ok(mut stream) = connection else {
             continue;
         };
         if stop.load(Ordering::SeqCst) {
@@ -161,14 +161,14 @@ impl WatsonxTransport for Iam {
         let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
         *calls = calls.saturating_add(1);
         drop(calls);
-        let body = self.answer.map(|body| body.as_bytes().to_vec());
-        ready(body.map_or_else(
+        let answer = self.answer.map(|text| text.as_bytes().to_vec());
+        ready(answer.map_or_else(
             || Err(TransportError::Closed),
-            |body| {
+            |bytes| {
                 Ok(UpstreamResponse {
                     status: 200_u16,
                     headers: HeaderMap::new(),
-                    body,
+                    body: bytes,
                 })
             },
         ))

@@ -83,12 +83,12 @@ impl<T: WatsonxTransport> AudioTranscriptionConfig for BoundConfig<'_, T> {
             filename: audio_file.filename.to_owned(),
             content_type: audio_file.content_type.to_owned(),
         };
-        let request = WatsonxAudioConfig { auth: self.auth }.transform_audio_request(
+        let transformed = WatsonxAudioConfig { auth: self.auth }.transform_audio_request(
             model,
             processed,
             optional_params,
         );
-        match request {
+        match transformed {
             Ok(request) => Ok(request_data(request)),
             Err(error) => {
                 *self.failure.lock().unwrap_or_else(PoisonError::into_inner) = Some(error);
@@ -118,9 +118,9 @@ impl<T: WatsonxTransport> TranscriptionHttpConfig for BoundConfig<'_, T> {
     }
 
     fn complete_transcription_url(&self, input: &UrlInput<'_>) -> Result<String, ConfigFailure> {
-        let url = WatsonxAudioConfig { auth: self.auth }
+        let complete = WatsonxAudioConfig { auth: self.auth }
             .get_complete_url(input.api_base, input.optional_params);
-        match url {
+        match complete {
             Ok(url) => Ok(url),
             Err(error) => {
                 *self.failure.lock().unwrap_or_else(PoisonError::into_inner) = Some(error);
