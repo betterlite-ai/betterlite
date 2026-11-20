@@ -89,10 +89,8 @@ impl CallKind for Call {
             refresh_enabled: false,
             session: SessionKind::Dedicated,
         };
-        // the harness owns the mock origin, so it takes the place of the configured api_base
         let mut kwargs = self.kwargs.clone();
-        kwargs.insert(String::from("api_base"), Json::Text(api_base.to_owned()));
-        let facade = prepare(self, &mut kwargs)?;
+        let facade = prepare(self, api_base, &mut kwargs)?;
         match (self.mode, facade) {
             (Mode::Sync, Facade::Create(call)) => match threads.create_thread(call).await {
                 Ok(thread) => Ok(thread_outcome(thread)),
@@ -116,8 +114,11 @@ impl CallKind for Call {
 
 fn prepare<'call>(
     call: &'call Call,
+    api_base: &str,
     kwargs: &'call mut BTreeMap<String, Json>,
 ) -> Result<Facade<'call>, SdkHttpError> {
+    // the harness owns the mock origin, so it takes the place of the configured api_base
+    kwargs.insert(String::from("api_base"), Json::Text(api_base.to_owned()));
     match call.operation {
         Operation::Create => Ok(Facade::Create(CreateThreadCall {
             custom_llm_provider: call.provider.clone(),
