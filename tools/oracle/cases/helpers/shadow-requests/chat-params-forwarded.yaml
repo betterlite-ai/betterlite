@@ -15,6 +15,9 @@ call:
       top_p: null
       user: u
       tools: []
+      stream: true
+      stream_options:
+        include_usage: true
     response:
       choices:
         - message:

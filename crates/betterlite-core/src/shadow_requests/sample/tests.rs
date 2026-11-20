@@ -76,6 +76,22 @@ fn custom_ops(chat_request: ChatRequestFn) -> SurfaceOps {
     }
 }
 
+fn wire_ops(chat_request: ChatRequestFn) -> SurfaceOps {
+    SurfaceOps {
+        chat_request,
+        final_text: chat_text::final_text,
+        wire_params: true,
+        surface: Surface::Chat,
+    }
+}
+
+fn quiet_request<'request>(
+    _kwargs: &'request Object,
+    _model_parameters: &'request Object,
+) -> ChatRequestFuture<'request> {
+    Box::pin(async { Ok(object(r#"{"messages":[{"role":"user","content":"hi"}]}"#)) })
+}
+
 #[tokio::test]
 async fn hosted_web_search_in_the_wire_body_skips_the_sample() {
     let kwargs = object(
@@ -89,6 +105,17 @@ async fn hosted_web_search_in_the_wire_body_skips_the_sample() {
         &chat_reply("answer"),
     )
     .await;
+    assert!(sample.is_none());
+}
+
+// Only the wire-body gate can stop this sample: the built request carries no web-search marker.
+#[tokio::test]
+async fn hosted_web_search_in_the_wire_body_skips_before_the_request_is_built() {
+    let kwargs = object(
+        r#"{"litellm_params":{"proxy_server_request":{"body":{"tools":[{"type":"web_search"}]}}}}"#,
+    );
+    let ops = wire_ops(quiet_request);
+    let sample = judgeable_sample(&ops, &kwargs, &object("{}"), &chat_reply("answer")).await;
     assert!(sample.is_none());
 }
 
@@ -187,8 +214,10 @@ async fn an_empty_final_text_skips_the_sample() {
 #[tokio::test]
 async fn a_usable_sample_returns_messages_params_and_real_text() {
     let kwargs = object(r#"{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}"#);
-    let model_parameters =
-        object(r#"{"temperature":0.5,"stop":[],"top_p":null,"user":"u","tools":[]}"#);
+    let model_parameters = object(
+        r#"{"temperature":0.5,"stop":[],"top_p":null,"user":"u","tools":[],
+            "stream":true,"stream_options":{"include_usage":true}}"#,
+    );
     let sample = judgeable_sample(
         surface_ops("completion").unwrap(),
         &kwargs,
@@ -215,6 +244,21 @@ async fn empty_objects_and_strings_stay_in_the_forwarded_params() {
     .await
     .unwrap();
     assert_eq!(sample.1, object(r#"{"response_format":{},"user":""}"#));
+}
+
+#[tokio::test]
+async fn the_anthropic_surface_reads_a_chat_shaped_reply_with_the_chat_reader() {
+    let kwargs =
+        object(r#"{"model":"claude-3-5-sonnet","messages":[{"role":"user","content":"hi"}]}"#);
+    let sample = judgeable_sample(
+        surface_ops("anthropic_messages").unwrap(),
+        &kwargs,
+        &object("{}"),
+        &chat_reply("answer"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(sample.2, "answer");
 }
 
 #[tokio::test]
