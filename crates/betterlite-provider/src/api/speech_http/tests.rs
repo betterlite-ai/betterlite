@@ -547,6 +547,43 @@ async fn speech_http_status_error() {
 }
 
 #[tokio::test]
+async fn speech_http_status_error_without_body() {
+    let wire = Wire::replying(Reply::bytes(429, b"").with_header("retry-after", "3"));
+    let source = Source::new(wire);
+    let config = RecordingConfig::new(
+        Ok(URL.to_owned()),
+        data(Some(r#"{"input":"hello"}"#), None, None),
+        headers(&[("x", "validated")]),
+    );
+    let deps = SpeechDeps {
+        config: &config,
+        source: &source,
+        supplied: None,
+    };
+    let declared = params(None, Some(URL), None);
+    let optional = Object::new();
+    let litellm = Object::new();
+    let call = SpeechCall {
+        model: "tts-1",
+        input: "hello",
+        voice: None,
+        optional_params: &optional,
+        litellm_params: &litellm,
+        extra_headers: None,
+        params: &declared,
+        timeout: None,
+    };
+    let mut fixture = Fixture::new();
+    let Err(SpeechError::Provider(error)) = run(&mut fixture, &deps, Mode::Sync, &call).await
+    else {
+        panic!("a 429 is a provider error");
+    };
+    assert_eq!(error.status_code, 429);
+    assert_eq!(error.message, "");
+    assert_eq!(error.headers, headers(&[("retry-after", "3")]));
+}
+
+#[tokio::test]
 async fn speech_http_transport_failure() {
     let wire = Wire::failing(TransportError::Closed);
     let source = Source::new(wire);

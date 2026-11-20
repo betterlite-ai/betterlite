@@ -30,7 +30,7 @@ pub(super) fn status(reply: &UpstreamResponse) -> FailureFacts {
     FailureFacts {
         response_status: Some(i64::from(reply.status)),
         status: None,
-        text: Some(text.clone()),
+        text: None,
         headers: None,
         response: Some(ResponseFacts {
             text: Some(text),
