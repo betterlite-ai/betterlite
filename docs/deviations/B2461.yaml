@@ -42,6 +42,16 @@ deviations:
       a client object, so a valid token goes on the wire and an invalid one fails with an error
       that names the method.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L3689-L3695
+  - what: >-
+      A 4xx or 5xx answer to a presigned request, a traditional text or bytes upload or a multipart
+      upload (a post in either mode, a put only in async mode) becomes the shared provider error
+      carrying the answer's status, body and headers; LiteLLM lets httpx's masked HTTPStatusError
+      propagate out of create_file.
+    why: >-
+      betterlite reports every upload failure through B2402's provider error, whose status, text and
+      headers are the ones the masked httpx error carries, so a caller sees the same answer facts
+      through the shared error type.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1514-L1524
 kept_bugs:
   - what: >-
       A sync upload whose transform returns raw bytes decodes them as UTF-8 before sending, so a
@@ -65,3 +75,12 @@ kept_bugs:
       The status check runs before any body read, so a provider that answers 204 to a media upload
       fails in LiteLLM; a setup that sees the failure relies on it, and betterlite keeps it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L3789-L3792
+  - what: >-
+      A sync upload sent with put (a presigned request, a traditional upload whose config asks for
+      PUT, or a two-step second request whose method is PUT) hands a 4xx/5xx answer to
+      transform_create_file_response as a successful reply; only the async put raises.
+    why: >-
+      The sync HTTPHandler.put never calls raise_for_status, so a sync setup relies on the answer
+      reaching its transform as is, and betterlite keeps the sync/async difference instead of
+      failing the upload.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1615-L1618

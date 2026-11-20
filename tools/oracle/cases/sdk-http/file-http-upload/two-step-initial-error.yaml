@@ -1,0 +1,31 @@
+kind: sdk_http
+name: file-http-upload-two-step-initial-error
+env: {}
+call:
+  file_http_upload:
+    mode: async
+    headers: {x-client-version: oracle}
+    file: {filename: notes.txt, content: "hello oracle"}
+    plan:
+      two_step:
+        initial_request:
+          method: post
+          url: "{{upstream}}/v1/initial-ticket"
+          headers: {x-goog-upload-command: start}
+          data: {name: notes.txt, size: 12}
+        upload_request:
+          method: put
+          url: "{{upstream}}/v1/unused-target"
+          headers: {content-type: text/plain}
+          data: "hello oracle"
+        upload_url_location: body
+        upload_url_key: upload_url
+upstream:
+  - status: 429
+    headers: {content-type: application/json}
+    body: {error: {message: slow down}}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [content-type, x-client-version, x-goog-upload-command]
+  ignore: []

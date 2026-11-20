@@ -7,8 +7,7 @@ use betterlite_logging::logging_pre_post::env::{LogLevel, PrePostEnv};
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::file_type_records::{ByteStream, UploadUrlLocation};
 use futures_util::stream;
-use http::header::CONTENT_TYPE;
-use http::{HeaderMap, HeaderValue, Method};
+use http::{HeaderMap, Method};
 use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
 use tokio::sync::mpsc;
@@ -19,12 +18,14 @@ use crate::api::file_http_upload::config::{FileParams, FileUploadConfig, Headers
 use crate::api::file_http_upload::decoder::{
     LocatedUpload, decode_file_upload_location, upload_url_from_headers,
 };
-use crate::api::file_http_upload::error::{UploadError, failure_facts, status_failure};
+use crate::api::file_http_upload::error::{
+    UploadError, failure_facts, raise_for_status, status_failure,
+};
 use crate::api::file_http_upload::media::BlockIter;
 use crate::api::file_http_upload::plan::{MediaPlan, PresignedPlan, TwoStepPlan, encoded_body};
 use crate::api::vector_store_http_write::error::handle_error;
 
-use super::wire::{headers_from, request_url, upload_method};
+use super::wire::{headers_from, media_headers, request_url, upload_method};
 use super::{BlockStream, Mode, UploadBody, UploadRequest, UploadTransport};
 
 // The answer transform_create_file_response reads, with the URL the last request was sent to
@@ -77,25 +78,14 @@ where
         let body = serde_json::to_vec(&plan.initial_data).map_err(UploadError::Encode)?;
         let initial = self
             .reply(
-                Method::POST,
+                &Method::POST,
                 self.api_base,
                 headers,
                 UploadBody::Bytes(body),
             )
             .await?;
-        let LocatedUpload {
-            url: located_url,
-            data,
-        } = located_upload(&initial.response, plan, self.limits)?;
-        let Some(url) = located_url else {
-            let facts = failure_facts(
-                Some(String::from(
-                    "Failed to get upload URL from initial request",
-                )),
-                String::new(),
-            );
-            return Err(UploadError::Provider(handle_error(&facts, None)));
-        };
+        raise_for_status(self.mode, &Method::POST, &initial.response)?;
+        let UploadTarget { url, data } = located_upload(&initial.response, plan, self.limits)?;
         let method = upload_method(plan.upload_method.as_deref().unwrap_or("POST"))?;
         let upload_headers = headers_from(
             plan.upload_headers
@@ -104,8 +94,14 @@ where
         )?;
         let upload_body = encoded_body(&plan.upload_data).map_err(UploadError::Encode)?;
         let reply = self
-            .reply(method, &url, upload_headers, UploadBody::Bytes(upload_body))
+            .reply(
+                &method,
+                &url,
+                upload_headers,
+                UploadBody::Bytes(upload_body),
+            )
             .await?;
+        raise_for_status(self.mode, &method, &reply.response)?;
         if let Some(fields) = data {
             self.params
                 .insert(String::from("initial_file_response"), Json::Object(fields));
@@ -122,8 +118,11 @@ where
                 .map(|(name, value)| (name.as_str(), value.as_str())),
         )?;
         let body = encoded_body(&plan.data).map_err(UploadError::Encode)?;
-        self.reply(method, &plan.url, headers, UploadBody::Bytes(body))
-            .await
+        let reply = self
+            .reply(&method, &plan.url, headers, UploadBody::Bytes(body))
+            .await?;
+        raise_for_status(self.mode, &method, &reply.response)?;
+        Ok(reply)
     }
 
     // The media branch streams one POST and checks 200/201 itself, both inside LiteLLM's try/except
@@ -136,9 +135,12 @@ where
     }
 
     async fn run_media(&self, plan: MediaPlan) -> Result<Reply, UploadError> {
-        let headers = self.media_headers(plan.content_type.as_deref())?;
+        let headers = media_headers(self.base_headers()?, plan.content_type.as_deref())?;
         let body = UploadBody::Blocks(self.block_stream(plan.body_stream));
-        match self.reply(Method::POST, self.api_base, headers, body).await {
+        match self
+            .reply(&Method::POST, self.api_base, headers, body)
+            .await
+        {
             Ok(reply) => match reply.response.status {
                 200 | 201 => Ok(reply),
                 202..=299 => {
@@ -176,8 +178,11 @@ where
             },
             UploadBody::Multipart { .. } | UploadBody::Blocks(_) => Method::POST,
         };
-        self.reply(method, self.api_base, self.base_headers()?, body)
-            .await
+        let reply = self
+            .reply(&method, self.api_base, self.base_headers()?, body)
+            .await?;
+        raise_for_status(self.mode, &method, &reply.response)?;
+        Ok(reply)
     }
 
     pub(super) async fn multipart(&self, parts: Vec<MultipartPart>) -> Result<Reply, UploadError> {
@@ -198,13 +203,13 @@ where
 
     async fn reply(
         &self,
-        method: Method,
+        method: &Method,
         url: &str,
         headers: HeaderMap,
         body: UploadBody,
     ) -> Result<Reply, UploadError> {
         let request = UploadRequest {
-            method,
+            method: method.clone(),
             url: request_url(url)?,
             headers,
             body,
@@ -236,20 +241,6 @@ where
         headers_from(base.chain(transform_headers))
     }
 
-    fn media_headers(&self, content_type: Option<&str>) -> Result<HeaderMap, UploadError> {
-        let mut headers = self.base_headers()?;
-        let media_type = content_type
-            .filter(|value| !value.is_empty())
-            .unwrap_or("application/octet-stream");
-        let value =
-            HeaderValue::from_str(media_type).map_err(|source| UploadError::HeaderValue {
-                name: String::from("content-type"),
-                source,
-            })?;
-        headers.insert(CONTENT_TYPE, value);
-        Ok(headers)
-    }
-
     // The block iterator runs on a blocking thread, so no transform work touches the async executor
     fn block_stream(&self, body_stream: ByteStream) -> BlockStream {
         let (sender, receiver) = mpsc::channel::<Vec<u8>>(1);
@@ -265,22 +256,41 @@ where
     }
 }
 
-// the headers location is the default and reads no key; only a body location parses the answer
+// The resolved second-request target: the URL and the initial body the transform may read
+struct UploadTarget {
+    url: String,
+    data: Option<IndexMap<String, Json>>,
+}
+
+// The headers location is the default and reads no key; a missing URL is the ValueError the two-step converts
 fn located_upload(
     response: &UpstreamResponse,
     plan: &TwoStepPlan,
     limits: ApiLimits,
-) -> Result<LocatedUpload, UploadError> {
-    match plan.url_location {
-        Some(UploadUrlLocation::Body) => Ok(decode_file_upload_location(
+) -> Result<UploadTarget, UploadError> {
+    let located = match plan.url_location {
+        Some(UploadUrlLocation::Body) => decode_file_upload_location(
             &response.body,
             UploadUrlLocation::Body,
             plan.url_key.as_deref().unwrap_or("upload_url"),
             limits,
-        )?),
-        Some(UploadUrlLocation::Headers) | None => Ok(LocatedUpload {
+        )?,
+        Some(UploadUrlLocation::Headers) | None => LocatedUpload {
             url: upload_url_from_headers(&response.headers),
             data: None,
-        }),
-    }
+        },
+    };
+    let Some(url) = located.url else {
+        let facts = failure_facts(
+            Some(String::from(
+                "Failed to get upload URL from initial request",
+            )),
+            String::new(),
+        );
+        return Err(UploadError::Provider(handle_error(&facts, None)));
+    };
+    Ok(UploadTarget {
+        url,
+        data: located.data,
+    })
 }

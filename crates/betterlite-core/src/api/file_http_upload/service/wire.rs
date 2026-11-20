@@ -1,6 +1,6 @@
 use std::str::from_utf8;
 
-use http::header::{HeaderName, HeaderValue};
+use http::header::{CONTENT_TYPE, HeaderName, HeaderValue};
 use http::{HeaderMap, Method};
 use url::Url;
 
@@ -53,4 +53,20 @@ pub(super) fn upload_method(method: &str) -> Result<Method, UploadError> {
     Method::from_bytes(token.as_bytes()).map_err(|_source| UploadError::Method {
         method: method.to_owned(),
     })
+}
+
+// A media upload carries the configured content type, or the octet-stream default when none is given
+pub(super) fn media_headers(
+    mut headers: HeaderMap,
+    content_type: Option<&str>,
+) -> Result<HeaderMap, UploadError> {
+    let media_type = content_type
+        .filter(|value| !value.is_empty())
+        .unwrap_or("application/octet-stream");
+    let value = HeaderValue::from_str(media_type).map_err(|source| UploadError::HeaderValue {
+        name: String::from("content-type"),
+        source,
+    })?;
+    headers.insert(CONTENT_TYPE, value);
+    Ok(headers)
 }

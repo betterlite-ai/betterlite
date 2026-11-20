@@ -2,17 +2,21 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::str::{Utf8Error, from_utf8};
 
+use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_models::decisions::Json;
+use http::Method;
 use http::header::{InvalidHeaderName, InvalidHeaderValue};
 use serde_json::Number;
 use thiserror::Error;
 
 use crate::api::api_boundaries::ApiLimitError;
 use crate::api::vector_store_http_write::error::{
-    BaseLlmException, ClientError, FailureFacts, ResponseFacts, header_text,
+    BaseLlmException, ClientError, FailureFacts, ResponseFacts, handle_error, header_text,
 };
+
+use super::service::Mode;
 
 // A provider transform that fails before any request raises its own error, so it travels as a source
 #[derive(Debug, Error)]
@@ -118,4 +122,20 @@ pub fn status_failure(status: u16, body: &[u8], headers: &http::HeaderMap) -> Fa
         }),
         display: String::new(),
     }
+}
+
+// httpx raises on every 4xx/5xx answer except the sync client's put, which hands its answer back unjudged
+pub(super) fn raise_for_status(
+    mode: Mode,
+    method: &Method,
+    response: &UpstreamResponse,
+) -> Result<(), UploadError> {
+    let unjudged = mode == Mode::Sync && *method == Method::PUT;
+    if unjudged || !(400..600).contains(&response.status) {
+        return Ok(());
+    }
+    Err(UploadError::Provider(handle_error(
+        &status_failure(response.status, &response.body, &response.headers),
+        None,
+    )))
 }
