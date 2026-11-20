@@ -176,7 +176,7 @@ async fn streaming_duration_limit_blocks_the_first_read() {
     let error = stream.next_event().await.expect_err("the stream times out");
     assert_eq!(
         timeout_details(&error).context.message,
-        "litellm.Timeout: Stream exceeded max streaming duration of 10s (elapsed 20.0s)"
+        "litellm.Timeout: Stream exceeded max streaming duration of 10.0s (elapsed 20.0s)"
     );
     assert_eq!(poll_count(&polls), 0);
     assert_eq!(failure.classes().len(), 1);
@@ -211,8 +211,10 @@ fn sync_iteration_runs_failure_handlers_without_a_runtime() {
         .expect("an event is returned");
     let error = futures_executor::block_on(stream.drive(Dispatch::Inline))
         .expect_err("the stream ends early");
-    connection_message(&error);
-    assert_eq!(failure.classes().len(), 1);
+    assert_eq!(fallback(&error).original_status.0, 500);
+    let recorded = failure.classes();
+    assert_eq!(recorded.len(), 1);
+    assert!(matches!(recorded[0], ErrorClass::ApiConnection(_)));
 }
 
 #[test]
@@ -420,6 +422,12 @@ async fn a_stream_without_a_provider_names_provider_in_the_early_end_message() {
         },
         prefetched(vec![Ok(payload(CREATED))]),
     );
+    let created = stream
+        .next_event()
+        .await
+        .expect("the created event yields")
+        .expect("an event is returned");
+    assert_eq!(event_type(&created), "response.created");
     let error = stream.next_event().await.expect_err("the stream fails");
     assert_eq!(
         fallback(&error).context.message,
