@@ -204,17 +204,15 @@ fn requested_options(
             JsonValue::Text(previous.clone()),
         );
     }
-    if !call.kwargs.is_empty() {
-        optional.insert(
-            String::from("kwargs"),
-            JsonValue::Object(
-                call.kwargs
-                    .iter()
-                    .map(|(name, value)| (name.clone(), json_value(value)))
-                    .collect(),
-            ),
-        );
-    }
+    optional.insert(
+        String::from("kwargs"),
+        JsonValue::Object(
+            call.kwargs
+                .iter()
+                .map(|(name, value)| (name.clone(), json_value(value)))
+                .collect(),
+        ),
+    );
     requested_optional_params(&mut optional)
         .map_err(CompactParamError::from)
         .map_err(CompactResponsesError::from)

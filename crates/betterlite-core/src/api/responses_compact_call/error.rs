@@ -89,7 +89,10 @@ impl CompactResponsesError {
             custom_llm_provider: provider.to_owned(),
             error_str: error_str.clone(),
             status_code: status,
-            status_code_is_synthesized: self.synthesized(),
+            status_code_is_synthesized: matches!(
+                self,
+                Self::Request(CompactError::Provider(error)) if error.status_code_is_synthesized
+            ),
             message: Some(error_str),
             body: None,
             exception_type: String::new(),
@@ -114,13 +117,6 @@ impl CompactResponsesError {
             | Self::InvalidTimeout { .. }
             | Self::Metadata(_) => (self.to_string(), None),
         }
-    }
-
-    const fn synthesized(&self) -> bool {
-        matches!(
-            self,
-            Self::Request(CompactError::Provider(error)) if error.status_code_is_synthesized
-        )
     }
 }
 
