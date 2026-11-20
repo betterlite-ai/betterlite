@@ -13,7 +13,7 @@ use betterlite_router::complexity_placement::params_on_request::{
     TierTarget, mark_raw_model_name, pin_tier_params_onto_request, restore_ceiling_without_pin,
 };
 use betterlite_router::complexity_placement::pools::tier_pools;
-use betterlite_router::complexity_placement::{TierChoice, TierPlacement};
+use betterlite_router::complexity_placement::{PlacedTier, TierChoice, TierPlacement};
 use betterlite_router::complexity_scoring::tier::{ComplexityTier, Tier};
 use betterlite_router::context_placement::ContextPlacement;
 use betterlite_router::context_placement::error::PlacementError;
@@ -22,6 +22,7 @@ use betterlite_router::context_placement::request::RequestCounter;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use betterlite_router::model_catalog_lookup::alias::AliasMap;
 use betterlite_router::model_catalog_lookup::lookup::CatalogLookup;
+use betterlite_router::router_predicates::JsonMap;
 use betterlite_router::router_predicates::params::{ParamSupport, ResolvedProvider};
 use betterlite_router::routing_groups::index::RoutingGroupIndex;
 use betterlite_router::routing_value_store::StoreSettings;
@@ -178,7 +179,7 @@ async fn step_output(
     let mut kwargs = step.request_kwargs.clone();
     mark_raw_model_name(service.config, &mut kwargs);
     let tier = ComplexityTier::built_in(&step.tier)
-        .map_or_else(|| Tier::Named(step.tier.to_owned()), Tier::BuiltIn);
+        .map_or_else(|| Tier::Named(step.tier.clone()), Tier::BuiltIn);
     let choice = TierChoice {
         tier: &tier,
         allowed_models: step.allowed_models.as_deref(),
@@ -188,7 +189,22 @@ async fn step_output(
         .place_tier(&choice, &mut kwargs, random)
         .await
         .map_err(invalid)?;
-    // the lookup's dyn Fn provider is not Send, so it is built only after the placement's await
+    let pinned = apply_tier_params(probe, step, &placed, &mut kwargs)?;
+    Ok(StepOutput {
+        model: placed.model,
+        tier: placed.tier,
+        pinned,
+        request_kwargs: kwargs,
+    })
+}
+
+// the lookup's dyn Fn provider is not Send, so it is built only after the placement's await
+fn apply_tier_params(
+    probe: &Probe<'_>,
+    step: &StepInput,
+    placed: &PlacedTier,
+    kwargs: &mut JsonMap,
+) -> Result<bool, OperationError> {
     let no_provider = |_name: &str| -> Option<String> { None };
     let lookup = CatalogLookup {
         catalog: &probe.deployments,
@@ -204,19 +220,14 @@ async fn step_output(
         &target,
         &placed.model,
         &placed.params,
-        &mut kwargs,
+        kwargs,
         step.responses_call,
     )
     .map_err(invalid)?;
     if !pinned {
-        restore_ceiling_without_pin(&mut kwargs);
+        restore_ceiling_without_pin(kwargs);
     }
-    Ok(StepOutput {
-        model: placed.model,
-        tier: placed.tier,
-        pinned,
-        request_kwargs: kwargs,
-    })
+    Ok(pinned)
 }
 
 fn claims() -> Result<AffinityClaims, OperationError> {
