@@ -14,10 +14,8 @@ from litellm.integrations.websearch_interception.handler import (
     WebSearchInterceptionLogger,
 )
 from litellm.litellm_core_utils.get_llm_provider_logic import get_llm_provider
-from litellm.llms.anthropic.pass_through.messages import (
-    fake_stream_iterator,
-    handler as entry_handler,
-)
+from litellm.llms.anthropic.pass_through.messages import fake_stream_iterator
+from litellm.llms.anthropic.pass_through.messages import handler as entry_handler
 from pydantic import BaseModel, ConfigDict
 from pydantic import JsonValue as Json
 from typing_extensions import override
@@ -82,10 +80,10 @@ class Recordings:
 
 
 class Dispatcher:
-    def __init__(
+    def __init__(  # type: ignore[explicit-any]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/handler.py#L254-L256
         self,
         recordings: Recordings,
-        handler: Callable[..., Json],  # type: ignore[explicit-any]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/handler.py#L254-L256
+        handler: Callable[..., Json],
     ) -> None:
         self.recordings = recordings
         self.handler = handler  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/handler.py#L254-L256
@@ -224,7 +222,7 @@ def install(call: NativeExecuteCall, recordings: Recordings) -> None:
         object.__setattr__(search, "try_short_circuit_search", scripted.short_circuit)
         callbacks.append(search)
     object.__setattr__(litellm, "callbacks", callbacks)
-    cache_hook = staticmethod(CacheRecorder(recordings))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py
+    cache_hook = staticmethod(CacheRecorder(recordings))
     type.__setattr__(AnthropicCacheControlHook, "maybe_inject_cache_control", cache_hook)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py
     object.__setattr__(litellm, "get_llm_provider", ScriptedResolver(call["provider"]))
     registry = InterceptorRegistry(call["interceptors"])
@@ -235,14 +233,11 @@ def install(call: NativeExecuteCall, recordings: Recordings) -> None:
 
 async def collect_stream(stream: AsyncIterator[bytes]) -> list[Json]:
     events: list[Json] = []
-    while True:
-        try:
-            chunk = await stream.__anext__()
-        except StopAsyncIteration:
-            return events
+    async for chunk in stream:
         line = chunk.decode().split("\n", maxsplit=1)[0]
         if line.startswith("event: "):
             events.append(line.removeprefix("event: "))
+    return events
 
 
 async def execute(call: NativeExecuteCall, api_base: str) -> dict[str, Json]:
