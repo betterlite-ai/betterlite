@@ -101,11 +101,30 @@ pub fn filter_tool_call_arguments(
     if !matches!(parsed, GuardrailValue::Object(_) | GuardrailValue::Array(_)) {
         return filter_text(filter.source, arguments, detections);
     }
+    let before = detections.len();
     let filtered = filter_argument_value(filter, &parsed, detections, TOOL_CALL_LABEL, 0)?;
     if filtered == parsed {
         return Ok(arguments.to_owned());
     }
+    // json.dumps writes an overflowing number back as Infinity, where serde_json writes a non-finite f64 as null
+    if holds_non_finite_decimal(&filtered) {
+        detections.truncate(before);
+        return filter_text(filter.source, arguments, detections);
+    }
     serde_json::to_string(&filtered).map_err(|source| ArgumentFilterError::Serialize { source })
+}
+
+fn holds_non_finite_decimal(value: &GuardrailValue) -> bool {
+    match value {
+        GuardrailValue::Decimal(number) => !number.is_finite(),
+        GuardrailValue::Array(items) => items.iter().any(holds_non_finite_decimal),
+        GuardrailValue::Object(entries) => entries.values().any(holds_non_finite_decimal),
+        GuardrailValue::Null
+        | GuardrailValue::Boolean(_)
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Text(_) => false,
+    }
 }
 
 // Past serde_json's parse limit the tree never forms, so the depth check reads the raw nesting instead

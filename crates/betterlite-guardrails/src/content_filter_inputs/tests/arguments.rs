@@ -384,6 +384,39 @@ fn tool_call_integers_beyond_64_bits_filter_as_text() {
     assert_eq!(pattern_names(&detections), ["secret"]);
 }
 
+#[test]
+fn tool_call_overflowing_number_filters_as_text() {
+    let fixture = Fixture::with_patterns(vec![regex_pattern(
+        "secret",
+        "secret",
+        ContentFilterAction::Mask,
+    )]);
+    let source = fixture.source();
+    let filter = ArgumentFilter {
+        source: &source,
+        max_depth: 100,
+    };
+    let untouched = r#"{"n": 1e999}"#;
+    let mut calls = vec![
+        tool_call(text(r#"{"n": 1e999, "s": "secret"}"#)),
+        tool_call(text(r#"{"n": -1e999, "s": "secret"}"#)),
+        tool_call(text(untouched)),
+    ];
+    let mut detections = Vec::new();
+    scan_tool_call_arguments(&filter, &mut calls, &mut detections)
+        .expect("an overflowing number filters the whole string as text");
+    assert_eq!(
+        arguments_of(&calls[0]),
+        Some(r#"{"n": 1e999, "s": "[SECRET_REDACTED]"}"#)
+    );
+    assert_eq!(
+        arguments_of(&calls[1]),
+        Some(r#"{"n": -1e999, "s": "[SECRET_REDACTED]"}"#)
+    );
+    assert_eq!(arguments_of(&calls[2]), Some(untouched));
+    assert_eq!(pattern_names(&detections), ["secret", "secret"]);
+}
+
 fn nested_json(depth: usize) -> String {
     let mut arguments = "[".repeat(depth);
     arguments.push_str("\"leaf\"");
