@@ -12,7 +12,7 @@ use super::details::{
     RateLimitDetails, ResponseDetails, ResponseStatus, SchemaValidationDetails, TimeoutDetails,
     TimeoutStatus,
 };
-use super::{ErrorClass, ErrorContext, TaxonomyError};
+use super::{ErrorClass, ErrorContext, TaxonomyError, class_message};
 use crate::envelope::WireField;
 use crate::rate_limit::{RateLimitCategory, RateLimitDimension};
 
@@ -653,19 +653,21 @@ Access raw response with `e.raw_response`"#
     "fallback"
 )]
 #[case::unclassified(ErrorClass::Unclassified(Box::new(context("plain"))), "plain")]
-fn message_reports_each_familys_constructed_text(
+fn class_message_reports_each_family_constructed_text(
     #[case] class: ErrorClass,
     #[case] expected: &str,
 ) {
-    assert_eq!(class.message(), expected);
+    assert_eq!(class_message(&class), expected);
 }
 
 #[rstest]
 #[case::absent(None)]
 #[case::empty(Some(""))]
-fn message_builds_the_budget_text_when_none_or_empty_was_given(#[case] message: Option<&str>) {
+fn class_message_builds_the_budget_text_when_none_or_empty_was_given(
+    #[case] message: Option<&str>,
+) {
     assert_eq!(
-        budget_class(message).message(),
+        class_message(&budget_class(message)),
         "Budget has been exceeded! Current cost: 12.5, Max budget: 10"
     );
 }

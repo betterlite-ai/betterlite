@@ -1,5 +1,6 @@
 use betterlite_error::envelope::WireField;
 use betterlite_error::error::ErrorClass;
+use betterlite_error::error::class_message;
 use betterlite_error::error::metadata::ErrorMetadata;
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_models::decisions::Json;
@@ -42,7 +43,7 @@ pub struct FamilyFields {
 #[must_use]
 pub fn family_fields(class: &ErrorClass) -> FamilyFields {
     FamilyFields {
-        message: class.message(),
+        message: class_message(class),
         missing_type_name: missing_type_name(class),
     }
 }

@@ -162,33 +162,33 @@ impl ErrorClass {
             Self::JsonSchemaValidation(details) => family_metadata(&Family::Schema(details)),
         }
     }
+}
 
-    // the text each LiteLLM exception's __init__ builds, which str(error) reports
-    #[must_use]
-    pub fn message(&self) -> String {
-        match self {
-            Self::Authentication(details) => details.message.clone(),
-            Self::NotFound(details) => details.message.clone(),
-            Self::PermissionDenied(details) => details.message.clone(),
-            Self::UnprocessableEntity(details) => details.message.clone(),
-            Self::BadRequest(details)
-            | Self::ContextWindowExceeded(details)
-            | Self::ContentPolicyViolation(details) => details.message.clone(),
-            Self::GuardrailRaised(details) => details.message.clone(),
-            Self::Timeout(details) => details.context.message.clone(),
-            Self::RateLimit(details) => details.context.message.clone(),
-            Self::BudgetExceeded(details) => budget_message(details),
-            Self::ServiceUnavailable(context)
-            | Self::BadGateway(context)
-            | Self::InternalServer(context)
-            | Self::ApiConnection(context)
-            | Self::ApiResponseValidation(context)
-            | Self::UnsupportedParams(context)
-            | Self::Unclassified(context) => context.message.clone(),
-            Self::Api(details) => details.context.message.clone(),
-            Self::MidStreamFallback(details) => details.context.message.clone(),
-            Self::JsonSchemaValidation(details) => schema_message(details),
-        }
+// the text each LiteLLM exception's __init__ builds, which str(error) reports
+#[must_use]
+pub fn class_message(class: &ErrorClass) -> String {
+    match class {
+        ErrorClass::Authentication(details) => details.message.clone(),
+        ErrorClass::NotFound(details) => details.message.clone(),
+        ErrorClass::PermissionDenied(details) => details.message.clone(),
+        ErrorClass::UnprocessableEntity(details) => details.message.clone(),
+        ErrorClass::BadRequest(details)
+        | ErrorClass::ContextWindowExceeded(details)
+        | ErrorClass::ContentPolicyViolation(details) => details.message.clone(),
+        ErrorClass::GuardrailRaised(details) => details.message.clone(),
+        ErrorClass::Timeout(details) => details.context.message.clone(),
+        ErrorClass::RateLimit(details) => details.context.message.clone(),
+        ErrorClass::BudgetExceeded(details) => budget_message(details),
+        ErrorClass::ServiceUnavailable(context)
+        | ErrorClass::BadGateway(context)
+        | ErrorClass::InternalServer(context)
+        | ErrorClass::ApiConnection(context)
+        | ErrorClass::ApiResponseValidation(context)
+        | ErrorClass::UnsupportedParams(context)
+        | ErrorClass::Unclassified(context) => context.message.clone(),
+        ErrorClass::Api(details) => details.context.message.clone(),
+        ErrorClass::MidStreamFallback(details) => details.context.message.clone(),
+        ErrorClass::JsonSchemaValidation(details) => schema_message(details),
     }
 }
 

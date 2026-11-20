@@ -1,4 +1,4 @@
-use betterlite_error::error::{ErrorClass, ErrorContext};
+use betterlite_error::error::{ErrorClass, ErrorContext, class_message};
 use betterlite_models::decisions::Json;
 use thiserror::Error;
 
@@ -16,7 +16,7 @@ pub enum CallErrorKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[error("{}", .class.message())]
+#[error("{}", class_message(.class))]
 pub struct CallError {
     pub class: ErrorClass,
     pub kind: CallErrorKind,

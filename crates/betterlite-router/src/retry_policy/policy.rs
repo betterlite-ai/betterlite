@@ -76,28 +76,22 @@ impl From<FailureClass> for RetryFamily {
     }
 }
 
-// the config wire names the counts; the shared policy owns what they decide
-impl From<&RetryPolicy> for SharedRetryPolicy {
-    fn from(policy: &RetryPolicy) -> Self {
-        Self {
-            bad_request: policy.bad_request,
-            authentication: policy.authentication,
-            timeout: policy.timeout,
-            rate_limit: policy.rate_limit,
-            content_policy: policy.content_policy,
-            internal_server: policy.internal_server,
-            service_unavailable: policy.service_unavailable,
-            not_found: policy.not_found,
-            fallback: policy.fallback,
-        }
-    }
-}
-
 impl RetryPolicy {
+    // the config wire names the counts; LiteLLM checks a 404 answer before the exception's class, and the shared policy owns that order
     #[must_use]
-    // ast-grep-ignore: no-one-line-functions - the server and this crate's tests call retries_for with a FailureClass, and the shared policy owns LiteLLM's 404-first order
     pub fn retries_for(&self, class: FailureClass, status: Option<u16>) -> Option<i64> {
-        SharedRetryPolicy::from(self).retries_for(RetryFamily::from(class), status)
+        let counts = SharedRetryPolicy {
+            bad_request: self.bad_request,
+            authentication: self.authentication,
+            timeout: self.timeout,
+            rate_limit: self.rate_limit,
+            content_policy: self.content_policy,
+            internal_server: self.internal_server,
+            service_unavailable: self.service_unavailable,
+            not_found: self.not_found,
+            fallback: self.fallback,
+        };
+        counts.retries_for(RetryFamily::from(class), status)
     }
 }
 
