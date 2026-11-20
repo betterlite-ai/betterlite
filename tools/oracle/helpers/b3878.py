@@ -73,13 +73,13 @@ class ProbeLogger(PrometheusLogger):
         pass
 
     def overhead_seconds(self, call: OverheadCall) -> float:
-        payload = cast(StandardLoggingPayload, {"guardrail_information": call["guardrail_information"]})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3570
+        payload = cast(StandardLoggingPayload, {"guardrail_information": call["guardrail_information"]})  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3570
         return self._get_guardrail_overhead_seconds(payload)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3570
 
     def bucket(self, call: BucketCall) -> str:
         combined = call["combined_usage"]
         return self._get_input_sequence_length(
-            cast(StandardLoggingPayload, {"prompt_tokens": call["prompt_tokens"], "metadata": {"usage_object": call["metadata_usage"]}}),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3570
+            cast(StandardLoggingPayload, {"prompt_tokens": call["prompt_tokens"], "metadata": {"usage_object": call["metadata_usage"]}}),  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3570
             {
                 "combined_usage_object": combined,
                 "_litellm_upstream_reported_usage": UpstreamUsage(
