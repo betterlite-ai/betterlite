@@ -91,7 +91,6 @@ impl Deployment {
             timeout,
             max_retries,
             drop_params,
-            // the params carry no proxy-wide setting
             global_drop_params: false,
             provider_affinity_header,
             anthropic: None,
