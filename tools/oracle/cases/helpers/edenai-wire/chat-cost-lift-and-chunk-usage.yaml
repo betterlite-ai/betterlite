@@ -1,0 +1,46 @@
+kind: helper
+name: edenai-chat-cost-lift-and-chunk-usage
+call:
+  b6100:
+    costs: []
+    cost_bodies: []
+    cost_headers: []
+    credentials: []
+    chat_params: []
+    chat_requests: []
+    chat_replies:
+      - '{"id": "chatcmpl-1", "object": "chat.completion", "created": 1, "model": "m", "choices": [{"index": 0, "message": {"role": "assistant", "content": "hi"}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}, "cost": 0.25}'
+      - '{"id": "chatcmpl-2", "object": "chat.completion", "created": 1, "model": "m", "choices": [{"index": 0, "message": {"role": "assistant", "content": "hi"}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}}'
+    chunks: []
+    models: []
+    embedding_plans: []
+    embedding_replies: []
+    responses_prepare: []
+    responses_replies: []
+    messages_environments: []
+    messages_replies: []
+calls:
+  - b6100:
+      costs: []
+      cost_bodies: []
+      cost_headers: []
+      credentials: []
+      chat_params: []
+      chat_requests: []
+      chat_replies: []
+      chunks:
+        - {id: "chatcmpl-1", object: "chat.completion.chunk", created: 1, model: "m", choices: [{index: 0, delta: {content: "hi"}, finish_reason: null}], usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}, cost: 0.5}
+        - {id: "chatcmpl-2", object: "chat.completion.chunk", created: 1, model: "m", choices: [], usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}}
+        - {id: "chatcmpl-3", object: "chat.completion.chunk", created: 1, model: "m", choices: [], cost: 0.75}
+        - {id: "chatcmpl-4", object: "chat.completion.chunk", created: 1, model: "m", choices: [], usage: null, cost: 0.75}
+        - {id: "chatcmpl-5", object: "chat.completion.chunk", created: 1, model: "m", choices: [], usage: {}, cost: 0.75}
+        - {id: "chatcmpl-6", object: "chat.completion.chunk", created: 1, model: "m", choices: [], usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}, cost: "0.125"}
+      models: []
+      embedding_plans: []
+      embedding_replies: []
+      responses_prepare: []
+      responses_replies: []
+      messages_environments: []
+      messages_replies: []
+env: {}
+compare: {ignore: []}
