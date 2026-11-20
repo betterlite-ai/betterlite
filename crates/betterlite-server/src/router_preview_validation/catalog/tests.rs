@@ -9,7 +9,6 @@ use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces, StoredValue};
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::json;
 
 use super::{
     AutoRouterCatalog, AutoRouterCatalogEntry, CatalogDeployment, CatalogLitellmParams,
@@ -50,6 +49,14 @@ fn sealed(cipher: &DbCipher, text: &str) -> String {
 
 fn row(text: &str) -> ProxyModelTable {
     serde_json::from_str(text).unwrap()
+}
+
+fn sealed_row(model: &str, config: &str) -> String {
+    format!(
+        r#"{{"model_id":"sealed","model_name":"sealed","litellm_params":{{"model":{},"complexity_router_config":{}}}}}"#,
+        serde_json::to_string(model).unwrap(),
+        serde_json::to_string(config).unwrap(),
+    )
 }
 
 #[test]
@@ -125,12 +132,7 @@ fn catalog_skips_a_row_whose_model_is_not_a_string(#[case] row_json: &str) {
 fn catalog_decrypts_an_encrypted_model_and_config() {
     let sealed_model = sealed(&cipher(), COMPLEXITY_MODEL);
     let sealed_config = sealed(&cipher(), r#"{"classifier_type":"heuristic_v2"}"#);
-    let row_json = json!({
-        "model_id": "encrypted",
-        "model_name": "encrypted",
-        "litellm_params": {"model": sealed_model, "complexity_router_config": sealed_config},
-    });
-    let rows = vec![serde_json::from_value::<ProxyModelTable>(row_json).unwrap()];
+    let rows = vec![row(&sealed_row(&sealed_model, &sealed_config))];
     let catalog = build_auto_router_catalog(&rows, &cipher()).unwrap();
     assert_eq!(catalog[0].deployment.litellm_params.model, COMPLEXITY_MODEL);
     assert_eq!(
@@ -147,12 +149,7 @@ fn catalog_decrypts_an_encrypted_model_and_config() {
 #[test]
 fn catalog_keeps_a_value_it_cannot_decrypt() {
     let sealed_config = sealed(&cipher_with(Some(OTHER_SIGNING_KEY)), "sealed-config-text");
-    let row_json = json!({
-        "model_id": "kept",
-        "model_name": "kept",
-        "litellm_params": {"model": COMPLEXITY_MODEL, "complexity_router_config": sealed_config.clone()},
-    });
-    let rows = vec![serde_json::from_value::<ProxyModelTable>(row_json).unwrap()];
+    let rows = vec![row(&sealed_row(COMPLEXITY_MODEL, &sealed_config))];
     let catalog = build_auto_router_catalog(&rows, &cipher()).unwrap();
     assert_eq!(catalog[0].deployment.litellm_params.model, COMPLEXITY_MODEL);
     assert_eq!(
@@ -168,12 +165,7 @@ fn catalog_keeps_a_value_it_cannot_decrypt() {
 fn catalog_keeps_stored_strings_when_no_signing_key_is_configured() {
     let sealed_model = sealed(&cipher(), COMPLEXITY_MODEL);
     let sealed_config = sealed(&cipher(), "sealed-config-text");
-    let row_json = json!({
-        "model_id": "keyless",
-        "model_name": "keyless",
-        "litellm_params": {"model": sealed_model, "complexity_router_config": sealed_config},
-    });
-    let rows = vec![serde_json::from_value::<ProxyModelTable>(row_json).unwrap()];
+    let rows = vec![row(&sealed_row(&sealed_model, &sealed_config))];
     let catalog = build_auto_router_catalog(&rows, &cipher_with(None)).unwrap();
     assert!(catalog.is_empty());
     let plain = row(
@@ -268,20 +260,13 @@ fn catalog_deployment_serializes_to_the_litellm_shape() {
         r#"{"model_id":"m","model_name":"n","litellm_params":{"model":"auto_router/complexity_router","complexity_router_config":{"classifier_type":"heuristic_v2"}},"model_info":{"team_id":"team-a"},"created_by":"creator"}"#,
     )];
     let catalog = build_auto_router_catalog(&rows, &cipher()).unwrap();
+    let expected: JsonData = serde_json::from_str(
+        r#"[{"model_id":"m","team_id":"team-a","created_by":"creator","deployment":{"litellm_params":{"model":"auto_router/complexity_router","complexity_router_config":{"classifier_type":"heuristic_v2"}},"model_info":{"id":"m","db_model":true}}}]"#,
+    )
+    .unwrap();
     assert_eq!(
         serde_json::to_value(&catalog).unwrap(),
-        json!([{
-            "model_id": "m",
-            "team_id": "team-a",
-            "created_by": "creator",
-            "deployment": {
-                "litellm_params": {
-                    "model": "auto_router/complexity_router",
-                    "complexity_router_config": {"classifier_type": "heuristic_v2"},
-                },
-                "model_info": {"id": "m", "db_model": true},
-            },
-        }])
+        serde_json::to_value(&expected).unwrap()
     );
 }
 
@@ -291,36 +276,29 @@ fn catalog_deployment_carries_a_null_config() {
         r#"{"model_id":"no-config","model_name":"n","litellm_params":{"model":"auto_router/complexity_router"}}"#,
     )];
     let catalog = build_auto_router_catalog(&rows, &cipher()).unwrap();
+    let expected: JsonData = serde_json::from_str(
+        r#"[{"model_id":"no-config","team_id":null,"created_by":null,"deployment":{"litellm_params":{"model":"auto_router/complexity_router","complexity_router_config":null},"model_info":{"id":"no-config","db_model":true}}}]"#,
+    )
+    .unwrap();
     assert_eq!(
         serde_json::to_value(&catalog).unwrap(),
-        json!([{
-            "model_id": "no-config",
-            "team_id": null,
-            "created_by": null,
-            "deployment": {
-                "litellm_params": {
-                    "model": "auto_router/complexity_router",
-                    "complexity_router_config": null,
-                },
-                "model_info": {"id": "no-config", "db_model": true},
-            },
-        }])
+        serde_json::to_value(&expected).unwrap()
     );
 }
 
 struct SnapshotCatalog {
-    entries: Arc<Vec<AutoRouterCatalogEntry>>,
+    entries: Vec<AutoRouterCatalogEntry>,
 }
 
 impl AutoRouterCatalog for SnapshotCatalog {
     fn catalog(&self) -> Option<Arc<Vec<AutoRouterCatalogEntry>>> {
-        Some(Arc::clone(&self.entries))
+        Some(Arc::new(self.entries.clone()))
     }
 }
 
 #[test]
 fn catalog_trait_hands_out_the_entry_types() {
-    let entries = Arc::new(vec![AutoRouterCatalogEntry {
+    let entries = vec![AutoRouterCatalogEntry {
         model_id: "m".to_owned(),
         team_id: Some("team-a".to_owned()),
         created_by: None,
@@ -334,10 +312,10 @@ fn catalog_trait_hands_out_the_entry_types() {
                 db_model: true,
             },
         },
-    }]);
+    }];
     let catalog: Arc<dyn AutoRouterCatalog> = Arc::new(SnapshotCatalog {
-        entries: Arc::clone(&entries),
+        entries: entries.clone(),
     });
     let handed = catalog.catalog().unwrap();
-    assert_eq!(handed.as_ref(), entries.as_ref());
+    assert_eq!(handed.as_ref(), &entries);
 }
