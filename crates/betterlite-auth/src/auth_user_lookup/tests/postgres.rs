@@ -1,6 +1,5 @@
 #![cfg(test)]
 
-use std::error::Error as _;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
@@ -20,7 +19,7 @@ use tokio_util::task::TaskTracker;
 use super::tests::support::{FakeCache, FakeEnrollment, FakeReset, request_with};
 use crate::auth_user_lookup::cache::UserCache;
 use crate::auth_user_lookup::cadence::{Cadence, WallClock};
-use crate::auth_user_lookup::error::UserLookupError;
+use crate::auth_user_lookup::error::{UserLookupError, UserReadFailure};
 use crate::auth_user_lookup::lookup::{UserLookup, UserLookupRequest};
 use crate::auth_user_lookup::ports::{BudgetResetCalculator, DefaultTeamEnrollment};
 use crate::auth_user_lookup::store::{DatabaseUserStore, UserStore};
@@ -173,6 +172,16 @@ async fn lookup_email(store: &Arc<DatabaseUserStore>, user_id: &str) -> Option<S
     user.user_email
 }
 
+fn names_row_cap(failure: &UserReadFailure) -> bool {
+    let mut names_cap = false;
+    let mut link = failure.cause.source();
+    while let Some(current) = link {
+        names_cap |= current.to_string().contains("over the");
+        link = current.source();
+    }
+    names_cap
+}
+
 #[tokio::test]
 async fn email_case_insensitive_first() {
     let (fixture, store) = database().await;
@@ -263,16 +272,10 @@ async fn row_cap_boundary() {
         .await;
     match result {
         Err(UserLookupError::UserMissing(failure)) => {
-            let mut names_cap = false;
-            let mut link = failure.cause.source();
-            while let Some(current) = link {
-                if current.to_string().contains("over the") {
-                    names_cap = true;
-                    break;
-                }
-                link = current.source();
-            }
-            assert!(names_cap, "the failure names the row cap: {failure}");
+            assert!(
+                names_row_cap(&failure),
+                "the failure names the row cap: {failure}"
+            );
         }
         other => panic!("a row over the cap fails the lookup: {other:?}"),
     }
