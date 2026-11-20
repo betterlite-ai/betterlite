@@ -26,10 +26,10 @@ pub fn responses_params_with_completion_window(
     result.shift_remove(METADATA);
     let mut wire_metadata = metadata.cloned().unwrap_or_default();
     wire_metadata.shift_remove(COMPLETION_WINDOW);
-    if let Some(window) = window {
+    if let Some(selected) = window {
         wire_metadata.insert(
             String::from(COMPLETION_WINDOW),
-            Json::Text(String::from(window.as_str())),
+            Json::Text(String::from(selected.as_str())),
         );
     }
     let raw_is_set = raw_metadata.is_some_and(|value| !matches!(value, Json::Null));
@@ -43,12 +43,12 @@ pub fn responses_params_with_completion_window(
 }
 
 fn resolved_window(
-    caller: Option<CompletionWindow>,
-    tier: Option<CompletionWindow>,
+    caller_window: Option<CompletionWindow>,
+    tier_window: Option<CompletionWindow>,
     raw_tier: Option<&Json>,
     model: &str,
 ) -> Result<Option<CompletionWindow>, SailError> {
-    if let (Some(caller), Some(tier)) = (caller, tier)
+    if let (Some(caller), Some(tier)) = (caller_window, tier_window)
         && caller.billed_tier() != tier.billed_tier()
     {
         return Err(SailError::ConflictingWindows {
@@ -57,7 +57,7 @@ fn resolved_window(
             completion_window: format!("{:?}", caller.as_str()),
         });
     }
-    Ok(caller.or(tier))
+    Ok(caller_window.or(tier_window))
 }
 
 fn caller_completion_window(

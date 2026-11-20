@@ -174,10 +174,10 @@ fn chat_metadata(
         drop_params,
         settings,
     )?;
-    if let Some(window) = window {
+    if let Some(selected) = window {
         metadata.insert(
             String::from(COMPLETION_WINDOW),
-            Json::Text(String::from(window.as_str())),
+            Json::Text(String::from(selected.as_str())),
         );
     }
     Ok(metadata)

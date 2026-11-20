@@ -134,7 +134,9 @@ fn the_error_class_carries_the_sail_provider_and_the_model() {
 
 #[test]
 fn metadata_without_the_caller_window_keeps_the_other_keys() {
-    let metadata = object(json!({"user_id": "u-1", "completion_window": "flex"}));
+    let metadata = Json::Object(object(
+        json!({"user_id": "u-1", "completion_window": "flex"}),
+    ));
     let error =
         metadata_without_caller_window(Some(&metadata), "metadata", MODEL, false, &settings(false))
             .unwrap_err();
@@ -174,7 +176,7 @@ fn metadata_without_the_caller_window_is_empty_for_non_mappings(#[case] metadata
 
 #[test]
 fn the_extra_body_field_name_reaches_the_error() {
-    let metadata = object(json!({"completion_window": "flex"}));
+    let metadata = Json::Object(object(json!({"completion_window": "flex"})));
     let error = metadata_without_caller_window(
         Some(&metadata),
         "extra_body.metadata",
@@ -630,12 +632,12 @@ fn responses_without_any_window_keep_the_params() {
 }
 
 #[test]
-fn every_unsupported_error_ends_with_the_drop_params_hint() {
+fn every_chat_error_ends_with_the_drop_params_hint() {
     let tier =
         completion_window_for_service_tier(Some(&text("flash")), MODEL, false, &settings(false))
             .unwrap_err();
     let metadata = metadata_without_caller_window(
-        Some(&object(json!({"completion_window": "flex"}))),
+        Some(&Json::Object(object(json!({"completion_window": "flex"})))),
         "metadata",
         MODEL,
         false,
@@ -650,6 +652,16 @@ fn every_unsupported_error_ends_with_the_drop_params_hint() {
         &settings(false),
     )
     .unwrap_err();
+    assert!(tier.to_string().ends_with(HINT), "{tier}");
+    assert_eq!(tier.status_code(), 400);
+    assert!(metadata.to_string().ends_with(HINT), "{metadata}");
+    assert_eq!(metadata.status_code(), 400);
+    assert!(extra.to_string().ends_with(HINT), "{extra}");
+    assert_eq!(extra.status_code(), 400);
+}
+
+#[test]
+fn every_responses_error_ends_with_the_drop_params_hint() {
     let window = responses_params_with_completion_window(
         &object(json!({"metadata": {"completion_window": "slow"}})),
         MODEL,
@@ -664,12 +676,6 @@ fn every_unsupported_error_ends_with_the_drop_params_hint() {
         &settings(false),
     )
     .unwrap_err();
-    assert!(tier.to_string().ends_with(HINT), "{tier}");
-    assert_eq!(tier.status_code(), 400);
-    assert!(metadata.to_string().ends_with(HINT), "{metadata}");
-    assert_eq!(metadata.status_code(), 400);
-    assert!(extra.to_string().ends_with(HINT), "{extra}");
-    assert_eq!(extra.status_code(), 400);
     assert!(window.to_string().ends_with(HINT), "{window}");
     assert_eq!(window.status_code(), 400);
     assert!(conflict.to_string().ends_with(HINT), "{conflict}");
