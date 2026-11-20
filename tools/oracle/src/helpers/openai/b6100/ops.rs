@@ -55,8 +55,11 @@ pub(super) fn run(input: &Input) -> HelperResult {
     if !input.costs.is_empty() || !input.cost_bodies.is_empty() || !input.cost_headers.is_empty() {
         return Ok(cost_value(input));
     }
-    if !input.credentials.is_empty() || !input.chat_params.is_empty() {
-        return Ok(call_value(input));
+    if !input.credentials.is_empty() {
+        return Ok(json!({"steps": credential_steps(input)}));
+    }
+    if !input.chat_params.is_empty() {
+        return Ok(json!({"steps": param_steps(input)}));
     }
     if !input.chat_requests.is_empty() {
         let mut values = Vec::with_capacity(input.chat_requests.len());
@@ -105,26 +108,28 @@ fn cost_value(input: &Input) -> Value {
     json!({"steps": steps})
 }
 
-// the credential resolution and the supported-parameter list, both read from the caller's values
-fn call_value(input: &Input) -> Value {
-    if !input.credentials.is_empty() {
-        let mut steps = Vec::with_capacity(input.credentials.len());
-        for case in &input.credentials {
-            let env = env_with(&case.environment, case.global_api_key.as_deref());
-            let explicit = case.api_key.clone().map(SecretString::from);
-            let required = match require_api_key(explicit.as_ref(), MODEL, &env) {
-                Ok(found) => json!({"key": found.expose_secret(), "status": null}),
-                Err(error) => json!({"key": null, "status": error.status_code}),
-            };
-            steps.push(json!({
-                "api_base": resolve_api_base(case.api_base.as_deref(), &env),
-                "api_key": resolve_api_key(explicit.as_ref(), &env)
-                    .map(|found| found.expose_secret().to_owned()),
-                "required": required,
-            }));
-        }
-        return json!({"steps": steps});
+// the credential resolution reads one case per call, in the case's order
+fn credential_steps(input: &Input) -> Vec<Value> {
+    let mut steps = Vec::with_capacity(input.credentials.len());
+    for case in &input.credentials {
+        let env = env_with(&case.environment, case.global_api_key.as_deref());
+        let explicit = case.api_key.clone().map(SecretString::from);
+        let required = match require_api_key(explicit.as_ref(), MODEL, &env) {
+            Ok(found) => json!({"key": found.expose_secret(), "status": null}),
+            Err(error) => json!({"key": null, "status": error.status_code}),
+        };
+        steps.push(json!({
+            "api_base": resolve_api_base(case.api_base.as_deref(), &env),
+            "api_key": resolve_api_key(explicit.as_ref(), &env)
+                .map(|found| found.expose_secret().to_owned()),
+            "required": required,
+        }));
     }
+    steps
+}
+
+// the supported-parameter list follows each case's reasoning capability
+fn param_steps(input: &Input) -> Vec<Value> {
     let catalog = CatalogCapabilities {
         chat_models: BTreeSet::new(),
         text_models: BTreeSet::new(),
@@ -134,7 +139,7 @@ fn call_value(input: &Input) -> Value {
         let lookup = FixedReasoning(case.reasoning);
         steps.push(json!(supported_params(&lookup, &case.model, &catalog)));
     }
-    json!({"steps": steps})
+    steps
 }
 
 fn chat_input(case: &ChatRequest) -> TransformInput<'_> {
