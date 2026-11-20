@@ -1,7 +1,7 @@
 import asyncio
 from collections.abc import Coroutine
 from datetime import UTC, datetime
-from typing import Final, Literal, Protocol, TypeAlias, TypedDict, TypeVar, Unpack, cast
+from typing import Final, Literal, Protocol, TypeAlias, TypedDict, TypeVar
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -56,7 +56,19 @@ class ReadArguments(TypedDict):
 
 
 class ReadHandler(Protocol[Result_co]):
-    def __call__(self, **kwargs: Unpack[ReadArguments]) -> Result_co: ...
+    def __call__(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11097-L11166
+        self,
+        *,
+        vector_store_id: str,
+        file_id: str,
+        # ast-grep-ignore: no-long-names
+        vector_store_files_provider_config: BaseVectorStoreFilesConfig,
+        custom_llm_provider: str,
+        litellm_params: GenericLiteLLMParams,
+        logging_obj: Logging,
+        extra_headers: dict[str, str],
+        timeout: float | httpx.Timeout | None,
+    ) -> Result_co: ...
 
 
 class ReadHandlers(Protocol):
@@ -81,7 +93,7 @@ class ReadHandlers(Protocol):
     ) -> ReadHandler[AsyncContentResult]: ...
 
 
-HANDLER: ReadHandlers = cast(ReadHandlers, BaseLLMHTTPHandler())  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11097-L11166
+HANDLER: ReadHandlers = BaseLLMHTTPHandler()
 
 
 class ReadCall(BaseModel):
