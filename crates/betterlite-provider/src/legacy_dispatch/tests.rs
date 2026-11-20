@@ -415,6 +415,14 @@ fn the_aleph_prompt_labels_control_roles() {
             .and_then(|value| value.as_u64()),
         Some(4096_u64)
     );
+    // betterlite posts the deployment's stripped model; LiteLLM's handler sees the prefixed one
+    assert_eq!(
+        call.request
+            .body
+            .get("model")
+            .and_then(|value| value.as_str()),
+        Some("luminous-base-control")
+    );
     assert_eq!(
         header_text(&call.request.headers, AUTHORIZATION),
         "Bearer aleph-key"
@@ -457,7 +465,7 @@ fn the_aleph_body_carries_the_call_parameters() {
     );
     let call = aleph::prepare(&request, &deployment).unwrap();
     let body = &call.request.body;
-    // LiteLLM forwards max_completion_tokens as max_tokens for a provider without that parameter
+    // betterlite maps the token ceiling onto the one Aleph Alpha accepts; see docs/deviations/B044.yaml
     assert_eq!(
         body.get("max_tokens").and_then(|value| value.as_u64()),
         Some(32_u64)
