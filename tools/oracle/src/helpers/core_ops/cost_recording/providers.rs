@@ -100,7 +100,7 @@ impl MantleRegionResolver for Mantle {
     }
 }
 
-fn text(value: Option<&Json>) -> Option<&str> {
+const fn text(value: Option<&Json>) -> Option<&str> {
     match value {
         Some(Json::Text(text)) => Some(text),
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))

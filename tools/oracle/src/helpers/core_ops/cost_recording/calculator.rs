@@ -124,7 +124,7 @@ fn usage_counts(request: &CostRequest<'_>) -> Option<(i64, i64)> {
     }
 }
 
-fn reborrow<'usage>(usage: &BillingUsage<'usage>) -> BillingUsage<'usage> {
+const fn reborrow<'usage>(usage: &BillingUsage<'usage>) -> BillingUsage<'usage> {
     match usage {
         BillingUsage::Absent => BillingUsage::Absent,
         BillingUsage::Null => BillingUsage::Null,

@@ -121,6 +121,7 @@ class CalculatorKwargs(TypedDict):
 
 
 class HiddenCarrier(BaseModel):
+    # ast-grep-ignore: no-loose-types
     _hidden_params: dict[str, object] = PrivateAttr(default_factory=dict)
 
     def __init__(self, hidden: dict[str, JsonValue] | None) -> None:
@@ -164,7 +165,8 @@ def _observe(fields: CalculatorKwargs) -> dict[str, JsonValue]:
     if usage is not None:
         prompt: JsonValue = usage.prompt_tokens
         completion: JsonValue = usage.completion_tokens
-        counts = _JSON.validate_python([prompt, completion])
+        parts: list[JsonValue] = [prompt, completion]
+        counts = _JSON.validate_python(parts)
     return {
         "model": fields["model"],
         "cache_hit": fields["cache_hit"],
