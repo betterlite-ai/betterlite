@@ -40,7 +40,7 @@ impl Slot {
 
     // No router is bound to this resource, so savings prices by the public lookup alone.
     #[must_use]
-    pub fn savings(&self) -> Option<Context<'_>> {
+    pub const fn savings(&self) -> Option<Context<'_>> {
         let Ok(service) = &self.service else {
             return None;
         };
