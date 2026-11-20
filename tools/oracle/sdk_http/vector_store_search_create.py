@@ -63,9 +63,9 @@ class Run(Strict):
     create: CreateFields | None = None
     search: SearchFields | None = None
     options: RunOptions
-    extra_headers: dict[str, object] | None = None
-    extra_body: dict[str, object] | None = None
-    extra_query: dict[str, object] | None = None
+    extra_headers: dict[str, JsonValue] | None = None
+    extra_body: dict[str, JsonValue] | None = None
+    extra_query: dict[str, JsonValue] | None = None
     timeout_seconds: float | None = None
     custom_llm_provider: str | None = None
 
@@ -110,9 +110,9 @@ class GenericOptions(TypedDict, total=False):
     litellm_logging_obj: Logging
     mock_response: JsonValue
     custom_llm_provider: str | None
-    extra_headers: dict[str, object] | None
-    extra_query: dict[str, object] | None
-    extra_body: dict[str, object] | None
+    extra_headers: dict[str, JsonValue] | None
+    extra_query: dict[str, JsonValue] | None
+    extra_body: dict[str, JsonValue] | None
     timeout: float | None
 
 
