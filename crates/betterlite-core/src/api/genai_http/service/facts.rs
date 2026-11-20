@@ -1,14 +1,8 @@
-use std::str::from_utf8;
 use std::time::Duration;
 
-use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::transport_error::TransportError;
-use betterlite_models::decisions::Json;
-use serde_json::Number;
 
-use crate::api::vector_store_http_write::error::{
-    FailureFacts, HeaderMap, ResponseFacts, header_text,
-};
+use crate::api::vector_store_http_write::error::{FailureFacts, display_facts, timeout_facts};
 use crate::api::vector_store_http_write::service::ClientKind;
 
 // What the timeout message needs: the caller's timeout, the one httpx used and how long the send took
@@ -19,92 +13,22 @@ pub(super) struct Attempt {
     pub(super) elapsed: Duration,
 }
 
-// An httpx.HTTPStatusError carries the masked response: its text and headers less content-encoding
-pub(super) fn status_facts(reply: &UpstreamResponse) -> FailureFacts {
-    let text = from_utf8(&reply.body).map_or_else(
-        |_| format!("{} bytes that are not UTF-8", reply.body.len()),
-        ToOwned::to_owned,
-    );
-    let mut headers = error_headers(&reply.headers);
-    // httpx re-encodes the decoded body into the masked response, so a non-empty one carries a new content-length
-    if !reply.body.is_empty() {
-        let length = reply.body.len().to_string();
-        headers.insert("content-length".to_owned(), Json::Text(length));
-    }
-    FailureFacts {
-        response_status: Some(i64::from(reply.status)),
-        status: Some(Json::Number(Number::from(reply.status))),
-        text: Some(text.clone()),
-        headers: None,
-        response: Some(ResponseFacts {
-            status_code: i64::from(reply.status),
-            text: Some(text),
-            headers: Some(headers),
-        }),
-        display: String::new(),
-    }
-}
-
-fn error_headers(headers: &http::HeaderMap) -> HeaderMap {
-    headers
-        .iter()
-        .filter(|(name, _)| !matches!(name.as_str(), "content-encoding" | "content-length"))
-        .map(|(name, value)| (name.as_str().to_owned(), Json::Text(header_text(value))))
-        .collect()
-}
-
 // A timeout carries 408 and its message; anything else the transport raises is synthesized into a 500
 pub(super) fn transport_facts(error: &TransportError, attempt: &Attempt) -> FailureFacts {
-    if timed_out(error) {
-        return FailureFacts {
-            response_status: None,
-            status: Some(Json::Number(Number::from(408_u16))),
-            text: Some(timeout_message(attempt)),
-            headers: Some(HeaderMap::new()),
-            response: None,
-            display: String::new(),
-        };
+    if !timed_out(error) {
+        return display_facts(error.to_string());
     }
-    FailureFacts {
-        response_status: None,
-        status: None,
-        text: None,
-        headers: None,
-        response: None,
-        display: error.to_string(),
-    }
+    // post catches httpx.TimeoutException in both forms: sync echoes the timeout it was given, async the deadline it ran with
+    let timeout = match attempt.mode {
+        ClientKind::Sync => attempt.timeout,
+        ClientKind::Asynchronous => Some(attempt.timeout.unwrap_or(attempt.effective)),
+    };
+    timeout_facts(attempt.mode, timeout, attempt.elapsed)
 }
 
-fn timed_out(error: &TransportError) -> bool {
+const fn timed_out(error: &TransportError) -> bool {
     matches!(
         error,
         TransportError::ConnectTimeout(_) | TransportError::Deadline(_)
     )
-}
-
-// post catches httpx.TimeoutException in both forms: sync echoes the caller's timeout, async the client's
-fn timeout_message(attempt: &Attempt) -> String {
-    if attempt.mode == ClientKind::Sync {
-        return match attempt.timeout {
-            Some(timeout) => format!(
-                "litellm.Timeout: Connection timed out after {} seconds.",
-                format_timeout(timeout)
-            ),
-            None => "litellm.Timeout: Connection timed out after None seconds.".to_owned(),
-        };
-    }
-    format!(
-        "litellm.Timeout: Connection timed out. Timeout passed={}, time taken={}.{:03} seconds",
-        format_timeout(attempt.timeout.unwrap_or(attempt.effective)),
-        attempt.elapsed.as_secs(),
-        attempt.elapsed.subsec_millis(),
-    )
-}
-
-fn format_timeout(timeout: Duration) -> String {
-    if timeout.subsec_nanos() == 0 {
-        timeout.as_secs().to_string()
-    } else {
-        timeout.as_secs_f64().to_string()
-    }
 }

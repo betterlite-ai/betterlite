@@ -87,8 +87,8 @@ fn overlay_headers(
     mut headers: IndexMap<String, String>,
     extra: Option<&IndexMap<String, String>>,
 ) -> IndexMap<String, String> {
-    if let Some(extra) = extra {
-        headers.extend(extra.clone());
+    if let Some(caller) = extra {
+        headers.extend(caller.clone());
     }
     headers
 }

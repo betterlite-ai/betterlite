@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_config::proxy::ProxyPolicy;
@@ -29,8 +29,9 @@ use indexmap::IndexMap;
 
 use crate::api::genai_http::config::{AuthCall, AuthTarget, GenerateContentHttpConfig};
 use crate::api::genai_http::service::{
-    ClientSource, GenAiRequest, GenAiTransport, StreamReply, WireReply,
+    ClientSource, GenAiRequest, GenAiTransport, GenerateContentDeps, StreamReply, WireReply,
 };
+use crate::api::genai_http::stream::StreamSettings;
 use crate::api::vector_store_http_write::error::{
     BaseLlmException, ClientError, HeaderMap, header_map,
 };
@@ -164,6 +165,22 @@ pub(crate) fn pre_post_env<'env>(
     }
 }
 
+// The handler's dependencies with no supplied client: every test that does not pick a client itself builds them here
+pub(crate) fn handler_deps<'deps, S>(
+    config: &'deps TestConfig,
+    source: &'deps S,
+) -> GenerateContentDeps<'deps, TestConfig, S>
+where
+    S: ClientSource,
+{
+    GenerateContentDeps {
+        config,
+        source,
+        supplied: None,
+        stream: StreamSettings::default(),
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct Reply {
     pub(crate) status: u16,
@@ -189,6 +206,7 @@ impl Reply {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct Recorded {
     pub(crate) request: GenAiRequest,
     pub(crate) streaming: bool,
@@ -239,13 +257,11 @@ impl Wire {
         self
     }
 
-    pub(crate) fn with_default_timeout(mut self, timeout: Duration) -> Self {
-        self.default_timeout = timeout;
-        self
-    }
-
-    pub(crate) fn requests(&self) -> MutexGuard<'_, Vec<Recorded>> {
-        self.requests.lock().unwrap_or_else(PoisonError::into_inner)
+    pub(crate) fn requests(&self) -> Vec<Recorded> {
+        self.requests
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 }
 
@@ -337,14 +353,18 @@ pub(crate) struct AuthRecord {
 #[error("the test provider config cannot build the call")]
 pub(crate) struct TestConfigError;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Quirk {
+    Auth,
+    Transform,
+    Decode,
+    TextBody,
+}
+
 // The provider config the handler talks to: it records auth, builds a body and fails on request
 pub(crate) struct TestConfig {
     pub(crate) base: String,
-    auth_failure: bool,
-    transform_failure: bool,
-    decode_failure: bool,
-    text_body: bool,
-    extra_headers: Vec<(String, String)>,
+    quirks: Vec<Quirk>,
     auth_calls: Mutex<Vec<AuthRecord>>,
     errors: Mutex<Vec<(String, u16, HeaderMap)>>,
 }
@@ -353,38 +373,29 @@ impl TestConfig {
     pub(crate) fn new(base: &str) -> Self {
         Self {
             base: base.to_owned(),
-            auth_failure: false,
-            transform_failure: false,
-            decode_failure: false,
-            text_body: false,
-            extra_headers: Vec::new(),
+            quirks: Vec::new(),
             auth_calls: Mutex::default(),
             errors: Mutex::default(),
         }
     }
 
-    pub(crate) fn provider_header(mut self, name: &str, value: &str) -> Self {
-        self.extra_headers.push((name.to_owned(), value.to_owned()));
-        self
-    }
-
     pub(crate) fn failing_auth(mut self) -> Self {
-        self.auth_failure = true;
+        self.quirks.push(Quirk::Auth);
         self
     }
 
     pub(crate) fn failing_transform(mut self) -> Self {
-        self.transform_failure = true;
+        self.quirks.push(Quirk::Transform);
         self
     }
 
     pub(crate) fn failing_decode(mut self) -> Self {
-        self.decode_failure = true;
+        self.quirks.push(Quirk::Decode);
         self
     }
 
     pub(crate) fn with_text_body(mut self) -> Self {
-        self.text_body = true;
+        self.quirks.push(Quirk::TextBody);
         self
     }
 
@@ -414,10 +425,10 @@ impl GenerateContentProviderConfig for TestConfig {
         &self,
         request: &GenerateContentRequest<'_>,
     ) -> Result<Json, TestConfigError> {
-        if self.transform_failure {
+        if self.quirks.contains(&Quirk::Transform) {
             return Err(TestConfigError);
         }
-        if self.text_body {
+        if self.quirks.contains(&Quirk::TextBody) {
             return Ok(Json::Text("not an object".to_owned()));
         }
         let mut body = Object::new();
@@ -456,7 +467,7 @@ impl GenerateContentHttpConfig for TestConfig {
                 model: call.model.to_owned(),
                 stream: call.stream,
             });
-        if self.auth_failure {
+        if self.quirks.contains(&Quirk::Auth) {
             return ready(Err(TestConfigError));
         }
         let operation = if call.stream {
@@ -467,9 +478,6 @@ impl GenerateContentHttpConfig for TestConfig {
         let mut headers = IndexMap::new();
         headers.insert("Content-Type".to_owned(), "application/json".to_owned());
         headers.insert("x-goog-api-key".to_owned(), "provider-key".to_owned());
-        for (name, value) in &self.extra_headers {
-            headers.insert(name.clone(), value.clone());
-        }
         ready(Ok(AuthTarget {
             url: format!("{}/v1beta/models/{}:{operation}", self.base, call.model),
             headers,
@@ -477,7 +485,7 @@ impl GenerateContentHttpConfig for TestConfig {
     }
 
     fn decode_response(&self, response: &UpstreamResponse) -> Result<Json, BaseLlmException> {
-        if self.decode_failure {
+        if self.quirks.contains(&Quirk::Decode) {
             return Err(self.error_class(
                 "Error transforming generate content response: the body is not JSON",
                 response.status,

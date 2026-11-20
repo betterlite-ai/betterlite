@@ -6,7 +6,7 @@ use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::serve;
 use rstest::rstest;
 
-use super::support::{IMPATIENT, ProxiedSource, recorded_call};
+use super::support::{IMPATIENT, ProxiedSource, handler_deps, recorded_call};
 use super::*;
 use crate::api::genai_http::error::GenAiHttpError;
 use crate::api::vector_store_http_write::error::HeaderMap;
@@ -23,12 +23,7 @@ async fn a_status_error_goes_through_the_shared_error_handler() {
     );
     let source = Source::new(wire);
     let config = TestConfig::new("https://gemini.test");
-    let deps = GenerateContentDeps {
-        config: &config,
-        source: &source,
-        supplied: None,
-        stream: StreamSettings::default(),
-    };
+    let deps = handler_deps(&config, &source);
     let contents = json(CONTENTS);
     let generation = object(CONFIG);
     let params = kwargs("{}");
@@ -56,61 +51,60 @@ async fn a_status_error_goes_through_the_shared_error_handler() {
 }
 
 #[tokio::test]
-async fn an_error_body_that_is_empty_or_not_utf8_keeps_its_shape() {
+async fn an_empty_error_body_keeps_its_shape() {
     let events = Events::new();
+    let wire = Wire::replying(
+        "sync",
+        Reply::json(500, "").with_header("content-length", "0"),
+        &events,
+    );
+    let source = Source::new(wire);
     let config = TestConfig::new("https://gemini.test");
+    let deps = handler_deps(&config, &source);
     let contents = json(CONTENTS);
     let generation = object(CONFIG);
     let params = kwargs("{}");
     let target = call(&contents, &generation, &params, false, None);
     let mut fixture = Fixture::new("generate_content");
-    {
-        let wire = Wire::replying(
-            "sync",
-            Reply::json(500, "").with_header("content-length", "0"),
-            &events,
-        );
-        let source = Source::new(wire);
-        let deps = GenerateContentDeps {
-            config: &config,
-            source: &source,
-            supplied: None,
-            stream: StreamSettings::default(),
-        };
-        let Err(GenAiHttpError::Provider(error)) =
-            recorded_call!(fixture, &events, generate_content, &deps, &target)
-        else {
-            panic!("a 500 is a provider error");
-        };
-        assert_eq!(error.status_code, 500);
-        assert!(error.headers.is_empty());
-        assert!(error.message.is_empty());
-    }
-    {
-        let mut failure = Reply::json(500, "");
-        failure.body = vec![0xff, 0xfe];
-        let wire = Wire::replying("sync", failure, &events);
-        let source = Source::new(wire);
-        let deps = GenerateContentDeps {
-            config: &config,
-            source: &source,
-            supplied: None,
-            stream: StreamSettings::default(),
-        };
-        let Err(GenAiHttpError::Provider(error)) =
-            recorded_call!(fixture, &events, generate_content, &deps, &target)
-        else {
-            panic!("a 500 is a provider error");
-        };
-        assert_eq!(error.message, "2 bytes that are not UTF-8");
-        assert_eq!(
-            error.headers,
-            HeaderMap::from([(
-                "content-length".to_owned(),
-                DecisionJson::Text("2".to_owned()),
-            )])
-        );
-    }
+
+    let Err(GenAiHttpError::Provider(error)) =
+        recorded_call!(fixture, &events, generate_content, &deps, &target)
+    else {
+        panic!("a 500 is a provider error");
+    };
+    assert_eq!(error.status_code, 500);
+    assert!(error.headers.is_empty());
+    assert!(error.message.is_empty());
+}
+
+#[tokio::test]
+async fn an_error_body_that_is_not_utf8_keeps_its_shape() {
+    let events = Events::new();
+    let mut failure = Reply::json(500, "");
+    failure.body = vec![0xff, 0xfe];
+    let wire = Wire::replying("sync", failure, &events);
+    let source = Source::new(wire);
+    let config = TestConfig::new("https://gemini.test");
+    let deps = handler_deps(&config, &source);
+    let contents = json(CONTENTS);
+    let generation = object(CONFIG);
+    let params = kwargs("{}");
+    let target = call(&contents, &generation, &params, false, None);
+    let mut fixture = Fixture::new("generate_content");
+
+    let Err(GenAiHttpError::Provider(error)) =
+        recorded_call!(fixture, &events, generate_content, &deps, &target)
+    else {
+        panic!("a 500 is a provider error");
+    };
+    assert_eq!(error.message, "2 bytes that are not UTF-8");
+    assert_eq!(
+        error.headers,
+        HeaderMap::from([(
+            "content-length".to_owned(),
+            DecisionJson::Text("2".to_owned()),
+        )])
+    );
 }
 
 #[tokio::test]
@@ -119,12 +113,7 @@ async fn a_transport_failure_becomes_a_synthesized_500() {
     let wire = Wire::failing("sync", TransportError::Closed, &events);
     let source = Source::new(wire);
     let config = TestConfig::new("https://gemini.test");
-    let deps = GenerateContentDeps {
-        config: &config,
-        source: &source,
-        supplied: None,
-        stream: StreamSettings::default(),
-    };
+    let deps = handler_deps(&config, &source);
     let contents = json(CONTENTS);
     let generation = object(CONFIG);
     let params = kwargs("{}");
@@ -160,12 +149,7 @@ async fn a_sync_timeout_carries_408_and_the_timeout_it_was_given(
     .expect("the fixture serves");
     let source = ProxiedSource::new(IMPATIENT);
     let config = TestConfig::new(&format!("http://{}", serving.address));
-    let deps = GenerateContentDeps {
-        config: &config,
-        source: &source,
-        supplied: None,
-        stream: StreamSettings::default(),
-    };
+    let deps = handler_deps(&config, &source);
     let contents = json(CONTENTS);
     let generation = object(CONFIG);
     let params = kwargs("{}");
@@ -192,12 +176,7 @@ async fn an_async_timeout_carries_408_and_the_client_timeout() {
     .expect("the fixture serves");
     let source = ProxiedSource::new(IMPATIENT);
     let config = TestConfig::new(&format!("http://{}", serving.address));
-    let deps = GenerateContentDeps {
-        config: &config,
-        source: &source,
-        supplied: None,
-        stream: StreamSettings::default(),
-    };
+    let deps = handler_deps(&config, &source);
     let contents = json(CONTENTS);
     let generation = object(CONFIG);
     let params = kwargs("{}");
@@ -234,12 +213,7 @@ async fn a_transform_failure_is_returned_as_the_provider_error() {
     let wire = Wire::replying("sync", Reply::json(200, REPLY), &events);
     let source = Source::new(wire);
     let config = TestConfig::new("https://gemini.test").failing_transform();
-    let deps = GenerateContentDeps {
-        config: &config,
-        source: &source,
-        supplied: None,
-        stream: StreamSettings::default(),
-    };
+    let deps = handler_deps(&config, &source);
     let contents = json(CONTENTS);
     let generation = object(CONFIG);
     let params = kwargs("{}");
@@ -258,12 +232,7 @@ async fn an_auth_failure_is_returned_as_the_provider_error() {
     let wire = Wire::replying("sync", Reply::json(200, REPLY), &events);
     let source = Source::new(wire);
     let config = TestConfig::new("https://gemini.test").failing_auth();
-    let deps = GenerateContentDeps {
-        config: &config,
-        source: &source,
-        supplied: None,
-        stream: StreamSettings::default(),
-    };
+    let deps = handler_deps(&config, &source);
     let contents = json(CONTENTS);
     let generation = object(CONFIG);
     let params = kwargs("{}");
@@ -282,12 +251,7 @@ async fn a_body_that_is_not_an_object_is_reported() {
     let wire = Wire::replying("sync", Reply::json(200, REPLY), &events);
     let source = Source::new(wire);
     let config = TestConfig::new("https://gemini.test").with_text_body();
-    let deps = GenerateContentDeps {
-        config: &config,
-        source: &source,
-        supplied: None,
-        stream: StreamSettings::default(),
-    };
+    let deps = handler_deps(&config, &source);
     let contents = json(CONTENTS);
     let generation = object(CONFIG);
     let params = kwargs("{}");
@@ -305,12 +269,7 @@ async fn a_reply_the_provider_cannot_decode_is_returned_as_the_provider_error() 
     let wire = Wire::replying("sync", Reply::json(200, "not json"), &events);
     let source = Source::new(wire);
     let config = TestConfig::new("https://gemini.test").failing_decode();
-    let deps = GenerateContentDeps {
-        config: &config,
-        source: &source,
-        supplied: None,
-        stream: StreamSettings::default(),
-    };
+    let deps = handler_deps(&config, &source);
     let contents = json(CONTENTS);
     let generation = object(CONFIG);
     let params = kwargs("{}");
@@ -334,12 +293,7 @@ async fn an_async_open_stream_for_a_call_that_did_not_stream_is_reported() {
     let wire = Wire::streaming("async", Reply::json(200, SSE), &events).always_streaming();
     let source = Source::new(wire);
     let config = TestConfig::new("https://gemini.test");
-    let deps = GenerateContentDeps {
-        config: &config,
-        source: &source,
-        supplied: None,
-        stream: StreamSettings::default(),
-    };
+    let deps = handler_deps(&config, &source);
     let contents = json(CONTENTS);
     let generation = object(CONFIG);
     let params = kwargs("{}");
@@ -357,12 +311,7 @@ async fn an_open_stream_for_a_call_that_did_not_stream_is_reported() {
     let wire = Wire::streaming("sync", Reply::json(200, SSE), &events).always_streaming();
     let source = Source::new(wire);
     let config = TestConfig::new("https://gemini.test");
-    let deps = GenerateContentDeps {
-        config: &config,
-        source: &source,
-        supplied: None,
-        stream: StreamSettings::default(),
-    };
+    let deps = handler_deps(&config, &source);
     let contents = json(CONTENTS);
     let generation = object(CONFIG);
     let params = kwargs("{}");
@@ -380,12 +329,7 @@ async fn a_sync_stream_that_receives_an_open_stream_is_reported() {
     let wire = Wire::streaming("sync", Reply::json(200, SSE), &events).always_streaming();
     let source = Source::new(wire);
     let config = TestConfig::new("https://gemini.test");
-    let deps = GenerateContentDeps {
-        config: &config,
-        source: &source,
-        supplied: None,
-        stream: StreamSettings::default(),
-    };
+    let deps = handler_deps(&config, &source);
     let contents = json(CONTENTS);
     let generation = object(CONFIG);
     let params = kwargs("{}");
@@ -403,12 +347,7 @@ async fn a_400_reply_is_a_provider_error() {
     let wire = Wire::replying("sync", Reply::json(400, ERROR_BODY), &events);
     let source = Source::new(wire);
     let config = TestConfig::new("https://gemini.test");
-    let deps = GenerateContentDeps {
-        config: &config,
-        source: &source,
-        supplied: None,
-        stream: StreamSettings::default(),
-    };
+    let deps = handler_deps(&config, &source);
     let contents = json(CONTENTS);
     let generation = object(CONFIG);
     let params = kwargs("{}");
@@ -440,12 +379,7 @@ async fn a_streaming_call_with_an_error_reply_reports_the_provider_error(
     .expect("the fixture serves");
     let source = ProxiedSource::new(IMPATIENT);
     let config = TestConfig::new(&format!("http://{}", serving.address));
-    let deps = GenerateContentDeps {
-        config: &config,
-        source: &source,
-        supplied: None,
-        stream: StreamSettings::default(),
-    };
+    let deps = handler_deps(&config, &source);
     let contents = json(CONTENTS);
     let generation = object(CONFIG);
     let params = kwargs("{}");
@@ -470,12 +404,7 @@ async fn a_unary_call_through_the_pooled_client_returns_the_response() {
     .expect("the fixture serves");
     let source = ProxiedSource::new(TransportLimits::DEFAULT);
     let config = TestConfig::new(&format!("http://{}", serving.address));
-    let deps = GenerateContentDeps {
-        config: &config,
-        source: &source,
-        supplied: None,
-        stream: StreamSettings::default(),
-    };
+    let deps = handler_deps(&config, &source);
     let contents = json(CONTENTS);
     let generation = object(CONFIG);
     let params = kwargs("{}");
@@ -506,12 +435,7 @@ async fn an_async_stream_that_receives_an_error_reply_reports_the_provider_error
     .expect("the fixture serves");
     let source = ProxiedSource::new(TransportLimits::DEFAULT);
     let config = TestConfig::new(&format!("http://{}", serving.address));
-    let deps = GenerateContentDeps {
-        config: &config,
-        source: &source,
-        supplied: None,
-        stream: StreamSettings::default(),
-    };
+    let deps = handler_deps(&config, &source);
     let contents = json(CONTENTS);
     let generation = object(CONFIG);
     let params = kwargs("{}");
@@ -539,12 +463,7 @@ async fn a_request_header_that_is_not_a_header_name_is_reported() {
     let wire = Wire::replying("sync", Reply::json(200, REPLY), &events);
     let source = Source::new(wire);
     let config = TestConfig::new("https://gemini.test");
-    let deps = GenerateContentDeps {
-        config: &config,
-        source: &source,
-        supplied: None,
-        stream: StreamSettings::default(),
-    };
+    let deps = handler_deps(&config, &source);
     let contents = json(CONTENTS);
     let generation = object(CONFIG);
     let params = kwargs("{}");

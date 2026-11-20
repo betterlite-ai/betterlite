@@ -13,13 +13,13 @@ use http::HeaderMap as HttpHeaders;
 use indexmap::IndexMap;
 use url::Url;
 
-use self::facts::{Attempt, status_facts, transport_facts};
+use self::facts::{Attempt, transport_facts};
 use self::outcome::{async_stream, sync_outcome};
 use self::prepare::prepare;
 use super::config::GenerateContentHttpConfig;
 use super::error::{GenAiHttpError, classed};
 use super::stream::{StreamInputs, StreamSettings};
-use crate::api::vector_store_http_write::error::ClientError;
+use crate::api::vector_store_http_write::error::{ClientError, status_facts};
 use crate::api::vector_store_http_write::service::{ClientKind, LogContext, SuppliedClient};
 use crate::genai_setup::params::GenerateContentLiteLLMParams;
 use crate::google_genai::metadata::GenAiStreamMetadata;
@@ -53,6 +53,7 @@ pub struct GenerateContentCall<'call> {
     pub stream: bool,
 }
 
+#[derive(Clone)]
 pub struct GenAiRequest {
     pub url: Url,
     pub headers: HttpHeaders,
@@ -239,11 +240,11 @@ where
 {
     match reply {
         WireReply::Buffered(answer) => {
-            let answer = successful(wire.config, answer)?;
+            let upstream = successful(wire.config, answer)?;
             if stream {
-                Ok(Answer::SyncEvents(wire, answer))
+                Ok(Answer::SyncEvents(wire, upstream))
             } else {
-                let response = unary(wire.config, answer, state)?;
+                let response = unary(wire.config, upstream, state)?;
                 Ok(Answer::Response(response))
             }
         }

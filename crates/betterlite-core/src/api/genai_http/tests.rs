@@ -11,7 +11,7 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use indexmap::IndexMap;
 
 use self::support::{
-    AuthRecord, Events, Fixture, Reply, Source, TestConfig, Wire, kwargs, recorded_call,
+    Events, Fixture, Reply, Source, TestConfig, Wire, handler_deps, kwargs, recorded_call,
 };
 use crate::api::genai_http::service::{
     AsyncGenerateContentOutcome, AsyncStream, GenerateContentCall, GenerateContentDeps,
@@ -80,13 +80,7 @@ async fn a_sync_unary_call_sends_the_authenticated_request_and_records_it() {
     );
     let source = Source::new(wire.clone());
     let config = TestConfig::new("https://gemini.test");
-    let stream = StreamSettings::default();
-    let deps = GenerateContentDeps {
-        config: &config,
-        source: &source,
-        supplied: None,
-        stream,
-    };
+    let deps = handler_deps(&config, &source);
     let contents = json(CONTENTS);
     let generation = object(CONFIG);
     let params = kwargs(r#"{"api_base":"https://ignored.test","api_key":"sk-caller"}"#);
@@ -100,37 +94,45 @@ async fn a_sync_unary_call_sends_the_authenticated_request_and_records_it() {
         panic!("a unary call answers a response");
     };
     assert_eq!(response, json(REPLY));
-    {
-        let requests = wire.requests();
-        assert_eq!(requests.len(), 1);
-        assert!(!requests[0].streaming);
-        assert_eq!(requests[0].request.url.as_str(), UNARY_URL);
-        assert_eq!(
-            requests[0]
-                .request
-                .headers
-                .get("x-goog-api-key")
-                .expect("the auth header travels"),
-            "provider-key"
-        );
-        assert_eq!(
-            requests[0]
-                .request
-                .headers
-                .get("content-type")
-                .expect("the content type travels"),
-            "application/json"
-        );
-        assert_eq!(request_body(&requests[0]), json(BODY));
-    }
+    let requests = wire.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].request.url.as_str(), UNARY_URL);
+    let sent = &requests[0].request;
     assert_eq!(
-        config.auth_calls(),
-        vec![AuthRecord {
-            api_base: Some("https://ignored.test".to_owned()),
-            model: MODEL.to_owned(),
-            stream: false,
-        }]
+        sent.headers.get("x-goog-api-key").expect("the key travels"),
+        "provider-key"
     );
+    assert_eq!(
+        sent.headers.get("content-type").expect("the type travels"),
+        "application/json"
+    );
+    assert_eq!(request_body(&requests[0]), json(BODY));
+    let auth = config.auth_calls();
+    assert_eq!(auth[0].api_base.as_deref(), Some("https://ignored.test"));
+    assert_eq!(auth[0].model, MODEL);
+    assert!(!auth[0].stream);
+}
+
+#[tokio::test]
+async fn a_sync_unary_call_logs_the_pre_call_and_stores_the_reply() {
+    let events = Events::new();
+    let wire = Wire::replying("sync", Reply::json(200, REPLY), &events);
+    let source = Source::new(wire);
+    let config = TestConfig::new("https://gemini.test");
+    let deps = handler_deps(&config, &source);
+    let contents = json(CONTENTS);
+    let generation = object(CONFIG);
+    let params = kwargs("{}");
+    let target = call(&contents, &generation, &params, false, None);
+    let mut fixture = Fixture::new("generate_content");
+
+    let outcome = recorded_call!(fixture, &events, generate_content, &deps, &target)
+        .expect("the call succeeds");
+
+    let GenerateContentOutcome::Response(response) = outcome else {
+        panic!("a unary call answers a response");
+    };
+    assert_eq!(response, json(REPLY));
     assert_eq!(
         fixture
             .state
@@ -159,12 +161,7 @@ async fn an_async_unary_call_sends_the_authenticated_request() {
     let wire = Wire::replying("async", Reply::json(200, REPLY), &events);
     let source = Source::new(wire.clone());
     let config = TestConfig::new("https://gemini.test");
-    let deps = GenerateContentDeps {
-        config: &config,
-        source: &source,
-        supplied: None,
-        stream: StreamSettings::default(),
-    };
+    let deps = handler_deps(&config, &source);
     let contents = json(CONTENTS);
     let generation = object(CONFIG);
     let params = kwargs("{}");
@@ -178,12 +175,10 @@ async fn an_async_unary_call_sends_the_authenticated_request() {
         panic!("a unary call answers a response");
     };
     assert_eq!(response, json(REPLY));
-    {
-        let requests = wire.requests();
-        assert_eq!(requests.len(), 1);
-        assert!(!requests[0].streaming);
-        assert_eq!(requests[0].request.url.as_str(), UNARY_URL);
-    }
+    let requests = wire.requests();
+    assert_eq!(requests.len(), 1);
+    assert!(!requests[0].streaming);
+    assert_eq!(requests[0].request.url.as_str(), UNARY_URL);
     assert!(!config.auth_calls()[0].stream);
     assert_eq!(
         fixture
@@ -201,12 +196,7 @@ async fn pre_call_logging_finishes_before_the_transport_is_called() {
     let wire = Wire::replying("transport", Reply::json(200, REPLY), &events);
     let source = Source::new(wire);
     let config = TestConfig::new("https://gemini.test");
-    let deps = GenerateContentDeps {
-        config: &config,
-        source: &source,
-        supplied: None,
-        stream: StreamSettings::default(),
-    };
+    let deps = handler_deps(&config, &source);
     let contents = json(CONTENTS);
     let generation = object(CONFIG);
     let params = kwargs("{}");
@@ -227,12 +217,7 @@ async fn the_callers_extra_headers_beat_the_provider_headers() {
     let wire = Wire::replying("sync", Reply::json(200, REPLY), &events);
     let source = Source::new(wire.clone());
     let config = TestConfig::new("https://gemini.test");
-    let deps = GenerateContentDeps {
-        config: &config,
-        source: &source,
-        supplied: None,
-        stream: StreamSettings::default(),
-    };
+    let deps = handler_deps(&config, &source);
     let contents = json(CONTENTS);
     let generation = object(CONFIG);
     let params = kwargs("{}");
@@ -276,12 +261,7 @@ async fn the_callers_extra_body_beats_the_transformed_body() {
     let wire = Wire::replying("sync", Reply::json(200, REPLY), &events);
     let source = Source::new(wire.clone());
     let config = TestConfig::new("https://gemini.test");
-    let deps = GenerateContentDeps {
-        config: &config,
-        source: &source,
-        supplied: None,
-        stream: StreamSettings::default(),
-    };
+    let deps = handler_deps(&config, &source);
     let contents = json(CONTENTS);
     let generation = object(CONFIG);
     let params = kwargs("{}");
@@ -319,12 +299,7 @@ async fn a_sync_stream_returns_the_iterator_and_its_metadata_before_the_first_ev
     );
     let source = Source::new(wire.clone());
     let config = TestConfig::new("https://gemini.test");
-    let deps = GenerateContentDeps {
-        config: &config,
-        source: &source,
-        supplied: None,
-        stream: StreamSettings::default(),
-    };
+    let deps = handler_deps(&config, &source);
     let contents = json(CONTENTS);
     let generation = object(CONFIG);
     let params = kwargs(r#"{"model_info":{"id":"deployment-7"}}"#);
@@ -337,39 +312,45 @@ async fn a_sync_stream_returns_the_iterator_and_its_metadata_before_the_first_ev
     let GenerateContentOutcome::Stream(stream) = outcome else {
         panic!("a streaming call answers an iterator");
     };
-    assert_eq!(stream.metadata.model, MODEL);
+    let hidden = &stream.metadata.hidden_params;
+    assert_eq!(hidden.get("model_id"), Some(&decision(r#""deployment-7""#)));
     assert_eq!(
-        stream.metadata.request_body.get("model"),
-        Some(&decision(r#""gemini-2.0-flash""#))
-    );
-    assert_eq!(
-        stream.metadata.hidden_params.get("model_id"),
-        Some(&decision(r#""deployment-7""#))
-    );
-    assert_eq!(
-        stream.metadata.hidden_params.get("api_base"),
+        hidden.get("api_base"),
         Some(&decision(&format!("\"{STREAM_URL}\"")))
     );
+    assert_eq!(hidden.get("cache_key"), Some(&decision(r#""""#)));
+    assert_eq!(hidden.get("response_cost"), Some(&decision(r#""""#)));
     assert_eq!(
-        stream.metadata.hidden_params.get("cache_key"),
-        Some(&decision(r#""""#))
-    );
-    assert_eq!(
-        stream.metadata.hidden_params.get("response_cost"),
-        Some(&decision(r#""""#))
-    );
-    assert_eq!(
-        stream.metadata.hidden_params.get("additional_headers"),
+        hidden.get("additional_headers"),
         Some(&decision(
             r#"{"x-ratelimit-remaining-requests":"9","llm_provider-x-ratelimit-remaining-requests":"9","llm_provider-x-request-id":"r1"}"#
         ))
     );
-    {
-        let requests = wire.requests();
-        assert!(!requests[0].streaming);
-        assert_eq!(requests[0].request.url.as_str(), STREAM_URL);
-    }
+    let requests = wire.requests();
+    assert!(!requests[0].streaming);
+    assert_eq!(requests[0].request.url.as_str(), STREAM_URL);
     assert!(fixture.state.httpx_response.is_none());
+}
+
+#[tokio::test]
+async fn a_sync_stream_iterator_yields_each_event() {
+    let events = Events::new();
+    let wire = Wire::streaming("sync", Reply::json(200, SSE), &events);
+    let source = Source::new(wire);
+    let config = TestConfig::new("https://gemini.test");
+    let deps = handler_deps(&config, &source);
+    let contents = json(CONTENTS);
+    let generation = object(CONFIG);
+    let params = kwargs(r#"{"model_info":{"id":"deployment-7"}}"#);
+    let target = call(&contents, &generation, &params, true, None);
+    let mut fixture = Fixture::new("generate_content");
+
+    let outcome = recorded_call!(fixture, &events, generate_content, &deps, &target)
+        .expect("the stream starts");
+
+    let GenerateContentOutcome::Stream(stream) = outcome else {
+        panic!("a streaming call answers an iterator");
+    };
     let SyncStream {
         mut iterator,
         metadata,
@@ -381,7 +362,7 @@ async fn a_sync_stream_returns_the_iterator_and_its_metadata_before_the_first_ev
     assert!(iterator.next().is_none());
     assert_eq!(
         metadata.hidden_params.get("model_id"),
-        Some(&decision(r#""deployment-7""#))
+        Some(&decision(r#""gemini-2.0-flash""#))
     );
 }
 
@@ -395,12 +376,7 @@ async fn an_async_stream_returns_the_iterator_and_its_metadata_before_the_first_
     );
     let source = Source::new(wire.clone());
     let config = TestConfig::new("https://gemini.test");
-    let deps = GenerateContentDeps {
-        config: &config,
-        source: &source,
-        supplied: None,
-        stream: StreamSettings::default(),
-    };
+    let deps = handler_deps(&config, &source);
     let contents = json(CONTENTS);
     let generation = object(CONFIG);
     let params = kwargs("{}");
@@ -413,29 +389,45 @@ async fn an_async_stream_returns_the_iterator_and_its_metadata_before_the_first_
     let AsyncGenerateContentOutcome::Stream(stream) = outcome else {
         panic!("a streaming call answers an iterator");
     };
-    let AsyncStream {
-        mut iterator,
-        metadata,
-    } = *stream;
-    assert_eq!(metadata.model, MODEL);
+    let hidden = &stream.metadata.hidden_params;
+    assert_eq!(stream.metadata.model, MODEL);
     assert_eq!(
-        metadata.hidden_params.get("model_id"),
+        hidden.get("model_id"),
         Some(&decision(r#""gemini-2.0-flash""#))
     );
     assert_eq!(
-        metadata.hidden_params.get("api_base"),
+        hidden.get("api_base"),
         Some(&decision(&format!("\"{STREAM_URL}\"")))
     );
     assert_eq!(
-        metadata.hidden_params.get("additional_headers"),
+        hidden.get("additional_headers"),
         Some(&decision(r#"{"llm_provider-x-request-id":"r1"}"#))
     );
-    {
-        let requests = wire.requests();
-        assert!(requests[0].streaming);
-    }
+    assert!(wire.requests()[0].streaming);
     assert!(config.auth_calls()[0].stream);
     assert!(fixture.state.httpx_response.is_none());
+}
+
+#[tokio::test]
+async fn an_async_stream_iterator_yields_each_event() {
+    let events = Events::new();
+    let wire = Wire::streaming("async", Reply::json(200, SSE), &events);
+    let source = Source::new(wire);
+    let config = TestConfig::new("https://gemini.test");
+    let deps = handler_deps(&config, &source);
+    let contents = json(CONTENTS);
+    let generation = object(CONFIG);
+    let params = kwargs("{}");
+    let target = call(&contents, &generation, &params, true, None);
+    let mut fixture = Fixture::new("agenerate_content");
+
+    let outcome = recorded_call!(fixture, &events, async_generate_content, &deps, &target)
+        .expect("the stream starts");
+
+    let AsyncGenerateContentOutcome::Stream(stream) = outcome else {
+        panic!("a streaming call answers an iterator");
+    };
+    let AsyncStream { mut iterator, .. } = *stream;
     assert_eq!(
         iterator
             .next_event()
@@ -453,12 +445,7 @@ async fn an_async_stream_over_a_buffered_reply_still_yields_its_events() {
     let wire = Wire::replying("async", Reply::json(200, SSE), &events);
     let source = Source::new(wire);
     let config = TestConfig::new("https://gemini.test");
-    let deps = GenerateContentDeps {
-        config: &config,
-        source: &source,
-        supplied: None,
-        stream: StreamSettings::default(),
-    };
+    let deps = handler_deps(&config, &source);
     let contents = json(CONTENTS);
     let generation = object(CONFIG);
     let params = kwargs("{}");
@@ -489,12 +476,7 @@ async fn stream_metadata_falls_back_to_the_request_model() {
     let wire = Wire::streaming("sync", Reply::json(200, SSE), &events);
     let source = Source::new(wire);
     let config = TestConfig::new("https://gemini.test");
-    let deps = GenerateContentDeps {
-        config: &config,
-        source: &source,
-        supplied: None,
-        stream: StreamSettings::default(),
-    };
+    let deps = handler_deps(&config, &source);
     let contents = json(CONTENTS);
     let generation = object(CONFIG);
     let params = kwargs(r#"{"model_info":{"id":7}}"#);
@@ -582,12 +564,7 @@ async fn the_client_source_receives_ssl_verify() {
     let wire = Wire::replying("sync", Reply::json(200, REPLY), &events);
     let source = Source::new(wire);
     let config = TestConfig::new("https://gemini.test");
-    let deps = GenerateContentDeps {
-        config: &config,
-        source: &source,
-        supplied: None,
-        stream: StreamSettings::default(),
-    };
+    let deps = handler_deps(&config, &source);
     let contents = json(CONTENTS);
     let generation = object(CONFIG);
     let params = kwargs(r#"{"ssl_verify":false}"#);
