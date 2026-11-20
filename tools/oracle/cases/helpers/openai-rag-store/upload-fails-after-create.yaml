@@ -1,0 +1,15 @@
+kind: helper
+name: openai-rag-store-upload-fails-after-create
+call:
+  b3453:
+    options:
+      vector_store:
+        ttl_days: 7
+    file_content_base64: aGVsbG8=
+    filename: notes.txt
+    create_response:
+      id: vs_created
+    upload_error: the upload was refused
+env: {}
+compare:
+  ignore: []

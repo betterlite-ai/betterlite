@@ -1,0 +1,15 @@
+kind: helper
+name: deployment-checks-misplaced-complexity-setting
+call:
+  b8378:
+    operation: complexity_placement
+    model:
+      model_name: misplaced
+      litellm_params:
+        model: auto_router/complexity_router
+        tiers:
+          - fast
+    model_list: []
+    limit: null
+env: {}
+compare: {ignore: []}

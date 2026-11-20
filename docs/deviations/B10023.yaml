@@ -1,0 +1,7 @@
+task: B10023
+deviations:
+  - what: >-
+      An os.environ/ reference in litellm_settings.sse_keepalive_ping_interval_seconds that names an unset variable fails the config load with MissingEnvironment, where LiteLLM stores None for the reference and starts with SSE pings off.
+    why: >-
+      Every betterlite setting resolves references through the shared rule, so a mistyped variable is named at startup instead of silently turning pings off. The test is sections::assistant_keepalive::tests::a_missing_environment_reference_fails_the_load.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5782-L5787

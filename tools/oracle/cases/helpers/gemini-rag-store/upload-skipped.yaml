@@ -1,0 +1,15 @@
+kind: helper
+name: gemini-rag-store-upload-skipped
+call:
+  b3454:
+    script: []
+    options:
+      vector_store:
+        custom_llm_provider: gemini
+        vector_store_id: fileSearchStores/s
+    environment:
+      GEMINI_API_KEY: gemini-key
+    file_content_base64: ''
+    filename: a.txt
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,36 @@
+kind: helper
+name: deployment-model-info-absent-versus-explicit-token-prices
+call:
+  deployment_model_info:
+    function: deployment_info
+    model_list: []
+    model_cost:
+      quiet-1:
+        max_tokens: 10
+    arguments:
+      model_id: quiet-1
+      model_name: openai/ghost-model
+calls:
+  - deployment_model_info:
+      function: deployment_info
+      model_list: []
+      model_cost:
+        zero-1:
+          max_tokens: 10
+          input_cost_per_token: 0
+      arguments:
+        model_id: zero-1
+        model_name: openai/ghost-model
+  - deployment_model_info:
+      function: deployment_info
+      model_list: []
+      model_cost:
+        null-1:
+          max_tokens: 10
+          input_cost_per_token: null
+          output_cost_per_token: null
+      arguments:
+        model_id: null-1
+        model_name: openai/ghost-model
+env: {}
+compare: {ignore: []}

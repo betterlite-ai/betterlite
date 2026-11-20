@@ -1,0 +1,42 @@
+kind: helper
+name: retention-gate
+call:
+  b10011:
+    database: true
+    config_servers: ['none', 'oauth2_id_jag']
+    db_servers: ['api_key']
+    failure: null
+    steps:
+      - {step: retention}
+env: {}
+compare: {ignore: []}
+calls:
+  - b10011:
+      database: true
+      config_servers: ['none', null]
+      db_servers: ['oauth2_id_jag', 'api_key']
+      failure: null
+      steps:
+        - {step: retention}
+  - b10011:
+      database: true
+      config_servers: [null]
+      db_servers: ['api_key', null]
+      failure: null
+      steps:
+        - {step: retention}
+  - b10011:
+      database: false
+      config_servers: []
+      db_servers: ['oauth2_id_jag']
+      failure: null
+      steps:
+        - {step: retention}
+  - b10011:
+      database: true
+      config_servers: []
+      db_servers: ['oauth2_id_jag']
+      failure: null
+      steps:
+        - {step: retention}
+        - {step: retention}

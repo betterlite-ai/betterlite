@@ -1,0 +1,18 @@
+kind: helper
+name: auto-router-catalog-seed
+call:
+  b10021:
+    rows:
+      - model_id: complexity
+        model_name: complexity
+        litellm_params: {model: auto_router/complexity_router, complexity_router_config: {classifier_type: heuristic_v2}}
+        model_info: {team_id: team-a}
+        created_by: creator
+      - model_id: plain
+        model_name: plain
+        litellm_params: {model: gpt-4o}
+      - model_id: no-model
+        model_name: no-model
+        litellm_params: {}
+env: {}
+compare: {ignore: []}

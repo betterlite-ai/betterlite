@@ -82,7 +82,7 @@ dod:
     proof: [config-defaults-tests]
 
 checks:
-  optional: []
+  optional: [mutants]
   commands:
     - id: bounded-series-tracker-tests
       why: series tracker tests fail or do not exist

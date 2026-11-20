@@ -228,6 +228,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "fine_tuning_read_page"
+path = "fuzz_targets/fine_tuning_read_page.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "listen_query"
 path = "fuzz_targets/listen_query.rs"
 test = false
@@ -475,6 +482,13 @@ bench = false
 [[bin]]
 name = "rag_json_decoder"
 path = "fuzz_targets/rag_json_decoder.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "gemini_upload_reply"
+path = "fuzz_targets/gemini_upload_reply.rs"
 test = false
 doc = false
 bench = false

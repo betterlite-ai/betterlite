@@ -1,0 +1,33 @@
+kind: helper
+name: datetime-nul-and-nonobject-rows
+call:
+  redis_spend_codec:
+    enabled: true
+    attached: true
+    park:
+      rows:
+        - values:
+            spend: 1.5
+            messages: "before\u0000after"
+            total_tokens: 7
+            metadata: {trace: "abc", nested: {ok: true}}
+            request_tags: [one, two]
+            cache_hit: null
+          datetimes:
+            startTime: "2024-01-02T03:04:05.123456+00:00"
+            endTime: "2024-01-02T03:04:06+00:00"
+        - values:
+            spend: 2
+            model: "gpt-4o"
+          datetimes: {}
+    drain:
+      reply:
+        kind: items
+        values:
+          - '{"spend": 1.5, "startTime": "2024-01-02T03:04:05+00:00"}'
+          - '{"spend": 2.5}'
+          - '[1, 2]'
+          - 'null'
+env: {}
+compare:
+  ignore: []

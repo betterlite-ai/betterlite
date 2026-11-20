@@ -1,0 +1,1 @@
+{"error":{"code":"content_filter","message":"The response was filtered due to the prompt triggering content management policy.","type":"invalid_request_error","innererror":{"code":"ResponsibleAIPolicyViolation","content_filter_result":{"hate":{"filtered":true,"severity":"high"}}}}}
