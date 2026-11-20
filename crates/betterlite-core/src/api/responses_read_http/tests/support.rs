@@ -21,6 +21,7 @@ use betterlite_logging::logging_state::correlation::{
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
 use betterlite_openai::credentials::LiteLlmGlobals;
+use betterlite_openai::response_resources::request::ListInputItemsQuery;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
 use http::HeaderMap as HttpHeaders;
@@ -39,8 +40,8 @@ use crate::api::responses_read_http::config::{
 };
 use crate::api::responses_read_http::error::ReadError;
 use crate::api::responses_read_http::service::{
-    ClientKind, ClientSource, LogContext, PreparedRead, ReadCall, ReadDeps, ReadRequest,
-    ReadTransport, RetrieveCall, prepare,
+    ClientKind, ClientSource, InputItemsCall, LogContext, PreparedRead, ReadCall, ReadDeps,
+    ReadRequest, ReadTransport, RetrieveCall, prepare,
 };
 use crate::api::vector_store_http_write::error::ClientError;
 
@@ -75,6 +76,16 @@ pub(crate) fn retrieve_call<'call>(api: &'call ReadParams) -> ReadCall<'call> {
     ReadCall::Retrieve(RetrieveCall {
         target: target("resp_a", api, None, None),
         extra_body: None,
+    })
+}
+
+pub(crate) fn input_items_call<'call>(
+    api: &'call ReadParams,
+    query: &'call ListInputItemsQuery,
+) -> ReadCall<'call> {
+    ReadCall::InputItems(InputItemsCall {
+        target: target("resp_a", api, None, None),
+        query,
     })
 }
 

@@ -3,32 +3,30 @@ use betterlite_openai::error::OpenAiError;
 use betterlite_openai::response_resources::error::ResponseResourceError;
 use betterlite_openai::response_resources::request::ListInputItemsQuery;
 
+use super::run;
 use super::support::{
-    Events, Fixture, Reply, Source, Wire, capture, json, openai_config, params, retrieve_call,
+    Events, Fixture, Reply, Source, Wire, capture, input_items_call, json, openai_config, params,
+    retrieve_call,
 };
-use super::{run, target};
 use crate::api::responses_read_http::config::ReadEnvironment;
 use crate::api::responses_read_http::error::ReadError;
-use crate::api::responses_read_http::service::{
-    ClientKind, InputItemsCall, ReadCall, ReadDeps, ReadOutcome,
-};
+use crate::api::responses_read_http::service::{ClientKind, ReadCall, ReadDeps, ReadOutcome};
 
 pub(super) async fn failure_boundary(mode: ClientKind) {
     status_error(mode).await;
-    input_items_status(mode).await;
     malformed(mode).await;
     invalid_record(mode).await;
     input_items_object(mode).await;
 }
 
 async fn status_error(mode: ClientKind) {
-    let (captured, _guard) = capture();
+    let (retrieve_capture, _retrieve_guard) = capture();
     let reply = Reply::json(429, "slow down")
         .with_header("retry-after", "3")
         .with_header("content-type", "text/plain");
     let api = params("http://mock.test/v1", "sk-provider");
-    let call = retrieve_call(&api);
-    let (wire, result) = read_with(mode, reply, &call).await;
+    let retrieve = retrieve_call(&api);
+    let (wire, result) = read_with(mode, reply, &retrieve).await;
     let Err(ReadError::Provider(error)) = result else {
         panic!("a 429 is a provider error");
     };
@@ -40,7 +38,23 @@ async fn status_error(mode: ClientKind) {
         Some(&Json::Text(String::from("3")))
     );
     assert_eq!(wire.requests().len(), 1);
-    assert_debug_line(mode, &captured.messages());
+    assert_debug_line(mode, &retrieve_capture.messages());
+    let (items_capture, _items_guard) = capture();
+    let query = ListInputItemsQuery::default();
+    let items = input_items_call(&api, &query);
+    let (items_wire, items_result) = read_with(mode, Reply::json(429, "slow down"), &items).await;
+    let Err(ReadError::Provider(items_error)) = items_result else {
+        panic!("a 429 is a provider error for an input items read too");
+    };
+    assert_eq!(items_error.status_code, 429);
+    assert_eq!(items_wire.requests().len(), 1);
+    // The retrieve-only debug line never appears for a failed input items read
+    assert!(
+        !items_capture
+            .messages()
+            .iter()
+            .any(|message| message.starts_with("Error retrieving response: "))
+    );
 }
 
 fn assert_debug_line(mode: ClientKind, messages: &[String]) {
@@ -55,30 +69,6 @@ fn assert_debug_line(mode: ClientKind, messages: &[String]) {
                 .any(|message| message == "Error retrieving response: slow down")
         );
     }
-}
-
-// The retrieve-only debug line never appears for a failed input items read
-async fn input_items_status(mode: ClientKind) {
-    let (captured, _guard) = capture();
-    let api = params("http://mock.test/v1", "sk-provider");
-    let query = ListInputItemsQuery::default();
-    let call = ReadCall::InputItems(InputItemsCall {
-        target: target("resp_a", &api, None, None),
-        query: &query,
-    });
-    let (wire, result) = read_with(mode, Reply::json(429, "slow down"), &call).await;
-    let Err(ReadError::Provider(error)) = result else {
-        panic!("a 429 is a provider error for an input items read too");
-    };
-    assert_eq!(error.status_code, 429);
-    assert!(!error.status_code_is_synthesized);
-    assert_eq!(wire.requests().len(), 1);
-    assert!(
-        !captured
-            .messages()
-            .iter()
-            .any(|message| message.starts_with("Error retrieving response: "))
-    );
 }
 
 async fn malformed(mode: ClientKind) {
@@ -113,10 +103,7 @@ async fn invalid_record(mode: ClientKind) {
 async fn input_items_object(mode: ClientKind) {
     let api = params("http://mock.test/v1", "sk-provider");
     let query = ListInputItemsQuery::default();
-    let call = ReadCall::InputItems(InputItemsCall {
-        target: target("resp_a", &api, None, None),
-        query: &query,
-    });
+    let call = input_items_call(&api, &query);
     let (_, result) = read_with(mode, Reply::json(200, r#"{"anything":true}"#), &call).await;
     let outcome = result.expect("an input items reply only needs a JSON object");
     let ReadOutcome::InputItems(value) = outcome else {

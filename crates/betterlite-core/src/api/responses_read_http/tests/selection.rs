@@ -6,14 +6,14 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::response_resources::request::ListInputItemsQuery;
 
 use super::support::{
-    Events, Fixture, IMPATIENT, ProxiedSource, Reply, Source, Wire, capture, openai_config, params,
-    retrieve_call,
+    Events, Fixture, IMPATIENT, ProxiedSource, Reply, Source, Wire, capture, input_items_call,
+    openai_config, params, retrieve_call,
 };
 use super::{run, target};
 use crate::api::responses_read_http::config::ReadEnvironment;
 use crate::api::responses_read_http::error::ReadError;
 use crate::api::responses_read_http::service::{
-    ClientKind, InputItemsCall, ReadCall, ReadDeps, RetrieveCall, SuppliedClient,
+    ClientKind, ReadCall, ReadDeps, RetrieveCall, SuppliedClient,
 };
 
 const RETRIEVED: &str =
@@ -143,10 +143,7 @@ async fn debug_lines(mode: ClientKind) {
         Some(&Json::Text(String::from(BASE)))
     );
     let query = ListInputItemsQuery::default();
-    let items = ReadCall::InputItems(InputItemsCall {
-        target: target("resp_a", &api, None, None),
-        query: &query,
-    });
+    let items = input_items_call(&api, &query);
     run(&mut fixture, &deps, mode, &items, &events)
         .await
         .expect("the input items read succeeds");
