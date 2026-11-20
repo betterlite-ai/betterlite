@@ -515,7 +515,7 @@ async fn raw_upload_sends_no_content_type_in_sync_mode() {
     assert!(!harness.seen()[0].headers.contains_key(CONTENT_TYPE));
 }
 
-// the async aiohttp transport labels a bytes body with no content type application/octet-stream
+// the async aiohttp transport labels a type-less bytes body application/octet-stream
 #[tokio::test]
 async fn raw_upload_defaults_to_octet_stream() {
     let mut harness = Harness::build(
