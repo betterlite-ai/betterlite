@@ -20,7 +20,7 @@ use tracing_subscriber::registry;
 
 use crate::api::realtime_backend_relay::relay_callbacks;
 use crate::api::realtime_client_relay::RealtimeClientRelay;
-use crate::api::realtime_contracts::close::ClientLoopExit;
+use crate::api::realtime_contracts::close::{BackendClose, ClientLoopExit};
 use crate::api::realtime_contracts::config::{BaseRealtimeConfig, Environment};
 use crate::api::realtime_contracts::error::{HeaderMap, WebSocketError};
 use crate::api::realtime_contracts::events::{
@@ -76,12 +76,6 @@ pub(super) struct SendData {
 }
 
 impl SendLog {
-    pub(super) fn failing(indices: Vec<usize>) -> Self {
-        let log = Self::default();
-        lock(&log.0).failures = indices;
-        log
-    }
-
     fn begin(&self) -> Result<(), WebSocketError> {
         let mut data = lock(&self.0);
         begin_attempt(&data.failures, &mut data.attempts, "the scripted send")
@@ -486,11 +480,6 @@ impl Fixture {
         self
     }
 
-    pub(super) fn with_session_configuration_request(mut self, request: &str) -> Self {
-        self.state.response.session_configuration_request = Some(request.to_owned());
-        self
-    }
-
     pub(super) fn with_pending_messages(mut self, messages: &[&str]) -> Self {
         self.state.setup.pending_messages_until_setup = messages
             .iter()
@@ -652,6 +641,7 @@ async fn run_fixture(fixture: Fixture, step: Step) -> Outcome {
     }
 }
 
+#[derive(Clone)]
 pub(super) struct Captured(Arc<Mutex<Vec<(Level, String)>>>);
 
 impl Default for Captured {
