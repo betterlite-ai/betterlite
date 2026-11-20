@@ -32,44 +32,44 @@ where
     R: ProviderResolver,
     P: SupportedParameterSource,
 {
-    let Some(target) = sources.lookup.model_group_alias.get(model_group) else {
-        return set_model_group_info(sources, model_group, model_group, keys).await;
+    let route = match sources.lookup.model_group_alias.get(model_group) {
+        None => AliasRoute::Group(model_group.to_owned()),
+        Some(target) => alias_route(target, model_group)?,
     };
-    match target {
-        AliasTarget::Name(target) => set_model_group_info(sources, target, model_group, keys).await,
-        AliasTarget::Item { model, hidden } => {
-            alias_item(sources, model.as_ref(), hidden.as_ref(), model_group, keys).await
+    match route {
+        AliasRoute::Group(target) => {
+            set_model_group_info(sources, &target, model_group, keys).await
         }
-        AliasTarget::Unsupported(_) => Ok(None),
+        AliasRoute::Hidden => Ok(None),
     }
 }
 
-async fn alias_item<D, R, P>(
-    sources: &GroupSources<'_, D, R, P>,
-    model: Option<&Json>,
-    hidden: Option<&Json>,
-    alias: &str,
-    keys: &mut ModelCostKeys,
-) -> Result<Option<ModelGroupInfo>, GroupInfoError>
-where
-    D: DeploymentInfo,
-    R: ProviderResolver,
-    P: SupportedParameterSource,
-{
-    let Some(hidden) = hidden else {
-        return Err(malformed_alias(alias, "hidden"));
-    };
-    if matches!(hidden, Json::Bool(true)) {
-        return Ok(None);
-    }
-    match model {
-        None => Err(malformed_alias(alias, "model")),
-        Some(Json::Null) => Ok(None),
-        Some(Json::Text(target)) => set_model_group_info(sources, target, alias, keys).await,
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(GroupInfoError::AliasModel {
-                alias: alias.to_owned(),
-            })
+enum AliasRoute {
+    Group(String),
+    Hidden,
+}
+
+fn alias_route(target: &AliasTarget, alias: &str) -> Result<AliasRoute, GroupInfoError> {
+    match target {
+        AliasTarget::Name(name) => Ok(AliasRoute::Group(name.clone())),
+        AliasTarget::Unsupported(_) => Ok(AliasRoute::Hidden),
+        AliasTarget::Item { model, hidden } => {
+            let Some(hidden) = hidden else {
+                return Err(malformed_alias(alias, "hidden"));
+            };
+            if matches!(hidden, Json::Bool(true)) {
+                return Ok(AliasRoute::Hidden);
+            }
+            match model {
+                None => Err(malformed_alias(alias, "model")),
+                Some(Json::Null) => Ok(AliasRoute::Hidden),
+                Some(Json::Text(target)) => Ok(AliasRoute::Group(target.clone())),
+                Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+                    Err(GroupInfoError::AliasModel {
+                        alias: alias.to_owned(),
+                    })
+                }
+            }
         }
     }
 }

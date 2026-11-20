@@ -8,8 +8,8 @@ use crate::deployment_identity::spec::DeploymentSpec;
 use crate::model_group_info::cost::cost_value;
 use crate::model_group_info::error::GroupInfoError;
 use crate::model_group_info::fields::{
-    auth_field, bool_value, constructor_params, int_value, json_float, mode_value, number_value,
-    replacement_params, text_list,
+    auth_field, constructor_params, json_float, mode_value, parse_decimal, parse_flag, parse_i64,
+    read_field, replacement_params, text_list,
 };
 use crate::model_group_info::group::{Capability, ClientsideAuth, ModelGroupInfo};
 use crate::model_group_info::sources::ProviderAnswer;
@@ -63,7 +63,7 @@ fn first_limit(row: &DeploymentSpec, field: &'static str) -> Result<Option<i64>,
     for source in [&row.extra, &row.litellm_params, &row.model_info] {
         match source.get(field) {
             None | Some(Json::Null) => {}
-            Some(_) => return int_value(source, field),
+            Some(_) => return read_field(source, field, parse_i64),
         }
     }
     Ok(None)
@@ -114,7 +114,6 @@ fn fallback_mode(model_info: &JsonObject) -> Result<Json, GroupInfoError> {
     }
 }
 
-// ModelGroupInfo(**{"model_group": user_facing, "providers": [provider], **model_info, ...}).
 pub fn first_group(
     user_facing: &str,
     answer: &ProviderAnswer,
@@ -123,16 +122,16 @@ pub fn first_group(
     Ok(ModelGroupInfo {
         model_group: identity(metadata, user_facing)?,
         providers: providers(metadata, answer)?,
-        max_input_tokens: number_value(metadata, "max_input_tokens")?,
-        max_output_tokens: number_value(metadata, "max_output_tokens")?,
-        input_cost_per_token: number_value(metadata, "input_cost_per_token")?,
-        output_cost_per_token: number_value(metadata, "output_cost_per_token")?,
-        input_cost_per_pixel: number_value(metadata, "input_cost_per_pixel")?,
+        max_input_tokens: read_field(metadata, "max_input_tokens", parse_decimal)?,
+        max_output_tokens: read_field(metadata, "max_output_tokens", parse_decimal)?,
+        input_cost_per_token: read_field(metadata, "input_cost_per_token", parse_decimal)?,
+        output_cost_per_token: read_field(metadata, "output_cost_per_token", parse_decimal)?,
+        input_cost_per_pixel: read_field(metadata, "input_cost_per_pixel", parse_decimal)?,
         mode: mode_value(metadata)?,
-        tpm: int_value(metadata, "tpm")?,
-        rpm: int_value(metadata, "rpm")?,
-        itpm: int_value(metadata, "itpm")?,
-        otpm: int_value(metadata, "otpm")?,
+        tpm: read_field(metadata, "tpm", parse_i64)?,
+        rpm: read_field(metadata, "rpm", parse_i64)?,
+        itpm: read_field(metadata, "itpm", parse_i64)?,
+        otpm: read_field(metadata, "otpm", parse_i64)?,
         capabilities: capabilities(metadata)?,
         supports_fast_mode: true,
         supported_reasoning_efforts: None,
@@ -145,11 +144,9 @@ fn identity(metadata: &JsonObject, user_facing: &str) -> Result<String, GroupInf
     match metadata.get("model_group") {
         None => Ok(user_facing.to_owned()),
         Some(Json::Text(name)) => Ok(name.clone()),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(GroupInfoError::Field {
-                field: "model_group",
-            })
-        }
+        Some(_) => Err(GroupInfoError::Field {
+            field: "model_group",
+        }),
     }
 }
 
@@ -167,7 +164,7 @@ fn providers(
 pub fn capabilities(metadata: &JsonObject) -> Result<BTreeSet<Capability>, GroupInfoError> {
     let mut enabled = BTreeSet::new();
     for capability in Capability::ALL {
-        if bool_value(metadata, capability.field())? {
+        if read_field(metadata, capability.field(), parse_flag)? == Some(true) {
             enabled.insert(capability);
         }
     }
@@ -188,9 +185,9 @@ pub fn merge_later(
     {
         group.providers.push(answer.provider.clone());
     }
-    let max_input = number_value(metadata, "max_input_tokens")?;
+    let max_input = read_field(metadata, "max_input_tokens", parse_decimal)?;
     widen(&mut group.max_input_tokens, max_input);
-    let max_output = number_value(metadata, "max_output_tokens")?;
+    let max_output = read_field(metadata, "max_output_tokens", parse_decimal)?;
     widen(&mut group.max_output_tokens, max_output);
     let input_cost = cost_value(metadata.get("input_cost_per_token"))?;
     widen(&mut group.input_cost_per_token, input_cost);
@@ -202,10 +199,10 @@ pub fn merge_later(
     }
     // A later deployment's own tpm/rpm answers fill a gap the row did not configure, and only then.
     if limits.tpm.is_none() {
-        limits.tpm = int_value(metadata, "tpm")?;
+        limits.tpm = read_field(metadata, "tpm", parse_i64)?;
     }
     if limits.rpm.is_none() {
-        limits.rpm = int_value(metadata, "rpm")?;
+        limits.rpm = read_field(metadata, "rpm", parse_i64)?;
     }
     Ok(())
 }

@@ -25,15 +25,19 @@ pub(crate) struct CaseInfo {
 
 impl CaseInfo {
     pub(crate) fn new(entries: &JsonObject, failing: bool) -> Result<Self, Failure> {
-        let mut answers = BTreeMap::new();
-        for (id, value) in entries {
-            let Json::Object(fields) = value else {
-                return Err(Failure::Metadata(id.clone()));
-            };
-            answers.insert(id.clone(), fields.clone());
-        }
+        let answers = entries
+            .iter()
+            .map(|(id, value)| Ok((id.clone(), object_answer(value, id)?)))
+            .collect::<Result<BTreeMap<String, JsonObject>, Failure>>()?;
         Ok(Self { answers, failing })
     }
+}
+
+fn object_answer(value: &Json, id: &str) -> Result<JsonObject, Failure> {
+    let Json::Object(fields) = value else {
+        return Err(Failure::Metadata(id.to_owned()));
+    };
+    Ok(fields.clone())
 }
 
 impl DeploymentInfo for CaseInfo {

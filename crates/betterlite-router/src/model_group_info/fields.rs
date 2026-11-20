@@ -19,27 +19,45 @@ pub fn json_float(value: Option<&Decimal>) -> Json {
         .map_or(Json::Null, Json::Number)
 }
 
-pub fn number_value(
+pub(crate) fn read_field<T>(
     map: &JsonObject,
-    field: &'static str,
-) -> Result<Option<Decimal>, GroupInfoError> {
-    match map.get(field) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Number(number)) => Ok(Some(decimal_from_lexeme(&number.to_string())?)),
-        Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            Err(GroupInfoError::Field { field })
-        }
+    name: &'static str,
+    parse: fn(&Json, &'static str) -> Result<Option<T>, GroupInfoError>,
+) -> Result<Option<T>, GroupInfoError> {
+    let Some(value) = map.get(name) else {
+        return Ok(None);
+    };
+    if matches!(value, Json::Null) {
+        return Ok(None);
     }
+    parse(value, name)
 }
 
-pub fn int_value(map: &JsonObject, field: &'static str) -> Result<Option<i64>, GroupInfoError> {
-    match map.get(field) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Number(number)) => integer(number, field),
-        Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            Err(GroupInfoError::Field { field })
-        }
+pub(crate) fn parse_decimal(
+    value: &Json,
+    name: &'static str,
+) -> Result<Option<Decimal>, GroupInfoError> {
+    let Json::Number(number) = value else {
+        return Err(GroupInfoError::Field { field: name });
+    };
+    Ok(Some(decimal_from_lexeme(&number.to_string())?))
+}
+
+pub(crate) fn parse_i64(value: &Json, name: &'static str) -> Result<Option<i64>, GroupInfoError> {
+    let Json::Number(number) = value else {
+        return Err(GroupInfoError::Field { field: name });
+    };
+    integer(number, name)
+}
+
+pub(crate) const fn parse_flag(
+    value: &Json,
+    name: &'static str,
+) -> Result<Option<bool>, GroupInfoError> {
+    if let Json::Bool(flag) = value {
+        return Ok(Some(*flag));
     }
+    Err(GroupInfoError::Field { field: name })
 }
 
 fn integer(number: &Number, field: &'static str) -> Result<Option<i64>, GroupInfoError> {
@@ -51,17 +69,6 @@ fn integer(number: &Number, field: &'static str) -> Result<Option<i64>, GroupInf
             .map(Some)
             .map_err(|_error| GroupInfoError::Field { field }),
         None => Err(GroupInfoError::Field { field }),
-    }
-}
-
-// ModelGroupInfo.__init__ rewrites a null bool to False, so absent and null both read as false.
-pub fn bool_value(map: &JsonObject, field: &'static str) -> Result<bool, GroupInfoError> {
-    match map.get(field) {
-        None | Some(Json::Null) => Ok(false),
-        Some(Json::Bool(flag)) => Ok(*flag),
-        Some(Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            Err(GroupInfoError::Field { field })
-        }
     }
 }
 
