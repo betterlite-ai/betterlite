@@ -14,38 +14,21 @@ use crate::foundry_resource_dispatch::{
     FoundryResourceError, FoundryResourceOperation, FoundryResourceResult, dispatch,
 };
 
-async fn run(
+async fn answer(
     call: Call<'_>,
     plan: &FoundryPassthroughPlan,
     logging: &mut RecordingPassthrough,
-) -> Result<FoundryResourceResult, FoundryResourceError> {
-    dispatch(FoundryResourceOperation::Passthrough(Box::new(Dispatch {
+) -> Result<Outcome, passthrough::Error> {
+    let operation = FoundryResourceOperation::Passthrough(Box::new(Dispatch {
         plan,
         logging,
         call,
-    })))
-    .await
-}
-
-async fn outcome(
-    call: Call<'_>,
-    plan: &FoundryPassthroughPlan,
-    logging: &mut RecordingPassthrough,
-) -> Outcome {
-    match run(call, plan, logging).await {
-        Ok(FoundryResourceResult::Passthrough(outcome)) => outcome,
-        Ok(_) | Err(_) => panic!("the passthrough call returns its own outcome"),
-    }
-}
-
-async fn leaf_error(
-    call: Call<'_>,
-    plan: &FoundryPassthroughPlan,
-    logging: &mut RecordingPassthrough,
-) -> passthrough::Error {
-    match run(call, plan, logging).await {
-        Err(FoundryResourceError::Passthrough(error)) => error,
-        Ok(_) | Err(_) => panic!("the passthrough call fails in its leaf"),
+    }));
+    match dispatch(operation).await {
+        Ok(FoundryResourceResult::Passthrough(outcome)) => Ok(outcome),
+        Ok(_) => panic!("the passthrough call returns its own outcome"),
+        Err(FoundryResourceError::Passthrough(error)) => Err(error),
+        Err(_) => panic!("the passthrough call fails in its leaf"),
     }
 }
 
@@ -71,7 +54,8 @@ async fn url_of(
         request_query_params: None,
         litellm_params,
     };
-    let Outcome::Url { url, root } = outcome(Call::Url(request), plan, &mut logging).await else {
+    let Ok(Outcome::Url { url, root }) = answer(Call::Url(request), plan, &mut logging).await
+    else {
         panic!("the url call returns the relay url");
     };
     (url, root)
@@ -119,7 +103,9 @@ async fn url_rows() {
         request_query_params: None,
         litellm_params: &params,
     };
-    let missing = leaf_error(Call::Url(request), &bare, &mut logging).await;
+    let Err(missing) = answer(Call::Url(request), &bare, &mut logging).await else {
+        panic!("a missing base fails in the leaf");
+    };
     assert!(matches!(
         missing,
         passthrough::Error::Passthrough(FoundryPassthroughError::MissingApiBase)
@@ -151,7 +137,7 @@ async fn relay_rows() {
         headers: &headers,
         body: &body[..],
     };
-    let Outcome::Relayed(found) = outcome(
+    let Ok(Outcome::Relayed(found)) = answer(
         Call::Relayed(logged(&unknown, &reply, &params)),
         &plan,
         &mut logging,
@@ -169,23 +155,17 @@ async fn relay_rows() {
     let expected: Json = parse(r#"{"ok":true}"#);
     assert_eq!(standard.response, expected);
     assert!(logging.call_types.is_empty());
-}
 
-async fn relay_shape_rows() {
-    let plan = passthrough_plan(Object::new());
-    let mut logging = RecordingPassthrough::default();
-    let headers = Headers::new();
-    let params = Object::new();
     let rerank = target("gpt-x", "v1/rerank");
-    let body =
+    let rerank_body =
         br#"{"id":"r1","results":[{"index":0,"relevance_score":0.5,"document":{"text":"a"}}]}"#;
-    let reply = ResponseReply {
+    let rerank_reply = ResponseReply {
         status: 200,
         headers: &headers,
-        body: &body[..],
+        body: &rerank_body[..],
     };
-    let Outcome::Relayed(found) = outcome(
-        Call::Relayed(logged(&rerank, &reply, &params)),
+    let Ok(Outcome::Relayed(projected)) = answer(
+        Call::Relayed(logged(&rerank, &rerank_reply, &params)),
         &plan,
         &mut logging,
     )
@@ -193,10 +173,10 @@ async fn relay_shape_rows() {
     else {
         panic!("the relayed call returns its projection");
     };
-    let Some(log) = found else {
+    let Some(shape) = projected else {
         panic!("a known relay shape projects its body");
     };
-    let FoundryRelayedLog::Relay(object) = *log else {
+    let FoundryRelayedLog::Relay(object) = *shape else {
         panic!("a rerank reply uses the relay projection");
     };
     assert!(object.contains_key("results"));
@@ -206,5 +186,4 @@ async fn relay_shape_rows() {
 pub(super) async fn check() {
     url_rows().await;
     relay_rows().await;
-    relay_shape_rows().await;
 }

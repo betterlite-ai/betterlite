@@ -5,10 +5,11 @@ use betterlite_foundry::image_edits::selection::ImageEditVariant;
 use betterlite_foundry::image_generation::params::ImageParams;
 use betterlite_openai::image_edits::file::ImageEditFile;
 use betterlite_openai::image_edits::request::ImageEditForm;
+use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_provider::foundry_resource_dispatch::image_edit::{Call, Dispatch, Outcome};
 use betterlite_provider::foundry_resource_dispatch::{
-    FoundryResourceError, FoundryResourceOperation, FoundryResourceResult, dispatch,
+    FoundryResourceOperation, FoundryResourceResult, dispatch,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -34,63 +35,94 @@ pub(super) struct ImageField {
 pub(super) fn run(input: &Input) -> HelperResult {
     let runtime = runtime()?;
     let mut logging = Recorder;
-    match ImageEditVariant::select(&input.model) {
-        Ok(ImageEditVariant::Flux2) => flux2_row(input, &runtime, &mut logging),
-        Ok(ImageEditVariant::Mai) => mai_row(input, &runtime, &mut logging),
-        Ok(ImageEditVariant::Flux1) => Err(failure("Variant", OTHER)),
+    edit_row(input, &runtime, &mut logging)
+}
+
+fn edit_row(input: &Input, runtime: &Runtime, logging: &mut Recorder) -> HelperResult {
+    let variant =
+        ImageEditVariant::select(&input.model).map_err(|error| failure("LeafFailure", error))?;
+    match variant {
+        ImageEditVariant::Flux2 => {
+            let mapped = match run_call(
+                Call::Flux2Params {
+                    options: &input.options,
+                    model: &input.model,
+                    drop_params: false,
+                },
+                runtime,
+                logging,
+            ) {
+                Ok(Outcome::Params(params)) => params,
+                Ok(_) => return Err(failure("Variant", OTHER)),
+                Err(error) => return Err(error),
+            };
+            let mut images = sources(input);
+            form_of(
+                run_call(
+                    Call::Flux2Form(Flux2EditRequest {
+                        model: &input.model,
+                        prompt: input.prompt.as_deref(),
+                        images: images.as_deref_mut(),
+                        options: &mapped,
+                    }),
+                    runtime,
+                    logging,
+                ),
+                "flux2",
+            )
+        }
+        ImageEditVariant::Mai => {
+            let images = input.images.as_ref().map(|fields| {
+                fields
+                    .iter()
+                    .map(|field| {
+                        field.as_ref().map(|present| ImageEditFile {
+                            content: present.text.clone().into_bytes(),
+                            name: None,
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            });
+            form_of(
+                run_call(
+                    Call::MaiForm(MaiEditRequest {
+                        model: &input.model,
+                        prompt: input.prompt.as_deref(),
+                        image: images.as_deref(),
+                        options: &input.options,
+                    }),
+                    runtime,
+                    logging,
+                ),
+                "mai",
+            )
+        }
+        ImageEditVariant::Flux1 => Err(failure("Variant", OTHER)),
+    }
+}
+
+fn run_call(
+    call: Call<'_>,
+    runtime: &Runtime,
+    logging: &mut Recorder,
+) -> Result<Outcome, Box<HelperError>> {
+    let operation = FoundryResourceOperation::ImageEdit(Box::new(Dispatch {
+        logging: &mut *logging,
+        call,
+    }));
+    match runtime.block_on(dispatch(operation)) {
+        Ok(FoundryResourceResult::ImageEdit(outcome)) => Ok(outcome),
+        Ok(_) => Err(failure("Variant", OTHER)),
         Err(error) => Err(failure("LeafFailure", error)),
     }
 }
 
-fn flux2_row(input: &Input, runtime: &Runtime, logging: &mut Recorder) -> HelperResult {
-    let operation = FoundryResourceOperation::ImageEdit(Box::new(Dispatch {
-        logging: &mut *logging,
-        call: Call::Flux2Params {
-            options: &input.options,
-            model: &input.model,
-            drop_params: false,
-        },
-    }));
-    let mapped = match runtime.block_on(dispatch(operation)) {
-        Ok(FoundryResourceResult::ImageEdit(Outcome::Params(params))) => params,
-        Ok(_) => return Err(failure("Variant", OTHER)),
-        Err(error) => return Err(failure("LeafFailure", error)),
-    };
-    let mut images = sources(input);
-    let operation = FoundryResourceOperation::ImageEdit(Box::new(Dispatch {
-        logging: &mut *logging,
-        call: Call::Flux2Form(Flux2EditRequest {
-            model: &input.model,
-            prompt: input.prompt.as_deref(),
-            images: images.as_deref_mut(),
-            options: &mapped,
-        }),
-    }));
-    form_row(runtime.block_on(dispatch(operation)), "flux2")
-}
-
-fn mai_row(input: &Input, runtime: &Runtime, logging: &mut Recorder) -> HelperResult {
-    let images = input.images.as_ref().map(|fields| {
-        fields
-            .iter()
-            .map(|field| {
-                field.as_ref().map(|present| ImageEditFile {
-                    content: present.text.clone().into_bytes(),
-                    name: None,
-                })
-            })
-            .collect::<Vec<_>>()
-    });
-    let operation = FoundryResourceOperation::ImageEdit(Box::new(Dispatch {
-        logging: &mut *logging,
-        call: Call::MaiForm(MaiEditRequest {
-            model: &input.model,
-            prompt: input.prompt.as_deref(),
-            image: images.as_deref(),
-            options: &input.options,
-        }),
-    }));
-    form_row(runtime.block_on(dispatch(operation)), "mai")
+fn form_of(outcome: Result<Outcome, Box<HelperError>>, kind: &str) -> HelperResult {
+    match outcome {
+        Ok(Outcome::Form(form)) => Ok(project(kind, &form)),
+        Ok(_) => Err(failure("Variant", OTHER)),
+        Err(error) => Err(error),
+    }
 }
 
 fn sources(input: &Input) -> Option<Vec<ImageSource>> {
@@ -108,17 +140,6 @@ fn sources(input: &Input) -> Option<Vec<ImageSource>> {
             })
             .collect(),
     )
-}
-
-fn form_row(
-    outcome: Result<FoundryResourceResult, FoundryResourceError>,
-    kind: &str,
-) -> HelperResult {
-    match outcome {
-        Ok(FoundryResourceResult::ImageEdit(Outcome::Form(form))) => Ok(project(kind, &form)),
-        Ok(_) => Err(failure("Variant", OTHER)),
-        Err(error) => Err(failure("LeafFailure", error)),
-    }
 }
 
 fn project(kind: &str, form: &ImageEditForm) -> Value {

@@ -35,68 +35,60 @@ enum Operation {
     NoNativeWebsocket,
 }
 
-pub(super) fn run(input: &Input) -> HelperResult {
+pub(super) fn answer(input: &Input) -> HelperResult {
     let runtime = runtime()?;
-    Ok(match input.operation {
-        Operation::Url => url_answer(input, &runtime),
-        Operation::DecisionsRoute => decisions_answer(input, &runtime),
-        Operation::NoNativeWebsocket => policy_answer(&runtime),
-    })
-}
-
-fn url_answer(input: &Input, runtime: &Runtime) -> Value {
     // the case's environment is the AZURE_AI_* layer, as the Responses leaf reads it in production
     let settings = Settings::resolve_environment(&input.environment);
-    let accessors = ModelInfoAccessors {
-        global_api_base: input.global_api_base.as_deref(),
-        global_api_key: None,
-        environment_api_base: settings.api_base.as_deref(),
-        environment_api_key: None,
+    let found = match input.operation {
+        Operation::Url => outcome(
+            Call::Url {
+                accessors: accessors(input, &settings),
+                api_base: input.api_base.as_deref(),
+            },
+            &runtime,
+        ),
+        Operation::DecisionsRoute => outcome(
+            Call::DecisionsUrl {
+                api_base: input.api_base.as_deref().unwrap_or_default(),
+                model: &input.model,
+            },
+            &runtime,
+        ),
+        Operation::NoNativeWebsocket => outcome(Call::Policy, &runtime),
     };
-    let operation = FoundryResourceOperation::ResponsesDecisions(Box::new(Dispatch {
-        call: Call::Url {
-            accessors,
-            api_base: input.api_base.as_deref(),
-        },
-    }));
-    match runtime.block_on(dispatch(operation)) {
-        Ok(FoundryResourceResult::ResponsesDecisions(Outcome::Url(url))) => {
-            json!({"kind": "url", "url": url})
-        }
-        Ok(_) | Err(_) => json!({"kind": "error"}),
-    }
-}
-
-fn decisions_answer(input: &Input, runtime: &Runtime) -> Value {
-    let operation = FoundryResourceOperation::ResponsesDecisions(Box::new(Dispatch {
-        call: Call::DecisionsUrl {
-            api_base: input.api_base.as_deref().unwrap_or_default(),
-            model: &input.model,
-        },
-    }));
-    match runtime.block_on(dispatch(operation)) {
-        Ok(FoundryResourceResult::ResponsesDecisions(Outcome::DecisionsUrl(url))) => json!({
+    Ok(match found {
+        Some(Outcome::Url(url)) => json!({"kind": "url", "url": url}),
+        Some(Outcome::DecisionsUrl(url)) => json!({
             "kind": "decisions_route",
             "url": url,
             "api_base": &input.api_base,
             "api_key": &input.api_key,
         }),
-        Ok(_) | Err(_) => json!({"kind": "error"}),
-    }
-}
-
-fn policy_answer(runtime: &Runtime) -> Value {
-    let operation =
-        FoundryResourceOperation::ResponsesDecisions(Box::new(Dispatch { call: Call::Policy }));
-    match runtime.block_on(dispatch(operation)) {
-        Ok(FoundryResourceResult::ResponsesDecisions(Outcome::Policy {
+        Some(Outcome::Policy {
             provider,
             native_websocket,
-        })) => json!({
+        }) => json!({
             "kind": "no_native_websocket",
             "provider": provider.to_string(),
             "websocket": native_websocket,
         }),
-        Ok(_) | Err(_) => json!({"kind": "error"}),
+        None => json!({"kind": "error"}),
+    })
+}
+
+fn accessors<'env>(input: &'env Input, settings: &'env Settings) -> ModelInfoAccessors<'env> {
+    ModelInfoAccessors {
+        global_api_base: input.global_api_base.as_deref(),
+        global_api_key: None,
+        environment_api_base: settings.api_base.as_deref(),
+        environment_api_key: None,
+    }
+}
+
+fn outcome(call: Call<'_>, runtime: &Runtime) -> Option<Outcome> {
+    let operation = FoundryResourceOperation::ResponsesDecisions(Box::new(Dispatch { call }));
+    match runtime.block_on(dispatch(operation)) {
+        Ok(FoundryResourceResult::ResponsesDecisions(resolved)) => Some(resolved),
+        Ok(_) | Err(_) => None,
     }
 }

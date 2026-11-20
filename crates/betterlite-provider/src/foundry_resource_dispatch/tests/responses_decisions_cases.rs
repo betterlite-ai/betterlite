@@ -68,10 +68,7 @@ async fn url_rows() {
         missing,
         responses_decisions::Error::Url(ResponsesUrlError::MissingApiBase)
     ));
-}
-
-async fn decisions_url_rows() {
-    let Outcome::DecisionsUrl(project) = outcome(Call::DecisionsUrl {
+    let Outcome::DecisionsUrl(decided) = outcome(Call::DecisionsUrl {
         api_base: "https://res.test/api/projects/p1/openai/v1",
         model: "gpt-5",
     })
@@ -80,7 +77,7 @@ async fn decisions_url_rows() {
         panic!("the decisions call returns a url");
     };
     assert_eq!(
-        project,
+        decided,
         "https://res.test/api/projects/p1/providers/microsoft/v1/systemone"
     );
     let Outcome::DecisionsUrl(plain) = outcome(Call::DecisionsUrl {
@@ -108,6 +105,5 @@ async fn policy_rows() {
 
 pub(super) async fn check() {
     url_rows().await;
-    decisions_url_rows().await;
     policy_rows().await;
 }

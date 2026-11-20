@@ -34,9 +34,9 @@ impl Helper for Op {
             Input::ImageGeneration(values) => image_generation::run(values),
             Input::ImageEdit(values) => image_edit::run(values),
             Input::Rerank(values) => rerank::run(values),
-            Input::ResponsesDecisions(values) => responses_decisions::run(values),
+            Input::ResponsesDecisions(values) => responses_decisions::answer(values),
             Input::VectorSearch {} => vector_search::run(),
-            Input::Passthrough(values) => passthrough::run(values),
+            Input::Passthrough(values) => passthrough::nonstream_answer(values),
             Input::MessagesCount(values) => messages_count::run(values),
         }
     }

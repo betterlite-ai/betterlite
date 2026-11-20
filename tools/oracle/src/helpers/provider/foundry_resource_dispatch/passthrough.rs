@@ -14,7 +14,6 @@ use betterlite_provider::foundry_resource_dispatch::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use tokio::runtime::Runtime;
 
 use super::support::{OTHER, RelayLog, failure, runtime};
 
@@ -34,36 +33,8 @@ const fn default_status() -> u16 {
 }
 
 // B566's response projection, including the standard body an unknown route keeps
-pub(super) fn run(input: &Input) -> HelperResult {
+pub(super) fn nonstream_answer(input: &Input) -> HelperResult {
     let runtime = runtime()?;
-    nonstream_answer(input, &runtime)
-}
-
-fn plan() -> FoundryPassthroughPlan {
-    FoundryPassthroughPlan {
-        global_api_base: None,
-        global_api_key: None,
-        azure: AzurePassthroughConfig {
-            api_base_env: None,
-            api_key_env: None,
-            model_call_details: None,
-            chat_reply: NoChatReplyProjection,
-            chat_stream: NoChatStreamAssembly,
-        },
-        ocr: None,
-        litellm_params: Object::new(),
-    }
-}
-
-const fn target<'call>(model: &'call str, endpoint: &'call str) -> PassthroughTarget<'call> {
-    PassthroughTarget {
-        model,
-        custom_llm_provider: "azure_ai",
-        endpoint,
-    }
-}
-
-fn nonstream_answer(input: &Input, runtime: &Runtime) -> HelperResult {
     let plan = plan();
     let headers = Headers::new();
     let reply = ResponseReply {
@@ -93,6 +64,30 @@ fn nonstream_answer(input: &Input, runtime: &Runtime) -> HelperResult {
     };
     let (kind, standard) = outcome_fields(outcome.as_deref());
     Ok(json!({"kind": kind, "call_type": logging.call_type, "standard": standard}))
+}
+
+fn plan() -> FoundryPassthroughPlan {
+    FoundryPassthroughPlan {
+        global_api_base: None,
+        global_api_key: None,
+        azure: AzurePassthroughConfig {
+            api_base_env: None,
+            api_key_env: None,
+            model_call_details: None,
+            chat_reply: NoChatReplyProjection,
+            chat_stream: NoChatStreamAssembly,
+        },
+        ocr: None,
+        litellm_params: Object::new(),
+    }
+}
+
+const fn target<'call>(model: &'call str, endpoint: &'call str) -> PassthroughTarget<'call> {
+    PassthroughTarget {
+        model,
+        custom_llm_provider: "azure_ai",
+        endpoint,
+    }
 }
 
 fn outcome_fields(outcome: Option<&FoundryRelayedLog>) -> (&'static str, Value) {

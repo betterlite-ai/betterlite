@@ -103,6 +103,39 @@ async fn flux2_rows() {
     ));
 }
 
+async fn mai_rows() {
+    let mut logging = RecordingImageLogging::default();
+    let cases = [
+        (
+            ImageOperation::Generation,
+            Some("https://res.test/"),
+            Some("2025-01-01"),
+            "https://res.test/mai/v1/images/generations?api-version=2025-01-01",
+        ),
+        (
+            ImageOperation::Edit,
+            Some("https://res.test"),
+            None,
+            "https://res.test/mai/v1/images/edits?api-version=preview",
+        ),
+    ];
+    for (operation, api_base, api_version, expected) in cases {
+        let Outcome::Url(url) = outcome(
+            Call::MaiUrl {
+                operation,
+                api_base,
+                api_version,
+            },
+            &mut logging,
+        )
+        .await
+        else {
+            panic!("the MAI url call returns a url");
+        };
+        assert_eq!(url, expected);
+    }
+}
+
 async fn flux2_params_rows() {
     let mut logging = RecordingImageLogging::default();
     let non_default: ImageParams =
@@ -154,78 +187,30 @@ async fn flux2_params_rows() {
     assert!(dropped.is_empty());
 }
 
-async fn mai_rows() {
-    let mut logging = RecordingImageLogging::default();
-    let Outcome::Url(generation) = outcome(
-        Call::MaiUrl {
-            operation: ImageOperation::Generation,
-            api_base: Some("https://res.test/"),
-            api_version: Some("2025-01-01"),
-        },
-        &mut logging,
-    )
-    .await
-    else {
-        panic!("the MAI url call returns a url");
-    };
-    assert_eq!(
-        generation,
-        "https://res.test/mai/v1/images/generations?api-version=2025-01-01"
-    );
-    let Outcome::Url(edit) = outcome(
-        Call::MaiUrl {
-            operation: ImageOperation::Edit,
-            api_base: Some("https://res.test"),
-            api_version: None,
-        },
-        &mut logging,
-    )
-    .await
-    else {
-        panic!("the MAI edit url call returns a url");
-    };
-    assert_eq!(
-        edit,
-        "https://res.test/mai/v1/images/edits?api-version=preview"
-    );
-}
-
 async fn mai_params_rows() {
     let mut logging = RecordingImageLogging::default();
-    let sizes: Object = parse(r#"{"size":"1792x1024"}"#);
-    let Outcome::MaiParams(mapped) = outcome(
-        Call::MaiParams {
-            non_default: &sizes,
-            optional: &Object::new(),
-            model: "mai-image",
-            drop_params: false,
-        },
-        &mut logging,
-    )
-    .await
-    else {
-        panic!("the MAI params call returns the mapped params");
-    };
-    let expected: Object = parse(r#"{"width":1792,"height":1024}"#);
-    assert_eq!(mapped, expected);
-
-    let defaults: Object = parse(r#"{}"#);
-    let Outcome::MaiParams(unchanged) = outcome(
-        Call::MaiParams {
-            non_default: &defaults,
-            optional: &Object::new(),
-            model: "mai-image",
-            drop_params: false,
-        },
-        &mut logging,
-    )
-    .await
-    else {
-        panic!("an empty request still returns the defaults");
-    };
-    let expected_defaults: Object = parse(r#"{"width":1024,"height":1024}"#);
-    assert_eq!(unchanged, expected_defaults);
-
+    let cases = [
+        (r#"{"size":"1792x1024"}"#, r#"{"width":1792,"height":1024}"#),
+        (r#"{}"#, r#"{"width":1024,"height":1024}"#),
+    ];
+    for (request, expected) in cases {
+        let non_default: Object = parse(request);
+        let Outcome::MaiParams(mapped) = outcome(
+            Call::MaiParams {
+                non_default: &non_default,
+                optional: &Object::new(),
+                model: "mai-image",
+                drop_params: false,
+            },
+            &mut logging,
+        )
+        .await
+        else {
+            panic!("the MAI params call returns the mapped params");
+        };
+        let wanted: Object = parse(expected);
+        assert_eq!(mapped, wanted);
+    }
     let counts: Object = parse(r#"{"n":2}"#);
     let error = leaf_error(
         Call::MaiParams {
@@ -291,8 +276,8 @@ async fn mai_reply_rows() {
 pub(super) async fn check() {
     config_rows().await;
     flux2_rows().await;
-    flux2_params_rows().await;
     mai_rows().await;
+    flux2_params_rows().await;
     mai_params_rows().await;
     mai_reply_rows().await;
 }
