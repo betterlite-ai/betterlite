@@ -20,7 +20,7 @@ use url::Url;
 use self::facts::Sent;
 use self::request::{call_timeout, select_client, update_body, validated_headers, write_endpoint};
 use super::config::{WriteConfig, WriteParams};
-use super::error::{ClientError, WriteError, handle_error};
+use super::error::{ClientError, WriteError, handle_error, masked_status_facts};
 use super::params::UpdateParams;
 
 mod facts;
@@ -263,7 +263,7 @@ where
         };
     }
     Err(WriteError::Provider(handle_error(
-        &facts::status_facts(&answer),
+        &masked_status_facts(&answer),
         Some(config),
     )))
 }

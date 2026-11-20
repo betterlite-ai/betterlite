@@ -21,7 +21,7 @@ use self::facts::ReplyView;
 use self::request::{LoggedCall, log_pre_call, select_client, write_endpoint};
 use super::config::{ResponsesConfig, WriteParams};
 use super::error::{WriteError, handle_error};
-use crate::api::vector_store_http_write::error::ClientError;
+use crate::api::vector_store_http_write::error::{ClientError, masked_status_facts};
 
 mod facts;
 mod proxied;
@@ -292,7 +292,7 @@ where
         };
     }
     Err(WriteError::Provider(handle_error(
-        &facts::status_facts(&reply),
+        &masked_status_facts(&reply),
         config,
     )))
 }

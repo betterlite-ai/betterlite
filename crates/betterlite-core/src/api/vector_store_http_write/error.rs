@@ -1,8 +1,10 @@
 use std::collections::BTreeMap;
 use std::error::Error;
+use std::str::from_utf8;
 
 use betterlite_config::tls::TlsPolicyError;
 use betterlite_http::error::HttpError;
+use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::pool::PoolError;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_models::decisions::Json;
@@ -106,6 +108,35 @@ pub fn header_map(headers: &http::HeaderMap) -> HeaderMap {
         .iter()
         .map(|(name, value)| (name.as_str().to_owned(), Json::Text(header_text(value))))
         .collect()
+}
+
+// An httpx.HTTPStatusError carries the masked response: its text and its headers less content-encoding, with content-length recomputed
+#[must_use]
+pub fn masked_status_facts(reply: &UpstreamResponse) -> FailureFacts {
+    let text = from_utf8(&reply.body).map_or_else(
+        |_| format!("{} bytes that are not UTF-8", reply.body.len()),
+        ToOwned::to_owned,
+    );
+    let mut headers = header_map(&reply.headers);
+    headers.remove("content-encoding");
+    headers.remove("content-length");
+    // httpx re-encodes the decoded body into the masked response, so a non-empty one carries a new content-length
+    if !reply.body.is_empty() {
+        let length = reply.body.len().to_string();
+        headers.insert("content-length".to_owned(), Json::Text(length));
+    }
+    FailureFacts {
+        response_status: Some(i64::from(reply.status)),
+        status: Some(Json::Number(Number::from(reply.status))),
+        text: Some(text.clone()),
+        headers: None,
+        response: Some(ResponseFacts {
+            status_code: i64::from(reply.status),
+            text: Some(text),
+            headers: Some(headers),
+        }),
+        display: String::new(),
+    }
 }
 
 // The shared error converter: an HTTP status error keeps its response status and text, another exception its integer status, and anything else becomes a synthesized 500
