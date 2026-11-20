@@ -322,6 +322,10 @@ pub(super) struct Events(Arc<Mutex<Vec<(String, String)>>>);
 
 impl<S: Subscriber> Layer<S> for Events {
     fn on_event(&self, event: &tracing::Event<'_>, _: Context<'_, S>) {
+        // Only this crate's lines count: the HTTP client logs its own connect events at debug.
+        if !event.metadata().target().starts_with("betterlite_router::") {
+            return;
+        }
         let mut field = MessageField::default();
         event.record(&mut field);
         if let Some(message) = field.0 {
