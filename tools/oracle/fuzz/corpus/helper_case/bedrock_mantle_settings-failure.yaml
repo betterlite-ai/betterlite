@@ -1,0 +1,10 @@
+kind: helper
+name: bedrock-mantle-settings-failure
+call:
+  bedrock_mantle_settings:
+    mantle_auth_failure:
+      cases:
+        - {kind: no_credentials}
+        - {kind: region, aws_region_name: NOT A REGION, api_base: 'https://proxy.example/v1'}
+env: {}
+compare: {ignore: []}

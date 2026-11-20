@@ -1,0 +1,15 @@
+id: B10007
+milestone: M7 observability
+title: Production OTel logger runtime and the request trace slot
+status: todo
+depends_on: [B8910, B3842, B3847, B3848, B3849, B3852, B3853, B3857, B8250, B247, B250, B251]
+file: tasks/B10007-otel-proxy-runtime.yaml
+covers:
+  - "litellm/integrations/otel/plumbing/context.py"
+  - "litellm/litellm_core_utils/logging_worker.py"
+parent: B110
+split_from: B110
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

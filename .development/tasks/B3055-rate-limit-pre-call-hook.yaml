@@ -18,7 +18,9 @@ description: >-
   Two, `RateLimitPreCallHook::async_pre_call_hook(user_api_key_dict, data, call_type, endpoint_type, stash)`,
   the port of L3968 to L4191, and it implements the `CallTypeRateLimiter` trait of B5660 for the main limiter.
   Steps, in order. Log "Inside Rate Limit Pre-Call Hook" at debug. If `select_call_type_limiter` of B5660
-  gives `Batch`, hand the call to the batch limiter of B1047 and return its result. Otherwise build the
+  gives `Batch`, hand the call to the limiter in B5660's `batch_limiter()` slot and return its result. The Batch API's
+  own task fills that slot later. While the slot is empty, the server gate below refuses a Batch call with its own error naming the
+  missing batch rate limiter, never the main limiter path. Only B1050's batch create route sends that call type, and B1050 waits on B1047. Otherwise build the
   descriptors. Store the set of tag values whose descriptor has a tokens limit in the stash. With no
   descriptors, return. Else run the first pass: collect the `max_parallel_requests` counter keys, make a
   slot id only when there are keys, drop the project ITPM and OTPM descriptors from the first pass when

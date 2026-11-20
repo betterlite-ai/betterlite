@@ -977,9 +977,11 @@ checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 name = "betterlite"
 version = "0.1.0"
 dependencies = [
+ "betterlite-auth",
  "betterlite-config",
  "betterlite-env",
  "betterlite-http",
+ "betterlite-models",
  "betterlite-router",
  "betterlite-secret-managers",
  "betterlite-server",
@@ -2773,6 +2775,7 @@ name = "betterlite-oracle-bedrock"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "aws-credential-types",
  "aws-smithy-async",
  "aws-smithy-runtime-api",
  "aws-smithy-types",
@@ -3546,8 +3549,10 @@ dependencies = [
  "async-trait",
  "betterlite-auth",
  "betterlite-config",
+ "betterlite-core",
  "betterlite-db",
  "betterlite-models",
+ "betterlite-openai",
  "betterlite-oracle-helper-api",
  "betterlite-rate-limit",
  "betterlite-redis",

@@ -33,8 +33,11 @@ description: >-
 
   Compute the effective complexity params and give B836 a write_row closure. It records the model_name
   it will store, sets updated_by to caller user_id or proxy admin name, sets updated_at from the UTC
-  clock, and updates by model_id inside B834._auto_router_capability_slot with the effective params
-  and member-write authorization. B836 handles encryption and writes before team grants; this task
+  clock, and updates by model_id through the plain model table: with no license limit and no member
+  auto-router write, LiteLLM's _auto_router_capability_slot yields just that table
+  (model_management_endpoints.py L556-L558), and a member auto-router write fails at B832's
+  MemberRouterWrite hook until B378 registers it. B834 later wraps this update in its slot and depends on
+  this task. B836 handles encryption and writes before team grants; this task
   must preserve its partial effects. Only when stored_model_name is non-null, equals the original
   requested name and differs from the old name, call B820.sync_access_groups_for_renamed_model, then
   B837.sync_model_allowlists_for_renamed_model. A team-internal rewritten name or no-op rename must not
@@ -154,7 +157,7 @@ dod:
       - oracle
       - behavior-tests
   - text: 'postgres_pinned_rows covers patch_preserves_secret, clear_credential, actor_and_updated_at,
-      capability_slot_arguments, rename_sync_in_order, no_op_rename_skips_sync,
+      rename_sync_in_order, no_op_rename_skips_sync,
       rewritten_team_name_skips_sync and audit_event_fields. postgres_failure_effects covers
       preflight_no_write, grant_failure_keeps_row, rename_sync_failure_keeps_row,
       clear_cache_failure_before_audit, degraded_reload_after_audit and collateral_serving_loss.'
