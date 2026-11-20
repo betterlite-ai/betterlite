@@ -7,14 +7,14 @@ use betterlite_config::sections::vertex_credential_sources::credential_source::C
 use secrecy::SecretString;
 use thiserror::Error;
 
-// stands for VertexBase._ensure_access_token: the credential cache turns a deployment's credentials into a bearer token
+// stands for VertexBase._ensure_access_token: the credential cache turns a deployment's credentials into a bearer token and the project they resolve
 #[async_trait]
 pub trait VertexTokenPort: Send + Sync {
     async fn access_token(
         &self,
         credentials: Option<&ConfiguredCredentials>,
         project: Option<&str>,
-    ) -> Result<SecretString, PortError>;
+    ) -> Result<(SecretString, String), PortError>;
 }
 
 // every call carries the bearer token and its own timeout; a non-2xx status is an HttpReply, not a port failure

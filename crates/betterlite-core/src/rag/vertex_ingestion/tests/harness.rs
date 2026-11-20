@@ -94,12 +94,15 @@ impl VertexTokenPort for FakeToken {
         &self,
         credentials: Option<&ConfiguredCredentials>,
         project: Option<&str>,
-    ) -> Result<SecretString, PortError> {
+    ) -> Result<(SecretString, String), PortError> {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push((credentials.is_some(), project.map(str::to_owned)));
-        Ok(SecretString::from(TOKEN.to_owned()))
+        Ok((
+            SecretString::from(TOKEN.to_owned()),
+            project.map(str::to_owned).unwrap_or_default(),
+        ))
     }
 }
 

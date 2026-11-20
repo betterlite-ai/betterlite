@@ -118,6 +118,7 @@ impl VertexIngestion {
             .token
             .access_token(credentials.as_ref(), project)
             .await
+            .map(|(token, _project)| token)
             .map_err(VertexIngestionError::from)
     }
 

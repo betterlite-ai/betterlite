@@ -71,7 +71,7 @@ impl VertexTokenPort for ScriptedToken {
         &self,
         credentials: Option<&ConfiguredCredentials>,
         project: Option<&str>,
-    ) -> Result<SecretString, PortError> {
+    ) -> Result<(SecretString, String), PortError> {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -79,7 +79,10 @@ impl VertexTokenPort for ScriptedToken {
                 "project": project,
                 "credentials": credentials.is_some(),
             }));
-        Ok(SecretString::from(TOKEN.to_owned()))
+        Ok((
+            SecretString::from(TOKEN.to_owned()),
+            project.map(str::to_owned).unwrap_or_default(),
+        ))
     }
 }
 
