@@ -20,7 +20,7 @@ from litellm.proxy.management_helpers.team_metadata_validation import (
 from pydantic import BaseModel, JsonValue, TypeAdapter
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from .validators import (
+from team_fields_validators import (
     VALIDATOR_A,
     VALIDATOR_B,
     PayloadDict,

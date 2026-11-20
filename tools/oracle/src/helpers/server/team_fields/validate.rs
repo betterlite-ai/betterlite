@@ -148,7 +148,8 @@ pub(super) fn validate_answer(call: &ValidateCall<'_>) -> HelperResult {
     let fake = found
         .map(|(behaviour, asynchronous)| Arc::new(FakeValidator::new(behaviour, asynchronous)));
     if let Some(installed) = &fake {
-        registry.set(Some(Arc::clone(installed) as Arc<dyn TeamMetadataValidator>));
+        let validator: Arc<dyn TeamMetadataValidator> = Arc::clone(installed);
+        registry.set(Some(validator));
     }
     let operation: TeamMetadataOperation =
         serde_json::from_value(json!(call.operation)).or_value_error()?;
