@@ -9,14 +9,15 @@ use super::lookup::{BlockFailure, UserLookup, UserLookupRequest};
 use super::rows::UserCreateData;
 use super::store::UserStore;
 
-// The user columns a create writes; every other merged key stays out of the row.
-const USER_COLUMNS: [&str; 26] = [
+// The user table columns a create writes; any other merged key fails the create.
+const USER_COLUMNS: [&str; 27] = [
     "user_id",
     "user_alias",
     "team_id",
     "sso_user_id",
     "organization_id",
     "object_permission_id",
+    "password",
     "password_reset_required",
     "last_breach_check_at",
     "teams",
@@ -103,12 +104,16 @@ fn create_data(params: &BTreeMap<String, JsonData>) -> Result<UserCreateData, Bl
     let record = JsonData::Object(params.clone());
     let user = user_record_to_model(Some(&record))?.ok_or(BlockFailure::NoRecord)?;
     let wire = serde_json::to_value(&user).map_err(BlockFailure::Serialize)?;
-    let dump: BTreeMap<String, JsonData> =
+    let mut dump: BTreeMap<String, JsonData> =
         serde_json::from_value(wire).map_err(BlockFailure::Serialize)?;
+    // the user model never serializes the password, so the create takes the value as given
+    if let Some(password) = params.get("password") {
+        dump.insert("password".to_owned(), password.clone());
+    }
     let mut fields = BTreeMap::new();
     for key in params.keys() {
         if !USER_COLUMNS.contains(&key.as_str()) {
-            continue;
+            return Err(BlockFailure::UnknownField { field: key.clone() });
         }
         if let Some(value) = dump.get(key) {
             fields.insert(key.clone(), value.clone());

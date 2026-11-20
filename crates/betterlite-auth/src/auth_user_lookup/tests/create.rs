@@ -67,10 +67,6 @@ async fn team_fields_not_user_columns() {
             JsonData::Array(vec![JsonData::String("t2".to_owned())]),
         ),
         ("user_role", JsonData::String("internal_user".to_owned())),
-        (
-            "custom_unknown",
-            JsonData::Number(serde_json::Number::from(1_i64)),
-        ),
     ])));
     let lookup = harness.lookup();
     let user = lookup
@@ -82,10 +78,47 @@ async fn team_fields_not_user_columns() {
     let fields = harness.store.create_fields().unwrap();
     assert!(!fields.contains_key("teams"));
     assert!(!fields.contains_key("available_teams"));
-    assert!(!fields.contains_key("custom_unknown"));
     assert_eq!(
         fields.get("user_role"),
         Some(&JsonData::String("internal_user".to_owned()))
+    );
+}
+
+#[tokio::test]
+async fn unknown_default_field_fails_lookup() {
+    let harness = harness_with_defaults(Some(defaults(&[(
+        "custom_unknown",
+        JsonData::Number(serde_json::Number::from(1_i64)),
+    )])));
+    let lookup = harness.lookup();
+    let result = lookup.get_user_object(upsert_request("u1", None)).await;
+    match result {
+        Err(UserLookupError::UserMissing(failure)) => assert!(
+            failure.to_string().contains("custom_unknown"),
+            "the failure names the unknown create field: {failure}"
+        ),
+        other => panic!("a create field outside the user table fails the lookup: {other:?}"),
+    }
+    assert_eq!(harness.store.methods(), vec!["find_by_id"]);
+    assert!(harness.cache.writes.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn password_default_reaches_create() {
+    let harness = harness_with_defaults(Some(defaults(&[(
+        "password",
+        JsonData::String("s3cret".to_owned()),
+    )])));
+    let lookup = harness.lookup();
+    lookup
+        .get_user_object(upsert_request("u1", None))
+        .await
+        .expect("the upsert")
+        .expect("the created user");
+    let fields = harness.store.create_fields().unwrap();
+    assert_eq!(
+        fields.get("password"),
+        Some(&JsonData::String("s3cret".to_owned()))
     );
 }
 

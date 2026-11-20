@@ -20,4 +20,14 @@ deviations:
       diagnostics must not carry credentials. The lookup's success and its write
       ordering are unchanged.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2576-L2582
+  - what: >-
+      A default_internal_user_params key that names a user relation
+      (organization_memberships, object_permission, verified_subjects) fails the
+      lookup with the field name; Prisma's create accepts the same key as a
+      nested relation write.
+    why: >-
+      The user row is written by one insert and betterlite does not port Prisma's
+      nested writes, so the relation value cannot be stored. Naming the key beats
+      dropping it silently.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/schema.prisma#L328-L334
 kept_bugs: []

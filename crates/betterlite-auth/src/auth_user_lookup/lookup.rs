@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use betterlite_config::sections::auth_user_lookup::DefaultUserParams;
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
-use betterlite_db::user_repository::UserRecordError;
+use betterlite_db::user_repository::projection::UserRecordError;
 use betterlite_redact::secret::Redactor;
 use tokio_util::task::TaskTracker;
 
@@ -63,6 +63,8 @@ pub(super) enum BlockFailure {
     Port(#[from] PortError),
     #[error(transparent)]
     Credential(#[from] CredentialError),
+    #[error("the user create field {field} is not a user table column")]
+    UnknownField { field: String },
 }
 
 impl BlockFailure {
@@ -77,6 +79,7 @@ impl BlockFailure {
             Self::Credential(error) => Box::new(error),
             Self::NotFound => Box::new(Self::NotFound),
             Self::NoRecord => Box::new(Self::NoRecord),
+            Self::UnknownField { field } => Box::new(Self::UnknownField { field }),
         }
     }
 }
