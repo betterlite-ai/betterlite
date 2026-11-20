@@ -1,0 +1,38 @@
+task: B1654
+deviations:
+  - what: >-
+      POST /compliance/eu-ai-act and POST /compliance/gdpr answer the declared 422 validation envelope when the JSON
+      body is null, a list or another non-object. LiteLLM reads request_data.get("model") inside its auth middleware
+      before FastAPI validates the body, so those requests raise there and the proxy's generic handler answers 500
+      with an internal_server_error JSON body.
+    why: >-
+      A 500 where a 4xx belongs: the request never reaches authentication or the compliance code, and the declared
+      request model rejects the shape. No working setup can rely on the crash, and docs/compatibility.md keeps the
+      declared types as the contract.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L589
+  - what: >-
+      A body that is not valid JSON gets a 422 whose loc is only ["body"], while LiteLLM reports the decoder offset
+      in the loc as ["body", <column>] and keeps the message JSON decode error. The column comes from CPython's json
+      decoder and has no serde_json equivalent, and a YAML HTTP case cannot send a malformed body for the oracle to
+      compare.
+    why: >-
+      The status, type, message and body-level loc match; only the column inside loc differs, and neither proxy reaches
+      authentication or compliance evaluation for such a body.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2034-L2046
+  - what: >-
+      POST /compliance/eu-ai-act and POST /compliance/gdpr with no Authorization header answer 500 with the text body
+      Internal Server Error, where LiteLLM raises Exception("No api key passed in.") when a master key is set and its
+      auth exception handler turns that into a 401 auth_error whose error body is {"error": {"message":
+      "Authentication Error, No api key passed in.", "type": "auth_error", "param": "None", "code": "401"}}
+      (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L75-L80).
+      The HTTP case leaves the anonymous step out rather than comparing a status betterlite does not produce.
+    why: >-
+      The answer to a request without a key comes from betterlite's shared auth stage, which every protected route
+      uses, not from the compliance code this task owns; changing it to LiteLLM's 401 auth_error is a change to that
+      shared layer and belongs to the task that owns it. Once that layer answers 401 auth_error, the anonymous step
+      returns to the case.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1883-L1884
+kept_bugs: []
