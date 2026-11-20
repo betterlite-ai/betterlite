@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
-use std::future::{Future, ready};
+use std::future::Future;
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -11,6 +11,7 @@ use base64::engine::general_purpose::STANDARD;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::sync::Notify;
 use tracing::Level;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::MakeWriter;
@@ -154,6 +155,8 @@ pub(crate) struct Captured {
     requests: Arc<Mutex<Vec<Recorded>>>,
     answers: Arc<Mutex<VecDeque<u16>>>,
     failing: Arc<AtomicBool>,
+    holding: Arc<AtomicBool>,
+    hold: Arc<Notify>,
     fallback: u16,
 }
 
@@ -163,6 +166,8 @@ impl Default for Captured {
             requests: Arc::default(),
             answers: Arc::default(),
             failing: Arc::default(),
+            holding: Arc::default(),
+            hold: Arc::default(),
             fallback: 200,
         }
     }
@@ -182,6 +187,14 @@ impl Captured {
 
     pub(crate) fn recover(&self) {
         self.failing.store(false, Ordering::SeqCst);
+    }
+
+    pub(crate) fn hold(&self) {
+        self.holding.store(true, Ordering::SeqCst);
+    }
+
+    pub(crate) fn release(&self) {
+        self.hold.notify_one();
     }
 
     pub(crate) fn requests(&self) -> Vec<Recorded> {
@@ -210,27 +223,38 @@ impl Delivery for Captured {
             })
             .collect();
         let body = serde_json::from_slice::<Json>(&request.body).unwrap_or(Json::Null);
-        self.requests
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(Recorded {
-                url: request.url.to_string(),
-                headers,
-                body,
-            });
-        if self.failing.load(Ordering::SeqCst) {
-            return ready(Err(TransportFailure));
+        let recorded = Recorded {
+            url: request.url.to_string(),
+            headers,
+            body,
+        };
+        let holding = self.holding.load(Ordering::SeqCst);
+        let hold = Arc::clone(&self.hold);
+        let requests = Arc::clone(&self.requests);
+        let answers = Arc::clone(&self.answers);
+        let failing = self.failing.load(Ordering::SeqCst);
+        let fallback = self.fallback;
+        async move {
+            if holding {
+                hold.notified().await;
+            }
+            requests
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(recorded);
+            if failing {
+                return Err(TransportFailure);
+            }
+            let status = answers
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .pop_front()
+                .unwrap_or(fallback);
+            Ok(PostResponse {
+                status,
+                body: Vec::new(),
+            })
         }
-        let status = self
-            .answers
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop_front()
-            .unwrap_or(self.fallback);
-        ready(Ok(PostResponse {
-            status,
-            body: Vec::new(),
-        }))
     }
 }
 

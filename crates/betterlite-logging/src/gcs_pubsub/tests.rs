@@ -343,6 +343,31 @@ async fn an_empty_batch_publishes_nothing() {
 }
 
 #[tokio::test]
+async fn an_event_enqueued_during_a_flush_stays_queued() {
+    let fixture = open(&configured(), Overrides::default(), 512);
+    fixture.delivery.hold();
+    fixture
+        .logger
+        .async_log_success_event(Arc::new(event()))
+        .await
+        .expect("the event is accepted");
+    let delivery = fixture.delivery.clone();
+    let logger = fixture.logger;
+    let flush = logger.send_batch();
+    let enqueue = async {
+        tokio::task::yield_now().await;
+        logger
+            .async_log_success_event(Arc::new(event()))
+            .await
+            .expect("the event is accepted");
+        delivery.release();
+    };
+    tokio::join!(flush, enqueue);
+    assert_eq!(delivery.requests().len(), 1);
+    assert_eq!(logger.queue.pending().len(), 1);
+}
+
+#[tokio::test]
 async fn a_failed_publish_does_not_stay_queued() {
     let fixture = open(&configured(), Overrides::default(), 512);
     fixture
