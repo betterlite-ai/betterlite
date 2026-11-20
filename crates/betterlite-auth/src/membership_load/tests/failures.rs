@@ -132,7 +132,8 @@ async fn all_waiters_observe_failure() {
     let rows = FakeRows::blocked(RowsAnswer::Database);
     let shared_index = index().1;
     let counting = CountingIndex::new(Arc::clone(&shared_index));
-    let index_handle: Arc<dyn MembershipIndex> = Arc::clone(&counting);
+    let index_clone = Arc::clone(&counting);
+    let index_handle: Arc<dyn MembershipIndex> = index_clone;
     let tasks = TaskTracker::new();
     let first = lookup(
         Arc::clone(&cache),

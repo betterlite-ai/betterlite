@@ -25,7 +25,8 @@ async fn simultaneous_requests_share_load() {
     let rows = FakeRows::blocked(RowsAnswer::Found);
     let shared_index = index().1;
     let counting = CountingIndex::new(Arc::clone(&shared_index));
-    let index_handle: Arc<dyn MembershipIndex> = Arc::clone(&counting);
+    let index_clone = Arc::clone(&counting);
+    let index_handle: Arc<dyn MembershipIndex> = index_clone;
     let tasks = TaskTracker::new();
     let first = lookup(
         Arc::clone(&cache),
@@ -116,8 +117,9 @@ async fn replacement_survives_old_completion() {
     let reservation = key("user-1", "team-1");
     let (start, started) = oneshot::channel();
     let (completion, receiver) = watch::channel(None::<MembershipLoad>);
-    let rows_handle: Arc<dyn TeamMembershipRows> = Arc::clone(&rows);
-    let cache_handle: Arc<dyn MembershipCache> = Arc::clone(&cache);
+    let rows_clone = Arc::clone(&rows);
+    let rows_handle: Arc<dyn TeamMembershipRows> = rows_clone;
+    let cache_handle: Arc<dyn MembershipCache> = cache;
     let old = tasks.spawn(run_load(LoadRequest {
         start: started,
         completion,

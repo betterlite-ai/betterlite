@@ -408,7 +408,8 @@ pub(crate) fn reset_rig() -> ResetRig {
         dual_settings(),
         60.0_f64,
     ));
-    let counters: Arc<dyn SpendCounterCache> = Arc::clone(&spend);
+    let spend_clone = Arc::clone(&spend);
+    let counters: Arc<dyn SpendCounterCache> = spend_clone;
     ResetRig {
         invalidation: AuthInvalidation {
             auth,

@@ -82,7 +82,8 @@ async fn join_before_db_requirement() {
     let rows = FakeRows::blocked(RowsAnswer::Found);
     let shared = index().1;
     let counting = CountingIndex::new(Arc::clone(&shared));
-    let index_handle: Arc<dyn MembershipIndex> = Arc::clone(&counting);
+    let index_clone = Arc::clone(&counting);
+    let index_handle: Arc<dyn MembershipIndex> = index_clone;
     let tasks = TaskTracker::new();
     let creator = lookup(
         Arc::clone(&cache),

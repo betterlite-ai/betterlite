@@ -169,8 +169,9 @@ async fn absent_membership_cached() {
     let cache = FakeCache::new(77.5_f64);
     let tasks = TaskTracker::new();
     let rows: Arc<dyn TeamMembershipRows> = Arc::new(database_rows(&pool));
+    let cache_handle = Arc::clone(&cache);
     let subject = MembershipLookup {
-        cache: Arc::clone(&cache),
+        cache: cache_handle,
         rows: Some(rows),
         index: index().1,
         tasks: tasks.clone(),
