@@ -226,5 +226,4 @@ impl UserStore for DatabaseUserStore {
     }
 }
 
-const SSO_UPDATE_SQL: &str =
-    "UPDATE \"LiteLLM_UserTable\" AS entry SET \"sso_user_id\" = $2 WHERE entry.\"user_id\" = $1";
+const SSO_UPDATE_SQL: &str = "UPDATE \"LiteLLM_UserTable\" AS entry SET \"sso_user_id\" = $2, \"updated_at\" = (NOW() AT TIME ZONE 'UTC') WHERE entry.\"user_id\" = $1";

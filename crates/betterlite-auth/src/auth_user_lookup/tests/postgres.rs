@@ -23,7 +23,7 @@ use crate::auth_user_lookup::store::{DatabaseUserStore, UserStore};
 
 const SEED_CASE_EMAIL: &str = "INSERT INTO \"LiteLLM_UserTable\" (user_id, user_email) VALUES ('case-user', 'MixedCase@Example.com'), ('other-user', 'other@example.com')";
 const SEED_BACKFILL: &str = "INSERT INTO \"LiteLLM_UserTable\" (user_id, user_email) VALUES ('filled-user', 'stored@example.com'), ('empty-user', ''), ('null-user', NULL)";
-const SEED_SSO: &str = "INSERT INTO \"LiteLLM_UserTable\" (user_id, user_email, sso_user_id) VALUES ('sso-user', 'sso@example.com', 'old-sso')";
+const SEED_SSO: &str = "INSERT INTO \"LiteLLM_UserTable\" (user_id, user_email, sso_user_id, updated_at) VALUES ('sso-user', 'sso@example.com', 'old-sso', TIMESTAMP '2000-01-01 00:00:00')";
 
 #[derive(Parser)]
 struct Environment {
@@ -79,7 +79,7 @@ async fn close(fixture: PostgresFixture, store: Arc<DatabaseUserStore>) {
 
 fn lookup_for(store: &Arc<DatabaseUserStore>, cache: Arc<FakeCache>) -> UserLookup {
     let cache_port: Arc<dyn UserCache> = cache;
-    let store_port: Arc<dyn UserStore> = Arc::clone(store);
+    let store_port: Arc<dyn UserStore> = Arc::<DatabaseUserStore>::clone(store);
     let reset: Arc<dyn BudgetResetCalculator> = Arc::new(FakeReset::default());
     let enrollment: Arc<dyn DefaultTeamEnrollment> = Arc::new(FakeEnrollment::default());
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the built-in patterns compile");
@@ -117,6 +117,18 @@ async fn stored_email(store: &PostgresStore, user_id: &str) -> Option<String> {
 
 async fn stored_sso(store: &PostgresStore, user_id: &str) -> Option<String> {
     stored_column(store, "sso_user_id", user_id).await
+}
+
+async fn stored_updated_after(store: &PostgresStore, user_id: &str, floor: &str) -> bool {
+    let client = store.session().await.expect("the database connection");
+    let row = client
+        .query_one(
+            "SELECT updated_at > $2::timestamp FROM \"LiteLLM_UserTable\" WHERE user_id = $1",
+            &[&user_id, &floor],
+        )
+        .await
+        .expect("the stored user");
+    row.try_get(0).expect("the updated_at comparison")
 }
 
 async fn user_count(store: &PostgresStore, user_id: &str) -> i64 {
@@ -222,6 +234,10 @@ async fn sso_update_overwrite_reaches_rows() {
     assert_eq!(
         stored_sso(&store.reader, "sso-user").await.as_deref(),
         Some("new-sso")
+    );
+    assert!(
+        stored_updated_after(&store.reader, "sso-user", "2000-01-02").await,
+        "the update stamps updated_at like Prisma's @updatedAt"
     );
     close(fixture, store).await;
 }
