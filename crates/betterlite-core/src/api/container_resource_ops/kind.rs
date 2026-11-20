@@ -14,15 +14,15 @@ pub(crate) const RETRIEVE_CALL_TYPE: &str = "retrieve_container";
 pub(crate) const DELETE_CALL_TYPE: &str = "delete_container";
 
 // what retrieve and delete do differently: the record, the call type, the mock and the handler entry point
-pub(crate) trait Kind<Handler> {
+pub(crate) trait Kind {
     type Reply;
     const CALL_TYPE: &'static str;
     fn mock(mock: Option<&Json>) -> Result<Option<Self::Reply>, ContainerOpError>;
-    fn call(
+    fn call<Handler: ContainerHandler>(
         handler: &Handler,
         call: &ContainerHandlerCall<'_>,
     ) -> Result<Self::Reply, ContainerResourceHttpError>;
-    fn call_async(
+    fn call_async<Handler: ContainerHandler>(
         handler: &Handler,
         call: &ContainerHandlerCall<'_>,
     ) -> impl Future<Output = Result<Self::Reply, ContainerResourceHttpError>> + Send;
@@ -32,7 +32,7 @@ pub(crate) trait Kind<Handler> {
 
 pub(crate) struct Retrieve;
 
-impl<Handler: ContainerHandler> Kind<Handler> for Retrieve {
+impl Kind for Retrieve {
     type Reply = ContainerObject;
     const CALL_TYPE: &'static str = RETRIEVE_CALL_TYPE;
 
@@ -40,14 +40,14 @@ impl<Handler: ContainerHandler> Kind<Handler> for Retrieve {
         mock_reply(mock, RETRIEVE_TYPE)
     }
 
-    fn call(
+    fn call<Handler: ContainerHandler>(
         handler: &Handler,
         call: &ContainerHandlerCall<'_>,
     ) -> Result<Self::Reply, ContainerResourceHttpError> {
         handler.retrieve(call)
     }
 
-    fn call_async(
+    fn call_async<Handler: ContainerHandler>(
         handler: &Handler,
         call: &ContainerHandlerCall<'_>,
     ) -> impl Future<Output = Result<Self::Reply, ContainerResourceHttpError>> + Send {
@@ -65,7 +65,7 @@ impl<Handler: ContainerHandler> Kind<Handler> for Retrieve {
 
 pub(crate) struct Delete;
 
-impl<Handler: ContainerHandler> Kind<Handler> for Delete {
+impl Kind for Delete {
     type Reply = DeleteContainerResult;
     const CALL_TYPE: &'static str = DELETE_CALL_TYPE;
 
@@ -73,14 +73,14 @@ impl<Handler: ContainerHandler> Kind<Handler> for Delete {
         mock_reply(mock, DELETE_TYPE)
     }
 
-    fn call(
+    fn call<Handler: ContainerHandler>(
         handler: &Handler,
         call: &ContainerHandlerCall<'_>,
     ) -> Result<Self::Reply, ContainerResourceHttpError> {
         handler.delete(call)
     }
 
-    fn call_async(
+    fn call_async<Handler: ContainerHandler>(
         handler: &Handler,
         call: &ContainerHandlerCall<'_>,
     ) -> impl Future<Output = Result<Self::Reply, ContainerResourceHttpError>> + Send {

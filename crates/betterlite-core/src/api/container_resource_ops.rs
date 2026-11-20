@@ -116,7 +116,7 @@ where
     Configs: ContainerConfigLookup,
 {
     // LiteLLM checks the mock first: only a real call decodes the id, looks up the config and updates the logging
-    fn begin<Operation: Kind<Handler>>(
+    fn begin<Operation: Kind>(
         &self,
         request: &ContainerOperationRequest<'_>,
     ) -> Result<Begin<'deps, Operation::Reply>, ContainerOpFailure> {
