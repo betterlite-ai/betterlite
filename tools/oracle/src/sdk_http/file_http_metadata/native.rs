@@ -84,13 +84,13 @@ fn metadata_call<'call>(
 fn outcome(result: Result<MetadataValue, MetadataError>) -> Result<Outcome, SdkHttpError> {
     match result {
         Ok(value) => {
-            let bare = match value {
-                MetadataValue::File(file) => serde_json::to_value(file),
-                MetadataValue::Deleted(deleted) => serde_json::to_value(deleted),
-                MetadataValue::Listed(files) => serde_json::to_value(files),
-            };
-            let json = serde_json::from_value(bare.map_err(SdkHttpError::Serialize)?)
-                .map_err(SdkHttpError::Serialize)?;
+            let text = match value {
+                MetadataValue::File(file) => serde_json::to_string(&file),
+                MetadataValue::Deleted(deleted) => serde_json::to_string(&deleted),
+                MetadataValue::Listed(files) => serde_json::to_string(&files),
+            }
+            .map_err(SdkHttpError::Serialize)?;
+            let json = serde_json::from_str(&text).map_err(SdkHttpError::Serialize)?;
             Ok(Outcome {
                 result: Some(json),
                 failure: None,
