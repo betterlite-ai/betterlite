@@ -298,3 +298,29 @@ fn creation_accepts_a_reply_at_the_response_cap() {
     assert_eq!(object, config.object);
     serving.finish().unwrap();
 }
+
+#[test]
+fn creation_refuses_a_reply_past_the_response_cap() {
+    let body = "a".repeat(MAX_RESPONSE_BYTES + 1);
+    let serving = serve(reply("200 OK", &[], &body), Duration::ZERO).unwrap();
+    let base = format!("http://{}", serving.address);
+    let (mut config, log, mut state, mut clients) = parts("video_create_character");
+    config.create_url = format!("{base}/v1/characters");
+    let env = log.env();
+    let mut transport =
+        CharacterTransport::with_generated_boundary(&config, &mut clients, &mut state, &env);
+    let litellm = params(&[("api_base", base.as_str())]);
+    let clip = video();
+    let call = create_call("Wren", &clip, &litellm);
+
+    let error = match transport.video_create_character_handler(&call) {
+        Ok(_handled) => panic!("a reply past the cap is refused"),
+        Err(error) => error,
+    };
+
+    let CharacterError::Transport(RequestFailure::BodyTooLarge { limit }) = error else {
+        panic!("the cap names the limit it refused");
+    };
+    assert_eq!(limit, MAX_RESPONSE_BYTES);
+    drop(serving.finish());
+}
