@@ -20,6 +20,8 @@ description: >-
   for cached JSON and decode_cli_complete_form for UTF-8 URL-encoded body bytes, retaining the
   first duplicate form value. Fuzz them through cli_login_input. The 205 source lines yield
   approximately 260 product, 200 behavior/HTTP tests and 130 config/fuzz lines, budget 700.
+
+  Mount and login entry arm. B1628 and B063 land first. B1628 answers GET /sso/key/generate with source=litellm-cli with 501 "the CLI SSO login is not installed"; replace that arm in crates/betterlite-server/src/sso_login_entry with this task's CLI login session check and CLI state, so the entry checks the CLI session first as LiteLLM does (ui_sso.py L1051-L1059), and drop B1628's 501 deviation there. Add this task's router to B063's public routes in crates/betterlite-server/src/sso.rs with no auth layer, and write tools/oracle/cases/sso/login-entry/invalid-cli-session.yaml through the booted proxy.
 scope:
   paths:
     - crates/betterlite-server/Cargo.toml
@@ -35,6 +37,10 @@ scope:
     - tools/oracle/helpers/b1613/**
     - tools/oracle/src/helpers/server/b1613.rs
     - tools/oracle/src/helpers/server/b1613/**
+    - crates/betterlite-server/src/sso_login_entry.rs
+    - crates/betterlite-server/src/sso_login_entry/**
+    - crates/betterlite-server/src/sso.rs
+    - tools/oracle/cases/sso/login-entry/invalid-cli-session.yaml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L261-L401
@@ -46,7 +52,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1743-L1747
     why: CLI state prefix, cache namespace and lifetime.
 dod:
-  - text: The handlers are tested with tower's oneshot over this task's own Router and fake ports; B8770 mounts them through B063 and B8771 proves them over HTTP.
+  - text: The handlers are tested with tower's oneshot over this task's own Router and fake ports; this task adds its router to B063's public routes, and B8771 proves the CLI flow over HTTP.
     proof: [flow-tests]
   - text: Actual unauthenticated HTTP starts and completion failures preserve status, headers and error envelopes.
     proof: [flow-tests]
@@ -54,6 +60,8 @@ dod:
     proof: [flow-tests]
   - text: The two general settings load with false defaults and new form/cache inputs survive corpus replay.
     proof: [flow-config, flow-corpora]
+  - text: "A CLI login with an invalid session answers like LiteLLM through the booted proxy, and the login entry checks the CLI session before the browser branches."
+    proof: [oracle]
 checks:
   optional: [mutants]
   commands:
@@ -66,7 +74,8 @@ checks:
     - id: flow-corpora
       why: CLI cache/form bytes or their config seed have no branch-added regression inputs.
       run: test -f crates/betterlite-server/fuzz/fuzz_targets/cli_login_input.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/cli_login_input)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/cli-login-flow-*')" && cargo nextest run --locked -p betterlite-server -p betterlite-config --no-tests=fail -E 'test(replays_the_cli_login_input_corpus) | test(replays_the_config_yaml_corpus)'
-oracle_cases: []
+oracle_cases:
+- tools/oracle/cases/sso/login-entry/invalid-cli-session.yaml
 deviations: []
 out_of_scope:
   - Browser identity completion and its browser token are created by B1615; B1614 consumes verified flows to issue a CLI JWT.

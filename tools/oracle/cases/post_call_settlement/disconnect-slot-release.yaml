@@ -1,0 +1,13 @@
+kind: helper
+name: post-call-settlement-disconnect-slot-release
+call:
+  b3046:
+    function: disconnect
+    stash:
+      parallel_slot:
+        slot_id: slot-1
+        counter_keys: [api_key:k1:max_parallel_requests]
+    seed:
+      api_key:k1:max_parallel_requests: 2
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,20 @@
+kind: helper
+name: guardrail-snapshot-capture-keeps-body
+call:
+  b9999:
+    function: capture
+    body:
+      model: gpt-4o
+      messages:
+        - role: user
+          content: hi
+      metadata:
+        litellm_parent_otel_span: otel-span
+      litellm_metadata:
+        litellm_parent_otel_span: otel-span
+    metadata:
+      standard_logging_guardrail_information:
+        - guardrail_mode: pre_call
+          guardrail_name: pii
+env: {}
+compare: {ignore: []}
