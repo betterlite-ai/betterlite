@@ -9,7 +9,6 @@ from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
 JSON_VALUE: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
-OBJECT: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 
 
 class ScriptedError(TypedDict):
@@ -72,11 +71,11 @@ def run(input_value: Input) -> JsonValue:
         logger.removeHandler(capture)
         litellm.vector_store_registry = previous
     warnings = [record.getMessage() for record in capture.buffer]
-    return JSON_VALUE.validate_python(
-        {
-            "provider": provider,
-            "kwargs": OBJECT.validate_python(kwargs),
-            "lookups": JSON_VALUE.validate_python(calls),
-            "warnings": JSON_VALUE.validate_python(warnings),
-        }
-    )
+    final_kwargs = cast("dict[str, JsonValue]", kwargs)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L39-L51
+    projection: dict[str, JsonValue] = {
+        "provider": provider,
+        "kwargs": final_kwargs,
+        "lookups": JSON_VALUE.validate_python(calls),
+        "warnings": JSON_VALUE.validate_python(warnings),
+    }
+    return projection
