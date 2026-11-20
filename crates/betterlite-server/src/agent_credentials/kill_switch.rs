@@ -9,14 +9,15 @@ use crate::kill_switch_management::restore::restore_kill_switch;
 
 #[must_use]
 pub fn parse_agent_kill_switch(value: Option<&AgentJson>) -> Option<AgentKillSwitchConfig> {
-    let value = value?;
-    match value {
+    let stored = value?;
+    match stored {
         AgentJson::Null => None,
-        AgentJson::String(text) => serde_json::from_str::<AgentJson>(text)
-            .ok()
-            .and_then(|parsed| serde_json::from_value::<AgentKillSwitchConfig>(parsed).ok()),
+        AgentJson::String(text) => {
+            let parsed = serde_json::from_str::<AgentJson>(text).ok()?;
+            serde_json::from_value::<AgentKillSwitchConfig>(parsed).ok()
+        }
         AgentJson::Bool(_) | AgentJson::Number(_) | AgentJson::Array(_) | AgentJson::Object(_) => {
-            serde_json::from_value::<AgentKillSwitchConfig>(value.clone()).ok()
+            serde_json::from_value::<AgentKillSwitchConfig>(stored.clone()).ok()
         }
     }
 }
