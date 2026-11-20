@@ -11,7 +11,9 @@ use super::support::{
 };
 use crate::api::video_character_transport::clients::SuppliedClients;
 use crate::api::video_character_transport::error::CharacterError;
-use crate::api::video_character_transport::service::{CharacterHandled, CharacterTransport};
+use crate::api::video_character_transport::service::{
+    CharacterCall, CharacterHandled, CharacterTransport,
+};
 
 const BASE: &str = "https://api.example/v1";
 
@@ -39,7 +41,10 @@ async fn async_creation_selects_through_the_async_factory_with_ssl_verify() {
     let clip = video();
     let call = create_call("Wren", &clip, &litellm);
 
-    fixture.async_create(&call, None).await.unwrap();
+    fixture
+        .async_call(CharacterCall::Create(&call), None)
+        .await
+        .unwrap();
 
     assert_eq!(
         fixture.clients.selections(),
@@ -65,7 +70,10 @@ async fn async_lookup_selects_with_ssl_verify_from_the_params() {
     litellm.insert("ssl_verify".to_owned(), JsonValue::Bool(true));
     let call = get_call("char-1", &litellm);
 
-    fixture.async_get(&call, None).await.unwrap();
+    fixture
+        .async_call(CharacterCall::Get(&call), None)
+        .await
+        .unwrap();
 
     assert_eq!(
         fixture.clients.selections(),
@@ -117,7 +125,10 @@ async fn a_supplied_async_client_sends_instead_of_the_factories() {
     let clip = video();
     let call = create_call("Wren", &clip, &litellm);
 
-    fixture.async_create(&call, Some(&supplied)).await.unwrap();
+    fixture
+        .async_call(CharacterCall::Create(&call), Some(&supplied))
+        .await
+        .unwrap();
 
     assert_eq!(supplied.requests().len(), 1);
     assert_eq!(fixture.wire.requests().len(), 0);

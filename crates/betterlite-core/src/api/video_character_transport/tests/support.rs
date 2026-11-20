@@ -25,6 +25,7 @@ use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
+use futures_util::FutureExt as _;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::Client;
 use reqwest::blocking::Client as BlockingClient;
@@ -629,26 +630,30 @@ impl Fixture {
         self.sync(CharacterCall::Get(call), supplied)
     }
 
-    pub(crate) async fn async_create(
+    pub(crate) async fn async_call(
         &mut self,
-        call: &CharacterCreateCall<'_>,
+        call: CharacterCall<'_>,
         supplied: Option<&FakeWire>,
     ) -> Result<CharacterObject, CharacterFault<RecordingConfig>> {
-        self.async_flow(CharacterCall::Create(call), supplied).await
-    }
-
-    pub(crate) async fn async_get(
-        &mut self,
-        call: &CharacterGetCall<'_>,
-        supplied: Option<&FakeWire>,
-    ) -> Result<CharacterObject, CharacterFault<RecordingConfig>> {
-        self.async_flow(CharacterCall::Get(call), supplied).await
+        self.run(call, supplied, Mode::Asynchronous).await
     }
 
     fn sync(
         &mut self,
         call: CharacterCall<'_>,
         supplied: Option<&FakeWire>,
+    ) -> Result<CharacterObject, CharacterFault<RecordingConfig>> {
+        self.run(call, supplied, Mode::Sync)
+            .now_or_never()
+            .expect("a sync call answers on the first poll")
+    }
+
+    // the one flow both helpers run; a sync call has its answer in hand after the first poll
+    async fn run(
+        &mut self,
+        call: CharacterCall<'_>,
+        supplied: Option<&FakeWire>,
+        mode: Mode,
     ) -> Result<CharacterObject, CharacterFault<RecordingConfig>> {
         let env = self.log.env();
         let mut transport = CharacterTransport::with_generated_boundary(
@@ -657,36 +662,32 @@ impl Fixture {
             &mut self.state,
             &env,
         )
-        .supplying(SuppliedClients {
-            sync: supplied,
-            asynchronous: None,
+        .supplying(match mode {
+            Mode::Sync => SuppliedClients {
+                sync: supplied,
+                asynchronous: None,
+            },
+            Mode::Asynchronous => SuppliedClients {
+                sync: None,
+                asynchronous: supplied,
+            },
         });
+        match mode {
+            Mode::Sync => Self::sync_answer(&mut transport, call),
+            Mode::Asynchronous => transport.async_video_character_handler(call).await,
+        }
+    }
+
+    fn sync_answer(
+        transport: &mut CharacterTransport<'_, '_, RecordingConfig, FakeClients>,
+        call: CharacterCall<'_>,
+    ) -> Result<CharacterObject, CharacterFault<RecordingConfig>> {
         let handled = transport.video_character_handler(call)?;
         let object = match handled {
             CharacterHandled::Done(object) => Some(object),
             CharacterHandled::Pending(_) => None,
         };
         Ok(object.expect("a sync call without the async flag answers in place"))
-    }
-
-    async fn async_flow(
-        &mut self,
-        call: CharacterCall<'_>,
-        supplied: Option<&FakeWire>,
-    ) -> Result<CharacterObject, CharacterFault<RecordingConfig>> {
-        let env = self.log.env();
-        let mut transport = CharacterTransport::with_generated_boundary(
-            &self.config,
-            &mut self.clients,
-            &mut self.state,
-            &env,
-        );
-        transport.supplied = SuppliedClients {
-            sync: None,
-            asynchronous: supplied,
-        };
-        let reply = transport.async_video_character_handler(call);
-        reply.await
     }
 }
 

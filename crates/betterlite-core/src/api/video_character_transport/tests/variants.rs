@@ -4,7 +4,9 @@ use super::support::{
     CHARACTER_BODY, Events, FakeClients, FakeWire, Fixture, LogEnv, create_call, get_call,
     logging_state, params, recording, video,
 };
-use crate::api::video_character_transport::service::{CharacterHandled, CharacterTransport};
+use crate::api::video_character_transport::service::{
+    CharacterCall, CharacterHandled, CharacterTransport,
+};
 
 const BASE: &str = "https://api.example/v1";
 
@@ -117,7 +119,10 @@ async fn async_creation_handler_runs_the_whole_flow() {
     let clip = video();
     let call = create_call("Wren", &clip, &litellm);
 
-    let object = fixture.async_create(&call, None).await.unwrap();
+    let object = fixture
+        .async_call(CharacterCall::Create(&call), None)
+        .await
+        .unwrap();
 
     assert_eq!(object, fixture.config.object);
     assert_eq!(
@@ -141,7 +146,10 @@ async fn async_lookup_handler_runs_the_whole_flow() {
     let litellm = params(&[("api_base", BASE)]);
     let call = get_call("char-1", &litellm);
 
-    let object = fixture.async_get(&call, None).await.unwrap();
+    let object = fixture
+        .async_call(CharacterCall::Get(&call), None)
+        .await
+        .unwrap();
 
     assert_eq!(object, fixture.config.object);
     assert_eq!(
