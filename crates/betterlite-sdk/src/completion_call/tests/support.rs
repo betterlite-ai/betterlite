@@ -140,6 +140,12 @@ pub(super) fn deployment() -> ChatDeployment {
     resolved
 }
 
+pub(super) fn deployment_named(model_id: &str) -> ChatDeployment {
+    let mut resolved = deployment();
+    resolved.model_id = model_id.to_owned();
+    resolved
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct Lookup {
     pub model: String,
@@ -347,6 +353,8 @@ pub(super) struct SeenCall {
 pub(super) struct FakeChat {
     completion: Mutex<String>,
     frames: Mutex<Vec<String>>,
+    null_models: Mutex<Vec<String>>,
+    failures: Mutex<VecDeque<ChatFailure>>,
     pub seen: Arc<Mutex<Vec<SeenCall>>>,
 }
 
@@ -357,12 +365,22 @@ impl FakeChat {
                 r#"{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"gpt-4o","choices":[{"index":0,"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"}]}"#,
             )),
             frames: Mutex::new(Vec::new()),
+            null_models: Mutex::new(Vec::new()),
+            failures: Mutex::new(VecDeque::new()),
             seen: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
     pub(super) fn answers(&self, body: &str) {
         *lock(&self.completion) = body.to_owned();
+    }
+
+    pub(super) fn answers_null(&self, model: &str) {
+        lock(&self.null_models).push(model.to_owned());
+    }
+
+    pub(super) fn fails_with(&self, failure: ChatFailure) {
+        lock(&self.failures).push_back(failure);
     }
 
     pub(super) fn streams(&self, frames: &[&str]) {
@@ -395,8 +413,21 @@ impl ChatCall for FakeChat {
         _control: ControlOptions,
     ) -> Result<ChatCompletionAnswer, ChatFailure> {
         self.record(&call);
+        if let Some(failure) = lock(&self.failures).pop_front() {
+            return Err(failure);
+        }
+        let empty = call
+            .request
+            .model
+            .as_deref()
+            .is_some_and(|model| lock(&self.null_models).iter().any(|null| null == model));
+        let body = if empty {
+            String::from("null")
+        } else {
+            lock(&self.completion).clone()
+        };
         Ok(ChatCompletionAnswer {
-            body: lock(&self.completion).clone().into_bytes(),
+            body: body.into_bytes(),
             upstream_headers: HeaderMap::new(),
             upstream_time: Duration::ZERO,
         })
@@ -629,6 +660,19 @@ impl RecordingTarget {
         }
     }
 
+    pub(super) fn empty_then_ok() -> Self {
+        let mut outcomes = VecDeque::new();
+        outcomes.push_back(Ok(CallOutcome::Response(Json::Null)));
+        outcomes.push_back(Ok(CallOutcome::Response(Json::Object(JsonObject::from([
+            (String::from("id"), Json::Text(String::from("ok"))),
+        ])))));
+        Self {
+            calls: Arc::new(Mutex::new(Vec::new())),
+            outcomes: Mutex::new(outcomes),
+            fail_all: false,
+        }
+    }
+
     pub(super) fn call_map(&self) -> Vec<RequestMap> {
         lock(&self.calls).clone()
     }
@@ -716,6 +760,53 @@ impl AgenticCallback for FakeCallback {
     }
 }
 
+// runs the loop only when the call details the tail built reach it intact
+pub(super) struct CheckingCallback {
+    pub reply: String,
+}
+
+#[async_trait]
+impl AgenticCallback for CheckingCallback {
+    fn callback_name(&self) -> &str {
+        "checking"
+    }
+
+    fn overrides(&self) -> AgenticOverrides {
+        AgenticOverrides {
+            should_run: true,
+            build_plan: false,
+            ..AgenticOverrides::default()
+        }
+    }
+
+    async fn should_run_agentic_loop(
+        &self,
+        call: &AgenticCall<'_>,
+    ) -> Result<AgenticGate, AgenticHookError> {
+        let message = call
+            .messages
+            .first()
+            .is_some_and(|message| message.0.get().contains("\"hi\""));
+        let marker = call.kwargs.contains_key("agentic_marker");
+        Ok(AgenticGate {
+            run: message && marker && !call.stream,
+            tools: JsonMap::new(),
+        })
+    }
+
+    async fn run_agentic_loop(
+        &self,
+        call: &AgenticLoopCall<'_>,
+    ) -> Result<Option<Box<RawValue>>, AgenticHookError> {
+        if !call.optional_params.contains_key("temperature") {
+            return Ok(None);
+        }
+        Ok(Some(
+            RawValue::from_string(self.reply.clone()).expect("the fixture reply is JSON"),
+        ))
+    }
+}
+
 pub(super) struct Harness {
     pub settings: CompletionSettings,
     pub metadata: FakeMetadata,
@@ -744,7 +835,7 @@ impl Harness {
             timeout: FakeTimeout,
             chat: Arc::new(FakeChat::new()),
             dispatch: Arc::new(Dispatch::new(
-                vec![deployment()],
+                vec![deployment(), deployment_named("empty-model")],
                 Arc::new(NoRules),
                 Arc::new(TracingCallLog),
             )),

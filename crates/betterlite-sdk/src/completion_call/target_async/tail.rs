@@ -19,7 +19,7 @@ use futures_util::{StreamExt as _, stream::BoxStream};
 use indexmap::IndexMap;
 impl AsyncCompletionTarget<'_> {
     // the provider-agnostic dispatch point for the chat-completions agentic loop
-    async fn agentic(
+    pub(super) async fn agentic(
         &self,
         outcome: CallOutcome,
         args: &CompletionArgs,

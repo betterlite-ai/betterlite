@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+mod coverage;
 mod support;
 
 use std::sync::Arc;

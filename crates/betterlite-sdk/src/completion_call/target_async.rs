@@ -152,7 +152,7 @@ impl CallTarget for AsyncCompletionTarget<'_> {
         retry::with_retries(&self.inner, request, logging, self.inner.sleeper).await
     }
 }
-fn provider_of(prepared: &PreparedCompletion) -> Option<&str> {
+pub(crate) fn provider_of(prepared: &PreparedCompletion) -> Option<&str> {
     match prepared {
         PreparedCompletion::Dispatch(call)
         | PreparedCompletion::ResponsesBridge(call)
