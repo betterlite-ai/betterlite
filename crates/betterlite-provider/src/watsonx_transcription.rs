@@ -15,7 +15,7 @@ use betterlite_openai::watsonx_audio::WatsonxAudioConfig;
 use betterlite_openai::watsonx_auth::WatsonxAuth;
 use betterlite_openai::watsonx_auth::transport::WatsonxTransport;
 use http::HeaderMap;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 use self::config::{BoundConfig, header_index};
 use self::error::WatsonxTranscriptionError;
@@ -60,10 +60,15 @@ impl<T: WatsonxTransport> WatsonxTranscription<'_, '_, '_, T> {
         let source = PooledSource {
             client: self.client.clone(),
         };
+        // A supplied client of the other kind stays unused, as llm_http_handler.py's isinstance check leaves it
+        let supplied = call.supplied.as_ref().map(|client| SuppliedClient {
+            kind: client.kind,
+            transport: client.transport,
+        });
         let deps = TranscriptionDeps {
             config: Some(&config),
             source: &source,
-            supplied: compatible(call.supplied.as_ref()),
+            supplied,
         };
         let outcome = audio_transcriptions(&deps, &forward(call), &mut *self.log).await;
         if let Some(failure) = config.take_failure() {
@@ -73,23 +78,13 @@ impl<T: WatsonxTransport> WatsonxTranscription<'_, '_, '_, T> {
     }
 }
 
-// A supplied client of the other kind stays unused, as llm_http_handler.py's isinstance check leaves it
-fn compatible<'call>(
-    supplied: Option<&SuppliedClient<'call, ProxiedClient>>,
-) -> Option<SuppliedClient<'call, ProxiedClient>> {
-    supplied.map(|client| SuppliedClient {
-        kind: client.kind,
-        transport: client.transport,
-    })
-}
-
 fn forward<'call>(call: &WatsonxTranscriptionCall<'call>) -> TranscriptionCall<'call> {
     TranscriptionCall {
         model: call.model,
         audio_file: call.audio_file,
         optional_params: call.optional_params,
         litellm_params: call.litellm_params,
-        api_key: call.api_key.map(|key| key.expose_secret()),
+        api_key: call.api_key.map(ExposeSecret::expose_secret),
         api_base: call.api_base,
         custom_llm_provider: WATSONX,
         headers: None,

@@ -75,13 +75,34 @@ fn json_reply(body: &str) -> Vec<u8> {
     reply("200 OK", &[("content-type", "application/json")], body)
 }
 
-fn provider_error<T: Debug>(result: Result<T, WatsonxTranscriptionError>) -> BaseLlmException {
+fn provider_error<T>(result: Result<T, WatsonxTranscriptionError>) -> BaseLlmException
+where
+    T: Debug,
+{
     let WatsonxTranscriptionError::Http(TranscriptionHttpError::Provider(provider)) =
         result.expect_err("the call fails")
     else {
         panic!("the executor failure is a provider error");
     };
     provider
+}
+
+// The auth that survives the multipart rewrite: Bearer, JSON accepted, and no JSON content type left
+fn assert_multipart_head(head: &str) {
+    assert!(head.contains("authorization: Bearer envtoken"));
+    assert!(head.contains("accept: application/json"));
+    assert!(!head.contains("content-type: application/json"));
+    assert!(head.contains("content-type: multipart/form-data; boundary="));
+}
+
+// httpx names a plain value's part upload, and the form names the model field model, not model_id
+fn assert_multipart_body(body: &str) {
+    assert!(body.contains("name=\"file\"; filename=\"upload\""));
+    assert!(body.contains("Content-Type: application/octet-stream"));
+    assert!(body.contains(AUDIO));
+    assert!(body.contains("name=\"model\""));
+    assert!(body.contains(MODEL));
+    assert!(!body.contains("model_id"));
 }
 
 async fn token_without_key() {
@@ -105,18 +126,8 @@ async fn token_without_key() {
     );
     let request = &outcome.requests[0];
     assert_eq!(request.line, DEFAULT_VERSION_POST);
-    let head = request.head.as_str();
-    assert!(head.contains("authorization: Bearer envtoken"));
-    assert!(head.contains("accept: application/json"));
-    assert!(!head.contains("content-type: application/json"));
-    assert!(head.contains("content-type: multipart/form-data; boundary="));
-    let body = request.body.as_str();
-    assert!(body.contains("name=\"file\"; filename=\"upload\""));
-    assert!(body.contains("Content-Type: application/octet-stream"));
-    assert!(body.contains(AUDIO));
-    assert!(body.contains("name=\"model\""));
-    assert!(body.contains(MODEL));
-    assert!(!body.contains("model_id"));
+    assert_multipart_head(request.head.as_str());
+    assert_multipart_body(request.body.as_str());
 }
 
 async fn project_before_space() {

@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::io::Write as _;
+use std::mem::take;
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -92,7 +93,7 @@ impl Recorder {
             handle.join().expect("the recorder stops");
         }
         let mut requests = self.requests.lock().unwrap_or_else(PoisonError::into_inner);
-        std::mem::take(&mut *requests)
+        take(&mut *requests)
     }
 }
 
@@ -126,7 +127,7 @@ fn record(
             .push(request);
         thread::park_timeout(pause);
         if stream.write_all(answer).is_err() {
-            continue;
+            break;
         }
     }
 }
@@ -214,12 +215,15 @@ impl Logging {
         }
     }
 
-    pub(crate) async fn transcribe<T: WatsonxTransport>(
+    pub(crate) async fn transcribe<T>(
         &mut self,
         auth: &WatsonxAuth<T>,
         client: &ProxiedClient,
         call: &WatsonxTranscriptionCall<'_>,
-    ) -> Result<TranscriptionReply, WatsonxTranscriptionError> {
+    ) -> Result<TranscriptionReply, WatsonxTranscriptionError>
+    where
+        T: WatsonxTransport,
+    {
         let env = PrePostEnv {
             debug: DebugSettings::default(),
             globals: GlobalFlags::default(),
