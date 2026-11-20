@@ -774,6 +774,10 @@ impl SearchConfig for DelegatingConfig {
         self.inner.transform_search_response(response, logging)
     }
 
+    fn sign_request(&self, request: SignRequest<'_>) -> (OpenAiHeaders, Option<Vec<u8>>) {
+        self.inner.sign_request(request)
+    }
+
     fn query_embedding_config(&self) -> Option<&dyn QueryEmbeddingConfig> {
         if self.inner.query_embedding {
             Some(self)

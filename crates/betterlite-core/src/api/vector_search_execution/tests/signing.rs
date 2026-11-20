@@ -387,6 +387,7 @@ fn assert_signed_thread(
 
 // Neither async transform is overridden here, so the traits' sync-to-async defaults run
 async fn default_case(kind: DefaultCase) {
+    let caller = std::thread::current().id();
     let case = signing_fixture();
     let events = Events::new();
     let wire = Wire::replying(Reply::json(200, SEARCH_RESPONSE), &events);
@@ -443,5 +444,8 @@ async fn default_case(kind: DefaultCase) {
             );
         }
     }
-    assert_eq!(wire.requests().len(), 1);
+    assert_eq!(guard.threads, [caller]);
+    let sent = wire.requests();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent_header(&sent[0], "x-signed"), Some("sig-1"));
 }
