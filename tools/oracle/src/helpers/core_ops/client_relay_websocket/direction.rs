@@ -98,7 +98,7 @@ pub(crate) async fn run_backend_direction(
     }
 }
 
-fn client_exit(outcome: ClientOutcome) -> ClientLoopExit {
+const fn client_exit(outcome: ClientOutcome) -> ClientLoopExit {
     match outcome {
         ClientOutcome::ClientDisconnected => ClientLoopExit::ClientDisconnected,
         ClientOutcome::BackendClosed => ClientLoopExit::BackendClosed,

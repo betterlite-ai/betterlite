@@ -22,7 +22,10 @@ async fn client_buffer_and_logging_order() {
 
 async fn pre_setup_audio_is_buffered() {
     let outcome = ack(Fixture::default()
-        .with_provider(false, true)
+        .with_provider(ScriptedProvider {
+            requires_session_configuration: false,
+            delivers: true,
+        })
         .with_client_message(AUDIO_APPEND))
     .await;
     assert!(outcome.backend.frames().is_empty());
@@ -36,7 +39,10 @@ async fn pre_setup_audio_is_buffered() {
 async fn the_setup_update_goes_before_the_backlog() {
     let update = r#"{"type":"session.update","session":{"instructions":"hi"}}"#;
     let outcome = ack(Fixture::default()
-        .with_provider(false, true)
+        .with_provider(ScriptedProvider {
+            requires_session_configuration: false,
+            delivers: true,
+        })
         .with_pending_messages(&[AUDIO_APPEND])
         .with_client_message(update))
     .await;
@@ -54,7 +60,10 @@ async fn the_setup_update_goes_before_the_backlog() {
 
 async fn unrelated_frames_flush_once_setup_is_complete() {
     let outcome = ack(Fixture::default()
-        .with_provider(false, true)
+        .with_provider(ScriptedProvider {
+            requires_session_configuration: false,
+            delivers: true,
+        })
         .with_setup_complete(true)
         .with_pending_messages(&[AUDIO_APPEND])
         .with_client_message(TEXT_FRAME))
@@ -68,7 +77,10 @@ async fn unrelated_frames_flush_once_setup_is_complete() {
 
 async fn arrivals_during_flushing_are_buffered() {
     let outcome = ack(Fixture::default()
-        .with_provider(false, true)
+        .with_provider(ScriptedProvider {
+            requires_session_configuration: false,
+            delivers: true,
+        })
         .with_setup_complete(true)
         .with_flushing(true)
         .with_client_message(AUDIO_APPEND)
@@ -83,7 +95,10 @@ async fn arrivals_during_flushing_are_buffered() {
 
 async fn a_failed_flush_retains_the_queue() {
     let outcome = ack(Fixture::default()
-        .with_provider(false, true)
+        .with_provider(ScriptedProvider {
+            requires_session_configuration: false,
+            delivers: true,
+        })
         .with_setup_complete(true)
         .with_pending_messages(&[AUDIO_APPEND])
         .with_backend_failures(vec![0])

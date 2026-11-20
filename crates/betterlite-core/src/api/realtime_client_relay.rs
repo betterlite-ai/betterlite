@@ -41,6 +41,7 @@ where
     CallbackError: Error + Send + 'static,
 {
     // LiteLLM's _receive_client_message: a closed or broken client socket is a disconnect, not a loop failure
+    #[must_use]
     pub async fn receive_client_message(&mut self) -> Option<String> {
         let Some(socket) = self.state.client.as_deref_mut() else {
             tracing::debug!("Client disconnected: the realtime client websocket is not connected");
@@ -55,6 +56,7 @@ where
         }
     }
 
+    #[must_use]
     pub async fn client_ack_messages(&mut self) -> ClientLoopExit {
         loop {
             let Some(message) = self.receive_client_message().await else {

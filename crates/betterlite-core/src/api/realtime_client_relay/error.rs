@@ -37,7 +37,7 @@ where
 {
     // LiteLLM returns BACKEND_CLOSED only for a closed backend socket; every other loop failure ends the client loop
     #[must_use]
-    pub fn is_backend_closed(&self) -> bool {
+    pub const fn is_backend_closed(&self) -> bool {
         match self {
             Self::Send(error) => matches!(error, RealtimeSenderError::Backend(_)),
             Self::Guardrails(error) => match error {

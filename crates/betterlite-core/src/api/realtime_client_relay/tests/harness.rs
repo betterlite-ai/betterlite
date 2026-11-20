@@ -447,17 +447,9 @@ impl Default for Fixture {
 }
 
 impl Fixture {
-    pub(super) fn with_provider(
-        mut self,
-        requires_session_configuration: bool,
-        delivers: bool,
-    ) -> Self {
-        let provider = ScriptedProvider {
-            requires_session_configuration,
-            delivers,
-        };
+    pub(super) fn with_provider(mut self, provider: ScriptedProvider) -> Self {
         self.state.provider_config = Some(Box::new(provider));
-        self.state.setup.backend_setup_complete.0 = requires_session_configuration;
+        self.state.setup.backend_setup_complete.0 = provider.requires_session_configuration;
         self.provider = Some(provider);
         self
     }

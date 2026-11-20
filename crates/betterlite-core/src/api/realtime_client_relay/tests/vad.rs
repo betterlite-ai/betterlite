@@ -126,7 +126,10 @@ async fn without_transcription_guardrails_values_survive() {
 
 async fn the_flag_is_marked_only_after_a_delivery() {
     let dropped = ack(Fixture::default()
-        .with_provider(false, false)
+        .with_provider(ScriptedProvider {
+            requires_session_configuration: false,
+            delivers: false,
+        })
         .with_setup_complete(true)
         .with_guardrail(transcription_guardrail())
         .with_client_message(&session_update(r#"{"instructions":"hi"}"#)))
