@@ -7,6 +7,8 @@ mod upload;
 
 mod tests;
 
+use std::future::{Ready, ready};
+
 use async_trait::async_trait;
 use betterlite_config::rag::document::ingest::VertexAIVectorStoreOptions;
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
@@ -64,9 +66,9 @@ impl VertexIngestion {
         }
     }
 
-    pub async fn embed(&self, _chunks: &[String]) -> Option<Vec<Vec<f64>>> {
+    pub fn embed(&self, _chunks: &[String]) -> Ready<Option<Vec<Vec<f64>>>> {
         // Vertex AI embeds when the file joins the corpus, so the pipeline's embedding step has no work
-        None
+        ready(None)
     }
 
     fn display_name(&self) -> &str {
