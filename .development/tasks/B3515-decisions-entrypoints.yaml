@@ -46,12 +46,18 @@ description: >-
   Router registration at litellm/router.py:2089-2097 is pure Python and not
   ported; native lifecycle dispatch happens via B014.
 
+  Health check. B4449's `NativeHealthBackend` (crates/betterlite-server/src/health_native_backend) lands first and answers
+  the evaluation mode with `HealthProbeError` naming it as not built. Once this task is merged, add its field to
+  NativeHealthBackend and replace that answer with a call to this task's entry, converting B4440's call arguments in
+  and the reply out with hidden params headers carried over, as B4449 does for the other modes.
 scope:
   paths:
     - crates/betterlite-core/src/decisions.rs
     - crates/betterlite-core/src/decisions/**
     - crates/betterlite-core/src/systemone.rs
     - crates/betterlite-core/src/systemone/**
+    - crates/betterlite-server/src/health_native_backend.rs
+    - crates/betterlite-server/src/health_native_backend/**
   lint_tables: false
 
 references:

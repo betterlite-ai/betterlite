@@ -1,14 +1,14 @@
 id: B3722
 milestone: M6 guardrails
 title: Bedrock guardrail decisions and usage tracing
-status: todo
+status: done
 depends_on: [B3720, B1667, B3667, B3664, B5471]
 file: tasks/B3722-bedrock-guardrail-decisions.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py"
 parent: B106
 split_from: B106
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2651

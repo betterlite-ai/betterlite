@@ -27,6 +27,8 @@ description: >-
   `alias_to_upstream(setup_model, router)` replaces _resolve_alias_to_upstream_model. No router returns the input. The candidates are the input and the part after its last `/`. Walk the router's model list in order and take the `litellm_params.model` of the first deployment whose `model_name` equals a candidate; the first match decides, even when its model is missing, which gives none. None returns the input. Otherwise run B174's get_llm_provider on the upstream model; its bad-request error returns the upstream model unchanged, and success returns the upstream model with a leading `{provider}/` removed (once, only as a prefix).
   `publisher_model_suffix(model)` replaces _vertex_publisher_model_suffix. When the text `publishers/` occurs anywhere, return the substring from its first occurrence to the end. Otherwise return `publishers/google/models/` followed by the part after the last `/` (the whole text when it has no `/`).
   Examples: `gemini-live-2.5-flash` gives `publishers/google/models/gemini-live-2.5-flash`; `models/gemini-live-2.5-flash` and `vertex_ai/gemini-live-2.5-flash` give the same; `projects/p/locations/l/publishers/acme/models/m` keeps `publishers/acme/models/m`.
+
+  Wiring. B8608 registers /vertex_ai/live with an upgrade arm that answers 501 "no Vertex Live route is installed", and B8641 builds no Live adapters, so this task finishes both: write B8641's LiveModelAdapter and LiveFailureAdapter next to its other adapters, build VertexLiveDeps in B8608's vertex_azure mount from B8640's PassThroughState (the one B3602 credential router and B1302 token state that CredentialAdapter reads, the B1304 region helpers, ps's WebSocketRelay as WebSocketRelayPort and AxumSocketServe as the socket port), replace the 501 arm with this Live route, and test that the Live route and the HTTP Vertex routes share one credential router and one token state, since LiteLLM caches Vertex tokens at module level for the Live path.
 scope:
   paths:
     - crates/betterlite-server/src/passthrough_vertex_live.rs
@@ -36,6 +38,10 @@ scope:
     - tools/oracle/helpers/b3629/**
     - tools/oracle/src/helpers/server/b3629.rs
     - tools/oracle/src/helpers/server/b3629/**
+    - crates/betterlite-server/src/app/pass_through/ports.rs
+    - crates/betterlite-server/src/app/pass_through/ports/**
+    - crates/betterlite-server/src/app/pass_through/routes/vertex_azure.rs
+    - crates/betterlite-server/src/app/pass_through/routes/vertex_azure/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L3529-L3560

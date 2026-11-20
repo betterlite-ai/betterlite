@@ -2,7 +2,7 @@ id: B9320
 milestone: M6 guardrails
 title: Shared policy runtime and typed policy configuration
 status: todo
-depends_on: [B002, B3240, B3241, B3243, B3245, B3250, B3683]
+depends_on: [B002, B3240, B3241, B3243, B3245, B3250, B3683, B8613]
 file: tasks/B9320-policy-runtime.yaml
 covers:
   - "litellm/proxy/policy_engine/__init__.py"

@@ -72,6 +72,8 @@ description: >-
   next_cursor. next_cursor is {start_time, request_id} of the last returned request when has_more, else null.
   Timestamps serialize as pydantic does: UTC with a trailing Z.
 
+
+  Mounting. B066's settings_api composition does not mount this task's routes, so add this router to settings_api's keyed or public router yourself, keeping its public or authenticated side, and extend B066's construction test so a duplicate or missing registration fails.
 scope:
   paths:
     - crates/betterlite-server/Cargo.toml
@@ -85,6 +87,8 @@ scope:
     - tools/oracle/helpers/b3125/**
     - tools/oracle/src/helpers/server/b3125.rs
     - tools/oracle/src/helpers/server/b3125/**
+    - crates/betterlite-server/src/settings_api.rs
+    - crates/betterlite-server/src/settings_api/**
   lint_tables: false
 
 references:

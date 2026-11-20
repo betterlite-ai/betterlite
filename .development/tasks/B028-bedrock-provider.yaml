@@ -3,8 +3,10 @@ title: Bedrock chat and Messages provider composition
 description: >-
   Compose Bedrock chat, Mantle and direct Nova operations using the shared B678 dispatcher contract. Own the main.py
   Bedrock/Mantle/Nova dispatch branches and the config tag selector. get_bedrock_route defaults to invoke and get_bedrock_chat_config
-  falls back to AmazonInvokeConfig for unknown models. B680 installs InvokeAgent/AgentCore and Claude Platform leaves;
-  no interim uninstalled-agent error is introduced.
+  falls back to AmazonInvokeConfig for unknown models. B680 installs the InvokeAgent leaves later and adds the agent tag arm then; until it does, the agent tag answers
+  the unavailable route error "no Bedrock route is installed for 'agent'". The Moonshot invoke config (B616) is later
+  work as well and adds its own arm: moonshot and deepseek_r1 answer "no Bedrock invoke config is installed for
+  'moonshot'".
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/main.py: _complete_bedrock_mantle
@@ -20,8 +22,7 @@ description: >-
   remains with that prerequisite.
 
 
-  Reuse AmazonInvokeAgentConfig.__init__ from B652 (litellm/llms/bedrock/chat/invoke_agent/transformation.py); its
-  implementation remains with that prerequisite.
+  AmazonInvokeAgentConfig.__init__ (B652, litellm/llms/bedrock/chat/invoke_agent/transformation.py) is used only by the agent arm that B680 adds.
 
 
   Reuse AmazonAgentCoreConfig.__init__ from B653 (litellm/llms/bedrock/chat/agentcore/transformation.py); its implementation
@@ -55,20 +56,20 @@ description: >-
   The separate amazon_nova main branch chooses key explicit, litellm.amazon_nova_api_key, AMAZON_NOVA_API_KEY, then
   litellm.api_key; base explicit, global, AMAZON_NOVA_API_BASE, https://api.nova.amazon.com/v1. Call the OpenAI-like
   B038 handler with ctx.custom_prompt_dict and original optional map; no owned headers/client/acompletion argument
-  is added. installed_agent_operation: Config tags agent and agentcore select B652 and B653; claude_platform resolves
+  is added. installed_agent_operation: Config tag agentcore selects B653 and tag agent answers the unavailable route error until B680 adds it; claude_platform resolves
   its config before stripping its model route via B598 and passes that config explicitly to HTTP completion, including
-  shared_session. Do not introduce an interim unsupported-agent error. unknown_model_invoke_fallback: Unknown invoke-provider
+  shared_session. unknown_model_invoke_fallback: Unknown invoke-provider
   families select AmazonInvokeConfig and keep the invoke fallback; do not reject because a model is absent from
   whitelisted_bedrock_models.txt, which has only test callers. chat_config_selector: Compute route B598, invoke-provider
   B591 and base B2203 before selection. Routes claude_platform, converse/converse_like, openai, chat_completions,
-  agent, agentcore, mantle select B656/B599/B619/B620/B652/B653/B625 respectively. Otherwise amazon -> Titan B614;
+  agentcore, mantle select B656/B599/B619/B620/B653/B625 respectively; agent answers the unavailable route error until B680 adds it. Otherwise amazon -> Titan B614;
   anthropic -> legacy B615 only for B615 legacy-name list, else Claude B615; meta/llama -> B613; ai21/cohere/mistral
-  -> B617; moonshot/deepseek_r1 -> B616; nova -> B614; qwen3/qwen2 -> B618; twelvelabs -> B617; everything else
+  -> B617; moonshot/deepseek_r1 answer the unavailable invoke config error until B616 adds it; nova -> B614; qwen3/qwen2 -> B618; twelvelabs -> B617; everything else
   -> B611 AmazonInvokeConfig. legacy_boto_credentials: When optional aws_bedrock_client is present, warn exactly:
   'aws_bedrock_client' is a deprecated param. Please move to another auth method - https://docs.litellm.ai/docs/providers/bedrock#boto3---authentication.
   Pop the client before extracting frozen credentials. Truthy access_key/secret_key/token overwrite aws_access_key_id/aws_secret_access_key/aws_session_token;
   falsey values leave prior entries. Fill aws_region_name from client.meta only when absent or None, retaining empty
-  strings. Native SDK clients enter through B159 credential snapshots, never a gateway subprocess.
+  strings. Native SDK clients never enter through a gateway subprocess.
 
 
   Write standalone Rust test bedrock_provider_credential_identity_isolation in betterlite-provider: Distinct configured
@@ -208,9 +209,9 @@ dod:
   - case-nova-provider-route
   - oracle
   - helper-python
-- text: 'installed_agent_operation: Config tags agent and agentcore select B652 and B653; claude_platform resolves
+- text: 'installed_agent_operation: Config tag agentcore selects B653 and tag agent answers the unavailable route error until B680 adds it; claude_platform resolves
     its config before stripping its model route via B598 and passes that config explicitly to HTTP completion, including
-    shared_session. Do not introduce an interim unsupported-agent error.'
+    shared_session.'
   proof:
   - case-installed-agent-operation
   - oracle
@@ -233,9 +234,8 @@ dod:
   proof:
   - unsupported-operation
 - text: 'chat_config_selector: Compute route B598, invoke-provider B591 and base B2203 before selection. Routes
-    claude_platform, converse/converse_like, openai, chat_completions, agent, agentcore, mantle select B656/B599/B619/B620/B652/B653/B625
-    respectively. Otherwise amazon -> Titan B614; anthropic -> legacy B615 only for B615 legacy-name list, else
-    Claude B615; meta/llama -> B613; ai21/cohere/mistral -> B617; moonshot/deepseek_r1 -> B616; nova -> B614; qwen3/qwen2
+    claude_platform, converse/converse_like, openai, chat_completions, agentcore, mantle select B656/B599/B619/B620/B653/B625 respectively; agent answers the unavailable route error until B680 adds it. Otherwise amazon -> Titan B614; anthropic -> legacy B615 only for B615 legacy-name list, else
+    Claude B615; meta/llama -> B613; ai21/cohere/mistral -> B617; moonshot/deepseek_r1 answer the unavailable invoke config error until B616 adds it; nova -> B614; qwen3/qwen2
     -> B618; twelvelabs -> B617; everything else -> B611 AmazonInvokeConfig.'
   proof:
   - case-chat-config-selector
@@ -245,7 +245,7 @@ dod:
     is a deprecated param. Please move to another auth method - https://docs.litellm.ai/docs/providers/bedrock#boto3---authentication.
     Pop the client before extracting frozen credentials. Truthy access_key/secret_key/token overwrite aws_access_key_id/aws_secret_access_key/aws_session_token;
     falsey values leave prior entries. Fill aws_region_name from client.meta only when absent or None, retaining
-    empty strings. Native SDK clients enter through B159 credential snapshots, never a gateway subprocess.'
+    empty strings. Native SDK clients never enter through a gateway subprocess.'
   proof:
   - case-legacy-boto-credentials
   - oracle
@@ -292,9 +292,8 @@ checks:
       argument is added.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_dispatch_cases::case_[0-9]+_nova_provider_route$/)'
   - id: case-installed-agent-operation
-    why: Config tags agent and agentcore select B652 and B653; claude_platform resolves its config before stripping
-      its model route via B598 and passes that config explicitly to HTTP completion, including shared_session. Do
-      not introduce an interim unsupported-agent error.
+    why: Config tag agentcore selects B653 and tag agent answers the unavailable route error until B680 adds it; claude_platform resolves its config before stripping
+      its model route via B598 and passes that config explicitly to HTTP completion, including shared_session.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_dispatch_cases::case_[0-9]+_installed_agent_operation$/)'
   - id: case-unknown-model-invoke-fallback
     why: Unknown invoke-provider families select AmazonInvokeConfig and keep the invoke fallback; do not reject
@@ -319,9 +318,9 @@ checks:
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_provider_unsupported_operation$/)'
   - id: case-chat-config-selector
     why: Compute route B598, invoke-provider B591 and base B2203 before selection. Routes claude_platform, converse/converse_like,
-      openai, chat_completions, agent, agentcore, mantle select B656/B599/B619/B620/B652/B653/B625 respectively.
+      openai, chat_completions, agentcore, mantle select B656/B599/B619/B620/B653/B625 respectively; agent answers the unavailable route error until B680 adds it.
       Otherwise amazon -> Titan B614; anthropic -> legacy B615 only for B615 legacy-name list, else Claude B615;
-      meta/llama -> B613; ai21/cohere/mistral -> B617; moonshot/deepseek_r1 -> B616; nova -> B614; qwen3/qwen2 ->
+      meta/llama -> B613; ai21/cohere/mistral -> B617; moonshot/deepseek_r1 answer the unavailable invoke config error until B616 adds it; nova -> B614; qwen3/qwen2 ->
       B618; twelvelabs -> B617; everything else -> B611 AmazonInvokeConfig.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_dispatch_cases::case_[0-9]+_chat_config_selector$/)'
   - id: case-legacy-boto-credentials
@@ -329,7 +328,7 @@ checks:
       Please move to another auth method - https://docs.litellm.ai/docs/providers/bedrock#boto3---authentication.
       Pop the client before extracting frozen credentials. Truthy access_key/secret_key/token overwrite aws_access_key_id/aws_secret_access_key/aws_session_token;
       falsey values leave prior entries. Fill aws_region_name from client.meta only when absent or None, retaining
-      empty strings. Native SDK clients enter through B159 credential snapshots, never a gateway subprocess.'
+      empty strings. Native SDK clients never enter through a gateway subprocess.'
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_dispatch_cases::case_[0-9]+_legacy_boto_credentials$/)'
   - id: credential-identity-isolation
     why: Distinct configured identities cannot share credentials, headers or cache entries.

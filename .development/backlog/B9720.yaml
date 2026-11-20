@@ -1,7 +1,7 @@
 id: B9720
 milestone: M8 platform
 title: Shared streaming data generator for Anthropic messages and A2A streams
-status: todo
+status: done
 depends_on: [B8604, B8602, B7324, B958, B980]
 file: tasks/B9720-shared-stream-generator.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/common_utils/sse_keepalive.py"
 parent: B7980
 split_from: B7980
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2692

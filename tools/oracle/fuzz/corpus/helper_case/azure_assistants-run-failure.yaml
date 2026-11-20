@@ -1,0 +1,5 @@
+kind: helper
+name: azure-assistants-seed-run-failure
+call: {azure_assistants: {run_failure: [{run: {thread_id: thread_a, assistant_id: asst_a}}]}}
+env: {}
+compare: {ignore: []}

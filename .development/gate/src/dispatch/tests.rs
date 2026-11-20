@@ -6,7 +6,7 @@ use std::fs::{self, File};
 use std::ops::ControlFlow;
 use std::path::Path;
 
-use crate::dispatch::attempt::{UNFINISHED_NOTE, remove_extra_targets};
+use crate::dispatch::attempt::remove_extra_targets;
 use crate::dispatch::chain::Chain;
 use crate::dispatch::progress::{NextRun, Panel, Progress, Red, ReviewerPin, WorkerSession};
 use crate::dispatch::prompt::Brief;
@@ -295,7 +295,7 @@ fn a_blocked_worker_resumes_its_session_once_then_stops_on_its_rung() {
 }
 
 #[test]
-fn a_blocked_answer_while_its_own_gate_run_is_unfinished_is_not_counted() {
+fn a_blocked_answer_counts_when_a_killed_stop_hook_left_its_gate_run_open() {
     let (mut agents, task) = fixtures();
     claude_answers(
         &mut agents,
@@ -317,10 +317,10 @@ fn a_blocked_answer_while_its_own_gate_run_is_unfinished_is_not_counted() {
     .unwrap_err();
     assert!(error.to_string().contains("2 blocked reports in a row"));
     let resumed = fs::read_to_string(folder.path().join("resumed")).unwrap();
-    assert_eq!(resumed, "s1\ns1\n");
+    assert_eq!(resumed, "s1\n");
     let prompts = fs::read_to_string(folder.path().join("prompts")).unwrap();
-    assert!(prompts.contains(UNFINISHED_NOTE), "{prompts}");
-    assert_eq!((progress.number, progress.used), (3, 1));
+    assert!(prompts.contains(BLOCKED_NOTE), "{prompts}");
+    assert_eq!((progress.number, progress.used), (2, 1));
 }
 
 #[test]

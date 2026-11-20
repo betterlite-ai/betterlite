@@ -1,0 +1,7 @@
+router_settings:
+  provider_budget_config:
+    openai:
+      max_budget: 5
+      budget_duration: 1h
+      tpm_limit: 1000
+      rpm_limit: 100
