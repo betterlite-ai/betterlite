@@ -1,14 +1,15 @@
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
+use rust_decimal::Decimal;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
 pub(super) enum Input {
     RemainingBudget {
-        max_budget: Option<f64>,
-        spend: Option<f64>,
+        max_budget: Option<Decimal>,
+        spend: Option<Decimal>,
     },
     RemainingHours {
         reset_at: DateTime<Utc>,
@@ -17,8 +18,8 @@ pub(super) enum Input {
     Team {
         team_id: String,
         team_alias: Option<String>,
-        spend: Option<f64>,
-        max_budget: Option<f64>,
+        spend: Option<Decimal>,
+        max_budget: Option<Decimal>,
         budget_reset_at: Option<DateTime<Utc>>,
         now: DateTime<Utc>,
         labels_by_metric: BTreeMap<String, Vec<String>>,
@@ -26,8 +27,8 @@ pub(super) enum Input {
     Org {
         org_id: String,
         org_alias: Option<String>,
-        spend: Option<f64>,
-        max_budget: Option<f64>,
+        spend: Option<Decimal>,
+        max_budget: Option<Decimal>,
         budget_reset_at: Option<DateTime<Utc>>,
         now: DateTime<Utc>,
         labels_by_metric: BTreeMap<String, Vec<String>>,
@@ -35,8 +36,8 @@ pub(super) enum Input {
     Key {
         token: String,
         key_alias: Option<String>,
-        spend: Option<f64>,
-        max_budget: Option<f64>,
+        spend: Option<Decimal>,
+        max_budget: Option<Decimal>,
         budget_reset_at: Option<DateTime<Utc>>,
         now: DateTime<Utc>,
         labels_by_metric: BTreeMap<String, Vec<String>>,
@@ -45,16 +46,16 @@ pub(super) enum Input {
         user_id: String,
         user_email: Option<String>,
         user_alias: Option<String>,
-        spend: Option<f64>,
-        max_budget: Option<f64>,
+        spend: Option<Decimal>,
+        max_budget: Option<Decimal>,
         budget_reset_at: Option<DateTime<Utc>>,
         now: DateTime<Utc>,
         labels_by_metric: BTreeMap<String, Vec<String>>,
     },
     Customer {
         end_user_id: String,
-        spend: Option<f64>,
-        max_budget: Option<f64>,
+        spend: Option<Decimal>,
+        max_budget: Option<Decimal>,
         budget_reset_at: Option<DateTime<Utc>>,
         now: DateTime<Utc>,
         enable_end_user_tracking: bool,
@@ -68,8 +69,8 @@ pub(super) enum Input {
     },
     Provider {
         provider: String,
-        spend: Option<f64>,
-        budget_limit: Option<f64>,
+        spend: Option<Decimal>,
+        budget_limit: Option<Decimal>,
     },
     KeyList {
         entries: Vec<KeyListEntryCall>,
@@ -96,8 +97,8 @@ pub(super) enum KeyListEntryCall {
     Record {
         token: String,
         key_alias: Option<String>,
-        spend: Option<f64>,
-        max_budget: Option<f64>,
+        spend: Option<Decimal>,
+        max_budget: Option<Decimal>,
         budget_reset_at: Option<DateTime<Utc>>,
     },
     Token {
@@ -109,19 +110,19 @@ pub(super) enum KeyListEntryCall {
 pub(super) struct OrgRowCall {
     pub(super) organization_id: Option<String>,
     pub(super) organization_alias: Option<String>,
-    pub(super) spend: Option<f64>,
+    pub(super) spend: Option<Decimal>,
     pub(super) budget: Option<BudgetRowCall>,
 }
 
 #[derive(Deserialize)]
 pub(super) struct CustomerRowCall {
     pub(super) user_id: String,
-    pub(super) spend: f64,
+    pub(super) spend: Decimal,
     pub(super) budget: Option<BudgetRowCall>,
 }
 
 #[derive(Deserialize)]
 pub(super) struct BudgetRowCall {
-    pub(super) max_budget: Option<f64>,
+    pub(super) max_budget: Option<Decimal>,
     pub(super) budget_reset_at: Option<DateTime<Utc>>,
 }

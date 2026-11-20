@@ -16,31 +16,24 @@ pub(super) struct ProbeSample {
     pub(super) value: MetricValue,
 }
 
-pub(super) type ProbeLog = Arc<Mutex<Vec<ProbeSample>>>;
+#[derive(Clone, Debug, Default)]
+pub(super) struct ProbeLog(Arc<Mutex<Vec<ProbeSample>>>);
 
-pub(super) fn new_log() -> ProbeLog {
-    Arc::new(Mutex::new(Vec::new()))
-}
-
-pub(super) fn samples(log: &ProbeLog) -> Vec<ProbeSample> {
-    log.lock().unwrap_or_else(PoisonError::into_inner).clone()
+impl ProbeLog {
+    pub(super) fn drain(&self) -> Vec<ProbeSample> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .drain(..)
+            .collect()
+    }
 }
 
 #[derive(Clone, Debug)]
 pub(super) struct ProbeGauge {
-    metric: &'static str,
-    labels: Vec<(String, String)>,
-    log: ProbeLog,
-}
-
-impl ProbeGauge {
-    pub(super) fn new(metric: &'static str, log: &ProbeLog) -> Self {
-        Self {
-            metric,
-            labels: Vec::new(),
-            log: Arc::clone(log),
-        }
-    }
+    pub(super) metric: &'static str,
+    pub(super) labels: Vec<(String, String)>,
+    pub(super) log: ProbeLog,
 }
 
 impl Collector for ProbeGauge {
@@ -56,6 +49,7 @@ impl Collector for ProbeGauge {
     fn update(&self, update: MetricUpdate) {
         if let MetricUpdate::Set(value) = update {
             self.log
+                .0
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .push(ProbeSample {
