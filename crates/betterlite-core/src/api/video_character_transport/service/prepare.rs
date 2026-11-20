@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use betterlite_http::interactions::base::{ClientError, Params, RequestHeaders};
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
@@ -16,7 +17,7 @@ use super::super::clients::{CharacterBody, CharacterRequest};
 use super::super::config::{CharacterConfig, CharacterContext, CharacterEnvironment};
 use super::super::error::{CharacterError, CharacterFault, converted};
 use super::wire::{header_map, multipart_body, request_url};
-use super::{CharacterCreateCall, CharacterGetCall};
+use super::{CharacterCall, CharacterCreateCall};
 
 // the litellm_params fields the handlers read before a transform sees them
 struct CallParts<'call> {
@@ -25,102 +26,120 @@ struct CallParts<'call> {
     api_key: Option<&'call SecretString>,
 }
 
+// what either transform hands back, so the request is assembled once
+struct Exchange {
+    url: String,
+    method: Method,
+    query: Vec<(String, String)>,
+    body: CharacterBody,
+    logged: Option<IndexMap<String, Json>>,
+    timeout: Option<Duration>,
+}
+
+impl<'call> CharacterCall<'call> {
+    const fn parts(&self) -> CallParts<'call> {
+        CallParts {
+            extra_headers: self.extra_headers(),
+            litellm_params: self.litellm_params(),
+            api_key: self.api_key(),
+        }
+    }
+}
+
 struct PreCallRecord<'call> {
     input: &'call str,
     url: &'call str,
     body: Option<IndexMap<String, Json>>,
 }
 
-pub(crate) fn prepare_create<C>(
+pub(crate) fn prepare<C>(
     config: &C,
     logging: &mut LoggingState,
     env: &PrePostEnv<'_>,
     boundary: &str,
-    call: &CharacterCreateCall<'_>,
+    call: CharacterCall<'_>,
 ) -> Result<CharacterRequest, CharacterFault<C>>
 where
     C: CharacterConfig,
 {
-    let parts = CallParts {
-        extra_headers: call.extra_headers,
-        litellm_params: call.litellm_params,
-        api_key: call.api_key,
+    let params = call.litellm_params();
+    let (headers, base) = validated(config, &call.parts())?;
+    let context = CharacterContext {
+        api_base: &base,
+        litellm_params: params,
+        headers: &headers,
     };
-    let (headers, base) = validated(config, &parts)?;
-    let (url_text, files) = config
-        .transform_create_request(
-            call.name,
-            call.video,
-            CharacterContext {
-                api_base: &base,
-                litellm_params: call.litellm_params,
-                headers: &headers,
-            },
-        )
-        .map_err(CharacterError::Provider)?;
-    let named = IndexMap::from([("name".to_owned(), Json::Text(call.name.to_owned()))]);
+    let mut exchange = match call {
+        CharacterCall::Create(create) => created(config, create, context, boundary)?,
+        CharacterCall::Get(get) => {
+            let (url, query) = config
+                .transform_get_request(get.character_id, context)
+                .map_err(CharacterError::Provider)?;
+            Exchange {
+                url,
+                method: Method::GET,
+                query,
+                body: CharacterBody::Empty,
+                logged: None,
+                timeout: None,
+            }
+        }
+    };
     log_pre_call(
         logging,
         env,
         PreCallRecord {
-            input: call.name,
-            url: &url_text,
-            body: Some(named),
+            input: call.input(),
+            url: &exchange.url,
+            body: exchange.logged.take(),
         },
         &headers,
     )
     .map_err(CharacterError::Logging)?;
+    assembled(config, exchange, &headers)
+}
+
+fn assembled<C>(
+    config: &C,
+    exchange: Exchange,
+    headers: &RequestHeaders,
+) -> Result<CharacterRequest, CharacterFault<C>>
+where
+    C: CharacterConfig,
+{
+    let url = request_url(&exchange.url, &exchange.query)
+        .map_err(|failure| converted(config, failure))?;
+    let wire_headers = header_map(headers).map_err(|failure| converted(config, failure))?;
     Ok(CharacterRequest {
-        method: Method::POST,
-        url: request_url(&url_text, &[]).map_err(|failure| converted(config, failure))?,
-        headers: header_map(&headers).map_err(|failure| converted(config, failure))?,
-        body: multipart_body(&files, boundary).map_err(CharacterError::Multipart)?,
-        timeout: call.timeout,
+        method: exchange.method,
+        url,
+        headers: wire_headers,
+        body: exchange.body,
+        timeout: exchange.timeout,
     })
 }
 
-pub(crate) fn prepare_get<C>(
+fn created<C>(
     config: &C,
-    logging: &mut LoggingState,
-    env: &PrePostEnv<'_>,
-    call: &CharacterGetCall<'_>,
-) -> Result<CharacterRequest, CharacterFault<C>>
+    call: &CharacterCreateCall<'_>,
+    context: CharacterContext<'_>,
+    boundary: &str,
+) -> Result<Exchange, CharacterFault<C>>
 where
     C: CharacterConfig,
 {
-    let parts = CallParts {
-        extra_headers: call.extra_headers,
-        litellm_params: call.litellm_params,
-        api_key: call.api_key,
-    };
-    let (headers, base) = validated(config, &parts)?;
-    let (url_text, query) = config
-        .transform_get_request(
-            call.character_id,
-            CharacterContext {
-                api_base: &base,
-                litellm_params: call.litellm_params,
-                headers: &headers,
-            },
-        )
+    let (url, files) = config
+        .transform_create_request(call.name, call.video, context)
         .map_err(CharacterError::Provider)?;
-    log_pre_call(
-        logging,
-        env,
-        PreCallRecord {
-            input: call.character_id,
-            url: &url_text,
-            body: None,
-        },
-        &headers,
-    )
-    .map_err(CharacterError::Logging)?;
-    Ok(CharacterRequest {
-        method: Method::GET,
-        url: request_url(&url_text, &query).map_err(|failure| converted(config, failure))?,
-        headers: header_map(&headers).map_err(|failure| converted(config, failure))?,
-        body: CharacterBody::Empty,
-        timeout: None,
+    let body = multipart_body(&files, boundary).map_err(CharacterError::Multipart)?;
+    let named = IndexMap::from([(String::from("name"), Json::Text(call.name.to_owned()))]);
+    Ok(Exchange {
+        url,
+        method: Method::POST,
+        query: Vec::new(),
+        body,
+        logged: Some(named),
+        timeout: call.timeout,
     })
 }
 

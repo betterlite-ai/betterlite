@@ -40,7 +40,7 @@ use crate::api::video_character_transport::config::{
 };
 use crate::api::video_character_transport::error::CharacterFault;
 use crate::api::video_character_transport::service::{
-    CharacterCreateCall, CharacterGetCall, CharacterHandled, CharacterTransport,
+    CharacterCall, CharacterCreateCall, CharacterGetCall, CharacterHandled, CharacterTransport,
 };
 use crate::api::video_records::CharacterObject;
 
@@ -85,7 +85,7 @@ pub(crate) struct LogEnv {
 }
 
 impl LogEnv {
-    pub(crate) fn new(events: &Events) -> Self {
+    pub(crate) fn for_events(events: &Events) -> Self {
         let recorded = events.clone();
         let logger = Box::new(move |_details: &Json| -> Result<(), PrePostError> {
             recorded.push("log");
@@ -170,11 +170,7 @@ pub(crate) enum Seen {
         api_base: String,
         headers: Vec<(String, String)>,
     },
-    CreateReply {
-        status: u16,
-        body: Vec<u8>,
-    },
-    GetReply {
+    Reply {
         status: u16,
         body: Vec<u8>,
     },
@@ -233,6 +229,22 @@ impl RecordingConfig {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(seen);
+    }
+
+    fn transformed(
+        &self,
+        event: &str,
+        reply: &UpstreamResponse,
+    ) -> Result<CharacterObject, TestError> {
+        self.events.push(event);
+        self.record(Seen::Reply {
+            status: reply.status,
+            body: reply.body.clone(),
+        });
+        self.reply_error.as_deref().map_or_else(
+            || Ok(self.object.clone()),
+            |message| Err(test_error(message)),
+        )
     }
 }
 
@@ -334,15 +346,7 @@ impl CharacterConfig for RecordingConfig {
         reply: &UpstreamResponse,
         _logging: &mut LoggingState,
     ) -> Result<CharacterObject, Self::Error> {
-        self.events.push("transform-create-response");
-        self.record(Seen::CreateReply {
-            status: reply.status,
-            body: reply.body.clone(),
-        });
-        self.reply_error.as_deref().map_or_else(
-            || Ok(self.object.clone()),
-            |message| Err(test_error(message)),
-        )
+        self.transformed("transform-create-response", reply)
     }
 
     fn transform_get_response(
@@ -350,15 +354,7 @@ impl CharacterConfig for RecordingConfig {
         reply: &UpstreamResponse,
         _logging: &mut LoggingState,
     ) -> Result<CharacterObject, Self::Error> {
-        self.events.push("transform-get-response");
-        self.record(Seen::GetReply {
-            status: reply.status,
-            body: reply.body.clone(),
-        });
-        self.reply_error.as_deref().map_or_else(
-            || Ok(self.object.clone()),
-            |message| Err(test_error(message)),
-        )
+        self.transformed("transform-get-response", reply)
     }
 }
 
@@ -489,7 +485,7 @@ pub(crate) struct FakeClients {
 }
 
 impl FakeClients {
-    pub(crate) fn new(events: &Events, wire: FakeWire) -> Self {
+    pub(crate) fn from_wire(events: &Events, wire: FakeWire) -> Self {
         Self {
             events: events.clone(),
             wire,
@@ -499,7 +495,7 @@ impl FakeClients {
     }
 
     pub(crate) fn failing(events: &Events, wire: FakeWire, failure: ClientError) -> Self {
-        let mut clients = Self::new(events, wire);
+        let mut clients = Self::from_wire(events, wire);
         clients.failure = Some(failure);
         clients
     }
@@ -511,7 +507,12 @@ impl FakeClients {
             .clone()
     }
 
-    fn record(&mut self, mode: Mode, params: &Params) -> Result<(), ClientError> {
+    fn selected(
+        &mut self,
+        mode: Mode,
+        params: &Params,
+        supplied: Option<&FakeWire>,
+    ) -> Result<FakeWire, ClientError> {
         self.events.push(match mode {
             Mode::Sync => "select-sync",
             Mode::Asynchronous => "select-async",
@@ -520,7 +521,10 @@ impl FakeClients {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push((mode, params.get("ssl_verify").cloned()));
-        self.failure.take().map_or_else(|| Ok(()), Err)
+        self.failure.take().map_or_else(
+            || Ok(supplied.map_or_else(|| self.wire.clone(), Clone::clone)),
+            Err,
+        )
     }
 }
 
@@ -533,8 +537,7 @@ impl CharacterClients for FakeClients {
         params: &Params,
         supplied: Option<&FakeWire>,
     ) -> Result<FakeWire, ClientError> {
-        self.record(Mode::Sync, params)?;
-        Ok(supplied.map_or_else(|| self.wire.clone(), Clone::clone))
+        self.selected(Mode::Sync, params, supplied)
     }
 
     fn select_async(
@@ -542,8 +545,7 @@ impl CharacterClients for FakeClients {
         params: &Params,
         supplied: Option<&FakeWire>,
     ) -> Result<FakeWire, ClientError> {
-        self.record(Mode::Asynchronous, params)?;
-        Ok(supplied.map_or_else(|| self.wire.clone(), Clone::clone))
+        self.selected(Mode::Asynchronous, params, supplied)
     }
 }
 
@@ -561,10 +563,10 @@ impl Fixture {
     pub(crate) fn new() -> Self {
         let events = Events::new();
         let wire = FakeWire::new(&events, 200, CHARACTER_BODY);
-        let clients = FakeClients::new(&events, wire.clone());
+        let clients = FakeClients::from_wire(&events, wire.clone());
         Self {
             config: recording(&events),
-            log: LogEnv::new(&events),
+            log: LogEnv::for_events(&events),
             state: logging_state("video_create_character"),
             clients,
             wire,
@@ -574,7 +576,7 @@ impl Fixture {
 
     // a case that needs the wire to answer differently swaps it in, and the client source follows it
     pub(crate) fn use_wire(&mut self, wire: FakeWire) {
-        self.clients = FakeClients::new(&self.events, wire.clone());
+        self.clients = FakeClients::from_wire(&self.events, wire.clone());
         self.wire = wire;
     }
 
@@ -587,42 +589,7 @@ impl Fixture {
         call: &CharacterCreateCall<'_>,
         supplied: Option<&FakeWire>,
     ) -> Result<CharacterObject, CharacterFault<RecordingConfig>> {
-        let env = self.log.env();
-        let mut transport = CharacterTransport::with_generated_boundary(
-            &self.config,
-            &mut self.clients,
-            &mut self.state,
-            &env,
-        )
-        .supplying(SuppliedClients {
-            sync: supplied,
-            asynchronous: None,
-        });
-        match transport.video_create_character_handler(call)? {
-            CharacterHandled::Done(object) => Ok(object),
-            CharacterHandled::Pending(_) => {
-                panic!("a sync call without the async flag answers in place")
-            }
-        }
-    }
-
-    pub(crate) async fn async_create(
-        &mut self,
-        call: &CharacterCreateCall<'_>,
-        supplied: Option<&FakeWire>,
-    ) -> Result<CharacterObject, CharacterFault<RecordingConfig>> {
-        let env = self.log.env();
-        let mut transport = CharacterTransport::with_generated_boundary(
-            &self.config,
-            &mut self.clients,
-            &mut self.state,
-            &env,
-        )
-        .supplying(SuppliedClients {
-            sync: None,
-            asynchronous: supplied,
-        });
-        transport.async_video_create_character_handler(call).await
+        self.sync(CharacterCall::Create(call), supplied)
     }
 
     pub(crate) fn sync_get(
@@ -630,6 +597,30 @@ impl Fixture {
         call: &CharacterGetCall<'_>,
         supplied: Option<&FakeWire>,
     ) -> Result<CharacterObject, CharacterFault<RecordingConfig>> {
+        self.sync(CharacterCall::Get(call), supplied)
+    }
+
+    pub(crate) async fn async_create(
+        &mut self,
+        call: &CharacterCreateCall<'_>,
+        supplied: Option<&FakeWire>,
+    ) -> Result<CharacterObject, CharacterFault<RecordingConfig>> {
+        self.async_flow(CharacterCall::Create(call), supplied).await
+    }
+
+    pub(crate) async fn async_get(
+        &mut self,
+        call: &CharacterGetCall<'_>,
+        supplied: Option<&FakeWire>,
+    ) -> Result<CharacterObject, CharacterFault<RecordingConfig>> {
+        self.async_flow(CharacterCall::Get(call), supplied).await
+    }
+
+    fn sync(
+        &mut self,
+        call: CharacterCall<'_>,
+        supplied: Option<&FakeWire>,
+    ) -> Result<CharacterObject, CharacterFault<RecordingConfig>> {
         let env = self.log.env();
         let mut transport = CharacterTransport::with_generated_boundary(
             &self.config,
@@ -641,7 +632,7 @@ impl Fixture {
             sync: supplied,
             asynchronous: None,
         });
-        match transport.video_get_character_handler(call)? {
+        match transport.video_character_handler(call)? {
             CharacterHandled::Done(object) => Ok(object),
             CharacterHandled::Pending(_) => {
                 panic!("a sync call without the async flag answers in place")
@@ -649,9 +640,9 @@ impl Fixture {
         }
     }
 
-    pub(crate) async fn async_get(
+    async fn async_flow(
         &mut self,
-        call: &CharacterGetCall<'_>,
+        call: CharacterCall<'_>,
         supplied: Option<&FakeWire>,
     ) -> Result<CharacterObject, CharacterFault<RecordingConfig>> {
         let env = self.log.env();
@@ -660,12 +651,13 @@ impl Fixture {
             &mut self.clients,
             &mut self.state,
             &env,
-        )
-        .supplying(SuppliedClients {
+        );
+        transport.supplied = SuppliedClients {
             sync: None,
             asynchronous: supplied,
-        });
-        transport.async_video_get_character_handler(call).await
+        };
+        let reply = transport.async_video_character_handler(call);
+        reply.await
     }
 }
 

@@ -371,7 +371,7 @@ fn a_header_that_cannot_be_sent_is_refused() {
 }
 
 #[test]
-fn a_url_the_transform_returns_unparseable_is_refused() {
+fn a_url_the_transform_returns_unparsable_is_refused() {
     let mut fixture = Fixture::new();
     fixture.config.create_url = String::from("not a url");
     let litellm = params(&[("api_base", BASE)]);

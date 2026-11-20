@@ -120,7 +120,7 @@ fn lookup_returns_the_object_the_transform_builds() {
     assert_eq!(object.name, "Ash");
     assert_eq!(
         fixture.config.seen().last(),
-        Some(&Seen::GetReply {
+        Some(&Seen::Reply {
             status: 200,
             body: CHARACTER_BODY.as_bytes().to_vec(),
         })

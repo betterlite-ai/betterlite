@@ -38,13 +38,13 @@ fn response_headers_reads_a_latin1_value() {
     let mut headers = HeaderMap::new();
     headers.insert(
         "x-name",
-        HeaderValue::from_bytes(b"caf\xE9").expect("a latin-1 byte is a header value"),
+        HeaderValue::from_bytes(b"\xE9").expect("a latin-1 byte is a header value"),
     );
     headers.insert("x-plain", HeaderValue::from_static("plain"));
 
     let mapped = response_headers(&headers);
 
-    assert_eq!(mapped.get("x-name").map(String::as_str), Some("café"));
+    assert_eq!(mapped.get("x-name").map(String::as_str), Some("é"));
     assert_eq!(mapped.get("x-plain").map(String::as_str), Some("plain"));
 }
 
@@ -111,7 +111,7 @@ fn request_url_keeps_repeated_params_in_the_source_order() {
 }
 
 #[test]
-fn request_url_refuses_an_unparseable_url() {
+fn request_url_refuses_an_unparsable_url() {
     let error = request_url("not a url", &[]).unwrap_err();
 
     assert!(matches!(error, RequestFailure::Url(_)));

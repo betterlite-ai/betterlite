@@ -94,7 +94,7 @@ fn selection_failure_surfaces_before_the_environment() {
 }
 
 #[test]
-fn a_supplied_sync_client_sends_instead_of_the_factorys() {
+fn a_supplied_sync_client_sends_instead_of_the_factories() {
     let mut fixture = Fixture::new();
     let events = fixture.events.clone();
     let supplied = FakeWire::new(&events, 200, CHARACTER_BODY);
@@ -109,7 +109,7 @@ fn a_supplied_sync_client_sends_instead_of_the_factorys() {
 }
 
 #[tokio::test]
-async fn a_supplied_async_client_sends_instead_of_the_factorys() {
+async fn a_supplied_async_client_sends_instead_of_the_factories() {
     let mut fixture = Fixture::new();
     let events = fixture.events.clone();
     let supplied = FakeWire::new(&events, 200, CHARACTER_BODY);
@@ -184,7 +184,7 @@ async fn the_real_async_factory_refuses_an_unusable_ssl_verify() {
 }
 
 #[test]
-fn a_supplied_sync_client_skips_the_factorys_ssl_verify_check() {
+fn a_supplied_sync_client_skips_the_factories_ssl_verify_check() {
     let serving = serve(reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let base = format!("http://{}", serving.address);
     let mut fixture = Fixture::new();
@@ -224,7 +224,7 @@ fn a_supplied_sync_client_skips_the_factorys_ssl_verify_check() {
 }
 
 #[tokio::test]
-async fn a_supplied_async_client_skips_the_factorys_ssl_verify_check() {
+async fn a_supplied_async_client_skips_the_factories_ssl_verify_check() {
     let serving = serve(reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let base = format!("http://{}", serving.address);
     let mut fixture = Fixture::new();

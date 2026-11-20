@@ -114,7 +114,7 @@ fn creation_sends_the_name_video_and_base_to_the_transform() {
                 api_base: String::from(BASE),
                 headers: vec![(String::from("x-provider"), String::from("acme"))],
             },
-            Seen::CreateReply {
+            Seen::Reply {
                 status: 200,
                 body: CHARACTER_BODY.as_bytes().to_vec(),
             },

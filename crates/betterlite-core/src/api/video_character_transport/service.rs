@@ -9,11 +9,11 @@ use betterlite_logging::logging_state::LoggingState;
 use secrecy::SecretString;
 use uuid::Uuid;
 
-use self::prepare::{prepare_create, prepare_get};
-use self::send::{create_async, create_blocking, get_async, get_blocking};
+use self::prepare::prepare;
+use self::send::{Transform, answered};
 use super::clients::{CharacterClients, SuppliedClients};
 use super::config::CharacterConfig;
-use super::error::{CharacterError, CharacterFault};
+use super::error::{CharacterError, CharacterFault, converted};
 use crate::api::bfl::edit::media::SuppliedMedia;
 use crate::api::video_records::CharacterObject;
 
@@ -39,6 +39,60 @@ pub struct CharacterGetCall<'call> {
     pub timeout: Option<Duration>,
     pub api_key: Option<&'call SecretString>,
     pub is_async: bool,
+}
+
+// either call, so the flow both share reads its fields once
+#[derive(Clone, Copy)]
+pub(crate) enum CharacterCall<'call> {
+    Create(&'call CharacterCreateCall<'call>),
+    Get(&'call CharacterGetCall<'call>),
+}
+
+impl<'call> CharacterCall<'call> {
+    pub(crate) const fn input(&self) -> &'call str {
+        match self {
+            Self::Create(call) => call.name,
+            Self::Get(call) => call.character_id,
+        }
+    }
+
+    pub(crate) const fn litellm_params(&self) -> &'call Params {
+        match self {
+            Self::Create(call) => call.litellm_params,
+            Self::Get(call) => call.litellm_params,
+        }
+    }
+
+    pub(crate) const fn extra_headers(&self) -> Option<&'call BTreeMap<String, String>> {
+        match self {
+            Self::Create(call) => call.extra_headers,
+            Self::Get(call) => call.extra_headers,
+        }
+    }
+
+    pub(crate) const fn api_key(&self) -> Option<&'call SecretString> {
+        match self {
+            Self::Create(call) => call.api_key,
+            Self::Get(call) => call.api_key,
+        }
+    }
+
+    const fn is_async(&self) -> bool {
+        match self {
+            Self::Create(call) => call.is_async,
+            Self::Get(call) => call.is_async,
+        }
+    }
+
+    fn transform<C>(&self) -> Transform<C>
+    where
+        C: CharacterConfig,
+    {
+        match self {
+            Self::Create(_) => C::transform_create_response,
+            Self::Get(_) => C::transform_get_response,
+        }
+    }
 }
 
 // the sync handler answers with the result, or with the pending async call when _is_async asked for one
@@ -103,26 +157,21 @@ where
     }
 
     #[must_use]
+    // ast-grep-ignore: no-one-line-functions - LiteLLM's entry point, and the whole flow is this call
     pub fn video_create_character_handler<'call>(
         &'call mut self,
         call: &'call CharacterCreateCall<'_>,
     ) -> CharacterAnswer<'call, C> {
-        if call.is_async {
-            let pending = self.async_video_create_character_handler(call);
-            return Ok(CharacterHandled::Pending(Box::pin(pending)));
-        }
-        let client = self
-            .clients
-            .select_sync(call.litellm_params, self.supplied.sync)
-            .map_err(CharacterError::Client)?;
-        let request = prepare_create(
-            self.config,
-            self.logging,
-            self.env,
-            &(self.boundary)(),
-            call,
-        )?;
-        create_blocking(self.config, self.logging, &client, request).map(CharacterHandled::Done)
+        self.video_character_handler(CharacterCall::Create(call))
+    }
+
+    #[must_use]
+    // ast-grep-ignore: no-one-line-functions - the same entry point for a lookup, with no other work
+    pub fn video_get_character_handler<'call>(
+        &'call mut self,
+        call: &'call CharacterGetCall<'_>,
+    ) -> CharacterAnswer<'call, C> {
+        self.video_character_handler(CharacterCall::Get(call))
     }
 
     #[must_use]
@@ -131,30 +180,8 @@ where
         &mut self,
         call: &CharacterCreateCall<'_>,
     ) -> Result<CharacterObject, CharacterFault<C>> {
-        let client = self
-            .clients
-            .select_async(call.litellm_params, self.supplied.asynchronous)
-            .map_err(CharacterError::Client)?;
-        let boundary = (self.boundary)();
-        let request = prepare_create(self.config, self.logging, self.env, &boundary, call)?;
-        create_async(self.config, self.logging, &client, request).await
-    }
-
-    #[must_use]
-    pub fn video_get_character_handler<'call>(
-        &'call mut self,
-        call: &'call CharacterGetCall<'_>,
-    ) -> CharacterAnswer<'call, C> {
-        if call.is_async {
-            let pending = self.async_video_get_character_handler(call);
-            return Ok(CharacterHandled::Pending(Box::pin(pending)));
-        }
-        let client = self
-            .clients
-            .select_sync(call.litellm_params, self.supplied.sync)
-            .map_err(CharacterError::Client)?;
-        let request = prepare_get(self.config, self.logging, self.env, call)?;
-        get_blocking(self.config, self.logging, &client, request).map(CharacterHandled::Done)
+        self.async_video_character_handler(CharacterCall::Create(call))
+            .await
     }
 
     #[must_use]
@@ -163,11 +190,56 @@ where
         &mut self,
         call: &CharacterGetCall<'_>,
     ) -> Result<CharacterObject, CharacterFault<C>> {
+        self.async_video_character_handler(CharacterCall::Get(call))
+            .await
+    }
+
+    fn video_character_handler<'call>(
+        &'call mut self,
+        call: CharacterCall<'call>,
+    ) -> CharacterAnswer<'call, C> {
+        if call.is_async() {
+            let pending = self.async_video_character_handler(call);
+            return Ok(CharacterHandled::Pending(Box::pin(pending)));
+        }
         let client = self
             .clients
-            .select_async(call.litellm_params, self.supplied.asynchronous)
+            .select_sync(call.litellm_params(), self.supplied.sync)
             .map_err(CharacterError::Client)?;
-        let request = prepare_get(self.config, self.logging, self.env, call)?;
-        get_async(self.config, self.logging, &client, request).await
+        let transform: Transform<C> = call.transform();
+        let request = prepare(
+            self.config,
+            self.logging,
+            self.env,
+            &(self.boundary)(),
+            call,
+        )?;
+        let reply = client
+            .send_blocking(request)
+            .map_err(|failure| converted(self.config, failure))?;
+        answered(self.config, self.logging, reply, transform).map(CharacterHandled::Done)
+    }
+
+    async fn async_video_character_handler(
+        &mut self,
+        call: CharacterCall<'_>,
+    ) -> Result<CharacterObject, CharacterFault<C>> {
+        let client = self
+            .clients
+            .select_async(call.litellm_params(), self.supplied.asynchronous)
+            .map_err(CharacterError::Client)?;
+        let transform: Transform<C> = call.transform();
+        let request = prepare(
+            self.config,
+            self.logging,
+            self.env,
+            &(self.boundary)(),
+            call,
+        )?;
+        let reply = client
+            .send(request)
+            .await
+            .map_err(|failure| converted(self.config, failure))?;
+        answered(self.config, self.logging, reply, transform)
     }
 }

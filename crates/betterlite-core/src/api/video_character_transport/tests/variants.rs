@@ -94,7 +94,7 @@ fn creation_dispatches_before_selecting_a_client() {
         },
     );
     let config = recording(&events);
-    let log = LogEnv::new(&events);
+    let log = LogEnv::for_events(&events);
     let mut state = logging_state("video_create_character");
     let litellm = params(&[("api_base", BASE)]);
     let clip = video();

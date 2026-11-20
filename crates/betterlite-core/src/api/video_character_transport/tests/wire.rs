@@ -15,14 +15,14 @@ use crate::api::video_character_transport::service::{CharacterHandled, Character
 
 fn parts(call_type: &str) -> (RecordingConfig, LogEnv, LoggingState, HttpClients) {
     let config = recording(&Events::new());
-    let log = LogEnv::new(&Events::new());
+    let log = LogEnv::for_events(&Events::new());
     (config, log, logging_state(call_type), real_clients())
 }
 
 fn assert_get_reply_seen(config: &RecordingConfig) {
     assert_eq!(
         config.seen().last(),
-        Some(&Seen::GetReply {
+        Some(&Seen::Reply {
             status: 200,
             body: CHARACTER_BODY.as_bytes().to_vec(),
         })
