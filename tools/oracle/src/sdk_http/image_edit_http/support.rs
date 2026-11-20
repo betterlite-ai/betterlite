@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -20,11 +19,12 @@ use betterlite_provider::api::image_contracts::edit::{
     BaseImageEditConfig, ImageEditEnvironment, ImageEditReply, ImageEditRequest,
 };
 use betterlite_provider::api::image_contracts::error::ImageContractError;
+use betterlite_provider::api::image_edit_http::asynchronous::async_image_edit_handler;
 use betterlite_provider::api::image_edit_http::error::ImageEditHttpError;
+use betterlite_provider::api::image_edit_http::image_edit_handler;
 use betterlite_provider::api::image_edit_http::service::{
     ClientKind, ClientSource, ImageEditCall, ImageEditDeps, ImageEditOutcome, LogContext,
 };
-use betterlite_provider::api::image_edit_http::{async_image_edit_handler, image_edit_handler};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
 use secrecy::ExposeSecret as _;
@@ -32,11 +32,10 @@ use thiserror::Error;
 use url::Url;
 
 use super::super::error::SdkHttpError;
-use super::super::vector_query_embedding::outbound_client;
 use super::LoggedCall;
 
 // The client the handler selects; the case env only carries the proxy settings
-pub(super) struct Source(ProxiedClient);
+pub(super) struct Source(pub(super) ProxiedClient);
 
 impl ClientSource for Source {
     type Client = ProxiedClient;
@@ -44,10 +43,6 @@ impl ClientSource for Source {
     fn client(&self, _ssl_verify: Option<bool>) -> Result<ProxiedClient, ClientError> {
         Ok(self.0.clone())
     }
-}
-
-pub(super) fn source(env: &BTreeMap<String, String>) -> Result<Source, SdkHttpError> {
-    Ok(Source(outbound_client(env)?))
 }
 
 // The config's own refusals, kept apart from the provider's answer

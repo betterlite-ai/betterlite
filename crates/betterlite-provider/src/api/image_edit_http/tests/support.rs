@@ -31,12 +31,13 @@ use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
 use thiserror::Error;
 
+use super::super::asynchronous::async_image_edit_handler;
 use super::super::error::{ImageEditHttpError, RequestError};
+use super::super::image_edit_handler;
 use super::super::service::{
     ClientKind, ClientSource, ImageEditCall, ImageEditDeps, ImageEditOutcome, LogContext,
     SuppliedClient,
 };
-use super::super::{async_image_edit_handler, image_edit_handler};
 use crate::api::image_contracts::edit::{
     BaseImageEditConfig, ImageEditEnvironment, ImageEditReply, ImageEditRequest,
 };

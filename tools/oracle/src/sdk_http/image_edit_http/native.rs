@@ -10,7 +10,8 @@ use betterlite_provider::api::image_edit_http::service::{
 
 use super::super::error::SdkHttpError;
 use super::super::result::kinds::SdkResult;
-use super::support::{Fixture, FixtureConfig, FixtureError, source};
+use super::super::vector_query_embedding::outbound_client;
+use super::support::{Fixture, FixtureConfig, FixtureError, Source};
 use super::{Call, Failure, LoggedCall, Mode, Outcome};
 
 // The production handler over the mock's base: the same pooled client and pre-call a request would build
@@ -19,7 +20,7 @@ pub(super) async fn execute(
     api_base: &str,
     env: &BTreeMap<String, String>,
 ) -> Result<SdkResult, SdkHttpError> {
-    let origin = source(env)?;
+    let origin = Source(outbound_client(env)?);
     let provider = FixtureConfig {
         multipart: call.multipart,
     };
