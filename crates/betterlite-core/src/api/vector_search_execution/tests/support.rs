@@ -100,6 +100,7 @@ pub(crate) struct Fixture {
     redactor: Redactor,
     sink: Sink,
     logger: Box<dyn Fn(&Json) -> Result<(), PrePostError> + Sync>,
+    history: Arc<Mutex<Vec<Json>>>,
     pub(crate) state: LoggingState,
     now: DateTime<FixedOffset>,
 }
@@ -107,8 +108,14 @@ pub(crate) struct Fixture {
 impl Fixture {
     pub(crate) fn new(call_type: &str, events: &Events) -> Self {
         let recorder = events.clone();
-        let logger = Box::new(move |_details: &Json| -> Result<(), PrePostError> {
+        let history: Arc<Mutex<Vec<Json>>> = Arc::default();
+        let captured = Arc::clone(&history);
+        let logger = Box::new(move |details: &Json| -> Result<(), PrePostError> {
             recorder.push("log");
+            captured
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(details.clone());
             Ok(())
         });
         let init: LoggingInit = serde_json::from_str(&format!(
@@ -133,6 +140,7 @@ impl Fixture {
             redactor,
             sink: Sink,
             logger,
+            history,
             state,
             now,
         }
@@ -196,6 +204,17 @@ impl Fixture {
 
     pub(crate) fn input(&self) -> Option<&Json> {
         self.state.model_call_details.get("input")
+    }
+
+    pub(crate) fn detail(&self, name: &str) -> Option<&Json> {
+        self.state.model_call_details.get(name)
+    }
+
+    pub(crate) fn history(&self) -> Vec<Json> {
+        self.history
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 }
 
@@ -319,10 +338,12 @@ impl ClientSource for Source {
 #[derive(Default)]
 pub(crate) struct Recorded {
     pub(crate) validations: Vec<(OpenAiHeaders, Params)>,
+    pub(crate) returned: Vec<OpenAiHeaders>,
     pub(crate) urls: Vec<Params>,
     pub(crate) transforms: Vec<TransformRecord>,
     pub(crate) query_transforms: Vec<TransformRecord>,
     pub(crate) signs: Vec<SignRecord>,
+    pub(crate) response_details: Vec<Params>,
     pub(crate) threads: Vec<std::thread::ThreadId>,
 }
 
@@ -334,6 +355,20 @@ pub(crate) struct TransformRecord {
     pub(crate) litellm_params: Params,
     pub(crate) extra_body: Option<Params>,
     pub(crate) executor: bool,
+    pub(crate) async_entry: bool,
+}
+
+fn transform_record(request: &SearchRequest<'_>, async_entry: bool) -> TransformRecord {
+    TransformRecord {
+        vector_store_id: request.vector_store_id.to_owned(),
+        query: request.query.clone(),
+        optional_params: request.optional_params.clone(),
+        api_base: request.api_base.to_owned(),
+        litellm_params: request.litellm_params.clone(),
+        extra_body: request.extra_body.cloned(),
+        executor: false,
+        async_entry,
+    }
 }
 
 pub(crate) struct SignRecord {
@@ -351,6 +386,7 @@ pub(crate) struct RecordingConfig {
     pub(crate) signed_body: Option<Vec<u8>>,
     pub(crate) signs_with_aws: bool,
     pub(crate) query_embedding: bool,
+    pub(crate) content_type: Option<&'static str>,
     pub(crate) transform_failure: Option<&'static str>,
     events: Events,
     recorded: Arc<Mutex<Recorded>>,
@@ -368,6 +404,7 @@ impl RecordingConfig {
             signed_body: None,
             signs_with_aws: false,
             query_embedding: false,
+            content_type: Some("application/json"),
             transform_failure: None,
             events: events.clone(),
             recorded: Arc::default(),
@@ -388,23 +425,49 @@ impl RecordingConfig {
         self
     }
 
+    pub(crate) const fn with_content_type(mut self, content_type: Option<&'static str>) -> Self {
+        self.content_type = content_type;
+        self
+    }
+
     fn recorded(&self) -> MutexGuard<'_, Recorded> {
         self.recorded.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    fn record(&self, request: &SearchRequest<'_>) -> TransformRecord {
-        TransformRecord {
-            vector_store_id: request.vector_store_id.to_owned(),
-            query: request.query.clone(),
-            optional_params: request.optional_params.clone(),
-            api_base: request.api_base.to_owned(),
-            litellm_params: request.litellm_params.clone(),
-            extra_body: request.extra_body.cloned(),
-            executor: false,
+    fn transform_with(
+        &self,
+        request: SearchRequest<'_>,
+        async_entry: bool,
+    ) -> Result<PreparedSearch, SearchError> {
+        if let Some(field) = self.transform_failure {
+            return Err(SearchError::Field {
+                field,
+                expected: "an integer",
+            });
         }
+        request.logging.model_call_details.insert(
+            "query".to_owned(),
+            Json::Text("recorded-by-transform".to_owned()),
+        );
+        self.recorded()
+            .transforms
+            .push(transform_record(&request, async_entry));
+        Ok((self.url.clone(), self.body.clone()))
+    }
+
+    fn query_transform_with(
+        &self,
+        request: QuerySearchRequest<'_>,
+        async_entry: bool,
+    ) -> PreparedSearch {
+        let mut record = transform_record(&request.search, async_entry);
+        record.executor = request.embedding_executor.is_some();
+        self.recorded().query_transforms.push(record);
+        (self.url.clone(), self.body.clone())
     }
 }
 
+#[async_trait]
 impl SearchConfig for RecordingConfig {
     fn validate_environment(
         &self,
@@ -418,10 +481,10 @@ impl SearchConfig for RecordingConfig {
             "Authorization".to_owned(),
             SecretString::from("Bearer sk-provider"),
         );
-        headers.insert(
-            "Content-Type".to_owned(),
-            SecretString::from("application/json"),
-        );
+        if let Some(content_type) = self.content_type {
+            headers.insert("Content-Type".to_owned(), SecretString::from(content_type));
+        }
+        self.recorded().returned.push(headers.clone());
         Ok(headers)
     }
 
@@ -434,21 +497,24 @@ impl SearchConfig for RecordingConfig {
         &self,
         request: SearchRequest<'_>,
     ) -> Result<PreparedSearch, SearchError> {
-        if let Some(field) = self.transform_failure {
-            return Err(SearchError::Field {
-                field,
-                expected: "an integer",
-            });
-        }
-        self.recorded().transforms.push(self.record(&request));
-        Ok((self.url.clone(), self.body.clone()))
+        self.transform_with(request, false)
+    }
+
+    async fn atransform_search_request(
+        &self,
+        request: SearchRequest<'_>,
+    ) -> Result<PreparedSearch, SearchError> {
+        self.transform_with(request, true)
     }
 
     fn transform_search_response(
         &self,
         response: &VectorStoreResponse,
-        _logging: &mut VectorStoreLogging,
+        logging: &mut VectorStoreLogging,
     ) -> Result<VectorStoreSearchResponse, SearchError> {
+        self.recorded()
+            .response_details
+            .push(logging.model_call_details.clone());
         serde_json::from_slice(&response.body).map_err(|source| {
             SearchError::Provider(self.error_class(
                 &source.to_string(),
@@ -505,16 +571,14 @@ impl QueryEmbeddingConfig for RecordingConfig {
         &self,
         request: QuerySearchRequest<'_>,
     ) -> Result<PreparedSearch, SearchError> {
-        Ok(self.record_query(&request))
+        Ok(self.query_transform_with(request, false))
     }
-}
 
-impl RecordingConfig {
-    fn record_query(&self, request: &QuerySearchRequest<'_>) -> PreparedSearch {
-        let mut record = self.record(&request.search);
-        record.executor = request.embedding_executor.is_some();
-        self.recorded().query_transforms.push(record);
-        (self.url.clone(), self.body.clone())
+    async fn atransform_query_search(
+        &self,
+        request: QuerySearchRequest<'_>,
+    ) -> Result<PreparedSearch, SearchError> {
+        Ok(self.query_transform_with(request, true))
     }
 }
 
@@ -581,9 +645,30 @@ pub(crate) struct DirectStore {
 #[derive(Default)]
 pub(crate) struct DirectObserved {
     pub(crate) ids: Vec<String>,
+    pub(crate) queries: Vec<SearchQuery>,
+    pub(crate) optional_params: Vec<Params>,
     pub(crate) timeouts: Vec<Option<Duration>>,
     pub(crate) executors: Vec<bool>,
     pub(crate) litellm_params: Vec<Params>,
+    pub(crate) async_entries: Vec<bool>,
+}
+
+fn record_direct(
+    request: &DirectSearchRequest<'_>,
+    observed: &mut DirectObserved,
+    async_entry: bool,
+) {
+    observed.ids.push(request.vector_store_id.to_owned());
+    observed.queries.push(request.query.clone());
+    observed
+        .optional_params
+        .push(request.optional_params.clone());
+    observed.timeouts.push(request.timeout);
+    observed
+        .executors
+        .push(request.embedding_executor.is_some());
+    observed.litellm_params.push(request.litellm_params.clone());
+    observed.async_entries.push(async_entry);
 }
 
 impl DirectStore {
@@ -601,15 +686,11 @@ impl DirectStore {
     fn answer(
         &self,
         request: &DirectSearchRequest<'_>,
+        async_entry: bool,
     ) -> Result<VectorStoreSearchResponse, DirectFailure> {
         {
             let mut observed = self.observed.lock().unwrap_or_else(PoisonError::into_inner);
-            observed.ids.push(request.vector_store_id.to_owned());
-            observed.timeouts.push(request.timeout);
-            observed
-                .executors
-                .push(request.embedding_executor.is_some());
-            observed.litellm_params.push(request.litellm_params.clone());
+            record_direct(request, &mut observed, async_entry);
         }
         if self.failure {
             return Err(DirectFailure(Box::new(std::io::Error::other(
@@ -626,7 +707,152 @@ impl DirectSearchConfig for DirectStore {
         &self,
         request: DirectSearchRequest<'_>,
     ) -> Result<VectorStoreSearchResponse, DirectFailure> {
-        self.answer(&request)
+        self.answer(&request, false)
+    }
+
+    async fn aexecute_search_request(
+        &self,
+        request: DirectSearchRequest<'_>,
+    ) -> Result<VectorStoreSearchResponse, DirectFailure> {
+        self.answer(&request, true)
+    }
+}
+
+// A config that overrides neither async transform, so the trait's sync-to-async defaults run
+pub(crate) struct DelegatingConfig {
+    base: String,
+    url: String,
+    body: Params,
+    query_embedding: bool,
+    recorded: Arc<Mutex<Recorded>>,
+}
+
+impl DelegatingConfig {
+    pub(crate) fn new() -> Self {
+        let base = String::from("http://mock.test/v1");
+        Self {
+            url: format!("{base}/vector_stores/vs_a/search"),
+            base,
+            body: Params::from([(
+                "query".to_owned(),
+                Json::List(vec![Json::Text("a".to_owned())]),
+            )]),
+            query_embedding: false,
+            recorded: Arc::default(),
+        }
+    }
+
+    pub(crate) const fn with_query_embedding(mut self) -> Self {
+        self.query_embedding = true;
+        self
+    }
+
+    pub(crate) fn recorder(&self) -> Arc<Mutex<Recorded>> {
+        Arc::clone(&self.recorded)
+    }
+
+    fn recorded(&self) -> MutexGuard<'_, Recorded> {
+        self.recorded.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+impl Default for DelegatingConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SearchConfig for DelegatingConfig {
+    fn validate_environment(
+        &self,
+        headers: OpenAiHeaders,
+        _litellm_params: &Params,
+    ) -> Result<OpenAiHeaders, SearchError> {
+        Ok(headers)
+    }
+
+    fn complete_url(&self, _litellm_params: &Params) -> Result<String, SearchError> {
+        Ok(self.base.clone())
+    }
+
+    fn transform_search_request(
+        &self,
+        request: SearchRequest<'_>,
+    ) -> Result<PreparedSearch, SearchError> {
+        self.recorded()
+            .transforms
+            .push(transform_record(&request, false));
+        Ok((self.url.clone(), self.body.clone()))
+    }
+
+    fn transform_search_response(
+        &self,
+        response: &VectorStoreResponse,
+        _logging: &mut VectorStoreLogging,
+    ) -> Result<VectorStoreSearchResponse, SearchError> {
+        serde_json::from_slice(&response.body).map_err(|source| {
+            SearchError::Provider(self.error_class(
+                &source.to_string(),
+                response.status_code,
+                HeaderMap::new(),
+            ))
+        })
+    }
+
+    fn query_embedding_config(&self) -> Option<&dyn QueryEmbeddingConfig> {
+        if self.query_embedding {
+            Some(self)
+        } else {
+            None
+        }
+    }
+
+    fn error_class(&self, message: &str, status_code: u16, headers: HeaderMap) -> BaseLlmException {
+        BaseLlmException {
+            status_code,
+            message: message.to_owned(),
+            headers,
+            status_code_is_synthesized: false,
+        }
+    }
+}
+
+#[async_trait]
+impl QueryEmbeddingConfig for DelegatingConfig {
+    fn transform_query_search(
+        &self,
+        request: QuerySearchRequest<'_>,
+    ) -> Result<PreparedSearch, SearchError> {
+        let mut record = transform_record(&request.search, false);
+        record.executor = request.embedding_executor.is_some();
+        self.recorded().query_transforms.push(record);
+        Ok((self.url.clone(), self.body.clone()))
+    }
+}
+
+// A store that overrides only the sync execute, so DirectSearchConfig's async default runs
+#[derive(Default)]
+pub(crate) struct DelegatingStore {
+    observed: Arc<Mutex<DirectObserved>>,
+}
+
+impl DelegatingStore {
+    pub(crate) fn observed(&self) -> MutexGuard<'_, DirectObserved> {
+        self.observed.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+#[async_trait]
+impl DirectSearchConfig for DelegatingStore {
+    fn execute_search_request(
+        &self,
+        request: DirectSearchRequest<'_>,
+    ) -> Result<VectorStoreSearchResponse, DirectFailure> {
+        {
+            let mut observed = self.observed.lock().unwrap_or_else(PoisonError::into_inner);
+            record_direct(&request, &mut observed, false);
+        }
+        serde_json::from_str(SEARCH_RESPONSE).map_err(|source| DirectFailure(Box::new(source)))
     }
 }
 

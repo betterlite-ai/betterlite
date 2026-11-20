@@ -6,8 +6,9 @@ use betterlite_models::decisions::Json;
 
 use super::json;
 use super::support::{
-    Embeddings, Events, Fixture, Recorded, RecordingConfig, Reply, SEARCH_RESPONSE, Source,
-    ThreadedSeam, Wire, body_bytes, body_json, caller_headers, params, sent_header,
+    DelegatingConfig, Embeddings, Events, Fixture, Recorded, RecordingConfig, Reply,
+    SEARCH_RESPONSE, Source, ThreadedSeam, Wire, body_bytes, body_json, caller_headers, params,
+    sent_header,
 };
 use crate::api::vector_search_execution::config::{Params, SearchQuery};
 use crate::api::vector_search_execution::service::{SearchCall, SearchDeps};
@@ -19,6 +20,8 @@ pub(super) enum SigningCase {
     SignedBody(&'static [u8]),
     SyncQueryEmbedding,
     AsyncQueryEmbedding,
+    AsyncSearchDefault,
+    AsyncQueryDefault,
     QueryEmbeddingNoExecutor,
     AsyncAwsSigning,
     AsyncPlainSigning,
@@ -47,6 +50,8 @@ pub(super) async fn signing_case(case: SigningCase) {
         SigningCase::AsyncQueryEmbedding => {
             query_embedding_transform(ClientKind::Asynchronous).await;
         }
+        SigningCase::AsyncSearchDefault => async_search_default().await,
+        SigningCase::AsyncQueryDefault => async_query_default().await,
         SigningCase::QueryEmbeddingNoExecutor => query_transform_no_executor().await,
         SigningCase::AsyncAwsSigning => {
             signed_on_thread(ClientKind::Asynchronous, true, SigningThread::OffLoop).await;
@@ -104,12 +109,39 @@ async fn ordinary_signing() {
     drop(recorded);
     assert_eq!(events.recorded(), ["sign", "log", "send"]);
     assert_ordinary_wire(&wire, &fixture);
+    assert_transform_logging(&fixture);
+}
+
+fn assert_transform_logging(fixture: &Fixture) {
+    assert_eq!(
+        fixture.detail("query"),
+        Some(&json(r#""recorded-by-transform""#))
+    );
+    let logged = fixture.history();
+    let Json::Object(details) = &logged[0] else {
+        panic!("the logger function receives the call metadata");
+    };
+    assert_eq!(
+        details.get("query"),
+        Some(&json(r#""recorded-by-transform""#))
+    );
+    assert!(details.contains_key("additional_args"));
 }
 
 fn assert_ordinary_records(recorded: &Recorded, case: &SigningFixture) {
     assert_validations(recorded, &case.litellm_params);
     assert_transform(recorded, case);
+    assert_transform_details(recorded);
     assert_sign(recorded);
+}
+
+fn assert_transform_details(recorded: &Recorded) {
+    assert_eq!(recorded.response_details.len(), 1);
+    assert_eq!(
+        recorded.response_details[0].get("query"),
+        Some(&Json::Text("recorded-by-transform".to_owned()))
+    );
+    assert!(recorded.response_details[0].contains_key("additional_args"));
 }
 
 fn assert_validations(recorded: &Recorded, litellm_params: &Params) {
@@ -134,6 +166,7 @@ fn assert_transform(recorded: &Recorded, case: &SigningFixture) {
     assert_eq!(transform.litellm_params, case.litellm_params);
     assert_eq!(transform.extra_body, Some(case.extra_body.clone()));
     assert!(!transform.executor);
+    assert!(!transform.async_entry);
 }
 
 fn assert_sign(recorded: &Recorded) {
@@ -175,6 +208,7 @@ async fn signed_body_is_sent(body: &'static [u8]) {
     let wire = Wire::replying(Reply::json(200, SEARCH_RESPONSE), &events);
     let source = Source::new(wire.clone());
     let config = RecordingConfig::new("http://mock.test/v1", &events).with_signed_body(Some(body));
+    let recorder = config.recorder();
     let deps = SearchDeps {
         config: Arc::new(config),
         source: &source,
@@ -195,6 +229,10 @@ async fn signed_body_is_sent(body: &'static [u8]) {
         .search(&deps, &ThreadedSeam, ClientKind::Asynchronous, &call)
         .await
         .expect("the search succeeds");
+    let recorded = recorder.lock().unwrap_or_else(PoisonError::into_inner);
+    assert_eq!(recorded.transforms.len(), 1);
+    assert!(recorded.transforms[0].async_entry);
+    drop(recorded);
     let sent = wire.requests();
     assert_eq!(sent.len(), 1);
     assert_eq!(body_bytes(&sent[0]), Some(body));
@@ -230,14 +268,15 @@ async fn query_embedding_transform(mode: ClientKind) {
         .await
         .expect("the search succeeds");
     let recorded = recorder.lock().unwrap_or_else(PoisonError::into_inner);
-    assert_query_embedding(&recorded, &case);
+    assert_query_embedding(&recorded, &case, mode);
     assert_eq!(wire.requests().len(), 1);
 }
 
-fn assert_query_embedding(recorded: &Recorded, case: &SigningFixture) {
+fn assert_query_embedding(recorded: &Recorded, case: &SigningFixture, mode: ClientKind) {
     assert!(recorded.transforms.is_empty());
     assert_eq!(recorded.query_transforms.len(), 1);
     let transform = &recorded.query_transforms[0];
+    assert_eq!(transform.async_entry, mode == ClientKind::Asynchronous);
     assert_eq!(transform.litellm_params.get("timeout"), Some(&json("7")));
     assert_eq!(
         transform.litellm_params.get("region"),
@@ -281,6 +320,7 @@ async fn query_transform_no_executor() {
         .expect("the search succeeds");
     let recorded = recorder.lock().unwrap_or_else(PoisonError::into_inner);
     assert!(!recorded.query_transforms[0].executor);
+    assert!(recorded.query_transforms[0].async_entry);
     assert_eq!(
         recorded.query_transforms[0].litellm_params.get("timeout"),
         Some(&Json::Null)
@@ -317,15 +357,100 @@ async fn signed_on_thread(mode: ClientKind, aws: bool, thread: SigningThread) {
         .await
         .expect("the search succeeds");
     let recorded = recorder.lock().unwrap_or_else(PoisonError::into_inner);
-    assert_signed_thread(&recorded, thread, caller_thread);
+    assert_signed_thread(&recorded, thread, caller_thread, mode);
     assert_eq!(wire.requests().len(), 1);
 }
 
-fn assert_signed_thread(recorded: &Recorded, thread: SigningThread, caller: std::thread::ThreadId) {
+fn assert_signed_thread(
+    recorded: &Recorded,
+    thread: SigningThread,
+    caller: std::thread::ThreadId,
+    mode: ClientKind,
+) {
+    assert_eq!(
+        recorded.transforms[0].async_entry,
+        mode == ClientKind::Asynchronous
+    );
     assert_eq!(recorded.signs.len(), 1);
     let signed_on = recorded.threads[0];
     match thread {
         SigningThread::OffLoop => assert_ne!(signed_on, caller),
         SigningThread::Inline => assert_eq!(signed_on, caller),
     }
+}
+
+// The async default must reach the sync transform; its record carries no async entry
+async fn async_search_default() {
+    let case = signing_fixture();
+    let events = Events::new();
+    let wire = Wire::replying(Reply::json(200, SEARCH_RESPONSE), &events);
+    let source = Source::new(wire.clone());
+    let config = DelegatingConfig::new();
+    let recorder = config.recorder();
+    let deps = SearchDeps {
+        config: Arc::new(config),
+        source: &source,
+        supplied: None,
+    };
+    let call = SearchCall {
+        vector_store_id: "vs_a",
+        query: &case.query,
+        optional_params: &case.optional_params,
+        litellm_params: &case.litellm_params,
+        extra_headers: None,
+        extra_body: None,
+        timeout: None,
+        embedding_executor: None,
+    };
+    let mut fixture = Fixture::new("vector_store_search", &events);
+    fixture
+        .search(&deps, &ThreadedSeam, ClientKind::Asynchronous, &call)
+        .await
+        .expect("the default async transform searches");
+    let recorded = recorder.lock().unwrap_or_else(PoisonError::into_inner);
+    assert_eq!(recorded.transforms.len(), 1);
+    assert!(!recorded.transforms[0].async_entry);
+    assert!(recorded.query_transforms.is_empty());
+    assert_eq!(wire.requests().len(), 1);
+}
+
+// The query-embedding async default must reach the sync transform with the executor
+async fn async_query_default() {
+    let case = signing_fixture();
+    let events = Events::new();
+    let wire = Wire::replying(Reply::json(200, SEARCH_RESPONSE), &events);
+    let source = Source::new(wire.clone());
+    let config = DelegatingConfig::new().with_query_embedding();
+    let recorder = config.recorder();
+    let deps = SearchDeps {
+        config: Arc::new(config),
+        source: &source,
+        supplied: None,
+    };
+    let embeddings = Embeddings;
+    let call = SearchCall {
+        vector_store_id: "vs_a",
+        query: &case.query,
+        optional_params: &case.optional_params,
+        litellm_params: &case.litellm_params,
+        extra_headers: None,
+        extra_body: None,
+        timeout: Some(Duration::from_secs(7)),
+        embedding_executor: Some(&embeddings),
+    };
+    let mut fixture = Fixture::new("vector_store_search", &events);
+    fixture
+        .search(&deps, &ThreadedSeam, ClientKind::Asynchronous, &call)
+        .await
+        .expect("the default async query transform searches");
+    let recorded = recorder.lock().unwrap_or_else(PoisonError::into_inner);
+    assert!(recorded.transforms.is_empty());
+    assert_eq!(recorded.query_transforms.len(), 1);
+    assert!(!recorded.query_transforms[0].async_entry);
+    assert!(recorded.query_transforms[0].executor);
+    assert_eq!(
+        recorded.query_transforms[0].litellm_params.get("timeout"),
+        Some(&json("7"))
+    );
+    assert_eq!(wire.requests().len(), 1);
 }

@@ -1,11 +1,15 @@
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError};
+use std::time::Duration;
 
+use betterlite_http::proxy::limits::TransportLimits;
+use betterlite_http_fixture::reply::reply;
+use betterlite_http_fixture::server::serve;
 use rstest::rstest;
 
 use super::support::{
-    Events, Fixture, RecordingConfig, RefusingSeam, Reply, SEARCH_RESPONSE, Source, ThreadedSeam,
-    Wire, caller_headers, params, sent_header,
+    Events, Fixture, ProxiedSource, RecordingConfig, RefusingSeam, Reply, SEARCH_RESPONSE, Source,
+    ThreadedSeam, Wire, caller_headers, params, sent_header,
 };
 use super::{TEXT_SEARCH_BODY, json, openai_search_config};
 use crate::api::vector_search_execution::config::{Params, SearchConfig, SearchQuery};
@@ -25,6 +29,7 @@ pub(super) enum HeaderCase {
     BadValue,
     BadUrl,
     TransformFailure,
+    AddedContentType,
     RawRequest,
     SigningFailure,
 }
@@ -40,6 +45,7 @@ pub(super) enum HeaderCase {
 #[case::bad_value(HeaderCase::BadValue)]
 #[case::bad_url(HeaderCase::BadUrl)]
 #[case::transform_failure(HeaderCase::TransformFailure)]
+#[case::added_content_type(HeaderCase::AddedContentType)]
 #[case::raw_request(HeaderCase::RawRequest)]
 #[case::signing_failure(HeaderCase::SigningFailure)]
 #[tokio::test]
@@ -59,6 +65,7 @@ async fn header_case(case: HeaderCase) {
         HeaderCase::BadValue => invalid_header_case(InvalidCase::BadValue).await,
         HeaderCase::BadUrl => invalid_header_case(InvalidCase::BadUrl).await,
         HeaderCase::TransformFailure => transform_failure().await,
+        HeaderCase::AddedContentType => added_content_type().await,
         HeaderCase::RawRequest => raw_request_capture().await,
         HeaderCase::SigningFailure => signing_failure().await,
     }
@@ -368,6 +375,48 @@ async fn transform_failure() {
     assert_eq!(field, "max_num_results");
     assert!(events.recorded().is_empty());
     assert!(wire.requests().is_empty());
+}
+
+// betterlite's outbound client tags every JSON body, where LiteLLM's data= carries no Content-Type of its own
+async fn added_content_type() {
+    let serving = serve(
+        reply(
+            "200 OK",
+            &[("content-type", "application/json")],
+            SEARCH_RESPONSE,
+        ),
+        Duration::ZERO,
+    )
+    .expect("the fixture serves");
+    let query = SearchQuery::Text("a".to_owned());
+    let optional_params = params("{}");
+    let events = Events::new();
+    let base = format!("http://{}", serving.address);
+    let litellm_params = params(&format!(r#"{{"api_base":"{base}"}}"#));
+    let config = RecordingConfig::new(&base, &events).with_content_type(None);
+    let recorder = config.recorder();
+    let source = ProxiedSource::new(TransportLimits::DEFAULT);
+    let deps = SearchDeps {
+        config: Arc::new(config),
+        source: &source,
+        supplied: None,
+    };
+    let call = search_call(&query, &optional_params, &litellm_params, None);
+    let mut fixture = Fixture::new("vector_store_search", &events);
+    fixture
+        .search(&deps, &ThreadedSeam, ClientKind::Sync, &call)
+        .await
+        .expect("the search succeeds");
+    let recorded = recorder.lock().unwrap_or_else(PoisonError::into_inner);
+    assert!(!recorded.returned[0].contains_key("Content-Type"));
+    drop(recorded);
+    let request = serving.finish().expect("the fixture saw the search");
+    assert!(
+        request
+            .head
+            .to_ascii_lowercase()
+            .contains("content-type: application/json")
+    );
 }
 
 async fn raw_request_capture() {

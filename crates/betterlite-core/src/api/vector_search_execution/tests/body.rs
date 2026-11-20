@@ -15,8 +15,8 @@ use crate::api::vector_store_http_write::service::ClientKind;
 const TIMEOUT: Duration = Duration::from_secs(7);
 const OVERRIDE: &str = r#"{"query":"override"}"#;
 const STANDARD_PARAMS: &str = r#"{"max_num_results":2,"rewrite_query":false}"#;
-const FILTER_PARAMS: &str = r#"{"filters":{"type":"eq","key":"k","value":"v"},"max_num_results":2,"ranking_options":{"ranker":"default-2024-11-15"},"rewrite_query":false}"#;
-const FILTER_BODY: &str = r#"{"query":["a","b"],"filters":{"type":"eq","key":"k","value":"v"},"max_num_results":2,"ranking_options":{"ranker":"default-2024-11-15"},"rewrite_query":false}"#;
+const FILTER_PARAMS: &str = r#"{"filters":{"type":"eq","key":"k","value":"v"},"max_num_results":2,"ranking_options":{"ranker":"default-2024-11-15"},"rewrite_query":true}"#;
+const FILTER_BODY: &str = r#"{"query":["a","b"],"filters":{"type":"eq","key":"k","value":"v"},"max_num_results":2,"ranking_options":{"ranker":"default-2024-11-15"},"rewrite_query":true}"#;
 
 #[derive(Debug, Clone, Copy)]
 pub(super) enum BodyCase {

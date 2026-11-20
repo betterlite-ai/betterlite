@@ -264,7 +264,7 @@ fn assert_provider_failure(error: &BaseLlmException, kind: FailureKind) {
         FailureKind::Transform => {
             assert_eq!(error.status_code, 200);
             assert!(!error.status_code_is_synthesized);
-            assert!(error.message.contains("invalid type"));
+            assert_eq!(error.message, "vector store reply is not a valid record");
             assert_eq!(
                 error.headers.get("x-request-id"),
                 Some(&Json::Text("req-1".to_owned()))
