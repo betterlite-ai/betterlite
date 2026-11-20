@@ -3,6 +3,9 @@ use std::future::Future;
 
 use betterlite_core::api::vector_store_http_write::service::ClientKind;
 use betterlite_models::decisions::Json;
+use betterlite_openai::api::vector_store_records::records::vector::{
+    VectorStoreChunkingStrategy, VectorStoreExpirationPolicy,
+};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
@@ -74,9 +77,9 @@ pub struct OptionalParams {
     #[serde(default)]
     pub file_ids: Option<Vec<String>>,
     #[serde(default)]
-    pub expires_after: Option<Json>,
+    pub expires_after: Option<VectorStoreExpirationPolicy>,
     #[serde(default)]
-    pub chunking_strategy: Option<Json>,
+    pub chunking_strategy: Option<VectorStoreChunkingStrategy>,
     #[serde(default)]
     pub metadata: Option<IndexMap<String, Json>>,
 }

@@ -1,0 +1,20 @@
+kind: sdk_http
+name: vector-store-create-read-transport-create-read-header-case-variants
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  vector_store_create_read_transport:
+    operation: retrieve
+    mode: async
+    vector_store_id: vs_a
+    extra_headers:
+      authorization: Bearer sk-caller
+      openai-beta: x
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: vs_a, object: vector_store}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type, openai-beta]
+  ignore: []

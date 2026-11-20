@@ -115,8 +115,6 @@ class TransportValue(BaseModel):
 
 
 class TransportEnvelope(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     store_transport: TransportValue = Field(alias="vector_store_create_read_transport")
 
 
@@ -257,4 +255,5 @@ class CreateReadTransportRequest(BaseModel):
     def serialize(self, api_base: str) -> str:
         outcome = run_transport(self.store_transport, api_base)
         value = TransportValue(value=outcome)
-        return TransportEnvelope(store_transport=value).model_dump_json(by_alias=True)
+        envelope = TransportEnvelope(vector_store_create_read_transport=value)
+        return envelope.model_dump_json(by_alias=True)
