@@ -37,7 +37,7 @@ pub(super) async fn claim(
     });
     let mut current = read(store, key).await?;
     for _attempt in 0..MAX_CLAIM_ATTEMPTS {
-        match evaluate(&current, pin, &requested, eligible)? {
+        match evaluate(&current, &requested, eligible)? {
             Decision::Return(stored) => return Ok(stored),
             Decision::Keep { value, stored } => {
                 let outcome = store
@@ -77,7 +77,6 @@ async fn read(store: &RoutingStateStore, key: &AffinityKey) -> Result<StoreRead,
 
 fn evaluate(
     current: &StoreRead,
-    pin: &AffinityPin,
     requested: &str,
     eligible: Option<&[AffinityPin]>,
 ) -> Result<Decision, SharedFallback> {
