@@ -305,10 +305,10 @@ fn provider_failure(answer: &Answer) {
     assert_eq!(answer.status, StatusCode::BAD_REQUEST);
     let failure: Failure = serde_json::from_slice(&answer.body).unwrap();
     assert_eq!(failure.error.error_type, "invalid_request_error");
-    assert!(
-        failure.error.message.contains("bad request"),
-        "{}",
-        failure.error.message
+    // betterlite writes its own message for a provider error instead of copying the provider body
+    assert_eq!(
+        failure.error.message,
+        "the provider answered with status 400"
     );
     assert_eq!(answer.bodies.len(), 1);
 }

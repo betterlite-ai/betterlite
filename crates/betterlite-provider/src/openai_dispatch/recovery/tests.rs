@@ -128,16 +128,16 @@ async fn openai_recovery_cases(
 ) {
     let (result, bodies) = answered(request, stream, drop, replies.to_vec()).await;
     match expected {
-        Expectation::RecoveredRequest => recovered_request(result, bodies),
-        Expectation::ProviderError(attempts) => provider_error(result, bodies, attempts),
-        Expectation::RejectedFieldKept => rejected_field_kept(result, bodies),
-        Expectation::RejectedFieldsError => rejected_fields_error(result, bodies),
-        Expectation::Resent => resent(result, bodies),
-        Expectation::ResentStream => resent_stream(result, bodies),
+        Expectation::RecoveredRequest => recovered_request(result, &bodies),
+        Expectation::ProviderError(attempts) => provider_error(&result, &bodies, attempts),
+        Expectation::RejectedFieldKept => rejected_field_kept(result, &bodies),
+        Expectation::RejectedFieldsError => rejected_fields_error(result, &bodies),
+        Expectation::Resent => resent(result, &bodies),
+        Expectation::ResentStream => resent_stream(&result, &bodies),
     }
 }
 
-fn recovered_request(result: Result<OperationResult, OperationError>, bodies: Vec<String>) {
+fn recovered_request(result: Result<OperationResult, OperationError>, bodies: &[String]) {
     let OperationResult::OutputLimit { sent } = result.unwrap() else {
         panic!("the output-limit 400 decodes to the recovered request");
     };
@@ -146,15 +146,15 @@ fn recovered_request(result: Result<OperationResult, OperationError>, bodies: Ve
 }
 
 fn provider_error(
-    result: Result<OperationResult, OperationError>,
-    bodies: Vec<String>,
+    result: &Result<OperationResult, OperationError>,
+    bodies: &[String],
     attempts: usize,
 ) {
     assert!(matches!(result, Err(OperationError::Provider { .. })));
     assert_eq!(bodies.len(), attempts);
 }
 
-fn rejected_field_kept(result: Result<OperationResult, OperationError>, bodies: Vec<String>) {
+fn rejected_field_kept(result: Result<OperationResult, OperationError>, bodies: &[String]) {
     let Err(OperationError::Provider { response }) = result else {
         panic!("the 422 reaches the client as the provider's error");
     };
@@ -163,7 +163,7 @@ fn rejected_field_kept(result: Result<OperationResult, OperationError>, bodies: 
     assert!(bodies[0].contains("\"temperature\":0.5"), "{}", bodies[0]);
 }
 
-fn rejected_fields_error(result: Result<OperationResult, OperationError>, bodies: Vec<String>) {
+fn rejected_fields_error(result: Result<OperationResult, OperationError>, bodies: &[String]) {
     let Err(OperationError::RejectedFields { source }) = result else {
         panic!("a malformed detail fails the call");
     };
@@ -171,7 +171,7 @@ fn rejected_fields_error(result: Result<OperationResult, OperationError>, bodies
     assert_eq!(bodies.len(), 1);
 }
 
-fn resent(result: Result<OperationResult, OperationError>, bodies: Vec<String>) {
+fn resent(result: Result<OperationResult, OperationError>, bodies: &[String]) {
     let OperationResult::Chat(ChatCompletion::OpenAi(completion)) = result.unwrap() else {
         panic!("the resent call answers the provider's completion");
     };
@@ -183,7 +183,7 @@ fn resent(result: Result<OperationResult, OperationError>, bodies: Vec<String>) 
     assert!(bodies[1].contains("\"model\":\"up\""), "{}", bodies[1]);
 }
 
-fn resent_stream(result: Result<OperationResult, OperationError>, bodies: Vec<String>) {
+fn resent_stream(result: &Result<OperationResult, OperationError>, bodies: &[String]) {
     assert!(matches!(result, Ok(OperationResult::Stream(_))));
     assert!(!bodies[1].contains("temperature"), "{}", bodies[1]);
 }
@@ -253,12 +253,12 @@ fn prepared(request: &str, stream: bool, inputs: &Deployment) -> PreparedRequest
         request: ChatRequest::parse(request.as_bytes()).unwrap(),
         control: ControlOptions::default(),
     };
-    let request = if stream {
+    let prepared = if stream {
         OperationRequest::Stream(Box::new(operation))
     } else {
         OperationRequest::Chat(Box::new(operation))
     };
-    OpenAi.prepare(&request, inputs, &catalog()).unwrap()
+    OpenAi.prepare(&prepared, inputs, &catalog()).unwrap()
 }
 
 // one prepare, execute and decode against a loopback upstream that answers the given replies in order

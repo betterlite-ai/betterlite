@@ -40,10 +40,10 @@ impl TransformOnUnprocessable for OpenAi {
 // openai-python's exception body: a JSON object's error member, else the JSON itself, else the body text
 fn sdk_exception_body(body: &[u8]) -> JsonValue {
     match serde_json::from_slice(body) {
-        Ok(JsonValue::Object(mut fields)) => match fields.shift_remove("error") {
-            Some(error) => error,
-            None => JsonValue::Object(fields),
-        },
+        Ok(JsonValue::Object(mut fields)) => {
+            let member = fields.shift_remove("error");
+            member.unwrap_or_else(|| JsonValue::Object(fields))
+        }
         Ok(other) => other,
         Err(_not_json) => JsonValue::Text(String::from_utf8(body.to_vec()).unwrap_or_default()),
     }
