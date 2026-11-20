@@ -683,9 +683,6 @@ impl MetadataConfig for RecordingConfig {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .len();
-        if let Some(error) = self.failure_at(Stage::Validate) {
-            return Err(error);
-        }
         self.validates
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -697,6 +694,9 @@ impl MetadataConfig for RecordingConfig {
                 headers: request.headers.keys().cloned().collect(),
                 incoming_validation: request.headers.get("x-validation").cloned(),
             });
+        if let Some(error) = self.failure_at(Stage::Validate) {
+            return Err(error);
+        }
         let mut headers = request.headers;
         headers.insert(
             "authorization".to_owned(),
