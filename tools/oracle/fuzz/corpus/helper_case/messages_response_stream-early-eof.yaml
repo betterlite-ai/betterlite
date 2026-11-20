@@ -3,7 +3,7 @@ name: messages-response-stream-early-eof-seed
 call:
   messages_response_stream:
     model: model_a
-    events: [{type: response.created}]
+    events: [{shape: mapping, fields: {type: response.created}}]
     failure: null
     logging: false
     redaction: enabled

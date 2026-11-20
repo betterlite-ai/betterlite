@@ -4,8 +4,8 @@ call:
   messages_response_stream:
     model: model_a
     events:
-      - {type: response.created}
-      - {type: response.failed, response: {error: {type: rate_limit_error, message: busy}}}
+      - {shape: mapping, fields: {type: response.created}}
+      - {shape: mapping, fields: {type: response.failed, response: {error: {type: rate_limit_error, message: busy}}}}
     failure: null
     logging: false
     redaction: enabled
@@ -14,8 +14,8 @@ calls:
   - messages_response_stream:
       model: model_a
       events:
-        - {type: response.created}
-        - {type: response.failed, response: {error: {type: rate_limit_error, message: "sk-1234567890abcdef boom"}}}
+        - {shape: mapping, fields: {type: response.created}}
+        - {shape: mapping, fields: {type: response.failed, response: {error: {type: rate_limit_error, message: "sk-1234567890abcdef boom"}}}}
       failure: null
       logging: true
       redaction: enabled
@@ -23,16 +23,16 @@ calls:
   - messages_response_stream:
       model: model_a
       events:
-        - {type: response.created}
-        - {type: response.failed, response: {error: {type: rate_limit_error, message: busy}}}
-        - {type: response.failed, response: {error: {type: rate_limit_error, message: ignored}}}
+        - {shape: mapping, fields: {type: response.created}}
+        - {shape: mapping, fields: {type: response.failed, response: {error: {type: rate_limit_error, message: busy}}}}
+        - {shape: mapping, fields: {type: response.failed, response: {error: {type: rate_limit_error, message: ignored}}}}
       failure: null
       logging: false
       redaction: enabled
       steps: [next, next, next, next]
   - messages_response_stream:
       model: model_a
-      events: [{type: response.created}]
+      events: [{shape: mapping, fields: {type: response.created}}]
       failure: {text: "dial tcp: refused"}
       logging: false
       redaction: enabled
@@ -48,6 +48,19 @@ calls:
       model: model_a
       events: []
       failure: {text: boom, message: busy, status_code: 429}
+      logging: false
+      redaction: enabled
+      steps: [next, next, drain]
+  - messages_response_stream:
+      model: model_a
+      events:
+        - {shape: mapping, fields: {type: response.created}}
+        - shape: attributes
+          attributes:
+            type: response.failed
+            response:
+              error: {message: busy, type: rate_limit_error, code: rate_limit_exceeded}
+      failure: null
       logging: false
       redaction: enabled
       steps: [next, next, drain]

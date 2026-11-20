@@ -19,9 +19,9 @@ calls:
   - messages_response_stream:
       model: model_a
       events:
-        - {type: response.created}
-        - {type: response.output_item.added, item: {type: message, id: item_a}}
-        - {type: response.output_text.delta, item_id: item_a, delta: ahead}
+        - {shape: mapping, fields: {type: response.created}}
+        - {shape: mapping, fields: {type: response.output_item.added, item: {type: message, id: item_a}}}
+        - {shape: mapping, fields: {type: response.output_text.delta, item_id: item_a, delta: ahead}}
       failure: null
       logging: false
       redaction: disabled
@@ -29,8 +29,8 @@ calls:
   - messages_response_stream:
       model: model_a
       events:
-        - {type: response.created}
-        - {type: response.completed}
+        - {shape: mapping, fields: {type: response.created}}
+        - {shape: mapping, fields: {type: response.completed}}
       failure: null
       logging: false
       redaction: disabled
@@ -38,9 +38,9 @@ calls:
   - messages_response_stream:
       model: model_a
       events:
-        - {type: response.created}
-        - {type: response.completed}
-        - {type: response.completed}
+        - {shape: mapping, fields: {type: response.created}}
+        - {shape: mapping, fields: {type: response.completed}}
+        - {shape: mapping, fields: {type: response.completed}}
       failure: null
       logging: false
       redaction: disabled
@@ -48,13 +48,38 @@ calls:
   - messages_response_stream:
       model: model_a
       events:
-        - {type: response.created}
-        - {type: response.created}
-        - {type: response.output_item.added, item: {type: message, id: item_a}}
-        - {type: response.output_text.delta, item_id: item_a, delta: "héllo"}
+        - {shape: mapping, fields: {type: response.created}}
+        - {shape: mapping, fields: {type: response.created}}
+        - {shape: mapping, fields: {type: response.output_item.added, item: {type: message, id: item_a}}}
+        - {shape: mapping, fields: {type: response.output_text.delta, item_id: item_a, delta: "héllo"}}
       failure: null
       logging: false
       redaction: disabled
       steps: [sse, sse, sse, sse, sse, sse]
+  - messages_response_stream:
+      model: model_a
+      events:
+        - {shape: mapping, fields: {type: response.created}}
+        - shape: attributes
+          attributes:
+            type: response.output_item.added
+            item: {type: function_call, id: item_tool, call_id: call_a, name: lookup}
+        - shape: attributes
+          attributes:
+            type: response.function_call_arguments.delta
+            item_id: item_tool
+            delta: "1}"
+        - shape: attributes
+          attributes:
+            type: response.completed
+            response:
+              output:
+                - {type: function_call, call_id: call_a, name: lookup, arguments: "1}"}
+              status: incomplete
+              usage: {input_tokens: 10, input_tokens_details: {cached_tokens: 3}, output_tokens: 2, total_tokens: 12}
+      failure: null
+      logging: false
+      redaction: disabled
+      steps: [next, drain]
 env: {LITELLM_DISABLE_REDACT_SECRETS: "true"}
 compare: {ignore: []}

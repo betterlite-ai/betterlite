@@ -3,11 +3,13 @@ import logging
 import os
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Final, Literal, NotRequired, TypeAlias, TypedDict
 
 import litellm
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.anthropic.pass_through.responses_adapters import streaming_iterator as adapter
+from litellm.types.llms.openai import ResponseAPIUsage
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
@@ -24,26 +26,63 @@ class FailureSpec(TypedDict):
     status_code: NotRequired[int]
 
 
+class ErrorSpec(TypedDict):
+    message: NotRequired[JsonValue]
+    type: NotRequired[JsonValue]
+    code: NotRequired[JsonValue]
+
+
+class ResponseSpec(TypedDict):
+    output: NotRequired[list[JsonValue]]
+    status: NotRequired[str]
+    usage: NotRequired[JsonValue]
+    error: NotRequired[ErrorSpec]
+
+
+class AttributesSpec(TypedDict):
+    type: NotRequired[JsonValue]
+    item: NotRequired[JsonValue]
+    item_id: NotRequired[JsonValue]
+    delta: NotRequired[JsonValue]
+    summary_index: NotRequired[JsonValue]
+    response: NotRequired[ResponseSpec]
+
+
+class EventSpec(TypedDict):
+    shape: Literal["mapping", "attributes"]
+    fields: NotRequired[dict[str, JsonValue]]
+    attributes: NotRequired[AttributesSpec]
+
+
 Step: TypeAlias = Literal["next", "drain", "sse"]
 
 
 class Input(TypedDict):
     model: str
-    events: list[JsonValue]
+    events: list[EventSpec]
     failure: FailureSpec | None
     logging: bool
     redaction: Literal["enabled", "disabled"]
     steps: list[Step]
 
 
+class Frame(TypedDict):
+    event: str
+    data: JsonValue
+
+
 class Output(TypedDict):
     chunks: list[JsonValue]
-    frames: list[str | None]
+    frames: list[Frame | None]
     served_id_logged: bool | None
     logs: list[str]
 
 
+EMPTY_FIELDS: Final[dict[str, JsonValue]] = {}
+EMPTY_ATTRIBUTES: Final[AttributesSpec] = {}
+EMPTY_OUTPUT: Final[list[JsonValue]] = []
 CHUNK: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
+RESPONSE_USAGE: Final[TypeAdapter[ResponseAPIUsage]] = TypeAdapter(ResponseAPIUsage)
 
 
 class UpstreamFailureError(Exception):
@@ -53,14 +92,66 @@ class UpstreamFailureError(Exception):
         self.status_code: int | None = spec.get("status_code")
 
 
-class ScriptedStream(AsyncIterator[JsonValue]):
-    def __init__(self, events: list[JsonValue], failure: FailureSpec | None) -> None:
-        self._events = events
+def response_fixture(spec: ResponseSpec) -> SimpleNamespace:
+    raw_output = spec.get("output")
+    output = EMPTY_OUTPUT if raw_output is None else raw_output
+    usage = spec.get("usage")
+    error = spec.get("error")
+    return SimpleNamespace(
+        output=output,
+        status=spec.get("status"),
+        usage=None if usage is None else RESPONSE_USAGE.validate_python(usage),
+        error=None if error is None else error_fixture(error),
+    )
+
+
+def error_fixture(spec: ErrorSpec) -> SimpleNamespace:
+    return SimpleNamespace(
+        message=spec.get("message"),
+        type=spec.get("type"),
+        code=spec.get("code"),
+    )
+
+
+def attribute_event(spec: AttributesSpec) -> SimpleNamespace:
+    response_spec = spec.get("response")
+    return SimpleNamespace(
+        type=spec.get("type"),
+        item=spec.get("item"),
+        item_id=spec.get("item_id"),
+        delta=spec.get("delta"),
+        summary_index=spec.get("summary_index"),
+        response=None if response_spec is None else response_fixture(response_spec),
+    )
+
+
+def build_event(spec: EventSpec) -> dict[str, JsonValue] | SimpleNamespace:
+    if spec["shape"] == "mapping":
+        return spec.get("fields", EMPTY_FIELDS)
+    attributes = spec.get("attributes")
+    return attribute_event(EMPTY_ATTRIBUTES if attributes is None else attributes)
+
+
+def frame_value(raw: bytes) -> Frame:
+    text = raw.decode()
+    if not text.endswith("\n\n"):
+        raise ValueError(f"not an SSE frame: {raw!r}")
+    event_line, data_line = text.removesuffix("\n\n").split("\n")
+    event = event_line.removeprefix("event: ")
+    data = data_line.removeprefix("data: ")
+    if event == event_line or data == data_line:
+        raise ValueError(f"not an SSE frame: {raw!r}")
+    return {"event": event, "data": CHUNK.validate_json(data)}
+
+
+class ScriptedStream(AsyncIterator[object]):
+    def __init__(self, events: list[EventSpec], failure: FailureSpec | None) -> None:
+        self._events = [build_event(event) for event in events]
         self._failure = failure
         self._index = 0
 
     @override
-    async def __anext__(self) -> JsonValue:
+    async def __anext__(self) -> object:
         if self._index < len(self._events):
             event = self._events[self._index]
             self._index += 1
@@ -110,7 +201,7 @@ async def _read_frame(frames: AsyncIterator[bytes], answer: Output) -> None:
     except StopAsyncIteration:
         answer["frames"].append(None)
         return
-    answer["frames"].append(frame.decode())
+    answer["frames"].append(frame_value(frame))
 
 
 async def _drive(input_value: Input) -> Output:
