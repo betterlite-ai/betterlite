@@ -18,6 +18,7 @@ class EndpointRow(TypedDict):
 
 
 ENDPOINT = TypeAdapter(EndpointRow)
+RESULT = TypeAdapter(tuple[Sequence[object], Sequence[object], Mapping[object, object]])
 
 
 class Entry(Strict):
@@ -36,13 +37,15 @@ class Output(Strict):
     unhealthy: list[Row]
 
 
-# perform_health_check's return carries bare list and dict element types, so the typed boundary is this declared shape.
+# perform_health_check's return carries bare list and dict element types, so the typed boundary is this adapter.
 async def checked(
     model_list: list[dict[str, JsonValue]],
     model_id: str | None,
     router: Router,
 ) -> tuple[Sequence[object], Sequence[object], Mapping[object, object]]:
-    return await perform_health_check(model_list=model_list, model_id=model_id, router=router)
+    return RESULT.validate_python(
+        await perform_health_check(model_list=model_list, model_id=model_id, router=router)
+    )
 
 
 def model_row(entry: Entry) -> dict[str, JsonValue]:
