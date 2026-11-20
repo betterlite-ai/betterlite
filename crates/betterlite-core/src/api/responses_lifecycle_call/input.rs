@@ -65,7 +65,7 @@ impl ReadIdentity {
     }
 
     // the read this call describes, with the operation's own extras
-    pub(super) fn sdk_read(&self, extras: ReadExtras<'_>) -> SdkRead<'_> {
+    pub(super) fn sdk_read<'read>(&'read self, extras: ReadExtras<'read>) -> SdkRead<'read> {
         SdkRead {
             identity: self,
             extras,

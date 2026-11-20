@@ -19,7 +19,6 @@ use betterlite_openai::response_resources::request::ListInputItemsQuery;
 use betterlite_openai::response_resources::response::{TypedReply, response_reply};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
-use http::HeaderMap;
 use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
 
@@ -157,7 +156,7 @@ fn reply(answer: Answer) -> Result<ReadOutcome, ReadError> {
         Answer::Provider { status, message } => Err(ReadError::Provider(BaseLlmException {
             status_code: status,
             message: message.to_owned(),
-            headers: HeaderMap::new(),
+            headers: BTreeMap::new(),
             status_code_is_synthesized: false,
         })),
     }
