@@ -23,7 +23,7 @@ pub(super) enum AuthOverrideSpec {
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct ResolveInput {
+pub(crate) struct ResolveInput {
     server: ServerSpec,
     mcp_auth_header: Option<AuthOverrideSpec>,
     #[serde(default)]
@@ -31,7 +31,7 @@ pub(super) struct ResolveInput {
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct HeaderInput {
+pub(crate) struct HeaderInput {
     server: ServerSpec,
     mcp_auth_header: Option<AuthOverrideSpec>,
 }
@@ -78,7 +78,7 @@ fn auth_value(value: Option<&McpAuthValue>) -> Value {
         Some(McpAuthValue::Headers(headers)) => json!(
             headers
                 .iter()
-                .map(|(name, value)| (name.clone(), value.expose_secret().to_owned()))
+                .map(|(name, secret)| (name.clone(), secret.expose_secret().to_owned()))
                 .collect::<BTreeMap<_, _>>()
         ),
     }

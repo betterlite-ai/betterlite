@@ -29,7 +29,7 @@ pub(super) use runtime::block_on;
 const NOW_MS: i64 = 1_700_000_000_000;
 
 #[derive(Debug, Deserialize)]
-pub(super) struct ServersInput {
+pub(crate) struct ServersInput {
     pub(super) servers: Vec<ServerSpec>,
 }
 

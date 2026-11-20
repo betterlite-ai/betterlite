@@ -18,7 +18,7 @@ use betterlite_server::mcp::backfills::{
 use super::support::{self, FakeError, SilentLog};
 
 #[derive(Debug, Deserialize)]
-pub(super) struct ClassifyInput {
+pub(crate) struct ClassifyInput {
     signals: Vec<SignalSpec>,
 }
 
@@ -32,7 +32,7 @@ pub(super) struct SignalSpec {
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct FlowBackfillInput {
+pub(crate) struct FlowBackfillInput {
     flow_rows: Vec<FlowRowSpec>,
     #[serde(default)]
     user_credentials: Vec<CredentialSpec>,

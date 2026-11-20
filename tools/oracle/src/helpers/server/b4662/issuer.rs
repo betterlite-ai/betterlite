@@ -15,7 +15,7 @@ use betterlite_server::mcp::backfills::{
 use super::support::{self, FakeError, SilentLog};
 
 #[derive(Debug, Deserialize)]
-pub(super) struct IssuerBackfillInput {
+pub(crate) struct IssuerBackfillInput {
     issuer_rows: Vec<IssuerRowSpec>,
     #[serde(default)]
     fail_server_ids: Vec<String>,

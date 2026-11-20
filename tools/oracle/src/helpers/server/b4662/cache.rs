@@ -20,7 +20,7 @@ use super::support::{
 };
 
 #[derive(Debug, Deserialize)]
-pub(super) struct GetTokenInput {
+pub(crate) struct GetTokenInput {
     server: ServerSpec,
     #[serde(default)]
     outcomes: Vec<OutcomeSpec>,
@@ -29,21 +29,21 @@ pub(super) struct GetTokenInput {
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct FetchInput {
+pub(crate) struct FetchInput {
     server: ServerSpec,
     #[serde(default)]
     outcomes: Vec<OutcomeSpec>,
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct InvalidateInput {
+pub(crate) struct InvalidateInput {
     server: ServerSpec,
     #[serde(default)]
     outcomes: Vec<OutcomeSpec>,
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct PerUserInput {
+pub(crate) struct PerUserInput {
     user_id: String,
     server_id: String,
     #[serde(default)]
@@ -61,7 +61,7 @@ pub(super) struct PerUserInput {
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct PerUserTtlInput {
+pub(crate) struct PerUserTtlInput {
     pub(super) server: ServerSpec,
     pub(super) expires_in: Option<i64>,
 }
@@ -123,7 +123,7 @@ impl PerUserCall {
         format!("{prefix}{}:{}", self.user_id, self.server_id)
     }
 
-    async fn seed(&self, token: &str, ttl: i64) {
+    async fn seed(&self, token: &str, ttl: i64, proof: Option<&str>) {
         self.cache
             .set(
                 &self.user_id,
@@ -131,7 +131,7 @@ impl PerUserCall {
                 PerUserToken {
                     access_token: token,
                     ttl_seconds: ttl,
-                    identity_binding_proof: None,
+                    identity_binding_proof: proof,
                 },
             )
             .await;
@@ -162,7 +162,7 @@ fn server_identity(spec: &ServerSpec) -> Result<String, Box<HelperError>> {
     Ok(MCPOAuth2TokenCache::token_identity(&server))
 }
 
-fn set_view(token: Option<String>, raw_differs: bool, ttl: Option<i64>) -> Value {
+fn set_view(token: Option<&str>, raw_differs: bool, ttl: Option<i64>) -> Value {
     json!({
         "token": token,
         "raw_differs": raw_differs,
@@ -171,7 +171,7 @@ fn set_view(token: Option<String>, raw_differs: bool, ttl: Option<i64>) -> Value
 }
 
 fn fetch_view(
-    token: String,
+    token: &str,
     ttl: i64,
     call: Option<RecordedCall>,
 ) -> Result<Value, Box<HelperError>> {
@@ -221,7 +221,7 @@ pub(super) async fn get_token(input: &GetTokenInput) -> Result<Value, Box<Helper
 pub(super) async fn fetch(input: &FetchInput) -> Result<Value, Box<HelperError>> {
     let call = OAuth2Call::new(&input.server, &input.outcomes)?;
     let (token, ttl) = call.fetched().await?;
-    fetch_view(token, ttl, call.scripted.first_call())
+    fetch_view(&token, ttl, call.scripted.first_call())
 }
 
 pub(super) async fn invalidate(input: &InvalidateInput) -> Result<Value, Box<HelperError>> {
@@ -235,7 +235,7 @@ pub(super) async fn invalidate(input: &InvalidateInput) -> Result<Value, Box<Hel
 pub(super) async fn per_user_get(input: &PerUserInput) -> Result<Value, Box<HelperError>> {
     let call = PerUserCall::new(input);
     if let Some(seed) = &input.seed {
-        call.seed(seed, 300).await;
+        call.seed(seed, 300, None).await;
     }
     if input.garbage {
         call.cache.backend.cache.seed(&call.key(), "garbage");
@@ -245,11 +245,12 @@ pub(super) async fn per_user_get(input: &PerUserInput) -> Result<Value, Box<Help
 
 pub(super) async fn per_user_set(input: &PerUserInput) -> Result<Value, Box<HelperError>> {
     let call = PerUserCall::new(input);
-    call.seed(&input.access_token, input.ttl).await;
+    let proof = input.identity_binding_proof.as_deref();
+    call.seed(&input.access_token, input.ttl, proof).await;
     let stored = call.cache.backend.cache.entry(&call.key());
     let differs = stored.is_some_and(|raw| raw != input.access_token);
     let ttl = call.cache.backend.cache.recorded_ttl(&call.key());
-    Ok(set_view(call.stored().await, differs, ttl))
+    Ok(set_view(call.stored().await.as_deref(), differs, ttl))
 }
 
 pub(super) async fn per_user_delete(input: &PerUserInput) -> Result<Value, Box<HelperError>> {
