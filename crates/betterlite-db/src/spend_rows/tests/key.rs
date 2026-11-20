@@ -1,3 +1,5 @@
+use std::ffi::OsStr;
+use std::fs;
 use std::path::PathBuf;
 
 use rstest::rstest;
@@ -118,10 +120,10 @@ fn rejects_key_bytes_that_are_not_text() {
 
 #[rstest]
 fn replays_the_spend_counter_key_corpus(#[files("fuzz/corpus/spend_counter_key/*")] path: PathBuf) {
-    let bytes = std::fs::read(&path).expect("a corpus file");
+    let bytes = fs::read(&path).expect("a corpus file");
     let stem = path
         .file_stem()
-        .and_then(std::ffi::OsStr::to_str)
+        .and_then(OsStr::to_str)
         .expect("a corpus file name");
     assert_eq!(replay_corpus_key(&bytes), expected_corpus_key(stem));
 }

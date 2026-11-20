@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::future::{Future, pending, ready};
 use std::str::FromStr as _;
 use std::sync::{Arc, Mutex};
 
@@ -65,23 +66,23 @@ pub(crate) fn lookup_label(lookup: SpendRowLookup<'_>) -> String {
 impl SpendCounterRows for FakeRows {
     type Error = FakeRowsError;
 
-    async fn spend_row(
+    fn spend_row(
         &self,
         lookup: SpendRowLookup<'_>,
-    ) -> Result<Option<SpendRow>, FakeRowsError> {
+    ) -> impl Future<Output = Result<Option<SpendRow>, FakeRowsError>> + Send {
         let label = lookup_label(lookup);
         self.calls
             .lock()
             .expect("the fake rows lock")
             .push(label.clone());
         if self.fails {
-            return Err(FakeRowsError);
+            return ready(Err(FakeRowsError));
         }
-        Ok(self
+        ready(Ok(self
             .rows
             .get(&label)
             .copied()
-            .map(|spend| SpendRow { spend }))
+            .map(|spend| SpendRow { spend })))
     }
 }
 
@@ -94,7 +95,7 @@ impl SpendCounterRows for HangingRows {
         &self,
         _lookup: SpendRowLookup<'_>,
     ) -> Result<Option<SpendRow>, FakeRowsError> {
-        std::future::pending().await
+        pending().await
     }
 }
 

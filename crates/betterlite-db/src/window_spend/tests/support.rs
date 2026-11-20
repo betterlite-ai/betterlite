@@ -1,3 +1,4 @@
+use std::future::{Future, ready};
 use std::str::FromStr as _;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -203,11 +204,11 @@ pub(crate) struct StaticLogs {
 }
 
 impl WindowSpendLogs for StaticLogs {
-    async fn seed_totals(
+    fn seed_totals(
         &self,
         _query: &SeedQuery<'_>,
-    ) -> Result<WindowSeedTotals, WindowSpendError> {
-        Ok(self.totals)
+    ) -> impl Future<Output = Result<WindowSeedTotals, WindowSpendError>> + Send {
+        ready(Ok(self.totals))
     }
 }
 
@@ -245,11 +246,11 @@ impl CountingLogs {
 }
 
 impl WindowSpendLogs for CountingLogs {
-    async fn seed_totals(
+    fn seed_totals(
         &self,
         _query: &SeedQuery<'_>,
-    ) -> Result<WindowSeedTotals, WindowSpendError> {
+    ) -> impl Future<Output = Result<WindowSeedTotals, WindowSpendError>> + Send {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        Ok(self.totals)
+        ready(Ok(self.totals))
     }
 }

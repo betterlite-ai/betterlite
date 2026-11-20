@@ -135,7 +135,7 @@ where
 }
 
 // _counter_row's prefix order, minus the end-user prefix that only the floor reader accepts
-fn primary_lookup(key: SpendCounterKey<'_>) -> Option<SpendRowLookup<'_>> {
+const fn primary_lookup(key: SpendCounterKey<'_>) -> Option<SpendRowLookup<'_>> {
     match key {
         SpendCounterKey::Key(token) => Some(SpendRowLookup::Key(token)),
         SpendCounterKey::TeamMember { user_id, team_id } => {
