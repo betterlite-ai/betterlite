@@ -12,7 +12,7 @@ use tokio::task::yield_now;
 use tokio_postgres::NoTls;
 
 use super::{
-    AssertionRow, AssertionRows, AssertionRowsMethod, MemoryAssertionRows, MemoryFailures,
+    AssertionRow, AssertionRows as _, AssertionRowsMethod, MemoryAssertionRows, MemoryFailures,
     MemoryRowsError, PostgresAssertionRows,
 };
 use crate::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};

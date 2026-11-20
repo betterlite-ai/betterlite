@@ -210,20 +210,25 @@ impl AssertionRows for MemoryAssertionRows {
     async fn upsert(&self, user_id: &str, assertion_b64: &str) -> Result<(), MemoryRowsError> {
         let mut rows = self.rows_guard(AssertionRowsMethod::Upsert).await?;
         if let Some(row) = rows.iter_mut().find(|row| row.user_id == user_id) {
-            row.assertion_b64 = assertion_b64.to_owned();
+            assertion_b64.clone_into(&mut row.assertion_b64);
             return Ok(());
         }
         rows.push(AssertionRow {
             user_id: user_id.to_owned(),
             assertion_b64: assertion_b64.to_owned(),
         });
+        drop(rows);
         Ok(())
     }
 
     async fn update(&self, user_id: &str, assertion_b64: &str) -> Result<(), MemoryRowsError> {
-        let mut rows = self.rows_guard(AssertionRowsMethod::Update).await?;
-        for row in rows.iter_mut().filter(|row| row.user_id == user_id) {
-            row.assertion_b64 = assertion_b64.to_owned();
+        for row in self
+            .rows_guard(AssertionRowsMethod::Update)
+            .await?
+            .iter_mut()
+            .filter(|row| row.user_id == user_id)
+        {
+            assertion_b64.clone_into(&mut row.assertion_b64);
         }
         Ok(())
     }
