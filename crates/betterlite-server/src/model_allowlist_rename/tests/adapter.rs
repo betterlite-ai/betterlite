@@ -108,7 +108,8 @@ impl InvalidationTransport for RecordingTransport {
 #[tokio::test]
 async fn auth_invalidation_adapter() {
     let recorder = Arc::new(RecordingTransport::default());
-    let transport: Arc<dyn InvalidationTransport> = Arc::clone(&recorder);
+    let transport_handle: Arc<RecordingTransport> = Arc::clone(&recorder);
+    let transport: Arc<dyn InvalidationTransport> = transport_handle;
     let invalidation = AuthInvalidation {
         auth: Arc::new(NoopAuth),
         usage: None,
