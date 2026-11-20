@@ -177,6 +177,16 @@ impl LogSink for Sink {
     fn emit(&self, _record: LogRecord) {}
 }
 
+const CLOCK: &str = "2026-01-01T00:00:05+00:00";
+
+fn redactor() -> Redactor {
+    Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds")
+}
+
+fn clock() -> DateTime<FixedOffset> {
+    DateTime::parse_from_rfc3339(CLOCK).expect("the clock parses")
+}
+
 // The pre/post environment the handlers log into: no callbacks and no sink, so only the state is observable
 pub(crate) struct Harness {
     redactor: Redactor,
@@ -187,10 +197,9 @@ pub(crate) struct Harness {
 impl Harness {
     pub(crate) fn new() -> Self {
         Self {
-            redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds"),
+            redactor: redactor(),
             sink: Sink,
-            now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00")
-                .expect("the clock parses"),
+            now: clock(),
         }
     }
 
@@ -227,7 +236,7 @@ pub(crate) fn state(model: &str, call_id: &str) -> LoggingState {
             context: &mut CorrelationContext::default(),
             settings: CorrelationSettings::default(),
         },
-        &Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds"),
+        &redactor(),
         || String::from("generated"),
         Duration::default,
     )
