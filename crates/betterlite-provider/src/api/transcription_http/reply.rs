@@ -11,6 +11,7 @@ use betterlite_openai::openai_base_config::Object;
 use super::config::TranscriptionHttpConfig;
 use super::error::TranscriptionHttpError;
 
+#[derive(Debug)]
 pub struct TranscriptionReply {
     pub response: TranscriptionResponse,
     pub provider_headers: ProviderHeaderProjection,
