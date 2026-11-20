@@ -135,12 +135,12 @@ fn absent_or_null_claims_leave_the_field_unset(
 
 #[rstest]
 #[case::absent(None)]
-#[case::null("null")]
-#[case::number("5")]
-#[case::boolean("true")]
-#[case::array("[]")]
-#[case::object(r#"{"token":"x"}"#)]
-#[case::empty(r#""""#)]
+#[case::null(Some("null"))]
+#[case::number(Some("5"))]
+#[case::boolean(Some("true"))]
+#[case::array(Some("[]"))]
+#[case::object(Some(r#"{"token":"x"}"#))]
+#[case::empty(Some(r#""""#))]
 fn a_missing_or_non_text_id_token_returns_none_without_a_warning(#[case] id_token: Option<&str>) {
     let (captured, _guard) = capture();
     let field = id_token.map(json_field);
@@ -151,11 +151,11 @@ fn a_missing_or_non_text_id_token_returns_none_without_a_warning(#[case] id_toke
 
 #[rstest]
 #[case::absent(None)]
-#[case::null("null")]
-#[case::number("7")]
-#[case::boolean("false")]
-#[case::array("[]")]
-#[case::empty(r#""""#)]
+#[case::null(Some("null"))]
+#[case::number(Some("7"))]
+#[case::boolean(Some("false"))]
+#[case::array(Some("[]"))]
+#[case::empty(Some(r#""""#))]
 fn a_missing_or_non_text_refresh_token_is_dropped(#[case] refresh_token: Option<&str>) {
     let field = refresh_token.map(json_field);
     let assertion = assertion_from_sso_login(

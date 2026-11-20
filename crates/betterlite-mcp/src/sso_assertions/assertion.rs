@@ -154,12 +154,15 @@ fn expiration(seconds: f64) -> Option<DateTime<Utc>> {
 fn expires_at_text(text: &str) -> Result<DateTime<Utc>, AssertionError> {
     let moment = match DateTime::parse_from_rfc3339(text) {
         Ok(fixed) => fixed.with_timezone(&Utc),
-        Err(_rfc3339) => NaiveDateTime::parse_from_str(text, NAIVE_FORMAT)
-            .map(NaiveDateTime::and_utc)
-            .map_err(|source| AssertionError::Timestamp {
-                text: text.to_owned(),
-                source,
-            })?,
+        Err(_rfc3339) => {
+            let naive = NaiveDateTime::parse_from_str(text, NAIVE_FORMAT).map_err(|source| {
+                AssertionError::Timestamp {
+                    text: text.to_owned(),
+                    source,
+                }
+            })?;
+            naive.and_utc()
+        }
     };
     if !(MIN_YEAR..=MAX_YEAR).contains(&moment.year()) {
         return Err(AssertionError::TimestampRange {
