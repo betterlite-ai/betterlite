@@ -4,11 +4,12 @@ use betterlite_core::api::responses_stream_driver::errors::{TransportFailure, Tr
 use betterlite_core::api::responses_stream_driver::source::{SourceFailure, classify};
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::{ProxiedClient, StreamResponse};
+use betterlite_models::decisions::Json;
 use betterlite_openai::stream::SseParser;
 use futures_util::StreamExt as _;
 use http::header::{AUTHORIZATION, HeaderValue};
 use http::{HeaderMap, Method};
-use serde_json::json;
+use indexmap::IndexMap;
 use url::Url;
 
 use super::call::{Call, FailureKind, RunSpec, ScriptedFailure};
@@ -45,11 +46,11 @@ pub(super) async fn prefetch(
     call: &Call,
     api_base: &str,
 ) -> Result<Opened, SdkHttpError> {
-    let body = serde_json::to_vec(&json!({
-        "model": &call.model,
-        "input": &call.input,
-        "stream": true,
-    }))
+    let body = serde_json::to_vec(&Json::Object(IndexMap::from_iter([
+        (String::from("model"), Json::Text(call.model.clone())),
+        (String::from("input"), call.input.clone()),
+        (String::from("stream"), Json::Bool(true)),
+    ])))
     .map_err(SdkHttpError::Serialize)?;
     let bearer = HeaderValue::from_bytes(format!("Bearer {}", call.api_key).as_bytes())
         .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;

@@ -1,6 +1,5 @@
 use betterlite_core::api::responses_stream_driver::errors::{DriverError, TransportKind};
-use betterlite_error::envelope::WireField;
-use betterlite_error::error::ErrorClass;
+use betterlite_error::{envelope::WireField, error::ErrorClass};
 use betterlite_models::decisions::Json;
 
 use super::super::assemble::Event;
@@ -14,17 +13,17 @@ pub(super) fn view(event: &Event) -> Result<Json, SdkHttpError> {
 }
 fn drop_nulls(value: Json) -> Json {
     match value {
-        Json::Object(fields) => Json::Object(
-            fields
-                .into_iter()
-                .filter_map(|(key, child)| match child {
-                    Json::Null => None,
-                    other => Some((key, drop_nulls(other))),
-                })
-                .collect(),
-        ),
+        Json::Object(mut fields) => {
+            fields.retain(|_, child| !matches!(child, Json::Null));
+            Json::Object(
+                fields
+                    .into_iter()
+                    .map(|(key, child)| (key, drop_nulls(child)))
+                    .collect(),
+            )
+        }
         Json::List(items) => Json::List(items.into_iter().map(drop_nulls).collect()),
-        other => other,
+        other @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_)) => other,
     }
 }
 pub(super) fn failure_of(error: &DriverError) -> Result<Failure, SdkHttpError> {
@@ -58,6 +57,7 @@ fn wire(field: &WireField) -> Nullable {
     }
 }
 // native::class_name stays private to its module, so the classes this driver raises are named here
+#[expect(clippy::wildcard_enum_match_arm, reason = "other classes fail loudly")]
 fn class_name(class: &ErrorClass) -> Result<&'static str, SdkHttpError> {
     match class {
         ErrorClass::MidStreamFallback(_) => Ok("MidStreamFallbackError"),
@@ -82,7 +82,7 @@ fn message_of(class: &ErrorClass) -> String {
     };
     value
         .pointer("/context/message")
-        .or(value.pointer("/message"))
+        .or_else(|| value.pointer("/message"))
         .and_then(|found| found.as_str())
         .unwrap_or_default()
         .to_owned()

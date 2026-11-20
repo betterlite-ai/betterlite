@@ -82,11 +82,11 @@ fn synthesize<'stream>(
     model: &'stream mut String,
 ) -> Result<Stream<'stream>, SdkHttpError> {
     let cached = matches!(spec.mode, Mode::Cached);
-    let response = spec
+    let body = spec
         .response
         .as_ref()
         .ok_or_else(|| SdkHttpError::Invalid("a fake or cached run needs a response".to_owned()))?;
-    let value = serde_json::to_value(response).map_err(SdkHttpError::Serialize)?;
+    let value = serde_json::to_value(body).map_err(SdkHttpError::Serialize)?;
     let response: ResponsesApiResponse =
         serde_json::from_value(value).map_err(SdkHttpError::ResultParse)?;
     if cached {
