@@ -6,7 +6,6 @@ use betterlite_logging::logging_state::LoggingStateError;
 use betterlite_logging::logging_state::updates::{CallUpdate, update_from_kwargs};
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
-use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::api::container_contracts::config::BaseContainerConfig;
 use betterlite_openai::openai_base_config::Object;
 use betterlite_redact::secret::Redactor;
@@ -14,26 +13,23 @@ use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
 use serde_json::json;
 
+use super::ContainerOperationRequest;
 use super::error::{ContainerOpError, ContainerOpFailure, failure};
-use super::handler::{ContainerHandler, ContainerHandlerCall};
-use super::{ContainerOperationRequest, ContainerOperations};
-use crate::api::container_file_endpoints::handler::{ContainerConfigLookup, ContainerIdDecoder};
+use super::handler::ContainerHandlerCall;
 use crate::containers::container_request_parameters::ContainerFieldTypeError;
 // ast-grep-ignore: no-long-names
 use crate::containers::container_request_parameters::encode_container_id_in_response as encode_id;
 
-// the declared default for the timeout argument, before `timeout or DEFAULT_REQUEST_TIMEOUT`
-const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
 // the declared default for custom_llm_provider, shared with the mock error path in the module root
 pub(crate) const DEFAULT_PROVIDER: &str = "openai";
 
 pub(crate) struct Prepared<'deps> {
     pub(crate) container_id: String,
     pub(crate) provider: String,
-    was_encoded: bool,
-    config: &'deps dyn BaseContainerConfig,
-    litellm_params: Object,
-    timeout: Duration,
+    pub(crate) was_encoded: bool,
+    pub(crate) config: &'deps dyn BaseContainerConfig,
+    pub(crate) litellm_params: Object,
+    pub(crate) timeout: Duration,
 }
 
 impl Prepared<'_> {
@@ -80,93 +76,10 @@ impl Prepared<'_> {
     }
 }
 
-impl<'deps, Handler, Decoder, Configs> ContainerOperations<'deps, Handler, Decoder, Configs>
-where
-    Handler: ContainerHandler,
-    Decoder: ContainerIdDecoder,
-    Configs: ContainerConfigLookup,
-{
-    // the managed id, the provider config it resolves to, the logging update, and the params the handler reads
-    pub(crate) fn prepare(
-        &self,
-        request: &ContainerOperationRequest<'_>,
-        call_type: &str,
-    ) -> Result<Prepared<'deps>, ContainerOpFailure> {
-        let caller = request.custom_llm_provider.unwrap_or(DEFAULT_PROVIDER);
-        let params = call_params(request)
-            .map_err(|error| failure(ContainerOpError::Params(error), caller, self.redactor))?;
-        let decoded = self
-            .decoder
-            .decode(request.container_id, caller, &params)
-            .map_err(|error| failure(ContainerOpError::Decode(error), caller, self.redactor))?;
-        let was_encoded = decoded.container_id.as_str() != request.container_id;
-        let provider = decoded.custom_llm_provider;
-        let config = self.config_for(&provider)?;
-        log_call(self.logging, request, &provider, call_type)
-            .map_err(|error| failure(ContainerOpError::Logging(error), &provider, self.redactor))?;
-        let timeout = self.timeout(request.timeout, &provider)?;
-        Ok(Prepared {
-            was_encoded,
-            container_id: decoded.container_id,
-            provider,
-            config,
-            litellm_params: decoded.litellm_params,
-            timeout,
-        })
-    }
-
-    // LiteLLM's litellm.LlmProviders(...) rejects an unknown name before the manager answers None
-    fn config_for(
-        &self,
-        provider: &str,
-    ) -> Result<&'deps dyn BaseContainerConfig, ContainerOpFailure> {
-        let kind = provider.parse::<ProviderId>().map_err(|_source| {
-            failure(
-                ContainerOpError::UnknownProvider {
-                    provider: provider.to_owned(),
-                },
-                provider,
-                self.redactor,
-            )
-        })?;
-        self.configs.container_config(kind).ok_or_else(|| {
-            failure(
-                ContainerOpError::ProviderConfigMissing {
-                    provider: provider.to_owned(),
-                },
-                provider,
-                self.redactor,
-            )
-        })
-    }
-
-    // `timeout or DEFAULT_REQUEST_TIMEOUT`: the declared default covers an absent value and a zero takes REQUEST_TIMEOUT
-    fn timeout(
-        &self,
-        requested: Option<Duration>,
-        provider: &str,
-    ) -> Result<Duration, ContainerOpFailure> {
-        match requested {
-            None => Ok(DEFAULT_TIMEOUT),
-            Some(given) if !given.is_zero() => Ok(given),
-            Some(_) => {
-                Duration::try_from_secs_f64(self.request_timeout_seconds).map_err(|source| {
-                    failure(
-                        ContainerOpError::Timeout {
-                            seconds: self.request_timeout_seconds,
-                            source,
-                        },
-                        provider,
-                        self.redactor,
-                    )
-                })
-            }
-        }
-    }
-}
-
 // GenericLiteLLMParams(api_key=api_key, api_base=api_base, api_version=api_version, **kwargs): the named credentials and the kwargs LiteLLM never pops
-fn call_params(request: &ContainerOperationRequest<'_>) -> Result<Object, serde_json::Error> {
+pub(crate) fn call_params(
+    request: &ContainerOperationRequest<'_>,
+) -> Result<Object, serde_json::Error> {
     let mut params = Object::new();
     if let Some(key) = &request.api_key {
         params.insert("api_key".to_owned(), json!(key.expose_secret()));
@@ -193,7 +106,7 @@ fn call_params(request: &ContainerOperationRequest<'_>) -> Result<Object, serde_
 }
 
 // update_from_kwargs(kwargs, model="", optional_params={}, litellm_params={"litellm_call_id": ...}, custom_llm_provider=...)
-fn log_call(
+pub(crate) fn log_call(
     logging: &Mutex<LoggingState>,
     request: &ContainerOperationRequest<'_>,
     provider: &str,

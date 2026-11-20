@@ -11,6 +11,8 @@ use std::time::Duration;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
+use betterlite_models::identity::provider_id::ProviderId;
+use betterlite_openai::api::container_contracts::config::BaseContainerConfig;
 use betterlite_openai::api::container_contracts::records::{
     ContainerObject, DeleteContainerResult,
 };
@@ -22,7 +24,7 @@ use secrecy::SecretString;
 use self::error::{ContainerOpError, ContainerOpFailure, failure};
 use self::handler::ContainerHandler;
 use self::kind::{Delete, Kind, Retrieve};
-use self::prepare::{DEFAULT_PROVIDER, Prepared};
+use self::prepare::{DEFAULT_PROVIDER, Prepared, call_params, log_call};
 use crate::api::container_file_endpoints::handler::{ContainerConfigLookup, ContainerIdDecoder};
 
 // the named arguments retrieve_container and delete_container take, which LiteLLM declares once and shares
@@ -54,6 +56,9 @@ pub struct ContainerOperations<'deps, Handler, Decoder, Configs> {
     // LiteLLM's request_timeout constant that REQUEST_TIMEOUT overrides, used only where LiteLLM reaches it
     pub request_timeout_seconds: f64,
 }
+
+// the declared default for the timeout argument, before `timeout or DEFAULT_REQUEST_TIMEOUT`
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
 
 // the mock answer, or the prepared call the handler still has to make
 enum Begin<'deps, Reply> {
@@ -137,6 +142,84 @@ where
     operations! {
         retrieve_container, aretrieve_container, Retrieve, retrieve, aretrieve, ContainerObject;
         delete_container, adelete_container, Delete, delete, adelete, DeleteContainerResult;
+    }
+
+    // the managed id, the provider config it resolves to, the logging update, and the params the handler reads
+    pub(crate) fn prepare(
+        &self,
+        request: &ContainerOperationRequest<'_>,
+        call_type: &str,
+    ) -> Result<Prepared<'deps>, ContainerOpFailure> {
+        let caller = request.custom_llm_provider.unwrap_or(DEFAULT_PROVIDER);
+        let params = call_params(request)
+            .map_err(|error| failure(ContainerOpError::Params(error), caller, self.redactor))?;
+        let decoded = self
+            .decoder
+            .decode(request.container_id, caller, &params)
+            .map_err(|error| failure(ContainerOpError::Decode(error), caller, self.redactor))?;
+        let was_encoded = decoded.container_id.as_str() != request.container_id;
+        let provider = decoded.custom_llm_provider;
+        let config = self.config_for(&provider)?;
+        log_call(self.logging, request, &provider, call_type)
+            .map_err(|error| failure(ContainerOpError::Logging(error), &provider, self.redactor))?;
+        let timeout = self.timeout(request.timeout, &provider)?;
+        Ok(Prepared {
+            was_encoded,
+            container_id: decoded.container_id,
+            provider,
+            config,
+            litellm_params: decoded.litellm_params,
+            timeout,
+        })
+    }
+
+    // LiteLLM's litellm.LlmProviders(...) rejects an unknown name before the manager answers None
+    fn config_for(
+        &self,
+        provider: &str,
+    ) -> Result<&'deps dyn BaseContainerConfig, ContainerOpFailure> {
+        let kind = provider.parse::<ProviderId>().map_err(|_source| {
+            failure(
+                ContainerOpError::UnknownProvider {
+                    provider: provider.to_owned(),
+                },
+                provider,
+                self.redactor,
+            )
+        })?;
+        self.configs.container_config(kind).ok_or_else(|| {
+            failure(
+                ContainerOpError::ProviderConfigMissing {
+                    provider: provider.to_owned(),
+                },
+                provider,
+                self.redactor,
+            )
+        })
+    }
+
+    // `timeout or DEFAULT_REQUEST_TIMEOUT`: the declared default covers an absent value and a zero takes REQUEST_TIMEOUT
+    fn timeout(
+        &self,
+        requested: Option<Duration>,
+        provider: &str,
+    ) -> Result<Duration, ContainerOpFailure> {
+        match requested {
+            None => Ok(DEFAULT_TIMEOUT),
+            Some(given) if !given.is_zero() => Ok(given),
+            Some(_) => {
+                Duration::try_from_secs_f64(self.request_timeout_seconds).map_err(|source| {
+                    failure(
+                        ContainerOpError::Timeout {
+                            seconds: self.request_timeout_seconds,
+                            source,
+                        },
+                        provider,
+                        self.redactor,
+                    )
+                })
+            }
+        }
     }
 }
 
