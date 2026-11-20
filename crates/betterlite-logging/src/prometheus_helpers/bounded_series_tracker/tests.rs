@@ -106,7 +106,7 @@ fn evicts_the_oldest_series_when_a_new_one_passes_the_limit() {
     tracker
         .track_series(&metric, key("m", &second), bounds, start)
         .unwrap();
-    assert_eq!(metric.attempts(), Vec::new());
+    assert!(metric.attempts().is_empty());
     tracker
         .track_series(&metric, key("m", &third), bounds, start)
         .unwrap();
@@ -157,7 +157,7 @@ fn treats_zero_or_negative_max_series_as_unlimited(#[case] max_series: Option<i6
     tracker
         .track_series(&metric, key("m", &third), bounds, start)
         .unwrap();
-    assert_eq!(metric.attempts(), Vec::new());
+    assert!(metric.attempts().is_empty());
 }
 
 #[test]
@@ -240,7 +240,7 @@ fn expires_series_older_than_the_ttl_in_one_pass() {
     tracker
         .track_series(&metric, key("m", &second), bounds, at(start, 5))
         .unwrap();
-    assert_eq!(metric.attempts(), Vec::new());
+    assert!(metric.attempts().is_empty());
     tracker
         .track_series(&metric, key("m", &third), bounds, at(start, 6))
         .unwrap();
@@ -262,7 +262,7 @@ fn runs_ttl_cleanup_only_after_the_cleanup_interval() {
     tracker
         .track_series(&metric, key("m", &second), bounds, at(start, 10))
         .unwrap();
-    assert_eq!(metric.attempts(), Vec::new());
+    assert!(metric.attempts().is_empty());
     tracker
         .track_series(&metric, key("m", &third), bounds, at(start, 60))
         .unwrap();

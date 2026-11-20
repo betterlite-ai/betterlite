@@ -20,7 +20,10 @@ pub enum ChildRemoval {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum TrackerError<MetricError: Error + 'static> {
+pub enum TrackerError<MetricError>
+where
+    MetricError: Error + 'static,
+{
     #[error("the metric failed to remove one of its series")]
     Removal {
         #[source]
@@ -57,13 +60,16 @@ pub struct BoundedPrometheusSeriesTracker {
 }
 
 impl BoundedPrometheusSeriesTracker {
-    pub fn track_series<M: RemovableMetric>(
+    pub fn track_series<M>(
         &self,
         metric: &M,
         series: SeriesKey<'_>,
         limits: SeriesLimits,
         now: Instant,
-    ) -> Result<(), TrackerError<M::Error>> {
+    ) -> Result<(), TrackerError<M::Error>>
+    where
+        M: RemovableMetric,
+    {
         if limits.max_series.is_none() && limits.ttl.is_none() {
             return Ok(());
         }
@@ -85,14 +91,19 @@ impl BoundedPrometheusSeriesTracker {
             let expired = expired_series(entries, now, ttl);
             remove_expired(self, metric, entries, &expired)?;
         }
-        evict_series(self, entries, limits.max_series, metric)
+        let result = evict_series(self, entries, limits.max_series, metric);
+        drop(state);
+        result
     }
 
-    pub fn remove_series<M: RemovableMetric>(
+    pub fn remove_series<M>(
         &self,
         metric: &M,
         label_values: &[Option<String>],
-    ) -> Result<bool, TrackerError<M::Error>> {
+    ) -> Result<bool, TrackerError<M::Error>>
+    where
+        M: RemovableMetric,
+    {
         match metric.remove_child(label_values) {
             Ok(ChildRemoval::Removed | ChildRemoval::Absent) => Ok(true),
             Ok(ChildRemoval::Unsupported) => Ok(false),
@@ -120,12 +131,15 @@ fn expired_series(
         .collect()
 }
 
-fn remove_expired<M: RemovableMetric>(
+fn remove_expired<M>(
     tracker: &BoundedPrometheusSeriesTracker,
     metric: &M,
     entries: &mut TrackedSeries,
     expired: &[Vec<Option<String>>],
-) -> Result<(), TrackerError<M::Error>> {
+) -> Result<(), TrackerError<M::Error>>
+where
+    M: RemovableMetric,
+{
     for label_values in expired {
         if tracker.remove_series(metric, label_values)? {
             entries.shift_remove(label_values);
@@ -135,16 +149,19 @@ fn remove_expired<M: RemovableMetric>(
 }
 
 // max_series at or below zero is unlimited, and a refused removal keeps the series so a later call retries it
-fn evict_series<M: RemovableMetric>(
+fn evict_series<M>(
     tracker: &BoundedPrometheusSeriesTracker,
     entries: &mut TrackedSeries,
     max_series: Option<i64>,
     metric: &M,
-) -> Result<(), TrackerError<M::Error>> {
-    let Some(max_series) = max_series.filter(|max| *max > 0) else {
+) -> Result<(), TrackerError<M::Error>>
+where
+    M: RemovableMetric,
+{
+    let Some(cap) = max_series.filter(|bound| *bound > 0) else {
         return Ok(());
     };
-    let limit = usize::try_from(max_series).ok();
+    let limit = usize::try_from(cap).ok();
     while limit.is_some_and(|ceiling| entries.len() > ceiling) {
         let Some(oldest) = entries.keys().next().cloned() else {
             break;

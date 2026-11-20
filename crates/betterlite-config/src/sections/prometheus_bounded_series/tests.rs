@@ -141,6 +141,17 @@ fn rejects_a_negative_ttl() {
     ));
 }
 
+#[rstest]
+#[case::ttl(TTL, TTL_PATH)]
+#[case::cleanup(CLEANUP, CLEANUP_PATH)]
+fn rejects_a_value_that_overflows_a_duration(#[case] prefix: &str, #[case] path: &str) {
+    let error = load_with(&format!("{prefix}1e300\n"), &[]).unwrap_err();
+    assert!(matches!(
+        error,
+        ConfigError::InvalidScalar { path: named, .. } if named == path
+    ));
+}
+
 #[test]
 fn reads_an_environment_reference() {
     let settings = load_with(
