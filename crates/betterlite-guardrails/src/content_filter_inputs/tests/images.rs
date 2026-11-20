@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use tokio::sync::Barrier;
+use tokio::task::yield_now;
 use tokio::time::timeout;
 
 use betterlite_config::sections::content_filter_records::ContentFilterAction;
@@ -12,8 +13,9 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 use crate::content_filter_inputs::error::ImageProcessingError;
 use crate::content_filter_inputs::images::{
-    IMAGE_DESCRIPTION_PROMPT, ImageDescriptionCompletion, ImageDescriptionReply,
-    ImageDescriptionRequest, ImageDescriptionResponse, ImageScan, process_images,
+    IMAGE_DESCRIPTION_CONCURRENCY, IMAGE_DESCRIPTION_PROMPT, ImageDescriptionCompletion,
+    ImageDescriptionReply, ImageDescriptionRequest, ImageDescriptionResponse, ImageScan,
+    process_images,
 };
 use crate::guardrail_base::failure::GuardrailFailure;
 
@@ -81,6 +83,40 @@ impl ImageDescriptionCompletion for Concurrent {
             .expect("the request list lock")
             .push(request.clone());
         self.barrier.wait().await;
+        Ok(reply(Some(&self.description)))
+    }
+}
+
+struct CountingState {
+    calls: usize,
+    peak: usize,
+    running: usize,
+}
+
+struct Counting {
+    description: String,
+    state: Mutex<CountingState>,
+}
+
+#[async_trait]
+impl ImageDescriptionCompletion for Counting {
+    type Error = ScriptedError;
+
+    async fn describe(
+        &self,
+        _request: &ImageDescriptionRequest,
+    ) -> Result<ImageDescriptionResponse, Self::Error> {
+        {
+            let mut state = self.state.lock().expect("the concurrency lock");
+            state.calls = state.calls.saturating_add(1);
+            state.running = state.running.saturating_add(1);
+            state.peak = state.peak.max(state.running);
+        }
+        yield_now().await;
+        {
+            let mut state = self.state.lock().expect("the concurrency lock");
+            state.running = state.running.saturating_sub(1);
+        }
         Ok(reply(Some(&self.description)))
     }
 }
@@ -159,6 +195,38 @@ async fn image_description_fetching() {
                 && request.system_prompt == IMAGE_DESCRIPTION_PROMPT)
     );
     assert_eq!(pattern_names(&detections), ["alpha", "alpha"]);
+}
+
+#[tokio::test]
+async fn image_description_calls_are_capped_at_eight_in_flight() {
+    let fixture = Fixture::empty();
+    let source = fixture.source();
+    let images: Vec<String> = (0_usize..12).map(|index| format!("img-{index}")).collect();
+    let completion = Counting {
+        description: "a scene".to_owned(),
+        state: Mutex::new(CountingState {
+            calls: 0,
+            peak: 0,
+            running: 0,
+        }),
+    };
+    let scan = ImageScan {
+        images: &images,
+        image_model: Some("vision-model"),
+        source: &source,
+    };
+    let mut detections = Vec::new();
+    timeout(
+        Duration::from_secs(10),
+        process_images(&scan, Some(&completion), &mut detections),
+    )
+    .await
+    .expect("every description must complete")
+    .expect("the descriptions filter");
+    let state = completion.state.lock().expect("the concurrency lock");
+    assert_eq!(state.calls, 12);
+    assert_eq!(state.peak, IMAGE_DESCRIPTION_CONCURRENCY);
+    assert!(detections.is_empty());
 }
 
 #[tokio::test]

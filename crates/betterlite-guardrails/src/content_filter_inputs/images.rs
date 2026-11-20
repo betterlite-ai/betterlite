@@ -2,6 +2,7 @@ use std::error::Error;
 
 use async_trait::async_trait;
 use futures_util::future::join_all;
+use tokio::sync::Semaphore;
 
 use betterlite_config::sections::content_filter_records::ContentFilterDetection;
 
@@ -11,6 +12,8 @@ use crate::content_filter_actions::{ContentFilterSource, filter_single_text};
 use super::error::ImageProcessingError;
 
 pub const IMAGE_DESCRIPTION_PROMPT: &str = "Describe the image in detail.";
+
+pub const IMAGE_DESCRIPTION_CONCURRENCY: usize = 8;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImageDescriptionRequest {
@@ -94,12 +97,23 @@ where
             image_url: image.clone(),
         })
         .collect();
-    let calls = requests.iter().map(|request| completion.describe(request));
+    // LiteLLM gathers one completion per image with no bound; the image list is caller data
+    let permits = Semaphore::new(IMAGE_DESCRIPTION_CONCURRENCY);
+    let calls = requests.iter().map(|request| async {
+        let _permit = permits
+            .acquire()
+            .await
+            .map_err(|source| ImageProcessingError::SemaphoreClosed { source })?;
+        completion
+            .describe(request)
+            .await
+            .map_err(|source| ImageProcessingError::Completion { source })
+    });
     let responses = join_all(calls).await;
 
     let mut descriptions = Vec::with_capacity(responses.len());
     for answer in responses {
-        let response = answer.map_err(|source| ImageProcessingError::Completion { source })?;
+        let response = answer?;
         let Some(choice) = response.choices.first() else {
             return Err(ImageProcessingError::NoChoices);
         };

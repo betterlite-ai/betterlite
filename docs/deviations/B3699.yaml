@@ -12,4 +12,7 @@ deviations:
   - what: A failing image description call is reported only after every concurrent call has finished, and the error is the first failure in image order; LiteLLM's asyncio.gather raises the first failure to complete and leaves the other calls running.
     why: join_all drives every description to completion in one future, so no call is left detached and the reported error is deterministic.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1487
+  - what: Image description calls are capped at eight in flight per request, where LiteLLM's asyncio.gather starts one completion per request image with no bound.
+    why: The image list is caller data and every description is an upstream completion, so the cap keeps one request from holding every model slot at once; results keep image order and a closed semaphore fails as a typed error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1467-L1487
 kept_bugs: []

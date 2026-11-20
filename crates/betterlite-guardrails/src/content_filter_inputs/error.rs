@@ -2,6 +2,7 @@ use std::error::Error;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use indexmap::IndexMap;
+use tokio::sync::AcquireError;
 
 use crate::content_filter_actions::error::ContentFilterBlockDetail::{
     BlockedWord, CategoryKeyword, Conditional, Pattern,
@@ -54,6 +55,11 @@ pub enum ImageProcessingError<E> {
     },
     #[error("the image description response has no choices")]
     NoChoices,
+    #[error("the image description semaphore closed")]
+    SemaphoreClosed {
+        #[source]
+        source: AcquireError,
+    },
     #[error("the content filter blocked an image description")]
     Blocked {
         detail: Box<ContentFilterBlockDetail>,
@@ -68,7 +74,10 @@ impl<E: Error> ImageProcessingError<E> {
     pub fn into_failure(self) -> GuardrailFailure {
         match &self {
             Self::Blocked { detail, text } => block_failure(detail, Some(text.as_str())),
-            Self::Completion { .. } | Self::Filter(_) | Self::NoChoices => self.other_failure(),
+            Self::Completion { .. }
+            | Self::Filter(_)
+            | Self::NoChoices
+            | Self::SemaphoreClosed { .. } => self.other_failure(),
         }
     }
 
@@ -76,7 +85,9 @@ impl<E: Error> ImageProcessingError<E> {
         match self {
             Self::Completion { source } => GuardrailFailure::Other(source.to_string()),
             Self::Filter(source) => GuardrailFailure::Other(source.to_string()),
-            Self::NoChoices | Self::Blocked { .. } => GuardrailFailure::Other(self.to_string()),
+            Self::NoChoices | Self::Blocked { .. } | Self::SemaphoreClosed { .. } => {
+                GuardrailFailure::Other(self.to_string())
+            }
         }
     }
 }
