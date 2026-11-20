@@ -21,9 +21,9 @@ pub(crate) struct Sent {
     pub(crate) elapsed: Duration,
 }
 
-// vector_store_http_write::service::facts::status_facts is pub(super) in that module and its files are outside this task's scope, so this module mirrors its conversion.
 // MaskedHTTPStatusError keeps the text, drops content-encoding and recomputes content-length for the decoded body
 pub(crate) fn status_facts(reply: &UpstreamResponse) -> FailureFacts {
+    // vector_store_http_write::service::facts::status_facts is pub(super) there and out of this task's scope, so this conversion is mirrored
     let text = from_utf8(&reply.body).map_or_else(
         |_| format!("{} bytes that are not UTF-8", reply.body.len()),
         ToOwned::to_owned,
