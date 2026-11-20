@@ -48,8 +48,7 @@ impl ModelGrantLookup for Grants {
     }
 }
 
-// The test stand-in for B1101's extract_nested_form_metadata: only the top-level paths it builds matter,
-// and every value is a leaf because JSON carries no uploads.
+// Stand-in for B1101's extract_nested_form_metadata: only the top-level names matter.
 #[derive(Debug)]
 pub(super) struct Extract;
 

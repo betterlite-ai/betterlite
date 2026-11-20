@@ -6,8 +6,7 @@ use betterlite_config::types::Config;
 
 use crate::state::shared::Shared;
 
-// The pinned settings resolve once at startup; the Arc lets the auth stage carry them without copying, and the
-// compatibility allowlist never authorizes a request destination in betterlite.
+// Pinned once at startup; the allowlist loads for compatibility but never authorizes a destination.
 #[derive(Clone, Debug)]
 pub struct Slot {
     pub settings: Arc<Settings>,

@@ -50,6 +50,7 @@ pub mod trusted_network;
 pub mod virtual_key_routes;
 
 use std::collections::BTreeSet;
+use std::mem;
 use std::sync::Arc;
 
 use betterlite_auth::auth_request_models::MODEL_ROUTING_HEADER_NAME;
@@ -68,10 +69,10 @@ use crate::auth::auth_resource_grants::{
     ResourceGrantStageInput, database_for_request, denial_response,
     rule_for_request as grant_rule_for_request,
 };
-use crate::auth::request_body_safety::{self, RequestBodySafetyStageInput};
+use crate::auth::request_body_safety::RequestBodySafetyStageInput;
 use crate::error_body::{AuthenticationFailure, authentication_error};
 use crate::state::ServerState;
-use axum::body::{Body, Bytes};
+use axum::body::{Body, Bytes, to_bytes};
 use axum::extract::State;
 use axum::http::{HeaderMap, Request, StatusCode, header};
 use axum::middleware::Next;
@@ -101,7 +102,8 @@ pub(crate) async fn authenticate(
     for backend in INSTALLED_STAGES {
         // the safety stage is the one body reader; only an authenticated caller makes it buffer anything
         if *backend == AuthBackend::RequestBodySafety && body.is_none() {
-            match request_body_safety::buffer_body(&mut request).await {
+            let stream = mem::replace(request.body_mut(), Body::empty());
+            match to_bytes(stream, usize::MAX).await {
                 Ok(bytes) => body = Some(bytes),
                 Err(error) => {
                     tracing::debug!(error = %error, "the request body could not be buffered");

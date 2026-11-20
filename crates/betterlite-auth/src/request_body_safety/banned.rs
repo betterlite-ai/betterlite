@@ -5,8 +5,7 @@ use crate::request_ban_catalog::RequestBanCatalog;
 use super::grants;
 use super::{RequestBodySafety, SafetyError};
 
-// Fields whose name itself names a destination or an observability host. The architect's security decision
-// keeps these refused even with an admin opt-in, where LiteLLM lets either opt-in admit them.
+// URL-valued fields stay refused under either opt-in, the architect's security decision for B884.
 pub const URL_DESTINATION_FIELDS: [&str; 16] = [
     "api_base",
     "base_url",
@@ -26,8 +25,7 @@ pub const URL_DESTINATION_FIELDS: [&str; 16] = [
     "dd_agent_host",
 ];
 
-// LiteLLM's _check_banned_params over the pinned catalog order: the first field present that no opt-in
-// admits rejects the request, and a null value is as present as any other.
+// _check_banned_params: the first present field no opt-in admits fails, a null value included.
 pub fn check(
     scan: &RequestBodySafety<'_>,
     body: &JsonObject,

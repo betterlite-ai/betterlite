@@ -56,7 +56,7 @@ deviations:
       A form body whose metadata field is a string that is not valid JSON is left for the route's own
       validation, where LiteLLM's form pre-read raises JSONDecodeError out of auth.
     why: >-
-      An unparseable caller value is a client error; a 500 from an uncaught interpreter exception is the wrong
+      An unparsable caller value is a client error; a 500 from an uncaught interpreter exception is the wrong
       reply, so betterlite lets the request-body validation report it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L220-L221
   - what: >-

@@ -1,3 +1,5 @@
+use rstest::rstest;
+
 use crate::request_body_safety::SafetyError;
 
 use super::{Fixture, Grants, denied, denied_param, passes};
@@ -44,26 +46,23 @@ fn fallback_url_denied() {
     );
 }
 
-#[test]
-fn fallback_three_fields_and_override() {
+#[rstest]
+#[case::fallbacks("fallbacks")]
+#[case::context_window("context_window_fallbacks")]
+#[case::content_policy("content_policy_fallbacks")]
+fn fallback_three_fields_and_override(#[case] field: &str) {
     let fixture = Fixture::default();
-    for field in [
-        "fallbacks",
-        "context_window_fallbacks",
-        "content_policy_fallbacks",
-    ] {
-        let text = format!(r#"{{"{field}": ["https://evil.example"]}}"#);
-        assert!(matches!(
-            denied(&fixture, &text),
-            SafetyError::FallbackDestination
-        ));
-        let overridden =
-            format!(r#"{{"router_settings_override": {{"{field}": ["https://evil.example"]}}}}"#);
-        assert!(matches!(
-            denied(&fixture, &overridden),
-            SafetyError::FallbackDestination
-        ));
-    }
+    let text = format!(r#"{{"{field}": ["https://evil.example"]}}"#);
+    assert!(matches!(
+        denied(&fixture, &text),
+        SafetyError::FallbackDestination
+    ));
+    let overridden =
+        format!(r#"{{"router_settings_override": {{"{field}": ["https://evil.example"]}}}}"#);
+    assert!(matches!(
+        denied(&fixture, &overridden),
+        SafetyError::FallbackDestination
+    ));
     // a stringified override is not a mapping, so LiteLLM never reads its fields
     passes(
         &fixture,
@@ -82,8 +81,7 @@ fn fallback_three_fields_and_override() {
 #[test]
 fn fallback_list_mapping_shapes() {
     let fixture = Fixture::default();
-    // a mapping whose nonempty values are all lists is traversed but never yielded, so its own keys are
-    // not scanned as a target
+    // an all-lists mapping is traversed but never yielded, so its own keys are not scanned
     passes(&fixture, r#"{"fallbacks": [{"azure_ad_token": ["x"]}]}"#);
     assert_eq!(
         denied_param(&fixture, r#"{"fallbacks": [{"azure_ad_token": "x"}]}"#),

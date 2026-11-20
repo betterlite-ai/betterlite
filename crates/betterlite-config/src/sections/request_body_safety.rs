@@ -26,8 +26,8 @@ struct GeneralSettings {
 // litellm_settings is set raw on the litellm module, and the host matcher accepts a bare string as one entry
 #[derive(Debug, Default, Deserialize)]
 struct LiteLlmSettings {
-    #[serde(default)]
-    provider_url_destination_allowed_hosts: Option<Hosts>,
+    #[serde(default, rename = "provider_url_destination_allowed_hosts")]
+    destination_hosts: Option<Hosts>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -47,8 +47,8 @@ struct Deployment {
 
 #[derive(Debug, Default, Deserialize)]
 struct LiteLlmParams {
-    #[serde(default)]
-    configurable_clientside_auth_params: Option<Vec<Json>>,
+    #[serde(default, rename = "configurable_clientside_auth_params")]
+    clientside_params: Option<Vec<Json>>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -61,9 +61,7 @@ pub struct Raw {
     model_list: Vec<Deployment>,
 }
 
-// LiteLLM's CONFIGURABLE_CLIENTSIDE_AUTH_PARAMS: a bare string grants that exact parameter and a mapping is
-// considered only for api_base, where its api_base entry is the matcher. Anything else fails the model's
-// pydantic validation before the proxy starts.
+// CONFIGURABLE_CLIENTSIDE_AUTH_PARAMS: a string grants its parameter, a mapping only api_base.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClientsideParamGrant {
     Exact(String),
@@ -96,17 +94,18 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
+        // int(ROUTER_MAX_FALLBACKS) at import: a non-number stops LiteLLM from starting, and no value is clamped
+        let text = lookup.lookup(MAX_FALLBACKS_VARIABLE).unwrap_or_default();
+        let max_fallbacks = betterlite_env::number::<i64>(MAX_FALLBACKS_VARIABLE, &text)?
+            .unwrap_or(DEFAULT_MAX_FALLBACKS);
         Ok(Settings {
             allow_client_side_credentials: self
                 .general_settings
                 .allow_client_side_credentials
                 .unwrap_or(false),
-            allowed_hosts: allowed_hosts(
-                self.litellm_settings.provider_url_destination_allowed_hosts,
-                lookup,
-            )?,
+            allowed_hosts: allowed_hosts(self.litellm_settings.destination_hosts, lookup)?,
             model_grants: model_grants(self.model_list)?,
-            max_fallbacks: max_fallbacks(lookup)?,
+            max_fallbacks,
         })
     }
 }
@@ -137,18 +136,18 @@ fn model_grants(
     model_grant_map(deployments.into_iter().map(|deployment| {
         (
             deployment.model_name,
-            deployment
-                .litellm_params
-                .configurable_clientside_auth_params,
+            deployment.litellm_params.clientside_params,
         )
     }))
 }
 
-// The same mapping over declarations another caller supplies, so the oracle helper reads deployments with
-// this loader's rules instead of its own.
-pub fn model_grant_map(
-    deployments: impl IntoIterator<Item = (Option<String>, Option<Vec<Json>>)>,
-) -> Result<BTreeMap<String, Option<Vec<ClientsideParamGrant>>>, ConfigError> {
+// The same mapping over another caller's declarations, so the oracle helper shares this loader's rules.
+pub fn model_grant_map<D>(
+    deployments: D,
+) -> Result<BTreeMap<String, Option<Vec<ClientsideParamGrant>>>, ConfigError>
+where
+    D: IntoIterator<Item = (Option<String>, Option<Vec<Json>>)>,
+{
     let mut grants = BTreeMap::new();
     for (index, (model_name, raw)) in deployments.into_iter().enumerate() {
         let Some(name) = model_name else {
@@ -178,18 +177,4 @@ fn grant(item: Json, deployment: usize) -> Result<ClientsideParamGrant, ConfigEr
             })
         }
     }
-}
-
-// int(ROUTER_MAX_FALLBACKS) at import: a non-number stops LiteLLM from starting, and no value is clamped
-fn max_fallbacks<L>(lookup: &L) -> Result<i64, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let Some(text) = lookup.lookup(MAX_FALLBACKS_VARIABLE) else {
-        return Ok(DEFAULT_MAX_FALLBACKS);
-    };
-    Ok(
-        betterlite_env::number::<i64>(MAX_FALLBACKS_VARIABLE, &text)?
-            .unwrap_or(DEFAULT_MAX_FALLBACKS),
-    )
 }

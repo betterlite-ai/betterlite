@@ -11,8 +11,7 @@ const FALLBACK_FIELDS: [&str; 3] = [
     "content_policy_fallbacks",
 ];
 
-// LiteLLM's iter_request_fallback_targets over the root and a mapping router_settings_override, checked in
-// the order the generator yields: a mapping target before the fallbacks nested inside it.
+// iter_request_fallback_targets order: root and override, a mapping before the fallbacks inside it.
 pub fn check(scan: &RequestBodySafety<'_>, catalog: &RequestBanCatalog) -> Result<(), SafetyError> {
     let override_fields = match scan.body.get("router_settings_override") {
         Some(Json::Object(fields)) => Some(fields),

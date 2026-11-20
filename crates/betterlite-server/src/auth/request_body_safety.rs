@@ -1,7 +1,4 @@
-use std::mem;
-
-use axum::body::{Body, Bytes, to_bytes};
-use axum::http::Request;
+use axum::body::Bytes;
 use betterlite_auth::request_body_safety::{
     FormMetadataExtractor, RequestBodySafety, SafetyError, is_request_body_safe,
 };
@@ -27,12 +24,6 @@ pub struct RequestBodySafetyStageInput {
     pub slot: Option<Slot>,
 }
 
-// The body is read once, before this stage, and handed back unchanged to the handler it was taken from.
-pub(crate) async fn buffer_body(request: &mut Request<Body>) -> Result<Bytes, axum::Error> {
-    let body = mem::replace(request.body_mut(), Body::empty());
-    to_bytes(body, usize::MAX).await
-}
-
 pub(crate) fn run_stage(
     stage: &RequestBodySafetyStageInput,
 ) -> Result<AuthContext, Box<ProxyException>> {
@@ -42,8 +33,7 @@ pub(crate) fn run_stage(
     Ok(stage.context.clone())
 }
 
-// LiteLLM hands is_request_body_safe the dict its auth-time body reader parsed; the buffered body is read
-// the same way here, and a body the reader cannot parse has nothing to scan.
+// The auth body reader's dict; a body it cannot parse has nothing to scan, like LiteLLM.
 fn scan(slot: &Slot, stage: &RequestBodySafetyStageInput) -> Result<(), SafetyError> {
     let content_type = stage.content_type.as_deref().unwrap_or_default();
     let Some(body) = request_object(&stage.body, content_type) else {
@@ -80,8 +70,7 @@ fn json_object(bytes: &[u8]) -> Option<JsonObject> {
     Some(body)
 }
 
-// dict(request.form()): the last value per exact key, and an upload part keeps its key because the banned
-// check only asks whether the name is present.
+// dict(request.form()): last value per key; an upload part keeps its key so the name is still checked.
 fn form_object(bytes: &[u8], content_type: &str) -> Option<JsonObject> {
     let Ok(parts) = decode_request_form(bytes, content_type.as_bytes(), &ApiLimits::default())
     else {
@@ -98,8 +87,7 @@ fn form_object(bytes: &[u8], content_type: &str) -> Option<JsonObject> {
     Some(body)
 }
 
-// B1101 builds the bracket-form tree; its top-level names are all the policy needs, because every
-// URL-valued banned field is refused by name before a value could admit it.
+// Only the extractor's top-level names matter: a URL-valued field is refused by name, not by value.
 #[derive(Debug)]
 struct CoreMetadata;
 

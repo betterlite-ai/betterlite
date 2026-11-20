@@ -1,7 +1,7 @@
 from typing import TypedDict
 
 import litellm
-from litellm.proxy.auth.auth_utils import is_request_body_safe
+from litellm.proxy.auth.auth_utils import is_request_body_safe  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L477-L539
 from litellm.router import Router
 from pydantic import JsonValue
 

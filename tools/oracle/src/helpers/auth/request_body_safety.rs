@@ -35,8 +35,8 @@ struct DeploymentInput {
 
 #[derive(Debug, Default, Deserialize)]
 struct LiteLlmParamsInput {
-    #[serde(default)]
-    configurable_clientside_auth_params: Option<Vec<Json>>,
+    #[serde(default, rename = "configurable_clientside_auth_params")]
+    clientside_params: Option<Vec<Json>>,
 }
 
 #[derive(Debug)]
@@ -76,10 +76,7 @@ impl Helper for Op {
         let grants = model_grant_map(input.model_list.iter().map(|deployment| {
             (
                 Some(deployment.model_name.clone()),
-                deployment
-                    .litellm_params
-                    .configurable_clientside_auth_params
-                    .clone(),
+                deployment.litellm_params.clientside_params.clone(),
             )
         }))
         .map_err(|error| Box::new(helper_error("ValidationError", error.to_string())))?;

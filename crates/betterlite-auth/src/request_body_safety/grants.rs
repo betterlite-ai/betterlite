@@ -7,8 +7,7 @@ use super::{ModelGrantLookup, ModelGrants, SafetyError};
 
 const API_BASE: &str = "api_base";
 
-// LiteLLM's _allow_model_level_clientside_configurable_parameters: the full group name first, then the
-// provider prefix only while B174's provider list holds it, and no group answers with a denial.
+// _allow_model_level_clientside_configurable_parameters: full group first, then B174's provider prefix.
 pub fn model_level_allows(
     model: &str,
     param: &str,
@@ -35,8 +34,7 @@ fn provider_prefix(model: &str) -> Option<&str> {
     Some(prefix)
 }
 
-// LiteLLM's _is_param_allowed: a string entry grants its own parameter exactly, and a mapping entry is
-// considered only for api_base, where its api_base entry is matched before the value is compared for equality.
+// _is_param_allowed: a string grants its own parameter; a mapping counts only for api_base.
 pub fn is_param_allowed(
     param: &str,
     value: &Json,

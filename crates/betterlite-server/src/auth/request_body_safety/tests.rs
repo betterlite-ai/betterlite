@@ -25,6 +25,7 @@ use crate::routes::tests::state_for;
 
 // a recognized route, so the auth chain runs before the marking handler
 const MODEL_ROUTE: &str = "/v1/files";
+const GRANT_SETTINGS: &str = "model_list:\n  - model_name: grant-model\n    litellm_params:\n      model: openai/gpt-4o\n      configurable_clientside_auth_params: [aws_role_name]\n";
 
 fn config(extra: &str) -> Config {
     ConfigLoader {
@@ -33,26 +34,6 @@ fn config(extra: &str) -> Config {
     .load(&format!(
         "general_settings:\n  master_key: secret-master-key\n{extra}"
     ))
-    .expect("the test config loads")
-}
-
-fn opt_in_config() -> Config {
-    ConfigLoader {
-        lookup: BTreeMap::<String, String>::new(),
-    }
-    .load(
-        "general_settings:\n  master_key: secret-master-key\n  allow_client_side_credentials: true\n",
-    )
-    .expect("the test config loads")
-}
-
-fn grant_config() -> Config {
-    ConfigLoader {
-        lookup: BTreeMap::<String, String>::new(),
-    }
-    .load(
-        "general_settings:\n  master_key: secret-master-key\nmodel_list:\n  - model_name: grant-model\n    litellm_params:\n      model: openai/gpt-4o\n      configurable_clientside_auth_params: [aws_role_name]\n",
-    )
     .expect("the test config loads")
 }
 
@@ -100,7 +81,11 @@ fn stage_is_registered() {
         context: master_context(&master_key),
         content_type: Some("application/json".to_owned()),
         body: Bytes::from_static(br#"{"model":["grant-model"],"aws_role_name":"admin"}"#),
-        slot: Some(state_for(&grant_config()).request_body_safety.clone()),
+        slot: Some(
+            state_for(&config(GRANT_SETTINGS))
+                .request_body_safety
+                .clone(),
+        ),
     };
     let granted_input = StageInput::RequestBodySafety(Box::new(granted));
     let Err(StageFailure::RequestBodySafety(non_text)) =
@@ -276,7 +261,7 @@ async fn failure_stops_downstream() {
 
     // the proxy-wide credential opt-in still cannot retarget a URL-valued field
     let (opted_status, opted_body, opted_reached) = run_request_with(
-        &opt_in_config(),
+        &config("  allow_client_side_credentials: true\n"),
         "application/json",
         r#"{"model":"gpt-4o","api_base":"https://evil.example"}"#,
     )
@@ -287,7 +272,7 @@ async fn failure_stops_downstream() {
 
     // the deployment grant admits only its own field, and no other deployment's model inherits it
     let (granted_status, granted_body, granted_reached) = run_request_with(
-        &grant_config(),
+        &config(GRANT_SETTINGS),
         "application/json",
         r#"{"model":"grant-model","aws_role_name":"admin"}"#,
     )
@@ -299,7 +284,7 @@ async fn failure_stops_downstream() {
         r#"{"model":"grant-model","aws_role_name":"admin"}"#
     );
     let (other_status, _other_body, other_reached) = run_request_with(
-        &grant_config(),
+        &config(GRANT_SETTINGS),
         "application/json",
         r#"{"model":"other-model","aws_role_name":"admin"}"#,
     )
@@ -307,7 +292,7 @@ async fn failure_stops_downstream() {
     assert_eq!(other_status, StatusCode::UNAUTHORIZED);
     assert!(!other_reached);
     let (paired_status, _paired_body, paired_reached) = run_request_with(
-        &grant_config(),
+        &config(GRANT_SETTINGS),
         "application/json",
         r#"{"model":"grant-model","aws_role_name":"admin","api_base":"https://evil.example"}"#,
     )

@@ -1,5 +1,6 @@
+use rstest::rstest;
+
 use crate::request_body_safety::SafetyError;
-use crate::request_body_safety::banned::URL_DESTINATION_FIELDS;
 
 use super::{Fixture, Grants, body, denied, denied_param, passes};
 
@@ -216,14 +217,28 @@ fn nested_litellm_params_metadata() {
     );
 }
 
-#[test]
-fn url_bans_survive_credential_opt_in() {
+#[rstest]
+#[case::api_base("api_base")]
+#[case::base_url("base_url")]
+#[case::aws_sts_endpoint("aws_sts_endpoint")]
+#[case::aws_bedrock_runtime_endpoint("aws_bedrock_runtime_endpoint")]
+#[case::s3_endpoint_url("s3_endpoint_url")]
+#[case::sagemaker_base_url("sagemaker_base_url")]
+#[case::deployment_url("deployment_url")]
+#[case::langfuse_host("langfuse_host")]
+#[case::langsmith_base_url("langsmith_base_url")]
+#[case::posthog_host("posthog_host")]
+#[case::posthog_api_url("posthog_api_url")]
+#[case::braintrust_host("braintrust_host")]
+#[case::slack_webhook_url("slack_webhook_url")]
+#[case::signoz_ingestion_endpoint("signoz_ingestion_endpoint")]
+#[case::dd_site("dd_site")]
+#[case::dd_agent_host("dd_agent_host")]
+fn url_bans_survive_credential_opt_in(#[case] field: &str) {
     let mut fixture = Fixture::default();
     fixture.allow = true;
-    for field in URL_DESTINATION_FIELDS {
-        let text = format!(r#"{{"{field}": "value"}}"#);
-        assert_eq!(denied_param(&fixture, &text), field);
-    }
+    let text = format!(r#"{{"{field}": "value"}}"#);
+    assert_eq!(denied_param(&fixture, &text), field);
 }
 
 #[test]

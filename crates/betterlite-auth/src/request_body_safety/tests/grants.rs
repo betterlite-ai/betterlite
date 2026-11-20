@@ -1,6 +1,7 @@
 use betterlite_config::sections::request_body_safety::ClientsideParamGrant;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use rstest::rstest;
 
 use crate::request_body_safety::SafetyError;
 use crate::request_body_safety::grants::{check_regex_or_str_match, is_param_allowed};
@@ -75,27 +76,21 @@ fn regex_type_key_failures() {
     ));
 }
 
-#[test]
-fn value_error_401_envelope() {
-    let mut fixture = Fixture::default();
-    fixture.allow = true;
-    let errors = [
-        denied(&fixture, r#"{"api_base": "https://evil.example"}"#),
-        SafetyError::ModelList,
-        SafetyError::FallbackDepth,
-    ];
-    for error in errors {
-        let exception = error.into_proxy_exception();
-        assert_eq!(exception.error_type, "auth_error");
-        assert_eq!(exception.param.as_deref(), Some("None"));
-        assert_eq!(exception.code, "401");
-        assert!(
-            exception
-                .message
-                .starts_with("Authentication Error, Rejected Request:"),
-            "{}",
-            exception.message
-        );
-        assert_eq!(exception.code.parse::<u16>(), Ok(401));
-    }
+#[rstest]
+#[case::banned(denied(&Fixture::default(), r#"{"api_base": "https://evil.example"}"#))]
+#[case::model_list(SafetyError::ModelList)]
+#[case::fallback_depth(SafetyError::FallbackDepth)]
+fn value_error_401_envelope(#[case] error: SafetyError) {
+    let exception = error.into_proxy_exception();
+    assert_eq!(exception.error_type, "auth_error");
+    assert_eq!(exception.param.as_deref(), Some("None"));
+    assert_eq!(exception.code, "401");
+    assert!(
+        exception
+            .message
+            .starts_with("Authentication Error, Rejected Request:"),
+        "{}",
+        exception.message
+    );
+    assert_eq!(exception.code.parse::<u16>(), Ok(401));
 }

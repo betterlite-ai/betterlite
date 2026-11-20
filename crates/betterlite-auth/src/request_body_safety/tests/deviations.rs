@@ -1,11 +1,13 @@
 use betterlite_config::sections::provider_url_destination::pattern::AllowedDestination;
-use betterlite_config::sections::request_body_safety::ClientsideParamGrant;
+use betterlite_config::sections::request_body_safety::{
+    ClientsideParamGrant, DEFAULT_MAX_FALLBACKS,
+};
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
 use crate::request_body_safety::SafetyError;
 
-use super::{Fixture, denied, denied_param};
+use super::{Fixture, Grants, denied, denied_param};
 
 fn allowlisted() -> Vec<AllowedDestination> {
     vec![AllowedDestination::parse("evil.example").expect("the host parses")]
@@ -40,8 +42,10 @@ fn destination_opt_in_still_denied() {
 #[test]
 fn fallback_allowlisted_host_denied() {
     let fixture = Fixture {
+        grants: Grants::default(),
+        allow: false,
         hosts: allowlisted(),
-        ..Fixture::default()
+        max_fallbacks: DEFAULT_MAX_FALLBACKS,
     };
     let error = denied(&fixture, r#"{"fallbacks": ["https://evil.example/v1"]}"#);
     assert!(matches!(&error, SafetyError::FallbackDestination));

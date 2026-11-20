@@ -40,8 +40,7 @@ pub enum DecodeError {
     },
 }
 
-// The outside-byte boundary: metadata arrives as an object or as a stringified object, and both are bounded
-// before any typed scan reads them.
+// Both the object and the stringified object are byte- and depth-bounded before any scan reads them.
 pub fn decode_request_metadata(bytes: &[u8]) -> Result<TypedValue, DecodeError> {
     if bytes.len() > MAX_METADATA_BYTES {
         return Err(DecodeError::TooLarge {
@@ -59,8 +58,7 @@ pub fn decode_request_metadata(bytes: &[u8]) -> Result<TypedValue, DecodeError> 
     Ok(TypedValue { json })
 }
 
-// Counts container nesting in the raw bytes, so a document past the bound is refused before the parser
-// recurses into it; brackets inside a JSON string are text, and an escaped quote does not end the string.
+// Counts container nesting on raw bytes before the parser recurses; brackets in strings are text.
 fn byte_depth(bytes: &[u8]) -> usize {
     let mut depth = 0_usize;
     let mut deepest = 0_usize;
@@ -100,8 +98,7 @@ pub trait ModelGrantLookup: fmt::Debug + Send + Sync {
     fn grants(&self, model_group: &str) -> ModelGrants<'_>;
 }
 
-// LiteLLM builds the bracket-form metadata with extract_nested_form_metadata and scans its top-level keys;
-// only the names matter, because every URL-valued banned field is refused by name before the opt-ins run.
+// The extractor's top-level names only: a URL-valued field is refused by name before any opt-in.
 pub trait FormMetadataExtractor: fmt::Debug + Send + Sync {
     fn top_level_names(&self, form_data: &JsonObject, prefix: &str) -> Vec<String>;
 }
