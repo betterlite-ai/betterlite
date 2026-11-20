@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -87,15 +88,11 @@ impl ImageDescriptionCompletion for Concurrent {
     }
 }
 
-struct CountingState {
-    calls: usize,
-    peak: usize,
-    running: usize,
-}
-
 struct Counting {
+    calls: AtomicUsize,
     description: String,
-    state: Mutex<CountingState>,
+    peak: AtomicUsize,
+    running: AtomicUsize,
 }
 
 #[async_trait]
@@ -106,18 +103,18 @@ impl ImageDescriptionCompletion for Counting {
         &self,
         _request: &ImageDescriptionRequest,
     ) -> Result<ImageDescriptionResponse, Self::Error> {
-        {
-            let mut state = self.state.lock().expect("the concurrency lock");
-            state.calls = state.calls.saturating_add(1);
-            state.running = state.running.saturating_add(1);
-            state.peak = state.peak.max(state.running);
-        }
+        let running = self.running.fetch_add(1, Ordering::SeqCst);
+        self.peak
+            .fetch_max(running.saturating_add(1), Ordering::SeqCst);
+        self.calls.fetch_add(1, Ordering::SeqCst);
         yield_now().await;
-        {
-            let mut state = self.state.lock().expect("the concurrency lock");
-            state.running = state.running.saturating_sub(1);
-        }
-        Ok(reply(Some(&self.description)))
+        self.running.fetch_sub(1, Ordering::SeqCst);
+        let choice = ImageDescriptionReply {
+            content: Some(self.description.clone()),
+        };
+        Ok(ImageDescriptionResponse {
+            choices: vec![choice],
+        })
     }
 }
 
@@ -203,12 +200,10 @@ async fn image_description_calls_are_capped_at_eight_in_flight() {
     let source = fixture.source();
     let images: Vec<String> = (0_usize..12).map(|index| format!("img-{index}")).collect();
     let completion = Counting {
+        calls: AtomicUsize::new(0),
         description: "a scene".to_owned(),
-        state: Mutex::new(CountingState {
-            calls: 0,
-            peak: 0,
-            running: 0,
-        }),
+        peak: AtomicUsize::new(0),
+        running: AtomicUsize::new(0),
     };
     let scan = ImageScan {
         images: &images,
@@ -223,9 +218,11 @@ async fn image_description_calls_are_capped_at_eight_in_flight() {
     .await
     .expect("every description must complete")
     .expect("the descriptions filter");
-    let state = completion.state.lock().expect("the concurrency lock");
-    assert_eq!(state.calls, 12);
-    assert_eq!(state.peak, IMAGE_DESCRIPTION_CONCURRENCY);
+    assert_eq!(completion.calls.load(Ordering::SeqCst), 12);
+    assert_eq!(
+        completion.peak.load(Ordering::SeqCst),
+        IMAGE_DESCRIPTION_CONCURRENCY
+    );
     assert!(detections.is_empty());
 }
 
