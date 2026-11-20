@@ -28,6 +28,8 @@ description: >-
   non-comment lines; budget 215 implementation, 170 tests, 210 fixtures and 45 composition lines,
   totaling 640. Existing request/ID decoders handle external input.
   B1100 registers routes/batch.rs as a stub, so fill only crates/betterlite-server/src/routes/batch.rs and leave routes.rs and state.rs as they are.
+
+  Booted case from B036. Add providers/xai-mistral/batch-poll-cancel-content: a native batch of B036's providers created at /{provider}/v1/batches, /v1/batches or /batches, polled at /{batch_id:path}, cancelled at /{batch_id:path}/cancel and its output read at /files/{file_id:path}/content (B1033's content route), with B1139's ordered steps and the same upstream and error comparisons as B036's other cases.
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
@@ -44,6 +46,7 @@ scope:
   - tools/oracle/helpers/b086/**
   - tools/oracle/src/helpers/server/b086.rs
   - tools/oracle/src/helpers/server/b086/**
+  - tools/oracle/cases/providers/xai-mistral/batch-poll-cancel-content.yaml
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/batches_endpoints/endpoints.py#L1017-L1256
@@ -122,6 +125,8 @@ dod:
     log_llm_api_exception and final mapping; early failures may lack a call id. These rules differ
     from file routes' status-sensitive error-type mapping and must not be shared accidentally.
   proof: [cancel-tests, oracle, new-cases]
+- text: "A native batch of B036's providers is created, polled and cancelled, and its output content read, through the composed aliases as LiteLLM does."
+  proof: [oracle]
 checks:
   optional: []
   commands:
@@ -140,6 +145,7 @@ oracle_cases:
 - tools/oracle/cases/api/batch-routes/cancel-managed-requirement.yaml
 - tools/oracle/cases/api/batch-routes/cancellation-effect-order.yaml
 - tools/oracle/cases/api/batch-routes/cancellation-error-envelope.yaml
+- tools/oracle/cases/providers/xai-mistral/batch-poll-cancel-content.yaml
 deviations:
 - what: Executed batch cancellation returns 400 invalid_request_error/code="400" with the database-required message even when connected, because the MIT managed store hook is absent; no cancellation/refund runs.
   why: Open-source LiteLLM behaves this way without the enterprise hook, and betterlite builds no managed files (decision 2026-10-31).

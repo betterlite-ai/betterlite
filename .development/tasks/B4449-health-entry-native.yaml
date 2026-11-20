@@ -13,9 +13,11 @@ description: >-
   completion_call); embedding has no native owner yet and goes through a trait `EmbeddingProbeCall` this task
   defines; completion (atext_completion) goes through `TextCompletionProbeCall`, defined here for the same
   reason; audio_speech uses B1083 (aspeech); audio_transcription uses B1082 (atranscription); image_generation
-  uses B998; image_edit uses B999; video_generation uses B3338; rerank uses B1014; realtime uses B1127's health
-  probe; batch list_batches uses B1129; responses uses B932; ocr goes through `OcrProbeCall`, defined here
-  (B8540's OcrProbe is its production implementation and calls B6809's `aocr` in betterlite-ocr module ocr_route); evaluation uses B3515's asystemone. A defined trait has one
+  uses B998; image_edit uses B999; rerank uses B1014; batch list_batches uses B1129; responses uses B932; ocr goes through `OcrProbeCall`, defined here
+  (B8540's OcrProbe is its production implementation and calls B6809's `aocr` in betterlite-ocr module ocr_route). video_generation, realtime and evaluation get no field yet, because their owners
+  (B3338's avideo_generation, B1127's realtime health probe, B3515's asystemone) are deferred: those three methods
+  return `HealthProbeError` naming the mode as not built, the way the ocr mode answers a provider with no health
+  document, never a healthy result. Each owner later adds its field and method body and depends on this task. A defined trait has one
   async method that takes the typed arguments B4440 passes for that mode and returns the reply type of the
   matching method on `HealthProbeBackend`. The bodies only convert B4440's call arguments into the owner's
   request type and the owner's response into B4440's reply, with the response's `hidden_params.headers` map
@@ -34,7 +36,7 @@ description: >-
   result.
 
   Tests live in `health_native_backend::tests` with a fake owner for every operation. Prefixes: `backend_` (one
-  case per mode, the arguments reach the owner unchanged and the reply carries hidden params headers over),
+  case per mode, the arguments reach the owner unchanged and the reply carries hidden params headers over; each of the three deferred modes answers its error),
   `error_` (an owner error comes back with its source), `cheapest_` (n = 3, the provider is passed through,
   order kept, empty list for an unknown provider) and `wiring_` (build_health_check_entry returns a working entry
   over the fakes for chat and a wildcard model). There are no oracle cases: the behavior LiteLLM has is in
@@ -94,7 +96,9 @@ checks:
 
 oracle_cases: []
 
-deviations: []
+deviations:
+  - what: A health check on a model whose mode is video_generation, realtime or evaluation reports the endpoint unhealthy with an error naming the mode as not built, where LiteLLM runs the call.
+    why: Those APIs are deferred (value split, 2026-11-19); an unhealthy answer keeps the check from reporting a model it never called as healthy.
 
 out_of_scope:
   - "The entry flow (mode lookup, cache flag, error result, header extraction): B6750."

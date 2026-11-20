@@ -48,10 +48,9 @@ description: >-
 
 
   prompt_factory.rs. The `litellm_agent` arm returns one process `LitellmAgentResolver` (B8253), built on first use.
-  `PromptLoggerFactory` implements B8560's `CompatibleLoggerFactory` over the same catalog: `init("litellm_agent")`
-  returns that resolver as an `Arc<dyn PromptManagementBackend>` (B4058's trait; add the impl here if B8253 does not
-  have it, a forwarder to its get_chat_completion_prompt that keeps messages and params). Every other name gives None.
-  The known names list is B8466's const slice of `_custom_logger_compatible_callbacks_literal`, in its order.
+  Add B4058's `PromptManagementBackend` impl for that resolver here if B8253 does not have it, a forwarder to its
+  get_chat_completion_prompt that keeps messages and params. `PromptLoggerFactory`, the B8560 `CompatibleLoggerFactory`
+  over this catalog, is later work: B8747 builds it and returns this resolver for litellm_agent.
 
 
   generic_api.rs. `resolve` checks generic_api first for any name, before the arms above, as `_safe_add_callback_to_list`
@@ -114,7 +113,7 @@ dod:
     proof: [catalog-tests]
   - text: datadog and newrelic pick the team logger only for truthy team credentials, reuse it per credential set, and stop an evicted logger.
     proof: [catalog-tests]
-  - text: litellm_agent resolves to one resolver and the prompt factory gives it for that name and None for others.
+  - text: litellm_agent resolves to one resolver, built on first use.
     proof: [catalog-tests]
   - text: generic_api names from callback_settings and from the compatible json build one cached logger each, rebuild on changed settings, skip a missing endpoint or headers, and flush every 5 seconds.
     proof: [catalog-tests]

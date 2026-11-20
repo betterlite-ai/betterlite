@@ -23,10 +23,22 @@ description: >-
 
 
   Tests are in `router_batch_calls/tests.rs`, driven by fake executors and fake router services, with names that start with `file_`, `vector_create_`, `batch_create_`, `batch_cancel_`, `batch_retrieve_` and `batch_list_`. There is no fuzz target: B1035 owns the JSONL rewrite.
+
+
+  Router adapters. B8631 builds `RouterCalls` in crates/betterlite-server/src/app/inference/router_calls but leaves
+  this task out, since no core route uses the batch calls. Once this module is merged, implement its traits there over
+  the startup router, one plain adapter per trait as B8631 does: the model list is Router.get_model_list (B844's
+  model_catalog_lookup.rs), the credential lookup is get_deployment_credentials_with_provider (B303's
+  deployment_clients.rs), and the healthy deployment list is async_get_healthy_deployments (B016's router_core.rs).
+  Add `batch` to RouterCalls, built from the same RouterCompletionParts and executor list as RouterSingleCalls, and test
+  there that the batch model list returns both deployments in config order and the healthy list drops a deployment the
+  router has cooled down.
 scope:
   paths:
   - crates/betterlite-sdk/src/router_batch_calls.rs
   - crates/betterlite-sdk/src/router_batch_calls/**
+  - crates/betterlite-server/src/app/inference/router_calls.rs
+  - crates/betterlite-server/src/app/inference/router_calls/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L5997-L6137
@@ -82,6 +94,8 @@ out_of_scope:
   - "B1035 owns the JSONL rewrite, B082 the file id mapping, B303 credentials, slots and request update, B016 selection and healthy deployments, B310 the fallback executor, B844 the model list."
   - "Router._override_vector_store_methods_for_router has a docstring and no statements at the pin, so there is nothing to build."
 pitfalls:
+  - "The credential lookup adapter lets the deployment's own custom_llm_provider win over the inferred one; keep the provider the router returns."
+  - "The healthy list adapter must come from the async router call, since that call applies cooldowns and the plain model list does not."
   - "`aretrieve_batch` drops `custom_llm_provider` from both the request copy and the params before adding the resolved one, so a request value never overrides the deployment."
   - "`create_file_attempt` refuses a missing `file` or `purpose` per deployment, after `total_calls` is already incremented."
   - "`alist_batches` takes `last_id` from the last answer even when it is null, so a later empty page clears it."

@@ -140,6 +140,8 @@ description: >-
   query parsing. The unassigned handlers occupy 46 nonblank noncomment source
   lines including decorators and excluding docstrings; composition and native/HTTP tests
   bring this to roughly 700 changed non-fixture lines, below the fixed budget.
+
+  Public hub page transcripts. B9693 proves the admin AI Hub table's model group reads; the public side of each publish flow is this task's, since it mounts the public routes. The public page (app/model_hub_table with publicPage true) calls GET /public/model_hub with no auth and only Content-Type and shows an empty list on a non-2xx. public_model_hub reads GET /public/model_hub/info for useful_links, GET /public/agent_hub, GET /public/mcp_hub and GET /public/skill_hub, all without auth, the list through GET /public/v1/model_hub?page=1&page_size=50&sort=model_group, adding q=<trimmed search>, sort=-<field> for descending and filter[providers][in]=a,b, filter[mode][in]=... or filter[features][in]=... joined by commas, and the three facets through GET /public/v1/model_hub/{providers,modes,features}?page_size=100. The admin writes these cases send first: POST /model_group/make_public {model_groups:[...]} with the full selected list (B839); agents from GET /v1/agents (B4784, mounted by B8647) and POST /v1/agents/make_public {agent_ids:[...]} (B4786); MCP servers from GET /v1/mcp/server (B4720, mounted by B8625) and POST /v1/mcp/make_public {mcp_server_ids:[...]} (B4721, mounted by B8627); skills from GET /claude-code/plugins?enabled_only=false (B993) and one POST /claude-code/plugins/<name>/enable or /disable per skill whose state changes, sent in parallel (B992); useful links saved with POST /model_hub/update_useful_links {useful_links: {name: url or {url, index}}} with the whole map (B839). Add these transcripts under tools/oracle/cases/ui/model-hub/: model-publish-then-public-lists (two groups published, then /public/model_hub and /public/v1/model_hub list only those), agent-publish-then-agent-hub, mcp-publish-then-mcp-hub, skill-toggle-then-skill-hub (one enabled and one disabled, then enabled_only=true and /public/skill_hub), useful-links-then-info (an indexed and a plain link), public-list-default-query (the page's exact default query), public-list-search-sort-filters (q, a descending sort and all three filters) and public-facets-page-size. The agent, MCP and skill publish transcripts also send their write as an internal_user and as a proxy_admin_viewer and keep the 403 bodies. Use B860's Postgres fixture with B9942's bootstrap, two configured model groups with model_info metadata, one stored agent, one stored MCP server and two registered plugins.
 scope:
   paths:
     - crates/betterlite-server/src/public_endpoints/hub_surface.rs
@@ -152,6 +154,14 @@ scope:
     - tools/oracle/cases/public/autorouter-presets.yaml
     - tools/oracle/cases/public/scorer-defaults.yaml
     - tools/oracle/cases/public/fuse-presets.yaml
+    - tools/oracle/cases/ui/model-hub/model-publish-then-public-lists.yaml
+    - tools/oracle/cases/ui/model-hub/agent-publish-then-agent-hub.yaml
+    - tools/oracle/cases/ui/model-hub/mcp-publish-then-mcp-hub.yaml
+    - tools/oracle/cases/ui/model-hub/skill-toggle-then-skill-hub.yaml
+    - tools/oracle/cases/ui/model-hub/useful-links-then-info.yaml
+    - tools/oracle/cases/ui/model-hub/public-list-default-query.yaml
+    - tools/oracle/cases/ui/model-hub/public-list-search-sort-filters.yaml
+    - tools/oracle/cases/ui/model-hub/public-facets-page-size.yaml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L362-L383
@@ -182,6 +192,16 @@ references:
     why: B839 saves before publishing useful_links; the public reader must observe that same live value.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/health_check_latest.py#L82-L100
     why: B7640's production health reads swallow database errors, including for the v1 page enrichment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/public_model_hub.tsx#L100-L145
+    why: Public info, agent, MCP and skill hub reads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/publicModelHub/publicModelHubFilters.ts#L28-L43
+    why: filter[field][in] values joined by commas.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/hooks/common/useResourceList.ts#L50-L81
+    why: page, page_size, sort with a minus for descending and q.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/publicModelHub/usePublicModelHubFacets.ts#L12-L40
+    why: Three facet reads at page_size 100.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/claude_code_plugins/MakeSkillPublicForm.tsx#L66-L103
+    why: Only skills whose state changes get an enable or disable request.
 dod:
   - text: The information, model-cost and blog handlers preserve the pinned response shapes, current-state reads, error boundaries and double fallback order.
     proof: [surface-tests, oracle, http-cases]
@@ -191,6 +211,8 @@ dod:
     proof: [composition-tests, oracle]
   - text: The preset, model-hub and resource-hub HTTP cases transferred from the parts run through both booted proxies, including real Postgres fixtures where required.
     proof: [oracle, http-cases]
+  - text: "Each admin publish, toggle or useful-links save is followed by the public hub read that shows it, and the public list queries and facets match LiteLLM through the booted proxy."
+    proof: [oracle]
 checks:
   optional: []
   commands:
@@ -257,6 +279,14 @@ oracle_cases:
   - tools/oracle/cases/public/resource-hubs/skill-hub-manifest-parse-error-500.yaml
   - tools/oracle/cases/public/resource-hubs/skill-hub-database-error-500.yaml
   - tools/oracle/cases/public/resource-hubs/skill-hub-count-and-response-shape.yaml
+  - tools/oracle/cases/ui/model-hub/model-publish-then-public-lists.yaml
+  - tools/oracle/cases/ui/model-hub/agent-publish-then-agent-hub.yaml
+  - tools/oracle/cases/ui/model-hub/mcp-publish-then-mcp-hub.yaml
+  - tools/oracle/cases/ui/model-hub/skill-toggle-then-skill-hub.yaml
+  - tools/oracle/cases/ui/model-hub/useful-links-then-info.yaml
+  - tools/oracle/cases/ui/model-hub/public-list-default-query.yaml
+  - tools/oracle/cases/ui/model-hub/public-list-search-sort-filters.yaml
+  - tools/oracle/cases/ui/model-hub/public-facets-page-size.yaml
 deviations:
   - what: GET /public/model_hub/info keeps litellm_version as the field name but returns the running betterlite version.
     why: Reporting LiteLLM's package version as the native server's version would be false; the compatibility pin remains separate from executable versioning.
@@ -278,6 +308,7 @@ pitfalls:
   - The blog handler retries local loading after a feed-service exception, but its final five-post projection is outside that catch.
   - A providers_routes merge here would duplicate the mounts already assigned to B8676/B8681 and can panic during application construction.
   - The useful-link update publishes after save_config, so reading an unrelated startup clone makes a successful admin update invisible.
+  - "The skill form sends no request for a skill whose state did not change, so a transcript that toggles one skill on and one off sends exactly two writes."
 review_level: security
 budget:
   max_changed_lines: 1500
