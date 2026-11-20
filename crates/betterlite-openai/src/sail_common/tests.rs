@@ -1,4 +1,12 @@
 #![cfg(test)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::disallowed_methods,
+        reason = "json! fixtures state the sail wire the transforms read, numbers included, and each test keeps to one scenario"
+    )
+)]
 
 use betterlite_error::error::ErrorClass;
 use betterlite_prompts::arguments::json::{Json, Object};
@@ -248,7 +256,7 @@ fn extra_body_ignores_a_non_mapping_request_metadata() {
 #[case(json!(5))]
 #[case(json!([1]))]
 fn extra_body_keeps_a_non_mapping_metadata_when_nothing_merges(#[case] metadata: Value) {
-    let extra_body = object(json!({"metadata": metadata.clone(), "user": "u"}));
+    let extra_body = object(json!({"metadata": metadata, "user": "u"}));
     let kept = extra_body_for_sail(&extra_body, None, MODEL, false, &settings(false)).unwrap();
     assert_eq!(value(&kept), json!({"user": "u", "metadata": metadata}));
 }

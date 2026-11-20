@@ -1,4 +1,12 @@
 #![cfg(test)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::disallowed_methods,
+        reason = "json! fixtures state the sail wire the transforms read, numbers included, and each test keeps to one scenario"
+    )
+)]
 
 use std::future::{Future, ready};
 
