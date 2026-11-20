@@ -15,7 +15,7 @@ use betterlite_prompts::arguments::json::Object;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rstest::rstest;
 use secrecy::SecretString;
-use serde_json::{Number, Value};
+use serde_json::Number;
 
 use super::{
     API_BASE_ENV, API_KEY_ENV, BASE_CLASS, EdenAiMessagesError, EnvironmentInput, ReplyInput,
@@ -260,10 +260,10 @@ fn transform_response_writes_the_cost_to_the_call_log() {
     })
     .unwrap();
     let reply = serde_json::to_value(&record).unwrap();
-    assert_eq!(reply["id"], Value::from("msg_1"));
-    assert_eq!(reply["cost"], Value::from(0.5_f64));
+    assert_eq!(reply["id"].as_str(), Some("msg_1"));
+    assert_eq!(reply["cost"].as_f64(), Some(0.5_f64));
     let details = serde_json::to_value(&state.model_call_details).unwrap();
-    assert_eq!(details["response_cost"], Value::from(0.5_f64));
+    assert_eq!(details["response_cost"].as_f64(), Some(0.5_f64));
 }
 
 #[test]
@@ -278,7 +278,7 @@ fn transform_response_reads_the_cost_through_the_header_alias() {
     .unwrap();
     assert_eq!(record.fields.get("x-edenai-cost").unwrap().get(), "\"2\"");
     let details = serde_json::to_value(&state.model_call_details).unwrap();
-    assert_eq!(details["response_cost"], Value::from(2_i32));
+    assert_eq!(details["response_cost"].as_i64(), Some(2_i64));
 }
 
 #[test]
@@ -296,7 +296,7 @@ fn transform_response_without_a_cost_leaves_the_call_log_alone() {
     })
     .unwrap();
     let details = serde_json::to_value(&state.model_call_details).unwrap();
-    assert_eq!(details["response_cost"], Value::from(1_i32));
+    assert_eq!(details["response_cost"].as_i64(), Some(1_i64));
 }
 
 #[test]
@@ -310,7 +310,7 @@ fn transform_response_lets_a_null_cost_beat_the_header_alias() {
     })
     .unwrap();
     let details = serde_json::to_value(&state.model_call_details).unwrap();
-    assert_eq!(details["response_cost"], Value::Null);
+    assert!(details["response_cost"].is_null());
 }
 
 #[test]
@@ -324,7 +324,7 @@ fn transform_response_ignores_an_invalid_cost() {
     })
     .unwrap();
     let details = serde_json::to_value(&state.model_call_details).unwrap();
-    assert_eq!(details["response_cost"], Value::Null);
+    assert!(details["response_cost"].is_null());
 }
 
 #[test]
@@ -368,5 +368,5 @@ fn transform_response_keeps_fields_it_does_not_model() {
     })
     .unwrap();
     let reply = serde_json::to_value(&record).unwrap();
-    assert_eq!(reply["custom_field"]["nested"], Value::from(true));
+    assert_eq!(reply["custom_field"]["nested"].as_bool(), Some(true));
 }
