@@ -29,7 +29,7 @@ fn parse_day(value: &str) -> Option<u32> {
 }
 
 fn parse_bounded_number(value: &str, maximum: u32) -> Option<u32> {
-    if value.is_empty() || value.len() > 2 || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+    if value.len() > 2 || !value.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
     let number = value.parse::<u32>().ok()?;
