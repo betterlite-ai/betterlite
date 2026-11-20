@@ -20,8 +20,8 @@ use crate::spend_event::CACHE_OFF_KEY;
 use crate::spend_metadata::records::SpendLogsMetadata;
 use crate::spend_metadata::redaction::redact_logged_api_key;
 use crate::spend_metadata::{
-    BATCH_COST_REQUEST_ID_SUFFIX, SpendLogsPayload, as_object, as_text, optional_text_field,
-    status_for_spend_log,
+    SpendLogsPayload, as_object, as_text, cache_hit_text, optional_text_field,
+    spend_logs_id_from_ids, status_for_spend_log,
 };
 use crate::spend_sanitize::SpendSanitizePolicy;
 
@@ -29,7 +29,6 @@ mod metadata;
 
 use metadata::clean_metadata;
 
-const ARETRIEVE_BATCH: &str = "aretrieve_batch";
 const MISSING_ID: &str = "None";
 const CACHE_HIT_SUFFIX: &str = "_cache_hit";
 
@@ -182,7 +181,7 @@ fn spend(payload: &StandardLoggingPayload) -> Option<Decimal> {
     })
 }
 
-// get_spend_logs_id and the cache-hit suffix over the event: the response id, then the payload id, then the call id
+// get_spend_logs_id over the event's ids and the cache-hit suffix that keeps the row unique
 fn request_id(payload: &StandardLoggingPayload) -> String {
     let response_id = payload
         .response
@@ -190,20 +189,13 @@ fn request_id(payload: &StandardLoggingPayload) -> String {
         .and_then(as_object)
         .and_then(|response| response.get("id"))
         .and_then(as_text);
-    let candidates = [
+    let mut id = spend_logs_id_from_ids(
+        payload.call_type.as_str(),
         response_id,
         Some(payload.id.as_str()),
         payload.litellm_call_id.as_deref(),
-    ];
-    let mut id = candidates
-        .into_iter()
-        .flatten()
-        .find(|value| !value.is_empty())
-        .unwrap_or(MISSING_ID)
-        .to_owned();
-    if payload.call_type == ARETRIEVE_BATCH {
-        id.push_str(BATCH_COST_REQUEST_ID_SUFFIX);
-    }
+    )
+    .unwrap_or_else(|| MISSING_ID.to_owned());
     // time.time() is not recorded in an event, so the request's end instant stands in for it
     if payload.cache_hit == Some(true) {
         let epoch = payload.end_time.to_f64().unwrap_or(0.0_f64);
@@ -274,13 +266,4 @@ fn namespaced_tool(clean: &SpendLogsMetadata) -> Result<Option<String>, Projecti
         optional_text_field(fields.get("namespaced_tool_name"), "namespaced_tool_name")?
             .map(ToOwned::to_owned),
     )
-}
-
-// str(cache_hit): Python capitalizes its booleans and writes None
-fn cache_hit_text(value: Option<bool>) -> String {
-    match value {
-        Some(true) => "True".to_owned(),
-        Some(false) => "False".to_owned(),
-        None => "None".to_owned(),
-    }
 }
