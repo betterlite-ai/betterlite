@@ -12,10 +12,8 @@ pub mod small_gauges;
 pub mod team;
 pub mod user;
 
-#[cfg(test)]
 #[path = "budget_gauges/tests/key_label_reuse.rs"]
 mod key_label_reuse;
-#[cfg(test)]
 #[path = "budget_gauges/tests/support.rs"]
 mod test_support;
 

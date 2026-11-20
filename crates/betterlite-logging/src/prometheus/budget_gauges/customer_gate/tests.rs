@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use betterlite_prometheus::collector_factory::collector::{ExcludedLabelMetric, MetricLike};
 use betterlite_prometheus::no_op_metric::NoOpMetric;
 
-use super::{customer_budget_gauges_are_noop, customer_budget_metrics_enabled};
+use super::{budget_gauges_are_noop, customer_budget_metrics_enabled};
 use crate::end_user::EndUserCostTrackingSettings;
 use crate::prometheus::budget_gauges::gauge::{EntityBudgetGauges, GaugeField};
 use crate::prometheus::budget_gauges::test_support::{ProbeGauge, field, new_log, words};
@@ -58,7 +58,7 @@ fn the_disable_flag_closes_an_open_gate() {
 
 #[test]
 fn three_noop_customer_gauges_are_noop() {
-    assert!(customer_budget_gauges_are_noop(&noop_gauges()));
+    assert!(budget_gauges_are_noop(&noop_gauges()));
 }
 
 #[test]
@@ -70,7 +70,7 @@ fn one_real_customer_gauge_is_not_noop() {
         &["end_user"],
         &log,
     );
-    assert!(!customer_budget_gauges_are_noop(&gauges));
+    assert!(!budget_gauges_are_noop(&gauges));
 }
 
 #[test]
@@ -89,5 +89,5 @@ fn one_excluded_customer_gauge_is_not_noop() {
             excluded_labels: BTreeSet::new(),
         }),
     };
-    assert!(!customer_budget_gauges_are_noop(&gauges));
+    assert!(!budget_gauges_are_noop(&gauges));
 }

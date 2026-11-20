@@ -147,12 +147,13 @@ pub(crate) fn set(metric: &str, labels: &[(&str, &str)], value: MetricValue) -> 
 }
 
 pub(crate) fn removal(metric: &str, labels: &[Option<&str>]) -> ProbeEvent {
+    let mut child_labels = Vec::with_capacity(labels.len());
+    for value in labels {
+        child_labels.push(value.map(str::to_owned));
+    }
     ProbeEvent::Removal {
         metric: metric.to_owned(),
-        labels: labels
-            .iter()
-            .map(|value| value.map(str::to_owned))
-            .collect(),
+        labels: child_labels,
     }
 }
 

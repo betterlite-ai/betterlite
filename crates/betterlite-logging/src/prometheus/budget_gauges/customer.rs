@@ -18,7 +18,7 @@ use super::BudgetGaugeError;
 use super::gauge::{EntityBudgetGauges, GaugeField, label_pairs, label_values};
 use super::inputs::CustomerBudgetGaugeInput;
 use super::remaining_budget::remaining_budget;
-use super::reset_hours::remaining_hours_for_budget_reset;
+use super::reset_hours::hours_until_reset;
 
 // the hours gauge reads the wall clock while the series tracker reads the monotonic one, so both come in together
 #[derive(Clone, Copy, Debug)]
@@ -69,17 +69,32 @@ where
             .set(MetricValue::Finite(max_budget));
         track_end_user_series(&gauges.max, &labels, context)?;
     }
-    if let Some(reset_at) = input.budget_reset_at {
-        let hours = remaining_hours_for_budget_reset(reset_at, context.clock.reset);
-        let value = Decimal::from_f64(hours).ok_or(BudgetGaugeError::HoursNotFinite { hours })?;
-        gauges
-            .remaining_hours
-            .collector
-            .labels(&label_pairs(&labels))
-            .set(MetricValue::Finite(value));
-        track_end_user_series(&gauges.remaining_hours, &labels, context)?;
+    if input.budget_reset_at.is_some() {
+        set_customer_hours_gauge(gauges, input, &labels, context)?;
     }
     Ok(())
+}
+
+fn set_customer_hours_gauge<Gauge>(
+    gauges: &EntityBudgetGauges<Gauge>,
+    input: &CustomerBudgetGaugeInput,
+    labels: &ProjectedLabels,
+    context: CustomerGaugeContext<'_>,
+) -> Result<(), BudgetGaugeError<Gauge::Error>>
+where
+    Gauge: Collector + RemovableMetric,
+{
+    let Some(reset_at) = input.budget_reset_at else {
+        return Ok(());
+    };
+    let hours = hours_until_reset(reset_at, context.clock.reset);
+    let value = Decimal::from_f64(hours).ok_or(BudgetGaugeError::HoursNotFinite { hours })?;
+    gauges
+        .remaining_hours
+        .collector
+        .labels(&label_pairs(labels))
+        .set(MetricValue::Finite(value));
+    track_end_user_series(&gauges.remaining_hours, labels, context)
 }
 
 fn track_end_user_series<Gauge>(

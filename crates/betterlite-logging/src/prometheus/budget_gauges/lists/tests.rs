@@ -5,11 +5,11 @@ use std::time::Instant;
 use betterlite_prometheus::collector_factory::collector::MetricValue;
 use chrono::{DateTime, Utc};
 
-use super::{
-    BudgetTableSnapshot, CustomerBudgetGaugeRow, KeyListEntry, OrgBudgetGaugeRow,
-    set_customer_budget_metrics_from_row, set_key_list_budget_metrics, set_org_list_budget_metrics,
-    set_team_list_budget_metrics,
-};
+use super::BudgetTableSnapshot;
+use super::customer_row::{CustomerBudgetGaugeRow, set_customer_row_gauges};
+use super::key_list::{KeyListEntry, set_key_list_budget_metrics};
+use super::org_list::{OrgBudgetGaugeRow, set_org_list_budget_metrics};
+use super::team_list::set_team_list_budget_metrics;
 use crate::end_user::EndUserCostTrackingSettings;
 use crate::prometheus::budget_gauges::customer::{BudgetGaugeClock, CustomerGaugeContext};
 use crate::prometheus::budget_gauges::inputs::{KeyBudgetGaugeInput, TeamBudgetGaugeInput};
@@ -208,7 +208,7 @@ fn the_customer_row_falls_back_to_the_default_budget() {
         max_budget: Some(decimal("10")),
         budget_reset_at: reset(),
     };
-    set_customer_budget_metrics_from_row(
+    set_customer_row_gauges(
         &gauges,
         &row,
         Some(&default),
@@ -249,7 +249,7 @@ fn the_customer_row_prefers_its_own_budget_table() {
         max_budget: Some(decimal("10")),
         budget_reset_at: reset(),
     };
-    set_customer_budget_metrics_from_row(
+    set_customer_row_gauges(
         &gauges,
         &row,
         Some(&default),
@@ -282,7 +282,7 @@ fn the_customer_row_works_without_any_budget() {
         spend: decimal("4"),
         budget: None,
     };
-    set_customer_budget_metrics_from_row(
+    set_customer_row_gauges(
         &gauges,
         &row,
         None,

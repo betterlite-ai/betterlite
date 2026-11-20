@@ -2,7 +2,7 @@
 
 use betterlite_prometheus::collector_factory::collector::MetricValue;
 
-use super::{set_team_members_metric, track_provider_remaining_budget};
+use super::{set_team_members_metric, track_provider_budget};
 use crate::end_user::EndUserCostTrackingSettings;
 use crate::prometheus::budget_gauges::inputs::TeamMembersGaugeInput;
 use crate::prometheus::budget_gauges::test_support::{
@@ -69,7 +69,7 @@ fn an_absent_team_alias_is_an_empty_member_label() {
 fn the_provider_gauge_takes_the_remaining_budget() {
     let log = new_log();
     let gauge = field(PROVIDER, &["api_provider"], &log);
-    track_provider_remaining_budget(&gauge, "openai", Some(decimal("4")), Some(decimal("10")));
+    track_provider_budget(&gauge, "openai", Some(decimal("4")), Some(decimal("10")));
     assert_eq!(
         events(&log),
         vec![set(PROVIDER, &[("api_provider", "openai")], finite("6"),)]
@@ -80,7 +80,7 @@ fn the_provider_gauge_takes_the_remaining_budget() {
 fn an_unlimited_provider_budget_is_infinity() {
     let log = new_log();
     let gauge = field(PROVIDER, &["api_provider"], &log);
-    track_provider_remaining_budget(&gauge, "openai", Some(decimal("4")), None);
+    track_provider_budget(&gauge, "openai", Some(decimal("4")), None);
     assert_eq!(
         events(&log),
         vec![set(
@@ -95,7 +95,7 @@ fn an_unlimited_provider_budget_is_infinity() {
 fn an_unrecorded_provider_spend_keeps_the_whole_limit() {
     let log = new_log();
     let gauge = field(PROVIDER, &["api_provider"], &log);
-    track_provider_remaining_budget(&gauge, "openai", None, Some(decimal("10")));
+    track_provider_budget(&gauge, "openai", None, Some(decimal("10")));
     assert_eq!(
         events(&log),
         vec![set(PROVIDER, &[("api_provider", "openai")], finite("10"),)]

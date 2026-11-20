@@ -6,14 +6,14 @@ use rust_decimal::prelude::FromPrimitive as _;
 
 use crate::prometheus_helpers::bounded_series_tracker::RemovableMetric;
 use crate::prometheus_label_projection::prometheus_label_factory::{
-    LabelSource, prometheus_label_factory,
+    LabelSource, ProjectedLabels, prometheus_label_factory,
 };
 
 use super::BudgetGaugeError;
 use super::gauge::{EntityBudgetGauges, label_pairs, label_values};
 use super::inputs::KeyBudgetGaugeInput;
 use super::remaining_budget::remaining_budget;
-use super::reset_hours::remaining_hours_for_budget_reset;
+use super::reset_hours::hours_until_reset;
 
 // LiteLLM's _set_key_budget_metrics keeps the last label build, so a user can give the max and hours metrics different lists
 pub fn set_key_budget_metrics<Gauge>(
@@ -52,14 +52,27 @@ where
         last_labels = max;
     }
     if let Some(reset_at) = input.budget_reset_at {
-        let hours = remaining_hours_for_budget_reset(reset_at, now);
-        let value = Decimal::from_f64(hours).ok_or(BudgetGaugeError::HoursNotFinite { hours })?;
-        gauges
-            .remaining_hours
-            .collector
-            .labels(&label_pairs(&last_labels))
-            .set(MetricValue::Finite(value));
+        set_key_hours_gauge(gauges, &last_labels, reset_at, now)?;
     }
+    Ok(())
+}
+
+fn set_key_hours_gauge<Gauge>(
+    gauges: &EntityBudgetGauges<Gauge>,
+    labels: &ProjectedLabels,
+    reset_at: DateTime<Utc>,
+    now: DateTime<Utc>,
+) -> Result<(), BudgetGaugeError<Gauge::Error>>
+where
+    Gauge: Collector + RemovableMetric,
+{
+    let hours = hours_until_reset(reset_at, now);
+    let value = Decimal::from_f64(hours).ok_or(BudgetGaugeError::HoursNotFinite { hours })?;
+    gauges
+        .remaining_hours
+        .collector
+        .labels(&label_pairs(labels))
+        .set(MetricValue::Finite(value));
     Ok(())
 }
 

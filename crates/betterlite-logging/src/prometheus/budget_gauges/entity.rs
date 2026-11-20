@@ -12,7 +12,7 @@ use crate::prometheus_label_projection::prometheus_label_factory::{
 use super::BudgetGaugeError;
 use super::gauge::{EntityBudgetGauges, label_pairs};
 use super::remaining_budget::remaining_budget;
-use super::reset_hours::remaining_hours_for_budget_reset;
+use super::reset_hours::hours_until_reset;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct BudgetGaugeAmounts {
@@ -49,7 +49,7 @@ where
     if let Some(reset_at) = amounts.reset_at {
         let hours_labels =
             prometheus_label_factory(&gauges.remaining_hours.supported_labels, values, source)?;
-        let hours = remaining_hours_for_budget_reset(reset_at, now);
+        let hours = hours_until_reset(reset_at, now);
         let value = Decimal::from_f64(hours).ok_or(BudgetGaugeError::HoursNotFinite { hours })?;
         gauges
             .remaining_hours

@@ -34,7 +34,7 @@ where
 }
 
 // LiteLLM passes the provider as the only positional label value, so no label factory or include/exclude filter runs
-pub fn track_provider_remaining_budget<Gauge>(
+pub fn track_provider_budget<Gauge>(
     field: &GaugeField<Gauge>,
     provider: &str,
     spend: Option<Decimal>,

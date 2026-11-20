@@ -49,15 +49,12 @@ pub(crate) fn label_values(pairs: &[(&str, &str)]) -> UserApiKeyLabelValues {
 }
 
 pub(crate) fn label_pairs(labels: &ProjectedLabels) -> Vec<(&str, &str)> {
-    labels
-        .iter()
-        .map(|(name, value)| {
-            (
-                name.as_str(),
-                value.as_deref().unwrap_or(MISSING_LABEL_VALUE),
-            )
-        })
-        .collect()
+    let mut pairs = Vec::with_capacity(labels.len());
+    for (name, value) in labels {
+        let value = value.as_deref().unwrap_or(MISSING_LABEL_VALUE);
+        pairs.push((name.as_str(), value));
+    }
+    pairs
 }
 
 // LiteLLM's no-op and excluded-label metrics carry no remove(), so the series tracker reads them as unsupported

@@ -14,9 +14,7 @@ pub const fn customer_budget_metrics_enabled(settings: &EndUserCostTrackingSetti
 
 // LiteLLM's _customer_budget_gauges_are_noop: with every customer gauge disabled the per-request path can skip its work
 #[must_use]
-pub fn customer_budget_gauges_are_noop<Gauge>(
-    gauges: &EntityBudgetGauges<MetricLike<Gauge>>,
-) -> bool {
+pub fn budget_gauges_are_noop<Gauge>(gauges: &EntityBudgetGauges<MetricLike<Gauge>>) -> bool {
     let fields = [&gauges.remaining, &gauges.max, &gauges.remaining_hours];
     fields
         .iter()
