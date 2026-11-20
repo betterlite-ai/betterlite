@@ -213,6 +213,24 @@ async fn azure_ad_token_is_sent_as_a_bearer() {
 }
 
 #[tokio::test]
+async fn an_extra_body_token_never_authenticates() {
+    let (recorder, fixture) = openai_recorder();
+    recorder.queue_twice(COMPLETED);
+    let sdk = fixture.sdk(ProviderRuns {
+        transport: Arc::clone(&recorder),
+    });
+    let mut params = RunParams::default();
+    params.api_base = Some(String::from(BASE));
+    params.api_key = secret("az-key");
+    params.extra_body = Some(serde_json::json!({"azure_ad_token": "body-token"}));
+    let reply = polled(sdk.run_thread(azure_call(params)).await.unwrap()).unwrap();
+    assert_eq!(reply.status, "completed");
+    let seen = recorder.requests();
+    assert_eq!(seen[0].api_key.as_deref(), Some("az-key"));
+    assert!(seen[0].authorization.is_none());
+}
+
+#[tokio::test]
 async fn azure_timeout_becomes_the_client_deadline() {
     let (recorder, fixture) = openai_recorder();
     recorder.queue_twice(COMPLETED);
