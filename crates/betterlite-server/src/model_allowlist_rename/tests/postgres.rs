@@ -167,10 +167,6 @@ fn expected(values: &[&str]) -> Vec<String> {
     values.iter().map(|value| (*value).to_owned()).collect()
 }
 
-fn array(values: &[&str]) -> Option<Vec<String>> {
-    Some(expected(values))
-}
-
 fn recorded_keys(cache: &ScriptedAllowlistCache) -> Vec<String> {
     let calls = cache.calls.lock().expect("calls");
     assert_eq!(calls.len(), 1, "the operation makes one eviction call");
@@ -621,7 +617,7 @@ async fn pinned_writer(pool: &Pool) {
         KEY_TABLE,
         "token",
         "k-pinned",
-        array(&["pin-old"]).as_deref(),
+        Some(expected(&["pin-old"]).as_slice()),
     )
     .await;
     let harness = Harness::new(pool);
@@ -634,7 +630,7 @@ async fn pinned_writer(pool: &Pool) {
     harness.run(&rename, &cache, None).await.unwrap();
     assert_eq!(
         stored(pool, KEY_TABLE, "token", "k-pinned").await,
-        array(&["pin-new"])
+        Some(expected(&["pin-new"]))
     );
 }
 
@@ -649,7 +645,7 @@ async fn one_table_failure(pool: &Pool) {
         pool,
         Some("t-one"),
         None,
-        array(&["onefail-old"]).as_deref(),
+        Some(expected(&["onefail-old"]).as_slice()),
     )
     .await;
     insert_allowlist(
@@ -657,7 +653,7 @@ async fn one_table_failure(pool: &Pool) {
         KEY_TABLE,
         "token",
         "k-one",
-        array(&["onefail-old"]).as_deref(),
+        Some(expected(&["onefail-old"]).as_slice()),
     )
     .await;
     execute(pool, REFUSE_ONE_FAILURE_SQL, &[]).await;
@@ -672,12 +668,12 @@ async fn one_table_failure(pool: &Pool) {
     assert!(matches!(error, ModelAllowlistError::Database(_)));
     assert_eq!(
         stored(pool, TEAM_TABLE, "team_id", "t-one").await,
-        array(&["onefail-old"]),
+        Some(expected(&["onefail-old"])),
         "one CTE's failure rolls back the team table's update too"
     );
     assert_eq!(
         stored(pool, KEY_TABLE, "token", "k-one").await,
-        array(&["onefail-old"])
+        Some(expected(&["onefail-old"]))
     );
     assert!(cache.calls.lock().expect("calls").is_empty());
     assert!(harness.events.lock().expect("events").is_empty());
@@ -688,7 +684,7 @@ async fn eviction_failure(pool: &Pool) {
         pool,
         Some("t-evict"),
         Some("evict-alias"),
-        array(&["evict-old"]).as_deref(),
+        Some(expected(&["evict-old"]).as_slice()),
     )
     .await;
     insert_allowlist(
@@ -696,7 +692,7 @@ async fn eviction_failure(pool: &Pool) {
         KEY_TABLE,
         "token",
         "k-evict",
-        array(&["evict-old"]).as_deref(),
+        Some(expected(&["evict-old"]).as_slice()),
     )
     .await;
     let harness = Harness::new(pool);
@@ -720,11 +716,11 @@ async fn eviction_failure(pool: &Pool) {
 async fn assert_eviction_committed(pool: &Pool) {
     assert_eq!(
         stored(pool, TEAM_TABLE, "team_id", "t-evict").await,
-        array(&["evict-new"])
+        Some(expected(&["evict-new"]))
     );
     assert_eq!(
         stored(pool, KEY_TABLE, "token", "k-evict").await,
-        array(&["evict-new"])
+        Some(expected(&["evict-new"]))
     );
 }
 
@@ -741,7 +737,7 @@ fn assert_single_cache_call(harness: &Harness) {
 async fn bad_returned_row(pool: &Pool) {
     execute(pool, DROP_TEAM_PK_SQL, &[]).await;
     execute(pool, DROP_TEAM_ID_NOT_NULL_SQL, &[]).await;
-    insert_team(pool, None, None, array(&["badrow-old"]).as_deref()).await;
+    insert_team(pool, None, None, Some(expected(&["badrow-old"]).as_slice())).await;
     let harness = Harness::new(pool);
     let cache = harness.cache();
     let rename = request("dep-1", "badrow-old", "badrow-new");
@@ -752,7 +748,7 @@ async fn bad_returned_row(pool: &Pool) {
     assert!(matches!(error, ModelAllowlistError::Database(_)));
     assert_eq!(
         stored_unnamed_team(pool).await,
-        array(&["badrow-new"]),
+        Some(expected(&["badrow-new"])),
         "the statement committed before the row failed to decode"
     );
     assert!(cache.calls.lock().expect("calls").is_empty());
