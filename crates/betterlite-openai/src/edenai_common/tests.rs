@@ -228,7 +228,7 @@ fn reported_cost_reads_the_cost_alias_from_a_json_value(
     let found = reported_cost(&payload);
     assert_eq!(
         found,
-        expected.map(|text| Decimal::from_str_exact(text).unwrap())
+        expected.map(|literal| Decimal::from_str_exact(literal).unwrap())
     );
 }
 

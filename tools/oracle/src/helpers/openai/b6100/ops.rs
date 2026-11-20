@@ -100,7 +100,10 @@ fn cost_value(input: &Input) -> Value {
     cost_steps(input.cost_headers.iter().map(reported_cost_from_headers))
 }
 
-fn cost_steps<Costs: Iterator<Item = Option<Decimal>>>(costs: Costs) -> Value {
+fn cost_steps<Costs>(costs: Costs) -> Value
+where
+    Costs: Iterator<Item = Option<Decimal>>,
+{
     let steps: Vec<Option<f64>> = costs
         .map(|cost| cost.and_then(|value| value.to_f64()))
         .collect();
