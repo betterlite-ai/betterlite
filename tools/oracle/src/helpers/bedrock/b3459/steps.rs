@@ -40,7 +40,9 @@ fn build_workflow(
     let embedder = ScriptedEmbedder::new(recorder.clone(), answer, failing);
     Ok(S3VectorsWorkflow::new(
         settings,
-        RecordingApi::new(recorder.clone()),
+        RecordingApi {
+            recorder: recorder.clone(),
+        },
         embedder,
         UNIQUE_ID.to_owned(),
     ))

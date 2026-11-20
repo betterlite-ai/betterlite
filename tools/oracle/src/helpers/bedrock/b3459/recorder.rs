@@ -34,13 +34,7 @@ pub(crate) struct ScriptedApiError;
 
 #[derive(Debug, Clone)]
 pub(crate) struct RecordingApi {
-    recorder: Recorder,
-}
-
-impl RecordingApi {
-    pub(crate) fn new(recorder: Recorder) -> Self {
-        Self { recorder }
-    }
+    pub(crate) recorder: Recorder,
 }
 
 #[async_trait]
