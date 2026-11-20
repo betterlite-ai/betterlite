@@ -20,7 +20,7 @@ use super::reads::{bounded_row, cached_amount, counter_row, end_user_lookup, pri
 use super::rows::{LookupAnswer, OwnedLookup, SpendCounterRows, SpendRow, WindowEntity};
 use super::values::{SpendValueError, aggregate_amount, stored_amount};
 use super::warm::warm;
-use super::windows::{WindowQuery, warm_window};
+use super::windows::{WindowQuery, WindowReseed, warm_window};
 
 pub const SPEND_COUNTER_LOOKUP: &str = "spend_counter";
 pub const END_USER_SPEND_LOOKUP: &str = "end_user_spend";
@@ -161,26 +161,29 @@ impl<Rows: SpendCounterRows> SpendCounterReseed<Rows> {
         &self,
         cache: &Cache,
         batch: &Batch,
-        counter_key: &str,
-        entity_type: &CounterEntityType,
-        entity_id: &str,
-        window_duration: Option<&str>,
-        window_start: Timestamp,
+        request: &WindowReseed<'_>,
     ) -> Result<Option<Decimal>, CoalescedError<Cache::Error>>
     where
         Cache: WindowReseedCache + ?Sized,
         Batch: ActiveSpendBatch + ?Sized,
     {
-        let _guard = self.locks.hold(counter_key).await;
-        if let Some(amount) = cached_answer(cache, batch, counter_key).await? {
+        let _guard = self.locks.hold(request.counter_key).await;
+        if let Some(amount) = cached_answer(cache, batch, request.counter_key).await? {
             return Ok(Some(amount));
         }
         match self
-            .window_from_db(entity_type, entity_id, window_duration, window_start)
+            .window_from_db(
+                request.entity_type,
+                request.entity_id,
+                request.window_duration,
+                request.window_start,
+            )
             .await?
         {
             None => Ok(None),
-            Some(window_spend) => warm_window(cache, batch, counter_key, window_spend).await,
+            Some(window_spend) => {
+                warm_window(cache, batch, request.counter_key, window_spend).await
+            }
         }
     }
 

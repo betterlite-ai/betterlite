@@ -15,6 +15,15 @@ pub struct WindowQuery<'entity> {
     pub start: Timestamp,
 }
 
+// everything coalesced_window reads before it warms: the counter, the window and that window's duration
+pub struct WindowReseed<'entity> {
+    pub counter_key: &'entity str,
+    pub entity_type: &'entity CounterEntityType,
+    pub entity_id: &'entity str,
+    pub window_duration: Option<&'entity str>,
+    pub window_start: Timestamp,
+}
+
 // a lost SET NX with a vanished winner adds the window amount, and window warm failures propagate
 pub(super) async fn warm_window<Cache, Batch>(
     cache: &Cache,

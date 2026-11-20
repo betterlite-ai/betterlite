@@ -15,7 +15,7 @@ use crate::spend_counter_batch::batch::CounterValue;
 use crate::spend_reseed::reseed::{CoalescedError, SpendCounterReseed};
 use crate::spend_reseed::rows::{WindowEntity, WindowSpendRow};
 use crate::spend_reseed::values::{ReseedCacheValue, SpendValueError};
-use crate::spend_reseed::windows::WindowQuery;
+use crate::spend_reseed::windows::{WindowQuery, WindowReseed};
 
 const WINDOW_KEY: &str = "spend:key:k1:window:1h";
 
@@ -372,17 +372,15 @@ async fn coalesced_window(
     batch: &FakeBatch,
     duration: Option<&str>,
 ) -> Result<Option<Decimal>, CoalescedError<FakeError>> {
-    counter
-        .coalesced_window(
-            cache,
-            batch,
-            WINDOW_KEY,
-            &CounterEntityType::Key,
-            "k1",
-            duration,
-            aware(EXPECTED_START),
-        )
-        .await
+    let entity = CounterEntityType::Key;
+    let request = WindowReseed {
+        counter_key: WINDOW_KEY,
+        entity_type: &entity,
+        entity_id: "k1",
+        window_duration: duration,
+        window_start: aware(EXPECTED_START),
+    };
+    counter.coalesced_window(cache, batch, &request).await
 }
 
 #[tokio::test]
@@ -579,17 +577,14 @@ async fn window_unavailable_sources_answer_none_without_warming() {
     let rows = Arc::new(FakeRows::default());
     let unsupported = reseed_with(Some(Arc::clone(&rows)), services(25), 5.0);
     let entity = CounterEntityType::User;
-    let answer = unsupported
-        .coalesced_window(
-            &cache,
-            &batch,
-            WINDOW_KEY,
-            &entity,
-            "u1",
-            Some("1h"),
-            aware(EXPECTED_START),
-        )
-        .await;
+    let request = WindowReseed {
+        counter_key: WINDOW_KEY,
+        entity_type: &entity,
+        entity_id: "u1",
+        window_duration: Some("1h"),
+        window_start: aware(EXPECTED_START),
+    };
+    let answer = unsupported.coalesced_window(&cache, &batch, &request).await;
     assert_eq!(answered(answer), None);
     assert!(rows.window_lookups().is_empty());
     assert!(cache.redis_sets().is_empty());
