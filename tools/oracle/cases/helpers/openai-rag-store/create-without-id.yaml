@@ -1,0 +1,13 @@
+kind: helper
+name: openai-rag-store-create-without-id
+call:
+  b3453:
+    options:
+      vector_store: {}
+    file_content_base64: aGVsbG8=
+    filename: notes.txt
+    create_response: {}
+    upload_id: file-new
+env: {}
+compare:
+  ignore: []
