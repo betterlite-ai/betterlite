@@ -186,9 +186,10 @@ fn dod_6_transform_and_send() {
         .extension_reply_seen()
         .expect("the response transform ran");
     assert_extension_wire(&request, &reply);
+    // The real client records no send event, so the request above is what proves the POST went out
     assert_eq!(
         events.recorded().join(","),
-        "extension-transform,pre-call,send,extension-response"
+        "extension-transform,pre-call,extension-response"
     );
 }
 

@@ -4,6 +4,7 @@ use std::time::Duration;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::multipart::MultipartPart;
 use betterlite_http::proxy::outbound::RequestBody;
+use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json;
 use http::header::{HeaderName, HeaderValue};
 use http::{HeaderMap as HttpHeaders, Method};
@@ -17,7 +18,7 @@ use super::error::{FieldTypeError, WireFailure};
 use crate::api::vector_store_http_write::error::{
     FailureFacts, HeaderMap as ErrorHeaders, ResponseFacts, header_text,
 };
-use crate::api::vector_store_http_write::service::WriteRequest;
+use crate::api::vector_store_http_write::service::{ClientKind, WriteRequest};
 
 // httpx's raise_for_status raises for any status from 400 up
 pub(crate) const SUCCESS_LIMIT: u16 = 400;
@@ -82,6 +83,45 @@ pub(crate) fn display_facts(text: &str) -> FailureFacts {
         headers: None,
         response: None,
         display: text.to_owned(),
+    }
+}
+
+// One send's timing, which LiteLLM's timeout message spells out
+#[derive(Clone, Copy)]
+pub(crate) struct SendAttempt {
+    pub(crate) mode: ClientKind,
+    pub(crate) timeout: Option<Duration>,
+    pub(crate) elapsed: Duration,
+}
+
+// A failed send carries the exception's text, unless it timed out: that is litellm.Timeout, which _handle_error keeps as a 408 with no response
+pub(crate) fn send_facts(error: &TransportError, attempt: SendAttempt) -> FailureFacts {
+    let mut facts = display_facts(&error.to_string());
+    if matches!(
+        error,
+        TransportError::ConnectTimeout(_) | TransportError::Deadline(_)
+    ) {
+        facts.status = Some(Json::Number(Number::from(408_u16)));
+        facts.text = Some(timeout_message(attempt));
+    }
+    facts
+}
+
+// httpx's two post handlers spell the timeout differently, and each shows the one the caller passed, None included
+fn timeout_message(attempt: SendAttempt) -> String {
+    let timeout = attempt.timeout.map_or_else(
+        || "None".to_owned(),
+        |timeout| timeout.as_secs_f64().to_string(),
+    );
+    match attempt.mode {
+        ClientKind::Sync => {
+            format!("litellm.Timeout: Connection timed out after {timeout} seconds.")
+        }
+        ClientKind::Asynchronous => format!(
+            "litellm.Timeout: Connection timed out. Timeout passed={timeout}, time taken={}.{:03} seconds",
+            attempt.elapsed.as_secs(),
+            attempt.elapsed.subsec_millis(),
+        ),
     }
 }
 

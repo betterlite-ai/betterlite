@@ -916,16 +916,24 @@ pub(crate) fn assert_nothing_sent(serving: Serving) {
 }
 
 pub(crate) fn proxied_client() -> ProxiedClient {
+    build_proxied_client(TransportLimits::DEFAULT)
+}
+
+// A client whose own read timeout is the deadline a call without a caller timeout runs on
+pub(crate) fn proxied_client_with_read_timeout(read_timeout: Duration) -> ProxiedClient {
+    build_proxied_client(TransportLimits {
+        read_timeout,
+        ..TransportLimits::DEFAULT
+    })
+}
+
+fn build_proxied_client(limits: TransportLimits) -> ProxiedClient {
     let policy = Arc::new(
         ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new())
             .expect("the proxy policy resolves"),
     );
-    ProxiedClient::build(
-        base_builder().http1_only(),
-        &policy,
-        TransportLimits::DEFAULT,
-    )
-    .expect("the proxied client builds")
+    ProxiedClient::build(base_builder().http1_only(), &policy, limits)
+        .expect("the proxied client builds")
 }
 
 pub(crate) fn serve_once(status: &str, headers: &[(&str, &str)], body: &str) -> Serving {

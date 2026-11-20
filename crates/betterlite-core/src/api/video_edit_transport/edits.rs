@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::time::Instant;
 
 use betterlite_http::proxy::UpstreamResponse;
 use tokio::runtime::{Builder, Handle};
@@ -8,7 +9,9 @@ use super::config::{BaseVideoConfig, Params, VideoEditInput, VideoReply};
 use super::error::{StepFailure, VideoEditTransportError};
 use super::handler::{PrepareFields, Prepared, VideoTransport};
 use super::seams::{VideoClientSource, VideoErrorConvert, VideoLoggingHandle, VideoPreCall};
-use super::wire::{SUCCESS_LIMIT, display_facts, status_facts, video_request};
+use super::wire::{
+    SUCCESS_LIMIT, SendAttempt, display_facts, send_facts, status_facts, video_request,
+};
 use crate::api::vector_store_http_write::service::{ClientKind, WriteRequest, WriteTransport as _};
 use crate::api::video_records::VideoObject;
 
@@ -116,14 +119,14 @@ where
             self.config,
             mode,
         )?;
-        let prefetched = self.prefetch(&prepared, &request).await?;
+        let prefetched = self.prefetch(&prepared, &request, mode).await?;
         let ready = self
             .begin(&prepared, &request, prefetched.as_ref())
             .map_err(|cause| {
                 self.transport
                     .provider_error(self.config, &display_facts(&cause.to_string()))
             })?;
-        self.deliver(prepared.client.get(), request.provider, ready)
+        self.deliver(prepared.client.get(), request.provider, ready, mode)
             .await
     }
 
@@ -132,6 +135,7 @@ where
         &self,
         prepared: &Prepared<'_, Source::Client>,
         request: &VideoEditRequest<'_, Source::Client>,
+        mode: ClientKind,
     ) -> Result<Option<Params>, VideoEditTransportError> {
         let transport = self.transport;
         let config = self.config;
@@ -144,7 +148,7 @@ where
         let wire = video_request(&url, &prepared.headers, &body, None, request.timeout).map_err(
             |cause| transport.provider_error(config, &display_facts(&cause.to_string())),
         )?;
-        let reply = self.post(prepared.client.get(), wire).await?;
+        let reply = self.post(prepared.client.get(), wire, mode).await?;
         let data: Params =
             serde_json::from_slice(&reply.body).map_err(VideoEditTransportError::PrefetchDecode)?;
         Ok(Some(data))
@@ -187,10 +191,11 @@ where
         client: &Source::Client,
         provider: &str,
         ready: EditReady,
+        mode: ClientKind,
     ) -> Result<VideoObject, VideoEditTransportError> {
         let transport = self.transport;
         let config = self.config;
-        let reply = self.post(client, ready.wire).await?;
+        let reply = self.post(client, ready.wire, mode).await?;
         let mut object = transport.logging.logging_object();
         config
             .transform_video_edit_response(
@@ -209,11 +214,19 @@ where
         &self,
         client: &Source::Client,
         wire: WriteRequest,
+        mode: ClientKind,
     ) -> Result<UpstreamResponse, VideoEditTransportError> {
         let transport = self.transport;
         let config = self.config;
+        let timeout = wire.timeout;
+        let started = Instant::now();
         let reply = client.send(wire).await.map_err(|cause| {
-            transport.provider_error(config, &display_facts(&cause.to_string()))
+            let attempt = SendAttempt {
+                mode,
+                timeout,
+                elapsed: started.elapsed(),
+            };
+            transport.provider_error(config, &send_facts(&cause, attempt))
         })?;
         if reply.status >= SUCCESS_LIMIT {
             return Err(transport.provider_error(config, &status_facts(&reply)));

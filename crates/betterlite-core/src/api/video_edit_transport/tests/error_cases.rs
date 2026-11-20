@@ -1,12 +1,17 @@
+use std::time::Duration;
+
+use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_http_fixture::reply::reply;
+use betterlite_http_fixture::server::{Serving, serve};
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_models::decisions::Json;
 use rstest::rstest;
 use tokio::runtime::Builder;
 
 use super::support::{
-    CallKind, EditPlan, Events, Harness, Reply, Wire, expect_failure, headers, object,
-    provider_error,
+    CallKind, EditPlan, Events, ExtensionPlan, Harness, Reply, Wire, expect_failure, headers,
+    object, provider_error, proxied_client, proxied_client_with_read_timeout, run,
 };
 use crate::api::video_edit_transport::calls::Handled;
 use crate::api::video_edit_transport::config::RequestFile;
@@ -25,8 +30,41 @@ use crate::api::video_edit_transport::extensions::VideoExtensionHandlers as _;
 #[case::dod_8_build_failure(dod_8_build_failure)]
 #[case::field_type(field_type)]
 #[case::dod_9_sync_in_runtime(dod_9_sync_in_runtime)]
+#[case::dod_1_async_hand_off_in_runtime(dod_1_async_hand_off_in_runtime)]
+#[case::dod_8_edit_timeout(dod_8_edit_timeout)]
+#[case::dod_8_extension_timeout(dod_8_extension_timeout)]
+#[case::dod_8_timeout_without_a_caller_timeout(dod_8_timeout_without_a_caller_timeout)]
+#[case::dod_8_async_timeout(dod_8_async_timeout)]
+#[case::dod_8_extension_build_failure(dod_8_extension_build_failure)]
 fn transport_error_behavior(#[case] check: fn()) {
     check();
+}
+
+fn dod_1_async_hand_off_in_runtime() {
+    let events = Events::new();
+    let wire = Wire::new(Vec::new(), &events);
+    let mut harness = Harness::new(&events, wire.clone());
+    harness.is_async = true;
+    let transport = harness.transport();
+    let runtime = Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("the runtime builds");
+    runtime.block_on(async {
+        assert_pending(transport.video_edit(harness.edit_request(), &harness.config));
+        assert_pending(transport.video_extension(harness.extension_request(), &harness.config));
+    });
+    assert!(harness.source.calls().is_empty());
+    assert!(wire.requests().is_empty());
+}
+
+// The hand-off comes before the runtime guard, so _is_async still returns the async handler's future
+fn assert_pending(handled: Result<Handled<'_>, VideoEditTransportError>) {
+    let handled = handled.unwrap_or_else(|error| panic!("the sync handler failed: {error}"));
+    assert!(
+        matches!(handled, Handled::Pending(_)),
+        "the sync handler ran instead of handing off"
+    );
 }
 
 fn dod_7_extension_unconverted() {
@@ -183,12 +221,20 @@ fn dod_8_response_transform() {
 
 fn dod_8_send_failure() {
     let events = Events::new();
-    let wire = Wire::failing(TransportError::Closed, &events);
-    let harness = Harness::new(&events, wire.clone());
-    let transport = harness.transport();
-    let error = expect_failure(transport.video_edit(harness.edit_request(), &harness.config));
-    assert_synthesized_error(error, &TransportError::Closed.to_string());
-    assert_eq!(wire.requests().len(), 1);
+    let edit_wire = Wire::failing(TransportError::Closed, &events);
+    let edit = Harness::new(&events, edit_wire.clone());
+    let extension_wire = Wire::failing(TransportError::Closed, &events);
+    let extension = Harness::new(&events, extension_wire.clone());
+    for (kind, harness, wire) in [
+        (CallKind::Edit, &edit, &edit_wire),
+        (CallKind::Extension, &extension, &extension_wire),
+    ] {
+        assert_synthesized_error(
+            harness.call_error(kind),
+            &TransportError::Closed.to_string(),
+        );
+        assert_eq!(wire.requests().len(), 1);
+    }
 }
 
 fn dod_8_build_failure() {
@@ -224,6 +270,121 @@ fn dod_8_build_failure() {
         "the multipart form field nested must be a string, a number or a boolean",
     );
     assert!(wire.requests().is_empty());
+}
+
+fn dod_8_extension_build_failure() {
+    let events = Events::new();
+    let wire = Wire::new(Vec::new(), &events);
+    let mut harness = Harness::new(&events, wire.clone());
+    harness.config.extension = Some(ExtensionPlan {
+        url: "not a url".to_owned(),
+        data: object("{}"),
+        refusal: None,
+    });
+    assert_synthesized_error(
+        harness.call_error(CallKind::Extension),
+        "the request URL not a url is not a URL",
+    );
+    assert!(wire.requests().is_empty());
+}
+
+fn dod_8_edit_timeout() {
+    let (harness, _serving) = timeout_harness(proxied_client(), Some(Duration::from_millis(100)));
+    assert_timeout_error(
+        harness.call_error(CallKind::Edit),
+        "litellm.Timeout: Connection timed out after 0.1 seconds.",
+    );
+}
+
+fn dod_8_extension_timeout() {
+    let (harness, _serving) = timeout_harness(proxied_client(), Some(Duration::from_millis(100)));
+    assert_timeout_error(
+        harness.call_error(CallKind::Extension),
+        "litellm.Timeout: Connection timed out after 0.1 seconds.",
+    );
+}
+
+// No caller timeout: the client's own read timeout ends each send, and both messages name none, as the handler's own timeout is None
+fn dod_8_timeout_without_a_caller_timeout() {
+    let (edit, _edit_serving) = timeout_harness(
+        proxied_client_with_read_timeout(Duration::from_millis(100)),
+        None,
+    );
+    assert_timeout_error(
+        edit.call_error(CallKind::Edit),
+        "litellm.Timeout: Connection timed out after None seconds.",
+    );
+    let (extension, _extension_serving) = timeout_harness(
+        proxied_client_with_read_timeout(Duration::from_millis(100)),
+        None,
+    );
+    let transport = extension.transport();
+    let failed =
+        run(transport.async_video_extension(extension.extension_request(), &extension.config))
+            .expect_err("the timed-out call fails");
+    assert_async_timeout(failed, "None");
+}
+
+fn dod_8_async_timeout() {
+    for kind in [CallKind::Edit, CallKind::Extension] {
+        let (harness, _serving) =
+            timeout_harness(proxied_client(), Some(Duration::from_millis(100)));
+        let transport = harness.transport();
+        let failed = match kind {
+            CallKind::Edit => {
+                run(transport.async_video_edit(harness.edit_request(), &harness.config))
+            }
+            CallKind::Extension => {
+                run(transport.async_video_extension(harness.extension_request(), &harness.config))
+            }
+        }
+        .expect_err("the timed-out call fails");
+        assert_async_timeout(failed, "0.1");
+    }
+}
+
+// A call that times out: the fixture answers only after the client's 100ms deadline has run out
+fn timeout_harness(
+    client: ProxiedClient,
+    timeout: Option<Duration>,
+) -> (Harness<ProxiedClient>, Serving) {
+    let serving = serve(reply("200 fixture", &[], "{}"), Duration::from_secs(2))
+        .expect("the fixture server serves");
+    let events = Events::new();
+    let mut harness = Harness::new(&events, client);
+    harness.timeout = timeout;
+    let url = format!("http://{}/call", serving.address);
+    harness.config.edit = Some(EditPlan {
+        url: url.clone(),
+        data: object("{\"prompt\":\"draw\"}"),
+        files: None,
+        refusal: None,
+    });
+    harness.config.extension = Some(ExtensionPlan {
+        url,
+        data: object("{\"seconds\":\"4\"}"),
+        refusal: None,
+    });
+    (harness, serving)
+}
+
+// litellm.Timeout keeps its 408 with no response behind it, so the flag stays clear
+fn assert_timeout_error(error: VideoEditTransportError, message: &str) {
+    let provider = provider_error(error);
+    assert_eq!(provider.status_code, 408);
+    assert!(!provider.status_code_is_synthesized);
+    assert_eq!(provider.message, message);
+}
+
+// AsyncHTTPHandler.post names the timeout it was given and the time the send took
+fn assert_async_timeout(error: VideoEditTransportError, passed: &str) {
+    let provider = provider_error(error);
+    assert_eq!(provider.status_code, 408);
+    assert!(!provider.status_code_is_synthesized);
+    let prefix =
+        format!("litellm.Timeout: Connection timed out. Timeout passed={passed}, time taken=");
+    assert!(provider.message.starts_with(&prefix));
+    assert!(provider.message.ends_with(" seconds"));
 }
 
 fn assert_field_type(error: VideoEditTransportError, field: &str, expected: &str) {

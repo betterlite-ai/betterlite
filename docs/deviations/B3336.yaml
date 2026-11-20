@@ -37,6 +37,17 @@ deviations:
       httpx's .json() accepts any JSON and would pass a list through. betterlite keeps the
       declared type.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L8090
+  - what: >-
+      The timeout message renders the caller's timeout and the time the send took from Duration
+      values, so a whole-second timeout prints as 7 where LiteLLM interpolates the Python float
+      7.0, and the elapsed time prints as seconds plus zero-padded milliseconds (0.100) where
+      LiteLLM rounds the float it measured (0.1).
+    why: >-
+      The message reports the same numbers LiteLLM does, and the 408, its text and the absent
+      response behind it are unchanged; only the rendering differs, since betterlite keeps
+      durations typed instead of interpolating floats. The caller's timeout still shows as None
+      when it passed none, as LiteLLM's handler does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L852-L866
 kept_bugs:
   - what: >-
       _handle_error only ever sets status_code_is_synthesized to true and never clears a flag the

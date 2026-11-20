@@ -130,6 +130,8 @@ fn assert_edit_prepare_records(harness: &Harness<Wire>) {
         .config
         .edit_seen()
         .expect("the request transform ran");
+    assert_eq!(seen.prompt, "make the sky brighter");
+    assert_eq!(seen.video_id, "video-77");
     assert_eq!(
         seen.headers,
         headers(&[
@@ -230,6 +232,13 @@ fn dod_3_prefetch_pair() {
         seen.prefetched,
         Some(object("{\"source\":{\"url\":\"https://cdn.test/a.mp4\"}}"))
     );
+    let prefetch = harness
+        .config
+        .prefetch_seen()
+        .expect("get_video_edit_prefetch_params ran");
+    assert_eq!(prefetch.video_id, "video-77");
+    assert_eq!(prefetch.api_base, "https://upstream.test");
+    assert_eq!(prefetch.headers, headers(&[("x-provider", "two")]));
 }
 
 fn assert_prefetch_wire(prefetch: &Request, main: &Request) {

@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::time::Instant;
 
 use tokio::runtime::{Builder, Handle};
 
@@ -7,7 +8,9 @@ use super::config::{BaseVideoConfig, VideoExtensionInput, VideoLogging, VideoRep
 use super::error::VideoEditTransportError;
 use super::handler::{PrepareFields, Prepared, VideoTransport};
 use super::seams::{VideoClientSource, VideoErrorConvert, VideoLoggingHandle, VideoPreCall};
-use super::wire::{SUCCESS_LIMIT, display_facts, status_facts, video_request};
+use super::wire::{
+    SUCCESS_LIMIT, SendAttempt, display_facts, send_facts, status_facts, video_request,
+};
 use crate::api::vector_store_http_write::service::{ClientKind, WriteRequest, WriteTransport as _};
 use crate::api::video_records::VideoObject;
 
@@ -116,7 +119,7 @@ where
             mode,
         )?;
         let ready = self.begin(&prepared, &request)?;
-        self.deliver(prepared.client.get(), request.provider, ready)
+        self.deliver(prepared.client.get(), request.provider, ready, mode)
             .await
     }
 
@@ -165,11 +168,19 @@ where
         client: &Source::Client,
         provider: &str,
         ready: ExtensionReady,
+        mode: ClientKind,
     ) -> Result<VideoObject, VideoEditTransportError> {
         let transport = self.transport;
         let config = self.config;
+        let timeout = ready.wire.timeout;
+        let started = Instant::now();
         let reply = client.send(ready.wire).await.map_err(|cause| {
-            transport.provider_error(config, &display_facts(&cause.to_string()))
+            let attempt = SendAttempt {
+                mode,
+                timeout,
+                elapsed: started.elapsed(),
+            };
+            transport.provider_error(config, &send_facts(&cause, attempt))
         })?;
         if reply.status >= SUCCESS_LIMIT {
             return Err(transport.provider_error(config, &status_facts(&reply)));
