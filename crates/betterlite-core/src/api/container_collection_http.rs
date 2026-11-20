@@ -279,12 +279,12 @@ fn provider_failure(
     config.get_error_class(&failure.to_string(), status, &BTreeMap::new())
 }
 
-// HTTPHandler.post calls raise_for_status, so an error status arrives through _handle_error with the whole body text
+// HTTPHandler.post calls raise_for_status, which raises on 4xx and 5xx only, so a 3xx body reaches the transform
 fn post_status(
     config: &dyn config::BaseContainerConfig,
     reply: &transport::ContainerHttpReply,
 ) -> Result<(), ContainerCollectionError> {
-    if (200..=299).contains(&reply.status) {
+    if !(400..=599).contains(&reply.status) {
         return Ok(());
     }
     let message = str::from_utf8(&reply.body).map_or_else(

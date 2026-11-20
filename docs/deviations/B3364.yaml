@@ -1,0 +1,21 @@
+task: B3364
+deviations:
+  - what: The collection handlers are four functions, container_create_handler and acontainer_create_handler, container_list_handler and acontainer_list_handler, and none of them changes its return type with a flag.
+    why: LiteLLM's container_create_handler and container_list_handler take _is_async and are annotated to return either the model or a coroutine; Rust cannot return either type from one function, so the async entry point is a separate function with the same steps, as the task's fixed names require.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L8801-8822
+  - what: The pre-call record's params for a list carry every value as the string that goes on the wire, where LiteLLM logs the transform's mapping with an extra_query value still of its own type.
+    why: request::pre_call_record takes IndexMap<String, String> because it serves the file handlers too, and the handler builds one rendered map for both the GET and the record; an integer or null in extra_query therefore reads as "5" or "" in a callback instead of 5 or None. The wire request keeps the httpx rendering in both cases.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L9030-9036
+  - what: An array value in extra_query is sent as one parameter holding its JSON text, where httpx repeats the key once per element.
+    why: The rendered query is an ordered map of single values per name, which is what pre_call_record logs and what the collection request carries; no OpenAI container parameter is an array, and repeating keys would need the record to hold a list where its type holds one string. Azure's overrides own their own query building under B547.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1435-1450
+  - what: A create POST whose error body is not UTF-8 reports the body's size ("N bytes that are not UTF-8") rather than httpx's replacement-character decoding of it.
+    why: clippy.toml refuses String::from_utf8_lossy, and the same rule already governs the file handlers' error text in B3363; the status and the headers still match.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6077-6085
+  - what: A transport failure's message is betterlite's transport text, not httpx's exception text, in the exception the handler raises.
+    why: The exceptions are converted from betterlite's own TransportError values rather than from httpx exceptions, so the wording of a timeout or a connection failure differs; the status code and the headers follow _handle_error's rules.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6077-6100
+kept_bugs:
+  - what: A timed-out container list GET is raised as a 500, not a 408, because the GET has no timeout translation and _handle_error synthesizes the status when the exception carries none.
+    why: A caller that catches the status sees 500 for a list timeout, and a working setup's error handling is written against that; the create POST does translate its timeout to 408.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L9051-9056

@@ -256,14 +256,14 @@ fn create_reports_the_whole_body_for_an_error_status() {
 }
 
 #[test]
-fn create_reports_a_redirect_as_an_error() {
-    let fixture = Fixture::new(300, "moved");
+fn create_lets_a_3xx_body_through_to_the_transform() {
+    let fixture = Fixture::new(300, CREATE_BODY);
     let call = fixture.create_call("box", None);
-    let failure =
-        container_create_handler(&call, &fixture.source, None, &fixture.hook).unwrap_err();
-    let provider = provider_error(&failure);
-    assert_eq!(provider.status_code, 300);
-    assert_eq!(provider.message, "moved");
+    let object = container_create_handler(&call, &fixture.source, None, &fixture.hook).unwrap();
+    assert_eq!(
+        object.id, "cntr_abc",
+        "raise_for_status leaves a redirect alone, so its body is transformed like a success"
+    );
 }
 
 #[test]
