@@ -8,7 +8,7 @@ use betterlite_core::api::file_http_content::error::ContentError;
 use betterlite_core::api::file_http_content::service::buffered::retrieve_file_content;
 use betterlite_core::api::file_http_content::service::streaming::retrieve_content_streaming;
 use betterlite_core::api::file_http_content::service::{
-    ClientSource, ContentDeps, PreparedContent, RetrieveCall, prepare,
+    ClientSource, ContentDeps, PreparedContent, RetrieveCall,
 };
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
