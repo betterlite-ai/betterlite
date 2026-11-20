@@ -47,50 +47,15 @@ struct Expectation {
     transform: &'static str,
 }
 
+#[rustfmt::skip]
 const fn expectation(handler: Handler) -> Expectation {
     match handler {
-        Handler::Create => Expectation {
-            method: "POST",
-            path: "/v1/evals/eval_1",
-            body: Some(CREATE_BODY),
-            reply: EVAL,
-            transform: "create_response",
-        },
-        Handler::List => Expectation {
-            method: "GET",
-            path: "/v1/evals/eval_1?limit=5&order=asc",
-            body: None,
-            reply: PAGE,
-            transform: "list_response",
-        },
-        Handler::Get => Expectation {
-            method: "GET",
-            path: "/v1/evals/eval_1",
-            body: None,
-            reply: EVAL,
-            transform: "get_response",
-        },
-        Handler::Update => Expectation {
-            method: "POST",
-            path: "/v1/evals/eval_1",
-            body: Some(UPDATE_BODY),
-            reply: EVAL,
-            transform: "update_response",
-        },
-        Handler::Delete => Expectation {
-            method: "DELETE",
-            path: "/v1/evals/eval_1",
-            body: None,
-            reply: DELETED,
-            transform: "delete_response",
-        },
-        Handler::Cancel => Expectation {
-            method: "POST",
-            path: "/v1/evals/eval_1",
-            body: Some("{}"),
-            reply: CANCELLED,
-            transform: "cancel_response",
-        },
+        Handler::Create => Expectation { method: "POST", path: "/v1/evals/eval_1", body: Some(CREATE_BODY), reply: EVAL, transform: "create_response" },
+        Handler::List => Expectation { method: "GET", path: "/v1/evals/eval_1?limit=5&order=asc", body: None, reply: PAGE, transform: "list_response" },
+        Handler::Get => Expectation { method: "GET", path: "/v1/evals/eval_1", body: None, reply: EVAL, transform: "get_response" },
+        Handler::Update => Expectation { method: "POST", path: "/v1/evals/eval_1", body: Some(UPDATE_BODY), reply: EVAL, transform: "update_response" },
+        Handler::Delete => Expectation { method: "DELETE", path: "/v1/evals/eval_1", body: None, reply: DELETED, transform: "delete_response" },
+        Handler::Cancel => Expectation { method: "POST", path: "/v1/evals/eval_1", body: Some("{}"), reply: CANCELLED, transform: "cancel_response" },
     }
 }
 
