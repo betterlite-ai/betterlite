@@ -68,30 +68,21 @@ fn byte_depth(bytes: &[u8]) -> usize {
     let mut escaped = false;
     for &byte in bytes {
         if quoted {
-            if escaped {
-                escaped = false;
-                continue;
-            }
-            if byte == b'\\' {
-                escaped = true;
-                continue;
-            }
-            if byte == b'"' {
-                quoted = false;
+            match byte {
+                b'\\' if !escaped => escaped = true,
+                b'"' if !escaped => quoted = false,
+                _ => escaped = false,
             }
             continue;
         }
-        if byte == b'"' {
-            quoted = true;
-            continue;
-        }
-        if byte == b'[' || byte == b'{' {
-            depth = depth.saturating_add(1);
-            deepest = deepest.max(depth);
-            continue;
-        }
-        if byte == b']' || byte == b'}' {
-            depth = depth.saturating_sub(1);
+        match byte {
+            b'"' => quoted = true,
+            b'[' | b'{' => {
+                depth = depth.saturating_add(1);
+                deepest = deepest.max(depth);
+            }
+            b']' | b'}' => depth = depth.saturating_sub(1),
+            _ => {}
         }
     }
     deepest
