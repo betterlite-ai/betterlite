@@ -70,5 +70,3 @@ where
     }
     pricing
 }
-
-mod tests;

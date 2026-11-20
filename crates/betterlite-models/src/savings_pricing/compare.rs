@@ -233,35 +233,36 @@ pub fn same_usage(left: &RequestUsage, right: &RequestUsage) -> bool {
 }
 
 fn same_logged_usage(left: &LoggedUsage, right: &LoggedUsage) -> bool {
-    (
-        left.prompt_tokens,
-        left.completion_tokens,
-        left.total_tokens,
-        left.cache_read_input_tokens,
-        left.cache_creation_input_tokens,
-        left.completion_tokens_details,
-        left.prompt_tokens_details.as_ref().map(prompt_counters),
-    ) == (
-        right.prompt_tokens,
-        right.completion_tokens,
-        right.total_tokens,
-        right.cache_read_input_tokens,
-        right.cache_creation_input_tokens,
-        right.completion_tokens_details,
-        right.prompt_tokens_details.as_ref().map(prompt_counters),
-    )
+    left.prompt_tokens == right.prompt_tokens
+        && left.completion_tokens == right.completion_tokens
+        && left.total_tokens == right.total_tokens
+        && left.cache_read_input_tokens == right.cache_read_input_tokens
+        && left.cache_creation_input_tokens == right.cache_creation_input_tokens
+        && left.completion_tokens_details == right.completion_tokens_details
+        && same_prompt_details(
+            left.prompt_tokens_details.as_ref(),
+            right.prompt_tokens_details.as_ref(),
+        )
 }
 
-fn prompt_counters(details: &PromptTokensDetails) -> (i64, i64, i64, i64, i64, i64, i64) {
-    (
-        details.cached_tokens,
-        details.cache_creation_tokens,
-        details.cache_write_tokens,
-        details.text_tokens,
-        details.audio_tokens,
-        details.image_tokens,
-        details.video_tokens,
-    )
+// The prompt counters compared one by one; the TTL split B1693 keeps opaque is compared by same_usage.
+fn same_prompt_details(
+    left: Option<&PromptTokensDetails>,
+    right: Option<&PromptTokensDetails>,
+) -> bool {
+    match (left, right) {
+        (None, None) => true,
+        (Some(baseline), Some(selected)) => {
+            baseline.cached_tokens == selected.cached_tokens
+                && baseline.cache_creation_tokens == selected.cache_creation_tokens
+                && baseline.cache_write_tokens == selected.cache_write_tokens
+                && baseline.text_tokens == selected.text_tokens
+                && baseline.audio_tokens == selected.audio_tokens
+                && baseline.image_tokens == selected.image_tokens
+                && baseline.video_tokens == selected.video_tokens
+        }
+        (Some(_), None) | (None, Some(_)) => false,
+    }
 }
 
 // math.isclose with the source's rel_tol=1e-9 and abs_tol=1e-12, in Decimal.
