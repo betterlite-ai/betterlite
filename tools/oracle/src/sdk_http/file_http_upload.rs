@@ -47,8 +47,7 @@ impl Content {
     }
 }
 
-// The four handlers' input: the mode, the caller's own request pieces and the plan a provider
-// transform would hand create_file, in LiteLLM's transformed_request shape
+// The four handlers' input: the mode, the caller's request pieces, and the plan create_file receives
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Call {
@@ -168,8 +167,7 @@ pub struct Failure {
     pub headers: BTreeMap<String, Json>,
 }
 
-// What the async handler handed pre_call: the input and key, and the additional args the record
-// keeps, which are the case headers, the base and the logged plan
+// What the async handler handed pre_call: the input and key, and the additional args it kept
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Diagnostics {
