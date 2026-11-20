@@ -43,7 +43,7 @@ pub struct Reply<B> {
 }
 
 impl<B> Reply<B> {
-    pub(super) fn new(status: u16, url: Url, headers: HttpHeaders, body: B) -> Self {
+    pub(super) const fn new(status: u16, url: Url, headers: HttpHeaders, body: B) -> Self {
         Self {
             status,
             url,
@@ -194,10 +194,9 @@ fn wire_headers(headers: &Headers) -> Result<HttpHeaders, ContentError> {
 #[must_use]
 pub fn decoded_body_headers(headers: &HttpHeaders) -> HttpHeaders {
     let flattened = flatten_headers(headers);
-    let identity = match flattened.get("content-encoding") {
-        None => true,
-        Some(value) => value.eq_ignore_ascii_case("identity"),
-    };
+    let identity = flattened
+        .get("content-encoding")
+        .is_none_or(|value| value.eq_ignore_ascii_case("identity"));
     if identity {
         return headers.clone();
     }

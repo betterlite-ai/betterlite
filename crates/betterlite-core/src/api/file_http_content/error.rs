@@ -1,3 +1,5 @@
+use std::error::Error as StdError;
+
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use http::header::{InvalidHeaderName, InvalidHeaderValue};
 use thiserror::Error;
@@ -31,5 +33,5 @@ pub enum ContentError {
         source: InvalidHeaderValue,
     },
     #[error("the provider transform failed")]
-    Transform(#[source] Box<dyn std::error::Error + Send + Sync>),
+    Transform(#[source] Box<dyn StdError + Send + Sync>),
 }
