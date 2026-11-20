@@ -47,6 +47,10 @@ pub(super) async fn headers_and_response(mode: ClientKind) {
     assert_reply(&outcome);
     assert_request(&wire);
     assert_logging(&fixture);
+    assert_eq!(
+        events.recorded(),
+        vec![String::from("log"), String::from("send")]
+    );
 }
 
 fn assert_reply(outcome: &ReadOutcome) {

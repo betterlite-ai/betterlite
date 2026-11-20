@@ -7,9 +7,10 @@ use betterlite_openai::response_resources::request::ListInputItemsQuery;
 
 use super::support::{
     Events, Fixture, IMPATIENT, ProxiedSource, Reply, Source, Wire, capture, openai_config, params,
+    retrieve_call,
 };
 use super::{run, target};
-use crate::api::responses_read_http::config::{ReadEnvironment, ReadParams};
+use crate::api::responses_read_http::config::ReadEnvironment;
 use crate::api::responses_read_http::error::ReadError;
 use crate::api::responses_read_http::service::{
     ClientKind, InputItemsCall, ReadCall, ReadDeps, RetrieveCall, SuppliedClient,
@@ -29,6 +30,7 @@ pub(super) async fn client_selection(mode: ClientKind) {
 }
 
 async fn supplied_wins(mode: ClientKind) {
+    let (captured, _guard) = capture();
     let config = openai_config(ReadEnvironment::default());
     let events = Events::new();
     let pooled = Wire::replying(Reply::json(200, RETRIEVED), &events);
@@ -55,6 +57,12 @@ async fn supplied_wins(mode: ClientKind) {
         fixture.logged("api_base"),
         Some(&Json::Text(String::from(BASE)))
     );
+    assert!(
+        !captured
+            .messages()
+            .iter()
+            .any(|message| message.starts_with("Creating HTTP client for "))
+    );
 }
 
 async fn pool_wins(mode: ClientKind, ssl_verify: Option<bool>) {
@@ -79,6 +87,7 @@ async fn pool_wins(mode: ClientKind, ssl_verify: Option<bool>) {
 }
 
 async fn wrong_kind_uses_pool(mode: ClientKind) {
+    let (captured, _guard) = capture();
     let config = openai_config(ReadEnvironment::default());
     let events = Events::new();
     let pooled = Wire::replying(Reply::json(200, RETRIEVED), &events);
@@ -105,6 +114,11 @@ async fn wrong_kind_uses_pool(mode: ClientKind) {
     assert_eq!(source.calls(), vec![None]);
     assert_eq!(pooled.requests().len(), 1);
     assert!(supplied.requests().is_empty());
+    let line = "Creating HTTP client for get_responses with shared_session: None";
+    assert_eq!(
+        captured.messages().iter().any(|message| message == line),
+        mode == ClientKind::Asynchronous
+    );
 }
 
 async fn debug_lines(mode: ClientKind) {
@@ -178,11 +192,4 @@ async fn no_per_call_timeout(mode: ClientKind) {
         error.message,
         "the request ran past its read timeout or total deadline"
     );
-}
-
-fn retrieve_call<'call>(api: &'call ReadParams) -> ReadCall<'call> {
-    ReadCall::Retrieve(RetrieveCall {
-        target: target("resp_a", api, None, None),
-        extra_body: None,
-    })
 }

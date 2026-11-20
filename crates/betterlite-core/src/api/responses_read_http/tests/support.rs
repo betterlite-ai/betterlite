@@ -32,14 +32,17 @@ use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::{Context as LayerContext, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
+use super::target;
+
 use crate::api::responses_read_http::config::{
     NoWorkloadIdentity, OpenAiReadConfig, ReadConfig, ReadEnvironment, ReadParams,
 };
-use crate::api::responses_read_http::error::{ClientError, ReadError};
+use crate::api::responses_read_http::error::ReadError;
 use crate::api::responses_read_http::service::{
     ClientKind, ClientSource, LogContext, PreparedRead, ReadCall, ReadDeps, ReadRequest,
-    ReadTransport, prepare,
+    ReadTransport, RetrieveCall, prepare,
 };
+use crate::api::vector_store_http_write::error::ClientError;
 
 pub(crate) fn json(text: &str) -> Json {
     serde_json::from_str(text).expect("the expected JSON parses")
@@ -68,6 +71,13 @@ pub(crate) fn openai_config(environment: ReadEnvironment) -> OpenAiReadConfig<No
     OpenAiReadConfig::new(LiteLlmGlobals::default(), environment, NoWorkloadIdentity)
 }
 
+pub(crate) fn retrieve_call<'call>(api: &'call ReadParams) -> ReadCall<'call> {
+    ReadCall::Retrieve(RetrieveCall {
+        target: target("resp_a", api, None, None),
+        extra_body: None,
+    })
+}
+
 pub(crate) fn header<'headers>(
     headers: &'headers HttpHeaders,
     name: &str,
@@ -88,6 +98,13 @@ impl Events {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(name.to_owned());
+    }
+
+    pub(crate) fn recorded(&self) -> Vec<String> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 }
 

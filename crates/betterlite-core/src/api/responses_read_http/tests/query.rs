@@ -51,6 +51,7 @@ pub(super) async fn input_items(mode: ClientKind) {
         ),
         (&omitted, "{}"),
     ];
+    let reads = cases.len();
     for (query, logged) in cases {
         let call = ReadCall::InputItems(InputItemsCall {
             target: target("resp_a", &api, None, Some(Duration::from_secs(7))),
@@ -66,6 +67,12 @@ pub(super) async fn input_items(mode: ClientKind) {
         assert_eq!(fixture.logged("complete_input_dict"), Some(&json(logged)));
     }
     assert_requests(&wire);
+    let mut expected = Vec::new();
+    for _ in 0..reads {
+        expected.push(String::from("log"));
+        expected.push(String::from("send"));
+    }
+    assert_eq!(events.recorded(), expected);
 }
 
 // Every read sends one GET with a body-less request, and the timeout never becomes a wire argument
