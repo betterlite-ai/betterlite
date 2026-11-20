@@ -11,10 +11,10 @@ use crate::savings_evidence::snapshot::{CostBreakdown, pricing_basis_from_breakd
 use super::context::{SavingsPricingContext, public_price, resolve_model};
 use super::usage::{RequestUsage, billed_usage};
 
-pub struct RequestPricingInput<'a> {
-    pub model: Option<&'a str>,
-    pub custom_llm_provider: Option<&'a str>,
-    pub model_id: Option<&'a str>,
+pub struct RequestPricingInput<'input> {
+    pub model: Option<&'input str>,
+    pub custom_llm_provider: Option<&'input str>,
+    pub model_id: Option<&'input str>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -24,6 +24,7 @@ pub struct RequestSavingsPricing {
 }
 
 // _request_savings_pricing: a truthy deployment mapping wins, otherwise the canonical public rates.
+#[must_use]
 pub async fn request_savings_pricing<C>(
     context: &C,
     input: &RequestPricingInput<'_>,
@@ -49,14 +50,14 @@ where
     RequestSavingsPricing { provider, pricing }
 }
 
-pub struct PromptCachingInput<'a> {
-    pub pricing: Option<&'a PricedModel>,
-    pub provider: Option<&'a str>,
-    pub usage: Option<&'a RequestUsage>,
-    pub cost_breakdown: Option<&'a CostBreakdown>,
-    pub billed_at: &'a BilledAt,
+pub struct PromptCachingInput<'input> {
+    pub pricing: Option<&'input PricedModel>,
+    pub provider: Option<&'input str>,
+    pub usage: Option<&'input RequestUsage>,
+    pub cost_breakdown: Option<&'input CostBreakdown>,
+    pub billed_at: &'input BilledAt,
     pub fallback_moment: DateTime<Utc>,
-    pub database: &'a TimeZoneDatabase,
+    pub database: &'input TimeZoneDatabase,
 }
 
 // _prompt_caching_savings: B1673's net read-discount-minus-write-premium at the recorded basis.
@@ -80,15 +81,15 @@ pub fn prompt_caching_savings(input: &PromptCachingInput<'_>) -> Option<Decimal>
     model_caching_savings(&price, pricing, billed_usage(usage), input.database).ok()
 }
 
-pub struct PromptCachingForRequest<'a> {
-    pub model: Option<&'a str>,
-    pub custom_llm_provider: Option<&'a str>,
-    pub usage: Option<&'a RequestUsage>,
-    pub model_id: Option<&'a str>,
-    pub cost_breakdown: Option<&'a CostBreakdown>,
-    pub billed_at: &'a BilledAt,
+pub struct PromptCachingForRequest<'input> {
+    pub model: Option<&'input str>,
+    pub custom_llm_provider: Option<&'input str>,
+    pub usage: Option<&'input RequestUsage>,
+    pub model_id: Option<&'input str>,
+    pub cost_breakdown: Option<&'input CostBreakdown>,
+    pub billed_at: &'input BilledAt,
     pub fallback_moment: DateTime<Utc>,
-    pub database: &'a TimeZoneDatabase,
+    pub database: &'input TimeZoneDatabase,
 }
 
 // caching_savings_for_request: the recorded request's own pricing, then the pure calculation.

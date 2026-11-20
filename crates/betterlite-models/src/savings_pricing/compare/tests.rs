@@ -3,6 +3,8 @@
 use chrono::{DateTime, Utc};
 use jiff::tz::TimeZoneDatabase;
 
+use crate::cost_usage::CompletionDetails;
+use crate::cost_usage::modality_projection::CacheCreationTokenDetails;
 use crate::savings_evidence::error::SavingsEvidenceError;
 use crate::savings_evidence::numeric::RoutingDecision;
 use crate::savings_evidence::pricing_basis::PricingBasis;
@@ -38,7 +40,9 @@ fn request_usage(prompt_tokens: i64, completion_tokens: i64) -> RequestUsage {
         usage: LoggedUsage {
             prompt_tokens,
             completion_tokens,
-            total_tokens: prompt_tokens + completion_tokens,
+            total_tokens: prompt_tokens
+                .checked_add(completion_tokens)
+                .expect("the fixture total fits"),
             cache_read_input_tokens: 0,
             cache_creation_input_tokens: 0,
             prompt_tokens_details: None,
@@ -397,7 +401,7 @@ fn cost_of_usage_keeps_anthropic_out_of_residency_and_location() {
     .expect("the anthropic rates price the usage");
     assert_eq!(total, decimal("10"));
     let generic = identity("gpt-4o", "openai");
-    let total = cost_of_usage(
+    let generic_total = cost_of_usage(
         &context,
         &CostOfUsageInput {
             identity: &generic,
@@ -409,7 +413,7 @@ fn cost_of_usage_keeps_anthropic_out_of_residency_and_location() {
         },
     )
     .expect("the generic rates apply the location uplift");
-    assert_eq!(total, decimal("30"));
+    assert_eq!(generic_total, decimal("30"));
 }
 
 #[test]
@@ -504,7 +508,7 @@ fn same_usage_compares_every_field() {
     other.usage.prompt_tokens = 11;
     assert!(!same_usage(&base, &other));
     let mut other_completion = detailed_usage();
-    other_completion.usage.completion_tokens_details = Some(Default::default());
+    other_completion.usage.completion_tokens_details = Some(CompletionDetails::default());
     assert!(!same_usage(&base, &other_completion));
     let mut other_prompt = detailed_usage();
     if let Some(details) = other_prompt.usage.prompt_tokens_details.as_mut() {
@@ -512,7 +516,7 @@ fn same_usage_compares_every_field() {
     }
     assert!(!same_usage(&base, &other_prompt));
     let mut other_ttl = detailed_usage();
-    other_ttl.cache_creation_token_details = Some(Default::default());
+    other_ttl.cache_creation_token_details = Some(CacheCreationTokenDetails::default());
     assert!(!same_usage(&base, &other_ttl));
 }
 

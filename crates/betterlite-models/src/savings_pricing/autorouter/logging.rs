@@ -21,17 +21,17 @@ pub struct LoggingMetadata {
     pub routing_decision: Option<MappingOrScalar<AutoRouterDecision>>,
 }
 
-pub struct LoggingPayloadInput<'a> {
-    pub metadata: &'a LoggingMetadata,
-    pub model: Option<&'a str>,
-    pub custom_llm_provider: Option<&'a str>,
-    pub model_id: Option<&'a str>,
-    pub usage: Option<&'a RequestUsage>,
-    pub cost_breakdown: Option<&'a CostBreakdown>,
-    pub baseline_usage: Option<&'a RequestUsage>,
+pub struct LoggingPayloadInput<'input> {
+    pub metadata: &'input LoggingMetadata,
+    pub model: Option<&'input str>,
+    pub custom_llm_provider: Option<&'input str>,
+    pub model_id: Option<&'input str>,
+    pub usage: Option<&'input RequestUsage>,
+    pub cost_breakdown: Option<&'input CostBreakdown>,
+    pub baseline_usage: Option<&'input RequestUsage>,
     pub baseline_provenance: Option<AutoRouterProvenance>,
     pub moment: DateTime<Utc>,
-    pub database: &'a TimeZoneDatabase,
+    pub database: &'input TimeZoneDatabase,
 }
 
 // savings_for_logging_payload: internal sub-calls carry no savings figure of their own.

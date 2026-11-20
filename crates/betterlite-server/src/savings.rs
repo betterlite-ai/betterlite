@@ -97,14 +97,17 @@ impl DeploymentPricing {
 }
 
 // The savings side of the cost resource: B174 identities, B845 deployment prices and its public lookup.
-pub struct Context<'a> {
-    lookup: &'a CatalogLookup,
-    deployments: &'a DeploymentPricing,
+pub struct Context<'state> {
+    lookup: &'state CatalogLookup,
+    deployments: &'state DeploymentPricing,
 }
 
-impl<'a> Context<'a> {
+impl<'state> Context<'state> {
     #[must_use]
-    pub const fn new(lookup: &'a CatalogLookup, deployments: &'a DeploymentPricing) -> Self {
+    pub const fn new(
+        lookup: &'state CatalogLookup,
+        deployments: &'state DeploymentPricing,
+    ) -> Self {
         Self {
             lookup,
             deployments,
@@ -137,10 +140,8 @@ impl SavingsPricingContext for Context<'_> {
         deployment_id: Option<&str>,
         model: &str,
     ) -> Option<PricedModel> {
-        let deployment_id = deployment_id?;
-        self.deployments
-            .price(self.lookup, deployment_id, model)
-            .await
+        let deployment = deployment_id?;
+        self.deployments.price(self.lookup, deployment, model).await
     }
 
     fn public_lookup(&self) -> &dyn PriceLookup {
@@ -149,8 +150,8 @@ impl SavingsPricingContext for Context<'_> {
 }
 
 // What B845 calls litellm.get_model_info for a model name: the public entry's scalar prices.
-struct PublicModelInfo<'a> {
-    lookup: &'a CatalogLookup,
+struct PublicModelInfo<'state> {
+    lookup: &'state CatalogLookup,
 }
 
 impl ModelMetadataSource for PublicModelInfo<'_> {
@@ -191,8 +192,8 @@ fn priced_from_info(
 ) -> Result<PricedModel, DeploymentPriceError> {
     let serialized = serde_json::to_string(info)?;
     let mut record: PriceRecord = serde_json::from_str(&serialized)?;
-    if let Some(public) = public {
-        for (key, value) in &public.record {
+    if let Some(public_pricing) = public {
+        for (key, value) in &public_pricing.record {
             record.entry(key.clone()).or_insert_with(|| value.clone());
         }
     }
@@ -210,40 +211,39 @@ fn tables(
     info: &JsonObject,
     public: Option<&PricedModel>,
 ) -> (Vec<Tier>, Option<OffPeakBlock>, bool) {
-    let tiered_pricing = match info.get("tiered_pricing") {
-        Some(value) => {
-            let serialized = serde_json::to_string(value);
-            serialized
-                .ok()
-                .and_then(|text| serde_json::from_str(&text).ok())
-                .unwrap_or_default()
-        }
-        None => public.map_or_else(Vec::new, |priced| priced.tiered_pricing.clone()),
+    let tiered = tiered_table(info, public);
+    let (off_peak, cache_read_present) = off_peak_table(info, public);
+    (tiered, off_peak, cache_read_present)
+}
+
+fn tiered_table(info: &JsonObject, public: Option<&PricedModel>) -> Vec<Tier> {
+    let Some(value) = info.get("tiered_pricing") else {
+        return public.map_or_else(Vec::new, |priced| priced.tiered_pricing.clone());
     };
-    let (off_peak_pricing, off_peak_cache_read_present) = match info.get("off_peak_pricing") {
-        Some(value) => {
-            let serialized = serde_json::to_string(value);
-            let block = serialized
-                .ok()
-                .and_then(|text| serde_json::from_str::<OffPeakBlockEntry>(&text).ok())
-                .and_then(|entry| entry.as_block().cloned());
+    let serialized = serde_json::to_string(value);
+    serialized
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_default()
+}
+
+fn off_peak_table(info: &JsonObject, public: Option<&PricedModel>) -> (Option<OffPeakBlock>, bool) {
+    let Some(value) = info.get("off_peak_pricing") else {
+        return public.map_or((None, false), |priced| {
             (
-                block,
-                matches!(value, Json::Object(fields) if fields.contains_key(CACHE_READ_KEY)),
-            )
-        }
-        None => match public {
-            Some(priced) => (
                 priced.off_peak_pricing.clone(),
                 priced.off_peak_cache_read_present,
-            ),
-            None => (None, false),
-        },
+            )
+        });
     };
+    let serialized = serde_json::to_string(value);
+    let block = serialized
+        .ok()
+        .and_then(|text| serde_json::from_str::<OffPeakBlockEntry>(&text).ok())
+        .and_then(|entry| entry.as_block().cloned());
     (
-        tiered_pricing,
-        off_peak_pricing,
-        off_peak_cache_read_present,
+        block,
+        matches!(value, Json::Object(fields) if fields.contains_key(CACHE_READ_KEY)),
     )
 }
 

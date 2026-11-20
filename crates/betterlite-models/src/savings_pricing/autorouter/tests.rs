@@ -40,6 +40,10 @@ fn request_usage(prompt_tokens: i64) -> RequestUsage {
 }
 
 fn cache_usage(cached: i64, written: i64) -> RequestUsage {
+    let text_tokens = 10_i64
+        .checked_sub(cached)
+        .and_then(|value| value.checked_sub(written))
+        .expect("the fixture keeps the text tokens nonnegative");
     RequestUsage {
         usage: LoggedUsage {
             prompt_tokens: 10,
@@ -51,7 +55,7 @@ fn cache_usage(cached: i64, written: i64) -> RequestUsage {
                 cached_tokens: cached,
                 cache_creation_tokens: written,
                 cache_write_tokens: written,
-                text_tokens: 10 - cached - written,
+                text_tokens,
                 audio_tokens: 0,
                 image_tokens: 0,
                 video_tokens: 0,
@@ -63,10 +67,10 @@ fn cache_usage(cached: i64, written: i64) -> RequestUsage {
     }
 }
 
-fn base_input<'a>(
-    usage: &'a RequestUsage,
-    database: &'a TimeZoneDatabase,
-) -> AutoRouterSavingsInput<'a> {
+fn base_input<'input>(
+    usage: &'input RequestUsage,
+    database: &'input TimeZoneDatabase,
+) -> AutoRouterSavingsInput<'input> {
     let issued_at = moment();
     AutoRouterSavingsInput {
         baseline_model: Some("claude"),
@@ -221,12 +225,12 @@ fn compute_requires_baseline_usage_for_cache_buckets() {
     );
 }
 
-fn observed_input<'a>(
-    usage: &'a RequestUsage,
-    database: &'a TimeZoneDatabase,
-    prices: &'a PricedModel,
-    breakdown: &'a CostBreakdown,
-) -> AutoRouterSavingsInput<'a> {
+fn observed_input<'input>(
+    usage: &'input RequestUsage,
+    database: &'input TimeZoneDatabase,
+    prices: &'input PricedModel,
+    breakdown: &'input CostBreakdown,
+) -> AutoRouterSavingsInput<'input> {
     let mut input = base_input(usage, database);
     input.selected_model = Some("anthropic/claude");
     input.baseline_info = Some(prices);
@@ -329,9 +333,9 @@ fn observed_initial_is_none_without_the_matching_recorded_cost() {
         None
     );
     let different = parse_breakdown(r#"{"input_cost": 1, "output_cost": 1}"#);
-    let input = observed_input(&usage, &database, &prices, &different);
+    let different_input = observed_input(&usage, &database, &prices, &different);
     assert_eq!(
-        compute_autorouter_savings(&identity_context(), &input),
+        compute_autorouter_savings(&identity_context(), &different_input),
         None
     );
 }
@@ -363,11 +367,11 @@ fn request_context() -> TestContext {
         )
 }
 
-fn request_input<'a>(
-    usage: &'a RequestUsage,
-    decision: &'a AutoRouterDecision,
-    database: &'a TimeZoneDatabase,
-) -> AutoRouterRequestInput<'a> {
+fn request_input<'input>(
+    usage: &'input RequestUsage,
+    decision: &'input AutoRouterDecision,
+    database: &'input TimeZoneDatabase,
+) -> AutoRouterRequestInput<'input> {
     let model = Some("selected");
     let model_id = Some("d-sel");
     let issued_at = moment();
@@ -422,20 +426,43 @@ async fn request_savings_ignores_a_non_numeric_classifier() {
 }
 
 #[tokio::test]
-async fn request_savings_requires_usage_model_and_baseline_model() {
+async fn request_savings_requires_usage_and_model() {
     let usage = request_usage(10);
     let database = zone_db();
     let decision = parse_decision(r#"{"savings_baseline_model": "baseline"}"#);
     let context = request_context();
-    let mut input = request_input(&usage, &decision, &database);
-    input.usage = None;
-    assert_eq!(autorouter_savings_for_request(&context, &input).await, None);
-    let mut input = request_input(&usage, &decision, &database);
-    input.model = Some("");
-    assert_eq!(autorouter_savings_for_request(&context, &input).await, None);
-    let mut input = request_input(&usage, &decision, &database);
-    input.routing_decision = None;
-    assert_eq!(autorouter_savings_for_request(&context, &input).await, None);
+    let mut missing_usage = request_input(&usage, &decision, &database);
+    missing_usage.usage = None;
+    assert_eq!(
+        autorouter_savings_for_request(&context, &missing_usage).await,
+        None
+    );
+    let mut missing_model = request_input(&usage, &decision, &database);
+    missing_model.model = Some("");
+    assert_eq!(
+        autorouter_savings_for_request(&context, &missing_model).await,
+        None
+    );
+}
+
+#[tokio::test]
+async fn request_savings_requires_a_routing_decision() {
+    let usage = request_usage(10);
+    let database = zone_db();
+    let decision = parse_decision(r#"{"savings_baseline_model": "baseline"}"#);
+    let mut missing_routing = request_input(&usage, &decision, &database);
+    missing_routing.routing_decision = None;
+    assert_eq!(
+        autorouter_savings_for_request(&request_context(), &missing_routing).await,
+        None
+    );
+}
+
+#[tokio::test]
+async fn request_savings_requires_a_string_baseline_model() {
+    let usage = request_usage(10);
+    let database = zone_db();
+    let context = request_context();
     let empty_decision = parse_decision(r#"{"savings_baseline_model": ""}"#);
     let empty_input = request_input(&usage, &empty_decision, &database);
     assert_eq!(
@@ -460,11 +487,11 @@ fn parse_metadata(json: &str) -> LoggingMetadata {
     serde_json::from_str(json).expect("the fixture is logging metadata")
 }
 
-fn logging_input<'a>(
-    metadata: &'a LoggingMetadata,
-    usage: &'a RequestUsage,
-    database: &'a TimeZoneDatabase,
-) -> LoggingPayloadInput<'a> {
+fn logging_input<'input>(
+    metadata: &'input LoggingMetadata,
+    usage: &'input RequestUsage,
+    database: &'input TimeZoneDatabase,
+) -> LoggingPayloadInput<'input> {
     let issued_at = moment();
     LoggingPayloadInput {
         metadata,

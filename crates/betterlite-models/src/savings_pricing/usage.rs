@@ -78,8 +78,8 @@ pub fn billed_usage(source: &RequestUsage) -> BilledTokenUsage {
     let cache_read = cost.cache_read_tokens;
     let cache_write = extras.cache_write_tokens;
     let ttl = extras.cache_creation_token_details;
-    let created_5m = ttl.and_then(|value| value.ephemeral_5m_input_tokens);
-    let created_1h = ttl.and_then(|value| value.ephemeral_1h_input_tokens);
+    let five_minute_writes = ttl.and_then(|value| value.ephemeral_5m_input_tokens);
+    let one_hour_writes = ttl.and_then(|value| value.ephemeral_1h_input_tokens);
     BilledTokenUsage {
         detail_reasoning: reasoning,
         top_level_reasoning: None,
@@ -88,8 +88,8 @@ pub fn billed_usage(source: &RequestUsage) -> BilledTokenUsage {
         detail_cache_creation: cache_write,
         top_level_cache_creation: None,
         detail_cached_audio: None,
-        detail_cache_creation_5m: created_5m,
-        detail_cache_creation_1h: created_1h,
+        detail_cache_creation_5m: five_minute_writes,
+        detail_cache_creation_1h: one_hour_writes,
     }
 }
 

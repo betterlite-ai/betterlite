@@ -16,28 +16,30 @@ use super::autorouter::{
     AutoRouterDecision, AutoRouterRequestInput, autorouter_savings_for_request,
 };
 use super::caching::{
-    PromptCachingInput, RequestPricingInput, prompt_caching_savings, request_savings_pricing,
+    PromptCachingInput, RequestPricingInput, RequestSavingsPricing, prompt_caching_savings,
+    request_savings_pricing,
 };
 use super::context::SavingsPricingContext;
 use super::usage::RequestUsage;
 
-pub struct SavingsSpendInput<'a> {
-    pub model: Option<&'a str>,
-    pub custom_llm_provider: Option<&'a str>,
+pub struct SavingsSpendInput<'input> {
+    pub model: Option<&'input str>,
+    pub custom_llm_provider: Option<&'input str>,
     pub compression_saved_tokens: i64,
     pub gateway_injected_cache: bool,
-    pub routing_decision: Option<&'a AutoRouterDecision>,
-    pub usage: Option<&'a RequestUsage>,
-    pub model_id: Option<&'a str>,
-    pub cost_breakdown: Option<&'a CostBreakdown>,
-    pub recorded_autorouter_savings: Option<&'a Scalar>,
-    pub recorded_estimate: Option<&'a MappingOrScalar<AutorouterEstimate>>,
-    pub billed_at: &'a BilledAt,
+    pub routing_decision: Option<&'input AutoRouterDecision>,
+    pub usage: Option<&'input RequestUsage>,
+    pub model_id: Option<&'input str>,
+    pub cost_breakdown: Option<&'input CostBreakdown>,
+    pub recorded_autorouter_savings: Option<&'input Scalar>,
+    pub recorded_estimate: Option<&'input MappingOrScalar<AutorouterEstimate>>,
+    pub billed_at: &'input BilledAt,
     pub fallback_moment: DateTime<Utc>,
-    pub database: &'a TimeZoneDatabase,
+    pub database: &'input TimeZoneDatabase,
 }
 
 // compute_savings_spend: every driver priced on its own rates, recorded values honored before recomputation.
+#[must_use]
 pub async fn compute_savings_spend<C>(context: &C, input: &SavingsSpendInput<'_>) -> SavingsSpend
 where
     C: SavingsPricingContext,
@@ -52,7 +54,22 @@ where
     )
     .await;
     let compression = compression_savings(input, pricing.pricing.as_ref());
-    let prompt_caching = prompt_caching_savings(&PromptCachingInput {
+    let prompt_caching = prompt_caching_total(input, &pricing);
+    let gateway_injected_caching = if input.gateway_injected_cache {
+        prompt_caching
+    } else {
+        Decimal::ZERO
+    };
+    SavingsSpend {
+        compression,
+        prompt_caching,
+        autorouter: autorouter_total(context, input).await,
+        gateway_injected_caching,
+    }
+}
+
+fn prompt_caching_total(input: &SavingsSpendInput<'_>, pricing: &RequestSavingsPricing) -> Decimal {
+    prompt_caching_savings(&PromptCachingInput {
         pricing: pricing.pricing.as_ref(),
         provider: pricing.provider.as_deref(),
         usage: input.usage,
@@ -61,31 +78,25 @@ where
         fallback_moment: input.fallback_moment,
         database: input.database,
     })
-    .unwrap_or(Decimal::ZERO);
-    let gateway_injected_caching = if input.gateway_injected_cache {
-        prompt_caching
-    } else {
-        Decimal::ZERO
-    };
-    let autorouter = match recorded_savings(input) {
+    .unwrap_or(Decimal::ZERO)
+}
+
+async fn autorouter_total<C>(context: &C, input: &SavingsSpendInput<'_>) -> Decimal
+where
+    C: SavingsPricingContext,
+{
+    match recorded_savings(input) {
         Some(recorded) => recorded,
         None if input.recorded_estimate.is_some() => Decimal::ZERO,
         None => request_savings(context, input)
             .await
             .unwrap_or(Decimal::ZERO),
-    };
-    SavingsSpend {
-        compression,
-        prompt_caching,
-        autorouter,
-        gateway_injected_caching,
     }
 }
 
 // A nonnull estimate is authoritative even when it holds no usable amount.
 fn recorded_savings(input: &SavingsSpendInput<'_>) -> Option<Decimal> {
-    let estimate = input.recorded_estimate;
-    let Some(estimate) = estimate else {
+    let Some(estimate) = input.recorded_estimate else {
         return numeric_savings(input.recorded_autorouter_savings);
     };
     let metadata = Metadata {

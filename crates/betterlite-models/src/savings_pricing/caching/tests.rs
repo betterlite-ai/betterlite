@@ -23,6 +23,10 @@ fn database() -> TimeZoneDatabase {
 }
 
 fn cache_usage(cached: i64, written: i64, ttl: CacheCreationTokenDetails) -> RequestUsage {
+    let text_tokens = 10_i64
+        .checked_sub(cached)
+        .and_then(|value| value.checked_sub(written))
+        .expect("the fixture keeps the text tokens nonnegative");
     RequestUsage {
         usage: LoggedUsage {
             prompt_tokens: 10,
@@ -34,7 +38,7 @@ fn cache_usage(cached: i64, written: i64, ttl: CacheCreationTokenDetails) -> Req
                 cached_tokens: cached,
                 cache_creation_tokens: written,
                 cache_write_tokens: written,
-                text_tokens: 10 - cached - written,
+                text_tokens,
                 audio_tokens: 0,
                 image_tokens: 0,
                 video_tokens: 0,

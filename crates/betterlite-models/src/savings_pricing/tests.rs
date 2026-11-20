@@ -53,10 +53,10 @@ impl TestContext {
     }
 
     fn public_record(&self, model: &str, provider: Option<&str>) -> Option<&PriceRecord> {
-        let provider = provider.unwrap_or_default();
+        let provider_name = provider.unwrap_or_default();
         self.public
             .iter()
-            .find(|entry| entry.0 == model && entry.1 == provider)
+            .find(|entry| entry.0 == model && entry.1 == provider_name)
             .map(|entry| &entry.2)
     }
 }
@@ -81,7 +81,7 @@ impl SavingsPricingContext for TestContext {
         let record = deployment_id
             .and_then(|id| self.deployments.get(id))
             .cloned();
-        ready(record.map(|record| priced(&record)))
+        ready(record.map(|stored| priced(&stored)))
     }
 
     fn public_lookup(&self) -> &dyn PriceLookup {

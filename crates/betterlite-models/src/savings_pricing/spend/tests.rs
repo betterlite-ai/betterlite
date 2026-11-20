@@ -44,7 +44,9 @@ fn cache_usage(cached: i64) -> RequestUsage {
         cached_tokens: cached,
         cache_creation_tokens: 0,
         cache_write_tokens: 0,
-        text_tokens: 10 - cached,
+        text_tokens: 10_i64
+            .checked_sub(cached)
+            .expect("the fixture keeps the text tokens nonnegative"),
         audio_tokens: 0,
         image_tokens: 0,
         video_tokens: 0,
@@ -69,11 +71,11 @@ fn context() -> TestContext {
         .with_deployment("d-base", record(r#"{"input_cost_per_token": 2.0}"#))
 }
 
-fn spend_input<'a>(
-    usage: &'a RequestUsage,
-    billed_at: &'a BilledAt,
-    database: &'a TimeZoneDatabase,
-) -> SavingsSpendInput<'a> {
+fn spend_input<'input>(
+    usage: &'input RequestUsage,
+    billed_at: &'input BilledAt,
+    database: &'input TimeZoneDatabase,
+) -> SavingsSpendInput<'input> {
     SavingsSpendInput {
         model: Some("claude"),
         custom_llm_provider: None,
@@ -149,8 +151,8 @@ async fn gateway_component_carries_only_the_attributed_subset() {
     assert_eq!(spend.gateway_injected_caching, decimal("0"));
     let mut attributed = spend_input(&usage, &billed_at, &database);
     attributed.gateway_injected_cache = true;
-    let spend = compute_savings_spend(&context(), &attributed).await;
-    assert_eq!(spend.gateway_injected_caching, decimal("6"));
+    let attributed_spend = compute_savings_spend(&context(), &attributed).await;
+    assert_eq!(attributed_spend.gateway_injected_caching, decimal("6"));
 }
 
 #[tokio::test]

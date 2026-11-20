@@ -33,13 +33,13 @@ pub enum ComparisonProvenance {
     Modeled,
 }
 
-pub struct CostOfUsageInput<'a> {
-    pub identity: &'a ModelIdentity,
-    pub usage: &'a RequestUsage,
-    pub model_info: Option<&'a PricedModel>,
-    pub basis: &'a PricingBasis,
+pub struct CostOfUsageInput<'input> {
+    pub identity: &'input ModelIdentity,
+    pub usage: &'input RequestUsage,
+    pub model_info: Option<&'input PricedModel>,
+    pub basis: &'input PricingBasis,
     pub moment: DateTime<Utc>,
-    pub database: &'a TimeZoneDatabase,
+    pub database: &'input TimeZoneDatabase,
 }
 
 // _cost_of_usage: anthropic prices with tier only, every other provider with the full basis.
@@ -79,12 +79,12 @@ where
     costs.prompt_cost.checked_add(costs.completion_cost)
 }
 
-pub struct SnapshotInput<'a> {
-    pub model: &'a str,
-    pub prices: Option<&'a ModelInfo>,
+pub struct SnapshotInput<'input> {
+    pub model: &'input str,
+    pub prices: Option<&'input ModelInfo>,
     pub actual_spend: Decimal,
-    pub cost_breakdown: Option<&'a CostBreakdown>,
-    pub routing_decision: Option<&'a RoutingDecision>,
+    pub cost_breakdown: Option<&'input CostBreakdown>,
+    pub routing_decision: Option<&'input RoutingDecision>,
 }
 
 // baseline_cost_snapshot: the recorded evidence a later comparison reads, through B1693's strict snapshot.
@@ -121,12 +121,12 @@ fn checked_amount(amount: Decimal, field: &'static str) -> Result<Decimal, Savin
     Ok(amount)
 }
 
-pub struct ComparisonInput<'a> {
-    pub snapshot: &'a BaselineCostSnapshot,
-    pub baseline_usage: Option<&'a RequestUsage>,
+pub struct ComparisonInput<'input> {
+    pub snapshot: &'input BaselineCostSnapshot,
+    pub baseline_usage: Option<&'input RequestUsage>,
     pub provenance: Option<ComparisonProvenance>,
     pub moment: DateTime<Utc>,
-    pub database: &'a TimeZoneDatabase,
+    pub database: &'input TimeZoneDatabase,
 }
 
 // price_baseline_comparison: replace only the baseline token portion, keeping every non-token charge on both sides.
@@ -151,27 +151,7 @@ where
     }
     let prices = request.snapshot.prices.as_ref()?;
     let recorded = request.snapshot.actual_token_cost?;
-    let identity = ModelIdentity {
-        model: request.snapshot.model.clone(),
-        provider: request.snapshot.provider.clone(),
-    };
-    let priced = PricedModel {
-        record: prices.clone(),
-        tiered_pricing: Vec::new(),
-        off_peak_pricing: None,
-        off_peak_cache_read_present: false,
-    };
-    let token_cost = cost_of_usage(
-        context,
-        &CostOfUsageInput {
-            identity: &identity,
-            usage,
-            model_info: Some(&priced),
-            basis: &request.snapshot.basis,
-            moment: request.moment,
-            database: request.database,
-        },
-    )?;
+    let token_cost = modeled_token_cost(context, request, usage, prices)?;
     if token_cost < Decimal::ZERO {
         return None;
     }
@@ -184,6 +164,39 @@ where
         return None;
     }
     Some(BaselineCosts { actual, baseline })
+}
+
+// The baseline tokens at the snapshot's own recorded rates, as a supplied model info table.
+fn modeled_token_cost<C>(
+    context: &C,
+    request: &ComparisonInput<'_>,
+    usage: &RequestUsage,
+    prices: &ModelInfo,
+) -> Option<Decimal>
+where
+    C: SavingsPricingContext,
+{
+    let identity = ModelIdentity {
+        model: request.snapshot.model.clone(),
+        provider: request.snapshot.provider.clone(),
+    };
+    let supplied = PricedModel {
+        record: prices.clone(),
+        tiered_pricing: Vec::new(),
+        off_peak_pricing: None,
+        off_peak_cache_read_present: false,
+    };
+    cost_of_usage(
+        context,
+        &CostOfUsageInput {
+            identity: &identity,
+            usage,
+            model_info: Some(&supplied),
+            basis: &request.snapshot.basis,
+            moment: request.moment,
+            database: request.database,
+        },
+    )
 }
 
 // effective_baseline_info == selected_model_info, with nested values conservatively unequal.
@@ -222,7 +235,7 @@ fn same_number(left: &Number, right: &Number) -> bool {
         parse_decimal_lexeme(&left_lexeme),
         parse_decimal_lexeme(&right_lexeme),
     ) {
-        (Ok(left), Ok(right)) => left == right,
+        (Ok(left_value), Ok(right_value)) => left_value == right_value,
         _ => left_lexeme == right_lexeme,
     }
 }
@@ -273,9 +286,10 @@ fn same_prompt_counters(baseline: &PromptTokensDetails, selected: &PromptTokensD
 // math.isclose with the source's rel_tol=1e-9 and abs_tol=1e-12, in Decimal.
 #[must_use]
 pub fn amounts_close(left: Decimal, right: Decimal) -> bool {
-    let Some(difference) = left.checked_sub(right).map(Decimal::abs) else {
+    let Some(signed_difference) = left.checked_sub(right) else {
         return false;
     };
+    let difference = signed_difference.abs();
     let scale = left.abs().max(right.abs());
     let Some(relative) = scale.checked_mul(Decimal::new(1, 9)) else {
         return false;

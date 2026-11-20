@@ -10,7 +10,7 @@ pub struct ModelIdentity {
 }
 
 // The proxy side of savings pricing, injected so this crate never reaches Router or proxy state.
-pub trait SavingsPricingContext {
+pub trait SavingsPricingContext: Send + Sync {
     // _resolve_model's get_llm_provider call: None when the name resolves to no provider.
     fn resolve_model(
         &self,

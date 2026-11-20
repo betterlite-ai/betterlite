@@ -5,6 +5,7 @@ use serde::Deserialize;
 
 use crate::price_lookup::PricedModel;
 use crate::savings_evidence::numeric::numeric_savings;
+use crate::savings_evidence::pricing_basis::PricingBasis;
 use crate::savings_evidence::snapshot::{
     CostBreakdown, pricing_basis_from_breakdown, recorded_token_cost,
 };
@@ -35,26 +36,26 @@ pub struct AutoRouterDecision {
     pub savings_baseline_deployment_id: Option<Scalar>,
 }
 
-pub struct AutoRouterSavingsInput<'a> {
-    pub baseline_model: Option<&'a str>,
-    pub selected_model: Option<&'a str>,
-    pub selected_provider: Option<&'a str>,
-    pub usage: &'a RequestUsage,
-    pub selected_info: Option<&'a PricedModel>,
-    pub baseline_info: Option<&'a PricedModel>,
-    pub cost_breakdown: Option<&'a CostBreakdown>,
-    pub baseline_deployment_id: Option<&'a str>,
-    pub selected_deployment_id: Option<&'a str>,
-    pub baseline_usage: Option<&'a RequestUsage>,
+pub struct AutoRouterSavingsInput<'input> {
+    pub baseline_model: Option<&'input str>,
+    pub selected_model: Option<&'input str>,
+    pub selected_provider: Option<&'input str>,
+    pub usage: &'input RequestUsage,
+    pub selected_info: Option<&'input PricedModel>,
+    pub baseline_info: Option<&'input PricedModel>,
+    pub cost_breakdown: Option<&'input CostBreakdown>,
+    pub baseline_deployment_id: Option<&'input str>,
+    pub selected_deployment_id: Option<&'input str>,
+    pub baseline_usage: Option<&'input RequestUsage>,
     pub baseline_provenance: Option<AutoRouterProvenance>,
     pub moment: DateTime<Utc>,
-    pub database: &'a TimeZoneDatabase,
+    pub database: &'input TimeZoneDatabase,
 }
 
-struct ComparisonValues<'a> {
-    baseline: &'a ModelIdentity,
-    selected: &'a ModelIdentity,
-    baseline_prices: &'a Option<PricedModel>,
+struct ComparisonValues<'input> {
+    baseline: &'input ModelIdentity,
+    selected: &'input ModelIdentity,
+    baseline_prices: &'input Option<PricedModel>,
     recorded_selected_cost: Option<Decimal>,
     baseline_cost: Decimal,
 }
@@ -72,53 +73,89 @@ where
     if input.baseline_usage.is_none() && has_cache_buckets(&input.usage.usage) {
         return None;
     }
-    let baseline_prices = match input.baseline_info {
-        Some(priced) => Some(priced.clone()),
-        None => public_price(context, &baseline),
-    };
-    let source = input.baseline_usage.unwrap_or(input.usage);
-    let baseline_usage = baseline_request_usage(
-        source,
-        baseline_prices.as_ref().map(|priced| &priced.record),
-    );
+    let prices = baseline_prices(context, input, &baseline);
     let basis = pricing_basis_from_breakdown(input.cost_breakdown);
-    let baseline_cost = cost_of_usage(
-        context,
-        &CostOfUsageInput {
-            identity: &baseline,
-            usage: &baseline_usage,
-            model_info: baseline_prices.as_ref(),
-            basis: &basis,
-            moment: input.moment,
-            database: input.database,
-        },
-    )?;
+    let baseline_cost = baseline_token_cost(context, input, &baseline, prices.as_ref(), &basis)?;
     let recorded = recorded_token_cost(input.cost_breakdown);
-    let selected_cost = match recorded {
-        Some(cost) => cost,
-        None => cost_of_usage(
-            context,
-            &CostOfUsageInput {
-                identity: &selected,
-                usage: input.usage,
-                model_info: input.selected_info,
-                basis: &basis,
-                moment: input.moment,
-                database: input.database,
-            },
-        )?,
-    };
+    let selected_cost = selected_token_cost(context, input, &selected, recorded, &basis)?;
     if input.baseline_provenance == Some(AutoRouterProvenance::ObservedInitial) {
         let values = ComparisonValues {
             baseline: &baseline,
             selected: &selected,
-            baseline_prices: &baseline_prices,
+            baseline_prices: &prices,
             recorded_selected_cost: recorded,
             baseline_cost,
         };
         return observed_equivalent(context, input, &values).then_some(Decimal::ZERO);
     }
     baseline_cost.checked_sub(selected_cost)
+}
+
+// A supplied baseline table is authoritative; an absent one falls back to the canonical public rates.
+fn baseline_prices<C>(
+    context: &C,
+    input: &AutoRouterSavingsInput<'_>,
+    baseline: &ModelIdentity,
+) -> Option<PricedModel>
+where
+    C: SavingsPricingContext,
+{
+    input.baseline_info.map_or_else(
+        || public_price(context, baseline),
+        |priced| Some(priced.clone()),
+    )
+}
+
+fn baseline_token_cost<C>(
+    context: &C,
+    input: &AutoRouterSavingsInput<'_>,
+    baseline: &ModelIdentity,
+    prices: Option<&PricedModel>,
+    basis: &PricingBasis,
+) -> Option<Decimal>
+where
+    C: SavingsPricingContext,
+{
+    let source = input.baseline_usage.unwrap_or(input.usage);
+    let usage = baseline_request_usage(source, prices.map(|stored| &stored.record));
+    cost_of_usage(
+        context,
+        &CostOfUsageInput {
+            identity: baseline,
+            usage: &usage,
+            model_info: prices,
+            basis,
+            moment: input.moment,
+            database: input.database,
+        },
+    )
+}
+
+// The recorded selected token cost wins; pricing the selected usage is the fallback.
+fn selected_token_cost<C>(
+    context: &C,
+    input: &AutoRouterSavingsInput<'_>,
+    selected: &ModelIdentity,
+    recorded: Option<Decimal>,
+    basis: &PricingBasis,
+) -> Option<Decimal>
+where
+    C: SavingsPricingContext,
+{
+    if let Some(cost) = recorded {
+        return Some(cost);
+    }
+    cost_of_usage(
+        context,
+        &CostOfUsageInput {
+            identity: selected,
+            usage: input.usage,
+            model_info: input.selected_info,
+            basis,
+            moment: input.moment,
+            database: input.database,
+        },
+    )
 }
 
 fn has_cache_buckets(usage: &LoggedUsage) -> bool {
@@ -137,10 +174,10 @@ where
     let Some(baseline_usage) = input.baseline_usage else {
         return false;
     };
-    let selected_prices = match input.selected_info {
-        Some(priced) => Some(priced.record.clone()),
-        None => public_price(context, values.selected).map(|priced| priced.record),
-    };
+    let selected_prices = input.selected_info.map_or_else(
+        || public_price(context, values.selected).map(|supplied| supplied.record),
+        |priced| Some(priced.record.clone()),
+    );
     let same_deployment = input
         .baseline_deployment_id
         .is_some_and(|id| !id.is_empty())
@@ -149,7 +186,7 @@ where
         && values.baseline == values.selected
         && same_deployment
         && same_prices(
-            values.baseline_prices.as_ref().map(|priced| &priced.record),
+            values.baseline_prices.as_ref().map(|stored| &stored.record),
             selected_prices.as_ref(),
         )
         && values
@@ -157,17 +194,17 @@ where
             .is_some_and(|cost| amounts_close(values.baseline_cost, cost))
 }
 
-pub struct AutoRouterRequestInput<'a> {
-    pub model: Option<&'a str>,
-    pub custom_llm_provider: Option<&'a str>,
-    pub routing_decision: Option<&'a AutoRouterDecision>,
-    pub usage: Option<&'a RequestUsage>,
-    pub model_id: Option<&'a str>,
-    pub cost_breakdown: Option<&'a CostBreakdown>,
-    pub baseline_usage: Option<&'a RequestUsage>,
+pub struct AutoRouterRequestInput<'input> {
+    pub model: Option<&'input str>,
+    pub custom_llm_provider: Option<&'input str>,
+    pub routing_decision: Option<&'input AutoRouterDecision>,
+    pub usage: Option<&'input RequestUsage>,
+    pub model_id: Option<&'input str>,
+    pub cost_breakdown: Option<&'input CostBreakdown>,
+    pub baseline_usage: Option<&'input RequestUsage>,
     pub baseline_provenance: Option<AutoRouterProvenance>,
     pub moment: DateTime<Utc>,
-    pub database: &'a TimeZoneDatabase,
+    pub database: &'input TimeZoneDatabase,
 }
 
 // autorouter_savings_for_request: resolve both deployment prices, compute gross and subtract the classifier.
@@ -206,10 +243,10 @@ where
             database: input.database,
         },
     )?;
-    match numeric_savings(decision.classifier_cost.as_ref()) {
-        Some(cost) => gross.checked_sub(cost),
-        None => Some(gross),
-    }
+    let Some(classifier) = numeric_savings(decision.classifier_cost.as_ref()) else {
+        return Some(gross);
+    };
+    gross.checked_sub(classifier)
 }
 
 fn text_value(value: Option<&Scalar>) -> Option<&str> {
