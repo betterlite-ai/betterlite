@@ -10,8 +10,9 @@ use betterlite_router::affinity_claims::AffinityClaims;
 use betterlite_router::affinity_claims::local::LocalPins;
 use betterlite_router::catalog_updates::catalog::DeploymentCatalog;
 use betterlite_router::complexity_placement::params_on_request::{
-    TierTarget, pin_tier_params_onto_request, restore_client_ceiling_no_tier_pins,
+    TierTarget, mark_raw_model_name, pin_tier_params_onto_request, restore_ceiling_without_pin,
 };
+use betterlite_router::complexity_placement::pools::tier_pools;
 use betterlite_router::complexity_placement::{TierChoice, TierPlacement};
 use betterlite_router::context_placement::ContextPlacement;
 use betterlite_router::context_placement::error::PlacementError;
@@ -25,7 +26,7 @@ use betterlite_router::routing_groups::index::RoutingGroupIndex;
 use betterlite_router::routing_value_store::StoreSettings;
 use betterlite_router::tier_definitions::model::TierSet;
 
-use self::world::{deployments, no_provider, tier, tier_set};
+use self::world::{deployments, tier, tier_set};
 use super::wire::{Input, Output, StepInput, StepOutput};
 use crate::router_probes::error::OperationError;
 use crate::router_probes::random::InjectedRandom;
@@ -143,6 +144,7 @@ impl Probe<'_> {
         service: &TierPlacement<'_>,
         random: &mut InjectedRandom<'_>,
     ) -> Result<Output, OperationError> {
+        let no_provider = |_name: &str| -> Option<String> { None };
         let lookup = CatalogLookup {
             catalog: &self.deployments,
             model_group_alias: &self.aliases,
@@ -163,13 +165,16 @@ impl Probe<'_> {
             });
         }
         Ok(Output {
-            tier_pools: service.tier_pools(),
+            tier_pools: tier_pools(service.tiers),
             steps,
         })
     }
 }
 
-fn invalid(error: impl Display) -> OperationError {
+fn invalid<E>(error: E) -> OperationError
+where
+    E: Display,
+{
     OperationError::InvalidRequest {
         message: error.to_string(),
     }
@@ -183,7 +188,7 @@ async fn step_output(
     random: &mut InjectedRandom<'_>,
 ) -> Result<StepOutput, OperationError> {
     let mut kwargs = step.request_kwargs.clone();
-    service.mark_raw_model_name(&mut kwargs);
+    mark_raw_model_name(service.config, &mut kwargs);
     let tier = tier(&step.tier);
     let choice = TierChoice {
         tier: &tier,
@@ -203,7 +208,7 @@ async fn step_output(
     )
     .map_err(invalid)?;
     if !pinned {
-        restore_client_ceiling_no_tier_pins(&mut kwargs);
+        restore_ceiling_without_pin(&mut kwargs);
     }
     Ok(StepOutput {
         model: placed.model,
@@ -241,7 +246,7 @@ pub(super) fn probe(input: &Input) -> Result<Probe<'_>, OperationError> {
                 .unwrap_or(section::DEFAULT_RETURN_RAW_MODEL_NAME),
             max_tokens_from_tier_model: input
                 .max_tokens_from_tier_model
-                .unwrap_or(section::DEFAULT_MAX_TOKENS_FROM_TIER_MODEL),
+                .unwrap_or(section::DEFAULT_MAX_TOKENS_FROM_TIER),
         },
         tiers: tier_set(&input.tiers),
         deployments: deployments(&input.deployments),

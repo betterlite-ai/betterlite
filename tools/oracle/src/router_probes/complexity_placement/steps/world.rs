@@ -60,24 +60,23 @@ pub(super) fn deployments(entries: &[DeploymentInput]) -> DeploymentCatalog {
     catalog
 }
 
-fn text(value: &str) -> Json {
-    Json::Text(value.to_owned())
-}
-
 // the deployment's litellm_params and model_info as the YAML declares them
 fn deployment_spec(entry: &DeploymentInput) -> DeploymentSpec {
     let mut params = JsonObject::new();
     params.insert(
         "model".to_owned(),
-        text(entry.model.as_deref().unwrap_or_default()),
+        Json::Text(entry.model.as_deref().unwrap_or_default().to_owned()),
     );
     if let Some(provider) = &entry.custom_llm_provider {
-        params.insert("custom_llm_provider".to_owned(), text(provider));
+        params.insert(
+            "custom_llm_provider".to_owned(),
+            Json::Text(provider.to_owned()),
+        );
     }
     let allowed: Vec<Json> = entry
         .allowed_openai_params
         .iter()
-        .map(|param| text(param.as_str()))
+        .map(|param| Json::Text(param.to_owned()))
         .collect();
     if !allowed.is_empty() {
         params.insert("allowed_openai_params".to_owned(), Json::List(allowed));
@@ -95,8 +94,4 @@ fn deployment_spec(entry: &DeploymentInput) -> DeploymentSpec {
         model_info,
         extra: JsonObject::new(),
     }
-}
-
-pub(super) const fn no_provider(_name: &str) -> Option<String> {
-    None
 }

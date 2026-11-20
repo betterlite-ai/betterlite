@@ -18,7 +18,9 @@ pub fn params_for_model(
     model: &str,
 ) -> JsonMap {
     let explicit = entry_params(placement.tiers, tier, model);
-    if !placement.config.max_tokens_from_tier_model || has_ceiling(&explicit) {
+    if !placement.config.max_tokens_from_tier_model
+        || explicit.keys().any(|key| CEILING.contains(&key.as_str()))
+    {
         return explicit;
     }
     let Some(ceiling) = placement.context.group_output_ceiling(model) else {
@@ -44,8 +46,4 @@ fn entry_params(set: &TierSet, tier: Option<&Tier>, model: &str) -> JsonMap {
         .iter()
         .map(|(key, value)| (key.clone(), Json::from(value.clone())))
         .collect()
-}
-
-fn has_ceiling(params: &JsonMap) -> bool {
-    params.keys().any(|key| CEILING.contains(&key.as_str()))
 }

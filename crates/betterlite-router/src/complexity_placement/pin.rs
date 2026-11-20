@@ -28,13 +28,23 @@ pub async fn pin_model_for_tier(
     retained_pin: Option<&RetainedPin>,
 ) -> Result<String, TierPlacementError> {
     let selected = selection.model;
-    if !placement.deployment_pin || !contains(selection.candidates, selected) {
+    if !placement.deployment_pin
+        || !selection
+            .candidates
+            .iter()
+            .any(|candidate| candidate == selected)
+    {
         return Ok(selected.to_owned());
     }
     let retained_model = retained_pin
         .filter(|pin| pin.tier.as_deref() == Some(tier.name()))
         .map(|pin| pin.model.as_str());
-    if let Some(retained) = retained_model.filter(|model| contains(selection.candidates, *model)) {
+    if let Some(retained) = retained_model.filter(|model| {
+        selection
+            .candidates
+            .iter()
+            .any(|candidate| candidate == *model)
+    }) {
         restamp_adaptive_choice(request_kwargs, selected, retained);
         return Ok(retained.to_owned());
     }
@@ -67,7 +77,11 @@ pub async fn pin_model_for_tier(
     let Some(pinned) = claimed_model(&claimed.pin) else {
         return Ok(selected.to_owned());
     };
-    if !contains(selection.candidates, pinned) {
+    if !selection
+        .candidates
+        .iter()
+        .any(|candidate| candidate == pinned)
+    {
         return Ok(selected.to_owned());
     }
     restamp_adaptive_choice(request_kwargs, selected, pinned);
@@ -87,10 +101,6 @@ pub fn restamp_adaptive_choice(request_kwargs: &mut JsonMap, old_model: &str, ne
     {
         decision.insert(CHOSEN_MODEL.to_owned(), Json::Text(new_model.to_owned()));
     }
-}
-
-pub(crate) fn contains(candidates: &[String], model: &str) -> bool {
-    candidates.iter().any(|candidate| candidate == model)
 }
 
 // _pin_model_for_tier's winner.get("model"): a dict's model field, never a bare stored string.

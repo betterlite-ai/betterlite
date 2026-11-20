@@ -3,10 +3,12 @@ use rstest::rstest;
 
 use crate::complexity_placement::RetainedPin;
 use crate::complexity_placement::TierChoice;
+use crate::complexity_placement::params::params_for_model;
 use crate::complexity_placement::params_on_request::{
-    TierTarget, pin_tier_params_onto_request, restore_client_ceiling_no_tier_pins,
+    TierTarget, mark_raw_model_name, pin_tier_params_onto_request, restore_ceiling_without_pin,
 };
 use crate::complexity_placement::pin::restamp_adaptive_choice;
+use crate::complexity_placement::pools::{model_for_tier, tier_pools};
 use crate::complexity_scoring::tier::{ComplexityTier, Tier};
 use crate::tier_definitions::model::TierPool;
 
@@ -22,7 +24,7 @@ fn a_tier_pool_draws_by_the_injected_sample() {
     let context = world.context();
     let service = world.service(&context);
     let mut random = ScriptedRng::new(&[HALF]);
-    let chosen = service.model_for_tier(&MEDIUM, &mut random).unwrap();
+    let chosen = model_for_tier(&service, &MEDIUM, &mut random).unwrap();
     assert_eq!(chosen, "b");
     assert_eq!(random.draws, 1);
 }
@@ -34,7 +36,7 @@ fn a_single_tier_model_is_returned_without_a_draw() {
     let context = world.context();
     let service = world.service(&context);
     let mut no_draw = NoDraw;
-    let chosen = service.model_for_tier(&MEDIUM, &mut no_draw).unwrap();
+    let chosen = model_for_tier(&service, &MEDIUM, &mut no_draw).unwrap();
     assert_eq!(chosen, "mid");
 }
 
@@ -45,7 +47,7 @@ fn a_missing_tier_uses_the_default_model() {
     let context = world.context();
     let service = world.service(&context);
     let mut no_draw = NoDraw;
-    let chosen = service.model_for_tier(&MEDIUM, &mut no_draw).unwrap();
+    let chosen = model_for_tier(&service, &MEDIUM, &mut no_draw).unwrap();
     assert_eq!(chosen, "fallback");
 }
 
@@ -57,7 +59,7 @@ fn a_missing_tier_and_default_uses_the_medium_pool() {
     let service = world.service(&context);
     let tier = Tier::BuiltIn(ComplexityTier::Simple);
     let mut no_draw = NoDraw;
-    let chosen = service.model_for_tier(&tier, &mut no_draw).unwrap();
+    let chosen = model_for_tier(&service, &tier, &mut no_draw).unwrap();
     assert_eq!(chosen, "mid");
 }
 
@@ -99,7 +101,7 @@ fn an_explicit_tier_ceiling_keeps_its_own_max_tokens() {
     world.add("mid", "openai/gpt-4o", Some(1000));
     let context = world.context();
     let service = world.service(&context);
-    let params = service.params_for_model(Some(&MEDIUM), "mid");
+    let params = params_for_model(&service, Some(&MEDIUM), "mid");
     assert_eq!(params.get("max_tokens"), Some(&number(7)));
 }
 
@@ -111,7 +113,7 @@ fn the_tier_model_ceiling_can_be_switched_off() {
     world.add("mid", "openai/gpt-4o", Some(1000));
     let context = world.context();
     let service = world.service(&context);
-    let params = service.params_for_model(Some(&MEDIUM), "mid");
+    let params = params_for_model(&service, Some(&MEDIUM), "mid");
     assert!(params.is_empty());
 }
 
@@ -121,7 +123,7 @@ fn a_model_outside_every_tier_still_gets_the_group_ceiling() {
     world.add("drawn", "openai/gpt-4o", Some(500));
     let context = world.context();
     let service = world.service(&context);
-    let params = service.params_for_model(None, "drawn");
+    let params = params_for_model(&service, None, "drawn");
     assert_eq!(params.get("max_tokens"), Some(&number(500)));
 }
 
@@ -270,6 +272,30 @@ fn a_retained_pin_of_another_tier_is_ignored() {
     let retained = RetainedPin {
         model: "b".to_owned(),
         tier: Some("SIMPLE".to_owned()),
+    };
+    let choice = TierChoice {
+        tier: &MEDIUM,
+        allowed_models: None,
+        retained_pin: Some(&retained),
+    };
+    let mut caller = request(&[]);
+    let mut random = ScriptedRng::new(&[0]);
+    let placed = runtime()
+        .block_on(service.place_tier(&choice, &mut caller, &mut random))
+        .unwrap();
+    assert_eq!(placed.model, "a");
+}
+
+#[test]
+fn a_retained_pin_outside_the_candidates_is_ignored() {
+    let mut world = World::new();
+    world.set_pool("MEDIUM", pool(&["a", "b"]));
+    world.deployment_pin = true;
+    let context = world.context();
+    let service = world.service(&context);
+    let retained = RetainedPin {
+        model: "z".to_owned(),
+        tier: Some("MEDIUM".to_owned()),
     };
     let choice = TierChoice {
         tier: &MEDIUM,
@@ -449,7 +475,7 @@ fn a_non_pinning_pass_restores_the_callers_ceiling() {
     let second_pinned =
         pin_tier_params_onto_request(&target, "mid", &request(&[]), &mut caller, false).unwrap();
     assert!(!second_pinned);
-    restore_client_ceiling_no_tier_pins(&mut caller);
+    restore_ceiling_without_pin(&mut caller);
     assert_eq!(caller.get("max_tokens"), Some(&number(99)));
     assert_eq!(
         caller.get("metadata"),
@@ -559,7 +585,7 @@ fn the_raw_model_name_flag_is_stamped_when_configured() {
     let context = world.context();
     let service = world.service(&context);
     let mut caller = request(&[("metadata", Json::Object(request(&[("kept", text("yes"))])))]);
-    service.mark_raw_model_name(&mut caller);
+    mark_raw_model_name(service.config, &mut caller);
     assert_eq!(
         caller.get("metadata"),
         Some(&Json::Object(request(&[
@@ -576,7 +602,7 @@ fn the_raw_model_name_flag_uses_the_litellm_metadata_bucket() {
     let context = world.context();
     let service = world.service(&context);
     let mut caller = request(&[("litellm_metadata", Json::Object(request(&[])))]);
-    service.mark_raw_model_name(&mut caller);
+    mark_raw_model_name(service.config, &mut caller);
     assert_eq!(
         caller.get("litellm_metadata"),
         Some(&Json::Object(request(&[(
@@ -593,7 +619,7 @@ fn the_raw_model_name_flag_is_absent_when_switched_off() {
     let context = world.context();
     let service = world.service(&context);
     let mut caller = request(&[]);
-    service.mark_raw_model_name(&mut caller);
+    mark_raw_model_name(service.config, &mut caller);
     assert!(caller.is_empty());
 }
 
@@ -610,7 +636,7 @@ fn a_stale_false_raw_model_name_flag_is_overwritten() {
             Json::Bool(false),
         )])),
     )]);
-    service.mark_raw_model_name(&mut caller);
+    mark_raw_model_name(service.config, &mut caller);
     assert_eq!(
         caller.get("metadata"),
         Some(&Json::Object(request(&[(
@@ -627,7 +653,7 @@ fn a_non_object_metadata_bucket_is_left_alone() {
     let context = world.context();
     let service = world.service(&context);
     let mut caller = request(&[("metadata", text("not a bucket"))]);
-    service.mark_raw_model_name(&mut caller);
+    mark_raw_model_name(service.config, &mut caller);
     assert_eq!(caller.get("metadata"), Some(&text("not a bucket")));
 }
 
@@ -638,7 +664,7 @@ fn the_tier_pools_view_names_every_configured_tier() {
     world.set_pool("MEDIUM", pool(&["mid-a", "mid-b"]));
     let context = world.context();
     let service = world.service(&context);
-    let pools = service.tier_pools();
+    let pools = tier_pools(service.tiers);
     assert_eq!(pools.get("SIMPLE"), Some(&vec!["mini".to_owned()]));
     assert_eq!(
         pools.get("MEDIUM"),
@@ -655,7 +681,7 @@ fn a_named_tier_reads_its_own_pool() {
     let service = world.service(&context);
     let tier = Tier::Named("frontier".to_owned());
     let mut random = ScriptedRng::new(&[THREE_QUARTERS]);
-    let chosen = service.model_for_tier(&tier, &mut random).unwrap();
+    let chosen = model_for_tier(&service, &tier, &mut random).unwrap();
     assert_eq!(chosen, "big-b");
 }
 
@@ -683,8 +709,6 @@ fn a_tier_resolves_in_litellm_order(
     let context = world.context();
     let service = world.service(&context);
     let mut no_draw = NoDraw;
-    let chosen = service
-        .model_for_tier(&Tier::BuiltIn(tier), &mut no_draw)
-        .unwrap();
+    let chosen = model_for_tier(&service, &Tier::BuiltIn(tier), &mut no_draw).unwrap();
     assert_eq!(chosen, expected);
 }

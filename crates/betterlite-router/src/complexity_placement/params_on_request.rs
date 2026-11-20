@@ -52,7 +52,7 @@ where
     );
     let surface = ceiling_under_surface_name(accepted.params, responses_call);
     drop_client_carriers(request_kwargs, &surface);
-    let pinned = surface.keys().any(|key| is_ceiling(key));
+    let pinned = surface.keys().any(|key| CEILING.contains(&key.as_str()));
     for (key, value) in &surface {
         request_kwargs.insert(key.clone(), value.clone());
     }
@@ -60,7 +60,7 @@ where
 }
 
 // Router._restore_client_ceiling_no_tier_pins: when this pass pins no ceiling, hand back the caller's own carriers.
-pub fn restore_client_ceiling_no_tier_pins(request_kwargs: &mut JsonMap) {
+pub fn restore_ceiling_without_pin(request_kwargs: &mut JsonMap) {
     let stamped =
         [METADATA, LITELLM_METADATA]
             .into_iter()
@@ -129,7 +129,7 @@ fn ceiling_under_surface_name(tier_params: JsonMap, responses_call: bool) -> Jso
     };
     let mut collapsed: JsonMap = tier_params
         .iter()
-        .filter(|(key, _)| !is_ceiling(key.as_str()))
+        .filter(|(key, _)| !CEILING.contains(&key.as_str()))
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect();
     if let Some(value) = tier_params.get(*carried) {
@@ -140,7 +140,10 @@ fn ceiling_under_surface_name(tier_params: JsonMap, responses_call: bool) -> Jso
 
 // Router._drop_client_carriers_a_tier_pin_supersedes: the request's own carrier of a pinned setting would outrank the tier's.
 fn drop_client_carriers(request_kwargs: &mut JsonMap, tier_params: &JsonMap) {
-    if tier_params.keys().any(|key| is_ceiling(key)) {
+    if tier_params
+        .keys()
+        .any(|key| CEILING.contains(&key.as_str()))
+    {
         stamp_client_ceiling(request_kwargs);
     }
     if !tier_params.contains_key(REASONING_EFFORT) {
@@ -187,8 +190,4 @@ fn pop_effort_from_nested_carrier(request_kwargs: &mut JsonMap, carrier: &str) {
     } else {
         request_kwargs.insert(carrier.to_owned(), Json::Object(sanitized));
     }
-}
-
-fn is_ceiling(key: &str) -> bool {
-    CEILING.contains(&key)
 }

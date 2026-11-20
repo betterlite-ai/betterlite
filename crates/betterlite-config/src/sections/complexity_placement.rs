@@ -12,7 +12,7 @@ const MAX_TOKENS_FROM_TIER_MODEL_KEY: &str = "max_tokens_from_tier_model";
 const ENV_MARKER: &str = "os.environ/";
 
 pub const DEFAULT_RETURN_RAW_MODEL_NAME: bool = false;
-pub const DEFAULT_MAX_TOKENS_FROM_TIER_MODEL: bool = true;
+pub const DEFAULT_MAX_TOKENS_FROM_TIER: bool = true;
 
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
@@ -57,7 +57,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             return_raw_model_name: DEFAULT_RETURN_RAW_MODEL_NAME,
-            max_tokens_from_tier_model: DEFAULT_MAX_TOKENS_FROM_TIER_MODEL,
+            max_tokens_from_tier_model: DEFAULT_MAX_TOKENS_FROM_TIER,
         }
     }
 }
@@ -106,7 +106,7 @@ impl RawRouterConfig {
                 &format!("{prefix}.{MAX_TOKENS_FROM_TIER_MODEL_KEY}"),
                 lookup,
             )?
-            .unwrap_or(DEFAULT_MAX_TOKENS_FROM_TIER_MODEL),
+            .unwrap_or(DEFAULT_MAX_TOKENS_FROM_TIER),
         })
     }
 }

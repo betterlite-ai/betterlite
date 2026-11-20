@@ -8,11 +8,11 @@ use crate::affinity_claims::pin::{AffinityPin, StoredPin};
 use crate::complexity_placement::Selection;
 use crate::complexity_placement::error::TierPlacementError;
 use crate::complexity_placement::params_on_request::{
-    TierTarget, pin_tier_params_onto_request, restore_client_ceiling_no_tier_pins,
+    TierTarget, pin_tier_params_onto_request, restore_ceiling_without_pin,
 };
-use crate::complexity_placement::pin::{claimed_model, contains, tier_pin_cache_key};
+use crate::complexity_placement::pin::{claimed_model, pin_model_for_tier, tier_pin_cache_key};
 use crate::complexity_placement::pools::{
-    draw_index, entry_model, pick_from_names, pick_from_pool,
+    draw_index, entry_model, model_for_tier, pick_from_names, pick_from_pool,
 };
 use crate::complexity_scoring::tier::{ComplexityTier, Tier};
 use crate::model_catalog_lookup::alias::AliasTarget;
@@ -24,8 +24,7 @@ use super::support::{
     entry, number, pool, request, runtime, single, text,
 };
 
-// floor(2^53 / 3), the first draw past it, floor(2 * 2^53 / 3) and the draw below it, and 2^52 - 1:
-// the samples where the scaled product reaches the next index, rounding up at the halfway point
+// floor(2^53 / 3) and one past it, floor(2 * 2^53 / 3) and one below, 2^52 - 1: where rounding reaches the next index
 const THIRD: u64 = 3_002_399_751_580_330;
 const THIRD_PLUS_ONE: u64 = 3_002_399_751_580_331;
 const TWO_THIRDS: u64 = 6_004_799_503_160_661;
@@ -58,7 +57,7 @@ fn a_two_model_pool_switches_at_half(#[case] sample: u64, #[case] expected: &str
     let context = world.context();
     let service = world.service(&context);
     let mut random = ScriptedRng::new(&[sample]);
-    let chosen = service.model_for_tier(&MEDIUM, &mut random).unwrap();
+    let chosen = model_for_tier(&service, &MEDIUM, &mut random).unwrap();
     assert_eq!(chosen, expected);
 }
 
@@ -79,7 +78,7 @@ fn a_one_entry_list_still_draws() {
     let context = world.context();
     let service = world.service(&context);
     let mut random = ScriptedRng::new(&[LAST_SAMPLE]);
-    let chosen = service.model_for_tier(&MEDIUM, &mut random).unwrap();
+    let chosen = model_for_tier(&service, &MEDIUM, &mut random).unwrap();
     assert_eq!(chosen, "only");
     assert_eq!(random.draws, 1);
 }
@@ -98,7 +97,7 @@ fn a_missing_tier_without_a_default_names_the_tier() {
     let context = world.context();
     let service = world.service(&context);
     let mut no_draw = NoDraw;
-    let error = service.model_for_tier(&MEDIUM, &mut no_draw).unwrap_err();
+    let error = model_for_tier(&service, &MEDIUM, &mut no_draw).unwrap_err();
     assert_eq!(
         error.to_string(),
         "No model configured for tier MEDIUM and no default_model set"
@@ -114,7 +113,7 @@ fn an_empty_medium_pool_is_reported_under_medium() {
     let service = world.service(&context);
     let tier = Tier::BuiltIn(ComplexityTier::Simple);
     let mut no_draw = NoDraw;
-    let error = service.model_for_tier(&tier, &mut no_draw).unwrap_err();
+    let error = model_for_tier(&service, &tier, &mut no_draw).unwrap_err();
     assert_eq!(error.to_string(), "Empty model pool for tier MEDIUM");
 }
 
@@ -126,7 +125,7 @@ fn an_empty_default_model_is_used_as_given() {
     let context = world.context();
     let service = world.service(&context);
     let mut no_draw = NoDraw;
-    let chosen = service.model_for_tier(&MEDIUM, &mut no_draw).unwrap();
+    let chosen = model_for_tier(&service, &MEDIUM, &mut no_draw).unwrap();
     assert_eq!(chosen, "");
 }
 
@@ -138,7 +137,7 @@ fn a_lowercase_pool_key_is_not_the_built_in_tier() {
     let service = world.service(&context);
     let tier = Tier::BuiltIn(ComplexityTier::Simple);
     let mut no_draw = NoDraw;
-    let error = service.model_for_tier(&tier, &mut no_draw).unwrap_err();
+    let error = model_for_tier(&service, &tier, &mut no_draw).unwrap_err();
     assert_eq!(
         error.to_string(),
         "No model configured for tier SIMPLE and no default_model set"
@@ -152,7 +151,7 @@ fn a_single_entry_with_an_empty_name_is_returned_as_given() {
     let context = world.context();
     let service = world.service(&context);
     let mut no_draw = NoDraw;
-    let chosen = service.model_for_tier(&MEDIUM, &mut no_draw).unwrap();
+    let chosen = model_for_tier(&service, &MEDIUM, &mut no_draw).unwrap();
     assert_eq!(chosen, "");
 }
 
@@ -190,7 +189,13 @@ fn a_model_outside_the_candidates_writes_no_pin() {
         Json::Object(request(&[("session_id", text("s1"))])),
     )]);
     let returned = runtime()
-        .block_on(service.pin_model_for_tier(&MEDIUM, &selection, &mut caller, None))
+        .block_on(pin_model_for_tier(
+            &service,
+            &MEDIUM,
+            &selection,
+            &mut caller,
+            None,
+        ))
         .unwrap();
     assert_eq!(returned, "zzz");
     let key = tier_pin_cache_key(&service, &MEDIUM, "s1", None, None).unwrap();
@@ -214,7 +219,13 @@ fn a_session_without_a_caller_key_still_pins() {
         Json::Object(request(&[("session_id", text("s1"))])),
     )]);
     let returned = runtime()
-        .block_on(service.pin_model_for_tier(&MEDIUM, &selection, &mut caller, None))
+        .block_on(pin_model_for_tier(
+            &service,
+            &MEDIUM,
+            &selection,
+            &mut caller,
+            None,
+        ))
         .unwrap();
     assert_eq!(returned, "a");
     let key = tier_pin_cache_key(&service, &MEDIUM, "s1", None, None).unwrap();
@@ -492,7 +503,7 @@ fn a_restore_takes_the_three_carriers_as_integers() {
             Json::Object(request(&[("_client_output_ceiling", stamp)])),
         ),
     ]);
-    restore_client_ceiling_no_tier_pins(&mut caller);
+    restore_ceiling_without_pin(&mut caller);
     assert_eq!(caller.get("max_tokens"), Some(&number(99)));
     assert_eq!(caller.get("max_completion_tokens"), Some(&number(7)));
     assert_eq!(caller.get("max_output_tokens"), None);
@@ -516,7 +527,7 @@ fn a_restore_reads_metadata_before_litellm_metadata() {
             )])),
         ),
     ]);
-    restore_client_ceiling_no_tier_pins(&mut caller);
+    restore_ceiling_without_pin(&mut caller);
     assert_eq!(caller.get("max_tokens"), Some(&number(5)));
 }
 
@@ -536,7 +547,7 @@ fn a_restore_ignores_a_non_object_stamp() {
         ),
         ("max_tokens", number(1)),
     ]);
-    restore_client_ceiling_no_tier_pins(&mut caller);
+    restore_ceiling_without_pin(&mut caller);
     assert_eq!(caller.get("max_tokens"), Some(&number(1)));
 }
 
@@ -546,7 +557,7 @@ fn a_restore_without_a_stamp_leaves_the_carriers() {
         ("metadata", Json::Object(request(&[("kept", text("yes"))]))),
         ("max_tokens", number(1)),
     ]);
-    restore_client_ceiling_no_tier_pins(&mut caller);
+    restore_ceiling_without_pin(&mut caller);
     assert_eq!(caller.get("max_tokens"), Some(&number(1)));
 }
 
@@ -655,10 +666,31 @@ fn claimed_model_reads_only_a_text_model_field() {
 }
 
 #[test]
-fn contains_needs_the_whole_name() {
+fn a_prefix_of_a_candidate_is_not_a_candidate() {
+    let mut world = World::new();
+    world.set_pool("MEDIUM", pool(&["model-a"]));
+    world.deployment_pin = true;
+    let context = world.context();
+    let service = world.service(&context);
     let candidates = vec!["model-a".to_owned()];
-    assert!(contains(&candidates, "model-a"));
-    assert!(!contains(&candidates, "model"));
-    assert!(!contains(&candidates, "model-a-2"));
-    assert!(!contains(&[], "model-a"));
+    let selection = Selection {
+        model: "model",
+        candidates: &candidates,
+    };
+    let mut caller = request(&[(
+        "metadata",
+        Json::Object(request(&[("session_id", text("s1"))])),
+    )]);
+    let returned = runtime()
+        .block_on(pin_model_for_tier(
+            &service,
+            &MEDIUM,
+            &selection,
+            &mut caller,
+            None,
+        ))
+        .unwrap();
+    assert_eq!(returned, "model");
+    let key = tier_pin_cache_key(&service, &MEDIUM, "s1", None, None).unwrap();
+    assert_eq!(world.claims.local.read(&key).unwrap(), None);
 }

@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use betterlite_config::sections::complexity_placement as section;
 use rand::Rng;
 
@@ -61,41 +59,6 @@ pub struct TierPlacement<'deps> {
 }
 
 impl TierPlacement<'_> {
-    // _tier_pools: every configured tier as its model names, a single value as a one-model list.
-    #[must_use]
-    pub fn tier_pools(&self) -> BTreeMap<String, Vec<String>> {
-        pools::tier_pools(self.tiers)
-    }
-
-    // get_model_for_tier: the tier's own pool, then the default model, then MEDIUM.
-    pub fn model_for_tier<R>(
-        &self,
-        tier: &Tier,
-        random: &mut R,
-    ) -> Result<String, TierPlacementError>
-    where
-        R: Rng + ?Sized,
-    {
-        pools::model_for_tier(self, tier, random)
-    }
-
-    // _litellm_params_for_model: the tier entry's params, plus the model's output ceiling as max_tokens.
-    #[must_use]
-    pub fn params_for_model(&self, tier: Option<&Tier>, model: &str) -> JsonMap {
-        params::params_for_model(self, tier, model)
-    }
-
-    // _pin_model_for_tier: a session's tier pin holds one model over the pool's own draw.
-    pub async fn pin_model_for_tier(
-        &self,
-        tier: &Tier,
-        selection: &Selection<'_>,
-        request_kwargs: &mut JsonMap,
-        retained_pin: Option<&RetainedPin>,
-    ) -> Result<String, TierPlacementError> {
-        pin::pin_model_for_tier(self, tier, selection, request_kwargs, retained_pin).await
-    }
-
     // _pick_model_for_tier without plugins: draw or keep the pin, then read the placed model's tier params.
     pub async fn place_tier<R>(
         &self,
@@ -118,27 +81,30 @@ impl TierPlacement<'_> {
                     .pools
                     .get(tier_key)
                     .map_or_else(Vec::new, pools::model_names);
-                (self.model_for_tier(choice.tier, random)?, candidates)
+                (
+                    pools::model_for_tier(self, choice.tier, random)?,
+                    candidates,
+                )
             }
         };
         let selection = Selection {
             model: &selected,
             candidates: &candidates,
         };
-        let model = self
-            .pin_model_for_tier(choice.tier, &selection, request_kwargs, choice.retained_pin)
-            .await?;
-        let params = self.params_for_model(Some(choice.tier), &model);
+        let model = pin::pin_model_for_tier(
+            self,
+            choice.tier,
+            &selection,
+            request_kwargs,
+            choice.retained_pin,
+        )
+        .await?;
+        let tier_params = params::params_for_model(self, Some(choice.tier), &model);
         Ok(PlacedTier {
             tier: tier_key.to_owned(),
             model,
             candidates,
-            params,
+            params: tier_params,
         })
-    }
-
-    // async_pre_routing_hook's raw-model-name marker: keep the resolved model name in the response.
-    pub fn mark_raw_model_name(&self, request_kwargs: &mut JsonMap) {
-        params_on_request::mark_raw_model_name(self.config, request_kwargs);
     }
 }

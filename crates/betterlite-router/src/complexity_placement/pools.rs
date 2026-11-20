@@ -95,8 +95,7 @@ where
     Ok(name.clone())
 }
 
-// Python's int(random() * len(seq)): one 53-bit draw, scaled and truncated toward zero. A draw past
-// the last entry fails in the caller's own lookup, so the two compare the same way.
+// Python's int(random() * len(seq)): one 53-bit draw, truncated; a draw past the end fails in the caller's lookup.
 pub(crate) fn draw_index<R>(count: usize, random: &mut R) -> Result<usize, TierPlacementError>
 where
     R: Rng + ?Sized,
