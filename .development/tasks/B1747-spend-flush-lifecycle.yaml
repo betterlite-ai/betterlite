@@ -20,8 +20,8 @@ description: >-
   and SPEND_LOG_QUEUE_POLL_INTERVAL=2.0 from an immutable config/environment snapshot.
   The monitor checks B1749 parked logs and B1744's complete queue census before waiting.
   A nonempty queue is processed even below threshold; threshold resets the interval to
-  its base, otherwise multiply it by 1.5 up to 30 seconds. Empty work still flushes B1699
-  baseline accounting. A coalesced explicit flush signal resets backoff; monitor errors
+  its base, otherwise multiply it by 1.5 up to 30 seconds. Empty work would also flush the
+  baseline accounting; that call is later work, and B1699 adds it to this monitor. A coalesced explicit flush signal resets backoff; monitor errors
   log and sleep with increased backoff. Preserve finite zero/negative setting behavior
   with cooperative yielding, and reject nonfinite timing at config load with a named
   setting error rather than creating an unbounded or unschedulable timer.

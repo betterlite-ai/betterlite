@@ -1,0 +1,13 @@
+kind: helper
+name: guardrail-snapshot-non-mutating-guardrail-modes
+call:
+  b9999:
+    function: mutating_ran
+    metadata:
+      standard_logging_guardrail_information:
+        - guardrail_mode: during_call
+        - guardrail_mode: [post_call, logging_only]
+        - guardrail_mode: []
+        - guardrail_mode: [during_mcp_call, post_mcp_call, realtime_input_transcription]
+env: {}
+compare: {ignore: []}

@@ -23,6 +23,8 @@ description: >-
 
 
   HTTP oracle cases in tools/oracle/cases/mcp-llm-tools/ compare the booted proxies. They set up the upstream MCP server as an mcp_servers entry named alpha with transport http and url "{{upstream}}/__mcp_fixture/alpha", whose scripted replies carry B9943's `$mcp_request_id` marker so the mock copies each request's id into them, with the model replies on the same scripted upstream in the order LiteLLM sends them. Chat cases post to /v1/chat/completions with model mcp-model (openai/gpt-mcp-upstream on the mock) and the tool `{type: mcp, server_label: alpha, server_url: "litellm_proxy/mcp/alpha", require_approval: never}`: chat-auto-execute, chat-auto-execute-stream, chat-approval-required (require_approval omitted, so one model call and no tools/call), chat-tool-error (tools/call answers isError) and chat-unknown-server (server_url litellm_proxy/mcp/missing, so no MCP request is made). Responses cases post to /v1/responses with the same tool: responses-auto-execute, responses-auto-execute-stream and responses-approval-required. Transport cases call POST /mcp-rest/tools/call (B8626's route) with name alpha-echo through the production runtime: rest-call-redirect-same-origin (the upstream answers the POST with 307 and a relative Location /__mcp_fixture/alpha-moved, followed), rest-call-redirect-cross-origin (307 to http://127.0.0.1:9/mcp, not followed, no request reaches it) and rest-call-upstream-500. Each case checks status, content-type and the body; generated ids and timestamps are ignored at their pointers only. Add one http_case corpus seed per case.
+
+  Playground MCP tools. The dashboard playground's chat request turns MCP selection into tools of type "mcp" with server_label "litellm" and server_url "litellm_proxy/mcp" for all servers, "litellm_proxy/mcp/<alias or server_name>" with allowed_tools for one server, or server_label <toolset name> and "litellm_proxy/mcp/<encoded toolset name>" for a toolset, all with require_approval "never". Add tools/oracle/cases/ui/playground/chat-mcp-tools.yaml: one POST /v1/chat/completions per form against a mock MCP server, with B860's Postgres fixture with B9942's bootstrap. B9694 proves the playground's other inference bodies.
 scope:
   paths:
     - crates/betterlite-server/Cargo.toml
@@ -37,6 +39,7 @@ scope:
     - Cargo.lock
     - tools/oracle/cases/mcp-llm-tools/**
     - tools/oracle/fuzz/corpus/http_case/mcp-llm-tools-*
+    - tools/oracle/cases/ui/playground/chat-mcp-tools.yaml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5258-L5300
@@ -72,6 +75,8 @@ dod:
     proof: [case-files, oracle]
   - text: The new HTTP transcripts replay through the existing HTTP-case decoder.
     proof: [http-corpus]
+  - text: "The playground's chat MCP tool forms (all servers, one server with allowed_tools, a toolset) match LiteLLM through the booted proxy."
+    proof: [oracle]
 checks:
   optional: []
   commands:
@@ -102,6 +107,7 @@ oracle_cases:
   - tools/oracle/cases/mcp-llm-tools/rest-call-redirect-same-origin.yaml
   - tools/oracle/cases/mcp-llm-tools/rest-call-redirect-cross-origin.yaml
   - tools/oracle/cases/mcp-llm-tools/rest-call-upstream-500.yaml
+  - tools/oracle/cases/ui/playground/chat-mcp-tools.yaml
 deviations: []
 out_of_scope:
   - "litellm/responses/mcp/chat_completions_handler.py: B956 owns _add_mcp_metadata_to_response L24-L82 and acompletion_with_mcp L85-L327, B957 owns L328-L651."
@@ -116,6 +122,7 @@ pitfalls:
   - "The chat stream sends mcp_list_tools on the first chunk and mcp_tool_calls and mcp_call_results on the initial stream's final chunk, before the follow-up chunks."
   - "Build McpLlmTools from McpState::shared each request; never open an MCP client or a runtime of its own, or the upstream calls lose B9654's capture and the shutdown tracker."
   - "post_call_failure_hook is skipped when the caller has no admitted principal (user_api_key_auth None), so a master-key-less test must still pass a principal to see the hook."
+  - "Chat MCP tools use the litellm_proxy/mcp pseudo-URL but Responses MCP tools use the absolute proxy URL, so each form needs its own case."
 review_level: security
 budget:
   max_changed_lines: 1500

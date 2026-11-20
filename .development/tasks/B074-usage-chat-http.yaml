@@ -160,7 +160,7 @@ out_of_scope:
   - "B3098 and B3099 already own export and cache-activity HTTP cases; B8661 owns the analytics and gateway-activity mounts and their deferred HTTP cases."
   - "B9270 owns daily usage fixture schema/seeding; B860 owns fixture lifecycle and B9942 owns Prisma generation."
   - "B005/B8271 own idle-ping timing and stream wrapping; B089 owns loading litellm_settings.sse_keepalive_ping_interval_seconds and B8673 passes it to the route."
-  - "B8675 backs ProxyUrls with CustomUrls; B7323's description naming B074 for that agent-card wiring is stale."
+  - "B4785 backs ProxyUrls with CustomUrls; B7323's description naming B074 for that agent-card wiring is stale."
 pitfalls:
   - A model_list api_base does not redirect this route's direct SDK call, so the mock address belongs in OPENAI_API_BASE.
   - The client tool event echoes a forged user_id even when the database query correctly substitutes the caller's id, so inspect the follow-up model request's summary to detect a leak.
