@@ -1,0 +1,24 @@
+task: B816
+deviations:
+  - what: >-
+      object_permissions::decode_object_permission rejects input over 1048576 bytes
+      or nested deeper than 64 containers with a typed DecodeError. LiteLLM calls
+      json.loads on the request field without a byte or depth bound.
+    why: >-
+      The decoder reads an outside string on the update and create paths, so an
+      unbounded parse lets one request spend arbitrary memory and stack. The
+      accepted records are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L324-L332
+  - what: >-
+      A mcp_tool_permissions value that is already a JSON string stays that
+      string when the row is prepared or created. LiteLLM runs safe_dumps over
+      it, so the stored value becomes a JSON string holding JSON text. The
+      next update parses the column and _mcp_tool_permission_entries fails on
+      the double-encoded value, losing the stored grants.
+    why: >-
+      Every string that reaches serialization has already passed the ambiguity
+      check, which parses it as dict[str, list[str] | None], so keeping it stores
+      the same grants LiteLLM meant to store. Only the second encoding is gone,
+      which is what makes later reads and updates work.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L121-L128
+kept_bugs: []
