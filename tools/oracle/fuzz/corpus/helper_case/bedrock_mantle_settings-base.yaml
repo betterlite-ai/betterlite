@@ -1,0 +1,10 @@
+kind: helper
+name: bedrock-mantle-settings-base
+call:
+  bedrock_mantle_settings:
+    standalone_mantle_base:
+      cases:
+        - {model: openai.gpt-oss-120b, inject_signer: true}
+        - {aws_region_name: eu-west-3}
+env: {}
+compare: {ignore: []}

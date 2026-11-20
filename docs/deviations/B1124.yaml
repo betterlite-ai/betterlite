@@ -1,0 +1,9 @@
+task: B1124
+deviations:
+  - what: 'A buffered-client-frame parse is bounded at 16 MiB; a larger frame returns a decode error instead of being parsed.'
+    why: 'LiteLLM calls json.loads without a size limit. Betterlite parses through the shared bounded decoder so one frame cannot force an unbounded allocation; the WebSocket transport already caps frames below this bound, and a frame past the 10 MiB queue cap would be warn-dropped anyway.'
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L106-L108'
+  - what: 'A frame that Python json.loads decodes but serde_json refuses (a lone surrogate escape or a bare NaN, Infinity or -Infinity token) is treated as a non-audio frame: should_buffer answers false and buffer stores it unclassified.'
+    why: 'The shared decoder cannot represent such values, so the frame type cannot be read; LiteLLM reads the type and buffers or forwards the frame as audio. B1110 carries the same decoder boundary for backend sends.'
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L596-L605'
+kept_bugs: []

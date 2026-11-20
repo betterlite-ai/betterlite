@@ -43,6 +43,7 @@ pub mod gcs_logger;
 pub mod gcs_mock;
 pub mod gcs_pubsub;
 pub mod generic_api_logger;
+pub mod guardrail_snapshot;
 pub mod hanging_requests;
 pub mod helicone;
 pub mod helpers;

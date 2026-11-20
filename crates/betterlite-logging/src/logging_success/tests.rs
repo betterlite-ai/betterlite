@@ -11,6 +11,7 @@ mod pass_through;
 mod privacy;
 mod proxy_logger;
 mod redaction;
+mod request_slot;
 mod response_shapes;
 mod support;
 
