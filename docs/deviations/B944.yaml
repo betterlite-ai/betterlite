@@ -1,0 +1,25 @@
+task: B944
+deviations:
+  - what: >-
+      A non-finite timeout is refused with a shape error naming the field; LiteLLM copies any non-None float
+      into call_kwargs, so Infinity or NaN reaches the model call unchanged.
+    why: >-
+      JSON has no non-finite numbers and docs/compatibility.md makes the output standard JSON; a working
+      setup sends a finite timeout, which both sides copy unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2831-L2832
+kept_bugs:
+  - what: >-
+      A websocket send that fails while writing an error frame is swallowed, so no error frame reaches the
+      client and the connection continues into B945's own failure handling.
+    why: >-
+      LiteLLM catches every exception from send_text and the task keeps that on purpose; a working client
+      treats a dead socket as terminal, so the lost frame changes nothing it can act on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2577-L2583
+  - what: >-
+      A chunk whose model dump fails to serialize is dropped with a debug log, and a warmup acknowledgement
+      drops only that event before trying the next status.
+    why: >-
+      LiteLLM returns None from _serialize_chunk on any exception and the warmup loop continues, so the
+      client sees a stream missing one frame rather than an error; a setup that survives a broken frame
+      depends on the stream continuing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2562-L2575

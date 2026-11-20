@@ -19,10 +19,10 @@ description: >-
   default false; only a true flag and B1739's successful partition probe allow ensure/drop.
   Always follow partition work with row deletion for DEFAULT and straddling partitions.
   SpendLogs uses (request_id,startTime)/startTime; SpendLogToolIndex uses
-  (request_id,tool_name)/start_time. Session cleanup first calls B1699 retire_before with
-  remaining timeout and batch size, warning on failure, then prunes AutoRouterSession
+  (request_id,tool_name)/start_time. Session cleanup prunes AutoRouterSession
   (api_key,session_id,router_name) and AutoRouterUserSession
-  (user_id,api_key,session_id,router_name), both by last_turn_at. HealthCheckTable uses
+  (user_id,api_key,session_id,router_name), both by last_turn_at. The baseline retire_before call that LiteLLM runs first is later work: B1699
+  adds it at the start of session cleanup, with remaining timeout and batch size and a warning on failure. HealthCheckTable uses
   health_check_id/checked_at. DailyTagSpend uses id/date and deletes ISO days strictly
   before the horizon's UTC calendar day, keeping that day and lifetime tag counters.
   Prefix all table names with LiteLLM_. Do not wrap different tables in one transaction.
