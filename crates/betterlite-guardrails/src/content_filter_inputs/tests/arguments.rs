@@ -413,6 +413,26 @@ fn tool_call_scalar_past_the_parse_limit_hits_the_cap() {
 }
 
 #[test]
+fn tool_call_unquoted_scalar_past_the_parse_limit_hits_the_cap() {
+    let fixture = Fixture::empty();
+    let source = fixture.source();
+    let filter = ArgumentFilter {
+        source: &source,
+        max_depth: 127,
+    };
+    let mut arguments = "[".repeat(128);
+    arguments.push('1');
+    arguments.push_str(&"]".repeat(128));
+    let mut calls = vec![tool_call(text(&arguments))];
+    let mut detections = Vec::new();
+    let error = scan_tool_call_arguments(&filter, &mut calls, &mut detections).unwrap_err();
+    let GuardrailFailure::HttpObject { status, .. } = error.into_failure() else {
+        panic!("an unquoted scalar past the parse limit must raise the depth detail");
+    };
+    assert_eq!(status, 400);
+}
+
+#[test]
 fn tool_call_deep_empty_container_stays_at_the_cap() {
     let fixture = Fixture::empty();
     let source = fixture.source();
