@@ -1,6 +1,7 @@
 use betterlite_context::media_config_selection::text_to_speech::TextToSpeechConfigTag;
 use betterlite_error::error::ErrorClass;
 use betterlite_openai::api::speech_provider_contract::SpeechVoice;
+use rstest::rstest;
 use secrecy::SecretString;
 use serde_json::Value;
 
@@ -123,28 +124,30 @@ fn elevenlabs_drops_a_non_dict_query_and_rejects_blank_voices() {
     );
 }
 
-#[test]
-fn minimax_selects_the_first_truthy_voice() {
+#[rstest]
+#[case(r#"{"voice_id": "v1", "id": "v2"}"#, Some("v1"))]
+#[case(r#"{"id": "v2", "name": "v3"}"#, Some("v2"))]
+#[case(r#"{"name": "v3"}"#, Some("v3"))]
+#[case(r#"{"voice_id": "", "id": "v2"}"#, Some("v2"))]
+#[case("{}", None)]
+fn minimax_selects_the_first_truthy_voice(#[case] source: &str, #[case] expected: Option<&str>) {
     let harness = branch_harness(Configs::absent(), ScriptedOperations::ok(b"audio"));
-    for (source, expected) in [
-        (r#"{"voice_id": "v1", "id": "v2"}"#, Some("v1")),
-        (r#"{"id": "v2", "name": "v3"}"#, Some("v2")),
-        (r#"{"name": "v3"}"#, Some("v3")),
-        (r#"{"voice_id": "", "id": "v2"}"#, Some("v2")),
-        ("{}", None),
-    ] {
-        let native = SpeechCall {
-            voice: dict_voice(source),
-            ..base_call("minimax/speech-02-hd")
-        };
-        harness.run_ok(&native);
-        let executed = harness.operations.take();
-        assert_eq!(
-            executed[0].voice,
-            expected.map(|name| SpeechVoice::Name(name.to_owned())),
-            "voice {source}"
-        );
-    }
+    let native = SpeechCall {
+        voice: dict_voice(source),
+        ..base_call("minimax/speech-02-hd")
+    };
+    harness.run_ok(&native);
+    let executed = harness.operations.take();
+    assert_eq!(
+        executed[0].voice,
+        expected.map(|name| SpeechVoice::Name(name.to_owned())),
+        "voice {source}"
+    );
+}
+
+#[test]
+fn minimax_keeps_a_string_voice() {
+    let harness = branch_harness(Configs::absent(), ScriptedOperations::ok(b"audio"));
     let native = SpeechCall {
         voice: named_voice("string-voice"),
         ..base_call("minimax/speech-02-hd")
@@ -156,21 +159,26 @@ fn minimax_selects_the_first_truthy_voice() {
     );
 }
 
-#[test]
-fn mistral_and_edenai_take_only_string_voices() {
+#[rstest]
+#[case("mistral/mistral-small")]
+#[case("edenai/text-to-speech")]
+fn mistral_and_edenai_take_only_string_voices(#[case] model: &str) {
     let harness = branch_harness(Configs::absent(), ScriptedOperations::ok(b"audio"));
-    for model in ["mistral/mistral-small", "edenai/text-to-speech"] {
-        let native = SpeechCall {
-            voice: dict_voice(r#"{"voice": "alice"}"#),
-            ..base_call(model)
-        };
-        harness.run_ok(&native);
-        assert_eq!(
-            harness.operations.take()[0].voice,
-            None,
-            "voice for {model}"
-        );
-    }
+    let native = SpeechCall {
+        voice: dict_voice(r#"{"voice": "alice"}"#),
+        ..base_call(model)
+    };
+    harness.run_ok(&native);
+    assert_eq!(
+        harness.operations.take()[0].voice,
+        None,
+        "voice for {model}"
+    );
+}
+
+#[test]
+fn mistral_keeps_a_string_voice() {
+    let harness = branch_harness(Configs::absent(), ScriptedOperations::ok(b"audio"));
     let native = SpeechCall {
         voice: named_voice("alice"),
         ..base_call("mistral/mistral-small")
