@@ -68,7 +68,7 @@ where
             stream_completed: false,
             client_disconnected: false,
         };
-        let items = ports
+        let wrapped = ports
             .hooks
             .wrap_iterator(items, &outcome.key, &outcome.request_data);
         let fast_path = !ports.hooks.needs_per_chunk_hook() && ports.cost.is_none();
@@ -85,7 +85,7 @@ where
                 delivered: false,
                 sealed: false,
             },
-            items,
+            items: wrapped,
             fast_path,
             str_so_far: String::new(),
         }
@@ -97,11 +97,11 @@ where
             Some(Ok(item)) => item,
             Some(Err(failure)) => return Step::Failed(self.fail(failure).await),
         };
-        let item = match self.prepare(item).await {
-            Ok(item) => item,
+        let prepared = match self.prepare(item).await {
+            Ok(prepared) => prepared,
             Err(failure) => return Step::Failed(self.fail(failure).await),
         };
-        self.write(item)
+        self.write(prepared)
     }
 
     pub(super) fn finish(&mut self, completed: bool) {
@@ -124,12 +124,12 @@ where
             }
             None => Ok(item),
         };
-        let item = hooked?;
-        append_str_so_far(&mut self.str_so_far, &item);
+        let hooked_item = hooked?;
+        append_str_so_far(&mut self.str_so_far, &hooked_item);
         let Some(cost) = &self.cost else {
-            return Ok(item);
+            return Ok(hooked_item);
         };
-        Ok(cost.inject(item, request_model(&self.guard)))
+        Ok(cost.inject(hooked_item, request_model(&self.guard)))
     }
 
     fn write(&mut self, item: StreamItem) -> Step<F::Out> {

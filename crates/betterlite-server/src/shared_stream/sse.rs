@@ -18,8 +18,8 @@ use super::tail::{
     ANTHROPIC_PING_CHUNK, SSE_STREAM_START_TAIL, advance_sse_tail, seal_open_sse_frame,
 };
 use crate::sse_data_generator::types::StreamHooks;
-use crate::stream_chunks::StreamItem;
 use crate::stream_chunks::restamp::should_return_raw_model_name;
+use crate::stream_chunks::{StreamItem, frames::sse_data_frame};
 
 // The messages flavor hands the route an Anthropic error frame as its own variant while nothing was written before it
 #[derive(Debug)]
@@ -72,9 +72,7 @@ impl ChunkFraming for SseFraming {
             None => chunk,
         };
         let written = match processed {
-            MessagesStreamChunk::Event(event) => {
-                format!("data: {}\n\n", dumps(&event)).into_bytes()
-            }
+            MessagesStreamChunk::Event(event) => sse_data_frame(&dumps(&event)).into_bytes(),
             MessagesStreamChunk::Bytes(bytes) => bytes,
             MessagesStreamChunk::Text(text) => text.into_bytes(),
         };

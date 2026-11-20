@@ -15,7 +15,7 @@ use crate::sse_error_frames::{ErrorFields, SseFailure, sse_error_payload};
 #[must_use]
 pub fn failure_exception(failure: &StreamFailure, redactor: Option<&Redactor>) -> ProxyException {
     let message = match redactor {
-        Some(redactor) => redactor.redact_internal_details(&failure.message),
+        Some(active) => active.redact_internal_details(&failure.message),
         None => failure.message.clone(),
     };
     let (status, body) = sse_error_payload(&shaped_failure(failure, message));

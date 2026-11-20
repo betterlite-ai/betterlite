@@ -71,8 +71,8 @@ where
                 match drive.pump().await {
                     Step::Write(out) => yield Ok(out),
                     Step::End(tail) => {
-                        if let Some(tail) = tail {
-                            yield Ok(tail);
+                        if let Some(remaining) = tail {
+                            yield Ok(remaining);
                         }
                         drive.finish(true);
                         return;
