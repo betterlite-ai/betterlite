@@ -130,18 +130,20 @@ fn safety_stage_input(
     let context = authenticated
         .cloned()
         .ok_or(AuthenticationFailure::Missing)?;
+    let content_type = request
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let slot = request
+        .extensions()
+        .get::<Arc<ServerState>>()
+        .map(|state| state.request_body_safety.clone());
     Ok(RequestBodySafetyStageInput {
         context,
-        content_type: request
-            .headers()
-            .get(header::CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok())
-            .map(str::to_owned),
+        content_type,
         body: body.cloned().unwrap_or_default(),
-        slot: request
-            .extensions()
-            .get::<Arc<ServerState>>()
-            .map(|state| state.request_body_safety.clone()),
+        slot,
     })
 }
 
