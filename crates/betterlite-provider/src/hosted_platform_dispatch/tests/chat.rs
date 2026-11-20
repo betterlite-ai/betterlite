@@ -375,8 +375,15 @@ async fn groq_resolves_the_key_chain_in_order(
     );
 }
 
+#[rstest]
+#[case::absent_request_headers(None, "global")]
+#[case::empty_request_headers(Some(BTreeMap::new()), "global")]
+#[case::present_request_headers(Some(headers(&[("x-scope", "request")])), "request")]
 #[tokio::test]
-async fn groq_falls_back_from_the_request_headers_to_the_global_ones() {
+async fn groq_falls_back_from_the_request_headers_to_the_global_ones(
+    #[case] request: Option<BTreeMap<String, String>>,
+    #[case] expected: &str,
+) {
     let redactor = redactor();
     let (mut state, prepost) = logging(&redactor);
     let mut log = CallLogging {
@@ -386,41 +393,14 @@ async fn groq_falls_back_from_the_request_headers_to_the_global_ones() {
     let mut fixture = Fixture::new();
     fixture.provider = String::from("groq");
     fixture.settings.headers = Some(headers(&[("x-scope", "global")]));
+    fixture.headers = request;
     let handler = Recorder::succeeding();
     dispatch_chat(ChatConfigTag::GroqChat, &fixture, &handler, &mut log)
         .await
         .expect("the groq arm answers");
     assert_eq!(
         handler.first().headers,
-        Some(headers(&[("x-scope", "global")]))
-    );
-    fixture.headers = Some(BTreeMap::new());
-    let empty_headers_handler = Recorder::succeeding();
-    dispatch_chat(
-        ChatConfigTag::GroqChat,
-        &fixture,
-        &empty_headers_handler,
-        &mut log,
-    )
-    .await
-    .expect("the groq arm answers");
-    assert_eq!(
-        empty_headers_handler.first().headers,
-        Some(headers(&[("x-scope", "global")]))
-    );
-    fixture.headers = Some(headers(&[("x-scope", "request")]));
-    let request_headers_handler = Recorder::succeeding();
-    dispatch_chat(
-        ChatConfigTag::GroqChat,
-        &fixture,
-        &request_headers_handler,
-        &mut log,
-    )
-    .await
-    .expect("the groq arm answers");
-    assert_eq!(
-        request_headers_handler.first().headers,
-        Some(headers(&[("x-scope", "request")]))
+        Some(headers(&[("x-scope", expected)]))
     );
 }
 
