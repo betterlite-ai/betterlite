@@ -96,7 +96,7 @@ fn force_false_vad(root: &mut IndexMap<String, Json>) -> bool {
     let Some(Json::Object(session)) = root.get_mut("session") else {
         return false;
     };
-    let flat = force_flat_detection(session);
+    let flat = force_detection(session);
     let nested = force_nested_detection(session);
     match (flat, nested) {
         (None, None) => {
@@ -110,21 +110,21 @@ fn force_false_vad(root: &mut IndexMap<String, Json>) -> bool {
     }
 }
 
-// A flat turn_detection is forced false; None means the key is absent or null, so this makes no default
-fn force_flat_detection(session: &mut IndexMap<String, Json>) -> Option<bool> {
-    let present = session
+// One turn_detection entry: an absent or null key makes no default, any other shape is replaced by the disable
+fn force_detection(container: &mut IndexMap<String, Json>) -> Option<bool> {
+    let present = container
         .get("turn_detection")
         .is_some_and(|value| !matches!(value, Json::Null));
     if !present {
         return None;
     }
-    if !matches!(session.get("turn_detection"), Some(Json::Object(_))) {
-        session.insert("turn_detection".to_owned(), Json::Object(IndexMap::new()));
+    if !matches!(container.get("turn_detection"), Some(Json::Object(_))) {
+        container.insert("turn_detection".to_owned(), Json::Object(IndexMap::new()));
     }
-    let Some(Json::Object(flat)) = session.get_mut("turn_detection") else {
+    let Some(Json::Object(detection)) = container.get_mut("turn_detection") else {
         return Some(false);
     };
-    Some(force_false(flat))
+    Some(force_false(detection))
 }
 
 // The nested audio.input turn_detection follows the flat one; None means this session has no nested turn detection
@@ -135,19 +135,7 @@ fn force_nested_detection(session: &mut IndexMap<String, Json>) -> Option<bool> 
     let Some(Json::Object(input)) = audio.get_mut("input") else {
         return None;
     };
-    let present = input
-        .get("turn_detection")
-        .is_some_and(|value| !matches!(value, Json::Null));
-    if !present {
-        return None;
-    }
-    if !matches!(input.get("turn_detection"), Some(Json::Object(_))) {
-        input.insert("turn_detection".to_owned(), Json::Object(IndexMap::new()));
-    }
-    let Some(Json::Object(nested)) = input.get_mut("turn_detection") else {
-        return Some(false);
-    };
-    Some(force_false(nested))
+    force_detection(input)
 }
 
 fn force_false(detection: &mut IndexMap<String, Json>) -> bool {
