@@ -48,7 +48,7 @@ impl Helper for Op {
                     .map_err(|error| support::value_error(error.to_string()))?;
                 Ok(json!({"ttl": compute_per_user_token_ttl(&server, value.expires_in)}))
             }
-            Input::FlowClassify(value) => flow::classify(value),
+            Input::FlowClassify(value) => Ok(flow::classify(value)),
             Input::FlowBackfill(value) => support::block_on(flow::flow_backfill(value)),
             Input::IssuerBackfill(value) => support::block_on(issuer::issuer_backfill(value)),
             Input::AuthResolve(value) => support::block_on(auth::resolve(value)),

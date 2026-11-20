@@ -106,6 +106,7 @@ impl FakeFlowTable {
             .filter(|state| state.flow.is_none())
             .map(|state| state.row.server_id.clone())
             .collect();
+        drop(rows);
         ids.sort();
         ids
     }
@@ -170,7 +171,7 @@ fn stamp_view(stamp: &StampCall) -> Value {
     json!({"flow": flow_name(stamp.flow), "server_ids": ids})
 }
 
-pub(super) fn classify(input: &ClassifyInput) -> Result<Value, Box<HelperError>> {
+pub(super) fn classify(input: &ClassifyInput) -> Value {
     let results = input
         .signals
         .iter()
@@ -188,7 +189,7 @@ pub(super) fn classify(input: &ClassifyInput) -> Result<Value, Box<HelperError>>
             })
         })
         .collect::<Vec<_>>();
-    Ok(json!({"results": results}))
+    json!({"results": results})
 }
 
 pub(super) async fn flow_backfill(input: &FlowBackfillInput) -> Result<Value, Box<HelperError>> {

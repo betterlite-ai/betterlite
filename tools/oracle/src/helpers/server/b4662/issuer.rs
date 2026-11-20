@@ -96,11 +96,14 @@ impl FakeIssuerTable {
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         let updated = self.updated.lock().unwrap_or_else(PoisonError::into_inner);
-        let failed: BTreeSet<&String> = attempted
+        let failed: BTreeSet<String> = attempted
             .iter()
             .filter(|server_id| !updated.contains(*server_id))
+            .cloned()
             .collect();
-        failed.into_iter().cloned().collect()
+        drop(updated);
+        drop(attempted);
+        failed.into_iter().collect()
     }
 }
 

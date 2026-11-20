@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::iter::repeat_with;
 use std::sync::Arc;
 
 use futures_util::future::try_join_all;
@@ -191,7 +192,7 @@ async fn concurrent_tokens(
     calls: usize,
     concurrent: bool,
 ) -> Result<Vec<Option<String>>, Box<HelperError>> {
-    let futures = (0..calls).map(|_call| call.cached());
+    let futures = repeat_with(|| call.cached()).take(calls);
     if concurrent {
         return try_join_all(futures).await;
     }

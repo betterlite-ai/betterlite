@@ -74,7 +74,7 @@ fn override_of(spec: Option<&AuthOverrideSpec>) -> Option<McpAuthOverride> {
 fn auth_value(value: Option<&McpAuthValue>) -> Value {
     match value {
         None => Value::Null,
-        Some(McpAuthValue::Text(text)) => Value::String(text.expose_secret().clone()),
+        Some(McpAuthValue::Text(text)) => Value::String(text.expose_secret().to_owned()),
         Some(McpAuthValue::Headers(headers)) => json!(
             headers
                 .iter()
