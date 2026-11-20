@@ -25,13 +25,13 @@ fn answer(input: Value) -> Value {
     <Op as Helper>::run(&decode(input)).expect("the helper answers")
 }
 
-fn seal_of(writes: Value) -> Value {
+fn seal_of(writes: &Value) -> Value {
     answer(json!({ "kind": "seal", "writes": writes }))
 }
 
 #[test]
 fn the_seal_folds_the_start_tail_over_each_write() {
-    let shaped = seal_of(json!(["data: {\"x\": 1}\n\n", "data: {"]));
+    let shaped = seal_of(&json!(["data: {\"x\": 1}\n\n", "data: {"]));
     assert_eq!(
         shaped,
         json!({
@@ -47,7 +47,7 @@ fn the_seal_folds_the_start_tail_over_each_write() {
 
 #[test]
 fn a_delimiter_split_across_writes_seals_empty() {
-    let shaped = seal_of(json!(["data: x\n", "\n"]));
+    let shaped = seal_of(&json!(["data: x\n", "\n"]));
     assert_eq!(
         shaped,
         json!({
@@ -63,7 +63,7 @@ fn a_delimiter_split_across_writes_seals_empty() {
 
 #[test]
 fn an_empty_write_keeps_the_tail() {
-    let shaped = seal_of(json!(["", "data: {\"x\": 1}\n\n", ""]));
+    let shaped = seal_of(&json!(["", "data: {\"x\": 1}\n\n", ""]));
     assert_eq!(
         shaped,
         json!({
@@ -75,7 +75,7 @@ fn an_empty_write_keeps_the_tail() {
 
 #[test]
 fn a_multibyte_tail_is_the_last_four_written_bytes() {
-    let shaped = seal_of(json!(["ééé"]));
+    let shaped = seal_of(&json!(["\u{e9}\u{e9}\u{e9}"]));
     assert_eq!(
         shaped,
         json!({
@@ -130,7 +130,7 @@ fn a_non_true_or_missing_flag_keeps_the_requested_model() {
 fn a_failure_becomes_an_error_body_and_an_unsealed_frame() {
     let shaped = answer(json!({
         "kind": "failure",
-        "failure": {"message": "slow down", "type": null, "param": null, "status_code": 429},
+        "failure": {"message": "slow down", "type": null, "param": null, "status_code": 429_u16},
     }));
     assert_eq!(
         shaped,
@@ -141,7 +141,7 @@ fn a_failure_becomes_an_error_body_and_an_unsealed_frame() {
                 "param": null,
                 "code": "429",
             },
-            "frame_status": 429,
+            "frame_status": 429_u16,
             "frame_body": "event: error\ndata: {\"type\": \"error\", \"error\": {\"type\": \"rate_limit_error\", \"message\": \"slow down\"}}\n\n",
         })
     );
@@ -155,7 +155,7 @@ fn the_router_code_remap_leaves_the_error_type_alone() {
             "message": "No deployments available for selected model",
             "type": null,
             "param": null,
-            "status_code": 500,
+            "status_code": 500_u16,
         },
     }));
     assert_eq!(
@@ -167,7 +167,7 @@ fn the_router_code_remap_leaves_the_error_type_alone() {
                 "param": null,
                 "code": "429",
             },
-            "frame_status": 429,
+            "frame_status": 429_u16,
             "frame_body": "event: error\ndata: {\"type\": \"error\", \"error\": {\"type\": \"rate_limit_error\", \"message\": \"No deployments available for selected model\"}}\n\n",
         })
     );
@@ -188,7 +188,7 @@ fn a_failure_without_a_status_is_a_500_api_error_frame() {
                 "param": null,
                 "code": "500",
             },
-            "frame_status": 500,
+            "frame_status": 500_u16,
             "frame_body": "event: error\ndata: {\"type\": \"error\", \"error\": {\"type\": \"api_error\", \"message\": \"gone\"}}\n\n",
         })
     );
@@ -202,7 +202,7 @@ fn a_failure_message_reaches_the_client_redacted() {
             "message": "Bearer abcdefghij1234567890",
             "type": "RateLimitError",
             "param": "messages",
-            "status_code": 400,
+            "status_code": 400_u16,
         },
     }));
     assert_eq!(
@@ -214,7 +214,7 @@ fn a_failure_message_reaches_the_client_redacted() {
                 "param": "messages",
                 "code": "400",
             },
-            "frame_status": 400,
+            "frame_status": 400_u16,
             "frame_body": "event: error\ndata: {\"type\": \"error\", \"error\": {\"type\": \"invalid_request_error\", \"message\": \"REDACTED\"}}\n\n",
         })
     );

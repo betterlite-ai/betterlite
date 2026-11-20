@@ -105,14 +105,13 @@ fn seal_value(writes: &[String]) -> Value {
 fn failure_value(spec: &FailureSpec) -> HelperResult {
     let failure = StreamFailure {
         message: spec.message.clone(),
-        error_type: match &spec.error_type {
-            Some(text) => FailureType::Text(text.clone()),
-            None => FailureType::Missing,
-        },
-        param: match &spec.param {
-            Some(text) => FailureParam::Text(text.clone()),
-            None => FailureParam::Missing,
-        },
+        error_type: spec
+            .error_type
+            .as_ref()
+            .map_or(FailureType::Missing, |text| FailureType::Text(text.clone())),
+        param: spec.param.as_ref().map_or(FailureParam::Missing, |text| {
+            FailureParam::Text(text.clone())
+        }),
         status_code: spec.status_code,
         code: None,
         body: None,
@@ -121,19 +120,16 @@ fn failure_value(spec: &FailureSpec) -> HelperResult {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).or_config_error()?;
     let exception = failure_exception(&failure, Some(&redactor));
     let mut framing = SseFraming::new(None, DEFAULT_LIMITS);
-    let frame = framing.frame_failure(&exception).map_err(|abort| {
+    let Emitted::AnthropicError(typed) = framing.frame_failure(&exception).map_err(|abort| {
         helper_error(format!(
             "the error frame could not be built: {} with {}",
             abort.status, abort.detail
         ))
-    })?;
-    let (status, body) = match frame {
-        Emitted::AnthropicError(frame) => (frame.status_code, frame.body),
-        Emitted::Frame(_) => {
-            return Err(helper_error(String::from(
-                "the start tail must seal an Anthropic error frame",
-            )));
-        }
+    })?
+    else {
+        return Err(helper_error(String::from(
+            "the start tail must seal an Anthropic error frame",
+        )));
     };
     Ok(json!({
         "error": {
@@ -142,7 +138,7 @@ fn failure_value(spec: &FailureSpec) -> HelperResult {
             "param": exception.param,
             "code": exception.code,
         },
-        "frame_status": status,
-        "frame_body": body,
+        "frame_status": typed.status_code,
+        "frame_body": typed.body,
     }))
 }
