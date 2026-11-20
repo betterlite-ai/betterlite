@@ -1,0 +1,18 @@
+kind: helper
+name: delete-transport-error
+call:
+  b3365:
+    operation: delete
+    asynchronous: false
+    container_id: cntr_1
+    api_key: sk-test
+    api_base: https://api.example/v1
+    extra_headers: {}
+    extra_query: {}
+    reply:
+      status: 200
+      headers: {}
+      body: '{"id":"cntr_1","object":"container.deleted","deleted":true}'
+    failure: timeout
+env: {}
+compare: {ignore: []}
