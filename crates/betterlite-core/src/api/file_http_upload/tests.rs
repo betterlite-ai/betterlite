@@ -678,9 +678,7 @@ async fn two_step_upload() {
         seen[0].headers.get("api_key").expect("the initial key"),
         "sk-manus"
     );
-    // the caller's timeout reaches both steps, as LiteLLM passes it to each request
     assert_eq!(seen[0].timeout, Some(Duration::from_secs(30)));
-    // the second request carries only upload_request headers, plus httpx's octet-stream default
     assert_eq!(seen[1].method, Method::PUT);
     assert_eq!(seen[1].url, "http://uploads.example.test/manus/1");
     assert_eq!(seen[1].body, vec![b"{\"row\":1}\n".to_vec()]);
@@ -693,7 +691,6 @@ async fn two_step_upload() {
     );
     assert_eq!(seen[1].headers.len(), 1);
     assert_eq!(seen[1].timeout, Some(Duration::from_secs(30)));
-    // the truthy response body is kept for the transform
     let saved = field(field(&result, "params"), "initial_file_response");
     assert_eq!(field(saved, "extra"), &Json::Bool(true));
 }

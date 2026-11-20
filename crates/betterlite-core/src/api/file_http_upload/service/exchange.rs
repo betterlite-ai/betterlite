@@ -208,14 +208,14 @@ where
         headers: HeaderMap,
         body: UploadBody,
     ) -> Result<Reply, UploadError> {
-        let headers = match &body {
+        let sent_headers = match &body {
             UploadBody::Bytes(_) => default_content_type(headers),
             UploadBody::Multipart { .. } | UploadBody::Blocks(_) => headers,
         };
         let request = UploadRequest {
             method: method.clone(),
             url: request_url(url)?,
-            headers,
+            headers: sent_headers,
             body,
             timeout: self.timeout,
         };
