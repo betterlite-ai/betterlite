@@ -27,6 +27,7 @@ use betterlite_openai::api::rerank_contracts::records::{RerankDocument, RerankRe
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
+use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Number;
 
@@ -804,37 +805,33 @@ fn the_logger_gets_the_call_user() {
     assert_eq!(logging.user.as_deref(), Some("u-1"));
 }
 
-#[test]
-fn every_provider_slug_selects_its_config() {
-    let cases = [
-        ("azure_ai", SelectedConfig::AzureAi),
-        ("hosted_vllm", SelectedConfig::HostedVllm),
-        ("huggingface", SelectedConfig::HuggingFace),
-        ("deepinfra", SelectedConfig::Deepinfra),
-        ("vertex_ai", SelectedConfig::VertexAi),
-        ("fireworks_ai", SelectedConfig::FireworksAi),
-        ("watsonx", SelectedConfig::Watsonx),
-        ("dashscope", SelectedConfig::Dashscope),
-        ("qwencloud", SelectedConfig::Qwencloud),
-        ("qwen_ai_platform", SelectedConfig::QwenAiPlatform),
-        ("openai", SelectedConfig::Cohere),
-    ];
-    for (slug, expected) in cases {
-        let identity = ProviderIdentity::Custom(slug.to_owned());
-        assert_eq!(
-            super::selection::selected_config(&identity, "rerank-v1", None, &[]),
-            expected,
-            "{slug}"
-        );
-    }
-    let nvidia = ProviderIdentity::Custom(String::from("nvidia_nim"));
+#[rstest]
+#[case::azure_ai("azure_ai", "rerank-v1", SelectedConfig::AzureAi)]
+#[case::hosted_vllm("hosted_vllm", "rerank-v1", SelectedConfig::HostedVllm)]
+#[case::huggingface("huggingface", "rerank-v1", SelectedConfig::HuggingFace)]
+#[case::deepinfra("deepinfra", "rerank-v1", SelectedConfig::Deepinfra)]
+#[case::vertex_ai("vertex_ai", "rerank-v1", SelectedConfig::VertexAi)]
+#[case::fireworks_ai("fireworks_ai", "rerank-v1", SelectedConfig::FireworksAi)]
+#[case::watsonx("watsonx", "rerank-v1", SelectedConfig::Watsonx)]
+#[case::dashscope("dashscope", "rerank-v1", SelectedConfig::Dashscope)]
+#[case::qwencloud("qwencloud", "rerank-v1", SelectedConfig::Qwencloud)]
+#[case::qwen_ai_platform("qwen_ai_platform", "rerank-v1", SelectedConfig::QwenAiPlatform)]
+#[case::nvidia_retrieval("nvidia_nim", "rerank-v1", SelectedConfig::NvidiaRetrieval)]
+#[case::nvidia_ranking(
+    "nvidia_nim",
+    "ranking/nvidia/rerank-qa",
+    SelectedConfig::NvidiaRanking
+)]
+#[case::unknown_falls_back("openai", "rerank-v1", SelectedConfig::Cohere)]
+fn every_provider_slug_selects_its_config(
+    #[case] slug: &str,
+    #[case] model: &str,
+    #[case] expected: SelectedConfig,
+) {
+    let identity = ProviderIdentity::Custom(slug.to_owned());
     assert_eq!(
-        super::selection::selected_config(&nvidia, "rerank-v1", None, &[]),
-        SelectedConfig::NvidiaRetrieval
-    );
-    assert_eq!(
-        super::selection::selected_config(&nvidia, "ranking/nvidia/rerank-qa", None, &[]),
-        SelectedConfig::NvidiaRanking
+        super::selection::selected_config(&identity, model, None, &[]),
+        expected
     );
 }
 
