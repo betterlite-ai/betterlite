@@ -46,7 +46,7 @@ async fn dynamic_params_land_in_the_body_without_content_or_source() {
     );
     assert_eq!(field_of(&bodies[0], "source"), text("INPUT"));
     assert_eq!(
-        transport.authorizations(),
+        transport.header_values("authorization"),
         vec![Some("Bearer sk-test".to_owned())]
     );
 }

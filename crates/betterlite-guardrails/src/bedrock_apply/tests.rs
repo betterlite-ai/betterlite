@@ -138,14 +138,11 @@ impl Scripted {
         sent.iter().map(body_of).collect()
     }
 
-    fn authorizations(&self) -> Vec<Option<String>> {
+    fn header_values(&self, name: &str) -> Vec<Option<String>> {
         let sent = self.sent.lock().unwrap_or_else(PoisonError::into_inner);
-        sent.iter().map(authorization_of).collect()
-    }
-
-    fn dates(&self) -> Vec<Option<String>> {
-        let sent = self.sent.lock().unwrap_or_else(PoisonError::into_inner);
-        sent.iter().map(date_of).collect()
+        sent.iter()
+            .map(|request| header_of(request, name))
+            .collect()
     }
 }
 
@@ -158,18 +155,10 @@ fn body_of(request: &OutboundRequest) -> Json {
     }
 }
 
-fn authorization_of(request: &OutboundRequest) -> Option<String> {
+fn header_of(request: &OutboundRequest, name: &str) -> Option<String> {
     request
         .headers
-        .get("authorization")
-        .and_then(|value| value.to_str().ok())
-        .map(str::to_owned)
-}
-
-fn date_of(request: &OutboundRequest) -> Option<String> {
-    request
-        .headers
-        .get("x-amz-date")
+        .get(name)
         .and_then(|value| value.to_str().ok())
         .map(str::to_owned)
 }

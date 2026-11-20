@@ -35,7 +35,11 @@ async fn every_send_is_signed_with_the_clock_at_that_moment() {
     )
     .await;
     drop(outcome.expect("both batches pass"));
-    let stamps: Vec<String> = transport.dates().into_iter().flatten().collect();
+    let stamps: Vec<String> = transport
+        .header_values("x-amz-date")
+        .into_iter()
+        .flatten()
+        .collect();
     assert_eq!(stamps.len(), 3);
     assert_ne!(stamps[0], stamps[1]);
     assert_ne!(stamps[1], stamps[2]);
