@@ -106,10 +106,6 @@ impl ScriptedLists {
             .insert(key.to_owned(), reply);
     }
 
-    fn script_pipeline(&self, replies: Vec<BufferReply>) {
-        *self.pipeline.lock().unwrap_or_else(PoisonError::into_inner) = Some(replies);
-    }
-
     fn pushed(&self) -> Vec<String> {
         self.pushed
             .lock()
@@ -176,7 +172,10 @@ fn script_replies(lists: &ScriptedLists, input: &Input) {
     }
     if let Some(step) = &input.pipeline {
         let replies = step.replies.iter().map(Reply::buffer).collect();
-        lists.script_pipeline(replies);
+        *lists
+            .pipeline
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(replies);
     }
 }
 

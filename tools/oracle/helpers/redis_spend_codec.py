@@ -2,13 +2,9 @@ import asyncio
 from collections.abc import Sequence
 from datetime import datetime
 from typing import Final, Literal, NotRequired, TypeAlias, TypedDict
-from unittest.mock import patch
 
+import litellm.constants
 from litellm.caching.redis_cache import RedisCache
-from litellm.constants import (
-    REDIS_DAILY_TAG_SPEND_UPDATE_BUFFER_KEY,
-    REDIS_SPEND_LOGS_BUFFER_KEY,
-)
 from litellm.proxy import proxy_server
 from litellm.proxy.db.db_transaction_queue.redis_update_buffer import RedisUpdateBuffer
 from litellm.types.caching import RedisPipelineLpopOperation
@@ -83,7 +79,7 @@ def reply_value(reply: Reply) -> str | list[str] | None:
     return reply_items(reply)
 
 
-# A pipelined pop is typed list[str] | None, so a scripted scalar fails the drain the way betterlite's typed reply does.
+# A pipelined pop is typed list[str] | None, so a scripted scalar fails the drain.
 def pipeline_reply(reply: Reply) -> list[str] | None:
     kind = reply["kind"]
     if kind == "missing":
@@ -152,10 +148,10 @@ def scripted_pops(data: Input) -> dict[str, Reply]:
     pops: dict[str, Reply] = {}
     drain = data.get("drain")
     if drain is not None:
-        pops[REDIS_SPEND_LOGS_BUFFER_KEY] = drain["reply"]
+        pops[litellm.constants.REDIS_SPEND_LOGS_BUFFER_KEY] = drain["reply"]
     tags = data.get("tags")
     if tags is not None:
-        pops[REDIS_DAILY_TAG_SPEND_UPDATE_BUFFER_KEY] = tags["reply"]
+        pops[litellm.constants.REDIS_DAILY_TAG_SPEND_UPDATE_BUFFER_KEY] = tags["reply"]
     return pops
 
 
@@ -176,7 +172,7 @@ async def drained(buffer: RedisUpdateBuffer) -> JsonValue:
         rows = await buffer.get_spend_logs_from_redis_buffer(LIMIT)
     except (AttributeError, KeyError, TypeError, ValueError):
         return INVALID
-    return JSON.validate_python(list(rows))
+    return [JSON.validate_python(row) for row in rows]
 
 
 async def pipelined(buffer: RedisUpdateBuffer) -> JsonValue:
@@ -186,7 +182,9 @@ async def pipelined(buffer: RedisUpdateBuffer) -> JsonValue:
         )
     except (AttributeError, KeyError, TypeError, ValueError):
         return INVALID
-    window_value: JsonValue = None if window is None else JSON.validate_python(list(window))
+    window_value: JsonValue = None
+    if window is not None:
+        window_value = [JSON.validate_python(entry) for entry in window]
     slots: dict[str, JsonValue] = {
         "entity": JSON.validate_python(entity),
         "daily_user": JSON.validate_python(daily_user),
@@ -228,5 +226,8 @@ def run(input_value: Input) -> JsonValue:
     redis = ScriptedRedis(scripted_pops(input_value), scripted_pipeline(input_value))
     buffer = RedisUpdateBuffer(redis if input_value["attached"] else None)
     settings: dict[str, bool] = {"use_redis_transaction_buffer": input_value["enabled"]}
-    with patch.object(proxy_server, "general_settings", settings):
+    proxy_server.general_settings = settings
+    try:
         return asyncio.run(scenario(input_value, buffer, redis))
+    finally:
+        settings.clear()
