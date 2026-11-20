@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use rstest::rstest;
 use rust_decimal::Decimal;
+use tokio::time::timeout;
 
 use super::support::{
     FakeBatch, FakeCache, FakeError, FakeRows, Logs, LookupRecord, RedisAnswer, SetAnswer,
@@ -374,6 +375,43 @@ async fn local_increment_same_lock() {
         .increment_in_memory(&cache, "spend:key:t", Decimal::ONE)
         .await;
     failed.unwrap_err();
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_local_increment_waits_for_an_active_reseed() {
+    let fake_rows = FakeRows::with_row(spend_row("2.5"));
+    fake_rows.hold_reads.store(true, Ordering::Relaxed);
+    let rows = Arc::new(fake_rows);
+    let counter = reseed_with(Some(Arc::clone(&rows)), services(25), 5.0);
+    let cache = FakeCache::new(false);
+    let batch = FakeBatch::new(None);
+    let reseed_task = counter.coalesced(&cache, &batch, "spend:key:t", false);
+    tokio::pin!(reseed_task);
+    assert!(
+        timeout(Duration::from_millis(10), reseed_task.as_mut())
+            .await
+            .is_err(),
+        "the reseed parks inside the row read while it owns the key"
+    );
+    let mut increment =
+        Box::pin(counter.increment_in_memory(&cache, "spend:key:t", decimal("1.5")));
+    assert!(
+        timeout(Duration::from_millis(10), increment.as_mut())
+            .await
+            .is_err(),
+        "a local increment cannot precede the active reseed"
+    );
+    assert!(cache.increments().is_empty());
+    rows.read_release.notify_waiters();
+    let reseeded = timeout(Duration::from_secs(1), reseed_task)
+        .await
+        .expect("the reseed finishes");
+    assert_eq!(answered(reseeded), Some(decimal("2.5")));
+    let incremented = timeout(Duration::from_secs(1), increment)
+        .await
+        .expect("the increment runs after the reseed");
+    assert!(matches!(incremented, Ok(Some(_))));
+    assert_eq!(cache.increments().get("spend:key:t"), Some(&decimal("1.5")));
 }
 
 #[tokio::test]

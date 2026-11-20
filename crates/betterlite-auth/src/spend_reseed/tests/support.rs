@@ -23,6 +23,7 @@ use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides
 use betterlite_redis::redis_live_client::LiveClientFactory;
 use chrono::{DateTime, FixedOffset, NaiveDateTime, TimeZone as _, Utc};
 use rust_decimal::Decimal;
+use tokio::sync::{Notify, Semaphore};
 use tokio::time::sleep;
 use tokio_util::task::TaskTracker;
 use tracing::Event;
@@ -33,7 +34,7 @@ use tracing_subscriber::layer::{Context, SubscriberExt as _};
 use crate::budget_primitives::window_start::DurationParser;
 use crate::model_budget_limiter::clock::BudgetClock;
 use crate::spend_counter_batch::batch::{CounterValue, SpendCounterBatchError};
-use crate::spend_reseed::cache::{ActiveSpendBatch, ReseedCache};
+use crate::spend_reseed::cache::{ActiveSpendBatch, ReseedCache, WindowReseedCache};
 use crate::spend_reseed::locks::LockRegistry;
 use crate::spend_reseed::reseed::SpendCounterReseed;
 use crate::spend_reseed::rows::{
@@ -129,7 +130,6 @@ impl From<SpendRowLookup<'_>> for LookupRecord {
     }
 }
 
-#[derive(Default)]
 pub(crate) struct FakeRows {
     pub(crate) row: Mutex<Option<SpendRow>>,
     pub(crate) window: Mutex<Option<WindowSpendRow>>,
@@ -141,6 +141,32 @@ pub(crate) struct FakeRows {
     pub(crate) window_fails: AtomicBool,
     pub(crate) logs_fail: AtomicBool,
     pub(crate) delay: Duration,
+    pub(crate) window_delay: Duration,
+    // a held read parks inside spend_row until the test releases it, so ordering is deterministic
+    pub(crate) hold_reads: AtomicBool,
+    pub(crate) read_started: Semaphore,
+    pub(crate) read_release: Notify,
+}
+
+impl Default for FakeRows {
+    fn default() -> Self {
+        Self {
+            row: Mutex::new(None),
+            window: Mutex::new(None),
+            logs: Mutex::new(Vec::new()),
+            lookups: Mutex::new(Vec::new()),
+            window_lookups: Mutex::new(Vec::new()),
+            log_lookups: Mutex::new(Vec::new()),
+            rows_fail: AtomicBool::new(false),
+            window_fails: AtomicBool::new(false),
+            logs_fail: AtomicBool::new(false),
+            delay: Duration::ZERO,
+            window_delay: Duration::ZERO,
+            hold_reads: AtomicBool::new(false),
+            read_started: Semaphore::new(0),
+            read_release: Notify::new(),
+        }
+    }
 }
 
 impl FakeRows {
@@ -199,16 +225,21 @@ impl SpendCounterRows for FakeRows {
             return Err(FakeError);
         }
         sleep(self.delay).await;
+        if self.hold_reads.load(Ordering::Relaxed) {
+            self.read_started.add_permits(2);
+            self.read_release.notified().await;
+        }
         Ok(self.row.lock().expect("the fake row lock").clone())
     }
 
-    fn window_row(
+    async fn window_row(
         &self,
         entity: WindowEntity,
         entity_id: &str,
         window_duration: &str,
-    ) -> impl Future<Output = Result<Option<WindowSpendRow>, FakeError>> + Send {
-        ready(self.take_window(entity, entity_id, window_duration))
+    ) -> Result<Option<WindowSpendRow>, FakeError> {
+        sleep(self.window_delay).await;
+        self.take_window(entity, entity_id, window_duration)
     }
 
     fn window_log_rows(
@@ -253,11 +284,13 @@ pub(crate) struct FakeCache {
     pub(crate) memory_sets: Mutex<Vec<(String, Decimal)>>,
     pub(crate) redis_sets: Mutex<Vec<(String, Decimal)>>,
     pub(crate) increments: Mutex<BTreeMap<String, Decimal>>,
+    pub(crate) redis_increments: Mutex<Vec<(String, Decimal)>>,
     pub(crate) redis_gets: AtomicUsize,
     pub(crate) memory_gets: AtomicUsize,
     pub(crate) memory_get_fails: AtomicBool,
     pub(crate) memory_set_fails: AtomicBool,
     pub(crate) increment_fails: AtomicBool,
+    pub(crate) redis_increment_fails: AtomicBool,
     pub(crate) increment_delay: Duration,
 }
 
@@ -273,11 +306,13 @@ impl FakeCache {
             memory_sets: Mutex::new(Vec::new()),
             redis_sets: Mutex::new(Vec::new()),
             increments: Mutex::new(BTreeMap::new()),
+            redis_increments: Mutex::new(Vec::new()),
             redis_gets: AtomicUsize::new(0),
             memory_gets: AtomicUsize::new(0),
             memory_get_fails: AtomicBool::new(false),
             memory_set_fails: AtomicBool::new(false),
             increment_fails: AtomicBool::new(false),
+            redis_increment_fails: AtomicBool::new(false),
             increment_delay: Duration::ZERO,
         }
     }
@@ -342,6 +377,13 @@ impl FakeCache {
         self.increments
             .lock()
             .expect("the fake increment lock")
+            .clone()
+    }
+
+    pub(crate) fn redis_increments(&self) -> Vec<(String, Decimal)> {
+        self.redis_increments
+            .lock()
+            .expect("the fake redis increment lock")
             .clone()
     }
 
@@ -472,6 +514,30 @@ impl ReseedCache for FakeCache {
             .expect("the fake increment lock")
             .insert(counter_key.to_owned(), next);
         Ok(Some(next))
+    }
+}
+
+impl WindowReseedCache for FakeCache {
+    async fn redis_increment(
+        &self,
+        counter_key: &str,
+        amount: Decimal,
+    ) -> Result<Decimal, FakeError> {
+        if self.redis_increment_fails.load(Ordering::Relaxed) {
+            return Err(FakeError);
+        }
+        let base = match self.redis_value() {
+            Some(ReseedCacheValue::Number(value)) => value,
+            Some(_) | None => Decimal::ZERO,
+        };
+        let next = base.checked_add(amount).unwrap_or(Decimal::MAX);
+        *self.redis.lock().unwrap_or_else(PoisonError::into_inner) =
+            Some(ReseedCacheValue::Number(next));
+        self.redis_increments
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((counter_key.to_owned(), amount));
+        Ok(next)
     }
 }
 

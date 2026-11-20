@@ -1,0 +1,30 @@
+task: B1736
+deviations:
+  - what: >-
+      Window spend, the SET NX seed and the vanished-winner INCRBYFLOAT carry exact Decimals.
+      LiteLLM converts every window amount to float and lets Redis answer with a double, so an
+      amount outside the decimal range fails here with SpendValueError::OutOfRange instead of
+      becoming an infinity, and the value recorded into the active batch is the decimal rather
+      than the nearest double of the Redis answer.
+    why: >-
+      The workspace requires checked Decimal money and the spend columns read back as exact
+      numerics; the native window tests pin the values on amounts both arithmetics agree on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/spend_counter_reseed.py#L455-L477
+kept_bugs:
+  - what: >-
+      A failed or stale window table read falls back to the spend-logs aggregate, and a failed
+      aggregate read returns None, so a caller enforcing a window budget sees no window spend
+      instead of an error: an outage, a deadline or a query bug all degrade to zero or unknown.
+    why: >-
+      LiteLLM catches every window read failure so enforcement keeps serving and treats the
+      aggregate as a transitional fallback; betterlite keeps that degrade and logs the failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/spend_counter_reseed.py#L330-L337
+  - what: >-
+      A failed Redis read while rechecking a cold counter falls back to the per-pod memory value,
+      which other pods' writes cannot have reached; only a successful miss is treated as
+      authoritative.
+    why: >-
+      LiteLLM swallows the Redis exception and reads its local cache at L244-L249, so a
+      deployment whose Redis connection blips keeps serving its last local balance; betterlite
+      keeps that fallback because a working setup relies on it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/spend_counter_reseed.py#L238-L249

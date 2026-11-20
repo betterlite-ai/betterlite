@@ -78,6 +78,12 @@ async fn configured_redis_tier_reports_itself_and_refuses_reads() {
         .redis_set_nx("spend:key:t", decimal("2.5"))
         .await
         .unwrap_err();
+    // local_only skips the dead Redis tier entirely, so the increment still answers from memory
+    let local = cache
+        .increment_local("spend:key:t", decimal("2"))
+        .await
+        .expect("a local-only increment never reaches Redis");
+    assert_eq!(local, Some(decimal("2")));
 }
 
 #[rstest]
