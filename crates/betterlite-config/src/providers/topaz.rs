@@ -8,7 +8,7 @@ const DEFAULT_API_BASE: &str = "https://api.topazlabs.com";
 const API_KEY_VARIABLE: &str = "TOPAZ_API_KEY";
 const API_BASE_VARIABLE: &str = "TOPAZ_API_BASE";
 
-// clippy's multiple_inherent_impl gives each provider's resolver a config type of its own; stability holds ProxyTrust
+// TopazModelInfo's credential lookup, beside the other providers' resolvers so B002 reads every variable in one place
 impl RoutingStrategy {
     // get_secret_str reads an empty, true or false variable as unset, so both variables need the same filter
     #[must_use]
