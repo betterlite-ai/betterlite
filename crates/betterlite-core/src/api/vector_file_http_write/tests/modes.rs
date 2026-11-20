@@ -78,14 +78,25 @@ async fn supplied_client_of_the_called_mode_answers(
     assert!(pooled.requests().is_empty());
 }
 
-// The sync handler drops an async client and the async handler a sync one, and either then asks the pool with litellm_params' ssl_verify
+// The sync handler drops an async client and the async handler a sync one, and either then asks the pool with litellm_params' ssl_verify as configured, null included
 #[rstest]
-#[case::async_handler_drops_sync(ClientKind::Asynchronous, ClientKind::Sync)]
-#[case::sync_handler_drops_async(ClientKind::Sync, ClientKind::Asynchronous)]
+#[case::async_handler_drops_sync(ClientKind::Asynchronous, ClientKind::Sync, None)]
+#[case::async_handler_drops_sync_unverified(
+    ClientKind::Asynchronous,
+    ClientKind::Sync,
+    Some(false)
+)]
+#[case::sync_handler_drops_async(ClientKind::Sync, ClientKind::Asynchronous, None)]
+#[case::sync_handler_drops_async_unverified(
+    ClientKind::Sync,
+    ClientKind::Asynchronous,
+    Some(false)
+)]
 #[tokio::test]
 async fn wrong_mode_client_selects_the_pool(
     #[case] mode: ClientKind,
     #[case] supplied: ClientKind,
+    #[case] ssl_verify: Option<bool>,
 ) {
     let events = Events::new();
     let unused = Wire::replying(Reply::json(200, FILE), &events);
@@ -100,14 +111,14 @@ async fn wrong_mode_client_selects_the_pool(
             transport: &unused,
         }),
     };
-    let mut unverified = params("http://unused.test");
-    unverified.ssl_verify = Some(false);
+    let mut configured = params("http://unused.test");
+    configured.ssl_verify = ssl_verify;
     let request = update_request(r#"{"attributes":{}}"#);
     let call = update_call(
         target(
             "vs_a",
             "file_a",
-            &unverified,
+            &configured,
             None,
             Some(Duration::from_secs(7)),
         ),
@@ -118,7 +129,7 @@ async fn wrong_mode_client_selects_the_pool(
     run(&mut fixture, &deps, mode, &call, &events)
         .await
         .expect("the update succeeds");
-    assert_eq!(source.calls(), [Some(false)]);
+    assert_eq!(source.calls(), [ssl_verify]);
     assert!(unused.requests().is_empty());
     let requests = pooled.requests();
     assert_eq!(requests.len(), 1);
