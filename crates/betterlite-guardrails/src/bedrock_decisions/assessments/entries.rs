@@ -7,11 +7,25 @@ use crate::bedrock_records::{
     Assessment, ContentFilter, GroundingFilter, ManagedWord, PiiEntity, Regex, TopicPolicyItem,
 };
 
+// a policy field keeps its type until entry renders it; an absent field renders as null
+enum FieldValue<'field> {
+    Text(Option<&'field String>),
+    Number(Option<&'field Number>),
+}
+
 // every entry starts with its category, then the policy's own fields in LiteLLM's order
-fn entry(category: &str, fields: &[(&str, Json)]) -> Json {
+fn entry(category: &str, fields: &[(&str, FieldValue<'_>)]) -> Json {
     let mut object = IndexMap::from([("category".to_owned(), Json::Text(category.to_owned()))]);
-    for (key, value) in fields {
-        object.insert((*key).to_owned(), value.clone());
+    for (key, field) in fields {
+        let value = match field {
+            FieldValue::Text(text) => {
+                text.map_or_else(|| Json::Null, |text| Json::Text(text.clone()))
+            }
+            FieldValue::Number(number) => {
+                number.map_or_else(|| Json::Null, |number| Json::Number(number.clone()))
+            }
+        };
+        object.insert((*key).to_owned(), value);
     }
     Json::Object(object)
 }
@@ -82,8 +96,8 @@ fn word_and_sensitive_blocks(assessment: &Assessment) -> [(&'static str, Vec<Jso
             entry(
                 "customWords",
                 &[
-                    ("match", optional_text(word.match_text.as_ref())),
-                    ("action", optional_text(word.action.as_ref())),
+                    ("match", FieldValue::Text(word.match_text.as_ref())),
+                    ("action", FieldValue::Text(word.action.as_ref())),
                 ],
             )
         })
@@ -110,9 +124,9 @@ fn topic_entry(topic: &TopicPolicyItem) -> Json {
     entry(
         "topics",
         &[
-            ("name", optional_text(topic.name.as_ref())),
-            ("type", optional_text(topic.type_name.as_ref())),
-            ("action", optional_text(topic.action.as_ref())),
+            ("name", FieldValue::Text(topic.name.as_ref())),
+            ("type", FieldValue::Text(topic.type_name.as_ref())),
+            ("action", FieldValue::Text(topic.action.as_ref())),
         ],
     )
 }
@@ -120,35 +134,35 @@ fn topic_entry(topic: &TopicPolicyItem) -> Json {
 // content filters and contextual grounding filters share the category and the outer fields
 fn filter_entry(
     type_name: Option<&String>,
-    middle: [(&'static str, Json); 2],
+    middle: [(&'static str, FieldValue<'_>); 2],
     action: Option<&String>,
 ) -> Json {
     let [first, second] = middle;
     entry(
         "filters",
         &[
-            ("type", optional_text(type_name)),
+            ("type", FieldValue::Text(type_name)),
             first,
             second,
-            ("action", optional_text(action)),
+            ("action", FieldValue::Text(action)),
         ],
     )
 }
 
-fn content_middle(filter: &ContentFilter) -> [(&'static str, Json); 2] {
+fn content_middle(filter: &ContentFilter) -> [(&'static str, FieldValue<'_>); 2] {
     [
-        ("confidence", optional_text(filter.confidence.as_ref())),
+        ("confidence", FieldValue::Text(filter.confidence.as_ref())),
         (
             "filterStrength",
-            optional_text(filter.filter_strength.as_ref()),
+            FieldValue::Text(filter.filter_strength.as_ref()),
         ),
     ]
 }
 
-fn grounding_middle(filter: &GroundingFilter) -> [(&'static str, Json); 2] {
+fn grounding_middle(filter: &GroundingFilter) -> [(&'static str, FieldValue<'_>); 2] {
     [
-        ("threshold", optional_number(filter.threshold.as_ref())),
-        ("score", optional_number(filter.score.as_ref())),
+        ("threshold", FieldValue::Number(filter.threshold.as_ref())),
+        ("score", FieldValue::Number(filter.score.as_ref())),
     ]
 }
 
@@ -178,9 +192,9 @@ fn typed_match_entry(
     entry(
         category,
         &[
-            ("type", optional_text(type_name)),
-            ("match", optional_text(match_text)),
-            ("action", optional_text(action)),
+            ("type", FieldValue::Text(type_name)),
+            ("match", FieldValue::Text(match_text)),
+            ("action", FieldValue::Text(action)),
         ],
     )
 }
@@ -207,18 +221,10 @@ fn regex_entry(pattern: &Regex) -> Json {
     entry(
         "regexes",
         &[
-            ("name", optional_text(pattern.name.as_ref())),
-            ("regex", optional_text(pattern.regex.as_ref())),
-            ("match", optional_text(pattern.match_text.as_ref())),
-            ("action", optional_text(pattern.action.as_ref())),
+            ("name", FieldValue::Text(pattern.name.as_ref())),
+            ("regex", FieldValue::Text(pattern.regex.as_ref())),
+            ("match", FieldValue::Text(pattern.match_text.as_ref())),
+            ("action", FieldValue::Text(pattern.action.as_ref())),
         ],
     )
-}
-
-fn optional_text(value: Option<&String>) -> Json {
-    value.map_or_else(|| Json::Null, |text| Json::Text(text.clone()))
-}
-
-fn optional_number(value: Option<&Number>) -> Json {
-    value.map_or_else(|| Json::Null, |number| Json::Number(number.clone()))
 }
