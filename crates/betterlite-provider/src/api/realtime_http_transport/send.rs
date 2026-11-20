@@ -14,7 +14,8 @@ use serde_json::Number;
 use url::Url;
 
 use super::error::{
-    RealtimeHttpError, display_facts, provider_failure, status_failure, timeout_failure,
+    RealtimeHttpError, StatusFailure, TimeoutFailure, display_facts, provider_failure,
+    status_failure, timeout_failure,
 };
 
 pub(crate) struct WireRequest<'wire> {
@@ -90,19 +91,27 @@ fn rejected<C: BaseRealtimeHttpConfig>(
     config: Option<&C>,
     answer: &UpstreamResponse,
 ) -> RealtimeHttpError {
-    let failure = status_failure(answer);
+    let StatusFailure {
+        status_code,
+        message,
+        headers,
+    } = status_failure(answer);
     let Some(provider) = config else {
-        return RealtimeHttpError::Status(failure);
+        return RealtimeHttpError::Status(StatusFailure {
+            status_code,
+            message,
+            headers,
+        });
     };
     let facts = FailureFacts {
-        response_status: Some(i64::from(failure.status_code)),
-        status: Some(Json::Number(Number::from(failure.status_code))),
-        text: Some(failure.message.clone()),
+        response_status: Some(i64::from(status_code)),
+        status: Some(Json::Number(Number::from(status_code))),
+        text: Some(message.clone()),
         headers: None,
         response: Some(ResponseFacts {
-            status_code: i64::from(failure.status_code),
-            text: Some(failure.message.clone()),
-            headers: Some(failure.headers.clone()),
+            status_code: i64::from(status_code),
+            text: Some(message),
+            headers: Some(headers),
         }),
         display: String::new(),
     };
@@ -128,14 +137,14 @@ fn failed<C: BaseRealtimeHttpConfig>(
             &display_facts(error.to_string()),
         ));
     }
-    let failure = timeout_failure(timeout, elapsed);
+    let TimeoutFailure { message } = timeout_failure(timeout, elapsed);
     let Some(provider) = config else {
-        return RealtimeHttpError::Timeout(failure);
+        return RealtimeHttpError::Timeout(TimeoutFailure { message });
     };
     let facts = FailureFacts {
         response_status: None,
         status: Some(Json::Number(Number::from(408_u16))),
-        text: Some(failure.message.clone()),
+        text: Some(message),
         headers: Some(HeaderMap::new()),
         response: None,
         display: String::new(),
