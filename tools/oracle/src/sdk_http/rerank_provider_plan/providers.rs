@@ -1,7 +1,5 @@
-use std::collections::BTreeMap;
-use std::sync::Arc;
-use std::time::Duration;
-
+use super::super::error::SdkHttpError;
+use super::report::Sink;
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::{Config, ProxyTrust};
@@ -26,21 +24,17 @@ use betterlite_provider::api::rerank_http::{RerankCall as HttpCall, RerankDeps, 
 use betterlite_provider::embedding_rerank_providers::rerank::FamilyRerankConfig;
 use betterlite_redact::secret::Redactor;
 use chrono::{DateTime, FixedOffset};
-
-use super::super::error::SdkHttpError;
-use super::report::Sink;
-
+use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::time::Duration;
 // The client the handler would build; the case env carries the proxy settings
 pub(super) struct Direct(ProxiedClient);
-
 impl ClientSource for Direct {
     type Client = ProxiedClient;
-
     fn client(&self) -> Result<Self::Client, ClientError> {
         Ok(self.0.clone())
     }
 }
-
 pub(super) fn direct(env: &BTreeMap<String, String>) -> Result<Direct, SdkHttpError> {
     let policy = Arc::new(
         ProxyPolicy::resolve(&ProxyTrust::default(), env).map_err(SdkHttpError::ProxyPolicy)?,
@@ -49,13 +43,11 @@ pub(super) fn direct(env: &BTreeMap<String, String>) -> Result<Direct, SdkHttpEr
         ProxiedClient::outbound(&policy).map_err(|error| SdkHttpError::Client(Box::new(error)))?;
     Ok(Direct(client))
 }
-
 pub(super) struct HttpState<'visit> {
     pub(super) source: &'visit Direct,
     pub(super) redactor: &'visit Redactor,
     pub(super) now: DateTime<FixedOffset>,
 }
-
 pub(super) fn family<'settings>(
     family: RerankConfig,
     config: &'settings Config,
@@ -68,7 +60,6 @@ pub(super) fn family<'settings>(
         environment,
     }
 }
-
 pub(super) fn map_with<C>(
     config: &C,
     request: OptionalRerankParams<'_>,
@@ -81,7 +72,6 @@ where
     get_optional_rerank_params(config, request)
         .map_err(|error| value_failure(&error.to_string(), model, provider))
 }
-
 pub(super) fn not_wired(model: &str, provider: &str) -> RawException {
     value_failure(
         &format!("the {provider} rerank handler is not wired into the oracle adapter"),
@@ -89,7 +79,6 @@ pub(super) fn not_wired(model: &str, provider: &str) -> RawException {
         provider,
     )
 }
-
 pub(super) async fn send_with<C>(
     config: &C,
     request: SendRequest<'_>,
@@ -139,7 +128,6 @@ where
         )),
     }
 }
-
 fn timeout_seconds(value: Option<f64>) -> Option<Duration> {
     match value {
         Some(seconds) if seconds.is_finite() && seconds >= 0.0 => {
@@ -148,7 +136,6 @@ fn timeout_seconds(value: Option<f64>) -> Option<Duration> {
         Some(_) | None => None,
     }
 }
-
 fn prepost_env<'visit>(
     sink: &'visit Sink,
     redactor: &'visit Redactor,

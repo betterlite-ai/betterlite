@@ -1,10 +1,8 @@
+use super::super::error::SdkHttpError;
+use super::{Call, MOCK};
 use betterlite_core::api::rerank_provider_plan::call::{RerankCall, ReturnDocuments};
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-
-use super::super::error::SdkHttpError;
-use super::{Call, MOCK};
-
 // A `{mock}` value names the harness origin in settings, env and kwargs alike, so kwargs substitute through their JSON text
 pub(super) fn core_call(call: &Call, api_base: &str) -> Result<RerankCall, SdkHttpError> {
     let text = serde_json::to_string(&call.kwargs)
@@ -29,7 +27,6 @@ pub(super) fn core_call(call: &Call, api_base: &str) -> Result<RerankCall, SdkHt
         kwargs,
     })
 }
-
 pub(super) fn settings_document(call: &Call, api_base: &str) -> Result<String, SdkHttpError> {
     let settings =
         serde_json::to_string(&call.litellm_settings).map_err(SdkHttpError::Serialize)?;

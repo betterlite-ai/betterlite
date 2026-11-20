@@ -1,18 +1,15 @@
-use std::collections::BTreeMap;
-
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::rerank_contracts::records::RerankDocument;
 use indexmap::IndexMap;
 use secrecy::SecretString;
+use std::collections::BTreeMap;
 use thiserror::Error;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReturnDocuments {
     Default,
     Null,
     Value(bool),
 }
-
 impl ReturnDocuments {
     #[must_use]
     pub const fn mapped(self) -> Option<bool> {
@@ -23,7 +20,6 @@ impl ReturnDocuments {
         }
     }
 }
-
 #[derive(Debug, Clone)]
 pub struct RerankCall {
     pub model: String,
@@ -37,7 +33,6 @@ pub struct RerankCall {
     pub max_tokens_per_doc: Option<i64>,
     pub kwargs: IndexMap<String, Json>,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum CallError {
     #[error("{field} must be a string")]
@@ -51,13 +46,11 @@ pub enum CallError {
     #[error("could not convert string to float: '{value}'")]
     Timeout { value: String },
 }
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum TimeoutArg {
     Number(f64),
     Text(String),
 }
-
 impl TimeoutArg {
     pub fn seconds(&self) -> Result<f64, CallError> {
         match self {
@@ -68,7 +61,6 @@ impl TimeoutArg {
         }
     }
 }
-
 #[derive(Debug, Clone, Default)]
 pub struct GenericParams {
     pub api_key: Option<SecretString>,
@@ -80,7 +72,6 @@ pub struct GenericParams {
     pub extra_headers: Option<BTreeMap<String, String>>,
     pub instruction: Option<String>,
 }
-
 impl GenericParams {
     pub fn read(kwargs: &IndexMap<String, Json>) -> Result<Self, CallError> {
         let mut params = Self::default();
@@ -123,7 +114,6 @@ impl GenericParams {
         Ok(params)
     }
 }
-
 fn string(value: &Json, field: &'static str) -> Result<Option<String>, CallError> {
     match value {
         Json::Null => Ok(None),
@@ -133,7 +123,6 @@ fn string(value: &Json, field: &'static str) -> Result<Option<String>, CallError
         }
     }
 }
-
 fn header_map(
     value: &Json,
     field: &'static str,

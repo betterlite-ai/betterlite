@@ -1,24 +1,20 @@
+use super::call::GenericParams;
+use super::dispatch::{Headers, Params};
+use super::selection::SelectedConfig;
 use betterlite_config::api::rerank_provider_plan::RerankSettings;
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_error::dispatch::RawException;
 use betterlite_models::resolution::ResolvedModel;
-use secrecy::SecretString;
-
-use super::call::GenericParams;
-use super::dispatch::{Headers, Params};
-use super::selection::SelectedConfig;
 use providers::Branches;
+use secrecy::SecretString;
 use watsonx::{WatsonxRequest, watsonx_credentials};
-
 mod providers;
 mod watsonx;
-
 pub(super) struct Credentials {
     pub(super) api_key: Option<SecretString>,
     pub(super) api_base: Option<String>,
     pub(super) headers: Headers,
 }
-
 pub(super) struct BranchInput<'request> {
     pub(super) provider: &'request str,
     pub(super) model: &'request str,
@@ -30,7 +26,6 @@ pub(super) struct BranchInput<'request> {
     pub(super) environment: &'request dyn EnvironmentLookup,
     pub(super) headers: Headers,
 }
-
 // Every branch of the dispatcher: the key and base chain it reads and the headers it hands its handler
 pub(super) fn select_credentials(
     mut input: BranchInput<'_>,
@@ -67,7 +62,6 @@ pub(super) fn select_credentials(
         headers: input.headers,
     })
 }
-
 // The call's extra_headers merge over the resolved headers for bedrock only
 fn merge_extra_headers(provider: &str, generic: &GenericParams, headers: &mut Headers) {
     if provider != "bedrock" {

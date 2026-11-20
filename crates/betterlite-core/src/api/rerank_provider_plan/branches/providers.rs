@@ -1,14 +1,11 @@
+use super::super::call::GenericParams;
+use super::super::dispatch::value_failure;
+use super::super::selection::SelectedConfig;
 use betterlite_config::api::rerank_provider_plan::{Environment, RerankSettings};
 use betterlite_error::dispatch::RawException;
 use betterlite_models::resolution::ResolvedModel;
 use secrecy::SecretString;
-
-use super::super::call::GenericParams;
-use super::super::dispatch::value_failure;
-use super::super::selection::SelectedConfig;
-
 type Chain = (Option<SecretString>, Option<String>);
-
 pub(super) struct Branches<'request> {
     pub(super) provider: &'request str,
     pub(super) model: &'request str,
@@ -18,7 +15,6 @@ pub(super) struct Branches<'request> {
     pub(super) settings: &'request RerankSettings,
     pub(super) environment: &'request Environment,
 }
-
 impl Branches<'_> {
     pub(super) fn select(&self) -> Result<Chain, RawException> {
         match self.provider {
@@ -36,7 +32,6 @@ impl Branches<'_> {
             other => self.other(other),
         }
     }
-
     fn cohere(&self) -> Chain {
         (
             self.resolved
@@ -53,7 +48,6 @@ impl Branches<'_> {
             ]),
         )
     }
-
     fn azure_ai(&self) -> Chain {
         (
             self.resolved
@@ -68,7 +62,6 @@ impl Branches<'_> {
             ]),
         )
     }
-
     fn infinity(&self) -> Result<Chain, RawException> {
         let Some(api_base) = first_text(&[
             self.resolved.api_base.as_deref(),
@@ -91,7 +84,6 @@ impl Branches<'_> {
             Some(api_base),
         ))
     }
-
     fn together_ai(&self) -> Result<Chain, RawException> {
         let Some(api_key) = self
             .resolved
@@ -118,7 +110,6 @@ impl Branches<'_> {
             ]),
         ))
     }
-
     fn jina_ai(&self) -> Result<Chain, RawException> {
         let Some(api_key) = self.resolved.api_key.clone() else {
             return Err(value_failure(
@@ -137,7 +128,6 @@ impl Branches<'_> {
             ]),
         ))
     }
-
     fn nvidia_nim(&self) -> Result<Chain, RawException> {
         let Some(api_key) = self.resolved.api_key.clone() else {
             return Err(value_failure(
@@ -156,7 +146,6 @@ impl Branches<'_> {
             ]),
         ))
     }
-
     fn bedrock(&self) -> Chain {
         (
             self.resolved
@@ -171,7 +160,6 @@ impl Branches<'_> {
             ]),
         )
     }
-
     fn hosted_vllm(&self) -> Result<Chain, RawException> {
         let Some(api_base) = first_text(&[
             self.resolved.api_base.as_deref(),
@@ -193,7 +181,6 @@ impl Branches<'_> {
             Some(api_base),
         ))
     }
-
     fn deepinfra(&self) -> Result<Chain, RawException> {
         let Some(api_base) = first_text(&[
             self.resolved.api_base.as_deref(),
@@ -215,7 +202,6 @@ impl Branches<'_> {
             Some(api_base),
         ))
     }
-
     fn fireworks_ai(&self) -> Chain {
         (
             self.resolved
@@ -233,7 +219,6 @@ impl Branches<'_> {
             ]),
         )
     }
-
     fn voyage(&self) -> Chain {
         (
             self.resolved
@@ -249,7 +234,6 @@ impl Branches<'_> {
             ]),
         )
     }
-
     fn other(&self, other: &str) -> Result<Chain, RawException> {
         if matches!(
             self.config,
@@ -273,7 +257,6 @@ impl Branches<'_> {
         ))
     }
 }
-
 fn first_text(values: &[Option<&str>]) -> Option<String> {
     values
         .iter()

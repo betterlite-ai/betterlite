@@ -1,5 +1,4 @@
-use std::collections::BTreeMap;
-
+use super::super::providers::{Direct, HttpState, family, map_with, not_wired, send_with};
 use betterlite_config::types::Config;
 use betterlite_core::api::rerank_provider_plan::call::ReturnDocuments as CoreReturnDocuments;
 use betterlite_core::api::rerank_provider_plan::dispatch::{
@@ -16,9 +15,7 @@ use betterlite_provider::api::rerank_contracts::{
 use betterlite_provider::nvidia_nim_rerank::{NvidiaNimRerankSelection, select_rerank_config};
 use betterlite_redact::secret::Redactor;
 use chrono::{DateTime, FixedOffset};
-
-use super::super::providers::{Direct, HttpState, family, map_with, not_wired, send_with};
-
+use std::collections::BTreeMap;
 pub(super) struct Operations<'call> {
     pub(super) environment: &'call BTreeMap<String, String>,
     pub(super) config: &'call Config,
@@ -26,7 +23,6 @@ pub(super) struct Operations<'call> {
     pub(super) redactor: Redactor,
     pub(super) now: DateTime<FixedOffset>,
 }
-
 impl RerankOperations for Operations<'_> {
     fn map_options(&self, request: OptionsRequest<'_>) -> Result<Params, RawException> {
         let (params, config, model, provider) = optional_params(request);
@@ -48,7 +44,6 @@ impl RerankOperations for Operations<'_> {
             FamilyChoice::Unsupported => Err(not_wired(model, provider)),
         }
     }
-
     async fn send(
         &self,
         request: SendRequest<'_>,
@@ -86,7 +81,6 @@ impl RerankOperations for Operations<'_> {
         self.send_family(family, request, logging).await
     }
 }
-
 impl Operations<'_> {
     async fn send_family<'call>(
         &self,
@@ -107,7 +101,6 @@ impl Operations<'_> {
         )
         .await
     }
-
     async fn send_config<'call, C>(
         &self,
         config: &C,
@@ -125,14 +118,12 @@ impl Operations<'_> {
         send_with(config, request, logging, &http).await
     }
 }
-
 // The three shapes a selected config takes: a provider family config, one of Nvidia's two clients, or no handler
 enum FamilyChoice {
     Family(RerankConfig),
     Nvidia,
     Unsupported,
 }
-
 fn family_choice(config: SelectedConfig) -> FamilyChoice {
     match config {
         SelectedConfig::Cohere => FamilyChoice::Family(RerankConfig::Cohere),
@@ -153,7 +144,6 @@ fn family_choice(config: SelectedConfig) -> FamilyChoice {
         | SelectedConfig::QwenAiPlatform => FamilyChoice::Unsupported,
     }
 }
-
 fn optional_params(
     request: OptionsRequest<'_>,
 ) -> (OptionalRerankParams<'_>, SelectedConfig, &str, &str) {

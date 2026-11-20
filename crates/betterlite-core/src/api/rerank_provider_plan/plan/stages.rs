@@ -1,3 +1,11 @@
+use super::super::branches::{BranchInput, Credentials, select_credentials};
+use super::super::call::{GenericParams, RerankCall, TimeoutArg};
+use super::super::dispatch::{Headers, OptionsRequest, Params, RerankOperations, value_failure};
+use super::super::selection::{SelectedConfig, selected_config};
+use super::{
+    RerankException, RerankIdentity, call_headers, present_version_params, raise,
+    rerank_litellm_params,
+};
 use betterlite_config::api::rerank_provider_plan::RerankSettings;
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_error::dispatch::RawException;
@@ -7,16 +15,6 @@ use betterlite_models::decisions::Json;
 use betterlite_models::resolution::{ResolutionRequest, ResolvedModel};
 use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
-
-use super::super::branches::{BranchInput, Credentials, select_credentials};
-use super::super::call::{GenericParams, RerankCall, TimeoutArg};
-use super::super::dispatch::{Headers, OptionsRequest, Params, RerankOperations, value_failure};
-use super::super::selection::{SelectedConfig, selected_config};
-use super::{
-    RerankException, RerankIdentity, call_headers, present_version_params, raise,
-    rerank_litellm_params,
-};
-
 pub(super) struct PreparedCall {
     pub(super) kwargs: IndexMap<String, Json>,
     pub(super) is_async: bool,
@@ -25,7 +23,6 @@ pub(super) struct PreparedCall {
     pub(super) resolved: ResolvedModel,
     pub(super) provider: String,
 }
-
 pub(super) struct MappedOptions {
     pub(super) config: SelectedConfig,
     pub(super) params: Params,
@@ -33,7 +30,6 @@ pub(super) struct MappedOptions {
     pub(super) headers: Headers,
     pub(super) timeout_seconds: Option<f64>,
 }
-
 pub(super) fn prepare<Identity>(
     identity: &Identity,
     redactor: &Redactor,
@@ -75,7 +71,6 @@ where
         provider,
     })
 }
-
 pub(super) fn map_options<Operations>(
     settings: &RerankSettings,
     operations: &Operations,
@@ -120,7 +115,6 @@ where
         timeout_seconds: mapped_timeout(redactor, prepared)?,
     })
 }
-
 // a string timeout is converted with float(...) only after the provider mapped the options
 fn mapped_timeout(
     redactor: &Redactor,
@@ -143,7 +137,6 @@ fn mapped_timeout(
             )
         })
 }
-
 pub(super) fn log(
     redactor: &Redactor,
     logging: &mut LoggingState,
@@ -173,7 +166,6 @@ pub(super) fn log(
         )
     })
 }
-
 pub(super) fn credentials(
     settings: &RerankSettings,
     environment: &dyn EnvironmentLookup,
@@ -195,14 +187,12 @@ pub(super) fn credentials(
         &mut mapped.params,
     )
 }
-
 fn params_from_kwargs(kwargs: &IndexMap<String, Json>) -> Params {
     kwargs
         .iter()
         .map(|(name, value)| (name.clone(), value.clone()))
         .collect()
 }
-
 fn as_index_map(params: &Params) -> IndexMap<String, Json> {
     params
         .iter()

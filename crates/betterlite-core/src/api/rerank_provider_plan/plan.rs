@@ -1,3 +1,5 @@
+use super::call::{GenericParams, RerankCall};
+use super::dispatch::{Headers, Params, RerankOperations, SendRequest, value_failure};
 use betterlite_config::api::rerank_provider_plan::RerankSettings;
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
@@ -11,35 +13,25 @@ use betterlite_openai::api::rerank_contracts::records::RerankResponse;
 use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
 use stages::{credentials, log, map_options, prepare};
-
-use super::call::{GenericParams, RerankCall};
-use super::dispatch::{Headers, Params, RerankOperations, SendRequest, value_failure};
-
 mod stages;
-
 // LiteLLM's `verbose_logger.error("Error in rerank: %s", e)`, the line every failed call starts with
 pub const DIAGNOSTIC_PREFIX: &str = "Error in rerank: ";
-
 #[derive(Debug, Clone)]
 pub struct RerankException {
     pub class: ErrorClass,
     pub message: String,
 }
-
 pub trait RerankIdentity {
     fn resolve(&self, request: &ResolutionRequest<'_>) -> Result<ResolvedModel, ResolutionError>;
 }
-
 pub struct CatalogIdentity<'context, 'borrow> {
     pub context: &'borrow ResolutionContext<'context>,
 }
-
 impl RerankIdentity for CatalogIdentity<'_, '_> {
     fn resolve(&self, request: &ResolutionRequest<'_>) -> Result<ResolvedModel, ResolutionError> {
         resolve(request, self.context)
     }
 }
-
 pub struct RerankPlan<'plan, Identity, Operations> {
     pub identity: &'plan Identity,
     pub operations: &'plan Operations,
@@ -47,7 +39,6 @@ pub struct RerankPlan<'plan, Identity, Operations> {
     pub environment: &'plan dyn EnvironmentLookup,
     pub redactor: &'plan Redactor,
 }
-
 pub async fn rerank<Identity, Operations>(
     plan: &RerankPlan<'_, Identity, Operations>,
     mut call: RerankCall,
@@ -94,7 +85,6 @@ where
         .await
         .map_err(|failure| raise(plan.redactor, failure))
 }
-
 // The error diagnostic runs before B011 maps the failure, as the except block does
 fn raise(redactor: &Redactor, failure: RawException) -> RerankException {
     tracing::error!("{}{}", DIAGNOSTIC_PREFIX, failure.error_str);
@@ -104,7 +94,6 @@ fn raise(redactor: &Redactor, failure: RawException) -> RerankException {
         message,
     }
 }
-
 fn present_version_params(max_chunks: Option<i64>, max_tokens: Option<i64>) -> Vec<String> {
     [
         ("max_chunks_per_doc", max_chunks),
@@ -115,14 +104,12 @@ fn present_version_params(max_chunks: Option<i64>, max_tokens: Option<i64>) -> V
     .map(|(name, _)| String::from(name))
     .collect()
 }
-
 fn call_headers(generic: &GenericParams, settings: &RerankSettings) -> Headers {
     if generic.headers.is_empty() {
         return settings.headers.clone().unwrap_or_default();
     }
     generic.headers.clone()
 }
-
 // `{litellm_call_id, proxy_server_request, model_info, preset_cache_key: None, stream_response: {}, **optional_params.model_dump(exclude_unset=True)}`
 fn rerank_litellm_params(kwargs: &IndexMap<String, Json>) -> Params {
     let mut params = Params::new();

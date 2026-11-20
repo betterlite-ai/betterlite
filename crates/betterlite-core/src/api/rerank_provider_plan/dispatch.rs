@@ -1,18 +1,14 @@
-use std::collections::BTreeMap;
-use std::future::Future;
-
+use super::call::ReturnDocuments;
+use super::selection::SelectedConfig;
 use betterlite_error::dispatch::RawException;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::rerank_contracts::records::{RerankDocument, RerankResponse};
 use secrecy::SecretString;
-
-use super::call::ReturnDocuments;
-use super::selection::SelectedConfig;
-
+use std::collections::BTreeMap;
+use std::future::Future;
 pub type Params = BTreeMap<String, Json>;
 pub type Headers = BTreeMap<String, String>;
-
 // What get_optional_rerank_params reads: the named arguments, drop_params and the remaining kwargs
 pub struct OptionsRequest<'request> {
     pub config: SelectedConfig,
@@ -29,7 +25,6 @@ pub struct OptionsRequest<'request> {
     pub instruction: Option<&'request str>,
     pub non_default_params: &'request mut Params,
 }
-
 // One provider call: the credentials the branch selected, the mapped options and the parameters LiteLLM forwards
 pub struct SendRequest<'request> {
     pub config: SelectedConfig,
@@ -52,18 +47,15 @@ pub struct SendRequest<'request> {
     pub max_tokens_per_doc: Option<i64>,
     pub instruction: Option<&'request str>,
 }
-
 // The provider operations the dispatcher drives: B1013's mapping and B2454's transport, supplied by the caller
 pub trait RerankOperations {
     fn map_options(&self, request: OptionsRequest<'_>) -> Result<Params, RawException>;
-
     fn send(
         &self,
         request: SendRequest<'_>,
         logging: &mut LoggingState,
     ) -> impl Future<Output = Result<RerankResponse, RawException>>;
 }
-
 // A failure the dispatcher raises itself: str(e) carries the text and nothing overrides it, as a ValueError does
 #[must_use]
 pub fn value_failure(message: &str, model: &str, provider: &str) -> RawException {
@@ -72,7 +64,6 @@ pub fn value_failure(message: &str, model: &str, provider: &str) -> RawException
     failure.message = None;
     failure
 }
-
 // A provider's exception: message is str(e) and the attribute exception_type() overrides error_str with
 #[must_use]
 pub fn provider_failure(

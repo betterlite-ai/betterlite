@@ -1,6 +1,10 @@
-use std::collections::{BTreeMap, BTreeSet};
-use std::sync::PoisonError;
-
+use super::super::error::SdkHttpError;
+use super::super::result::SyncDiagnostic;
+use super::super::result::kinds::SdkResult;
+use super::input::{core_call, settings_document};
+use super::providers::direct;
+use super::report::{Diagnostics, failure, logging_state};
+use super::{Call, Failure, MOCK, Outcome};
 use betterlite_config::api::rerank_provider_plan::{RerankSettings, loads_rerank_settings};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
@@ -15,22 +19,13 @@ use betterlite_models::resolution::ResolutionContext;
 use betterlite_openai::api::rerank_contracts::records::RerankResponse;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::DateTime;
+use operations::Operations;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::PoisonError;
 use tracing::subscriber::set_default;
 use tracing_subscriber::registry;
-
-use super::super::error::SdkHttpError;
-use super::super::result::SyncDiagnostic;
-use super::super::result::kinds::SdkResult;
-use super::input::{core_call, settings_document};
-use super::providers::direct;
-use super::report::{Diagnostics, failure, logging_state};
-use super::{Call, Failure, MOCK, Outcome};
-use operations::Operations;
-
 mod operations;
-
 const FIXTURE_NOW: &str = "2026-01-01T00:00:05+00:00";
-
 pub(super) async fn execute(
     call: &Call,
     api_base: &str,
@@ -74,7 +69,6 @@ pub(super) async fn execute(
         value: Box::new(value),
     })
 }
-
 fn substituted_environment(
     env: &BTreeMap<String, String>,
     api_base: &str,
@@ -83,7 +77,6 @@ fn substituted_environment(
         .map(|(name, value)| (name.clone(), value.replace(MOCK, api_base)))
         .collect()
 }
-
 fn build_operations<'settings>(
     environment: &'settings BTreeMap<String, String>,
     config: &'settings Config,
@@ -97,7 +90,6 @@ fn build_operations<'settings>(
             .map_err(|error| SdkHttpError::Invalid(error.to_string()))?,
     })
 }
-
 fn build_plan<'a, Identity>(
     identity: &'a Identity,
     operations: &'a Operations<'a>,
@@ -112,7 +104,6 @@ fn build_plan<'a, Identity>(
         redactor: &operations.redactor,
     }
 }
-
 fn to_outcome(
     result: Result<RerankResponse, RerankException>,
     diagnostics: Vec<SyncDiagnostic>,

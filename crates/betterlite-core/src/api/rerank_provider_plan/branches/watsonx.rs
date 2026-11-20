@@ -1,3 +1,5 @@
+use super::super::dispatch::{Headers, Params, provider_failure, value_failure};
+use super::Credentials;
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_error::dispatch::RawException;
 use betterlite_models::decisions::Json;
@@ -7,10 +9,6 @@ use betterlite_openai::watsonx_auth::environment::WatsonxEnvironment;
 use betterlite_openai::watsonx_auth::error::WatsonxError;
 use betterlite_openai::watsonx_auth::types::WatsonxParams;
 use secrecy::{ExposeSecret as _, SecretString};
-
-use super::super::dispatch::{Headers, Params, provider_failure, value_failure};
-use super::Credentials;
-
 pub(super) struct WatsonxRequest<'request> {
     pub(super) model: &'request str,
     pub(super) provider: &'request str,
@@ -19,7 +17,6 @@ pub(super) struct WatsonxRequest<'request> {
     pub(super) environment: &'request dyn EnvironmentLookup,
     pub(super) headers: Headers,
 }
-
 // get_watsonx_credentials reads the whole generic map plus the resolved key and base and keeps a token that is not None
 pub(super) fn watsonx_credentials(
     request: WatsonxRequest<'_>,
@@ -54,7 +51,6 @@ pub(super) fn watsonx_credentials(
         Err(error) => Err(watsonx_failure(&error, request.model, request.provider)),
     }
 }
-
 fn watsonx_failure(error: &WatsonxError, model: &str, provider: &str) -> RawException {
     match error {
         WatsonxError::Api {
@@ -75,7 +71,6 @@ fn watsonx_failure(error: &WatsonxError, model: &str, provider: &str) -> RawExce
         | WatsonxError::Cache(_) => value_failure(&error.to_string(), model, provider),
     }
 }
-
 fn watsonx_environment(lookup: &dyn EnvironmentLookup) -> WatsonxEnvironment {
     let text = |name: &str| lookup.lookup(name).filter(|value| !value.is_empty());
     let secret = |name: &str| text(name).map(SecretString::from);

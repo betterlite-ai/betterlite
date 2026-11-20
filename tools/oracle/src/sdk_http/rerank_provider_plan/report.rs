@@ -1,7 +1,6 @@
-use std::fmt::Debug;
-use std::sync::{Arc, Mutex, PoisonError};
-use std::time::Duration;
-
+use super::super::error::SdkHttpError;
+use super::super::result::SyncDiagnostic;
+use super::{FIXTURE_INIT, Failure};
 use betterlite_core::api::rerank_provider_plan::plan::{DIAGNOSTIC_PREFIX, RerankException};
 use betterlite_error::envelope::WireField;
 use betterlite_error::error::ErrorClass;
@@ -12,22 +11,17 @@ use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
 use betterlite_redact::secret::Redactor;
+use std::fmt::Debug;
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 use tracing::field::{Field, Visit};
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
-
-use super::super::error::SdkHttpError;
-use super::super::result::SyncDiagnostic;
-use super::{FIXTURE_INIT, Failure};
-
 const TARGET: &str = "betterlite_core::api::rerank_provider_plan";
-
 pub(super) struct Sink;
-
 impl LogSink for Sink {
     fn emit(&self, _record: LogRecord) {}
 }
-
 pub(super) fn logging_state(redactor: &Redactor) -> Result<LoggingState, SdkHttpError> {
     let init: LoggingInit = serde_json::from_str(FIXTURE_INIT).map_err(SdkHttpError::Serialize)?;
     LoggingState::new(
@@ -42,7 +36,6 @@ pub(super) fn logging_state(redactor: &Redactor) -> Result<LoggingState, SdkHttp
     )
     .map_err(SdkHttpError::LoggingState)
 }
-
 // The exception the SDK raises for this class, as the pinned litellm.exceptions module names it
 pub(super) fn failure(exception: &RerankException) -> Result<Failure, SdkHttpError> {
     let metadata = exception.class.metadata();
@@ -55,14 +48,12 @@ pub(super) fn failure(exception: &RerankException) -> Result<Failure, SdkHttpErr
         message: exception.message.clone(),
     })
 }
-
 fn text_field(field: WireField) -> Option<String> {
     match field {
         WireField::Text(text) => Some(text),
         WireField::Missing(_) | WireField::Null => None,
     }
 }
-
 fn class_name(class: &ErrorClass) -> Result<&'static str, SdkHttpError> {
     match class {
         ErrorClass::Authentication(_) => Ok("AuthenticationError"),
@@ -88,13 +79,10 @@ fn class_name(class: &ErrorClass) -> Result<&'static str, SdkHttpError> {
         | ErrorClass::Unclassified(_) => Err(SdkHttpError::Unprojected(format!("{class:?}"))),
     }
 }
-
 #[derive(Clone, Default)]
 pub(super) struct Diagnostics(pub(super) Arc<Mutex<Vec<SyncDiagnostic>>>);
-
 #[derive(Default)]
 struct MessageVisitor(Option<String>);
-
 impl Visit for MessageVisitor {
     fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
         if field.name() == "message" {
@@ -102,7 +90,6 @@ impl Visit for MessageVisitor {
         }
     }
 }
-
 impl<Inner: Subscriber> Layer<Inner> for Diagnostics {
     fn on_event(&self, event: &Event<'_>, _context: Context<'_, Inner>) {
         if !event.metadata().target().starts_with(TARGET) {

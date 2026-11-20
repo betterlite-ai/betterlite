@@ -1,7 +1,5 @@
-use betterlite_models::resolution::ProviderIdentity;
-
 use crate::embedding_rerank_providers::{RerankConfig, rerank_config};
-
+use betterlite_models::resolution::ProviderIdentity;
 // LiteLLM's ProviderConfigManager.get_provider_rerank_config, every arm it selects a config class for
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SelectedConfig {
@@ -23,7 +21,6 @@ pub enum SelectedConfig {
     Qwencloud,
     QwenAiPlatform,
 }
-
 // The selector chooses by provider, by the call's api_base and by the version parameters; the model decides Nvidia's shape
 #[must_use]
 pub fn selected_config(
@@ -45,7 +42,6 @@ pub fn selected_config(
     }
     provider_config(identity.slug(), model)
 }
-
 // The remaining arms of get_provider_rerank_config, keyed by the provider slug it switches on
 fn provider_config(provider: &str, model: &str) -> SelectedConfig {
     match provider {

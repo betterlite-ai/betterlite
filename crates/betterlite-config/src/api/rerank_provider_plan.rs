@@ -1,23 +1,17 @@
-use std::collections::BTreeMap;
-
+use crate::loader::{ConfigError, EnvironmentLookup, parse_view};
+use crate::resolve::{resolve_secret, resolve_string};
 use betterlite_models::call_helpers::drop_params::drop_params_env_flag;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
-
-use crate::loader::{ConfigError, EnvironmentLookup, parse_view};
-use crate::resolve::{resolve_secret, resolve_string};
-
+use std::collections::BTreeMap;
 mod tests;
-
 pub type Headers = BTreeMap<String, String>;
-
 // The rerank dispatcher reads litellm_settings through this view; every other section keeps its own view.
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
     #[serde(default)]
     litellm_settings: RawSettings,
 }
-
 #[derive(Debug, Default, Deserialize)]
 struct RawSettings {
     api_key: Option<SecretString>,
@@ -27,7 +21,6 @@ struct RawSettings {
     togetherai_api_key: Option<SecretString>,
     drop_params: Option<bool>,
 }
-
 // The provider variables the dispatcher's last-resort fallbacks read; an empty one counts as unset.
 #[derive(Debug, Clone, Default)]
 pub struct Environment {
@@ -52,7 +45,6 @@ pub struct Environment {
     pub voyage_ai_api_key: Option<SecretString>,
     pub voyage_api_base: Option<String>,
 }
-
 impl Environment {
     // The loaded snapshot wins; a field the snapshot left empty reads the lookup, as the process env holds the same values
     #[must_use]
@@ -60,7 +52,6 @@ impl Environment {
         let secrets = self.resolve_secrets(lookup);
         secrets.resolve_bases(lookup)
     }
-
     fn resolve_secrets(&self, lookup: &dyn EnvironmentLookup) -> Self {
         Self {
             togetherai_api_key: secret(
@@ -101,7 +92,6 @@ impl Environment {
             ..self.clone()
         }
     }
-
     fn resolve_bases(&self, lookup: &dyn EnvironmentLookup) -> Self {
         Self {
             cohere_api_base: text(self.cohere_api_base.as_ref(), lookup, "COHERE_API_BASE"),
@@ -133,13 +123,11 @@ impl Environment {
         }
     }
 }
-
 fn text(snapshot: Option<&String>, lookup: &dyn EnvironmentLookup, name: &str) -> Option<String> {
     snapshot
         .cloned()
         .or_else(|| lookup.lookup(name).filter(|value| !value.is_empty()))
 }
-
 fn secret(
     snapshot: Option<&SecretString>,
     lookup: &dyn EnvironmentLookup,
@@ -152,7 +140,6 @@ fn secret(
             .map(SecretString::from)
     })
 }
-
 #[derive(Debug, Clone, Default)]
 pub struct RerankSettings {
     pub api_key: Option<SecretString>,
@@ -162,7 +149,6 @@ pub struct RerankSettings {
     pub drop_params: bool,
     pub environment: Environment,
 }
-
 // The settings litellm_settings holds for rerank, read through the same YAML decoding the config loader uses.
 pub fn loads_rerank_settings(
     source: &str,
@@ -171,7 +157,6 @@ pub fn loads_rerank_settings(
     let (raw, _ignored) = parse_view::<Raw>(source)?;
     raw.convert(environment)
 }
-
 impl Raw {
     fn convert(self, lookup: &dyn EnvironmentLookup) -> Result<RerankSettings, ConfigError> {
         let settings = self.litellm_settings;
