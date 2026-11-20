@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use betterlite_logging::logging_success::types::SuccessResult;
-use betterlite_logging::worker::{Admission, Callback, Rejection};
+use betterlite_logging::worker::{Admission, Callback as _, Rejection};
 
 use super::support::Stub;
 use super::support::capture_logs;
@@ -228,7 +228,7 @@ fn a_rejected_success_log_is_warned_about() {
             true,
         )
         .expect("the logging state builds");
-    let logging: Arc<dyn CallLogging> = fixture.logging.clone();
+    let logging: Arc<dyn CallLogging> = Arc::clone(&fixture.logging);
     let scheduler: Arc<dyn SuccessLogScheduler> = Arc::new(RejectingScheduler);
     dispatch_success_logging(
         &logging,

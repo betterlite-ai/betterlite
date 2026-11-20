@@ -10,6 +10,7 @@ use super::support::chat_stream;
 use super::support::fixture;
 use super::support::response;
 use super::support::run_sync;
+use super::support::started_logging;
 use super::support::value;
 use crate::call_setup::hooks::DeploymentHook;
 use crate::call_wrapper::state::WrapperOptions;
@@ -217,14 +218,7 @@ async fn async_call_drops_the_internal_call_flag() {
 #[tokio::test]
 async fn async_response_call_restores_the_correlation_context() {
     let mut fixture = fixture();
-    let (handle, _prepared) = fixture
-        .wrapper
-        .start_logging(
-            "acompletion",
-            chat_request(r#"{"litellm_call_id":"call-1"}"#),
-            true,
-        )
-        .expect("the logging state builds");
+    let handle = started_logging(&mut fixture);
     let restored = handle
         .state
         .lock()
@@ -233,13 +227,11 @@ async fn async_response_call_restores_the_correlation_context() {
         .pre_call
         .trace_id
         .clone();
-    {
-        let mut correlation = handle
-            .correlation
-            .lock()
-            .expect("the correlation lock is free");
-        correlation.trace_id = String::from("active-trace");
-    }
+    handle
+        .correlation
+        .lock()
+        .expect("the correlation lock is free")
+        .trace_id = String::from("active-trace");
     let stub = Stub::new("acompletion");
     fixture
         .wrapper
@@ -266,21 +258,12 @@ async fn async_response_call_restores_the_correlation_context() {
 #[tokio::test]
 async fn async_chat_stream_keeps_the_correlation_context() {
     let mut fixture = fixture();
-    let (handle, _prepared) = fixture
-        .wrapper
-        .start_logging(
-            "acompletion",
-            chat_request(r#"{"litellm_call_id":"call-1"}"#),
-            true,
-        )
-        .expect("the logging state builds");
-    {
-        let mut correlation = handle
-            .correlation
-            .lock()
-            .expect("the correlation lock is free");
-        correlation.trace_id = String::from("active-trace");
-    }
+    let handle = started_logging(&mut fixture);
+    handle
+        .correlation
+        .lock()
+        .expect("the correlation lock is free")
+        .trace_id = String::from("active-trace");
     let stream = chat_stream(value(r#"{"id":"stream-1"}"#), false);
     let stub = Stub::responding("acompletion", stream.clone());
     let outcome = fixture
@@ -308,18 +291,8 @@ async fn async_chat_stream_keeps_the_correlation_context() {
 #[tokio::test]
 async fn async_call_syncs_the_logging_stream_flag() {
     let mut fixture = fixture().with_cache();
-    let (handle, _prepared) = fixture
-        .wrapper
-        .start_logging(
-            "acompletion",
-            chat_request(r#"{"litellm_call_id":"call-1"}"#),
-            true,
-        )
-        .expect("the logging state builds");
-    {
-        let mut state = handle.state.lock().expect("the state lock is free");
-        state.stream = Some(false);
-    }
+    let handle = started_logging(&mut fixture);
+    handle.state.lock().expect("the state lock is free").stream = Some(false);
     fixture
         .cache
         .set_found(cache_hit(response(value(r#"{"cached":true}"#))));

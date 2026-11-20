@@ -773,6 +773,18 @@ pub(crate) fn run_sync(
         .call_blocking(stub, request, WrapperOptions::default(), &runtime)
 }
 
+pub(crate) fn started_logging(fixture: &mut Fixture) -> LoggingHandle {
+    let (handle, _prepared) = fixture
+        .wrapper
+        .start_logging(
+            "acompletion",
+            chat_request(r#"{"litellm_call_id":"call-1"}"#),
+            true,
+        )
+        .expect("the logging state builds");
+    handle
+}
+
 pub(crate) fn fixture() -> Fixture {
     let cache = Arc::new(ScriptedCache::default());
     let logging = Arc::new(RecordingLogging::default());
