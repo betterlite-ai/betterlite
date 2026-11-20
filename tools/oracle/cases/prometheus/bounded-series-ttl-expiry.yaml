@@ -1,0 +1,18 @@
+kind: helper
+name: prometheus-bounded-series-ttl-expiry
+call:
+  b3876:
+    function: track_end_user
+    metric_name: litellm_requests_metric
+    supported_labels: [model, end_user]
+    metrics:
+      probe: removed
+    steps:
+      - {metric: probe, labels: {model: m, end_user: e1}, at_seconds: 0, max_series: null, ttl_seconds: 5, cleanup_interval_seconds: 60}
+      - {metric: probe, labels: {model: m, end_user: e2}, at_seconds: 10, max_series: null, ttl_seconds: 5, cleanup_interval_seconds: 60}
+      - {metric: probe, labels: {model: m, end_user: e3}, at_seconds: 60, max_series: null, ttl_seconds: 5, cleanup_interval_seconds: 60}
+      - {metric: probe, labels: {model: m, end_user: e4}, at_seconds: 70, max_series: null, ttl_seconds: 5, cleanup_interval_seconds: 0}
+      - {metric: probe, labels: {model: m, end_user: e5}, at_seconds: 75, max_series: null, ttl_seconds: 5, cleanup_interval_seconds: 0}
+      - {metric: probe, labels: {model: m, end_user: e6}, at_seconds: 76, max_series: null, ttl_seconds: 5, cleanup_interval_seconds: 0}
+env: {}
+compare: {ignore: []}

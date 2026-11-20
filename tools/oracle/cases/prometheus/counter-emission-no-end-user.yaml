@@ -1,0 +1,17 @@
+kind: helper
+name: prometheus-counter-emission-no-end-user
+call:
+  b3876:
+    function: inc_labeled_counter
+    metric_name: litellm_requests_metric
+    supported_labels: [model, user]
+    enable_end_user_tracking: true
+    max_series: 1
+    ttl_seconds: null
+    cleanup_interval_seconds: null
+    amount: 1
+    emissions:
+      - {values: {model: m, user: u1}, at_seconds: 0}
+      - {values: {model: m, user: u2}, at_seconds: 1}
+env: {}
+compare: {ignore: []}

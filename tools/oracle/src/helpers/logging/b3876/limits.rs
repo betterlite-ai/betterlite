@@ -1,0 +1,48 @@
+use std::time::{Duration, Instant};
+
+use betterlite_logging::prometheus_helpers::bounded_series_tracker::SeriesLimits;
+use betterlite_oracle_helper_api::error::HelperError;
+
+use super::{EmissionScenario, TrackStep, invalid};
+
+pub(super) fn step_limits(step: &TrackStep) -> Result<SeriesLimits, Box<HelperError>> {
+    Ok(SeriesLimits {
+        max_series: step.max_series,
+        ttl: step.ttl_seconds.map(seconds_duration).transpose()?,
+        cleanup_interval: step
+            .cleanup_interval_seconds
+            .map(cleanup_duration)
+            .transpose()?,
+    })
+}
+
+pub(super) fn emission_limits(
+    scenario: &EmissionScenario,
+) -> Result<SeriesLimits, Box<HelperError>> {
+    Ok(SeriesLimits {
+        max_series: scenario.max_series,
+        ttl: scenario.ttl_seconds.map(seconds_duration).transpose()?,
+        cleanup_interval: scenario
+            .cleanup_interval_seconds
+            .map(cleanup_duration)
+            .transpose()?,
+    })
+}
+
+pub(super) fn seconds_duration(seconds: f64) -> Result<Duration, Box<HelperError>> {
+    Duration::try_from_secs_f64(seconds)
+        .map_err(|error| invalid(&format!("invalid seconds: {error}")))
+}
+
+pub(super) fn cleanup_duration(seconds: f64) -> Result<Duration, Box<HelperError>> {
+    if seconds <= 0.0 {
+        return Ok(Duration::ZERO);
+    }
+    seconds_duration(seconds)
+}
+
+pub(super) fn time_at(base: Instant, seconds: f64) -> Result<Instant, Box<HelperError>> {
+    let offset = seconds_duration(seconds)?;
+    base.checked_add(offset)
+        .ok_or_else(|| invalid("the emission time is out of range"))
+}

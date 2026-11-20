@@ -1,0 +1,18 @@
+kind: helper
+name: prometheus-bounded-series-no-limits
+call:
+  b3876:
+    function: track_end_user
+    metric_name: litellm_requests_metric
+    supported_labels: [model, end_user]
+    metrics:
+      probe: removed
+    steps:
+      - {metric: probe, labels: {model: m, end_user: e1}, at_seconds: 0, max_series: null, ttl_seconds: null, cleanup_interval_seconds: null}
+      - {metric: probe, labels: {model: m, end_user: e2}, at_seconds: 1, max_series: null, ttl_seconds: null, cleanup_interval_seconds: null}
+      - {metric: probe, labels: {model: m, end_user: e1}, at_seconds: 2, max_series: 0, ttl_seconds: null, cleanup_interval_seconds: null}
+      - {metric: probe, labels: {model: m, end_user: e2}, at_seconds: 3, max_series: 0, ttl_seconds: null, cleanup_interval_seconds: null}
+      - {metric: probe, labels: {model: m, end_user: e3}, at_seconds: 4, max_series: 0, ttl_seconds: null, cleanup_interval_seconds: null}
+      - {metric: probe, labels: {model: m, end_user: e4}, at_seconds: 5, max_series: -1, ttl_seconds: null, cleanup_interval_seconds: null}
+env: {}
+compare: {ignore: []}

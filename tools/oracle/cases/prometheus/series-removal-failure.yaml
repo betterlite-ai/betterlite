@@ -1,0 +1,14 @@
+kind: helper
+name: prometheus-series-removal-failure
+call:
+  b3876:
+    function: track_end_user
+    metric_name: litellm_requests_metric
+    supported_labels: [model, end_user]
+    metrics:
+      probe: failed
+    steps:
+      - {metric: probe, labels: {model: m, end_user: e1}, at_seconds: 0, max_series: 1, ttl_seconds: null, cleanup_interval_seconds: null}
+      - {metric: probe, labels: {model: m, end_user: e2}, at_seconds: 1, max_series: 1, ttl_seconds: null, cleanup_interval_seconds: null}
+env: {}
+compare: {ignore: []}
