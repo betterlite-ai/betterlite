@@ -225,7 +225,7 @@ fn the_session_marker_ttl_takes_positive_integers_up_to_the_u32_limit() {
         marker_session_affinity_ttl(&at_limit).unwrap(),
         Some(u32::MAX)
     );
-    let past_limit = marker_kwargs(Json::Number(Number::from(0x1_0000_0000_u64)));
+    let past_limit = marker_kwargs(Json::Number(Number::from(0x0001_0000_0000_u64)));
     assert_eq!(
         marker_session_affinity_ttl(&past_limit)
             .unwrap_err()
