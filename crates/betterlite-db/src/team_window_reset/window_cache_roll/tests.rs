@@ -18,7 +18,7 @@ async fn expired_window_settles_the_counter_and_rolls_the_spend_row() {
     let mut window = window_json("1h", Some("10"), Some(PAST_TEXT));
     insert_windows(&client, KEY_TABLE, KEY_COLUMN, "k1", &[window.clone()]).await;
     seed_window_spend(&client, "key", "k1", "1h", past(), 99.0).await;
-    let cache = FakeCounterCache::with_counter("spend:key:k1:window:1h", Some(decimal(12)));
+    let cache = FakeCounterCache::with_counter("spend:key:k1:window:1h", Some(decimal("12")));
     let mut harness = WindowHarness::new(
         store,
         TestSchedule::fixed(moment(3600)),
@@ -35,8 +35,8 @@ async fn expired_window_settles_the_counter_and_rolls_the_spend_row() {
     assert!(reset);
     let counter = "spend:key:k1:window:1h".to_owned();
     assert_eq!(harness.cache.read_keys(), vec![counter.clone()]);
-    assert_eq!(harness.cache.memory_of(&counter), Some(decimal(2)));
-    assert_eq!(harness.cache.redis_of(&counter), Some(decimal(2)));
+    assert_eq!(harness.cache.memory_of(&counter), Some(decimal("2")));
+    assert_eq!(harness.cache.redis_of(&counter), Some(decimal("2")));
     assert_eq!(window_text(&window, "reset_at"), Some(next_text()));
     assert_eq!(harness.durations.requested(), vec!["1h".to_owned()]);
     let (start, spend, updated_at) = window_spend_row(&client, "key", "k1", "1h").await.unwrap();
@@ -75,7 +75,7 @@ async fn team_windows_use_the_team_counter_prefix() {
     assert!(reset);
     assert_eq!(
         harness.cache.memory_of("spend:team:t1:window:2h"),
-        Some(decimal(0))
+        Some(decimal("0"))
     );
     let (start, spend, _) = window_spend_row(&client, "team", "t1", "2h").await.unwrap();
     assert_eq!(start, moment(0).naive_utc());
@@ -93,7 +93,7 @@ async fn window_with_a_future_reset_time_is_untouched() {
     let mut harness = WindowHarness::new(
         store,
         TestSchedule::fixed(moment(3600)),
-        FakeCounterCache::with_counter("spend:key:k1:window:1h", Some(decimal(12))),
+        FakeCounterCache::with_counter("spend:key:k1:window:1h", Some(decimal("12"))),
         TestDurations::fixed(3600),
         CountingReconnect::new(true),
     );
@@ -131,7 +131,7 @@ async fn window_without_a_reset_time_is_untouched() {
     let mut harness = WindowHarness::new(
         store,
         TestSchedule::fixed(moment(3600)),
-        FakeCounterCache::with_counter("spend:key:k1:window:1h", Some(decimal(12))),
+        FakeCounterCache::with_counter("spend:key:k1:window:1h", Some(decimal("12"))),
         TestDurations::fixed(3600),
         CountingReconnect::new(true),
     );
@@ -163,7 +163,7 @@ async fn expired_window_without_a_cap_resets_to_zero_without_a_read() {
     let mut harness = WindowHarness::new(
         store,
         TestSchedule::fixed(moment(3600)),
-        FakeCounterCache::with_counter("spend:key:k1:window:1h", Some(decimal(12))),
+        FakeCounterCache::with_counter("spend:key:k1:window:1h", Some(decimal("12"))),
         TestDurations::fixed(3600),
         CountingReconnect::new(true),
     );
@@ -178,11 +178,11 @@ async fn expired_window_without_a_cap_resets_to_zero_without_a_read() {
     assert!(harness.cache.read_keys().is_empty());
     assert_eq!(
         harness.cache.memory_of("spend:key:k1:window:1h"),
-        Some(decimal(0))
+        Some(decimal("0"))
     );
     assert_eq!(
         harness.cache.redis_of("spend:key:k1:window:1h"),
-        Some(decimal(0))
+        Some(decimal("0"))
     );
     close_store(harness.store.clone());
     finish(fixture, harness.store, client).await;
@@ -215,7 +215,7 @@ async fn redis_failure_keeps_the_reset_and_the_memory_counter() {
     assert!(reset);
     assert_eq!(
         harness.cache.memory_of("spend:key:k1:window:1h"),
-        Some(decimal(0))
+        Some(decimal("0"))
     );
     assert_eq!(harness.cache.redis_of("spend:key:k1:window:1h"), None);
     assert_eq!(window_text(&window, "reset_at"), Some(next_text()));
@@ -320,7 +320,7 @@ async fn refused_reset_time_leaves_the_window_unchanged() {
     assert_eq!(window_text(&window, "reset_at"), Some(PAST_TEXT.to_owned()));
     assert_eq!(
         harness.cache.memory_of("spend:key:k1:window:1h"),
-        Some(decimal(0))
+        Some(decimal("0"))
     );
     close_store(harness.store.clone());
     finish(fixture, harness.store, client).await;
