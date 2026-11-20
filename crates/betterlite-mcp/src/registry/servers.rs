@@ -85,9 +85,8 @@ impl ServerRegistry {
 }
 
 impl Debug for ServerRegistry {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("ServerRegistry")
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ServerRegistry")
             .field("config_servers", &self.config_servers)
             .field("db_servers", &self.db_servers)
             .field("settings", &self.settings)
