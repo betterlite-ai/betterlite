@@ -151,6 +151,8 @@ struct GigachatTokenBearer {
 
 #[async_trait]
 impl GigachatBearer for GigachatTokenBearer {
+    // the OAuth round trip needs a live GigaChat token endpoint; betterlite-http tests it
+    #[cfg_attr(test, mutants::skip)]
     async fn access_token(
         &self,
         credentials: Option<&SecretString>,

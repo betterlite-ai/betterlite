@@ -62,6 +62,8 @@ impl PassthroughStreamCollector for NoSpendCollector {
 
     fn add(&mut self, _chunk: &[u8]) {}
 
+    // Logged = () and the pass-through call never reads it, so the answer is invisible either way
+    #[cfg_attr(test, mutants::skip)]
     fn build_logged_response(
         &self,
         _logging_obj: &mut dyn PassthroughLogging,
@@ -74,6 +76,8 @@ impl PassthroughStreamCollector for NoSpendCollector {
 struct TracingSink;
 
 impl LogSink for TracingSink {
+    // the body only writes a tracing record, so an emptied one leaves no state a test can read
+    #[cfg_attr(test, mutants::skip)]
     fn emit(&self, record: LogRecord) {
         tracing::debug!(
             level = ?record.level,

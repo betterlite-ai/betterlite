@@ -98,21 +98,17 @@ impl From<AzurePassthroughError> for ConfigError {
 
 impl From<CredentialsError> for ConfigError {
     fn from(error: CredentialsError) -> Self {
-        status_error(credentials_status(&error), error.to_string())
-    }
-}
-
-// the status a failed Entra token fetch carries; the other failures have none
-const fn credentials_status(error: &CredentialsError) -> Option<u16> {
-    match error {
-        CredentialsError::Token(token) => token.status(),
-        CredentialsError::Source(failure) => failure.status,
-        CredentialsError::MissingCredentials { .. }
-        | CredentialsError::AgentTokenUnresolved { .. }
-        | CredentialsError::InvalidParam { .. }
-        | CredentialsError::TokenNotString { .. }
-        | CredentialsError::ProviderFailed { .. }
-        | CredentialsError::Secret(_) => None,
+        let status = match &error {
+            CredentialsError::Token(token) => token.status(),
+            CredentialsError::Source(failure) => failure.status,
+            CredentialsError::MissingCredentials { .. }
+            | CredentialsError::AgentTokenUnresolved { .. }
+            | CredentialsError::InvalidParam { .. }
+            | CredentialsError::TokenNotString { .. }
+            | CredentialsError::ProviderFailed { .. }
+            | CredentialsError::Secret(_) => None,
+        };
+        status_error(status, error.to_string())
     }
 }
 

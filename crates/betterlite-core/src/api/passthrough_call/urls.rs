@@ -138,7 +138,7 @@ fn region(params: &Object, model: &str, mantle: bool) -> Result<String, ConfigEr
         return Ok(region.to_owned());
     }
     if mantle {
-        let base = text_param(params, "api_base")?.filter(|base| !base.is_empty());
+        let base = text_param(params, "api_base")?;
         if let Some(region) = base.and_then(mantle_region_from_host) {
             return Ok(region);
         }
@@ -190,8 +190,11 @@ fn mantle_region_from_host(base: &str) -> Option<String> {
 fn encoded_model_id(model_id: &str) -> String {
     let probe = format!("/model/{model_id}/converse");
     let encoded = encode_runtime_modelid_arn(&probe);
-    let segment = encoded.split('/').nth(2).filter(|part| !part.is_empty());
-    segment.unwrap_or(model_id).to_owned()
+    let segment = encoded.split('/').nth(2).unwrap_or("");
+    if segment.is_empty() {
+        return model_id.to_owned();
+    }
+    segment.to_owned()
 }
 
 fn rewrite_model_path(endpoint: &str, encoded: &str) -> String {
