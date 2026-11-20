@@ -16,6 +16,7 @@ use super::super::params;
 use super::super::{ContainerCallDeps, ContainerListCall, LIST_CALL_TYPE};
 use super::{ContainerOperation, mock_answer, params_failure, provider_config, resolved_timeout};
 use crate::api::container_file_endpoints::handler::ContainerConfigLookup;
+// ast-grep-ignore: no-long-names
 use crate::containers::container_request_parameters::get_requested_container_list_optional_param;
 
 // a mock answer, or everything the list handler call needs
@@ -113,6 +114,7 @@ fn log_list_params(
     kwargs: &IndexMap<String, Json>,
     deps: &ContainerCallDeps<'_>,
 ) -> Result<(), ContainerOpFailure> {
+    // ast-grep-ignore: no-long-names
     let requested = get_requested_container_list_optional_param(&params::list_request(call));
     let logged = params::logged_params(&requested)
         .map_err(|error| params_failure(error, &call.custom_llm_provider, deps.redactor))?;

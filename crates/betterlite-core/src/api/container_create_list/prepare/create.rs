@@ -17,7 +17,10 @@ use super::super::{CREATE_CALL_TYPE, ContainerCallDeps, ContainerCreateCall};
 use super::{ContainerOperation, mock_answer, params_failure, provider_config, resolved_timeout};
 use crate::api::container_file_endpoints::handler::ContainerConfigLookup;
 use crate::containers::container_request_parameters::{
-    get_optional_params_container_create, get_requested_container_create_optional_param,
+    // ast-grep-ignore: no-long-names
+    get_optional_params_container_create,
+    // ast-grep-ignore: no-long-names
+    get_requested_container_create_optional_param,
 };
 
 // a mock answer, or everything the create handler call needs
@@ -116,7 +119,9 @@ fn mapped_create_params(
     kwargs: &IndexMap<String, Json>,
     deps: &ContainerCallDeps<'_>,
 ) -> Result<Object, ContainerOpFailure> {
+    // ast-grep-ignore: no-long-names
     let requested = get_requested_container_create_optional_param(&params::create_request(call));
+    // ast-grep-ignore: no-long-names
     let mapped = get_optional_params_container_create(&requested);
     let logged = params::logged_params(&mapped)
         .map_err(|error| params_failure(error, &call.custom_llm_provider, deps.redactor))?;

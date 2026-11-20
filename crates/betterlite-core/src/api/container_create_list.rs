@@ -28,6 +28,7 @@ use self::prepare::create::{PreparedCreate, prepare_create};
 use self::prepare::list::{PreparedList, prepare_list};
 use crate::api::container_collection_http::ContainerCollectionError;
 use crate::api::container_file_endpoints::handler::ContainerConfigLookup;
+// ast-grep-ignore: no-long-names
 use crate::containers::container_request_parameters::encode_container_id_in_response;
 
 // LiteLLM declares both providers and the timeout argument with these defaults
@@ -224,6 +225,7 @@ fn encode_created(
     call: &ContainerCreateCall,
     redactor: &Redactor,
 ) -> Result<ContainerObject, ContainerOpFailure> {
+    // ast-grep-ignore: no-long-names
     let encoded = encode_container_id_in_response(
         &container.id,
         Some(&call.custom_llm_provider),
