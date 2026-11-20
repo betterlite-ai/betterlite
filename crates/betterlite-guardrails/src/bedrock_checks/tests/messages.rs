@@ -58,7 +58,9 @@ fn input_without_messages_builds_nothing() {
 
 #[test]
 fn ten_content_blocks_stay_in_one_message() {
-    let texts: Vec<String> = (0..10).map(|index| format!("text-{index}")).collect();
+    let texts: Vec<String> = (0_usize..10_usize)
+        .map(|index| format!("text-{index}"))
+        .collect();
     let chunked = chunk_texts(Role::User, &texts);
     assert_eq!(chunked.len(), 1);
     assert_eq!(blocks(&chunked[0]).len(), 10);

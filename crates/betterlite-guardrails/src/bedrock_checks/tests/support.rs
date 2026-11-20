@@ -99,8 +99,10 @@ pub(crate) fn guardrail() -> BedrockGuardrail {
 }
 
 pub(crate) fn base() -> GuardrailBase {
-    let mut settings = GuardrailSettings::default();
-    settings.guardrail_name = Some(GUARDRAIL_NAME.to_owned());
+    let settings = GuardrailSettings {
+        guardrail_name: Some(GUARDRAIL_NAME.to_owned()),
+        ..GuardrailSettings::default()
+    };
     GuardrailBase::new(settings, false).expect("the test base")
 }
 
@@ -226,7 +228,6 @@ pub(crate) struct Sent {
     pub(crate) content_type: Option<String>,
     pub(crate) authorization: Option<String>,
     pub(crate) body: String,
-    pub(crate) deadline: Duration,
 }
 
 impl Sent {
@@ -243,7 +244,6 @@ impl Sent {
             content_type: header(&request.headers, "content-type"),
             authorization: header(&request.headers, "authorization"),
             body,
-            deadline: request.deadline,
         }
     }
 }
@@ -367,13 +367,13 @@ pub(crate) fn field(fields: &BTreeMap<String, GuardrailValue>, key: &str) -> Gua
     fields.get(key).expect("the record field").clone()
 }
 
-pub(crate) enum Label<'a> {
-    Category(&'a str),
-    TypeName(&'a str),
+pub(crate) enum Label<'value> {
+    Category(&'value str),
+    TypeName(&'value str),
 }
 
-pub(crate) fn scored(check: &str, label: Label<'_>, score: f64) -> ChecksViolation {
-    let (category, type_name, severity_score, confidence_score) = match label {
+pub(crate) fn scored(check: &str, label: &Label<'_>, score: f64) -> ChecksViolation {
+    let (category, type_name, severity_score, confidence_score) = match *label {
         Label::Category(category) => (
             Some(category.to_owned()),
             None,

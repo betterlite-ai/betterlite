@@ -29,7 +29,7 @@ fn request_data() -> BTreeMap<String, GuardrailValue> {
 
 #[test]
 fn http_exception_on_violations() {
-    let found = vec![scored("contentFilter", Label::Category("VIOLENCE"), 0.8)];
+    let found = vec![scored("contentFilter", &Label::Category("VIOLENCE"), 0.8)];
     let failure = exception(&guardrail(), &base(), &found, &request_data());
     let GuardrailFailure::HttpObject { status, detail } = failure else {
         panic!("expected a 400 http object: {failure:?}");
@@ -68,7 +68,7 @@ fn http_exception_on_violations() {
 
 #[test]
 fn modify_response_on_violations() {
-    let found = vec![scored("contentFilter", Label::Category("VIOLENCE"), 0.8)];
+    let found = vec![scored("contentFilter", &Label::Category("VIOLENCE"), 0.8)];
     let failure = exception(&blocking_guardrail(), &base(), &found, &request_data());
     let GuardrailFailure::ModifyResponse(response) = failure else {
         panic!("expected a modify response: {failure:?}");
@@ -83,7 +83,7 @@ fn modify_response_on_violations() {
 
 #[test]
 fn modify_response_uses_the_default_model_when_absent() {
-    let found = vec![scored("contentFilter", Label::Category("VIOLENCE"), 0.8)];
+    let found = vec![scored("contentFilter", &Label::Category("VIOLENCE"), 0.8)];
     let failure = exception(&blocking_guardrail(), &base(), &found, &BTreeMap::new());
     let GuardrailFailure::ModifyResponse(response) = failure else {
         panic!("expected a modify response: {failure:?}");
@@ -153,7 +153,7 @@ fn block_detail_writes_the_truncated_violation() {
 
 #[test]
 fn block_detail_keeps_an_integral_score() {
-    let found = vec![scored("contentFilter", Label::Category("VIOLENCE"), 1.0)];
+    let found = vec![scored("contentFilter", &Label::Category("VIOLENCE"), 1.0)];
     let failure = exception(&guardrail(), &base(), &found, &request_data());
     let GuardrailFailure::HttpObject { detail, .. } = failure else {
         panic!("expected a 400 http object: {failure:?}");

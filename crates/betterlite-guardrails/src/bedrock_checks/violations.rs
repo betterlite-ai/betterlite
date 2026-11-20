@@ -62,7 +62,7 @@ fn collect_scores(
     threshold: Option<ConfidenceThreshold>,
     violations: &mut Vec<ChecksViolation>,
 ) {
-    let Some(threshold) = threshold else {
+    let Some(minimum) = threshold else {
         return;
     };
     let Some(entries) = result.and_then(|value| value.results.as_ref()) else {
@@ -74,7 +74,7 @@ fn collect_scores(
             check,
             Label::Category(entry.category.clone()),
             entry.severity_score.as_ref(),
-            threshold,
+            minimum,
         );
     }
 }
@@ -92,18 +92,18 @@ fn push_scored(
     score: Option<&Number>,
     threshold: ConfidenceThreshold,
 ) {
-    let Some(score) = score.and_then(Number::as_f64) else {
+    let Some(value) = score.and_then(Number::as_f64) else {
         return;
     };
-    if score < threshold.0 {
+    if value < threshold.0 {
         return;
     }
-    let Some(score) = Number::from_f64(score) else {
+    let Some(encoded) = Number::from_f64(value) else {
         return;
     };
     let (category, type_name, severity_score, confidence_score) = match label {
-        Label::Category(category) => (category, None, Some(score), None),
-        Label::TypeName(type_name) => (None, type_name, None, Some(score)),
+        Label::Category(category) => (category, None, Some(encoded), None),
+        Label::TypeName(type_name) => (None, type_name, None, Some(encoded)),
     };
     violations.push(ChecksViolation {
         check: Some(check.to_owned()),
@@ -123,13 +123,13 @@ fn collect_sensitive(
     threshold: Option<ConfidenceThreshold>,
     violations: &mut Vec<ChecksViolation>,
 ) {
-    let Some(threshold) = threshold else {
+    let Some(minimum) = threshold else {
         return;
     };
-    let Some(result) = result else {
+    let Some(sensitive) = result else {
         return;
     };
-    if result.truncated == Some(true) {
+    if sensitive.truncated == Some(true) {
         violations.push(ChecksViolation {
             check: Some(check.to_owned()),
             category: None,
@@ -140,7 +140,7 @@ fn collect_sensitive(
             extra: BTreeMap::new(),
         });
     }
-    let Some(entries) = result.results.as_ref() else {
+    let Some(entries) = sensitive.results.as_ref() else {
         return;
     };
     for entry in entries {
@@ -149,7 +149,7 @@ fn collect_sensitive(
             check,
             Label::TypeName(entry.type_name.clone()),
             entry.confidence_score.as_ref(),
-            threshold,
+            minimum,
         );
     }
 }
@@ -196,10 +196,12 @@ fn label(violation: &ChecksViolation) -> Option<&str> {
         .category
         .as_deref()
         .filter(|value| !value.is_empty())
-        .or(violation
-            .type_name
-            .as_deref()
-            .filter(|value| !value.is_empty()))
+        .or_else(|| {
+            violation
+                .type_name
+                .as_deref()
+                .filter(|value| !value.is_empty())
+        })
 }
 
 const fn action(violations: &[ChecksViolation]) -> &'static str {

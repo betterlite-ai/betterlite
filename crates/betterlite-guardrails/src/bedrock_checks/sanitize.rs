@@ -11,8 +11,8 @@ pub fn for_logging(response: &ChecksResponse) -> ChecksResponse {
         .results
         .as_mut()
         .and_then(|results| results.sensitive_information.as_mut());
-    if let Some(sensitive) = sensitive
-        && let Some(entries) = sensitive.results.as_mut()
+    if let Some(pii) = sensitive
+        && let Some(entries) = pii.results.as_mut()
     {
         for entry in entries {
             strip_location(entry);
@@ -47,8 +47,8 @@ fn as_floats(response: &mut ChecksResponse) {
         .sensitive_information
         .as_mut()
         .and_then(|sensitive| sensitive.results.as_mut());
-    if let Some(entries) = entries {
-        for entry in entries {
+    if let Some(pii_entries) = entries {
+        for entry in pii_entries {
             entry.confidence_score = entry
                 .confidence_score
                 .as_ref()

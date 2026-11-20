@@ -18,7 +18,7 @@ fn content_filter_at_the_threshold_is_a_violation() {
     let found = collect(
         Some(&response),
         &checks_named(&["contentFilter"]),
-        thresholds(Some(0.8), None, None),
+        thresholds(Some(0.8_f64), None, None),
     );
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].check.as_deref(), Some("contentFilter"));
@@ -35,7 +35,7 @@ fn content_filter_below_the_threshold_is_not_a_violation() {
     let found = collect(
         Some(&response),
         &checks_named(&["contentFilter"]),
-        thresholds(Some(0.8), None, None),
+        thresholds(Some(0.8_f64), None, None),
     );
     assert!(found.is_empty());
 }
@@ -61,7 +61,7 @@ fn unconfigured_check_is_not_evaluated() {
     let found = collect(
         Some(&response),
         &checks_named(&["promptAttack"]),
-        thresholds(Some(0.5), Some(0.5), None),
+        thresholds(Some(0.5_f64), Some(0.5_f64), None),
     );
     assert!(found.is_empty());
 }
@@ -74,7 +74,7 @@ fn results_of_an_unconfigured_check_are_not_evaluated() {
     let found = collect(
         Some(&response),
         &checks_named(&["contentFilter"]),
-        thresholds(None, Some(0.5), Some(0.5)),
+        thresholds(None, Some(0.5_f64), Some(0.5_f64)),
     );
     assert!(found.is_empty());
 }
@@ -87,7 +87,7 @@ fn prompt_attack_threshold_match_is_a_violation() {
     let found = collect(
         Some(&response),
         &checks_named(&["promptAttack"]),
-        thresholds(None, Some(0.5), None),
+        thresholds(None, Some(0.5_f64), None),
     );
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].check.as_deref(), Some("promptAttack"));
@@ -103,7 +103,7 @@ fn pii_confidence_at_the_threshold_is_a_violation() {
     let found = collect(
         Some(&response),
         &checks_named(&["sensitiveInformation"]),
-        thresholds(None, None, Some(0.9)),
+        thresholds(None, None, Some(0.9_f64)),
     );
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].check.as_deref(), Some("sensitiveInformation"));
@@ -120,7 +120,7 @@ fn pii_below_the_threshold_is_not_a_violation() {
     let found = collect(
         Some(&response),
         &checks_named(&["sensitiveInformation"]),
-        thresholds(None, None, Some(0.9)),
+        thresholds(None, None, Some(0.9_f64)),
     );
     assert!(found.is_empty());
 }
@@ -131,7 +131,7 @@ fn truncated_sensitive_information_is_a_violation_without_entries() {
     let found = collect(
         Some(&response),
         &checks_named(&["sensitiveInformation"]),
-        thresholds(None, None, Some(0.9)),
+        thresholds(None, None, Some(0.9_f64)),
     );
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].truncated, Some(true));
@@ -159,7 +159,7 @@ fn truncated_false_adds_no_violation_of_its_own() {
     let found = collect(
         Some(&response),
         &checks_named(&["sensitiveInformation"]),
-        thresholds(None, None, Some(0.9)),
+        thresholds(None, None, Some(0.9_f64)),
     );
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].truncated, None);
@@ -174,7 +174,7 @@ fn truncated_result_counts_before_its_scored_entries() {
     let found = collect(
         Some(&response),
         &checks_named(&["sensitiveInformation"]),
-        thresholds(None, None, Some(0.9)),
+        thresholds(None, None, Some(0.9_f64)),
     );
     assert_eq!(found.len(), 2);
     assert_eq!(found[0].truncated, Some(true));
@@ -188,7 +188,7 @@ fn entry_without_a_score_is_not_a_violation() {
     let found = collect(
         Some(&content),
         &checks_named(&["contentFilter"]),
-        thresholds(Some(0.5), None, None),
+        thresholds(Some(0.5_f64), None, None),
     );
     assert!(found.is_empty());
     let pii =
@@ -196,7 +196,7 @@ fn entry_without_a_score_is_not_a_violation() {
     let pii_found = collect(
         Some(&pii),
         &checks_named(&["sensitiveInformation"]),
-        thresholds(None, None, Some(0.5)),
+        thresholds(None, None, Some(0.5_f64)),
     );
     assert!(pii_found.is_empty());
 }
@@ -207,13 +207,13 @@ fn a_response_without_results_yields_no_violations() {
     let found = collect(
         Some(&response),
         &checks_named(&["contentFilter", "promptAttack", "sensitiveInformation"]),
-        thresholds(Some(0.0), Some(0.0), Some(0.0)),
+        thresholds(Some(0.0_f64), Some(0.0_f64), Some(0.0_f64)),
     );
     assert!(found.is_empty());
     let without_response = collect(
         None,
         &checks_named(&["contentFilter"]),
-        thresholds(Some(0.0), None, None),
+        thresholds(Some(0.0_f64), None, None),
     );
     assert!(without_response.is_empty());
 }
@@ -227,8 +227,8 @@ fn status_is_intervened_only_over_the_threshold() {
 #[test]
 fn tracing_detail_collects_categories_and_the_action() {
     let found = vec![
-        scored("contentFilter", Label::Category("VIOLENCE"), 0.9),
-        scored("sensitiveInformation", Label::TypeName("EMAIL"), 0.8),
+        scored("contentFilter", &Label::Category("VIOLENCE"), 0.9),
+        scored("sensitiveInformation", &Label::TypeName("EMAIL"), 0.8),
     ];
     let detail = tracing_detail(&found);
     assert_eq!(
@@ -253,7 +253,7 @@ fn tracing_detail_falls_back_to_the_type_and_skips_empty_labels() {
             truncated: None,
             extra: BTreeMap::new(),
         },
-        scored("contentFilter", Label::Category(""), 0.9),
+        scored("contentFilter", &Label::Category(""), 0.9),
     ];
     let detail = tracing_detail(&found);
     assert_eq!(

@@ -56,12 +56,16 @@ fn blocked_model(request_data: &BTreeMap<String, GuardrailValue>) -> String {
 fn violation_value(violation: &ChecksViolation) -> GuardrailValue {
     let mut fields = BTreeMap::new();
     insert_text(&mut fields, "check", violation.check.as_deref());
-    if let Some(score) = &violation.severity_score {
-        insert_text(&mut fields, "category", violation.category.as_deref());
-        insert_number(&mut fields, "severityScore", score);
-    } else if let Some(score) = &violation.confidence_score {
-        insert_text(&mut fields, "type", violation.type_name.as_deref());
-        insert_number(&mut fields, "confidenceScore", score);
+    match (&violation.severity_score, &violation.confidence_score) {
+        (Some(score), _) => {
+            insert_text(&mut fields, "category", violation.category.as_deref());
+            insert_number(&mut fields, "severityScore", score);
+        }
+        (None, Some(score)) => {
+            insert_text(&mut fields, "type", violation.type_name.as_deref());
+            insert_number(&mut fields, "confidenceScore", score);
+        }
+        (None, None) => {}
     }
     if violation.truncated == Some(true) {
         fields.insert("truncated".to_owned(), GuardrailValue::Boolean(true));

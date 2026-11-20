@@ -63,7 +63,8 @@ fn output(response: Option<&ModelResponse>) -> Vec<ChecksMessage> {
         .content
         .unwrap_or_default()
         .into_iter()
-        .filter_map(|item| item.text.and_then(|text| text.text))
+        .filter_map(|item| item.text)
+        .filter_map(|text| text.text)
         .filter(|text| !text.is_empty())
         .collect();
     chunk_texts(Role::Assistant, &texts)
