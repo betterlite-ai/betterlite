@@ -60,6 +60,22 @@ pub enum SuppliedClient<'call, Synchronous, Asynchronous> {
     Async(&'call Asynchronous),
 }
 
+impl<'call, Synchronous, Asynchronous> SuppliedClient<'call, Synchronous, Asynchronous> {
+    pub(crate) const fn synchronous(&self) -> Option<&'call Synchronous> {
+        match self {
+            Self::Sync(client) => Some(*client),
+            Self::Async(_) => None,
+        }
+    }
+
+    pub(crate) const fn asynchronous(&self) -> Option<&'call Asynchronous> {
+        match self {
+            Self::Sync(_) => None,
+            Self::Async(client) => Some(*client),
+        }
+    }
+}
+
 pub struct StatusCall<'call, Synchronous, Asynchronous> {
     pub video_id: &'call str,
     pub custom_llm_provider: &'call str,

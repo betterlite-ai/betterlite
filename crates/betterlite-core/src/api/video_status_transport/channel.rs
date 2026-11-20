@@ -1,27 +1,44 @@
 use std::future::{Future, ready};
 
 use betterlite_http::proxy::UpstreamResponse;
+use betterlite_http::proxy::pool::PoolError;
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_models::identity::provider_id::ProviderId;
 
 use super::clients::{AsyncClient, ClientFactories, SyncClient, provider_id, ssl_verify};
 use super::config::StatusConfig;
 use super::error::{ProviderFailure, VideoStatusError};
-use super::records::{Params, StatusCall, StatusRequest, SuppliedClient, VideoReply};
+use super::records::{Params, StatusCall, StatusRequest, VideoReply};
 use crate::api::video_records::VideoObject;
 
 // What differs between the blocking and the async call, so one body serves both
 pub(crate) trait Channel<Factories: ClientFactories> {
     type Client: Send + Sync;
+    // what this mode resolves the provider name into before it asks the factories
+    type Provider;
 
     fn supplied<'call>(
         call: &StatusCall<'call, Factories::Synchronous, Factories::Asynchronous>,
     ) -> Option<&'call Self::Client>;
 
+    fn resolve(provider: &str) -> Result<Self::Provider, VideoStatusError>;
+
+    fn client(
+        factories: &Factories,
+        provider: Self::Provider,
+        verify: Option<bool>,
+    ) -> Result<Self::Client, PoolError>;
+
+    // the provider is resolved first, as LiteLLM builds its enum before the client reads ssl_verify
     fn build(
         factories: &Factories,
         provider: &str,
         litellm_params: &Params,
-    ) -> Result<Self::Client, VideoStatusError>;
+    ) -> Result<Self::Client, VideoStatusError> {
+        let resolved = Self::resolve(provider)?;
+        let verify = ssl_verify(litellm_params)?;
+        Self::client(factories, resolved, verify).map_err(VideoStatusError::from)
+    }
 
     // one lifetime ties the client, the request and the returned future together
     fn send<'call>(
@@ -42,25 +59,25 @@ pub(crate) struct AsynchronousKind;
 
 impl<Factories: ClientFactories> Channel<Factories> for SynchronousKind {
     type Client = Factories::Synchronous;
+    // the blocking factory is asked for no provider, so the name resolves to nothing
+    type Provider = ();
 
     fn supplied<'call>(
         call: &StatusCall<'call, Factories::Synchronous, Factories::Asynchronous>,
     ) -> Option<&'call Factories::Synchronous> {
-        match call.client.as_ref() {
-            Some(SuppliedClient::Sync(client)) => Some(*client),
-            Some(SuppliedClient::Async(_)) | None => None,
-        }
+        call.client.as_ref()?.synchronous()
     }
 
-    fn build(
+    fn resolve(_provider: &str) -> Result<(), VideoStatusError> {
+        Ok(())
+    }
+
+    fn client(
         factories: &Factories,
-        _provider: &str,
-        litellm_params: &Params,
-    ) -> Result<Self::Client, VideoStatusError> {
-        let verify = ssl_verify(litellm_params)?;
-        factories
-            .sync_client(verify)
-            .map_err(VideoStatusError::from)
+        _provider: (),
+        verify: Option<bool>,
+    ) -> Result<Self::Client, PoolError> {
+        factories.sync_client(verify)
     }
 
     // the blocking client answers before this future is first polled, so it never suspends
@@ -82,26 +99,25 @@ impl<Factories: ClientFactories> Channel<Factories> for SynchronousKind {
 
 impl<Factories: ClientFactories> Channel<Factories> for AsynchronousKind {
     type Client = Factories::Asynchronous;
+    // get_async_httpx_client takes the provider as a litellm.LlmProviders member
+    type Provider = ProviderId;
 
     fn supplied<'call>(
         call: &StatusCall<'call, Factories::Synchronous, Factories::Asynchronous>,
     ) -> Option<&'call Factories::Asynchronous> {
-        match call.client.as_ref() {
-            Some(SuppliedClient::Async(client)) => Some(*client),
-            Some(SuppliedClient::Sync(_)) | None => None,
-        }
+        call.client.as_ref()?.asynchronous()
     }
 
-    fn build(
+    fn resolve(provider: &str) -> Result<ProviderId, VideoStatusError> {
+        provider_id(provider)
+    }
+
+    fn client(
         factories: &Factories,
-        provider: &str,
-        litellm_params: &Params,
-    ) -> Result<Self::Client, VideoStatusError> {
-        let verified = provider_id(provider)?;
-        let verify = ssl_verify(litellm_params)?;
-        factories
-            .async_client(verified, verify)
-            .map_err(VideoStatusError::from)
+        provider: ProviderId,
+        verify: Option<bool>,
+    ) -> Result<Self::Client, PoolError> {
+        factories.async_client(provider, verify)
     }
 
     fn send<'call>(
