@@ -5,6 +5,7 @@ use betterlite_postgres_fixture::connection::PostgresFixture;
 use betterlite_postgres_fixture::sql::READ_SPEND_TABLES;
 use clap::Parser;
 use deadpool_postgres::{Client, Manager, Pool};
+use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
 
@@ -146,17 +147,20 @@ async fn query_errors_on_a_row_that_does_not_decode() {
     fixture.close_async().await.unwrap();
 }
 
-// LiteLLM's float row keeps an infinity; Decimal cannot hold one, so the source answers with an error
+// LiteLLM's float row keeps a NaN or an infinity, and the HAVING keeps both; Decimal cannot hold either
+#[rstest]
+#[case::infinity("Infinity")]
+#[case::nan("NaN")]
 #[tokio::test]
-async fn query_errors_on_a_non_finite_spend() {
+async fn query_errors_on_a_non_finite_spend(#[case] spend: &str) {
     let (fixture, pool, client) = database(vec![READ_SPEND_TABLES.to_owned()]).await;
     client
-        .batch_execute(
+        .batch_execute(&format!(
             r#"
         INSERT INTO "LiteLLM_DailyUserSpend" (user_id, date, spend, api_requests) VALUES
-            ('user-1', '2026-01-15', 'Infinity'::float8, 1);
-    "#,
-        )
+            ('user-1', '2026-01-15', '{spend}'::float8, 1);
+    "#
+        ))
         .await
         .unwrap();
     drop(client);

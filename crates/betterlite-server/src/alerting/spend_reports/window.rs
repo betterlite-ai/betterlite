@@ -2,7 +2,7 @@ use std::error::Error as StdError;
 use std::fmt::Write as _;
 
 use betterlite_logging::analytics::python::float_text;
-use chrono::{Days, Months, NaiveDate};
+use chrono::{Datelike as _, Days, Months, NaiveDate};
 
 use super::{SPEND_REPORT_PLACES, SpendReportError, float_rounded};
 use crate::spend::estimates::report::SpendRow;

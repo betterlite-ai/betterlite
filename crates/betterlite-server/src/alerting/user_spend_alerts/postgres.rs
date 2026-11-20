@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use betterlite_db::postgres_store::errors::{DbError, backend};
 use betterlite_db::postgres_store::session::PostgresStore;
-use chrono::{Days, NaiveDate};
+use chrono::{Datelike as _, Days, NaiveDate};
 use rust_decimal::Decimal;
 use tokio_postgres::Row;
 use tokio_postgres::types::{FromSql, ToSql};
