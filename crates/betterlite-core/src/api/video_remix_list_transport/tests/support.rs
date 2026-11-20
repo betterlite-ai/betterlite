@@ -532,6 +532,13 @@ impl<'call, Source: VideoClientSource> Setup<'call, Source> {
             }),
         }
     }
+
+    fn into_list_call(self) -> ListCall<'call, Source> {
+        match self.into_call(CallKind::List) {
+            FixtureCall::List(call) => call,
+            FixtureCall::Remix(_) => panic!("the sync list case builds a list call"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -684,9 +691,7 @@ where
         state: &mut bench.fixture.state,
         env: &env,
     };
-    let FixtureCall::List(call) = setup.into_call(CallKind::List) else {
-        panic!("the sync list helper is given a list call");
-    };
+    let call = setup.into_list_call();
     Ok(done(bench.transport.list(
         &bench.config,
         call,
