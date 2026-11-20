@@ -1,68 +1,66 @@
 import asyncio
 from collections.abc import Coroutine
-from typing import Literal, Protocol, TypeAlias, TypedDict, Unpack
+from enum import Enum
+from typing import Literal, Protocol, TypeAlias, TypedDict, Unpack, runtime_checkable
 
 import httpx
 import litellm
 import openai
-from litellm.types.llms.openai import ResponsesAPIResponse
-from pydantic import BaseModel, ConfigDict, JsonValue
+from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
 from openai_chat import Failure, project_failure
 
+JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
-# the values both retrieve entries read; the four input-items arguments come on their own dict
-class RetrieveValues(TypedDict, total=False):
+
+# every keyword argument the four SDK calls take; each call reads its own subset
+class LifecycleValues(TypedDict, total=False):
     api_base: str | None
     api_key: str | None
     ssl_verify: bool | None
     litellm_call_id: str | None
     metadata: dict[str, JsonValue] | None
     litellm_metadata: dict[str, JsonValue] | None
+    custom_llm_provider: str | None
+    timeout: float | httpx.Timeout | None
     extra_headers: dict[str, str] | None
     extra_query: dict[str, JsonValue] | None
     extra_body: dict[str, JsonValue] | None
-    timeout: float | httpx.Timeout | None
-    custom_llm_provider: str | None
-
-
-class ItemsValues(TypedDict, total=False):
-    api_base: str | None
-    api_key: str | None
-    ssl_verify: bool | None
-    litellm_call_id: str | None
-    metadata: dict[str, JsonValue] | None
-    litellm_metadata: dict[str, JsonValue] | None
     after: str | None
     before: str | None
     include: list[str] | None
     limit: int | None
     order: Literal["asc", "desc"] | None
-    extra_headers: dict[str, str] | None
-    timeout: float | httpx.Timeout | None
-    custom_llm_provider: str | None
 
 
-# the four SDK entries are unannotated **kwargs functions, so each name is declared as the call it answers
-class LifecycleFacade(Protocol):
-    def get_responses(
-        self, response_id: str, **values: Unpack[RetrieveValues]
-    ) -> ResponsesAPIResponse | Coroutine[object, object, ResponsesAPIResponse]: ...
-
-    def aget_responses(
-        self, response_id: str, **values: Unpack[RetrieveValues]
-    ) -> Coroutine[object, object, ResponsesAPIResponse]: ...
-
-    def list_input_items(
-        self, response_id: str, **values: Unpack[ItemsValues]
-    ) -> dict[str, JsonValue] | Coroutine[object, object, dict[str, JsonValue]]: ...
-
-    def alist_input_items(
-        self, response_id: str, **values: Unpack[ItemsValues]
-    ) -> Coroutine[object, object, dict[str, JsonValue]]: ...
+# the sync calls answer the response or the item page, the async ones a coroutine of it
+LifecycleResult: TypeAlias = (
+    BaseModel | dict[str, JsonValue] | Coroutine[None, None, BaseModel | dict[str, JsonValue]]
+)
 
 
-FACADE: LifecycleFacade = litellm
+class ReadCall(Protocol):
+    def __call__(
+        self, response_id: str, **values: Unpack[LifecycleValues]
+    ) -> LifecycleResult: ...
+
+
+# litellm leaves the four reads unannotated, so every name on the module answers one typed call
+class LifecycleApi(Protocol):
+    def __getattr__(self, name: str) -> ReadCall: ...
+
+
+API: LifecycleApi = litellm
+
+
+@runtime_checkable
+class HasModelDump(Protocol):
+    def model_dump_json(self) -> str: ...
+
+
+class Answer(Enum):
+    RESPONSE = "response"
+    ITEMS = "items"
 
 
 class StructuredTimeout(BaseModel):
@@ -84,18 +82,18 @@ class LifecycleParams(BaseModel):
     litellm_call_id: str | None = None
     metadata: dict[str, JsonValue] | None = None
     litellm_metadata: dict[str, JsonValue] | None = None
+    extra_headers: dict[str, str] | None = None
+    timeout: float | StructuredTimeout | None = None
 
 
 class RetrieveCall(LifecycleParams):
     response_id: str
     custom_llm_provider: str | None = None
-    extra_headers: dict[str, str] | None = None
     extra_query: dict[str, JsonValue] | None = None
     extra_body: dict[str, JsonValue] | None = None
-    timeout: float | StructuredTimeout | None = None
 
 
-# the absent limit and order are the SDK signature's own defaults, while an explicit null passes None on
+# absent limit and order take the SDK signature's defaults, while an explicit null passes None on
 class InputItemsCall(LifecycleParams):
     response_id: str
     after: str | None = None
@@ -104,8 +102,6 @@ class InputItemsCall(LifecycleParams):
     limit: int | None = 20
     order: Literal["asc", "desc"] | None = "desc"
     custom_llm_provider: str | None = None
-    extra_headers: dict[str, str] | None = None
-    timeout: float | StructuredTimeout | None = None
 
 
 class RetrieveStep(BaseModel):
@@ -140,7 +136,7 @@ Step: TypeAlias = GetResponsesKind | AgetResponsesKind | ListInputItemsKind | Al
 
 
 class Retrieved(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", from_attributes=True)
 
     id: str
     created_at: int
@@ -182,14 +178,12 @@ class ResponsesLifecycleReadRequest(BaseModel):
     def serialize(self, api_base: str) -> str:
         steps = [run_step(step, api_base) for step in self.responses_lifecycle_read.steps]
         envelope = LifecycleEnvelope(
-            responses_lifecycle_read=LifecycleValue(
-                value=LifecycleOutcome(steps=steps)
-            )
+            responses_lifecycle_read=LifecycleValue(value=LifecycleOutcome(steps=steps))
         )
         return envelope.model_dump_json(by_alias=True, exclude_unset=True)
 
 
-# the SDK's timeout is float | httpx.Timeout | None; a null and a zero both fall back to its request_timeout
+# the SDK's timeout is float | httpx.Timeout | None; a null falls back to its request_timeout
 def timeout_value(timeout: float | StructuredTimeout | None) -> float | httpx.Timeout | None:
     match timeout:
         case StructuredTimeout():
@@ -199,116 +193,68 @@ def timeout_value(timeout: float | StructuredTimeout | None) -> float | httpx.Ti
                 write=timeout.write,
                 pool=timeout.pool,
             )
-        case float():
+        case float() | None:
             return timeout
-        case None:
-            return None
 
 
-def retrieve_values(call: RetrieveCall, harness: str) -> RetrieveValues:
-    return RetrieveValues(
+# the common kwargs every call takes, then the ones only its own step carries
+def lifecycle_values(step: RetrieveStep | InputItemsStep, harness: str) -> LifecycleValues:
+    call = step.call
+    values = LifecycleValues(
         api_base=call.api_base if call.api_base is not None else harness,
         api_key=call.api_key,
         ssl_verify=call.ssl_verify,
         litellm_call_id=call.litellm_call_id,
         metadata=call.metadata,
         litellm_metadata=call.litellm_metadata,
-        extra_headers=call.extra_headers,
-        extra_query=call.extra_query,
-        extra_body=call.extra_body,
-        timeout=timeout_value(call.timeout),
         custom_llm_provider=call.custom_llm_provider,
-    )
-
-
-def items_values(call: InputItemsCall, harness: str) -> ItemsValues:
-    return ItemsValues(
-        api_base=call.api_base if call.api_base is not None else harness,
-        api_key=call.api_key,
-        ssl_verify=call.ssl_verify,
-        litellm_call_id=call.litellm_call_id,
-        metadata=call.metadata,
-        litellm_metadata=call.litellm_metadata,
-        after=call.after,
-        before=call.before,
-        include=call.include,
-        limit=call.limit,
-        order=call.order,
-        extra_headers=call.extra_headers,
         timeout=timeout_value(call.timeout),
-        custom_llm_provider=call.custom_llm_provider,
+        extra_headers=call.extra_headers,
     )
+    match step:
+        case RetrieveStep(call=retrieve):
+            values["extra_query"] = retrieve.extra_query
+            values["extra_body"] = retrieve.extra_body
+        case InputItemsStep(call=items):
+            values["after"] = items.after
+            values["before"] = items.before
+            values["include"] = items.include
+            values["limit"] = items.limit
+            values["order"] = items.order
+    return values
 
 
-# the sync entry answers the object and the async one a coroutine of it; the wrapper awaits it once
-def settle_response(
-    result: ResponsesAPIResponse | Coroutine[object, object, ResponsesAPIResponse],
-) -> ResponsesAPIResponse:
+# the wrapper's coroutine is awaited once, so the settled answer is the object or the page itself
+def settle(result: LifecycleResult) -> BaseModel | dict[str, JsonValue]:
     match result:
         case Coroutine():
             with asyncio.Runner() as runner:
-                return settle_response(runner.run(result))
-        case ResponsesAPIResponse():
+                return settle(runner.run(result))
+        case dict() as page:
+            return page
+        case HasModelDump():
             return result
 
 
-def settle_items(
-    result: dict[str, JsonValue] | Coroutine[object, object, dict[str, JsonValue]],
-) -> dict[str, JsonValue]:
-    match result:
-        case Coroutine():
-            with asyncio.Runner() as runner:
-                return settle_items(runner.run(result))
-        case dict():
-            return result
-
-
-def project_response(response: ResponsesAPIResponse) -> StepOutcome:
-    return StepOutcome(
-        retrieved=Retrieved(
-            id=response.id,
-            created_at=response.created_at,
-            status=response.status,
-            model=response.model,
-        )
-    )
-
-
-def run_retrieve(step: RetrieveStep, harness: str, asynchronous: bool) -> StepOutcome:
-    values = retrieve_values(step.call, harness)
+def read_outcome(
+    step: RetrieveStep | InputItemsStep, harness: str, method: ReadCall, answer: Answer
+) -> StepOutcome:
     try:
-        result = (
-            FACADE.aget_responses(step.call.response_id, **values)
-            if asynchronous
-            else FACADE.get_responses(step.call.response_id, **values)
-        )
-        response = settle_response(result)
+        settled = settle(method(step.call.response_id, **lifecycle_values(step, harness)))
     except openai.APIError as error:
         return StepOutcome(failure=project_failure(error).failure)
-    return project_response(response)
-
-
-def run_items(step: InputItemsStep, harness: str, asynchronous: bool) -> StepOutcome:
-    values = items_values(step.call, harness)
-    try:
-        result = (
-            FACADE.alist_input_items(step.call.response_id, **values)
-            if asynchronous
-            else FACADE.list_input_items(step.call.response_id, **values)
-        )
-        listed = settle_items(result)
-    except openai.APIError as error:
-        return StepOutcome(failure=project_failure(error).failure)
-    return StepOutcome(items=listed)
+    if answer is Answer.RESPONSE:
+        return StepOutcome(retrieved=Retrieved.model_validate(settled))
+    return StepOutcome(items=JSON.validate_python(settled))
 
 
 def run_step(step: Step, harness: str) -> StepOutcome:
     match step:
         case GetResponsesKind(get_responses=inner):
-            return run_retrieve(inner, harness, False)
+            return read_outcome(inner, harness, API.get_responses, Answer.RESPONSE)
         case AgetResponsesKind(aget_responses=inner):
-            return run_retrieve(inner, harness, True)
+            return read_outcome(inner, harness, API.aget_responses, Answer.RESPONSE)
         case ListInputItemsKind(list_input_items=inner):
-            return run_items(inner, harness, False)
+            return read_outcome(inner, harness, API.list_input_items, Answer.ITEMS)
         case AlistInputItemsKind(alist_input_items=inner):
-            return run_items(inner, harness, True)
+            return read_outcome(inner, harness, API.alist_input_items, Answer.ITEMS)

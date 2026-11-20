@@ -5,11 +5,13 @@ use betterlite_config::loader::ConfigLoader;
 use betterlite_context::resource_config_selection::responses::ResponsesModelFacts;
 use betterlite_core::api::responses_lifecycle_call::error::LifecycleFailure;
 use betterlite_core::api::responses_lifecycle_call::executor::HttpReadExecutor;
+use betterlite_core::api::responses_lifecycle_call::input::ReadIdentity;
 use betterlite_core::api::responses_lifecycle_call::service::{LifecycleLog, ResponsesLifecycle};
 use betterlite_core::api::responses_read_http::config::{
     NoWorkloadIdentity, OpenAiReadConfig, ReadEnvironment,
 };
 use betterlite_error::envelope::WireField;
+use betterlite_models::decisions::Json;
 use betterlite_openai::credentials::LiteLlmGlobals;
 use betterlite_openai::response_resources::response::TypedReply;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
@@ -18,7 +20,7 @@ use super::super::error::SdkHttpError;
 use super::super::result::Failure;
 use super::super::result::kinds::SdkResult;
 use super::support::{Fixture, Source, pre_post, source};
-use super::{Call, InputItemsStep, Outcome, RetrieveStep, Retrieved, Step, StepOutcome};
+use super::{Call, Outcome, Retrieved, Step, StepOutcome};
 
 type Lifecycle = ResponsesLifecycle<HttpReadExecutor<OpenAiReadConfig<NoWorkloadIdentity>, Source>>;
 
@@ -65,89 +67,74 @@ pub(super) async fn execute(
     })
 }
 
+// what one read answered: the rewritten response or the provider's own item page
+enum Answered {
+    Reply(Result<TypedReply, LifecycleFailure>),
+    Items(Result<Json, LifecycleFailure>),
+}
+
 async fn run_step(
     step: &Step,
     service: &Lifecycle,
     api_base: &str,
 ) -> Result<StepOutcome, SdkHttpError> {
-    match step {
-        Step::GetResponses(step) => retrieve(step, service, api_base, false).await,
-        Step::AgetResponses(step) => retrieve(step, service, api_base, true).await,
-        Step::ListInputItems(step) => input_items(step, service, api_base, false).await,
-        Step::AlistInputItems(step) => input_items(step, service, api_base, true).await,
-    }
-}
-
-async fn retrieve(
-    step: &RetrieveStep,
-    service: &Lifecycle,
-    api_base: &str,
-    asynchronous: bool,
-) -> Result<StepOutcome, SdkHttpError> {
-    let mut call = step.call.clone();
-    // the SDK reads a null base as its own default, so the harness base stands in for an absent one
-    if call.params.api_base.is_none() {
-        call.params.api_base = Some(api_base.to_owned());
-    }
     let mut fixture = Fixture::new()?;
     let env = pre_post(&service.redactor, &fixture.sink, fixture.now);
     let log = LifecycleLog {
         state: &mut fixture.state,
-        env: &env,
+        env,
     };
-    let reply = if asynchronous {
-        service.aget_responses(&call, log).await
-    } else {
-        service.get_responses(&call, log).await
+    let answered = match step {
+        Step::GetResponses(inner) => {
+            let mut call = inner.call.clone();
+            fill_base(&mut call.identity, api_base);
+            Answered::Reply(service.get_responses(&call, log).await)
+        }
+        Step::AgetResponses(inner) => {
+            let mut call = inner.call.clone();
+            fill_base(&mut call.identity, api_base);
+            Answered::Reply(service.aget_responses(&call, log).await)
+        }
+        Step::ListInputItems(inner) => {
+            let mut call = inner.call.clone();
+            fill_base(&mut call.identity, api_base);
+            Answered::Items(service.list_input_items(&call, log).await)
+        }
+        Step::AlistInputItems(inner) => {
+            let mut call = inner.call.clone();
+            fill_base(&mut call.identity, api_base);
+            Answered::Items(service.alist_input_items(call, log).await)
+        }
     };
+    Ok(outcome(answered))
+}
 
-    Ok(match reply {
-        Ok(reply) => StepOutcome {
+// the SDK reads a null base as its own default, so the harness base stands in for an absent one
+fn fill_base(identity: &mut ReadIdentity, api_base: &str) {
+    if identity.api_base.is_none() {
+        identity.api_base = Some(api_base.to_owned());
+    }
+}
+
+// the step answers what the read returned, or the exception class the SDK raises instead
+fn outcome(answered: Answered) -> StepOutcome {
+    match answered {
+        Answered::Reply(Ok(reply)) => StepOutcome {
             retrieved: Some(retrieved(&reply)),
             items: None,
             failure: None,
         },
-        Err(failure) => StepOutcome {
-            retrieved: None,
-            items: None,
-            failure: Some(failure_of(failure)),
-        },
-    })
-}
-
-async fn input_items(
-    step: &InputItemsStep,
-    service: &Lifecycle,
-    api_base: &str,
-    asynchronous: bool,
-) -> Result<StepOutcome, SdkHttpError> {
-    let mut call = step.call.clone();
-    if call.params.api_base.is_none() {
-        call.params.api_base = Some(api_base.to_owned());
-    }
-    let mut fixture = Fixture::new()?;
-    let env = pre_post(&service.redactor, &fixture.sink, fixture.now);
-    let log = LifecycleLog {
-        state: &mut fixture.state,
-        env: &env,
-    };
-    let listed = if asynchronous {
-        service.alist_input_items(&call, log).await
-    } else {
-        service.list_input_items(&call, log).await
-    };
-    Ok(match listed {
-        Ok(items) => StepOutcome {
+        Answered::Items(Ok(items)) => StepOutcome {
             retrieved: None,
             items: Some(items),
             failure: None,
         },
-        Err(failure) => StepOutcome {
+        Answered::Reply(Err(failure)) | Answered::Items(Err(failure)) => StepOutcome {
             retrieved: None,
             items: None,
             failure: Some(failure_of(failure)),
         },
-    })
+    }
 }
 
 // The response fields a caller reads off the object the SDK hands back
