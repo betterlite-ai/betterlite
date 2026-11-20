@@ -217,21 +217,7 @@ fn creation_passes_absent_and_null_params_as_none() {
 
     fixture.sync_create(&call, None).unwrap();
 
-    assert_eq!(
-        fixture.config.seen()[0],
-        Seen::Environment {
-            api_key: None,
-            model: String::new(),
-            headers: Vec::new(),
-        }
-    );
-    assert_eq!(
-        fixture.config.seen()[1],
-        Seen::Url {
-            model: String::new(),
-            api_base: None,
-        }
-    );
+    assert_base_and_key_are_none(&fixture);
 
     let mut null_fixture = Fixture::new();
     let mut null_litellm = params(&[]);
@@ -242,8 +228,13 @@ fn creation_passes_absent_and_null_params_as_none() {
 
     null_fixture.sync_create(&null_call, None).unwrap();
 
+    assert_base_and_key_are_none(&null_fixture);
+}
+
+fn assert_base_and_key_are_none(fixture: &Fixture) {
+    let seen = fixture.config.seen();
     assert_eq!(
-        null_fixture.config.seen()[0],
+        seen[0],
         Seen::Environment {
             api_key: None,
             model: String::new(),
@@ -251,7 +242,7 @@ fn creation_passes_absent_and_null_params_as_none() {
         }
     );
     assert_eq!(
-        null_fixture.config.seen()[1],
+        seen[1],
         Seen::Url {
             model: String::new(),
             api_base: None,
@@ -262,22 +253,18 @@ fn creation_passes_absent_and_null_params_as_none() {
 #[test]
 fn creation_logs_the_name_as_the_pre_call_input_with_a_name_body() {
     let mut fixture = Fixture::new();
-    fixture
-        .config
-        .environment
-        .insert("x-provider".to_owned(), secret("acme"));
     let litellm = params(&[("api_base", BASE)]);
     let clip = video();
     let call = create_call("Wren", &clip, &litellm);
 
     fixture.sync_create(&call, None).unwrap();
 
+    let recorded = &fixture.state.model_call_details;
     assert_eq!(
-        fixture.state.model_call_details.get("input"),
+        recorded.get("input"),
         Some(&Json::Text(String::from("Wren")))
     );
-    let Some(Json::Object(details)) = fixture.state.model_call_details.get("additional_args")
-    else {
+    let Some(Json::Object(details)) = recorded.get("additional_args") else {
         panic!("the pre-call records its arguments");
     };
     assert_eq!(
@@ -293,6 +280,25 @@ fn creation_logs_the_name_as_the_pre_call_input_with_a_name_body() {
             "https://api.example/v1/characters"
         )))
     );
+}
+
+#[test]
+fn creation_logs_the_headers_it_sends() {
+    let mut fixture = Fixture::new();
+    fixture
+        .config
+        .environment
+        .insert("x-provider".to_owned(), secret("acme"));
+    let litellm = params(&[("api_base", BASE)]);
+    let clip = video();
+    let call = create_call("Wren", &clip, &litellm);
+
+    fixture.sync_create(&call, None).unwrap();
+
+    let Some(Json::Object(details)) = fixture.state.model_call_details.get("additional_args")
+    else {
+        panic!("the pre-call records its arguments");
+    };
     assert_eq!(
         details.get("headers"),
         Some(&Json::Object(IndexMap::from([(
