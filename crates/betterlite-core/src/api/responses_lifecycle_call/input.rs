@@ -152,6 +152,19 @@ pub struct ResponsesInputItemsCall {
     pub alist_input_items: Option<Json>,
 }
 
+impl ResponsesInputItemsCall {
+    // the five pagination arguments as the query the provider GET carries
+    pub(super) fn query(&self) -> ListInputItemsQuery {
+        ListInputItemsQuery {
+            after: self.after.clone(),
+            before: self.before.clone(),
+            include: self.include.clone(),
+            limit: self.limit,
+            order: self.order,
+        }
+    }
+}
+
 const fn default_limit() -> Option<i64> {
     Some(20)
 }

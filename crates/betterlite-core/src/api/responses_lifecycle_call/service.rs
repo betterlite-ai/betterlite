@@ -87,13 +87,7 @@ where
         call: &ResponsesInputItemsCall,
         log: LifecycleLog<'_, '_>,
     ) -> Result<Json, LifecycleFailure> {
-        let query = ListInputItemsQuery {
-            after: call.after.clone(),
-            before: call.before.clone(),
-            include: call.include.clone(),
-            limit: call.limit,
-            order: call.order,
-        };
+        let query = call.query();
         let extras = ReadExtras::InputItems {
             query,
             flag: call.alist_input_items.as_ref(),
