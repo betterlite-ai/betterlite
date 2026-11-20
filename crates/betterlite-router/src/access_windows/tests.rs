@@ -418,6 +418,26 @@ fn wall_clock_takes_seconds_and_fractions() {
     }
 }
 
+// pydantic's time parser reads both '.' and ',' as the fractional-second separator.
+fn a_comma_fraction_parses_like_the_dotted_form() {
+    let zones = database();
+    for separator in ['.', ','] {
+        let value = format!("09:00:30{separator}5");
+        let model_info = windows(Json::List(vec![window(
+            value.as_str(),
+            "17:00",
+            "UTC",
+            &["t"],
+        )]));
+        let parsed = parse_access_windows(&model_info, &zones).unwrap();
+        assert_eq!(
+            parsed.first().unwrap().start,
+            Time::new(9, 0, 30, 500_000_000).unwrap(),
+            "{value}"
+        );
+    }
+}
+
 fn wall_clock_refuses_malformed_values_and_offsets() {
     let zones = database();
     for (value, expected) in [
@@ -739,6 +759,7 @@ fn an_admin_pool_unnamed_by_the_request_is_only_filtered() {
 #[case::an_admin_pool_named_by_its_public_name_is_kept(
     an_admin_pool_named_by_its_public_name_is_kept
 )]
+#[case::a_comma_fraction_parses_like_the_dotted_form(a_comma_fraction_parses_like_the_dotted_form)]
 fn access_windows_behaviors(#[case] run: fn()) {
     run();
 }

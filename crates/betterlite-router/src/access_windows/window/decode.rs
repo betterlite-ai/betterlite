@@ -123,7 +123,7 @@ fn offset_marker(text: &str) -> Option<usize> {
         .map(|(index, _)| index)
 }
 
-// HH:MM[:SS[.ffffff]]: the zero-padded shape pydantic's time parser accepts, with at most microsecond fractions.
+// HH:MM[:SS[.,ffffff]]: the zero-padded shape pydantic's time parser accepts, with at most microsecond fractions.
 fn clock_shape(text: &str) -> Option<Time> {
     let bytes = text.as_bytes();
     if bytes.len() < 5 {
@@ -144,7 +144,7 @@ fn clock_shape(text: &str) -> Option<Time> {
     if bytes.len() == 8 {
         return clock(hour, minute, second, 0);
     }
-    if bytes.get(8) != Some(&b'.') {
+    if !matches!(bytes.get(8), Some(&b'.' | &b',')) {
         return None;
     }
     clock(hour, minute, second, fraction(bytes.get(9..)?)?)
