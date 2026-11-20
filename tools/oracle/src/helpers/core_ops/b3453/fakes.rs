@@ -13,7 +13,7 @@ use betterlite_core::rag::openai_ingestion::{
 use betterlite_oracle_helper_api::error::HelperError;
 use serde_json::{Value, json};
 
-enum RecordedCall {
+pub(super) enum RecordedCall {
     Create {
         name: String,
         expires_after: Option<ExpiresAfter>,
@@ -39,7 +39,7 @@ enum RecordedCall {
 
 #[derive(Default)]
 pub(super) struct CallRecorder {
-    calls: Mutex<Vec<RecordedCall>>,
+    pub(super) calls: Mutex<Vec<RecordedCall>>,
 }
 
 impl CallRecorder {
@@ -49,14 +49,9 @@ impl CallRecorder {
             .unwrap_or_else(PoisonError::into_inner)
             .push(call);
     }
-
-    pub(super) fn calls_json(&self) -> Result<Vec<Value>, Box<HelperError>> {
-        let calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
-        calls.iter().map(call_json).collect()
-    }
 }
 
-fn call_json(call: &RecordedCall) -> Result<Value, Box<HelperError>> {
+pub(super) fn call_json(call: &RecordedCall) -> Result<Value, Box<HelperError>> {
     match call {
         RecordedCall::Create {
             name,
@@ -118,21 +113,30 @@ fn scripted_error(message: &str) -> PortError {
     }
 }
 
+macro_rules! scripted_port {
+    (
+        $port:ident, $method:ident, $fake:ident,
+        $request:ident: $request_type:ty, $result:ty, $reply:ident,
+        $record:expr $(,)?
+    ) => {
+        #[async_trait]
+        impl $port for $fake {
+            async fn $method(&self, $request: $request_type) -> $result {
+                self.recorder.push($record);
+                self.$reply()
+            }
+        }
+    };
+}
+
 pub(super) struct ScriptedStore {
     pub(super) recorder: Arc<CallRecorder>,
     pub(super) response: Option<String>,
     pub(super) failure: Option<String>,
 }
 
-#[async_trait]
-impl VectorStorePort for ScriptedStore {
-    async fn create_store(&self, request: CreateStore<'_>) -> Result<Option<String>, PortError> {
-        self.recorder.push(RecordedCall::Create {
-            name: request.name.to_owned(),
-            expires_after: request.expires_after,
-            api_key: request.api_key.is_some(),
-            api_base: request.api_base.map(str::to_owned),
-        });
+impl ScriptedStore {
+    fn store_reply(&self) -> Result<Option<String>, PortError> {
         if let Some(message) = &self.failure {
             return Err(scripted_error(message));
         }
@@ -140,21 +144,28 @@ impl VectorStorePort for ScriptedStore {
     }
 }
 
+scripted_port!(
+    VectorStorePort,
+    create_store,
+    ScriptedStore,
+    request: CreateStore<'_>,
+    Result<Option<String>, PortError>,
+    store_reply,
+    RecordedCall::Create {
+        name: request.name.to_owned(),
+        expires_after: request.expires_after,
+        api_key: request.api_key.is_some(),
+        api_base: request.api_base.map(str::to_owned),
+    }
+);
+
 pub(super) struct ScriptedFile {
     pub(super) recorder: Arc<CallRecorder>,
     pub(super) failure: Option<String>,
 }
 
-#[async_trait]
-impl VectorFilePort for ScriptedFile {
-    async fn attach(&self, request: AttachFile<'_>) -> Result<(), PortError> {
-        self.recorder.push(RecordedCall::Attach {
-            vector_store_id: request.vector_store_id.to_owned(),
-            file_id: request.file_id.to_owned(),
-            chunking_strategy: request.chunking_strategy.get().to_owned(),
-            api_key: request.api_key.is_some(),
-            api_base: request.api_base.map(str::to_owned),
-        });
+impl ScriptedFile {
+    fn file_reply(&self) -> Result<(), PortError> {
         if let Some(message) = &self.failure {
             return Err(scripted_error(message));
         }
@@ -162,29 +173,53 @@ impl VectorFilePort for ScriptedFile {
     }
 }
 
+scripted_port!(
+    VectorFilePort,
+    attach,
+    ScriptedFile,
+    request: AttachFile<'_>,
+    Result<(), PortError>,
+    file_reply,
+    RecordedCall::Attach {
+        vector_store_id: request.vector_store_id.to_owned(),
+        file_id: request.file_id.to_owned(),
+        chunking_strategy: request.chunking_strategy.get().to_owned(),
+        api_key: request.api_key.is_some(),
+        api_base: request.api_base.map(str::to_owned),
+    }
+);
+
 pub(super) struct ScriptedUpload {
     pub(super) recorder: Arc<CallRecorder>,
     pub(super) id: String,
     pub(super) failure: Option<String>,
 }
 
-#[async_trait]
-impl FileUploadPort for ScriptedUpload {
-    async fn upload(&self, request: UploadFile<'_>) -> Result<String, PortError> {
-        self.recorder.push(RecordedCall::Upload {
-            filename: request.filename.to_owned(),
-            size_bytes: request.content.len(),
-            content_type: request.content_type.to_owned(),
-            purpose: request.purpose.to_owned(),
-            api_key: request.api_key.is_some(),
-            api_base: request.api_base.map(str::to_owned),
-        });
+impl ScriptedUpload {
+    fn upload_reply(&self) -> Result<String, PortError> {
         if let Some(message) = &self.failure {
             return Err(scripted_error(message));
         }
         Ok(self.id.clone())
     }
 }
+
+scripted_port!(
+    FileUploadPort,
+    upload,
+    ScriptedUpload,
+    request: UploadFile<'_>,
+    Result<String, PortError>,
+    upload_reply,
+    RecordedCall::Upload {
+        filename: request.filename.to_owned(),
+        size_bytes: request.content.len(),
+        content_type: request.content_type.to_owned(),
+        purpose: request.purpose.to_owned(),
+        api_key: request.api_key.is_some(),
+        api_base: request.api_base.map(str::to_owned),
+    }
+);
 
 pub(super) struct NoOcr;
 

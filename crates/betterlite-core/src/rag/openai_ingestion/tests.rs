@@ -105,21 +105,30 @@ fn port_failure(message: &str) -> PortError {
     }
 }
 
+macro_rules! scripted_port {
+    (
+        $port:ident, $method:ident, $fake:ident,
+        $request:ident: $request_type:ty, $result:ty, $reply:ident,
+        $record:expr $(,)?
+    ) => {
+        #[async_trait]
+        impl $port for $fake {
+            async fn $method(&self, $request: $request_type) -> $result {
+                self.calls.push($record);
+                self.$reply()
+            }
+        }
+    };
+}
+
 struct FakeStore {
     calls: Arc<Calls>,
     id: Option<String>,
     failure: Option<String>,
 }
 
-#[async_trait]
-impl VectorStorePort for FakeStore {
-    async fn create_store(&self, request: CreateStore<'_>) -> Result<Option<String>, PortError> {
-        self.calls.push(RecordedCall::Create {
-            name: request.name.to_owned(),
-            expires_after: request.expires_after,
-            api_key: request.api_key.map(|key| key.expose_secret().to_owned()),
-            api_base: request.api_base.map(str::to_owned),
-        });
+impl FakeStore {
+    fn store_reply(&self) -> Result<Option<String>, PortError> {
         if let Some(message) = &self.failure {
             return Err(port_failure(message));
         }
@@ -127,21 +136,28 @@ impl VectorStorePort for FakeStore {
     }
 }
 
+scripted_port!(
+    VectorStorePort,
+    create_store,
+    FakeStore,
+    request: CreateStore<'_>,
+    Result<Option<String>, PortError>,
+    store_reply,
+    RecordedCall::Create {
+        name: request.name.to_owned(),
+        expires_after: request.expires_after,
+        api_key: request.api_key.map(|key| key.expose_secret().to_owned()),
+        api_base: request.api_base.map(str::to_owned),
+    }
+);
+
 struct FakeFile {
     calls: Arc<Calls>,
     failure: Option<String>,
 }
 
-#[async_trait]
-impl VectorFilePort for FakeFile {
-    async fn attach(&self, request: AttachFile<'_>) -> Result<(), PortError> {
-        self.calls.push(RecordedCall::Attach {
-            vector_store_id: request.vector_store_id.to_owned(),
-            file_id: request.file_id.to_owned(),
-            chunking_strategy: request.chunking_strategy.get().to_owned(),
-            api_key: request.api_key.map(|key| key.expose_secret().to_owned()),
-            api_base: request.api_base.map(str::to_owned),
-        });
+impl FakeFile {
+    fn file_reply(&self) -> Result<(), PortError> {
         if let Some(message) = &self.failure {
             return Err(port_failure(message));
         }
@@ -149,28 +165,52 @@ impl VectorFilePort for FakeFile {
     }
 }
 
+scripted_port!(
+    VectorFilePort,
+    attach,
+    FakeFile,
+    request: AttachFile<'_>,
+    Result<(), PortError>,
+    file_reply,
+    RecordedCall::Attach {
+        vector_store_id: request.vector_store_id.to_owned(),
+        file_id: request.file_id.to_owned(),
+        chunking_strategy: request.chunking_strategy.get().to_owned(),
+        api_key: request.api_key.map(|key| key.expose_secret().to_owned()),
+        api_base: request.api_base.map(str::to_owned),
+    }
+);
+
 struct FakeUpload {
     calls: Arc<Calls>,
     failure: Option<String>,
 }
 
-#[async_trait]
-impl FileUploadPort for FakeUpload {
-    async fn upload(&self, request: UploadFile<'_>) -> Result<String, PortError> {
-        self.calls.push(RecordedCall::Upload {
-            filename: request.filename.to_owned(),
-            content: request.content.to_vec(),
-            content_type: request.content_type.to_owned(),
-            purpose: request.purpose.to_owned(),
-            api_key: request.api_key.map(|key| key.expose_secret().to_owned()),
-            api_base: request.api_base.map(str::to_owned),
-        });
+impl FakeUpload {
+    fn upload_reply(&self) -> Result<String, PortError> {
         if let Some(message) = &self.failure {
             return Err(port_failure(message));
         }
         Ok("file_new".to_owned())
     }
 }
+
+scripted_port!(
+    FileUploadPort,
+    upload,
+    FakeUpload,
+    request: UploadFile<'_>,
+    Result<String, PortError>,
+    upload_reply,
+    RecordedCall::Upload {
+        filename: request.filename.to_owned(),
+        content: request.content.to_vec(),
+        content_type: request.content_type.to_owned(),
+        purpose: request.purpose.to_owned(),
+        api_key: request.api_key.map(|key| key.expose_secret().to_owned()),
+        api_base: request.api_base.map(str::to_owned),
+    }
+);
 
 struct Script {
     create_id: Option<String>,

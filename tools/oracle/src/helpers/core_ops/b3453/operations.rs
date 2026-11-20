@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -6,10 +6,10 @@ use betterlite_core::rag::ingestion::store::{RagStore as _, StoreRequest};
 use betterlite_core::rag::openai_ingestion::OpenAiIngestion;
 use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::HelperResult;
-use serde_json::json;
+use serde_json::{Value, json};
 use tokio::runtime::Builder;
 
-use super::fakes::{CallRecorder, ScriptedFile, ScriptedStore, ScriptedUpload};
+use super::fakes::{CallRecorder, ScriptedFile, ScriptedStore, ScriptedUpload, call_json};
 use super::inputs::{StoreInput, build_state};
 
 pub(super) fn store(input: &StoreInput) -> HelperResult {
@@ -53,7 +53,13 @@ pub(super) fn store(input: &StoreInput) -> HelperResult {
             existing_file_id: input.existing_file_id.as_deref(),
         }))
         .or_value_error()?;
-    let calls = recorder.calls_json()?;
+    let calls = recorder
+        .calls
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .iter()
+        .map(call_json)
+        .collect::<Result<Vec<Value>, _>>()?;
     Ok(json!({
         "calls": calls,
         "result": [stored.0, stored.1],
