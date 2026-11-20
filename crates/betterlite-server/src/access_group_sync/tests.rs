@@ -35,7 +35,7 @@ fn team_groups(entries: &[(&str, Option<&[&str]>)]) -> BTreeMap<String, Option<V
     entries
         .iter()
         .map(|(access_group_id, teams)| {
-            let teams = teams.map(|teams| teams.iter().map(|team| (*team).to_owned()).collect());
+            let teams = teams.map(|names| names.iter().map(|team| (*team).to_owned()).collect());
             ((*access_group_id).to_owned(), teams)
         })
         .collect()
