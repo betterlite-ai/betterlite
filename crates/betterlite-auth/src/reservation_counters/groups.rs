@@ -1,6 +1,7 @@
 use rust_decimal::Decimal;
 
 use crate::auth_cache::keys::CacheKey;
+use crate::auth_model_lists::lists::dedup_first;
 use crate::auth_tag_budgets::cache::TagBudgetCache;
 use crate::auth_tag_budgets::groups::group_budgets_batch;
 use crate::budget_counter::{BudgetCounter, CounterEntityType};
@@ -8,7 +9,6 @@ use crate::resolved_key::auth::UserAPIKeyAuth;
 
 use super::CounterServices;
 use super::error::ReservationCounterError;
-use super::names::dedupe_names;
 
 pub(crate) async fn access_group_counters(
     token: &UserAPIKeyAuth,
@@ -19,7 +19,7 @@ pub(crate) async fn access_group_counters(
         .matched_model_access_groups
         .as_deref()
         .unwrap_or_default();
-    let names = dedupe_names(matched);
+    let names = dedup_first(matched.to_vec());
     let cache: &dyn TagBudgetCache = services.cache;
     let budgets = group_budgets_batch(&names, services.database, cache, services.groups).await?;
     let mut counters = Vec::new();

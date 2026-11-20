@@ -5,7 +5,6 @@ mod end_user;
 mod entities;
 mod groups;
 mod member;
-mod names;
 mod org_project;
 mod tags;
 mod windows;

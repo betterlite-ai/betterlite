@@ -1,19 +1,19 @@
 use rust_decimal::Decimal;
 
 use crate::auth_cache::keys::CacheKey;
+use crate::auth_model_lists::lists::dedup_first;
 use crate::auth_tag_budgets::cache::TagBudgetCache;
 use crate::auth_tag_budgets::tags::get_tag_objects_batch;
 use crate::budget_counter::{BudgetCounter, CounterEntityType};
 
 use super::CounterServices;
 use super::error::ReservationCounterError;
-use super::names::dedupe_names;
 
 pub(crate) async fn tag_counters(
     tag_names: &[String],
     services: &CounterServices<'_>,
 ) -> Result<Vec<BudgetCounter>, ReservationCounterError> {
-    let names = dedupe_names(tag_names);
+    let names = dedup_first(tag_names.to_vec());
     let cache: &dyn TagBudgetCache = services.cache;
     let objects = get_tag_objects_batch(&names, services.database, cache, services.tags).await?;
     let mut counters = Vec::new();
