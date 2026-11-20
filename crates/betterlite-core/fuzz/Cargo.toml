@@ -473,6 +473,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "rag_json_decoder"
+path = "fuzz_targets/rag_json_decoder.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "brave_search"
 path = "fuzz_targets/brave_search.rs"
 test = false

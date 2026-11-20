@@ -1,0 +1,20 @@
+kind: helper
+name: azure-batches-errors
+call:
+  azure_batches:
+    steps:
+    - action: create
+      builder: none
+      args: {api_key: seed-7, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      data: {completion_window: 24h, endpoint: /v1/chat/completions, input_file_id: file_seed}
+    - action: retrieve
+      args: {api_key: seed-8, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      query: {batch_id: batch_seed}
+      reply: {status: 400, body: {error: {message: bad batch, type: invalid_request_error, param: batch_id, code: invalid}}}
+    - action: cancel
+      is_async: true
+      client: openai
+      args: {api_key: seed-9, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      query: {batch_id: batch_seed}
+env: {}
+compare: {ignore: []}
