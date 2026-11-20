@@ -1,5 +1,5 @@
 from collections.abc import AsyncIterator, Coroutine, Iterator
-from typing import Final, Literal, Protocol, TypedDict, TypeVar
+from typing import Final, Literal, Protocol, TypedDict, TypeVar, cast
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -17,8 +17,8 @@ PROVIDERS: Final[dict[str, LlmProviders]] = {
     "gemini": LlmProviders.GEMINI,
     "vertex_ai": LlmProviders.VERTEX_AI,
 }
-EXTRA: Final = TypeAdapter(dict[str, object] | None)
-Answer = TypeVar("Answer", covariant=True)
+EXTRA: Final = TypeAdapter(dict[str, JsonValue] | None)
+Answer_co = TypeVar("Answer_co", covariant=True)
 
 Provider = Literal["gemini", "vertex_ai"]
 
@@ -41,8 +41,8 @@ class Case(TypedDict):
     model: str
     contents: JsonValue
     config: dict[str, JsonValue]
-    tools: JsonValue | None
-    system_instruction: JsonValue | None
+    tools: JsonValue
+    system_instruction: JsonValue
     litellm_params: Params
     extra_headers: dict[str, str] | None
     extra_body: dict[str, JsonValue] | None
@@ -63,34 +63,38 @@ class AsyncEvents(Protocol):
     def __aiter__(self) -> AsyncIterator[bytes]: ...
 
 
-class Handler(Protocol[Answer]):
+class Handler(Protocol[Answer_co]):
     def __call__(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11577-L11707
         self,
         *,
         model: str,
-        contents: object,
-        generate_content_provider_config: GenAiConfig,
+        contents: JsonValue,
+        generate_content_provider_config: GenAiConfig,  # ast-grep-ignore: no-long-names
         generate_content_config_dict: dict[str, JsonValue],
-        tools: object,
+        tools: JsonValue,
         custom_llm_provider: str,
         litellm_params: GenericLiteLLMParams,
         logging_obj: Logging,
-        extra_headers: dict[str, object] | None = None,
-        extra_body: dict[str, object] | None = None,
+        extra_headers: dict[str, JsonValue] | None = None,
+        extra_body: dict[str, JsonValue] | None = None,
         timeout: float | httpx.Timeout | None = None,
         _is_async: bool = False,
         client: HTTPHandler | AsyncHTTPHandler | None = None,
         stream: bool = False,
-        litellm_metadata: dict[str, object] | None = None,
-        system_instruction: object | None = None,
-    ) -> Answer: ...
+        litellm_metadata: dict[str, JsonValue] | None = None,
+        system_instruction: JsonValue | None = None,
+    ) -> Answer_co: ...
 
 
 HANDLER: Final = BaseLLMHTTPHandler()
-UNARY: Handler[Generated] = HANDLER.generate_content_handler  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11577-L11707
-STREAM: Handler[SyncEvents] = HANDLER.generate_content_handler  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11665-L11669
-ASYNC_UNARY: Handler[Coroutine[JsonValue, JsonValue, Generated]] = HANDLER.generate_content_handler  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11709-L11822
-ASYNC_STREAM: Handler[Coroutine[JsonValue, JsonValue, AsyncEvents]] = HANDLER.generate_content_handler  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11778-L11786
+UNARY: Handler[Generated] = cast(Handler[Generated], HANDLER.generate_content_handler)  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11577-L11707
+STREAM: Handler[SyncEvents] = cast(Handler[SyncEvents], HANDLER.generate_content_handler)  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11665-L11669
+ASYNC_UNARY: Handler[Coroutine[JsonValue, JsonValue, Generated]] = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11709-L11822
+    Handler[Coroutine[JsonValue, JsonValue, Generated]], HANDLER.generate_content_handler  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11709-L11822
+)
+ASYNC_STREAM: Handler[Coroutine[JsonValue, JsonValue, AsyncEvents]] = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11778-L11786
+    Handler[Coroutine[JsonValue, JsonValue, AsyncEvents]], HANDLER.generate_content_handler  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11778-L11786
+)
 
 
 def config_of(case: Case) -> GenAiConfig:
@@ -112,13 +116,13 @@ def params_of(case: Case) -> GenericLiteLLMParams:
 
 
 def invoke(
-    call: Handler[Answer],
+    call: Handler[Answer_co],
     case: Case,
     logging_obj: Logging,
     client: HTTPHandler | AsyncHTTPHandler,
     *,
     is_async: bool,
-) -> Answer:
+) -> Answer_co:
     return call(
         model=case["model"],
         contents=case["contents"],
