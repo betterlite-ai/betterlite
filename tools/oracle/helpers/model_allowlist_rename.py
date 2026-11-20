@@ -1,7 +1,6 @@
 from typing import NotRequired, TypedDict
 
 from litellm.proxy.management_helpers import model_allowlist_rename_sync
-from pydantic import JsonValue
 
 
 class Input(TypedDict):
@@ -10,7 +9,7 @@ class Input(TypedDict):
     team_alias: NotRequired[str | None]
 
 
-def run(input_value: Input) -> dict[str, JsonValue]:
+def run(input_value: Input) -> dict[str, tuple[str, ...]]:
     row = model_allowlist_rename_sync._TouchedRow(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/model_allowlist_rename_sync.py#L22
         kind=input_value["kind"],
         object_id=input_value["object_id"],
@@ -29,5 +28,4 @@ def run(input_value: Input) -> dict[str, JsonValue]:
         keys = model_allowlist_rename_sync._user_cache_keys(row)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/model_allowlist_rename_sync.py#L60
     else:
         raise ValueError(f"unsupported model_allowlist_rename kind {kind}")
-    keys_value: list[JsonValue] = [key for key in keys]
-    return {"keys": keys_value}
+    return {"keys": keys}
