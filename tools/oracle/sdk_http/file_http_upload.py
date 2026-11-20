@@ -14,28 +14,18 @@ from litellm.types.llms.openai import CreateFileRequest, OpenAIFileObject
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 from typing_extensions import override
 
-Mode = Literal["sync", "async"]
-Content = str | list[int]
-Location = Literal["headers", "body"]
-MultipartValue = dict[
-    str, tuple[str | None, str | bytes] | tuple[str | None, str | bytes, str | None]
-]
-
-JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
-HANDLER: Final = BaseLLMHTTPHandler()
-PLACEHOLDER: Final = "{{upstream}}"
-DEFAULT_FILENAME: Final = "oracle.txt"
+MultipartValue = dict[str, tuple[str | None, str | bytes, str | None]]
 PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
 
 
 class FileSpec(BaseModel):
-    content: Content
+    content: str | list[int]
     filename: str | None = None
     content_type: str | None = None
 
 
 class RequestSpec(BaseModel):
-    data: Content | dict[str, JsonValue]
+    data: str | list[int] | dict[str, JsonValue]
     headers: dict[str, str] = Field(default_factory=dict)
     method: str | None = None
     url: str | None = None
@@ -44,14 +34,14 @@ class RequestSpec(BaseModel):
 class TwoStepSpec(BaseModel):
     initial_request: RequestSpec
     upload_request: RequestSpec
-    upload_url_location: Location | None = None
+    upload_url_location: Literal["headers", "body"] | None = None
     upload_url_key: str | None = None
 
 
 class PresignedSpec(BaseModel):
     method: str
     url: str
-    data: Content
+    data: str | list[int]
     headers: dict[str, str] = Field(default_factory=dict)
 
 
@@ -80,7 +70,7 @@ class Plan(BaseModel):
 class UploadCall(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    mode: Mode
+    mode: Literal["sync", "async"]
     file: FileSpec
     plan: Plan
     upload_method: Literal["post", "put"] = "post"
@@ -96,7 +86,7 @@ class RequestValue(TypedDict):
     url: NotRequired[str]
 
 
-TwoStepValue = dict[str, RequestValue | Location | str]
+TwoStepValue = dict[str, RequestValue | Literal["headers", "body"] | str]
 MediaValue = dict[str, dict[str, BaseFileUploadStream | str | None]]
 Transformed = TwoStepValue | RequestValue | MediaValue | MultipartValue | str | bytes
 
@@ -119,7 +109,7 @@ class ChunkStream(BaseFileUploadStream):
         return iter(self.chunks)
 
 
-def content_value(content: Content) -> str | bytes:
+def content_value(content: str | list[int]) -> str | bytes:
     match content:
         case str():
             return content
@@ -138,29 +128,26 @@ def request_value(spec: RequestSpec, origin: str) -> RequestValue:
     if spec.method is not None:
         value["method"] = spec.method
     if spec.url is not None:
-        value["url"] = spec.url.replace(PLACEHOLDER, origin)
-    return value
-
-
-def two_step_value(spec: TwoStepSpec, origin: str) -> TwoStepValue:
-    value: TwoStepValue = {
-        "initial_request": request_value(spec.initial_request, origin),
-        "upload_request": request_value(spec.upload_request, origin),
-    }
-    if spec.upload_url_location is not None:
-        value["upload_url_location"] = spec.upload_url_location
-    if spec.upload_url_key is not None:
-        value["upload_url_key"] = spec.upload_url_key
+        value["url"] = spec.url.replace("{{upstream}}", origin)
     return value
 
 
 def transformed_value(plan: Plan, origin: str) -> Transformed:
     if plan.two_step is not None:
-        return two_step_value(plan.two_step, origin)
+        spec = plan.two_step
+        value: TwoStepValue = {
+            "initial_request": request_value(spec.initial_request, origin),
+            "upload_request": request_value(spec.upload_request, origin),
+        }
+        if spec.upload_url_location is not None:
+            value["upload_url_location"] = spec.upload_url_location
+        if spec.upload_url_key is not None:
+            value["upload_url_key"] = spec.upload_url_key
+        return value
     if plan.presigned is not None:
         return {
             "method": plan.presigned.method,
-            "url": plan.presigned.url.replace(PLACEHOLDER, origin),
+            "url": plan.presigned.url.replace("{{upstream}}", origin),
             "headers": plan.presigned.headers,
             "data": content_value(plan.presigned.data),
         }
@@ -190,7 +177,7 @@ class FixtureLogging(Logging):
 
     @override
     def pre_call(self, *args: JsonValue, **kwargs: JsonValue) -> None:
-        self.observed = {name: JSON.validate_json(json.dumps(value, default=list)) for name, value in kwargs.items()}  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L3643-L3658
+        self.observed = {name: TypeAdapter(JsonValue).validate_json(json.dumps(value, default=list)) for name, value in kwargs.items()}  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L3643-L3658
         super().pre_call(*args, **kwargs)  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1350
 
 
@@ -221,7 +208,7 @@ class FixtureConfig(MistralFilesConfig):
         self, model: str, create_file_data: CreateFileRequest,
         optional_params: dict[str, JsonValue],  # type: ignore[override]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/files/transformation.py#L169
         litellm_params: dict[str, JsonValue],  # type: ignore[override]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/files/transformation.py#L169
-    ) -> TwoStepValue | RequestValue | MediaValue | MultipartValue | str | bytes:
+    ) -> Transformed:
         del model, create_file_data, optional_params, litellm_params  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1283
         return transformed_value(self.case.plan, self.api_base.removesuffix("/v1"))
 
@@ -233,7 +220,7 @@ class FixtureConfig(MistralFilesConfig):
         del model, logging_obj, litellm_params
         return OpenAIFileObject(
             id="file-oracle", object="file", bytes=len(raw_response.content),
-            created_at=0, filename=DEFAULT_FILENAME, purpose="batch",
+            created_at=0, filename="oracle.txt", purpose="batch",
         )
 
     @override
@@ -260,29 +247,23 @@ class Outcome(BaseModel):
     diagnostics: JsonValue = None
 
 
-class UploadValue(BaseModel):
-    value: Outcome
-
-
 class UploadEnvelope(BaseModel):
-    file_http_upload: UploadValue
+    file_http_upload: dict[str, Outcome]
 
 
 def run_upload(case: UploadCall, api_base: str) -> Outcome:
     logging_obj = FixtureLogging()
-    filename = DEFAULT_FILENAME if case.file.filename is None else case.file.filename
+    filename = "oracle.txt" if case.file.filename is None else case.file.filename
     create_file_data: CreateFileRequest = {
         "file": (filename, content_value(case.file.content), case.file.content_type),  # type: ignore[typeddict-item]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L96
         "purpose": "batch",
     }
-    upload_params: dict[str, JsonValue] = dict(case.litellm_params)
-    request_headers: dict[str, str] = {}
     try:
-        work = HANDLER.create_file(
+        work = BaseLLMHTTPHandler().create_file(
             create_file_data=create_file_data,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1283
-            litellm_params=upload_params,
+            litellm_params=dict[str, JsonValue](case.litellm_params),
             provider_config=FixtureConfig(case, api_base),
-            headers=request_headers,
+            headers=dict[str, str](),
             api_base=api_base,
             api_key=None,
             logging_obj=logging_obj,
@@ -301,7 +282,7 @@ def run_upload(case: UploadCall, api_base: str) -> Outcome:
             diagnostics=diagnostics_view(case, logging_obj),
         )
     return Outcome(
-        result=JSON.validate_json(result.model_dump_json(exclude_unset=True)),
+        result=TypeAdapter(JsonValue).validate_json(result.model_dump_json(exclude_unset=True)),
         diagnostics=diagnostics_view(case, logging_obj),
     )
 
@@ -313,6 +294,6 @@ class FileHttpUploadRequest(BaseModel):
 
     def serialize(self, api_base: str) -> str:
         outcome = run_upload(self.file_http_upload, api_base)
-        envelope = UploadEnvelope(file_http_upload=UploadValue(value=outcome))
+        envelope = UploadEnvelope(file_http_upload={"value": outcome})
         text = envelope.model_dump_json(by_alias=True)
-        return text.replace(api_base.removesuffix("/v1"), PLACEHOLDER)
+        return text.replace(api_base.removesuffix("/v1"), "{{upstream}}")
