@@ -366,6 +366,119 @@ async fn write_transport_failures(#[case] operation: Operation) {
     // The masked rebuild carries a content-length only when the decoded body is non-empty
     assert_eq!(empty_error.headers.get("content-length"), None);
     assert_eq!(empty_wire.requests().len(), 1);
+    let unrouted = RecordingConfig::new("not a url");
+    let unrouted_wire = Wire::replying(Reply::json(200, DELETED), &events);
+    let unrouted_source = Source::new(unrouted_wire.clone());
+    let unrouted_deps = WriteDeps {
+        config: &unrouted,
+        source: &unrouted_source,
+        supplied: None,
+        shared_session: None,
+    };
+    let mut unrouted_fixture = Fixture::new("responses");
+    let unrouted_call = operation_call(operation, "resp_a", &write_params, None, None);
+    let Err(WriteError::RequestUrl { .. }) = run(
+        &mut unrouted_fixture,
+        &unrouted_deps,
+        ClientKind::Sync,
+        &unrouted_call,
+        &events,
+    )
+    .await
+    else {
+        panic!("a base that is not a URL fails before the send");
+    };
+    assert!(unrouted_wire.requests().is_empty());
+    let refused_headers = caller_headers(&[("bad name", "value")]);
+    let refused = RecordingConfig::new("http://mock.test/v1/responses");
+    let refused_wire = Wire::replying(Reply::json(200, DELETED), &events);
+    let refused_source = Source::new(refused_wire.clone());
+    let refused_deps = WriteDeps {
+        config: &refused,
+        source: &refused_source,
+        supplied: None,
+        shared_session: None,
+    };
+    let mut refused_fixture = Fixture::new("responses");
+    let refused_call = operation_call(
+        operation,
+        "resp_a",
+        &write_params,
+        Some(&refused_headers),
+        None,
+    );
+    let Err(WriteError::HeaderName { .. }) = run(
+        &mut refused_fixture,
+        &refused_deps,
+        ClientKind::Sync,
+        &refused_call,
+        &events,
+    )
+    .await
+    else {
+        panic!("a header name HTTP cannot carry fails before the send");
+    };
+    assert!(refused_wire.requests().is_empty());
+    let malformed_headers = caller_headers(&[("x-bad", "bad\nvalue")]);
+    let malformed = RecordingConfig::new("http://mock.test/v1/responses");
+    let malformed_wire = Wire::replying(Reply::json(200, DELETED), &events);
+    let malformed_source = Source::new(malformed_wire.clone());
+    let malformed_deps = WriteDeps {
+        config: &malformed,
+        source: &malformed_source,
+        supplied: None,
+        shared_session: None,
+    };
+    let mut malformed_fixture = Fixture::new("responses");
+    let malformed_call = operation_call(
+        operation,
+        "resp_a",
+        &write_params,
+        Some(&malformed_headers),
+        None,
+    );
+    let Err(WriteError::HeaderValue { .. }) = run(
+        &mut malformed_fixture,
+        &malformed_deps,
+        ClientKind::Sync,
+        &malformed_call,
+        &events,
+    )
+    .await
+    else {
+        panic!("a header value HTTP cannot carry fails before the send");
+    };
+    assert!(malformed_wire.requests().is_empty());
+    let mut garbled = Reply::json(429, "slow down");
+    garbled.body = vec![0xff_u8, 0xfe];
+    let garbled_wire = Wire::replying(garbled, &events);
+    let garbled_config = RecordingConfig::new("http://mock.test/v1/responses");
+    let garbled_source = Source::new(garbled_wire.clone());
+    let garbled_deps = WriteDeps {
+        config: &garbled_config,
+        source: &garbled_source,
+        supplied: None,
+        shared_session: None,
+    };
+    let mut garbled_fixture = Fixture::new("responses");
+    let garbled_call = operation_call(operation, "resp_a", &write_params, None, None);
+    let Err(WriteError::Provider(garbled_error)) = run(
+        &mut garbled_fixture,
+        &garbled_deps,
+        ClientKind::Sync,
+        &garbled_call,
+        &events,
+    )
+    .await
+    else {
+        panic!("a non-UTF-8 error body is still a provider error");
+    };
+    assert_eq!(garbled_error.status_code, 429);
+    assert_eq!(garbled_error.message, "2 bytes that are not UTF-8");
+    assert_eq!(
+        garbled_error.headers.get("content-length"),
+        Some(&Json::Text(String::from("2")))
+    );
     let rejected = RecordingConfig::new("http://mock.test/v1/responses");
     let rejected_wire = Wire::replying(Reply::json(400, DELETED), &events);
     let rejected_source = Source::new(rejected_wire.clone());
