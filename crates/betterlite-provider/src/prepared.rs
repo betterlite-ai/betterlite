@@ -7,6 +7,7 @@ use url::Url;
 
 use crate::aiohttp_openai_dispatch::AiohttpOpenAiPrepared;
 use crate::anthropic_dispatch::AnthropicPrepared;
+use crate::anthropic_dispatch::gateway::AnthropicUpstream;
 use crate::api::batch_records::BatchPrepared;
 use crate::api::file_contracts::FilePrepared;
 use crate::api::image_contracts::ImagePrepared;
@@ -187,7 +188,7 @@ impl PreparedRequest {
 pub enum Upstream {
     Buffered(UpstreamResponse),
     Streaming(StreamResponse),
-    Anthropic(Box<crate::anthropic_dispatch::gateway::AnthropicUpstream>),
+    Anthropic(Box<AnthropicUpstream>),
 }
 
 impl Upstream {

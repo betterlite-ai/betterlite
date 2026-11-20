@@ -44,10 +44,17 @@ use crate::prepared::deployment::Deployment;
 use crate::prepared::{PreparedRequest, Upstream};
 
 type Media = Fetcher<SystemResolver>;
-type Files<'a> = files::Files<'a, Media>;
-type Blocks<'a> = RemoteFileBlocks<'a, Files<'a>>;
-type Handler<'a> =
-    Native<'a, ProxiedClient, NoDynamicMetadata, NoHfConfig, Files<'a>, Blocks<'a>, fn() -> String>;
+type Files<'fetch> = files::Files<'fetch, Media>;
+type Blocks<'fetch> = RemoteFileBlocks<'fetch, Files<'fetch>>;
+type Handler<'call> = Native<
+    'call,
+    ProxiedClient,
+    NoDynamicMetadata,
+    NoHfConfig,
+    Files<'call>,
+    Blocks<'call>,
+    fn() -> String,
+>;
 
 // The request's messages and remaining fields, taken apart once so no held borrow ties the walk to them.
 pub(crate) struct Request {
@@ -186,7 +193,10 @@ impl<'call> From<Deps<'call>> for Handler<'call> {
                 now: Utc::now(),
                 max_event_bytes: deps.runtime.max_event_bytes,
                 max_error_body_bytes: deps.runtime.max_error_body_bytes,
-                disable_add_prefix_to_prompt: deps.runtime.disable_add_prefix_to_prompt,
+                disable_add_prefix_to_prompt: deps
+                    .runtime
+                    .request_flags
+                    .disable_add_prefix_to_prompt,
                 effort_used: deps.effort_used,
             },
             preparation: Preparation {
@@ -201,7 +211,7 @@ impl<'call> From<Deps<'call>> for Handler<'call> {
                 defaults: &deps.runtime.defaults,
                 max_tokens: deps.runtime.max_tokens,
                 billing: BillingHeader::Keep,
-                modify_params: deps.runtime.modify_params,
+                modify_params: deps.runtime.request_flags.modify_params,
                 drop_params: deps.runtime.global_drop_params,
             },
             legacy: Legacy {

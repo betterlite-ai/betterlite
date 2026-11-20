@@ -372,7 +372,7 @@ async fn the_provider_field_reaches_the_body_with_its_beta() {
 // allowed_openai_params forwards a name the Anthropic mapper does not map, as sent.
 #[tokio::test]
 async fn the_allowed_openai_param_reaches_the_body() {
-    let harness = Harness::start(vec![buffered()]).await;
+    let mut harness = Harness::start(vec![buffered()]).await;
     let result = support::complete(
         &harness,
         support::chat(chat_body(

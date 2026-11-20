@@ -11,6 +11,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 use url::Url;
 
+use crate::anthropic_dispatch::gateway::runtime::AnthropicRuntime;
 use crate::operation::OperationError;
 use crate::provider::Provider;
 
@@ -32,7 +33,7 @@ pub struct Deployment {
     pub max_retries: Option<u32>,
     pub drop_params: Option<DropParams>,
     pub provider_affinity_header: Option<String>,
-    pub anthropic: Option<Arc<crate::anthropic_dispatch::gateway::runtime::AnthropicRuntime>>,
+    pub anthropic: Option<Arc<AnthropicRuntime>>,
 }
 
 impl Deployment {

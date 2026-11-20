@@ -104,12 +104,14 @@ impl Adapter for OpenAi {
                 Ok(OperationResult::Embedding(Box::new(decoded)))
             }
             (PreparedKind::Chat(_) | PreparedKind::Embedding(_), Upstream::Streaming(_))
-            | (PreparedKind::Other, Upstream::Buffered(_) | Upstream::Streaming(_))
+            | (
+                PreparedKind::Other,
+                Upstream::Buffered(_) | Upstream::Streaming(_) | Upstream::Anthropic(_),
+            )
             | (
                 PreparedKind::Chat(_) | PreparedKind::Stream(_) | PreparedKind::Embedding(_),
                 Upstream::Anthropic(_),
-            )
-            | (PreparedKind::Other, Upstream::Anthropic(_)) => Err(unsupported()),
+            ) => Err(unsupported()),
         }
     }
 }

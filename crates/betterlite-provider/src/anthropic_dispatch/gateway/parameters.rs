@@ -100,7 +100,7 @@ async fn optional_parameters(
         &mut *sources.environment,
     )
     .await
-    .map_err(params_error)?;
+    .map_err(|source| params_error(&source))?;
     copy_provider_fields(provider, &mut optional);
     optional = openai_overrides(optional, standard, policy)?;
     copy_extra_body(extra_body, policy, &mut optional)?;
@@ -187,7 +187,7 @@ fn take_policy(
 fn names(value: Option<JsonValue>) -> Result<Vec<String>, OperationError> {
     match value {
         None | Some(JsonValue::Null) => Ok(Vec::new()),
-        Some(value) => convert(value),
+        Some(listed) => convert(listed),
     }
 }
 
@@ -232,21 +232,21 @@ where
 }
 
 // A mapped parameter that LiteLLM rejects keeps the status it raised, so the caller reads it as the provider's own error.
-fn params_error(source: ParamsError) -> OperationError {
-    match source.status_code() {
-        Some(status) => OperationError::Provider {
-            response: Box::new(UpstreamResponse {
-                status,
-                headers: HeaderMap::new(),
-                body: source.to_string().into_bytes(),
-            }),
-        },
-        None => OperationError::Anthropic {
+fn params_error(source: &ParamsError) -> OperationError {
+    source.status_code().map_or_else(
+        || OperationError::Anthropic {
             source: Box::new(AnthropicCallError::Anthropic {
                 status_code: 500,
                 message: source.to_string(),
                 headers: None,
             }),
         },
-    }
+        |status| OperationError::Provider {
+            response: Box::new(UpstreamResponse {
+                status,
+                headers: HeaderMap::new(),
+                body: source.to_string().into_bytes(),
+            }),
+        },
+    )
 }

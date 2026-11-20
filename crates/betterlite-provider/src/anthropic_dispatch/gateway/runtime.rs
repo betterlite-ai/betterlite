@@ -7,6 +7,7 @@ use betterlite_anthropic::credentials::AnthropicSettings;
 use betterlite_anthropic::option_primitives::OptionDefaults;
 use betterlite_config::sections::anthropic_capability_catalog::Settings as Budgets;
 use betterlite_config::sections::anthropic_completion::OptionValues;
+use betterlite_config::sections::anthropic_option_primitives::OptionValues as PrimitiveOptionValues;
 use betterlite_config::tls::Verification;
 use betterlite_config::types::Config;
 use betterlite_context::anthropic_catalog_lookup::RawCatalog;
@@ -67,6 +68,10 @@ impl AnthropicBases {
     }
 }
 
+pub struct RequestFlags {
+    pub modify_params: bool,
+    pub disable_add_prefix_to_prompt: bool,
+}
 pub struct AnthropicRuntime {
     pub bases: AnthropicBases,
     pub settings: AnthropicSettings,
@@ -86,8 +91,7 @@ pub struct AnthropicRuntime {
     pub budgets: Budgets,
     pub max_tokens: i64,
     pub global_drop_params: bool,
-    pub modify_params: bool,
-    pub disable_add_prefix_to_prompt: bool,
+    pub request_flags: RequestFlags,
     pub redactor: Redactor,
     pub engine: Engine,
     pub new_id: fn() -> String,
@@ -100,10 +104,8 @@ pub struct AnthropicRuntime {
 }
 
 impl fmt::Debug for AnthropicRuntime {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("AnthropicRuntime")
-            .finish_non_exhaustive()
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AnthropicRuntime").finish_non_exhaustive()
     }
 }
 
@@ -115,6 +117,7 @@ impl AnthropicRuntime {
     ) -> Result<Self, RuntimeError> {
         let (map, source, patterns) = bundled_catalogs()?;
         let options = &config.sections.anthropic_option_primitives;
+        let defaults = option_defaults(&options.litellm_settings);
         Ok(Self {
             bases: AnthropicBases::new(config),
             settings: settings(config),
@@ -129,21 +132,12 @@ impl AnthropicRuntime {
             custom_providers: BTreeSet::new(),
             credentials: credentials(config),
             fetcher: fetcher(config, client)?,
-            defaults: option_defaults(&options.litellm_settings),
-            legacy_defaults: config
-                .sections
-                .anthropic_completion
-                .litellm_settings
-                .clone(),
+            defaults,
+            legacy_defaults: legacy_defaults(config),
             budgets: config.sections.anthropic_capability_catalog,
             max_tokens: options.default_chat_max_tokens,
             global_drop_params: config.sections.drop_params.policy.global_drop_params,
-            modify_params: config.litellm_settings.modify_params,
-            disable_add_prefix_to_prompt: config
-                .sections
-                .anthropic_response
-                .inner
-                .global_disable_prefix,
+            request_flags: request_flags(config),
             redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)?,
             engine: engine()?,
             new_id: || Uuid::new_v4().to_string(),
@@ -154,6 +148,24 @@ impl AnthropicRuntime {
             max_event_bytes: ApiLimits::default().max_event_bytes,
             max_error_body_bytes: client.limits.body_bytes,
         })
+    }
+}
+
+// The legacy surface keeps the raw option values; the Messages surface reads the typed defaults instead.
+fn legacy_defaults(config: &Config) -> OptionValues {
+    config
+        .sections
+        .anthropic_completion
+        .litellm_settings
+        .clone()
+}
+
+// Both flags change how a request is assembled, and neither is per call.
+const fn request_flags(config: &Config) -> RequestFlags {
+    let inner = &config.sections.anthropic_response.inner;
+    RequestFlags {
+        modify_params: config.litellm_settings.modify_params,
+        disable_add_prefix_to_prompt: inner.global_disable_prefix,
     }
 }
 
@@ -177,7 +189,7 @@ fn credentials(config: &Config) -> GlobalCredentials {
 }
 
 // The Messages surface never reads the legacy prompt factory, so its hub never resolves.
-fn prompt_factory() -> PromptFactory {
+const fn prompt_factory() -> PromptFactory {
     PromptFactory {
         cache: Mutex::new(BTreeMap::new()),
         hub: Hub::Unreachable,
@@ -248,15 +260,13 @@ fn fetcher(
         Arc::new(|| {
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .map_or(0.0, |elapsed| elapsed.as_secs_f64())
+                .map_or(0.0_f64, |elapsed| elapsed.as_secs_f64())
         }),
     )?;
     Ok(fetcher)
 }
 
-fn option_defaults(
-    values: &betterlite_config::sections::anthropic_option_primitives::OptionValues,
-) -> OptionDefaults {
+fn option_defaults(values: &PrimitiveOptionValues) -> OptionDefaults {
     OptionDefaults {
         max_tokens: values.max_tokens,
         stop_sequences: values.stop_sequences.clone(),

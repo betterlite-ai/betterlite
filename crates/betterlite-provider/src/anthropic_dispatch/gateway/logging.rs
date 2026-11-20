@@ -17,7 +17,7 @@ use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 
 // The production sink: LiteLLM's debug logging writes the record and the client never sees it.
-pub struct TracingSink;
+pub(crate) struct TracingSink;
 
 impl LogSink for TracingSink {
     fn emit(&self, record: LogRecord) {
@@ -59,7 +59,7 @@ pub(crate) fn state<'env>(
         },
         redactor,
         || call_id.to_owned(),
-        || Duration::default(),
+        Duration::default,
     )?;
     Ok((state, env(redactor, sink, now)))
 }

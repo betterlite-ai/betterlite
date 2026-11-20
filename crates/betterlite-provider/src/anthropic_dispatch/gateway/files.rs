@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::future::Future;
 use std::sync::Arc;
 
 use betterlite_models::decisions::Json;
@@ -11,27 +10,27 @@ pub(crate) type Prefetched = BTreeMap<String, Result<String, Arc<ImageFetchError
 // LiteLLM fetches each remote file while it walks the messages, so a failure stops the walk where it is.
 pub(crate) async fn prefetch<Source>(fetcher: &Source, messages: &[Json]) -> Prefetched
 where
-    Source: RemoteMediaFetcher,
+    Source: RemoteMediaFetcher + Sync,
 {
-    let mut fetched = Prefetched::new();
+    let mut prefetched = Prefetched::new();
     for url in http_file_urls(messages) {
-        if fetched.contains_key(&url) {
+        if prefetched.contains_key(&url) {
             continue;
         }
-        let fetched_url = fetcher.convert_url(&url).await;
-        let failed = fetched_url.is_err();
-        fetched.insert(url, fetched_url.map_err(Arc::new));
+        let converted = fetcher.convert_url(&url).await;
+        let failed = converted.is_err();
+        prefetched.insert(url, converted.map_err(Arc::new));
         if failed {
             break;
         }
     }
-    fetched
+    prefetched
 }
 
 // The prompt assembly reads a fetched file from here, so the same URL never leaves the proxy twice.
-pub(crate) struct Files<'a, Source> {
-    pub(crate) fetcher: &'a Source,
-    pub(crate) fetched: &'a Prefetched,
+pub(crate) struct Files<'fetch, Source> {
+    pub(crate) fetcher: &'fetch Source,
+    pub(crate) fetched: &'fetch Prefetched,
 }
 
 impl<Source> Files<'_, Source>
@@ -52,24 +51,16 @@ impl<Source> RemoteMediaFetcher for Files<'_, Source>
 where
     Source: RemoteMediaFetcher + Sync,
 {
-    fn convert_url(
-        &self,
-        url: &str,
-    ) -> impl Future<Output = Result<String, ImageFetchError>> + Send {
-        async move { self.resolve(url).await }
+    async fn convert_url(&self, url: &str) -> Result<String, ImageFetchError> {
+        self.resolve(url).await
     }
 
-    fn convert_urls(
-        &self,
-        urls: &[String],
-    ) -> impl Future<Output = Result<Vec<String>, ImageFetchError>> + Send {
-        async move {
-            let mut converted = Vec::with_capacity(urls.len());
-            for url in urls {
-                converted.push(self.resolve(url).await?);
-            }
-            Ok(converted)
+    async fn convert_urls(&self, urls: &[String]) -> Result<Vec<String>, ImageFetchError> {
+        let mut converted = Vec::with_capacity(urls.len());
+        for url in urls {
+            converted.push(self.resolve(url).await?);
         }
+        Ok(converted)
     }
 }
 
@@ -105,13 +96,13 @@ fn http_file_urls(messages: &[Json]) -> Vec<String> {
             continue;
         };
         for part in parts {
-            let Json::Object(fields) = part else {
+            let Json::Object(part_fields) = part else {
                 continue;
             };
-            if !matches!(fields.get("type"), Some(Json::Text(kind)) if kind == "file") {
+            if !matches!(part_fields.get("type"), Some(Json::Text(kind)) if kind == "file") {
                 continue;
             }
-            let Some(Json::Object(file)) = fields.get("file") else {
+            let Some(Json::Object(file)) = part_fields.get("file") else {
                 continue;
             };
             let Some(Json::Text(data)) = file.get("file_data") else {

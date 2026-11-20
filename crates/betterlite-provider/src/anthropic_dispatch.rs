@@ -3,6 +3,7 @@ pub mod base;
 pub mod config;
 
 use betterlite_http::error::HttpError;
+use betterlite_http::proxy::ProxiedClient;
 use betterlite_openai::openai_base_config::CatalogCapabilities;
 use futures_util::stream::BoxStream;
 
@@ -24,7 +25,7 @@ pub struct AnthropicRequest;
 
 // The client's reply or the framed stream; the B010 stub it replaces had no payload.
 pub enum AnthropicResult {
-    Reply(Box<gateway::AnthropicReply>),
+    Reply(Box<gateway::reply::AnthropicReply>),
     Stream(BoxStream<'static, Result<Vec<u8>, HttpError>>),
 }
 
@@ -69,7 +70,7 @@ impl Adapter for Anthropic {
 
     fn execute(
         &self,
-        client: &betterlite_http::proxy::ProxiedClient,
+        client: &ProxiedClient,
         prepared: &PreparedRequest,
         deployment: &Deployment,
     ) -> impl Future<Output = Result<Upstream, OperationError>> + Send {

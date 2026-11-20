@@ -64,9 +64,9 @@ pub(crate) fn frames(
         include_usage,
         done: false,
     };
-    stream::unfold(frames, |mut frames| async move {
-        let item = next_frame(&mut frames).await;
-        item.map(|item| (item, frames))
+    stream::unfold(frames, |mut state| async move {
+        let item = next_frame(&mut state).await;
+        item.map(|frame| (frame, state))
     })
     .boxed()
 }

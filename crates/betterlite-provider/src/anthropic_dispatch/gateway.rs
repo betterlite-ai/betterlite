@@ -11,12 +11,10 @@ pub(crate) mod context;
 pub(crate) mod error;
 pub(crate) mod files;
 pub(crate) mod frames;
-pub(crate) mod logging;
+pub mod logging;
 pub(crate) mod parameters;
-pub(crate) mod reply;
-pub(crate) mod runtime;
-
-pub use reply::AnthropicReply;
+pub mod reply;
+pub mod runtime;
 
 // What a Messages call hands back before decode: the provider headers LiteLLM projected and the raw outcome.
 pub struct AnthropicUpstream {

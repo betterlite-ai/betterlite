@@ -134,12 +134,14 @@ impl Adapter for AiohttpOpenAi {
             }
             (PreparedKind::Chat(_) | PreparedKind::Embedding(_), Upstream::Streaming(_))
             | (PreparedKind::Embedding(_), Upstream::Buffered(_))
-            | (PreparedKind::Other, Upstream::Buffered(_) | Upstream::Streaming(_))
+            | (
+                PreparedKind::Other,
+                Upstream::Buffered(_) | Upstream::Streaming(_) | Upstream::Anthropic(_),
+            )
             | (
                 PreparedKind::Chat(_) | PreparedKind::Stream(_) | PreparedKind::Embedding(_),
                 Upstream::Anthropic(_),
-            )
-            | (PreparedKind::Other, Upstream::Anthropic(_)) => Err(unsupported()),
+            ) => Err(unsupported()),
         }
     }
 }

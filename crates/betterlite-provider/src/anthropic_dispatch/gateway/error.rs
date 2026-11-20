@@ -17,15 +17,18 @@ type CallFailure = Failure<StreamFailure, FileBlockError>;
 pub(crate) fn dispatch(error: DispatchError<CallFailure>) -> OperationError {
     match error {
         DispatchError::Completion(source) => failure(source),
-        other => internal(other.to_string()),
+        other @ (DispatchError::Selection(_)
+        | DispatchError::Count(_)
+        | DispatchError::Batch(_)
+        | DispatchError::File(_)) => internal(other.to_string()),
     }
 }
 
-fn failure(source: CallFailure) -> OperationError {
-    match source {
+fn failure(call: CallFailure) -> OperationError {
+    match call {
         Failure::Http(source) => source,
         Failure::Chat(source) => chat(*source),
-        Failure::Prepare(source) => prepare(*source),
+        Failure::Prepare(source) => prepare(&source),
         Failure::Config
         | Failure::MissingBase
         | Failure::ExtraBody
@@ -33,7 +36,7 @@ fn failure(source: CallFailure) -> OperationError {
         | Failure::Json(_)
         | Failure::Url(_)
         | Failure::HeaderName(_)
-        | Failure::HeaderValue(_) => internal(source.to_string()),
+        | Failure::HeaderValue(_) => internal(call.to_string()),
     }
 }
 
@@ -61,31 +64,30 @@ fn chat(source: AnthropicCallError) -> OperationError {
     }
 }
 
-fn prepare(source: RequestError<FileBlockError>) -> OperationError {
-    match source.status_code() {
-        Some(status) => OperationError::Provider {
+fn prepare(source: &RequestError<FileBlockError>) -> OperationError {
+    source.status_code().map_or_else(
+        || internal(source.to_string()),
+        |status| OperationError::Provider {
             response: Box::new(UpstreamResponse {
                 status,
                 headers: HeaderMap::new(),
                 body: source.to_string().into_bytes(),
             }),
         },
-        None => internal(source.to_string()),
-    }
+    )
 }
 
 // LiteLLM's stream handler reports a read that timed out as the request timeout, not as a provider answer.
-fn timeout(source: &AnthropicCallError) -> bool {
+const fn timeout(call: &AnthropicCallError) -> bool {
     let ChatCallError::Open(
         StreamOpenError::Reraised { source } | StreamOpenError::Unknown { source },
-    ) = source
+    ) = call
     else {
         return false;
     };
     matches!(
         source,
-        StreamFailure::Transport(TransportError::ConnectTimeout(_))
-            | StreamFailure::Transport(TransportError::Deadline(_))
+        StreamFailure::Transport(TransportError::ConnectTimeout(_) | TransportError::Deadline(_))
     )
 }
 

@@ -1,4 +1,5 @@
 use betterlite_anthropic::anthropic_capability_catalog::CatalogSources;
+use betterlite_bedrock::mantle_inputs::region::split_region_prefix;
 use betterlite_context::bedrock_model::{get_bedrock_base_model, strip_bedrock_routing_prefix};
 use betterlite_core::cost::completion::lookup::NoHfConfig;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
@@ -12,7 +13,7 @@ use betterlite_models::resolution::ResolutionContext;
 
 use crate::anthropic_dispatch::gateway::runtime::AnthropicRuntime;
 
-pub(super) fn catalogs(runtime: &AnthropicRuntime) -> CatalogSources<'_> {
+pub(super) const fn catalogs(runtime: &AnthropicRuntime) -> CatalogSources<'_> {
     CatalogSources {
         patterns: &runtime.patterns,
         runtime: &runtime.source,
@@ -59,7 +60,7 @@ fn metadata<'call>(
         normalizers: NameNormalizers {
             bedrock_base_model: get_bedrock_base_model,
             bedrock_routing_prefix: strip_bedrock_routing_prefix,
-            mantle_region_split: betterlite_bedrock::mantle_inputs::region::split_region_prefix,
+            mantle_region_split: split_region_prefix,
         },
     }
 }
