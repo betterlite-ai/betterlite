@@ -31,11 +31,11 @@ use secrecy::{ExposeSecret as _, SecretString};
 use crate::api::speech_http::error::{ClientError, SpeechError};
 use crate::api::speech_http::{
     ClientSource, LogContext, Mode, SpeechBinaryResponse, SpeechCall, SpeechDeps, SpeechParams,
-    SpeechTransport, SpeechWireRequest, prepare, send,
+    SpeechTransport, SpeechWireRequest, async_text_to_speech_handler, text_to_speech_handler,
 };
+use crate::api::speech_provider_contract::error::{BaseLlmException, SpeechContractError};
 use crate::api::speech_provider_contract::{
-    BaseLlmException, ClassAttribute, SpeechContractError, SpeechHeaders, SpeechMappingOptions,
-    SpeechRequestInput, TextToSpeechConfig,
+    ClassAttribute, SpeechHeaders, SpeechMappingOptions, SpeechRequestInput, TextToSpeechConfig,
 };
 
 pub(crate) struct Sink;
@@ -92,12 +92,15 @@ impl Fixture {
     }
 }
 
-pub(crate) async fn run<'deps, S: ClientSource>(
+pub(crate) async fn run<'deps, S>(
     fixture: &mut Fixture,
     deps: &'deps SpeechDeps<'deps, S>,
     mode: Mode,
     call: &SpeechCall<'_>,
-) -> Result<SpeechBinaryResponse, SpeechError> {
+) -> Result<SpeechBinaryResponse, SpeechError>
+where
+    S: ClientSource,
+{
     let env = PrePostEnv {
         debug: DebugSettings::default(),
         globals: GlobalFlags::default(),
@@ -112,16 +115,14 @@ pub(crate) async fn run<'deps, S: ClientSource>(
         logger_fn: None,
         now: fixture.now,
     };
-    let prepared = prepare(
-        deps,
-        mode,
-        call,
-        &mut LogContext {
-            state: &mut fixture.state,
-            env: &env,
-        },
-    )?;
-    send(prepared, call.model).await
+    let mut log = LogContext {
+        state: &mut fixture.state,
+        env: &env,
+    };
+    match mode {
+        Mode::Sync => text_to_speech_handler(deps, call, &mut log).await,
+        Mode::Asynchronous => async_text_to_speech_handler(deps, call, &mut log).await,
+    }
 }
 
 #[derive(Clone)]

@@ -109,7 +109,8 @@ enum Selected<'client, Client> {
 impl<Client> Selected<'_, Client> {
     const fn get(&self) -> &Client {
         match self {
-            Self::Supplied(client) | Self::Created(client) => client,
+            Self::Supplied(client) => *client,
+            Self::Created(client) => client,
         }
     }
 }
@@ -172,10 +173,13 @@ where
 }
 
 // One post, no retry: a missing body, a transport failure and a non-2xx status all become provider errors
-pub async fn send<S: ClientSource>(
+pub async fn send<S>(
     prepared: PreparedSpeech<'_, S>,
     model: &str,
-) -> Result<SpeechBinaryResponse, SpeechError> {
+) -> Result<SpeechBinaryResponse, SpeechError>
+where
+    S: ClientSource,
+{
     let PreparedSpeech {
         config,
         client,
@@ -238,30 +242,39 @@ fn wire_body(
 }
 
 // ast-grep-ignore: no-padded-one-line-functions - both public entry points forward here, and this body is the pipeline itself
-async fn execute<S: ClientSource>(
+async fn execute<S>(
     deps: &SpeechDeps<'_, S>,
     mode: Mode,
     call: &SpeechCall<'_>,
     log: &mut LogContext<'_, '_>,
-) -> Result<SpeechBinaryResponse, SpeechError> {
+) -> Result<SpeechBinaryResponse, SpeechError>
+where
+    S: ClientSource,
+{
     let prepared = prepare(deps, mode, call, log)?;
     send(prepared, call.model).await
 }
 
 // ast-grep-ignore: no-one-line-functions - the public sync entry point forwards to the shared pipeline with its client class
-pub async fn text_to_speech_handler<S: ClientSource>(
+pub async fn text_to_speech_handler<S>(
     deps: &SpeechDeps<'_, S>,
     call: &SpeechCall<'_>,
     log: &mut LogContext<'_, '_>,
-) -> Result<SpeechBinaryResponse, SpeechError> {
+) -> Result<SpeechBinaryResponse, SpeechError>
+where
+    S: ClientSource,
+{
     execute(deps, Mode::Sync, call, log).await
 }
 
 // ast-grep-ignore: no-one-line-functions - the public async entry point forwards to the shared pipeline with its client class
-pub async fn async_text_to_speech_handler<S: ClientSource>(
+pub async fn async_text_to_speech_handler<S>(
     deps: &SpeechDeps<'_, S>,
     call: &SpeechCall<'_>,
     log: &mut LogContext<'_, '_>,
-) -> Result<SpeechBinaryResponse, SpeechError> {
+) -> Result<SpeechBinaryResponse, SpeechError>
+where
+    S: ClientSource,
+{
     execute(deps, Mode::Asynchronous, call, log).await
 }

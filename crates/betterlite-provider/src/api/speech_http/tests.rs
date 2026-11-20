@@ -22,7 +22,8 @@ use self::support::{
 use super::error::SpeechError;
 use super::facts::{MISSING_BODY, format_timeout};
 use super::{Mode, SpeechCall, SpeechDeps, SpeechParams, SuppliedClient};
-use crate::api::speech_provider_contract::{SpeechContractError, SpeechHeaders};
+use crate::api::speech_provider_contract::SpeechHeaders;
+use crate::api::speech_provider_contract::error::SpeechContractError;
 
 const URL: &str = "http://provider.test/v1/audio/speech";
 
@@ -111,6 +112,7 @@ async fn speech_http_body_and_headers() {
         assert_eq!(requests.len(), 1);
         assert_eq!(requests[0].method, Method::POST);
         assert_eq!(requests[0].url.as_str(), URL);
+        assert_eq!(requests[0].timeout, Some(Duration::from_secs(5)));
         assert_eq!(header(&requests[0], "x").as_deref(), Some("provider"));
         assert_eq!(header(&requests[0], "content-type"), None);
         assert_eq!(bytes_content_type(&requests[0]), None);
@@ -220,7 +222,7 @@ async fn speech_http_sync_and_async_send_the_same_http() {
         litellm_params: &litellm,
         extra_headers: Some(&caller),
         params: &declared,
-        timeout: None,
+        timeout: Some(Duration::from_secs(5)),
     };
     let sync_wire = Wire::replying(Reply::bytes(200, b"audio"));
     let sync_source = Source::new(sync_wire.clone());
@@ -263,6 +265,14 @@ async fn speech_http_sync_and_async_send_the_same_http() {
     }];
     assert_eq!(captured(&sync_wire), expected);
     assert_eq!(captured(&async_wire), expected);
+    assert_eq!(
+        sync_wire.requests()[0].timeout,
+        Some(Duration::from_secs(5))
+    );
+    assert_eq!(
+        async_wire.requests()[0].timeout,
+        Some(Duration::from_secs(5))
+    );
 }
 
 #[tokio::test]

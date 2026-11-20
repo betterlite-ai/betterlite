@@ -206,7 +206,7 @@ async def execute_step(step: Step, api_base: str) -> StepOutcome:
     timeout = DEFAULT_TIMEOUT if step.timeout_seconds is None else float(step.timeout_seconds)
     try:
         if step.mode == "sync":
-            work = HANDLER.text_to_speech_handler(
+            work = HANDLER.text_to_speech_handler(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11827-L11841
                 MODEL,
                 step.input,
                 step.voice,
@@ -221,7 +221,7 @@ async def execute_step(step: Step, api_base: str) -> StepOutcome:
             )
             response = await settled(work)
         else:
-            response = await HANDLER.async_text_to_speech_handler(
+            response = await HANDLER.async_text_to_speech_handler(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11944-L11955
                 MODEL,
                 step.input,
                 step.voice,

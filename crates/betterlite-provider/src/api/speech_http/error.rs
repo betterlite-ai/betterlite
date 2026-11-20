@@ -4,9 +4,8 @@ use betterlite_logging::logging_pre_post::error::PrePostError;
 use http::header::{InvalidHeaderName, InvalidHeaderValue};
 use thiserror::Error;
 
-use crate::api::speech_provider_contract::{
-    SpeechContractError, SpeechHeaders, TextToSpeechConfig,
-};
+use crate::api::speech_provider_contract::error::SpeechContractError;
+use crate::api::speech_provider_contract::{SpeechHeaders, TextToSpeechConfig};
 
 // LiteLLM's BaseLLMException together with the flag only _handle_error sets
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
