@@ -102,7 +102,7 @@ async fn all_entity_allowlists() {
 
 #[tokio::test]
 async fn duplicate_target_name() {
-    let database = ScriptedAllowlists::new(
+    let mut database = ScriptedAllowlists::new(
         vec![
             row(AllowlistKind::Key, "k-1", None, Some(&["old", "x", "old"])),
             row(
@@ -116,6 +116,8 @@ async fn duplicate_target_name() {
         ],
         EventLog::default(),
     );
+    // The keys follow the order the statement returned, which SQL does not promise to keep.
+    database.reverse_rows = true;
     let cache = ScriptedAllowlistCache::recording(EventLog::default());
     let request = rename("old", "new");
     sync_model_allowlists_for_renamed_model(&grant_counts(0), &database, &cache, None, &request)
@@ -130,7 +132,7 @@ async fn duplicate_target_name() {
             Some(names(&["other"])),
         ]
     );
-    assert_eq!(calls(&cache), vec![names(&["k-1", "k-2", "k-3"])]);
+    assert_eq!(calls(&cache), vec![names(&["k-3", "k-2", "k-1"])]);
 }
 
 #[tokio::test]
