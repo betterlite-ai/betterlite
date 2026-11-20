@@ -2,7 +2,7 @@ use rstest::rstest;
 
 use super::*;
 use crate::api::vector_store_http_write::service::LogContext;
-use crate::api::vector_store_search::service::{CreateCall, create};
+use crate::api::vector_store_search::service::{CreateCall, create_call::create};
 
 impl Logs {
     pub(super) async fn run_create<S>(

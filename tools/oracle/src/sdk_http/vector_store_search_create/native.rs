@@ -9,7 +9,7 @@ use betterlite_core::api::vector_store_search::error::{
     SdkFailure, VectorStoreSearchError, failure as project_failure,
 };
 use betterlite_core::api::vector_store_search::service::{
-    CreateCall, SdkDeps, create as create_vector_store,
+    CreateCall, SdkDeps, create_call::create as create_vector_store,
 };
 use betterlite_error::envelope::WireField;
 use betterlite_logging::logging_state::LoggingState;

@@ -20,7 +20,7 @@ pub fn mock_create_response(mock_response: Option<&Json>) -> Json {
         ("object".to_owned(), Json::Text("vector_store".to_owned())),
         (
             "created_at".to_owned(),
-            Json::Number(Number::from(1699061776_u64)),
+            Json::Number(Number::from(1_699_061_776_u64)),
         ),
         (
             "name".to_owned(),

@@ -2,7 +2,7 @@ use betterlite_core::api::vector_search_execution::config::Params;
 use betterlite_core::api::vector_store_http_write::service::LogContext;
 use betterlite_core::api::vector_store_search::error::VectorStoreSearchError;
 use betterlite_core::api::vector_store_search::service::{
-    SdkDeps, SearchCall, search as search_vector_store,
+    SdkDeps, SearchCall, search_call::search as search_vector_store,
 };
 use betterlite_models::decisions::Json;
 

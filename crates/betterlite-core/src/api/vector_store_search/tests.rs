@@ -49,8 +49,8 @@ use crate::api::vector_search_execution::error::SearchError;
 use crate::api::vector_search_execution::service::signing::{
     SignFuture, SignInput, SignedSearch, SigningSeam,
 };
-use crate::api::vector_store_http_create_read::config::{CapabilityError, CreateReadConfig};
-use crate::api::vector_store_http_create_read::error::CreateReadError;
+use crate::api::vector_store_http_create_read::config::CreateReadConfig;
+use crate::api::vector_store_http_create_read::error::{CapabilityError, CreateReadError};
 use crate::api::vector_store_http_write::config::{WriteConfig, WriteParams};
 use crate::api::vector_store_http_write::error::{
     BaseLlmException, ClientError, HeaderMap as WireHeaders, UrlFailure, WriteError,
@@ -404,7 +404,7 @@ impl Logs {
             },
             &redactor,
             || String::from("generated"),
-            Duration::default(),
+            || Duration::default(),
         )
         .expect("the logging state builds");
         Self {

@@ -4,7 +4,7 @@ use super::create::create_call;
 use super::*;
 use crate::api::vector_store_http_write::service::LogContext;
 use crate::api::vector_store_search::mock;
-use crate::api::vector_store_search::service::{SearchCall, search};
+use crate::api::vector_store_search::service::{SearchCall, search_call::search};
 
 impl Logs {
     pub(super) async fn run_search<S>(

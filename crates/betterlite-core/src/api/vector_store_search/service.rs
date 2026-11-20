@@ -12,17 +12,14 @@ use super::error::VectorStoreSearchError;
 use super::executor::{DirectExecutor, EmbeddingExecutorSource};
 use crate::api::vector_search_execution::config::{Params, SearchConfig, SearchQuery};
 use crate::api::vector_search_execution::service::signing::SigningSeam;
-use crate::api::vector_store_http_create_read::config::{CapabilityError, CreateReadConfig};
+use crate::api::vector_store_http_create_read::{config::CreateReadConfig, error::CapabilityError};
 use crate::api::vector_store_http_write::config::WriteConfig;
 use crate::api::vector_store_http_write::service::{ClientKind, ClientSource, SuppliedClient};
 use crate::api::vector_store_registry::store::VectorStoreRegistry;
 
-mod create_call;
+pub mod create_call;
 mod logging;
-mod search_call;
-
-pub use create_call::create;
-pub use search_call::search;
+pub mod search_call;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

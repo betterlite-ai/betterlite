@@ -146,7 +146,7 @@ fn search_mock(kwargs: &Params) -> Option<Json> {
     if let Some(Json::List(items)) = mock
         && !items.is_empty()
     {
-        return Some(mock::mock_search_response(Some(Json::List(items.clone()))));
+        return Some(mock::mock_search_response(mock));
     }
     if let Some(Json::Text(sample)) = mock
         && !sample.is_empty()
