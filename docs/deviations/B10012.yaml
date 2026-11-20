@@ -2,10 +2,14 @@ task: B10012
 deviations:
   - what: >-
       get_all_agents_from_db returns typed AgentResponse values instead of the dicts LiteLLM's
-      Prisma find_many produces.
+      Prisma find_many produces, and the nested object permission is the typed
+      AgentObjectPermission with its six fields, so the permission's other columns
+      (vector_stores, blocked_tools, agent_access_groups, search_tools, mcp_tool_search_enabled,
+      skills) do not reach the response JSON.
     why: >-
       LiteLLM's dicts are read only by the registry reload, which validates them into AgentResponse;
-      typed values replace that round trip.
+      typed values replace that round trip. B4770's AgentObjectPermission fixes the six fields, and
+      AgentResponse.object_permission is that type.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L893-L918
   - what: >-
       The codec accepts a JSON string stored in a jsonb column (litellm_params, agent_card_params,
@@ -14,6 +18,15 @@ deviations:
       B4777 writes parsed jsonb values, and older rows can hold the string form; B4775's parsers
       already accept both and the response JSON is the same.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L893-L918
+  - what: >-
+      A row that does not decode fails the whole listing with
+      "Error getting agents from DB: <RowDecodeError>", where LiteLLM's listing returns the raw
+      dicts and a malformed row fails later, when the registry validates the batch into
+      AgentResponse. The per-column error text names the column kind, never the column value.
+    why: >-
+      Typed rows replace the dicts, so the failure surfaces at the read; the task requires every
+      listing failure, database or decode, to carry the same prefix.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L906-L915
   - what: >-
       A NULL required_roles or required_scopes array on an identity row decodes as an empty list.
     why: >-
