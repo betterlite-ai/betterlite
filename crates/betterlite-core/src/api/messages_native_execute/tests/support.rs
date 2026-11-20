@@ -345,7 +345,7 @@ fn recorded(request: &InterceptorRequest<'_>) -> IndexMap<String, Json> {
     record.insert(
         "api_key".to_owned(),
         match request.api_key {
-            Some(secret) => Json::Text(secret.expose_secret().clone()),
+            Some(secret) => Json::Text(secret.expose_secret().to_owned()),
             None => Json::Null,
         },
     );

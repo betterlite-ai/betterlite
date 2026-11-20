@@ -72,7 +72,7 @@ pub enum MessagesDispatchOutcome {
 // The prepared final dispatch: the caller executes it and resumes this pipeline's result handling
 pub struct MessagesExecutionContinuation {
     pub dispatch: MessagesDispatchRequest,
-    redactor: Arc<Redactor>,
+    pub redactor: Arc<Redactor>,
 }
 
 impl MessagesExecutionContinuation {

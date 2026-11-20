@@ -11,7 +11,7 @@ use rstest::rstest;
 use secrecy::SecretString;
 
 use super::dispatch::{MessagesBaseLlmException, MessagesDispatchOutcome};
-use super::entry::{MessagesEntryResult, MessagesExecuteStream};
+use super::entry::MessagesEntryResult;
 use super::error::MessagesExecuteError;
 use super::pipeline::execute;
 use support::{

@@ -114,10 +114,9 @@ pub(super) fn sanitize_messages(messages: &[Json]) -> Result<Vec<Json>, Messages
         serde_json::from_slice(&encoded).map_err(TransformError::from)?;
     let stripped = strip_blocks(&prompt_messages, BlockStrip::EmptyContent);
     let with_ids = sanitize_tool_use_ids(&stripped);
-    let flattened = flatten_web_search_results(&with_ids);
-    let reencoded = serde_json::to_vec(&flattened).map_err(TransformError::from)?;
+    let reencoded = serde_json::to_vec(&with_ids).map_err(TransformError::from)?;
     let contract: Vec<Json> = serde_json::from_slice(&reencoded).map_err(TransformError::from)?;
-    Ok(contract)
+    Ok(flatten_web_search_results(&contract))
 }
 
 // AnthropicCacheControlHook.maybe_inject_cache_control runs first and may replace messages or system
@@ -186,15 +185,15 @@ pub(super) fn resolve_provider(
     request: &MessagesEntryRequest,
     seams: &MessagesEntrySeams<'_>,
 ) -> Option<String> {
-    let lookup = ProviderLookup {
+    let mut lookup = ProviderLookup {
         model: Some(request.model.as_str()),
         custom_llm_provider: request.custom_llm_provider.as_deref(),
         api_base: request.api_base.as_deref(),
-        api_key: request
-            .api_key
-            .as_ref()
-            .map(|secret| secret.expose_secret().as_str()),
+        api_key: None,
     };
+    if let Some(secret) = request.api_key.as_ref() {
+        lookup.api_key = Some(secret.expose_secret());
+    }
     seams
         .provider_resolution
         .resolve(&lookup)
