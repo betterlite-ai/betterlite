@@ -3,9 +3,9 @@ use std::sync::{Mutex, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_db::mcp_server_encoding::credentials::CredentialBlob;
-use betterlite_db::mcp_stored_contracts::JsonValue;
 use betterlite_mcp::server_record::OAuth2Flow;
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
 use betterlite_oracle_helper_api::error::HelperError;
@@ -28,7 +28,7 @@ pub(super) struct SignalSpec {
     authorization_url: Option<String>,
     registration_url: Option<String>,
     token_url: Option<String>,
-    credentials: Option<CredentialBlob>,
+    credentials: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -44,7 +44,7 @@ pub(super) struct FlowRowSpec {
     authorization_url: Option<String>,
     registration_url: Option<String>,
     token_url: Option<String>,
-    credentials: Option<JsonValue>,
+    credentials: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -71,26 +71,29 @@ pub(super) struct FakeFlowTable {
 }
 
 impl FakeFlowTable {
-    fn new(rows: &[FlowRowSpec], credentials: Vec<UserCredentialRow>) -> Self {
-        let states = rows
-            .iter()
-            .map(|spec| FlowState {
+    fn new(
+        rows: &[FlowRowSpec],
+        credentials: Vec<UserCredentialRow>,
+    ) -> Result<Self, Box<HelperError>> {
+        let mut states = Vec::with_capacity(rows.len());
+        for spec in rows {
+            states.push(FlowState {
                 row: FlowCandidateRow {
                     server_id: spec.server_id.clone(),
                     authorization_url: spec.authorization_url.clone(),
                     registration_url: spec.registration_url.clone(),
                     token_url: spec.token_url.clone(),
-                    credentials: spec.credentials.clone(),
+                    credentials: decode_stored(spec.credentials.as_ref())?,
                 },
                 flow: None,
                 updated_by: None,
-            })
-            .collect();
-        Self {
+            });
+        }
+        Ok(Self {
             rows: Mutex::new(states),
             credentials,
             stamps: Mutex::new(Vec::new()),
-        }
+        })
     }
 
     fn row_views(&self) -> Vec<Value> {
@@ -171,29 +174,41 @@ fn stamp_view(stamp: &StampCall) -> Value {
     json!({"flow": flow_name(stamp.flow), "server_ids": ids})
 }
 
-pub(super) fn classify(input: &ClassifyInput) -> Value {
-    let results = input
-        .signals
-        .iter()
-        .map(|signal| {
-            let classification = classify_null_flow_row(&FlowSignals {
-                has_per_user_tokens: signal.has_per_user_tokens,
-                authorization_url: signal.authorization_url.as_deref(),
-                registration_url: signal.registration_url.as_deref(),
-                token_url: signal.token_url.as_deref(),
-                credentials: signal.credentials.as_ref(),
-            });
-            json!({
-                "flow": classification.flow.map(flow_name),
-                "rule": classification.rule.as_str(),
-            })
+pub(super) fn classify(input: &ClassifyInput) -> Result<Value, Box<HelperError>> {
+    let mut results = Vec::with_capacity(input.signals.len());
+    for signal in &input.signals {
+        let credentials: Option<CredentialBlob> = decode_stored(signal.credentials.as_ref())?;
+        let classification = classify_null_flow_row(&FlowSignals {
+            has_per_user_tokens: signal.has_per_user_tokens,
+            authorization_url: signal.authorization_url.as_deref(),
+            registration_url: signal.registration_url.as_deref(),
+            token_url: signal.token_url.as_deref(),
+            credentials: credentials.as_ref(),
+        });
+        results.push(json!({
+            "flow": classification.flow.map(flow_name),
+            "rule": classification.rule.as_str(),
+        }));
+    }
+    Ok(json!({"results": results}))
+}
+
+// The case's raw JSON cannot decode straight into the stored types inside the tagged input enum, so it is converted here.
+fn decode_stored<T>(value: Option<&Value>) -> Result<Option<T>, Box<HelperError>>
+where
+    T: DeserializeOwned,
+{
+    value
+        .cloned()
+        .map(|document| {
+            serde_json::from_value::<T>(document)
+                .map_err(|error| support::value_error(error.to_string()))
         })
-        .collect::<Vec<_>>();
-    json!({"results": results})
+        .transpose()
 }
 
 pub(super) async fn flow_backfill(input: &FlowBackfillInput) -> Result<Value, Box<HelperError>> {
-    let table = FakeFlowTable::new(&input.flow_rows, credential_rows(&input.user_credentials));
+    let table = FakeFlowTable::new(&input.flow_rows, credential_rows(&input.user_credentials))?;
     let measured = backfill_null_oauth2_flows(&table, &support::cipher(), &SilentLog)
         .await
         .map_err(|error| support::value_error(error.to_string()))?;
