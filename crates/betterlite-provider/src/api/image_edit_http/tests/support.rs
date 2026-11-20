@@ -1,4 +1,3 @@
-use std::error::Error;
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
@@ -15,7 +14,6 @@ use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
 };
-use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_logging::logging_privacy::request::Decision;
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
@@ -588,37 +586,10 @@ pub(super) const fn edit_call<'call>(
     }
 }
 
-pub(super) fn provider_error<ConfigError: Error + 'static>(
-    error: ImageEditHttpError<ConfigError>,
-) -> ProviderError {
-    let ImageEditHttpError::Provider(provider) = error else {
-        panic!("the call failed outside the provider answer: {error}");
-    };
-    *provider
-}
-
-pub(super) fn request_error<ConfigError: Error + 'static>(
-    error: ImageEditHttpError<ConfigError>,
-) -> RequestError {
-    let ImageEditHttpError::Request(request) = error else {
-        panic!("the call failed outside the request build: {error}");
-    };
-    request
-}
-
-pub(super) fn pre_post_error<ConfigError: Error + 'static>(
-    error: ImageEditHttpError<ConfigError>,
-) -> PrePostError {
-    match error {
-        ImageEditHttpError::Logging(logging) => logging,
-        other => panic!("the call failed outside the pre-call logging: {other}"),
-    }
-}
-
 pub(super) const RESPONSE_BODY: &str = r#"{"created":1,"data":[{"b64_json":"YQ=="}]}"#;
 pub(super) const API_BASE: &str = "http://mock.test/v1";
 pub(super) const EDITS_URL: &str = "http://mock.test/v1/images/edits";
-const MODEL: &str = "gpt-image-1";
+pub(super) const MODEL: &str = "gpt-image-1";
 
 pub(super) fn image() -> ImageFile {
     ImageFile {
@@ -634,15 +605,6 @@ pub(super) fn image_response() -> ImageResponse {
 
 pub(super) fn litellm_params() -> ImageParams {
     params(r#"{"api_key":"key","api_base":"http://mock.test/v1"}"#)
-}
-
-pub(super) fn part(name: &str, data: &[u8]) -> MultipartPart {
-    MultipartPart {
-        name: name.to_owned(),
-        file_name: None,
-        content_type: None,
-        data: data.to_vec(),
-    }
 }
 
 pub(super) fn file_part(
@@ -663,33 +625,22 @@ pub(super) fn edit_transport() -> Transport {
     Transport::replying(Reply::json(200, RESPONSE_BODY).with_header("x-request-id", "edit_1"))
 }
 
-fn caller_transform_event(mode: ClientKind, image: &ImageFile, options: &ImageParams) -> Event {
-    Event::Transform {
-        mode,
-        model: String::from(MODEL),
-        prompt: Some(String::from("change")),
-        image: Some(image.clone()),
-        options: options.clone(),
-        headers: headers(&[("x", "caller")]),
-    }
-}
-
-pub(super) fn sync_events(image: &ImageFile, options: &ImageParams) -> Vec<Event> {
+pub(super) fn recorded_events(environment_headers: ImageHeaders, transform: Event) -> Vec<Event> {
     vec![
         Event::Environment {
             api_key: Some(String::from("key")),
             api_base: Some(String::from(API_BASE)),
             model: String::from(MODEL),
-            headers: headers(&[("x", "option")]),
+            headers: environment_headers,
         },
         Event::Url {
             api_base: Some(String::from(API_BASE)),
             api_key: Some(String::from("key")),
         },
-        caller_transform_event(ClientKind::Sync, image, options),
+        transform,
         Event::Finalize {
             url: String::from(EDITS_URL),
-            data: params_json(),
+            data: params(r#"{"prompt":"change","revision":"final"}"#),
         },
         Event::Respond { status: 200 },
     ]
@@ -729,8 +680,8 @@ pub(super) fn assert_sync_request(transport: &Transport) {
     assert_eq!(
         parts,
         &vec![
-            part("prompt", b"change"),
-            part("revision", b"final"),
+            file_part("prompt", None, None, b"change"),
+            file_part("revision", None, None, b"final"),
             file_part("image", Some("a.png"), Some("image/png"), b"abc"),
         ]
     );
@@ -766,7 +717,14 @@ pub(super) async fn assert_async_matches_sync(
         .await
         .expect("the async edit succeeds");
     assert_eq!(outcome.response, image_response());
-    let transformed = caller_transform_event(ClientKind::Asynchronous, image, options);
+    let transformed = Event::Transform {
+        mode: ClientKind::Asynchronous,
+        model: String::from(MODEL),
+        prompt: Some(String::from("change")),
+        image: Some(image.clone()),
+        options: options.clone(),
+        headers: headers(&[("x", "caller")]),
+    };
     assert!(deps.config.events().contains(&transformed));
     assert_eq!(fixture.logged("complete_input_dict"), Some(&params_json()));
     assert!(fixture.state.model_call_details.get("api_key").is_none());
@@ -791,27 +749,6 @@ pub(super) fn validated_transform_event(mode: ClientKind) -> Event {
         options: ImageParams::new(),
         headers: headers(&[("x", "validated")]),
     }
-}
-
-pub(super) fn validated_events() -> Vec<Event> {
-    vec![
-        Event::Environment {
-            api_key: Some(String::from("key")),
-            api_base: Some(String::from(API_BASE)),
-            model: String::from(MODEL),
-            headers: ImageHeaders::new(),
-        },
-        Event::Url {
-            api_base: Some(String::from(API_BASE)),
-            api_key: Some(String::from("key")),
-        },
-        validated_transform_event(ClientKind::Sync),
-        Event::Finalize {
-            url: String::from(EDITS_URL),
-            data: params_json(),
-        },
-        Event::Respond { status: 200 },
-    ]
 }
 
 pub(super) fn assert_async_transform_once(config: &RecordingConfig) {
@@ -841,7 +778,10 @@ async fn assert_field_error(
     let Err(error) = fixture.run(ClientKind::Sync, deps, &call).await else {
         panic!("the wrong-typed {expected} fails the call");
     };
-    let RequestError::FieldType { field } = request_error(error) else {
+    let ImageEditHttpError::Request(built) = error else {
+        panic!("the wrong-typed {expected} fails outside the request build: {error}");
+    };
+    let RequestError::FieldType { field } = built else {
         panic!("the wrong-typed {expected} is a field type");
     };
     assert_eq!(field, expected);

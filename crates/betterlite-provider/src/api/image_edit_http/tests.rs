@@ -17,13 +17,12 @@ use http::header::{HeaderMap as HttpHeaders, HeaderValue};
 use serde_json::Number;
 
 use self::support::{
-    API_BASE, EDITS_URL, Event, Fixture, FixtureError, RESPONSE_BODY, RecordingConfig, Reply,
-    Source, Transport, assert_async_matches_sync, assert_async_transform_once,
+    API_BASE, EDITS_URL, Event, Fixture, FixtureError, MODEL, RESPONSE_BODY, RecordingConfig,
+    Reply, Source, Transport, assert_async_matches_sync, assert_async_transform_once,
     assert_reply_failure, assert_sync_logging, assert_sync_request, assert_sync_result,
     assert_transform_failure, assert_validation_never_selects, body_json, deps, edit_call,
     edit_transport, fact_headers, file_part, headers, image, image_response, json, litellm_params,
-    params, params_json, part, pre_post_error, provider_error, request_error, sync_events,
-    validated_events, validated_transform_event,
+    params, params_json, recorded_events, validated_transform_event,
 };
 use super::error::{ImageEditHttpError, RequestError};
 use super::facts::{self, Failure, SendError, Sent};
@@ -58,7 +57,20 @@ async fn edit_finalization_and_multipart() {
         .await
         .expect("the sync edit succeeds");
     assert_sync_result(&outcome);
-    assert_eq!(config.events(), sync_events(&image, &options));
+    assert_eq!(
+        config.events(),
+        recorded_events(
+            headers(&[("x", "option")]),
+            Event::Transform {
+                mode: ClientKind::Sync,
+                model: String::from(MODEL),
+                prompt: Some(String::from("change")),
+                image: Some(image.clone()),
+                options: options.clone(),
+                headers: headers(&[("x", "caller")]),
+            }
+        )
+    );
     assert_sync_request(&transport);
     assert_sync_logging(&fixture);
 
@@ -88,7 +100,13 @@ async fn edit_json_and_unused_arguments() {
         .expect("the JSON edit succeeds");
     assert_eq!(outcome.response, image_response());
     assert_eq!(source.calls(), vec![Some(false)]);
-    assert_eq!(config.events(), validated_events());
+    assert_eq!(
+        config.events(),
+        recorded_events(
+            ImageHeaders::new(),
+            validated_transform_event(ClientKind::Sync)
+        )
+    );
     let requests = transport.requests();
     assert_eq!(requests.len(), 1);
     assert_eq!(body_json(&requests[0]), params_json());
@@ -162,7 +180,10 @@ async fn edit_transport_failure() {
     let Err(error) = fixture.run(ClientKind::Sync, &deps, &call).await else {
         panic!("a 400 fails the edit");
     };
-    assert_reply_failure(&config, &provider_error(error));
+    let ImageEditHttpError::Provider(answer) = error else {
+        panic!("a 400 fails outside the provider answer: {error}");
+    };
+    assert_reply_failure(&config, &answer);
     assert_eq!(fixture.input(), Some(&Json::Text(String::from("change"))));
     assert_eq!(
         fixture.logged("api_base"),
@@ -208,14 +229,16 @@ async fn a_send_failure_is_a_synthesized_500() {
     let Err(error) = fixture.run(ClientKind::Sync, &deps, &call).await else {
         panic!("a closed client fails the edit");
     };
-    let error = provider_error(error);
-    assert_eq!(error.status_code, 500);
-    assert!(error.status_code_is_synthesized);
+    let ImageEditHttpError::Provider(answer) = error else {
+        panic!("a closed client fails outside the provider answer: {error}");
+    };
+    assert_eq!(answer.status_code, 500);
+    assert!(answer.status_code_is_synthesized);
     assert_eq!(
-        error.message,
+        answer.message,
         "the client is shutting down and takes no new requests"
     );
-    assert_eq!(error.headers, Some(Vec::new()));
+    assert_eq!(answer.headers, Some(Vec::new()));
     assert_eq!(transport.requests().len(), 1);
 }
 
@@ -401,7 +424,10 @@ async fn finalizer_failures_send_nothing() {
     let Err(error) = fixture.run(ClientKind::Sync, &deps, &call).await else {
         panic!("a nested finalized value fails the multipart body");
     };
-    let RequestError::FormValue { field } = request_error(error) else {
+    let ImageEditHttpError::Request(built) = error else {
+        panic!("a nested finalized value fails outside the request build: {error}");
+    };
+    let RequestError::FormValue { field } = built else {
         panic!("a nested finalized value has no form spelling");
     };
     assert_eq!(field, "nested");
@@ -425,10 +451,10 @@ async fn logging_failure_sends_nothing() {
     let Err(error) = fixture.run(ClientKind::Sync, &deps, &call).await else {
         panic!("the raw-request-only pre-call refuses the call");
     };
-    assert!(matches!(
-        pre_post_error(error),
-        PrePostError::RawRequestCaptured
-    ));
+    let ImageEditHttpError::Logging(logging) = error else {
+        panic!("the refusal is outside the pre-call logging: {error}");
+    };
+    assert!(matches!(logging, PrePostError::RawRequestCaptured));
     assert!(transport.requests().is_empty());
     assert_eq!(fixture.input(), Some(&Json::Text(String::from("change"))));
 }
@@ -446,7 +472,10 @@ async fn a_resolved_url_that_is_not_a_url_fails_the_request() {
     let Err(error) = fixture.run(ClientKind::Sync, &deps, &call).await else {
         panic!("a resolved URL that is not a URL fails the call");
     };
-    let RequestError::Url { url, .. } = request_error(error) else {
+    let ImageEditHttpError::Request(built) = error else {
+        panic!("a resolved URL that is not a URL fails outside the request build: {error}");
+    };
+    let RequestError::Url { url, .. } = built else {
         panic!("a resolved URL that is not a URL fails the request URL");
     };
     assert_eq!(url, "not a url/images/edits");
@@ -472,7 +501,10 @@ async fn request_headers_reject_names_and_values() {
     let Err(name_error) = fixture.run(ClientKind::Sync, &deps, &bad_name_call).await else {
         panic!("a header name HTTP cannot carry fails the call");
     };
-    let RequestError::HeaderName { name, .. } = request_error(name_error) else {
+    let ImageEditHttpError::Request(built) = name_error else {
+        panic!("a header name HTTP cannot carry fails outside the request build: {name_error}");
+    };
+    let RequestError::HeaderName { name, .. } = built else {
         panic!("a header name HTTP cannot carry fails the name");
     };
     assert_eq!(name, "bad name");
@@ -482,7 +514,10 @@ async fn request_headers_reject_names_and_values() {
     let Err(value_error) = fixture.run(ClientKind::Sync, &deps, &bad_value_call).await else {
         panic!("a header value HTTP cannot carry fails the call");
     };
-    let RequestError::HeaderValue { name, .. } = request_error(value_error) else {
+    let ImageEditHttpError::Request(built) = value_error else {
+        panic!("a header value HTTP cannot carry fails outside the request build: {value_error}");
+    };
+    let RequestError::HeaderValue { name, .. } = built else {
         panic!("a header value HTTP cannot carry fails the value");
     };
     assert_eq!(name, "x");
@@ -590,14 +625,14 @@ fn multipart_fields_spell_each_scalar_and_repeat_lists() {
     assert_eq!(
         parts,
         vec![
-            part("none", b""),
-            part("flag", b"true"),
-            part("count", b"3"),
-            part("ratio", b"1.5"),
-            part("text", b"v"),
-            part("many", b"a"),
-            part("many", b"2"),
-            part("many", b""),
+            file_part("none", None, None, b""),
+            file_part("flag", None, None, b"true"),
+            file_part("count", None, None, b"3"),
+            file_part("ratio", None, None, b"1.5"),
+            file_part("text", None, None, b"v"),
+            file_part("many", None, None, b"a"),
+            file_part("many", None, None, b"2"),
+            file_part("many", None, None, b""),
         ]
     );
     assert!(matches!(
