@@ -72,6 +72,10 @@ fn model_info(model: &JsonObject) -> &JsonObject {
     r#"{"model_name": "huge", "litellm_params": {"model": "openai/gpt-4o", "max_agentic_loops": -9223372036854775807}}"#,
     "litellm_params.max_agentic_loops on model 'huge' must be at least 1, got -9223372036854775807"
 )]
+#[case::above_the_u32_bound(
+    r#"{"model_name": "bound", "litellm_params": {"model": "openai/gpt-4o", "max_agentic_loops": 4294967296}}"#,
+    "litellm_params.max_agentic_loops on model 'bound' must be an integer, got 4294967296"
+)]
 fn refuses_a_ceiling_the_agentic_loop_cannot_honor(#[case] fixture: &str, #[case] expected: &str) {
     let error = check_max_agentic_loops(&entry(fixture)).expect_err("the ceiling is refused");
     assert_eq!(error.to_string(), expected);
