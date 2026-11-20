@@ -45,7 +45,7 @@ pub(crate) struct ReadyCreate<'deps> {
 }
 
 impl ReadyCreate<'_> {
-    pub(crate) const fn handler_call<'call>(
+    pub(crate) fn handler_call<'call>(
         &'call self,
         call: &'call ContainerCreateCall,
         logging: &'call Mutex<LoggingState>,

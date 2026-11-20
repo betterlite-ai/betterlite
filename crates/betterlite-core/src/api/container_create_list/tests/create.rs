@@ -49,7 +49,7 @@ fn create_hands_the_name_and_mapped_params_to_the_handler() {
 
     let creates = fixture.handler.creates();
     assert_eq!(creates.len(), 1);
-    assert_eq!(creates[0].form, HandlerForm::Blocking);
+    assert_eq!(creates[0].base.form, HandlerForm::Blocking);
     assert_eq!(creates[0].name, "store");
     assert_eq!(creates[0].base.headers, Some(headers()));
     assert_eq!(
