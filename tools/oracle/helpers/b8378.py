@@ -2,7 +2,7 @@ from typing import Literal, TypeAlias, TypedDict
 
 import litellm
 from litellm.proxy.proxy_server import (
-    pin_complexity_router_model_id,
+    pin_complexity_router_model_id,  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5116
     validate_auto_router_capability_limits,
     validate_deployment_access_windows,
     validate_deployment_complexity_router_placement,
