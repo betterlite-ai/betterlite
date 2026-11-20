@@ -248,15 +248,12 @@ impl RealtimeBackendSource for ScriptedSource {
                 message: format!("the scripted receive {attempt} failed"),
             }));
         }
-        data.outcomes.pop_front().map_or_else(
-            || {
-                Err(RelayReceiveError::Closed(ConnectionClosed {
-                    received: None,
-                    message: String::from("the scripted source has no frames left"),
-                }))
-            },
-            Ok,
-        )
+        data.outcomes.pop_front().unwrap_or_else(|| {
+            Err(RelayReceiveError::Closed(ConnectionClosed {
+                received: None,
+                message: String::from("the scripted source has no frames left"),
+            }))
+        })
     }
 }
 
@@ -859,14 +856,14 @@ impl Logging {
 }
 
 pub(super) fn streaming(options: &StateOptions, fixture: &Fixture) -> RealtimeStreaming {
-    let provider: Option<Box<dyn RealtimeProviderConfig>> = options
+    let provider = options
         .provider
         .0
-        .then(|| Box::new(fixture.provider.clone()));
-    let normalizer: Option<Box<dyn RealtimeEventNormalizer>> = options
+        .then(|| -> Box<dyn RealtimeProviderConfig> { Box::new(fixture.provider.clone()) });
+    let normalizer = options
         .normalizer
         .clone()
-        .map(|normalizer| Box::new(normalizer));
+        .map(|normalizer| -> Box<dyn RealtimeEventNormalizer> { Box::new(normalizer) });
     let mut state = RealtimeStreaming::new(ConnectionSetup {
         client: options.sockets.client(options, fixture),
         backend: options.sockets.backend(fixture),
