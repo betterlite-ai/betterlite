@@ -581,7 +581,7 @@ async fn projected(fixture: &support::Fixture, event: LoggerEvent) -> Json {
         .await
         .expect("the event is accepted");
     let requests = fixture.delivery.requests();
-    assert_eq!(requests.len(), sent + 1);
+    assert_eq!(requests.len(), sent.saturating_add(1));
     published(&requests[sent])
 }
 
