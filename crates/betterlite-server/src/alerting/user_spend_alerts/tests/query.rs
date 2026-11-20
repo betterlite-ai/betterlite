@@ -9,8 +9,18 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
 
 use super::UserSpendSource as _;
-use super::postgres::PgUserSpendSource;
+use super::postgres::{PgUserSpendSource, UserSpendQueryError};
 use super::support::date;
+
+// a user id column the query reads fine but the row's String field cannot decode
+const INTEGER_USER_ID_TABLE: &str = r#"
+    CREATE TABLE "LiteLLM_DailyUserSpend" (
+        user_id integer,
+        date text,
+        spend double precision,
+        api_requests bigint
+    )
+"#;
 
 #[derive(Parser)]
 struct Environment {
@@ -18,17 +28,14 @@ struct Environment {
     url: Option<String>,
 }
 
-async fn database() -> (PostgresFixture, Pool, Client) {
+async fn database(statements: Vec<String>) -> (PostgresFixture, Pool, Client) {
     let url = Environment::parse_from(["user-spend-alerts-tests"])
         .url
         .map(SecretString::from);
-    let fixture = PostgresFixture::provision_with_statements(
-        url.as_ref(),
-        vec![READ_SPEND_TABLES.to_owned()],
-    )
-    .resolve()
-    .await
-    .unwrap();
+    let fixture = PostgresFixture::provision_with_statements(url.as_ref(), statements)
+        .resolve()
+        .await
+        .unwrap();
     let manager = Manager::new(fixture.options.url.expose_secret().parse().unwrap(), NoTls);
     let pool = Pool::builder(manager).max_size(1).build().unwrap();
     let client = pool.get().await.unwrap();
@@ -45,7 +52,7 @@ fn source(pool: &Pool) -> PgUserSpendSource {
 
 #[tokio::test]
 async fn query_sums_daily_monthly_and_baseline_per_user() {
-    let (fixture, pool, client) = database().await;
+    let (fixture, pool, client) = database(vec![READ_SPEND_TABLES.to_owned()]).await;
     client
         .batch_execute(
             r#"
@@ -71,7 +78,7 @@ async fn query_sums_daily_monthly_and_baseline_per_user() {
 
 #[tokio::test]
 async fn query_leaves_out_null_users_and_users_without_monthly_spend() {
-    let (fixture, pool, client) = database().await;
+    let (fixture, pool, client) = database(vec![READ_SPEND_TABLES.to_owned()]).await;
     client
         .batch_execute(
             r#"
@@ -95,7 +102,7 @@ async fn query_leaves_out_null_users_and_users_without_monthly_spend() {
 
 #[tokio::test]
 async fn query_uses_the_baseline_window_before_today() {
-    let (fixture, pool, client) = database().await;
+    let (fixture, pool, client) = database(vec![READ_SPEND_TABLES.to_owned()]).await;
     client
         .batch_execute(
             r#"
@@ -115,6 +122,26 @@ async fn query_uses_the_baseline_window_before_today() {
     assert_eq!(rows[0].monthly_spend, 12.0);
     let minimum = source(&pool).rows(date("2026-01-15"), 0).await.unwrap();
     assert_eq!(minimum[0].baseline_spend, 2.0);
+    pool.close();
+    fixture.close_async().await.unwrap();
+}
+
+// LiteLLM's TypeAdapter raises on a row that does not fit UserSpendRow; the source answers with an error
+#[tokio::test]
+async fn query_errors_on_a_row_that_does_not_decode() {
+    let (fixture, pool, client) = database(vec![INTEGER_USER_ID_TABLE.to_owned()]).await;
+    client
+        .batch_execute(
+            r#"
+        INSERT INTO "LiteLLM_DailyUserSpend" (user_id, date, spend, api_requests) VALUES
+            (7, '2026-01-15', 5.0, 1);
+    "#,
+        )
+        .await
+        .unwrap();
+    drop(client);
+    let error = source(&pool).rows(date("2026-01-15"), 7).await.unwrap_err();
+    assert!(matches!(error, UserSpendQueryError::Database(_)));
     pool.close();
     fixture.close_async().await.unwrap();
 }
