@@ -15,5 +15,5 @@ call:
 env: {}
 compare:
   ignore:
-    - pointer: /error/message
+    - pointer: /value/error/message
       why: betterlite reports its own transport text where LiteLLM reports the httpx read-timeout message; both reach _handle_error and keep the 408 a POST timeout maps to

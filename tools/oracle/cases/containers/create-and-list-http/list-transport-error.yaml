@@ -15,5 +15,5 @@ call:
 env: {}
 compare:
   ignore:
-    - pointer: /error/message
+    - pointer: /value/error/message
       why: betterlite reports its own transport text where LiteLLM reports the httpx read-timeout message; a GET has no timeout translation, so both synthesize the 500

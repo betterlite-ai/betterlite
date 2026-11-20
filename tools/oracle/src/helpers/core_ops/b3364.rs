@@ -63,7 +63,14 @@ fn answer(
         Err(ContainerCollectionError::Provider(exception)) => {
             (String::from("error"), projection::provider(&exception))
         }
-        Err(other) => return Err(failure(&other)),
+        Err(
+            other @ (ContainerCollectionError::Config(_)
+            | ContainerCollectionError::Params(_)
+            | ContainerCollectionError::Client(_)
+            | ContainerCollectionError::Logging(_)
+            | ContainerCollectionError::Encode(_)
+            | ContainerCollectionError::Suspended),
+        ) => return Err(failure(&other)),
     };
     let mut output = Map::new();
     output.insert(
@@ -83,7 +90,7 @@ struct Harness<'run> {
     hook: &'run RecordingHook,
 }
 
-impl<'run> Harness<'run> {
+impl Harness<'_> {
     // The client is never supplied here, so each handler builds one from the fake source, as a caller without a pool would
     fn base<'call>(
         &'call self,

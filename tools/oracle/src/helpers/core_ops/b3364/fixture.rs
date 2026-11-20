@@ -16,7 +16,6 @@ use betterlite_core::api::container_collection_http::{
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::pool::PoolError;
-use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::proxy::{ProxiedClient, base_builder};
 use betterlite_logging::logging_pre_post::args::AdditionalArgs;
 use betterlite_logging::logging_pre_post::error::PrePostError;
@@ -221,7 +220,7 @@ async fn send_into_the_hold(client: &ProxiedClient) -> Result<TransferError, Box
         let mut chunk = [0_u8; 64];
         let read = stream.read(&mut chunk).await.or_config_error()?;
         if read == 0 {
-            return Err(failure("the client sent no request"));
+            return Err(failure(&"the client sent no request"));
         }
         sleep(HOLD).await;
         Ok(())
@@ -230,7 +229,9 @@ async fn send_into_the_hold(client: &ProxiedClient) -> Result<TransferError, Box
     listener_finished?;
     match result {
         Err(stopped) => Ok(TransferError::Transport(stopped)),
-        Ok(_) => Err(failure("the local listener answered instead of timing out")),
+        Ok(_) => Err(failure(
+            &"the local listener answered instead of timing out",
+        )),
     }
 }
 
