@@ -1,0 +1,19 @@
+kind: helper
+name: openai-rag-store-existing-file-attach
+call:
+  b3453:
+    options:
+      chunking_strategy:
+        chunk_overlap: 50
+        chunk_size: 900
+      vector_store:
+        api_base: "https://openai.example/v1"
+        api_key: sk-test
+        vector_store_id: vs_existing
+    file_content_base64: aGVsbG8=
+    filename: notes.txt
+    content_type: text/plain
+    existing_file_id: file-existing
+env: {}
+compare:
+  ignore: []

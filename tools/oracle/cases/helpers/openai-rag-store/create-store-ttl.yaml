@@ -1,0 +1,18 @@
+kind: helper
+name: openai-rag-store-create-store-ttl
+call:
+  b3453:
+    options:
+      name: ingest-name
+      vector_store:
+        api_base: "https://openai.example/v1"
+        api_key: sk-test
+        ttl_days: 3
+    file_content_base64: aGVsbG8=
+    filename: notes.txt
+    create_response:
+      id: vs_created
+    upload_id: file-new
+env: {}
+compare:
+  ignore: []
