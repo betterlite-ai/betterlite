@@ -1,0 +1,433 @@
+use std::io::{Read as _, Write as _};
+use std::net::TcpListener;
+use std::thread;
+use std::time::Duration;
+
+use betterlite_http::interactions::base::clients::HttpClients;
+use betterlite_http::interactions::base::{MAX_RESPONSE_BYTES, RequestFailure};
+use betterlite_http_fixture::reply::reply;
+use betterlite_http_fixture::server::serve;
+use betterlite_logging::logging_state::LoggingState;
+
+use super::support::{
+    CHARACTER_BODY, Events, LogEnv, RecordingConfig, Seen, TestError, create_call, extra_headers,
+    get_call, logging_state, params, real_clients, recording, secret, video,
+};
+use crate::api::video_character_transport::error::CharacterError;
+use crate::api::video_character_transport::service::{CharacterHandled, CharacterTransport};
+
+fn parts(call_type: &str) -> (RecordingConfig, LogEnv, LoggingState, HttpClients) {
+    let config = recording(&Events::new());
+    let log = LogEnv::for_events(&Events::new());
+    (config, log, logging_state(call_type), real_clients())
+}
+
+fn assert_get_reply_seen(config: &RecordingConfig) {
+    assert_eq!(
+        config.seen().last(),
+        Some(&Seen::Reply {
+            status: 200,
+            body: CHARACTER_BODY.as_bytes().to_vec(),
+        })
+    );
+}
+
+#[test]
+fn creation_writes_the_multipart_body_and_headers_to_the_wire() {
+    let serving = serve(reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
+    let base = format!("http://{}", serving.address);
+    let (mut config, log, mut state, mut clients) = parts("video_create_character");
+    config.create_url = format!("{base}/v1/characters");
+    config
+        .environment
+        .insert("authorization".to_owned(), secret("Bearer sk-provider"));
+    let env = log.env();
+    let mut transport =
+        CharacterTransport::with_generated_boundary(&config, &mut clients, &mut state, &env);
+    transport.boundary = || String::from("fixed-boundary");
+    let litellm = params(&[("api_base", base.as_str())]);
+    let caller_headers = extra_headers(&[("x-caller", "yes")]);
+    let clip = video();
+    let mut call = create_call("Wren", &clip, &litellm);
+    call.extra_headers = Some(&caller_headers);
+
+    let object = match transport.video_create_character_handler(&call) {
+        Ok(CharacterHandled::Done(object)) => object,
+        Ok(CharacterHandled::Pending(_)) => panic!("a sync call answers in place"),
+        Err(error) => panic!("the creation reaches the server: {error:?}"),
+    };
+
+    assert_eq!(object, config.object);
+    let request = serving.finish().unwrap();
+    assert_eq!(request.line, "POST /v1/characters HTTP/1.1");
+    assert!(
+        request
+            .head
+            .contains("content-type: multipart/form-data; boundary=fixed-boundary")
+    );
+    assert!(request.head.contains("x-caller: yes"));
+    assert!(request.head.contains("authorization: Bearer sk-provider"));
+    let expected = String::from(
+        "--fixed-boundary\r\nContent-Disposition: form-data; name=\"name\"\r\n\r\nWren\r\n--fixed-boundary\r\nContent-Disposition: form-data; name=\"video\"; filename=\"clip.mp4\"\r\nContent-Type: video/mp4\r\n\r\nvideo-bytes\r\n--fixed-boundary--\r\n",
+    );
+    assert_eq!(request.body, expected);
+}
+
+#[test]
+fn creation_keeps_the_callers_content_type_and_its_boundary() {
+    let serving = serve(reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
+    let base = format!("http://{}", serving.address);
+    let (mut config, log, mut state, mut clients) = parts("video_create_character");
+    config.create_url = format!("{base}/v1/characters");
+    let env = log.env();
+    let mut transport =
+        CharacterTransport::with_generated_boundary(&config, &mut clients, &mut state, &env);
+    transport.boundary = || String::from("generated-boundary");
+    let litellm = params(&[("api_base", base.as_str())]);
+    let caller_headers = extra_headers(&[(
+        "content-type",
+        "multipart/form-data; boundary=caller-boundary",
+    )]);
+    let clip = video();
+    let mut call = create_call("Wren", &clip, &litellm);
+    call.extra_headers = Some(&caller_headers);
+
+    let object = match transport.video_create_character_handler(&call) {
+        Ok(CharacterHandled::Done(object)) => object,
+        Ok(CharacterHandled::Pending(_)) => panic!("a sync call answers in place"),
+        Err(error) => panic!("the creation reaches the server: {error:?}"),
+    };
+
+    assert_eq!(object, config.object);
+    let request = serving.finish().unwrap();
+    let content_types: Vec<&str> = request
+        .head
+        .lines()
+        .filter(|line| line.to_ascii_lowercase().starts_with("content-type:"))
+        .collect();
+    assert_eq!(
+        content_types,
+        ["content-type: multipart/form-data; boundary=caller-boundary"]
+    );
+    assert!(request.body.starts_with("--caller-boundary\r\n"));
+    assert!(request.body.contains("\r\n--caller-boundary--\r\n"));
+}
+
+#[test]
+fn creation_forwards_its_timeout_to_the_post() {
+    let serving = serve(reply("200 OK", &[], "{}"), Duration::from_millis(300)).unwrap();
+    let base = format!("http://{}", serving.address);
+    let (mut config, log, mut state, mut clients) = parts("video_create_character");
+    config.create_url = format!("{base}/v1/characters");
+    let env = log.env();
+    let mut transport =
+        CharacterTransport::with_generated_boundary(&config, &mut clients, &mut state, &env);
+    let litellm = params(&[("api_base", base.as_str())]);
+    let clip = video();
+    let mut call = create_call("Wren", &clip, &litellm);
+    call.timeout = Some(Duration::from_millis(50));
+
+    let error = match transport.video_create_character_handler(&call) {
+        Ok(_handled) => panic!("the deadline ends the call"),
+        Err(error) => error,
+    };
+
+    let CharacterError::Provider(TestError {
+        message,
+        status_code,
+        ..
+    }) = error
+    else {
+        panic!("the timeout becomes the provider's error");
+    };
+    assert_eq!(status_code, 408);
+    assert_eq!(
+        message,
+        "litellm.Timeout: Connection timed out after 0.05 seconds."
+    );
+    drop(serving.finish());
+}
+
+#[test]
+fn creation_without_a_timeout_waits_for_a_slow_reply() {
+    let serving = serve(reply("200 OK", &[], "{}"), Duration::from_millis(150)).unwrap();
+    let base = format!("http://{}", serving.address);
+    let (mut config, log, mut state, mut clients) = parts("video_create_character");
+    config.create_url = format!("{base}/v1/characters");
+    let env = log.env();
+    let mut transport =
+        CharacterTransport::with_generated_boundary(&config, &mut clients, &mut state, &env);
+    let litellm = params(&[("api_base", base.as_str())]);
+    let clip = video();
+    let call = create_call("Wren", &clip, &litellm);
+
+    let object = match transport.video_create_character_handler(&call) {
+        Ok(CharacterHandled::Done(object)) => object,
+        Ok(CharacterHandled::Pending(_)) => panic!("a sync call answers in place"),
+        Err(error) => panic!("an absent timeout leaves the wire deadline: {error:?}"),
+    };
+
+    assert_eq!(object, config.object);
+    serving.finish().unwrap();
+}
+
+#[test]
+fn lookup_sends_a_get_with_its_params_and_ignores_the_calls_timeout() {
+    let serving = serve(
+        reply("200 OK", &[], CHARACTER_BODY),
+        Duration::from_millis(150),
+    )
+    .unwrap();
+    let base = format!("http://{}", serving.address);
+    let (mut config, log, mut state, mut clients) = parts("video_get_character");
+    config.get_url = format!("{base}/v1/characters/char-1?expand=url");
+    config.query = vec![
+        (String::from("expand"), String::from("param")),
+        (String::from("view"), String::from("full")),
+    ];
+    let env = log.env();
+    let mut transport =
+        CharacterTransport::with_generated_boundary(&config, &mut clients, &mut state, &env);
+    let litellm = params(&[("api_base", base.as_str())]);
+    let mut call = get_call("char-1", &litellm);
+    call.timeout = Some(Duration::from_millis(50));
+
+    let object = match transport.video_get_character_handler(&call) {
+        Ok(CharacterHandled::Done(object)) => object,
+        Ok(CharacterHandled::Pending(_)) => panic!("a sync call answers in place"),
+        Err(error) => panic!("the lookup ignores the send timeout: {error:?}"),
+    };
+
+    assert_eq!(object, config.object);
+    assert_get_reply_seen(&config);
+    let request = serving.finish().unwrap();
+    assert_eq!(
+        request.line,
+        "GET /v1/characters/char-1?expand=url&view=full HTTP/1.1"
+    );
+    assert!(request.body.is_empty());
+}
+
+#[test]
+fn lookup_turns_a_real_status_into_the_provider_error() {
+    let serving = serve(
+        reply(
+            "400 Bad Request",
+            &[("retry-after", "5")],
+            "no such character",
+        ),
+        Duration::ZERO,
+    )
+    .unwrap();
+    let base = format!("http://{}", serving.address);
+    let (mut config, log, mut state, mut clients) = parts("video_get_character");
+    config.get_url = format!("{base}/v1/characters/char-1");
+    let env = log.env();
+    let mut transport =
+        CharacterTransport::with_generated_boundary(&config, &mut clients, &mut state, &env);
+    let litellm = params(&[("api_base", base.as_str())]);
+    let call = get_call("char-1", &litellm);
+
+    let error = match transport.video_get_character_handler(&call) {
+        Ok(_handled) => panic!("a 400 ends the call"),
+        Err(error) => error,
+    };
+
+    let CharacterError::Provider(TestError {
+        message,
+        status_code,
+        headers,
+    }) = error
+    else {
+        panic!("the real reply becomes the provider's error");
+    };
+    assert_eq!(message, "no such character");
+    assert_eq!(status_code, 400);
+    assert_eq!(headers.get("retry-after").map(String::as_str), Some("5"));
+    serving.finish().unwrap();
+}
+
+#[tokio::test]
+async fn async_creation_writes_the_multipart_body_to_the_wire() {
+    let serving = serve(reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
+    let base = format!("http://{}", serving.address);
+    let (mut config, log, mut state, mut clients) = parts("video_create_character");
+    config.create_url = format!("{base}/v1/characters");
+    let env = log.env();
+    let mut transport =
+        CharacterTransport::with_generated_boundary(&config, &mut clients, &mut state, &env);
+    transport.boundary = || String::from("async-boundary");
+    let litellm = params(&[("api_base", base.as_str())]);
+    let clip = video();
+    let call = create_call("Wren", &clip, &litellm);
+
+    let object = transport
+        .async_video_create_character_handler(&call)
+        .await
+        .unwrap();
+
+    assert_eq!(object, config.object);
+    let request = serving.finish().unwrap();
+    assert_eq!(request.line, "POST /v1/characters HTTP/1.1");
+    assert!(
+        request
+            .head
+            .contains("content-type: multipart/form-data; boundary=async-boundary")
+    );
+    assert!(request.body.contains("name=\"video\""));
+    assert!(request.body.contains("video-bytes"));
+}
+
+#[tokio::test]
+async fn async_creation_forwards_its_timeout_to_the_post() {
+    let serving = serve(reply("200 OK", &[], "{}"), Duration::from_millis(300)).unwrap();
+    let base = format!("http://{}", serving.address);
+    let (mut config, log, mut state, mut clients) = parts("video_create_character");
+    config.create_url = format!("{base}/v1/characters");
+    let env = log.env();
+    let mut transport =
+        CharacterTransport::with_generated_boundary(&config, &mut clients, &mut state, &env);
+    let litellm = params(&[("api_base", base.as_str())]);
+    let clip = video();
+    let mut call = create_call("Wren", &clip, &litellm);
+    call.timeout = Some(Duration::from_millis(50));
+
+    let error = transport
+        .async_video_create_character_handler(&call)
+        .await
+        .unwrap_err();
+
+    let CharacterError::Provider(TestError {
+        message,
+        status_code,
+        ..
+    }) = error
+    else {
+        panic!("the timeout becomes the provider's error");
+    };
+    assert_eq!(status_code, 408);
+    assert!(
+        message
+            .starts_with("litellm.Timeout: Connection timed out. Timeout passed=0.05, time taken="),
+        "{message}"
+    );
+    assert!(message.ends_with(" seconds"), "{message}");
+    drop(serving.finish());
+}
+
+#[tokio::test]
+async fn async_lookup_reads_the_real_reply() {
+    let serving = serve(reply("200 OK", &[], CHARACTER_BODY), Duration::ZERO).unwrap();
+    let base = format!("http://{}", serving.address);
+    let (mut config, log, mut state, mut clients) = parts("video_get_character");
+    config.get_url = format!("{base}/v1/characters/char-1");
+    let env = log.env();
+    let mut transport =
+        CharacterTransport::with_generated_boundary(&config, &mut clients, &mut state, &env);
+    let litellm = params(&[("api_base", base.as_str())]);
+    let call = get_call("char-1", &litellm);
+
+    let object = transport
+        .async_video_get_character_handler(&call)
+        .await
+        .unwrap();
+
+    assert_eq!(object, config.object);
+    assert_get_reply_seen(&config);
+    let request = serving.finish().unwrap();
+    assert_eq!(request.line, "GET /v1/characters/char-1 HTTP/1.1");
+}
+
+#[test]
+fn creation_accepts_a_reply_at_the_response_cap() {
+    let body = "a".repeat(MAX_RESPONSE_BYTES);
+    let serving = serve(reply("200 OK", &[], &body), Duration::ZERO).unwrap();
+    let base = format!("http://{}", serving.address);
+    let (mut config, log, mut state, mut clients) = parts("video_create_character");
+    config.create_url = format!("{base}/v1/characters");
+    let env = log.env();
+    let mut transport =
+        CharacterTransport::with_generated_boundary(&config, &mut clients, &mut state, &env);
+    let litellm = params(&[("api_base", base.as_str())]);
+    let clip = video();
+    let call = create_call("Wren", &clip, &litellm);
+
+    let object = match transport.video_create_character_handler(&call) {
+        Ok(CharacterHandled::Done(object)) => object,
+        Ok(CharacterHandled::Pending(_)) => panic!("a sync call answers in place"),
+        Err(error) => panic!("a reply at the cap is read whole: {error:?}"),
+    };
+
+    assert_eq!(object, config.object);
+    serving.finish().unwrap();
+}
+
+#[test]
+fn creation_refuses_a_reply_past_the_response_cap() {
+    let body = "a".repeat(MAX_RESPONSE_BYTES + 1);
+    let serving = serve(reply("200 OK", &[], &body), Duration::ZERO).unwrap();
+    let base = format!("http://{}", serving.address);
+    let (mut config, log, mut state, mut clients) = parts("video_create_character");
+    config.create_url = format!("{base}/v1/characters");
+    let env = log.env();
+    let mut transport =
+        CharacterTransport::with_generated_boundary(&config, &mut clients, &mut state, &env);
+    let litellm = params(&[("api_base", base.as_str())]);
+    let clip = video();
+    let call = create_call("Wren", &clip, &litellm);
+
+    let error = match transport.video_create_character_handler(&call) {
+        Ok(_handled) => panic!("a reply past the cap is refused"),
+        Err(error) => error,
+    };
+
+    let CharacterError::Request(RequestFailure::BodyTooLarge { limit }) = error else {
+        panic!("the cap names the limit it refused");
+    };
+    assert_eq!(limit, MAX_RESPONSE_BYTES);
+    drop(serving.finish());
+}
+
+// LiteLLM reads the reply body inside the sync send, so a body that misses the deadline raises litellm.Timeout; reqwest reports that read as an io::Error, which stays a typed reason here (deviation)
+#[test]
+fn sync_creation_keeps_a_body_read_timeout_typed() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::Builder::new()
+        .name("body-deadline".to_owned())
+        .spawn(move || {
+            let (mut stream, _peer) = listener.accept().unwrap();
+            let mut request = [0_u8; 1024];
+            let _read = stream.read(&mut request);
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n")
+                .unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(10)))
+                .unwrap();
+            // the head arrives and the body never does, so the client's own deadline ends the read, then it hangs up
+            let mut sink = [0_u8; 64];
+            let _closed = stream.read(&mut sink);
+        })
+        .unwrap();
+    let base = format!("http://{address}");
+    let (mut config, log, mut state, mut clients) = parts("video_create_character");
+    config.create_url = format!("{base}/v1/characters");
+    let env = log.env();
+    let mut transport =
+        CharacterTransport::with_generated_boundary(&config, &mut clients, &mut state, &env);
+    let litellm = params(&[("api_base", base.as_str())]);
+    let clip = video();
+    let mut call = create_call("Wren", &clip, &litellm);
+    call.timeout = Some(Duration::from_millis(500));
+
+    let error = match transport.video_create_character_handler(&call) {
+        Ok(_handled) => panic!("the body deadline ends the call"),
+        Err(error) => error,
+    };
+    server.join().unwrap();
+
+    let CharacterError::Request(RequestFailure::Body(_)) = error else {
+        panic!("a sync body read that passes the deadline stays typed");
+    };
+}
