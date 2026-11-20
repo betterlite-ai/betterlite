@@ -1,7 +1,7 @@
 import asyncio
 from collections.abc import Coroutine, Mapping
 from datetime import UTC, datetime
-from typing import Literal, TypeAlias
+from typing import Final, Literal, TypeAlias
 
 import httpx
 from litellm.integrations.custom_logger import CustomLogger
@@ -18,6 +18,7 @@ Mode = Literal["sync", "async"]
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
 RerankWork: TypeAlias = RerankResponse | Coroutine[object, object, RerankResponse]
+PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
 
 
 class TransportCall(BaseModel):
@@ -38,6 +39,12 @@ class Failure(BaseModel):
     kind: str | None = Field(default=None, serialization_alias="type")
     param: str | None = None
     code: str | None = None
+    message: str
+
+
+class ProviderError(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    status_code: int
     message: str
 
 
@@ -138,13 +145,12 @@ class RecordingConfig(BaseRerankConfig):
         litellm_params: dict[str, JsonValue] | None = None,
     ) -> dict[str, JsonValue]:
         self.events.append("transform")
-        documents: JsonValue = (
-            optional_rerank_params["documents"] if "documents" in optional_rerank_params else []
-        )
-        query: JsonValue = (
-            optional_rerank_params["query"] if "query" in optional_rerank_params else ""
-        )
-        return {"documents": documents, "query": query}
+        body: dict[str, JsonValue] = {"documents": [], "query": ""}
+        if "documents" in optional_rerank_params:
+            body["documents"] = optional_rerank_params["documents"]
+        if "query" in optional_rerank_params:
+            body["query"] = optional_rerank_params["query"]
+        return body
 
     @override
     def transform_rerank_response(
@@ -170,7 +176,7 @@ class RecordingConfig(BaseRerankConfig):
             raw_status=raw_response.status_code,
             raw_body=JSON.validate_json(raw_response.text),
         )
-        return RerankResponse.model_validate_json(raw_response.text)
+        return model_response.model_validate_json(raw_response.text)
 
     @override
     def get_supported_cohere_rerank_params(  # ast-grep-ignore: no-long-names
@@ -223,7 +229,7 @@ HANDLER: BaseLLMHTTPHandler = BaseLLMHTTPHandler()
 def logging_fixture() -> Logging:
     return Logging(
         model="",
-        messages=[],
+        messages=None,
         stream=False,
         call_type="rerank",
         start_time=datetime(2026, 1, 1, tzinfo=UTC),
@@ -232,22 +238,17 @@ def logging_fixture() -> Logging:
     )
 
 
-async def run_work(work: Coroutine[object, object, RerankResponse]) -> RerankResponse:
-    return await work
-
-
 def settle(work: RerankWork) -> RerankResponse:
     match work:
         case Coroutine():
-            return asyncio.run(run_work(work))
+            return asyncio.run(work)
         case object():
             return work
 
 
 def run_once(call: TransportCall, mode: Mode, api_base: str) -> RunOutcome:
     config = RecordingConfig()
-    events = config.events
-    recorder = PreCallRecorder(events)
+    recorder = PreCallRecorder(config.events)
     logging_obj = logging_fixture()
     logging_obj.add_dynamic_callback(recorder)
     try:
@@ -264,28 +265,24 @@ def run_once(call: TransportCall, mode: Mode, api_base: str) -> RunOutcome:
             api_base=api_base,
         )
         record = settle(work)
-    except BaseLLMException as error:
+    except PROVIDER_ERROR as error:
+        provider = ProviderError.model_validate(error)
         return RunOutcome(
             failure=Failure(
                 class_name=type(error).__name__,
-                status=error.status_code,
-                message=str(error),
+                status=provider.status_code,
+                message=provider.message,
             ),
-            events=list(events),
+            events=list(config.events),
             pre_call=recorder.seen,
             transform=config.seen,
         )
     return RunOutcome(
         result=JSON.validate_json(record.model_dump_json()),
-        events=list(events),
+        events=list(config.events),
         pre_call=recorder.seen,
         transform=config.seen,
     )
-
-
-def run_transport(call: TransportCall, api_base: str) -> Outcome:
-    runs = [run_once(call, mode, api_base) for mode in call.modes]
-    return Outcome(runs=runs)
 
 
 class RerankHttpRequest(BaseModel):
@@ -294,6 +291,6 @@ class RerankHttpRequest(BaseModel):
     rerank_http: TransportCall
 
     def serialize(self, api_base: str) -> str:
-        outcome = run_transport(self.rerank_http, api_base)
-        envelope = TransportEnvelope(rerank_http=TransportValue(value=outcome))
+        runs = [run_once(self.rerank_http, mode, api_base) for mode in self.rerank_http.modes]
+        envelope = TransportEnvelope(rerank_http=TransportValue(value=Outcome(runs=runs)))
         return envelope.model_dump_json(by_alias=True)

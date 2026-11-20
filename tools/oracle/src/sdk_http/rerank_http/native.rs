@@ -5,13 +5,11 @@ use std::time::Duration;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_logging::logging_pre_post::env::{DebugSettings, GlobalFlags, PrePostEnv};
 use betterlite_logging::logging_privacy::request::Decision;
-use betterlite_models::decisions::Json;
 use betterlite_openai::api::rerank_contracts::records::RerankResponse;
 use betterlite_provider::api::rerank_contracts::{BaseLlmException, RerankLogging};
 use betterlite_provider::api::rerank_http::error::RerankHttpError;
 use betterlite_provider::api::rerank_http::{RerankCall, RerankDeps, RerankLogContext, rerank};
 use secrecy::SecretString;
-use serde::Serialize;
 
 use super::super::error::SdkHttpError;
 use super::super::result::Failure;
@@ -116,7 +114,12 @@ fn outcome(
 ) -> Result<RunOutcome, SdkHttpError> {
     match reply {
         Ok(record) => Ok(RunOutcome {
-            result: Some(json_of(&record)?),
+            result: Some(
+                serde_json::from_value(
+                    serde_json::to_value(&record).map_err(SdkHttpError::Serialize)?,
+                )
+                .map_err(SdkHttpError::Serialize)?,
+            ),
             failure: None,
             events,
             pre_call,
@@ -142,9 +145,4 @@ fn failure(error: &BaseLlmException) -> Failure {
         code: Some(None),
         message: error.message.clone(),
     }
-}
-
-fn json_of<T: Serialize>(value: &T) -> Result<Json, SdkHttpError> {
-    let plain = serde_json::to_value(value).map_err(SdkHttpError::Serialize)?;
-    serde_json::from_value(plain).map_err(SdkHttpError::Serialize)
 }
