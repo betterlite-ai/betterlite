@@ -1,0 +1,50 @@
+kind: helper
+name: policy-state-bucket-choice
+call:
+  b8391:
+    function: policy_state
+    data:
+      metadata:
+        _guardrail_pipelines: []
+calls:
+  - b8391:
+      function: policy_state
+      data:
+        metadata:
+          custom: 1
+        litellm_metadata:
+          _pipeline_managed_guardrails: ["pii"]
+  - b8391:
+      function: policy_state
+      data:
+        metadata:
+          _guardrail_pipelines: ["from-metadata"]
+        litellm_metadata:
+          _guardrail_pipelines: ["from-litellm"]
+  - b8391:
+      function: policy_state
+      data:
+        metadata:
+          custom: 1
+        litellm_metadata:
+          custom: 2
+  - b8391:
+      function: policy_state
+      data:
+        metadata: "text"
+        litellm_metadata:
+          _guardrail_pipelines: []
+  - b8391:
+      function: policy_state
+      data:
+        metadata:
+          _guardrail_pipelines: null
+  - b8391:
+      function: policy_state
+      data:
+        metadata: {}
+        litellm_metadata:
+          _pipeline_managed_guardrails: []
+env: {}
+compare:
+  ignore: []

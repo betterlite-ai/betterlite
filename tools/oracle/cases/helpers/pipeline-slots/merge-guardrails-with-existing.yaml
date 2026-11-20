@@ -1,0 +1,49 @@
+kind: helper
+name: merge-guardrails-with-existing
+call:
+  b8391:
+    function: merge_guardrails
+    data:
+      model: gpt-4o
+      metadata:
+        team: acme
+    model_level_guardrails: ["pii", "block"]
+calls:
+  - b8391:
+      function: merge_guardrails
+      data:
+        metadata:
+          guardrails: "pii"
+      model_level_guardrails: ["block"]
+  - b8391:
+      function: merge_guardrails
+      data:
+        metadata:
+          guardrails: ["pii", "block"]
+          team: acme
+      model_level_guardrails: ["block", "pii", "moderation"]
+  - b8391:
+      function: merge_guardrails
+      data: {}
+      model_level_guardrails: []
+  - b8391:
+      function: merge_guardrails
+      data:
+        metadata:
+          guardrails: ["pii", "pii"]
+      model_level_guardrails: ["pii"]
+  - b8391:
+      function: merge_guardrails
+      data:
+        metadata:
+          guardrails: []
+      model_level_guardrails: ["pii"]
+  - b8391:
+      function: merge_guardrails
+      data:
+        metadata:
+          other: 1
+      model_level_guardrails: null
+env: {}
+compare:
+  ignore: []
