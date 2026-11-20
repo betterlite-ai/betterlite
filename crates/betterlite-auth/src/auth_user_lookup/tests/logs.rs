@@ -3,7 +3,7 @@ use std::fmt;
 use std::sync::{Arc, Mutex};
 
 use tracing::field::{Field, Visit};
-use tracing::subscriber::DefaultGuard;
+use tracing::subscriber::{DefaultGuard, set_default};
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
@@ -24,7 +24,7 @@ impl Logs {
         let capture = Capture {
             entries: Arc::clone(&self.entries),
         };
-        tracing::subscriber::set_default(tracing_subscriber::registry().with(capture))
+        set_default(tracing_subscriber::registry().with(capture))
     }
 
     pub(crate) fn entries(&self) -> Vec<Logged> {

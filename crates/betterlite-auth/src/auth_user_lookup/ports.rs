@@ -13,7 +13,7 @@ pub struct PortError {
     pub message: String,
     #[source]
     pub cause: Option<Box<dyn Error + Send + Sync>>,
-    pub database_fault: Option<DatabaseFault>,
+    pub database_fault: Option<Box<DatabaseFault>>,
 }
 
 impl PortError {
@@ -43,7 +43,7 @@ impl PortError {
         Self {
             message: message.to_owned(),
             cause: None,
-            database_fault: Some(fault),
+            database_fault: Some(Box::new(fault)),
         }
     }
 }

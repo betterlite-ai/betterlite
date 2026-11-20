@@ -5,7 +5,7 @@ use betterlite_cache::dual_cache::{DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE
 
 use super::support::{model, user_with};
 use crate::auth_cache::gateway_cache;
-use crate::auth_user_lookup::cache::UserCache;
+use crate::auth_user_lookup::cache::UserCache as _;
 
 #[tokio::test]
 async fn auth_cache_round_trips_and_reports_management_ttl() {
@@ -24,7 +24,7 @@ async fn auth_cache_round_trips_and_reports_management_ttl() {
     };
     let cache = gateway_cache(memory(), memory(), None, settings, 45.0_f64);
 
-    assert_eq!(cache.management_ttl(), 60.0_f64);
+    assert!(cache.management_ttl().total_cmp(&60.0_f64).is_eq());
 
     let key = "user_id:u1";
     assert!(cache.read(key).await.expect("the miss read").is_none());

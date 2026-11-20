@@ -1,5 +1,8 @@
+use std::error::Error;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
+
+use tokio::time::timeout;
 
 use super::logs::Logs;
 use super::support::{FailureKind, Harness, request, request_with, user_with};
@@ -59,7 +62,7 @@ async fn other_read_error_keeps_cause() {
                 failure.to_string().ends_with("Got error - boom"),
                 "{failure}"
             );
-            let retained = std::error::Error::source(&failure).expect("the retained cause");
+            let retained = Error::source(&failure).expect("the retained cause");
             assert_eq!(retained.to_string(), "boom");
         }
         other => panic!("an ordinary read failure is rewritten: {other:?}"),
@@ -146,7 +149,7 @@ async fn cancellation_not_wrapped() {
     let logs = Logs::default();
     let _guard = logs.install();
     let lookup = harness.lookup();
-    let outcome = tokio::time::timeout(
+    let outcome = timeout(
         Duration::from_millis(10),
         lookup.get_user_object(request(Some("u1"))),
     )

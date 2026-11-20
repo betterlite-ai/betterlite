@@ -28,14 +28,18 @@ impl RolePermissions {
     // get_role_based_models / get_role_based_routes: the first entry naming the role decides, even when empty
     #[must_use]
     pub fn models(&self, role: RbacRole) -> Option<&[String]> {
-        self.selected(role)
-            .and_then(|entry| entry.models.as_deref())
+        let Some(entry) = self.selected(role) else {
+            return None;
+        };
+        entry.models.as_deref()
     }
 
     #[must_use]
     pub fn routes(&self, role: RbacRole) -> Option<&[String]> {
-        self.selected(role)
-            .and_then(|entry| entry.routes.as_deref())
+        let Some(entry) = self.selected(role) else {
+            return None;
+        };
+        entry.routes.as_deref()
     }
 
     fn selected(&self, role: RbacRole) -> Option<&RoleBasedPermissions> {

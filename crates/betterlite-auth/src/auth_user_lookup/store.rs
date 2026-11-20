@@ -1,3 +1,4 @@
+use std::convert::Infallible;
 use std::error::Error;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -12,13 +13,14 @@ use betterlite_db::postgres_store::rows::KeyColumn;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_db::user_repository::{RowDecodeError, UserRepository};
 use deadpool_postgres::Client;
+use tokio_postgres::types::ToSql;
 use tokio_util::task::TaskTracker;
 
 use crate::auth_read::adapter::AuthReadAdapter;
 use crate::auth_read::include::UserInclude;
 use crate::auth_read::repository::{NativeKey, RepositoryTable};
 use crate::auth_read::table::{
-    AuthReadError, AuthReadTable, AuthTable, Create, FindOne, Presence, ReadContext,
+    AuthReadError, AuthReadTable, AuthTable as _, Create, FindOne, Presence, ReadContext,
 };
 use crate::auth_read::user_rows::UserEmailFilter;
 
@@ -124,13 +126,13 @@ enum Wanted<'user_id> {
     Filter(UserFilter),
 }
 
-fn members() -> Presence<UserInclude> {
+const fn members() -> Presence<UserInclude> {
     Presence::Value(UserInclude {
         organization_memberships: true,
     })
 }
 
-fn id_key(user_id: &str) -> NativeKey<std::convert::Infallible> {
+fn id_key(user_id: &str) -> NativeKey<Infallible> {
     NativeKey {
         column: KeyColumn::Id,
         value: Box::new(user_id.to_owned()),
@@ -177,9 +179,9 @@ impl UserStore for DatabaseUserStore {
             .session()
             .await
             .map_err(UserStoreError::Session)?;
-        let user_id = user_id.to_owned();
-        let sso_user_id = sso_user_id.to_owned();
-        let parameters: [&(dyn tokio_postgres::types::ToSql + Sync); 2] = [&user_id, &sso_user_id];
+        let bound_user_id = user_id.to_owned();
+        let bound_sso_user_id = sso_user_id.to_owned();
+        let parameters: [&(dyn ToSql + Sync); 2] = [&bound_user_id, &bound_sso_user_id];
         session
             .execute(SSO_UPDATE_SQL, &parameters)
             .await

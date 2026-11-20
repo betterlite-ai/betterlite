@@ -17,11 +17,11 @@ fn strings(values: &[&str]) -> JsonData {
 fn role_entry(role: &str, models: Option<&[&str]>, routes: Option<&[&str]>) -> JsonData {
     let mut fields = BTreeMap::new();
     fields.insert("role".to_owned(), JsonData::String(role.to_owned()));
-    if let Some(models) = models {
-        fields.insert("models".to_owned(), strings(models));
+    if let Some(model_list) = models {
+        fields.insert("models".to_owned(), strings(model_list));
     }
-    if let Some(routes) = routes {
-        fields.insert("routes".to_owned(), strings(routes));
+    if let Some(route_list) = routes {
+        fields.insert("routes".to_owned(), strings(route_list));
     }
     JsonData::Object(fields)
 }
@@ -50,9 +50,9 @@ fn three_role_values_only() {
     assert_eq!(parse_role("proxy_admin").unwrap(), RbacRole::ProxyAdmin);
     assert_eq!(parse_role("team").unwrap(), RbacRole::Team);
     assert_eq!(parse_role("internal_user").unwrap(), RbacRole::InternalUser);
-    assert!(matches!(parse_role("admin"), Err(_)));
-    assert!(matches!(parse_role("Proxy_Admin"), Err(_)));
-    assert!(matches!(parse_role(""), Err(_)));
+    assert!(parse_role("admin").is_err());
+    assert!(parse_role("Proxy_Admin").is_err());
+    assert!(parse_role("").is_err());
 }
 
 #[test]
@@ -79,12 +79,12 @@ fn whole_list_validated_before_match() {
         role_entry("proxy_admin", Some(&["gpt-4"]), None),
         role_entry("admin", None, None),
     ]);
-    assert!(matches!(RolePermissions::from_json(&configured), Err(_)));
+    assert!(RolePermissions::from_json(&configured).is_err());
     let missing_role = JsonData::Array(vec![JsonData::Object(BTreeMap::from([(
         "models".to_owned(),
         strings(&["gpt-4"]),
     )]))]);
-    assert!(matches!(RolePermissions::from_json(&missing_role), Err(_)));
+    assert!(RolePermissions::from_json(&missing_role).is_err());
 }
 
 #[test]
@@ -94,7 +94,7 @@ fn role_extras_rejected() {
     };
     entry.insert("extra".to_owned(), JsonData::Bool(true));
     let configured = JsonData::Array(vec![JsonData::Object(entry)]);
-    assert!(matches!(RolePermissions::from_json(&configured), Err(_)));
+    assert!(RolePermissions::from_json(&configured).is_err());
 }
 
 #[test]

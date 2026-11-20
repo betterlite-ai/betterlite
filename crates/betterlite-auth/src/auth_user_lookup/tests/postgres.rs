@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
 use betterlite_db::database_failures::gate::{DbLookupStallTracker, SystemClock};
@@ -143,8 +144,9 @@ async fn row_text_len(store: &PostgresStore, user_id: &str) -> i64 {
 
 async fn grow_alias_to(store: &PostgresStore, user_id: &str, target: i64) {
     let length = row_text_len(store, user_id).await;
-    let delta = target - length;
-    assert!(delta >= 0, "the seeded row starts below the target");
+    let delta = target
+        .checked_sub(length)
+        .expect("the seeded row starts below the target");
     let sql = "UPDATE \"LiteLLM_UserTable\" SET user_alias = COALESCE(user_alias, '') || repeat('a', $2) WHERE user_id = $1";
     let client = store.session().await.expect("the database connection");
     client
@@ -156,6 +158,15 @@ async fn grow_alias_to(store: &PostgresStore, user_id: &str, target: i64) {
 async fn user_count(store: &PostgresStore, user_id: &str) -> i64 {
     let sql = "SELECT count(*) FROM \"LiteLLM_UserTable\" WHERE user_id = $1";
     scalar(store, sql, &[&user_id]).await
+}
+
+async fn lookup_email(lookup: &UserLookup, user_id: &str) -> Option<String> {
+    let user = lookup
+        .get_user_object(request_with(Some(user_id), None, Some("new@example.com")))
+        .await
+        .expect("the stored user")
+        .expect("the stored user is present");
+    user.user_email
 }
 
 #[tokio::test]
@@ -183,50 +194,20 @@ async fn backfill_only_null_email() {
     seed(&store.reader, SEED_BACKFILL).await;
     let lookup = lookup_for(&store, Arc::new(FakeCache::new(60.0)));
 
-    let filled = lookup
-        .get_user_object(request_with(
-            Some("filled-user"),
-            None,
-            Some("new@example.com"),
-        ))
-        .await
-        .expect("the stored user")
-        .expect("the stored user is present");
-    assert_eq!(filled.user_email.as_deref(), Some("stored@example.com"));
-    assert_eq!(
-        stored_email(&store.reader, "filled-user").await.as_deref(),
-        Some("stored@example.com")
-    );
+    let filled = lookup_email(&lookup, "filled-user").await;
+    assert_eq!(filled.as_deref(), Some("stored@example.com"));
+    let filled_stored = stored_email(&store.reader, "filled-user").await;
+    assert_eq!(filled_stored.as_deref(), Some("stored@example.com"));
 
-    let empty = lookup
-        .get_user_object(request_with(
-            Some("empty-user"),
-            None,
-            Some("new@example.com"),
-        ))
-        .await
-        .expect("the stored user")
-        .expect("the stored user is present");
-    assert_eq!(empty.user_email.as_deref(), Some(""));
-    assert_eq!(
-        stored_email(&store.reader, "empty-user").await.as_deref(),
-        Some("")
-    );
+    let empty = lookup_email(&lookup, "empty-user").await;
+    assert_eq!(empty.as_deref(), Some(""));
+    let empty_stored = stored_email(&store.reader, "empty-user").await;
+    assert_eq!(empty_stored.as_deref(), Some(""));
 
-    let null = lookup
-        .get_user_object(request_with(
-            Some("null-user"),
-            None,
-            Some("new@example.com"),
-        ))
-        .await
-        .expect("the stored user")
-        .expect("the stored user is present");
-    assert_eq!(null.user_email.as_deref(), Some("new@example.com"));
-    assert_eq!(
-        stored_email(&store.reader, "null-user").await.as_deref(),
-        Some("new@example.com")
-    );
+    let null = lookup_email(&lookup, "null-user").await;
+    assert_eq!(null.as_deref(), Some("new@example.com"));
+    let null_stored = stored_email(&store.reader, "null-user").await;
+    assert_eq!(null_stored.as_deref(), Some("new@example.com"));
     close(fixture, store).await;
 }
 
@@ -317,9 +298,7 @@ async fn created_row_and_memberships_persist() {
 async fn partial_failure_keeps_created_row() {
     let (fixture, store) = database().await;
     let cache = Arc::new(FakeCache::new(60.0));
-    cache
-        .write_fails
-        .store(true, std::sync::atomic::Ordering::SeqCst);
+    cache.write_fails.store(true, Ordering::SeqCst);
     let lookup = lookup_for(&store, cache);
     let result = lookup
         .get_user_object(UserLookupRequest {

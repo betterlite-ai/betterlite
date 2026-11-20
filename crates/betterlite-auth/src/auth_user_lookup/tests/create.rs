@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 use betterlite_db::budget_permission_rows::JsonData;
 
@@ -107,10 +108,10 @@ async fn unknown_default_field_fails_lookup() {
         JsonData::Array(Vec::new()),
     )])));
     let relation_lookup = relation.lookup();
-    let result = relation_lookup
+    let relation_result = relation_lookup
         .get_user_object(upsert_request("u1", None))
         .await;
-    match result {
+    match relation_result {
         Err(UserLookupError::UserMissing(failure)) => assert!(
             failure.to_string().contains("organization_memberships"),
             "the failure names the relation key: {failure}"
@@ -292,9 +293,8 @@ async fn enrollment_port_error_keeps_created_user() {
 #[tokio::test]
 async fn null_memberships_filtered_in_order() {
     let harness = Harness::default();
-    let mut fields = match user_with("u1", None, None) {
-        JsonData::Object(fields) => fields,
-        other => panic!("a user row is a mapping: {other:?}"),
+    let JsonData::Object(mut fields) = user_with("u1", None, None) else {
+        panic!("a user row is a mapping");
     };
     fields.insert(
         "organization_memberships".to_owned(),
@@ -319,24 +319,26 @@ async fn null_memberships_filtered_in_order() {
         .map(|entry| entry.organization_id.as_str())
         .collect();
     assert_eq!(organizations, vec!["org-a", "org-b", "org-a"]);
+}
 
-    let empty = Harness::default();
-    let mut empty_fields = match user_with("u2", None, None) {
-        JsonData::Object(fields) => fields,
-        other => panic!("a user row is a mapping: {other:?}"),
+#[tokio::test]
+async fn empty_memberships_stay_empty() {
+    let harness = Harness::default();
+    let JsonData::Object(mut fields) = user_with("u2", None, None) else {
+        panic!("a user row is a mapping");
     };
-    empty_fields.insert(
+    fields.insert(
         "organization_memberships".to_owned(),
         JsonData::Array(Vec::new()),
     );
-    *empty.store.by_id.lock().unwrap() = Some(JsonData::Object(empty_fields));
-    let empty_lookup = empty.lookup();
-    let empty_user = empty_lookup
+    *harness.store.by_id.lock().unwrap() = Some(JsonData::Object(fields));
+    let lookup = harness.lookup();
+    let user = lookup
         .get_user_object(request(Some("u2")))
         .await
         .expect("the stored user")
         .expect("the stored user is present");
-    assert_eq!(empty_user.organization_memberships, Some(Vec::new()));
+    assert_eq!(user.organization_memberships, Some(Vec::new()));
 }
 
 #[tokio::test]
@@ -368,7 +370,7 @@ async fn cache_before_positive_cadence() {
     assert_eq!(harness.cache.writes.lock().unwrap().len(), 1);
     let entry = cadence_entry(&harness.cadence, "user_id:u1").unwrap();
     assert!(entry.record.is_some());
-    assert_eq!(entry.checked_at, std::time::Duration::ZERO);
+    assert_eq!(entry.checked_at, Duration::ZERO);
 }
 
 #[tokio::test]
@@ -386,9 +388,9 @@ async fn cache_failure_keeps_committed_user() {
 #[tokio::test]
 async fn upsert_after_suppressed_miss() {
     let harness = Harness::default();
-    harness.clock.set(std::time::Duration::from_secs(100));
+    harness.clock.set(Duration::from_secs(100));
     harness.cadence.update("user_id:u1", None);
-    harness.clock.set(std::time::Duration::from_secs(101));
+    harness.clock.set(Duration::from_secs(101));
     let lookup = harness.lookup();
     let user = lookup
         .get_user_object(upsert_request("u1", None))

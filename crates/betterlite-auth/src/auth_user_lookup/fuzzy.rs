@@ -13,23 +13,23 @@ pub(super) async fn fuzzy_user(
     user_email: Option<&str>,
 ) -> Result<Option<JsonData>, BlockFailure> {
     let mut response = match sso_user_id {
-        Some(sso_user_id) => store
-            .find_by_sso_id(sso_user_id)
+        Some(sso) => store
+            .find_by_sso_id(sso)
             .await
-            .map_err(BlockFailure::Store)?,
+            .map_err(|error| BlockFailure::Store(Box::new(error)))?,
         None => None,
     };
     if response.is_none()
-        && let Some(user_email) = user_email
+        && let Some(email) = user_email
     {
         response = store
-            .find_by_email(user_email)
+            .find_by_email(email)
             .await
-            .map_err(BlockFailure::Store)?;
+            .map_err(|error| BlockFailure::Store(Box::new(error)))?;
         if let Some(record) = response.as_ref()
-            && let Some(sso_user_id) = sso_user_id
+            && let Some(sso) = sso_user_id
         {
-            schedule_sso_update(lookup, record, sso_user_id);
+            schedule_sso_update(lookup, record, sso);
         }
     }
     Ok(response)

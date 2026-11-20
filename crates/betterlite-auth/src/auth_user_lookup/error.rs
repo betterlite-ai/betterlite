@@ -1,5 +1,6 @@
 use std::convert::Infallible;
 use std::error::Error;
+use std::io::Error as IoError;
 
 use betterlite_db::database_failures::deadline::DbLookupError;
 use betterlite_db::database_faults::native::is_native_transport_error;
@@ -91,7 +92,7 @@ fn unavailable_link(link: &(dyn Error + 'static)) -> bool {
     if let Some(port) = link.downcast_ref::<PortError>()
         && port
             .database_fault
-            .as_ref()
+            .as_deref()
             .is_some_and(database_unavailable)
     {
         return true;
@@ -105,7 +106,7 @@ fn unavailable_link(link: &(dyn Error + 'static)) -> bool {
     if let Some(native) = link.downcast_ref::<NativeDbError<Infallible>>() {
         return native_unavailable(native);
     }
-    if link.downcast_ref::<std::io::Error>().is_some() {
+    if link.downcast_ref::<IoError>().is_some() {
         return true;
     }
     link.to_string()
@@ -157,15 +158,17 @@ fn native_unavailable<Failure>(error: &NativeDbError<Failure>) -> bool {
 }
 
 // DriverError hides the driver text from the source chain, so a stale-plan fault is read here
-fn native_driver<Failure>(error: &NativeDbError<Failure>) -> Option<&tokio_postgres::Error> {
+const fn native_driver<Failure>(error: &NativeDbError<Failure>) -> Option<&tokio_postgres::Error> {
     match error {
         NativeDbError::Backend { source }
         | NativeDbError::SqlState { source, .. }
         | NativeDbError::UniqueViolation { source, .. } => Some(&source.driver),
         NativeDbError::Pool { source } => match &source.driver {
             PoolError::Backend(driver) => Some(driver),
-            PoolError::Timeout(_) | PoolError::Closed => None,
-            PoolError::NoRuntimeSpecified | PoolError::PostCreateHook(_) => None,
+            PoolError::Timeout(_)
+            | PoolError::Closed
+            | PoolError::NoRuntimeSpecified
+            | PoolError::PostCreateHook(_) => None,
         },
         NativeDbError::NoDbConnected
         | NativeDbError::InvalidRecord { .. }

@@ -11,9 +11,9 @@ pub(super) async fn finish(
     email: Option<&str>,
     requested_id: &str,
 ) -> Result<LiteLLMUserTable, BlockFailure> {
-    let record = normalize_memberships(record)?;
-    let user = user_record_to_model(Some(&record))?.ok_or(BlockFailure::NoRecord)?;
-    let user = backfill(lookup, user, email).await?;
+    let normalized = normalize_memberships(record)?;
+    let model = user_record_to_model(Some(&normalized))?.ok_or(BlockFailure::NoRecord)?;
+    let user = backfill(lookup, model, email).await?;
     let ttl = lookup.cache.management_ttl();
     lookup
         .cache
@@ -35,7 +35,7 @@ pub(super) async fn backfill(
     user: LiteLLMUserTable,
     email: Option<&str>,
 ) -> Result<LiteLLMUserTable, BlockFailure> {
-    let Some(email) = email else {
+    let Some(address) = email else {
         return Ok(user);
     };
     if user.user_email.is_some() {
@@ -45,13 +45,13 @@ pub(super) async fn backfill(
         return Ok(user);
     };
     store
-        .backfill_null_email(&user.user_id, email)
+        .backfill_null_email(&user.user_id, address)
         .await
-        .map_err(BlockFailure::Store)?;
+        .map_err(|error| BlockFailure::Store(Box::new(error)))?;
     let Some(reread) = store
         .reread_for_backfill(&user.user_id)
         .await
-        .map_err(BlockFailure::Store)?
+        .map_err(|error| BlockFailure::Store(Box::new(error)))?
     else {
         return Ok(user);
     };

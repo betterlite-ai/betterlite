@@ -1,4 +1,6 @@
 use std::collections::{BTreeMap, VecDeque};
+use std::future::pending;
+use std::io::Error as IoError;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -31,7 +33,6 @@ pub(crate) struct NamedFailure(pub(crate) String);
 pub(crate) enum FailureKind {
     Named(String),
     Io(String),
-    StalePlan,
 }
 
 fn failure_error(kind: &FailureKind) -> UserStoreError {
@@ -40,11 +41,8 @@ fn failure_error(kind: &FailureKind) -> UserStoreError {
             UserStoreError::Other(Box::new(NamedFailure(message.clone())))
         }
         FailureKind::Io(message) => {
-            UserStoreError::Other(Box::new(std::io::Error::other(message.clone())))
+            UserStoreError::Other(Box::new(IoError::other(message.clone())))
         }
-        FailureKind::StalePlan => UserStoreError::Other(Box::new(NamedFailure(
-            "cached plan must not change result type".to_owned(),
-        ))),
     }
 }
 
@@ -145,13 +143,13 @@ pub(crate) struct FakeStore {
 impl Call {
     fn name(&self) -> &'static str {
         match self {
-            Call::FindById { .. } => "find_by_id",
-            Call::FindBySso { .. } => "find_by_sso_id",
-            Call::FindByEmail { .. } => "find_by_email",
-            Call::Create { .. } => "create",
-            Call::UpdateSso { .. } => "update_sso",
-            Call::Backfill { .. } => "backfill",
-            Call::Reread { .. } => "reread",
+            Self::FindById { .. } => "find_by_id",
+            Self::FindBySso { .. } => "find_by_sso_id",
+            Self::FindByEmail { .. } => "find_by_email",
+            Self::Create { .. } => "create",
+            Self::UpdateSso { .. } => "update_sso",
+            Self::Backfill { .. } => "backfill",
+            Self::Reread { .. } => "reread",
         }
     }
 }
@@ -193,7 +191,10 @@ where
     if let Some(error) = failed {
         return Err(error);
     }
-    Ok(stored.lock().unwrap().clone())
+    Ok(stored
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone())
 }
 
 #[async_trait]
@@ -209,7 +210,7 @@ impl UserStore for FakeStore {
         };
         let failed = self.observe("find_by_id", call);
         if self.hang.load(Ordering::SeqCst) {
-            std::future::pending::<()>().await;
+            pending::<()>().await;
         }
         answer(failed, &self.by_id)
     }
@@ -262,10 +263,7 @@ impl UserStore for FakeStore {
             self.update_started.notify_one();
             self.update_release.notified().await;
         }
-        match failed {
-            Some(error) => Err(error),
-            None => Ok(()),
-        }
+        failed.map_or_else(|| Ok(()), Err)
     }
 
     async fn backfill_null_email(&self, user_id: &str, email: &str) -> Result<(), UserStoreError> {
@@ -276,10 +274,7 @@ impl UserStore for FakeStore {
                 email: email.to_owned(),
             },
         );
-        match failed {
-            Some(error) => Err(error),
-            None => Ok(()),
-        }
+        failed.map_or_else(|| Ok(()), Err)
     }
 
     async fn reread_for_backfill(
@@ -382,12 +377,18 @@ impl Default for FakeReset {
 
 impl BudgetResetCalculator for FakeReset {
     fn reset_time(&self, budget_duration: &str) -> Result<Timestamp, PortError> {
-        self.calls.lock().unwrap().push(budget_duration.to_owned());
-        self.events.lock().unwrap().push("reset".to_owned());
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(budget_duration.to_owned());
+        self.events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push("reset".to_owned());
         if self.fail.load(Ordering::SeqCst) {
             return Err(PortError::new("budget reset failed"));
         }
-        Ok(self.reset.clone())
+        Ok(self.reset)
     }
 }
 
@@ -487,12 +488,8 @@ impl Harness {
 
     pub(crate) fn lookup(&self) -> UserLookup {
         let cache: Arc<dyn UserCache> = Arc::<FakeCache>::clone(&self.cache);
-        let store: Option<Arc<dyn UserStore>> = if self.with_store {
-            let handle: Arc<dyn UserStore> = Arc::<FakeStore>::clone(&self.store);
-            Some(handle)
-        } else {
-            None
-        };
+        let handle: Arc<dyn UserStore> = Arc::<FakeStore>::clone(&self.store);
+        let store = self.with_store.then_some(handle);
         let reset: Arc<dyn BudgetResetCalculator> = Arc::<FakeReset>::clone(&self.reset);
         let enrollment: Arc<dyn DefaultTeamEnrollment> =
             Arc::<FakeEnrollment>::clone(&self.enrollment);
@@ -519,18 +516,18 @@ impl Default for Harness {
 }
 
 pub(crate) fn harness_without_store() -> Harness {
-    let mut harness = Harness::default();
+    let mut harness = Harness::new(5);
     harness.with_store = false;
     harness
 }
 
 pub(crate) fn harness_with_defaults(defaults: Option<DefaultUserParams>) -> Harness {
-    let mut harness = Harness::default();
+    let mut harness = Harness::new(5);
     harness.defaults = defaults;
     harness
 }
 
-pub(crate) fn request<'request>(user_id: Option<&'request str>) -> UserLookupRequest<'request> {
+pub(crate) fn request(user_id: Option<&str>) -> UserLookupRequest<'_> {
     request_with(user_id, None, None)
 }
 
@@ -574,14 +571,14 @@ pub(crate) fn user_row(user_id: &str) -> JsonData {
 
 pub(crate) fn user_with(user_id: &str, email: Option<&str>, sso_user_id: Option<&str>) -> JsonData {
     let mut fields = BTreeMap::from([("user_id".to_owned(), JsonData::String(user_id.to_owned()))]);
-    if let Some(email) = email {
-        fields.insert("user_email".to_owned(), JsonData::String(email.to_owned()));
-    }
-    if let Some(sso_user_id) = sso_user_id {
+    if let Some(address) = email {
         fields.insert(
-            "sso_user_id".to_owned(),
-            JsonData::String(sso_user_id.to_owned()),
+            "user_email".to_owned(),
+            JsonData::String(address.to_owned()),
         );
+    }
+    if let Some(sso) = sso_user_id {
+        fields.insert("sso_user_id".to_owned(), JsonData::String(sso.to_owned()));
     }
     JsonData::Object(fields)
 }

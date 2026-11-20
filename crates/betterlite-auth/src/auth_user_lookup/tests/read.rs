@@ -1,7 +1,7 @@
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use betterlite_db::postgres_store::rows::{KeyColumn, Table};
+use betterlite_db::postgres_store::rows::{KeyColumn, Table as _};
 use rstest::rstest;
 
 use super::logs::Logs;
@@ -131,7 +131,7 @@ async fn hit_backfill_error_outside_catch() {
         .await;
     match result {
         Err(UserLookupError::PreLookup(error)) => {
-            assert!(error.to_string().contains("connection reset"), "{error}")
+            assert!(error.to_string().contains("connection reset"), "{error}");
         }
         other => panic!("a cache-hit backfill failure is not wrapped: {other:?}"),
     }

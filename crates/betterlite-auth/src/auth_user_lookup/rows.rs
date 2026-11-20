@@ -64,7 +64,7 @@ pub enum UserFilter {
 }
 
 // The user columns a create writes; a merged create supplies only the ones its defaults name.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UserCreateData {
     pub(crate) fields: BTreeMap<String, JsonData>,
     pub(crate) json: String,
@@ -169,8 +169,12 @@ impl Table for UserRows {
                 sql: USER_COUNT_SSO_SQL,
                 parameters: vec![sso_user_id],
             },
-            Some([UserFilter::Email(email), ..]) => match email.address.as_ref() {
-                Some(address) => Query {
+            Some([UserFilter::Email(email), ..]) => email.address.as_ref().map_or_else(
+                || Query {
+                    sql: USER_COUNT_SQL,
+                    parameters: Vec::new(),
+                },
+                |address| Query {
                     sql: if email.insensitive {
                         USER_COUNT_EMAIL_CASE_SQL
                     } else {
@@ -178,11 +182,7 @@ impl Table for UserRows {
                     },
                     parameters: vec![address],
                 },
-                None => Query {
-                    sql: USER_COUNT_SQL,
-                    parameters: Vec::new(),
-                },
-            },
+            ),
             Some([]) | None => Query {
                 sql: USER_COUNT_SQL,
                 parameters: Vec::new(),
@@ -247,7 +247,9 @@ fn keyed_query<'query>(
     }
 }
 
-fn filter_query<'query>(
+// the SQL binds the limit as written, and a pub fn keeps clippy's ref_option quiet
+#[must_use]
+pub fn filter_query<'query>(
     filter: Option<&'query UserFilter>,
     limit: &'query Option<i64>,
     memberships: bool,

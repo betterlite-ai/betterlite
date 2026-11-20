@@ -3,6 +3,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use betterlite_db::budget_permission_rows::JsonData;
+use tokio::time::timeout;
 
 use super::logs::Logs;
 use super::support::{
@@ -60,11 +61,8 @@ async fn empty_fuzzy_values_preserved() {
 #[tokio::test]
 async fn sso_update_overwrites_in_background() {
     let harness = Harness::default();
-    *harness.store.by_email.lock().unwrap() = Some(user_with(
-        "canonical",
-        Some("stored@example.com"),
-        Some("old-sso"),
-    ));
+    let stored = user_with("canonical", Some("stored@example.com"), Some("old-sso"));
+    *harness.store.by_email.lock().unwrap() = Some(stored);
     harness.store.block_update.store(true, Ordering::SeqCst);
     let lookup = harness.lookup();
     let user = lookup
@@ -77,7 +75,7 @@ async fn sso_update_overwrites_in_background() {
         .expect("the email lookup")
         .expect("the matched user");
     assert_eq!(user.user_id, "canonical");
-    tokio::time::timeout(
+    timeout(
         Duration::from_secs(1),
         harness.store.update_started.notified(),
     )
@@ -197,9 +195,8 @@ async fn backfill_uses_reread_email_only() {
             JsonData::String("original".to_owned()),
         ),
     ])));
-    let mut reread = match user_with("u1", Some("db@example.com"), None) {
-        JsonData::Object(fields) => fields,
-        other => panic!("a user row is a mapping: {other:?}"),
+    let JsonData::Object(mut reread) = user_with("u1", Some("db@example.com"), None) else {
+        panic!("a user row is a mapping");
     };
     reread.insert(
         "user_alias".to_owned(),

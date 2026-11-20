@@ -50,7 +50,7 @@ pub(super) enum BlockFailure {
     #[error("the user row did not return")]
     NoRecord,
     #[error(transparent)]
-    Store(#[from] UserStoreError),
+    Store(Box<UserStoreError>),
     #[error(transparent)]
     Record(#[from] UserRecordError),
     #[error(transparent)]
@@ -71,7 +71,7 @@ impl BlockFailure {
     // the concrete failure, so the classifier can inspect its typed payload instead of a wrapper
     fn into_cause(self) -> Box<dyn Error + Send + Sync> {
         match self {
-            Self::Store(error) => Box::new(error),
+            Self::Store(error) => error,
             Self::Record(error) => Box::new(error),
             Self::Membership(error) | Self::Serialize(error) => Box::new(error),
             Self::Cache(error) => Box::new(error),
@@ -162,19 +162,19 @@ impl UserLookup {
         let key = format!("user_id:{user_id}");
         let should_check =
             check_db_only || self.cadence.should_check_db(&key, self.db_cache_expiry);
-        let record = if should_check {
-            let primary = store
+        let primary = if should_check {
+            let found = store
                 .find_by_id(user_id, check_db_only)
                 .await
-                .map_err(BlockFailure::Store)?;
-            match primary {
+                .map_err(|error| BlockFailure::Store(Box::new(error)))?;
+            match found {
                 Some(record) => Some(record),
                 None => fuzzy_user(self, store, request.sso_user_id, request.user_email).await?,
             }
         } else {
             None
         };
-        let record = match record {
+        let record = match primary {
             Some(record) => record,
             None if !request.user_id_upsert => {
                 if should_check {

@@ -65,7 +65,10 @@ pub(super) async fn create_user(
     }
     apply_budget_reset(lookup, &mut params)?;
     let data = create_data(&params)?;
-    let record = store.create(data).await.map_err(BlockFailure::Store)?;
+    let record = store
+        .create(data)
+        .await
+        .map_err(|error| BlockFailure::Store(Box::new(error)))?;
     let auth = proxy_admin_auth()?;
     lookup
         .enrollment
@@ -93,7 +96,7 @@ fn apply_budget_reset(
         .budget_reset
         .reset_time(budget_duration)
         .map_err(BlockFailure::Port)?;
-    let wire = serde_json::to_value(&reset).map_err(BlockFailure::Serialize)?;
+    let wire = serde_json::to_value(reset).map_err(BlockFailure::Serialize)?;
     let value = serde_json::from_value(wire).map_err(BlockFailure::Serialize)?;
     params.insert("budget_reset_at".to_owned(), value);
     Ok(())
