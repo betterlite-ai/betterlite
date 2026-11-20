@@ -2,7 +2,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_models::decisions::Json;
 use serde_json::Number;
 
-// model_armor's twin is private to its module, so the request record's GuardrailValue copy is rebuilt here
+// model_armor/request_files's twin is pub(super) to its module and outside this task's scope, so the copy is rebuilt here
 #[must_use]
 pub fn json_to_value(value: &Json) -> GuardrailValue {
     match value {

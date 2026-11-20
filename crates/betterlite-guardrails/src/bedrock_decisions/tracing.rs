@@ -32,10 +32,10 @@ pub fn tracing_detail(
 
 // LiteLLM's _usage_tracing_detail: only integer counters are billed, and no counter leaves no detail
 pub fn usage_tracing_detail(
-    usage: Option<&Usage>,
+    counters: Option<&Usage>,
     pricing: &Pricing<'_>,
 ) -> Result<GuardrailTracingDetail, BedrockDecisionError> {
-    let Some(usage) = usage else {
+    let Some(usage) = counters else {
         return Ok(detail(None, None, None, None, None));
     };
     let mut units = BTreeMap::new();
@@ -53,7 +53,7 @@ pub fn usage_tracing_detail(
     Ok(detail(None, None, Some(units), Some(total), cost_by_unit))
 }
 
-fn detail(
+const fn detail(
     violation_categories: Option<Vec<String>>,
     guardrail_action: Option<String>,
     guardrail_usage: Option<BTreeMap<String, i64>>,

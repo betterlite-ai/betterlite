@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::str;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_core::guardrails::model_armor::streams::chunk::text_field;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
@@ -21,10 +22,15 @@ pub fn payload_has_exception(payload: &Json) -> bool {
     let Json::Object(fields) = payload else {
         return false;
     };
-    let Some(Json::Object(output)) = fields.get("Output") else {
+    fields.get("Output").is_some_and(marker_in_output)
+}
+
+// the marker is a string __type naming an exception; any other shape carries none
+fn marker_in_output(output: &Json) -> bool {
+    let Json::Object(fields) = output else {
         return false;
     };
-    let Some(Json::Text(kind)) = output.get("__type") else {
+    let Some(Json::Text(kind)) = fields.get("__type") else {
         return false;
     };
     kind.contains("Exception")
@@ -43,7 +49,7 @@ pub fn response_has_exception(response: &Response) -> bool {
     let Some(raw) = response.extra.get("Output") else {
         return false;
     };
-    serde_json::from_str::<Json>(raw.get()).is_ok_and(|payload| payload_has_exception(&payload))
+    serde_json::from_str::<Json>(raw.get()).is_ok_and(|output| marker_in_output(&output))
 }
 
 // LiteLLM's _get_bedrock_guardrail_response_status: only a 200 can be a success or a block
@@ -102,10 +108,8 @@ fn modify_failure(
     request_data: &BTreeMap<String, GuardrailValue>,
     guardrail: &BlockedGuardrail<'_>,
 ) -> GuardrailFailure {
-    let mut model = DEFAULT_MODEL.to_owned();
-    if let Some(GuardrailValue::Text(found)) = request_data.get("model") {
-        model = found.clone();
-    }
+    let model = text_field(request_data.get("model"))
+        .map_or_else(|| DEFAULT_MODEL.to_owned(), str::to_owned);
     GuardrailFailure::ModifyResponse(Box::new(ModifyResponseFailure {
         message: text,
         model,

@@ -38,7 +38,7 @@ where
     })
 }
 
-// LiteLLM's _extract_blocked_assessments reads the five policies in this order
+// LiteLLM's _extract_blocked_assessments appends topic, content, word, sensitive, then contextual grounding
 pub(super) fn assessment_blocks(assessment: &Assessment) -> Vec<(&'static str, Vec<Json>)> {
     let topic = assessment
         .topic_policy
@@ -61,12 +61,12 @@ pub(super) fn assessment_blocks(assessment: &Assessment) -> Vec<(&'static str, V
             "contentPolicy",
             blocked_policy(content, |item| item.action.as_deref(), content_entry),
         ),
-        (
-            "contextualGroundingPolicy",
-            blocked_policy(grounding, |item| item.action.as_deref(), grounding_entry),
-        ),
     ];
     blocks.extend(word_and_sensitive_blocks(assessment));
+    blocks.push((
+        "contextualGroundingPolicy",
+        blocked_policy(grounding, |item| item.action.as_deref(), grounding_entry),
+    ));
     blocks
 }
 
@@ -216,15 +216,9 @@ fn regex_entry(pattern: &Regex) -> Json {
 }
 
 fn optional_text(value: Option<&String>) -> Json {
-    match value {
-        Some(text) => Json::Text(text.clone()),
-        None => Json::Null,
-    }
+    value.map_or_else(|| Json::Null, |text| Json::Text(text.clone()))
 }
 
 fn optional_number(value: Option<&Number>) -> Json {
-    match value {
-        Some(number) => Json::Number(number.clone()),
-        None => Json::Null,
-    }
+    value.map_or_else(|| Json::Null, |number| Json::Number(number.clone()))
 }
