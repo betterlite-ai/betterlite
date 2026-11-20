@@ -123,8 +123,7 @@ fn decode_response(value: &Json) -> Result<ChatResponse, EstimateError> {
     })
 }
 
-// ModelResponse(**body) hands the body's usage object to LiteLLM's Usage constructor, which keeps the provider's
-// top-level cache counters as prompt details; a response without usage prices as zero counts.
+// ModelResponse(**body) passes the body's usage through LiteLLM's Usage constructor, so its cache aliases become prompt details; a missing usage prices as zero counts.
 fn response_usage(value: &Json) -> Result<Usage, EstimateError> {
     let Json::Object(fields) = value else {
         return Err(EstimateError::Failure {
