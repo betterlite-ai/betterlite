@@ -41,12 +41,75 @@ pub fn daily_report_message(
     message
 }
 
-// The failed-request rows, or none when a top-five id has no deployment in the router.
-pub fn failed_requests_section<Router>(
+// Which of the two report sections a shared row engine is building.
+#[derive(Clone, Copy)]
+enum ReportSection {
+    Failed,
+    Slowest,
+}
+
+impl ReportSection {
+    const fn base_fallback(self) -> &'static str {
+        match self {
+            Self::Failed => "",
+            Self::Slowest => "None",
+        }
+    }
+
+    const fn terminator(self) -> &'static str {
+        match self {
+            Self::Failed => "\n",
+            Self::Slowest => "\n\n",
+        }
+    }
+
+    fn metric(self, value: f64) -> String {
+        match self {
+            Self::Failed => format!("Failed Requests: `{}`", count_text(value)),
+            Self::Slowest => format!("Latency per output token: `{}s/token`", latency_text(value)),
+        }
+    }
+}
+
+// The failed-request rows and the slowest rows, or none when the failed section hits a deployment the router does not know.
+pub fn report_sections<Router>(
+    api_base: &dyn ApiBaseResolver,
+    router: &Router,
+    keys: &MetricKeys,
+    values: &[Option<f64>],
+) -> Result<Option<(Vec<String>, Vec<String>)>, ApiBaseError>
+where
+    Router: DailyReportRouter,
+{
+    let (failed_values, latency_values) = values.split_at(keys.failed.len());
+    let Some(failed_rows) = section_rows(
+        api_base,
+        router,
+        &keys.failed,
+        failed_values,
+        ReportSection::Failed,
+    )?
+    else {
+        return Ok(None);
+    };
+    let latency_rows = section_rows(
+        api_base,
+        router,
+        &keys.latency,
+        latency_values,
+        ReportSection::Slowest,
+    )?
+    .unwrap_or_default();
+    Ok(Some((failed_rows, latency_rows)))
+}
+
+// One section's rows, ranked from one: an unknown deployment aborts the failed section and degrades the slowest one.
+fn section_rows<Router>(
     api_base: &dyn ApiBaseResolver,
     router: &Router,
     keys: &[String],
     values: &[Option<f64>],
+    section: ReportSection,
 ) -> Result<Option<Vec<String>>, ApiBaseError>
 where
     Router: DailyReportRouter,
@@ -54,55 +117,30 @@ where
     let mut rows = Vec::new();
     for (rank, index) in top_five(values).into_iter().enumerate() {
         let Some(key) = keys.get(index) else {
-            return Ok(None);
-        };
-        let id = key.split(':').next().unwrap_or(key);
-        let Some(spec) = router.model_info(id) else {
-            return Ok(None);
-        };
-        let name = deployment_name(&spec);
-        let resolved = api_base.resolve(&name, &spec.litellm_params)?;
-        let base = resolved.as_deref().unwrap_or("");
-        let value = values.get(index).copied().flatten().unwrap_or_default();
-        rows.push(format!(
-            "\t{}. Deployment: `{name}`, Failed Requests: `{}`,  API Base: `{base}`\n",
-            rank.saturating_add(1),
-            count_text(value)
-        ));
-    }
-    Ok(Some(rows))
-}
-
-// The slowest rows: an id the router does not know still reports, with an empty name, and Python's None stands in for a base.
-pub fn latency_section<Router>(
-    api_base: &dyn ApiBaseResolver,
-    router: &Router,
-    keys: &[String],
-    values: &[Option<f64>],
-) -> Result<Vec<String>, ApiBaseError>
-where
-    Router: DailyReportRouter,
-{
-    let mut rows = Vec::new();
-    for (rank, index) in top_five(values).into_iter().enumerate() {
-        let Some(key) = keys.get(index) else {
+            if matches!(section, ReportSection::Failed) {
+                return Ok(None);
+            }
             continue;
         };
         let id = key.split(':').next().unwrap_or(key);
         let spec = router.model_info(id);
+        if spec.is_none() && matches!(section, ReportSection::Failed) {
+            return Ok(None);
+        }
         let name = spec.as_ref().map_or_else(String::new, deployment_name);
         let empty = JsonObject::new();
         let params = spec.as_ref().map_or(&empty, |found| &found.litellm_params);
-        let resolved = api_base.resolve(&name, params)?;
-        let base = resolved.as_deref().unwrap_or("None");
+        let base = api_base.resolve(&name, params)?;
         let value = values.get(index).copied().flatten().unwrap_or_default();
         rows.push(format!(
-            "\t{}. Deployment: `{name}`, Latency per output token: `{}s/token`,  API Base: `{base}`\n\n",
+            "\t{}. Deployment: `{name}`, {},  API Base: `{}`{}",
             rank.saturating_add(1),
-            latency_text(value)
+            section.metric(value),
+            base.as_deref().unwrap_or(section.base_fallback()),
+            section.terminator()
         ));
     }
-    Ok(rows)
+    Ok(Some(rows))
 }
 
 // The cleanup before the send: every latency key, then every failed key, each set back to zero.

@@ -10,10 +10,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde_json::Number;
 
-use self::daily_report::{
-    DailyReportRouter, daily_report_message, failed_requests_section, latency_section,
-    reset_entries,
-};
+use self::daily_report::{DailyReportRouter, daily_report_message, report_sections, reset_entries};
 use self::daily_report_scheduler::ReportJitter;
 use self::deployment_metrics::{DailyReportCache, metric_keys, metric_number};
 use crate::alerting::model_alerts::ModelAlertSender;
@@ -99,13 +96,11 @@ where
         {
             return Ok(false);
         }
-        let (failed_values, latency_values) = values.split_at(keys.failed.len());
-        let Some(failed_rows) =
-            failed_requests_section(&self.api_base, router, &keys.failed, failed_values)?
+        let Some((failed_rows, latency_rows)) =
+            report_sections(&self.api_base, router, &keys, &values)?
         else {
             return Ok(false);
         };
-        let latency_rows = latency_section(&self.api_base, router, &keys.latency, latency_values)?;
         let now = self.clock_instant()?;
         let next_run = now
             .seconds

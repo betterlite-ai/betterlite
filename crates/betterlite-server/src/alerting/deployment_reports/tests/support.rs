@@ -99,15 +99,9 @@ impl FakeCache {
     }
 
     pub(crate) fn unavailable() -> Self {
-        Self {
-            entries: Arc::new(Mutex::new(BTreeMap::new())),
-            reads: Journal::default(),
-            writes: Journal::default(),
-            increments: Journal::default(),
-            batch_reads: Journal::default(),
-            batches: Journal::default(),
-            fails_batch: true,
-        }
+        let mut cache = Self::seeded(&[]);
+        cache.fails_batch = true;
+        cache
     }
 
     pub(crate) fn value(&self, key: &str) -> Option<Json> {

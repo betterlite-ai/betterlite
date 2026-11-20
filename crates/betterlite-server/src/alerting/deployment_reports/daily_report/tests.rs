@@ -64,17 +64,6 @@ fn six_metrics() -> FakeCache {
     ])
 }
 
-fn six_failed_counts() -> FakeCache {
-    FakeCache::seeded(&[
-        ("d1:failed_requests_daily_metrics", int_metric(10)),
-        ("d2:failed_requests_daily_metrics", int_metric(9)),
-        ("d3:failed_requests_daily_metrics", int_metric(8)),
-        ("d4:failed_requests_daily_metrics", int_metric(7)),
-        ("d5:failed_requests_daily_metrics", int_metric(6)),
-        ("d6:failed_requests_daily_metrics", int_metric(5)),
-    ])
-}
-
 fn six_bases() -> FakeApiBase {
     FakeApiBase::with_bases(&[
         ("model-a", "https://a.example/v1"),
@@ -417,7 +406,14 @@ async fn the_next_run_is_the_send_time_plus_the_daily_frequency() {
 
 #[tokio::test]
 async fn only_five_failed_rows_are_listed() {
-    let scenario = six_deployment_scenario(six_failed_counts());
+    let scenario = six_deployment_scenario(FakeCache::seeded(&[
+        ("d1:failed_requests_daily_metrics", int_metric(10)),
+        ("d2:failed_requests_daily_metrics", int_metric(9)),
+        ("d3:failed_requests_daily_metrics", int_metric(8)),
+        ("d4:failed_requests_daily_metrics", int_metric(7)),
+        ("d5:failed_requests_daily_metrics", int_metric(6)),
+        ("d6:failed_requests_daily_metrics", int_metric(5)),
+    ]));
 
     let sent = scenario.service.send_daily_reports(&scenario.router).await;
 
