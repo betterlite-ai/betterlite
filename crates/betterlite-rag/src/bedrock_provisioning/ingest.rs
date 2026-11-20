@@ -55,8 +55,9 @@ impl<Transport> BedrockProvisioner<'_, Transport>
 where
     Transport: AwsRagTransport,
 {
-    // Bedrock embeds the chunks itself when it ingests the file
+    // Bedrock embeds the file inside the ingestion job, so there is no vector to hand back
     pub fn embed(&self, _chunks: &[String]) -> Option<Vec<Vec<f64>>> {
+        tracing::debug!("Bedrock embeds the uploaded file inside the ingestion job");
         None
     }
 
@@ -89,9 +90,14 @@ where
         let key = format!("{prefix}/{filename}");
         let region = self.clients.settings.aws_region_name.clone();
         let call = s3::put_object(&region, &bucket, &key, request.content_type, content);
-        self.send_ok(&call).await?;
-        let call = agent::start_ingestion_job(&region, &knowledge_base, &data_source)?;
-        let response = self.send_ok(&call).await?;
+        self.send(&call).await?.require_success(call.operation)?;
+        let call = agent::ingestion_job_call(
+            &region,
+            &knowledge_base,
+            &data_source,
+            agent::IngestionJobCall::Start,
+        )?;
+        let response = self.send(&call).await?.require_success(call.operation)?;
         let job_id = agent::ingestion_job_id(&response.body, agent::START_INGESTION_JOB)?;
         if self.clients.settings.wait_for_ingestion {
             self.wait_for_ingestion(&region, &knowledge_base, &data_source, &job_id)
@@ -111,8 +117,13 @@ where
         let seconds = u64::try_from(self.clients.settings.ingestion_timeout).unwrap_or_default();
         let limit = Duration::from_secs(seconds);
         while start.elapsed() < limit {
-            let call = agent::get_ingestion_job(region, knowledge_base, data_source, job_id);
-            let response = self.send_ok(&call).await?;
+            let call = agent::ingestion_job_call(
+                region,
+                knowledge_base,
+                data_source,
+                agent::IngestionJobCall::Get(job_id),
+            )?;
+            let response = self.send(&call).await?.require_success(call.operation)?;
             let job = agent::ingestion_job(&response.body, agent::GET_INGESTION_JOB)?;
             match job.status.as_deref() {
                 Some(COMPLETE) => {

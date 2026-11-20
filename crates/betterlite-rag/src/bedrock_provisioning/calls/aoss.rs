@@ -12,26 +12,16 @@ pub const CREATE_COLLECTION: &str = "CreateCollection";
 pub const BATCH_GET_COLLECTION: &str = "BatchGetCollection";
 pub const ENCRYPTION: &str = "encryption";
 pub const NETWORK: &str = "network";
+pub const DATA: &str = "data";
 pub const AOSS_SERVICE: &str = "aoss";
 pub const JSON_CONTENT_TYPE: &str = "application/x-amz-json-1.0";
 
 const TARGET_PREFIX: &str = "OpenSearchServerless";
-const DATA: &str = "data";
 const VECTOR_SEARCH: &str = "VECTORSEARCH";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct SecurityPolicyRequest {
-    name: String,
-    #[serde(rename = "type")]
-    policy_type: String,
-    policy: String,
-    client_token: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct AccessPolicyRequest {
+struct PolicyRequest {
     name: String,
     #[serde(rename = "type")]
     policy_type: String,
@@ -84,39 +74,35 @@ pub struct CollectionDetail {
     pub collection_endpoint: Option<String>,
 }
 
+// BatchGetCollection takes either field, and an empty one is not a valid answer
+#[derive(Debug, Clone, Copy)]
+pub enum CollectionSelection<'selection> {
+    Id(&'selection str),
+    Name(&'selection str),
+}
+
 #[must_use]
 pub fn aoss_url(region: &str) -> String {
     let suffix = get_aws_partition(Some(region)).dns_suffix;
     format!("https://aoss.{region}.{suffix}/")
 }
 
-pub fn create_security_policy<Policy: Serialize>(
+pub fn create_policy<Policy: Serialize>(
     region: &str,
+    operation: &'static str,
     name: &str,
-    policy_type: &str,
+    kind: &str,
     policy: &Policy,
 ) -> Result<CallRequest, CallError> {
-    let request = SecurityPolicyRequest {
+    let document = serde_json::to_string(policy)
+        .map_err(|source| CallError::Serialize { operation, source })?;
+    let request = PolicyRequest {
         name: name.to_owned(),
-        policy_type: policy_type.to_owned(),
-        policy: super::document(policy, CREATE_SECURITY_POLICY)?,
+        policy_type: kind.to_owned(),
+        policy: document,
         client_token: Uuid::new_v4().to_string(),
     };
-    json_request(region, CREATE_SECURITY_POLICY, &request)
-}
-
-pub fn create_access_policy<Policy: Serialize>(
-    region: &str,
-    name: &str,
-    policy: &Policy,
-) -> Result<CallRequest, CallError> {
-    let request = AccessPolicyRequest {
-        name: name.to_owned(),
-        policy_type: DATA.to_owned(),
-        policy: super::document(policy, CREATE_ACCESS_POLICY)?,
-        client_token: Uuid::new_v4().to_string(),
-    };
-    json_request(region, CREATE_ACCESS_POLICY, &request)
+    json_request(region, operation, &request)
 }
 
 pub fn create_collection(region: &str, name: &str) -> Result<CallRequest, CallError> {
@@ -128,62 +114,49 @@ pub fn create_collection(region: &str, name: &str) -> Result<CallRequest, CallEr
     json_request(region, CREATE_COLLECTION, &request)
 }
 
-pub fn batch_get_collection_by_id(
+pub fn batch_get_collection(
     region: &str,
-    collection_id: &str,
+    selection: CollectionSelection<'_>,
 ) -> Result<CallRequest, CallError> {
-    let request = CollectionsById {
-        ids: vec![collection_id.to_owned()],
-    };
-    json_request(region, BATCH_GET_COLLECTION, &request)
+    match selection {
+        CollectionSelection::Id(id) => json_request(
+            region,
+            BATCH_GET_COLLECTION,
+            &CollectionsById {
+                ids: vec![id.to_owned()],
+            },
+        ),
+        CollectionSelection::Name(name) => json_request(
+            region,
+            BATCH_GET_COLLECTION,
+            &CollectionsByName {
+                names: vec![name.to_owned()],
+            },
+        ),
+    }
 }
 
-pub fn batch_get_collection_by_name(
-    region: &str,
-    collection_name: &str,
-) -> Result<CallRequest, CallError> {
-    let request = CollectionsByName {
-        names: vec![collection_name.to_owned()],
-    };
-    json_request(region, BATCH_GET_COLLECTION, &request)
-}
-
-pub fn created_collection_id(body: &[u8], operation: &'static str) -> Result<String, CallError> {
-    let response: CreateCollectionResponse = parse(body, operation)?;
-    response
-        .create_collection_detail
-        .and_then(|detail| detail.id)
-        .ok_or(CallError::MissingEntry {
-            operation,
-            field: "createCollectionDetail.id",
-        })
-}
-
-pub fn collection_details(
-    body: &[u8],
-    operation: &'static str,
-) -> Result<BatchGetCollectionResponse, CallError> {
-    parse(body, operation)
-}
-
-pub fn first_collection<'details>(
-    response: &'details BatchGetCollectionResponse,
-    operation: &'static str,
-) -> Result<&'details CollectionDetail, CallError> {
-    response
-        .collection_details
-        .first()
-        .ok_or(CallError::MissingEntry {
-            operation,
-            field: "collectionDetails",
-        })
-}
-
-fn parse<Response: DeserializeOwned>(
+pub fn parse_json<Response: DeserializeOwned>(
     body: &[u8],
     operation: &'static str,
 ) -> Result<Response, CallError> {
     serde_json::from_slice(body).map_err(|source| CallError::Json { operation, source })
+}
+
+// an empty collectionDetails list is an answer that cannot be used, not an empty collection
+pub fn first_collection(
+    body: &[u8],
+    operation: &'static str,
+) -> Result<CollectionDetail, CallError> {
+    let response: BatchGetCollectionResponse = parse_json(body, operation)?;
+    response
+        .collection_details
+        .into_iter()
+        .next()
+        .ok_or(CallError::MissingEntry {
+            operation,
+            field: "collectionDetails",
+        })
 }
 
 fn json_request<Body: Serialize>(

@@ -3,8 +3,8 @@
 use serde::Deserialize;
 
 use super::{
-    GET_INGESTION_JOB, START_INGESTION_JOB, get_ingestion_job, ingestion_job, ingestion_job_id,
-    start_ingestion_job,
+    GET_INGESTION_JOB, IngestionJobCall, START_INGESTION_JOB, ingestion_job, ingestion_job_call,
+    ingestion_job_id,
 };
 
 #[derive(Debug, Deserialize)]
@@ -15,7 +15,7 @@ struct StartBody {
 
 #[test]
 fn call_start_ingestion_job_puts_to_the_data_source_jobs_path() {
-    let call = start_ingestion_job("us-west-2", "kb1", "ds1").unwrap();
+    let call = ingestion_job_call("us-west-2", "kb1", "ds1", IngestionJobCall::Start).unwrap();
     assert_eq!(call.operation, START_INGESTION_JOB);
     assert_eq!(call.service, "bedrock");
     assert_eq!(call.signing_region, "us-west-2");
@@ -36,7 +36,8 @@ fn call_start_ingestion_job_puts_to_the_data_source_jobs_path() {
 
 #[test]
 fn call_get_ingestion_job_gets_the_job_path() {
-    let call = get_ingestion_job("us-west-2", "kb1", "ds1", "job1");
+    let call =
+        ingestion_job_call("us-west-2", "kb1", "ds1", IngestionJobCall::Get("job1")).unwrap();
     assert_eq!(call.operation, GET_INGESTION_JOB);
     assert_eq!(call.method, "GET");
     assert_eq!(
@@ -49,7 +50,8 @@ fn call_get_ingestion_job_gets_the_job_path() {
 
 #[test]
 fn call_ingestion_job_paths_encode_each_identifier() {
-    let call = get_ingestion_job("us-west-2", "kb/1", "ds 1", "job#1");
+    let call =
+        ingestion_job_call("us-west-2", "kb/1", "ds 1", IngestionJobCall::Get("job#1")).unwrap();
     assert!(call.url.contains("knowledgebases/kb%2F1"));
     assert!(call.url.contains("datasources/ds%201"));
     assert!(call.url.ends_with("ingestionjobs/job%231"));

@@ -3,7 +3,6 @@ use percent_encoding::utf8_percent_encode;
 use quick_xml::Reader;
 use quick_xml::escape::unescape;
 use quick_xml::events::Event;
-use serde::Serialize;
 
 use super::CallRequest;
 use super::error::CallError;
@@ -73,7 +72,7 @@ pub fn caller_identity(region: &str) -> CallRequest {
         signing_region: region.to_owned(),
         method: "POST",
         url: sts_url(region),
-        headers: form_headers(),
+        headers: vec![("Content-Type".to_owned(), FORM_CONTENT_TYPE.to_owned())],
         body: form_body(&[("Action", GET_CALLER_IDENTITY), ("Version", STS_VERSION)]),
     }
 }
@@ -86,46 +85,20 @@ pub fn caller_identity_from(body: &[u8]) -> Result<CallerIdentity, CallError> {
     })
 }
 
-pub fn create_role<Policy: Serialize>(
-    region: &str,
-    role_name: &str,
-    policy: &Policy,
-) -> Result<CallRequest, CallError> {
-    let policy_document = super::document(policy, CREATE_ROLE)?;
-    Ok(iam_request(
-        region,
-        CREATE_ROLE,
-        &[
-            ("Action", CREATE_ROLE),
-            ("Version", IAM_VERSION),
-            ("RoleName", role_name),
-            ("AssumeRolePolicyDocument", policy_document.as_str()),
-        ],
-    ))
-}
-
-pub fn role_arn(body: &[u8], operation: &'static str) -> Result<String, CallError> {
-    child_text(body, "Role", "Arn", operation)
-}
-
-pub fn put_role_policy<Policy: Serialize>(
-    region: &str,
-    role_name: &str,
-    policy_name: &str,
-    policy: &Policy,
-) -> Result<CallRequest, CallError> {
-    let policy_document = super::document(policy, PUT_ROLE_POLICY)?;
-    Ok(iam_request(
-        region,
-        PUT_ROLE_POLICY,
-        &[
-            ("Action", PUT_ROLE_POLICY),
-            ("Version", IAM_VERSION),
-            ("RoleName", role_name),
-            ("PolicyName", policy_name),
-            ("PolicyDocument", policy_document.as_str()),
-        ],
-    ))
+// the IAM query protocol carries every field of the operation in the form body
+pub fn iam_request(region: &str, operation: &'static str, pairs: &[(&str, &str)]) -> CallRequest {
+    let endpoint = iam_endpoint(region);
+    let mut fields: Vec<(&str, &str)> = vec![("Action", operation), ("Version", IAM_VERSION)];
+    fields.extend_from_slice(pairs);
+    CallRequest {
+        operation,
+        service: IAM_SERVICE,
+        signing_region: endpoint.signing_region.to_owned(),
+        method: "POST",
+        url: endpoint.url.to_owned(),
+        headers: vec![("Content-Type".to_owned(), FORM_CONTENT_TYPE.to_owned())],
+        body: form_body(&fields),
+    }
 }
 
 fn iam_endpoint(region: &str) -> IamEndpoint {
@@ -138,23 +111,6 @@ fn iam_endpoint(region: &str) -> IamEndpoint {
         "aws-iso-f" => IAM_ISO_F,
         _ => IAM_COMMERCIAL,
     }
-}
-
-fn iam_request(region: &str, operation: &'static str, pairs: &[(&str, &str)]) -> CallRequest {
-    let endpoint = iam_endpoint(region);
-    CallRequest {
-        operation,
-        service: IAM_SERVICE,
-        signing_region: endpoint.signing_region.to_owned(),
-        method: "POST",
-        url: endpoint.url.to_owned(),
-        headers: form_headers(),
-        body: form_body(pairs),
-    }
-}
-
-fn form_headers() -> Vec<(String, String)> {
-    vec![("Content-Type".to_owned(), FORM_CONTENT_TYPE.to_owned())]
 }
 
 fn form_body(pairs: &[(&str, &str)]) -> Vec<u8> {
@@ -171,7 +127,7 @@ fn form_body(pairs: &[(&str, &str)]) -> Vec<u8> {
 }
 
 // reads the text of the child element inside the named parent, so Role/Arn is not any Arn
-fn child_text(
+pub fn child_text(
     body: &[u8],
     parent: &str,
     child: &'static str,

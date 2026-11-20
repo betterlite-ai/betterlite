@@ -103,17 +103,9 @@ where
         Ok(self.clients.signed_request_with(request).await?)
     }
 
-    pub(crate) async fn send_ok(
-        &self,
-        call: &CallRequest,
-    ) -> Result<AwsRagResponse, ProvisionError<Transport::Error>> {
-        let response = self.send(call).await?;
-        Ok(response.require_success(call.operation)?)
-    }
-
     async fn caller_identity(&self) -> Result<CallerIdentity, ProvisionError<Transport::Error>> {
         let call = query::caller_identity(&self.clients.settings.aws_region_name);
-        let response = self.send_ok(&call).await?;
+        let response = self.send(&call).await?.require_success(call.operation)?;
         Ok(query::caller_identity_from(&response.body)?)
     }
 }

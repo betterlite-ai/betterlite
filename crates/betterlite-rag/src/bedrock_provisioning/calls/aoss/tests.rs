@@ -3,9 +3,9 @@
 use serde::Deserialize;
 
 use super::{
-    BATCH_GET_COLLECTION, CREATE_COLLECTION, aoss_url, batch_get_collection_by_id,
-    batch_get_collection_by_name, collection_details, create_access_policy, create_collection,
-    create_security_policy, created_collection_id, first_collection,
+    BATCH_GET_COLLECTION, CREATE_ACCESS_POLICY, CREATE_COLLECTION, CREATE_SECURITY_POLICY,
+    CollectionSelection, CreateCollectionResponse, aoss_url, batch_get_collection,
+    create_collection, create_policy, first_collection, parse_json,
 };
 use crate::bedrock_provisioning::calls::CallRequest;
 use crate::bedrock_provisioning::plan;
@@ -49,7 +49,14 @@ fn target(call: &CallRequest) -> Option<String> {
 #[test]
 fn call_create_security_policy_targets_the_aoss_endpoint() {
     let policy = plan::encryption_policy("kb");
-    let call = create_security_policy("us-west-2", "kb-enc", "encryption", &policy).unwrap();
+    let call = create_policy(
+        "us-west-2",
+        CREATE_SECURITY_POLICY,
+        "kb-enc",
+        "encryption",
+        &policy,
+    )
+    .unwrap();
     assert_eq!(call.operation, "CreateSecurityPolicy");
     assert_eq!(call.service, "aoss");
     assert_eq!(call.signing_region, "us-west-2");
@@ -69,8 +76,9 @@ fn call_create_security_policy_targets_the_aoss_endpoint() {
 
 #[test]
 fn call_create_security_policy_sends_the_document_and_a_uuid_token() {
-    let call = create_security_policy(
+    let call = create_policy(
         "us-west-2",
+        CREATE_SECURITY_POLICY,
         "kb-enc",
         "encryption",
         &plan::encryption_policy("kb"),
@@ -86,9 +94,11 @@ fn call_create_security_policy_sends_the_document_and_a_uuid_token() {
 
 #[test]
 fn call_create_access_policy_sends_the_data_type() {
-    let call = create_access_policy(
+    let call = create_policy(
         "us-west-2",
+        CREATE_ACCESS_POLICY,
         "kb-access",
+        "data",
         &plan::data_access_policy("kb", "arn:aws:", "123456789012", "arn:aws:iam::1:root"),
     )
     .unwrap();
@@ -119,7 +129,7 @@ fn call_create_collection_sends_vectorsearch() {
 
 #[test]
 fn call_batch_get_collection_selects_by_id_or_name() {
-    let by_id = batch_get_collection_by_id("us-west-2", "abc").unwrap();
+    let by_id = batch_get_collection("us-west-2", CollectionSelection::Id("abc")).unwrap();
     assert_eq!(by_id.operation, BATCH_GET_COLLECTION);
     assert_eq!(
         target(&by_id).as_deref(),
@@ -127,7 +137,11 @@ fn call_batch_get_collection_selects_by_id_or_name() {
     );
     let ids: Ids = serde_json::from_slice(&by_id.body).unwrap();
     assert_eq!(ids.ids, vec!["abc".to_owned()]);
-    let by_name = batch_get_collection_by_name("us-west-2", "litellm-kb-0123abcd").unwrap();
+    let by_name = batch_get_collection(
+        "us-west-2",
+        CollectionSelection::Name("litellm-kb-0123abcd"),
+    )
+    .unwrap();
     let names: Names = serde_json::from_slice(&by_name.body).unwrap();
     assert_eq!(names.names, vec!["litellm-kb-0123abcd".to_owned()]);
 }
@@ -147,22 +161,30 @@ fn call_aoss_url_follows_the_partition_suffix() {
 #[test]
 fn call_create_collection_reads_the_detail_id() {
     let body = br#"{"createCollectionDetail":{"id":"abc","name":"kb","status":"CREATING"}}"#;
+    let created: CreateCollectionResponse = parse_json(body, CREATE_COLLECTION).unwrap();
     assert_eq!(
-        created_collection_id(body, CREATE_COLLECTION).unwrap(),
-        "abc"
+        created
+            .create_collection_detail
+            .and_then(|detail| detail.id),
+        Some("abc".to_owned())
     );
 }
 
 #[test]
 fn call_create_collection_reports_a_missing_detail() {
-    assert!(created_collection_id(b"{}", CREATE_COLLECTION).is_err());
+    let created: CreateCollectionResponse = parse_json(b"{}", CREATE_COLLECTION).unwrap();
+    assert_eq!(created.create_collection_detail, None);
 }
 
 #[test]
-fn call_collection_details_read_the_status_arn_and_endpoint() {
+fn call_parse_json_reports_a_body_that_is_not_json() {
+    assert!(parse_json::<CreateCollectionResponse>(b"not json", CREATE_COLLECTION).is_err());
+}
+
+#[test]
+fn call_first_collection_reads_the_status_arn_and_endpoint() {
     let body = br#"{"collectionDetails":[{"id":"abc","status":"ACTIVE","arn":"arn:aws:aoss:us-west-2:1:collection/abc","collectionEndpoint":"https://abc.us-west-2.aoss.amazonaws.com"}]}"#;
-    let details = collection_details(body, BATCH_GET_COLLECTION).unwrap();
-    let detail = first_collection(&details, BATCH_GET_COLLECTION).unwrap();
+    let detail = first_collection(body, BATCH_GET_COLLECTION).unwrap();
     assert_eq!(detail.status.as_deref(), Some("ACTIVE"));
     assert_eq!(
         detail.arn.as_deref(),
@@ -175,12 +197,11 @@ fn call_collection_details_read_the_status_arn_and_endpoint() {
 }
 
 #[test]
-fn call_collection_details_report_an_empty_list() {
-    let details = collection_details(br#"{"collectionDetails":[]}"#, BATCH_GET_COLLECTION).unwrap();
-    assert!(first_collection(&details, BATCH_GET_COLLECTION).is_err());
+fn call_first_collection_reports_an_empty_list() {
+    assert!(first_collection(br#"{"collectionDetails":[]}"#, BATCH_GET_COLLECTION).is_err());
 }
 
 #[test]
-fn call_collection_details_report_a_body_that_is_not_json() {
-    assert!(collection_details(b"not json", BATCH_GET_COLLECTION).is_err());
+fn call_first_collection_reports_a_body_that_is_not_json() {
+    assert!(first_collection(b"not json", BATCH_GET_COLLECTION).is_err());
 }

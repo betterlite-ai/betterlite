@@ -2,6 +2,8 @@ use serde::Serialize;
 
 use crate::bedrock_ingestion::resources::principal::normalize_principal_arn;
 
+pub mod index;
+
 pub const VECTOR_DIMENSION: u32 = 1024;
 pub const EF_SEARCH: u32 = 512;
 pub const POLICY_VERSION: &str = "2012-10-17";
@@ -50,67 +52,6 @@ pub struct AccessRule {
     pub resource_type: String,
     pub resource: Vec<String>,
     pub permission: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct IndexBody {
-    pub settings: IndexSettings,
-    pub mappings: IndexMappings,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct IndexSettings {
-    pub index: IndexKnobs,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct IndexKnobs {
-    pub knn: bool,
-    #[serde(rename = "knn.algo_param.ef_search")]
-    pub ef_search: u32,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct IndexMappings {
-    pub properties: IndexProperties,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct IndexProperties {
-    #[serde(rename = "bedrock-knowledge-base-default-vector")]
-    pub vector: VectorField,
-    #[serde(rename = "AMAZON_BEDROCK_METADATA")]
-    pub metadata: MetadataField,
-    #[serde(rename = "AMAZON_BEDROCK_TEXT_CHUNK")]
-    pub text_chunk: TextField,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct VectorField {
-    #[serde(rename = "type")]
-    pub field_type: String,
-    pub dimension: u32,
-    pub method: VectorMethod,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct VectorMethod {
-    pub engine: String,
-    pub name: String,
-    pub space_type: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct MetadataField {
-    #[serde(rename = "type")]
-    pub field_type: String,
-    pub index: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct TextField {
-    #[serde(rename = "type")]
-    pub field_type: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -229,38 +170,6 @@ pub fn data_access_policy(
 }
 
 #[must_use]
-pub fn index_body() -> IndexBody {
-    IndexBody {
-        settings: IndexSettings {
-            index: IndexKnobs {
-                knn: true,
-                ef_search: EF_SEARCH,
-            },
-        },
-        mappings: IndexMappings {
-            properties: IndexProperties {
-                vector: VectorField {
-                    field_type: VECTOR_TYPE.to_owned(),
-                    dimension: VECTOR_DIMENSION,
-                    method: VectorMethod {
-                        engine: "faiss".to_owned(),
-                        name: "hnsw".to_owned(),
-                        space_type: "l2".to_owned(),
-                    },
-                },
-                metadata: MetadataField {
-                    field_type: TEXT_TYPE.to_owned(),
-                    index: false,
-                },
-                text_chunk: TextField {
-                    field_type: TEXT_TYPE.to_owned(),
-                },
-            },
-        },
-    }
-}
-
-#[must_use]
 pub fn trust_policy(resources: &RoleResources<'_>) -> TrustPolicy {
     TrustPolicy {
         version: POLICY_VERSION.to_owned(),
@@ -275,10 +184,7 @@ pub fn trust_policy(resources: &RoleResources<'_>) -> TrustPolicy {
                     account: resources.account_id.to_owned(),
                 },
                 arn_like: SourceArnCondition {
-                    arn: format!(
-                        "{}bedrock:{}:{}:knowledge-base/*",
-                        resources.arn_prefix, resources.region, resources.account_id
-                    ),
+                    arn: knowledge_base_arn(resources),
                 },
             },
         }],
@@ -289,31 +195,37 @@ pub fn trust_policy(resources: &RoleResources<'_>) -> TrustPolicy {
 pub fn permissions_policy(resources: &RoleResources<'_>) -> PermissionsPolicy {
     let prefix = resources.arn_prefix;
     let region = resources.region;
+    let model = format!(
+        "{prefix}bedrock:{region}::foundation-model/{}",
+        resources.embedding_model
+    );
+    let bucket = format!("{prefix}s3:::{}", resources.bucket);
+    let objects = format!("{bucket}/*");
     PermissionsPolicy {
         version: POLICY_VERSION.to_owned(),
         statement: vec![
-            PermissionStatement {
-                effect: ALLOW.to_owned(),
-                action: vec!["bedrock:InvokeModel".to_owned()],
-                resource: vec![format!(
-                    "{prefix}bedrock:{region}::foundation-model/{}",
-                    resources.embedding_model
-                )],
-            },
-            PermissionStatement {
-                effect: ALLOW.to_owned(),
-                action: vec!["aoss:APIAccessAll".to_owned()],
-                resource: vec![resources.collection_arn.to_owned()],
-            },
-            PermissionStatement {
-                effect: ALLOW.to_owned(),
-                action: vec!["s3:GetObject".to_owned(), "s3:ListBucket".to_owned()],
-                resource: vec![
-                    format!("{prefix}s3:::{}", resources.bucket),
-                    format!("{prefix}s3:::{}/*", resources.bucket),
-                ],
-            },
+            permission_statement(&["bedrock:InvokeModel"], &[model]),
+            permission_statement(
+                &["aoss:APIAccessAll"],
+                &[resources.collection_arn.to_owned()],
+            ),
+            permission_statement(&["s3:GetObject", "s3:ListBucket"], &[bucket, objects]),
         ],
+    }
+}
+
+fn knowledge_base_arn(resources: &RoleResources<'_>) -> String {
+    format!(
+        "{}bedrock:{}:{}:knowledge-base/*",
+        resources.arn_prefix, resources.region, resources.account_id
+    )
+}
+
+fn permission_statement(actions: &[&str], resources: &[String]) -> PermissionStatement {
+    PermissionStatement {
+        effect: ALLOW.to_owned(),
+        action: actions.iter().map(|action| (*action).to_owned()).collect(),
+        resource: resources.to_vec(),
     }
 }
 

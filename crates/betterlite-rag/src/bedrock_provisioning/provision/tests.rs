@@ -125,6 +125,37 @@ async fn collection_records_nothing_when_the_create_call_fails() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn collection_reports_a_create_answer_without_a_detail() {
+    let transport =
+        ScriptedTransport::new(vec![answer("{}"), answer("{}"), answer("{}"), answer("{}")]);
+    let mut provisioner = new_provisioner(r#"{"aws_region_name":"us-west-2"}"#, transport.clone());
+    let error = provisioner
+        .create_opensearch_collection(UNIQUE_ID, ACCOUNT, CALLER_ARN)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, ProvisionError::Call(_)));
+    assert_eq!(transport.operations().len(), 4);
+}
+
+#[tokio::test(start_paused = true)]
+async fn collection_reports_an_active_answer_without_an_arn() {
+    let active = r#"{"collectionDetails":[{"id":"abc","status":"ACTIVE"}]}"#;
+    let transport = ScriptedTransport::new(vec![
+        answer("{}"),
+        answer("{}"),
+        answer("{}"),
+        answer(CREATED_COLLECTION),
+        answer(active),
+    ]);
+    let mut provisioner = new_provisioner(r#"{"aws_region_name":"us-west-2"}"#, transport.clone());
+    let error = provisioner
+        .create_opensearch_collection(UNIQUE_ID, ACCOUNT, CALLER_ARN)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, ProvisionError::Call(_)));
+}
+
+#[tokio::test(start_paused = true)]
 async fn collection_uses_the_partition_arn_prefix_in_the_access_policy() {
     let transport = ScriptedTransport::new(vec![
         answer("{}"),

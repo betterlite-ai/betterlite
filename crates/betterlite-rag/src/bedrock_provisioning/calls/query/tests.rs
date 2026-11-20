@@ -1,8 +1,8 @@
 #![cfg(test)]
 
 use super::{
-    CallerIdentity, caller_identity, caller_identity_from, create_role, put_role_policy, role_arn,
-    sts_url,
+    CREATE_ROLE, CallerIdentity, PUT_ROLE_POLICY, caller_identity, caller_identity_from,
+    child_text, iam_request, sts_url,
 };
 use crate::bedrock_provisioning::calls::CallRequest;
 use crate::bedrock_provisioning::plan::{self, RoleResources};
@@ -82,7 +82,15 @@ fn call_caller_identity_rejects_a_body_that_is_not_utf8() {
 #[test]
 fn call_create_role_posts_the_encoded_policy() {
     let policy = plan::trust_policy(&resources("arn:aws:", "us-west-2"));
-    let call = create_role("us-west-2", "litellm-bedrock-kb-0123abcd", &policy).unwrap();
+    let document = serde_json::to_string(&policy).unwrap();
+    let call = iam_request(
+        "us-west-2",
+        CREATE_ROLE,
+        &[
+            ("RoleName", "litellm-bedrock-kb-0123abcd"),
+            ("AssumeRolePolicyDocument", document.as_str()),
+        ],
+    );
     assert_eq!(call.operation, "CreateRole");
     assert_eq!(call.service, "iam");
     assert_eq!(call.signing_region, "us-east-1");
@@ -96,14 +104,13 @@ fn call_create_role_posts_the_encoded_policy() {
 
 #[test]
 fn call_iam_endpoints_are_global_per_partition() {
-    let policy = plan::trust_policy(&resources("arn:aws:", "us-west-2"));
-    let commercial = create_role("us-west-2", "role", &policy).unwrap();
+    let commercial = iam_request("us-west-2", CREATE_ROLE, &[]);
     assert_eq!(commercial.url, "https://iam.amazonaws.com/");
     assert_eq!(commercial.signing_region, "us-east-1");
-    let china = create_role("cn-north-1", "role", &policy).unwrap();
+    let china = iam_request("cn-north-1", CREATE_ROLE, &[]);
     assert_eq!(china.url, "https://iam.cn-north-1.amazonaws.com.cn/");
     assert_eq!(china.signing_region, "cn-north-1");
-    let government = create_role("us-gov-west-1", "role", &policy).unwrap();
+    let government = iam_request("us-gov-west-1", CREATE_ROLE, &[]);
     assert_eq!(government.url, "https://iam.us-gov.amazonaws.com/");
     assert_eq!(government.signing_region, "us-gov-west-1");
 }
@@ -112,7 +119,7 @@ fn call_iam_endpoints_are_global_per_partition() {
 fn call_create_role_reads_the_role_arn() {
     let body = br#"<CreateRoleResponse><CreateRoleResult><Role><Path>/</Path><Arn>arn:aws:iam::123456789012:role/litellm-bedrock-kb-0123abcd</Arn></Role></CreateRoleResult></CreateRoleResponse>"#;
     assert_eq!(
-        role_arn(body, "CreateRole").unwrap(),
+        child_text(body, "Role", "Arn", CREATE_ROLE).unwrap(),
         "arn:aws:iam::123456789012:role/litellm-bedrock-kb-0123abcd"
     );
 }
@@ -120,13 +127,22 @@ fn call_create_role_reads_the_role_arn() {
 #[test]
 fn call_role_arn_reports_a_missing_element() {
     let body = br#"<CreateRoleResponse><CreateRoleResult><Role><Path>/</Path></Role></CreateRoleResult></CreateRoleResponse>"#;
-    assert!(role_arn(body, "CreateRole").is_err());
+    assert!(child_text(body, "Role", "Arn", CREATE_ROLE).is_err());
 }
 
 #[test]
 fn call_put_role_policy_sends_the_policy_name_and_document() {
     let policy = plan::permissions_policy(&resources("arn:aws:", "us-west-2"));
-    let call = put_role_policy("us-west-2", "role", "role-policy", &policy).unwrap();
+    let document = serde_json::to_string(&policy).unwrap();
+    let call = iam_request(
+        "us-west-2",
+        PUT_ROLE_POLICY,
+        &[
+            ("RoleName", "role"),
+            ("PolicyName", "role-policy"),
+            ("PolicyDocument", document.as_str()),
+        ],
+    );
     assert_eq!(call.operation, "PutRolePolicy");
     let body = std::str::from_utf8(&call.body).unwrap();
     assert!(body.starts_with("Action=PutRolePolicy&Version=2010-05-08&RoleName=role"));
@@ -136,13 +152,13 @@ fn call_put_role_policy_sends_the_policy_name_and_document() {
 
 #[test]
 fn call_form_values_encode_reserved_characters() {
-    let call = put_role_policy(
+    let policy = plan::permissions_policy(&resources("arn:aws:", "us-west-2"));
+    let document = serde_json::to_string(&policy).unwrap();
+    let call = iam_request(
         "us-west-2",
-        "role",
-        "role-policy",
-        &plan::permissions_policy(&resources("arn:aws:", "us-west-2")),
-    )
-    .unwrap();
+        PUT_ROLE_POLICY,
+        &[("PolicyDocument", document.as_str())],
+    );
     let body = std::str::from_utf8(&call.body).unwrap();
     assert!(body.contains("aoss%3AAPIAccessAll"));
     assert!(body.contains("%2F"));
@@ -154,7 +170,7 @@ fn call_form_values_encode_reserved_characters() {
 fn call_xml_entities_are_decoded() {
     let body = br#"<Role><Arn>arn:aws:iam::1:role/a&amp;b</Arn></Role>"#;
     assert_eq!(
-        role_arn(body, "CreateRole").unwrap(),
+        child_text(body, "Role", "Arn", CREATE_ROLE).unwrap(),
         "arn:aws:iam::1:role/a&b"
     );
 }
@@ -163,7 +179,7 @@ fn call_xml_entities_are_decoded() {
 fn call_xml_cdata_is_read() {
     let body = br#"<Role><Arn><![CDATA[arn:aws:iam::1:role/c]]></Arn></Role>"#;
     assert_eq!(
-        role_arn(body, "CreateRole").unwrap(),
+        child_text(body, "Role", "Arn", CREATE_ROLE).unwrap(),
         "arn:aws:iam::1:role/c"
     );
 }

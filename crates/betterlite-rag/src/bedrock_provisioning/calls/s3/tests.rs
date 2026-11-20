@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::{object_key, object_url, put_object};
+use super::{object_key, put_object};
 
 fn header<'call>(call: &'call super::CallRequest, name: &str) -> Option<&'call str> {
     call.headers
@@ -65,8 +65,9 @@ fn call_put_object_keeps_a_dotted_bucket_in_the_path() {
 #[test]
 fn call_put_object_encodes_every_key_segment_and_keeps_the_slashes() {
     assert_eq!(object_key("data/my file+.txt"), "data/my%20file%2B.txt");
+    let call = put_object("us-west-2", "bucket", "data/a/b.txt", None, b"");
     assert_eq!(
-        object_url("us-west-2", "bucket", "data/a/b.txt"),
+        call.url,
         "https://bucket.s3.us-west-2.amazonaws.com/data/a/b.txt"
     );
 }

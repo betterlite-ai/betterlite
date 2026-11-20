@@ -205,12 +205,11 @@ pub(crate) fn new_provisioner(
     }
 }
 
-// a provisioner whose lazy initialization already ran, for the store tests
-pub(crate) fn initialized_provisioner(
-    config: &str,
-    transport: ScriptedTransport,
+// the store tests run after the lazy initialization, with the ids it would have found
+pub(crate) fn initialized(
+    provisioner: BedrockProvisioner<'static, ScriptedTransport>,
 ) -> BedrockProvisioner<'static, ScriptedTransport> {
-    let mut provisioner = new_provisioner(config, transport);
+    let mut provisioner = provisioner;
     provisioner.initialized = true;
     provisioner.state.s3_bucket = Some("bucket".to_owned());
     provisioner.state.data_source_id = Some("ds1".to_owned());

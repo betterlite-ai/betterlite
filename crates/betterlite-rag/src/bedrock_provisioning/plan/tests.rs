@@ -1,8 +1,9 @@
 #![cfg(test)]
 
+use super::index::index_body;
 use super::{
-    RoleResources, data_access_policy, encryption_policy, index_body, network_policy,
-    permissions_policy, trust_policy,
+    RoleResources, data_access_policy, encryption_policy, network_policy, permissions_policy,
+    trust_policy,
 };
 
 const ACCOUNT: &str = "123456789012";

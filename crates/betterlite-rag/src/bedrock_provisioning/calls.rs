@@ -1,15 +1,12 @@
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
-use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
-use serde::Serialize;
+use percent_encoding::{AsciiSet, CONTROLS};
 
 pub mod agent;
 pub mod aoss;
 pub mod error;
 pub mod query;
 pub mod s3;
-
-use error::CallError;
 
 // RFC 3986 keeps only ALPHA, DIGIT and -_.~ as they are, in a path segment and in a form value
 pub(super) const UNRESERVED: &AsciiSet = &CONTROLS
@@ -69,16 +66,4 @@ impl Debug for CallRequest {
             .field("body_length", &self.body.len())
             .finish()
     }
-}
-
-pub(super) fn encode_segment(value: &str) -> String {
-    utf8_percent_encode(value, UNRESERVED).to_string()
-}
-
-// an AWS document field is a compact JSON string inside the request body
-pub(super) fn document<Policy: Serialize>(
-    policy: &Policy,
-    operation: &'static str,
-) -> Result<String, CallError> {
-    serde_json::to_string(policy).map_err(|source| CallError::Serialize { operation, source })
 }

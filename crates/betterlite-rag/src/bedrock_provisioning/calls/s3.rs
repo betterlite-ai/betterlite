@@ -1,3 +1,4 @@
+use percent_encoding::utf8_percent_encode;
 use sha2::{Digest as _, Sha256};
 
 use super::CallRequest;
@@ -10,14 +11,9 @@ pub const DEFAULT_CONTENT_TYPE: &str = "application/octet-stream";
 #[must_use]
 pub fn object_key(key: &str) -> String {
     key.split('/')
-        .map(super::encode_segment)
+        .map(|segment| utf8_percent_encode(segment, super::UNRESERVED).to_string())
         .collect::<Vec<String>>()
         .join("/")
-}
-
-#[must_use]
-pub fn object_url(region: &str, bucket: &str, key: &str) -> String {
-    format!("{}/{}", s3_bucket_host(bucket, region), object_key(key))
 }
 
 #[must_use]
@@ -36,7 +32,7 @@ pub fn put_object(
         service: S3_SERVICE,
         signing_region: region.to_owned(),
         method: "PUT",
-        url: object_url(region, bucket, key),
+        url: format!("{}/{}", s3_bucket_host(bucket, region), object_key(key)),
         headers: vec![
             ("Content-Type".to_owned(), content_type.to_owned()),
             (
