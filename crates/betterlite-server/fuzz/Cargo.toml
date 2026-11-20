@@ -404,3 +404,10 @@ path = "fuzz_targets/team_admin_object.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "object_permissions"
+path = "fuzz_targets/object_permissions.rs"
+test = false
+doc = false
+bench = false
