@@ -1,6 +1,6 @@
 use rstest::rstest;
 
-use crate::user_agent_analytics::query::ActiveUsersQuery;
+use crate::user_agent_analytics::query::AnalyticsQuery;
 use crate::user_agent_analytics::query::TagFilter;
 
 fn substring(text: &str) -> TagFilter {
@@ -26,5 +26,5 @@ fn decoding_a_query_string_gives_its_tag_filter(
     #[case] raw: &str,
     #[case] expected: Option<TagFilter>,
 ) {
-    assert_eq!(ActiveUsersQuery::decode(raw).filter(), expected);
+    assert_eq!(AnalyticsQuery::decode(raw).filter(), expected);
 }
