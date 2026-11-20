@@ -1,0 +1,5 @@
+kind: helper
+name: decisions-providers-supported-seed
+call: {b10022: {}}
+env: {}
+compare: {ignore: []}
