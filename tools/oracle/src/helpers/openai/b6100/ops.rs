@@ -86,25 +86,22 @@ pub(super) fn run(input: &Input) -> HelperResult {
 
 // the three reported-cost shapes in one family, cheapest first as LiteLLM reads them
 fn cost_value(input: &Input) -> Value {
-    if !input.costs.is_empty() {
-        return cost_steps(input.costs.iter().map(reported_cost));
-    }
-    if !input.cost_bodies.is_empty() {
-        return cost_steps(
-            input
-                .cost_bodies
-                .iter()
-                .map(|text| reported_cost_from_bytes(text.as_bytes())),
-        );
-    }
-    cost_steps(input.cost_headers.iter().map(reported_cost_from_headers))
-}
-
-fn cost_steps<Costs>(costs: Costs) -> Value
-where
-    Costs: Iterator<Item = Option<Decimal>>,
-{
-    let steps: Vec<Option<f64>> = costs.map(|cost| cost?.to_f64()).collect();
+    let costs: Vec<Option<Decimal>> = if !input.costs.is_empty() {
+        input.costs.iter().map(reported_cost).collect()
+    } else if !input.cost_bodies.is_empty() {
+        input
+            .cost_bodies
+            .iter()
+            .map(|text| reported_cost_from_bytes(text.as_bytes()))
+            .collect()
+    } else {
+        input
+            .cost_headers
+            .iter()
+            .map(reported_cost_from_headers)
+            .collect()
+    };
+    let steps: Vec<Option<f64>> = costs.into_iter().map(|cost| cost?.to_f64()).collect();
     json!({"steps": steps})
 }
 
