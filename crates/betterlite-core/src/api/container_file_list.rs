@@ -1,3 +1,4 @@
+pub mod asynchronous;
 pub mod error;
 pub mod execution;
 mod mock;
@@ -18,8 +19,7 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 
 use self::error::{ContainerFileListError, ContainerFileListFailure, failure};
-// ast-grep-ignore: no-long-names
-use self::execution::{async_container_file_list_handler, container_file_list_handler};
+use self::execution::blocking::container_file_list_handler;
 use self::prepare::{Prepared, prepare_call};
 use crate::api::container_file_endpoints::handler::ContainerConfigLookup;
 
@@ -73,7 +73,7 @@ pub struct ContainerFileListDeps<'deps> {
     pub request_timeout_seconds: f64,
 }
 
-// LiteLLM's list_container_files: the body below, run through the blocking handler
+// LiteLLM's list_container_files: mock first, then the blocking handler runs the call it prepared
 pub fn list_container_files<Source, Hook, Configs>(
     clients: &Source,
     hook: &Hook,
@@ -86,12 +86,12 @@ where
     Hook: PreCallHook,
     Configs: ContainerConfigLookup,
 {
-    let prepared = prepare_call(configs, &deps, request, caller_defaults(request))?;
+    let prepared = prepare_call(configs, &deps, request)?;
     let ready = match prepared {
         Prepared::Mock(response) => return Ok(response),
         Prepared::Call(ready) => ready,
     };
-    let call = ready.handler_call(request, deps.logging);
+    let call = ready.handler_call::<Source>(request, deps.logging);
     container_file_list_handler(clients, hook, &call).map_err(|error| {
         failure(
             ContainerFileListError::Handler(error),
@@ -99,37 +99,6 @@ where
             deps.redactor,
         )
     })
-}
-
-// LiteLLM's alist_container_files: the same body, awaited through the async handler
-pub async fn alist_container_files<Source, Hook, Configs>(
-    clients: &Source,
-    hook: &Hook,
-    configs: &Configs,
-    deps: ContainerFileListDeps<'_>,
-    request: &ContainerFileListRequest<'_>,
-) -> Result<ContainerFileListResponse, ContainerFileListFailure>
-where
-    Source: ClientSource,
-    Hook: PreCallHook,
-    Configs: ContainerConfigLookup,
-{
-    let prepared = prepare_call(configs, &deps, request, caller_defaults(request))?;
-    let ready = match prepared {
-        Prepared::Mock(response) => return Ok(response),
-        Prepared::Call(ready) => ready,
-    };
-    let call = ready.handler_call(request, deps.logging);
-    // ast-grep-ignore: no-long-names
-    async_container_file_list_handler(clients, hook, &call)
-        .await
-        .map_err(|error| {
-            failure(
-                ContainerFileListError::Handler(error),
-                &ready.provider,
-                deps.redactor,
-            )
-        })
 }
 
 #[path = "container_file_list/tests/support.rs"]

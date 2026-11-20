@@ -103,28 +103,23 @@ pub fn failure(
 }
 
 fn handler_class(error: &FileListHandlerError, provider: &str, redactor: &Redactor) -> ErrorClass {
-    match error {
+    let (exception, synthesized) = match error {
         FileListHandlerError::Params(ContainerFileHttpError::ParamType { field, .. }) => {
-            named_field_class(error.to_string(), *field, provider)
+            return named_field_class(error.to_string(), *field, provider);
         }
-        FileListHandlerError::Provider(provider_error) => {
-            provider_class(provider_error, provider, false, redactor)
-        }
-        FileListHandlerError::Transport(transport_error) => {
-            provider_class(transport_error, provider, true, redactor)
-        }
-        FileListHandlerError::Config(ContainerError::Upstream(upstream)) => {
-            provider_class(upstream, provider, false, redactor)
-        }
+        FileListHandlerError::Provider(provider_error) => (provider_error, false),
+        FileListHandlerError::Transport(transport_error) => (transport_error, true),
+        FileListHandlerError::Config(ContainerError::Upstream(upstream)) => (upstream, false),
         FileListHandlerError::Params(_)
         | FileListHandlerError::Config(_)
         | FileListHandlerError::Client(_)
         | FileListHandlerError::Logging(_)
         | FileListHandlerError::Encoding(_)
         | FileListHandlerError::QueryValue { .. } => {
-            value_error(error.to_string(), provider, redactor)
+            return value_error(error.to_string(), provider, redactor);
         }
-    }
+    };
+    provider_class(exception, provider, synthesized, redactor)
 }
 
 // a provider answer keeps its status, while _handle_error's synthesized one lets the message decide
@@ -134,16 +129,8 @@ fn provider_class(
     synthesized: bool,
     redactor: &Redactor,
 ) -> ErrorClass {
-    let raw = RawException {
-        model: MODEL.to_owned(),
-        custom_llm_provider: provider.to_owned(),
-        error_str: error.message.clone(),
-        status_code: Some(error.status_code),
-        status_code_is_synthesized: synthesized,
-        message: Some(error.message.clone()),
-        body: None,
-        exception_type: String::new(),
-    };
+    let mut raw = exception(error.message.clone(), provider, Some(error.status_code));
+    raw.status_code_is_synthesized = synthesized;
     dispatch(&DispatchInput::Raw(Box::new(raw)), redactor)
 }
 

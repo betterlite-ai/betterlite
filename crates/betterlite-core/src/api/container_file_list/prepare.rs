@@ -17,7 +17,7 @@ use serde_json::Number;
 use super::error::{ContainerFileListError, ContainerFileListFailure, failure};
 use super::execution::ContainerFileListCall;
 use super::mock::mock_response;
-use super::{CALL_TYPE, Caller, ContainerFileListDeps, ContainerFileListRequest};
+use super::{CALL_TYPE, Caller, ContainerFileListDeps, ContainerFileListRequest, caller_defaults};
 use crate::api::container_file_endpoints::handler::ContainerConfigLookup;
 use crate::containers::container_request_parameters::{
     ContainerProviderConfig, DecodedContainerRequest, get_provider_container_config,
@@ -66,22 +66,21 @@ pub(crate) fn prepare_call<'deps, Configs>(
     configs: &'deps Configs,
     deps: &ContainerFileListDeps<'_>,
     request: &ContainerFileListRequest<'_>,
-    caller: Caller<'_>,
 ) -> Result<Prepared<'deps>, ContainerFileListFailure>
 where
     Configs: ContainerConfigLookup,
 {
+    let caller = caller_defaults(request);
     let kwargs = call_kwargs(request);
-    match mock_response(&kwargs) {
-        Ok(Some(response)) => return Ok(Prepared::Mock(response)),
-        Ok(None) => {}
-        Err(error) => {
-            return Err(failure(
-                ContainerFileListError::Mock(error),
-                caller.provider,
-                deps.redactor,
-            ));
-        }
+    let mock = mock_response(&kwargs).map_err(|error| {
+        failure(
+            ContainerFileListError::Mock(error),
+            caller.provider,
+            deps.redactor,
+        )
+    })?;
+    if let Some(response) = mock {
+        return Ok(Prepared::Mock(response));
     }
     let params = request_params(request, &kwargs).map_err(|source| {
         failure(

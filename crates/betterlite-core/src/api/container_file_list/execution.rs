@@ -1,3 +1,5 @@
+pub mod blocking;
+
 use std::collections::BTreeMap;
 use std::sync::{Mutex, PoisonError};
 
@@ -13,8 +15,8 @@ use betterlite_openai::containers::container_file_http::request::{
 };
 use betterlite_openai::containers::container_file_http::response::raise_for_error_status;
 use betterlite_openai::containers::container_file_http::transport::{
-    AsyncClient as _, BlockingClient as _, ClientSource, ContainerHttpReply, ContainerHttpRequest,
-    ContainerMethod, Selected, TransferError,
+    AsyncClient as _, ClientSource, ContainerHttpReply, ContainerHttpRequest, ContainerMethod,
+    Selected, TransferError,
 };
 use betterlite_openai::openai_base_config::Object;
 use indexmap::IndexMap;
@@ -40,29 +42,7 @@ pub struct ContainerFileListCall<'call, Source: ClientSource> {
     pub async_client: Option<&'call Source::Asynchronous>,
 }
 
-// llm_http_handler's container_file_list_handler
-pub fn container_file_list_handler<Source, Hook>(
-    clients: &Source,
-    hook: &Hook,
-    call: &ContainerFileListCall<'_, Source>,
-) -> Result<ContainerFileListResponse, FileListHandlerError>
-where
-    Source: ClientSource,
-    Hook: PreCallHook,
-{
-    let params = read_params(call.litellm_params)?;
-    let client = Selected::choose(call.blocking_client, || {
-        clients.blocking_client(params.ssl_verify.as_ref())
-    })?;
-    let request = prepare_request(hook, call, &params)?;
-    let reply = client
-        .get()
-        .send(&request)
-        .map_err(|error| transport_error(call.config, error))?;
-    finish(call.config, &reply)
-}
-
-// llm_http_handler's async_container_file_list_handler, the same flow over the async client
+// llm_http_handler's async_container_file_list_handler, in LiteLLM's order: client, request, send, transform
 // ast-grep-ignore: no-long-names
 pub async fn async_container_file_list_handler<Source, Hook>(
     clients: &Source,
@@ -78,16 +58,14 @@ where
         clients.async_client(params.ssl_verify.as_ref())
     })?;
     let request = prepare_request(hook, call, &params)?;
-    let reply = client
-        .get()
-        .send(&request)
+    let reply = AsyncClient::send(client.get(), &request)
         .await
         .map_err(|error| transport_error(call.config, error))?;
     finish(call.config, &reply)
 }
 
 // validate_environment, get_complete_url, the provider transform, pre_call, then the GET itself
-fn prepare_request<Source, Hook>(
+pub(crate) fn prepare_request<Source, Hook>(
     hook: &Hook,
     call: &ContainerFileListCall<'_, Source>,
     params: &CallParams<'_>,
@@ -202,7 +180,7 @@ where
 }
 
 // raise_for_error_status, then the provider's response transform
-fn finish(
+pub(crate) fn finish(
     config: &dyn BaseContainerConfig,
     reply: &ContainerHttpReply,
 ) -> Result<ContainerFileListResponse, FileListHandlerError> {
@@ -213,7 +191,10 @@ fn finish(
 }
 
 // _handle_error: a transport failure has no provider status, so the config's exception carries a synthesized 500
-fn transport_error(config: &dyn BaseContainerConfig, error: TransferError) -> FileListHandlerError {
+pub(crate) fn transport_error(
+    config: &dyn BaseContainerConfig,
+    error: TransferError,
+) -> FileListHandlerError {
     FileListHandlerError::Transport(config.get_error_class(
         &error.to_string(),
         500,
