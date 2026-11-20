@@ -31,6 +31,7 @@ where
 }
 
 // _handle_error normalizes the status, text and headers, then the provider config names the class
+#[must_use]
 pub fn classed<C>(config: &C, facts: &FailureFacts) -> BaseLlmException
 where
     C: GenerateContentHttpConfig,
@@ -47,6 +48,7 @@ where
 }
 
 // A request the wire cannot carry fails inside LiteLLM's try block too, so it gets the same synthesized 500
+#[must_use]
 pub fn wire_failure<C>(config: &C, display: String) -> BaseLlmException
 where
     C: GenerateContentHttpConfig,
