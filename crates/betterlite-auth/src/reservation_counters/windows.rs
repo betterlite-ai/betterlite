@@ -128,7 +128,7 @@ fn timestamp_text(timestamp: Timestamp) -> String {
 fn system_time(moment: DateTime<FixedOffset>) -> Option<SystemTime> {
     let seconds = moment.timestamp();
     let nanos = moment.timestamp_subsec_nanos();
-    let base = if seconds < 0 {
+    let base = if seconds.is_negative() {
         UNIX_EPOCH.checked_sub(Duration::from_secs(seconds.unsigned_abs()))?
     } else {
         UNIX_EPOCH.checked_add(Duration::from_secs(u64::try_from(seconds).ok()?))?

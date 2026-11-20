@@ -174,6 +174,12 @@ async fn member_effective_overflow_skips_the_counter() {
 #[case::zero_membership_budget(Some(r#"{"max_budget":0}"#), None)]
 #[case::zero_default_budget(Some(r#"{"max_budget":null}"#), Some(r#"{"max_budget":0}"#))]
 #[case::negative_default_budget(Some(r#"{"max_budget":null}"#), Some(r#"{"max_budget":-5}"#))]
+#[case::zero_default_with_an_active_increase(
+    Some(
+        r#"{"max_budget":null,"temp_budget_increase":2,"temp_budget_expiry":"2024-01-03T00:00:00Z"}"#
+    ),
+    Some(r#"{"max_budget":0}"#)
+)]
 #[case::increase_cancels_the_cap(
     Some(
         r#"{"max_budget":1,"temp_budget_increase":-2,"temp_budget_expiry":"2024-01-03T00:00:00Z"}"#

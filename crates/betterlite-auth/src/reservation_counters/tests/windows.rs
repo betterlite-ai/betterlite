@@ -1,3 +1,5 @@
+use std::time::{Duration, UNIX_EPOCH};
+
 use rust_decimal::Decimal;
 
 use super::support::{Fixture, Logs, auth, dec, decoded_row, epoch_seconds, only};
@@ -72,6 +74,21 @@ async fn window_utc_treats_a_naive_reset_at_as_utc() {
         epoch_seconds(counter.window_start.expect("the window start")),
         1_704_153_600
     );
+}
+
+#[tokio::test]
+async fn window_start_accepts_a_reset_before_the_epoch() {
+    let mut fixture = Fixture::new();
+    fixture.token = auth(concat!(
+        r#"{"token":"tok","budget_limits":["#,
+        r#"{"budget_duration":"1d","max_budget":5,"reset_at":"1969-12-30T00:00:00Z"}]}"#,
+    ));
+    let list = fixture.counters().await;
+    let counter = only(&list);
+    let expected = UNIX_EPOCH
+        .checked_sub(Duration::from_secs(259_200))
+        .expect("the pre-epoch start");
+    assert_eq!(counter.window_start, Some(expected));
 }
 
 #[tokio::test]
