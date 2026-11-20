@@ -1,6 +1,5 @@
 mod scenario;
 
-use betterlite_router::affinity_claims::identity::AffinityKey;
 use betterlite_router::affinity_claims::pin::{AffinityPin, PinError, StoredPin};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
