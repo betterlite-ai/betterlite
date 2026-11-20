@@ -39,7 +39,10 @@ pub(crate) fn credentials() -> Credentials {
     }
 }
 
-pub(crate) fn block_on<F: Future>(future: F) -> Result<F::Output, Box<HelperError>> {
+pub(crate) fn block_on<F>(future: F) -> Result<F::Output, Box<HelperError>>
+where
+    F: Future,
+{
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()

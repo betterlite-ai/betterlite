@@ -88,7 +88,7 @@ impl Operation<'_> {
         })?;
         let signing = Signing {
             headers: validate_environment(self.headers),
-            optional_params: self.signing_params,
+            optional_params: &self.signing_params,
             request_data: &call.body,
             api_base: &call.url,
             api_key: self.api_key,

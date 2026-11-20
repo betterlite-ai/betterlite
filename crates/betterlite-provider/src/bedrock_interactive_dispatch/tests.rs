@@ -36,7 +36,6 @@ use betterlite_openai::response_params::bundled::BundledReasoningModels;
 use betterlite_openai::response_params::capabilities::{ModelInfo, ResponsesCapabilities};
 use betterlite_openai::response_params::params::ResponsesParams;
 use betterlite_openai::search::provider::SearchQuery as SearchInput;
-use betterlite_prompts::arguments::json::Json as PromptJson;
 use betterlite_prompts::media::inline::RemoteMediaFetcher;
 use betterlite_prompts::media_fetch::error::ImageFetchError;
 use betterlite_streaming::stream_base_assembly::provider_metadata::ChatConfigSelection;
@@ -78,7 +77,10 @@ fn token(text: &str) -> SecretString {
     SecretString::from(text.to_owned())
 }
 
-fn block_on<F: Future>(future: F) -> F::Output {
+fn block_on<F>(future: F) -> F::Output
+where
+    F: Future,
+{
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -94,19 +96,25 @@ fn json(source: &str) -> Json {
     serde_json::from_str(source).unwrap()
 }
 
-fn pjson(source: &str) -> PromptJson {
+fn pjson<T>(source: &str) -> T
+where
+    T: serde::de::DeserializeOwned,
+{
     serde_json::from_str(source).unwrap()
 }
 
 fn text_field<'body>(object: &'body Object, name: &str) -> Option<&'body str> {
-    object.get(name).and_then(PromptJson::as_str)
+    object.get(name).and_then(|value| value.as_str())
 }
 
 fn object_field<'body>(object: &'body Object, name: &str) -> Option<&'body Object> {
-    object.get(name).and_then(PromptJson::as_object)
+    object.get(name).and_then(|value| value.as_object())
 }
 
-fn from_serialized<T: serde::Serialize>(value: &T) -> Json {
+fn from_serialized<T>(value: &T) -> Json
+where
+    T: serde::Serialize,
+{
     serde_json::from_str(&serde_json::to_string(value).unwrap()).unwrap()
 }
 
