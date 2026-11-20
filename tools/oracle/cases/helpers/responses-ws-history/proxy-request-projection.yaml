@@ -1,0 +1,74 @@
+kind: helper
+name: proxy-request-projection
+call:
+  responses_ws_history:
+    setup:
+      model: openai/gpt-4o-mini
+      custom_llm_provider: null
+      api_key: null
+      api_base: null
+      timeout: null
+      first_message: null
+      litellm_metadata: null
+      kwargs: {}
+    credentials: []
+    proxy:
+    - input:
+      - hello
+      store: null
+      tools: null
+      tool_choice: auto
+      instructions: null
+      metadata:
+        tenant: t1
+    - litellm_metadata:
+        proxy_server_request:
+          body:
+            tenant: old
+            model: old-model
+          headers:
+            x-test: y
+        trace_id: t1
+      input: hi
+      store: true
+      instructions: ins
+    - litellm_metadata:
+        proxy_server_request: not-a-dict
+      input: hi
+    - litellm_metadata:
+        proxy_server_request: {}
+      input: hi
+    - litellm_metadata: {}
+      input: hi
+    - input: hi
+      store: false
+      tools:
+      - type: function
+    - input: null
+    - litellm_metadata:
+        proxy_server_request:
+          body:
+            tenant: old
+            model: old-model
+        trace_id: t1
+      input: hi
+      metadata:
+        m: 1
+    frames: []
+    warmup: []
+    warmup_ids: []
+    case:
+      inputs: []
+      completions: []
+      store: []
+      first: resp_missing
+      append:
+        type: message
+        role: assistant
+        content: []
+      missing: resp_missing
+      applied: []
+      base_kwargs: []
+env: {}
+compare:
+  ignore: []

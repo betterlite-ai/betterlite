@@ -1,0 +1,33 @@
+kind: helper
+name: chat-provider-prefix
+call:
+  bedrock_mantle_settings:
+    chat_provider_prefix:
+      catalog:
+        chat_models: [gpt-4o]
+        text_models: [gpt-3.5-turbo-instruct]
+      cases:
+        - model: openai.gpt-oss-120b
+          api_key: explicit-fixture-key
+          error: {message: mantle fixture failure, status_code: 400}
+        - model: openai.gpt-oss-120b
+          project_id: project-fixture
+          headers: {X-Caller: fixture}
+          error:
+            message: mantle fixture failure
+            status_code: 400
+            headers: {X-Request-Id: request-fixture}
+        - model: gpt-4o
+          reasoning: supported
+          json_mode: true
+          sync_stream: true
+          error: {message: mantle fixture failure, status_code: 429}
+        - model: gpt-5.2
+          reasoning: unsupported
+          json_mode: false
+          error: {message: mantle fixture failure, status_code: 400}
+        - model: gpt-5.2
+          reasoning: panic
+          error: {message: mantle fixture failure, status_code: 400}
+env: {}
+compare: {ignore: []}

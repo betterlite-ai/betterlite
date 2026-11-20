@@ -1,0 +1,5 @@
+kind: helper
+name: azure-assistants-seed-run-instructions-tools
+call: {azure_assistants: {run_instructions_tools: [{run: {thread_id: thread_a, assistant_id: asst_a, instructions: base, tools: [{type: code_interpreter}]}}]}}
+env: {}
+compare: {ignore: []}

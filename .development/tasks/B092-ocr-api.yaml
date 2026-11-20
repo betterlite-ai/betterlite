@@ -21,6 +21,8 @@ description: >-
   own the SDK side of OCR (providers, provider choice, request preparation and the aocr function).
   B092 owns the HTTP route and the wiring.
 
+
+  Booted case from B036. Add providers/xai-mistral/ocr-hook-aliases: Mistral OCR through /v1/ocr and /ocr with a guardrail that uses B036's mistral_ocr_guardrail translation, so the request hook sees a nonempty document_url or image_url as text and the response hook sees the truthy page markdown, compared with LiteLLM.
 scope:
   paths:
     - crates/betterlite-server/src/api.rs
@@ -35,6 +37,7 @@ scope:
     - tools/oracle/helpers/b092/**
     - tools/oracle/src/helpers/server/b092.rs
     - tools/oracle/src/helpers/server/b092/**
+    - tools/oracle/cases/providers/xai-mistral/ocr-hook-aliases.yaml
   lint_tables: false
 
 references:
@@ -56,7 +59,8 @@ dod:
     proof: [route-tests, oracle]
   - text: The wiring adapters call the Azure, AWS and Vertex services once per OCR call and add no credential logic.
     proof: [wiring-tests]
-
+  - text: "Mistral OCR answers through both aliases, and B036's OCR guardrail translation sees the same texts and writes back the same pages as LiteLLM."
+    proof: [oracle]
 checks:
   optional: []
   commands:
@@ -72,6 +76,7 @@ oracle_cases:
   - tools/oracle/cases/ocr-routes/multipart-upload.yaml
   - tools/oracle/cases/ocr-routes/native-format.yaml
   - tools/oracle/cases/ocr-routes/auth-hooks-and-errors.yaml
+  - tools/oracle/cases/providers/xai-mistral/ocr-hook-aliases.yaml
 
 deviations: []
 

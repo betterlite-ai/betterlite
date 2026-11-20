@@ -1,0 +1,11 @@
+kind: helper
+name: auth-invalidation-access-group-seed
+call:
+  auth_invalidation:
+    scenario: access
+    management_ttl: 45.0
+    access_group_ttl: 600.0
+    access_group_id: ag-seed
+    table: {access_group_id: ag-seed, access_group_name: Seed Group}
+env: {DEFAULT_ACCESS_GROUP_CACHE_TTL: "600"}
+compare: {ignore: []}

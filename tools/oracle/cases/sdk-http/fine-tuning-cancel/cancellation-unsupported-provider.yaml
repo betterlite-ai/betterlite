@@ -1,0 +1,36 @@
+kind: sdk_http
+name: sdk-http-fine-tuning-cancel-failures
+env: {}
+call:
+  fine_tuning_cancel:
+    runs:
+      - fine_tuning_job_id: ft_vertex
+        custom_llm_provider: vertex_ai
+      - fine_tuning_job_id: ft_none
+        custom_llm_provider: null
+      - fine_tuning_job_id: ft_bad_timeout
+        custom_llm_provider: openai
+        base: param
+        params:
+          api_key: sk-param
+          timeout: bad
+      - fine_tuning_job_id: ft_missing
+        custom_llm_provider: openai
+        base: param
+        params:
+          api_key: sk-param
+upstream:
+  - status: 404
+    headers: {content-type: application/json}
+    body:
+      error:
+        message: no such job
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - {pointer: /fine_tuning_cancel/value/runs/0/error/message, why: LiteLLM prefixes the class name and betterlite writes the source message}
+    - {pointer: /fine_tuning_cancel/value/runs/1/error/message, why: LiteLLM prefixes the class name and betterlite writes the source message}
+    - {pointer: /fine_tuning_cancel/value/runs/2/error/message, why: Python's float conversion and betterlite's timeout parser word the failure differently}
+    - {pointer: /fine_tuning_cancel/value/runs/3/error/message, why: the SDK renders the status and body while betterlite writes its own status line}

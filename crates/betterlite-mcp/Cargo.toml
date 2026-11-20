@@ -8,6 +8,7 @@ publish.workspace = true
 [dependencies]
 aws-lc-rs = "1.18.2"
 base64 = "0.23.1"
+betterlite-auth = { path = "../betterlite-auth" }
 betterlite-config = { path = "../betterlite-config" }
 betterlite-db = { path = "../betterlite-db" }
 betterlite-env = { path = "../betterlite-env" }
@@ -16,7 +17,7 @@ betterlite-openai = { path = "../betterlite-openai" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-secrets = { path = "../betterlite-secrets" }
 bytes = "1.12.1"
-chrono = { version = "0.4.45", default-features = false, features = ["serde"] }
+chrono = { version = "0.4.45", default-features = false, features = ["alloc", "serde"] }
 derive_more = { version = "2.1.1", default-features = false, features = ["display"] }
 futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
 hex.workspace = true

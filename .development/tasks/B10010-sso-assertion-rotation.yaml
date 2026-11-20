@@ -1,0 +1,104 @@
+id: B10010
+title: SSO assertion rows and master-key rotation
+description: >-
+  Master-key rotation re-encrypts the stored SSO identity assertions as one of its stages (key_management_endpoints.py L5324-L5331), and B1700 and B2331 build that rotation service. They need only the table's rows and this one function, not the assertion cache, the store or the MCP token exchange, so those parts of B4663 sit apart: this task builds the row access in betterlite-db and rotate_sso_identity_assertions_master_key (sso_assertion_store.py L317-L356) in betterlite-mcp. B10011 builds the cache, persist and the retention gate on the same rows, and B4663 the reads.
+
+
+  Layout. crates/betterlite-db/src/sso_assertion_rows.rs with its tests in sso_assertion_rows/tests.rs, and crates/betterlite-mcp/src/sso_assertions/rotation.rs with its tests in sso_assertions/rotation/tests.rs. Both files are empty stubs on main and their parents declare them. betterlite-db is already a path dependency of betterlite-mcp and doesn't depend on it, so there is no cycle. sso_assertion_rows is the only place that holds SQL for these two tables. Names stop at 30 characters, so rotate_sso_identity_assertions_master_key is rotation::rotate_assertions; B1700 uses the LiteLLM name in its text.
+
+
+  sso_assertion_rows. AssertionRow { user_id, assertion_b64 } and the trait AssertionRows (native async fn, type Error: std::error::Error + Send + Sync + 'static) with find(user_id), find_all(), upsert(user_id, assertion_b64), update(user_id, assertion_b64) and id_jag_server_exists(). These five replace LiteLLM's _SSOAssertionTable and _MCPServerTable views (L42-L67). PostgresAssertionRows implements the trait over PostgresStore::session() with plain SQL on "LiteLLM_SSOIdentityAssertion" and "LiteLLM_MCPServerTable"; sync_store.rs shows the form. upsert is one INSERT with ON CONFLICT (user_id) DO UPDATE. id_jag_server_exists asks for any row with auth_type 'oauth2_id_jag'. update on a row that has gone is not an error. The module also holds the decrypt field name "sso_identity_assertion" and the policy DecryptPolicy { log: FailureLog::Debug, value: FailureValue::Nothing } as two pub constants, since rotation here and B4663's row read both decrypt with them.
+
+
+  The shared fake. MemoryAssertionRows in the same module is a pub in-memory AssertionRows: rows in insertion order, an id_jag flag, a read count and a write count, and an optional failure for each method. It is pub and not cfg(test) because the native tests of this task, of B10011 and of B4663 and the Rust side of all three helper adapters use it; nobody writes a second fake.
+
+
+  rotation. rotate_assertions(rows: &R, cipher: &DbCipher, new_master_key: &SecretString) with R: AssertionRows reads find_all and then works one row at a time, so the table's plaintext is never held at once. Each row is decrypted under the current key with the field name and policy above. A row that won't decrypt logs the warning "rotate_sso_identity_assertions_master_key: could not decrypt assertion for user_id=%s, skipping" and the loop goes on. Otherwise it calls B1600's cipher.encrypt_value with Some(new_master_key) and update. The last step logs at info "rotate_sso_identity_assertions_master_key: rotated %d row(s), skipped %d". An encrypt or update failure returns this module's error enum at once; the warn-and-continue around the call is the caller's. The function never decodes the payload, so it needs nothing from B10003.
+
+
+  Tests. sso_assertion_rows::tests run on B860's Postgres: upsert creates and replaces a row, upsert and update both move updated_at, find and find_all return the stored text, update on a missing row is not an error, and id_jag_server_exists looks at auth_type alone. sso_assertions::rotation::tests run on MemoryAssertionRows: every readable row ends up decryptable under the new key and not under the old one, an undecryptable row keeps its text, the counts in the info line, and an update failure on the second of three rows returns the error with the first row rotated and the third untouched.
+
+
+  Oracle. Helper cases on the b10010 operation; no route reaches this code, and B1700 and B2331 test the whole rotation. The Python adapter sets LITELLM_SALT_KEY to a fixed value, patches the Prisma client with an in-memory double of the two tables the way LiteLLM's test_sso_assertion_store.py does, and calls the pinned rotate_sso_identity_assertions_master_key. Write that double once in tools/oracle/helpers/b10010/prisma_double.py with all five operations the store uses (find_unique, find_many, upsert, update and find_first), since B10011's and B4663's adapters import it from there. A case seeds rows as plaintext payloads the adapter encrypts under the salt key, or as raw text that is not ciphertext, then rotates to a new key. The answer is each row's plaintext read back under the new key, the unchanged text of a skipped row, the log lines and the update count, never ciphertext, because the nonce differs per run.
+scope:
+  paths:
+    - crates/betterlite-mcp/src/sso_assertions/rotation.rs
+    - crates/betterlite-mcp/src/sso_assertions/rotation/**
+    - crates/betterlite-db/src/sso_assertion_rows.rs
+    - crates/betterlite-db/src/sso_assertion_rows/**
+    - crates/betterlite-mcp/Cargo.toml
+    - Cargo.lock
+    - tools/oracle/cases/helpers/sso-assertion-rotation/**
+    - tools/oracle/fuzz/corpus/helper_case/sso-assertion-rotation-*
+    - tools/oracle/helpers/b10010.py
+    - tools/oracle/helpers/b10010/**
+    - tools/oracle/src/helpers/mcp/b10010.rs
+    - tools/oracle/src/helpers/mcp/b10010/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_store.py#L42-L67
+    why: The table operations AssertionRows replaces, find_first included.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_store.py#L317-L356
+    why: Owned. The row-at-a-time rotation, its skip warning and its count line.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_store.py#L196-L198
+    why: The find_first on auth_type that id_jag_server_exists answers, with no status filter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/schema.prisma#L476-L483
+    why: The table. updated_at is @updatedAt, so Prisma writes it and no database trigger does.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5324-L5331
+    why: Call site. The rotation failure is caught and warned about here, in B1700's and B2331's code.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/proxy/_experimental/mcp_server/outbound_credentials/test_sso_assertion_store.py#L57-L70
+    why: LiteLLM's own Prisma double, a model for the shared one in the helper adapter.
+dod:
+  - text: rotate_assertions moves every readable row to the new key and logs the counts, and a row that won't decrypt is skipped with the fixed warning and keeps its text.
+    proof: [rotation-tests, oracle, helper-python]
+  - text: An update failure during rotation stops at that row and returns the error, with earlier rows left rotated and later rows untouched.
+    proof: [rotation-tests]
+  - text: No plaintext payload or token text appears in a log line or error text of the rotation.
+    proof: [rotation-tests]
+  - text: On real Postgres, upsert creates and replaces a row, upsert and update both move updated_at, find and find_all return the stored text, update on a missing row is not an error, and id_jag_server_exists ignores every column but auth_type.
+    proof: [rows-tests]
+  - text: The b10010 adapter, with the shared Prisma double, passes the strict Python checks and a new helper seed names the operation.
+    proof: [helper-python, helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: rows-tests
+      why: The Postgres row tests or the shared fake's tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^sso_assertion_rows::tests::/)'
+    - id: rotation-tests
+      why: The master-key rotation tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^sso_assertions::rotation::tests::/)'
+    - id: helper-python
+      why: The b10010 adapter or the shared Prisma double is missing or fails the strict Python checks.
+      run: >-
+        test -f tools/oracle/helpers/b10010/prisma_double.py &&
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10010.py tools/oracle/helpers/b10010)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b10010 seed reaches the shared helper case parser.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/sso-assertion-rotation-*")" &&
+        grep -lE 'b10010"?:' tools/oracle/fuzz/corpus/helper_case/sso-assertion-rotation-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-mcp --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/sso-assertion-rotation/rotate-rows.yaml
+  - tools/oracle/cases/helpers/sso-assertion-rotation/rotate-skips-undecryptable.yaml
+deviations: []
+out_of_scope:
+  - "SSOAssertionCache, persist_sso_identity_assertion, ema_assertion_retention_enabled, retain_sso_identity_assertion_for_ema, the DbSSOAssertionStore struct and the mcp_sso_assertion_cache section: B10011."
+  - "_read_assertion_from_db, fetch_sso_identity_assertion, AssertionStoreUnavailable, the SSOAssertionStore protocol and the read side of DbSSOAssertionStore: B4663."
+  - "SSOIdentityAssertion, the stored payload and its encode and decode: B10003."
+  - "The warn-and-continue around this call inside _rotate_master_key: B1700 and B2331. The table's entry in the ciphertext migration list: B730."
+  - "encrypt_value_helper and decrypt_value_helper (the StoredCipher): B1600. The table and its migration: B707."
+pitfalls:
+  - "The migration gives updated_at a DEFAULT and no trigger, so upsert's DO UPDATE arm and update must set updated_at = CURRENT_TIMESTAMP themselves or the column freezes at the first login."
+  - "id_jag_server_exists must not filter on status or approval_status: LiteLLM's find_first looks at auth_type alone, so a pending server still turns retention on."
+  - "An undecryptable row is skipped and left under the old key, and the rotated count only goes up after the update, so skipped plus rotated equals the rows read."
+  - "The loop has no transaction, so a failed update leaves earlier rows under the new key; don't wrap it in one."
+  - "Rotation stops on a failed update and returns the error; catching it here would hide the 'Failed to rotate SSO identity assertions' warning the caller logs."
+  - "Rotation doesn't touch any cache, since a cached entry holds decrypted fields that stay valid under the new key."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

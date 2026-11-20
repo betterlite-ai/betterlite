@@ -1,0 +1,41 @@
+kind: helper
+name: violation-names-never-include-match
+call:
+  b3722:
+    bedrock_decisions:
+      violation_names:
+        response:
+          action: GUARDRAIL_INTERVENED
+          assessments:
+            - topicPolicy:
+                topics:
+                  - name: finance
+                    action: BLOCKED
+            - contentPolicy:
+                filters:
+                  - type: HATE
+                    action: BLOCKED
+            - wordPolicy:
+                customWords:
+                  - match: secret
+                    action: BLOCKED
+                managedWordLists:
+                  - match: profane
+                    type: PROFANITY
+                    action: BLOCKED
+            - sensitiveInformationPolicy:
+                piiEntities:
+                  - type: EMAIL
+                    match: a@b.c
+                    action: BLOCKED
+                regexes:
+                  - name: account
+                    regex: '\d{4}'
+                    match: "1234"
+                    action: BLOCKED
+                  - name: ""
+                    regex: '\d+'
+                    match: "4111"
+                    action: BLOCKED
+env: {}
+compare: {ignore: []}
