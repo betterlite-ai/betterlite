@@ -20,7 +20,7 @@ use secrecy::ExposeSecret as _;
 
 use super::super::error::SdkHttpError;
 use super::super::result::kinds::SdkResult;
-use super::support::{Source, source};
+use super::support::source;
 use super::{Call, Effects, Failure, Outcome, PreCallEffect, UrlEffect, ValidateEffect};
 
 // The production handler over the mock's base: the same config section and pooled client a request would build
@@ -71,7 +71,12 @@ fn outcome(
 ) -> Result<Outcome, SdkHttpError> {
     match answer {
         Ok(outcome) => Ok(Outcome {
-            result: Some(serde_json::to_value(&outcome.response).map_err(SdkHttpError::Serialize)?),
+            result: Some(
+                serde_json::from_value(
+                    serde_json::to_value(&outcome.response).map_err(SdkHttpError::Serialize)?,
+                )
+                .map_err(SdkHttpError::Serialize)?,
+            ),
             failure: None,
             provider_headers: Some(outcome.provider_headers.headers.into_iter().collect()),
             effects,
@@ -145,15 +150,21 @@ impl Fixture {
 
     fn effects(&self) -> Result<Effects, SdkHttpError> {
         let recorded = self.recorded.lock().unwrap_or_else(PoisonError::into_inner);
+        let validation = required(recorded.validate.as_ref(), "validate_environment")?;
+        let url = required(recorded.url.as_ref(), "get_complete_url")?;
+        let pre_call = required(recorded.pre_call.as_ref(), "pre_call")?;
         Ok(Effects {
-            validation: required(recorded.validate.as_ref(), "validate_environment")?,
-            url: required(recorded.url.as_ref(), "get_complete_url")?,
-            pre_call: required(recorded.pre_call.as_ref(), "pre_call")?,
+            validation,
+            url,
+            pre_call,
         })
     }
 }
 
-fn required<T: Clone>(slot: Option<&T>, step: &str) -> Result<T, SdkHttpError> {
+fn required<T>(slot: Option<&T>, step: &str) -> Result<T, SdkHttpError>
+where
+    T: Clone,
+{
     slot.cloned()
         .ok_or_else(|| SdkHttpError::Invalid(format!("the fixture never ran {step}")))
 }
