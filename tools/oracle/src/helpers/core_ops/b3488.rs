@@ -11,6 +11,7 @@ use betterlite_core::genai_setup::params::GenerateContentLiteLLMParams;
 use betterlite_models::catalog::BundledCatalog;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use betterlite_vertex::google_native_content::capabilities::NativeProvider;
 use betterlite_vertex::google_native_content::response::GenerateContentResponse;
 use chrono::DateTime;
 use indexmap::IndexMap;
@@ -107,7 +108,10 @@ impl Helper for Op {
 async fn call(input: &Input) -> HelperResult {
     let params = params_of(input)?;
     let mut bundled = BundledCatalog::default();
-    let config = NativeConfig::new(bundled.get());
+    let config = NativeConfig {
+        catalog: bundled.get(),
+        provider: NativeProvider::Studio,
+    };
     let source = Source::new(input)?;
     let request = request_of(input, &params, timeout_of(input)?);
     let deps = GenerateContentDeps {

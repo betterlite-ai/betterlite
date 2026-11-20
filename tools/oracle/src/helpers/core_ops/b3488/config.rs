@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::future::{Future, ready};
+use std::future::ready;
 use std::sync::Arc;
 
 use betterlite_config::sections::studio_identity::Settings as StudioSettings;
@@ -48,17 +48,8 @@ pub(super) enum ConfigError {
 
 // The adapter over betterlite-vertex: B3483's transform, the native auth, the transformation and the error class
 pub(super) struct NativeConfig {
-    catalog: Arc<ModelCatalog>,
-    provider: NativeProvider,
-}
-
-impl NativeConfig {
-    pub(super) fn new(catalog: Arc<ModelCatalog>) -> Self {
-        Self {
-            catalog,
-            provider: NativeProvider::Studio,
-        }
-    }
+    pub(super) catalog: Arc<ModelCatalog>,
+    pub(super) provider: NativeProvider,
 }
 
 impl GenerateContentProviderConfig for NativeConfig {
@@ -92,27 +83,22 @@ impl GenerateContentHttpConfig for NativeConfig {
     type Response = GenerateContentResponse;
 
     // sync_get_auth_token_and_url: the Studio key names the header, and Gemini's access token is empty
-    fn auth_token_and_url(
-        &self,
-        call: &AuthCall<'_>,
-    ) -> impl Future<Output = Result<AuthTarget, ConfigError>> + Send {
-        async move {
-            if let NativeProvider::Vertex = self.provider {
-                return Err(ConfigError::UnsupportedProvider);
-            }
-            let vertex = VertexSettings::default();
-            let studio = StudioSettings::default();
-            let auth = auth_input(self.provider, call, &vertex, &studio);
-            let target = native_auth(self.catalog.as_ref(), &auth, |_credentials, _project| {
-                ready(Ok(AccessToken {
-                    token: SecretString::from(""),
-                    project: String::new(),
-                }))
-            })
-            .await
-            .map_err(ConfigError::Native)?;
-            Ok(auth_target(target.url, target.headers))
+    async fn auth_token_and_url(&self, call: &AuthCall<'_>) -> Result<AuthTarget, ConfigError> {
+        if self.provider == NativeProvider::Vertex {
+            return Err(ConfigError::UnsupportedProvider);
         }
+        let vertex = VertexSettings::default();
+        let studio = StudioSettings::default();
+        let auth = auth_input(self.provider, call, &vertex, &studio);
+        let target = native_auth(self.catalog.as_ref(), &auth, |_credentials, _project| {
+            ready(Ok(AccessToken {
+                token: SecretString::from(""),
+                project: String::new(),
+            }))
+        })
+        .await
+        .map_err(ConfigError::Native)?;
+        Ok(auth_target(target.url, target.headers))
     }
 
     // transform_generate_content_response: a reply it cannot parse becomes the base config's error class

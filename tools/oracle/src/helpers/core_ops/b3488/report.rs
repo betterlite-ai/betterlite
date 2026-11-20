@@ -38,22 +38,22 @@ impl Run<'_> {
         let pre_call = pre_call_view(self.state)?;
         let http = http_view(self.state);
         let events = sync_events(&mut stream.iterator)?;
-        self.stream(pre_call, http, &stream.metadata.hidden_params, events)
+        self.stream(&pre_call, &http, &stream.metadata.hidden_params, &events)
     }
 
     pub(super) async fn async_stream(&self, mut stream: AsyncStream) -> HelperResult {
         let pre_call = pre_call_view(self.state)?;
         let http = http_view(self.state);
         let events = async_events(&mut stream.iterator).await?;
-        self.stream(pre_call, http, &stream.metadata.hidden_params, events)
+        self.stream(&pre_call, &http, &stream.metadata.hidden_params, &events)
     }
 
     fn stream(
         &self,
-        pre_call: Value,
-        http: Value,
+        pre_call: &Value,
+        http: &Value,
         hidden: &HiddenParams,
-        events: Vec<String>,
+        events: &[String],
     ) -> HelperResult {
         Ok(json!({
             "request": self.source.view()?,
@@ -97,13 +97,12 @@ fn pre_call_view(state: &LoggingState) -> Result<Value, Box<HelperError>> {
 
 // transform_generate_content_response keeps the raw reply on the logging state; a stream never runs it
 fn http_view(state: &LoggingState) -> Value {
-    match &state.httpx_response {
-        None => Value::Null,
-        Some(answer) => json!({
+    state.httpx_response.as_ref().map_or(Value::Null, |answer| {
+        json!({
             "status": answer.status,
             "text": String::from_utf8_lossy(&answer.body),
-        }),
-    }
+        })
+    })
 }
 
 fn field<'value>(value: &'value Value, name: &str) -> Result<&'value Value, Box<HelperError>> {
