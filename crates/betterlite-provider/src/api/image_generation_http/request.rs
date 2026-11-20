@@ -19,7 +19,16 @@ where
     C: BaseImageGenerationConfig,
     S: ClientSource,
 {
-    let ssl_verify = ssl_verify(call.litellm_params)?;
+    let ssl_verify = match call.litellm_params.get("ssl_verify") {
+        None | Some(Json::Null) => None,
+        Some(Json::Bool(setting)) => Some(*setting),
+        Some(Json::Text(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            return Err(ImageGenerationError::FieldType {
+                field: "litellm_params.ssl_verify",
+                expected: "a boolean",
+            });
+        }
+    };
     match &deps.supplied {
         Some(supplied) if supplied.kind == mode => Ok(Selected::Supplied(supplied.transport)),
         Some(_) | None => deps
@@ -31,19 +40,6 @@ where
                     source: Box::new(source),
                 })
             }),
-    }
-}
-
-fn ssl_verify(params: &ImageParams) -> Result<Option<bool>, ImageGenerationError> {
-    match params.get("ssl_verify") {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Bool(setting)) => Ok(Some(*setting)),
-        Some(Json::Text(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(ImageGenerationError::FieldType {
-                field: "litellm_params.ssl_verify",
-                expected: "a boolean",
-            })
-        }
     }
 }
 
@@ -71,16 +67,15 @@ pub(super) fn validated_headers<C: BaseImageGenerationConfig>(
 fn caller_headers(optional_params: &ImageParams) -> Result<ImageHeaders, ImageGenerationError> {
     match optional_params.get("extra_headers") {
         None | Some(Json::Null) => Ok(ImageHeaders::new()),
-        Some(Json::Object(fields)) => {
-            let mut headers = ImageHeaders::new();
-            for (name, value) in fields {
-                let Json::Text(text) = value else {
-                    return Err(ImageGenerationError::HeaderType { name: name.clone() });
-                };
-                headers.insert(name.clone(), text.clone());
-            }
-            Ok(headers)
-        }
+        Some(Json::Object(fields)) => fields
+            .iter()
+            .map(|(name, value)| match value {
+                Json::Text(text) => Ok((name.clone(), text.clone())),
+                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+                    Err(ImageGenerationError::HeaderType { name: name.clone() })
+                }
+            })
+            .collect(),
         Some(Json::Text(_) | Json::Bool(_) | Json::Number(_) | Json::List(_)) => {
             Err(ImageGenerationError::HeadersType)
         }

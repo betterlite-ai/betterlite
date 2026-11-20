@@ -152,13 +152,9 @@ where
         timeout,
         elapsed: started.elapsed(),
     };
-    let answer = reply.map_err(|error| {
-        ImageGenerationError::Provider(Box::new(facts::transport_error(&error, &sent, config)))
-    })?;
+    let answer = reply.map_err(|error| facts::transport_error(&error, &sent, config))?;
     if answer.status >= 400 {
-        return Err(ImageGenerationError::Provider(Box::new(
-            facts::status_error(&answer, config),
-        )));
+        return Err(facts::status_error(&answer, config));
     }
     let response = facts::http_response(&answer)?;
     let image = transform_response(config, call, &data, &response)?;

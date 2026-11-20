@@ -2,7 +2,7 @@ use std::str::from_utf8;
 use std::time::Duration;
 
 use betterlite_core::api::vector_store_http_write::error::{
-    FailureFacts, HeaderMap, handle_error, header_text,
+    FailureFacts, handle_error, header_text,
 };
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::transport_error::TransportError;
@@ -31,17 +31,17 @@ pub(super) struct Sent {
 pub(super) fn status_error<C: BaseImageGenerationConfig>(
     reply: &UpstreamResponse,
     config: &C,
-) -> ProviderError {
+) -> ImageGenerationError {
     let (text, headers) = masked_reply(reply);
     let facts = FailureFacts {
         response_status: Some(i64::from(reply.status)),
         status: None,
         text: Some(text),
-        headers: Some(json_headers(&headers)),
+        headers: None,
         response: None,
         display: String::new(),
     };
-    classify(&facts, &headers, config)
+    ImageGenerationError::Provider(Box::new(classify(&facts, &headers, config)))
 }
 
 fn masked_reply(reply: &UpstreamResponse) -> (String, ImageHeaders) {
@@ -71,12 +71,24 @@ pub(super) fn transport_error<C: BaseImageGenerationConfig>(
     error: &TransportError,
     sent: &Sent,
     config: &C,
-) -> ProviderError {
+) -> ImageGenerationError {
     if matches!(
         error,
         TransportError::ConnectTimeout(_) | TransportError::Deadline(_)
     ) {
-        return classify(&timeout_facts(sent), &ImageHeaders::new(), config);
+        let facts = FailureFacts {
+            response_status: None,
+            status: Some(Json::Number(Number::from(408_u16))),
+            text: None,
+            headers: None,
+            response: None,
+            display: timeout_message(sent),
+        };
+        return ImageGenerationError::Provider(Box::new(classify(
+            &facts,
+            &ImageHeaders::new(),
+            config,
+        )));
     }
     let facts = FailureFacts {
         response_status: None,
@@ -86,19 +98,7 @@ pub(super) fn transport_error<C: BaseImageGenerationConfig>(
         response: None,
         display: error.to_string(),
     };
-    classify(&facts, &ImageHeaders::new(), config)
-}
-
-// litellm.Timeout carries a 408 of its own, so _handle_error keeps it as the status the exception named
-fn timeout_facts(sent: &Sent) -> FailureFacts {
-    FailureFacts {
-        response_status: None,
-        status: Some(Json::Number(Number::from(408_u16))),
-        text: None,
-        headers: None,
-        response: None,
-        display: timeout_message(sent),
-    }
+    ImageGenerationError::Provider(Box::new(classify(&facts, &ImageHeaders::new(), config)))
 }
 
 fn timeout_message(sent: &Sent) -> String {
@@ -134,13 +134,6 @@ fn classify<C: BaseImageGenerationConfig>(
     let mut error = config.get_error_class(&base.message, base.status_code, headers);
     error.status_code_is_synthesized = base.status_code_is_synthesized;
     error
-}
-
-fn json_headers(headers: &ImageHeaders) -> HeaderMap {
-    headers
-        .iter()
-        .map(|(name, value)| (name.clone(), Json::Text(value.clone())))
-        .collect()
 }
 
 pub(super) fn http_response(

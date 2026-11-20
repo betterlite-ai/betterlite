@@ -1,3 +1,4 @@
+use std::slice::from_ref;
 use std::time::Duration;
 
 use betterlite_http::proxy::multipart::MultipartPart;
@@ -22,17 +23,13 @@ pub(super) fn outbound(
         method: Method::POST,
         url: url.clone(),
         query: Vec::new(),
-        headers: request_headers(headers)?,
+        headers: headers
+            .iter()
+            .map(|(name, value)| header(name, value))
+            .collect::<Result<HttpHeaders, _>>()?,
         body: body(data, multipart)?,
         deadline: timeout,
     })
-}
-
-fn request_headers(headers: &ImageHeaders) -> Result<HttpHeaders, ImageGenerationError> {
-    headers
-        .iter()
-        .map(|(name, value)| header(name, value))
-        .collect()
 }
 
 fn header(name: &str, value: &str) -> Result<(HeaderName, HeaderValue), ImageGenerationError> {
@@ -72,51 +69,40 @@ fn form_parts(data: &ImageParams) -> Result<Vec<MultipartPart>, ImageGenerationE
     Ok(parts)
 }
 
-// httpx writes one field per list item and refuses a list or an object inside one
+// httpx writes one field per list item, renders a primitive as its JSON spelling, and refuses an object
 fn push_field(
     parts: &mut Vec<MultipartPart>,
     name: &str,
     value: &Json,
 ) -> Result<(), ImageGenerationError> {
-    match value {
-        Json::List(items) => {
-            for item in items {
-                push_text(parts, name, item)?;
-            }
-            Ok(())
-        }
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => {
-            push_text(parts, name, value)
-        }
-        Json::Object(_) => Err(ImageGenerationError::FormValue {
-            field: name.to_owned(),
-        }),
-    }
-}
-
-// httpx renders a primitive as its JSON spelling: true, false, an empty string for null, and str() elsewhere
-fn push_text(
-    parts: &mut Vec<MultipartPart>,
-    name: &str,
-    value: &Json,
-) -> Result<(), ImageGenerationError> {
-    let text = match value {
-        Json::Text(text) => text.clone(),
-        Json::Number(number) => number.to_string(),
-        Json::Bool(setting) => setting.to_string(),
-        Json::Null => String::new(),
-        Json::List(_) | Json::Object(_) => {
+    let items: &[Json] = match value {
+        Json::List(items) => items.as_slice(),
+        Json::Object(_) => {
             return Err(ImageGenerationError::FormValue {
                 field: name.to_owned(),
             });
         }
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => from_ref(value),
     };
-    parts.push(MultipartPart {
-        name: name.to_owned(),
-        file_name: None,
-        content_type: None,
-        data: text.into_bytes(),
-    });
+    for item in items {
+        let text = match item {
+            Json::Text(text) => text.clone(),
+            Json::Number(number) => number.to_string(),
+            Json::Bool(setting) => setting.to_string(),
+            Json::Null => String::new(),
+            Json::List(_) | Json::Object(_) => {
+                return Err(ImageGenerationError::FormValue {
+                    field: name.to_owned(),
+                });
+            }
+        };
+        parts.push(MultipartPart {
+            name: name.to_owned(),
+            file_name: None,
+            content_type: None,
+            data: text.into_bytes(),
+        });
+    }
     Ok(())
 }
 

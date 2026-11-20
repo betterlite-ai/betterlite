@@ -200,20 +200,18 @@ impl BaseImageGenerationConfig for Fixture {
         &self,
         request: ImageGenerationRequest<'_>,
     ) -> Result<ImageParams, FixtureError> {
-        match self.request {
-            Step::Fail => Err(FixtureError::Refused),
-            Step::Work => {
-                let mut data = ImageParams::new();
-                data.insert(String::from("model"), Json::Text(request.model.to_owned()));
-                data.insert(
-                    String::from("prompt"),
-                    Json::Text(request.prompt.to_owned()),
-                );
-                data.extend(self.echo.clone());
-                self.record_headers(request.headers);
-                Ok(data)
-            }
-        }
+        let Step::Work = self.request else {
+            return Err(FixtureError::Refused);
+        };
+        let mut data = ImageParams::new();
+        data.insert(String::from("model"), Json::Text(request.model.to_owned()));
+        data.insert(
+            String::from("prompt"),
+            Json::Text(request.prompt.to_owned()),
+        );
+        data.extend(self.echo.clone());
+        self.record_headers(request.headers);
+        Ok(data)
     }
 
     fn transform_image_generation_response(
@@ -604,14 +602,15 @@ async fn assert_status_error() {
 // An empty body leaves no content-length, since the recomputed one is only added for a body that has bytes
 async fn assert_boundary_status() {
     let fixture = Fixture::working(ImageHeaders::new());
-    let served = reply("400 Bad Request", &[], b"");
-    let run = failing_send(&fixture, &served).await;
+    let run = failing_send(&fixture, &reply("400 Bad Request", &[], b"")).await;
     let error = expect_provider(run.outcome);
-    assert_eq!(error.status_code, 400);
-    assert_eq!(error.message, "");
     assert_eq!(
-        error.headers,
-        Some(vec![(String::from("connection"), String::from("close"))])
+        (error.status_code, error.message, error.headers),
+        (
+            400,
+            String::new(),
+            Some(vec![(String::from("connection"), String::from("close"))]),
+        )
     );
 }
 
