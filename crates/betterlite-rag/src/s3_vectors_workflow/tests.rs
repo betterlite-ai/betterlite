@@ -709,18 +709,27 @@ async fn store_trait_impl_forwards_the_columns() {
 
 #[tokio::test]
 async fn store_signs_every_request_through_the_bedrock_clients() {
-    let (transport, id) = store_through_the_signed_api().await;
+    let (transport, resolver, id) = store_through_the_signed_api().await;
     assert_eq!(id.as_deref(), Some("sign-bucket:idx"));
+
+    let seen = resolver.calls();
+    assert_eq!(seen.len(), 5);
+    assert!(seen.iter().all(|(settings, region)| {
+        region == "eu-central-1"
+            && settings.region_name.as_deref() == Some("eu-central-1")
+            && settings.access_key_id.as_ref().unwrap().expose_secret() == "AKIDS3VECTORSLIVE"
+            && settings.secret_access_key.as_ref().unwrap().expose_secret() == "vectors-live-secret"
+    }));
 
     let sent = transport.sent();
     assert_eq!(sent.len(), 5);
     assert_eq!(
         sent[0].url,
-        "https://s3vectors.us-west-2.api.aws/GetVectorBucket"
+        "https://s3vectors.eu-central-1.api.aws/GetVectorBucket"
     );
     assert_eq!(
         sent[4].url,
-        "https://s3vectors.us-west-2.api.aws/PutVectors"
+        "https://s3vectors.eu-central-1.api.aws/PutVectors"
     );
     let authorizations: Vec<&str> = sent
         .iter()
@@ -734,8 +743,8 @@ async fn store_signs_every_request_through_the_bedrock_clients() {
         .collect();
     assert_eq!(authorizations.len(), 5);
     assert!(authorizations.iter().all(|value| {
-        value.contains("Credential=AKIDVECTORSEXAMPLE/")
-            && value.contains("/us-west-2/s3vectors/aws4_request")
+        value.contains("Credential=AKIDS3VECTORSLIVE/")
+            && value.contains("/eu-central-1/s3vectors/aws4_request")
     }));
 
     let body: PutVectorsBody = serde_json::from_slice(&sent[4].body).unwrap();
@@ -752,9 +761,9 @@ async fn store_signs_every_request_through_the_bedrock_clients() {
     );
 }
 
-async fn store_through_the_signed_api() -> (RecordingTransport, Option<String>) {
+async fn store_through_the_signed_api() -> (RecordingTransport, StaticResolver, Option<String>) {
     let settings = s3_settings(
-        r#"{"vector_bucket_name": "sign-bucket", "index_name": "idx", "dimension": 2}"#,
+        r#"{"vector_bucket_name": "sign-bucket", "index_name": "idx", "dimension": 2, "aws_region_name": "eu-central-1", "aws_access_key_id": "AKIDS3VECTORSLIVE", "aws_secret_access_key": "vectors-live-secret"}"#,
     );
     let transport = RecordingTransport::answering(vec![
         not_found(),
@@ -763,9 +772,10 @@ async fn store_through_the_signed_api() -> (RecordingTransport, Option<String>) 
         accepted(),
         accepted(),
     ]);
+    let resolver = StaticResolver::default();
     let api = SignedS3Vectors::<'static, _>::new(
         &settings,
-        Box::new(StaticResolver),
+        Box::new(resolver.clone()),
         Box::new(FixedClock),
         transport.clone(),
     );
@@ -781,5 +791,5 @@ async fn store_through_the_signed_api() -> (RecordingTransport, Option<String>) 
         .store_vectors(Some("a.txt"), &chunks, Some(embeddings.as_slice()))
         .await
         .unwrap();
-    (transport, id)
+    (transport, resolver, id)
 }
