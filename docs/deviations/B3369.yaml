@@ -91,7 +91,7 @@ deviations:
     why: >-
       The Rust call holds those names as typed fields and the remaining kwargs as a map, with no
       argument binding to keep them out of the map; the value the caller stated explicitly wins.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L205-L210
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L166-L181
 kept_bugs:
   - what: >-
       The mock short circuit runs before the provider is parsed, its container config looked up or
