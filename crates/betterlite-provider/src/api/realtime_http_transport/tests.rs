@@ -207,14 +207,20 @@ struct Reply {
     hold: bool,
 }
 
-const fn ok_reply() -> Reply {
-    Reply {
-        status: 200,
-        headers: "",
-        body: b"{}",
-        hold: false,
-    }
-}
+const OK_REPLY: Reply = Reply {
+    status: 200,
+    headers: "",
+    body: b"{}",
+    hold: false,
+};
+
+// A server that reads the request and never answers, so the client's own deadline is what ends the send
+const HELD_REPLY: Reply = Reply {
+    status: 200,
+    headers: "",
+    body: b"",
+    hold: true,
+};
 
 fn runtime() -> Runtime {
     Builder::new_current_thread().enable_all().build().unwrap()
@@ -356,16 +362,6 @@ where
     (api_base, output.0, output.1)
 }
 
-// A server that reads the request and never answers, so the client's own deadline is what ends the send
-const fn held_reply() -> Reply {
-    Reply {
-        status: 200,
-        headers: "",
-        body: b"",
-        hold: true,
-    }
-}
-
 const fn session_call<'call>(
     endpoint: SessionEndpoint,
     api_base: &'call str,
@@ -466,7 +462,7 @@ fn session_posts_to_the_transcription_fallback() {
     let envelope = logging_env(&redactor);
     let source = test_source();
     let data = session_request();
-    let (api_base, requests, answers) = exchange(&[ok_reply()], |base| {
+    let (api_base, requests, answers) = exchange(&[OK_REPLY], |base| {
         runtime().block_on(async {
             let deps = fallback_deps(&source, None, ApiLimits::default());
             let call = session_call(SessionEndpoint::TranscriptionSessions, base, &data);
@@ -501,7 +497,7 @@ fn session_config_names_the_url_headers_and_extra_headers_win() {
     let config = TestConfig::default();
     let data = session_request();
     let extra = extra_headers(&[("api-key", "override"), ("x-test", "test")]);
-    let (_, requests, answers) = exchange(&[ok_reply()], |api_base| {
+    let (_, requests, answers) = exchange(&[OK_REPLY], |api_base| {
         runtime().block_on(async {
             let deps = TransportDeps {
                 config: Some(&config),
@@ -549,7 +545,7 @@ fn client_selection_reuses_an_async_client_and_replaces_a_sync_one(
     let source = test_source();
     let supplied = source.client().unwrap();
     let data = session_request();
-    let (_, _, answers) = exchange(&[ok_reply()], |api_base| {
+    let (_, _, answers) = exchange(&[OK_REPLY], |api_base| {
         runtime().block_on(async {
             let supplied_client = kind.map(|selected| SuppliedClient {
                 kind: selected,
@@ -576,7 +572,7 @@ fn the_supplied_timeout_reaches_the_deadline() {
     let envelope = logging_env(&redactor);
     let source = test_source();
     let data = session_request();
-    let (_, _, answer) = exchange(&[held_reply()], |api_base| {
+    let (_, _, answer) = exchange(&[HELD_REPLY], |api_base| {
         runtime().block_on(async {
             let deps = fallback_deps(&source, None, ApiLimits::default());
             let mut call = session_call(SessionEndpoint::ClientSecrets, api_base, &data);
@@ -793,7 +789,7 @@ fn a_timeout_with_a_config_is_a_provider_timeout() {
     let source = test_source();
     let config = TestConfig::default();
     let data = session_request();
-    let (_, _, answer) = exchange(&[held_reply()], |api_base| {
+    let (_, _, answer) = exchange(&[HELD_REPLY], |api_base| {
         runtime().block_on(async {
             let deps = TransportDeps {
                 config: Some(&config),
