@@ -1,14 +1,14 @@
 id: B3453
 milestone: M5 api families
 title: OpenAI RAG file upload and attachment
-status: todo
+status: done
 depends_on: [B3451, B3450]
 file: tasks/B3453-openai-rag-store.yaml
 covers:
   - "litellm/rag/ingestion/openai_ingestion.py"
 parent: B097
 split_from: B097
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2746
