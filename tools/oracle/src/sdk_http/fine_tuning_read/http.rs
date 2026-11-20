@@ -27,7 +27,6 @@ const V1_API_VERSIONS: [&str; 3] = ["preview", "latest", "v1"];
 const SUPPLIED_KEY: &str = "sk-supplied";
 const SUPPLIED_ORGANIZATION: &str = "org-supplied";
 const READ_DEADLINE: Duration = Duration::from_secs(600);
-
 #[derive(Debug, thiserror::Error)]
 pub(super) enum ReadWireError {
     #[error(transparent)]
@@ -47,21 +46,18 @@ pub(super) enum ReadWireError {
     #[error("the provider error body does not decode: {0}")]
     Body(#[source] serde_json::Error),
 }
-
 #[derive(Clone)]
 pub(super) struct HttpDispatch {
     pub(super) client: ProxiedClient,
     // LiteLLM hands a supplied client to its openai handler only, so azure ignores it
     pub(super) supplied: bool,
 }
-
 pub(super) fn outbound(env: &BTreeMap<String, String>) -> Result<ProxiedClient, SdkHttpError> {
     let policy = Arc::new(
         ProxyPolicy::resolve(&ProxyTrust::default(), env).map_err(SdkHttpError::ProxyPolicy)?,
     );
     ProxiedClient::outbound(&policy).map_err(|error| SdkHttpError::Client(Box::new(error)))
 }
-
 impl FineTuningReadDispatch for HttpDispatch {
     type Error = ReadWireError;
 
@@ -84,7 +80,6 @@ impl FineTuningReadDispatch for HttpDispatch {
         Ok(response.body)
     }
 }
-
 impl HttpDispatch {
     // a supplied client carries its own base, key and organization; the call's base only locates it
     fn openai_request(&self, call: &OpenAiReadCall<'_>) -> Result<OutboundRequest, ReadWireError> {
@@ -115,7 +110,6 @@ impl HttpDispatch {
         Ok(read_outbound(url, query, headers, &call.values))
     }
 }
-
 // every read is a GET with no body, and its deadline is the read's timeout
 fn read_outbound(
     url: Url,
@@ -132,7 +126,6 @@ fn read_outbound(
         deadline: deadline(values),
     }
 }
-
 fn openai_target(
     api_base: &str,
     values: &ReadValues<'_>,
@@ -145,7 +138,6 @@ fn openai_target(
     .map_err(|source| ReadWireError::Url(Box::new(source)))?;
     Ok((url, paging(values.operation)))
 }
-
 fn azure_request(call: &AzureReadCall<'_>) -> Result<OutboundRequest, ReadWireError> {
     let Some(api_base) = call.api_base else {
         return Err(ReadWireError::MissingBase);

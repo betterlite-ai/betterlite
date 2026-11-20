@@ -25,12 +25,10 @@ mod tests;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct ReadProvider(pub String);
-
 // the field defaults through this type so an absent key takes openai and an explicit null stays None
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct ReadProviderField(pub Option<ReadProvider>);
-
 impl Default for ReadProviderField {
     fn default() -> Self {
         Self(Some(ReadProvider("openai".to_owned())))
@@ -52,7 +50,6 @@ pub enum ReadTimeoutValue {
     Number(Number),
     Text(String),
 }
-
 impl TryFrom<&ReadTimeoutValue> for TimeoutValue {
     type Error = TimeoutError;
 
@@ -65,7 +62,6 @@ impl TryFrom<&ReadTimeoutValue> for TimeoutValue {
         }
     }
 }
-
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ReadStructuredTimeout {
@@ -74,7 +70,6 @@ pub struct ReadStructuredTimeout {
     pub write: Option<Number>,
     pub pool: Option<Number>,
 }
-
 impl TryFrom<&ReadStructuredTimeout> for StructuredTimeout {
     type Error = TimeoutError;
 
@@ -99,15 +94,12 @@ fn optional_seconds(number: Option<&Number>) -> Result<Option<f64>, TimeoutError
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(transparent)]
 pub struct ApiKeyText(String);
-
 impl Zeroize for ApiKeyText {
     fn zeroize(&mut self) {
         self.0.zeroize();
     }
 }
-
 impl CloneableSecret for ApiKeyText {}
-
 impl SerializableSecret for ApiKeyText {}
 
 // the kwargs both calls read through GenericLiteLLMParams, beside request_timeout from kwargs
@@ -122,7 +114,6 @@ pub struct FineTuningReadParams {
     pub request_timeout: Option<ReadTimeoutValue>,
     pub max_retries: Option<i64>,
 }
-
 impl From<&FineTuningReadParams> for ResourceSdkRequestOptions {
     fn from(params: &FineTuningReadParams) -> Self {
         Self {
@@ -139,7 +130,6 @@ impl From<&FineTuningReadParams> for ResourceSdkRequestOptions {
         }
     }
 }
-
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct FineTuningListCall {
     #[serde(default)]
@@ -156,7 +146,6 @@ pub struct FineTuningListCall {
     #[serde(flatten)]
     pub params: FineTuningReadParams,
 }
-
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct FineTuningRetrieveCall {
     pub fine_tuning_job_id: String,
@@ -169,7 +158,6 @@ pub struct FineTuningRetrieveCall {
     #[serde(flatten)]
     pub params: FineTuningReadParams,
 }
-
 impl FineTuningListCall {
     fn operation(&self) -> ReadOperation<'_> {
         ReadOperation::List {
@@ -178,7 +166,6 @@ impl FineTuningListCall {
         }
     }
 }
-
 impl FineTuningRetrieveCall {
     fn operation(&self) -> ReadOperation<'_> {
         ReadOperation::Retrieve {
@@ -198,7 +185,6 @@ pub enum FineTuningReadInput {
     #[serde(rename = "aretrieve")]
     ARetrieve(Box<FineTuningRetrieveCall>),
 }
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FineTuningReadOutcome {
@@ -217,7 +203,6 @@ pub enum ReadOperation<'call> {
         job_id: &'call str,
     },
 }
-
 #[derive(Debug, Clone, Copy)]
 pub struct ReadValues<'call> {
     pub is_async: bool,
@@ -225,7 +210,6 @@ pub struct ReadValues<'call> {
     pub timeout: &'call FineTuningTimeout,
     pub max_retries: Option<i64>,
 }
-
 #[derive(Debug, Clone)]
 pub struct OpenAiReadCall<'call> {
     pub values: ReadValues<'call>,
@@ -235,7 +219,6 @@ pub struct OpenAiReadCall<'call> {
     pub api_version: Option<&'call str>,
     pub organization: Option<&'call str>,
 }
-
 #[derive(Debug, Clone, Copy)]
 pub struct AzureReadCall<'call> {
     pub values: ReadValues<'call>,
@@ -255,7 +238,6 @@ pub enum ReadTarget<'call> {
 // the dispatch answers the provider's bytes; the list page and the single job are decoded here
 pub trait FineTuningReadDispatch: Send + Sync {
     type Error: Error + Send + Sync + 'static;
-
     fn read(
         &self,
         target: ReadTarget<'_>,

@@ -1,5 +1,3 @@
-use std::error::Error;
-
 use betterlite_config::sections::resource_sdk_settings::Settings as ConfiguredSettings;
 use betterlite_openai::fine_tuning::job::decode_fine_tune_job;
 
@@ -19,7 +17,6 @@ pub struct FineTuningRead<Dispatch> {
     pub dispatch: Dispatch,
     pub settings: ConfiguredSettings,
 }
-
 impl<Dispatch> FineTuningRead<Dispatch>
 where
     Dispatch: FineTuningReadDispatch,
@@ -67,7 +64,6 @@ where
             }
         }
     }
-
     // all four calls share the provider, timeout and dispatch chains; only the decode differs
     async fn read(
         &self,
@@ -88,7 +84,13 @@ where
             max_retries: params.max_retries,
         };
         let Some(target) = read_target(provider_name, values, &settings, &options) else {
-            return Err(Self::unsupported(provider_name, operation));
+            let provider = provider_name.to_owned();
+            return Err(match operation {
+                ReadOperation::List { .. } => FineTuningReadError::UnsupportedList { provider },
+                ReadOperation::Retrieve { .. } => {
+                    FineTuningReadError::UnsupportedRetrieve { provider }
+                }
+            });
         };
         let is_azure = matches!(target, ReadTarget::Azure(_));
         let bytes = self
@@ -96,44 +98,17 @@ where
             .read(target)
             .await
             .map_err(FineTuningReadError::Dispatch)?;
-        decode(operation, &bytes, is_azure)
-    }
-
-    // list keeps LiteLLM's create_batch wording, and retrieve names its own function
-    fn unsupported(
-        provider: &str,
-        operation: ReadOperation<'_>,
-    ) -> FineTuningReadError<Dispatch::Error> {
+        // list decodes a page, and retrieve decodes a job the azure handler normalizes first
         match operation {
-            ReadOperation::List { .. } => FineTuningReadError::UnsupportedList {
-                provider: provider.to_owned(),
-            },
-            ReadOperation::Retrieve { .. } => FineTuningReadError::UnsupportedRetrieve {
-                provider: provider.to_owned(),
-            },
+            ReadOperation::List { .. } => Ok(FineTuningReadOutcome::Page(
+                page::decode_page(&bytes).map_err(|source| FineTuningReadError::Page { source })?,
+            )),
+            ReadOperation::Retrieve { .. } => Ok(FineTuningReadOutcome::Job(Box::new(
+                decode_fine_tune_job(&bytes, is_azure)?,
+            ))),
         }
     }
 }
-
-// list decodes a page, and retrieve decodes a job the azure handler normalizes first
-fn decode<DispatchError>(
-    operation: ReadOperation<'_>,
-    bytes: &[u8],
-    is_azure: bool,
-) -> Result<FineTuningReadOutcome, FineTuningReadError<DispatchError>>
-where
-    DispatchError: Error + 'static,
-{
-    match operation {
-        ReadOperation::List { .. } => Ok(FineTuningReadOutcome::Page(
-            page::decode_page(bytes).map_err(|source| FineTuningReadError::Page { source })?,
-        )),
-        ReadOperation::Retrieve { .. } => Ok(FineTuningReadOutcome::Job(Box::new(
-            decode_fine_tune_job(bytes, is_azure)?,
-        ))),
-    }
-}
-
 // both read calls build the same two provider chains, and only their unsupported message differs
 fn read_target<'call>(
     provider: &str,
@@ -159,7 +134,6 @@ fn read_target<'call>(
         _ => None,
     }
 }
-
 // optional_params.timeout or request_timeout or 600, where a zero or an empty value falls through
 fn resolve_timeout(
     params: &FineTuningReadParams,

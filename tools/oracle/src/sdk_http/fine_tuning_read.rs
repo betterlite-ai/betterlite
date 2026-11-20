@@ -26,7 +26,6 @@ mod http;
 pub struct Call {
     pub steps: Vec<Step>,
 }
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Step {
@@ -37,7 +36,6 @@ pub enum Step {
     #[serde(rename = "aretrieve")]
     ARetrieve(RetrieveStep),
 }
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ListStep {
@@ -46,7 +44,6 @@ pub struct ListStep {
     #[serde(default)]
     pub supplied_client: bool,
 }
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RetrieveStep {
@@ -54,13 +51,11 @@ pub struct RetrieveStep {
     #[serde(default)]
     pub supplied_client: bool,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Outcome {
     pub steps: Vec<StepOutcome>,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StepOutcome {
@@ -71,7 +66,6 @@ pub struct StepOutcome {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failure: Option<Failure>,
 }
-
 impl CallKind for Call {
     fn validate(&self, limits: &OracleLimits) -> Result<(), SdkHttpError> {
         if self.steps.is_empty() {
@@ -116,7 +110,6 @@ impl CallKind for Call {
         })
     }
 }
-
 impl Step {
     fn input(&self) -> (FineTuningReadInput, bool) {
         match self {
@@ -184,7 +177,6 @@ fn outcome(
         }),
     }
 }
-
 fn failure(error: &FineTuningReadError<ReadWireError>) -> Failure {
     match error {
         FineTuningReadError::Dispatch(ReadWireError::Sdk(source)) => Failure {

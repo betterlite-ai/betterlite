@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct FineTuningPage(pub Json);
-
 pub fn decode_page(bytes: &[u8]) -> Result<FineTuningPage, serde_json::Error> {
     let value: Json = serde_json::from_slice(bytes)?;
     let normalized = normalize(&value, &PAGE);
@@ -21,21 +20,19 @@ enum Shape {
     Objects(&'static Self),
     Tagged(&'static [(&'static str, Self)], &'static Self),
 }
-
 fn normalize(value: &Json, shape: &Shape) -> Json {
     match shape {
         Shape::Any => value.clone(),
-        Shape::Fields(names) => normalize_fields(value, names),
+        // a fields object writes every declared key as given, which is an object whose keys have no shape
+        Shape::Fields(names) => {
+            let fields: Vec<(&'static str, Shape)> =
+                names.iter().map(|name| (*name, Shape::Any)).collect();
+            normalize_object(value, &fields)
+        }
         Shape::Object(fields) => normalize_object(value, fields),
         Shape::Objects(element) => normalize_list(value, element),
         Shape::Tagged(variants, unsupported) => normalize_tagged(value, variants, unsupported),
     }
-}
-
-// a fields object writes every declared key as given, which is an object whose keys have no shape
-fn normalize_fields(value: &Json, names: &'static [&'static str]) -> Json {
-    let fields: Vec<(&'static str, Shape)> = names.iter().map(|name| (*name, Shape::Any)).collect();
-    normalize_object(value, &fields)
 }
 
 // an object writes every declared key in its shape's order and appends the keys the shape never names
@@ -51,7 +48,6 @@ fn normalize_object(value: &Json, fields: &[(&'static str, Shape)]) -> Json {
     append_extras(&mut object, source);
     Json::Object(object)
 }
-
 // the keys no shape names stay as the provider wrote them, after the declared ones
 fn append_extras(object: &mut IndexMap<String, Json>, source: &IndexMap<String, Json>) {
     for (name, extra) in source {
@@ -60,7 +56,6 @@ fn append_extras(object: &mut IndexMap<String, Json>, source: &IndexMap<String, 
         }
     }
 }
-
 // a list is normalized element by element, and any other value stays as the provider wrote it
 fn normalize_list(value: &Json, element: &Shape) -> Json {
     let Json::List(items) = value else {
@@ -68,7 +63,6 @@ fn normalize_list(value: &Json, element: &Shape) -> Json {
     };
     Json::List(items.iter().map(|item| normalize(item, element)).collect())
 }
-
 // a tagged value takes its type's shape, item by item for a list, and its first member's shape otherwise
 fn normalize_tagged(
     value: &Json,
@@ -95,15 +89,11 @@ fn normalize_tagged(
             |(_, shape)| normalize(value, shape),
         )
 }
-
 const ERROR: Shape = Shape::Fields(&["code", "message", "param"]);
-
 const HYPERPARAMETERS: Shape =
     Shape::Fields(&["batch_size", "learning_rate_multiplier", "n_epochs"]);
-
 const DPO_HYPERPARAMETERS: Shape =
     Shape::Fields(&["batch_size", "beta", "learning_rate_multiplier", "n_epochs"]);
-
 const REINFORCEMENT_HYPERPARAMETERS: Shape = Shape::Fields(&[
     "batch_size",
     "compute_multiplier",
@@ -113,9 +103,7 @@ const REINFORCEMENT_HYPERPARAMETERS: Shape = Shape::Fields(&[
     "n_epochs",
     "reasoning_effort",
 ]);
-
 const WANDB: Shape = Shape::Fields(&["project", "entity", "name", "tags"]);
-
 const INTEGRATION: Shape = Shape::Object(&[("type", Shape::Any), ("wandb", WANDB)]);
 
 // an Input's content block writes the keys its member declares
@@ -141,15 +129,11 @@ const GRADER_INPUT: Shape = Shape::Object(&[
     ("role", Shape::Any),
     ("type", Shape::Any),
 ]);
-
 const STRING_CHECK_GRADER: Shape =
     Shape::Fields(&["input", "name", "operation", "reference", "type"]);
-
 const TEXT_SIMILARITY_GRADER: Shape =
     Shape::Fields(&["evaluation_metric", "input", "name", "reference", "type"]);
-
 const PYTHON_GRADER: Shape = Shape::Fields(&["name", "source", "type", "image_tag"]);
-
 const SAMPLING_PARAMS: Shape = Shape::Fields(&[
     "max_completions_tokens",
     "reasoning_effort",
@@ -157,7 +141,6 @@ const SAMPLING_PARAMS: Shape = Shape::Fields(&[
     "temperature",
     "top_p",
 ]);
-
 const SCORE_MODEL_GRADER: Shape = Shape::Object(&[
     ("input", Shape::Objects(&GRADER_INPUT)),
     ("model", Shape::Any),
@@ -176,7 +159,6 @@ const LABEL_MODEL_GRADER: Shape = Shape::Object(&[
     ("passing_labels", Shape::Any),
     ("type", Shape::Any),
 ]);
-
 const MULTI_GRADER: Shape = Shape::Object(&[
     ("calculate_output", Shape::Any),
     ("graders", GRADERS),
