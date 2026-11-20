@@ -155,14 +155,14 @@ fn assert_remix_inputs(bench: &Bench<Source>, params: &Params, extra_body: Optio
 async fn sync_pooled_client() {
     let (mut bench, pooled) = fake_bench(REMIX, Reply::json(200, "{}"), RecordingConfig::new);
     let supplied = Wire::replying(Reply::json(200, "{}"), &bench.events);
-    let params = json_params(r#"{"api_key":"sk-params","ssl_verify":false}"#);
+    let params = json_params(r#"{"api_key":"sk-params","ssl_verify":true}"#);
     let mut setup = Setup::new("openai", &params).video("video_a", PROMPT);
     setup.client = Some(VideoClient::Asynchronous(&supplied));
     let answer = run(&mut bench, setup, CallKind::Remix, CallMode::Sync)
         .await
         .expect("the sync remix handler answers");
     assert_eq!(answer.object(), video_object("video_out", "queued"));
-    assert_eq!(bench.transport.source.sync_calls(), vec![Some(false)]);
+    assert_eq!(bench.transport.source.sync_calls(), vec![Some(true)]);
     assert!(bench.transport.source.async_calls().is_empty());
     assert!(supplied.requests().is_empty());
     let sent = pooled.requests();
