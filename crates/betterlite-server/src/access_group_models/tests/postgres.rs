@@ -8,6 +8,7 @@ use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
+use futures_util::future::join_all;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
 use tokio_postgres::types::ToSql;
@@ -35,6 +36,29 @@ const INSERT_GROUP_SQL: &str = r#"INSERT INTO "LiteLLM_AccessGroupTable" ("acces
 const MODEL_NAMES_SQL: &str =
     r#"SELECT "access_model_names" FROM "LiteLLM_AccessGroupTable" WHERE "access_group_id" = $1"#;
 const NULL_ID_NAMES_SQL: &str = r#"SELECT "access_model_names" FROM "LiteLLM_AccessGroupTable" WHERE "access_group_id" IS NULL"#;
+const MODELS: [(&str, &str); 4] = [
+    ("dep-1", "solo"),
+    ("dep-2", "shared"),
+    ("dep-3", "shared"),
+    ("dep-9", "kept"),
+];
+const GROUPS: [(&str, Option<&[&str]>); 15] = [
+    ("g1", Some(&["old", "old"])),
+    ("g2", Some(&["new", "old", "new"])),
+    ("g3", None),
+    ("g4", Some(&[])),
+    ("g5", Some(&["other"])),
+    ("g6", Some(&["it's $1"])),
+    ("g7", Some(&["old", "new"])),
+    ("g9", Some(&["old2", "x", "old2"])),
+    ("g10", Some(&["new2", "old2", "new2"])),
+    ("g11", Some(&["old2", "old2"])),
+    ("g12", Some(&["old3", "x", "old3"])),
+    ("g13", Some(&["old3"])),
+    ("g14", Some(&["old4"])),
+    ("g15", Some(&["kept"])),
+    ("g16", Some(&["gone"])),
+];
 
 #[derive(Parser)]
 struct Environment {
@@ -123,34 +147,12 @@ const fn grants<'db>(
 }
 
 async fn seed(pool: &Pool) {
-    let models = [
-        ("dep-1", "solo"),
-        ("dep-2", "shared"),
-        ("dep-3", "shared"),
-        ("dep-9", "kept"),
-    ];
-    for (model_id, model_name) in models {
+    for (model_id, model_name) in MODELS {
         insert_model(pool, model_id, model_name).await;
     }
-    let groups = [
-        ("g1", Some(expected(&["old", "old"]))),
-        ("g2", Some(expected(&["new", "old", "new"]))),
-        ("g3", None),
-        ("g4", Some(Vec::new())),
-        ("g5", Some(expected(&["other"]))),
-        ("g6", Some(expected(&["it's $1"]))),
-        ("g7", Some(expected(&["old", "new"]))),
-        ("g9", Some(expected(&["old2", "x", "old2"]))),
-        ("g10", Some(expected(&["new2", "old2", "new2"]))),
-        ("g11", Some(expected(&["old2", "old2"]))),
-        ("g12", Some(expected(&["old3", "x", "old3"]))),
-        ("g13", Some(expected(&["old3"]))),
-        ("g14", Some(expected(&["old4"]))),
-        ("g15", Some(expected(&["kept"]))),
-        ("g16", Some(expected(&["gone"]))),
-    ];
-    for (access_group_id, names) in groups {
-        insert_group(pool, Some(access_group_id), names.as_deref()).await;
+    for (access_group_id, names) in GROUPS {
+        let stored_names = names.map(expected);
+        insert_group(pool, Some(access_group_id), stored_names.as_deref()).await;
     }
 }
 
@@ -230,10 +232,7 @@ async fn assert_stored_rows(pool: &Pool) {
     let ids = [
         "g1", "g2", "g3", "g4", "g7", "g12", "g13", "g9", "g10", "g11", "g6",
     ];
-    let mut actual = Vec::new();
-    for id in ids {
-        actual.push(model_names(pool, id).await);
-    }
+    let actual = join_all(ids.iter().map(|id| model_names(pool, id))).await;
     assert_eq!(
         actual,
         [
