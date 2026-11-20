@@ -30,10 +30,10 @@ use crate::api::vector_file_http_read::config::{
 };
 use crate::api::vector_file_http_read::error::{PrepareFailure, ReadError};
 use crate::api::vector_file_http_read::service::{
-    ClientKind, ClientSource, LogContext, Operation, ReadCall, ReadRequest, ReadTarget,
-    ReadTransport, SuppliedClient,
+    ClientSource, LogContext, Operation, ReadCall, ReadRequest, ReadTarget, ReadTransport,
 };
 use crate::api::vector_store_http_write::error::{BaseLlmException, ClientError, HeaderMap};
+use crate::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 
 #[derive(Clone, Default)]
 pub(crate) struct Events(Arc<Mutex<Vec<String>>>);

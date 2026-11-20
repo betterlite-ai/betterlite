@@ -11,7 +11,8 @@ use super::support::{
 use super::{RETRIEVE_BODY, json};
 use crate::api::vector_file_http_read::VectorFileReadTransport;
 use crate::api::vector_file_http_read::error::ReadError;
-use crate::api::vector_file_http_read::service::{ClientKind, Operation};
+use crate::api::vector_file_http_read::service::Operation;
+use crate::api::vector_store_http_write::service::ClientKind;
 
 #[tokio::test]
 async fn read_error_scope() {

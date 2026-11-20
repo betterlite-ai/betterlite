@@ -9,7 +9,8 @@ use super::support::{
 use super::{CONTENT_BODY, RETRIEVE_BODY, json};
 use crate::api::vector_file_http_read::VectorFileReadTransport;
 use crate::api::vector_file_http_read::config::ReadConfig;
-use crate::api::vector_file_http_read::service::{ClientKind, Operation};
+use crate::api::vector_file_http_read::service::Operation;
+use crate::api::vector_store_http_write::service::ClientKind;
 
 async fn read<C: ReadConfig>(
     operation: Operation,

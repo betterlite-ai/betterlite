@@ -8,9 +8,9 @@ use betterlite_models::decisions::Json;
 use self::config::ReadConfig;
 use self::error::ReadError;
 use self::service::{
-    ClientKind, ClientSource, LogContext, Operation, ReadCall, ReadDeps, ReadTarget, prepare, send,
+    ClientSource, LogContext, Operation, ReadCall, ReadDeps, ReadTarget, prepare, send,
 };
-use crate::api::vector_store_http_write::service::SuppliedClient;
+use crate::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 
 // The four attached-file GET handlers share one preparation and one send; only the operation and the client kind differ
 pub struct VectorFileReadTransport<Source: ClientSource> {
@@ -144,8 +144,8 @@ fn forwarded_client<Client>(
     client.filter(|supplied| supplied.kind == ClientKind::Asynchronous)
 }
 
-async fn run<C, S>(
-    deps: &ReadDeps<'_, C, S>,
+async fn run<'deps, C, S>(
+    deps: &'deps ReadDeps<'deps, C, S>,
     mode: ClientKind,
     operation: Operation,
     target: &ReadTarget<'_>,

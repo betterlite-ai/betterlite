@@ -8,7 +8,8 @@ use super::support::{
 };
 use super::{CONTENT_BODY, RETRIEVE_BODY, json};
 use crate::api::vector_file_http_read::VectorFileReadTransport;
-use crate::api::vector_file_http_read::service::{ClientKind, Operation};
+use crate::api::vector_file_http_read::service::Operation;
+use crate::api::vector_store_http_write::service::ClientKind;
 
 const fn body(operation: Operation) -> &'static str {
     match operation {
