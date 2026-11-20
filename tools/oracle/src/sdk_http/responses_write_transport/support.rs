@@ -96,7 +96,7 @@ impl Fixture {
             },
             &redactor,
             || String::from("generated"),
-            Duration::default(),
+            Duration::default,
         )
         .map_err(SdkHttpError::LoggingState)?;
         Ok(Self {
