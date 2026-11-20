@@ -1,0 +1,18 @@
+task: B8560
+deviations:
+  - what: The compatible-callback factory, the prompt manager list, the vector store registry and the global callback list are passed in through PromptHookDispatch and the gate function instead of read from litellm globals; the manager list holds only the prompt-management loggers selection walks, and the vector store hook joins the callback list, where LiteLLM detects the duplicate by scanning litellm.callbacks.
+    why: Constructor wiring; module-level state is banned, and the server supplies the registered callback order LiteLLM's callback manager keeps and owns the global list it runs itself.
+    link: ""
+  - what: When a vector store registry is configured but the factory has no vector_store_pre_call_hook, step 5 selects nothing and writes no prompt_integration stamp, where LiteLLM writes the class name of None, "NoneType", and returns None.
+    why: Python's None.__class__.__name__ shows through there as the text NoneType, and no working setup can read it as a prompt integration; the control flow is unchanged, since step 5 still ends the search and skips the registration.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1290-L1300
+  - what: The async hook call does not hand tools or the logging object to the prompt manager, where LiteLLM's async_get_chat_completion_prompt passes tools=tools and litellm_logging_obj=self.
+    why: B4058's ChatCompletionPromptRequest carries neither the call's tools nor a logging handle, so there is no place in the manager contract to put them; the tools still reach prompt selection, which is the only code in this module that reads them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1143-L1155
+  - what: A tool whose vector_store_ids carries a non-string id, an unhashable object element included, makes the gate answer false; LiteLLM deduplicates the ids with dict.fromkeys and raises TypeError on the unhashable element, so the request fails with a 500.
+    why: The gate has a bool answer and B1062 refuses a non-string id list with a typed error, so a malformed id can only mean no stored store to run; a hashable non-string id is false in LiteLLM too, and no working setup sends an unhashable one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L123-L139
+  - what: Steps 2 to 5 stamp prompt_integration with the prompt manager's integration key ("dotprompt", "langfuse", "anthropic_cache_control_hook", "vector_store_pre_call_hook") where LiteLLM stamps the manager's class name ("DotpromptManager", "LangfusePromptManagement", "AnthropicCacheControlHook", "VectorStorePreCallHook"), so the value copied into the standard logging payload's prompt_management_metadata.prompt_integration is the lower-case key in betterlite.
+    why: LiteLLM's value is logger.__class__.__name__, a property of the Python object; B4058's PromptManagementBackend and B4126's hook expose only the integration key, and the PromptManager contract this task owns carries no second name, so producing the class name needs a change in those crates, which this task does not own.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1195-L1296
+kept_bugs: []

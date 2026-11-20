@@ -1,0 +1,20 @@
+kind: sdk_http
+name: file-http-metadata-retrieve-status-error
+env: {}
+call:
+  file_http_metadata:
+    operation: retrieve
+    mode: sync
+    file_id: file_batch
+    api_key: sk-xai
+upstream:
+  - status: 404
+    headers: {content-type: application/json}
+    body: {error: {message: no such file}}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization]
+  ignore:
+    - pointer: /file_http_metadata/value/failure/headers/date
+      why: each side answers from its own mock, so a server-stamped date would differ while answering nothing

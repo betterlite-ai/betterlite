@@ -1,0 +1,22 @@
+kind: helper
+name: per-user-cache-ttl-default
+call:
+  b4662:
+    function: per_user_ttl
+    server:
+      server_id: srv-1
+      name: Server
+      transport: http
+      url: https://mcp.example.com/mcp
+      auth_type: oauth2
+      oauth2_flow: client_credentials
+      client_id: client
+      client_secret: secret
+      token_url: https://idp.example.com/token
+      scopes:
+        - read
+        - write
+      token_storage_ttl_seconds: null
+    expires_in: null
+env: {}
+compare: {ignore: []}

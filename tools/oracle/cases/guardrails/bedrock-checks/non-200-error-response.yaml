@@ -1,0 +1,24 @@
+kind: helper
+name: non-200-error-response
+call:
+  b3725:
+    source: INPUT
+    messages:
+      - {role: user, content: hi}
+    response: null
+    logging_event_type: null
+    checks: {contentFilter: {}}
+    content_filter_threshold: null
+    prompt_attack_threshold: null
+    pii_confidence_threshold: null
+    disable_exception_on_block: false
+    data: {model: gpt-4o}
+    reply:
+      status: 400
+      body: {message: bad input}
+      raw: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/requests/0/authorization
+      why: "Each side signs its own request at its own clock time, so the SigV4 signature differs"

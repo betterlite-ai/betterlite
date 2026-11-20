@@ -229,6 +229,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "bedrock_checks_response"
+path = "fuzz_targets/bedrock_checks_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "content_filter_arguments"
 path = "fuzz_targets/content_filter_arguments.rs"
 test = false
