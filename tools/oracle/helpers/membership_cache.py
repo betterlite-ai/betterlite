@@ -2,8 +2,8 @@ from typing import Final, Literal, TypeAlias, TypedDict
 
 from litellm.models.team_membership import LiteLLM_TeamMembership
 from litellm.proxy.auth.auth_checks import (
-    _TeamMembershipCacheMiss,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L402-L406
     _membership_from_cached_payload,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2328-L2336
+    _TeamMembershipCacheMiss,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L402-L406
 )
 from pydantic import JsonValue, TypeAdapter
 
@@ -40,9 +40,9 @@ def classify(payload: CachedPayload) -> JsonValue:
         result = _membership_from_cached_payload(typed)
     else:
         result = _membership_from_cached_payload(payload["payload"])
+    if result is None:
+        return {"kind": "absent"}
     match result:
-        case None:
-            return {"kind": "absent"}
         case _TeamMembershipCacheMiss():
             return {"kind": "miss"}
         case LiteLLM_TeamMembership() as membership:
