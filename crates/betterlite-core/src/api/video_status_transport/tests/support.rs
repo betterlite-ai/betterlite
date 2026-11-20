@@ -123,13 +123,25 @@ pub(crate) fn recorder() -> Recorder {
     Arc::new(Mutex::new(Journal::default()))
 }
 
+impl Journal {
+    // the kind and its payload land under the one lock, so an observer never sees half a record
+    fn note<Update>(&mut self, kind: Kind, update: Update)
+    where
+        Update: FnOnce(&mut Journal),
+    {
+        self.kinds.push(kind);
+        update(self);
+    }
+}
+
 pub(crate) fn record<Update>(events: &Recorder, kind: Kind, update: Update)
 where
     Update: FnOnce(&mut Journal),
 {
-    let mut journal = events.lock().unwrap_or_else(PoisonError::into_inner);
-    journal.kinds.push(kind);
-    update(&mut journal);
+    events
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .note(kind, update);
 }
 
 pub(crate) fn observed(events: &Recorder) -> Journal {
@@ -265,12 +277,17 @@ impl FakeConfig {
         owner: Option<Owner>,
         form: Form,
     ) -> Result<VideoObject, ProviderFailure> {
+        let VideoReply {
+            raw_response,
+            logging_obj,
+            custom_llm_provider,
+        } = reply;
         let recorded = ResponseRecord {
             owner,
-            provider: reply.custom_llm_provider.map(ToOwned::to_owned),
-            status: reply.raw_response.status,
-            body: reply.raw_response.body.clone(),
-            header: reply_header(reply.raw_response),
+            provider: custom_llm_provider.map(ToOwned::to_owned),
+            status: raw_response.status,
+            body: raw_response.body.clone(),
+            header: reply_header(raw_response),
         };
         let (mark, outcome) = match form {
             Form::Sync => ("sync_transform", self.response.clone()),
@@ -284,8 +301,7 @@ impl FakeConfig {
                 journal.async_responses.push(recorded);
             }),
         }
-        reply
-            .logging_obj
+        logging_obj
             .model_call_details
             .insert(mark.to_owned(), Json::Bool(true));
         outcome
@@ -435,23 +451,26 @@ impl LogSink for Sink {
     fn emit(&self, _record: LogRecord) {}
 }
 
+// the logger fn B249's environment calls, holding the fixture's journal open to the test
+type FixtureLogger = Box<dyn Fn(&Json) -> Result<(), PrePostError> + Send + Sync>;
+
 // B249's logging environment, with a logger fn that records what pre_call handed it
 pub(crate) struct Fixture {
     redactor: Redactor,
     sink: Sink,
-    logger: Box<dyn Fn(&Json) -> Result<(), PrePostError> + Sync>,
+    logger: FixtureLogger,
     now: DateTime<FixedOffset>,
 }
 
 impl Fixture {
     pub(crate) fn new(events: &Recorder) -> Self {
-        let events = Arc::clone(events);
+        let shared = Arc::clone(events);
         Self {
             redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor compiles"),
             sink: Sink,
             logger: Box::new(move |details: &Json| -> Result<(), PrePostError> {
                 let recorded = recorded_pre_call(details);
-                record(&events, Kind::PreCall, |journal| {
+                record(&shared, Kind::PreCall, |journal| {
                     journal.pre_calls.push(recorded);
                 });
                 Ok(())

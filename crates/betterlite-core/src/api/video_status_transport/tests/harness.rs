@@ -139,7 +139,7 @@ impl<'call> Call<'call> {
     }
 
     const fn status<S, A>(
-        &self,
+        self,
         state: &'call mut LoggingState,
         sync: &'call S,
         asynchronous: &'call A,
@@ -176,9 +176,8 @@ impl Harness {
         let request = call.status(&mut self.state, &self.supplied_sync, &self.supplied_async);
         match handler.video_status_handler(&self.deps.config, request, false)? {
             VideoStatusHandled::Ready(video) => Ok(video),
-            VideoStatusHandled::Pending(_) => {
-                panic!("the blocking entry point answered with a future")
-            }
+            // the blocking entry never answers with a future, so one here is a broken fixture
+            VideoStatusHandled::Pending(_) => Err(VideoStatusError::Suspended),
         }
     }
 
