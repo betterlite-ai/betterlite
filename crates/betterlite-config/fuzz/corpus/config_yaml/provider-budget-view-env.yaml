@@ -1,0 +1,5 @@
+router_settings:
+  provider_budget_config:
+    openai:
+      budget_limit: os.environ/PROVIDER_BUDGET_LIMIT
+      time_period: os.environ/PROVIDER_BUDGET_PERIOD

@@ -1,0 +1,6 @@
+kind: helper
+name: decisions-providers-supported
+call:
+  b10022: {}
+env: {}
+compare: {ignore: []}

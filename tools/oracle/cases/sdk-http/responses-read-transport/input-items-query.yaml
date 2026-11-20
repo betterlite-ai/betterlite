@@ -1,0 +1,44 @@
+kind: sdk_http
+name: responses-read-transport-input-items-query
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  responses_read_transport:
+    runs:
+      - operation: input_items
+        mode: sync
+        response_id: resp_a
+      - operation: input_items
+        mode: async
+        response_id: resp_a
+        query:
+          after: ""
+          before: b
+          include: [message.input_image.image_url, computer_call_output.output.image_url]
+          limit: 3
+          order: asc
+      - operation: input_items
+        mode: sync
+        response_id: resp_a
+        query: {include: []}
+      - operation: input_items
+        mode: async
+        response_id: resp_a
+        timeout_seconds: 7
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], has_more: false}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], has_more: false}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], has_more: false}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], has_more: false}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization]
+  ignore: []
