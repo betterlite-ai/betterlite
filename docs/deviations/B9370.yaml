@@ -1,0 +1,30 @@
+task: B9370
+deviations:
+  - what: "create_eval_handler logs the body's `name` as the pre_call input, where LiteLLM's sync create_eval_handler logs `display_name`; the async twin the proxy calls logs `name`, so a call from the sync create_eval logs the name here too."
+    why: "CreateEvalRequest has no display_name key, so the sync handler always logs an empty input while the async handler logs the eval's name; betterlite has one async handler and keeps the async behavior."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L12550-L12552
+  - what: "A DELETE that runs past its timeout becomes the provider's error class with status 500 marked synthesized and the transport's message, where LiteLLM's sync delete_eval_handler turns the same timeout into litellm.Timeout with status 408."
+    why: "betterlite has one async handler and follows the async twin the proxy calls: the async delete never catches TimeoutException, so the failure reaches _handle_error with no status. A call from the sync delete would see the sync handler's 408."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1671-L1676
+  - what: "A post timeout message renders the deadline the request ran with and the elapsed time from Duration values: a whole-second deadline prints as an integer and the elapsed time as seconds plus zero-padded milliseconds (time taken=0.050). LiteLLM interpolates Python floats, so a whole-second timeout prints as 2.0 and fifty milliseconds as 0.05."
+    why: "The message still reports the timeout the request ran under and the time the failed request took; only the float rendering differs, since betterlite keeps durations typed."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L852-L866
+  - what: "A transport or wire failure carries betterlite's own wording in the error text (\"the connection could not be made\", \"the request URL {url} is not a URL\", \"the {name} header value is not a header value\", \"the {name} query value is not a scalar\") where LiteLLM uses str(e) of the httpx or Python exception; the status and the synthesized flag are the same."
+    why: "The httpx exceptions do not exist here, so the typed message names the failure where it was found; the status the caller sees does not change."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6084-L6085
+  - what: "A reply body that is not UTF-8 reaches the transform as the text \"{n} bytes that are not UTF-8\", so the transform fails with its typed decode error; LiteLLM hands the bytes to httpx's response.json(), which raises a Python decode error from inside the transform."
+    why: "Rust text is UTF-8, so every reply needs a text form; naming the size keeps the failure the same kind (the body does not decode as the JSON it should be) and lets the transform see what arrived."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/evals/transformation.py#L35-L36
+kept_bugs:
+  - what: update_eval_handler logs the body's `display_name` as the pre_call input, and a typed UpdateEvalRequest body never carries that key, so the input is empty on every call.
+    why: Both pinned handlers read a key their own request type does not have; reading `name` instead would change the input a working setup already logs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L12910-L12911
+  - what: list_evals_handler takes no timeout and sends none, so the GET runs on the pooled client's read deadline whatever the operation asked for; LiteLLM's list handler accepts a timeout and never puts it on the request.
+    why: The pinned handler drops the timeout on this call, so a working setup's list calls never carry the operation's timeout; honoring it would time out list calls LiteLLM lets run.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L12713-L12719
+  - what: get_eval_handler takes no timeout and sends none, so the GET runs on the pooled client's read deadline; LiteLLM's get handler accepts a timeout and never puts it on the request.
+    why: The pinned handler drops the timeout on this call too, and depending on it being honored would change how long a get may take.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L12814-L12820
+  - what: cancel_eval_handler posts the literal {} and never the body transform_cancel_eval_request builds.
+    why: The pinned handler does the same and OpenAI's transform also returns {}, so a provider transform that builds a different cancel body gets it dropped, as it does in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L13122-L13123

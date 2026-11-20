@@ -1,0 +1,16 @@
+kind: helper
+name: topaz-variation-replace-headers
+call:
+  topaz_variation:
+    calls:
+      - function: environment
+        api_key: caller-key
+        headers: {X-Old: "1", Authorization: "Bearer old", Accept: text/plain}
+      - function: environment
+        api_key: ""
+        headers: {Accept: text/plain}
+      - function: environment
+        api_key: null
+        headers: {X-Old: "1"}
+env: {}
+compare: {ignore: []}

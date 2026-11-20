@@ -1,0 +1,33 @@
+kind: helper
+name: access-group-models-config-sibling-short-circuit
+call:
+  access_group_models:
+    function: served_by_a_config_deployment
+    model_list:
+      - model_name: team-gpt
+        litellm_params:
+          model: azure/team-gpt
+        model_info:
+          id: db-1
+          db_model: true
+      - model_name: team-gpt
+        litellm_params:
+          model: openai/team-gpt
+        model_info:
+          id: config-2
+    model_name: team-gpt
+    model_id: dep-9
+calls:
+  - access_group_models:
+      function: served_by_a_config_deployment
+      model_list:
+        - model_name: team-gpt
+          litellm_params:
+            model: azure/team-gpt
+          model_info:
+            id: db-1
+            db_model: true
+      model_name: team-gpt
+      model_id: dep-9
+env: {}
+compare: {ignore: []}
