@@ -93,10 +93,11 @@ async fn claim_tier_model(
     let Some(pinned) = claimed_model(&claimed.pin) else {
         return Ok(None);
     };
+    // eq over ==: a claimed model is always a candidate, so an inverted comparison has no case
     if !selection
         .candidates
         .iter()
-        .any(|candidate| candidate == pinned)
+        .any(|candidate| pinned.eq(candidate))
     {
         return Ok(None);
     }
