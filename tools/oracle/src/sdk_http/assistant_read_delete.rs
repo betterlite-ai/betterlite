@@ -1,3 +1,5 @@
+#![expect(clippy::disallowed_methods, reason = "the SDK view is arbitrary JSON")]
+
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -133,8 +135,8 @@ impl Harness<'_> {
         input: &AssistantReadDeleteInput,
         wrapper: AssistantWrapper,
     ) -> Result<View, SdkHttpError> {
-        let mut input = input.clone();
-        input.entry = wrapper;
+        let mut request = input.clone();
+        request.entry = wrapper;
         let facade = AssistantReadDelete {
             dispatch: SdkDispatch {
                 transport: Arc::clone(&self.transport),
@@ -145,7 +147,7 @@ impl Harness<'_> {
             limits: ApiLimits::default(),
             settings: self.settings.clone(),
         };
-        match facade.run(&input).await {
+        match facade.run(&request).await {
             Ok(result) => Ok(step_view(result.step)),
             Err(error) => failure_view(&error, wrapper),
         }
@@ -203,7 +205,7 @@ fn failure_view(
     {
         status_failure(*status, body, wrapper)?
     } else if wrapper == AssistantWrapper::Async {
-        json!({ "class": "APIConnectionError", "status": 500, "message": error.to_string() })
+        json!({ "class": "APIConnectionError", "status": 500_u16, "message": error.to_string() })
     } else {
         json!({ "class": "Exception", "message": error.to_string() })
     };
@@ -257,7 +259,7 @@ fn compact(value: Value) -> Value {
                 .collect(),
         ),
         Value::Array(items) => Value::Array(items.into_iter().map(compact).collect()),
-        other => other,
+        other @ (Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_)) => other,
     }
 }
 
