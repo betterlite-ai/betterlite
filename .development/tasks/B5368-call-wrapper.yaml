@@ -60,8 +60,6 @@ scope:
   - crates/betterlite-sdk/Cargo.toml
   - crates/betterlite-sdk/src/call_wrapper.rs
   - crates/betterlite-sdk/src/call_wrapper/**
-  - crates/betterlite-error/src/retry_policy.rs
-  - crates/betterlite-error/src/retry_policy/**
   - crates/betterlite-error/src/error.rs
   - crates/betterlite-error/src/error/**
   - crates/betterlite-router/src/retry_policy/policy.rs
