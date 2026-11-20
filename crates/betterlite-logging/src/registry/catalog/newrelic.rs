@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use super::super::{CatalogError, CatalogInputs};
 use super::otel::maybe;
 use super::otel::shared::SharedOtel;
+use super::{CatalogError, CatalogInputs};
 use crate::callback_logger::CallbackLogger;
 use crate::newrelic_agent::backoff::MetricBackoff;
 use crate::newrelic_agent::init::NewRelicInit;

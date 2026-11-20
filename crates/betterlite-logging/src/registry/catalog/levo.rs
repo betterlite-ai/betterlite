@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use secrecy::ExposeSecret as _;
 
-use super::super::{CatalogError, CatalogInputs};
 use super::otel::shared::SharedOtel;
 use super::otel::{legacy, maybe};
+use super::{CatalogError, CatalogInputs};
 use crate::callback_logger::CallbackLogger;
 use crate::otel::integrations::levo_settings::LevoConfig;
 use crate::otel::legacy_policy::config::{Exporter, OpenTelemetryConfig};

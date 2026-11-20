@@ -13,16 +13,17 @@ use crate::otel_provider_assembly::proxy_registry::ProxyRegistry;
 
 // What every legacy arm shares: one environment snapshot, one set of provider slots, one exporter pool.
 pub struct SharedOtel {
-    pub env: BTreeMap<String, String>,
-    pub globals: GlobalProviders,
-    pub proxy: ProxyRegistry,
-    pub shared_exporter: InMemorySpanExporter,
+    pub(crate) env: BTreeMap<String, String>,
+    pub(crate) globals: GlobalProviders,
+    pub(crate) proxy: ProxyRegistry,
+    pub(crate) shared_exporter: InMemorySpanExporter,
     // LiteLLM keeps the meter and logger providers on the logger: dropping either shuts its pipeline down.
-    pub kept: Mutex<Vec<(Option<SdkMeterProvider>, Option<SdkLoggerProvider>)>>,
-    clients: Mutex<Option<HttpClients>>,
+    pub(crate) kept: Mutex<Vec<(Option<SdkMeterProvider>, Option<SdkLoggerProvider>)>>,
+    pub(crate) clients: Mutex<Option<HttpClients>>,
 }
 
 impl SharedOtel {
+    #[must_use]
     pub fn new(inputs: &CatalogInputs) -> Self {
         Self {
             env: env::snapshot(inputs),

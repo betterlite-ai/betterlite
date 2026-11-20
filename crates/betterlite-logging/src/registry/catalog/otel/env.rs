@@ -68,6 +68,7 @@ const LEGACY_KEYS: &[&str] = &[
 ];
 
 // The legacy builders and B3848's HttpClients take a map, so the injected lookup is read once into one.
+#[must_use]
 pub fn snapshot(inputs: &CatalogInputs) -> BTreeMap<String, String> {
     let mut values = BTreeMap::new();
     for name in LEGACY_KEYS {
@@ -79,6 +80,7 @@ pub fn snapshot(inputs: &CatalogInputs) -> BTreeMap<String, String> {
 }
 
 // litellm.integrations.opentelemetry's LITELLM_LOGGER_NAME, which binds the semantic event logger
+#[must_use]
 pub fn logger_name(environment: &BTreeMap<String, String>) -> String {
     environment
         .get("LITELLM_LOGGER_NAME")

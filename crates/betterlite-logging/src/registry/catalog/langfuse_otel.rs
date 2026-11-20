@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use super::super::{CatalogError, CatalogInputs};
 use super::otel::shared::SharedOtel;
 use super::otel::{legacy, maybe};
+use super::{CatalogError, CatalogInputs};
 use crate::callback_logger::CallbackLogger;
 use crate::langfuse_otel::LangfuseOtelLogger;
 use crate::otel::legacy_exporters::tracer_cache::MAX_DYNAMIC_TRACER_PROVIDERS;

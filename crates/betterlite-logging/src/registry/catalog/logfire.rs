@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use betterlite_config::loader::EnvironmentLookup;
 
-use super::super::{CatalogError, CatalogInputs};
 use super::otel::shared::SharedOtel;
 use super::otel::{legacy, maybe};
+use super::{CatalogError, CatalogInputs};
 use crate::callback_logger::CallbackLogger;
 use crate::otel::legacy_policy::config::{Exporter, OTLP_HTTP_EXPORTER, OpenTelemetryConfig};
 use crate::otel::logger_runtime::LoggerRuntime;

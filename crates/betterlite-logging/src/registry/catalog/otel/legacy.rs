@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use chrono::Utc;
+use chrono::{Offset as _, Utc};
 use opentelemetry::logs::LoggerProvider as _;
 
 use super::super::{CatalogError, CatalogInputs};
@@ -24,9 +24,9 @@ use crate::otel_provider_assembly::legacy_otel_init::{
 
 // A legacy logger part-way through construction: the provider side is built, the lifecycle is not.
 pub struct Prepared<'shared> {
-    pub otel: LegacyOtel,
-    view: Arc<dyn CallbackSettingsView>,
-    shared: &'shared SharedOtel,
+    pub(crate) otel: LegacyOtel,
+    pub(crate) view: Arc<dyn CallbackSettingsView>,
+    pub(crate) shared: &'shared SharedOtel,
 }
 
 // B3868's init, after the metric filter this config names has been validated (opentelemetry.py 395-415).
@@ -69,9 +69,9 @@ pub fn prepare<'shared>(
 }
 
 // B3910 builds the config and the LegacyOtel itself; it gets the same filter and the same lifecycle.
-pub fn complete<'shared>(
+pub fn complete(
     inputs: &CatalogInputs,
-    shared: &'shared SharedOtel,
+    shared: &SharedOtel,
     otel: LegacyOtel,
 ) -> Result<Arc<dyn CallbackLogger>, CatalogError> {
     let view: Arc<dyn CallbackSettingsView> = Arc::new(AttributeSettings::from_settings(

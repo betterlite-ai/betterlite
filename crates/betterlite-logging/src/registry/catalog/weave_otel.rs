@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use secrecy::ExposeSecret as _;
 
-use super::super::{CatalogError, CatalogInputs};
 use super::otel::shared::SharedOtel;
 use super::otel::{legacy, maybe};
+use super::{CatalogError, CatalogInputs};
 use crate::callback_logger::CallbackLogger;
 use crate::otel::callbacks::weave::weave_lifecycle;
 use crate::otel::integrations::weave_settings::WeaveOtelConfig;
