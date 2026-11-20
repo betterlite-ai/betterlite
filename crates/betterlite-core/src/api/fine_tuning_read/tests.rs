@@ -398,6 +398,31 @@ async fn page_shapes_an_unknown_grader_as_the_union_fallback() {
     assert_eq!(fallback.get("labels"), Some(&json!(["good"])));
 }
 
+// a declared grader type missing a required field still writes that type's keys, where the SDK falls back
+#[tokio::test]
+async fn page_shapes_an_incomplete_grader_by_its_type() {
+    let fake = Fake::answering(
+        br#"{"data": [{"id": "ft_t", "method": {"type": "reinforcement", "reinforcement": {"grader": {"type": "text_similarity", "name": "sim", "input": "out", "reference": "ref"}}}}], "has_more": false}"#,
+    );
+    let outcome = run(
+        &fake,
+        &ConfiguredSettings::default(),
+        &input(r#"{"list": {}}"#),
+    )
+    .await
+    .expect("a listed page");
+    let FineTuningReadOutcome::Page(FineTuningPage(page)) = outcome else {
+        panic!("list answered a job");
+    };
+    let page_json = serde_json::to_value(page).expect("a page serializes");
+    let grader = page_json["data"][0]["method"]["reinforcement"]["grader"]
+        .as_object()
+        .expect("a grader object");
+    assert_eq!(grader.len(), 5);
+    assert_eq!(grader.get("evaluation_metric"), Some(&json!(null)));
+    assert_eq!(grader.get("type"), Some(&json!("text_similarity")));
+}
+
 // every corpus seed reaches the page decoder, which answers a page or a JSON error and never panics
 #[rstest]
 fn replays_the_fine_tuning_read_page_corpus(
