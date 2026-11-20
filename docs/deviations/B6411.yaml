@@ -1,0 +1,12 @@
+task: B6411
+deviations:
+  - what: >-
+      In an unsupported-parameter error message, a service_tier or metadata.completion_window value that is not a
+      string is described by its JSON text, and a string value by the Rust debug text of that string, where LiteLLM
+      writes Python's repr of the value.
+    why: >-
+      Python repr text is not reproducible outside Python, and docs/compatibility.md leaves it out. No oracle case
+      compares the text: the cases send strings, the helper reports only the status of a failing step, and compare
+      strips error messages.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sail/common_utils.py#L68
+kept_bugs: []

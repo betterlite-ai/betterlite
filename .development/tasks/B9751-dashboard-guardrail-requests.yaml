@@ -65,7 +65,9 @@ description: >-
   {model,input,questions:[{type:"predicate",name,instructions}]} and reads
   answers[].name,type,probability. Configure an OpenAI decision deployment with a deterministic
   mock reply, including a refusal. B060 GET /model_group/info supplies data[].model_group,
-  providers,mode, with evaluation groups used by the decision selector. No query is sent.
+  providers,mode, with evaluation groups used by the decision selector. No query is sent. The
+  decision request needs B8276 and B8634, which are later work, so that page case and its model
+  group read belong to them; this task sends neither request.
   modelAvailableCall GET /models?include_model_access_groups=True reads data[].id; reuse
   B9735's exact selector case rather than adding a second one. B007 owns /models.
 
@@ -133,7 +135,7 @@ dod:
     proof: [new-form-cases, oracle]
   - text: Team submission, search, review and header controls retain authentication, team visibility and secret masking.
     proof: [new-form-cases, oracle]
-  - text: Catalog reads, direct apply, custom-code testing and inline decision questions use the exact page requests and consumed fields.
+  - text: Catalog reads, direct apply and custom-code testing use the exact page requests and consumed fields.
     proof: [new-form-cases, oracle]
 checks:
   optional: []
@@ -146,7 +148,6 @@ oracle_cases:
   - tools/oracle/cases/ui/guardrail-forms/create-decision-and-tool-permission.yaml
   - tools/oracle/cases/ui/guardrail-forms/custom-code-test-save-edit.yaml
   - tools/oracle/cases/ui/guardrail-forms/playground-optional-metadata.yaml
-  - tools/oracle/cases/ui/guardrail-forms/decision-questions-and-model-groups.yaml
   - tools/oracle/cases/ui/guardrail-forms/register-approve-and-list.yaml
   - tools/oracle/cases/ui/guardrail-forms/register-reject-and-filter-summary.yaml
   - tools/oracle/cases/ui/guardrail-forms/submission-header-patches.yaml

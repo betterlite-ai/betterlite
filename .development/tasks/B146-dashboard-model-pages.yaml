@@ -15,13 +15,8 @@ description: >-
   handshake is on disk yet. This part therefore adds no HTTP case and no handler; oracle_cases
   is empty on purpose.
 
-  The one page left here is Model Insights. It sends GET /model-insights?metric=<tokens|spend|requests>
-  and GET /model-insights/tasks?metric=<m> with no dates, so the server picks its default
-  window ending today (B8272 builds both, B8676 mounts them, B075 proves the ranking and window
-  rules over HTTP with fixed dates). A fixed-date database seed would fall out of that window
-  as time passes, so the browser checks the empty state on a fresh database, every metric tab
-  and the task metric select, each answered by the real server with no error banner, and B075
-  carries the populated proof.
+  The Model Insights page is deferred with its routes: B8272 builds them and B075 proves them,
+  and the page walk this task would run goes with B075.
 
   Run it through B144's harness: bash tools/dashboard/browser-check.sh --test
   dashboard_model_pages builds and installs the bundle, sets up the locked browser and runs
@@ -49,7 +44,7 @@ description: >-
   the public hub and opens /ui/model_hub_table in a fresh context without a session to see it;
   in the playground streams a chat reply, sends two Responses turns, compares two models, runs
   a compliance quick test that a seeded guardrail blocks, transforms a request, creates an
-  agent in the agent builder, chats with it and deletes it; opens Model Insights as above; and
+  agent in the agent builder, chats with it and deletes it; and
   finally deletes the model. model_pages_member_scope signs in as an internal_user prepared
   the way B145 prepares role identities, checks the read-only model table, sends one forbidden
   model PATCH from the same session and asserts the server's 403, then opens /ui/chat, sends
@@ -58,7 +53,7 @@ description: >-
   SERVER_ROOT_PATH=/gateway, since the playground's SDK base URL is built from the discovered
   proxy base. Realtime, audio and image edits stay with their HTTP cases.
 
-  Document the page-to-case map, the mock provider and the Model Insights window choice in
+  Document the page-to-case map, and the mock provider in
   ui/dashboard/MODEL-PAGES.md. A backend mismatch a child finds is fixed by that route's owner,
   not here. Budget about 160 harness lines, 480 browser steps and 80 documentation lines.
 scope:
@@ -69,8 +64,6 @@ scope:
     - ui/dashboard/MODEL-PAGES.md
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/model-insights/_components/ModelInsightsView.tsx#L116-L163
-    why: Both insight reads send only metric, so the window is the server default.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/models-and-endpoints/page.tsx#L83-L160
     why: The models page composition the browser walks through.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/llm_calls/chat_completion.tsx#L55-L66
@@ -84,7 +77,7 @@ references:
 dod:
   - text: The built dashboard adds, edits, tests, publishes and deletes a model, an auto-router and routing settings through real HTTP, and the edits survive a refresh.
     proof: [model-pages-browser, bootstrap-regression]
-  - text: The playground, compare, compliance, agent builder, transform request, public hub and model insights pages work against the native process at root and /gateway.
+  - text: The playground, compare, compliance, agent builder, transform request and public hub pages work against the native process at root and /gateway.
     proof: [model-pages-browser]
   - text: An internal user keeps the server's denial on model writes and can chat, rotate their own key and see their logs and usage in /ui/chat without a paid claim.
     proof: [model-pages-browser]
@@ -102,7 +95,7 @@ deviations: []
 out_of_scope:
   - B9090 retains every function under the covers, B9091 builds it and B144 owns the login, discovery and browser foundation.
   - B9690-B9695 own the exact-request HTTP cases and the two page patches; B4920 and B4921 own the insights data helpers and the upload checks. No proxy handler is written here.
-  - B8272 and B8676 own the model insights routes and B075 their populated HTTP proof.
+  - B8272 and B8676 own the model insights routes, and B075 their populated HTTP proof and the Model Insights page walk.
   - Pass-through settings on the models page belong to B150's pass-through child, and TeamInfoView to B9731.
 pitfalls:
   - The playground SDK calls have no /v1 prefix and follow the root path, so the /gateway run is the one that catches a mount missing under the prefix.

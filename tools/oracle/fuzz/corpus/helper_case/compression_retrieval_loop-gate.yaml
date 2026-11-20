@@ -1,0 +1,14 @@
+kind: helper
+name: compression-retrieval-loop-gate-seed
+call:
+  b3544:
+    function: gate
+    model: claude-3-sonnet
+    response:
+      content:
+        - {type: thinking, thinking: hm, signature: sig}
+        - {type: tool_use, id: call-1, name: litellm_content_retrieve, input: {key: message_1}}
+    tools:
+      - {type: custom, name: litellm_content_retrieve}
+env: {}
+compare: {ignore: []}

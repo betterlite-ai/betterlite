@@ -9,19 +9,28 @@ description: >-
 
   The security guardrail extracts server names from tools with type=mcp and litellm_proxy server_url prefix, compares against the registered MCP server manager's registry keys and reports unregistered names sorted alphabetically in HTTP 400 errors when blocking. It defaults off (default_on=false) and defaults to alert behavior unless on_violation is explicitly set to "block". It does not branch on input_type despite its request-only documentation.
 
-  Both guardrails register through initialize_guardrail functions following the existing callback pattern. End-user defaults to on unless the raw guardrail dict explicitly sets default_on to false; the security initializer maps anything except literal on_violation=block to alert. Both use the cached auth lookup from B739; preserve its existing failure boundary and behavior.
+  The two initialize_guardrail functions become argument functions that register nothing, the way B8217 writes the third-party initializers. `initialize_mcp_end_user_permission(params, guardrail_name) -> McpEndUserPermissionArgs` in mcp_end_user_permission/init.rs keeps the name, mode as the event hook, and default_on true unless the params set default_on to false; LitellmParams keeps default_on as Option<bool>, so None is the "not set" that LiteLLM reads from the raw guardrail dict. `initialize_mcp_security(params, guardrail_name)` in mcp_security/init.rs returns McpSecurityArgs or the error "MCP Security: guardrail_name is required" for an empty name, maps every on_violation except literal "block" to alert, and falls back to default_on false. Both use the cached auth lookup from B739; preserve its existing failure boundary and behavior.
+
+  B8521's hook registry answers mcp_end_user_permission and mcp_security with HookRegistryError::NotBuilt until this task lands. B8666's LiveGuardrail::build has no arm for either, so also add both `LiveGuardrail` variants and arms in crates/betterlite-server/src/guardrail_dispatch/live.rs. Put both arms in place of those answers in hook_registry/kinds.rs, keep the args as `HookSpec::McpEndUserPermission` and `HookSpec::McpSecurity` in spec.rs with their settings arms, let the security initializer's error come back as HookRegistryError::Init, and give each name in hooks.rs the event hooks its class sets. B8521's `unbuilt_mcp_end_user_permission` and `unbuilt_mcp_security` tests become `mcp_end_user_permission_arm` and `mcp_security_arm`, and both names leave the not-built row in docs/deviations/B8521.yaml. Should these two be the last NotBuilt answers, the same change deletes the NotBuilt variant and its skips_startup arm in hook_registry/error.rs, the NotBuilt half of `hook_errors_at_startup` and that row.
 scope:
   paths:
     - crates/betterlite-guardrails/src/mcp_end_user_permission.rs
     - crates/betterlite-guardrails/src/mcp_end_user_permission/**
     - crates/betterlite-guardrails/src/mcp_security.rs
     - crates/betterlite-guardrails/src/mcp_security/**
+    - crates/betterlite-guardrails/src/hook_registry/kinds.rs
+    - crates/betterlite-guardrails/src/hook_registry/spec.rs
+    - crates/betterlite-guardrails/src/hook_registry/hooks.rs
+    - crates/betterlite-guardrails/src/hook_registry/error.rs
+    - crates/betterlite-guardrails/src/hook_registry/tests.rs
+    - docs/deviations/B8521.yaml
     - tools/oracle/cases/guardrails/mcp_end_user_permission/**
     - tools/oracle/cases/guardrails/mcp_security/**
     - tools/oracle/helpers/b3815.py
     - tools/oracle/helpers/b3815/**
     - tools/oracle/src/helpers/guardrails/b3815.rs
     - tools/oracle/src/helpers/guardrails/b3815/**
+    - crates/betterlite-server/src/guardrail_dispatch/live.rs
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_end_user_permission/__init__.py
@@ -63,13 +72,21 @@ dod:
     proof: [mcp-security-tests]
   - text: When on_violation is alert (default when not explicitly block), a warning is logged instead of raising an exception.
     proof: [mcp-security-tests]
-  - text: Guardrail initializers register via logging_callback_manager.add_litellm_callback and follow the callback pattern established in B189.
+  - text: The two argument functions copy name, mode and default_on as LiteLLM's initializers do, and the security one refuses an empty name and maps on_violation to block or alert.
     proof: [mcp-permission-tests, mcp-security-tests]
+  - text: Both wire names build their HookSpec through B8521's hook registry with their classes' event hooks instead of answering NotBuilt.
+    proof: [hook-arm-tests, hook-registry-tests]
   - text: All behavior from the listed oracle cases matches LiteLLM on tool filtering, permission handling and server validation.
     proof: [mcp-oracle]
 checks:
   optional: []
   commands:
+    - id: hook-arm-tests
+      why: mcp_end_user_permission or mcp_security still answers NotBuilt or keeps the wrong arguments
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^hook_registry::tests::mcp_end_user_permission_arm/) | test(/^hook_registry::tests::mcp_security_arm/)'
+    - id: hook-registry-tests
+      why: the two new variants or arms broke another hook registry arm
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^hook_registry::/)'
     - id: mcp-permission-tests
       why: end-user permission guardrail tests fail, do not exist or have missing behavior cases
       run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(mcp_end_user_permission::)'
@@ -104,6 +121,7 @@ out_of_scope:
   - MCP server registry management beyond registry lookups.
   - Configuration UI and settings exposure beyond the basic config model.
   - CustomGuardrail base class implementation and callback dispatcher integration (B5471 for the base class, B8666 for live class dispatch).
+  - The hook registry table, HookSpec and its other arms (B8521); this task adds only its two names.
   - Tool name extraction from LiteLLM's lower tool_name_extraction module.
 pitfalls:
   - The end-user guardrail defaults to on (default_on=true) only when the raw guardrail dict does not explicitly set default_on to false; normalize the None case upfront to avoid confusion with Pydantic's false normalization.

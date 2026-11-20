@@ -1,0 +1,12 @@
+kind: helper
+name: post-call-settlement-header-merge-multiple-statuses
+call:
+  b3046:
+    function: header_merge
+    stash:
+      statuses:
+        - {code: OK, current_limit: 60, limit_remaining: 59, rate_limit_type: requests, descriptor_key: api_key, descriptor_value: key-1}
+        - {code: OK, current_limit: 5000, limit_remaining: 4000, rate_limit_type: tokens, descriptor_key: api_key, descriptor_value: key-1}
+        - {code: OK, current_limit: 4, limit_remaining: 3, rate_limit_type: max_parallel_requests, descriptor_key: model, descriptor_value: gpt-4}
+env: {}
+compare: {ignore: []}

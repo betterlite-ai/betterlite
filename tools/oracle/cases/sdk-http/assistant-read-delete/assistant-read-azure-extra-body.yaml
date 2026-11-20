@@ -1,0 +1,55 @@
+kind: sdk_http
+name: assistant-read-delete-assistant-read-azure-extra-body
+env: {AZURE_AD_TOKEN: env-token}
+call:
+  assistant_read_delete:
+    runs:
+      - input:
+          operation: list
+          provider: azure
+          params: {api_base: $API_BASE, api_key: sk-zu, api_version: "2024-02-01"}
+      - input:
+          operation: list
+          provider: azure
+          extra_body: {}
+          params: {api_base: $API_BASE, api_key: sk-zu, api_version: "2024-02-01"}
+      - input:
+          operation: list
+          provider: azure
+          extra_body: null
+          params: {api_base: $API_BASE, api_key: sk-zu, api_version: "2024-02-01"}
+      - input:
+          operation: list
+          provider: azure
+          extra_body: {azure_ad_token: body-token, other: 1}
+          params: {api_base: $API_BASE, api_key: sk-zu, api_version: "2024-02-01"}
+      - input:
+          operation: list
+          provider: azure
+          params: {api_base: $API_BASE, api_key: sk-zu, api_version: "2024-02-01", azure_ad_token: kwarg-token, max_retries: 2}
+      - input:
+          operation: list
+          provider: azure
+          after: asst_a
+          before: asst_z
+          limit: 3
+          order: asc
+          params: {api_base: $API_BASE, api_key: sk-zu, api_version: "2024-02-01"}
+upstream:
+  - {status: 200, headers: {content-type: application/json}, body: {object: list, data: [{id: asst_b, object: assistant, created_at: 1, model: gpt-4o, name: helper, tools: []}], has_more: false, first_id: asst_b, last_id: asst_b}}
+  - {status: 200, headers: {content-type: application/json}, body: {object: list, data: [{id: asst_b, object: assistant, created_at: 1, model: gpt-4o, name: helper, tools: []}], has_more: false, first_id: asst_b, last_id: asst_b}}
+  - {status: 200, headers: {content-type: application/json}, body: {object: list, data: [{id: asst_b, object: assistant, created_at: 1, model: gpt-4o, name: helper, tools: []}], has_more: false, first_id: asst_b, last_id: asst_b}}
+  - {status: 200, headers: {content-type: application/json}, body: {object: list, data: [{id: asst_b, object: assistant, created_at: 1, model: gpt-4o, name: helper, tools: []}], has_more: false, first_id: asst_b, last_id: asst_b}}
+  - {status: 200, headers: {content-type: application/json}, body: {object: list, data: [{id: asst_b, object: assistant, created_at: 1, model: gpt-4o, name: helper, tools: []}], has_more: false, first_id: asst_b, last_id: asst_b}}
+  - {status: 200, headers: {content-type: application/json}, body: {object: list, data: [{id: asst_b, object: assistant, created_at: 1, model: gpt-4o, name: helper, tools: []}], has_more: false, first_id: asst_b, last_id: asst_b}}
+  - {status: 200, headers: {content-type: application/json}, body: {object: list, data: [{id: asst_b, object: assistant, created_at: 1, model: gpt-4o, name: helper, tools: []}], has_more: false, first_id: asst_b, last_id: asst_b}}
+  - {status: 200, headers: {content-type: application/json}, body: {object: list, data: [{id: asst_b, object: assistant, created_at: 1, model: gpt-4o, name: helper, tools: []}], has_more: false, first_id: asst_b, last_id: asst_b}}
+  - {status: 200, headers: {content-type: application/json}, body: {object: list, data: [{id: asst_b, object: assistant, created_at: 1, model: gpt-4o, name: helper, tools: []}], has_more: false, first_id: asst_b, last_id: asst_b}}
+  - {status: 200, headers: {content-type: application/json}, body: {object: list, data: [{id: asst_b, object: assistant, created_at: 1, model: gpt-4o, name: helper, tools: []}], has_more: false, first_id: asst_b, last_id: asst_b}}
+  - {status: 200, headers: {content-type: application/json}, body: {object: list, data: [{id: asst_b, object: assistant, created_at: 1, model: gpt-4o, name: helper, tools: []}], has_more: false, first_id: asst_b, last_id: asst_b}}
+  - {status: 200, headers: {content-type: application/json}, body: {object: list, data: [{id: asst_b, object: assistant, created_at: 1, model: gpt-4o, name: helper, tools: []}], has_more: false, first_id: asst_b, last_id: asst_b}}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, api-key, openai-beta]
+  ignore: []

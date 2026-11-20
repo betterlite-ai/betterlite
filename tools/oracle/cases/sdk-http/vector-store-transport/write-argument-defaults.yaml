@@ -1,0 +1,17 @@
+kind: sdk_http
+name: vector-store-transport-write-argument-defaults
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  vector_store_transport:
+    operation: update
+    mode: async
+    vector_store_id: vs_a
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: vs_a, object: vector_store, name: vs_a}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type, openai-beta]
+  ignore: []

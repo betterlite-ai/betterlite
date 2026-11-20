@@ -1,0 +1,32 @@
+kind: helper
+name: batch-retrieve-cancel-list
+call:
+  azure_batches:
+    steps:
+    - action: retrieve
+      args: {api_key: rc-1, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      query: {batch_id: batch_a, extra_headers: {x-ms-client-request-id: req-b}, extra_body: {mode: retrieve}, timeout: 7.5}
+      reply: {status: 200, body: {id: batch_a, completion_window: 24h, created_at: 1741000000, endpoint: /v1/chat/completions, input_file_id: file_in, object: batch, status: in_progress, cancelled_at: null, cancelling_at: null, completed_at: null, error_file_id: null, errors: null, expired_at: null, expires_at: null, failed_at: null, finalizing_at: null, in_progress_at: 1741000050, metadata: null, model: null, output_file_id: null, request_counts: {completed: 1, failed: 0, total: 3}, usage: null}}
+    - action: retrieve
+      is_async: true
+      args: {api_key: rc-2, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      query: {batch_id: batch_a}
+      reply: {status: 200, body: {id: batch_a, completion_window: 24h, created_at: 1741000000, endpoint: /v1/chat/completions, input_file_id: file_in, object: batch, status: in_progress, cancelled_at: null, cancelling_at: null, completed_at: null, error_file_id: null, errors: null, expired_at: null, expires_at: null, failed_at: null, finalizing_at: null, in_progress_at: 1741000050, metadata: null, model: null, output_file_id: null, request_counts: {completed: 1, failed: 0, total: 3}, usage: null}}
+    - action: cancel
+      args: {api_key: rc-3, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      query: {batch_id: batch_a}
+      reply: {status: 200, body: {id: batch_a, completion_window: 24h, created_at: 1741000000, endpoint: /v1/chat/completions, input_file_id: file_in, object: batch, status: cancelling, cancelled_at: null, cancelling_at: 1741000200, completed_at: null, error_file_id: null, errors: null, expired_at: null, expires_at: null, failed_at: null, finalizing_at: null, in_progress_at: 1741000050, metadata: null, model: null, output_file_id: null, request_counts: {completed: 1, failed: 0, total: 3}, usage: null}}
+    - action: cancel
+      is_async: true
+      args: {api_key: rc-4, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      query: {batch_id: batch_a, timeout: 3.5}
+      reply: {status: 200, body: {id: batch_a, completion_window: 24h, created_at: 1741000000, endpoint: /v1/chat/completions, input_file_id: file_in, object: batch, status: cancelling, cancelled_at: null, cancelling_at: 1741000200, completed_at: null, error_file_id: null, errors: null, expired_at: null, expires_at: null, failed_at: null, finalizing_at: null, in_progress_at: 1741000050, metadata: null, model: null, output_file_id: null, request_counts: {completed: 1, failed: 0, total: 3}, usage: null}}
+    - action: list
+      args: {api_key: rc-5, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      reply: {status: 200, body: {object: list, data: [{id: batch_a, completion_window: 24h, created_at: 1741000000, endpoint: /v1/chat/completions, input_file_id: file_in, object: batch, status: completed, cancelled_at: null, cancelling_at: null, completed_at: 1741000100, error_file_id: null, errors: null, expired_at: null, expires_at: null, failed_at: null, finalizing_at: null, in_progress_at: null, metadata: null, model: null, output_file_id: file_out, request_counts: {completed: 3, failed: 0, total: 3}, usage: null}], has_more: false, first_id: batch_a, last_id: batch_a}}
+    - action: list
+      is_async: true
+      args: {api_key: rc-6, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      reply: {status: 200, body: {object: list, data: [], has_more: false}}
+env: {}
+compare: {ignore: []}

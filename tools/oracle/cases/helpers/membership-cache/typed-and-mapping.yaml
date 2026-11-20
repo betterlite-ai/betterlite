@@ -1,0 +1,21 @@
+kind: helper
+name: membership-cache-typed-and-mapping
+call:
+  membership_cache:
+    payloads:
+      - kind: typed
+        membership:
+          user_id: member-1
+          team_id: team-1
+          budget_id: budget-1
+          spend: 0.5
+          total_spend: 4.5
+      - kind: stored
+        payload:
+          user_id: member-1
+          team_id: team-1
+          budget_id: budget-1
+          spend: 0.5
+          total_spend: 4.5
+env: {}
+compare: {ignore: []}

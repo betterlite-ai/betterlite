@@ -1,0 +1,36 @@
+kind: helper
+name: four_exact_forbidden_details
+call:
+  team_admin_fields:
+    function: team_request
+    request: {"team_id": "t"}
+    existing: {"team_id": "t"}
+    permitted: []
+calls:
+  - team_admin_fields:
+      function: team_request
+      request: {"team_id": "t", "rpm_limit": 2}
+      existing: {"team_id": "t"}
+      permitted: ["tpm_limit"]
+  - team_admin_fields:
+      function: key_request
+      request: {"key": "sk-1"}
+      existing: {"token": "sk-1"}
+      enabled: false
+  - team_admin_fields:
+      function: key_request
+      request: {"key": "sk-1", "tpm_limit": 3}
+      existing: {"token": "sk-1"}
+      enabled: true
+  - team_admin_fields:
+      function: team_request
+      request: {"team_id": "t", "max_budget": 10.0}
+      existing: {"team_id": "t", "max_budget": 5.0}
+      permitted: ["max_budget"]
+  - team_admin_fields:
+      function: key_request
+      request: {"key": "sk-1", "max_budget": 10.0}
+      existing: {"token": "sk-1"}
+      enabled: true
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,101 @@
+task: B8391
+deviations:
+  - what: >-
+      The router, policy registry and pipeline executor reach these functions
+      through traits (DeploymentGuardrails, DeferralContext, PipelineCallbacks)
+      instead of module globals.
+    why: >-
+      betterlite keeps no globals; the results are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8037-L8040
+  - what: >-
+      A `_guardrail_pipelines` slot that is not an array yields no pipelines, and
+      an entry that is not a [policy name, pipeline] pair, or whose pipeline does
+      not deserialize, is skipped with a warning. LiteLLM trusts the slot: a
+      non-array value is unpacked as pairs or raises, and a bad entry raises on
+      unpacking or on reading `.mode`.
+    why: >-
+      The slot arrives as JSON from a request, so a malformed slot must not take
+      the proxy task down; the pipelines that do parse still run.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L569-L575
+  - what: >-
+      In the model-level lookup, an absent or null `metadata`, `litellm_metadata`
+      or `metadata.model_info` is treated as absent, and any other non-object
+      value returns a typed error naming the field. LiteLLM's `or {}` keeps a
+      truthy non-dict and then calls `.get` on it, which raises AttributeError.
+    why: >-
+      A request field of the wrong type gets the typed error docs/compatibility.md
+      promises, and an untyped crash in the request path is not a behavior any
+      working setup can rely on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8041-L8043
+  - what: >-
+      A `metadata.model_info.id` that is not a string counts as an unknown
+      deployment and returns the data unchanged, and a `user_api_key_team_id`
+      that is not a string is skipped, so the `litellm_metadata` value is used
+      when it is a string. LiteLLM passes either value to Router, which returns
+      no deployment for an unknown hashable id and raises TypeError for an
+      unhashable one.
+    why: >-
+      Both fields are declared as optional strings. A typed lookup cannot carry a
+      container, and refusing to crash keeps the guardrail merge running for the
+      rest of the request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8044-L8050
+  - what: >-
+      The merged guardrail list keeps first-seen order over each entry's JSON text,
+      and an entry that is not hashable is kept once instead of raising TypeError.
+      LiteLLM returns `list(set(existing + model_level))`, whose order depends on
+      the process hash seed and which rejects a dict or list entry.
+    why: >-
+      Set iteration order is runtime formatting, which docs/compatibility.md keeps
+      out of parity, and a guardrail list that crashes on a nested value is a 500
+      where the merge can simply keep the value. The oracle helpers sort the list
+      by canonical JSON text on both sides so the case compares the contents.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8124
+  - what: >-
+      Withdrawing deferred claims keeps a non-string entry in `applied_policies`
+      or `applied_guardrails` and removes only the named strings; it pops the slot
+      when every entry is removed. LiteLLM's `name not in names` hashes each
+      entry, so a dict or list entry raises TypeError.
+    why: >-
+      The slots are JSON arrays a hook wrote; membership in a set of names cannot
+      decide about a value that has no name, and dropping the request over one is
+      not something a working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L682-L694
+  - what: >-
+      A `policy_sources` value that is not a string never counts as a tag match,
+      because the deferred policies are matched on the string values as written.
+      LiteLLM tests `"tag:" in str(value)`, so a dict or list value whose text
+      form contains `tag:` counts as tag-matched.
+    why: >-
+      docs/compatibility.md keeps Python's str() text out of parity, and the
+      policy engine writes these values as strings; the string comparison is the
+      declared behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L756-L766
+  - what: >-
+      `merge_guardrails_with_existing` treats an absent or null `metadata` as
+      absent and a non-object `metadata` as a typed error naming the field.
+      LiteLLM's `setdefault` returns a null bucket and a truthy non-dict bucket
+      as they are, and the next `.get` raises AttributeError.
+    why: >-
+      docs/compatibility.md gives absent or null the default and a wrong type a
+      typed error, and a request field of the wrong type must not crash the
+      request path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8111-L8112
+kept_bugs:
+  - what: >-
+      Merging pipeline metadata writes creates the bucket even when the working
+      copy's bucket held nothing but the skipped `guardrails` key, so the request
+      gains an empty `metadata` (or `litellm_metadata`) map.
+    why: >-
+      A post_call hook or header writer can rely on the bucket existing after the
+      pipeline returns, and the slot is proxy-owned state, so the empty map is
+      copied rather than suppressed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L610-L619
+  - what: >-
+      A deployment whose `litellm_params.guardrails` is an empty list still runs
+      the merge, which rewrites `metadata.guardrails` into a list and normalizes a
+      bare string there even though no model-level guardrail is added.
+    why: >-
+      The rewrite is visible in the request the post_call hooks read, and a
+      working setup that stores a bare name relies on the list shape, so the
+      empty-list path keeps LiteLLM's behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8059-L8062

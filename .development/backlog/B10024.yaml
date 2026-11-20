@@ -1,0 +1,14 @@
+id: B10024
+milestone: M4 keys, spend and management
+title: Team membership patch and roster write failures
+status: todo
+depends_on: [B808, B1207, B2314, B860, B171]
+file: tasks/B10024-team-membership-patch.yaml
+covers:
+  - "litellm/proxy/management_endpoints/scim/scim_v2.py"
+parent: B064
+split_from: B1637
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

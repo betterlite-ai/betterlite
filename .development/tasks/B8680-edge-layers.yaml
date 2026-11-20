@@ -82,8 +82,10 @@ description: >-
   SERVER span per HTTP request whose path is not excluded, through the global tracer provider the proxy publishes after
   config load. It extracts the inbound traceparent and tracestate with the global propagator as the parent context,
   names the span "{METHOD} {path}", sets http.request.method, url.path and http.route, applies
-  `passthrough_span_name(method, path)` (name and http.route) when the span is recording, anchors the span in B3847's
-  request root slot for the request's task so later callbacks parent under it, sets http.response.status_code and an
+  `passthrough_span_name(method, path)` (name and http.route) when the span is recording, runs every request, excluded
+  paths included, inside B10007's request_slot_scope and anchors the span there with anchor_request_root (its
+  AnchoredSpan and the Context that holds the live span, so Langfuse stamps the span this layer ends) so later
+  callbacks parent under it, sets http.response.status_code and an
   error status on a 5xx answer, and ends the span when the response body is finished or dropped. WebSocket upgrades are
   spanned like any GET.
 
@@ -228,7 +230,7 @@ deviations:
   - what: A panic is the only failure the outer 500 handler catches; a route error that is not a ProxyFailure keeps the response its route built.
     why: Rust handlers return responses instead of raising, so only a panic reaches the outermost layer unhandled.
 out_of_scope:
-  - "The handlers, CORS settings and UI folder logic themselves: B8591. ProxyException: B8410. The span policy and passthrough name: B8250. The request root slot: B3847. The metrics middleware: B3889. The accumulator and flush_gateway_requests: B3102. The release layer: B8270, its releaser: B8481. PrometheusAuthMiddleware and metrics_router: B3886."
+  - "The handlers, CORS settings and UI folder logic themselves: B8591. ProxyException: B8410. The span policy and passthrough name: B8250. The request slot and its anchor call: B10007, over B3847's RequestTraceContext. The metrics middleware: B3889. The accumulator and flush_gateway_requests: B3102. The release layer: B8270, its releaser: B8481. PrometheusAuthMiddleware and metrics_router: B3886."
   - "The root path, admission control, size limit, gzip, security header and Redis batch layers: B4200, B022, B122 and B8295, installed in server.rs. The periodic gateway request flush: B8372. The final drain at shutdown: B8613's stop. The Shared fields gateway_requests and budget: B8610."
   - "Public routes, docs pages and the OpenAPI document: B8681. Lens routes: B8682. Health routes and the background health loop: B8540."
 pitfalls:

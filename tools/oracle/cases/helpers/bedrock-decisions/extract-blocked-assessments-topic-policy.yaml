@@ -1,0 +1,19 @@
+kind: helper
+name: extract-blocked-assessments-topic-policy
+call:
+  b3722:
+    bedrock_decisions:
+      blocked_assessments:
+        response:
+          assessments:
+            - topicPolicy:
+                topics:
+                  - name: finance
+                    type: DENY
+                    action: BLOCKED
+                  - name: medical
+                    type: DENY
+                    action: ANONYMIZED
+                  - action: BLOCKED
+env: {}
+compare: {ignore: []}

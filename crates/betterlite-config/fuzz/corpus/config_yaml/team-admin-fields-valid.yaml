@@ -1,0 +1,6 @@
+general_settings:
+  team_admin_editable_team_fields:
+    - max_budget
+    - rpm_limit
+    - rpm_limit
+    - member_key_budgets

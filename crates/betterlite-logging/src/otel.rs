@@ -16,6 +16,7 @@ pub mod mappers;
 pub mod model;
 pub mod plumbing;
 pub mod presets;
+pub mod proxy_runtime;
 pub mod server_span_policy;
 pub mod service;
 pub mod span_attributes;

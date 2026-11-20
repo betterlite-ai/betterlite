@@ -49,6 +49,21 @@ description: >-
   The five source files hold about 407 nonblank, non-comment lines. Add fuzz target perplexity_replies in
   crates/betterlite-openai/fuzz that feeds bytes to the embedding reply decoder and the search reply decoder, with a
   corpus and a replay test replays_the_perplexity_replies_corpus.
+
+
+  Dispatch. B8310 left four stubs in crates/betterlite-provider/src/hosted_platform_dispatch/perplexity.rs
+  (`perplexity::embedding`, `responses`, `search` and `decisions`) that answer `DispatchError::NotBuilt` for
+  Perplexity, so this task wires its own parts in. perplexity::embedding is main.py's perplexity embedding arm
+  (L7335-L7348): the shared HTTP embedding handler with perplexity_embedding as the config, api_base and api_key as they
+  came, and empty litellm_params. The Responses, search and decisions stubs build perplexity_responses,
+  perplexity_search and perplexity_decisions where B5360's selection returns their tag, the same way B8310 builds the
+  other hosted configs. Then delete the NotBuilt variant from hosted_platform_dispatch/error.rs, B8310's four
+  `unbuilt_perplexity_` tests and the Perplexity row in docs/deviations/B8310.yaml, and add tests in
+  hosted_platform_dispatch/perplexity/tests.rs, named with the prefix `reaches_config_`, that each operation reaches its config. Add the HTTP oracle case
+  tools/oracle/cases/http/perplexity-embedding/perplexity-embedding-int8.yaml in the shape of B9210's hosted-platform
+  cases (master_key, a model_list deployment with api_key and api_base on the harness mock, router_settings.num_retries
+  0): POST /v1/embeddings for perplexity/pplx-embed-v1-0.6b with an explicit base without /v1, encoding_format float and
+  a mock base64 embedding holding the bytes 0, 127 and 129, so the response vector is [0, 1, -1] with total_tokens set.
 scope:
   paths:
     - crates/betterlite-openai/src/perplexity_embedding.rs
@@ -67,6 +82,11 @@ scope:
     - tools/oracle/helpers/b5834/**
     - tools/oracle/src/helpers/openai/b5834.rs
     - tools/oracle/src/helpers/openai/b5834/**
+    - crates/betterlite-provider/src/hosted_platform_dispatch/perplexity.rs
+    - crates/betterlite-provider/src/hosted_platform_dispatch/perplexity/**
+    - crates/betterlite-provider/src/hosted_platform_dispatch/error.rs
+    - docs/deviations/B8310.yaml
+    - tools/oracle/cases/http/perplexity-embedding/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/perplexity/embedding/transformation.py#L28-L118
@@ -83,6 +103,8 @@ references:
     why: The decisions path, environment names and default base.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/decisions/transformation.py#L299-L345
     why: The base attributes and URL rule the Perplexity decisions config inherits.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7335-L7348
+    why: The perplexity embedding arm that perplexity::embedding fills in.
   - url: https://docs.perplexity.ai/api-reference/embeddings-post
     why: Embedding request and the base64 int8 reply format.
   - url: https://docs.perplexity.ai/api-reference/responses-post
@@ -100,6 +122,10 @@ dod:
     proof: [perplexity-decisions-tests, oracle]
   - text: The new oracle cases call the task's helper.
     proof: [perplexity-wire-cases]
+  - text: Perplexity embeddings, Responses, search and decisions reach their configs through B8310's dispatch, and the NotBuilt answer and its tests are gone.
+    proof: [perplexity-dispatch-tests, not-built-gone]
+  - text: A Perplexity embedding through the booted proxy decodes the signed int8 vector and matches LiteLLM's status, body and upstream request.
+    proof: [perplexity-http-case, oracle]
 checks:
   optional: [mutants]
   commands:
@@ -121,6 +147,15 @@ checks:
     - id: perplexity-wire-cases
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/perplexity-wire)" && /usr/bin/grep -rlE '^  b5834:' tools/oracle/cases/helpers/perplexity-wire
       why: Without cases that call the B5834 helper nothing compares these transforms with LiteLLM.
+    - id: perplexity-dispatch-tests
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^hosted_platform_dispatch::perplexity::tests::reaches_config_/)'
+      why: B8310's stubs still answer NotBuilt, or an operation builds the wrong config.
+    - id: not-built-gone
+      run: test -z "$(/usr/bin/grep -rl NotBuilt crates/betterlite-provider/src/hosted_platform_dispatch)"
+      why: The stub error stays behind after its last user is wired in.
+    - id: perplexity-http-case
+      run: test -f tools/oracle/cases/http/perplexity-embedding/perplexity-embedding-int8.yaml
+      why: Without the HTTP case the signed embedding reply is never compared through a booted proxy.
 oracle_cases:
   - tools/oracle/cases/helpers/perplexity-wire/embedding-url-rules.yaml
   - tools/oracle/cases/helpers/perplexity-wire/embedding-headers-drop-caller.yaml
@@ -137,6 +172,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/perplexity-wire/search-request-fields.yaml
   - tools/oracle/cases/helpers/perplexity-wire/search-reply-defaults.yaml
   - tools/oracle/cases/helpers/perplexity-wire/decisions-config.yaml
+  - tools/oracle/cases/http/perplexity-embedding/perplexity-embedding-int8.yaml
 deviations:
   - what: A malformed base64 embedding string returns a 500 error with the decode message.
     why: LiteLLM lets the binascii exception escape, which the proxy reports as an internal error; betterlite names the failure instead of a bare panic path.
@@ -148,7 +184,8 @@ out_of_scope:
   - B6120 owns chat/transformation.py and cost_calculator.py.
   - B506, B507 and B508 own the OpenAI Responses base transforms this config extends, including _validate_input_param and the ordinary request and reply decode.
   - B2202 owns BaseLLMException, B006 owns EmbeddingResponse and the base embedding path, B3270 owns the search trait, records and server key policy, and B3511 owns the DecisionsProviderConfig trait.
-  - B8310 wires Perplexity into dispatch and builds its embedding arm; Perplexity chat goes through B024's OpenAI-compatible arm. This task touches no dispatch file.
+  - B8310 owns the hosted-platform dispatch, its other arms and the Perplexity chat wiring through B024's OpenAI-compatible arm; this task fills in only perplexity.rs and removes NotBuilt.
+  - The other hosted-platform HTTP cases, including perplexity-chat-citations, belong to B9210.
   - Search execution, search tool registry and search pricing belong to B3272, B3271 and B3274.
   - PerplexitySearchRequest is only a typed request body here; the LiteLLM TypedDict has no other caller.
 pitfalls:
@@ -160,7 +197,8 @@ pitfalls:
   - Search reads PERPLEXITYAI_API_KEY only, while embeddings, Responses and decisions also read PERPLEXITY_API_KEY.
   - Search drops unknown optional params such as search_recency_filter even though they are valid for chat.
   - The decisions config inherits the base URL rule that removes a trailing /v1 before adding /v1/decisions.
+  - In the HTTP case, a mock base that already ends in /v1 tests a different URL, since the embedding rule appends /v1/embeddings without trimming.
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 1800
   max_new_expects: 0

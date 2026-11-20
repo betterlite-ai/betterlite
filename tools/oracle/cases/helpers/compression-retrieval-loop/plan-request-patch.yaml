@@ -1,0 +1,53 @@
+kind: helper
+name: compression-retrieval-loop-plan-request-patch
+call:
+  b3544:
+    function: plan
+    model: claude-3-sonnet
+    tool_calls: []
+    thinking_blocks: []
+    messages: []
+    optional_params: {max_tokens: 100, temperature: 0.2}
+    kwargs:
+      litellm_call_id: call-1
+      max_tokens: 512
+      _compression_interception: true
+      litellm_logging_obj: {marker: true}
+    logging: {call_id: callback-9, agentic_model: claude-original}
+calls:
+  - b3544:
+      function: plan
+      model: claude-3-sonnet
+      tool_calls: []
+      thinking_blocks: []
+      messages: []
+      optional_params: {max_tokens: 0}
+      kwargs: {litellm_call_id: call-1, max_tokens: 512}
+  - b3544:
+      function: plan
+      model: claude-3-sonnet
+      tool_calls: []
+      thinking_blocks: []
+      messages: []
+      optional_params: {max_tokens: null}
+      kwargs: {litellm_call_id: call-1}
+  - b3544:
+      function: plan
+      model: claude-3-sonnet
+      tool_calls: []
+      thinking_blocks: []
+      messages: []
+      optional_params: {}
+      kwargs: {}
+      logging: {call_id: callback-id, agentic_model: null}
+  - b3544:
+      function: plan
+      model: claude-3-sonnet
+      tool_calls: []
+      thinking_blocks: []
+      messages: []
+      optional_params: {}
+      kwargs: {litellm_call_id: call-1, max_tokens: 0}
+      logging: {call_id: call-1, agentic_model: claude-opus}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,38 @@
+kind: helper
+name: unknown_field_warns
+call:
+  team_admin_fields:
+    function: resolve
+    general_settings: {"team_admin_editable_team_fields": ["bogus"]}
+    supported: ["tpm_limit", "rpm_limit", "max_budget"]
+calls:
+  - team_admin_fields:
+      function: resolve
+      general_settings: {"team_admin_editable_team_fields": ["max_budget", "bogus"]}
+      supported: ["tpm_limit", "rpm_limit", "max_budget"]
+  - team_admin_fields:
+      function: resolve
+      general_settings: {"team_admin_editable_team_fields": ["projects"]}
+      supported: ["tpm_limit", "rpm_limit", "max_budget"]
+  - team_admin_fields:
+      function: resolve
+      general_settings: {"team_admin_editable_team_fields": ["member_key_budgets"]}
+      supported: ["tpm_limit", "rpm_limit", "max_budget"]
+  - team_admin_fields:
+      function: resolve
+      general_settings: {"team_admin_editable_team_fields": ["bogus1", "bogus2", "max_budget"]}
+      supported: ["tpm_limit", "rpm_limit", "max_budget"]
+  - team_admin_fields:
+      function: resolve
+      general_settings: {"team_admin_editable_team_fields": ["max_budget", "bogus"]}
+      supported: ["tpm_limit"]
+  - team_admin_fields:
+      function: resolve
+      general_settings: {"team_admin_editable_team_fields": ["max_budget", "max_budget"]}
+      supported: ["tpm_limit", "rpm_limit", "max_budget"]
+  - team_admin_fields:
+      function: resolve
+      general_settings: {"team_admin_editable_team_fields": ["projects", "max_budget"]}
+      supported: ["tpm_limit", "rpm_limit", "max_budget", "projects"]
+env: {}
+compare: {ignore: []}

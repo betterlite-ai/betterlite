@@ -2,7 +2,7 @@ id: B8660
 milestone: M4 keys, spend and management
 title: Plug the shared budget services into auth, reservations and shadow spend
 status: todo
-depends_on: [B8610, B8611, B8481, B753, B755, B1225, B3001, B2321, B3015, B4083, B3499, B860]
+depends_on: [B8610, B8611, B8481, B753, B755, B1225, B3001, B2321, B3015, B4083, B860]
 file: tasks/B8660-spend-budget-wiring.yaml
 covers: []
 parent: null
