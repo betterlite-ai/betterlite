@@ -53,20 +53,21 @@ fn body(data: &ImageParams, multipart: bool) -> Result<RequestBody, ImageGenerat
             .map(RequestBody::Json)
             .map_err(ImageGenerationError::Encode);
     }
-    let mut parts = form_parts(data)?;
-    parts.push(dummy_file());
-    Ok(RequestBody::Multipart {
-        boundary: Uuid::new_v4().simple().to_string(),
-        parts,
-    })
-}
-
-fn form_parts(data: &ImageParams) -> Result<Vec<MultipartPart>, ImageGenerationError> {
     let mut parts = Vec::new();
     for (name, value) in data {
         push_field(&mut parts, name, value)?;
     }
-    Ok(parts)
+    // httpx's files={"none": ""}: one empty part called upload, its content type guessed from that name
+    parts.push(MultipartPart {
+        name: "none".to_owned(),
+        file_name: Some("upload".to_owned()),
+        content_type: Some("application/octet-stream".to_owned()),
+        data: Vec::new(),
+    });
+    Ok(RequestBody::Multipart {
+        boundary: Uuid::new_v4().simple().to_string(),
+        parts,
+    })
 }
 
 // httpx writes one field per list item, renders a primitive as its JSON spelling, and refuses an object
@@ -104,14 +105,4 @@ fn push_field(
         });
     }
     Ok(())
-}
-
-// httpx's files={"none": ""}: one empty part called upload, its content type guessed from that name
-fn dummy_file() -> MultipartPart {
-    MultipartPart {
-        name: "none".to_owned(),
-        file_name: Some("upload".to_owned()),
-        content_type: Some("application/octet-stream".to_owned()),
-        data: Vec::new(),
-    }
 }
