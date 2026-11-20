@@ -989,5 +989,8 @@ fn the_decoder_reads_utf8_up_to_the_json_body_cap() {
 #[test]
 fn the_corpus_holds_an_invalid_utf8_offer() {
     let bytes = fs::read(corpus().join("invalid-utf8")).unwrap();
-    assert!(decode_realtime_sdp(&bytes, ApiLimits::default()).is_err());
+    assert!(matches!(
+        decode_realtime_sdp(&bytes, ApiLimits::default()),
+        Err(super::decode::SdpError::Utf8(_))
+    ));
 }
