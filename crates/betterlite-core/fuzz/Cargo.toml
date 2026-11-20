@@ -228,6 +228,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "fine_tuning_read_page"
+path = "fuzz_targets/fine_tuning_read_page.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "listen_query"
 path = "fuzz_targets/listen_query.rs"
 test = false
