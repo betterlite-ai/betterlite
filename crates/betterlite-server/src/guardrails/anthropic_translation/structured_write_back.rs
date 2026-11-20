@@ -65,8 +65,8 @@ pub async fn hoisted_system_message(
     probe.insert(MODEL.to_owned(), Value::String(model_of(data)));
     probe.insert(MESSAGES.to_owned(), Value::Array(Vec::new()));
     probe.insert(SYSTEM.to_owned(), system.clone());
-    let translated = translate_to_openai(&probe).await?;
-    let translated = serde_json::to_value(&translated)?;
+    let reply = translate_to_openai(&probe).await?;
+    let translated = serde_json::to_value(&reply)?;
     let first = translated
         .get(MESSAGES)
         .and_then(Value::as_array)
@@ -129,6 +129,7 @@ pub fn fold_leading_systems(
     data.insert(SYSTEM.to_owned(), Value::Array(folded));
 }
 
+#[must_use]
 pub fn defer_tool_exchange_systems(messages: &[Value]) -> Vec<Value> {
     let positioned: Vec<(usize, PromptJson)> = messages
         .iter()
@@ -158,11 +159,7 @@ pub fn defer_tool_exchange_systems(messages: &[Value]) -> Vec<Value> {
     }
     let held_positions: HashSet<usize> = deferred_positions
         .into_iter()
-        .filter(|index| {
-            messages
-                .get(*index)
-                .is_some_and(|message| is_system(message))
-        })
+        .filter(|index| messages.get(*index).is_some_and(is_system))
         .collect();
     reorder_messages(messages, &held_positions, &exchange_ends)
 }
@@ -210,12 +207,8 @@ pub async fn write_back_structured_messages(
     if !leading.is_empty() && !only_the_hoisted_prompt {
         fold_leading_systems(data, leading, hoisted_system_message.is_none());
     }
-    let mut conversion = Conversion::new(
-        &model,
-        hoisted_system_message,
-        preserve_system_messages,
-        hoisted_in_leading,
-    );
+    let mut conversion = Conversion::new(&model, hoisted_system_message, preserve_system_messages);
+    conversion.hoisted_dropped = hoisted_in_leading;
     conversion.walk(rest).await?;
     let converted = conversion.finish().await?;
     data.insert(MESSAGES.to_owned(), Value::Array(converted));

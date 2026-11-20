@@ -25,7 +25,7 @@ pub(super) fn text_block_row(block: &Value) -> Option<Value> {
 pub(super) fn text_block(text: String) -> Value {
     let mut block = Map::new();
     block.insert(TYPE.to_owned(), Value::String(TEXT.to_owned()));
-    block.insert(TEXT.to_owned(), text);
+    block.insert(TEXT.to_owned(), Value::String(text));
     Value::Object(block)
 }
 

@@ -29,11 +29,11 @@ pub fn write_back_system_block(system: &mut Value, block_idx: usize, response: &
     let Value::Array(blocks) = system else {
         return;
     };
-    let block = blocks
+    let selected = blocks
         .iter_mut()
         .filter(|block| block.get(TYPE).and_then(Value::as_str) == Some(TEXT))
         .nth(block_idx);
-    let Some(block) = block else {
+    let Some(block) = selected else {
         return;
     };
     if let Some(fields) = block.as_object_mut() {
@@ -221,11 +221,11 @@ fn write_message_target(
     target: &MessageTextTarget,
     response: &str,
 ) -> Result<(), WriteBackError> {
-    let message = data
+    let selected = data
         .get_mut(MESSAGES)
         .and_then(Value::as_array_mut)
         .and_then(|messages| messages.get_mut(message_index(target)));
-    let Some(message) = message else {
+    let Some(message) = selected else {
         return Err(WriteBackError::TargetMissing {
             target: target.clone(),
         });

@@ -523,8 +523,15 @@ fn tool_calls_ignores_a_returned_list_of_the_wrong_length() {
     assert_eq!(messages[0]["content"][0]["input"], json!({}));
     assert_eq!(messages[0]["content"][0]["name"], "one");
 
-    let (scanned, pre, mut absent_answer) = scanned_pair();
-    apply_tool_calls_to_input(&mut absent_answer, &scanned, &pre, None, Some("guard")).unwrap();
+    let (absent_scanned, absent_pre, mut absent_answer) = scanned_pair();
+    apply_tool_calls_to_input(
+        &mut absent_answer,
+        &absent_scanned,
+        &absent_pre,
+        None,
+        Some("guard"),
+    )
+    .unwrap();
     assert_eq!(absent_answer[0]["content"][0]["input"], json!({}));
     assert_eq!(
         absent_answer[0]["content"][1]["input"],
@@ -594,8 +601,8 @@ fn tool_calls_errors_when_the_message_is_missing() {
     assert_eq!(error, ApplyError::MessageMissing { msg_idx: 0 });
 
     let mut scalar_message = vec![json!("not a message")];
-    let error =
+    let scalar_error =
         apply_tool_calls_to_input(&mut scalar_message, &scanned, &pre, Some(&returned), None)
             .unwrap_err();
-    assert_eq!(error, ApplyError::MessageMissing { msg_idx: 0 });
+    assert_eq!(scalar_error, ApplyError::MessageMissing { msg_idx: 0 });
 }

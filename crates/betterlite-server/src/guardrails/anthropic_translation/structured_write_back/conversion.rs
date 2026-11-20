@@ -45,11 +45,11 @@ pub(super) async fn convert_grouped(
     let rows = prompt_rows(run)?;
     let mut converted = Vec::new();
     for group in group_tool_exchanges(&rows) {
-        let group_rows = group
+        let selected = group
             .iter()
             .map(|index| rows.get(*index).cloned())
             .collect::<Option<Vec<PromptJson>>>();
-        let Some(group_rows) = group_rows else {
+        let Some(group_rows) = selected else {
             return Err(StructuredWriteBackError::RowMissing);
         };
         for row in convert(&group_rows, model).await? {
@@ -72,7 +72,7 @@ pub(super) struct Conversion<'input> {
     model: &'input str,
     hoisted: Option<&'input Value>,
     preserve_system_messages: bool,
-    hoisted_dropped: bool,
+    pub(super) hoisted_dropped: bool,
     converted: Vec<Value>,
 }
 
@@ -81,13 +81,12 @@ impl<'input> Conversion<'input> {
         model: &'input str,
         hoisted: Option<&'input Value>,
         preserve_system_messages: bool,
-        hoisted_dropped: bool,
     ) -> Self {
         Self {
             model,
             hoisted,
             preserve_system_messages,
-            hoisted_dropped,
+            hoisted_dropped: false,
             converted: Vec::new(),
         }
     }
