@@ -26,9 +26,9 @@ fn decode_file_upload_location_reads_only_the_body_location() {
     let mut empty = HeaderMap::new();
     empty.insert("x-goog-upload-url", HeaderValue::from_static(""));
     assert_eq!(upload_url_from_headers(&empty), None);
-    // the headers location never parses the body, even a broken one
+    // the headers location never reads the body, even one that names an upload URL
     let located = decode_file_upload_location(
-        b"not json",
+        br#"{"upload_url":"http://from-body.example.test"}"#,
         UploadUrlLocation::Headers,
         "upload_url",
         limits,

@@ -5,9 +5,7 @@ use indexmap::IndexMap;
 use crate::api::file_http_upload::plan::{MultipartPlan, UploadPlan};
 use crate::api::file_http_upload::service::Mode;
 
-use super::{
-    API_BASE, Harness, answer, bytes_json, create_call, field, lookup, manus_plan, params, text,
-};
+use super::{API_BASE, Harness, answer, create_call, field, lookup, manus_plan, params, text};
 
 // an unsupported request is logged before it fails, and its top-level headers are masked like any request
 #[tokio::test]
@@ -127,15 +125,11 @@ async fn upload_diagnostics_logs_the_multipart_form() {
         .unwrap();
     let details = harness.details();
     let body = field(field(&details, "additional_args"), "complete_input_dict");
-    let expected = Json::Object(IndexMap::from([(
-        String::from("file"),
-        Json::List(vec![
-            text("rows.jsonl"),
-            bytes_json(b"{\"row\":1}\n"),
-            text("application/jsonl"),
-        ]),
-    )]));
-    assert_eq!(body, &expected);
+    // the byte list is spelled out, so a decoder that stops producing byte numbers fails here
+    assert_eq!(
+        serde_json::to_string(body).expect("the logged form"),
+        "{\"file\":[\"rows.jsonl\",[123,34,114,111,119,34,58,49,125,10],\"application/jsonl\"]}"
+    );
 }
 
 // a raw-bytes plan has no JSON form, so its async log records no complete_input_dict at all
