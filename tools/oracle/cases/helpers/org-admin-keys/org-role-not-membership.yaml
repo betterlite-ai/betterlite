@@ -1,0 +1,21 @@
+kind: helper
+name: org-role-not-membership
+call:
+  b10015:
+    calls:
+      # an org admin membership arrives as org_id on a global role that is not org_admin, and the guard never reads it
+      - role: internal_user
+        org_id: org-1
+        settings: {disable_key_generate_for_org_admin: true}
+      - role: proxy_admin
+        settings: {disable_key_generate_for_org_admin: true}
+      - role: proxy_admin_viewer
+        settings: {disable_key_generate_for_org_admin: true}
+      - role: internal_user_viewer
+        settings: {disable_key_generate_for_org_admin: true}
+      - role: team
+        settings: {disable_key_generate_for_org_admin: true}
+      - role: customer
+        settings: {disable_key_generate_for_org_admin: true}
+env: {}
+compare: {ignore: []}

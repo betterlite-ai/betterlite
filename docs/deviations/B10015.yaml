@@ -1,0 +1,6 @@
+task: B10015
+deviations: []
+kept_bugs:
+  - what: A nonempty string such as "false" in general_settings.disable_key_generate_for_org_admin disables key generation for org admins, because LiteLLM tests the raw value's truthiness instead of reading a boolean.
+    why: The setting reaches the guard as whatever the runtime settings map holds, and a config that quoted the value keeps refusing org admins the way a working LiteLLM proxy does; betterlite reads the same Python truthiness through its config section.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/rbac_utils.py#L90-L95
