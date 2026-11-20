@@ -49,8 +49,33 @@ impl Environment {
     // The loaded snapshot wins; a field the snapshot left empty reads the lookup, as the process env holds the same values
     #[must_use]
     pub fn resolve(&self, lookup: &dyn EnvironmentLookup) -> Self {
-        let secrets = self.resolve_secrets(lookup);
-        secrets.resolve_bases(lookup)
+        let mut env = self.resolve_secrets(lookup);
+        env.cohere_api_base = text(env.cohere_api_base.as_ref(), lookup, "COHERE_API_BASE");
+        env.azure_ai_api_base = text(env.azure_ai_api_base.as_ref(), lookup, "AZURE_AI_API_BASE");
+        env.infinity_api_base = text(env.infinity_api_base.as_ref(), lookup, "INFINITY_API_BASE");
+        env.bedrock_api_base = text(env.bedrock_api_base.as_ref(), lookup, "BEDROCK_API_BASE");
+        env.nvidia_nim_api_base = text(
+            env.nvidia_nim_api_base.as_ref(),
+            lookup,
+            "NVIDIA_NIM_API_BASE",
+        );
+        env.hosted_vllm_api_base = text(
+            env.hosted_vllm_api_base.as_ref(),
+            lookup,
+            "HOSTED_VLLM_API_BASE",
+        );
+        env.deepinfra_api_base = text(
+            env.deepinfra_api_base.as_ref(),
+            lookup,
+            "DEEPINFRA_API_BASE",
+        );
+        env.fireworks_ai_api_base = text(
+            env.fireworks_ai_api_base.as_ref(),
+            lookup,
+            "FIREWORKS_AI_API_BASE",
+        );
+        env.voyage_api_base = text(env.voyage_api_base.as_ref(), lookup, "VOYAGE_API_BASE");
+        env
     }
     fn resolve_secrets(&self, lookup: &dyn EnvironmentLookup) -> Self {
         Self {
@@ -89,36 +114,6 @@ impl Environment {
             ),
             voyage_api_key: secret(self.voyage_api_key.as_ref(), lookup, "VOYAGE_API_KEY"),
             voyage_ai_api_key: secret(self.voyage_ai_api_key.as_ref(), lookup, "VOYAGE_AI_API_KEY"),
-            ..self.clone()
-        }
-    }
-    fn resolve_bases(&self, lookup: &dyn EnvironmentLookup) -> Self {
-        Self {
-            cohere_api_base: text(self.cohere_api_base.as_ref(), lookup, "COHERE_API_BASE"),
-            azure_ai_api_base: text(self.azure_ai_api_base.as_ref(), lookup, "AZURE_AI_API_BASE"),
-            infinity_api_base: text(self.infinity_api_base.as_ref(), lookup, "INFINITY_API_BASE"),
-            bedrock_api_base: text(self.bedrock_api_base.as_ref(), lookup, "BEDROCK_API_BASE"),
-            nvidia_nim_api_base: text(
-                self.nvidia_nim_api_base.as_ref(),
-                lookup,
-                "NVIDIA_NIM_API_BASE",
-            ),
-            hosted_vllm_api_base: text(
-                self.hosted_vllm_api_base.as_ref(),
-                lookup,
-                "HOSTED_VLLM_API_BASE",
-            ),
-            deepinfra_api_base: text(
-                self.deepinfra_api_base.as_ref(),
-                lookup,
-                "DEEPINFRA_API_BASE",
-            ),
-            fireworks_ai_api_base: text(
-                self.fireworks_ai_api_base.as_ref(),
-                lookup,
-                "FIREWORKS_AI_API_BASE",
-            ),
-            voyage_api_base: text(self.voyage_api_base.as_ref(), lookup, "VOYAGE_API_BASE"),
             ..self.clone()
         }
     }

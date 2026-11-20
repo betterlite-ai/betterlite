@@ -204,7 +204,7 @@ fn rerank_cohere_foundry_infinity() {
     run_one(
         &infinity,
         &ops,
-        &settings,
+        &defaults(),
         &[("INFINITY_API_BASE", "https://env.test")],
         call("infinity"),
     )

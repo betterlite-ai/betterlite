@@ -49,7 +49,7 @@ impl RerankOperations for Operations<'_> {
         request: SendRequest<'_>,
         logging: &mut LoggingState,
     ) -> Result<RerankResponse, RawException> {
-        let family = match request.config {
+        let kind = match request.config {
             SelectedConfig::Cohere => RerankConfig::Cohere,
             SelectedConfig::CohereV2 => RerankConfig::CohereV2,
             SelectedConfig::Infinity => RerankConfig::Infinity,
@@ -57,11 +57,11 @@ impl RerankOperations for Operations<'_> {
             SelectedConfig::Voyage => RerankConfig::Voyage,
             SelectedConfig::NvidiaRetrieval | SelectedConfig::NvidiaRanking => {
                 return match select_rerank_config(request.model) {
-                    NvidiaNimRerankSelection::Retrieval(config) => {
-                        self.send_config(&config, request, logging).await
+                    NvidiaNimRerankSelection::Retrieval(selected) => {
+                        self.send_config(&selected, request, logging).await
                     }
-                    NvidiaNimRerankSelection::Ranking(config) => {
-                        self.send_config(&config, request, logging).await
+                    NvidiaNimRerankSelection::Ranking(selected) => {
+                        self.send_config(&selected, request, logging).await
                     }
                 };
             }
@@ -78,29 +78,11 @@ impl RerankOperations for Operations<'_> {
                 return Err(not_wired(request.model, request.provider));
             }
         };
-        self.send_family(family, request, logging).await
+        let config = family(kind, self.config, self.environment);
+        self.send_config(&config, request, logging).await
     }
 }
 impl Operations<'_> {
-    async fn send_family<'call>(
-        &self,
-        config: RerankConfig,
-        request: SendRequest<'call>,
-        logging: &mut LoggingState,
-    ) -> Result<RerankResponse, RawException> {
-        let http = HttpState {
-            source: &self.source,
-            redactor: &self.redactor,
-            now: self.now,
-        };
-        send_with(
-            &family(config, self.config, self.environment),
-            request,
-            logging,
-            &http,
-        )
-        .await
-    }
     async fn send_config<'call, C>(
         &self,
         config: &C,
