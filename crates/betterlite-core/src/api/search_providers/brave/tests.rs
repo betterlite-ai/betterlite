@@ -779,6 +779,29 @@ fn brave_search_dates_read_json_values(#[case] literal: &str, #[case] expected: 
 #[case::time_with_seconds("10:00:30", Some("2024-03-05"))]
 #[case::fraction_and_offset("2024-03-05T10:00:00.5-05:00", Some("2024-03-05"))]
 #[case::leap_day("2024-02-29T23:59:59.999Z", Some("2024-02-29"))]
+#[case::weekday_dash_zero("Monday-0", None)]
+#[case::time_then_offset("10:00 +0200", Some("2024-03-05"))]
+#[case::month_dash_day_slash_word("Jan-5/xyz", Some("2024-01-05"))]
+#[case::month_dash_day_trailing_dash("Jan-5-", None)]
+#[case::month_dash_over_day("Jan-32-2024", None)]
+#[case::month_space_padded_day("Mar 05", Some("2024-03-05"))]
+#[case::day_before_jump_word("1-at", Some("2024-03-01"))]
+#[case::time_then_two_numbers("10:00 5 3", Some("2024-05-03"))]
+#[case::weekday_then_day("Monday 31", Some("2024-03-31"))]
+#[case::month_space_day("Jan 31", Some("2024-01-31"))]
+#[case::over_day_dash_month("31-1", None)]
+#[case::day_dash_over_day("1-31", Some("2024-01-31"))]
+#[case::day_dash_month("1-5", Some("2024-01-05"))]
+#[case::month_zero_day("Jan 0 1", None)]
+#[case::month_over_day_year("Jan 32 1", Some("2032-01-01"))]
+#[case::month_day_zero_year("Jan 31 0", Some("2000-01-31"))]
+#[case::zero_year_month_dash_day("0-Jan-1", None)]
+#[case::day_month_dash_zero_year("31-Jan-0", Some("2000-01-31"))]
+#[case::numbers_before_month("0 1 Jan", Some("2000-01-01"))]
+#[case::numbers_before_month_end("0 31 Jan", Some("2000-01-31"))]
+#[case::numbers_after_month("1 32 Jan", Some("2032-01-01"))]
+#[case::twelve_before_month("12-05-2024", Some("2024-12-05"))]
+#[case::month_dash_leading_zero_year("Jan-0001-05", Some("0001-01-05"))]
 fn brave_search_dates_read_text(#[case] value: &str, #[case] expected: Option<&str>) {
     assert_eq!(date_of(&format!("{value:?}")).as_deref(), expected);
 }
@@ -798,6 +821,35 @@ fn brave_search_dates_expose_the_sources_two_flags() {
     assert_eq!(
         dates::to_yyyy_mm_dd(&value, today(), DateFlags::default()).as_deref(),
         Some("2024-05-03")
+    );
+}
+
+#[rstest]
+#[case::pair_dayfirst("1-5", true, false, Some("2024-05-01"))]
+#[case::month_day_zero_year_yearfirst("Jan 1 0", false, true, Some("2000-01-01"))]
+#[case::zero_year_month_day("0-Jan-5", true, true, Some("2000-01-05"))]
+#[case::zero_year_month_day_year("0-Jan-1", false, true, Some("2000-01-01"))]
+#[case::compact_short_year_after_word("240305 UTC", false, true, Some("2024-03-05"))]
+#[case::iso_like_dayfirst("2024-3-5T10:00", true, false, Some("2024-05-03"))]
+#[case::numeric_triple_yearfirst("5 3 4", false, true, Some("2005-03-04"))]
+#[case::three_parts_year_last("5-05-2024", false, true, Some("2024-05-05"))]
+#[case::non_iso_dayfirst("2024-5x-03", true, false, Some("2024-03-05"))]
+fn brave_search_dates_read_under_the_source_flags(
+    #[case] value: &str,
+    #[case] dayfirst: bool,
+    #[case] yearfirst: bool,
+    #[case] expected: Option<&str>,
+) {
+    let flags = DateFlags {
+        dayfirst,
+        yearfirst,
+    };
+    let literal = format!("{value:?}");
+    let parsed = DateValue::from_literal(&literal);
+
+    assert_eq!(
+        dates::to_yyyy_mm_dd(&parsed, today(), flags).as_deref(),
+        expected
     );
 }
 
@@ -823,6 +875,28 @@ fn brave_search_dates_clamp_the_default_day_to_the_month() {
     assert_eq!(
         dates::to_yyyy_mm_dd(&value, january_end, DateFlags::default()).as_deref(),
         Some("2024-02-29")
+    );
+}
+
+#[test]
+fn brave_search_dates_clamp_a_leap_february() {
+    let january_end = NaiveDate::from_ymd_opt(2000, 1, 31).unwrap();
+    let value = DateValue::from_literal("\"2000-02\"");
+
+    assert_eq!(
+        dates::to_yyyy_mm_dd(&value, january_end, DateFlags::default()).as_deref(),
+        Some("2000-02-29")
+    );
+}
+
+#[test]
+fn brave_search_dates_keep_a_short_february() {
+    let january_end = NaiveDate::from_ymd_opt(2023, 1, 31).unwrap();
+    let value = DateValue::from_literal("\"2023-02\"");
+
+    assert_eq!(
+        dates::to_yyyy_mm_dd(&value, january_end, DateFlags::default()).as_deref(),
+        Some("2023-02-28")
     );
 }
 

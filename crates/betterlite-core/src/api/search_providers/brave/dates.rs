@@ -117,9 +117,9 @@ fn is_iso_ymd(text: &str) -> bool {
     if year.len() != 4 || !year.bytes().all(|byte| byte.is_ascii_digit()) {
         return false;
     }
-    [month, day].into_iter().all(|part| {
-        !part.is_empty() && part.len() <= 2 && part.bytes().all(|byte| byte.is_ascii_digit())
-    })
+    [month, day]
+        .into_iter()
+        .all(|part| (1..=2).contains(&part.len()) && part.bytes().all(|byte| byte.is_ascii_digit()))
 }
 
 // a magnitude above this is milliseconds in the source, and the float is the instant it reads

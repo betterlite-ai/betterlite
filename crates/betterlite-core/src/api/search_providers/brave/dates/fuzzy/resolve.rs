@@ -37,7 +37,7 @@ impl Fields {
 
     // a run of digits read as text; more than two digits make it the year
     pub(super) fn push_text(&mut self, text: &str, label: Option<Label>) -> Option<()> {
-        if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
+        if !text.bytes().all(|byte| byte.is_ascii_digit()) {
             return None;
         }
         let long = text.len() > 2;

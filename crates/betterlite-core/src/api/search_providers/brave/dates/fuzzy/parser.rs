@@ -129,15 +129,13 @@ impl Parser<'_> {
         };
         let member = self.tokens.get(index.saturating_add(2))?.clone();
         self.push_member(&member)?;
-        let third = index.saturating_add(4);
-        if third < self.tokens.len()
-            && self.tokens.get(index.saturating_add(3)) == Some(&Token::Punct(separator))
-        {
-            let token = self.tokens.get(third)?.clone();
-            self.push_member(&token)?;
-            return Some(third);
+        if self.tokens.get(index.saturating_add(3)) != Some(&Token::Punct(separator)) {
+            return Some(index.saturating_add(2));
         }
-        Some(index.saturating_add(2))
+        let third = index.saturating_add(4);
+        let token = self.tokens.get(third)?.clone();
+        self.push_member(&token)?;
+        Some(third)
     }
 
     fn push_member(&mut self, token: &Token) -> Option<()> {
@@ -185,7 +183,7 @@ impl Parser<'_> {
         // a clock time after this number is read on its own, so this one closes the date
         let closes = following.is_none_or(is_jump) || self.starts_time(index.saturating_add(1));
         if closes || self.could_be_day(value)? {
-            let long = value > 100;
+            let long = value >= 101;
             self.fields.push(value, None, long)?;
         }
         Some(index)

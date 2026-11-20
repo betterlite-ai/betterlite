@@ -96,5 +96,65 @@ call:
         value: "19990101120000h"
         dayfirst: false
         yearfirst: false
+      - kind: date
+        value: "Jan-5-"
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: "Jan-32-2024"
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: "31-1"
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: "0-Jan-1"
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: "Jan 0 1"
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: "Jan 32 1"
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: "Jan 31 0"
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: "31-Jan-0"
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: "0 1 Jan"
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: "1 32 Jan"
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: "2024-3-5T10:00"
+        dayfirst: true
+        yearfirst: false
+      - kind: date
+        value: "240305 UTC"
+        dayfirst: false
+        yearfirst: true
+      - kind: date
+        value: "Jan 1 0"
+        dayfirst: false
+        yearfirst: true
+      - kind: date
+        value: "0-Jan-5"
+        dayfirst: true
+        yearfirst: true
+      - kind: date
+        value: "0-Jan-1"
+        dayfirst: false
+        yearfirst: true
 env: {}
 compare: {ignore: []}
