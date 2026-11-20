@@ -61,6 +61,13 @@ const UNRELATED: &str = r#"{"error":{"message":"bad"}}"#;
 #[case::output_limit_chat(CHAT, false, DropFlag::None, &[(400, LIMIT_ERROR)], Expectation::RecoveredRequest)]
 #[case::output_limit_stream(STREAM_REQUEST, true, DropFlag::None, &[(400, LIMIT_ERROR)], Expectation::RecoveredRequest)]
 #[case::unrelated_400_stays_provider(CHAT, false, DropFlag::None, &[(400, UNRELATED)], Expectation::ProviderError(1))]
+#[case::only_a_400_is_recovered(
+    CHAT,
+    false,
+    DropFlag::None,
+    &[(500, LIMIT_ERROR)],
+    Expectation::ProviderError(1)
+)]
 #[case::second_422_keeps_provider_error(
     CHAT_WITH_TEMPERATURE,
     false,
@@ -88,6 +95,13 @@ const UNRELATED: &str = r#"{"error":{"message":"bad"}}"#;
     DropFlag::None,
     &[(422, REJECTED_TEMPERATURE), (200, CHAT_REPLY)],
     Expectation::RejectedFieldKept
+)]
+#[case::retry_ignores_another_status(
+    CHAT,
+    false,
+    DropFlag::Global,
+    &[(400, UNRELATED)],
+    Expectation::ProviderError(1)
 )]
 #[case::retry_ignores_the_call_drop_params(
     CHAT_WITH_TEMPERATURE,
