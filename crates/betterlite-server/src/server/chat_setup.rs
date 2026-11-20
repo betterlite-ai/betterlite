@@ -206,8 +206,7 @@ fn refuse_unbuilt_chain(
     let base_missing = params.api_base.as_deref().is_none_or(str::is_empty);
     let field = match legacy {
         Legacy::AlephAlpha | Legacy::LitellmProxy if key_missing => "api_key",
-        Legacy::AlephAlpha | Legacy::LitellmProxy if base_missing => "api_base",
-        Legacy::Custom if base_missing => "api_base",
+        Legacy::AlephAlpha | Legacy::LitellmProxy | Legacy::Custom if base_missing => "api_base",
         Legacy::AlephAlpha | Legacy::LitellmProxy | Legacy::Custom => return Ok(()),
     };
     Err(ChatSetupError::UnbuiltChain {

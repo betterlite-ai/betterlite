@@ -16,7 +16,7 @@ use betterlite_openai::chat::response::ChatUsage;
 use betterlite_openai::embedding::EmbeddingRequest;
 use betterlite_openai::openai_base_config::CatalogCapabilities;
 use http::HeaderMap;
-use http::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE};
+use http::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderName};
 use rstest::rstest;
 use secrecy::SecretString;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
@@ -25,11 +25,12 @@ use url::Url;
 
 use super::custom::{self, CustomChatMethod, custom_chat_llm_router, decode_custom_output};
 use super::error::LegacyError;
-use super::{Legacy, aleph, proxy};
+use super::{Legacy, LegacyRequest, aleph, proxy};
 use crate::operation::{
     ChatCompletion, ChatOperation, EmbeddingOperation, OperationError, OperationRequest,
     OperationResult,
 };
+use crate::prepared::PreparedRequest;
 use crate::prepared::Upstream;
 use crate::prepared::deployment::Deployment;
 use crate::provider::Adapter as _;
@@ -103,7 +104,7 @@ fn field<'fields>(fields: &'fields JsonValue, name: &str) -> &'fields JsonValue 
         .unwrap_or_else(|| panic!("missing {name}"))
 }
 
-fn header_text(headers: &HeaderMap, name: http::header::HeaderName) -> String {
+fn header_text(headers: &HeaderMap, name: HeaderName) -> String {
     let value = headers.get(name).unwrap();
     value.to_str().unwrap().to_owned()
 }
@@ -215,7 +216,7 @@ fn the_proxy_sends_the_configured_organization_header() {
     let mut deployment = deployment("gpt-4o", "https://proxy.example", Some("test-key"));
     deployment.organization = Some(String::from("org-1"));
     let call = proxy::prepare(&request, &deployment, &catalog()).unwrap();
-    let organization = http::header::HeaderName::from_static("openai-organization");
+    let organization = HeaderName::from_static("openai-organization");
     assert_eq!(header_text(&call.headers, organization), "org-1");
 }
 
@@ -419,11 +420,10 @@ fn the_aleph_prompt_labels_control_roles() {
         "###Instruction: You are terse.###Input: hi###Response: ok"
     );
     assert_eq!(
-        call.request
-            .body
-            .get("maximum_tokens")
-            .and_then(|value| value.as_u64()),
-        Some(4096_u64)
+        call.request.body.get("maximum_tokens"),
+        Some(&serde_json::Value::Number(serde_json::Number::from(
+            4096_u64
+        )))
     );
     // betterlite posts the deployment's stripped model; LiteLLM's handler sees the prefixed one
     assert_eq!(
@@ -477,21 +477,25 @@ fn the_aleph_body_carries_the_call_parameters() {
     let body = &call.request.body;
     // betterlite maps the token ceiling onto the one Aleph Alpha accepts; see docs/deviations/B044.yaml
     assert_eq!(
-        body.get("max_tokens").and_then(|value| value.as_u64()),
-        Some(32_u64)
+        body.get("max_tokens"),
+        Some(&serde_json::Value::Number(serde_json::Number::from(32_u64)))
     );
     assert!(body.get("max_completion_tokens").is_none());
     assert_eq!(
-        body.get("temperature").and_then(|value| value.as_f64()),
-        Some(0.5_f64)
+        body.get("temperature"),
+        Some(&serde_json::Value::Number(
+            serde_json::Number::from_f64(0.5).unwrap()
+        ))
     );
     assert_eq!(
-        body.get("top_p").and_then(|value| value.as_f64()),
-        Some(0.8_f64)
+        body.get("top_p"),
+        Some(&serde_json::Value::Number(
+            serde_json::Number::from_f64(0.8).unwrap()
+        ))
     );
     assert_eq!(
-        body.get("top_k").and_then(|value| value.as_u64()),
-        Some(7_u64)
+        body.get("top_k"),
+        Some(&serde_json::Value::Number(serde_json::Number::from(7_u64)))
     );
 }
 
@@ -803,9 +807,8 @@ async fn a_legacy_call_that_cannot_connect_is_a_transport_error(
     let request = chat_operation(br#"{"messages":[{"role":"user","content":"hi"}]}"#, false);
     let deployment = deployment("model-name", base, Some("test-key"));
     let prepared = legacy.prepare(&request, &deployment, &catalog()).unwrap();
-    let refused = match legacy.execute(&client, &prepared, &deployment).await {
-        Ok(_) => panic!("a closed port answered"),
-        Err(error) => error,
+    let Err(refused) = legacy.execute(&client, &prepared, &deployment).await else {
+        panic!("a closed port answered");
     };
     assert!(
         matches!(refused, OperationError::Http { .. }),
@@ -866,13 +869,10 @@ fn the_legacy_adapter_wraps_each_call_as_a_legacy_prepared_request() {
     let prepared = Legacy::Custom
         .prepare(&request, &deployment, &catalog())
         .unwrap();
-    assert!(matches!(
-        prepared,
-        crate::prepared::PreparedRequest::Legacy(_)
-    ));
+    assert!(matches!(prepared, PreparedRequest::Legacy(_)));
     let refused = Legacy::Custom
         .prepare(
-            &OperationRequest::Legacy(crate::legacy_dispatch::LegacyRequest),
+            &OperationRequest::Legacy(LegacyRequest),
             &deployment,
             &catalog(),
         )
@@ -899,7 +899,7 @@ fn replays_custom_output(#[files("fuzz/corpus/custom_output/*")] path: PathBuf) 
             assert!(matches!(
                 decode_custom_output(&bytes),
                 Err(LegacyError::CustomOutput)
-            ))
+            ));
         }
         "invalid-json" => assert!(matches!(
             decode_custom_output(&bytes),

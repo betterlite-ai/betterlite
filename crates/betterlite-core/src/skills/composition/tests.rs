@@ -211,8 +211,8 @@ fn the_search_reads_the_store_the_operations_share() {
     let composition =
         HostedSkills::new(repository.clone(), ids(), clock(), sandbox()).expect("the composition");
     let embedder = FixedEmbedder::of(&[
-        ("Skill Title\nLook up the weather", [1.0, 0.0]),
-        ("Look up the weather", [1.0, 0.0]),
+        ("Skill Title\nLook up the weather", [1.0_f64, 0.0_f64]),
+        ("Look up the weather", [1.0_f64, 0.0_f64]),
     ]);
     let outcome = runtime()
         .block_on(composition.search(

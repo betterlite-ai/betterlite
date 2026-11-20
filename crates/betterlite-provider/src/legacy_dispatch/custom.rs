@@ -151,24 +151,29 @@ fn custom_params(
     );
     inner.insert(
         String::from("max_tokens"),
-        match chat.request.max_tokens {
-            Some(limit) => serde_json::Value::from(limit),
-            None => serde_json::Value::Null,
-        },
+        chat.request
+            .max_tokens
+            .map_or(serde_json::Value::Null, |limit| {
+                serde_json::Value::Number(serde_json::Number::from(limit))
+            }),
     );
     inner.insert(
         String::from("temperature"),
-        match chat.request.temperature.as_ref() {
-            Some(number) => serde_json::Value::Number(number.clone()),
-            None => serde_json::Value::Null,
-        },
+        chat.request
+            .temperature
+            .as_ref()
+            .map_or(serde_json::Value::Null, |number| {
+                serde_json::Value::Number(number.clone())
+            }),
     );
     inner.insert(
         String::from("top_p"),
-        match chat.request.top_p.as_ref() {
-            Some(number) => serde_json::Value::Number(number.clone()),
-            None => serde_json::Value::Null,
-        },
+        chat.request
+            .top_p
+            .as_ref()
+            .map_or(serde_json::Value::Null, |number| {
+                serde_json::Value::Number(number.clone())
+            }),
     );
     inner.insert(
         String::from("top_k"),
