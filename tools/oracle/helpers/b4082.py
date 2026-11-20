@@ -9,9 +9,8 @@ litellm.suppress_debug_info = True
 
 OPS, CHAT_OPS, ANTHROPIC_OPS, RESPONSES_OPS, JUDGEABLE, POST_GUARDRAIL, HAS_HOSTED, SNAPSHOT = (shadow_eval_logger._SURFACE_OPS, shadow_eval_logger._CHAT_OPS, shadow_eval_logger._ANTHROPIC_OPS, shadow_eval_logger._RESPONSES_OPS, shadow_eval_logger._judgeable_sample, shadow_eval_logger._post_guardrail_kwargs, shadow_eval_logger._request_has_hosted_web_search, shadow_eval_logger.GuardrailRequestSnapshot)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L93-L450
 
-# betterlite's typed request omits unset optional fields, so null and absent are one value here
 OBJECT: Final = TypeAdapter(dict[str, JsonValue])
-MESSAGE_LIST: Final = TypeAdapter(list[dict[str, JsonValue]])
+MESSAGE_LIST: Final = TypeAdapter(list[JsonValue])
 
 
 class SurfaceOpsCall(TypedDict):
@@ -79,11 +78,12 @@ def sample_of(call: SampleCall) -> JsonValue:
     if sample is None:
         return None
     messages, params, real_text = sample
-    return {
+    row: dict[str, JsonValue] = {
         "messages": MESSAGE_LIST.validate_json(json.dumps(messages, default=dict)),
-        "params": OBJECT.validate_json(json.dumps(dict(params), default=dict)),
+        "params": OBJECT.validate_json(json.dumps(params, default=dict)),
         "real_text": real_text,
     }
+    return row
 
 
 def guardrail_row(call: PostGuardrailCall) -> JsonValue:
@@ -91,7 +91,7 @@ def guardrail_row(call: PostGuardrailCall) -> JsonValue:
     rebuilt = POST_GUARDRAIL(call["kwargs"], call["metadata"], OPS[call["call_type"]], snapshot)
     if rebuilt is None:
         return None
-    return OBJECT.validate_json(json.dumps(dict(rebuilt), default=dict))
+    return OBJECT.validate_json(json.dumps(rebuilt, default=dict))
 
 
 def run(input_value: Input) -> JsonValue:
