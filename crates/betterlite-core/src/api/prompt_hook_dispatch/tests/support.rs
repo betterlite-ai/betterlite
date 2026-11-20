@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use betterlite_auth::auth_model_lists::credential::CredentialSnapshot;
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
@@ -18,7 +19,7 @@ use betterlite_prompts::orchestration::prompt_orchestration::{
     ChatCompletionPrompt, ChatCompletionPromptRequest, CompletionFuture, PromptOrchestrationError,
 };
 use betterlite_redact::secret::Redactor;
-use chrono::DateTime;
+use chrono::{DateTime, Utc};
 use thiserror::Error;
 
 use crate::api::prompt_hook_dispatch::{CompatibleLoggerFactory, PromptCheckError, PromptManager};
@@ -279,7 +280,8 @@ pub(crate) fn logging_state() -> LoggingState {
 pub(crate) fn registry(stores: Vec<LiteLlmManagedVectorStore>) -> VectorStoreRegistry {
     VectorStoreRegistry {
         stores,
-        ..VectorStoreRegistry::default()
+        clock: Arc::new(Utc::now),
+        credentials: Arc::new(CredentialSnapshot::default()),
     }
 }
 
