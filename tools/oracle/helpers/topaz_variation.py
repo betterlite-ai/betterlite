@@ -78,10 +78,10 @@ class MapCall(TypedDict):
 
 class FileSpec(TypedDict):
     kind: Literal["bytes", "tuple2", "tuple3", "tuple4", "other"]
-    content: NotRequired[str]
-    filename: NotRequired[str | None]
-    content_type: NotRequired[str | None]
-    headers: NotRequired[dict[str, str]]
+    content: str
+    filename: str | None
+    content_type: str | None
+    headers: dict[str, str]
 
 
 class UploadCall(TypedDict):
@@ -150,13 +150,13 @@ def file_value(spec: FileSpec) -> FileTypes:
     if spec["kind"] == "bytes":
         return spec["content"].encode()
     if spec["kind"] == "tuple2":
-        return (spec.get("filename"), spec["content"].encode())
+        return (spec["filename"], spec["content"].encode())
     if spec["kind"] == "tuple3":
-        return (spec.get("filename"), spec["content"].encode(), spec.get("content_type"))
+        return (spec["filename"], spec["content"].encode(), spec["content_type"])
     if spec["kind"] == "tuple4":
         return (
-            spec.get("filename"), spec["content"].encode(),
-            spec.get("content_type"), spec["headers"],
+            spec["filename"], spec["content"].encode(),
+            spec["content_type"], spec["headers"],
         )
     return Path("image.png")
 
