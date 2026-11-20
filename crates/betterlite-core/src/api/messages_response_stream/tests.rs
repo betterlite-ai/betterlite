@@ -217,26 +217,30 @@ async fn ended(stream: &mut MessagesResponseStream<Scripted>) {
 
 async fn drain(stream: &mut MessagesResponseStream<Scripted>) -> Vec<Json> {
     let mut chunks = Vec::new();
-    while let MessagesResponseStreamResult::Chunk(chunk) = stream
-        .next_chunk()
-        .await
-        .expect("the wrapper yields a chunk")
-    {
-        chunks.push(chunk);
+    loop {
+        match stream
+            .next_chunk()
+            .await
+            .expect("the wrapper yields a chunk")
+        {
+            MessagesResponseStreamResult::Chunk(chunk) => chunks.push(chunk),
+            MessagesResponseStreamResult::End => return chunks,
+        }
     }
-    chunks
 }
 
 async fn sse_frames(stream: &mut MessagesResponseStream<Scripted>) -> Vec<String> {
     let mut frames = Vec::new();
-    while let Some(frame) = stream
-        .next_frame()
-        .await
-        .expect("the wrapper frames a chunk")
-    {
+    loop {
+        let Some(frame) = stream
+            .next_frame()
+            .await
+            .expect("the wrapper frames a chunk")
+        else {
+            return frames;
+        };
         frames.push(String::from_utf8(frame).expect("a frame is UTF-8"));
     }
-    frames
 }
 
 // The wrapper returns its pre-sent message_start before it reads any upstream event.
