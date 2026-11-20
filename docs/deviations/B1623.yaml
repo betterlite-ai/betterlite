@@ -31,6 +31,26 @@ deviations:
       response.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1403-L1412
   - what: >-
+      A GENERIC_ROLE_MAPPINGS_ROLES literal that does not parse answers 500 internal_server_error with
+      code 500, where the pinned code lets ast.literal_eval's SyntaxError or ValueError escape
+      _setup_role_mappings outside the wrapper, so FastAPI answers its generic 500 body with no type,
+      param or code.
+    why: >-
+      The status is the same; betterlite answers its typed error envelope so the failure is classified,
+      and the pinned ordering the task fixes (role mappings, then team mappings, then headers, all
+      before the exchange wrapper) still decides which failure wins. No working setup stores a literal
+      that cannot be parsed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1382
+  - what: >-
+      A response-convertor failure answers 500 internal_server_error with code 500, where the pinned
+      generic_response_convertor's exception reaches the wrapper, which logs and re-raises it into
+      FastAPI's generic 500 body with no type, param or code.
+    why: >-
+      The status is the same; betterlite answers its typed error envelope so the conversion failure is
+      classified, and the verifier retention the task fixes is unchanged because the cache entry is only
+      deleted after a successful conversion. No working setup depends on the shape of a crash response.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1530
+  - what: >-
       In the PKCE exchange a header name or value that cannot be sent answers 401 auth_error with param
       token_exchange and code 401, where the pinned httpx client raises while sending and the wrapper
       re-raises that exception into FastAPI's generic 500 body.
