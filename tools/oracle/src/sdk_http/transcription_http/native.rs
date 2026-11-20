@@ -26,7 +26,7 @@ pub(super) async fn execute(
     .load("model_list: []")
     .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
     let origin = source(&config, env)?;
-    let fixture_config = FixtureConfig::new(call);
+    let fixture_config = FixtureConfig { call };
     let configured = match call.provider_config {
         ProviderConfig::Present => Some(&fixture_config),
         ProviderConfig::Missing => None,

@@ -1,7 +1,7 @@
 import asyncio
-from collections.abc import Coroutine
+from collections.abc import Coroutine, Sequence
 from datetime import UTC, datetime
-from typing import Final, Literal, Protocol
+from typing import Final, Literal, Protocol, TypeAlias
 
 import httpx
 from litellm.litellm_core_utils.core_helpers import (
@@ -14,9 +14,8 @@ from litellm.llms.base_llm.audio_transcription.transformation import (
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.llms.custom_httpx.llm_http_handler import BaseLLMHTTPHandler
 from litellm.llms.openai.transcriptions.whisper_transformation import (
-    OpenAIWhisperAudioTranscriptionConfig,
+    OpenAIWhisperAudioTranscriptionConfig as WhisperConfig,
 )
-from litellm.types.llms.openai import AllMessageValues
 from litellm.types.utils import FileTypes, TranscriptionResponse
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 from typing_extensions import override
@@ -25,10 +24,9 @@ Mode = Literal["sync", "async"]
 ProviderConfig = Literal["present", "missing"]
 
 AUDIO: Final[FileTypes] = ("a.wav", b"abc", "audio/wav")
-DEFAULT_TIMEOUT: Final = 600.0
-HEADERS: Final = TypeAdapter(dict[str, object] | None)
 RESPONSE: Final = TypeAdapter(TranscriptionResponse)
-PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
+AsyncWork: TypeAlias = Coroutine[object, object, TranscriptionResponse]
+Work: TypeAlias = TranscriptionResponse | AsyncWork
 
 
 class Transform(BaseModel):
@@ -48,7 +46,6 @@ class HttpCall(BaseModel):
     api_key: str | None = None
     optional_params: dict[str, JsonValue] = Field(default_factory=dict)
     litellm_params: dict[str, JsonValue] = Field(default_factory=dict)
-    headers: dict[str, str] | None = None
     transform: Transform = Field(default_factory=Transform)
     response: dict[str, JsonValue] | None = None
     supports_subtitle_synthesis: bool = False
@@ -107,7 +104,7 @@ class Envelope(BaseModel):
     transcription_http: TranscriptionHttpValue
 
 
-class FixtureConfig(OpenAIWhisperAudioTranscriptionConfig):
+class FixtureConfig(WhisperConfig):
     def __init__(self, call: HttpCall) -> None:
         self.call = call
 
@@ -130,7 +127,8 @@ class FixtureConfig(OpenAIWhisperAudioTranscriptionConfig):
         self,
         headers: dict[str, str],
         model: str,
-        messages: list[AllMessageValues],
+        # ast-grep-ignore: no-loose-types
+        messages: Sequence[object],
         optional_params: dict[str, JsonValue],
         litellm_params: dict[str, JsonValue],
         api_key: str | None = None,
@@ -143,8 +141,7 @@ class FixtureConfig(OpenAIWhisperAudioTranscriptionConfig):
         return validated
 
     @override
-    # ast-grep-ignore: no-long-names
-    def transform_audio_transcription_request(
+    def transform_audio_transcription_request(  # ast-grep-ignore: no-long-names
         self,
         model: str,
         audio_file: FileTypes,
@@ -166,74 +163,70 @@ class FixtureConfig(OpenAIWhisperAudioTranscriptionConfig):
         )
 
     @override
-    # ast-grep-ignore: no-long-names
-    def transform_audio_transcription_response(
+    def transform_audio_transcription_response(  # ast-grep-ignore: no-long-names
         self,
         raw_response: httpx.Response,
     ) -> TranscriptionResponse:
         _ = raw_response
         if self.call.response is None:
             return TranscriptionResponse()
-        return TranscriptionResponse.model_validate(self.call.response)
+        return RESPONSE.validate_python(self.call.response)
 
     @property
     @override
     def supports_subtitle_synthesis(self) -> bool:
         return self.call.supports_subtitle_synthesis
 
-    @override
-    def get_error_class(
-        self, error_message: str, status_code: int, headers: dict[str, str] | httpx.Headers
-    ) -> BaseLLMException:
-        return BaseLLMException(status_code=status_code, message=error_message, headers=headers)
-
 
 class Handlers(Protocol):
     def audio_transcriptions(
         self,
-        _model: str,
-        _audio_file: FileTypes,
-        _optional_params: dict[str, JsonValue],
-        _litellm_params: dict[str, JsonValue],
-        _model_response: TranscriptionResponse,
-        _timeout: float,
-        _max_retries: int,
-        _logging_obj: Logging,
-        _api_key: str | None,
-        _api_base: str | None,
-        _custom_llm_provider: str,
-        /,
         *,
+        model: str,
+        audio_file: FileTypes,
+        optional_params: dict[str, JsonValue],
+        litellm_params: dict[str, JsonValue],
+        model_response: TranscriptionResponse,
+        timeout: float,
+        max_retries: int,
+        logging_obj: Logging,
+        api_key: str | None,
+        api_base: str | None,
+        custom_llm_provider: str,
         atranscription: bool,
-        headers: dict[str, object] | None,
         provider_config: FixtureConfig | None,
-    ) -> Coroutine[object, object, TranscriptionResponse] | TranscriptionResponse: ...
+    ) -> Work: ...
 
     def async_audio_transcriptions(
         self,
-        _model: str,
-        _audio_file: FileTypes,
-        _optional_params: dict[str, JsonValue],
-        _litellm_params: dict[str, JsonValue],
-        _model_response: TranscriptionResponse,
-        _timeout: float,
-        _max_retries: int,
-        _logging_obj: Logging,
-        _api_key: str | None,
-        _api_base: str | None,
-        _custom_llm_provider: str,
-        /,
         *,
-        headers: dict[str, object] | None,
+        model: str,
+        audio_file: FileTypes,
+        optional_params: dict[str, JsonValue],
+        litellm_params: dict[str, JsonValue],
+        model_response: TranscriptionResponse,
+        timeout: float,
+        max_retries: int,
+        logging_obj: Logging,
+        api_key: str | None,
+        api_base: str | None,
+        custom_llm_provider: str,
         provider_config: FixtureConfig | None,
-    ) -> Coroutine[object, object, TranscriptionResponse]: ...
+    ) -> AsyncWork: ...
 
 
 HANDLER: Handlers = BaseLLMHTTPHandler()
 
 
-def logging_fixture() -> Logging:
-    return Logging(
+def view(response: TranscriptionResponse, names: list[str]) -> View:
+    fields = RESPONSE_TEXT.validate_json(response.model_dump_json())
+    hidden = get_provider_response_headers_from_hidden_params(response)
+    headers = {} if hidden is None else {name: hidden[name] for name in names if name in hidden}
+    return View(text=fields.text, words=fields.words, headers=headers)
+
+
+def run_http(call: HttpCall, api_base: str) -> Outcome:
+    logging_obj = Logging(
         model="",
         messages="",
         stream=False,
@@ -242,70 +235,45 @@ def logging_fixture() -> Logging:
         litellm_call_id="transcription-http",
         function_id="transcription-http",
     )
-
-
-def observed(response: TranscriptionResponse, names: list[str]) -> dict[str, str]:
-    headers = get_provider_response_headers_from_hidden_params(response)
-    if headers is None:
-        return {}
-    return {name: headers[name] for name in names if name in headers}
-
-
-def view(response: TranscriptionResponse, names: list[str]) -> View:
-    fields = RESPONSE_TEXT.validate_json(response.model_dump_json())
-    return View(text=fields.text, words=fields.words, headers=observed(response, names))
-
-
-def exchange(
-    call: HttpCall, provider_config: FixtureConfig | None, api_base: str
-) -> TranscriptionResponse:
-    logging_obj = logging_fixture()
-    timeout = DEFAULT_TIMEOUT if call.timeout_seconds is None else float(call.timeout_seconds)
-    headers = HEADERS.validate_python(call.headers)
-    if call.mode == "async" or call.atranscription:
-        return asyncio.run(
-            HANDLER.async_audio_transcriptions(
-                call.model,
-                AUDIO,
-                call.optional_params,
-                call.litellm_params,
-                TranscriptionResponse(),
-                timeout,
-                call.max_retries,
-                logging_obj,
-                call.api_key,
-                api_base,
-                "openai",
-                headers=headers,
-                provider_config=provider_config,
-            )
-        )
-    return RESPONSE.validate_python(
-        HANDLER.audio_transcriptions(
-            call.model,
-            AUDIO,
-            call.optional_params,
-            call.litellm_params,
-            TranscriptionResponse(),
-            timeout,
-            call.max_retries,
-            logging_obj,
-            call.api_key,
-            api_base,
-            "openai",
-            atranscription=False,
-            headers=headers,
-            provider_config=provider_config,
-        )
-    )
-
-
-def run_http(call: HttpCall, api_base: str) -> Outcome:
-    config = FixtureConfig(call)
-    provider_config = config if call.provider_config == "present" else None
+    provider_config = FixtureConfig(call) if call.provider_config == "present" else None
+    timeout = 600.0 if call.timeout_seconds is None else float(call.timeout_seconds)
     try:
-        response = exchange(call, provider_config, api_base)
-    except PROVIDER_ERROR as error:
+        if call.mode == "async" or call.atranscription:
+            response = asyncio.run(
+                HANDLER.async_audio_transcriptions(
+                    model=call.model,
+                    audio_file=AUDIO,
+                    optional_params=call.optional_params,
+                    litellm_params=call.litellm_params,
+                    model_response=TranscriptionResponse(),
+                    timeout=timeout,
+                    max_retries=call.max_retries,
+                    logging_obj=logging_obj,
+                    api_key=call.api_key,
+                    api_base=api_base,
+                    custom_llm_provider="openai",
+                    provider_config=provider_config,
+                )
+            )
+        else:
+            response = RESPONSE.validate_python(
+                HANDLER.audio_transcriptions(
+                    model=call.model,
+                    audio_file=AUDIO,
+                    optional_params=call.optional_params,
+                    litellm_params=call.litellm_params,
+                    model_response=TranscriptionResponse(),
+                    timeout=timeout,
+                    max_retries=call.max_retries,
+                    logging_obj=logging_obj,
+                    api_key=call.api_key,
+                    api_base=api_base,
+                    custom_llm_provider="openai",
+                    atranscription=False,
+                    provider_config=provider_config,
+                )
+            )
+    except BaseLLMException as error:
         return Outcome(result=None, failure=Failure.model_validate(error), raised=None)
     except ValueError as error:
         raised = Raised(cls=type(error).__name__, message=str(error))

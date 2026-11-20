@@ -6,6 +6,7 @@ use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::TlsPolicy;
 use betterlite_config::types::{Config, ProxyTrust};
 use betterlite_core::api::vector_store_http_write::error::ClientError;
+use betterlite_core::api::vector_store_http_write::service::LogContext;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::limits::TransportLimits;
@@ -27,13 +28,13 @@ use betterlite_provider::api::transcription_contract::{
     AudioFile, AudioTranscriptionConfig, TranscriptionContractError,
 };
 use betterlite_provider::api::transcription_http::config::{
-    ClientRequest, ClientSource, ConfigFailure, Headers, TranscriptionHttpConfig, Validation,
+    ClientRequest, ClientSource, ConfigFailure, Headers, TranscriptionHttpConfig, UrlInput,
+    Validation,
 };
 use betterlite_provider::api::transcription_http::error::TranscriptionHttpError;
 use betterlite_provider::api::transcription_http::reply::TranscriptionReply;
 use betterlite_provider::api::transcription_http::{
-    LogContext, TranscriptionCall, TranscriptionDeps, async_audio_transcriptions,
-    audio_transcriptions,
+    TranscriptionCall, TranscriptionDeps, async_audio_transcriptions, audio_transcriptions,
 };
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
@@ -153,13 +154,7 @@ impl Fixture {
 
 // A provider config that answers with the case's request transform and response, as a real provider would
 pub(super) struct FixtureConfig<'call> {
-    call: &'call Call,
-}
-
-impl<'call> FixtureConfig<'call> {
-    pub(super) const fn new(call: &'call Call) -> Self {
-        Self { call }
-    }
+    pub(super) call: &'call Call,
 }
 
 impl AudioTranscriptionConfig for FixtureConfig<'_> {
@@ -206,6 +201,11 @@ impl TranscriptionHttpConfig for FixtureConfig<'_> {
             headers.insert(String::from("Authorization"), format!("Bearer {key}"));
         }
         Ok(headers)
+    }
+
+    fn complete_transcription_url(&self, input: &UrlInput<'_>) -> Result<String, ConfigFailure> {
+        let base = input.api_base.unwrap_or_default();
+        Ok(format!("{base}/audio/transcriptions"))
     }
 }
 
