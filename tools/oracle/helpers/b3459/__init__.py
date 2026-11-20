@@ -155,7 +155,7 @@ class RecordingIngestion(S3VectorsRAGIngestion):
                 "index": self.index_name,
                 "dimension": self.dimension,
                 "distance_metric": self.distance_metric,
-                "non_filterable_metadata_keys": list(self.non_filterable_metadata_keys),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L99-L102
+                "non_filterable_metadata_keys": list(self.non_filterable_metadata_keys),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L99-L102
             }
         )
 
@@ -203,7 +203,7 @@ def settings_for(case: SettingsCase) -> JsonValue:
         "index_name": ingestion.index_name,
         "embedding_model": None if embedding_config is None else embedding_config.get("model"),
         "distance_metric": ingestion.distance_metric,
-        "non_filterable_metadata_keys": list(ingestion.non_filterable_metadata_keys),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L99-L102
+        "non_filterable_metadata_keys": list(ingestion.non_filterable_metadata_keys),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L99-L102
         "dimension": ingestion.dimension,
         "aws_region_name": ingestion.aws_region_name,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L845-L848
     }
