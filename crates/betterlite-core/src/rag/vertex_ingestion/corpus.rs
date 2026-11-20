@@ -222,13 +222,16 @@ fn done_corpus(operation: &Json) -> Result<Option<String>, VertexIngestionError>
 }
 
 fn is_done(fields: &Extra) -> Result<bool, VertexIngestionError> {
-    match fields.get("done") {
-        Some(Json::Bool(done)) => Ok(*done),
-        Some(Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            Err(VertexIngestionError::BooleanField { field: "done" })
-        }
-        None | Some(Json::Null) => Ok(false),
+    let Some(flag) = fields.get("done") else {
+        return Ok(false);
+    };
+    if matches!(flag, Json::Null) {
+        return Ok(false);
     }
+    if let Json::Bool(done) = flag {
+        return Ok(*done);
+    }
+    Err(VertexIngestionError::BooleanField { field: "done" })
 }
 
 fn response_name(fields: &Extra) -> Result<String, VertexIngestionError> {
