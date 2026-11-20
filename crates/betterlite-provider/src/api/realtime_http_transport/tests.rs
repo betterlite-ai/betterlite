@@ -663,6 +663,40 @@ fn a_bad_request_status_is_rejected() {
     assert_eq!(failure.message, "bad");
 }
 
+// The masked status carries bytes it cannot read as text by their count, never as replacement characters
+#[test]
+fn a_masked_reply_body_that_is_not_utf8_is_counted() {
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+    let mut state = logging_state(&redactor);
+    let envelope = logging_env(&redactor);
+    let source = test_source();
+    let data = session_request();
+    let replies = [Reply {
+        status: 429,
+        headers: "content-type: application/octet-stream",
+        body: b"\xff\xfe",
+    }];
+    let (_, _, answers) = exchange(&replies, |api_base| {
+        runtime().block_on(async {
+            let deps = fallback_deps(&source, None, ApiLimits::default());
+            let call = session_call(SessionEndpoint::ClientSecrets, api_base, &data);
+            let mut log = LogContext {
+                state: &mut state,
+                env: &envelope,
+            };
+            session_post(&deps, &call, &mut log).await
+        })
+    });
+    let Err(RealtimeHttpError::Status(failure)) = answers else {
+        panic!("a 429 is the masked status error");
+    };
+    assert_eq!(failure.message, "2 bytes that are not UTF-8");
+    assert_eq!(
+        failure.headers.get("content-length"),
+        Some(&Json::Text(String::from("2")))
+    );
+}
+
 // The transport's body cap: a reply past the limit is a transport error, never a silently cut answer
 #[test]
 fn a_reply_body_over_the_transport_limit_is_a_transport_error() {
