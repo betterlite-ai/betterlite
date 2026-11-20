@@ -14,8 +14,7 @@ use super::harness::*;
 
 #[tokio::test]
 async fn transformed_session_ready() {
-    let mut fixture = Fixture::default();
-    fixture.provider.requires_session_configuration = true;
+    let fixture = Fixture::default();
     respond(&fixture, json(SESSION_CREATED));
     let mut source = fixture.source.clone();
     source.text(r#"{"type":"provider.frame"}"#);
@@ -154,8 +153,7 @@ async fn transformed_dropped_events_are_not_forwarded() {
 
 #[tokio::test]
 async fn transformed_session_created_without_pending_does_not_flush() {
-    let mut fixture = Fixture::default();
-    fixture.provider.requires_session_configuration = true;
+    let fixture = Fixture::default();
     respond(&fixture, json(SESSION_CREATED));
     let mut source = fixture.source.clone();
     source.text(r#"{"type":"provider.frame"}"#);
@@ -175,9 +173,34 @@ async fn transformed_session_created_without_pending_does_not_flush() {
 }
 
 #[tokio::test]
-async fn transformed_flush_failure_retains_frames_and_resets_flushing() {
+async fn transformed_session_created_skips_flush_when_the_provider_configures_the_session() {
     let mut fixture = Fixture::default();
     fixture.provider.requires_session_configuration = true;
+    respond(&fixture, json(SESSION_CREATED));
+    let mut source = fixture.source.clone();
+    source.text(r#"{"type":"provider.frame"}"#);
+    source.close_with(1000, "");
+    let options = StateOptions {
+        provider: Flag(true),
+        pending_messages: vec![String::from("audio-1")],
+        ..StateOptions::default()
+    };
+    let token = CancellationToken::new();
+    let (result, state) = run(&options, &fixture, &mut source, &[], &token).await;
+    assert_eq!(result.unwrap().code, 1000);
+    assert!(state.setup.backend_setup_complete.0);
+    assert!(!state.setup.flushing_pending_messages.0);
+    assert!(lock(&fixture.provider.script).requests.is_empty());
+    assert_eq!(
+        state.setup.pending_messages_until_setup,
+        vec![String::from("audio-1")]
+    );
+    assert_eq!(state.setup.pending_messages_byte_total, 7);
+}
+
+#[tokio::test]
+async fn transformed_flush_failure_retains_frames_and_resets_flushing() {
+    let fixture = Fixture::default();
     {
         let mut script = lock(&fixture.provider.script);
         script.responses.push_back(ScriptedResponse {
