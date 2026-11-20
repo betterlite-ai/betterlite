@@ -47,7 +47,7 @@ impl Helper for Op {
             .or_value_error()?;
         let (outcome, slept) =
             runtime.block_on(store_and_time(&ingestion, &input.file, content.as_deref()));
-        Ok(projection(http.requests(), slept, token.calls(), outcome))
+        Ok(projection(&http.requests(), slept, &token.calls(), outcome))
     }
 }
 
@@ -120,9 +120,9 @@ async fn store_and_time(
 }
 
 fn projection(
-    requests: Vec<Value>,
+    requests: &[Value],
     slept: Duration,
-    token_calls: Vec<Value>,
+    token_calls: &[Value],
     outcome: Result<StoreResult, VertexIngestionError>,
 ) -> Value {
     let (corpus_id, file_id, failure) = match outcome {
