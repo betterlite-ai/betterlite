@@ -169,9 +169,12 @@ class FixtureConfig(WhisperConfig):
         raw_response: httpx.Response,
     ) -> TranscriptionResponse:
         _ = raw_response
+        response = TranscriptionResponse()
         if self.call.response is None:
-            return TranscriptionResponse()
-        return RESPONSE.validate_python(self.call.response)
+            return response
+        for name, value in self.call.response.items():
+            setattr(response, name, value)
+        return response
 
     @property
     @override
