@@ -223,6 +223,28 @@ fn delete_raises_the_response_error_before_decoding(
     );
 }
 
+// HTTPHandler.delete raises on any non-2xx, so a 3xx raises before its body is decoded
+#[test]
+fn delete_raises_a_redirect_status_before_decoding() {
+    let fixture = Fixture::new();
+    fixture.source.answer(reply(302, DELETED_JSON));
+    let call = fixture.call();
+    let (exception, synthesized) = provider_error(delete_error(&fixture, &call));
+    assert!(!synthesized);
+    assert_eq!(exception.status_code, 302);
+    assert_eq!(exception.message, DELETED_JSON);
+    let headers = header_map(&[("x-request-id", "req_1")]);
+    assert_eq!(exception.headers, headers);
+    assert_eq!(
+        fixture.config.errors(),
+        vec![ErrorSeen {
+            message: DELETED_JSON.to_owned(),
+            status: 302,
+            headers,
+        }]
+    );
+}
+
 #[test]
 fn delete_reports_a_body_that_does_not_decode() {
     let fixture = Fixture::new();

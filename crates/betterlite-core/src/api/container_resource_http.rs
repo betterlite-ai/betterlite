@@ -9,6 +9,7 @@ use std::future::Future;
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
+use crate::api::vector_store_http_write::error::{FailureFacts, handle_error};
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_state::LoggingState;
@@ -22,7 +23,7 @@ use betterlite_openai::{
     containers::container_file_http::{
         ContainerFileHttpError, PreCallHook,
         request::{CallParams, ParamValue, pre_call_record, read_params, request_headers},
-        response::raise_for_error_status,
+        response::{error_message_from_response, raise_for_error_status},
         transport::{
             AsyncClient, BlockingClient, ClientSource, ContainerHttpReply, ContainerHttpRequest,
             ContainerMethod, Selected, TransferError,
@@ -31,12 +32,11 @@ use betterlite_openai::{
     openai_base_config::Object,
 };
 use indexmap::IndexMap;
-use serde_json::Value;
+use serde_json::{Number, Value};
 use thiserror::Error;
 use url::Url;
 
 const TIMEOUT_STATUS: u16 = 408;
-const FALLBACK_STATUS: u16 = 500;
 const TIMEOUT_MESSAGE: &str = "litellm.Timeout: Connection timed out after None seconds.";
 
 #[derive(Debug, Error)]
@@ -61,6 +61,7 @@ trait Resource {
     type Reply;
     const METHOD: ContainerMethod;
     const CAUGHT_TIMEOUT_STATUS: Option<u16>;
+    fn error_status(config: &dyn BaseContainerConfig, reply: &ContainerHttpReply) -> Result<(), BaseLlmException>;
     fn transform(config: &dyn BaseContainerConfig, container_id: &str, api_base: &str, context: ContainerRequestContext<'_>) -> Result<(String, Object), ContainerError>;
     fn decode(config: &dyn BaseContainerConfig, body: &[u8]) -> Result<Self::Reply, ContainerError>;
 }
@@ -71,6 +72,7 @@ impl Resource for Retrieve {
     type Reply = ContainerObject;
     const METHOD: ContainerMethod = ContainerMethod::Get;
     const CAUGHT_TIMEOUT_STATUS: Option<u16> = None;
+    fn error_status(config: &dyn BaseContainerConfig, reply: &ContainerHttpReply) -> Result<(), BaseLlmException> { raise_for_error_status(config, reply) }
     fn transform(config: &dyn BaseContainerConfig, container_id: &str, api_base: &str, context: ContainerRequestContext<'_>) -> Result<(String, Object), ContainerError> { config.transform_container_retrieve_request(container_id, api_base, context) }
     fn decode(config: &dyn BaseContainerConfig, body: &[u8]) -> Result<ContainerObject, ContainerError> { config.transform_container_retrieve_response(body) }
 }
@@ -80,14 +82,16 @@ impl Resource for Delete {
     type Reply = DeleteContainerResult;
     const METHOD: ContainerMethod = ContainerMethod::Delete;
     const CAUGHT_TIMEOUT_STATUS: Option<u16> = Some(TIMEOUT_STATUS);
+    fn error_status(config: &dyn BaseContainerConfig, reply: &ContainerHttpReply) -> Result<(), BaseLlmException> {
+        if (200..300).contains(&reply.status) { return Ok(()); }
+        Err(config.get_error_class(&error_message_from_response(&reply.body), reply.status, &reply.headers))
+    }
     fn transform(config: &dyn BaseContainerConfig, container_id: &str, api_base: &str, context: ContainerRequestContext<'_>) -> Result<(String, Object), ContainerError> { config.transform_container_delete_request(container_id, api_base, context) }
     fn decode(config: &dyn BaseContainerConfig, body: &[u8]) -> Result<DeleteContainerResult, ContainerError> { config.transform_container_delete_response(body) }
 }
 
-pub enum Handled<Ready, Pending> {
-    Done(Ready),
-    Pending(Pending),
-}
+#[rustfmt::skip]
+pub enum Handled<Ready, Pending> { Done(Ready), Pending(Pending) }
 pub struct ContainerResourceCall<'call, Source: ClientSource> {
     pub container_id: &'call str,
     pub config: &'call dyn BaseContainerConfig,
@@ -110,9 +114,7 @@ pub struct ContainerResourceHandler<Source: ClientSource, Hook: PreCallHook> {
 macro_rules! endpoints {
     ($($sync:ident, $asynchronous:ident, $kind:ident, $result:ident;)+) => { $(
         pub fn $sync(&self, call: &ContainerResourceCall<'_, Source>, is_async: bool) -> Result<Handled<<$kind as Resource>::Reply, impl Future<Output = $result>>, ContainerResourceHttpError> {
-            if is_async {
-                return Ok(Handled::Pending(self.$asynchronous(call)));
-            }
+            if is_async { return Ok(Handled::Pending(self.$asynchronous(call))); }
             self.sync_call::<$kind>(call).map(Handled::Done)
         }
         pub async fn $asynchronous(&self, call: &ContainerResourceCall<'_, Source>) -> $result {
@@ -228,19 +230,14 @@ fn rendered_query(
 }
 
 // httpx replaces the URL's own query with the params of a non-GET request, while GET merges them in the client
+#[rustfmt::skip]
 fn resource_request(
     method: ContainerMethod,
     url: String,
     headers: BTreeMap<String, String>,
     query: IndexMap<String, String>,
 ) -> Result<ContainerHttpRequest, ContainerResourceHttpError> {
-    let mut request = ContainerHttpRequest {
-        method,
-        url,
-        headers,
-        query: Vec::new(),
-        file: None,
-    };
+    let mut request = ContainerHttpRequest { method, url, headers, query: Vec::new(), file: None };
     if matches!(method, ContainerMethod::Get) || query.is_empty() {
         request.query = query.into_iter().collect();
         return Ok(request);
@@ -255,7 +252,8 @@ fn resource_request(
     Ok(request)
 }
 
-// _handle_error: the caught exception's own status when it has one, a synthesized 500 otherwise
+// llm_http_handler.py's _handle_error through the shared converter: the caught status or a synthesized 500, the text, then get_error_class
+#[rustfmt::skip]
 fn transport_failure(
     error: &TransferError,
     config: &dyn BaseContainerConfig,
@@ -269,17 +267,19 @@ fn transport_failure(
                 | TransportError::Rejected(HttpError::Timeout)
         )
     );
-    let (status, message) = caught_timeout_status.filter(|_| timed_out).map_or_else(
-        || (None, error.to_string()),
-        |status| (Some(status), TIMEOUT_MESSAGE.to_owned()),
-    );
+    let caught = caught_timeout_status.filter(|_| timed_out);
+    let facts = FailureFacts {
+        response_status: None,
+        status: caught.map(|status| Json::Number(Number::from(status))),
+        text: caught.map(|_| TIMEOUT_MESSAGE.to_owned()),
+        headers: None,
+        response: None,
+        display: error.to_string(),
+    };
+    let converted = handle_error(&facts, None);
     ContainerResourceHttpError::Provider {
-        exception: config.get_error_class(
-            &message,
-            status.unwrap_or(FALLBACK_STATUS),
-            &BTreeMap::new(),
-        ),
-        status_code_is_synthesized: status.is_none(),
+        exception: config.get_error_class(&converted.message, converted.status_code, &BTreeMap::new()),
+        status_code_is_synthesized: converted.status_code_is_synthesized,
     }
 }
 
@@ -290,7 +290,7 @@ fn decoded<Kind>(
 where
     Kind: Resource,
 {
-    raise_for_error_status(config, reply).map_err(|exception| {
+    Kind::error_status(config, reply).map_err(|exception| {
         ContainerResourceHttpError::Provider {
             exception,
             status_code_is_synthesized: false,
