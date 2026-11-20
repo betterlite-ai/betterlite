@@ -4,9 +4,8 @@ pub mod index;
 pub mod load;
 pub mod rows;
 
-#[cfg(test)]
+#[path = "membership_load/tests/postgres.rs"]
 mod postgres;
-#[cfg(test)]
 mod tests;
 
 use std::sync::Arc;

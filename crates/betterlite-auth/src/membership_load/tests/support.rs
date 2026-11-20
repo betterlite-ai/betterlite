@@ -99,10 +99,13 @@ pub(crate) struct FakeCache {
 
 impl FakeCache {
     pub(crate) fn new(management_ttl: f64) -> Arc<Self> {
-        Arc::new(Self {
-            management_ttl,
-            ..Self::default()
-        })
+        Arc::new(Self::default().with_management_ttl(management_ttl))
+    }
+
+    #[must_use]
+    fn with_management_ttl(mut self, management_ttl: f64) -> Self {
+        self.management_ttl = management_ttl;
+        self
     }
 
     pub(crate) fn seed_local(&self, key: &str, stored: Json) {

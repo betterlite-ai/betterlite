@@ -17,11 +17,11 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
 use tokio_util::task::TaskTracker;
 
-use super::rows::{DatabaseTeamMembership, TeamMembershipRows};
-use super::tests::support::{
+use crate::membership_load::MembershipLookup;
+use crate::membership_load::rows::{DatabaseTeamMembership, TeamMembershipRows};
+use crate::membership_load::tests::support::{
     FakeCache, RecordedWrite, WriteKind, drain, expect_absent, index, key,
 };
-use crate::membership_load::MembershipLookup;
 
 const SEED: &str = r#"
 INSERT INTO "LiteLLM_BudgetTable" (budget_id, max_budget, tpm_limit, rpm_limit, created_by, updated_by)
@@ -239,7 +239,6 @@ async fn normal_read_routing() {
 }
 
 #[tokio::test]
-// ast-grep-ignore: no-long-names
 async fn provided_database_url_failure_is_fatal() {
     let statements = catalog_statements(&PACKAGED_CATALOGS).expect("the migration text");
     let broken = SecretString::from("postgres://localhost:not-a-port/betterlite");
