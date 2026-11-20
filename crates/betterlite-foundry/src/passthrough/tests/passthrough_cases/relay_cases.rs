@@ -12,6 +12,7 @@ use super::RES;
 
 pub(super) fn foundry_relay_shape_literals() {
     relay_shapes_log_their_call_types();
+    relay_shapes_accept_their_declared_fields();
     relay_shapes_reject_other_shapes();
     relay_fallbacks_log_the_standard_body();
     undecodable_standard_bodies_log_nothing();
@@ -20,55 +21,107 @@ pub(super) fn foundry_relay_shape_literals() {
 
 const RERANK_BODY: &[u8] =
     br#"{"id":"r","results":[{"index":0,"relevance_score":0.5,"document":{"text":"x"}}]}"#;
-const RERANK_BODY_WITHOUT_SCORE: &[u8] = br#"{"results":[{"index":0}]}"#;
 const FLUX_BODY: &[u8] = br#"{"created":1,"data":[{"url":"https://image.test/one.png"}]}"#;
-const FLUX_BODY_WITH_WRONG_CREATED: &[u8] = br#"{"created":"yesterday"}"#;
+const RERANK_ENDPOINT: &str = "/rerank";
+const FLUX_ENDPOINT: &str = "/providers/blackforestlabs/v1/flux-2-pro";
+
+fn relayed_shape(body: &[u8], endpoint: &str) -> (Option<Object>, Option<String>) {
+    let mut logging = RecordingLogging::default();
+    let parsed = logged_relay_shape(&FOUNDRY_RELAY_SHAPES, 200_u16, body, &mut logging, endpoint);
+    (parsed, logging.call_type)
+}
+
+// the parsed shape is the body itself, so spend runs on every field the provider sent
+fn assert_shape_logged(body: &[u8], endpoint: &str, call_type: &str) {
+    let (parsed, logged) = relayed_shape(body, endpoint);
+    let expected: Object = serde_json::from_slice(body).unwrap();
+    assert_eq!(parsed, Some(expected), "{endpoint} {body:?}");
+    assert_eq!(logged.as_deref(), Some(call_type), "{endpoint} {body:?}");
+}
+
+fn assert_shape_rejected(body: &[u8], endpoint: &str) {
+    let (parsed, logged) = relayed_shape(body, endpoint);
+    assert_eq!(parsed, None, "{endpoint} {body:?}");
+    assert_eq!(logged, None, "{endpoint} {body:?}");
+}
 
 fn relay_shapes_log_their_call_types() {
-    let mut rerank_logging = RecordingLogging::default();
-    let rerank_parsed = logged_relay_shape(
-        &FOUNDRY_RELAY_SHAPES,
-        200_u16,
-        RERANK_BODY,
-        &mut rerank_logging,
-        "providers/cohere/v2/rerank",
-    );
-    assert!(rerank_parsed.is_some());
-    assert_eq!(rerank_logging.call_type.as_deref(), Some("arerank"));
-    let mut flux_logging = RecordingLogging::default();
-    let flux_parsed = logged_relay_shape(
-        &FOUNDRY_RELAY_SHAPES,
-        200_u16,
-        FLUX_BODY,
-        &mut flux_logging,
-        "/providers/blackforestlabs/v1/flux-2-pro",
-    );
-    assert!(flux_parsed.is_some());
-    assert_eq!(flux_logging.call_type.as_deref(), Some("aimage_generation"));
+    assert_shape_logged(RERANK_BODY, "providers/cohere/v2/rerank", "arerank");
+    assert_shape_logged(FLUX_BODY, FLUX_ENDPOINT, "aimage_generation");
+}
+
+fn relay_shapes_accept_their_declared_fields() {
+    for body in [
+        &br#"{}"#[..],
+        &br#"{"id":null,"results":null,"meta":null}"#[..],
+        &br#"{"id":"x","meta":{}}"#[..],
+        &br#"{"results":[{"index":-1,"relevance_score":0}]}"#[..],
+        &br#"{"results":[{"index":9223372036854775808,"relevance_score":0.5}]}"#[..],
+        &br#"{"results":[{"index":0,"relevance_score":1,"document":{"text":"x","extra":1}}]}"#[..],
+        &br#"{"unknown":true,"results":[{"index":0,"relevance_score":0.5}]}"#[..],
+    ] {
+        assert_shape_logged(body, RERANK_ENDPOINT, "arerank");
+    }
+    for body in [
+        &br#"{"created":1}"#[..],
+        &br#"{"created":1,"data":null}"#[..],
+        &br#"{"created":1,"data":[]}"#[..],
+        &br#"{"created":-1,"data":[]}"#[..],
+        &br#"{"created":9223372036854775808,"data":[]}"#[..],
+        &br#"{"created":1,"data":[{}]}"#[..],
+        &br#"{"created":1,"data":[{"url":null,"b64_json":null,"revised_prompt":null,"extra":1}]}"#
+            [..],
+        &br#"{"created":1,"unknown":{"a":1}}"#[..],
+    ] {
+        assert_shape_logged(body, FLUX_ENDPOINT, "aimage_generation");
+    }
 }
 
 fn relay_shapes_reject_other_shapes() {
-    for (status, body, endpoint) in [
-        (
-            201_u16,
-            FLUX_BODY,
-            "/providers/blackforestlabs/v1/flux-2-pro",
-        ),
-        (200_u16, RERANK_BODY_WITHOUT_SCORE, "/rerank"),
-        (200_u16, FLUX_BODY, "/providers/blackforestlabs/v1/flux-2"),
-        (200_u16, FLUX_BODY, "/rerankx"),
-        (
-            200_u16,
-            FLUX_BODY_WITH_WRONG_CREATED,
-            "/providers/blackforestlabs/v1/flux-2-pro",
-        ),
+    for body in [
+        &br#"{"results":[{"index":0}]}"#[..],
+        &br#"{"results":[{"relevance_score":0.5}]}"#[..],
+        &br#"{"results":[{"index":0.5,"relevance_score":0.5}]}"#[..],
+        &br#"{"results":[{"index":"1","relevance_score":0.5}]}"#[..],
+        &br#"{"results":[{"index":0,"relevance_score":"x"}]}"#[..],
+        &br#"{"results":[{"index":0,"relevance_score":true}]}"#[..],
+        &br#"{"results":[{"index":0,"relevance_score":0.5,"document":null}]}"#[..],
+        &br#"{"results":[{"index":0,"relevance_score":0.5,"document":{}}]}"#[..],
+        &br#"{"results":[{"index":0,"relevance_score":0.5,"document":{"text":5}}]}"#[..],
+        &br#"{"results":{}}"#[..],
+        &br#"{"results":[5]}"#[..],
+        &br#"{"id":5}"#[..],
+        &br#"{"meta":[]}"#[..],
     ] {
-        let mut logging = RecordingLogging::default();
-        let parsed =
-            logged_relay_shape(&FOUNDRY_RELAY_SHAPES, status, body, &mut logging, endpoint);
-        assert!(parsed.is_none(), "{endpoint} {status}");
-        assert_eq!(logging.call_type, None);
+        assert_shape_rejected(body, RERANK_ENDPOINT);
     }
+    for body in [
+        &br#"{"created":"yesterday"}"#[..],
+        &br#"{"data":[]}"#[..],
+        &br#"{"created":null}"#[..],
+        &br#"{"created":1.5}"#[..],
+        &br#"{"created":true}"#[..],
+        &br#"{"created":1,"data":{}}"#[..],
+        &br#"{"created":1,"data":[5]}"#[..],
+        &br#"{"created":1,"data":[{"url":5}]}"#[..],
+        &br#"{"created":1,"data":[{"b64_json":5}]}"#[..],
+        &br#"{"created":1,"data":[{"revised_prompt":5}]}"#[..],
+    ] {
+        assert_shape_rejected(body, FLUX_ENDPOINT);
+    }
+    // the suffix must end the relayed path, and only a 200 carries a relayed object
+    assert_shape_rejected(FLUX_BODY, "/providers/blackforestlabs/v1/flux-2");
+    assert_shape_rejected(FLUX_BODY, "/rerankx");
+    let mut logging = RecordingLogging::default();
+    let created = logged_relay_shape(
+        &FOUNDRY_RELAY_SHAPES,
+        201_u16,
+        FLUX_BODY,
+        &mut logging,
+        FLUX_ENDPOINT,
+    );
+    assert_eq!(created, None);
+    assert_eq!(logging.call_type, None);
 }
 
 fn relay_fallbacks_log_the_standard_body() {

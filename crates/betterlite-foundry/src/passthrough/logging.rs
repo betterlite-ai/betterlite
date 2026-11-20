@@ -5,7 +5,6 @@ use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::passthrough::transformation::types::{
     PassthroughLogging, RelayCallType, RelayShape,
 };
-use serde::Deserialize;
 
 // LoggedRelayResponse | OCRResponse | StandardPassThroughResponseObject, one variant per projection
 #[derive(Debug, Clone)]
@@ -34,44 +33,55 @@ impl FoundryPassthroughLogging for TraitFoundryLogging<'_> {
     fn set_ocr_call_type(&mut self) {}
 }
 
-// RerankResponse.model_validate: every field is optional, but a result needs its index and score
-#[derive(Debug, Deserialize)]
-struct RerankReply {
-    #[serde(default)]
-    id: Option<String>,
-    #[serde(default)]
-    results: Option<Vec<RerankResult>>,
-    #[serde(default)]
-    meta: Option<Object>,
+// RerankResponse.model_validate: id, results and meta are optional, but a sent result needs its index and score
+fn rerank_response(body: &Object) -> Option<Object> {
+    let results_fit = body.get("results").is_none_or(|value| {
+        value.is_null()
+            || value.as_array().is_some_and(|results| {
+                results
+                    .iter()
+                    .all(|result| result.as_object().is_some_and(rerank_result_fits))
+            })
+    });
+    let meta_fits = body
+        .get("meta")
+        .is_none_or(|value| value.is_null() || value.is_object());
+    (optional_text(body, "id") && results_fit && meta_fits).then(|| body.clone())
 }
 
-#[derive(Debug, Deserialize)]
-struct RerankResult {
-    index: i64,
-    relevance_score: f64,
-    #[serde(default)]
-    document: Option<RerankDocument>,
+fn rerank_result_fits(fields: &Object) -> bool {
+    let index_fits = fields
+        .get("index")
+        .is_some_and(|index| index.is_i64() || index.is_u64());
+    let score_fits = fields
+        .get("relevance_score")
+        .is_some_and(|score| score.is_number());
+    let document_fits = fields.get("document").is_none_or(|document| {
+        document
+            .as_object()
+            .is_some_and(|document| document.get("text").is_some_and(|text| text.is_string()))
+    });
+    index_fits && score_fits && document_fits
 }
 
-#[derive(Debug, Deserialize)]
-struct RerankDocument {
-    text: String,
-}
-
-// ImagesResponse: created is required and data, when sent, is a list of image objects
-#[derive(Debug, Deserialize)]
-struct ImageReply {
-    created: i64,
-    #[serde(default)]
-    data: Option<Vec<ImageEntry>>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ImageEntry {
-    #[serde(default)]
-    url: Option<String>,
-    #[serde(default)]
-    b64_json: Option<String>,
+// ImagesResponse.model_validate: created is required, and data, when sent, is a list of image objects
+fn image_response(body: &Object) -> Option<Object> {
+    let created_is_integer = body
+        .get("created")
+        .is_some_and(|value| value.is_i64() || value.is_u64());
+    let data_fits = body.get("data").is_none_or(|value| {
+        value.is_null()
+            || value.as_array().is_some_and(|entries| {
+                entries.iter().all(|entry| {
+                    entry.as_object().is_some_and(|fields| {
+                        optional_text(fields, "b64_json")
+                            && optional_text(fields, "revised_prompt")
+                            && optional_text(fields, "url")
+                    })
+                })
+            })
+    });
+    (created_is_integer && data_fits).then(|| body.clone())
 }
 
 pub const FOUNDRY_RELAY_SHAPES: [RelayShape<'static, Object>; 2] = [
@@ -87,14 +97,8 @@ pub const FOUNDRY_RELAY_SHAPES: [RelayShape<'static, Object>; 2] = [
     },
 ];
 
-fn rerank_response(body: &Object) -> Option<Object> {
-    serde_json::from_value::<RerankReply>(serde_json::json!(body))
-        .is_ok()
-        .then(|| body.clone())
-}
-
-fn image_response(body: &Object) -> Option<Object> {
-    serde_json::from_value::<ImageReply>(serde_json::json!(body))
-        .is_ok()
-        .then(|| body.clone())
+fn optional_text(fields: &Object, name: &str) -> bool {
+    fields
+        .get(name)
+        .is_none_or(|value| value.is_null() || value.is_string())
 }
