@@ -29,12 +29,12 @@ where
 pub(crate) fn answered<C>(
     config: &C,
     logging: &mut LoggingState,
-    reply: UpstreamResponse,
+    reply: &UpstreamResponse,
     transform: Transform<C>,
 ) -> Result<CharacterObject, CharacterFault<C>>
 where
     C: CharacterConfig,
 {
-    checked(config, &reply)?;
-    transform(config, &reply, logging).map_err(|error| synthesized(config, &error))
+    checked(config, reply)?;
+    transform(config, reply, logging).map_err(|error| synthesized(config, &error))
 }

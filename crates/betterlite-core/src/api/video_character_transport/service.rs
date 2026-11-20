@@ -11,7 +11,9 @@ use uuid::Uuid;
 
 use self::prepare::prepare;
 use self::send::{Transform, answered};
-use super::clients::{CharacterClients, SuppliedClients};
+use super::clients::{
+    CharacterAsyncClient as _, CharacterClients, CharacterSyncClient as _, SuppliedClients,
+};
 use super::config::CharacterConfig;
 use super::error::{CharacterError, CharacterFault, converted};
 use crate::api::bfl::edit::media::SuppliedMedia;
@@ -194,7 +196,7 @@ where
             .await
     }
 
-    fn video_character_handler<'call>(
+    pub(crate) fn video_character_handler<'call>(
         &'call mut self,
         call: CharacterCall<'call>,
     ) -> CharacterAnswer<'call, C> {
@@ -217,10 +219,10 @@ where
         let reply = client
             .send_blocking(request)
             .map_err(|failure| converted(self.config, failure))?;
-        answered(self.config, self.logging, reply, transform).map(CharacterHandled::Done)
+        answered(self.config, self.logging, &reply, transform).map(CharacterHandled::Done)
     }
 
-    async fn async_video_character_handler(
+    pub(crate) async fn async_video_character_handler(
         &mut self,
         call: CharacterCall<'_>,
     ) -> Result<CharacterObject, CharacterFault<C>> {
@@ -240,6 +242,6 @@ where
             .send(request)
             .await
             .map_err(|failure| converted(self.config, failure))?;
-        answered(self.config, self.logging, reply, transform)
+        answered(self.config, self.logging, &reply, transform)
     }
 }
