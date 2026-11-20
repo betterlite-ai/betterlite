@@ -22,6 +22,7 @@ pub(super) struct ListPreCall<'call> {
 }
 
 // Which handler is logging; only its input and its own extra arguments differ
+#[derive(Clone, Copy)]
 pub(super) enum PreCallSource<'call> {
     Remix(&'call RemixPreCall<'call>),
     List(&'call ListPreCall<'call>),

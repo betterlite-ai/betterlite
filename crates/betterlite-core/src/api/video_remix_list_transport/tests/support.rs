@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
+use std::io;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -10,6 +11,8 @@ use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::outbound::RequestBody;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
+use betterlite_http_fixture::reply::reply;
+use betterlite_http_fixture::server::{Serving, serve};
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
 };
@@ -66,7 +69,7 @@ impl LogSink for Sink {
     fn emit(&self, _record: LogRecord) {}
 }
 
-pub(crate) type Logger = Box<dyn Fn(&Json) -> Result<(), PrePostError> + Sync>;
+pub(crate) type Logger = Box<dyn Fn(&Json) -> Result<(), PrePostError> + Send + Sync>;
 
 // The fixture's logging object: one redactor, one sink and a logger function that marks every pre-call
 pub(crate) struct LogEnv {
@@ -246,12 +249,15 @@ impl VideoAsyncClient for Wire {
     }
 }
 
+type PoolCall = (ProviderId, Option<bool>);
+type AsyncCalls = Arc<Mutex<Vec<PoolCall>>>;
+
 #[derive(Clone)]
 pub(crate) struct Source {
     wire: Wire,
     fail: bool,
     sync_calls: Arc<Mutex<Vec<Option<bool>>>>,
-    async_calls: Arc<Mutex<Vec<(ProviderId, Option<bool>)>>>,
+    async_calls: AsyncCalls,
 }
 
 impl Source {
@@ -278,11 +284,18 @@ impl Source {
             .clone()
     }
 
-    pub(crate) fn async_calls(&self) -> Vec<(ProviderId, Option<bool>)> {
+    pub(crate) fn async_calls(&self) -> Vec<PoolCall> {
         self.async_calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
+    }
+
+    fn wire_or_error(&self) -> Result<Wire, io::Error> {
+        if self.fail {
+            return Err(io::Error::other("the pool is down"));
+        }
+        Ok(self.wire.clone())
     }
 }
 
@@ -294,9 +307,9 @@ fn record<T>(calls: &Mutex<Vec<T>>, value: T) {
 impl VideoClientSource for Source {
     type SyncClient = Wire;
     type AsyncClient = Wire;
-    type Error = std::io::Error;
+    type Error = io::Error;
 
-    fn sync_client(&self, ssl_verify: Option<bool>) -> Result<Wire, std::io::Error> {
+    fn sync_client(&self, ssl_verify: Option<bool>) -> Result<Wire, io::Error> {
         record(&self.sync_calls, ssl_verify);
         self.wire_or_error()
     }
@@ -305,18 +318,9 @@ impl VideoClientSource for Source {
         &self,
         provider: ProviderId,
         ssl_verify: Option<bool>,
-    ) -> Result<Wire, std::io::Error> {
+    ) -> Result<Wire, io::Error> {
         record(&self.async_calls, (provider, ssl_verify));
         self.wire_or_error()
-    }
-}
-
-impl Source {
-    fn wire_or_error(&self) -> Result<Wire, std::io::Error> {
-        if self.fail {
-            return Err(std::io::Error::other("the pool is down"));
-        }
-        Ok(self.wire.clone())
     }
 }
 
@@ -324,7 +328,7 @@ pub(crate) struct UnusableSync;
 
 impl VideoSyncClient for UnusableSync {
     fn send(&self, _request: VideoRequest) -> Result<UpstreamResponse, TransportError> {
-        panic!("the proxied fixture has no blocking client")
+        Err(TransportError::Closed)
     }
 }
 
@@ -344,17 +348,19 @@ impl ProxiedSource {
 impl VideoClientSource for ProxiedSource {
     type SyncClient = UnusableSync;
     type AsyncClient = ProxiedClient;
-    type Error = std::io::Error;
+    type Error = io::Error;
 
-    fn sync_client(&self, _ssl_verify: Option<bool>) -> Result<UnusableSync, std::io::Error> {
-        panic!("the proxied fixture has no blocking client")
+    fn sync_client(&self, _ssl_verify: Option<bool>) -> Result<UnusableSync, io::Error> {
+        Err(io::Error::other(
+            "the proxied fixture has no blocking client",
+        ))
     }
 
     fn async_client(
         &self,
         _provider: ProviderId,
         _ssl_verify: Option<bool>,
-    ) -> Result<ProxiedClient, std::io::Error> {
+    ) -> Result<ProxiedClient, io::Error> {
         Ok(self.client.clone())
     }
 }
@@ -366,6 +372,15 @@ fn proxied_client(limits: TransportLimits) -> ProxiedClient {
     );
     ProxiedClient::build(base_builder().http1_only(), &policy, limits)
         .expect("the proxied client builds")
+}
+
+// A real server for the B173 transport: one 200 reply with a JSON body, held open for the pause
+pub(crate) fn json_server(body: &str, pause: Duration) -> Serving {
+    serve(
+        reply("200 fixture", &[("content-type", "application/json")], body),
+        pause,
+    )
+    .expect("the fixture serves")
 }
 
 pub(crate) const IMPATIENT: TransportLimits = TransportLimits {
@@ -395,7 +410,7 @@ fn bench_from(
     call_type: &str,
     events: Events,
     config: RecordingConfig,
-    wire: Wire,
+    wire: &Wire,
 ) -> Bench<Source> {
     Bench {
         fixture: Fixture::new(call_type, &events),
@@ -416,7 +431,7 @@ where
     let events = Events::new();
     let config = configure(&events);
     let wire = Wire::replying(reply, &events);
-    (bench_from(call_type, events, config, wire.clone()), wire)
+    (bench_from(call_type, events, config, &wire), wire)
 }
 
 pub(crate) fn failing(wire: &Wire, error: TransportError) {

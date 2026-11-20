@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use betterlite_http::proxy::outbound::RequestBody;
 use betterlite_models::decisions::Json;
-use http::header::{HeaderName, HeaderValue};
+use http::header::{HeaderName, HeaderValue, InvalidHeaderName, InvalidHeaderValue};
 use http::{HeaderMap, Method};
 use thiserror::Error;
 use url::Url;
@@ -22,13 +22,13 @@ pub(super) enum WireError {
     HeaderName {
         name: String,
         #[source]
-        source: http::header::InvalidHeaderName,
+        source: InvalidHeaderName,
     },
     #[error("the {name} header value is not a header value")]
     HeaderValue {
         name: String,
         #[source]
-        source: http::header::InvalidHeaderValue,
+        source: InvalidHeaderValue,
     },
     #[error("the {name} query value is not a scalar")]
     QueryValue { name: String },
@@ -113,7 +113,7 @@ fn query_pairs(params: &Params) -> Result<Vec<(String, String)>, WireError> {
 fn query_scalar(name: &str, value: &Json) -> Result<String, WireError> {
     match value {
         Json::Null => Ok(String::new()),
-        Json::Bool(value) => Ok(value.to_string()),
+        Json::Bool(flag) => Ok(flag.to_string()),
         Json::Number(number) => Ok(number.to_string()),
         Json::Text(text) => Ok(text.clone()),
         Json::List(_) | Json::Object(_) => Err(WireError::QueryValue {

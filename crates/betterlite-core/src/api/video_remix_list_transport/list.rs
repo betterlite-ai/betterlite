@@ -1,82 +1,24 @@
-use std::future::Future;
 use std::time::{Duration, Instant};
 
 use betterlite_http::proxy::UpstreamResponse;
-use tokio::runtime::{Builder, Handle};
 
 use crate::api::vector_store_http_write::error::display_facts;
 use crate::api::vector_store_http_write::service::ClientKind;
 
-use super::client::{VideoAsyncClient, VideoClient, VideoClientSource, VideoRequest, choose_async};
+use super::client::{VideoAsyncClient, VideoClientSource, VideoRequest};
 use super::config::VideoRemixListConfig;
 use super::convert;
 use super::error::{Operation, VideoRemixListTransportError};
 use super::fields;
 use super::logging::{ListPreCall, PreCallSource, record_pre_call};
 use super::records::{Headers, Params, VideoEnvironment, VideoListQuery, VideoRequestContext};
-use super::response::{ListResponse, transform_response};
 use super::wire;
-use super::{Handled, ListCall, LogContext, VideoRemixListTransport};
+use super::{ListCall, LogContext};
 
-struct PreparedList {
+pub(super) struct PreparedList {
     url: String,
     headers: Headers,
     params: Params,
-}
-
-impl<Source: VideoClientSource> VideoRemixListTransport<Source> {
-    // video_list_handler: the _is_async hand-off, or the async handler run to completion with no api_key
-    pub fn list(
-        &self,
-        config: &dyn VideoRemixListConfig,
-        call: ListCall<'_, Source>,
-        log: LogContext<'_, '_>,
-        is_async: bool,
-    ) -> Result<
-        Handled<Params, impl Future<Output = Result<Params, VideoRemixListTransportError>> + Send>,
-        VideoRemixListTransportError,
-    > {
-        if is_async {
-            return Ok(Handled::Pending(self.async_list(config, call, log)));
-        }
-        if Handle::try_current().is_ok() {
-            return Err(VideoRemixListTransportError::RunningRuntime { status_code: 500 });
-        }
-        let runtime = Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|source| VideoRemixListTransportError::Runtime { source })?;
-        let async_call = ListCall {
-            api_key: None,
-            ..call
-        };
-        runtime
-            .block_on(self.async_list(config, async_call, log))
-            .map(Handled::Done)
-    }
-
-    // async_video_list_handler: validate_environment sees only the api_key argument, never the params' one
-    pub async fn async_list(
-        &self,
-        config: &dyn VideoRemixListConfig,
-        call: ListCall<'_, Source>,
-        mut log: LogContext<'_, '_>,
-    ) -> Result<Params, VideoRemixListTransportError> {
-        let supplied = match &call.client {
-            Some(VideoClient::Asynchronous(client)) => Some(*client),
-            Some(VideoClient::Sync(_)) | None => None,
-        };
-        let chosen = choose_async(
-            &self.source,
-            supplied,
-            call.custom_llm_provider,
-            call.litellm_params,
-        )?;
-        let prepared = prepare_list(config, &call, &mut log)?;
-        let answer = send_list(config, chosen.get(), &prepared, call.timeout).await?;
-        let checked = convert::check_status(config, answer)?;
-        transform_response::<ListResponse>(config, &checked, call.custom_llm_provider, &mut log)
-    }
 }
 
 // validate_environment gets the extra headers and only the api_key argument; the caller's headers are re-applied over its answer
@@ -140,7 +82,7 @@ fn list_wire_request(
 }
 
 // The try block's send on the async path: one GET with no timeout, and the caller's timeout only in a timeout message
-async fn send_list<Client>(
+pub(super) async fn send_list<Client>(
     config: &dyn VideoRemixListConfig,
     client: &Client,
     prepared: &PreparedList,
@@ -162,7 +104,7 @@ where
 }
 
 // Everything before the try block: the environment (api_key only), the base URL, the query transform and the pre-call
-fn prepare_list<Source>(
+pub(super) fn prepare_list<Source>(
     config: &dyn VideoRemixListConfig,
     call: &ListCall<'_, Source>,
     log: &mut LogContext<'_, '_>,

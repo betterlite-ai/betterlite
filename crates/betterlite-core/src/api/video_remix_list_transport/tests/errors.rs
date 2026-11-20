@@ -1,14 +1,12 @@
 use std::time::Duration;
 
-use betterlite_http_fixture::reply::reply;
-use betterlite_http_fixture::server::serve;
 use betterlite_models::decisions::Json;
 use betterlite_openai::error::ProviderError;
 
 use super::recording::{RecordingConfig, Step};
 use super::support::{
-    Bench, CallKind, CallMode, Events, IMPATIENT, ProxiedSource, Setup, json_params, proxied_bench,
-    run,
+    Bench, CallKind, CallMode, Events, IMPATIENT, ProxiedSource, Setup, json_params, json_server,
+    proxied_bench, run,
 };
 use crate::api::video_remix_list_transport::client::VideoClientSource;
 use crate::api::video_remix_list_transport::error::{
@@ -49,10 +47,10 @@ pub(super) enum ErrorCase {
 }
 
 pub(super) fn provider(error: &VideoRemixListTransportError) -> &ProviderError {
-    match error {
-        VideoRemixListTransportError::Provider(provider) => provider,
-        other => panic!("the handler answers with the provider's error, not {other}"),
-    }
+    let VideoRemixListTransportError::Provider(provider) = error else {
+        panic!("the handler answers with the provider's error, not {error}");
+    };
+    provider
 }
 
 pub(super) fn expected_headers(pairs: &[(&str, &str)]) -> ErrorHeaders {
@@ -123,11 +121,7 @@ where
 pub(super) async fn timed_remix(
     timeout: Option<Duration>,
 ) -> (Bench<ProxiedSource>, VideoRemixListTransportError) {
-    let serving = serve(
-        reply("200 fixture", &[("content-type", "application/json")], "{}"),
-        Duration::from_millis(300),
-    )
-    .expect("the fixture serves");
+    let serving = json_server("{}", Duration::from_millis(300));
     let address = serving.address;
     let configure = move |events: &Events| {
         RecordingConfig::new(events)

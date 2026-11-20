@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 
 use betterlite_http::proxy::UpstreamResponse;
 use secrecy::SecretString;
+use tokio::runtime::{Builder, Handle};
 
 use crate::api::vector_store_http_write::error::display_facts;
 use crate::api::vector_store_http_write::service::ClientKind;
@@ -16,11 +17,12 @@ use super::config::VideoRemixListConfig;
 use super::convert;
 use super::error::{Operation, VideoRemixListTransportError};
 use super::fields;
+use super::list::{prepare_list, send_list};
 use super::logging::{PreCallSource, RemixPreCall, record_pre_call};
 use super::records::{Headers, Params, VideoEnvironment, VideoRequestContext};
-use super::response::{RemixResponse, transform_response};
+use super::response::{ListResponse, RemixResponse, transform_response};
 use super::wire;
-use super::{Handled, LogContext, RemixCall, VideoRemixListTransport};
+use super::{Handled, ListCall, LogContext, RemixCall, VideoRemixListTransport};
 
 struct PreparedRemix {
     url: String,
@@ -29,6 +31,7 @@ struct PreparedRemix {
     timeout: Option<Duration>,
 }
 
+// The type's one inherent impl: the four LiteLLM handlers, while each operation's request work lives in its module
 impl<Source: VideoClientSource> VideoRemixListTransport<Source> {
     // video_remix_handler: the _is_async hand-off comes before any client is picked
     pub fn remix(
@@ -89,7 +92,9 @@ impl<Source: VideoClientSource> VideoRemixListTransport<Source> {
         )?;
         let prepared = prepare_remix(config, &call, &mut log)?;
         let request = remix_wire_request(config, &prepared)?;
-        let timeout = prepared.timeout.unwrap_or(chosen.get().default_timeout());
+        let timeout = prepared
+            .timeout
+            .unwrap_or_else(|| chosen.get().default_timeout());
         let started = Instant::now();
         let sent = chosen.get().send(request).await;
         let facts = convert::SendFacts {
@@ -102,6 +107,59 @@ impl<Source: VideoClientSource> VideoRemixListTransport<Source> {
             .map_err(|error| convert::failure(config, &convert::transport_facts(&facts, &error)))?;
         let checked = convert::check_status(config, answer)?;
         transform_response::<RemixResponse>(config, &checked, call.custom_llm_provider, &mut log)
+    }
+
+    // video_list_handler: the _is_async hand-off, or the async handler run to completion with no api_key
+    pub fn list(
+        &self,
+        config: &dyn VideoRemixListConfig,
+        call: ListCall<'_, Source>,
+        log: LogContext<'_, '_>,
+        is_async: bool,
+    ) -> Result<
+        Handled<Params, impl Future<Output = Result<Params, VideoRemixListTransportError>> + Send>,
+        VideoRemixListTransportError,
+    > {
+        if is_async {
+            return Ok(Handled::Pending(self.async_list(config, call, log)));
+        }
+        if Handle::try_current().is_ok() {
+            return Err(VideoRemixListTransportError::RunningRuntime { status_code: 500 });
+        }
+        let runtime = Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|source| VideoRemixListTransportError::Runtime { source })?;
+        let async_call = ListCall {
+            api_key: None,
+            ..call
+        };
+        runtime
+            .block_on(self.async_list(config, async_call, log))
+            .map(Handled::Done)
+    }
+
+    // async_video_list_handler: validate_environment sees only the api_key argument, never the params' one
+    pub async fn async_list(
+        &self,
+        config: &dyn VideoRemixListConfig,
+        call: ListCall<'_, Source>,
+        mut log: LogContext<'_, '_>,
+    ) -> Result<Params, VideoRemixListTransportError> {
+        let supplied = match &call.client {
+            Some(VideoClient::Asynchronous(client)) => Some(*client),
+            Some(VideoClient::Sync(_)) | None => None,
+        };
+        let chosen = choose_async(
+            &self.source,
+            supplied,
+            call.custom_llm_provider,
+            call.litellm_params,
+        )?;
+        let prepared = prepare_list(config, &call, &mut log)?;
+        let answer = send_list(config, chosen.get(), &prepared, call.timeout).await?;
+        let checked = convert::check_status(config, answer)?;
+        transform_response::<ListResponse>(config, &checked, call.custom_llm_provider, &mut log)
     }
 }
 

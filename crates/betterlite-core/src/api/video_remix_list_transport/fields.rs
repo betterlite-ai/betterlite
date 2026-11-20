@@ -38,7 +38,7 @@ impl FieldValue for SecretString {
 
     fn parse(value: &Json) -> Option<Self> {
         match value {
-            Json::Text(text) => Some(SecretString::from(text.clone())),
+            Json::Text(text) => Some(Self::from(text.clone())),
             Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
         }
     }
@@ -52,11 +52,13 @@ where
     let Some(value) = params.get(name).filter(|given| **given != Json::Null) else {
         return Ok(None);
     };
-    match T::parse(value) {
-        Some(parsed) => Ok(Some(parsed)),
-        None => Err(FieldError::Type {
-            field: name,
-            expected: T::EXPECTED,
-        }),
-    }
+    T::parse(value).map_or_else(
+        || {
+            Err(FieldError::Type {
+                field: name,
+                expected: T::EXPECTED,
+            })
+        },
+        |parsed| Ok(Some(parsed)),
+    )
 }

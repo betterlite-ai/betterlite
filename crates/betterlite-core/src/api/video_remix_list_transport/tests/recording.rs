@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::io;
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_models::decisions::Json;
@@ -140,11 +141,6 @@ impl RecordingConfig {
 
     pub(crate) fn with_list_url(mut self, url: &str) -> Self {
         self.list_url = url.to_owned();
-        self
-    }
-
-    pub(crate) fn with_remix_body(mut self, body: Params) -> Self {
-        self.remix_body = body;
         self
     }
 
@@ -293,7 +289,7 @@ impl RecordingConfig {
 
     fn failure(step: Step) -> ConfigFailure {
         ConfigFailure {
-            source: Box::new(std::io::Error::other(format!(
+            source: Box::new(io::Error::other(format!(
                 "the fake config fails at {step:?}"
             ))),
         }
@@ -412,7 +408,7 @@ impl VideoRemixListConfig for RecordingConfig {
             .push(ErrorCall {
                 message: message.to_owned(),
                 status_code,
-                headers: headers.clone(),
+                headers,
             });
         ProviderError::from(ProviderErrorParts {
             status_code,

@@ -2,8 +2,6 @@ use std::time::Duration;
 
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::outbound::RequestBody;
-use betterlite_http_fixture::reply::reply;
-use betterlite_http_fixture::server::serve;
 use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
 use http::Method;
@@ -12,7 +10,8 @@ use tokio::runtime::{Builder, Runtime};
 use super::recording::RecordingConfig;
 use super::support::{
     Answer, Bench, CallKind, CallMode, Events, LIST_PAGE, Reply, Setup, Source, Wire,
-    assert_validated, fake_bench, headers, json_params, proxied_bench, run, run_sync_list, secret,
+    assert_validated, fake_bench, headers, json_params, json_server, proxied_bench, run,
+    run_sync_list, secret,
 };
 use crate::api::video_remix_list_transport::client::VideoClient;
 use crate::api::video_remix_list_transport::error::VideoRemixListTransportError;
@@ -205,15 +204,7 @@ async fn async_supplied_client() {
 
 // The real B173 transport sends the query it was given, and the caller's timeout is not part of the GET
 async fn real_get() {
-    let serving = serve(
-        reply(
-            "200 fixture",
-            &[("content-type", "application/json")],
-            LIST_PAGE,
-        ),
-        Duration::ZERO,
-    )
-    .expect("the fixture serves");
+    let serving = json_server(LIST_PAGE, Duration::ZERO);
     let address = serving.address;
     let configure = move |events: &Events| {
         RecordingConfig::new(events)

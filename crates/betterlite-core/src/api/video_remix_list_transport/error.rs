@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::error::Error as StdError;
+use std::io;
 
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_models::decisions::Json;
@@ -62,7 +63,7 @@ pub enum VideoRemixListTransportError {
     #[error("the video list sync runtime could not be started")]
     Runtime {
         #[source]
-        source: std::io::Error,
+        source: io::Error,
     },
 }
 

@@ -111,7 +111,7 @@ impl VideoAsyncClient for ProxiedClient {
         &self,
         request: VideoRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        let deadline = request.timeout.unwrap_or(self.default_timeout());
+        let deadline = request.timeout.unwrap_or_else(|| self.default_timeout());
         let limit = self.limits.body_bytes;
         async move {
             self.send_following(OutboundRequest {

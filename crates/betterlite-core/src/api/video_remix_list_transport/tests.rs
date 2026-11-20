@@ -9,8 +9,6 @@ mod support;
 use std::time::Duration;
 
 use betterlite_http::proxy::transport_error::TransportError;
-use betterlite_http_fixture::reply::reply;
-use betterlite_http_fixture::server::serve;
 use http::Method;
 use rstest::rstest;
 
@@ -22,7 +20,7 @@ use self::errors::{
 use self::recording::{RecordingConfig, Step};
 use self::support::{
     Bench, CallKind, CallMode, Events, Fixture, IMPATIENT, Reply, Setup, Source, Wire, failing,
-    fake_bench, json_params, proxied_bench, run, transport,
+    fake_bench, json_params, json_server, proxied_bench, run, transport,
 };
 use crate::api::vector_store_http_write::error::timeout_facts;
 use crate::api::vector_store_http_write::service::ClientKind;
@@ -254,11 +252,7 @@ async fn transport_error_behavior(#[case] case: ErrorCase) {
             assert_outside_transform(&bench, "list_response");
         }
         ErrorCase::ListTimeout => {
-            let serving = serve(
-                reply("200 fixture", &[("content-type", "application/json")], "{}"),
-                Duration::from_millis(300),
-            )
-            .expect("the fixture serves");
+            let serving = json_server("{}", Duration::from_millis(300));
             let address = serving.address;
             let configure = move |events: &Events| {
                 RecordingConfig::new(events)

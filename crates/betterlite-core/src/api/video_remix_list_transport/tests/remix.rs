@@ -1,8 +1,6 @@
 use std::time::Duration;
 
 use betterlite_http::proxy::limits::TransportLimits;
-use betterlite_http_fixture::reply::reply;
-use betterlite_http_fixture::server::serve;
 use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
 use http::Method;
@@ -10,7 +8,8 @@ use http::Method;
 use super::recording::RecordingConfig;
 use super::support::{
     Bench, CallKind, CallMode, Events, Reply, Setup, Source, Wire, assert_validated, fake_bench,
-    headers, json_params, proxied_bench, request_body, request_header, run, secret, video_object,
+    headers, json_params, json_server, proxied_bench, request_body, request_header, run, secret,
+    video_object,
 };
 use crate::api::video_remix_list_transport::client::VideoClient;
 use crate::api::video_remix_list_transport::error::VideoRemixListTransportError;
@@ -86,6 +85,7 @@ fn assert_sync_supplied(
     params: &Params,
     extra_body: &Params,
 ) {
+    assert_sync_supplied_records(bench, params, extra_body);
     let sent = supplied.requests();
     assert_eq!(sent.len(), 1);
     let request = &sent[0];
@@ -107,7 +107,6 @@ fn assert_sync_supplied(
         request_body(request),
         Json::Object(bench.config.remix_body().clone())
     );
-    assert_sync_supplied_records(bench, params, extra_body);
 }
 
 fn assert_sync_supplied_records(bench: &Bench<Source>, params: &Params, extra_body: &Params) {
@@ -216,15 +215,7 @@ async fn async_pooled_client() {
 // The pooled client is the real B173 transport, and its POST carries the JSON body and the config's headers
 async fn async_real_server() {
     const VIDEO: &str = r#"{"id":"video_out","status":"queued"}"#;
-    let serving = serve(
-        reply(
-            "200 fixture",
-            &[("content-type", "application/json")],
-            VIDEO,
-        ),
-        Duration::ZERO,
-    )
-    .expect("the fixture serves");
+    let serving = json_server(VIDEO, Duration::ZERO);
     let address = serving.address;
     let configure = move |events: &Events| {
         RecordingConfig::new(events)
@@ -320,7 +311,7 @@ fn assert_remix_pre_call(bench: &Bench<Source>, extra_headers: &Headers) {
         logged.get("Authorization"),
         Some(&Json::Text(String::from("Be****er")))
     );
-    assert_eq!(logged.len(), extra_headers.len() + 2);
+    assert_eq!(logged.len(), extra_headers.len().saturating_add(2));
     assert_eq!(bench.events.recorded(), EVENTS);
 }
 
