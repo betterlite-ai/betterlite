@@ -114,7 +114,10 @@ pub fn baseline_cost_snapshot(
     })
 }
 
-fn checked_amount(amount: Decimal, field: &'static str) -> Result<Decimal, SavingsEvidenceError> {
+const fn checked_amount(
+    amount: Decimal,
+    field: &'static str,
+) -> Result<Decimal, SavingsEvidenceError> {
     if amount.is_sign_negative() {
         return Err(SavingsEvidenceError::NegativeAmount { field });
     }
@@ -260,7 +263,7 @@ fn same_logged_usage(left: &LoggedUsage, right: &LoggedUsage) -> bool {
 }
 
 // The prompt counters compared one by one; the TTL split B1693 keeps opaque is compared by same_usage.
-fn same_prompt_details(
+const fn same_prompt_details(
     left: Option<&PromptTokensDetails>,
     right: Option<&PromptTokensDetails>,
 ) -> bool {
@@ -271,7 +274,10 @@ fn same_prompt_details(
     }
 }
 
-fn same_prompt_counters(baseline: &PromptTokensDetails, selected: &PromptTokensDetails) -> bool {
+const fn same_prompt_counters(
+    baseline: &PromptTokensDetails,
+    selected: &PromptTokensDetails,
+) -> bool {
     baseline.cached_tokens == selected.cached_tokens
         && baseline.cache_creation_tokens == selected.cache_creation_tokens
         && baseline.cache_write_tokens == selected.cache_write_tokens

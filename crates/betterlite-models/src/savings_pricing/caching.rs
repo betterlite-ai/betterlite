@@ -39,9 +39,8 @@ where
     let pricing = deployment
         .filter(|value| !value.record.is_empty())
         .or_else(|| {
-            identity
-                .as_ref()
-                .and_then(|value| public_price(context, value))
+            let resolved = identity.as_ref()?;
+            public_price(context, resolved)
         });
     let provider = identity
         .as_ref()

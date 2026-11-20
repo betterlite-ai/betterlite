@@ -132,7 +132,7 @@ where
     )
 }
 
-fn has_cache_buckets(usage: &LoggedUsage) -> bool {
+const fn has_cache_buckets(usage: &LoggedUsage) -> bool {
     let (cache_read, cache_creation) = cache_token_split(usage);
     cache_read != 0 || cache_creation != 0
 }
