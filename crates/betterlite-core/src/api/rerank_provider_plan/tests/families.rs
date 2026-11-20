@@ -602,6 +602,7 @@ fn rerank_bedrock_watsonx_and_generic() {
     watsonx_reads_the_credentials_object(&ops);
     watsonx_without_a_token_sends_none(&ops);
     an_unknown_provider_raises(&ops);
+    another_config_uses_only_the_dynamic_chain(&ops);
     the_cohere_chat_provider_keeps_the_cohere_config(&ops);
     a_provider_failure_is_converted();
     an_unresolvable_provider_raises(&ops);
@@ -719,6 +720,27 @@ fn an_unknown_provider_raises(ops: &FakeOps) {
         .expect_err("an unknown provider with a cohere config raises");
     assert_eq!(error.message, "Unsupported provider: openai");
     assert_eq!(ops.sends().len(), sent_before);
+}
+
+fn another_config_uses_only_the_dynamic_chain(ops: &FakeOps) {
+    let vertex = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Custom("vertex_ai".to_owned()),
+        None,
+        None,
+    );
+    let mut settings = defaults();
+    settings.api_key = Some(SecretString::from("global-key"));
+    settings.api_base = Some(String::from("https://global.test"));
+    let mut call = rerank_call("vertex_ai");
+    call.kwargs = with(&[("api_key", text("call-key"))]);
+    run_one(&vertex, ops, &settings, &[], call)
+        .expect("a non-cohere config keeps the generic chain");
+    let send = last(ops);
+    assert_eq!(send.provider, "vertex_ai");
+    assert_eq!(send.config, SelectedConfig::VertexAi);
+    assert_eq!(send.api_key.as_deref(), Some("call-key"));
+    assert_eq!(send.api_base, None);
 }
 
 fn the_cohere_chat_provider_keeps_the_cohere_config(ops: &FakeOps) {
