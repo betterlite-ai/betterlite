@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use betterlite_bedrock::aws_settings::sources::Credentials;
@@ -157,7 +157,7 @@ impl RagEmbedder for FakeEmbedder {
 pub(super) struct FixedClock;
 
 impl Clock for FixedClock {
-    fn now(&self) -> std::time::SystemTime {
+    fn now(&self) -> SystemTime {
         UNIX_EPOCH
             .checked_add(Duration::from_hours(490_896))
             .unwrap()
