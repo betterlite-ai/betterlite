@@ -19,14 +19,18 @@ pub(super) fn build(
 ) -> Option<Result<HookSpec, HookRegistryError>> {
     let arms = Arms { kind, settings };
     Some(match kind {
-        wire::ALICE => Ok(arms.plain(initialize_alice(params, Some(name)), HookKind::Alice)),
+        wire::ALICE => Ok(HookSpec::new(
+            settings,
+            HookKind::Alice(Box::new(initialize_alice(params, Some(name)))),
+        )),
         wire::CATO_NETWORKS => {
             let result = initialize_cato_networks(params, Some(name));
             arms.take(result, HookKind::CatoNetworks)
         }
-        wire::DYNAMOAI => {
-            Ok(arms.plain(initialize_dynamoai(params, Some(name)), HookKind::Dynamoai))
-        }
+        wire::DYNAMOAI => Ok(HookSpec::new(
+            settings,
+            HookKind::Dynamoai(Box::new(initialize_dynamoai(params, Some(name)))),
+        )),
         wire::ENKRYPTAI => arms.take(
             initialize_enkryptai(params, Some(name)),
             HookKind::Enkryptai,

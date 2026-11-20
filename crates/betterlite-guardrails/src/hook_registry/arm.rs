@@ -1,7 +1,5 @@
 use std::fmt::Display;
 
-use betterlite_config::sections::guardrail_params::params::LitellmParams;
-
 use super::error::HookRegistryError;
 use super::kind::HookKind;
 use super::spec::{HookSettings, HookSpec};
@@ -22,22 +20,8 @@ impl Arms<'_> {
         E: Display,
         F: FnOnce(Box<A>) -> HookKind,
     {
-        let args = result.map_err(|error| HookRegistryError::init(self.kind, error))?;
-        Ok(HookSpec::new(self.settings, wrap(Box::new(args))))
-    }
-
-    pub(super) fn plain<A, F>(&self, value: A, wrap: F) -> HookSpec
-    where
-        F: FnOnce(Box<A>) -> HookKind,
-    {
-        HookSpec::new(self.settings, wrap(Box::new(value)))
-    }
-
-    // the class tasks parse these params themselves, so the spec keeps the params
-    pub(super) fn class<F>(&self, params: &LitellmParams, wrap: F) -> HookSpec
-    where
-        F: FnOnce(Box<LitellmParams>) -> HookKind,
-    {
-        HookSpec::new(self.settings, wrap(Box::new(params.clone())))
+        result
+            .map_err(|error| HookRegistryError::init(self.kind, error))
+            .map(|args| HookSpec::new(self.settings, wrap(Box::new(args))))
     }
 }

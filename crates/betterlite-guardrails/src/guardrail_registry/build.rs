@@ -183,28 +183,14 @@ impl GuardrailFactories {
                 .map(|_args| Vec::new())
                 .map_err(RegistryError::Enterprise),
             integrations::TOOL_POLICY => self.tool_policy_callbacks(params, name, strict_modes),
-            other => self.hook_callbacks(other, params, name, strict_modes),
+            other => Ok(vec![hook_callback(
+                other,
+                params,
+                name,
+                strict_modes,
+                self.hooks.as_ref(),
+            )?]),
         }
-    }
-
-    fn hook_callbacks(
-        &self,
-        kind: &str,
-        params: &LitellmParams,
-        name: &str,
-        strict_modes: bool,
-    ) -> Result<Vec<GuardrailCallback>, RegistryError> {
-        let Some(ports) = &self.hooks else {
-            return Err(RegistryError::Unsupported {
-                kind: kind.to_owned(),
-            });
-        };
-        let outcome = build_hook_spec(kind, params, name, ports).ok_or_else(|| {
-            RegistryError::Unsupported {
-                kind: kind.to_owned(),
-            }
-        })?;
-        Ok(vec![hook_callback(outcome?, kind, strict_modes)?])
     }
 
     fn tool_policy_callbacks(
@@ -226,6 +212,22 @@ impl GuardrailFactories {
             spec: CallbackSpec::ToolPolicy(guardrail),
             scoping: CallbackScoping::default(),
         }])
+    }
+}
+
+fn hook_callback(
+    kind: &str,
+    params: &LitellmParams,
+    name: &str,
+    strict_modes: bool,
+    hooks: Option<&HookPorts>,
+) -> Result<GuardrailCallback, RegistryError> {
+    match hooks.map(|ports| build_hook_spec(kind, params, name, ports)) {
+        None | Some(None) => Err(RegistryError::Unsupported {
+            kind: kind.to_owned(),
+        }),
+        Some(Some(Err(error))) => Err(RegistryError::Hook(error)),
+        Some(Some(Ok(spec))) => spec_callback(spec, kind, strict_modes),
     }
 }
 
@@ -263,7 +265,7 @@ where
     })
 }
 
-fn hook_callback(
+fn spec_callback(
     spec: HookSpec,
     kind: &str,
     strict_modes: bool,

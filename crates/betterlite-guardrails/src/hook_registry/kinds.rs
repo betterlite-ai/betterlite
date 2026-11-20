@@ -31,24 +31,22 @@ where
     })
 }
 
+// What all four classes take straight from LitellmParams before their own fields
 #[derive(Debug, Clone)]
-pub struct AliceArgs {
+pub struct PortedBase {
     pub api_key: Option<SecretString>,
     pub api_base: Option<String>,
-    pub unreachable_fallback: UnreachableFallback,
     pub guardrail_name: String,
     pub event_hook: LitellmParamsMode,
     pub default_on: GuardrailFlag,
     pub timeout: Option<f64>,
 }
 
-#[must_use]
-pub fn initialize_alice(params: &LitellmParams, guardrail_name: Option<&str>) -> AliceArgs {
+fn ported_base(params: &LitellmParams, guardrail_name: Option<&str>) -> PortedBase {
     let fields = &params.base.fields;
-    AliceArgs {
+    PortedBase {
         api_key: fields.api_key.clone(),
         api_base: fields.api_base.clone(),
-        unreachable_fallback: fields.unreachable_fallback,
         guardrail_name: guardrail_name.unwrap_or_default().to_owned(),
         event_hook: params.mode.clone(),
         default_on: fields.default_on.unwrap_or_default(),
@@ -57,90 +55,74 @@ pub fn initialize_alice(params: &LitellmParams, guardrail_name: Option<&str>) ->
 }
 
 #[derive(Debug, Clone)]
+pub struct AliceArgs {
+    pub base: PortedBase,
+    pub unreachable_fallback: UnreachableFallback,
+}
+
+#[must_use]
+pub fn initialize_alice(params: &LitellmParams, guardrail_name: Option<&str>) -> AliceArgs {
+    AliceArgs {
+        base: ported_base(params, guardrail_name),
+        unreachable_fallback: params.base.fields.unreachable_fallback,
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct CatoNetworksArgs {
-    pub api_base: Option<String>,
-    pub api_key: Option<SecretString>,
-    pub guardrail_name: String,
-    pub event_hook: LitellmParamsMode,
-    pub default_on: GuardrailFlag,
+    pub base: PortedBase,
     pub inspect_embeddings: Option<bool>,
     pub ssl_verify: Option<VerifySetting>,
-    pub timeout: Option<f64>,
 }
 
 pub fn initialize_cato_networks(
     params: &LitellmParams,
     guardrail_name: Option<&str>,
 ) -> Result<CatoNetworksArgs, PortedInitError> {
-    let fields = &params.base.fields;
-    let extra = &params.base.extra.0;
     Ok(CatoNetworksArgs {
-        api_base: fields.api_base.clone(),
-        api_key: fields.api_key.clone(),
-        guardrail_name: guardrail_name.unwrap_or_default().to_owned(),
-        event_hook: params.mode.clone(),
-        default_on: fields.default_on.unwrap_or_default(),
-        inspect_embeddings: fields.inspect_embeddings,
-        ssl_verify: read("ssl_verify", extra.get("ssl_verify"))?,
-        timeout: fields.timeout,
+        base: ported_base(params, guardrail_name),
+        inspect_embeddings: params.base.fields.inspect_embeddings,
+        ssl_verify: read("ssl_verify", params.base.extra.0.get("ssl_verify"))?,
     })
 }
 
 #[derive(Debug, Clone)]
 pub struct DynamoAiArgs {
-    pub api_base: Option<String>,
-    pub api_key: Option<SecretString>,
-    pub guardrail_name: String,
-    pub event_hook: LitellmParamsMode,
-    pub default_on: GuardrailFlag,
-    pub timeout: Option<f64>,
+    pub base: PortedBase,
 }
 
 #[must_use]
 pub fn initialize_dynamoai(params: &LitellmParams, guardrail_name: Option<&str>) -> DynamoAiArgs {
-    let fields = &params.base.fields;
     DynamoAiArgs {
-        api_base: fields.api_base.clone(),
-        api_key: fields.api_key.clone(),
-        guardrail_name: guardrail_name.unwrap_or_default().to_owned(),
-        event_hook: params.mode.clone(),
-        default_on: fields.default_on.unwrap_or_default(),
-        timeout: fields.timeout,
+        base: ported_base(params, guardrail_name),
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct EnkryptaiArgs {
-    pub guardrail_name: String,
-    pub api_key: Option<SecretString>,
-    pub api_base: Option<String>,
+    pub base: PortedBase,
     pub policy_name: Option<String>,
     pub deployment_name: Option<String>,
     pub detectors: Option<BTreeMap<String, GuardrailValue>>,
     pub block_on_violation: GuardrailFlag,
-    pub event_hook: LitellmParamsMode,
-    pub default_on: GuardrailFlag,
-    pub timeout: Option<f64>,
 }
 
 pub fn initialize_enkryptai(
     params: &LitellmParams,
     guardrail_name: Option<&str>,
 ) -> Result<EnkryptaiArgs, PortedInitError> {
-    let fields = &params.base.fields;
     let extra = &params.base.extra.0;
+    let policy_name = read("policy_name", extra.get("policy_name"))?;
+    let deployment_name = read("deployment_name", extra.get("deployment_name"))?;
+    let detectors = read("detectors", extra.get("detectors"))?;
+    let block_on_violation =
+        read("block_on_violation", extra.get("block_on_violation"))?.unwrap_or(true);
     Ok(EnkryptaiArgs {
-        guardrail_name: guardrail_name.unwrap_or_default().to_owned(),
-        api_key: fields.api_key.clone(),
-        api_base: fields.api_base.clone(),
-        policy_name: read("policy_name", extra.get("policy_name"))?,
-        deployment_name: read("deployment_name", extra.get("deployment_name"))?,
-        detectors: read("detectors", extra.get("detectors"))?,
-        block_on_violation: read("block_on_violation", extra.get("block_on_violation"))?
-            .unwrap_or(true),
-        event_hook: params.mode.clone(),
-        default_on: fields.default_on.unwrap_or_default(),
-        timeout: fields.timeout,
+        base: ported_base(params, guardrail_name),
+        policy_name,
+        deployment_name,
+        detectors,
+        block_on_violation,
     })
 }
 
@@ -152,6 +134,11 @@ pub fn build_hook_spec(
     guardrail_name: &str,
     ports: &HookPorts,
 ) -> Option<Result<HookSpec, HookRegistryError>> {
-    let settings = HookSettings::from_params(params, guardrail_name);
-    arms::build(kind, params, guardrail_name, &settings, ports)
+    arms::build(
+        kind,
+        params,
+        guardrail_name,
+        &HookSettings::from_params(params, guardrail_name),
+        ports,
+    )
 }

@@ -26,9 +26,9 @@ pub(super) fn build(
             let result = initialize_promptguard(params, Some(name));
             arms.take(result, HookKind::Promptguard)
         }
-        wire::QOSTODIAN_NEXUS => Ok(arms.plain(
-            initialize_qohash(params, Some(name)),
-            HookKind::QostodianNexus,
+        wire::QOSTODIAN_NEXUS => Ok(HookSpec::new(
+            settings,
+            HookKind::QostodianNexus(Box::new(initialize_qohash(params, Some(name)))),
         )),
         wire::QUALIFIRE => {
             let result = initialize_qualifire(params, Some(name));

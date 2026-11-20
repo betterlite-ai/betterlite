@@ -1,4 +1,3 @@
-// The SupportedGuardrailIntegrations values each guardrail_hooks folder registers at the pin
 use crate::guardrail_registry::integrations;
 
 pub const AGENT_365: &str = "agent_365";

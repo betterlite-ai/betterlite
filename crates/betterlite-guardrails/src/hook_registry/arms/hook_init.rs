@@ -36,9 +36,9 @@ pub(super) fn build(
             initialize_purview(params, Some(name)),
             HookKind::MicrosoftPurview,
         ),
-        wire::MODEL_ARMOR => Ok(arms.plain(
-            initialize_model_armor(params, Some(name)),
-            HookKind::ModelArmor,
+        wire::MODEL_ARMOR => Ok(HookSpec::new(
+            settings,
+            HookKind::ModelArmor(Box::new(initialize_model_armor(params, Some(name)))),
         )),
         wire::OPENAI_MODERATION => arms.take(
             initialize_openai(params, Some(name)),
