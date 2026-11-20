@@ -4152,6 +4152,8 @@ dependencies = [
  "betterlite-bedrock",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-core",
+ "betterlite-http",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-provider",
@@ -4159,8 +4161,10 @@ dependencies = [
  "betterlite-redis",
  "betterlite-secret-managers",
  "hex",
+ "http 1.5.0",
  "indexmap 2.14.2",
  "percent-encoding",
+ "quick-xml",
  "redis",
  "rstest",
  "rust_decimal",
@@ -4171,6 +4175,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "url",
  "uuid",
 ]
 
