@@ -142,7 +142,15 @@ fn list_sends_an_array_extra_query_as_one_json_text_value() {
 #[test]
 fn list_logs_the_params_before_the_get() {
     let fixture = Fixture::new(202, LIST_BODY);
-    let call = fixture.list_call(all_page(), None);
+    let mut extra = Map::new();
+    extra.insert(String::from("page"), json!(5));
+    let query = ContainerListQuery {
+        after: Some("cntr_a"),
+        limit: Some(2),
+        order: Some("asc"),
+        extra_query: Some(&extra),
+    };
+    let call = fixture.list_call(query, None);
     container_list_handler(&call, &fixture.source, None, &fixture.hook).unwrap();
     assert_eq!(fixture.order(), vec!["log", "send"]);
     let calls = fixture.hook.calls();
@@ -161,6 +169,11 @@ fn list_logs_the_params_before_the_get() {
     );
     assert_eq!(params.get("limit"), Some(&Json::Text(String::from("2"))));
     assert_eq!(params.get("order"), Some(&Json::Text(String::from("asc"))));
+    assert_eq!(
+        params.get("page"),
+        Some(&Json::Text(String::from("5"))),
+        "the record carries every value as the text that goes on the wire"
+    );
     assert!(args.complete_input_dict.is_none());
 }
 
