@@ -19,16 +19,15 @@ use super::values::{params_map, store_value, stores_value};
 
 pub(super) fn drive(input: &Input) -> HelperResult {
     match input.operation {
-        Operation::Consumed => consumed(input),
-        Operation::Selection => selection(input),
-        Operation::Lookup => lookup(input),
+        Operation::Consumed => consumed_answer(&registry_of(decode_all(&input.stores)?), input),
+        Operation::Selection => Ok(answer(&select_stores(input, None)?, None)),
+        Operation::Lookup => lookup_answer(
+            &registry_of(decode_all(&input.stores)?),
+            input,
+            &input.tools,
+        ),
         Operation::Fallback => fallback(input),
     }
-}
-
-fn consumed(input: &Input) -> HelperResult {
-    let registry = stored_registry(input)?;
-    consumed_answer(&registry, input)
 }
 
 fn consumed_answer(registry: &VectorStoreRegistry, input: &Input) -> HelperResult {
@@ -44,11 +43,6 @@ fn consumed_answer(registry: &VectorStoreRegistry, input: &Input) -> HelperResul
         "ids": ids,
         "raised": raised_text,
     }))
-}
-
-fn lookup(input: &Input) -> HelperResult {
-    let registry = stored_registry(input)?;
-    lookup_answer(&registry, input, &input.tools)
 }
 
 fn lookup_answer(
@@ -79,11 +73,6 @@ struct LookupAnswer<'answer> {
     registry: Value,
 }
 
-fn selection(input: &Input) -> HelperResult {
-    let selected = select_stores(input, None)?;
-    Ok(answer(&selected, None))
-}
-
 fn fallback(input: &Input) -> HelperResult {
     let database = input
         .database
@@ -95,11 +84,6 @@ fn fallback(input: &Input) -> HelperResult {
         .as_ref()
         .map_or_else(Vec::new, ScriptedDatabase::calls);
     Ok(answer(&selected, Some(calls)))
-}
-
-fn stored_registry(input: &Input) -> Result<VectorStoreRegistry, HelperFailure> {
-    let stores = decode_all(&input.stores)?;
-    Ok(registry_of(stores))
 }
 
 struct Selected {
@@ -114,7 +98,7 @@ fn select_stores(
     input: &Input,
     database: Option<&ScriptedDatabase>,
 ) -> Result<Selected, HelperFailure> {
-    let mut registry = stored_registry(input)?;
+    let mut registry = registry_of(decode_all(&input.stores)?);
     let mut params = input.non_default_params.clone();
     let mut tools = input.tools.clone();
     let runtime = runtime()?;
