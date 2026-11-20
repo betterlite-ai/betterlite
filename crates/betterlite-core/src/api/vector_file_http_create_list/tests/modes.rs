@@ -202,6 +202,38 @@ async fn create_timeout_without_a_value_names_none() {
         error.message,
         "litellm.Timeout: Connection timed out after None seconds."
     );
+    // no per-call timeout on the async side either, so the pooled client's read timeout is the only deadline
+    let slow_async = serve(
+        reply("200 OK", &[("content-type", "application/json")], "{}"),
+        Duration::from_millis(500),
+    )
+    .expect("the fixture serves");
+    let blank_config = RecordingConfig::new(&format!(
+        "http://{}/v1/vector_stores/vs_a/files",
+        slow_async.address
+    ));
+    let blank_deps = FileDeps {
+        config: &blank_config,
+        source: &source,
+        supplied: None,
+    };
+    let blank_result = run(
+        &mut fixture,
+        &blank_deps,
+        ClientKind::Asynchronous,
+        &call,
+        &events,
+    )
+    .await;
+    let Err(FileTransportError::Provider(blank_error)) = blank_result else {
+        panic!("an async timeout is a provider error");
+    };
+    assert_eq!(blank_error.status_code, 408);
+    assert!(
+        blank_error
+            .message
+            .starts_with("litellm.Timeout: Connection timed out. Timeout passed=None, time taken=")
+    );
 }
 
 #[tokio::test]

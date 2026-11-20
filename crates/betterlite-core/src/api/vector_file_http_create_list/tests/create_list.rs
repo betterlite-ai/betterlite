@@ -7,6 +7,7 @@ use super::support::{
     openai_config, openai_settings, params,
 };
 use super::{FILE, LIST, json, run};
+use crate::api::vector_file_http_create_list::error::FileTransportError;
 use crate::api::vector_file_http_create_list::service::{
     ClientKind, CreateCall, FileCall, FileDeps, ListCall,
 };
@@ -220,4 +221,40 @@ async fn list_query_overlay() {
     for sent in requests.iter() {
         assert_eq!(body_bytes(sent), None);
     }
+}
+
+// a query string carries text, so a nested value is refused by name instead of being stringified
+#[tokio::test]
+async fn list_rejects_nested_query_values() {
+    let settings = openai_settings();
+    let config = openai_config(&settings, "sk-provider");
+    let events = Events::new();
+    let wire = Wire::replying(Reply::json(200, LIST), &events);
+    let source = Source::new(wire.clone());
+    let deps = FileDeps {
+        config: &config,
+        source: &source,
+        supplied: None,
+    };
+    let files = params("http://mock.test/v1");
+    let request = CallRequest::new("vs_a", &files);
+    let original = file_params("{}");
+    let nested = [
+        extra(r#"{"filter":{"status":"completed"}}"#),
+        extra(r#"{"order":[["asc"]]}"#),
+    ];
+    let mut fixture = Fixture::new("vector_store_file_list");
+    for (overlay, key) in nested.iter().zip(["filter", "order"]) {
+        let call = FileCall::List(ListCall {
+            target: request.target(),
+            query_params: &original,
+            extra_query: Some(overlay),
+        });
+        let result = run(&mut fixture, &deps, ClientKind::Sync, &call, &events).await;
+        let Err(FileTransportError::QueryValue { name }) = result else {
+            panic!("a nested query value is a typed error");
+        };
+        assert_eq!(name, key);
+    }
+    assert!(wire.requests().is_empty());
 }
