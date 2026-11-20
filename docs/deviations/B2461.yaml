@@ -1,5 +1,29 @@
 task: B2461
-deviations: []
+deviations:
+  - what: >-
+      A body-located upload URL that is present but not a string (a number, a boolean, a list or an
+      object) counts as missing, so betterlite fails with "Failed to get upload URL from initial
+      request"; LiteLLM hands that value to httpx and fails later with httpx's own type error.
+    why: >-
+      The decoder names a non-empty text value as the URL rather than passing an untyped value into
+      the request builder, and either way the upload fails before the second request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L3428-L3433
+  - what: >-
+      A logged upload request stores byte values as JSON lists of numbers: a multipart file part
+      becomes [filename, [bytes], content type], a no-filename form field becomes [null, [bytes]]
+      instead of LiteLLM's (None, "purpose"), and a raw-bytes plan records no complete_input_dict
+      at all, where LiteLLM logs the bytes object.
+    why: >-
+      The pre_call record keeps JSON, so bytes have no other form, and the shared multipart part
+      type carries the bytes of every field without keeping which field was text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L3650-L3654
+  - what: >-
+      A transformed request that is neither an object nor a string (an unsupported plan) is logged
+      as its JSON text, not as the list or number itself.
+    why: >-
+      The pre_call record holds an object or text body, and such a request fails before any HTTP
+      request, so only the recorded shape differs while the raised error matches.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L3650-L3654
 kept_bugs:
   - what: >-
       A sync upload whose transform returns raw bytes decodes them as UTF-8 before sending, so a
