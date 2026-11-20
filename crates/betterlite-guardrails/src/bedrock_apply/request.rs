@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::time::SystemTime;
 
 use betterlite_bedrock::aws_settings::bedrock_bearer_token;
 use betterlite_bedrock_guardrails::bedrock_credentials::{
@@ -19,7 +20,7 @@ use super::record::{LogSite, Logged, write};
 use crate::bedrock_checks::request::ChecksScan;
 use crate::bedrock_chunking::{ChunkResult, merge};
 use crate::bedrock_message_selection::content;
-use crate::bedrock_records::{Request, Response, Source, Usage};
+use crate::bedrock_records::{ContentItem, Request, Response, Source, Usage};
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_selection::gate::GuardrailSelection as _;
 
@@ -35,16 +36,29 @@ where
     T: GuardrailTransport,
 {
     let started = (invocation.now)();
-    let guardrail = invocation.guardrail;
-    let environment = invocation.environment;
-    let base = invocation.base;
-    let catalog = invocation.catalog;
-    let now = invocation.now;
+    let Some(request) = guard_request(invocation, scan)? else {
+        return Ok(Response::default());
+    };
+    run_apply(invocation, request, started, credentials, transport).await
+}
+
+struct ApplyRequest {
+    body: Request,
+    items: Vec<ContentItem>,
+    api_key: Option<SecretString>,
+    event_type: GuardrailEventHooks,
+}
+
+// LiteLLM converts the scan and merges the dynamic params before it checks whether any content is left
+fn guard_request(
+    invocation: &ApiInvocation<'_>,
+    scan: ChecksScan<'_>,
+) -> Result<Option<ApplyRequest>, GuardrailFailure> {
     let mut body = content::convert(
         scan.source,
         scan.messages,
         scan.response,
-        guardrail.contextual_grounding,
+        invocation.guardrail.contextual_grounding,
     );
     let api_key = dynamic_params(invocation, &mut body)?;
     let event_type = scan
@@ -53,38 +67,59 @@ where
     let items = body.content.clone().unwrap_or_default();
     if items.is_empty() {
         // ApplyGuardrail rejects an empty content list with a 400, so a turn with no text is skipped
-        return Ok(Response::default());
+        return Ok(None);
     }
+    Ok(Some(ApplyRequest {
+        body,
+        items,
+        api_key,
+        event_type,
+    }))
+}
+
+async fn run_apply<C, T>(
+    invocation: &mut ApiInvocation<'_>,
+    request: ApplyRequest,
+    started: SystemTime,
+    credentials: &C,
+    transport: &T,
+) -> Result<Response, GuardrailFailure>
+where
+    C: CredentialSource,
+    T: GuardrailTransport,
+{
+    let guardrail = invocation.guardrail;
+    let environment = invocation.environment;
+    let bearer = bedrock_bearer_token(request.api_key.as_ref(), environment.bearer_token);
     let region_environment = RegionEnvironment {
         region_name: environment.region_name,
         region: environment.region,
     };
-    let bearer = bedrock_bearer_token(api_key.as_ref(), environment.bearer_token);
     let (resolved, region) =
         load_credentials(guardrail, bearer.as_ref(), region_environment, credentials)
             .await
             .map_err(ApplyRequestError::from)?;
     let logs = LogSite {
         guardrail_provider: guardrail.guardrail_provider,
-        base,
+        base: invocation.base,
         request_data: &mut *invocation.request_data,
         log_target: invocation.log_target.as_deref_mut(),
-        event_type,
+        event_type: request.event_type,
         started,
-        now,
-        catalog,
+        now: invocation.now,
+        catalog: invocation.catalog,
         region: &region,
     };
     let mut call = PostCall {
         guardrail,
         environment,
-        body,
+        body: request.body,
         credentials: resolved,
-        api_key,
+        api_key: request.api_key,
         logs,
     };
     let mut completed = Vec::new();
-    match chunked(&mut call, items, transport, &mut completed).await {
+    match chunked(&mut call, request.items, transport, &mut completed).await {
         Ok(results) => merged_response(&mut call, &results),
         Err(error) => Err(end_to_end_failure(&mut call, error, &completed)),
     }
@@ -137,7 +172,7 @@ fn merged_response(
         status: 500,
         detail: error.to_string(),
     })?;
-    if let Err(error) = write(&mut call.logs, Logged::Success { merged: &merged }) {
+    if let Err(error) = write(&mut call.logs, &Logged::Success { merged: &merged }) {
         tracing::warn!("Bedrock ApplyGuardrail: the success record was not written: {error}");
     }
     Ok(merged)
@@ -152,7 +187,7 @@ fn end_to_end_failure(
     if let ApplyError::Unreported { detail, .. } = &error
         && let Err(log_error) = write(
             &mut call.logs,
-            Logged::Failure {
+            &Logged::Failure {
                 detail: detail.as_str(),
                 completed,
             },

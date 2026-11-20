@@ -4,6 +4,7 @@ use betterlite_bedrock_guardrails::bedrock_post::GuardrailTransport;
 use betterlite_bedrock_guardrails::constants::{
     BEDROCK_BASE_BACKOFF_SECONDS, BEDROCK_MAX_THROTTLE_RETRIES,
 };
+use tokio::time::sleep;
 
 use super::error::ApplyError;
 use super::post::{PostCall, post};
@@ -40,5 +41,5 @@ async fn sleep_backoff(attempt: usize) {
         .unwrap_or_default()
         .checked_mul(factor)
         .unwrap_or_default();
-    tokio::time::sleep(delay).await;
+    sleep(delay).await;
 }

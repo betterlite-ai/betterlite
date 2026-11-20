@@ -86,7 +86,7 @@ fn transport_failure(call: &mut PostCall<'_>, error: &PostError) -> ApplyError {
     let detail = transport_detail(error);
     if let Err(log_error) = write(
         &mut call.logs,
-        Logged::Failure {
+        &Logged::Failure {
             detail: detail.as_str(),
             completed: &[],
         },
@@ -101,10 +101,9 @@ fn transport_failure(call: &mut PostCall<'_>, error: &PostError) -> ApplyError {
 
 // the transport failure LiteLLM logs is str(e), the innermost cause rather than this crate's wrapper text
 fn transport_detail(error: &PostError) -> String {
-    match error.source() {
-        Some(source) => source.to_string(),
-        None => error.to_string(),
-    }
+    error
+        .source()
+        .map_or_else(|| error.to_string(), ToString::to_string)
 }
 
 fn parsed_response(
@@ -140,7 +139,7 @@ fn blocked(
         response: parsed,
         completed,
     };
-    if let Err(error) = write(&mut call.logs, logged) {
+    if let Err(error) = write(&mut call.logs, &logged) {
         tracing::warn!("Bedrock ApplyGuardrail: the blocking record was not written: {error}");
     }
     let guardrail = BlockedGuardrail {

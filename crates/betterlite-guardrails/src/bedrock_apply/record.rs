@@ -60,11 +60,11 @@ pub(super) enum Logged<'logged> {
 
 pub(super) fn write(
     site: &mut LogSite<'_>,
-    logged: Logged<'_>,
+    logged: &Logged<'_>,
 ) -> Result<(), BedrockDecisionError> {
     let call = call_log(site);
     let mut context = record_context(site);
-    match logged {
+    match *logged {
         Logged::Attempt {
             status_code,
             body,
