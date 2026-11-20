@@ -38,6 +38,21 @@ struct Exchange {
     timeout: Option<Duration>,
 }
 
+impl Exchange {
+    // the create exchange: the POST litellm's pre_call logs the name for, with the transform's url and parts
+    fn post(url: String, parts: Vec<MultipartPart>, name: &str, timeout: Option<Duration>) -> Self {
+        let named = IndexMap::from([(String::from("name"), Json::Text(name.to_owned()))]);
+        Self {
+            url,
+            method: Method::POST,
+            query: Vec::new(),
+            parts: Some(parts),
+            logged: Some(named),
+            timeout,
+        }
+    }
+}
+
 // what a call reads before any transform sees it
 const fn parts(call: CharacterCall<'_>) -> CallParts<'_> {
     CallParts {
@@ -146,18 +161,10 @@ fn created<C>(
 where
     C: CharacterConfig,
 {
-    let (url, files) = config
+    let (url, parts) = config
         .transform_create_request(call.name, call.video, context)
         .map_err(CharacterError::Provider)?;
-    let named = IndexMap::from([(String::from("name"), Json::Text(call.name.to_owned()))]);
-    Ok(Exchange {
-        url,
-        method: Method::POST,
-        query: Vec::new(),
-        parts: Some(files),
-        logged: Some(named),
-        timeout: call.timeout,
-    })
+    Ok(Exchange::post(url, parts, call.name, call.timeout))
 }
 
 // validate_environment gets the caller's headers in the map it may rewrite, then get_complete_url

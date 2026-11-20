@@ -3,23 +3,24 @@ use std::future::Future;
 use std::pin::Pin;
 use std::time::{Duration, Instant};
 
-use betterlite_http::interactions::base::{ErrorClasses, Params, RequestFailure, ResponseHeaders};
+use betterlite_http::interactions::base::{Params, RequestFailure};
+use betterlite_http::proxy::UpstreamResponse;
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_state::LoggingState;
 use secrecy::SecretString;
 use uuid::Uuid;
 
 use self::prepare::prepare;
-use self::send::{Transform, answered};
+use self::send::{Transform, answered, send_failure};
 use super::clients::{
-    CharacterAsyncClient as _, CharacterClients, CharacterSyncClient as _, SuppliedClients,
+    CharacterAsyncClient as _, CharacterClients, CharacterRequest, CharacterSyncClient as _,
+    SuppliedClients,
 };
 use super::config::CharacterConfig;
-use super::error::{CharacterError, CharacterFault, converted};
+use super::error::{CharacterError, CharacterFault};
 use crate::api::bfl::edit::media::SuppliedMedia;
 use crate::api::video_records::CharacterObject;
 use crate::api::videos_http_transport::client::{ClientKind, HttpVerb, Sent};
-use crate::api::videos_http_transport::error::elapsed_text;
 
 mod prepare;
 mod send;
@@ -214,14 +215,7 @@ where
             .clients
             .select_sync(call.litellm_params(), self.supplied.sync)
             .map_err(CharacterError::Client)?;
-        let transform: Transform<C> = call.transform();
-        let request = prepare(
-            self.config,
-            self.logging,
-            self.env,
-            &(self.boundary)(),
-            call,
-        )?;
+        let (transform, request) = self.staged(call)?;
         let sent = Sent {
             mode: ClientKind::Sync,
             verb: call.verb(),
@@ -229,9 +223,38 @@ where
         };
         let started = Instant::now();
         let outcome = client.send_blocking(request);
+        self.reply(outcome, sent, started, transform)
+            .map(CharacterHandled::Done)
+    }
+
+    // the transform and the wire request both flows share, built before either send
+    fn staged(
+        &mut self,
+        call: CharacterCall<'_>,
+    ) -> Result<(Transform<C>, CharacterRequest), CharacterFault<C>> {
+        let transform = call.transform();
+        let request = prepare(
+            self.config,
+            self.logging,
+            self.env,
+            &(self.boundary)(),
+            call,
+        )?;
+        Ok((transform, request))
+    }
+
+    // the reply both flows convert: a failed send becomes its error, a 2xx reply its object
+    fn reply(
+        &mut self,
+        outcome: Result<UpstreamResponse, RequestFailure>,
+        sent: Sent,
+        started: Instant,
+        transform: Transform<C>,
+    ) -> Result<CharacterObject, CharacterFault<C>> {
         let elapsed = started.elapsed();
-        let reply = outcome.map_err(|failure| send_failure(self.config, sent, elapsed, failure))?;
-        answered(self.config, self.logging, &reply, transform).map(CharacterHandled::Done)
+        let response =
+            outcome.map_err(|failure| send_failure(self.config, sent, elapsed, failure))?;
+        answered(self.config, self.logging, &response, transform)
     }
 
     pub(crate) async fn async_video_character_handler(
@@ -242,14 +265,7 @@ where
             .clients
             .select_async(call.litellm_params(), self.supplied.asynchronous)
             .map_err(CharacterError::Client)?;
-        let transform: Transform<C> = call.transform();
-        let request = prepare(
-            self.config,
-            self.logging,
-            self.env,
-            &(self.boundary)(),
-            call,
-        )?;
+        let (transform, request) = self.staged(call)?;
         let sent = Sent {
             mode: ClientKind::Asynchronous,
             verb: call.verb(),
@@ -257,44 +273,6 @@ where
         };
         let started = Instant::now();
         let outcome = client.send(request).await;
-        let elapsed = started.elapsed();
-        let reply = outcome.map_err(|failure| send_failure(self.config, sent, elapsed, failure))?;
-        answered(self.config, self.logging, &reply, transform)
-    }
-}
-
-// httpx.post turns its own timeout into litellm.Timeout, which _handle_error reports with the 408 it carries; a get raises none
-fn send_failure<C>(
-    config: &C,
-    sent: Sent,
-    elapsed: Duration,
-    failure: RequestFailure,
-) -> CharacterFault<C>
-where
-    C: CharacterConfig,
-{
-    let timed_out = sent.verb == HttpVerb::Post
-        && matches!(&failure, RequestFailure::Transport(source) if source.is_timeout());
-    if !timed_out {
-        return converted(config, failure);
-    }
-    let message = timeout_message(sent, elapsed);
-    CharacterError::Provider(config.get_error_class(&message, 408_u16, &ResponseHeaders::new()))
-}
-
-// the message litellm.Timeout carries: the sync post names the timeout it was passed, the async one adds the time taken
-fn timeout_message(sent: Sent, elapsed: Duration) -> String {
-    let passed = sent.timeout.map_or_else(
-        || String::from("None"),
-        |value| value.as_secs_f64().to_string(),
-    );
-    match sent.mode {
-        ClientKind::Sync => {
-            format!("litellm.Timeout: Connection timed out after {passed} seconds.")
-        }
-        ClientKind::Asynchronous => format!(
-            "litellm.Timeout: Connection timed out. Timeout passed={passed}, time taken={} seconds",
-            elapsed_text(elapsed)
-        ),
+        self.reply(outcome, sent, started, transform)
     }
 }
