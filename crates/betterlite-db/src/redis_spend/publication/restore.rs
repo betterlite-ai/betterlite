@@ -7,7 +7,8 @@ use crate::spend_queues::daily::{DailySpendUpdate, DailySpendUpdateQueue};
 use crate::spend_queues::entity::{
     EntityType, SpendAmount, SpendUpdateQueue, SpendUpdateQueueItem, SpendUpdateTransactions,
 };
-use crate::window_queue::{WindowSpendTransaction, WindowSpendUpdateQueue};
+use crate::window_queue::WindowSpendTransaction;
+use crate::window_queue::queue::WindowSpendUpdateQueue;
 
 use super::{DrainedCohorts, RedisSpendPublisher, SpendPublishError, SpendUpdateQueues};
 

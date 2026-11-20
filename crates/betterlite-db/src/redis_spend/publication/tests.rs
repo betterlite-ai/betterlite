@@ -31,7 +31,7 @@ use crate::redis_spend::tests::support::{
 };
 use crate::spend_queues::daily::DailySpendUpdateQueue;
 use crate::spend_queues::entity::{EntityType, SpendUpdateQueue, SpendUpdateTransactions};
-use crate::window_queue::WindowSpendUpdateQueue;
+use crate::window_queue::queue::WindowSpendUpdateQueue;
 
 mod real_redis;
 

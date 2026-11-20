@@ -8,9 +8,10 @@ use crate::search_tools::create::dump::safe_dumps;
 use crate::spend_queues::SpendQueueError;
 use crate::spend_queues::daily::{DailySpendUpdate, DailySpendUpdateQueue, aggregate_daily_rows};
 use crate::spend_queues::entity::{SpendUpdateQueue, SpendUpdateTransactions};
+use crate::window_queue::queue::WindowSpendUpdateQueue;
 use crate::window_queue::{
-    WindowQueueError, WindowSpendTransaction, WindowSpendUpdateQueue, WindowSpendWirePayload,
-    aggregate_window_spend, to_wire_payload,
+    WindowQueueError, WindowSpendTransaction, WindowSpendWirePayload, aggregate_window_spend,
+    to_wire_payload,
 };
 
 use self::restore::restore_cohorts;

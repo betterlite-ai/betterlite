@@ -24,7 +24,8 @@ use crate::spend_queues::entity::{
     EntityType, SpendAmount, SpendUpdateQueue, SpendUpdateQueueItem, SpendUpdateTransactions,
 };
 use crate::spend_queues::events::NoSpendQueueEventSink;
-use crate::window_queue::{WindowSpendTransaction, WindowSpendUpdateQueue};
+use crate::window_queue::WindowSpendTransaction;
+use crate::window_queue::queue::WindowSpendUpdateQueue;
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Pushed {
@@ -55,12 +56,20 @@ pub(crate) struct FakeLists {
     state: Mutex<State>,
 }
 
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum Failure {
+    #[default]
+    None,
+    Read,
+    Trim,
+    Push,
+}
+
 #[derive(Default)]
 struct State {
     pops: VecDeque<BufferReply>,
     pipelines: VecDeque<Vec<BufferReply>>,
-    fail_reads: bool,
-    fail_trim: bool,
+    failure: Failure,
     trim_size: i64,
     popped: Vec<(String, Option<i64>)>,
     piped: Vec<Vec<BufferPop>>,
@@ -69,7 +78,6 @@ struct State {
     singles: Vec<(String, Vec<String>)>,
     push_lengths: VecDeque<Vec<i64>>,
     single_length: i64,
-    fail_push: bool,
     fill_on_push: Option<FillOnPush>,
 }
 
@@ -87,11 +95,11 @@ impl FakeLists {
     }
 
     pub(crate) fn fail_reads(&self) {
-        self.lock().fail_reads = true;
+        self.lock().failure = Failure::Read;
     }
 
     pub(crate) fn fail_trim(&self) {
-        self.lock().fail_trim = true;
+        self.lock().failure = Failure::Trim;
     }
 
     pub(crate) fn trim_size(&self, size: i64) {
@@ -107,11 +115,11 @@ impl FakeLists {
     }
 
     pub(crate) fn fail_push(&self) {
-        self.lock().fail_push = true;
+        self.lock().failure = Failure::Push;
     }
 
     pub(crate) fn allow_push(&self) {
-        self.lock().fail_push = false;
+        self.lock().failure = Failure::None;
     }
 
     pub(crate) fn fill_on_push(&self, fill: FillOnPush) {
@@ -155,7 +163,7 @@ impl SpendBufferLists for FakeLists {
         Box::pin(async move {
             let mut state = self.lock();
             state.piped.push(operations.to_vec());
-            if state.fail_reads {
+            if state.failure == Failure::Read {
                 return Err(list_failure("async_lpop_pipeline"));
             }
             Ok(state.pipelines.pop_front().unwrap_or_default())
@@ -175,7 +183,7 @@ impl SpendBufferLists for FakeLists {
                 values: values.to_vec(),
                 max_len,
             });
-            if state.fail_trim {
+            if state.failure == Failure::Trim {
                 return Err(list_failure("async_rpush_and_trim"));
             }
             Ok(state.trim_size)
@@ -192,7 +200,7 @@ impl SpendBufferPush for FakeLists {
         Box::pin(async move {
             let mut state = self.lock();
             state.singles.push((key.to_owned(), values.to_vec()));
-            if state.fail_push {
+            if state.failure == Failure::Push {
                 return Err(list_failure("async_rpush"));
             }
             Ok(state.single_length)
@@ -213,7 +221,7 @@ impl SpendBufferPush for FakeLists {
                 fill.apply().await;
             }
             let mut state = self.lock();
-            if state.fail_push {
+            if state.failure == Failure::Push {
                 return Err(list_failure("async_rpush_pipeline"));
             }
             Ok(state.push_lengths.pop_front().unwrap_or_default())
@@ -228,7 +236,7 @@ fn pop_once(
 ) -> Result<BufferReply, SpendBufferListError> {
     let reply = state.pops.pop_front();
     state.popped.push((key.to_owned(), count));
-    if state.fail_reads {
+    if state.failure == Failure::Read {
         return Err(list_failure("async_lpop"));
     }
     Ok(reply.unwrap_or(BufferReply::Missing))
