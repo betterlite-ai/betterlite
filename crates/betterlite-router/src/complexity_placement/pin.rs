@@ -62,7 +62,7 @@ async fn claim_tier_model(
     placement: &TierPlacement<'_>,
     tier: &Tier,
     selection: &Selection<'_>,
-    request_kwargs: &mut JsonMap,
+    request_kwargs: &JsonMap,
     retained_model: Option<&str>,
 ) -> Result<Option<String>, TierPlacementError> {
     let Some(session_id) = session_id_from_request_kwargs(request_kwargs)? else {
@@ -143,7 +143,6 @@ fn model_pin(model: &str) -> IndexMap<String, String> {
 }
 
 // _get_session_affinity_cache_key's tier-pin sibling: one key per router, config version, caller, session and tier.
-#[must_use]
 pub fn tier_pin_cache_key(
     placement: &TierPlacement<'_>,
     tier: &Tier,
@@ -155,20 +154,21 @@ pub fn tier_pin_cache_key(
     let affinity_config = placement.tier_affinity_config;
     let tier_name = tier.name();
     // json.dumps of LiteLLM's cache identity, so two identities can never collide on a delimiter
-    let identity = match retained_model {
-        None => {
-            serde_json::to_string(&(model_name, affinity_config, caller, session_id, tier_name))
-        }
-        Some(model) => serde_json::to_string(&(
-            model_name,
-            affinity_config,
-            caller,
-            session_id,
-            tier_name,
-            ("replay_fallback", model),
-        )),
-    }
-    .unwrap_or_default();
+    let identity = retained_model
+        .map_or_else(
+            || serde_json::to_string(&(model_name, affinity_config, caller, session_id, tier_name)),
+            |model| {
+                serde_json::to_string(&(
+                    model_name,
+                    affinity_config,
+                    caller,
+                    session_id,
+                    tier_name,
+                    ("replay_fallback", model),
+                ))
+            },
+        )
+        .unwrap_or_default();
     let digest = Sha256::digest(identity.as_bytes());
     AffinityKey::try_from(format!("{CACHE_KEY_PREFIX}{}", hex::encode(digest)).as_str())
         .map_err(TierPlacementError::from)

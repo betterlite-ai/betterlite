@@ -12,6 +12,7 @@ use betterlite_openai::chat::ChatMessage;
 use indexmap::IndexMap;
 use rand::TryRng;
 use serde_json::Number;
+use tokio::runtime::{Builder, Runtime};
 
 use crate::affinity_claims::AffinityClaims;
 use crate::affinity_claims::local::LocalPins;
@@ -32,7 +33,6 @@ use crate::tier_definitions::model::{TierModelEntry, TierPool, TierSet};
 
 use super::super::TierPlacement;
 
-pub(super) const SIMPLE: Tier = Tier::BuiltIn(ComplexityTier::Simple);
 pub(super) const MEDIUM: Tier = Tier::BuiltIn(ComplexityTier::Medium);
 
 // a 53-bit draw: 0, 2^51, 2^52, 3 * 2^51 and 2^53 - 1, the last sample below one
@@ -42,11 +42,8 @@ pub(super) const HALF: u64 = 0x0010_0000_0000_0000;
 pub(super) const THREE_QUARTERS: u64 = 6_755_399_441_055_744;
 pub(super) const LAST_SAMPLE: u64 = 0x001F_FFFF_FFFF_FFFF;
 
-pub(super) fn runtime() -> tokio::runtime::Runtime {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
+pub(super) fn runtime() -> Runtime {
+    Builder::new_current_thread().enable_all().build().unwrap()
 }
 
 // a 53-bit draw sequence, as the oracle's injected samples give it
@@ -87,6 +84,11 @@ impl TryRng for ScriptedRng {
     }
 }
 
+// a draw here means the placement was wrong, and rand's infallible Rng leaves no error to return
+fn unexpected_draw() -> ! {
+    panic!("the placement drew from the generator")
+}
+
 // a tier whose value is one name must not reach the generator at all
 pub(super) struct NoDraw;
 
@@ -94,15 +96,15 @@ impl TryRng for NoDraw {
     type Error = Infallible;
 
     fn try_next_u32(&mut self) -> Result<u32, Infallible> {
-        panic!("the placement drew from the generator")
+        unexpected_draw()
     }
 
     fn try_next_u64(&mut self) -> Result<u64, Infallible> {
-        panic!("the placement drew from the generator")
+        unexpected_draw()
     }
 
     fn try_fill_bytes(&mut self, _dst: &mut [u8]) -> Result<(), Infallible> {
-        panic!("the placement drew from the generator")
+        unexpected_draw()
     }
 }
 
@@ -181,7 +183,6 @@ pub(super) struct World {
     pub aliases: AliasMap,
     pub groups: RoutingGroupIndex,
     pub provider: fn(&str) -> Option<String>,
-    pub support: Support,
 }
 
 impl World {
@@ -224,7 +225,6 @@ impl World {
             aliases: AliasMap::new(),
             groups: RoutingGroupIndex::default(),
             provider: no_provider,
-            support: Support,
         }
     }
 
@@ -314,10 +314,10 @@ pub(super) fn deployment(
         );
     }
     let mut model_info = JsonObject::new();
-    if let Some(ceiling) = ceiling {
+    if let Some(max_output) = ceiling {
         model_info.insert(
             "max_output_tokens".to_owned(),
-            Json::Number(Number::from(ceiling)),
+            Json::Number(Number::from(max_output)),
         );
     }
     DeploymentSpec {

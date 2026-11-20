@@ -17,7 +17,7 @@ mod tests;
 use self::error::TierPlacementError;
 
 // the model a tier decided on, with the pool it was drawn from and the params the tier pins onto the request
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PlacedTier {
     pub tier: String,
     pub model: String,
@@ -70,22 +70,21 @@ impl TierPlacement<'_> {
         R: Rng + ?Sized,
     {
         let tier_key = choice.tier.name();
-        let (selected, candidates) = match choice.allowed_models {
-            Some(allowed) => (
+        let (selected, candidates) = if let Some(allowed) = choice.allowed_models {
+            (
                 pools::pick_from_names(allowed, tier_key, random)?,
                 allowed.to_vec(),
-            ),
-            None => {
-                let candidates = self
-                    .tiers
-                    .pools
-                    .get(tier_key)
-                    .map_or_else(Vec::new, pools::model_names);
-                (
-                    pools::model_for_tier(self, choice.tier, random)?,
-                    candidates,
-                )
-            }
+            )
+        } else {
+            let candidates = self
+                .tiers
+                .pools
+                .get(tier_key)
+                .map_or_else(Vec::new, pools::model_names);
+            (
+                pools::model_for_tier(self, choice.tier, random)?,
+                candidates,
+            )
         };
         let selection = Selection {
             model: &selected,
