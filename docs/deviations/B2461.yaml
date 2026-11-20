@@ -24,6 +24,24 @@ deviations:
       The pre_call record holds an object or text body, and such a request fails before any HTTP
       request, so only the recorded shape differs while the raised error matches.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L3650-L3654
+  - what: >-
+      A header that both the base headers and a plan's own headers name, spelled in another
+      casing, goes out once with the plan's value; LiteLLM merges the two dicts and httpx sends the
+      field twice, for a two-step initial_request over validate_environment's headers and for a
+      media upload's Content-Type over a base header.
+    why: >-
+      betterlite holds request headers in one map keyed case-insensitively, and a request that
+      repeats a field with two values is malformed, so the plan's value replaces the base one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L3667-L3671
+  - what: >-
+      An upload_request method other than the handler's client verbs is sent as that method;
+      LiteLLM resolves the lowercased name as an attribute of its HTTP handler, so a verb the
+      handler has no method for fails with an AttributeError before the second request.
+    why: >-
+      betterlite parses the declared method string as an HTTP method token instead of reflecting on
+      a client object, so a valid token goes on the wire and an invalid one fails with an error
+      that names the method.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L3689-L3695
 kept_bugs:
   - what: >-
       A sync upload whose transform returns raw bytes decodes them as UTF-8 before sending, so a
