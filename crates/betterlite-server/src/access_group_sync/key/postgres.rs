@@ -1,5 +1,3 @@
-use std::future::Future;
-
 use betterlite_db::auxiliary_repository::bindings::AccessGroupTable;
 use betterlite_db::auxiliary_repository::repository::{PrismaClient, PrismaTableRepository};
 use betterlite_db::database_replica::pinned::{WriterPinnedClient, writer_wrapper};
@@ -28,24 +26,22 @@ pub struct PostgresKeyMembership<'db> {
 }
 
 impl KeyMembershipDatabase for PostgresKeyMembership<'_> {
-    fn move_key_membership(
+    async fn move_key_membership(
         &self,
         statement: KeyMembershipStatement,
         key_token: &str,
         access_group_ids: &[String],
-    ) -> impl Future<Output = Result<Vec<MovedGroupRow>, KeySyncError>> + Send {
-        async move {
-            let parameters: [&(dyn ToSql + Sync); 2] = [&key_token, &access_group_ids];
-            moved_groups(self.client, statement.sql(), &parameters).await
-        }
+    ) -> Result<Vec<MovedGroupRow>, KeySyncError> {
+        let parameters: [&(dyn ToSql + Sync); 2] = [&key_token, &access_group_ids];
+        moved_groups(self.client, statement.sql(), &parameters).await
     }
 
-    fn repoint_key_membership(
+    async fn repoint_key_membership(
         &self,
         previous: &str,
         new: &str,
-    ) -> impl Future<Output = Result<Vec<MovedGroupRow>, KeySyncError>> + Send {
-        async move { moved_groups(self.client, REPOINT_KEY_SQL, &[&previous, &new]).await }
+    ) -> Result<Vec<MovedGroupRow>, KeySyncError> {
+        moved_groups(self.client, REPOINT_KEY_SQL, &[&previous, &new]).await
     }
 }
 

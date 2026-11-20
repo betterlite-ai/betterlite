@@ -1,5 +1,3 @@
-use std::future::Future;
-
 use betterlite_db::postgres_store::errors::backend;
 use tokio_postgres::Row;
 use tokio_postgres::types::ToSql;
@@ -14,43 +12,30 @@ const ATTACH_SQL: &str = "UPDATE \"LiteLLM_AccessGroupTable\" SET assigned_team_
 const DETACH_SQL: &str = "UPDATE \"LiteLLM_AccessGroupTable\" SET assigned_team_ids = array_remove(assigned_team_ids, $1) WHERE $1 = ANY(COALESCE(assigned_team_ids, ARRAY[]::TEXT[])) AND NOT (access_group_id = ANY($2::TEXT[])) RETURNING access_group_id";
 
 impl TeamSyncTransaction for deadpool_postgres::Transaction<'_> {
-    fn lock_team(&self, team_id: &str) -> impl Future<Output = Result<(), TeamSyncError>> + Send {
-        async move {
-            run(self, TEAM_ADVISORY_LOCK_SQL, &[&team_id])
-                .await
-                .map(drop)
-        }
+    async fn lock_team(&self, team_id: &str) -> Result<(), TeamSyncError> {
+        run(self, TEAM_ADVISORY_LOCK_SQL, &[&team_id])
+            .await
+            .map(drop)
     }
 
-    fn team_groups(
-        &self,
-        team_id: &str,
-    ) -> impl Future<Output = Result<Option<TeamGroupRow>, TeamSyncError>> + Send {
-        async move { team_row(self, team_id).await }
+    async fn team_groups(&self, team_id: &str) -> Result<Option<TeamGroupRow>, TeamSyncError> {
+        team_row(self, team_id).await
     }
 
-    fn affected_groups(
+    async fn affected_groups(
         &self,
         team_id: &str,
         desired: &[String],
-    ) -> impl Future<Output = Result<Vec<AffectedGroupRow>, TeamSyncError>> + Send {
-        async move { affected_rows(self, team_id, desired).await }
+    ) -> Result<Vec<AffectedGroupRow>, TeamSyncError> {
+        affected_rows(self, team_id, desired).await
     }
 
-    fn attach_groups(
-        &self,
-        team_id: &str,
-        desired: &[String],
-    ) -> impl Future<Output = Result<(), TeamSyncError>> + Send {
-        async move { run(self, ATTACH_SQL, &[&team_id, &desired]).await.map(drop) }
+    async fn attach_groups(&self, team_id: &str, desired: &[String]) -> Result<(), TeamSyncError> {
+        run(self, ATTACH_SQL, &[&team_id, &desired]).await.map(drop)
     }
 
-    fn detach_groups(
-        &self,
-        team_id: &str,
-        desired: &[String],
-    ) -> impl Future<Output = Result<(), TeamSyncError>> + Send {
-        async move { run(self, DETACH_SQL, &[&team_id, &desired]).await.map(drop) }
+    async fn detach_groups(&self, team_id: &str, desired: &[String]) -> Result<(), TeamSyncError> {
+        run(self, DETACH_SQL, &[&team_id, &desired]).await.map(drop)
     }
 }
 

@@ -6,6 +6,8 @@ use crate::access_group_sync::team::{
     AffectedGroupRow, TeamGroupRow, TeamSyncError, TeamSyncTransaction,
 };
 
+type GroupTeams = BTreeMap<String, Option<Vec<String>>>;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TeamStep {
     Lock,
@@ -25,14 +27,11 @@ pub(crate) struct ScriptedTeamTransaction {
     pub(crate) calls: Mutex<Vec<TeamStep>>,
     pub(crate) missing_team: bool,
     pub(crate) team_group_ids: Option<Vec<String>>,
-    pub(crate) groups: Mutex<BTreeMap<String, Option<Vec<String>>>>,
+    pub(crate) groups: Mutex<GroupTeams>,
 }
 
 impl ScriptedTeamTransaction {
-    pub(crate) const fn new(
-        team_group_ids: Option<Vec<String>>,
-        groups: BTreeMap<String, Option<Vec<String>>>,
-    ) -> Self {
+    pub(crate) const fn new(team_group_ids: Option<Vec<String>>, groups: GroupTeams) -> Self {
         let calls = Mutex::new(Vec::new());
         let groups = Mutex::new(groups);
         Self {
@@ -48,7 +47,9 @@ impl ScriptedTeamTransaction {
         self.team_group_ids
             .clone()
             .filter(|_| !self.missing_team)
-            .map(|access_group_ids| TeamGroupRow { access_group_ids })
+            .map(|access_group_ids| TeamGroupRow {
+                access_group_ids: Some(access_group_ids),
+            })
     }
 
     fn affected_rows(&self, team_id: &str, desired: &[String]) -> Vec<AffectedGroupRow> {
@@ -81,43 +82,41 @@ impl ScriptedTeamTransaction {
         });
         let mut groups = self.groups.lock().expect("groups");
         match write {
-            TeamWrite::Attach => {
-                for (access_group_id, assigned) in groups.iter_mut() {
-                    if !desired.contains(access_group_id) {
-                        continue;
-                    }
-                    let teams = assigned.get_or_insert_default();
-                    if !teams.iter().any(|team| team == team_id) {
-                        teams.push(team_id.to_owned());
-                    }
-                }
-            }
-            TeamWrite::Detach => {
-                for (access_group_id, assigned) in groups.iter_mut() {
-                    if desired.contains(access_group_id) {
-                        continue;
-                    }
-                    if let Some(teams) = assigned {
-                        teams.retain(|team| team != team_id);
-                    }
-                }
-            }
+            TeamWrite::Attach => attach_team(&mut groups, team_id, desired),
+            TeamWrite::Detach => detach_team(&mut groups, team_id, desired),
         }
         ready(Ok(()))
+    }
+}
+
+fn attach_team(groups: &mut GroupTeams, team_id: &str, desired: &[String]) {
+    for (_, assigned) in groups.iter_mut().filter(|(id, _)| desired.contains(*id)) {
+        let teams = assigned.get_or_insert_default();
+        if !teams.iter().any(|team| team == team_id) {
+            teams.push(team_id.to_owned());
+        }
+    }
+}
+
+fn detach_team(groups: &mut GroupTeams, team_id: &str, desired: &[String]) {
+    for (_, assigned) in groups.iter_mut().filter(|(id, _)| !desired.contains(*id)) {
+        if let Some(teams) = assigned {
+            teams.retain(|team| team != team_id);
+        }
     }
 }
 
 impl TeamSyncTransaction for ScriptedTeamTransaction {
     fn lock_team(&self, _team_id: &str) -> impl Future<Output = Result<(), TeamSyncError>> + Send {
         self.calls.lock().expect("calls").push(TeamStep::Lock);
-        async move { Ok(()) }
+        ready(Ok(()))
     }
 
     fn team_groups(
         &self,
         _team_id: &str,
     ) -> impl Future<Output = Result<Option<TeamGroupRow>, TeamSyncError>> + Send {
-        async move { Ok(self.read_rows()) }
+        ready(Ok(self.read_rows()))
     }
 
     fn affected_groups(
@@ -125,7 +124,7 @@ impl TeamSyncTransaction for ScriptedTeamTransaction {
         team_id: &str,
         desired: &[String],
     ) -> impl Future<Output = Result<Vec<AffectedGroupRow>, TeamSyncError>> + Send {
-        async move { Ok(self.affected_rows(team_id, desired)) }
+        ready(Ok(self.affected_rows(team_id, desired)))
     }
 
     fn attach_groups(
