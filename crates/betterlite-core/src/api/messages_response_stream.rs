@@ -134,7 +134,9 @@ impl<S> MessagesResponseStream<S> {
             .attributes
             .response
             .as_ref()
-            .map_or_else(Vec::new, |response| output_items(&response.output));
+            .map_or_else(Vec::new, |response| {
+                response.output.iter().map(OutputItem::Raw).collect()
+            });
         let attributes = provider_attributes(&event.attributes, &output);
         let failure = self
             .state
@@ -219,11 +221,6 @@ impl<S> MessagesResponseStream<S> {
             MessagesResponseStreamResult::Chunk,
         )
     }
-}
-
-// A provider response's output items as B1119 reads them, each one still the JSON form of the SDK item.
-fn output_items(output: &[Json]) -> Vec<OutputItem<'_>> {
-    output.iter().map(OutputItem::Raw).collect()
 }
 
 // The attributes of a provider event, whose response borrows the output items handed to B1119 alongside it.
