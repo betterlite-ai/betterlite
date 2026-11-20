@@ -1,0 +1,23 @@
+kind: helper
+name: deployment-checks-bad-access-window
+call:
+  b8378:
+    operation: access_windows
+    model:
+      model_name: windows
+      model_info:
+        access_windows:
+          - start: "9:00"
+            end: "17:00"
+            timezone: UTC
+            team_ids: [t1]
+    model_list: []
+    limit: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/message
+      why: >-
+        betterlite refuses through B322's typed window errors, so the text after "invalid
+        model_info.access_windows:" differs from pydantic's validation text
+        (docs/deviations/B8378.yaml); the refusal and the model name are still compared.
