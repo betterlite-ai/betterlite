@@ -1,16 +1,13 @@
-use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
-use secrecy::SecretString;
-use serde::{Deserialize, Serialize};
-
 use super::error::CompletionCallError;
 use super::ports::{
     LocalTokenCountRequest, LocalTokenCounter, ProviderTokenCountRequest, ProviderTokenCounter,
 };
 use crate::completion_request::ports::{ModelMetadata, ProviderLookup};
-
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
+use secrecy::SecretString;
+use serde::{Deserialize, Serialize};
 pub const LOCAL_TOKENIZER: &str = "local_tokenizer";
-
 // litellm.types.utils.TokenCountResponse
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TokenCountResponse {
@@ -27,7 +24,6 @@ pub struct TokenCountResponse {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status_code: Option<u16>,
 }
-
 impl TokenCountResponse {
     // the fallback acount_tokens builds when no provider counter answered
     #[must_use]
@@ -44,7 +40,6 @@ impl TokenCountResponse {
         }
     }
 }
-
 pub struct TokenCountRequest<'request> {
     pub model: &'request str,
     pub messages: Option<&'request [Json]>,
@@ -53,7 +48,6 @@ pub struct TokenCountRequest<'request> {
     pub api_key: Option<&'request SecretString>,
     pub api_base: Option<&'request str>,
 }
-
 // acount_tokens: the provider's count when it works, B196's local count otherwise
 pub async fn count_tokens(
     request: &TokenCountRequest<'_>,
@@ -103,7 +97,6 @@ pub async fn count_tokens(
         &resolved.model,
     ))
 }
-
 fn system_message(system: &str) -> Json {
     Json::Object(IndexMap::from([
         (String::from("role"), Json::Text(String::from("system"))),
