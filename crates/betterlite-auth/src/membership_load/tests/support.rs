@@ -390,7 +390,7 @@ pub(crate) fn local_memory() -> Arc<LocalMemoryOps> {
     Arc::new(LocalMemoryOps::new(1024_i64, clock()).expect("the local memory cache builds"))
 }
 
-fn dual_settings() -> DualCacheSettings {
+pub(crate) fn dual_settings() -> DualCacheSettings {
     DualCacheSettings {
         default_in_memory_ttl: None,
         default_redis_ttl: None,

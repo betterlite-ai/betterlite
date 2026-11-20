@@ -1,9 +1,14 @@
 #![cfg(test)]
 
+use std::sync::{Arc, Mutex};
+
+use betterlite_cache::backend::memory::local::LocalMemoryOps;
 use betterlite_models::decisions::Json;
 use serde_json::Number;
 
-use super::support::{Logs, membership, stored_membership};
+use super::support::{Logs, dual_settings, key, lock, membership, stored_membership};
+use crate::auth_cache::gateway_cache;
+use crate::membership_load::cache::MembershipCache as _;
 use crate::membership_load::cache::{CachedMembership, CachedPayload, classify_cached};
 
 fn classify(cached: CachedPayload) -> CachedMembership {
@@ -99,4 +104,73 @@ fn negative_result_differs_from_miss() {
     assert_eq!(absent, CachedMembership::Absent);
     assert_eq!(miss, CachedMembership::Miss);
     assert_ne!(absent, miss);
+}
+
+type SharedClock = Arc<Mutex<f64>>;
+
+// The local tier reads its clock on every write and read, so the test controls expiry.
+fn movable_memory(now: &SharedClock) -> Arc<LocalMemoryOps> {
+    let reader = Arc::clone(now);
+    let clock: Arc<dyn Fn() -> f64 + Send + Sync> = Arc::new(move || *lock(&reader));
+    Arc::new(LocalMemoryOps::new(1024_i64, clock).expect("the local memory cache builds"))
+}
+
+#[tokio::test]
+async fn auth_cache_port_round_trips_and_expires_negative() {
+    let now: SharedClock = Arc::new(Mutex::new(1_000.0_f64));
+    let cache = gateway_cache(
+        movable_memory(&now),
+        movable_memory(&now),
+        None,
+        dual_settings(),
+        42.5_f64,
+    );
+    assert_eq!(cache.management_ttl().to_bits(), 42.5_f64.to_bits());
+    let present = key("user-1", "team-1");
+    cache
+        .write_membership(&present, &membership(), None)
+        .await
+        .expect("the membership write");
+    let stored = cache
+        .read(&present, true)
+        .await
+        .expect("the present read")
+        .expect("the stored membership");
+    let CachedMembership::Membership(found) =
+        classify_cached(CachedPayload::from(Some(stored))).expect("the membership classifies")
+    else {
+        panic!("the cached membership classifies as present");
+    };
+    assert_eq!(*found, membership());
+    let absent = key("user-2", "team-1");
+    cache
+        .write_absent(&absent, Some(42.5_f64))
+        .await
+        .expect("the absence write");
+    let negative = cache
+        .read(&absent, true)
+        .await
+        .expect("the negative read")
+        .expect("the stored sentinel");
+    assert_eq!(
+        classify_cached(CachedPayload::from(Some(negative))).expect("the sentinel classifies"),
+        CachedMembership::Absent
+    );
+    *lock(&now) = 1_050.0_f64;
+    assert!(
+        cache
+            .read(&absent, true)
+            .await
+            .expect("the expired read")
+            .is_none(),
+        "the negative entry expires with the management ttl"
+    );
+    assert!(
+        cache
+            .read(&present, true)
+            .await
+            .expect("the live read")
+            .is_some(),
+        "the positive entry keeps the backend default ttl"
+    );
 }
