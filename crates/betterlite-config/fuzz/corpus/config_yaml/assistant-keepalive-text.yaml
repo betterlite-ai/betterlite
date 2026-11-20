@@ -1,0 +1,2 @@
+litellm_settings:
+  sse_keepalive_ping_interval_seconds: "1.5"
