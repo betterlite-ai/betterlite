@@ -8,8 +8,8 @@ use tokio::time::{Instant, sleep};
 
 use crate::bedrock_ingestion::client::AwsRagTransport;
 use crate::bedrock_ingestion::error::BedrockIngestionError;
+use crate::bedrock_provisioning::calls::agent;
 use crate::bedrock_provisioning::calls::error::CallError;
-use crate::bedrock_provisioning::calls::{agent, s3};
 use crate::bedrock_provisioning::provision::BedrockProvisioner;
 use crate::bedrock_provisioning::provision::error::ProvisionError;
 
@@ -54,69 +54,7 @@ where
     }
 }
 
-#[async_trait]
-pub(crate) trait Ingestion {
-    type Failure: StdError + Send + Sync + 'static;
-
-    async fn store(
-        &mut self,
-        request: StoreRequest<'_>,
-    ) -> Result<StoreResult, IngestError<Self::Failure>>;
-}
-
-#[async_trait]
-impl<Transport> Ingestion for BedrockProvisioner<'_, Transport>
-where
-    Transport: AwsRagTransport,
-{
-    type Failure = Transport::Error;
-
-    async fn store(
-        &mut self,
-        request: StoreRequest<'_>,
-    ) -> Result<StoreResult, IngestError<Transport::Error>> {
-        self.ensure_config_initialized().await?;
-        let knowledge_base_id = self.clients.settings.knowledge_base_id.clone();
-        let (Some(content), Some(filename)) = (request.file_content, request.filename) else {
-            return Ok((knowledge_base_id, None));
-        };
-        if content.is_empty() || filename.is_empty() {
-            return Ok((knowledge_base_id, None));
-        }
-        let bucket = self
-            .state
-            .s3_bucket
-            .clone()
-            .ok_or(IngestError::MissingBucket)?;
-        let data_source = self
-            .state
-            .data_source_id
-            .clone()
-            .ok_or(IngestError::MissingDataSource)?;
-        let knowledge_base = knowledge_base_id
-            .clone()
-            .ok_or(IngestError::MissingKnowledgeBase)?;
-        let prefix = self.state.s3_prefix.trim_end_matches('/');
-        let key = format!("{prefix}/{filename}");
-        let region = self.clients.settings.aws_region_name.clone();
-        let put = s3::put_object(&region, &bucket, &key, request.content_type, content);
-        self.send(&put).await?.require_success(put.operation)?;
-        let call = agent::ingestion_job_call(
-            &region,
-            &knowledge_base,
-            &data_source,
-            agent::IngestionJobCall::Start,
-        )?;
-        let response = self.send(&call).await?.require_success(call.operation)?;
-        let job_id = agent::ingestion_job_id(&response.body, agent::START_INGESTION_JOB)?;
-        if self.clients.settings.wait_for_ingestion {
-            wait_for_ingestion(self, &region, &knowledge_base, &data_source, &job_id).await?;
-        }
-        Ok((Some(knowledge_base), Some(key)))
-    }
-}
-
-async fn wait_for_ingestion<Transport>(
+pub(super) async fn wait_for_ingestion<Transport>(
     provisioner: &BedrockProvisioner<'_, Transport>,
     region: &str,
     knowledge_base: &str,

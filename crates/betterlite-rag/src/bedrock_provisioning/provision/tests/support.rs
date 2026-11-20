@@ -33,7 +33,7 @@ pub(crate) struct FixedClock;
 impl Clock for FixedClock {
     fn now(&self) -> SystemTime {
         UNIX_EPOCH
-            .checked_add(Duration::from_days(20_454))
+            .checked_add(Duration::from_hours(490_896))
             .expect("the fixture instant is representable")
     }
 }

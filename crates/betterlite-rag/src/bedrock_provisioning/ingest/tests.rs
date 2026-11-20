@@ -9,7 +9,6 @@ use tokio::sync::Mutex;
 use tokio::time::Instant;
 
 use crate::bedrock_provisioning::ingest::BedrockIngest;
-use crate::bedrock_provisioning::ingest::Ingestion;
 use crate::bedrock_provisioning::provision::tests::support::{
     ScriptedTransport, answer, initialized, new_provisioner, status,
 };

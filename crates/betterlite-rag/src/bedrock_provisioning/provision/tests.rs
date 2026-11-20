@@ -12,7 +12,6 @@ use self::support::{
 use crate::bedrock_provisioning::calls::error::CallError;
 use crate::bedrock_provisioning::provision::BedrockProvisioner;
 use crate::bedrock_provisioning::provision::error::ProvisionError;
-use crate::bedrock_provisioning::provision::resources::ProvisioningSteps;
 
 pub(crate) mod support;
 
