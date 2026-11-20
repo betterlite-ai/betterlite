@@ -1,0 +1,91 @@
+id: B10020
+title: MCP server registry maps and their registry-order reads
+description: >-
+  Key and team grant checks need the MCP servers the proxy knows, in LiteLLM's order, long before the rest of the MCP server manager exists. This task builds only that: the ServerRegistry type with its two server maps and its settings, the SharedRegistry alias, and the five reads that walk the maps in registry order (mcp_server_manager.py L1949-L1951, L2377-L2389, L3342-L3351, L6903-L6909). B817 and B818 call these reads and hand get_registry's records to B10000's resolve_identifiers_to_ids, so they wait on this task and not on B4731. B4731 adds the lookups by id and name, the IP and public-hub rules, permission expansion, the table view, the tool owner lookups and server_resolution.py as more methods on the same type.
+
+
+  Layout. Code goes in betterlite-mcp, module registry::servers: crates/betterlite-mcp/src/registry/servers.rs, with tests in registry/servers/tests.rs. The parent registry.rs is B4731's and exists as an empty file that declares this module. betterlite-mcp already has indexmap 2.14.2 and tokio's sync feature (through the workspace), so its Cargo.toml doesn't change.
+
+
+  The type. ServerRegistry holds config_servers: IndexMap<String, MCPServer> (LiteLLM's config_mcp_servers, the servers from config.yaml) and db_servers: IndexMap<String, MCPServer> (LiteLLM's registry dict, the servers loaded from LiteLLM_MCPServerTable), both keyed by server_id and both pub(crate), so only the loaders inside this crate change them (B6764 for the config file, B6765 for the database). It also holds settings: RegistrySettings, a plain struct with public fields public_mcp_servers: Vec<String>, public_hub_strict: bool and internal_ip_ranges: Option<Vec<String>>. This task only stores the settings; B4731's IP and public-hub rules read them and B9997 fills them from config. `ServerRegistry::new(settings, config_servers: Vec<MCPServer>, db_servers: Vec<MCPServer>)` builds one and keys each map by the record's server_id, the way LiteLLM's loaders do (L2113, L2115); a later record with an id already present replaces the value and keeps the first position, as a dict assignment does. So code in another crate (the boot code, the grant tests in betterlite-server) can make a registry with records, and one with no records is what core routes hold until B9997 loads servers. MCPServer is B6590's betterlite_mcp::server_record::MCPServer. The registry has no global state and holds no lock of its own. servers.rs also defines `pub type SharedRegistry = Arc<tokio::sync::RwLock<ServerRegistry>>;` next to the type, so every later user shares one alias; the caller builds the Arc and the lock.
+
+
+  The reads, each a method on ServerRegistry (LiteLLM name in backticks).
+
+  1. `get_registry`, returning Vec<&MCPServer>: the config servers first in their order, then the database servers. LiteLLM computes config_mcp_servers | registry, a dict union, so a key present in both keeps the config key's position and takes the database record, and a key only the database has follows in database order. The Vec goes straight into B10000's `registry: &[&MCPServer]` argument.
+
+  2. `get_all_mcp_server_ids`: the set of server_id values of get_registry's records, as a BTreeSet<String>.
+
+  3. `get_allow_all_keys_server_ids`: the server_id of every get_registry record whose allow_all_keys is true, in registry order, as a Vec<String>.
+
+  4. `is_config_declared_server(server_id)`: true when config_servers has that key, whatever db_servers holds for it.
+
+  5. `get_mcp_servers_from_ids(server_ids)`: the get_registry records whose server_id is in the given list, in registry order and not in the order of the list. An id the registry doesn't hold is skipped, and an id given twice still yields its record once.
+
+
+  Tests in registry/servers/tests.rs, names starting with `registry_`. Build synthetic records from JSON the way server_record's tests do (server ids like test-config-a and test-db-a). They cover: the constructor keying records by server_id, a repeated id keeping its first position with the later record; config records before database records; a shared id at the config position with the database record; an empty registry giving empty answers; the id set and the allow-all list in registry order; is_config_declared_server true for a config id that the database also holds and false for a database-only id; get_mcp_servers_from_ids in registry order for ids given in another order, with an unknown id and a repeated id. No route reaches these reads yet and they only walk two maps, so, as in B4731, there are no oracle cases; the native tests pin the order.
+
+scope:
+  paths:
+    - crates/betterlite-mcp/src/registry/servers.rs
+    - crates/betterlite-mcp/src/registry/servers/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L1949-L1951
+    why: The two maps of MCPServerManager, registry (database servers) and config_mcp_servers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2377-L2389
+    why: get_registry as a dict union and is_config_declared_server.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3342-L3351
+    why: get_all_mcp_server_ids and get_allow_all_keys_server_ids.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6903-L6909
+    why: get_mcp_servers_from_ids walks the registry, not the id list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2109-L2115
+    why: Both maps are keyed by server_id, so the dict keys and the server_id values agree.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L466-L481
+    why: B817's two callers, the allow-all ids and the registry keys.
+
+dod:
+  - text: get_registry lists config servers first and database servers after, and a shared id keeps the config position with the database record.
+    proof: [registry-tests]
+  - text: The id set, the allow-all list, the config-declared test and the by-ids read follow registry order as described, with an unknown or repeated id handled as described.
+    proof: [registry-tests]
+  - text: ServerRegistry keeps its two server maps pub(crate) behind a public constructor that keys records by server_id, holds no lock, and servers.rs defines the SharedRegistry alias.
+    proof: [registry-tests, registry-shape]
+
+checks:
+  optional: []
+  commands:
+    - id: registry-tests
+      why: the registry order or one of the registry-order reads is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^registry::servers::tests::registry_/)'
+    - id: registry-shape
+      why: the maps are public, or the shared alias or the constructor is missing
+      run: >-
+        grep -q 'pub(crate) config_servers' crates/betterlite-mcp/src/registry/servers.rs &&
+        grep -q 'pub(crate) db_servers' crates/betterlite-mcp/src/registry/servers.rs &&
+        grep -q 'pub type SharedRegistry' crates/betterlite-mcp/src/registry/servers.rs &&
+        grep -qE 'pub (const )?fn new\(' crates/betterlite-mcp/src/registry/servers.rs
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - "IP accessibility, lookups by id and name, the filtered registry, the public-hub rules, permission and tool permission expansion, the table view, the tool owner lookups and server_resolution.py: B4731, as more methods on this type."
+  - "Filling the maps: B6764 (load_servers_from_config) and B6765 (reload_servers_from_database, add_server, update_server, remove_server). Filling RegistrySettings from config and building the SharedRegistry at boot: B9997."
+  - "The MCPServer record: B6590."
+  - "_get_allow_all_keys_server_ids and _get_all_mcp_server_ids in object_permission_utils.py: B817, over these reads."
+  - "The rest of mcp_server_manager.py (allowed-server unions, OAuth discovery, health checks, tool calls): B6591, B6592, B6760 to B6765, B8460 to B8465 and B8970."
+
+pitfalls:
+  - "get_registry is a dict union: a database record replaces a config record of the same id but keeps the config key's position, so don't append it after the config servers."
+  - "get_mcp_servers_from_ids returns records in registry order, not in the order of the ids given."
+  - "is_config_declared_server reads only config_servers; a database row for the same id doesn't make it false, since LiteLLM checks for the row before it asks."
+  - "LiteLLM's _get_all_mcp_server_ids takes the dict keys and get_all_mcp_server_ids takes each record's server_id; both maps are keyed by server_id, so one read of server_id values serves both, and nothing may insert a record under another key."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

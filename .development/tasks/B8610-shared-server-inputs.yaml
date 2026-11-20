@@ -69,7 +69,7 @@ description: >-
   betterlite-server type): the one reload state the lifespan timer checks write and B8586's routes read.
   `deployment_sync: Arc<dyn DeploymentSyncPort>` (B8611's port; B8613 implements it over B8381's DeploymentSync, which
   lives in crates/betterlite) for the add_deployment call of B8594 and B8596, and `auto_router_catalog: Arc<dyn
-  AutoRouterCatalog>` (B379's trait, backed by the same DeploymentSync) for B8676. `config_overlay: Arc<dyn
+  AutoRouterCatalog>` (B10021's trait, backed by the same DeploymentSync) for B379's availability route. `config_overlay: Arc<dyn
   ConfigOverlayPort>` (B8379's port in betterlite-server's config_overlay_port; B8379's OverlayPortAdapter implements it
   in crates/betterlite and B8613 makes the one value) for B8595's pass-through re-serve and the config reads of B1656,
   B1657 and the other settings routes. `gateway_requests:

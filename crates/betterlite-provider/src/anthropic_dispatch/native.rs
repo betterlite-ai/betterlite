@@ -7,7 +7,7 @@ pub mod config;
 pub mod legacy;
 mod messages;
 pub mod preparation;
-mod tests;
+pub(crate) mod tests;
 
 use betterlite_anthropic::anthropic_http_stream::call::StreamLogger;
 use betterlite_anthropic::chat_call::ChatOutcome;

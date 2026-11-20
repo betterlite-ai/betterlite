@@ -4,3 +4,4 @@ pub mod a2a_ports;
 pub mod api;
 pub mod auth_ports;
 pub mod services;
+pub mod skills;
