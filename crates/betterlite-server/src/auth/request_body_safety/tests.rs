@@ -1,10 +1,8 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::task::{Context, Poll};
 
 use axum::Router;
 use axum::body::{Body, Bytes, to_bytes};
@@ -14,6 +12,7 @@ use axum::routing::post;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
 use betterlite_core::api::api_boundaries::ApiLimits;
+use futures_util::stream::once;
 use secrecy::SecretString;
 use tower::ServiceExt as _;
 
@@ -26,6 +25,7 @@ use crate::routes::tests::state_for;
 
 // a recognized route, so the auth chain runs before the marking handler
 const MODEL_ROUTE: &str = "/v1/files";
+const MASTER_KEY: &str = "secret-master-key";
 const GRANT_SETTINGS: &str = "model_list:\n  - model_name: grant-model\n    litellm_params:\n      model: openai/gpt-4o\n      configurable_clientside_auth_params: [aws_role_name]\n";
 
 fn config(extra: &str) -> Config {
@@ -33,7 +33,7 @@ fn config(extra: &str) -> Config {
         lookup: BTreeMap::<String, String>::new(),
     }
     .load(&format!(
-        "general_settings:\n  master_key: secret-master-key\n{extra}"
+        "general_settings:\n  master_key: {MASTER_KEY}\n{extra}"
     ))
     .expect("the test config loads")
 }
@@ -46,20 +46,33 @@ fn master_context(master_key: &SecretString) -> AuthContext {
     context
 }
 
+fn safety_input(
+    settings: &Config,
+    content_type: &'static str,
+    body: &'static [u8],
+) -> RequestBodySafetyStageInput {
+    RequestBodySafetyStageInput {
+        context: master_context(&SecretString::from(MASTER_KEY.to_owned())),
+        content_type: Some(content_type.to_owned()),
+        body: Bytes::from_static(body),
+        slot: Some(state_for(settings).request_body_safety.clone()),
+    }
+}
+
+fn safety_stage(settings: &Config, content_type: &'static str, body: &'static [u8]) -> StageInput {
+    StageInput::RequestBodySafety(Box::new(safety_input(settings, content_type, body)))
+}
+
 #[test]
 fn stage_is_registered() {
     assert!(INSTALLED_STAGES.contains(&AuthBackend::RequestBodySafety));
 
-    let master_key = SecretString::from("secret-master-key".to_owned());
-    let stage = RequestBodySafetyStageInput {
-        context: master_context(&master_key),
-        content_type: Some("application/json".to_owned()),
-        body: Bytes::from_static(
-            br#"{"model":"gpt-4o","metadata":{"langfuse_host":"https://evil.example"}}"#,
-        ),
-        slot: Some(state_for(&config("")).request_body_safety.clone()),
-    };
-    let input = StageInput::RequestBodySafety(Box::new(stage));
+    let master_key = SecretString::from(MASTER_KEY.to_owned());
+    let input = safety_stage(
+        &config(""),
+        "application/json",
+        br#"{"model":"gpt-4o","metadata":{"langfuse_host":"https://evil.example"}}"#,
+    );
     let Err(StageFailure::RequestBodySafety(exception)) =
         dispatch(AuthBackend::RequestBodySafety, &input, &master_key)
     else {
@@ -76,21 +89,19 @@ fn stage_is_registered() {
         exception.message
     );
     assert!(!exception.message.contains("evil.example"));
+}
 
+#[test]
+fn non_text_model_cannot_use_the_deployment_grant() {
     // a non-text model answers the empty group name, so a deployment grant cannot admit the field
-    let granted = RequestBodySafetyStageInput {
-        context: master_context(&master_key),
-        content_type: Some("application/json".to_owned()),
-        body: Bytes::from_static(br#"{"model":["grant-model"],"aws_role_name":"admin"}"#),
-        slot: Some(
-            state_for(&config(GRANT_SETTINGS))
-                .request_body_safety
-                .clone(),
-        ),
-    };
-    let granted_input = StageInput::RequestBodySafety(Box::new(granted));
+    let input = safety_stage(
+        &config(GRANT_SETTINGS),
+        "application/json",
+        br#"{"model":["grant-model"],"aws_role_name":"admin"}"#,
+    );
+    let master_key = SecretString::from(MASTER_KEY.to_owned());
     let Err(StageFailure::RequestBodySafety(non_text)) =
-        dispatch(AuthBackend::RequestBodySafety, &granted_input, &master_key)
+        dispatch(AuthBackend::RequestBodySafety, &input, &master_key)
     else {
         panic!("a non-text model cannot use the deployment grant");
     };
@@ -101,35 +112,36 @@ fn stage_is_registered() {
         "{}",
         non_text.message
     );
+}
 
+#[test]
+fn foreign_stage_input_is_an_auth_failure() {
+    let master_key = SecretString::from(MASTER_KEY.to_owned());
     let wrong_stage = StageInput::MasterKey(Some(master_key.clone()));
     assert!(matches!(
         dispatch(AuthBackend::RequestBodySafety, &wrong_stage, &master_key),
         Err(StageFailure::Authentication(_))
     ));
+}
 
+#[test]
+fn unscannable_and_binary_bodies() {
     // a body with nothing to scan still forwards the authenticated context
-    let clean = RequestBodySafetyStageInput {
-        context: master_context(&master_key),
-        content_type: Some("application/json".to_owned()),
-        body: Bytes::from_static(b"not json"),
-        slot: Some(state_for(&config("")).request_body_safety.clone()),
-    };
+    let clean = safety_input(&config(""), "application/json", b"not json");
     let Ok(forwarded) = run_stage(&clean) else {
         panic!("an unscannable body passes");
     };
     assert_eq!(forwarded.principal.subject, "master_key");
 
     // JSON under a binary content type still parses, like _parse_binary_body
-    let binary = RequestBodySafetyStageInput {
-        context: master_context(&master_key),
-        content_type: Some("application/x-protobuf".to_owned()),
-        body: Bytes::from_static(br#"{"api_base":"https://evil.example"}"#),
-        slot: Some(state_for(&config("")).request_body_safety.clone()),
-    };
-    let binary_input = StageInput::RequestBodySafety(Box::new(binary));
+    let binary = safety_stage(
+        &config(""),
+        "application/x-protobuf",
+        br#"{"api_base":"https://evil.example"}"#,
+    );
+    let master_key = SecretString::from(MASTER_KEY.to_owned());
     let Err(StageFailure::RequestBodySafety(binary_error)) =
-        dispatch(AuthBackend::RequestBodySafety, &binary_input, &master_key)
+        dispatch(AuthBackend::RequestBodySafety, &binary, &master_key)
     else {
         panic!("a JSON protobuf body is still scanned");
     };
@@ -161,7 +173,7 @@ fn request(content_type: &'static str, body: &str) -> Request<Body> {
     Request::builder()
         .method("POST")
         .uri(MODEL_ROUTE)
-        .header(header::AUTHORIZATION, "Bearer secret-master-key")
+        .header(header::AUTHORIZATION, format!("Bearer {MASTER_KEY}"))
         .header(header::CONTENT_TYPE, content_type)
         .body(Body::from(body.to_owned()))
         .expect("the request builds")
@@ -186,18 +198,10 @@ async fn run_request_with(
 }
 
 // A body whose stream fails on the first frame, so the middleware's body read cannot finish.
-struct BrokenBody;
-
-impl http_body::Body for BrokenBody {
-    type Data = Bytes;
-    type Error = std::io::Error;
-
-    fn poll_frame(
-        self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<http_body::Frame<Bytes>, Self::Error>>> {
-        Poll::Ready(Some(Err(std::io::Error::other("the body stream fails"))))
-    }
+fn broken_body() -> Body {
+    Body::from_stream(once(async {
+        Err::<Bytes, std::io::Error>(std::io::Error::other("the body stream fails"))
+    }))
 }
 
 #[tokio::test]
@@ -208,7 +212,7 @@ async fn unreadable_bodies_are_buffered_after_authentication() {
         .uri(MODEL_ROUTE)
         .header(header::AUTHORIZATION, "Bearer wrong-key")
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::new(BrokenBody))
+        .body(broken_body())
         .expect("the request builds");
     let reached = Arc::new(AtomicBool::new(false));
     let response = application(&config(""), &reached)
@@ -222,9 +226,9 @@ async fn unreadable_bodies_are_buffered_after_authentication() {
     let broken = Request::builder()
         .method("POST")
         .uri(MODEL_ROUTE)
-        .header(header::AUTHORIZATION, "Bearer secret-master-key")
+        .header(header::AUTHORIZATION, format!("Bearer {MASTER_KEY}"))
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::new(BrokenBody))
+        .body(broken_body())
         .expect("the request builds");
     let reached = Arc::new(AtomicBool::new(false));
     let response = application(&config(""), &reached)
@@ -244,7 +248,7 @@ async fn unreadable_bodies_are_buffered_after_authentication() {
 async fn oversized_bodies_are_refused_before_the_handler() {
     // with no configured size the auth read keeps the default JSON body cap, so one byte over it is a 413
     let default_cap = ApiLimits::default().max_json_bytes;
-    let oversized = "x".repeat(default_cap + 1);
+    let oversized = "x".repeat(default_cap.saturating_add(1));
     let (status, body, reached) =
         run_request_with(&config(""), "application/json", &oversized).await;
     assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
@@ -267,7 +271,7 @@ async fn oversized_bodies_are_refused_before_the_handler() {
     assert_eq!(at_status, StatusCode::OK);
     assert!(at_reached);
 
-    let over = "x".repeat(1_048_576 + 1);
+    let over = "x".repeat(1_048_577);
     let (over_status, over_body, over_reached) = run_request_with(
         &config("  max_request_size_mb: 1\n"),
         "application/json",
@@ -307,18 +311,24 @@ async fn failure_stops_downstream() {
     );
     assert!(!body.contains("evil.example"), "{body}");
     assert!(!reached);
+}
 
+#[tokio::test]
+async fn proxy_wide_opt_in_still_cannot_retarget() {
     // the proxy-wide credential opt-in still cannot retarget a URL-valued field
-    let (opted_status, opted_body, opted_reached) = run_request_with(
+    let (status, body, reached) = run_request_with(
         &config("  allow_client_side_credentials: true\n"),
         "application/json",
         r#"{"model":"gpt-4o","api_base":"https://evil.example"}"#,
     )
     .await;
-    assert_eq!(opted_status, StatusCode::UNAUTHORIZED);
-    assert!(!opted_body.contains("evil.example"), "{opted_body}");
-    assert!(!opted_reached);
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert!(!body.contains("evil.example"), "{body}");
+    assert!(!reached);
+}
 
+#[tokio::test]
+async fn deployment_grants_are_per_model() {
     // the deployment grant admits only its own field, and no other deployment's model inherits it
     let (granted_status, granted_body, granted_reached) = run_request_with(
         &config(GRANT_SETTINGS),
@@ -348,14 +358,16 @@ async fn failure_stops_downstream() {
     .await;
     assert_eq!(paired_status, StatusCode::UNAUTHORIZED);
     assert!(!paired_reached);
+}
 
+#[tokio::test]
+async fn clean_request_body_round_trips() {
     // a clean request reaches the handler with its body restored byte for byte
     let clean = r#"{"model":"gpt-4o","messages":[]}"#;
-    let (clean_status, clean_body, clean_reached) =
-        run_request_with(&config(""), "application/json", clean).await;
-    assert_eq!(clean_status, StatusCode::OK);
-    assert!(clean_reached);
-    assert_eq!(clean_body, clean);
+    let (status, body, reached) = run_request_with(&config(""), "application/json", clean).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(reached);
+    assert_eq!(body, clean);
 }
 
 #[tokio::test]
@@ -375,6 +387,17 @@ async fn form_fields_are_scanned() {
     assert!(!body.contains("evil.example"), "{body}");
     assert!(!reached);
 
+    // a form post with no banned field forwards with its body intact
+    let clean = "model=gpt-4o&messages=%5B%5D";
+    let (clean_status, clean_body, clean_reached) =
+        run_request_with(&config(""), "application/x-www-form-urlencoded", clean).await;
+    assert_eq!(clean_status, StatusCode::OK);
+    assert!(clean_reached);
+    assert_eq!(clean_body, clean);
+}
+
+#[tokio::test]
+async fn multipart_uploads_are_scanned_by_key() {
     // an upload part under a bracket-form metadata key is scanned by its top-level name
     let bracket = "--safety-boundary\r\nContent-Disposition: form-data; name=\"metadata[langfuse_host]\"; filename=\"host.txt\"\r\nContent-Type: text/plain\r\n\r\nhttps://evil.example\r\n--safety-boundary--\r\n";
     let (bracket_status, bracket_body, bracket_reached) = run_request_with(
@@ -405,15 +428,10 @@ async fn form_fields_are_scanned() {
     );
     assert!(!upload_body.contains("evil.example"), "{upload_body}");
     assert!(!upload_reached);
+}
 
-    // a form post with no banned field forwards with its body intact
-    let clean = "model=gpt-4o&messages=%5B%5D";
-    let (clean_status, clean_body, clean_reached) =
-        run_request_with(&config(""), "application/x-www-form-urlencoded", clean).await;
-    assert_eq!(clean_status, StatusCode::OK);
-    assert!(clean_reached);
-    assert_eq!(clean_body, clean);
-
+#[tokio::test]
+async fn undecodable_forms_are_left_to_the_route() {
     // a form body the decoder cannot read is not scanned here, so the route's own decoder reports it
     let (broken_status, _broken_body, broken_reached) = run_request_with(
         &config(""),
