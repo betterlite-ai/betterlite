@@ -10,7 +10,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 use tokio::sync::Notify;
 use tracing::Level;
 use tracing::subscriber::{DefaultGuard, set_default};
@@ -152,22 +152,22 @@ pub(crate) struct TransportFailure;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Captured {
-    requests: Arc<Mutex<Vec<Recorded>>>,
+    recorded: Arc<Mutex<Vec<Recorded>>>,
     answers: Arc<Mutex<VecDeque<u16>>>,
     failing: Arc<AtomicBool>,
     holding: Arc<AtomicBool>,
-    hold: Arc<Notify>,
+    gate: Arc<Notify>,
     fallback: u16,
 }
 
 impl Default for Captured {
     fn default() -> Self {
         Self {
-            requests: Arc::default(),
+            recorded: Arc::default(),
             answers: Arc::default(),
             failing: Arc::default(),
             holding: Arc::default(),
-            hold: Arc::default(),
+            gate: Arc::default(),
             fallback: 200,
         }
     }
@@ -194,11 +194,11 @@ impl Captured {
     }
 
     pub(crate) fn release(&self) {
-        self.hold.notify_one();
+        self.gate.notify_one();
     }
 
     pub(crate) fn requests(&self) -> Vec<Recorded> {
-        self.requests
+        self.recorded
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
@@ -229,14 +229,14 @@ impl Delivery for Captured {
             body,
         };
         let holding = self.holding.load(Ordering::SeqCst);
-        let hold = Arc::clone(&self.hold);
-        let requests = Arc::clone(&self.requests);
+        let gate = Arc::clone(&self.gate);
+        let requests = Arc::clone(&self.recorded);
         let answers = Arc::clone(&self.answers);
         let failing = self.failing.load(Ordering::SeqCst);
         let fallback = self.fallback;
         async move {
             if holding {
-                hold.notified().await;
+                gate.notified().await;
             }
             requests
                 .lock()

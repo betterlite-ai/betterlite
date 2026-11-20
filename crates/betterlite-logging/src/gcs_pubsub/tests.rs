@@ -8,6 +8,7 @@ use std::time::Duration;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::task::yield_now;
 use tokio::time::{sleep, timeout};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
@@ -382,7 +383,7 @@ async fn an_event_enqueued_during_a_flush_stays_queued() {
     let logger = fixture.logger;
     let flush = logger.send_batch();
     let enqueue = async {
-        tokio::task::yield_now().await;
+        yield_now().await;
         logger
             .async_log_success_event(Arc::new(event()))
             .await
@@ -735,7 +736,7 @@ async fn the_flush_loop_publishes_on_its_interval() {
     let logger = Arc::new(fixture.logger);
     let tracker = TaskTracker::new();
     let shutdown = CancellationToken::new();
-    spawn_flush_loop(&logger, tracker.clone(), shutdown.clone());
+    spawn_flush_loop(&logger, &tracker, shutdown.clone());
     logger
         .async_log_success_event(Arc::new(event()))
         .await
