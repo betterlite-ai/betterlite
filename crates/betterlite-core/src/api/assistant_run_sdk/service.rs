@@ -134,6 +134,7 @@ where
 
     // arun_thread's except block: provider and wrapper failures are mapped, a litellm error passes through
     fn map_arun_error(&self, provider: &str, error: AssistantRunError) -> AssistantRunError {
+        let text = error.to_string();
         match error {
             AssistantRunError::Dispatch(dispatch) => {
                 AssistantRunError::Mapped(map_failure(provider, &dispatch, self.redactor))
@@ -141,13 +142,9 @@ where
             AssistantRunError::Timeout(_)
             | AssistantRunError::InvalidTimeout { .. }
             | AssistantRunError::InvalidTimeoutText { .. }
-            | AssistantRunError::InvalidExtraBody => AssistantRunError::Mapped(failed(
-                provider,
-                error.to_string(),
-                None,
-                None,
-                self.redactor,
-            )),
+            | AssistantRunError::InvalidExtraBody => {
+                AssistantRunError::Mapped(failed(provider, text, None, None, self.redactor))
+            }
             mapped @ (AssistantRunError::Unsupported { .. }
             | AssistantRunError::Mapped(_)
             | AssistantRunError::DuplicateStream) => mapped,

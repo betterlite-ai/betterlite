@@ -372,6 +372,22 @@ async fn a_supplied_azure_client_reaches_the_request() {
 }
 
 #[tokio::test]
+async fn azure_string_timeout_reaches_litellm_params() {
+    let fixture = Fixture::new();
+    let operations = CaptureRuns::default();
+    let sdk = fixture.sdk(operations);
+    let mut params = RunParams::default();
+    params.timeout = Some(RunTimeout::Plain(TimeoutValue::String(String::from(
+        " 2.5 ",
+    ))));
+    sdk.run_thread(azure_call(params)).await.unwrap();
+    match sdk.operations.targets().remove(0) {
+        CapturedTarget::Azure { params, .. } => assert_eq!(params.timeout, Some(2.5_f64)),
+        CapturedTarget::OpenAi { .. } => panic!("the azure provider built an openai target"),
+    }
+}
+
+#[tokio::test]
 async fn litellm_params_reach_only_the_azure_branch() {
     let fixture = Fixture::new();
     let operations = CaptureRuns::default();

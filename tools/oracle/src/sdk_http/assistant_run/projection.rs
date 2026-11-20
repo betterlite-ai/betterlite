@@ -2,11 +2,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use betterlite_azure::assistants::error::AssistantsRunError;
-use betterlite_azure::azure_default_chain::grant::{ClientSecretRecord, UsernamePasswordRecord};
-use betterlite_azure::credentials::source::{
-    CallableTokenProvider, CredentialSources, SourceFailure,
-};
-use betterlite_azure::oidc_exchange::OidcExchangeInput;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_core::api::assistant_run_sdk::error::{
     AssistantRunError, RunDispatchError as _, RunFailure,
@@ -17,7 +12,6 @@ use betterlite_openai::thread_runs::error::ThreadRunsError;
 use betterlite_openai::thread_runs::records::{RunEvent, RunReply};
 use betterlite_openai::thread_runs::stream::{RunEventHandler, RunStream};
 use http::HeaderMap;
-use secrecy::SecretString;
 
 use super::super::native::failure as sdk_failure;
 use super::super::result::{Failure, Nullable};
@@ -190,50 +184,5 @@ impl RunEventHandler for RecordingHandler {
 
     fn on_end(&self) {
         self.ended.store(true, Ordering::Release);
-    }
-}
-
-// B543 owns the Azure credential sources; the run cases authenticate through keys and tokens alone
-pub(super) struct NoSources;
-
-fn unavailable(kind: &str) -> SourceFailure {
-    SourceFailure {
-        class: String::from("ValueError"),
-        status: None,
-        message: format!("no {kind} source is configured"),
-    }
-}
-
-impl CredentialSources for NoSources {
-    fn client_secret<'source>(
-        &'source self,
-        _record: &ClientSecretRecord,
-    ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        Err(unavailable("client secret"))
-    }
-
-    fn username_password<'source>(
-        &'source self,
-        _record: &UsernamePasswordRecord,
-    ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        Err(unavailable("username and password"))
-    }
-
-    fn sdk_refresh<'source>(
-        &'source self,
-        _scope: &str,
-    ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        Err(unavailable("SDK refresh"))
-    }
-
-    fn default_credential<'source>(
-        &'source self,
-        _scope: &'source str,
-    ) -> Option<Arc<dyn CallableTokenProvider + 'source>> {
-        None
-    }
-
-    fn oidc(&self, _input: &OidcExchangeInput) -> Result<SecretString, SourceFailure> {
-        Err(unavailable("OIDC"))
     }
 }

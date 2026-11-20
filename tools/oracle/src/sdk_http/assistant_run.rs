@@ -8,6 +8,7 @@ use betterlite_core::api::assistant_run_sdk::call::{RunFlag, RunParams, RunThrea
 use betterlite_core::api::assistant_run_sdk::provider::ProviderRuns;
 use betterlite_core::api::assistant_run_sdk::service::{AssistantRunSdk, RunOutcome};
 use betterlite_core::api::resource_sdk_settings::ResourceSdkSettings;
+use betterlite_foundry::chat::sources::NoSources;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_openai::thread_runs::stream::RunEventHandler;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
@@ -22,7 +23,7 @@ use super::vector_query_embedding::outbound_client;
 
 mod projection;
 
-use projection::{NoSources, RecordingHandler, failure_outcome, run_outcome, stream_outcome};
+use projection::{RecordingHandler, failure_outcome, run_outcome, stream_outcome};
 
 type Sdk<'data> = AssistantRunSdk<'data, ProviderRuns<ProxiedClient>>;
 

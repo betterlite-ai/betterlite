@@ -722,6 +722,19 @@ async fn arun_status_failure_maps_through_b011() {
 }
 
 #[tokio::test]
+async fn arun_thread_maps_a_wrapper_failure_as_api_connection() {
+    let fixture = Fixture::new();
+    let operations = CaptureRuns::default();
+    let sdk = fixture.sdk(operations);
+    let mut input = call("openai");
+    input.params.timeout = Some(RunTimeout::Plain(TimeoutValue::String(String::from("x"))));
+    let error = sdk.arun_thread(input).await.err().unwrap();
+    let mapped = failure(&error);
+    assert_eq!(mapped.class_name, "APIConnectionError");
+    assert!(matches!(mapped.class, ErrorClass::ApiConnection(_)));
+}
+
+#[tokio::test]
 async fn a_server_error_body_reaches_the_mapped_error() {
     let (recorder, fixture) = openai_recorder();
     recorder.queue(500, SERVER_ERROR);

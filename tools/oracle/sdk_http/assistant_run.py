@@ -7,8 +7,7 @@ from litellm.exceptions import BadRequestError
 from openai.lib.streaming import AssistantStreamManager, AsyncAssistantStreamManager
 from openai.types.beta import AssistantStreamEvent
 from openai.types.beta.threads import Run
-from pydantic import BaseModel, ConfigDict
-from pydantic import JsonValue as Json
+from pydantic import BaseModel, ConfigDict, JsonValue as Json
 from typing_extensions import override
 
 from openai_chat import Failure, optional_text, status_code
@@ -127,9 +126,11 @@ def run(call: Call, api_base: str) -> Outcome:
             case "run_stream":
                 return run_stream_call(call, options, handler)
             case "arun_stream":
-                return arun_stream_call(options, handler)
+                manager = runs.arun_thread_stream(**options, event_handler=handler)
+                return async_manager(manager, handler)
     except (TypeError, ValueError) as error:
-        return local_failure(error)
+        failure = Failure(cls=error.__class__.__name__, status=0, message=str(error))
+        return Outcome(run=None, stream=None, failure=failure, response=None)
     except openai.APIError as error:
         return api_failure(call, error)
 
@@ -163,11 +164,6 @@ def run_stream_call(call: Call, options: dict[str, Json], handler: Recorder | No
     return sync_manager(sync, handler)
 
 
-def arun_stream_call(options: dict[str, Json], handler: Recorder | None) -> Outcome:
-    manager = runs.arun_thread_stream(**options, event_handler=handler)
-    return async_manager(manager, handler)
-
-
 def sync_manager(
     manager: AssistantStreamManager[openai.AssistantEventHandler],
     handler: Recorder | None,
@@ -198,12 +194,10 @@ def stream_outcome(events: list[str], handler: Recorder | None) -> Outcome:
 
 
 def run_outcome(response: Run) -> Outcome:
-    tool_calls = None
-    if response.required_action is not None:
-        tool_calls = len(response.required_action.submit_tool_outputs.tool_calls)
-    last_error: dict[str, str | None] | None = None
-    if response.last_error is not None:
-        last_error = {"code": response.last_error.code, "message": response.last_error.message}
+    required = response.required_action
+    tool_calls = None if required is None else len(required.submit_tool_outputs.tool_calls)
+    reported = response.last_error
+    last_error = None if reported is None else {"code": reported.code, "message": reported.message}
     view = RunView(
         id=response.id,
         status=response.status,
@@ -213,7 +207,7 @@ def run_outcome(response: Run) -> Outcome:
     return Outcome(run=view, stream=None, failure=None, response=None)
 
 
-def failure_view(error: openai.APIError) -> Failure:
+def api_failure(call: Call, error: openai.APIError) -> Outcome:
     fields: dict[str, str | int | None] = {
         "cls": error.__class__.__name__,
         "status": status_code(error),
@@ -221,32 +215,13 @@ def failure_view(error: openai.APIError) -> Failure:
     }
     for name in ("type", "param", "code"):
         fields.update(optional_text(error, name))
-    return Failure.model_validate(fields)
-
-
-def status_failure(error: openai.APIError) -> Outcome:
-    failure = failure_view(error)
+    failure = Failure.model_validate(fields)
+    if call.provider not in ("openai", "azure"):
+        match error:
+            case BadRequestError():
+                response = ResponseView(
+                    content=error.response.content.decode(),
+                    method=error.response.request.method,
+                )
+                return Outcome(run=None, stream=None, failure=failure, response=response)
     return Outcome(run=None, stream=None, failure=failure, response=None)
-
-
-def unsupported_failure(error: BadRequestError) -> Outcome:
-    failure = failure_view(error)
-    response = ResponseView(
-        content=error.response.content.decode(),
-        method=error.response.request.method,
-    )
-    return Outcome(run=None, stream=None, failure=failure, response=response)
-
-
-def local_failure(error: TypeError | ValueError) -> Outcome:
-    failure = Failure(cls=error.__class__.__name__, status=0, message=str(error))
-    return Outcome(run=None, stream=None, failure=failure, response=None)
-
-
-def api_failure(call: Call, error: openai.APIError) -> Outcome:
-    if call.provider in ("openai", "azure"):
-        return status_failure(error)
-    match error:
-        case BadRequestError():
-            return unsupported_failure(error)
-    return status_failure(error)
