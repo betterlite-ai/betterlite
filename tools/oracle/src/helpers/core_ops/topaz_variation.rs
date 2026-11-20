@@ -1,8 +1,12 @@
 use std::collections::BTreeMap;
+use std::time::Duration;
 
+use betterlite_core::api::topaz::MODELS;
+use betterlite_core::api::topaz::params::{SUPPORTED_OPENAI_PARAMS, get_complete_url};
+use betterlite_core::api::topaz::reply::{TopazTiming, transform_response};
 use betterlite_openai::api::image_contracts::records::{ImageHeaders, ImageParams};
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
@@ -111,9 +115,9 @@ impl Helper for Op {
 
 fn run_call(call: &Call) -> Value {
     match call {
-        Call::Models => answers::models_answer(),
-        Call::BaseModel { model } => answers::base_model_answer(model),
-        Call::Supported => answers::supported_answer(),
+        Call::Models => json!(MODELS),
+        Call::BaseModel { model } => json!(model),
+        Call::Supported => json!(SUPPORTED_OPENAI_PARAMS),
         Call::Credential {
             field,
             value,
@@ -123,7 +127,7 @@ fn run_call(call: &Call) -> Value {
             api_key,
             headers: _headers,
         } => answers::environment_answer(api_key.as_deref()),
-        Call::Url { api_base } => answers::url_answer(api_base.as_deref()),
+        Call::Url { api_base } => json!({"url": get_complete_url(api_base.as_deref())}),
         Call::Map {
             non_default_params,
             optional_params,
@@ -133,15 +137,23 @@ fn run_call(call: &Call) -> Value {
             file,
             optional_params,
         } => answers::upload_answer(file, optional_params.as_ref()),
+        // the sync entry point reads the raw response's elapsed time
         Call::ResponseSync {
             body,
             elapsed_ms,
             created,
-        } => answers::sync_reply_answer(body, *elapsed_ms, *created),
+        } => {
+            let timing = TopazTiming::Elapsed(Duration::from_millis(*elapsed_ms));
+            answers::reply_answer(&transform_response(body, timing, *created), "elapsed")
+        }
+        // the async entry point reads the call's recorded response time instead
         Call::ResponseAsync {
             body,
             response_ms,
             created,
-        } => answers::async_reply_answer(body, *response_ms, *created),
+        } => {
+            let timing = TopazTiming::Measured(*response_ms);
+            answers::reply_answer(&transform_response(body, timing, *created), "measured")
+        }
     }
 }

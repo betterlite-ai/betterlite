@@ -1,38 +1,19 @@
 use std::collections::BTreeMap;
-use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use betterlite_config::types::RoutingStrategy;
-use betterlite_core::api::topaz::params::{
-    SUPPORTED_OPENAI_PARAMS, get_complete_url, map_openai_params,
-};
-use betterlite_core::api::topaz::reply::{TopazReply, TopazTiming, transform_response};
+use betterlite_core::api::topaz::params::map_openai_params;
+use betterlite_core::api::topaz::reply::TopazReply;
 use betterlite_core::api::topaz::upload::{
     PreparedFile, TopazFile, prepare_file_tuple, transform_request,
 };
-use betterlite_core::api::topaz::{
-    MODELS, TopazSettings, get_api_base, get_api_key, validate_environment,
-};
+use betterlite_core::api::topaz::{TopazSettings, get_api_base, get_api_key, validate_environment};
 use betterlite_openai::api::image_contracts::records::ImageParams;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 
 use super::{CredentialField, FileKind, FileSpec};
-
-// get_models answers the same five names with no argument to read
-pub(super) fn models_answer() -> Value {
-    json!(MODELS)
-}
-
-// get_base_model returns its argument, so the typed call echoes the model the case sent
-pub(super) fn base_model_answer(model: &str) -> Value {
-    json!(model)
-}
-
-pub(super) fn supported_answer() -> Value {
-    json!(SUPPORTED_OPENAI_PARAMS)
-}
 
 // get_api_key and get_api_base take a truthy explicit value before the environment settings
 pub(super) fn credential_answer(
@@ -61,10 +42,6 @@ pub(super) fn environment_answer(api_key: Option<&str>) -> Value {
     json!({"missing_key": true})
 }
 
-pub(super) fn url_answer(api_base: Option<&str>) -> Value {
-    json!({"url": get_complete_url(api_base)})
-}
-
 pub(super) fn map_answer(non_default_params: &ImageParams, optional_params: &ImageParams) -> Value {
     if let Ok(mapped) = map_openai_params(non_default_params, optional_params.clone()) {
         return json!({"mapped": mapped});
@@ -86,18 +63,6 @@ pub(super) fn upload_answer(spec: &FileSpec, optional_params: Option<&ImageParam
     json!({"files": files, "data": fields.data})
 }
 
-// the sync entry point reads the raw response's elapsed time
-pub(super) fn sync_reply_answer(body: &[u8], elapsed_ms: u64, created: i64) -> Value {
-    let timing = TopazTiming::Elapsed(Duration::from_millis(elapsed_ms));
-    reply_answer(&transform_response(body, timing, created), "elapsed")
-}
-
-// the async entry point reads the call's recorded response time instead
-pub(super) fn async_reply_answer(body: &[u8], response_ms: f64, created: i64) -> Value {
-    let timing = TopazTiming::Measured(response_ms);
-    reply_answer(&transform_response(body, timing, created), "measured")
-}
-
 // the source's prepared tuple, with its optional content base64 encoded as the wire form
 fn prepared_answer(prepared: &PreparedFile) -> Value {
     let content = prepared
@@ -113,7 +78,7 @@ fn prepared_answer(prepared: &PreparedFile) -> Value {
 }
 
 // a reply carries the created timestamp and one image beside the timing its entry point measured
-fn reply_answer(reply: &TopazReply, timing_source: &str) -> Value {
+pub(super) fn reply_answer(reply: &TopazReply, timing_source: &str) -> Value {
     json!({
         "response": response_answer(reply),
         "response_ms": reply.response_ms,
