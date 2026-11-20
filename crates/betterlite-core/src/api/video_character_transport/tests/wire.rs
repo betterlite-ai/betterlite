@@ -1,3 +1,6 @@
+use std::io::{Read, Write};
+use std::net::TcpListener;
+use std::thread;
 use std::time::Duration;
 
 use betterlite_http::interactions::base::clients::HttpClients;
@@ -383,4 +386,41 @@ fn creation_refuses_a_reply_past_the_response_cap() {
     };
     assert_eq!(limit, MAX_RESPONSE_BYTES);
     drop(serving.finish());
+}
+
+// LiteLLM reads the reply body inside the sync send, so a body that misses the deadline raises litellm.Timeout; reqwest reports that read as an io::Error, which stays a typed reason here (deviation)
+#[test]
+fn sync_creation_keeps_a_body_read_timeout_typed() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let (mut stream, _peer) = listener.accept().unwrap();
+        let mut request = [0_u8; 1024];
+        let _read = stream.read(&mut request);
+        stream
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n")
+            .unwrap();
+        thread::sleep(Duration::from_millis(300));
+        let _written = stream.write_all(b"{}");
+    });
+    let base = format!("http://{address}");
+    let (mut config, log, mut state, mut clients) = parts("video_create_character");
+    config.create_url = format!("{base}/v1/characters");
+    let env = log.env();
+    let mut transport =
+        CharacterTransport::with_generated_boundary(&config, &mut clients, &mut state, &env);
+    let litellm = params(&[("api_base", base.as_str())]);
+    let clip = video();
+    let mut call = create_call("Wren", &clip, &litellm);
+    call.timeout = Some(Duration::from_millis(50));
+
+    let error = match transport.video_create_character_handler(&call) {
+        Ok(_handled) => panic!("the body deadline ends the call"),
+        Err(error) => error,
+    };
+    server.join().unwrap();
+
+    let CharacterError::Request(RequestFailure::Body(_)) = error else {
+        panic!("a sync body read that passes the deadline stays typed");
+    };
 }

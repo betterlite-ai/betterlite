@@ -15,16 +15,26 @@ deviations:
       Every betterlite HTTP client bounds a request (B173); the transport never sends an unbounded call.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L799-L830
   - what: >-
-      Every failure other than a timed-out create POST reaches the caller as CharacterError::Request with its typed
-      reason: a create POST's non-timeout fault, a lookup GET timeout or other fault, an unreadable reply body, a
-      reply over the response cap, and a request the transport cannot build (an unparsable URL or an illegal header
-      value). LiteLLM's _handle_error turns each of those caught exceptions into the provider's error class, with a
-      synthesized 500 when the exception carries no status code.
+      Every failure other than a create POST whose send times out reaches the caller as CharacterError::Request
+      with its typed reason: a create POST's non-timeout send fault, a sync create POST whose reply body read
+      passes the deadline, a lookup GET timeout or other fault, a reply over the response cap, and a request the
+      transport cannot build (an unparsable URL or an illegal header value). LiteLLM's _handle_error turns each
+      of those caught exceptions into the provider's error class, with a synthesized 500 when the exception
+      carries no status code.
     why: >-
       The shared handle_error (B2402) passes a failure without a status through typed, so a network fault is not
-      reported as a provider 500 with the fault's text as its message; a timed-out create POST is the one failure
-      mapped to the provider's error, with the 408 litellm.Timeout carries.
+      reported as a provider 500 with the fault's text as its message; a create POST whose send times out is the
+      one failure mapped to the provider's error, with the 408 litellm.Timeout carries.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6077-L6085
+  - what: >-
+      A sync create POST whose reply body read passes the caller's deadline reaches the caller as a typed body
+      failure, while a create POST whose send times out becomes the provider's 408. LiteLLM's sync post reads the
+      body inside self.client.send(req, stream=False), so that timeout raises litellm.Timeout with status 408.
+    why: >-
+      reqwest reports a blocking body-read timeout as an io::Error, and betterlite-core cannot name reqwest to
+      inspect it because deny.toml lists the crates allowed to depend on reqwest directly; the async body read
+      keeps its reqwest::Error and does become the 408.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1511-L1521
   - what: >-
       The provider error built from a synthesized 500 does not carry LiteLLM's status_code_is_synthesized marker.
     why: >-
