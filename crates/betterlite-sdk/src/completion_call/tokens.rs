@@ -25,7 +25,7 @@ pub struct TokenCountResponse {
     pub status_code: Option<u16>,
 }
 impl TokenCountResponse {
-    // the fallback acount_tokens builds when no provider counter answered
+    // the fallback the token count builds when no provider counter answered
     #[must_use]
     pub fn local(total_tokens: usize, request_model: &str, model_used: &str) -> Self {
         Self {
@@ -48,7 +48,7 @@ pub struct TokenCountRequest<'request> {
     pub api_key: Option<&'request SecretString>,
     pub api_base: Option<&'request str>,
 }
-// acount_tokens: the provider's count when it works, B196's local count otherwise
+// the token count: the provider's count when it works, B196's local count otherwise
 pub async fn count_tokens(
     request: &TokenCountRequest<'_>,
     metadata: &dyn ModelMetadata,

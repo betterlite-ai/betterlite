@@ -77,44 +77,43 @@ impl ChatContinuation for AsyncCompletionTarget<'_> {
         for (name, value) in params.iter().chain(kwargs.iter()) {
             request.insert(
                 name.clone(),
-                json_from_raw(value.get()).map_err(|error| self.async_error(error, "", None))?,
+                serde_json::from_str::<Json>(value.get()).map_err(|error| {
+                    self.async_error(CompletionCallError::from(error), "", None)
+                })?,
             );
         }
         let mut list = Vec::with_capacity(messages.len());
         for message in messages {
             list.push(
-                json_from_raw(message.0.get())
-                    .map_err(|error| self.async_error(error, "", None))?,
+                serde_json::from_str::<Json>(message.0.get()).map_err(|error| {
+                    self.async_error(CompletionCallError::from(error), "", None)
+                })?,
             );
         }
         request.insert(String::from("model"), Json::Text(model.to_owned()));
         request.insert(String::from("messages"), Json::List(list));
         match self.call(request, None).await? {
-            CallOutcome::Response(json) => Ok(ChatLoopResult::Response(raw_value(&json)?)),
-            CallOutcome::ResponsesStream(json) => Ok(ChatLoopResult::Response(raw_value(&json)?)),
+            CallOutcome::Response(json) | CallOutcome::ResponsesStream(json) => {
+                Ok(ChatLoopResult::Response(to_raw_value(&json).map_err(
+                    |source| CallError::from(plain_error(&source.to_string())),
+                )?))
+            }
             CallOutcome::ChatStream(stream) => {
                 let mut chunks = Vec::new();
                 if let Json::List(items) = stream.model_response {
                     for item in items {
-                        chunks.push(
-                            chunk_of(item).map_err(|error| self.async_error(error, "", None))?,
-                        );
+                        let encoded = serde_json::to_value(item).map_err(|error| {
+                            self.async_error(CompletionCallError::from(error), "", None)
+                        })?;
+                        chunks.push(serde_json::from_value(encoded).map_err(|error| {
+                            self.async_error(CompletionCallError::from(error), "", None)
+                        })?);
                     }
                 }
                 Ok(ChatLoopResult::Stream(stream::iter(chunks).boxed()))
             }
         }
     }
-}
-fn json_from_raw(raw: &str) -> Result<Json, CompletionCallError> {
-    Ok(serde_json::from_str(raw)?)
-}
-fn raw_value(json: &Json) -> Result<Box<RawValue>, CallError> {
-    to_raw_value(json).map_err(|source| CallError::from(plain_error(&source.to_string())))
-}
-fn chunk_of(value: Json) -> Result<Chunk, CompletionCallError> {
-    let encoded = serde_json::to_value(value)?;
-    Ok(serde_json::from_value(encoded)?)
 }
 fn followup_messages(messages: &[Json]) -> Result<Vec<FollowupMessage>, CompletionCallError> {
     let mut list = Vec::with_capacity(messages.len());

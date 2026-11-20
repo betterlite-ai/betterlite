@@ -7,6 +7,7 @@ use crate::call_setup::correlation::CallOutcome;
 use crate::call_wrapper::error::CallError;
 use crate::call_wrapper::state::LoggingHandle;
 use crate::call_wrapper::target::CallTarget;
+use crate::completion_request::args::CompletionArgs;
 use crate::completion_request::call::{MockCall, PreparedCompletion};
 use crate::completion_request::prepare_acompletion;
 use async_trait::async_trait;
@@ -101,8 +102,10 @@ impl CallTarget for AsyncCompletionTarget<'_> {
         request: RequestMap,
         logging: Option<&LoggingHandle>,
     ) -> Result<CallOutcome, CallError> {
-        let args =
-            request::args_from_map(&request).map_err(|error| self.async_error(error, "", None))?;
+        let encoded = serde_json::to_value(&request)
+            .map_err(|error| self.async_error(CompletionCallError::from(error), "", None))?;
+        let args: CompletionArgs = serde_json::from_value(encoded)
+            .map_err(|error| self.async_error(CompletionCallError::from(error), "", None))?;
         let model = args.model.clone().unwrap_or_default();
         let prepared = prepare_acompletion(&args, &self.inner.settings, &self.inner.ports)
             .await
@@ -113,7 +116,7 @@ impl CallTarget for AsyncCompletionTarget<'_> {
                 let outcome = super::fallbacks::run_fallbacks(self, call, logging)
                     .await
                     .map_err(|error| self.async_error(error, &model, provider.as_deref()))?;
-                if super::fallbacks::is_empty(&outcome) {
+                if matches!(&outcome, CallOutcome::Response(Json::Null)) {
                     return Err(self.async_error(
                         CompletionCallError::NoFallbackResponse,
                         &model,

@@ -47,7 +47,7 @@ pub async fn run_fallbacks(
         let mut attempt = filter_internal_params(attempt);
         attempt.insert(String::from("model"), Json::Text(model.clone()));
         match requester.call(attempt, logging).await {
-            Ok(outcome) if !is_empty(&outcome) => {
+            Ok(outcome) if !matches!(&outcome, CallOutcome::Response(Json::Null)) => {
                 return Ok(with_attempt_header(outcome, attempted));
             }
             Ok(_) => {}
@@ -90,10 +90,6 @@ fn filter_internal_params(mut request: RequestMap) -> RequestMap {
         request.shift_remove(name);
     }
     request
-}
-#[must_use]
-pub fn is_empty(outcome: &CallOutcome) -> bool {
-    matches!(outcome, CallOutcome::Response(Json::Null))
 }
 // add_fallback_headers_to_response: the zero-based attempt number under _hidden_params.additional_headers
 fn with_attempt_header(outcome: CallOutcome, attempted: usize) -> CallOutcome {

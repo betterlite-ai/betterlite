@@ -14,12 +14,12 @@ use uuid::Uuid;
 use super::USER;
 use super::support::{
     CheckingCallback, FakeFacts, FakeFoundry, Harness, RecordingTarget, args_from, chat_body, dig,
-    json, request,
+    json, prepared_call, request,
 };
 use crate::call_setup::correlation::CallOutcome;
 use crate::call_wrapper::error::class_status;
 use crate::completion_call::bridge_facts::ModelBridgeFacts;
-use crate::completion_call::error::CompletionCallError;
+use crate::completion_call::error::{CompletionCallError, into_call_error};
 use crate::completion_call::fallbacks::run_fallbacks;
 use crate::completion_call::ports::NoFoundryRules;
 use crate::completion_call::request;
@@ -35,9 +35,19 @@ use crate::completion_request::call::{
 fn target_errors_carry_their_status() {
     let harness = Harness::new();
     let target = harness.target();
-    let missing = target.error(CompletionCallError::MissingMock, "gpt-4o");
+    let missing = into_call_error(
+        &CompletionCallError::MissingMock,
+        "gpt-4o",
+        "",
+        &target.redactor,
+    );
     assert_eq!(class_status(&missing.class), Some(400));
-    let no_fallback = target.error(CompletionCallError::NoFallbackResponse, "gpt-4o");
+    let no_fallback = into_call_error(
+        &CompletionCallError::NoFallbackResponse,
+        "gpt-4o",
+        "",
+        &target.redactor,
+    );
     assert_eq!(class_status(&no_fallback.class), Some(500));
 }
 
@@ -216,10 +226,9 @@ async fn retry_runs_the_completion_entry_and_the_async_entry() {
 
 #[test]
 fn async_provider_of_reads_the_prepared_call() {
-    let prepared = PreparedCompletion::Dispatch(PreparedCall {
-        custom_llm_provider: Some(String::from("text-completion-openai")),
-        ..PreparedCall::default()
-    });
+    let mut call = prepared_call("");
+    call.custom_llm_provider = Some(String::from("text-completion-openai"));
+    let prepared = PreparedCompletion::Dispatch(call);
     assert_eq!(provider_of(&prepared), Some("text-completion-openai"));
 }
 

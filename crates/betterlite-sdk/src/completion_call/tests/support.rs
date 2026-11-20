@@ -1,5 +1,3 @@
-// The ports B5655's preparation asks for, and the recording doubles the completion call's tests drive.
-
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
@@ -25,6 +23,7 @@ use betterlite_core::responses_bridge::{
     ModelInfoError, ReasoningEffort, ResponsesBridgeCapabilities,
 };
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
+use betterlite_models::controls::call_params::CallParams;
 use betterlite_models::controls::control_options::ControlOptions;
 use betterlite_models::controls::optional_params::OptionalParams;
 use betterlite_models::decisions::Json;
@@ -59,7 +58,7 @@ use crate::completion_call::tokens::TokenCountResponse;
 use crate::completion_request::args::{
     CompletionArgs, CompletionFlags, CompletionSettings, JsonObject,
 };
-use crate::completion_request::call::PreparedTimeout;
+use crate::completion_request::call::{PreparedCall, PreparedOptionalParams, PreparedTimeout};
 use crate::completion_request::error::{CompletionRequestError, PricingFailure};
 use crate::completion_request::ports::{
     CacheSeedRequest, ChatPolicy, CompletionLogging, CompletionPorts, CompletionTimeout,
@@ -82,6 +81,30 @@ pub(super) fn request(text: &str) -> RequestMap {
 
 pub(super) fn args_from(text: &str) -> CompletionArgs {
     serde_json::from_str(text).unwrap()
+}
+
+pub(super) fn prepared_call(model: &str) -> PreparedCall {
+    PreparedCall {
+        model: model.to_owned(),
+        custom_llm_provider: None,
+        messages: Vec::new(),
+        tools: None,
+        kwargs: JsonObject::new(),
+        options: PreparedOptionalParams::default(),
+        non_default_params: JsonObject::new(),
+        litellm_params: CallParams::default(),
+        headers: AdditionalHeaders::new(),
+        api_key: None,
+        api_base: None,
+        timeout: None,
+        max_retries: None,
+        stream: false,
+        choice_count: None,
+        model_info: JsonObject::new(),
+        hidden_params: JsonObject::new(),
+        custom_prompt_dict: JsonObject::new(),
+        base_model: None,
+    }
 }
 
 pub(super) fn dig<'a>(json: &'a Json, path: &[&str]) -> Option<&'a Json> {
@@ -115,8 +138,8 @@ pub(super) fn settings_default() -> CompletionSettings {
     }
 }
 
-pub(super) fn deployment() -> ChatDeployment {
-    let listed = ModelDeployment {
+fn listed_deployment() -> ModelDeployment {
+    ModelDeployment {
         model_name: String::from("gpt-4o"),
         litellm_params: LiteLlmParams {
             ssl_verify: None,
@@ -132,8 +155,11 @@ pub(super) fn deployment() -> ChatDeployment {
             weight: None,
         },
         model_info: ModelInfo::default(),
-    };
-    let mut resolved = ChatDeployment::resolve(&listed, &OpenAiDefaults::default())
+    }
+}
+
+pub(super) fn deployment() -> ChatDeployment {
+    let mut resolved = ChatDeployment::resolve(&listed_deployment(), &OpenAiDefaults::default())
         .expect("the fixture deployment resolves");
     resolved.model_id = String::from("gpt-4o");
     resolved
@@ -353,19 +379,19 @@ pub(super) struct FakeChat {
     pub seen: Arc<Mutex<Vec<SeenCall>>>,
 }
 
-impl FakeChat {
-    pub(super) fn new() -> Self {
-        Self {
-            completion: Mutex::new(String::from(
-                r#"{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"gpt-4o","choices":[{"index":0,"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"}]}"#,
-            )),
-            frames: Mutex::new(Vec::new()),
-            null_models: Mutex::new(Vec::new()),
-            failures: Mutex::new(VecDeque::new()),
-            seen: Arc::new(Mutex::new(Vec::new())),
-        }
-    }
+const DEFAULT_COMPLETION: &str = r#"{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"gpt-4o","choices":[{"index":0,"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"}]}"#;
 
+fn fake_chat() -> FakeChat {
+    FakeChat {
+        completion: Mutex::new(String::from(DEFAULT_COMPLETION)),
+        frames: Mutex::new(Vec::new()),
+        null_models: Mutex::new(Vec::new()),
+        failures: Mutex::new(VecDeque::new()),
+        seen: Arc::new(Mutex::new(Vec::new())),
+    }
+}
+
+impl FakeChat {
     pub(super) fn answers(&self, body: &str) {
         *lock(&self.completion) = body.to_owned();
     }
@@ -384,6 +410,13 @@ impl FakeChat {
 
     pub(super) fn seen(&self) -> Vec<SeenCall> {
         lock(&self.seen).clone()
+    }
+
+    fn answers_empty(&self, request: &ClientChatRequest) -> bool {
+        request
+            .model
+            .as_deref()
+            .is_some_and(|model| lock(&self.null_models).iter().any(|null| null == model))
     }
 
     fn record(&self, call: &ChatCallInput<'_>) {
@@ -411,12 +444,7 @@ impl ChatCall for FakeChat {
         if let Some(failure) = lock(&self.failures).pop_front() {
             return Err(failure);
         }
-        let empty = call
-            .request
-            .model
-            .as_deref()
-            .is_some_and(|model| lock(&self.null_models).iter().any(|null| null == model));
-        let body = if empty {
+        let body = if self.answers_empty(&call.request) {
             String::from("null")
         } else {
             lock(&self.completion).clone()
@@ -434,10 +462,10 @@ impl ChatCall for FakeChat {
         _control: ControlOptions,
     ) -> Result<ChatStreamAnswer, ChatFailure> {
         self.record(&call);
-        let frames = lock(&self.frames).clone();
-        let body = stream::iter(frames.into_iter().map(|frame| Ok(frame.into_bytes()))).boxed();
+        let frames: Vec<String> = lock(&self.frames).clone();
+        let chunks = frames.into_iter().map(|frame| Ok(frame.into_bytes()));
         Ok(ChatStreamAnswer {
-            body,
+            body: stream::iter(chunks).boxed(),
             upstream_headers: HeaderMap::new(),
             upstream_time: Duration::ZERO,
         })
@@ -627,40 +655,39 @@ pub(super) struct RecordingTarget {
     pub fail_all: bool,
 }
 
+fn ok_outcome() -> CallOutcome {
+    CallOutcome::Response(Json::Object(JsonObject::from([(
+        String::from("id"),
+        Json::Text(String::from("ok")),
+    )])))
+}
+
 impl RecordingTarget {
     pub(super) fn failing_then_ok(failures: usize) -> Self {
         let mut outcomes = VecDeque::new();
         for _ in 0..failures {
             outcomes.push_back(Err(CallError::from(plain_error("first down"))));
         }
-        outcomes.push_back(Ok(CallOutcome::Response(Json::Object(JsonObject::from([
-            (String::from("id"), Json::Text(String::from("ok"))),
-        ])))));
-        Self {
-            calls: Arc::new(Mutex::new(Vec::new())),
-            outcomes: Mutex::new(outcomes),
-            fail_all: false,
-        }
+        outcomes.push_back(Ok(ok_outcome()));
+        Self::queued(outcomes, false)
     }
 
     pub(super) fn always_failing() -> Self {
-        Self {
-            calls: Arc::new(Mutex::new(Vec::new())),
-            outcomes: Mutex::new(VecDeque::new()),
-            fail_all: true,
-        }
+        Self::queued(VecDeque::new(), true)
     }
 
     pub(super) fn empty_then_ok() -> Self {
         let mut outcomes = VecDeque::new();
         outcomes.push_back(Ok(CallOutcome::Response(Json::Null)));
-        outcomes.push_back(Ok(CallOutcome::Response(Json::Object(JsonObject::from([
-            (String::from("id"), Json::Text(String::from("ok"))),
-        ])))));
+        outcomes.push_back(Ok(ok_outcome()));
+        Self::queued(outcomes, false)
+    }
+
+    fn queued(outcomes: VecDeque<Result<CallOutcome, CallError>>, fail_all: bool) -> Self {
         Self {
             calls: Arc::new(Mutex::new(Vec::new())),
             outcomes: Mutex::new(outcomes),
-            fail_all: false,
+            fail_all,
         }
     }
 
@@ -713,6 +740,25 @@ impl FakeStreamPort for FakeStream {
     }
 }
 
+const AGENTIC_OVERRIDES: AgenticOverrides = AgenticOverrides {
+    should_run: true,
+    run_loop: false,
+    build_plan: false,
+    post_response: false,
+    cleanup: false,
+};
+
+fn gate(run: bool) -> Result<AgenticGate, AgenticHookError> {
+    Ok(AgenticGate {
+        run,
+        tools: JsonMap::new(),
+    })
+}
+
+fn reply_of(reply: &str) -> Box<RawValue> {
+    RawValue::from_string(reply.to_owned()).expect("the fixture reply is JSON")
+}
+
 pub(super) struct FakeCallback {
     pub reply: String,
 }
@@ -724,30 +770,21 @@ impl AgenticCallback for FakeCallback {
     }
 
     fn overrides(&self) -> AgenticOverrides {
-        AgenticOverrides {
-            should_run: true,
-            build_plan: false,
-            ..AgenticOverrides::default()
-        }
+        AGENTIC_OVERRIDES
     }
 
     async fn should_run_agentic_loop(
         &self,
         _call: &AgenticCall<'_>,
     ) -> Result<AgenticGate, AgenticHookError> {
-        Ok(AgenticGate {
-            run: true,
-            tools: JsonMap::new(),
-        })
+        gate(true)
     }
 
     async fn run_agentic_loop(
         &self,
         _call: &AgenticLoopCall<'_>,
     ) -> Result<Option<Box<RawValue>>, AgenticHookError> {
-        Ok(Some(
-            RawValue::from_string(self.reply.clone()).expect("the fixture reply is JSON"),
-        ))
+        Ok(Some(reply_of(&self.reply)))
     }
 }
 
@@ -763,11 +800,7 @@ impl AgenticCallback for CheckingCallback {
     }
 
     fn overrides(&self) -> AgenticOverrides {
-        AgenticOverrides {
-            should_run: true,
-            build_plan: false,
-            ..AgenticOverrides::default()
-        }
+        AGENTIC_OVERRIDES
     }
 
     async fn should_run_agentic_loop(
@@ -779,10 +812,7 @@ impl AgenticCallback for CheckingCallback {
             .first()
             .is_some_and(|message| message.0.get().contains("\"hi\""));
         let marker = call.kwargs.contains_key("agentic_marker");
-        Ok(AgenticGate {
-            run: message && marker && !call.stream,
-            tools: JsonMap::new(),
-        })
+        gate(message && marker && !call.stream)
     }
 
     async fn run_agentic_loop(
@@ -792,9 +822,7 @@ impl AgenticCallback for CheckingCallback {
         if !call.optional_params.contains_key("temperature") {
             return Ok(None);
         }
-        Ok(Some(
-            RawValue::from_string(self.reply.clone()).expect("the fixture reply is JSON"),
-        ))
+        Ok(Some(reply_of(&self.reply)))
     }
 }
 
@@ -816,6 +844,7 @@ pub(super) struct Harness {
 
 impl Harness {
     pub(super) fn new() -> Self {
+        let chat = Arc::new(fake_chat());
         Self {
             settings: settings_default(),
             metadata: FakeMetadata::default(),
@@ -824,7 +853,7 @@ impl Harness {
             pricing: FakePricing,
             logging: FakeLogging,
             timeout: FakeTimeout,
-            chat: Arc::new(FakeChat::new()),
+            chat,
             dispatch: Arc::new(Dispatch::new(
                 vec![deployment(), deployment_named("empty-model")],
                 Arc::new(NoRules),
@@ -838,26 +867,39 @@ impl Harness {
     }
 
     pub(super) fn ports(&self) -> CompletionPorts<'_> {
+        let Self {
+            metadata,
+            prompt,
+            bridge,
+            pricing,
+            logging,
+            timeout,
+            ..
+        } = self;
         CompletionPorts {
-            model_metadata: &self.metadata,
-            prompt: &self.prompt,
-            bridge: &self.bridge,
-            pricing: &self.pricing,
-            logging: &self.logging,
-            timeout: &self.timeout,
+            model_metadata: metadata,
+            prompt,
+            bridge,
+            pricing,
+            logging,
+            timeout,
         }
     }
 
     pub(super) fn target(&self) -> CompletionTarget<'_> {
+        let calls: Arc<dyn ChatCall> = Arc::clone(&self.chat);
+        let settings = self.settings.clone();
+        let dispatch = Arc::clone(&self.dispatch);
+        let redactor = Redactor::new(16).expect("the default redactor");
         CompletionTarget {
-            settings: self.settings.clone(),
+            settings,
             ports: self.ports(),
-            dispatch: Arc::clone(&self.dispatch),
-            calls: Arc::clone(&self.chat) as Arc<dyn ChatCall>,
+            dispatch,
+            calls,
             mock: MockSettings::default(),
             ids: Arc::new(FakeIds),
             clock: Arc::new(FakeClock),
-            redactor: Redactor::new(16).expect("the default redactor"),
+            redactor,
             mcp: &self.mcp,
             sleeper: &self.sleeper,
         }

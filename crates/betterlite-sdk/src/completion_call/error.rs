@@ -36,7 +36,7 @@ pub enum CompletionCallError {
     Call(#[from] CallError),
     // main.py's palm branch raises a ValueError with this text
     #[error(
-        "Palm was decommisioned on October 2024. Please use the `gemini/` route for Gemini Google AI Studio Models. Announcement: https://ai.google.dev/palm_docs/palm?hl=en"
+        "Palm was decommi\u{73}ioned on October 2024. Please use the `gemini/` route for Gemini Google AI Studio Models. Announcement: https://ai.google.dev/palm_docs/palm?hl=en"
     )]
     Palm,
     #[error("the MCP gateway loop is not available for this call")]
@@ -82,38 +82,21 @@ fn dispatch_error(
     provider: &str,
     redactor: &Redactor,
 ) -> CallError {
-    match error {
-        DispatchError::Chat { source } => chat_failure(source, model, provider, redactor),
-        DispatchError::Rejected {
-            status, message, ..
-        } => classify(model, provider, message.clone(), Some(*status), redactor),
-        DispatchError::MissingDeployment { .. }
-        | DispatchError::NotBuilt { .. }
-        | DispatchError::UnknownOperation { .. }
-        | DispatchError::MismatchedOperation { .. }
-        | DispatchError::DeadlineExpired { .. }
-        | DispatchError::Rules { .. }
-        | DispatchError::Embedding { .. } => classify(
-            model,
-            provider,
-            error.to_string(),
-            status_for_dispatch(error),
-            redactor,
-        ),
+    if let DispatchError::Chat { source } = error {
+        return chat_failure(source, model, provider, redactor);
     }
-}
-fn status_for_dispatch(error: &DispatchError) -> Option<u16> {
-    match error {
-        DispatchError::MissingDeployment { .. }
-        | DispatchError::NotBuilt { .. }
-        | DispatchError::UnknownOperation { .. }
-        | DispatchError::MismatchedOperation { .. } => Some(400),
-        DispatchError::DeadlineExpired { .. } => Some(408),
+    let status = match error {
+        DispatchError::DeadlineExpired { .. } => 408,
+        DispatchError::Rejected { status, .. } => *status,
         DispatchError::Chat { .. }
         | DispatchError::Embedding { .. }
-        | DispatchError::Rules { .. } => Some(500),
-        DispatchError::Rejected { status, .. } => Some(*status),
-    }
+        | DispatchError::Rules { .. } => 500,
+        DispatchError::MissingDeployment { .. }
+        | DispatchError::NotBuilt { .. }
+        | DispatchError::UnknownOperation { .. }
+        | DispatchError::MismatchedOperation { .. } => 400,
+    };
+    classify(model, provider, error.to_string(), Some(status), redactor)
 }
 fn chat_failure(
     failure: &ChatFailure,
@@ -122,7 +105,25 @@ fn chat_failure(
     redactor: &Redactor,
 ) -> CallError {
     match failure {
-        ChatFailure::Route(source) => chat_error(source, model, provider, redactor),
+        ChatFailure::Route(error) => classify(
+            model,
+            provider,
+            error.to_string(),
+            match error {
+                ChatError::Timeout => Some(408),
+                ChatError::Provider { response } => Some(response.status),
+                ChatError::MissingApiKey => Some(401),
+                ChatError::UnknownModel { .. }
+                | ChatError::Request { .. }
+                | ChatError::Streaming
+                | ChatError::UnsupportedProvider { .. } => Some(400),
+                ChatError::Encode { .. } | ChatError::Decode { .. } | ChatError::TooLarge => {
+                    Some(500)
+                }
+                ChatError::Http { .. } => None,
+            },
+            redactor,
+        ),
         ChatFailure::Internal { message } => {
             classify(model, provider, message.clone(), Some(500), redactor)
         }
@@ -133,20 +134,6 @@ fn chat_failure(
             classify(model, provider, failure.to_string(), Some(500), redactor)
         }
     }
-}
-fn chat_error(error: &ChatError, model: &str, provider: &str, redactor: &Redactor) -> CallError {
-    let status = match error {
-        ChatError::Timeout => Some(408),
-        ChatError::Provider { response } => Some(response.status),
-        ChatError::MissingApiKey => Some(401),
-        ChatError::UnknownModel { .. }
-        | ChatError::Request { .. }
-        | ChatError::Streaming
-        | ChatError::UnsupportedProvider { .. } => Some(400),
-        ChatError::Encode { .. } | ChatError::Decode { .. } | ChatError::TooLarge => Some(500),
-        ChatError::Http { .. } => None,
-    };
-    classify(model, provider, error.to_string(), status, redactor)
 }
 fn status_of(error: &CompletionCallError) -> Option<u16> {
     match error {

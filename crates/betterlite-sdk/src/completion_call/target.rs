@@ -8,7 +8,7 @@ use crate::call_wrapper::error::CallError;
 use crate::call_wrapper::ports::{IdSource, WrapperClock};
 use crate::call_wrapper::state::LoggingHandle;
 use crate::call_wrapper::target::CallTarget;
-use crate::completion_request::args::CompletionSettings;
+use crate::completion_request::args::{CompletionArgs, CompletionSettings};
 use crate::completion_request::call::{MockCall, ModelListCall, PreparedCall, PreparedCompletion};
 use crate::completion_request::ports::CompletionPorts;
 use crate::completion_request::prepare_completion;
@@ -19,6 +19,7 @@ use betterlite_core::dispatch::Dispatch;
 use betterlite_core::mock;
 use betterlite_core::operation::Operation;
 use betterlite_core::operation::chat::ChatCall;
+use betterlite_core::operation::responses::ResponsesRequest;
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat::MockSettings;
 use betterlite_redact::secret::Redactor;
@@ -38,10 +39,6 @@ pub struct CompletionTarget<'ports> {
     pub sleeper: &'ports dyn Sleeper,
 }
 impl CompletionTarget<'_> {
-    #[must_use]
-    pub fn error(&self, error: CompletionCallError, model: &str) -> CallError {
-        into_call_error(&error, model, "", &self.redactor)
-    }
     pub(crate) async fn run(
         &self,
         prepared: PreparedCompletion,
@@ -75,7 +72,7 @@ impl CompletionTarget<'_> {
         if call.custom_llm_provider.as_deref() == Some("palm") {
             return Err(CompletionCallError::Palm);
         }
-        request::execute(&self.dispatch, request::responses_operation()).await
+        request::execute(&self.dispatch, Operation::Responses(ResponsesRequest)).await
     }
     fn mock_call(&self, call: &MockCall) -> Result<CallOutcome, CompletionCallError> {
         let mock_response = optional_kwarg(&call.call, "mock_response")?;
@@ -132,7 +129,9 @@ impl CompletionTarget<'_> {
                 request.insert(name.clone(), value.clone());
             }
             match self.call(request.clone(), logging).await {
-                Ok(outcome) if !super::fallbacks::is_empty(&outcome) => return Ok(outcome),
+                Ok(outcome) if !matches!(&outcome, CallOutcome::Response(Json::Null)) => {
+                    return Ok(outcome);
+                }
                 Ok(_) => {}
                 Err(error) => last_failure = Some(CompletionCallError::Call(error)),
             }
@@ -150,14 +149,26 @@ impl CallTarget for CompletionTarget<'_> {
         request: RequestMap,
         logging: Option<&LoggingHandle>,
     ) -> Result<CallOutcome, CallError> {
-        let args = request::args_from_map(&request).map_err(|error| self.error(error, ""))?;
+        let encoded = serde_json::to_value(&request).map_err(|error| {
+            into_call_error(&CompletionCallError::from(error), "", "", &self.redactor)
+        })?;
+        let args: CompletionArgs = serde_json::from_value(encoded).map_err(|error| {
+            into_call_error(&CompletionCallError::from(error), "", "", &self.redactor)
+        })?;
         let model = args.model.clone().unwrap_or_default();
         let prepared = prepare_completion(&args, &self.settings, &self.ports)
             .await
-            .map_err(|error| self.error(CompletionCallError::from(error), &model))?;
+            .map_err(|error| {
+                into_call_error(
+                    &CompletionCallError::from(error),
+                    &model,
+                    "",
+                    &self.redactor,
+                )
+            })?;
         self.run(prepared, false, logging)
             .await
-            .map_err(|error| self.error(error, &model))
+            .map_err(|error| into_call_error(&error, &model, "", &self.redactor))
     }
     async fn retry(
         &self,
@@ -167,16 +178,16 @@ impl CallTarget for CompletionTarget<'_> {
         retry::with_retries(self, request, logging, self.sleeper).await
     }
 }
-fn kwarg<T: DeserializeOwned>(value: &Json, field: &'static str) -> Result<T, CompletionCallError> {
-    let encoded = serde_json::to_value(value)?;
-    serde_json::from_value(encoded).map_err(|_error| CompletionCallError::Field { field })
-}
 fn optional_kwarg<T: DeserializeOwned>(
     call: &PreparedCall,
     name: &'static str,
 ) -> Result<Option<T>, CompletionCallError> {
     match call.kwargs.get(name) {
         None | Some(Json::Null) => Ok(None),
-        Some(value) => Ok(Some(kwarg(value, name)?)),
+        Some(value) => {
+            let encoded = serde_json::to_value(value)?;
+            serde_json::from_value(encoded)
+                .map_err(|_error| CompletionCallError::Field { field: name })
+        }
     }
 }

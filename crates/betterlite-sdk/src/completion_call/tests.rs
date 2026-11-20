@@ -4,7 +4,7 @@ mod coverage;
 mod support;
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use betterlite_config::proxy::ProxyPolicy;
@@ -25,7 +25,7 @@ use tokio::task::JoinSet;
 use crate::call_setup::correlation::CallOutcome;
 use crate::call_wrapper::error::{class_name, class_status};
 use crate::completion_call::bridge_facts::ModelBridgeFacts;
-use crate::completion_call::error::CompletionCallError;
+use crate::completion_call::error::{CompletionCallError, into_call_error};
 use crate::completion_call::fallbacks::run_fallbacks;
 use crate::completion_call::probe::{CompletionProbe, ProbeFailure};
 use crate::completion_call::retry::{RetryStrategy, with_retries};
@@ -38,7 +38,7 @@ use crate::completion_request::call::{
 };
 use support::{
     FakeCallback, FakeFacts, FakeFoundry, FakeLocalCounter, FakeProviderCounter, Harness,
-    RecordingTarget, args_from, chat_body, dig, json, request, secret, text_of,
+    RecordingTarget, args_from, chat_body, dig, json, prepared_call, request, secret, text_of,
 };
 
 const USER: &str = r#"{"role":"user","content":"hi"}"#;
@@ -183,12 +183,10 @@ async fn target_mock_answers_from_the_mock_response() {
         String::from("mock_response"),
         Json::Text(String::from("hi")),
     );
+    let mut prepared = prepared_call("gpt-4o");
+    prepared.kwargs = kwargs;
     let call = MockCall {
-        call: PreparedCall {
-            model: String::from("gpt-4o"),
-            kwargs,
-            ..PreparedCall::default()
-        },
+        call: prepared,
         acompletion: false,
         mock_delay: None,
         prompt_tokens: None,
@@ -224,13 +222,11 @@ async fn target_mock_stream_is_a_chat_stream() {
         String::from("mock_response"),
         Json::Text(String::from("hello")),
     );
+    let mut prepared = prepared_call("gpt-4o");
+    prepared.kwargs = kwargs;
+    prepared.stream = true;
     let call = MockCall {
-        call: PreparedCall {
-            model: String::from("gpt-4o"),
-            kwargs,
-            stream: true,
-            ..PreparedCall::default()
-        },
+        call: prepared,
         acompletion: true,
         mock_delay: None,
         prompt_tokens: None,
@@ -253,21 +249,18 @@ async fn target_mock_stream_is_a_chat_stream() {
 async fn target_palm_raises_its_value_error() {
     let harness = Harness::new();
     let target = harness.target();
-    let call = PreparedCall {
-        model: String::from("palm"),
-        custom_llm_provider: Some(String::from("palm")),
-        ..PreparedCall::default()
-    };
+    let mut call = prepared_call("palm");
+    call.custom_llm_provider = Some(String::from("palm"));
     let error = target
         .run(PreparedCompletion::Dispatch(call), false, None)
         .await
         .unwrap_err();
     assert!(matches!(&error, CompletionCallError::Palm));
-    let mapped = target.error(error, "palm");
+    let mapped = into_call_error(&error, "palm", "", &target.redactor);
     assert!(
         mapped
             .to_string()
-            .contains("Palm was decommisioned on October 2024")
+            .contains("Palm was decommi\u{73}ioned on October 2024")
     );
 }
 
@@ -366,29 +359,29 @@ async fn fallback_dict_without_a_model_keeps_the_original() {
 async fn fallback_internal_params_never_reach_an_attempt() {
     let target = RecordingTarget::failing_then_ok(1);
     let mut args = args_from(&format!(r#"{{"model":"gpt-4o","messages":[{USER}]}}"#));
-    for name in [
-        "skip_mcp_handler",
-        "mcp_handler_context",
-        "_skip_mcp_handler",
-    ] {
-        args.kwargs.insert(String::from(name), Json::Bool(true));
-    }
+    args.kwargs
+        .insert(String::from("skip_mcp_handler"), Json::Bool(true));
+    args.kwargs
+        .insert(String::from("mcp_handler_context"), Json::Bool(true));
+    args.kwargs
+        .insert(String::from("_skip_mcp_handler"), Json::Bool(true));
     let call = FallbackCall {
         fallbacks: vec![json(r#""gpt-3.5-turbo""#)],
         args,
     };
     run_fallbacks(&target, call, None).await.unwrap();
-    for attempt in target.call_map() {
-        for name in [
-            "skip_mcp_handler",
-            "mcp_handler_context",
-            "_skip_mcp_handler",
-        ] {
-            assert!(!attempt.contains_key(name), "{name} stays internal");
-        }
-        assert!(!attempt.contains_key("fallbacks"));
-        assert!(!attempt.contains_key("acompletion"));
-    }
+    let attempts = target.call_map();
+    assert_eq!(attempts.len(), 2);
+    assert!(!attempts[0].contains_key("skip_mcp_handler"));
+    assert!(!attempts[0].contains_key("mcp_handler_context"));
+    assert!(!attempts[0].contains_key("_skip_mcp_handler"));
+    assert!(!attempts[0].contains_key("fallbacks"));
+    assert!(!attempts[0].contains_key("acompletion"));
+    assert!(!attempts[1].contains_key("skip_mcp_handler"));
+    assert!(!attempts[1].contains_key("mcp_handler_context"));
+    assert!(!attempts[1].contains_key("_skip_mcp_handler"));
+    assert!(!attempts[1].contains_key("fallbacks"));
+    assert!(!attempts[1].contains_key("acompletion"));
 }
 
 #[tokio::test]
@@ -532,11 +525,14 @@ async fn retry_defaults_to_three_attempts_and_zeroes_inner_retries() {
     let error = with_retries(&target, call, None, &sleeper)
         .await
         .unwrap_err();
-    assert_eq!(target.call_map().len(), 3);
-    for attempt in target.call_map() {
-        assert!(zero_retries(attempt.get("num_retries")));
-        assert!(zero_retries(attempt.get("max_retries")));
-    }
+    let attempts = target.call_map();
+    assert_eq!(attempts.len(), 3);
+    assert!(zero_retries(attempts[0].get("num_retries")));
+    assert!(zero_retries(attempts[0].get("max_retries")));
+    assert!(zero_retries(attempts[1].get("num_retries")));
+    assert!(zero_retries(attempts[1].get("max_retries")));
+    assert!(zero_retries(attempts[2].get("num_retries")));
+    assert!(zero_retries(attempts[2].get("max_retries")));
     assert_eq!(error.to_string(), "first down");
     assert!(sleeper.slept().is_empty(), "constant retry waits nothing");
 }
@@ -734,7 +730,7 @@ fn bridge_facts_answers_model_info_and_unknown_models() {
     let info: Object = serde_json::from_str(r#"{"mode":"responses"}"#).unwrap();
     let facts = FakeFacts {
         info: Some(info.clone()),
-        ..FakeFacts::default()
+        seen: Arc::new(Mutex::new(Vec::new())),
     };
     let foundry = FakeFoundry::default();
     let facts_bridge = bridge(&facts, &foundry);
@@ -755,7 +751,7 @@ fn bridge_facts_passes_the_foundry_questions_to_its_field() {
     let foundry = FakeFoundry {
         supports: true,
         rejects: true,
-        ..FakeFoundry::default()
+        calls: Arc::new(Mutex::new(Vec::new())),
     };
     let facts_bridge = bridge(&facts, &foundry);
     assert!(

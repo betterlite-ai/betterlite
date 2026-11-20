@@ -9,7 +9,6 @@ use betterlite_core::operation::chat::first_message::first_message_has_content;
 use betterlite_core::operation::chat::{
     ChatCall, ChatRequest as DispatchChatRequest, ChatResult, ChatStreamAnswer,
 };
-use betterlite_core::operation::responses::ResponsesRequest;
 use betterlite_core::operation::{CallResult, Operation};
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat::ChatRequest;
@@ -19,10 +18,6 @@ use secrecy::ExposeSecret as _;
 use std::sync::Arc;
 use std::time::SystemTime;
 use uuid::Uuid;
-pub fn args_from_map(request: &RequestMap) -> Result<CompletionArgs, CompletionCallError> {
-    let encoded = serde_json::to_value(request)?;
-    Ok(serde_json::from_value(encoded)?)
-}
 // The call's kwargs as the map completion() was handed, with the secret the struct never serializes
 pub fn args_to_map(args: &CompletionArgs) -> Result<RequestMap, CompletionCallError> {
     let encoded = serde_json::to_value(args)?;
@@ -140,8 +135,4 @@ pub fn sse_chunks(bytes: &[u8]) -> Result<Json, CompletionCallError> {
         }
     }
     Ok(Json::List(chunks))
-}
-#[must_use]
-pub fn responses_operation() -> Operation {
-    Operation::Responses(ResponsesRequest)
 }
