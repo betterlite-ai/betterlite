@@ -75,12 +75,54 @@ async fn search_optional_fields() {
             vec![Some(Duration::from_secs_f64(6000.0))]
         );
     });
+}
+
+#[tokio::test]
+async fn search_logs_optional_params() {
+    let fakes = Fakes::new();
+    let source = fakes.source(SEARCH_RESULT);
+    let mut logs = Logs::new("vector_store_search");
+    let optional = params(SEARCH_OPTIONALS);
+    let kwargs = params(
+        r#"{"api_key":"sk-client","api_base":"https://mock.invalid/v1","litellm_call_id":null}"#,
+    );
+    let query = SearchQuery::Sequence(vec![String::from("one"), String::from("two")]);
+    let call = search_call(&query, &optional, &kwargs, Entry::Asynchronous);
+    let deps = fakes.deps(&source, None);
+    logs.run_search(&deps, &call)
+        .await
+        .expect("the mock provider answers");
     assert_eq!(
         logs.detail("optional_params"),
         json(
             r#"{"vector_store_id":"vs_a","query":["one","two"],"filters":{"type":"eq","key":"tag","value":"x"},"max_num_results":0,"ranking_options":{"ranker":"auto"},"rewrite_query":false}"#
         )
     );
+    assert_eq!(
+        logs.detail("custom_llm_provider"),
+        Json::Text(String::from("openai"))
+    );
+    assert_eq!(
+        logs.detail("model"),
+        Json::Text(String::from("vector-store"))
+    );
+}
+
+#[tokio::test]
+async fn search_logs_litellm_params() {
+    let fakes = Fakes::new();
+    let source = fakes.source(SEARCH_RESULT);
+    let mut logs = Logs::new("vector_store_search");
+    let optional = Params::new();
+    let kwargs = params(
+        r#"{"api_key":"sk-client","api_base":"https://mock.invalid/v1","litellm_call_id":null}"#,
+    );
+    let query = SearchQuery::Text(String::from("one"));
+    let call = search_call(&query, &optional, &kwargs, Entry::Sync);
+    let deps = fakes.deps(&source, None);
+    logs.run_search(&deps, &call)
+        .await
+        .expect("the mock provider answers");
     let Json::Object(litellm_params) = logs.detail("litellm_params") else {
         panic!("the logged litellm params are an object");
     };
@@ -92,14 +134,6 @@ async fn search_optional_fields() {
     assert_eq!(
         litellm_params.get("use_litellm_proxy"),
         Some(&Json::Bool(false))
-    );
-    assert_eq!(
-        logs.detail("custom_llm_provider"),
-        Json::Text(String::from("openai"))
-    );
-    assert_eq!(
-        logs.detail("model"),
-        Json::Text(String::from("vector-store"))
     );
 }
 
@@ -162,13 +196,27 @@ async fn registry_overlays_search_credentials() {
             Some(&Json::Text(String::from("sk-registry")))
         );
     });
-    // create never reads the registry, so the caller's key is the one it uses
-    let create_source = fakes.source(CREATE_RESULT);
-    let create_optional = params(r#"{"name":"notes"}"#);
-    let create_kwargs = params(r#"{"api_key":"sk-client","api_base":"https://mock.invalid/v1"}"#);
-    let create_invocation = create_call(&create_optional, &create_kwargs, Entry::Sync);
-    let create_deps = fakes.deps(&create_source, None);
-    logs.run_create(&create_deps, &create_invocation)
+}
+
+#[tokio::test]
+async fn create_never_reads_the_registry() {
+    let mut fakes = Fakes::new();
+    let credentials = JsonObject::from([(
+        String::from("api_key"),
+        Json::Text(String::from("sk-registry")),
+    )]);
+    fakes.registry = VectorStoreRegistry {
+        stores: vec![managed_store(Some("store-credential"))],
+        clock: Arc::new(Utc::now),
+        credentials: Arc::new(FixedCredentials(credentials)),
+    };
+    let source = fakes.source(CREATE_RESULT);
+    let mut logs = Logs::new("vector_store_create");
+    let optional = params(r#"{"name":"notes"}"#);
+    let kwargs = params(r#"{"api_key":"sk-client","api_base":"https://mock.invalid/v1"}"#);
+    let invocation = create_call(&optional, &kwargs, Entry::Sync);
+    let deps = fakes.deps(&source, None);
+    logs.run_create(&deps, &invocation)
         .await
         .expect("the mock provider answers");
     fakes.seen.with(|seen| {
@@ -177,19 +225,28 @@ async fn registry_overlays_search_credentials() {
             Some(&Some(String::from("sk-client")))
         );
     });
-    // a non-executor fails before the registry, the mocks or any HTTP
-    let count = fakes.seen.with(|seen| seen.clients.len());
-    let mut invalid = search_call(&query, &optional, &kwargs, Entry::Sync);
-    invalid.executor = Some(DirectExecutor::Invalid);
+}
+
+#[tokio::test]
+async fn invalid_executor_fails_before_any_http() {
+    let fakes = Fakes::new();
+    let source = fakes.source(SEARCH_RESULT);
+    let mut logs = Logs::new("vector_store_search");
+    let kwargs = params(r#"{"api_base":"https://mock.invalid/v1"}"#);
+    let optional = Params::new();
+    let query = SearchQuery::Text(String::from("one"));
+    let mut call = search_call(&query, &optional, &kwargs, Entry::Sync);
+    call.executor = Some(DirectExecutor::Invalid);
+    let deps = fakes.deps(&source, None);
     let error = logs
-        .run_search(&deps, &invalid)
+        .run_search(&deps, &call)
         .await
         .expect_err("a non-executor is refused");
     assert_eq!(
         error.to_string(),
         "Invalid direct vector store embedding executor"
     );
-    assert_eq!(fakes.seen.with(|seen| seen.clients.len()), count);
+    fakes.seen.with(|seen| assert_eq!(seen.clients.len(), 0));
 }
 
 #[tokio::test]

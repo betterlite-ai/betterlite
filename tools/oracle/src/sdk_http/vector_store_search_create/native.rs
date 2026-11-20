@@ -12,6 +12,7 @@ use betterlite_core::api::vector_store_search::service::{
     CreateCall, SdkDeps, create as create_vector_store,
 };
 use betterlite_error::envelope::WireField;
+use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
@@ -84,16 +85,7 @@ async fn run_once(
         state: &mut state,
         env: &pre_post,
     };
-    let deps = SdkDeps {
-        configs: &fixtures.configs,
-        filters: &fixtures.filters,
-        executors: &fixtures.executors,
-        signing: &fixtures.assets,
-        registry: fixtures.registry.as_ref(),
-        source: fixtures.source,
-        supplied: None,
-        settings: fixtures.settings,
-    };
+    let deps = deps_of(fixtures);
     let kwargs = kwargs_of(run, api_base);
     let answer = match run.operation {
         Operation::Create => {
@@ -105,8 +97,36 @@ async fn run_once(
             search_run(run, args, &deps, &kwargs, &mut log).await
         }
     };
-    // update_from_kwargs is what names the provider; a call that failed before it has no context to record
-    let context = state.custom_llm_provider.as_ref().map(|provider| Context {
+    let failure = match &answer {
+        Ok(_) => None,
+        Err(error) => Some(sdk_failure(error, &fixtures.assets.redactor)?),
+    };
+    Ok(RunOutcome {
+        operation: run.operation,
+        mode: run.mode,
+        result: answer.ok(),
+        failure,
+        context: context_of(&state),
+    })
+}
+
+fn deps_of<'fixtures>(fixtures: &'fixtures Fixtures<'_>) -> SdkDeps<'fixtures, Source> {
+    SdkDeps {
+        configs: &fixtures.configs,
+        filters: &fixtures.filters,
+        executors: &fixtures.executors,
+        signing: &fixtures.assets,
+        registry: fixtures.registry.as_ref(),
+        source: fixtures.source,
+        supplied: None,
+        settings: fixtures.settings,
+    }
+}
+
+// update_from_kwargs is what names the provider; a call that failed before it has no context to record
+fn context_of(state: &LoggingState) -> Option<Context> {
+    let provider = state.custom_llm_provider.as_ref()?;
+    Some(Context {
         model: state.model.clone(),
         optional_params: state
             .optional_params
@@ -124,17 +144,6 @@ async fn run_once(
             .get("vector_store_id")
             .cloned()
             .unwrap_or(Json::Null),
-    });
-    let failure = match &answer {
-        Ok(_) => None,
-        Err(error) => Some(sdk_failure(error, &fixtures.assets.redactor)?),
-    };
-    Ok(RunOutcome {
-        operation: run.operation,
-        mode: run.mode,
-        result: answer.ok(),
-        failure,
-        context,
     })
 }
 

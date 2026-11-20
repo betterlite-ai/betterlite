@@ -92,70 +92,53 @@ pub fn failure(error: &VectorStoreSearchError, redactor: &Redactor) -> SdkFailur
 
 // The provider, its status, the exception class exception_type saw and the text it mapped
 fn raised(error: &VectorStoreSearchError) -> (&str, Option<u16>, String, String) {
-    match error {
-        VectorStoreSearchError::Unsupported { provider, .. } => (
-            provider,
-            None,
-            String::from("ValueError"),
-            error.to_string(),
-        ),
-        VectorStoreSearchError::Search { provider, source } => match source {
-            SearchError::Provider(exception) => (
-                provider,
-                Some(exception.status_code),
-                String::new(),
-                error.to_string(),
-            ),
-            SearchError::Client(_)
-            | SearchError::Logging(_)
-            | SearchError::Request(_)
-            | SearchError::RequestUrl { .. }
-            | SearchError::HeaderName { .. }
-            | SearchError::HeaderValue { .. }
-            | SearchError::Encode(_)
-            | SearchError::Field { .. }
-            | SearchError::Signing(_)
-            | SearchError::Direct(_) => (
-                provider,
-                None,
-                String::from("ValueError"),
-                error.to_string(),
-            ),
-        },
-        VectorStoreSearchError::Create { provider, source } => match source {
-            CreateReadError::Write(WriteError::Provider(exception)) => (
-                provider,
-                Some(exception.status_code),
-                String::new(),
-                error.to_string(),
-            ),
-            CreateReadError::Write(
-                WriteError::Client(_)
-                | WriteError::Logging(_)
-                | WriteError::Segment(_)
-                | WriteError::Url(_)
-                | WriteError::RequestUrl { .. }
-                | WriteError::HeaderName { .. }
-                | WriteError::HeaderValue { .. }
-                | WriteError::Encode(_)
-                | WriteError::Reply(_),
-            )
-            | CreateReadError::Capability(_) => (
-                provider,
-                None,
-                String::from("ValueError"),
-                error.to_string(),
-            ),
-        },
+    let (provider, status) = match error {
+        VectorStoreSearchError::Search { provider, source } => {
+            (provider.as_str(), search_status(source))
+        }
+        VectorStoreSearchError::Create { provider, source } => {
+            (provider.as_str(), create_status(source))
+        }
+        VectorStoreSearchError::Unsupported { provider, .. } => (provider.as_str(), None),
         VectorStoreSearchError::InvalidProvider { .. }
         | VectorStoreSearchError::UnresolvedProvider { .. }
         | VectorStoreSearchError::InvalidEmbeddingExecutor
         | VectorStoreSearchError::Field { .. }
         | VectorStoreSearchError::Logging(_)
         | VectorStoreSearchError::Timeout(_)
-        | VectorStoreSearchError::Encode(_) => {
-            ("", None, String::from("ValueError"), error.to_string())
-        }
+        | VectorStoreSearchError::Encode(_) => ("", None),
+    };
+    // an SDK status error keeps its status and lets exception_type read the class from the status
+    let class = if status.is_some() {
+        String::new()
+    } else {
+        String::from("ValueError")
+    };
+    (provider, status, class, error.to_string())
+}
+
+fn search_status(source: &SearchError) -> Option<u16> {
+    if let SearchError::Provider(exception) = source {
+        return Some(exception.status_code);
+    }
+    None
+}
+
+fn create_status(source: &CreateReadError) -> Option<u16> {
+    match source {
+        CreateReadError::Write(WriteError::Provider(exception)) => Some(exception.status_code),
+        CreateReadError::Write(
+            WriteError::Client(_)
+            | WriteError::Logging(_)
+            | WriteError::Segment(_)
+            | WriteError::Url(_)
+            | WriteError::RequestUrl { .. }
+            | WriteError::HeaderName { .. }
+            | WriteError::HeaderValue { .. }
+            | WriteError::Encode(_)
+            | WriteError::Reply(_),
+        )
+        | CreateReadError::Capability(_) => None,
     }
 }
 

@@ -1,5 +1,7 @@
+use std::collections::BTreeMap;
+
 use betterlite_logging::logging_state::LoggingState;
-use betterlite_logging::logging_state::updates::{CallUpdate, update_from_kwargs};
+use betterlite_logging::logging_state::updates::CallUpdate;
 use betterlite_models::decisions::Json;
 use betterlite_openai::vector_stores::store::CreateParams;
 use indexmap::IndexMap;
@@ -18,7 +20,7 @@ use crate::api::vector_store_http_write::config::WriteParams;
 use crate::api::vector_store_http_write::service::{ClientSource, LogContext};
 use crate::api::vector_store_search::error::VectorStoreSearchError;
 use crate::api::vector_store_search::mock;
-use crate::api::vector_store_search::provider::resolve_provider;
+use crate::api::vector_store_search::provider::{ResolvedProvider, resolve_provider};
 
 // create/acreate: the mock, then the provider and its config, the filtered fields, the pre-call and B2485's create
 pub async fn create<S>(
@@ -34,50 +36,73 @@ where
     let api_key = text(&kwargs, "api_key")?;
     let api_base = text(&kwargs, "api_base")?;
     let ssl_verify = flag(&kwargs, "ssl_verify")?;
-    let mock_response = kwargs
-        .get("mock_response")
-        .filter(|value| !matches!(value, Json::Null));
-    if let Some(given @ Json::Object(fields)) = mock_response
-        && !fields.is_empty()
-    {
-        return Ok(mock::mock_create_response(Some(given)));
+    if let Some(answer) = create_mock(&kwargs) {
+        return Ok(answer);
     }
     let resolved = resolve_provider("create", call.custom_llm_provider)?;
-    let provider = resolved.provider.to_string();
-    let config = OwnedCreateReadConfig {
-        inner: deps.configs.create_config(resolved.tag).ok_or_else(|| {
-            VectorStoreSearchError::Unsupported {
-                operation: "create",
-                provider: provider.clone(),
-            }
-        })?,
-    };
-    let merged = merge_optionals(call.optional, &kwargs);
-    let filtered = deps.filters.create_params(&merged);
-    let params = create_params(&filtered)?;
-    log_create(log.state, call, &kwargs, &filtered, &provider)?;
-    let timeout = call_duration(call.timeout, deps.settings)?;
-    let write = WriteParams {
-        api_base,
-        api_key: api_key.map(SecretString::from),
-        ssl_verify,
-    };
-    let target = CreateReadTarget {
-        params: &write,
+    let filtered = deps
+        .filters
+        .create_params(&merge_optionals(call.optional, &kwargs));
+    log_create(
+        log.state,
+        call,
+        &kwargs,
+        &filtered,
+        &resolved.provider.to_string(),
+    )?;
+    let parts = CreateParts {
+        resolved: &resolved,
+        filtered: &filtered,
+        write: WriteParams {
+            api_base,
+            api_key: api_key.map(SecretString::from),
+            ssl_verify,
+        },
         extra_headers: call.extra_headers,
+        extra_body: call.extra_body,
+        timeout: call.timeout,
+    };
+    create_send(deps, call, log, &parts).await
+}
+
+// VectorStoreCreateRequest is built from these, and the write carries the key the caller's kwargs named
+struct CreateParts<'parts> {
+    resolved: &'parts ResolvedProvider,
+    filtered: &'parts Params,
+    write: WriteParams,
+    extra_headers: Option<&'parts BTreeMap<String, String>>,
+    extra_body: Option<&'parts IndexMap<String, Json>>,
+    timeout: Option<f64>,
+}
+
+async fn create_send<S>(
+    deps: &SdkDeps<'_, S>,
+    call: &CreateCall<'_>,
+    log: &mut LogContext<'_, '_>,
+    parts: &CreateParts<'_>,
+) -> Result<Json, VectorStoreSearchError>
+where
+    S: ClientSource,
+{
+    let (config, provider) = create_config(deps, parts.resolved)?;
+    let params = create_params(parts.filtered)?;
+    let timeout = call_duration(parts.timeout, deps.settings)?;
+    let target = CreateReadTarget {
+        params: &parts.write,
+        extra_headers: parts.extra_headers,
         timeout: Some(timeout),
     };
-    let transport_call = CreateReadCall::Create(CreateTransportCall {
+    let transport = CreateReadCall::Create(CreateTransportCall {
         target,
         optional_params: &params,
-        extra_body: call.extra_body,
+        extra_body: parts.extra_body,
     });
     let create_deps = CreateReadDeps {
         config: &config,
         source: deps.source,
         supplied: supplied(deps),
     };
-    let prepared = prepare_create(&create_deps, call.entry.client_kind(), &transport_call, log)
+    let prepared = prepare_create(&create_deps, call.entry.client_kind(), &transport, log)
         .map_err(|source| VectorStoreSearchError::Create {
             provider: provider.clone(),
             source,
@@ -85,6 +110,37 @@ where
     send_create(prepared)
         .await
         .map_err(|source| VectorStoreSearchError::Create { provider, source })
+}
+
+// B010's create config for the resolved tag, or the local unsupported ValueError the SDK raises before HTTP
+fn create_config<'deps, S>(
+    deps: &SdkDeps<'deps, S>,
+    resolved: &ResolvedProvider,
+) -> Result<(OwnedCreateReadConfig<'deps>, String), VectorStoreSearchError>
+where
+    S: ClientSource,
+{
+    let provider = resolved.provider.to_string();
+    let inner = deps.configs.create_config(resolved.tag).ok_or_else(|| {
+        VectorStoreSearchError::Unsupported {
+            operation: "create",
+            provider: provider.clone(),
+        }
+    })?;
+    Ok((OwnedCreateReadConfig { inner }, provider))
+}
+
+// mock_vector_store_create_response: a nonempty dict comes back unchanged, and an empty one proceeds to HTTP
+fn create_mock(kwargs: &Params) -> Option<Json> {
+    let mock = kwargs
+        .get("mock_response")
+        .filter(|value| !matches!(value, Json::Null));
+    if let Some(given @ Json::Object(fields)) = mock
+        && !fields.is_empty()
+    {
+        return Some(mock::mock_create_response(Some(given)));
+    }
+    None
 }
 
 // VectorStoreCreateRequest's five fields; B1058 has already dropped everything else

@@ -515,6 +515,10 @@ fn vector_provider_resolution() {
         unsupported_create.to_string(),
         "Vector store create is not supported for anthropic"
     );
+}
+
+#[test]
+fn vector_async_flag_truthiness() {
     // only a literal true selects the asynchronous handler
     assert_eq!(
         entry_from_flag(&params(r#"{"asearch":true}"#), "asearch"),
@@ -556,6 +560,11 @@ fn local_errors_map_to_api_connection() {
     assert_eq!(invalid.class, "APIConnectionError");
     assert_eq!(invalid.status, Some(500));
     assert_eq!(invalid.kind, WireField::Null);
+}
+
+#[test]
+fn provider_errors_keep_the_sdk_status() {
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds");
     let provider = failure(
         &VectorStoreSearchError::Search {
             provider: String::from("openai"),
