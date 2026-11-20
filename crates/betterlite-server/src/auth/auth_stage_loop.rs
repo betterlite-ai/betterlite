@@ -8,7 +8,7 @@ use secrecy::SecretString;
 
 use super::{prefetch_tag_budgets, resolver_for, stage_input};
 use crate::auth::auth_identity::{
-    AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
+    AuthBackend, AuthContext, INSTALLED_STAGES, StageInput, dispatch,
 };
 use crate::auth::body_buffering::{BufferError, max_body_bytes, read_body};
 use crate::auth::failures::{
