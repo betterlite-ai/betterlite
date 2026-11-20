@@ -16,9 +16,7 @@ pub fn frame_error_code(frame: &[u8]) -> Option<u16> {
     let Some(Json::Object(error)) = data.get("error") else {
         return None;
     };
-    let Some(raw) = error.get("code") else {
-        return None;
-    };
+    let raw = error.get("code")?;
     let code = match raw {
         Json::Null => return None,
         Json::Text(text) => match parse_python_int(text) {
