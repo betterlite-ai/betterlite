@@ -18,3 +18,4 @@ compare:
   headers: []
   headers_present: []
   upstream_headers: [authorization, content-type]
+  ignore: []

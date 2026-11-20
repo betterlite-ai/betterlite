@@ -23,3 +23,4 @@ compare:
   headers: []
   headers_present: []
   upstream_headers: [authorization, content-type, openai-beta, x-trace]
+  ignore: []
