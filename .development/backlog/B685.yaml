@@ -1,14 +1,14 @@
 id: B685
 milestone: M3 providers
 title: Azure chat streaming adapters
-status: todo
+status: done
 depends_on: [B531, B005, B171, B505, B529, B530, B2200, B673, B249, B187]
 file: tasks/B685-azure-stream-errors.yaml
 covers:
   - "litellm/llms/azure/azure.py"
 parent: B025
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2660
