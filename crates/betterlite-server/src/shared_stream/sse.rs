@@ -8,16 +8,10 @@ use betterlite_logging::python_json::dumps;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use bytes::Bytes;
-use futures_util::stream::BoxStream;
 
-use super::call::{SharedCall, StreamAbort};
+use super::call::StreamAbort;
 use super::framing::ChunkFraming;
-use super::generator::SharedStreamGenerator;
-use super::pings::with_sse_pings;
-use super::tail::{
-    ANTHROPIC_PING_CHUNK, SSE_STREAM_START_TAIL, advance_sse_tail, seal_open_sse_frame,
-};
-use crate::sse_data_generator::types::StreamHooks;
+use super::tail::{SSE_STREAM_START_TAIL, advance_sse_tail, seal_open_sse_frame};
 use crate::stream_chunks::restamp::should_return_raw_model_name;
 use crate::stream_chunks::{StreamItem, frames::sse_data_frame};
 
@@ -118,21 +112,4 @@ pub fn restamp_model_for(request_data: &JsonObject, client_model: Option<&str>) 
         return None;
     }
     client_model.map(str::to_owned)
-}
-
-impl<Key, H> SharedStreamGenerator<Key, H>
-where
-    Key: Send + Sync + 'static,
-    H: StreamHooks<Key> + 'static,
-{
-    #[must_use]
-    pub fn messages_stream(
-        &self,
-        call: SharedCall<Key>,
-        client_model: Option<&str>,
-    ) -> BoxStream<'static, Result<Emitted, StreamAbort>> {
-        let restamp = restamp_model_for(&call.request_data, client_model);
-        let body = self.generate(call, SseFraming::new(restamp, self.limits));
-        with_sse_pings(body, self.anthropic_ping.as_ref(), ANTHROPIC_PING_CHUNK)
-    }
 }

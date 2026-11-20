@@ -4,6 +4,7 @@ use bytes::Bytes;
 use futures_util::Stream;
 use futures_util::StreamExt as _;
 use futures_util::stream::BoxStream;
+use tokio::time::timeout;
 
 use super::call::StreamAbort;
 use super::sse::Emitted;
@@ -31,7 +32,7 @@ fn paced(
     async_stream::stream! {
         let mut inner = stream;
         loop {
-            match tokio::time::timeout(interval, inner.next()).await {
+            match timeout(interval, inner.next()).await {
                 Err(_elapsed) => yield Ok(Emitted::Frame(Bytes::from_static(ping.as_bytes()))),
                 Ok(None) => return,
                 Ok(Some(item)) => yield item,

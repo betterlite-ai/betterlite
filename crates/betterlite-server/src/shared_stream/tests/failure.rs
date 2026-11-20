@@ -10,8 +10,7 @@ use super::super::failure::failure_exception;
 use super::super::sse::Emitted;
 use super::super::tail::ANTHROPIC_PING_CHUNK;
 use super::{
-    HookConfig, Rig, StreamFailure, abort_of, call, drive, other_failure, sse_body, status_failure,
-    text_chunk,
+    HookConfig, Rig, abort_of, call, drive, other_failure, sse_body, status_failure, text_chunk,
 };
 use crate::sse_data_generator::types::{FailureKind, FailureParam, FailureType};
 use crate::stream_chunks::StreamItem;
@@ -22,14 +21,14 @@ fn error_frame(message: &str, kind: &str) -> String {
     )
 }
 
-fn closed_frame() -> Result<StreamItem, StreamFailure> {
-    Ok(StreamItem::Bytes(Bytes::from_static(b"data: x\n\n")))
+fn closed_frame() -> StreamItem {
+    StreamItem::Bytes(Bytes::from_static(b"data: x\n\n"))
 }
 
 #[test]
 fn error_frame_after_closed_frame() {
     let rig = Rig::new(HookConfig::plain());
-    let items = vec![closed_frame(), Err(status_failure("slow down", 429))];
+    let items = vec![Ok(closed_frame()), Err(status_failure("slow down", 429))];
     let results = drive(sse_body(&rig.generator, call(items), None));
     assert_eq!(results.len(), 2);
     match results.get(1) {
@@ -37,8 +36,7 @@ fn error_frame_after_closed_frame() {
             assert_eq!(frame.status_code, 429);
             assert_eq!(frame.body, error_frame("slow down", "rate_limit_error"));
         }
-        Some(Ok(Emitted::Frame(_))) => panic!("expected the typed error frame"),
-        Some(Err(_)) => panic!("expected the typed error frame"),
+        Some(Ok(Emitted::Frame(_))) | Some(Err(_)) => panic!("expected the typed error frame"),
         None => panic!("no frame"),
     }
     assert_eq!(
@@ -78,7 +76,7 @@ fn error_seals_after_torn_bytes() {
 fn no_deployments_becomes_429() {
     let rig = Rig::new(HookConfig::plain());
     let items = vec![
-        closed_frame(),
+        Ok(closed_frame()),
         Err(status_failure(
             "No deployments available for selected model",
             500,
@@ -96,8 +94,7 @@ fn no_deployments_becomes_429() {
                 )
             );
         }
-        Some(Ok(Emitted::Frame(_))) => panic!("expected the typed error frame"),
-        Some(Err(_)) => panic!("expected the typed error frame"),
+        Some(Ok(Emitted::Frame(_))) | Some(Err(_)) => panic!("expected the typed error frame"),
         None => panic!("no frame"),
     }
 }
@@ -106,7 +103,7 @@ fn no_deployments_becomes_429() {
 fn tag_routing_becomes_401() {
     let rig = Rig::new(HookConfig::plain());
     let items = vec![
-        closed_frame(),
+        Ok(closed_frame()),
         Err(status_failure(
             "Not allowed to access model due to tags configuration",
             400,
@@ -124,8 +121,7 @@ fn tag_routing_becomes_401() {
                 )
             );
         }
-        Some(Ok(Emitted::Frame(_))) => panic!("expected the typed error frame"),
-        Some(Err(_)) => panic!("expected the typed error frame"),
+        Some(Ok(Emitted::Frame(_))) | Some(Err(_)) => panic!("expected the typed error frame"),
         None => panic!("no frame"),
     }
 }
@@ -182,8 +178,7 @@ fn generator_redacts_failure() {
         Some(Ok(Emitted::AnthropicError(frame))) => {
             assert_eq!(frame.body, error_frame("REDACTED", "invalid_request_error"));
         }
-        Some(Ok(Emitted::Frame(_))) => panic!("expected the typed error frame"),
-        Some(Err(_)) => panic!("expected the typed error frame"),
+        Some(Ok(Emitted::Frame(_))) | Some(Err(_)) => panic!("expected the typed error frame"),
         None => panic!("no frame"),
     }
 }

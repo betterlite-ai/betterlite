@@ -1,10 +1,13 @@
 #![cfg(test)]
 
+use std::time::Duration;
+
 use betterlite_anthropic::api::messages_errors::frame::anthropic_error_sse_frame;
 use betterlite_models::decisions::Json;
 use bytes::Bytes;
 use futures_util::StreamExt as _;
 use futures_util::stream::{self, BoxStream};
+use tokio::time::sleep;
 
 use super::super::call::StreamAbort;
 use super::super::generator::DEFAULT_LIMITS;
@@ -27,7 +30,7 @@ fn sse_uses_python_json() {
         ("z", Json::Null),
         ("a", Json::Bool(true)),
         ("n", Json::Number(serde_json::Number::from(7_i64))),
-        ("t", Json::Text(String::from("é"))),
+        ("t", Json::Text(String::from("\u{e9}"))),
     ]);
     let frames = texts(sse_body(&rig.generator, call(vec![Ok(item)]), None));
     assert_eq!(
@@ -264,7 +267,7 @@ fn restamp_none_without_client() {
 #[tokio::test(start_paused = true)]
 async fn pings_fill_idle_gaps() {
     let inner: BoxStream<'static, Result<Emitted, StreamAbort>> = stream::once(async {
-        tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
+        sleep(Duration::from_millis(2500)).await;
         Ok::<Emitted, StreamAbort>(Emitted::Frame(Bytes::from_static(b"late")))
     })
     .boxed();

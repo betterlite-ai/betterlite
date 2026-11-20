@@ -14,7 +14,7 @@ pub(super) struct Guard<Key> {
 }
 
 impl<Key> Guard<Key> {
-    pub(super) fn mark_completed(&mut self) {
+    pub(super) const fn mark_completed(&mut self) {
         if let Some(outcome) = self.outcome.as_mut() {
             outcome.stream_completed = true;
         }

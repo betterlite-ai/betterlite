@@ -9,7 +9,10 @@ use super::call::{SharedCall, StreamAbort};
 use super::drive::{Drive, Ports, Step};
 use super::framing::ChunkFraming;
 use super::passthrough::{NoCleanup, NoRelease, PassThroughHooks};
+use super::pings::with_sse_pings;
 use super::ports::{CostInjection, ReservationRelease};
+use super::sse::{Emitted, SseFraming, restamp_model_for};
+use super::tail::ANTHROPIC_PING_CHUNK;
 use crate::keepalive_interval::PingSetting;
 use crate::sse_data_generator::types::{StreamCleanup, StreamHooks};
 
@@ -86,5 +89,16 @@ where
             }
         }
         .boxed()
+    }
+
+    #[must_use]
+    pub fn messages_stream(
+        &self,
+        call: SharedCall<Key>,
+        client_model: Option<&str>,
+    ) -> BoxStream<'static, Result<Emitted, StreamAbort>> {
+        let restamp = restamp_model_for(&call.request_data, client_model);
+        let body = self.generate(call, SseFraming::new(restamp, self.limits));
+        with_sse_pings(body, self.anthropic_ping.as_ref(), ANTHROPIC_PING_CHUNK)
     }
 }

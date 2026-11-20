@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_error::proxy_exception::ProxyException;
@@ -10,6 +11,7 @@ use bytes::Bytes;
 use futures_util::StreamExt as _;
 use futures_util::stream::{self, BoxStream};
 use tokio::runtime::Runtime;
+use tokio::time::timeout;
 
 use super::call::{SharedCall, SharedSource, StreamAbort};
 use super::framing::ChunkFraming;
@@ -25,10 +27,15 @@ use crate::sse_data_generator::types::{
 };
 use crate::stream_chunks::{ChunkKind, StreamChunk, StreamItem};
 
+enum Rewrite {
+    Keep,
+    Hooked,
+}
+
 struct HookConfig {
     per_chunk: bool,
     wrap_prefix: bool,
-    rewrite: bool,
+    rewrite: Rewrite,
     chunk_failure: Option<StreamFailure>,
     replacement: Option<StreamFailure>,
 }
@@ -38,7 +45,7 @@ impl HookConfig {
         Self {
             per_chunk: false,
             wrap_prefix: false,
-            rewrite: false,
+            rewrite: Rewrite::Keep,
             chunk_failure: None,
             replacement: None,
         }
@@ -66,8 +73,13 @@ impl StreamHooks<String> for RecordingHooks {
         self.config.per_chunk
     }
 
-    fn wrap_iterator(&self, items: ItemStream, _key: &String, request: &JsonObject) -> ItemStream {
-        self.record(&format!("wrap:{}", text_at(request, "model")));
+    fn wrap_iterator(
+        &self,
+        items: ItemStream,
+        _key: &String,
+        request_data: &JsonObject,
+    ) -> ItemStream {
+        self.record(&format!("wrap:{}", text_at(request_data, "model")));
         if self.config.wrap_prefix {
             return stream::iter([Ok(StreamItem::Text(String::from("wrapped")))])
                 .chain(items)
@@ -87,7 +99,7 @@ impl StreamHooks<String> for RecordingHooks {
         if let Some(failure) = &self.config.chunk_failure {
             return Err(failure.clone());
         }
-        if self.config.rewrite {
+        if matches!(self.config.rewrite, Rewrite::Hooked) {
             return Ok(StreamItem::Text(String::from("hooked")));
         }
         Ok(item)
@@ -100,10 +112,10 @@ impl StreamHooks<String> for RecordingHooks {
         _request_data: &JsonObject,
     ) -> Result<(), StreamFailure> {
         self.record(&format!("failure:{}", failure.message));
-        match &self.config.replacement {
-            Some(replacement) => Err(replacement.clone()),
-            None => Ok(()),
-        }
+        self.config
+            .replacement
+            .as_ref()
+            .map_or_else(|| Ok(()), |replacement| Err(replacement.clone()))
     }
 
     fn fire_deferred_stream_logging(&self, _request_data: &JsonObject) {
@@ -151,7 +163,7 @@ impl CostInjection for RecordingCost {
         self.0.lock().expect("cost").push(model_name.to_owned());
         match item {
             StreamItem::Text(text) => StreamItem::Text(format!("cost {text}")),
-            other => other,
+            other @ (StreamItem::Chunk(_) | StreamItem::Bytes(_)) => other,
         }
     }
 }
@@ -495,7 +507,7 @@ fn bytes_and_text_do_not_grow() {
 fn chunk_hook_replacement_is_written() {
     let mut config = HookConfig::plain();
     config.per_chunk = true;
-    config.rewrite = true;
+    config.rewrite = Rewrite::Hooked;
     let rig = Rig::new(config);
     let frames = texts(sse_body(
         &rig.generator,
@@ -519,8 +531,7 @@ fn chunk_hook_failure_ends_stream() {
     assert_eq!(results.len(), 1);
     match results.first() {
         Some(Ok(Emitted::AnthropicError(frame))) => assert_eq!(frame.status_code, 400),
-        Some(Ok(Emitted::Frame(_))) => panic!("expected the error frame"),
-        Some(Err(_)) => panic!("expected the error frame"),
+        Some(Ok(Emitted::Frame(_))) | Some(Err(_)) => panic!("expected the error frame"),
         None => panic!("no frame"),
     }
     assert_eq!(
@@ -686,10 +697,9 @@ fn drop_at_the_error_frame_still_counts_the_disconnect() {
     let rig = Rig::new(HookConfig::plain());
     let mut body = sse_body(&rig.generator, call(vec![Err(other_failure("boom"))]), None);
     let first = Runtime::new().expect("runtime").block_on(body.next());
-    match first.expect("frame") {
-        Ok(Emitted::AnthropicError(frame)) => assert_eq!(frame.status_code, 500),
-        Ok(Emitted::Frame(_)) => panic!("expected the typed error frame"),
-        Err(_) => panic!("expected the error frame"),
+    match first.expect("frame").expect("expected the error frame") {
+        Emitted::AnthropicError(frame) => assert_eq!(frame.status_code, 500),
+        Emitted::Frame(_) => panic!("expected the typed error frame"),
     }
     drop(body);
     assert_eq!(rig.releases(), vec![String::from("key-1")]);
@@ -780,9 +790,9 @@ fn buffered_output_keeps_charge() {
 fn pending_stream_times_out_disconnected() {
     let rig = Rig::new(HookConfig::plain());
     let mut body = sse_body(&rig.generator, pending_call(), None);
-    let polled = Runtime::new().expect("runtime").block_on(async {
-        tokio::time::timeout(std::time::Duration::from_millis(20), body.next()).await
-    });
+    let polled = Runtime::new()
+        .expect("runtime")
+        .block_on(async { timeout(Duration::from_millis(20), body.next()).await });
     polled.expect_err("the stream stays pending");
     drop(body);
     assert_eq!(rig.releases(), vec![String::from("key-1")]);
