@@ -218,27 +218,37 @@ fn nested_litellm_params_metadata() {
 }
 
 #[rstest]
-#[case::api_base("api_base")]
-#[case::base_url("base_url")]
-#[case::aws_sts_endpoint("aws_sts_endpoint")]
-#[case::aws_bedrock_runtime_endpoint("aws_bedrock_runtime_endpoint")]
-#[case::s3_endpoint_url("s3_endpoint_url")]
-#[case::sagemaker_base_url("sagemaker_base_url")]
-#[case::deployment_url("deployment_url")]
-#[case::langfuse_host("langfuse_host")]
-#[case::langsmith_base_url("langsmith_base_url")]
-#[case::posthog_host("posthog_host")]
-#[case::posthog_api_url("posthog_api_url")]
-#[case::braintrust_host("braintrust_host")]
-#[case::slack_webhook_url("slack_webhook_url")]
-#[case::signoz_ingestion_endpoint("signoz_ingestion_endpoint")]
-#[case::dd_site("dd_site")]
-#[case::dd_agent_host("dd_agent_host")]
-fn url_bans_survive_credential_opt_in(#[case] field: &str) {
+#[case::api_base("api_base", r#"{"api_base": "value"}"#)]
+#[case::base_url("base_url", r#"{"base_url": "value"}"#)]
+#[case::aws_sts_endpoint("aws_sts_endpoint", r#"{"aws_sts_endpoint": "value"}"#)]
+#[case::aws_bedrock_runtime_endpoint(
+    "aws_bedrock_runtime_endpoint",
+    r#"{"aws_bedrock_runtime_endpoint": "value"}"#
+)]
+#[case::s3_endpoint_url("s3_endpoint_url", r#"{"s3_endpoint_url": "value"}"#)]
+#[case::sagemaker_base_url("sagemaker_base_url", r#"{"sagemaker_base_url": "value"}"#)]
+#[case::deployment_url("deployment_url", r#"{"deployment_url": "value"}"#)]
+#[case::langfuse_host("langfuse_host", r#"{"langfuse_host": "value"}"#)]
+#[case::langsmith_base_url("langsmith_base_url", r#"{"langsmith_base_url": "value"}"#)]
+#[case::posthog_host("posthog_host", r#"{"posthog_host": "value"}"#)]
+#[case::posthog_api_url("posthog_api_url", r#"{"posthog_api_url": "value"}"#)]
+#[case::braintrust_host("braintrust_host", r#"{"braintrust_host": "value"}"#)]
+#[case::slack_webhook_url("slack_webhook_url", r#"{"slack_webhook_url": "value"}"#)]
+#[case::signoz_ingestion_endpoint(
+    "signoz_ingestion_endpoint",
+    r#"{"signoz_ingestion_endpoint": "value"}"#
+)]
+#[case::dd_site("dd_site", r#"{"dd_site": "value"}"#)]
+#[case::dd_agent_host("dd_agent_host", r#"{"dd_agent_host": "value"}"#)]
+#[case::after_admitted_field(
+    "langfuse_host",
+    r#"{"aws_role_name": "admin", "langfuse_host": "https://evil.example"}"#
+)]
+fn url_bans_survive_credential_opt_in(#[case] field: &str, #[case] body: &str) {
+    // the opt-in admits one field at a time, so the URL field paired with it is still refused
     let mut fixture = Fixture::default();
     fixture.allow = true;
-    let text = format!(r#"{{"{field}": "value"}}"#);
-    assert_eq!(denied_param(&fixture, &text), field);
+    assert_eq!(denied_param(&fixture, body), field);
 }
 
 #[test]

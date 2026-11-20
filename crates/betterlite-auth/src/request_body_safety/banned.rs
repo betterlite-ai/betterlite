@@ -41,7 +41,7 @@ pub fn check(
             });
         }
         if scan.allow_client_side_credentials {
-            return Ok(());
+            continue;
         }
         if grants::model_level_allows(scan.model, param, value, scan.grants)? {
             continue;
