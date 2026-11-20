@@ -31,7 +31,6 @@ use super::ocr::{NativeOcrPassthrough, decode_logged_ocr_reply};
 use super::url::{foundry_root, relay_query_params, without_repeated_native_prefix};
 
 const STREAM: &str = "stream";
-// litellm_params carries the deployment version under its own underscore key
 const PARAMS_API_VERSION: &str = "api_version";
 
 // one relayed reply with the route it came from: LiteLLM's logging methods read these beside each other
@@ -193,8 +192,9 @@ where
         let api_version = request
             .litellm_params
             .get(PARAMS_API_VERSION)
-            .and_then(serde_json::Value::as_str);
-        let query_params = relay_query_params(request.request_query_params, api_version, &base)?;
+            .and_then(|value| value.as_str().map(str::to_owned));
+        let version = api_version.as_deref();
+        let query_params = relay_query_params(request.request_query_params, version, &base)?;
         let url = self.format_url(&native_endpoint, &root, query_params.as_ref())?;
         Ok((url, root))
     }

@@ -78,6 +78,12 @@ fn relay_shapes_accept_their_declared_fields() {
 }
 
 fn relay_shapes_reject_other_shapes() {
+    rerank_bodies_are_rejected();
+    image_bodies_are_rejected();
+    only_a_matching_200_logs_a_relay_shape();
+}
+
+fn rerank_bodies_are_rejected() {
     for body in [
         &br#"{"results":[{"index":0}]}"#[..],
         &br#"{"results":[{"relevance_score":0.5}]}"#[..],
@@ -95,6 +101,9 @@ fn relay_shapes_reject_other_shapes() {
     ] {
         assert_shape_rejected(body, RERANK_ENDPOINT);
     }
+}
+
+fn image_bodies_are_rejected() {
     for body in [
         &br#"{"created":"yesterday"}"#[..],
         &br#"{"data":[]}"#[..],
@@ -109,7 +118,10 @@ fn relay_shapes_reject_other_shapes() {
     ] {
         assert_shape_rejected(body, FLUX_ENDPOINT);
     }
-    // the suffix must end the relayed path, and only a 200 carries a relayed object
+}
+
+// the suffix must end the relayed path, and only a 200 carries a relayed object
+fn only_a_matching_200_logs_a_relay_shape() {
     assert_shape_rejected(FLUX_BODY, "/providers/blackforestlabs/v1/flux-2");
     assert_shape_rejected(FLUX_BODY, "/rerankx");
     let mut logging = RecordingLogging::default();

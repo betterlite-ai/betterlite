@@ -30,7 +30,7 @@ mod tests;
 use input::{
     BaseStep, CollectedStep, Input, NonStreamStep, PrefixStep, QueryStep, RootStep, ValidationStep,
 };
-use support::{RecordingLogging, capture_warnings, scripted_ocr};
+use support::{RecordingLogging, ScriptedOcr, capture_warnings, scripted_ocr};
 
 type Plan = FoundryPassthroughPlan;
 
@@ -57,7 +57,7 @@ impl Helper for Op {
     }
 }
 
-fn plan_for(
+const fn plan_for(
     global_api_base: Option<String>,
     environment_api_base: Option<String>,
     litellm_params: Object,
@@ -79,7 +79,7 @@ fn plan_for(
     }
 }
 
-fn target<'call>(model: &'call str, endpoint: &'call str) -> PassthroughTarget<'call> {
+const fn target<'call>(model: &'call str, endpoint: &'call str) -> PassthroughTarget<'call> {
     PassthroughTarget {
         model,
         custom_llm_provider: "azure_ai",
@@ -154,7 +154,7 @@ fn validation_step(step: &ValidationStep, sources: &NoSources) -> Value {
 }
 
 fn outcome_fields(
-    outcome: &Option<FoundryRelayedLog>,
+    outcome: Option<&FoundryRelayedLog>,
 ) -> (&'static str, Option<(&'static str, Value)>) {
     match outcome {
         Some(FoundryRelayedLog::Azure(AzureRelayedLog::Chat(_))) => ("chat", None),
@@ -207,10 +207,9 @@ fn nonstream_step(step: &NonStreamStep) -> Value {
     let mut logging = RecordingLogging::default();
     let (outcome, warnings) =
         capture_warnings(|| plan.logging_relayed_response(&input, &mut logging));
-    let (kind, detail) = outcome_fields(&outcome);
-    let calls = recorder
-        .as_ref()
-        .map_or_else(Vec::new, |ocr| ocr.calls_json());
+    let (kind, detail) = outcome_fields(outcome.as_ref());
+    let script = recorder.as_deref();
+    let calls = script.map_or_else(Vec::new, ScriptedOcr::calls_json);
     let mut output = json!({
         "kind": kind,
         "call_type": logging.call_type,
@@ -232,6 +231,6 @@ fn collected_step(step: &CollectedStep) -> Value {
         &mut logging,
         &target(&step.model, &step.endpoint),
     );
-    let (kind, _detail) = outcome_fields(&outcome);
+    let (kind, _detail) = outcome_fields(outcome.as_ref());
     json!({"kind": kind, "call_type": logging.call_type, "streaming": streaming})
 }

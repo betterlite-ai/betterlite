@@ -28,7 +28,7 @@ pub(super) fn ocr_usage_log() {
 
 pub(super) fn scripted_ocr() -> Arc<RecordingOcr> {
     let response = serde_json::from_str(OCR_BODY).expect("OCR fixture");
-    let script = OcrScript::Response(response);
+    let script = OcrScript::Response(Box::new(response));
     RecordingOcr::scripted(script)
 }
 
@@ -36,7 +36,7 @@ fn azure_chat_projection_runs_first() {
     let headers = Headers::new();
     let empty = object("{}");
     let chat = RecordingChat::default();
-    let chat_calls = chat.calls.clone();
+    let chat_calls = Arc::clone(&chat.calls);
     let mut projecting = plan_with_reply(chat);
     projecting.ocr = Some(scripted_ocr());
     let mut logging = RecordingLogging::default();
@@ -66,7 +66,7 @@ fn azure_chat_projection_runs_first() {
 fn azure_relay_projection_runs_before_ocr() {
     let ocr = scripted_ocr();
     let mut plan = build_plan(None, None, None, None, Object::new());
-    plan.ocr = Some(ocr.clone());
+    plan.ocr = Some(Arc::clone(&ocr));
     let mut logging = RecordingLogging::default();
     let logged = plan.logging_relayed_response(
         &FoundryLogInput {
@@ -96,7 +96,7 @@ fn ocr_route_logs_the_decoded_reply() {
     let litellm_params = object(r#"{"litellm_metadata": {"model_group": "group-one"}}"#);
     let ocr = scripted_ocr();
     let mut plan = build_plan(None, None, Some(RES), None, litellm_params);
-    plan.ocr = Some(ocr.clone());
+    plan.ocr = Some(Arc::clone(&ocr));
     let mut logging = RecordingLogging::default();
     let endpoint = format!("group-one/{OCR_ENDPOINT}");
     let request_url = format!("{RES}/{OCR_ENDPOINT}");
@@ -141,7 +141,7 @@ fn native_ocr_binding_decodes() {
 fn ocr_decodes_only_a_200() {
     let ocr = scripted_ocr();
     let mut plan = build_plan(None, None, Some(RES), None, Object::new());
-    plan.ocr = Some(ocr.clone());
+    plan.ocr = Some(Arc::clone(&ocr));
     let mut logging = RecordingLogging::default();
     let request_url = format!("{RES}/{OCR_ENDPOINT}");
     let logged = plan.logging_relayed_response(
@@ -161,7 +161,7 @@ fn ocr_decodes_only_a_200() {
 fn ocr_failure_warns_and_falls_back() {
     let ocr = RecordingOcr::scripted(OcrScript::Failure);
     let mut plan = build_plan(None, None, Some(RES), None, Object::new());
-    plan.ocr = Some(ocr.clone());
+    plan.ocr = Some(Arc::clone(&ocr));
     let mut logging = RecordingLogging::default();
     let request_url = format!("{RES}/{OCR_ENDPOINT}");
     let (logged, warnings) = capture_warnings(|| {
@@ -191,7 +191,7 @@ fn ocr_failure_warns_and_falls_back() {
 fn an_absent_ocr_body_logs_nothing() {
     let ocr = RecordingOcr::scripted(OcrScript::Absent);
     let mut plan = build_plan(None, None, Some(RES), None, Object::new());
-    plan.ocr = Some(ocr.clone());
+    plan.ocr = Some(Arc::clone(&ocr));
     let mut logging = RecordingLogging::default();
     let request_url = format!("{RES}/{OCR_ENDPOINT}");
     let (logged, warnings) = capture_warnings(|| {
@@ -215,7 +215,7 @@ fn an_absent_ocr_body_logs_nothing() {
 fn the_trait_path_logs_ocr_without_the_ocr_call_type() {
     let ocr = scripted_ocr();
     let mut plan = build_plan(None, None, Some(RES), None, Object::new());
-    plan.ocr = Some(ocr.clone());
+    plan.ocr = Some(ocr);
     let mut logging = RecordingLogging::default();
     let response = RelayedResponse {
         status_code: 200_u16,

@@ -1,4 +1,4 @@
-use std::sync::PoisonError;
+use std::sync::{Arc, PoisonError};
 
 use betterlite_azure::passthrough::logging::AzureRelayedLog;
 use betterlite_openai::openai_base_config::Object;
@@ -36,7 +36,7 @@ fn responses_streams_log_the_terminal_event() {
 fn chat_streams_delegate_to_the_assembly() {
     let chunks = vec![String::from(RESPONSES_CHUNK)];
     let stream = RecordingStream::default();
-    let calls = stream.calls.clone();
+    let calls = Arc::clone(&stream.calls);
     let plan = plan_with_stream(stream);
     let mut logging = RecordingLogging::default();
     let logged = plan.handle_collected_chunks(
@@ -71,7 +71,7 @@ fn stream_collection_skips_ocr() {
     let chunks = vec![String::from(RESPONSES_CHUNK)];
     let ocr = scripted_ocr();
     let mut plan = build_plan(None, None, None, None, Object::new());
-    plan.ocr = Some(ocr.clone());
+    plan.ocr = Some(Arc::clone(&ocr));
     let mut logging = RecordingLogging::default();
     let logged = plan.handle_collected_chunks(
         &chunks,

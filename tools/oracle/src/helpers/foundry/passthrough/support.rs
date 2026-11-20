@@ -8,6 +8,7 @@ use betterlite_ocr::ocr_error::OcrError;
 use betterlite_ocr::response::OCRResponse;
 use betterlite_openai::passthrough::transformation::types::{PassthroughLogging, RelayCallType};
 use serde_json::{Value, json};
+use tracing::subscriber::with_default;
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
@@ -109,6 +110,6 @@ where
 {
     let warnings = Warnings::default();
     let subscriber = tracing_subscriber::registry().with(warnings.clone());
-    let value = tracing::subscriber::with_default(subscriber, run);
+    let value = with_default(subscriber, run);
     (value, warnings.0.load(Ordering::Relaxed))
 }

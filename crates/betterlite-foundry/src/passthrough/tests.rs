@@ -3,6 +3,7 @@
 mod passthrough_cases;
 
 use std::collections::BTreeMap;
+use std::fmt::Debug;
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -28,6 +29,7 @@ use betterlite_openai::passthrough::transformation::types::{
 use betterlite_prompts::arguments::json::Object as ParamsObject;
 use secrecy::{ExposeSecret as _, SecretString};
 use tracing::field::{Field, Visit};
+use tracing::subscriber::with_default;
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
@@ -71,7 +73,7 @@ pub(super) struct RecordedOcrCall {
 
 #[derive(Debug)]
 pub(super) enum OcrScript {
-    Response(OCRResponse),
+    Response(Box<OCRResponse>),
     Absent,
     Failure,
 }
@@ -114,7 +116,7 @@ impl NativeOcrPassthrough for RecordingOcr {
                 body: body.to_vec(),
             });
         match &self.script {
-            Some(OcrScript::Response(response)) => Ok(Some(response.clone())),
+            Some(OcrScript::Response(response)) => Ok(Some(OCRResponse::clone(response))),
             Some(OcrScript::Absent) | None => Ok(None),
             Some(OcrScript::Failure) => {
                 Err(OcrError::InvalidRequest(String::from("malformed OCR body")))
@@ -190,7 +192,7 @@ impl Warnings {
 struct MessageField(String);
 
 impl Visit for MessageField {
-    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
         if field.name() == "message" {
             self.0 = format!("{value:?}");
         }
@@ -217,7 +219,7 @@ where
 {
     let warnings = Warnings::default();
     let subscriber = tracing_subscriber::registry().with(warnings.clone());
-    let value = tracing::subscriber::with_default(subscriber, run);
+    let value = with_default(subscriber, run);
     (value, warnings.messages())
 }
 
@@ -516,11 +518,11 @@ fn passthrough_secret_safe_failure() {
 }
 
 fn corpus_failure(path: &Path) -> Option<String> {
-    let bytes = fs::read(path).expect("corpus file");
+    let bytes = fs::read(path).unwrap_or_default();
     let name = path
         .file_name()
         .and_then(|name| name.to_str())
-        .expect("corpus name");
+        .unwrap_or_default();
     let expected_ok = name.starts_with("ok-");
     let outcome = decode_logged_ocr_reply(None, OCR_MODEL, OCR_ENDPOINT, &bytes);
     let matched = match &outcome {

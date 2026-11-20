@@ -48,12 +48,12 @@ fn rerank_result_fits(fields: &Object) -> bool {
         .is_some_and(|index| index.is_i64() || index.is_u64());
     let score_fits = fields
         .get("relevance_score")
-        .is_some_and(serde_json::Value::is_number);
+        .is_some_and(|score| score.as_f64().is_some());
     let document_fits = fields.get("document").is_none_or(|document| {
         document.as_object().is_some_and(|document_fields| {
             document_fields
                 .get("text")
-                .is_some_and(serde_json::Value::is_string)
+                .is_some_and(|text| text.as_str().is_some())
         })
     });
     index_fits && score_fits && document_fits
