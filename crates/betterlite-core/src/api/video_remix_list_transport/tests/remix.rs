@@ -88,23 +88,22 @@ fn assert_sync_supplied(
     assert_sync_supplied_records(bench, params, extra_body);
     let sent = supplied.requests();
     assert_eq!(sent.len(), 1);
-    let request = &sent[0];
-    assert_eq!(request.method, Method::POST);
+    assert_eq!(sent[0].method, Method::POST);
     assert_eq!(
-        request.url.as_str(),
+        sent[0].url.as_str(),
         "https://api.test/v1/videos/video_a/remix"
     );
-    assert!(request.query.is_empty());
-    assert_eq!(request.timeout, Some(Duration::from_secs(2)));
+    assert!(sent[0].query.is_empty());
+    assert_eq!(sent[0].timeout, Some(Duration::from_secs(2)));
     assert_eq!(
-        request_header(request, "authorization"),
+        request_header(&sent[0], "authorization"),
         "Bearer sk-provider"
     );
-    assert_eq!(request_header(request, "content-type"), "application/json");
+    assert_eq!(request_header(&sent[0], "content-type"), "application/json");
     // the caller's header survives the config's own X-Trace because the extra headers are re-applied
-    assert_eq!(request_header(request, "x-trace"), "trace-a");
+    assert_eq!(request_header(&sent[0], "x-trace"), "trace-a");
     assert_eq!(
-        request_body(request),
+        request_body(&sent[0]),
         Json::Object(bench.config.remix_body().clone())
     );
 }
