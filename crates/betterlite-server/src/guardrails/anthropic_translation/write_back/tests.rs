@@ -1,7 +1,10 @@
 #![cfg(test)]
-#![expect(
-    clippy::disallowed_methods,
-    reason = "serde_json test fixtures built with json! are concise and type-directed"
+#![cfg_attr(
+    test,
+    expect(
+        clippy::disallowed_methods,
+        reason = "serde_json test fixtures built with json! are concise and type-directed"
+    )
 )]
 
 use rstest::rstest;
