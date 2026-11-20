@@ -1,13 +1,10 @@
-use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use betterlite_config::sections::complexity_placement as section;
 use betterlite_config::sections::context_placement as context_section;
-use betterlite_config::sections::tier_definitions::{TierEntry, TierPool as WireTierPool};
 use betterlite_models::decisions::Json;
-use betterlite_models::model_registration::JsonObject;
 use betterlite_openai::chat::ChatMessage;
 use betterlite_router::affinity_claims::AffinityClaims;
 use betterlite_router::affinity_claims::local::LocalPins;
@@ -16,7 +13,6 @@ use betterlite_router::complexity_placement::params_on_request::{
     TierTarget, pin_tier_params_onto_request, restore_client_ceiling_no_tier_pins,
 };
 use betterlite_router::complexity_placement::{TierChoice, TierPlacement};
-use betterlite_router::complexity_scoring::tier::{ComplexityTier, Tier};
 use betterlite_router::context_placement::ContextPlacement;
 use betterlite_router::context_placement::error::PlacementError;
 use betterlite_router::context_placement::facts::{ModelLimitKey, RouterModelInfo};
@@ -27,13 +23,14 @@ use betterlite_router::model_catalog_lookup::lookup::CatalogLookup;
 use betterlite_router::router_predicates::params::{ParamSupport, ResolvedProvider};
 use betterlite_router::routing_groups::index::RoutingGroupIndex;
 use betterlite_router::routing_value_store::StoreSettings;
-use betterlite_router::tier_definitions::model::{TierModelEntry, TierPool, TierSet};
-use indexmap::IndexMap;
-use serde_json::Number;
+use betterlite_router::tier_definitions::model::TierSet;
 
-use super::wire::{DeploymentInput, Input, Output, StepInput, StepOutput};
+use self::world::{deployments, no_provider, tier, tier_set};
+use super::wire::{Input, Output, StepInput, StepOutput};
 use crate::router_probes::error::OperationError;
 use crate::router_probes::random::InjectedRandom;
+
+mod world;
 
 const MODEL_NAME: &str = "probe";
 const AFFINITY_CONFIG: &str = "probe-affinity";
@@ -214,95 +211,6 @@ async fn step_output(
         pinned,
         request_kwargs: kwargs,
     })
-}
-
-fn tier(name: &str) -> Tier {
-    match ComplexityTier::built_in(name) {
-        Some(built_in) => Tier::BuiltIn(built_in),
-        None => Tier::Named(name.to_owned()),
-    }
-}
-
-fn tier_set(tiers: &IndexMap<String, WireTierPool>) -> TierSet {
-    TierSet {
-        definitions: None,
-        pools: tiers
-            .iter()
-            .map(|(name, pool)| (name.clone(), tier_pool(pool)))
-            .collect(),
-        labels: BTreeMap::new(),
-        non_reasoning: false,
-        fallback: None,
-    }
-}
-
-fn tier_pool(pool: &WireTierPool) -> TierPool {
-    match pool {
-        WireTierPool::Single(entry) => TierPool::Single(tier_entry(entry)),
-        WireTierPool::Pool(entries) => TierPool::Pool(entries.iter().map(tier_entry).collect()),
-    }
-}
-
-fn tier_entry(entry: &TierEntry) -> TierModelEntry {
-    match entry {
-        TierEntry::Model(name) => TierModelEntry {
-            model_name: name.clone(),
-            params: IndexMap::new(),
-        },
-        TierEntry::Detailed(detailed) => TierModelEntry {
-            model_name: detailed.model_name.clone(),
-            params: detailed.litellm_params.clone(),
-        },
-    }
-}
-
-fn deployments(entries: &[DeploymentInput]) -> DeploymentCatalog {
-    let mut catalog = DeploymentCatalog::default();
-    for entry in entries {
-        catalog.push(deployment_spec(entry));
-    }
-    catalog
-}
-
-fn text(value: &str) -> Json {
-    Json::Text(value.to_owned())
-}
-
-// the deployment's litellm_params and model_info as the YAML declares them
-fn deployment_spec(entry: &DeploymentInput) -> DeploymentSpec {
-    let mut params = JsonObject::new();
-    params.insert(
-        "model".to_owned(),
-        text(entry.model.as_deref().unwrap_or_default()),
-    );
-    if let Some(provider) = &entry.custom_llm_provider {
-        params.insert("custom_llm_provider".to_owned(), text(provider));
-    }
-    let allowed: Vec<Json> = entry
-        .allowed_openai_params
-        .iter()
-        .map(|param| text(param.as_str()))
-        .collect();
-    if !allowed.is_empty() {
-        params.insert("allowed_openai_params".to_owned(), Json::List(allowed));
-    }
-    let mut model_info = JsonObject::new();
-    if let Some(ceiling) = entry.max_output_tokens {
-        model_info.insert(
-            "max_output_tokens".to_owned(),
-            Json::Number(Number::from(ceiling)),
-        );
-    }
-    DeploymentSpec {
-        model_name: entry.group.clone(),
-        litellm_params: params,
-        model_info,
-        extra: JsonObject::new(),
-    }
-}
-
-const fn no_provider(_name: &str) -> Option<String> {
-    None
 }
 
 fn claims() -> Result<AffinityClaims, OperationError> {
