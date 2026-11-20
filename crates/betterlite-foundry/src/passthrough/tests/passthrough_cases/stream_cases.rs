@@ -6,7 +6,7 @@ use betterlite_openai::passthrough::transformation::BasePassthroughConfig as _;
 
 use crate::passthrough::logging::FoundryRelayedLog;
 use crate::passthrough::tests::{
-    RecordingLogging, RecordingStream, build_plan, object, plan_with_stream, target,
+    RecordingLogging, RecordingStream, build_plan, plan_with_stream, target,
 };
 
 use super::ocr_cases::scripted_ocr;

@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_openai::openai_base_config::Object;
+use betterlite_prompts::arguments::json::Object as ParamsObject;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -60,7 +61,7 @@ pub(super) struct BaseStep {
 pub(super) struct ValidationStep {
     pub(super) api_key: Option<String>,
     pub(super) api_base: Option<String>,
-    pub(super) params: Option<Object>,
+    pub(super) params: Option<ParamsObject>,
     #[serde(default)]
     pub(super) headers: BTreeMap<String, String>,
     #[serde(default)]

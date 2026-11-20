@@ -19,8 +19,8 @@ pub fn decode_logged_ocr_reply(
     endpoint: &str,
     body: &[u8],
 ) -> Result<Option<OCRResponse>, OcrError> {
-    match projector {
-        Some(projector) => projector.passthrough_response(model, endpoint, body),
-        None => native_passthrough_response(model, endpoint, body),
-    }
+    projector.map_or_else(
+        || native_passthrough_response(model, endpoint, body),
+        |selected| selected.passthrough_response(model, endpoint, body),
+    )
 }

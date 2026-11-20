@@ -49,14 +49,13 @@ pub struct FoundryPassthroughPlan<Reply = NoChatReplyProjection, Stream = NoChat
     // AZURE_AI_API_BASE and AZURE_AI_API_KEY, resolved by the caller
     pub azure: AzurePassthroughConfig<Reply, Stream>,
     pub ocr: Option<Arc<dyn NativeOcrPassthrough>>,
-    // LiteLLM reads litellm_metadata.model_group from the logging object's litellm_params
+    // LiteLLM reads litellm_metadata.model_group from here; the map also holds api_key and Entra secrets
     pub litellm_params: Object,
 }
 
 impl<Reply, Stream> Debug for FoundryPassthroughPlan<Reply, Stream> {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> FormatResult {
-        formatter
-            .debug_struct("FoundryPassthroughPlan")
+    fn fmt(&self, f: &mut Formatter<'_>) -> FormatResult {
+        f.debug_struct("FoundryPassthroughPlan")
             .field("global_api_base", &self.global_api_base)
             .field("environment_api_base", &self.azure.api_base_env)
             .field(
@@ -67,7 +66,7 @@ impl<Reply, Stream> Debug for FoundryPassthroughPlan<Reply, Stream> {
                 "environment_api_key",
                 &self.azure.api_key_env.as_ref().map(|_key| "<redacted>"),
             )
-            .field("litellm_params", &self.litellm_params)
+            .field("model_group", &model_group_from(&self.litellm_params))
             .field("injected_ocr", &self.ocr.is_some())
             .finish_non_exhaustive()
     }
@@ -138,8 +137,8 @@ impl<Reply, Stream> FoundryPassthroughPlan<Reply, Stream> {
                 trait_logging,
             )
         };
-        if let Some(azure) = azure {
-            return Some(FoundryRelayedLog::Azure(azure));
+        if let Some(azure_log) = azure {
+            return Some(FoundryRelayedLog::Azure(azure_log));
         }
         if let Some(ocr) = self.logged_ocr_response(relayed, logging_obj) {
             return Some(FoundryRelayedLog::Ocr(Box::new(ocr)));
@@ -154,8 +153,8 @@ impl<Reply, Stream> FoundryPassthroughPlan<Reply, Stream> {
                 relayed.target.endpoint,
             )
         };
-        if let Some(shaped) = shaped {
-            return Some(FoundryRelayedLog::Relay(shaped));
+        if let Some(shaped_log) = shaped {
+            return Some(FoundryRelayedLog::Relay(shaped_log));
         }
         standard_response(relayed.reply.body).map(FoundryRelayedLog::Standard)
     }
@@ -191,10 +190,10 @@ where
         );
         let root = without_repeated_native_prefix(&foundry_root(&base)?, &native_endpoint)?;
         // api_version_from: TypeAdapter(str | None) accepts only a string or null
-        let api_version = match request.litellm_params.get(PARAMS_API_VERSION) {
-            Some(value) => value.as_str(),
-            None => None,
-        };
+        let api_version = request
+            .litellm_params
+            .get(PARAMS_API_VERSION)
+            .and_then(serde_json::Value::as_str);
         let query_params = relay_query_params(request.request_query_params, api_version, &base)?;
         let url = self.format_url(&native_endpoint, &root, query_params.as_ref())?;
         Ok((url, root))

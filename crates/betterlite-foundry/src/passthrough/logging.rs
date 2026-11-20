@@ -48,16 +48,17 @@ fn rerank_result_fits(fields: &Object) -> bool {
         .is_some_and(|index| index.is_i64() || index.is_u64());
     let score_fits = fields
         .get("relevance_score")
-        .is_some_and(|score| score.is_number());
+        .is_some_and(serde_json::Value::is_number);
     let document_fits = fields.get("document").is_none_or(|document| {
-        document
-            .as_object()
-            .is_some_and(|fields| fields.get("text").is_some_and(|text| text.is_string()))
+        document.as_object().is_some_and(|document_fields| {
+            document_fields
+                .get("text")
+                .is_some_and(serde_json::Value::is_string)
+        })
     });
     index_fits && score_fits && document_fits
 }
 
-// a sent list is null or a list of objects that each pass their own field check
 fn optional_object_list(body: &Object, name: &str, entry_fits: fn(&Object) -> bool) -> bool {
     body.get(name).is_none_or(|value| {
         value.is_null()

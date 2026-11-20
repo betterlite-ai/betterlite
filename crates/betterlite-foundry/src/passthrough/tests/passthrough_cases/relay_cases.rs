@@ -52,7 +52,7 @@ fn relay_shapes_log_their_call_types() {
 
 fn relay_shapes_accept_their_declared_fields() {
     for body in [
-        &br#"{}"#[..],
+        &b"{}"[..],
         &br#"{"id":null,"results":null,"meta":null}"#[..],
         &br#"{"id":"x","meta":{}}"#[..],
         &br#"{"results":[{"index":-1,"relevance_score":0}]}"#[..],

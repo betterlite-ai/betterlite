@@ -29,7 +29,7 @@ use betterlite_prompts::arguments::json::Object as ParamsObject;
 use secrecy::{ExposeSecret as _, SecretString};
 use tracing::field::{Field, Visit};
 use tracing::{Event, Level, Subscriber};
-use tracing_subscriber::layer::{Context, Layer};
+use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
 use crate::credentials::error::CredentialsError;
 
@@ -69,6 +69,7 @@ pub(super) struct RecordedOcrCall {
     pub(super) body: Vec<u8>,
 }
 
+#[derive(Debug)]
 pub(super) enum OcrScript {
     Response(OCRResponse),
     Absent,
@@ -429,7 +430,9 @@ fn secret_plan() -> Plan {
             chat_stream: NoChatStreamAssembly,
         },
         ocr: None,
-        litellm_params: Object::new(),
+        litellm_params: object(
+            r#"{"litellm_metadata": {"model_group": "fixture-group"}, "api_key": "fixture-params-key", "client_secret": "fixture-params-secret", "azure_ad_token": "fixture-params-token", "azure_password": "fixture-params-password"}"#,
+        ),
     }
 }
 
@@ -437,7 +440,15 @@ fn assert_plan_debug_redacts(plan: &Plan) {
     let debug = format!("{plan:?}");
     assert!(debug.contains("FoundryPassthroughPlan"), "{debug}");
     assert!(debug.contains("<redacted>"), "{debug}");
-    for secret in ["fixture-global-secret", "fixture-env-secret"] {
+    assert!(debug.contains("fixture-group"), "{debug}");
+    for secret in [
+        "fixture-global-secret",
+        "fixture-env-secret",
+        "fixture-params-key",
+        "fixture-params-secret",
+        "fixture-params-token",
+        "fixture-params-password",
+    ] {
         assert!(!debug.contains(secret), "{debug}");
     }
 }
