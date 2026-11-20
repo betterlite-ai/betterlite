@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use serde::Deserialize;
 use serde::de::IgnoredAny;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
@@ -13,7 +14,9 @@ pub const MAX_SIZE_VARIABLE: &str = "MCP_OAUTH2_TOKEN_CACHE_MAX_SIZE";
 pub const DEFAULT_MAX_SIZE: usize = 200;
 
 // env-only section: the loader reports every key, and the box keeps the map value type non-zero-sized for clippy
-pub type Raw = BTreeMap<String, Box<IgnoredAny>>;
+#[derive(Default, Deserialize)]
+#[serde(transparent)]
+pub struct Raw(pub BTreeMap<String, Box<IgnoredAny>>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Settings {
