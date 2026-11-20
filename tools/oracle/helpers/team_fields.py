@@ -155,7 +155,7 @@ VALIDATOR_A = Marker()
 VALIDATOR_B = Marker()
 
 
-async def _accept_function(
+async def _accept_function(  # ast-grep-ignore: no-one-line-functions
     _payload: TeamMetadataValidationPayload,
 ) -> TeamMetadataValidationResult:
     return TeamMetadataValidationResult(valid=True)
