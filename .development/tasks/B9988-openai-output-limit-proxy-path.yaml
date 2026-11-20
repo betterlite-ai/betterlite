@@ -234,6 +234,7 @@ oracle_cases:
 - tools/oracle/cases/chat/openai-output-limit-buffered.yaml
 - tools/oracle/cases/chat/openai-output-limit-stream.yaml
 - tools/oracle/cases/chat/openai-422-drop-retry.yaml
+- tools/oracle/cases/chat/openai-output-limit-completions.yaml
 deviations: []
 out_of_scope:
 - B505 owns the output_limits functions, the Azure raw-send wrappers, impl PromptTokens for Counter, runtime_counter

@@ -3,7 +3,4 @@ deviations:
 - what: A second 422 after the dropped fields were resent reaches the client as the provider's own error. LiteLLM's two-iteration loop drops the newly named fields and then falls out of the function, returning None, so the caller receives no completion at all instead of an error.
   why: A null completion reported as a success is a bug no working setup can rely on, so rule owned-behavior-is-built keeps the provider error, which carries the status and the rejected fields.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L919-L1011
-- what: A streamed /v1/completions call whose chat deployment answers the output-limit 400 sends the two recovered chat.completion.chunk frames the route's existing bridge sends, where LiteLLM wraps every chat chunk of that route in TextCompletionStreamWrapper and sends object text_completion with choices[].text and a zero usage block.
-  why: The recovered frames are rendered through the route's existing bridged-chunk path, whose conversion (B203's) lives in routes/completions/bridge.rs and betterlite-openai's text_completion_stream.rs, outside this task's scope, and changing only the recovered frames would leave one route with two chunk shapes.
-  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7344-L7365
 kept_bugs: []

@@ -482,24 +482,6 @@ struct RecoveredUsage {
 }
 
 #[derive(Deserialize)]
-struct RecoveredFrame {
-    object: String,
-    model: String,
-    choices: Vec<RecoveredFrameChoice>,
-}
-
-#[derive(Deserialize)]
-struct RecoveredFrameChoice {
-    delta: RecoveredDelta,
-    finish_reason: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct RecoveredDelta {
-    content: Option<String>,
-}
-
-#[derive(Deserialize)]
 struct UsageFrame {
     usage: Option<RecoveredUsage>,
 }
@@ -536,7 +518,7 @@ async fn a_chat_deployment_recovers_the_output_limit_on_the_completions_route() 
     assert!(sent_text.contains("\"messages\""), "{sent_text}");
 }
 
-// the streamed answer is the two recovered chat frames read as the route's chunks, then the closing frame
+// the streamed answer is the two recovered chat frames read as the route's text_completion chunks
 #[tokio::test]
 async fn a_chat_deployment_recovers_the_output_limit_on_the_completions_stream() {
     let (status, _headers, body, sent) =
@@ -545,19 +527,23 @@ async fn a_chat_deployment_recovers_the_output_limit_on_the_completions_stream()
     let text = String::from_utf8(body).expect("utf8");
     let answer = frames(&text);
     assert_eq!(answer.len(), 3, "{text}");
-    let first: RecoveredFrame =
+    let first: RecoveredText =
         serde_json::from_str(answer[0].strip_prefix("data: ").expect("data prefix"))
             .expect("frame");
-    assert_eq!(first.object, "chat.completion.chunk");
+    assert_eq!(first.object, "text_completion");
     assert_eq!(first.model, "chat-model");
     assert_eq!(first.choices.len(), 1);
-    assert_eq!(first.choices[0].delta.content.as_deref(), Some(""));
+    assert_eq!(first.choices[0].text.as_deref(), Some(""));
     assert_eq!(first.choices[0].finish_reason, None);
-    let second: RecoveredFrame =
+    assert_eq!(first.usage.prompt_tokens, 0);
+    assert_eq!(first.usage.completion, 0);
+    assert_eq!(first.usage.total, 0);
+    let second: RecoveredText =
         serde_json::from_str(answer[1].strip_prefix("data: ").expect("data prefix"))
             .expect("frame");
-    assert_eq!(second.choices[0].delta.content, None);
+    assert_eq!(second.choices[0].text, None);
     assert_eq!(second.choices[0].finish_reason.as_deref(), Some("length"));
+    assert_eq!(second.usage.total, 0);
     assert_eq!(answer[2], "data: [DONE]");
     let sent_text = String::from_utf8(sent).expect("sent body");
     assert!(sent_text.contains("\"stream\":true"), "{sent_text}");
