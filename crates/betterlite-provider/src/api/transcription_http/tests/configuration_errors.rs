@@ -1,3 +1,7 @@
+use std::time::Duration;
+
+use betterlite_http::error::HttpError;
+use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::transcription_contract::AudioTranscriptionData;
 use betterlite_openai::openai_base_config::Object;
@@ -5,8 +9,8 @@ use betterlite_openai::transcription::client::SharedSession;
 use serde_json::Number;
 
 use super::support::{
-    ClientCall, Entry, Events, Fixture, RecordingConfig, Reply, Source, Wire, call, deps, object,
-    record,
+    ClientCall, DefaultUrlConfig, Entry, Events, Fixture, RecordingConfig, Reply, Source, Wire,
+    call, deps, object, record,
 };
 use crate::api::transcription_http::TranscriptionDeps;
 use crate::api::transcription_http::error::TranscriptionHttpError;
@@ -19,6 +23,11 @@ async fn transcription_http_configuration_errors() {
     assert_integer_atranscription_stays_sync().await;
     assert_max_retries_sends_once().await;
     assert_status_failure_keeps_status_body_and_headers().await;
+    assert_status_failure_with_an_empty_body_has_no_length().await;
+    assert_default_complete_url().await;
+    assert_sync_timeout_reports_the_timeout().await;
+    assert_async_timeout_reports_the_fraction().await;
+    assert_whole_second_timeouts_print_exactly().await;
 }
 
 async fn assert_missing_config_is_a_value_error() {
@@ -202,4 +211,141 @@ async fn assert_status_failure_keeps_status_body_and_headers() {
         Some(&Json::Text(String::from("9")))
     );
     assert_eq!(error.headers.get("content-encoding"), None);
+}
+
+async fn assert_status_failure_with_an_empty_body_has_no_length() {
+    let events = Events::new();
+    let wire = Wire::replying(Reply::json(429, ""), &events);
+    let source = Source::new(wire);
+    let config = RecordingConfig::new(
+        record(AudioTranscriptionData::Object(Object::new())),
+        &events,
+    );
+    let optional = object("{}");
+    let litellm = object("{}");
+    let request_call = call(&optional, &litellm);
+    let mut fixture = Fixture::new("transcription");
+    let error = fixture
+        .run(
+            &events,
+            &deps(&config, &source),
+            &request_call,
+            Entry::Audio,
+        )
+        .await
+        .expect_err("the status fails the call");
+    let TranscriptionHttpError::Provider(error) = error else {
+        panic!("the status error is a provider error");
+    };
+    assert_eq!(error.status_code, 429);
+    assert_eq!(error.message, "");
+    assert_eq!(error.headers.get("content-length"), None);
+}
+
+async fn assert_default_complete_url() {
+    let events = Events::new();
+    let wire = Wire::replying(Reply::json(200, r#"{"text":"hi"}"#), &events);
+    let source = Source::new(wire.clone());
+    let config = DefaultUrlConfig(RecordingConfig::new(
+        record(AudioTranscriptionData::Object(Object::new())),
+        &events,
+    ));
+    let optional = object("{}");
+    let litellm = object("{}");
+    let request_call = call(&optional, &litellm);
+    let mut fixture = Fixture::new("transcription");
+    fixture
+        .run(
+            &events,
+            &TranscriptionDeps {
+                config: Some(&config),
+                source: &source,
+                supplied: None,
+            },
+            &request_call,
+            Entry::Audio,
+        )
+        .await
+        .expect("the default URL reaches the fixture");
+    let requests = wire.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(
+        requests[0].url.as_str(),
+        "https://fixture.test/v1/audio/transcriptions"
+    );
+}
+
+async fn failing_call(
+    error: TransportError,
+    timeout: Option<Duration>,
+    entry: Entry,
+) -> TranscriptionHttpError {
+    let events = Events::new();
+    let wire = Wire::failing(error, &events);
+    let source = Source::new(wire);
+    let config = RecordingConfig::new(
+        record(AudioTranscriptionData::Object(Object::new())),
+        &events,
+    );
+    let optional = object("{}");
+    let litellm = object("{}");
+    let mut request_call = call(&optional, &litellm);
+    request_call.timeout = timeout;
+    let mut fixture = Fixture::new("transcription");
+    fixture
+        .run(&events, &deps(&config, &source), &request_call, entry)
+        .await
+        .expect_err("the send fails")
+}
+
+async fn assert_sync_timeout_reports_the_timeout() {
+    let error = failing_call(
+        TransportError::Rejected(HttpError::Timeout),
+        Some(Duration::from_secs(30)),
+        Entry::Audio,
+    )
+    .await;
+    let TranscriptionHttpError::Provider(error) = error else {
+        panic!("a timeout is converted");
+    };
+    assert_eq!(error.status_code, 408);
+    assert!(!error.status_code_is_synthesized);
+    assert_eq!(
+        error.message,
+        "litellm.Timeout: Connection timed out after 30 seconds."
+    );
+}
+
+async fn assert_async_timeout_reports_the_fraction() {
+    let error = failing_call(
+        TransportError::Rejected(HttpError::Timeout),
+        Some(Duration::from_millis(1500)),
+        Entry::Async,
+    )
+    .await;
+    let TranscriptionHttpError::Provider(error) = error else {
+        panic!("a timeout is converted");
+    };
+    assert_eq!(error.status_code, 408);
+    assert!(
+        error
+            .message
+            .starts_with("litellm.Timeout: Connection timed out. Timeout passed=1.5, time taken=")
+    );
+}
+
+async fn assert_whole_second_timeouts_print_exactly() {
+    let error = failing_call(
+        TransportError::Rejected(HttpError::Timeout),
+        Some(Duration::new(u64::MAX, 0)),
+        Entry::Audio,
+    )
+    .await;
+    let TranscriptionHttpError::Provider(error) = error else {
+        panic!("a timeout is converted");
+    };
+    assert_eq!(
+        error.message,
+        "litellm.Timeout: Connection timed out after 18446744073709551615 seconds."
+    );
 }

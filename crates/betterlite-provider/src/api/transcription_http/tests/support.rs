@@ -456,6 +456,54 @@ impl TranscriptionHttpConfig for RecordingConfig {
     }
 }
 
+// A config that leaves TranscriptionHttpConfig::complete_transcription_url at its default
+pub(crate) struct DefaultUrlConfig(pub(crate) RecordingConfig);
+
+impl AudioTranscriptionConfig for DefaultUrlConfig {
+    fn supported_openai_params(&self, model: &str) -> Vec<String> {
+        self.0.supported_openai_params(model)
+    }
+
+    fn transform_audio_request(
+        &self,
+        model: &str,
+        audio_file: &AudioFile<'_>,
+        optional_params: &Object,
+        litellm_params: &Object,
+    ) -> Result<AudioTranscriptionRequestData, TranscriptionContractError> {
+        self.0
+            .transform_audio_request(model, audio_file, optional_params, litellm_params)
+    }
+
+    fn supports_subtitle_synthesis(&self) -> bool {
+        self.0.supports_subtitle_synthesis()
+    }
+
+    fn complete_url(
+        &self,
+        api_base: Option<&str>,
+        model: &str,
+        optional_params: &Object,
+        litellm_params: &Object,
+    ) -> String {
+        self.0
+            .complete_url(api_base, model, optional_params, litellm_params)
+    }
+
+    fn transform_audio_response(
+        &self,
+        raw_response: &UpstreamResponse,
+    ) -> Result<TranscriptionResponse, TranscriptionContractError> {
+        self.0.transform_audio_response(raw_response)
+    }
+}
+
+impl TranscriptionHttpConfig for DefaultUrlConfig {
+    fn validate_environment(&self, input: &Validation<'_>) -> Result<Headers, ConfigFailure> {
+        self.0.validate_environment(input)
+    }
+}
+
 pub(crate) struct ProxiedSource {
     pub(crate) client: ProxiedClient,
 }

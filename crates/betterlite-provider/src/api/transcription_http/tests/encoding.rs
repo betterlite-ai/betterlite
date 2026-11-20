@@ -11,6 +11,7 @@ use super::support::{
     deps, header, json, object, record,
 };
 use crate::api::transcription_http::config::Headers;
+use crate::api::transcription_http::error::TranscriptionHttpError;
 use crate::api::transcription_http::wire::{TranscriptionBody, TranscriptionRequest};
 
 #[tokio::test]
@@ -24,6 +25,8 @@ async fn transcription_http_encoding() {
     assert_declared_boundary_is_kept();
     assert_declared_type_without_boundary_gets_one();
     assert_bytes_are_raw();
+    assert_bytes_with_empty_files_are_raw();
+    assert_bytes_with_files_are_rejected();
     assert_content_type_override();
     assert_validation_and_url_arguments();
     assert_logging_input();
@@ -220,6 +223,41 @@ async fn assert_bytes_are_raw() {
     assert!(matches!(&request.body, TranscriptionBody::Raw(_)));
     assert_eq!(body_bytes(&request.body), Some(&b"abc"[..]));
     assert_eq!(header(&request.headers, "content-type"), None);
+}
+
+async fn assert_bytes_with_empty_files_are_raw() {
+    let optional = object("{}");
+    let mut data = record(AudioTranscriptionData::Bytes(b"abc".to_vec()));
+    data.files = Some(AudioTranscriptionFiles::new());
+    let (request, _fixture, _config, _events, _wire) = send(data, &optional).await;
+    assert_eq!(body_bytes(&request.body), Some(&b"abc"[..]));
+}
+
+async fn assert_bytes_with_files_are_rejected() {
+    let optional = object("{}");
+    let mut data = record(AudioTranscriptionData::Bytes(b"abc".to_vec()));
+    data.files = Some(AudioTranscriptionFiles::from([(
+        String::from("a.wav"),
+        AudioTranscriptionFileValue::Text(String::from("abc")),
+    )]));
+    let events = Events::new();
+    let wire = Wire::replying(Reply::json(200, r#"{"text":"hi"}"#), &events);
+    let source = Source::new(wire.clone());
+    let config = RecordingConfig::new(data, &events);
+    let litellm = object("{}");
+    let request_call = call(&optional, &litellm);
+    let mut fixture = Fixture::new("transcription");
+    let error = fixture
+        .run(
+            &events,
+            &deps(&config, &source),
+            &request_call,
+            Entry::Audio,
+        )
+        .await
+        .expect_err("raw bytes with files fail");
+    assert!(matches!(error, TranscriptionHttpError::BytesWithFiles));
+    assert!(wire.requests().is_empty());
 }
 
 async fn assert_content_type_override() {
