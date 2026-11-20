@@ -1,0 +1,42 @@
+kind: sdk_http
+name: sdk-http-responses-stream-driver-terminal-errors-and-hooks
+env: {}
+call:
+  responses_stream_driver:
+    model: gpt-4o
+    input: hi
+    api_key: sk-test
+    timeout_seconds: 30
+    runs:
+      - {mode: scripted, asynchronous: false, steps: [drain], payloads: ["{\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"created_at\":1,\"object\":\"response\",\"status\":\"in_progress\",\"output\":[]}}", "{\"type\":\"error\",\"sequence_number\":2,\"error\":{\"type\":\"invalid_request_error\",\"code\":\"bad\",\"message\":\"boom\"}}"]}
+      - {mode: scripted, asynchronous: false, steps: [drain], payloads: ["{\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"created_at\":1,\"object\":\"response\",\"status\":\"in_progress\",\"output\":[]}}", "{\"type\":\"response.failed\",\"response\":{\"id\":\"resp_1\",\"created_at\":1,\"object\":\"response\",\"status\":\"failed\",\"output\":[],\"error\":{\"type\":\"server_error\",\"code\":\"server_error\",\"message\":\"boom\"}}}"]}
+      - {mode: scripted, asynchronous: false, steps: [drain], payloads: ["{\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"created_at\":1,\"object\":\"response\",\"status\":\"in_progress\",\"output\":[]}}", "{\"type\":\"error\",\"sequence_number\":2,\"error\":{\"type\":\"rate_limit_error\",\"code\":\"rate_limit_exceeded\",\"message\":\"slow down\"}}"]}
+      - {mode: scripted, asynchronous: true, steps: [drain], payloads: ["{\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"created_at\":1,\"object\":\"response\",\"status\":\"in_progress\",\"output\":[]}}", "{\"type\":\"response.output_text.delta\",\"item_id\":\"msg_1\",\"output_index\":0,\"content_index\":0,\"delta\":\"Hello\"}", "{\"type\":\"error\",\"sequence_number\":3,\"error\":{\"type\":\"server_error\",\"code\":\"server_error\",\"message\":\"boom\"}}"]}
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization]
+  ignore:
+    - pointer: /responses_stream_driver/value/0/failure/message
+      why: >-
+        LiteLLM's mapped BadRequestError carries its exception_type message,
+        "OpenaiException - Error code: 400 - {...}", inside the
+        "litellm.BadRequestError: " prefix; the class, status, type, param and
+        code are compared, and the message text comes from B011's shared
+        error mapping rather than this driver.
+    - pointer: /responses_stream_driver/value/1/failure/message
+      why: >-
+        The fallback wraps the mapped class's own text, and betterlite's
+        MidStreamFallbackError message drops LiteLLM's inner
+        "litellm.InternalServerError: " prefix (B926 builds that message).
+    - pointer: /responses_stream_driver/value/2/failure/message
+      why: >-
+        The fallback wraps the mapped class's own text, and betterlite's
+        MidStreamFallbackError message drops LiteLLM's inner
+        "litellm.RateLimitError: " prefix (B926 builds that message).
+    - pointer: /responses_stream_driver/value/3/failure/message
+      why: >-
+        The fallback wraps the mapped class's own text, and betterlite's
+        MidStreamFallbackError message drops LiteLLM's inner
+        "litellm.InternalServerError: " prefix (B926 builds that message).
