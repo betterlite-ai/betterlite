@@ -13,7 +13,7 @@ use indexmap::IndexMap;
 use rstest::rstest;
 
 use self::support::{
-    Answer, Config, Dispatcher, NO_CALLBACKS, NO_RESOLVER, RESP_A, Reply, Source, Wire,
+    Answer, Config, Dispatcher, NO_CALLBACKS, NO_RESOLVER, RESP_A, Reply, Sent, Source, Wire,
     agentic_callback, body_map, config_with, create_deps, execute, headers, hooks, json, models,
     object, params, pre_hook_callback, text_input,
 };
@@ -172,70 +172,194 @@ async fn assert_async_keeps_original(
     assert_eq!(signed.api_key.as_deref(), Some("sk-base"));
 }
 
+// The stream inputs and the expected handoff of one create call
 #[derive(Clone, Copy)]
-enum StreamCase {
-    LiveFromExtraBody,
-    FakePrepared,
-    IdentityGuard,
-    PlainCall,
+struct StreamScenario {
+    optional: &'static str,
+    body: Option<&'static str>,
+    fake: Option<&'static str>,
+    metadata: bool,
+    mode: ClientKind,
+    sse: bool,
+    expect: StreamExpect,
 }
 
-#[rstest]
-#[case::live_from_extra_body(StreamCase::LiveFromExtraBody)]
-#[case::fake_prepared(StreamCase::FakePrepared)]
-#[case::identity_guard(StreamCase::IdentityGuard)]
-#[case::plain_call(StreamCase::PlainCall)]
-#[tokio::test]
-async fn create_stream_and_fake_selection(#[case] scenario: StreamCase) {
-    let input = text_input("hello");
-    let call_params = params(r#"{"api_base":"http://mock/v1"}"#);
-    let dispatcher = Dispatcher::quiet();
-    match scenario {
-        StreamCase::LiveFromExtraBody => {
-            live_from_extra_body(&input, &call_params, &dispatcher).await;
-        }
-        StreamCase::FakePrepared => fake_prepared(&input, &call_params, &dispatcher).await,
-        StreamCase::IdentityGuard => identity_guard(&input, &call_params, &dispatcher).await,
-        StreamCase::PlainCall => plain_call(&input, &call_params, &dispatcher).await,
-    }
+#[derive(Clone, Copy)]
+enum StreamExpect {
+    Live,
+    LiveGuard,
+    Synthetic,
+    Plain,
 }
 
-// optional stream=false with extra_body.stream=true still selects a streaming call and builds live SSE
-async fn live_from_extra_body(
+// One create call: its stream inputs, its callbacks and the transport's scripted answers
+struct CallSetup<'a> {
+    optional: &'a Object,
+    body: Option<&'a Object>,
+    fake: Option<&'a ModelJson>,
+    metadata: Option<&'a IndexMap<String, ModelJson>>,
+    callbacks: CallbackPlan,
+    mode: ClientKind,
+    answers: Vec<Answer>,
+}
+
+#[derive(Clone, Copy)]
+enum CallbackPlan {
+    None,
+    Agentic(Option<&'static str>),
+}
+
+// Builds the scripted dependencies from the setup and runs the create call
+async fn run_scenario(
     input: &ResponsesInput,
     call_params: &CreateParams,
     dispatcher: &Dispatcher,
-) {
-    let metadata = IndexMap::from([(String::from("trace"), models("\"t\""))]);
-    let wire = Wire::new(vec![Answer::Sse(vec![
-        String::from("hello"),
-        String::from("[DONE]"),
-    ])]);
+    setup: CallSetup<'_>,
+) -> (CreateOutcome, Wire) {
+    let globals = match setup.callbacks {
+        CallbackPlan::None => Vec::new(),
+        CallbackPlan::Agentic(result) => vec![CallbackValue::Object(agentic_callback(result))],
+    };
+    let callbacks = CallbackLists {
+        global: &globals,
+        dynamic: &[],
+    };
+    let wire = Wire::new(setup.answers);
     let source = Source::with(wire.clone());
-    let optional = object(r#"{"stream":false}"#);
-    let body = object(r#"{"stream":true}"#);
-    let mut call = create_call(input, &optional, call_params);
-    call.extra_body = Some(&body);
-    call.litellm_metadata = Some(&metadata);
-    let create_hooks = hooks(NO_CALLBACKS, dispatcher, &NO_RESOLVER);
+    let mut call = create_call(input, setup.optional, call_params);
+    call.extra_body = setup.body;
+    call.fake_stream = setup.fake;
+    call.litellm_metadata = setup.metadata;
+    let create_hooks = hooks(callbacks, dispatcher, &NO_RESOLVER);
     let config = Config::default();
     let deps = create_deps(&config, &source);
-    let outcome = execute(&deps, ClientKind::Asynchronous, &call, &create_hooks)
+    let outcome = execute(&deps, setup.mode, &call, &create_hooks)
         .await
-        .expect("the live call");
-    assert!(wire.requests()[0].stream);
-    assert_eq!(
-        body_map(&wire.requests()[0].body_json()).get("stream"),
-        Some(&json("true"))
-    );
-    let CreateOutcome::Live(mut live) = outcome else {
-        panic!("a streaming send returns the live iterator handoff")
+        .expect("the scenario call");
+    (outcome, wire)
+}
+
+#[rstest]
+#[case::live_from_extra_body(StreamScenario {
+    optional: r#"{"stream":false}"#,
+    body: Some(r#"{"stream":true}"#),
+    fake: None,
+    metadata: true,
+    mode: ClientKind::Asynchronous,
+    sse: true,
+    expect: StreamExpect::Live,
+})]
+#[case::fake_prepared(StreamScenario {
+    optional: r#"{"stream":true}"#,
+    body: Some(r#"{"stream":false}"#),
+    fake: Some("true"),
+    metadata: false,
+    mode: ClientKind::Sync,
+    sse: false,
+    expect: StreamExpect::Synthetic,
+})]
+#[case::identity_guard(StreamScenario {
+    optional: r#"{"stream":true}"#,
+    body: None,
+    fake: Some("1"),
+    metadata: false,
+    mode: ClientKind::Sync,
+    sse: true,
+    expect: StreamExpect::LiveGuard,
+})]
+#[case::plain_call(StreamScenario {
+    optional: "{}",
+    body: None,
+    fake: Some("true"),
+    metadata: false,
+    mode: ClientKind::Sync,
+    sse: false,
+    expect: StreamExpect::Plain,
+})]
+#[tokio::test]
+async fn create_stream_and_fake_selection(#[case] scenario: StreamScenario) {
+    let input = text_input("hello");
+    let call_params = params(r#"{"api_base":"http://mock/v1"}"#);
+    let dispatcher = Dispatcher::quiet();
+    let optional = object(scenario.optional);
+    let body = scenario.body.map(object);
+    let fake = scenario.fake.map(models);
+    let metadata = scenario
+        .metadata
+        .then(|| IndexMap::from([(String::from("trace"), models("\"t\""))]));
+    let answers = if scenario.sse {
+        vec![Answer::Sse(vec![
+            String::from("hello"),
+            String::from("[DONE]"),
+        ])]
+    } else {
+        vec![Answer::Json(Reply::json(200, RESP_A))]
     };
+    let setup = CallSetup {
+        optional: &optional,
+        body: body.as_ref(),
+        fake: fake.as_ref(),
+        metadata: metadata.as_ref(),
+        callbacks: CallbackPlan::None,
+        mode: scenario.mode,
+        answers,
+    };
+    let (outcome, wire) = run_scenario(&input, &call_params, &dispatcher, setup).await;
+    check_stream(scenario, outcome, &wire).await;
+}
+
+// The transport request and the handoff the scenario expects
+async fn check_stream(scenario: StreamScenario, outcome: CreateOutcome, wire: &Wire) {
+    let sent = wire.requests();
+    match scenario.expect {
+        StreamExpect::Live => {
+            assert!(sent[0].stream);
+            assert_eq!(
+                body_map(&sent[0].body_json()).get("stream"),
+                Some(&json("true"))
+            );
+            let CreateOutcome::Live(mut live) = outcome else {
+                panic!("a streaming send returns the live iterator handoff")
+            };
+            assert_eq!(
+                collect_payloads(&mut live.source).await,
+                vec![String::from("hello"), String::from("[DONE]")]
+            );
+            assert_live_setup(&live);
+        }
+        StreamExpect::LiveGuard => {
+            assert!(matches!(outcome, CreateOutcome::Live(_)));
+            assert!(sent[0].stream);
+        }
+        StreamExpect::Synthetic => check_synthetic(outcome, &sent),
+        StreamExpect::Plain => {
+            assert_eq!(
+                body_map(&read_value(&outcome)).get("id"),
+                Some(&json("\"resp_a\""))
+            );
+            assert!(!sent[0].stream);
+            assert!(body_map(&sent[0].body_json()).get("stream").is_none());
+        }
+    }
+}
+
+// A prepared fake stream drops the body's stream key and returns synthetic events with the request
+async fn check_synthetic(outcome: CreateOutcome, sent: &[Sent]) {
+    assert!(!sent[0].stream);
+    assert!(body_map(&sent[0].body_json()).get("stream").is_none());
+    let CreateOutcome::Synthetic(synthetic) = outcome else {
+        panic!("a prepared fake stream returns the synthetic handoff")
+    };
+    assert_eq!(synthetic.response.id, "resp_a");
+    assert_eq!(synthetic.setup.call_type.as_deref(), Some("responses"));
     assert_eq!(
-        collect_payloads(&mut live.source).await,
-        vec![String::from("hello"), String::from("[DONE]")]
+        synthetic
+            .setup
+            .request_data
+            .as_ref()
+            .and_then(|context| context.get("input")),
+        Some(&models("\"hello\""))
     );
-    assert_live_setup(&live);
 }
 
 fn assert_live_setup(live: &CreateLive) {
@@ -260,95 +384,6 @@ fn assert_live_setup(live: &CreateLive) {
         context.get("litellm_params"),
         Some(ModelJson::Object(_))
     ));
-}
-
-// fake_stream=true removes body.stream, sends a buffered request, then returns synthetic events
-async fn fake_prepared(
-    input: &ResponsesInput,
-    call_params: &CreateParams,
-    dispatcher: &Dispatcher,
-) {
-    let wire = Wire::new(vec![Answer::Json(Reply::json(200, RESP_A))]);
-    let source = Source::with(wire.clone());
-    let optional = object(r#"{"stream":true}"#);
-    let body = object(r#"{"stream":false}"#);
-    let fake = models("true");
-    let mut call = create_call(input, &optional, call_params);
-    call.extra_body = Some(&body);
-    call.fake_stream = Some(&fake);
-    let create_hooks = hooks(NO_CALLBACKS, dispatcher, &NO_RESOLVER);
-    let config = Config::default();
-    let deps = create_deps(&config, &source);
-    let outcome = execute(&deps, ClientKind::Sync, &call, &create_hooks)
-        .await
-        .expect("the fake call");
-    assert!(!wire.requests()[0].stream);
-    assert!(
-        body_map(&wire.requests()[0].body_json())
-            .get("stream")
-            .is_none()
-    );
-    let CreateOutcome::Synthetic(synthetic) = outcome else {
-        panic!("a prepared fake stream returns the synthetic handoff")
-    };
-    assert_eq!(synthetic.response.id, "resp_a");
-    assert_eq!(synthetic.setup.call_type.as_deref(), Some("responses"));
-    assert_eq!(
-        synthetic
-            .setup
-            .request_data
-            .as_ref()
-            .and_then(|context| context.get("input")),
-        Some(&models("\"hello\""))
-    );
-}
-
-// fake_stream=1 does not satisfy the `is True` identity guard, so the call streams
-async fn identity_guard(
-    input: &ResponsesInput,
-    call_params: &CreateParams,
-    dispatcher: &Dispatcher,
-) {
-    let wire = Wire::new(vec![Answer::Sse(vec![String::from("[DONE]")])]);
-    let source = Source::with(wire.clone());
-    let optional = object(r#"{"stream":true}"#);
-    let one = models("1");
-    let mut call = create_call(input, &optional, call_params);
-    call.fake_stream = Some(&one);
-    let create_hooks = hooks(NO_CALLBACKS, dispatcher, &NO_RESOLVER);
-    let config = Config::default();
-    let deps = create_deps(&config, &source);
-    let outcome = execute(&deps, ClientKind::Sync, &call, &create_hooks)
-        .await
-        .expect("the identity-guard call");
-    assert!(matches!(outcome, CreateOutcome::Live(_)));
-    assert!(wire.requests()[0].stream);
-}
-
-// a nonstream call with fake_stream ignores both the flag and the stream key
-async fn plain_call(input: &ResponsesInput, call_params: &CreateParams, dispatcher: &Dispatcher) {
-    let wire = Wire::new(vec![Answer::Json(Reply::json(200, RESP_A))]);
-    let source = Source::with(wire.clone());
-    let optional = Object::new();
-    let fake = models("true");
-    let mut call = create_call(input, &optional, call_params);
-    call.fake_stream = Some(&fake);
-    let create_hooks = hooks(NO_CALLBACKS, dispatcher, &NO_RESOLVER);
-    let config = Config::default();
-    let deps = create_deps(&config, &source);
-    let outcome = execute(&deps, ClientKind::Sync, &call, &create_hooks)
-        .await
-        .expect("the plain call");
-    assert_eq!(
-        body_map(&read_value(&outcome)).get("id"),
-        Some(&json("\"resp_a\""))
-    );
-    assert!(!wire.requests()[0].stream);
-    assert!(
-        body_map(&wire.requests()[0].body_json())
-            .get("stream")
-            .is_none()
-    );
 }
 
 #[derive(Clone, Copy)]
@@ -542,190 +577,119 @@ async fn shared_session_run(
 }
 
 #[derive(Clone, Copy)]
-struct NothingCase {
-    flag: &'static str,
-    value: &'static str,
-    wraps: bool,
+enum AgenticExpect {
+    Wrapped(&'static str),
+    Plain(&'static str),
+    Value(&'static str),
 }
 
+// One agentic call: its generic params, the scripted hook and the result the wrap decision expects
 #[derive(Clone, Copy)]
-enum AgenticCase {
-    Converted(&'static str),
-    Nothing(NothingCase),
-    Depth,
-    FalseResult,
-    SyncNoHook,
+struct AgenticScenario {
+    call_params: &'static str,
+    hook: CallbackPlan,
+    mode: ClientKind,
+    expect: AgenticExpect,
 }
 
 #[rstest]
-#[case::websearch(AgenticCase::Converted("_websearch_interception_converted_stream"))]
-#[case::compression(AgenticCase::Converted("_compression_interception_converted_stream"))]
-#[case::headroom(AgenticCase::Converted("_headroom_interception_converted_stream"))]
-#[case::code_interpreter(AgenticCase::Converted(
-    "_code_interpreter_interception_converted_stream"
-))]
-#[case::null_result(AgenticCase::Nothing(NothingCase { flag: "_websearch_interception_converted_stream", value: "true", wraps: true }))]
-#[case::falsy_flag(AgenticCase::Nothing(NothingCase { flag: "_headroom_interception_converted_stream", value: r#""""#, wraps: false }))]
-#[case::depth(AgenticCase::Depth)]
-#[case::false_result(AgenticCase::FalseResult)]
-#[case::sync_no_hook(AgenticCase::SyncNoHook)]
+#[case::websearch(AgenticScenario {
+    call_params: r#"{"api_base":"http://mock/v1","_websearch_interception_converted_stream":true}"#,
+    hook: CallbackPlan::Agentic(Some(HOOK_RESPONSE)),
+    mode: ClientKind::Asynchronous,
+    expect: AgenticExpect::Wrapped("resp_hook"),
+})]
+#[case::compression(AgenticScenario {
+    call_params: r#"{"api_base":"http://mock/v1","_compression_interception_converted_stream":true}"#,
+    hook: CallbackPlan::Agentic(Some(HOOK_RESPONSE)),
+    mode: ClientKind::Asynchronous,
+    expect: AgenticExpect::Wrapped("resp_hook"),
+})]
+#[case::headroom(AgenticScenario {
+    call_params: r#"{"api_base":"http://mock/v1","_headroom_interception_converted_stream":true}"#,
+    hook: CallbackPlan::Agentic(Some(HOOK_RESPONSE)),
+    mode: ClientKind::Asynchronous,
+    expect: AgenticExpect::Wrapped("resp_hook"),
+})]
+#[case::code_interpreter(AgenticScenario {
+    call_params: r#"{"api_base":"http://mock/v1","_code_interpreter_interception_converted_stream":true}"#,
+    hook: CallbackPlan::Agentic(Some(HOOK_RESPONSE)),
+    mode: ClientKind::Asynchronous,
+    expect: AgenticExpect::Wrapped("resp_hook"),
+})]
+#[case::null_result(AgenticScenario {
+    call_params: r#"{"api_base":"http://mock/v1","_websearch_interception_converted_stream":true}"#,
+    hook: CallbackPlan::Agentic(None),
+    mode: ClientKind::Asynchronous,
+    expect: AgenticExpect::Wrapped("resp_a"),
+})]
+#[case::falsy_flag(AgenticScenario {
+    call_params: r#"{"api_base":"http://mock/v1","_headroom_interception_converted_stream":""}"#,
+    hook: CallbackPlan::Agentic(None),
+    mode: ClientKind::Asynchronous,
+    expect: AgenticExpect::Plain("\"resp_a\""),
+})]
+#[case::depth(AgenticScenario {
+    call_params: r#"{"api_base":"http://mock/v1","_websearch_interception_converted_stream":true,"_agentic_loop_depth":1}"#,
+    hook: CallbackPlan::Agentic(Some(HOOK_RESPONSE)),
+    mode: ClientKind::Sync,
+    expect: AgenticExpect::Plain("\"resp_hook\""),
+})]
+#[case::false_result(AgenticScenario {
+    call_params: r#"{"api_base":"http://mock/v1"}"#,
+    hook: CallbackPlan::Agentic(Some("false")),
+    mode: ClientKind::Asynchronous,
+    expect: AgenticExpect::Value("false"),
+})]
+#[case::no_hook_sync(AgenticScenario {
+    call_params: r#"{"api_base":"http://mock/v1","_websearch_interception_converted_stream":true}"#,
+    hook: CallbackPlan::None,
+    mode: ClientKind::Sync,
+    expect: AgenticExpect::Plain("\"resp_a\""),
+})]
+#[case::no_hook_async(AgenticScenario {
+    call_params: r#"{"api_base":"http://mock/v1","_websearch_interception_converted_stream":true}"#,
+    hook: CallbackPlan::None,
+    mode: ClientKind::Asynchronous,
+    expect: AgenticExpect::Wrapped("resp_a"),
+})]
 #[tokio::test]
-async fn create_agentic_result_wrapping(#[case] scenario: AgenticCase) {
+async fn create_agentic_result_wrapping(#[case] scenario: AgenticScenario) {
     let input = text_input("hello");
-    let empty = Object::new();
     let dispatcher = Dispatcher::quiet();
-    match scenario {
-        AgenticCase::Converted(flag) => converted_flag(&input, &empty, &dispatcher, flag).await,
-        AgenticCase::Nothing(case) => nothing_result(case, &input, &empty, &dispatcher).await,
-        AgenticCase::Depth => depth(&input, &empty, &dispatcher).await,
-        AgenticCase::FalseResult => false_result(&input, &empty, &dispatcher).await,
-        AgenticCase::SyncNoHook => sync_no_hook(&input, &empty, &dispatcher).await,
+    let empty = Object::new();
+    let call_params = params(scenario.call_params);
+    let setup = CallSetup {
+        optional: &empty,
+        body: None,
+        fake: None,
+        metadata: None,
+        callbacks: scenario.hook,
+        mode: scenario.mode,
+        answers: vec![Answer::Json(Reply::json(200, RESP_A))],
+    };
+    let (outcome, _) = run_scenario(&input, &call_params, &dispatcher, setup).await;
+    check_agentic(scenario.expect, outcome);
+}
+
+// A non-null result replaces the initial response; a null result keeps it and the flag decides the wrap
+fn check_agentic(expect: AgenticExpect, outcome: CreateOutcome) {
+    match expect {
+        AgenticExpect::Wrapped(id) => {
+            let CreateOutcome::Synthetic(synthetic) = outcome else {
+                panic!("the converted flag wraps the result as synthetic events")
+            };
+            assert_eq!(synthetic.response.id, id);
+            assert_eq!(synthetic.setup.model, "gpt-4o");
+            assert!(synthetic.setup.request_data.is_none());
+            assert!(synthetic.setup.litellm_metadata.is_none());
+            assert!(synthetic.setup.call_type.is_none());
+        }
+        AgenticExpect::Plain(id) => {
+            assert_eq!(body_map(&read_value(&outcome)).get("id"), Some(&json(id)));
+        }
+        AgenticExpect::Value(text) => assert_eq!(read_value(&outcome), json(text)),
     }
-}
-
-// every converted-stream flag wraps the hook's result with no request context or metadata
-async fn converted_flag(
-    input: &ResponsesInput,
-    empty: &Object,
-    dispatcher: &Dispatcher,
-    flag: &str,
-) {
-    let globals = [CallbackValue::Object(agentic_callback(Some(HOOK_RESPONSE)))];
-    let callbacks = CallbackLists {
-        global: &globals,
-        dynamic: &[],
-    };
-    let call_params = params(&format!(r#"{{"api_base":"http://mock/v1","{flag}":true}}"#));
-    let wire = Wire::new(vec![Answer::Json(Reply::json(200, RESP_A))]);
-    let source = Source::with(wire);
-    let call = create_call(input, empty, &call_params);
-    let config = Config::default();
-    let create_hooks = hooks(callbacks, dispatcher, &NO_RESOLVER);
-    let deps = create_deps(&config, &source);
-    let outcome = execute(&deps, ClientKind::Asynchronous, &call, &create_hooks)
-        .await
-        .expect("the agentic call");
-    let CreateOutcome::Synthetic(synthetic) = outcome else {
-        panic!("{flag} wraps the result as synthetic events")
-    };
-    assert_eq!(synthetic.response.id, "resp_hook", "{flag}");
-    assert_eq!(synthetic.setup.model, "gpt-4o", "{flag}");
-    assert!(synthetic.setup.request_data.is_none(), "{flag}");
-    assert!(synthetic.setup.litellm_metadata.is_none(), "{flag}");
-    assert!(synthetic.setup.call_type.is_none(), "{flag}");
-}
-
-// a nonzero depth prevents the wrap, and the hook result is returned as plain JSON
-async fn depth(input: &ResponsesInput, empty: &Object, dispatcher: &Dispatcher) {
-    let globals = [CallbackValue::Object(agentic_callback(Some(HOOK_RESPONSE)))];
-    let callbacks = CallbackLists {
-        global: &globals,
-        dynamic: &[],
-    };
-    let call_params = params(
-        r#"{"api_base":"http://mock/v1","_websearch_interception_converted_stream":true,"_agentic_loop_depth":1}"#,
-    );
-    let wire = Wire::new(vec![Answer::Json(Reply::json(200, RESP_A))]);
-    let source = Source::with(wire);
-    let call = create_call(input, empty, &call_params);
-    let config = Config::default();
-    let create_hooks = hooks(callbacks, dispatcher, &NO_RESOLVER);
-    let deps = create_deps(&config, &source);
-    let outcome = execute(&deps, ClientKind::Sync, &call, &create_hooks)
-        .await
-        .expect("the depth call");
-    assert_eq!(
-        body_map(&read_value(&outcome)).get("id"),
-        Some(&json("\"resp_hook\""))
-    );
-}
-
-// a null hook result keeps the initial response; a truthy converted flag still wraps it, a falsy one does not
-async fn nothing_result(
-    case: NothingCase,
-    input: &ResponsesInput,
-    empty: &Object,
-    dispatcher: &Dispatcher,
-) {
-    let globals = [CallbackValue::Object(agentic_callback(None))];
-    let callbacks = CallbackLists {
-        global: &globals,
-        dynamic: &[],
-    };
-    let call_params = params(&format!(
-        r#"{{"api_base":"http://mock/v1","{}":{}}}"#,
-        case.flag, case.value
-    ));
-    let wire = Wire::new(vec![Answer::Json(Reply::json(200, RESP_A))]);
-    let source = Source::with(wire);
-    let call = create_call(input, empty, &call_params);
-    let config = Config::default();
-    let create_hooks = hooks(callbacks, dispatcher, &NO_RESOLVER);
-    let deps = create_deps(&config, &source);
-    let outcome = execute(&deps, ClientKind::Asynchronous, &call, &create_hooks)
-        .await
-        .expect("the null hook call");
-    if case.wraps {
-        let CreateOutcome::Synthetic(synthetic) = outcome else {
-            panic!("a null hook result with a converted flag wraps the initial response")
-        };
-        assert_eq!(synthetic.response.id, "resp_a");
-    } else {
-        assert_eq!(
-            body_map(&read_value(&outcome)).get("id"),
-            Some(&json("\"resp_a\""))
-        );
-    }
-}
-
-// a non-null false result replaces the initial response even though it is falsy
-async fn false_result(input: &ResponsesInput, empty: &Object, dispatcher: &Dispatcher) {
-    let globals = [CallbackValue::Object(agentic_callback(Some("false")))];
-    let callbacks = CallbackLists {
-        global: &globals,
-        dynamic: &[],
-    };
-    let call_params = params(r#"{"api_base":"http://mock/v1"}"#);
-    let wire = Wire::new(vec![Answer::Json(Reply::json(200, RESP_A))]);
-    let source = Source::with(wire);
-    let call = create_call(input, empty, &call_params);
-    let config = Config::default();
-    let create_hooks = hooks(callbacks, dispatcher, &NO_RESOLVER);
-    let deps = create_deps(&config, &source);
-    let outcome = execute(&deps, ClientKind::Asynchronous, &call, &create_hooks)
-        .await
-        .expect("the false result call");
-    assert_eq!(read_value(&outcome), json("false"));
-}
-
-// sync with no agentic hook returns plain JSON even when a converted flag exists; async wraps it
-async fn sync_no_hook(input: &ResponsesInput, empty: &Object, dispatcher: &Dispatcher) {
-    let call_params =
-        params(r#"{"api_base":"http://mock/v1","_websearch_interception_converted_stream":true}"#);
-    let call = create_call(input, empty, &call_params);
-    let create_hooks = hooks(NO_CALLBACKS, dispatcher, &NO_RESOLVER);
-
-    let sync_source = Source::with(Wire::new(vec![Answer::Json(Reply::json(200, RESP_A))]));
-    let sync_config = Config::default();
-    let sync_deps = create_deps(&sync_config, &sync_source);
-    let sync_outcome = execute(&sync_deps, ClientKind::Sync, &call, &create_hooks)
-        .await
-        .expect("the sync no-hook call");
-    assert_eq!(
-        body_map(&read_value(&sync_outcome)).get("id"),
-        Some(&json("\"resp_a\""))
-    );
-
-    let async_source = Source::with(Wire::new(vec![Answer::Json(Reply::json(200, RESP_A))]));
-    let async_config = Config::default();
-    let async_deps = create_deps(&async_config, &async_source);
-    let async_outcome = execute(&async_deps, ClientKind::Asynchronous, &call, &create_hooks)
-        .await
-        .expect("the async no-hook call");
-    let CreateOutcome::Synthetic(wrapped) = async_outcome else {
-        panic!("async wraps the initial response when the agentic result is null")
-    };
-    assert_eq!(wrapped.response.id, "resp_a");
 }
 
 #[derive(Clone, Copy)]
