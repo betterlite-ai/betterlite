@@ -41,13 +41,23 @@ fn metadata_arguments(
         batch_models: hidden.batch_models.clone(),
         batch_successful_requests: hidden.batch_successful_requests,
         batch_failed_requests: hidden.batch_failed_requests,
-        mcp_tool_call_metadata: object_field(
+        mcp_tool_call_metadata: optional_field(
             stored.mcp_tool_call_metadata.as_ref(),
             "mcp_tool_call_metadata",
-        )?,
+            as_object,
+        )?
+        .cloned(),
         vector_store_request_metadata: stored.vector_store_request_metadata.clone(),
-        guardrail_information: guardrail_information(payload)?,
-        usage_object: object_field(stored.usage_object.as_ref(), "usage_object")?,
+        guardrail_information: payload
+            .guardrail_information
+            .as_ref()
+            .map(|information| {
+                serde_json::to_value(information).and_then(serde_json::from_value::<Json>)
+            })
+            .transpose()
+            .map_err(ProjectionError::Encode)?,
+        usage_object: optional_field(stored.usage_object.as_ref(), "usage_object", as_object)?
+            .cloned(),
         model_map_information: Some(payload.model_map_information.clone()),
         cold_storage_object_key: stored.cold_storage_object_key.clone(),
         litellm_overhead_time_ms: hidden.litellm_overhead_time_ms.map(|stamp| stamp.0),
@@ -66,26 +76,6 @@ fn metadata_arguments(
         azure_spillover: spillover(payload)?,
         used_client_oauth_token: oauth_token(merged, payload.custom_llm_provider.as_deref())?,
     })
-}
-
-fn object_field(
-    value: Option<&Json>,
-    field: &'static str,
-) -> Result<Option<JsonObject>, ProjectionError> {
-    Ok(optional_field(value, field, as_object)?.cloned())
-}
-
-// the standard payload's typed guardrails, as the mapping _get_spend_logs_metadata receives
-fn guardrail_information(
-    payload: &StandardLoggingPayload,
-) -> Result<Option<Json>, ProjectionError> {
-    let Some(information) = payload.guardrail_information.as_ref() else {
-        return Ok(None);
-    };
-    serde_json::to_value(information)
-        .and_then(serde_json::from_value::<Json>)
-        .map(Some)
-        .map_err(ProjectionError::Encode)
 }
 
 // azure_spillover over the additional headers the standard payload kept; an event carries no response headers

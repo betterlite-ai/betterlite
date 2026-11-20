@@ -94,7 +94,15 @@ fn record(
             .cache_key
             .clone()
             .unwrap_or_else(|| CACHE_OFF_KEY.to_owned()),
-        request_tags: request_tags(payload)?,
+        request_tags: safe_dumps(
+            &Json::List(payload.request_tags.clone()),
+            DEFAULT_MAX_RECURSE_DEPTH,
+            None,
+        )
+        .map_err(|source| ProjectionError::Json {
+            record: "request_tags",
+            source,
+        })?,
         team_id: text_or_empty(merged, "user_api_key_team_id")?,
         organization_id: text_or_empty(merged, "user_api_key_org_id")?,
         end_user: end_user(payload, merged)?,
@@ -224,18 +232,6 @@ fn text_or_empty(merged: &JsonObject, field: &'static str) -> Result<String, Pro
     Ok(optional_text_field(merged.get(field), field)?
         .unwrap_or_default()
         .to_owned())
-}
-
-fn request_tags(payload: &StandardLoggingPayload) -> Result<String, ProjectionError> {
-    safe_dumps(
-        &Json::List(payload.request_tags.clone()),
-        DEFAULT_MAX_RECURSE_DEPTH,
-        None,
-    )
-    .map_err(|source| ProjectionError::Json {
-        record: "request_tags",
-        source,
-    })
 }
 
 fn metadata_text(clean: &SpendLogsMetadata) -> Result<String, ProjectionError> {
