@@ -2588,6 +2588,7 @@ dependencies = [
  "betterlite-redis",
  "betterlite-router",
  "betterlite-sdk",
+ "betterlite-secret-managers",
  "betterlite-server",
  "betterlite-streaming",
  "betterlite-tokenizer",
