@@ -1,5 +1,8 @@
 use betterlite_error::envelope::WireField;
 use betterlite_error::error::ErrorClass;
+use betterlite_models::resolution::{
+    ProviderIdentity, ResolutionError, ResolutionRequest, ResolvedModel,
+};
 use rstest::rstest;
 
 use super::{json, parameters, resolution, resolver};
@@ -7,6 +10,7 @@ use crate::api::responses_provider_selection::prompting::PromptError;
 use crate::api::responses_provider_selection::prompting::swap::{
     PromptSwapError, SwapRequest, model_info_after_swap, resolve_swapped_provider,
 };
+use crate::api::responses_provider_selection::resolution::ModelResolver;
 
 fn expected_message(
     prompt_id: &str,
@@ -190,4 +194,64 @@ fn absent_deployment_info_stays_absent() {
         model_info_after_swap(Some("openai"), Some("openai"), None),
         None
     );
+}
+
+struct BrokenOriginal;
+
+impl ModelResolver for BrokenOriginal {
+    fn resolve_model(
+        &self,
+        request: &ResolutionRequest<'_>,
+    ) -> Result<ResolvedModel, ResolutionError> {
+        if request.model == "claude-3" {
+            return Ok(ResolvedModel {
+                model: request.model.to_owned(),
+                provider: ProviderIdentity::Custom(String::from("anthropic")),
+                api_base: None,
+                api_key: None,
+            });
+        }
+        Err(ResolutionError::EndpointWithoutProvider {
+            endpoint: String::from("registered-endpoint"),
+            api_base: String::from("https://base.test/v1"),
+        })
+    }
+}
+
+#[test]
+fn an_unresolvable_swapped_model_is_a_resolution_error() {
+    let resolver = resolver(&[]);
+    let request = SwapRequest {
+        original_model: "gpt-4o",
+        swapped_model: "unknown/model",
+        custom_llm_provider: Some("openai"),
+        prompt_id: Some("p-1"),
+    };
+    let kwargs = parameters(&[("api_key", json(r#""sk-test""#))]);
+    let error = resolve_swapped_provider(&request, &kwargs, &resolver)
+        .expect_err("the swapped model names no provider");
+    assert!(matches!(
+        error,
+        PromptError::Swap(PromptSwapError::Resolution(_))
+    ));
+}
+
+#[test]
+fn a_broken_original_resolution_fails_the_swap() {
+    let request = SwapRequest {
+        original_model: "gpt-4o",
+        swapped_model: "claude-3",
+        custom_llm_provider: None,
+        prompt_id: Some("p-1"),
+    };
+    let kwargs = parameters(&[("api_key", json(r#""sk-test""#))]);
+    let error = resolve_swapped_provider(&request, &kwargs, &BrokenOriginal)
+        .expect_err("only a missing provider is allowed to keep the swap");
+    let PromptError::Swap(PromptSwapError::Resolution(cause)) = error else {
+        panic!("the original resolution error propagates");
+    };
+    assert!(matches!(
+        cause,
+        ResolutionError::EndpointWithoutProvider { .. }
+    ));
 }

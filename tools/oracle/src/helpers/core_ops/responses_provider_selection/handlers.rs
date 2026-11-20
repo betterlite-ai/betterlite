@@ -29,7 +29,9 @@ fn prompt_error(error: PromptError) -> Box<HelperError> {
         PromptError::Swap(PromptSwapError::CredentialBoundary(boundary)) => {
             ("BadRequestError", Some(400), boundary.message)
         }
-        PromptError::Swap(other) => ("ValueError", None, other.to_string()),
+        PromptError::Swap(PromptSwapError::Resolution(cause)) => {
+            ("BadRequestError", Some(400), cause.to_string())
+        }
         PromptError::Merge(cause) => ("ValueError", None, cause.to_string()),
         PromptError::Manager(cause) => ("ValueError", None, cause.to_string()),
         PromptError::AsyncOutcome(cause) => ("ValueError", None, cause.to_string()),

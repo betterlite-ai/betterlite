@@ -42,7 +42,8 @@ pub fn resolve_swapped_provider(
         Some(provider) => provider.to_owned(),
         None => match provider_of(resolver, request.original_model) {
             Ok(provider) => provider,
-            Err(_unresolved) => return Ok(swapped_provider),
+            Err(ResolutionError::MissingProvider { .. }) => return Ok(swapped_provider),
+            Err(error) => return Err(PromptError::Swap(PromptSwapError::Resolution(error))),
         },
     };
     if swapped_provider == original_provider {

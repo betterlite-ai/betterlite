@@ -10,8 +10,8 @@ use thiserror::Error;
 pub enum FileMappingError {
     #[error(transparent)]
     FileIds(#[from] FileIdsError),
-    #[error("the mapped value could not be encoded: {message}")]
-    Encode { message: String },
+    #[error("the mapped value could not be encoded: {0}")]
+    Encode(#[source] serde_json::Error),
 }
 pub struct FileMappingOutcome {
     pub input: ResponsesInput,
@@ -62,10 +62,6 @@ pub fn model_info_id(model_info: Option<&JsonValue>) -> Option<String> {
     }
 }
 fn json_value<T: serde::Serialize>(value: &T) -> Result<JsonValue, FileMappingError> {
-    let raw = serde_json::to_value(value).map_err(|source| FileMappingError::Encode {
-        message: source.to_string(),
-    })?;
-    JsonValue::deserialize(raw).map_err(|source| FileMappingError::Encode {
-        message: source.to_string(),
-    })
+    let raw = serde_json::to_value(value).map_err(FileMappingError::Encode)?;
+    JsonValue::deserialize(raw).map_err(FileMappingError::Encode)
 }
