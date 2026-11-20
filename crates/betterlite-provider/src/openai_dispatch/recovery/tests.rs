@@ -35,6 +35,14 @@ const LIMIT_ERROR: &str = r#"{"error":{"message":"You could not finish the messa
 const REJECTED_TEMPERATURE: &str = r#"{"error":{"message":"{\"detail\":[{\"loc\":[\"body\",\"temperature\"],\"msg\":\"extra inputs are not permitted\"}]}","type":"invalid_request_error","param":"temperature","code":"invalid_request_error"}}"#;
 const MALFORMED_DETAIL: &str = r#"{"error":{"message":"[1, 2]","type":"invalid_request_error","code":"invalid_request_error"}}"#;
 
+// which drop_params the deployment carries: LiteLLM turns the 422 retry on for the proxy-wide one only
+#[derive(Clone, Copy)]
+enum DropFlag {
+    None,
+    Global,
+    CallOnly,
+}
+
 #[derive(Clone, Copy)]
 enum Expectation {
     RecoveredRequest,
@@ -50,41 +58,48 @@ const STREAM_REQUEST: &str =
 const UNRELATED: &str = r#"{"error":{"message":"bad"}}"#;
 
 #[rstest]
-#[case::output_limit_chat(CHAT, false, false, &[(400, LIMIT_ERROR)], Expectation::RecoveredRequest)]
-#[case::output_limit_stream(STREAM_REQUEST, true, false, &[(400, LIMIT_ERROR)], Expectation::RecoveredRequest)]
-#[case::unrelated_400_stays_provider(CHAT, false, false, &[(400, UNRELATED)], Expectation::ProviderError(1))]
+#[case::output_limit_chat(CHAT, false, DropFlag::None, &[(400, LIMIT_ERROR)], Expectation::RecoveredRequest)]
+#[case::output_limit_stream(STREAM_REQUEST, true, DropFlag::None, &[(400, LIMIT_ERROR)], Expectation::RecoveredRequest)]
+#[case::unrelated_400_stays_provider(CHAT, false, DropFlag::None, &[(400, UNRELATED)], Expectation::ProviderError(1))]
 #[case::second_422_keeps_provider_error(
     CHAT_WITH_TEMPERATURE,
     false,
-    true,
+    DropFlag::Global,
     &[(422, REJECTED_TEMPERATURE), (422, REJECTED_TEMPERATURE)],
     Expectation::ProviderError(2)
 )]
 #[case::retry_drops_rejected_fields(
     CHAT_WITH_TEMPERATURE,
     false,
-    true,
+    DropFlag::Global,
     &[(422, REJECTED_TEMPERATURE), (200, CHAT_REPLY)],
     Expectation::Resent
 )]
 #[case::retry_resends_a_stream(
     STREAM_REQUEST,
     true,
-    true,
+    DropFlag::Global,
     &[(422, REJECTED_TEMPERATURE), (200, "")],
     Expectation::ResentStream
 )]
 #[case::retry_needs_global_flag(
     CHAT_WITH_TEMPERATURE,
     false,
+    DropFlag::None,
+    &[(422, REJECTED_TEMPERATURE), (200, CHAT_REPLY)],
+    Expectation::RejectedFieldKept
+)]
+#[case::retry_ignores_the_call_drop_params(
+    CHAT_WITH_TEMPERATURE,
     false,
+    DropFlag::CallOnly,
     &[(422, REJECTED_TEMPERATURE), (200, CHAT_REPLY)],
     Expectation::RejectedFieldKept
 )]
 #[case::malformed_detail_fails_the_call(
     CHAT,
     false,
-    true,
+    DropFlag::Global,
     &[(422, MALFORMED_DETAIL), (200, CHAT_REPLY)],
     Expectation::RejectedFieldsError
 )]
@@ -92,11 +107,11 @@ const UNRELATED: &str = r#"{"error":{"message":"bad"}}"#;
 async fn openai_recovery_cases(
     #[case] request: &'static str,
     #[case] stream: bool,
-    #[case] global_drop_params: bool,
+    #[case] drop: DropFlag,
     #[case] replies: &'static [(u16, &'static str)],
     #[case] expected: Expectation,
 ) {
-    let (result, bodies) = answered(request, stream, global_drop_params, replies.to_vec()).await;
+    let (result, bodies) = answered(request, stream, drop, replies.to_vec()).await;
     match expected {
         Expectation::RecoveredRequest => recovered_request(result, bodies),
         Expectation::ProviderError(attempts) => provider_error(result, bodies, attempts),
@@ -235,12 +250,19 @@ fn prepared(request: &str, stream: bool, inputs: &Deployment) -> PreparedRequest
 async fn answered(
     request: &str,
     stream: bool,
-    global_drop_params: bool,
+    drop: DropFlag,
     replies: Vec<(u16, &'static str)>,
 ) -> (Result<OperationResult, OperationError>, Vec<String>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}/v1", listener.local_addr().unwrap());
-    let inputs = deployment(&base, global_drop_params);
+    let inputs = match drop {
+        DropFlag::None => deployment(&base, false),
+        DropFlag::Global => deployment(&base, true),
+        DropFlag::CallOnly => Deployment {
+            drop_params: Some(true),
+            ..deployment(&base, false)
+        },
+    };
     let prepared = prepared(request, stream, &inputs);
     let client = client();
     let (bodies, upstream) = tokio::join!(
