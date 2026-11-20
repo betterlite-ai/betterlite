@@ -1,0 +1,31 @@
+kind: helper
+name: sdk-client-wrong-async
+call:
+  azure_batches:
+    steps:
+    - action: create
+      is_async: true
+      client: openai
+      args: {api_key: wa-1, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      data: {completion_window: 24h, endpoint: /v1/chat/completions, input_file_id: file_in}
+    - action: retrieve
+      is_async: true
+      client: azure_openai
+      args: {api_key: wa-2, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      query: {batch_id: batch_a}
+    - action: list
+      is_async: true
+      client: openai
+      args: {api_key: wa-3, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+    - action: cancel
+      is_async: true
+      client: openai
+      args: {api_key: wa-4, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      query: {batch_id: batch_a}
+    - action: cancel
+      is_async: true
+      client: azure_openai
+      args: {api_key: wa-5, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      query: {batch_id: batch_a}
+env: {}
+compare: {ignore: []}

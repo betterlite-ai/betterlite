@@ -1,0 +1,14 @@
+kind: sdk_http
+name: image-variations-variation-provider-errors
+env: {}
+call:
+  image_variations:
+    image: {filename: a.png, content: abc, content_type: image/png}
+    model: dall-e-2
+    litellm_params: {custom_llm_provider: azure}
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []
