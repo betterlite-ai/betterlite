@@ -99,16 +99,9 @@ where
         .collect();
     // LiteLLM gathers one completion per image with no bound; the image list is caller data
     let permits = Semaphore::new(IMAGE_DESCRIPTION_CONCURRENCY);
-    let calls = requests.iter().map(|request| async {
-        let _permit = permits
-            .acquire()
-            .await
-            .map_err(|source| ImageProcessingError::SemaphoreClosed { source })?;
-        completion
-            .describe(request)
-            .await
-            .map_err(|source| ImageProcessingError::Completion { source })
-    });
+    let calls = requests
+        .iter()
+        .map(|request| describe_one(completion, request, &permits));
     let responses = join_all(calls).await;
 
     let mut descriptions = Vec::with_capacity(responses.len());
@@ -130,4 +123,22 @@ where
         "content filter applying guardrail to image descriptions"
     );
     Ok(descriptions)
+}
+
+async fn describe_one<C>(
+    completion: &C,
+    request: &ImageDescriptionRequest,
+    permits: &Semaphore,
+) -> Result<ImageDescriptionResponse, ImageProcessingError<C::Error>>
+where
+    C: ImageDescriptionCompletion + ?Sized,
+{
+    let _permit = permits
+        .acquire()
+        .await
+        .map_err(|source| ImageProcessingError::SemaphoreClosed { source })?;
+    completion
+        .describe(request)
+        .await
+        .map_err(|source| ImageProcessingError::Completion { source })
 }
