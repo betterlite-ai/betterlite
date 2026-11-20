@@ -6,9 +6,7 @@ use betterlite_config::loader::ConfigLoader;
 use betterlite_core::api::vector_search_execution::config::Params;
 use betterlite_core::api::vector_search_execution::error::SearchError;
 use betterlite_core::api::vector_search_execution::openai::OpenAiSearchConfig;
-use betterlite_core::api::vector_search_execution::service::{
-    SearchCall, SearchDeps, prepare, send,
-};
+use betterlite_core::api::vector_search_execution::service::{SearchCall, SearchDeps, send};
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::vector_store_records::records::vector::VectorStoreSearchResponse;
 use betterlite_openai::credentials::LiteLlmGlobals;

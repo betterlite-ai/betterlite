@@ -56,7 +56,7 @@ pub(super) fn integer(json: &Json, name: &'static str) -> Result<Option<i64>, Se
     wrong_type(name, "an integer")
 }
 
-pub(super) fn boolean(json: &Json, name: &'static str) -> Result<Option<bool>, SearchError> {
+pub(super) const fn boolean(json: &Json, name: &'static str) -> Result<Option<bool>, SearchError> {
     match json {
         Json::Null => Ok(None),
         Json::Bool(flag) => Ok(Some(*flag)),

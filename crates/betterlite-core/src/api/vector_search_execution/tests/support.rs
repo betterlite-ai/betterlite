@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
+use std::io::Error as IoError;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::thread::{ThreadId, current};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -73,10 +75,13 @@ impl LogSink for Sink {
     fn emit(&self, _record: LogRecord) {}
 }
 
+// Send as well as Sync because the fixture's search futures are awaited across threads
+type Logger = dyn Fn(&Json) -> Result<(), PrePostError> + Sync + Send;
+
 fn pre_post_env<'env>(
     redactor: &'env Redactor,
     sink: &'env Sink,
-    logger: &'env (dyn Fn(&Json) -> Result<(), PrePostError> + Sync),
+    logger: &'env Logger,
     now: DateTime<FixedOffset>,
 ) -> PrePostEnv<'env> {
     PrePostEnv {
@@ -99,7 +104,7 @@ fn pre_post_env<'env>(
 pub(crate) struct Fixture {
     redactor: Redactor,
     sink: Sink,
-    logger: Box<dyn Fn(&Json) -> Result<(), PrePostError> + Sync>,
+    logger: Box<Logger>,
     history: Arc<Mutex<Vec<Json>>>,
     pub(crate) state: LoggingState,
     now: DateTime<FixedOffset>,
@@ -344,7 +349,7 @@ pub(crate) struct Recorded {
     pub(crate) query_transforms: Vec<TransformRecord>,
     pub(crate) signs: Vec<SignRecord>,
     pub(crate) response_details: Vec<Params>,
-    pub(crate) threads: Vec<std::thread::ThreadId>,
+    pub(crate) threads: Vec<ThreadId>,
 }
 
 pub(crate) struct TransformRecord {
@@ -358,14 +363,23 @@ pub(crate) struct TransformRecord {
     pub(crate) async_entry: bool,
 }
 
-fn transform_record(request: &SearchRequest<'_>, async_entry: bool) -> TransformRecord {
+fn transform_record(request: SearchRequest<'_>, async_entry: bool) -> TransformRecord {
+    let SearchRequest {
+        vector_store_id,
+        query,
+        optional_params,
+        api_base,
+        litellm_params,
+        extra_body,
+        ..
+    } = request;
     TransformRecord {
-        vector_store_id: request.vector_store_id.to_owned(),
-        query: request.query.clone(),
-        optional_params: request.optional_params.clone(),
-        api_base: request.api_base.to_owned(),
-        litellm_params: request.litellm_params.clone(),
-        extra_body: request.extra_body.cloned(),
+        vector_store_id: vector_store_id.to_owned(),
+        query: query.clone(),
+        optional_params: optional_params.clone(),
+        api_base: api_base.to_owned(),
+        litellm_params: litellm_params.clone(),
+        extra_body: extra_body.cloned(),
         executor: false,
         async_entry,
     }
@@ -451,7 +465,7 @@ impl RecordingConfig {
         );
         self.recorded()
             .transforms
-            .push(transform_record(&request, async_entry));
+            .push(transform_record(request, async_entry));
         Ok((self.url.clone(), self.body.clone()))
     }
 
@@ -460,7 +474,7 @@ impl RecordingConfig {
         request: QuerySearchRequest<'_>,
         async_entry: bool,
     ) -> PreparedSearch {
-        let mut record = transform_record(&request.search, async_entry);
+        let mut record = transform_record(request.search, async_entry);
         record.executor = request.embedding_executor.is_some();
         self.recorded().query_transforms.push(record);
         (self.url.clone(), self.body.clone())
@@ -531,7 +545,7 @@ impl SearchConfig for RecordingConfig {
             .iter()
             .map(|(name, value)| (name.clone(), value.expose_secret().to_owned()))
             .collect();
-        self.recorded().threads.push(std::thread::current().id());
+        self.recorded().threads.push(current().id());
         self.recorded().signs.push(SignRecord {
             headers,
             optional_params: request.optional_params.clone(),
@@ -548,11 +562,7 @@ impl SearchConfig for RecordingConfig {
     }
 
     fn query_embedding_config(&self) -> Option<&dyn QueryEmbeddingConfig> {
-        if self.query_embedding {
-            Some(self)
-        } else {
-            None
-        }
+        self.query_embedding.then_some(self)
     }
 
     fn error_class(&self, message: &str, status_code: u16, headers: HeaderMap) -> BaseLlmException {
@@ -594,9 +604,7 @@ impl QueryEmbeddingExecutor for Embeddings {
         _query: &str,
         _configuration: &Params,
     ) -> Result<EmbeddingResponse, StoreFailure> {
-        Err(Box::new(std::io::Error::other(
-            "the embedding fixture refuses",
-        )))
+        Err(Box::new(IoError::other("the embedding fixture refuses")))
     }
 }
 
@@ -618,7 +626,7 @@ impl SigningSeam for ThreadedSeam {
                     source: Box::new(error),
                 }),
                 None => Err(SigningFailure {
-                    source: Box::new(std::io::Error::other("no signing task ran")),
+                    source: Box::new(IoError::other("no signing task ran")),
                 }),
             }
         })
@@ -631,7 +639,7 @@ impl SigningSeam for RefusingSeam {
     fn sign(&self, _config: Arc<dyn SearchConfig>, _request: SignInput) -> SignFuture<'_> {
         Box::pin(async {
             Err(SigningFailure {
-                source: Box::new(std::io::Error::other("the signing fixture refuses")),
+                source: Box::new(IoError::other("the signing fixture refuses")),
             })
         })
     }
@@ -688,14 +696,13 @@ impl DirectStore {
         request: &DirectSearchRequest<'_>,
         async_entry: bool,
     ) -> Result<VectorStoreSearchResponse, DirectFailure> {
-        {
-            let mut observed = self.observed.lock().unwrap_or_else(PoisonError::into_inner);
-            record_direct(request, &mut observed, async_entry);
-        }
+        record_direct(
+            request,
+            &mut self.observed.lock().unwrap_or_else(PoisonError::into_inner),
+            async_entry,
+        );
         if self.failure {
-            return Err(DirectFailure(Box::new(std::io::Error::other(
-                "the store refused",
-            ))));
+            return Err(DirectFailure(Box::new(IoError::other("the store refused"))));
         }
         serde_json::from_str(SEARCH_RESPONSE).map_err(|source| DirectFailure(Box::new(source)))
     }
@@ -779,11 +786,7 @@ impl SearchConfig for DelegatingConfig {
     }
 
     fn query_embedding_config(&self) -> Option<&dyn QueryEmbeddingConfig> {
-        if self.inner.query_embedding {
-            Some(self)
-        } else {
-            None
-        }
+        self.inner.query_embedding.then_some(self)
     }
 
     fn error_class(&self, message: &str, status_code: u16, headers: HeaderMap) -> BaseLlmException {
@@ -819,10 +822,11 @@ impl DirectSearchConfig for DelegatingStore {
         &self,
         request: DirectSearchRequest<'_>,
     ) -> Result<VectorStoreSearchResponse, DirectFailure> {
-        {
-            let mut observed = self.observed.lock().unwrap_or_else(PoisonError::into_inner);
-            record_direct(&request, &mut observed, false);
-        }
+        record_direct(
+            &request,
+            &mut self.observed.lock().unwrap_or_else(PoisonError::into_inner),
+            false,
+        );
         serde_json::from_str(SEARCH_RESPONSE).map_err(|source| DirectFailure(Box::new(source)))
     }
 }

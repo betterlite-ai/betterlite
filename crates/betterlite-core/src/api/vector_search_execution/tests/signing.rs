@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, PoisonError};
+use std::thread::{ThreadId, current};
 use std::time::Duration;
 
 use betterlite_models::decisions::Json;
@@ -334,7 +335,7 @@ async fn query_transform_no_executor() {
 }
 
 async fn signed_on_thread(mode: ClientKind, aws: bool, thread: SigningThread) {
-    let caller_thread = std::thread::current().id();
+    let caller_thread = current().id();
     let case = signing_fixture();
     let events = Events::new();
     let wire = Wire::replying(Reply::json(200, SEARCH_RESPONSE), &events);
@@ -370,7 +371,7 @@ async fn signed_on_thread(mode: ClientKind, aws: bool, thread: SigningThread) {
 fn assert_signed_thread(
     recorded: &Recorded,
     thread: SigningThread,
-    caller: std::thread::ThreadId,
+    caller: ThreadId,
     mode: ClientKind,
 ) {
     assert_eq!(
@@ -387,65 +388,76 @@ fn assert_signed_thread(
 
 // Neither async transform is overridden here, so the traits' sync-to-async defaults run
 async fn default_case(kind: DefaultCase) {
-    let caller = std::thread::current().id();
+    let caller = current().id();
     let case = signing_fixture();
     let events = Events::new();
     let wire = Wire::replying(Reply::json(200, SEARCH_RESPONSE), &events);
     let source = Source::new(wire.clone());
-    let config = match kind {
-        DefaultCase::Search => DelegatingConfig::new(),
-        DefaultCase::Query => DelegatingConfig::new().with_query_embedding(),
-    };
+    let config = delegating_config(kind);
     let recorder = config.recorder();
     let embeddings = Embeddings;
-    let executor: Option<&dyn QueryEmbeddingExecutor> = match kind {
-        DefaultCase::Search => None,
-        DefaultCase::Query => Some(&embeddings),
-    };
-    let timeout = match kind {
-        DefaultCase::Search => None,
-        DefaultCase::Query => Some(Duration::from_secs(7)),
-    };
     let deps = SearchDeps {
         config: Arc::new(config),
         source: &source,
         supplied: None,
     };
-    let call = SearchCall {
-        vector_store_id: "vs_a",
-        query: &case.query,
-        optional_params: &case.optional_params,
-        litellm_params: &case.litellm_params,
-        extra_headers: None,
-        extra_body: None,
-        timeout,
-        embedding_executor: executor,
-    };
+    let call = default_call(kind, &case, &embeddings);
     let mut fixture = Fixture::new("vector_store_search", &events);
     fixture
         .search(&deps, &ThreadedSeam, ClientKind::Asynchronous, &call)
         .await
         .expect("the default async transform searches");
     let guard = recorder.lock().unwrap_or_else(PoisonError::into_inner);
-    match kind {
-        DefaultCase::Search => {
-            assert_eq!(guard.transforms.len(), 1);
-            assert!(!guard.transforms[0].async_entry);
-            assert!(guard.query_transforms.is_empty());
-        }
-        DefaultCase::Query => {
-            assert!(guard.transforms.is_empty());
-            assert_eq!(guard.query_transforms.len(), 1);
-            assert!(!guard.query_transforms[0].async_entry);
-            assert!(guard.query_transforms[0].executor);
-            assert_eq!(
-                guard.query_transforms[0].litellm_params.get("timeout"),
-                Some(&json("7"))
-            );
-        }
-    }
+    assert_default_transforms(&guard, kind);
     assert_eq!(guard.threads, [caller]);
     let sent = wire.requests();
     assert_eq!(sent.len(), 1);
     assert_eq!(sent_header(&sent[0], "x-signed"), Some("sig-1"));
+}
+
+fn delegating_config(kind: DefaultCase) -> DelegatingConfig {
+    match kind {
+        DefaultCase::Search => DelegatingConfig::new(),
+        DefaultCase::Query => DelegatingConfig::new().with_query_embedding(),
+    }
+}
+
+// The query default receives the executor and the timeout, and the search default receives neither
+fn default_call<'call>(
+    kind: DefaultCase,
+    case: &'call SigningFixture,
+    embeddings: &'call Embeddings,
+) -> SearchCall<'call> {
+    let query = matches!(kind, DefaultCase::Query);
+    let executor: Option<&'call dyn QueryEmbeddingExecutor> = query.then_some(embeddings);
+    SearchCall {
+        vector_store_id: "vs_a",
+        query: &case.query,
+        optional_params: &case.optional_params,
+        litellm_params: &case.litellm_params,
+        extra_headers: None,
+        extra_body: None,
+        timeout: query.then_some(Duration::from_secs(7)),
+        embedding_executor: executor,
+    }
+}
+
+fn assert_default_transforms(recorded: &Recorded, kind: DefaultCase) {
+    match kind {
+        DefaultCase::Search => {
+            assert_eq!(recorded.transforms.len(), 1);
+            assert!(!recorded.transforms[0].async_entry);
+            assert!(recorded.query_transforms.is_empty());
+        }
+        DefaultCase::Query => {
+            assert!(recorded.transforms.is_empty());
+            assert_eq!(recorded.query_transforms.len(), 1);
+            assert!(!recorded.query_transforms[0].async_entry);
+            assert!(recorded.query_transforms[0].executor);
+            assert_eq!(
+                recorded.query_transforms[0].litellm_params.get("timeout"),
+                Some(&json("7"))
+            );
+        }
+    }
 }

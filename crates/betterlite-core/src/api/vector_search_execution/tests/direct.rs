@@ -1,3 +1,4 @@
+use std::slice::from_ref;
 use std::time::Duration;
 
 use super::support::{
@@ -80,11 +81,11 @@ fn assert_direct_observed(
 ) {
     let observed = store.observed();
     assert_eq!(observed.ids, ["store-a"]);
-    assert_eq!(observed.queries, [query.clone()]);
-    assert_eq!(observed.optional_params, [optional_params.clone()]);
+    assert_eq!(observed.queries, from_ref(query));
+    assert_eq!(observed.optional_params, from_ref(optional_params));
     assert_eq!(observed.timeouts, [Some(Duration::from_secs(7))]);
     assert_eq!(observed.executors, [true]);
-    assert_eq!(observed.litellm_params, [litellm_params.clone()]);
+    assert_eq!(observed.litellm_params, from_ref(litellm_params));
     assert_eq!(observed.async_entries, [mode == ClientKind::Asynchronous]);
 }
 
@@ -123,8 +124,8 @@ async fn direct_default() {
     assert_eq!(to_json(&answer), json(SEARCH_RESPONSE));
     let observed = store.observed();
     assert_eq!(observed.ids, ["store-a"]);
-    assert_eq!(observed.queries, [query.clone()]);
-    assert_eq!(observed.optional_params, [optional_params.clone()]);
+    assert_eq!(observed.queries, from_ref(&query));
+    assert_eq!(observed.optional_params, from_ref(&optional_params));
     assert_eq!(observed.async_entries, [false]);
 }
 

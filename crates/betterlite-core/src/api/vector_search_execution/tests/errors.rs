@@ -1,3 +1,4 @@
+use std::error::Error as _;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -96,7 +97,7 @@ async fn timeout_case(mode: ClientKind) {
     assert!(!error.status_code_is_synthesized);
     assert_eq!(error.message, TIMEOUT_MESSAGE);
     assert!(error.headers.is_empty());
-    assert!(std::error::Error::source(&error).is_none());
+    assert!(error.source().is_none());
 }
 
 async fn status_case(status: u16, body: &str) {
