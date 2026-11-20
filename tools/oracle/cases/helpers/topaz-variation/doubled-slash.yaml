@@ -1,0 +1,15 @@
+kind: helper
+name: topaz-variation-doubled-slash
+call:
+  topaz_variation:
+    calls:
+      - function: url
+        api_base: https://proxy.test/v1/
+      - function: url
+        api_base: https://proxy.test/v1
+      - function: url
+        api_base: null
+      - function: url
+        api_base: ""
+env: {}
+compare: {ignore: []}

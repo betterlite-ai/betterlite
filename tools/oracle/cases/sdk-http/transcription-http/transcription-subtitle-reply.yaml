@@ -1,0 +1,26 @@
+kind: sdk_http
+name: transcription-subtitle-reply
+env: {}
+call:
+  transcription_http:
+    mode: sync
+    model: m
+    api_key: sk-provider
+    optional_params: {response_format: srt}
+    supports_subtitle_synthesis: true
+    transform:
+      data: {query: hello}
+    response:
+      text: old
+      words:
+        - {word: Hello, start: 0, end: 1}
+    observe_headers: [x-request-id]
+upstream:
+  - status: 200
+    headers: {content-type: application/json, x-request-id: transcribe_1}
+    body: {text: old}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore: []

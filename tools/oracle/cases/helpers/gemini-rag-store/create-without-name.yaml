@@ -1,0 +1,17 @@
+kind: helper
+name: gemini-rag-store-create-without-name
+call:
+  b3454:
+    script:
+      - status: 200
+        body: '{}'
+    options:
+      name: notes
+      vector_store:
+        custom_llm_provider: gemini
+    environment:
+      GEMINI_API_KEY: gemini-key
+    file_content_base64: aGVsbG8=
+    filename: a.txt
+env: {}
+compare: {ignore: []}
