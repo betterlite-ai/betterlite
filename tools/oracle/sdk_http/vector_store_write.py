@@ -20,17 +20,17 @@ JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
 class WriteOptions(TypedDict, total=False):
     api_base: str
-    name: str
+    name: str | None
     expires_after: JsonValue
     metadata: JsonValue
-    file_ids: list[str]
+    file_ids: list[str] | None
     chunking_strategy: JsonValue
     unknown: JsonValue
     extra_headers: JsonValue
     extra_query: JsonValue
     extra_body: JsonValue
-    timeout: float
-    custom_llm_provider: str
+    timeout: float | None
+    custom_llm_provider: str | None
 
 
 # The four entries take optional arguments as keywords, so one options map feeds both modes
@@ -114,56 +114,41 @@ class VectorStoreWriteRequest(BaseModel):
         return VectorStoreWriteResult(vector_store_write=value).model_dump_json(by_alias=True)
 
 
-def transport_options(run: Run, api_base: str) -> WriteOptions:
-    options: WriteOptions = {"api_base": api_base}
-    if run.extra_headers is not None:
-        options["extra_headers"] = run.extra_headers
-    if run.extra_query is not None:
-        options["extra_query"] = run.extra_query
-    if run.extra_body is not None:
-        options["extra_body"] = run.extra_body
-    if run.timeout is not None:
-        options["timeout"] = run.timeout
-    if run.custom_llm_provider is not None:
-        options["custom_llm_provider"] = run.custom_llm_provider
-    return options
-
-
-# update reads file_ids and chunking_strategy from **kwargs; the create filter keeps only those
-def update_options(run: Run, api_base: str) -> WriteOptions:
-    options = transport_options(run, api_base)
-    if run.name is not None:
-        options["name"] = run.name
-    if run.expires_after is not None:
-        options["expires_after"] = run.expires_after
-    if run.metadata is not None:
-        options["metadata"] = run.metadata
-    if run.file_ids is not None:
-        options["file_ids"] = run.file_ids
-    if run.chunking_strategy is not None:
-        options["chunking_strategy"] = run.chunking_strategy
-    if run.unknown is not None:
-        options["unknown"] = run.unknown
-    return options
+# update reads file_ids and chunking_strategy from **kwargs; null takes the SDK default
+def write_options(run: Run, api_base: str) -> WriteOptions:
+    return {
+        "api_base": api_base,
+        "name": run.name,
+        "expires_after": run.expires_after,
+        "metadata": run.metadata,
+        "file_ids": run.file_ids,
+        "chunking_strategy": run.chunking_strategy,
+        "unknown": run.unknown,
+        "extra_headers": run.extra_headers,
+        "extra_query": run.extra_query,
+        "extra_body": run.extra_body,
+        "timeout": run.timeout,
+        "custom_llm_provider": run.custom_llm_provider,
+    }
 
 
 def update_write(run: Run, api_base: str) -> JsonValue:
-    answer = WRITES.update(run.vector_store_id, **update_options(run, api_base))
+    answer = WRITES.update(run.vector_store_id, **write_options(run, api_base))
     return JSON.validate_python(answer)
 
 
 def aupdate_write(run: Run, api_base: str) -> JsonValue:
-    held = WRITES.aupdate(run.vector_store_id, **update_options(run, api_base))
+    held = WRITES.aupdate(run.vector_store_id, **write_options(run, api_base))
     return JSON.validate_python(asyncio.run(held))
 
 
 def delete_write(run: Run, api_base: str) -> JsonValue:
-    answer = WRITES.delete(run.vector_store_id, **transport_options(run, api_base))
+    answer = WRITES.delete(run.vector_store_id, **write_options(run, api_base))
     return JSON.validate_python(answer)
 
 
 def adelete_write(run: Run, api_base: str) -> JsonValue:
-    held = WRITES.adelete(run.vector_store_id, **transport_options(run, api_base))
+    held = WRITES.adelete(run.vector_store_id, **write_options(run, api_base))
     return JSON.validate_python(asyncio.run(held))
 
 
