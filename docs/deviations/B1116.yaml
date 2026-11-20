@@ -1,0 +1,12 @@
+task: B1116
+deviations:
+  - what: "Local SDK failure messages use bounded shared error wording instead of Python tracebacks; status=500 and exception classification remain APIConnectionError."
+    why: "B184/B187 require redacted client diagnostics, so the public message cannot quote the traceback LiteLLM embeds; the exact source message stays on the typed cause the entry point returns."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2692-L2709"
+kept_bugs:
+  - what: Both SDK entry points accept extra_query and drop it before the HTTP handler; the provider request never carries the caller's query parameters.
+    why: A working setup passing extra_query gets no query on the wire today, and adding it now would change request URLs deployments have always sent without it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L1588-L1601
+  - what: Both SDK entry points accept extra_body and the handler never merges it into the transformed payload, so a caller sending extra_body gets an unchanged body (or, for delete, no body at all).
+    why: B2417 already keeps this bug for the transport; a setup passing extra_body through the SDK gets it ignored today, and merging it would change request bodies that deployments have always sent unmerged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L1588-L1601
