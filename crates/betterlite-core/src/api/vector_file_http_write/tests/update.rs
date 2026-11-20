@@ -1,9 +1,7 @@
 use std::collections::BTreeMap;
 
-use betterlite_models::decisions::Json;
 use http::Method;
 use http::header::HeaderValue;
-use indexmap::IndexMap;
 use rstest::rstest;
 
 use super::json;
@@ -64,8 +62,21 @@ async fn update_body_before_transform(#[case] mode: ClientKind) {
 }
 
 // dict(update_request) keeps a null attributes and an empty mapping, and an absent or empty extra_body changes neither
+#[rstest]
+#[case::kept(r#"{"attributes":{"old":"x"}}"#, None, r#"{"attributes":{"old":"x"}}"#)]
+#[case::empty_extra_body(
+    r#"{"attributes":{"old":"x"}}"#,
+    Some("{}"),
+    r#"{"attributes":{"old":"x"}}"#
+)]
+#[case::null_attributes(r#"{"attributes":null}"#, None, r#"{"attributes":null}"#)]
+#[case::empty_attributes(r#"{"attributes":{}}"#, None, r#"{"attributes":{}}"#)]
 #[tokio::test]
-async fn update_body_cleaning_edges() {
+async fn update_body_cleaning_edges(
+    #[case] payload: &str,
+    #[case] case_overlay: Option<&str>,
+    #[case] expected: &str,
+) {
     let settings = openai_settings();
     let config = openai_config(&settings, "sk-provider");
     let events = Events::new();
@@ -77,41 +88,20 @@ async fn update_body_cleaning_edges() {
         supplied: None,
     };
     let params = params("http://mock.test/v1");
-    let kept = update_request(r#"{"attributes":{"old":"x"}}"#);
-    let empty: IndexMap<String, Json> = IndexMap::new();
-    let cleared = update_request(r#"{"attributes":null}"#);
-    let none = update_request(r#"{"attributes":{}}"#);
+    let request = update_request(payload);
+    let overlay = case_overlay.map(extra_body);
     let mut fixture = Fixture::new("vector_store_file_update");
-    let calls = [
-        update_call(target("vs_a", "file_a", &params, None, None), &kept, None),
-        update_call(
-            target("vs_a", "file_a", &params, None, None),
-            &kept,
-            Some(&empty),
-        ),
-        update_call(
-            target("vs_a", "file_a", &params, None, None),
-            &cleared,
-            None,
-        ),
-        update_call(target("vs_a", "file_a", &params, None, None), &none, None),
-    ];
-    for call in &calls {
-        run(&mut fixture, &deps, ClientKind::Sync, call, &events)
-            .await
-            .expect("the update succeeds");
-    }
-    let requests = wire.requests();
-    let bodies: Vec<Json> = requests.iter().map(body_json).collect();
-    assert_eq!(
-        bodies,
-        [
-            json(r#"{"attributes":{"old":"x"}}"#),
-            json(r#"{"attributes":{"old":"x"}}"#),
-            json(r#"{"attributes":null}"#),
-            json(r#"{"attributes":{}}"#),
-        ]
+    let call = update_call(
+        target("vs_a", "file_a", &params, None, None),
+        &request,
+        overlay.as_ref(),
     );
+    run(&mut fixture, &deps, ClientKind::Sync, &call, &events)
+        .await
+        .expect("the update succeeds");
+    let requests = wire.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(body_json(&requests[0]), json(expected));
 }
 
 #[rstest]
@@ -174,8 +164,11 @@ async fn file_write_header_order(#[case] beta: Option<&str>, #[case] expected_be
 }
 
 // A null map and an empty one both reach the config as {}, which then adds its credential, its content type and the default beta
+#[rstest]
+#[case::absent(None)]
+#[case::empty(Some(BTreeMap::new()))]
 #[tokio::test]
-async fn file_write_header_empty_maps() {
+async fn file_write_header_empty_maps(#[case] given: Option<BTreeMap<String, String>>) {
     let settings = openai_settings();
     let config = openai_config(&settings, "sk-provider");
     let events = Events::new();
@@ -188,28 +181,17 @@ async fn file_write_header_empty_maps() {
     };
     let params = params("http://mock.test/v1");
     let request = update_request(r#"{"attributes":{}}"#);
-    let empty: BTreeMap<String, String> = BTreeMap::new();
     let mut fixture = Fixture::new("vector_store_file_update");
-    let calls = [
-        update_call(
-            target("vs_a", "file_a", &params, None, None),
-            &request,
-            None,
-        ),
-        update_call(
-            target("vs_a", "file_a", &params, Some(&empty), None),
-            &request,
-            None,
-        ),
-    ];
-    for call in &calls {
-        run(&mut fixture, &deps, ClientKind::Sync, call, &events)
-            .await
-            .expect("the update succeeds");
-    }
+    let call = update_call(
+        target("vs_a", "file_a", &params, given.as_ref(), None),
+        &request,
+        None,
+    );
+    run(&mut fixture, &deps, ClientKind::Sync, &call, &events)
+        .await
+        .expect("the update succeeds");
     let requests = wire.requests();
-    assert_eq!(requests.len(), 2);
-    assert_eq!(requests[1].headers, requests[0].headers);
+    assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].headers.len(), 3);
     assert_eq!(
         requests[0].headers.get("authorization"),
@@ -229,7 +211,7 @@ async fn file_write_header_empty_maps() {
             r#"{"Authorization":"Be****er","Content-Type":"application/json","OpenAI-Beta":"assistants=v2"}"#
         ))
     );
-    assert_eq!(events.recorded(), ["log", "send", "log", "send"]);
+    assert_eq!(events.recorded(), ["log", "send"]);
 }
 
 // A base carrying a query string gets the collection path and the file id appended after it, as LiteLLM's f-strings do

@@ -17,7 +17,7 @@ use crate::api::vector_store_http_write::error::{ClientError, status_facts};
 use crate::api::vector_store_http_write::service::{ClientKind, Operation};
 
 use self::facts::Sent;
-use self::request::{delete_parts, select_client, update_parts, validated_headers, wire_headers};
+use self::request::{request_parts, select_client, validated_headers, wire_headers};
 use super::config::{FileWriteConfig, WriteParams};
 use super::error::FileWriteError;
 
@@ -133,10 +133,7 @@ where
     let api_base = deps
         .config
         .complete_url(target.params, target.vector_store_id)?;
-    let parts = match call {
-        WriteCall::Update(update) => update_parts(deps.config, update, &api_base, &headers, log)?,
-        WriteCall::Delete(delete) => delete_parts(deps.config, delete, &api_base, &headers, log)?,
-    };
+    let parts = request_parts(deps.config, call, &api_base, &headers, log)?;
     Ok(PreparedWrite {
         config: deps.config,
         client,

@@ -14,11 +14,7 @@ from litellm.llms.openai.vector_store_files.transformation import (
     OpenAIVectorStoreFilesConfig,
 )
 from litellm.types.router import GenericLiteLLMParams
-from litellm.types.vector_store_files import (
-    VectorStoreFileDeleteResponse,
-    VectorStoreFileObject,
-    VectorStoreFileUpdateRequest,
-)
+from litellm.types.vector_store_files import VectorStoreFileUpdateRequest
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 Operation = Literal["update", "delete"]
@@ -29,80 +25,58 @@ JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 OBJECTS: Final = TypeAdapter(dict[str, object] | None)
 PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
 
-UpdateWork = VectorStoreFileObject | Coroutine[object, object, VectorStoreFileObject]
-DeleteWork = (
-    VectorStoreFileDeleteResponse | Coroutine[object, object, VectorStoreFileDeleteResponse]
-)
-UpdateAnswer = Coroutine[object, object, VectorStoreFileObject]
-DeleteAnswer = Coroutine[object, object, VectorStoreFileDeleteResponse]
+class UpdateKwargs(TypedDict):
+    vector_store_id: str
+    file_id: str
+    update_request: VectorStoreFileUpdateRequest
+    vector_store_files_provider_config: BaseVectorStoreFilesConfig
+    custom_llm_provider: str
+    litellm_params: GenericLiteLLMParams
+    logging_obj: Logging
+    extra_headers: dict[str, str] | None
+    extra_body: dict[str, object] | None
+    timeout: float | httpx.Timeout | None
 
-UpdateKwargs = TypedDict(
-    "UpdateKwargs",
-    {
-        "vector_store_id": str,
-        "file_id": str,
-        "update_request": VectorStoreFileUpdateRequest,
-        "vector_store_files_provider_config": BaseVectorStoreFilesConfig,
-        "custom_llm_provider": str,
-        "litellm_params": GenericLiteLLMParams,
-        "logging_obj": Logging,
-        "extra_headers": dict[str, str] | None,
-        "extra_body": dict[str, object] | None,
-        "timeout": float | httpx.Timeout | None,
-    },
-)
 
-DeleteKwargs = TypedDict(
-    "DeleteKwargs",
-    {
-        "vector_store_id": str,
-        "file_id": str,
-        "vector_store_files_provider_config": BaseVectorStoreFilesConfig,
-        "custom_llm_provider": str,
-        "litellm_params": GenericLiteLLMParams,
-        "logging_obj": Logging,
-        "extra_headers": dict[str, str] | None,
-        "timeout": float | httpx.Timeout | None,
-    },
-)
+class DeleteKwargs(TypedDict):
+    vector_store_id: str
+    file_id: str
+    vector_store_files_provider_config: BaseVectorStoreFilesConfig
+    custom_llm_provider: str
+    litellm_params: GenericLiteLLMParams
+    logging_obj: Logging
+    extra_headers: dict[str, str] | None
+    timeout: float | httpx.Timeout | None
 
 
 class UpdateHandler(Protocol):
-    def __call__(self, **kwargs: Unpack[UpdateKwargs]) -> UpdateWork: ...
+    def __call__(self, **kwargs: Unpack[UpdateKwargs]) -> object: ...
 
 
 class AsyncUpdateHandler(Protocol):
-    def __call__(self, **kwargs: Unpack[UpdateKwargs]) -> UpdateAnswer: ...
+    def __call__(self, **kwargs: Unpack[UpdateKwargs]) -> Coroutine[object, object, object]: ...
 
 
 class DeleteHandler(Protocol):
-    def __call__(self, **kwargs: Unpack[DeleteKwargs]) -> DeleteWork: ...
+    def __call__(self, **kwargs: Unpack[DeleteKwargs]) -> object: ...
 
 
 class AsyncDeleteHandler(Protocol):
-    def __call__(self, **kwargs: Unpack[DeleteKwargs]) -> DeleteAnswer: ...
+    def __call__(self, **kwargs: Unpack[DeleteKwargs]) -> Coroutine[object, object, object]: ...
 
 
 class Handlers(Protocol):
     @property
-    def vector_store_file_update_handler(  # ast-grep-ignore: no-long-names
-        self,
-    ) -> UpdateHandler: ...
+    def vector_store_file_update_handler(self) -> UpdateHandler: ...
 
     @property
-    def async_vector_store_file_update_handler(  # ast-grep-ignore: no-long-names
-        self,
-    ) -> AsyncUpdateHandler: ...
+    def async_vector_store_file_update_handler(self) -> AsyncUpdateHandler: ...
 
     @property
-    def vector_store_file_delete_handler(  # ast-grep-ignore: no-long-names
-        self,
-    ) -> DeleteHandler: ...
+    def vector_store_file_delete_handler(self) -> DeleteHandler: ...
 
     @property
-    def async_vector_store_file_delete_handler(  # ast-grep-ignore: no-long-names
-        self,
-    ) -> AsyncDeleteHandler: ...
+    def async_vector_store_file_delete_handler(self) -> AsyncDeleteHandler: ...
 
 
 HANDLER: Handlers = BaseLLMHTTPHandler()

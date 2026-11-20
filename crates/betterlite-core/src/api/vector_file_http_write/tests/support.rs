@@ -308,6 +308,16 @@ impl RecordingConfig {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
+
+    fn parse_reply(&self, response: &http::Response<Vec<u8>>) -> Result<Json, BaseLlmException> {
+        serde_json::from_slice(response.body()).map_err(|source| {
+            self.error_class(
+                &source.to_string(),
+                response.status().as_u16(),
+                header_map(response.headers()),
+            )
+        })
+    }
 }
 
 impl FileWriteConfig for RecordingConfig {
@@ -352,13 +362,7 @@ impl FileWriteConfig for RecordingConfig {
         &self,
         response: &http::Response<Vec<u8>>,
     ) -> Result<Json, BaseLlmException> {
-        serde_json::from_slice(response.body()).map_err(|source| {
-            self.error_class(
-                &source.to_string(),
-                response.status().as_u16(),
-                header_map(response.headers()),
-            )
-        })
+        self.parse_reply(response)
     }
 
     fn transform_delete_request(
@@ -373,13 +377,7 @@ impl FileWriteConfig for RecordingConfig {
         &self,
         response: &http::Response<Vec<u8>>,
     ) -> Result<Json, BaseLlmException> {
-        serde_json::from_slice(response.body()).map_err(|source| {
-            self.error_class(
-                &source.to_string(),
-                response.status().as_u16(),
-                header_map(response.headers()),
-            )
-        })
+        self.parse_reply(response)
     }
 
     fn error_class(&self, message: &str, status_code: u16, headers: HeaderMap) -> BaseLlmException {

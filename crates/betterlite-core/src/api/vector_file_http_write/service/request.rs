@@ -12,9 +12,7 @@ use url::Url;
 use super::super::config::{FileWriteConfig, QueryParams};
 use super::super::error::FileWriteError;
 use super::super::params::merged_request;
-use super::{
-    ClientKind, ClientSource, DeleteCall, LogContext, Selected, UpdateCall, WriteDeps, WriteTarget,
-};
+use super::{ClientKind, ClientSource, LogContext, Selected, WriteCall, WriteDeps, WriteTarget};
 
 // The request an operation puts on the wire, after the pre-call logged the same body or query
 pub(super) struct Parts {
@@ -80,10 +78,10 @@ pub(super) fn log_pre_call(
     Ok(())
 }
 
-// The update operation's transform and pre-call, answering the parts its request goes out with
-pub(super) fn update_parts<C>(
+// The operation's transform, its pre-call over the final body or params, and the parts its request goes out with
+pub(super) fn request_parts<C>(
     config: &C,
-    update: &UpdateCall<'_>,
+    call: &WriteCall<'_>,
     api_base: &str,
     headers: &OpenAiHeaders,
     log: &mut LogContext<'_, '_>,
@@ -91,35 +89,29 @@ pub(super) fn update_parts<C>(
 where
     C: FileWriteConfig,
 {
-    let merged = merged_request(update.update_request, update.extra_body)?;
-    let (target_url, payload) =
-        config.transform_update_request(&merged, api_base, update.target.file_id)?;
-    log_pre_call(api_base, headers, Some(&payload), log)?;
-    Ok(Parts {
-        url: request_url(&target_url)?,
-        query: Vec::new(),
-        body: wire_body(&payload)?,
-    })
-}
-
-// The delete operation's transform and pre-call: its params go out as the query string, and its body is empty
-pub(super) fn delete_parts<C>(
-    config: &C,
-    delete: &DeleteCall<'_>,
-    api_base: &str,
-    headers: &OpenAiHeaders,
-    log: &mut LogContext<'_, '_>,
-) -> Result<Parts, FileWriteError>
-where
-    C: FileWriteConfig,
-{
-    let (target_url, query) = config.transform_delete_request(api_base, delete.target.file_id)?;
-    log_pre_call(api_base, headers, Some(&logged_query(&query)), log)?;
-    Ok(Parts {
-        url: request_url(&target_url)?,
-        query: query.into_iter().collect(),
-        body: RequestBody::Empty,
-    })
+    match call {
+        WriteCall::Update(update) => {
+            let merged = merged_request(update.update_request, update.extra_body)?;
+            let (target_url, payload) =
+                config.transform_update_request(&merged, api_base, update.target.file_id)?;
+            log_pre_call(api_base, headers, Some(&payload), log)?;
+            Ok(Parts {
+                url: request_url(&target_url)?,
+                query: Vec::new(),
+                body: wire_body(&payload)?,
+            })
+        }
+        WriteCall::Delete(delete) => {
+            let (target_url, query) =
+                config.transform_delete_request(api_base, delete.target.file_id)?;
+            log_pre_call(api_base, headers, Some(&logged_query(&query)), log)?;
+            Ok(Parts {
+                url: request_url(&target_url)?,
+                query: query.into_iter().collect(),
+                body: RequestBody::Empty,
+            })
+        }
+    }
 }
 
 // The delete transform's params dict is what pre_call logs before httpx appends it to the URL
