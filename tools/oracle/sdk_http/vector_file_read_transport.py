@@ -1,7 +1,7 @@
 import asyncio
-from collections.abc import Callable, Coroutine
+from collections.abc import Coroutine
 from datetime import UTC, datetime
-from typing import Final, Literal, Protocol, TypedDict
+from typing import Final, Literal, Protocol, TypeAlias, TypedDict, TypeVar
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -21,9 +21,10 @@ Mode = Literal["sync", "async"]
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
-# the handlers are keyword-only and their returns carry Any, so these shapes type the calls
-ReadHandler = Callable[..., object]
-AsyncReadHandler = Callable[..., Coroutine[object, object, object]]
+# the handlers' TypedDicts carry Any, so the call's type comes from its result, not the handler
+ReadResult: TypeAlias = object
+AsyncReadResult: TypeAlias = Coroutine[object, object, object]
+Result_co = TypeVar("Result_co", covariant=True)
 
 
 class ReadArguments(TypedDict):
@@ -38,26 +39,42 @@ class ReadArguments(TypedDict):
     timeout: float | httpx.Timeout | None
 
 
+class ReadHandler(Protocol[Result_co]):
+    def __call__(
+        self,
+        *,
+        vector_store_id: str,
+        file_id: str,
+        # ast-grep-ignore: no-long-names
+        vector_store_files_provider_config: BaseVectorStoreFilesConfig,
+        custom_llm_provider: str,
+        litellm_params: GenericLiteLLMParams,
+        logging_obj: Logging,
+        extra_headers: dict[str, str],
+        timeout: float | httpx.Timeout | None,
+    ) -> Result_co: ...
+
+
 class ReadHandlers(Protocol):
     @property
     def vector_store_file_retrieve_handler(  # ast-grep-ignore: no-long-names
         self,
-    ) -> ReadHandler: ...
+    ) -> ReadHandler[ReadResult]: ...
 
     @property
     def async_vector_store_file_retrieve_handler(  # ast-grep-ignore: no-long-names
         self,
-    ) -> AsyncReadHandler: ...
+    ) -> ReadHandler[AsyncReadResult]: ...
 
     @property
     def vector_store_file_content_handler(  # ast-grep-ignore: no-long-names
         self,
-    ) -> ReadHandler: ...
+    ) -> ReadHandler[ReadResult]: ...
 
     @property
     def async_vector_store_file_content_handler(  # ast-grep-ignore: no-long-names
         self,
-    ) -> AsyncReadHandler: ...
+    ) -> ReadHandler[AsyncReadResult]: ...
 
 
 HANDLER: ReadHandlers = BaseLLMHTTPHandler()
@@ -133,13 +150,13 @@ def read_arguments(call: ReadCall, operation: Operation, api_base: str) -> ReadA
     }
 
 
-def sync_handler(operation: Operation) -> ReadHandler:
+def sync_handler(operation: Operation) -> ReadHandler[ReadResult]:
     if operation == "retrieve":
         return HANDLER.vector_store_file_retrieve_handler
     return HANDLER.vector_store_file_content_handler
 
 
-def async_handler(operation: Operation) -> AsyncReadHandler:
+def async_handler(operation: Operation) -> ReadHandler[AsyncReadResult]:
     if operation == "retrieve":
         return HANDLER.async_vector_store_file_retrieve_handler
     return HANDLER.async_vector_store_file_content_handler
