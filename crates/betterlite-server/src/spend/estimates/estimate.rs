@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::time::SystemTime;
 
@@ -18,6 +17,7 @@ use betterlite_core::cost::usage::{BillingUsage, ResponseKind};
 use betterlite_core::routes::CallType;
 use betterlite_logging::cost_breakdown::{CostBreakdownInput, CostBreakdownTarget};
 use betterlite_logging::fields::usage::Usage;
+use betterlite_logging::fields::usage::parse::usage_from_mapping;
 use betterlite_models::decisions::Json;
 use betterlite_models::token_cost::error::TokenCostError;
 use betterlite_models::tool_fees::billing::BuiltInToolParams;
@@ -25,9 +25,7 @@ use betterlite_models::tool_signals::response::{OtherView, ToolBillingResponse};
 use betterlite_openai::chat::response::ChatResponse;
 use betterlite_provider::pricing::grounding::ProviderFormulas;
 use betterlite_provider::pricing::image::error::ImagePolicyError;
-use indexmap::IndexMap;
 use rust_decimal::Decimal;
-use serde_json::Number;
 
 use super::decode::SpendCalculateRequest;
 use super::deployments::{find_deployment, matched_deployment};
@@ -80,7 +78,7 @@ async fn price_response(
     instant: SystemTime,
 ) -> Result<Decimal, EstimateError> {
     let response = decode_response(value)?;
-    let usage = usage(&response)?;
+    let usage = response_usage(value)?;
     let view = ResponseView::Typed(TypedResponse {
         kind: ResponseKind::Chat,
         model: Some(response.model.as_str()),
@@ -115,7 +113,7 @@ const fn billing_input<'input>(
     }
 }
 
-// ModelResponse(**request.completion_response) runs LiteLLM's chat decoder, whose usage defaults to zero counts.
+// ModelResponse(**request.completion_response) validates the body with LiteLLM's chat decoder before any price is read.
 fn decode_response(value: &Json) -> Result<ChatResponse, EstimateError> {
     let document = serde_json::to_value(value).map_err(|error| EstimateError::Failure {
         message: error.to_string(),
@@ -125,37 +123,27 @@ fn decode_response(value: &Json) -> Result<ChatResponse, EstimateError> {
     })
 }
 
-fn usage(response: &ChatResponse) -> Result<Usage, EstimateError> {
-    let prompt_tokens = count(response.usage.prompt_tokens, "prompt_tokens")?;
-    let completion_tokens = count(response.usage.completion_tokens, "completion_tokens")?;
-    Ok(Usage {
-        prompt_tokens,
-        completion_tokens,
-        total_tokens: prompt_tokens.saturating_add(completion_tokens),
-        prompt_tokens_details: details(response.usage.prompt_tokens_details.as_ref()),
-        completion_tokens_details: details(response.usage.completion_tokens_details.as_ref()),
-        server_tool_use: None,
-        cost: None,
-        extras: IndexMap::new(),
-    })
-}
-
-fn count(value: u64, field: &'static str) -> Result<i64, EstimateError> {
-    i64::try_from(value).map_err(|_conversion| EstimateError::Failure {
-        message: format!("the response's {field} does not fit a signed 64-bit counter"),
-    })
-}
-
-fn details(map: Option<&BTreeMap<String, Option<u64>>>) -> Option<IndexMap<String, Json>> {
-    let fields = map?;
-    Some(
-        fields
-            .iter()
-            .filter_map(|(name, count)| {
-                count.map(|tokens| (name.clone(), Json::Number(Number::from(tokens))))
+// ModelResponse(**body) hands the body's usage object to LiteLLM's Usage constructor, which keeps the provider's
+// top-level cache counters as prompt details; a response without usage prices as zero counts.
+fn response_usage(value: &Json) -> Result<Usage, EstimateError> {
+    let Json::Object(fields) = value else {
+        return Err(EstimateError::Failure {
+            message: "the completion response is not an object".to_owned(),
+        });
+    };
+    match fields.get("usage") {
+        Some(Json::Object(mapping)) => {
+            usage_from_mapping(mapping).map_err(|error| EstimateError::Failure {
+                message: error.to_string(),
             })
-            .collect(),
-    )
+        }
+        None | Some(Json::Null) => Ok(Usage::default()),
+        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            Err(EstimateError::Failure {
+                message: "the completion response's usage must be an object".to_owned(),
+            })
+        }
+    }
 }
 
 async fn price(

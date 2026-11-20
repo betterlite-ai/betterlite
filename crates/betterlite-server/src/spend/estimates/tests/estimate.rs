@@ -310,6 +310,51 @@ async fn bills_a_responses_cached_tokens_at_the_cache_read_rate() {
 }
 
 #[tokio::test]
+async fn bills_a_top_level_cache_read_counter_at_the_cache_read_rate() {
+    let response = r#"{"id":"chatcmpl-1","object":"chat.completion","created":1,
+        "model":"gpt-4o-mini","choices":[],
+        "usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15,
+            "cache_read_input_tokens":10}}"#;
+    let cost = priced(
+        &state(None),
+        &format!(r#"{{"completion_response":{response}}}"#),
+    )
+    .await
+    .unwrap();
+    assert_eq!(cost, decimal("0.00000375"));
+}
+
+#[tokio::test]
+async fn bills_a_top_level_cache_hit_counter_at_the_cache_read_rate() {
+    let response = r#"{"id":"chatcmpl-1","object":"chat.completion","created":1,
+        "model":"gpt-4o-mini","choices":[],
+        "usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15,
+            "prompt_cache_hit_tokens":10}}"#;
+    let cost = priced(
+        &state(None),
+        &format!(r#"{{"completion_response":{response}}}"#),
+    )
+    .await
+    .unwrap();
+    assert_eq!(cost, decimal("0.00000375"));
+}
+
+#[tokio::test]
+async fn bills_a_top_level_cache_creation_counter_at_the_cache_creation_rate() {
+    let response = r#"{"id":"chatcmpl-1","object":"chat.completion","created":1,
+        "model":"claude-haiku-4-5","choices":[],
+        "usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15,
+            "cache_creation_input_tokens":4}}"#;
+    let cost = priced(
+        &state(None),
+        &format!(r#"{{"completion_response":{response}}}"#),
+    )
+    .await
+    .unwrap();
+    assert_eq!(cost, decimal("0.000036"));
+}
+
+#[tokio::test]
 async fn a_supplied_model_wins_over_a_supplied_response() {
     let response = r#"{"id":"chatcmpl-1","object":"chat.completion","created":1,
         "model":"gpt-4o","choices":[],
