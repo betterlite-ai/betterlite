@@ -18,34 +18,47 @@ from pydantic import JsonValue, TypeAdapter, ValidationError
 from typing_extensions import override
 
 Wait = Literal["none", "cancel", "signal"]
-CloseDocument = TypedDict("CloseDocument", {"code": int, "reason": str})
-GuardrailDocument = TypedDict("GuardrailDocument", {"hooks": list[str], "block_on": str | None})
-SetupDocument = TypedDict(
-    "SetupDocument",
-    {
-        "pending": list[str], "backend_setup_complete": bool | None,
-        "flushing": bool, "turn_detection_sent": bool,
-        "pending_guardrail_message": str | None, "session_configuration_request": str | None,
-    },
-)
-LifetimeDocument = TypedDict(
-    "LifetimeDocument",
-    {
-        "client_wait": Wait, "client_signals": bool,
-        "client_outcome": Literal["client_disconnected", "backend_closed"],
-        "backend_wait": Wait, "backend_signals": bool,
-        "backend_outcome": Literal["close", "error"],
-    },
-)
-Input = TypedDict(
-    "Input",
-    {
-        "mode": Literal["ack", "lifetime"], "messages": list[str], "setup": SetupDocument,
-        "guardrails": list[GuardrailDocument], "beta_backend": bool,
-        "close": CloseDocument | None, "lifetime": LifetimeDocument | None,
-        "client_send_failures": list[int], "client_close_failures": list[int],
-    },
-)
+
+
+class CloseDocument(TypedDict):
+    code: int
+    reason: str
+
+
+class GuardrailDocument(TypedDict):
+    hooks: list[str]
+    block_on: str | None
+
+
+class SetupDocument(TypedDict):
+    pending: list[str]
+    backend_setup_complete: bool | None
+    flushing: bool
+    turn_detection_sent: bool
+    pending_guardrail_message: str | None
+    session_configuration_request: str | None
+
+
+class LifetimeDocument(TypedDict):
+    client_wait: Wait
+    client_signals: bool
+    client_outcome: Literal["client_disconnected", "backend_closed"]
+    backend_wait: Wait
+    backend_signals: bool
+    backend_outcome: Literal["close", "error"]
+
+
+class Input(TypedDict):
+    mode: Literal["ack", "lifetime"]
+    messages: list[str]
+    setup: SetupDocument
+    guardrails: list[GuardrailDocument]
+    beta_backend: bool
+    close: CloseDocument | None
+    lifetime: LifetimeDocument | None
+    client_send_failures: list[int]
+    client_close_failures: list[int]
+
 
 WIRE: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 MAX_FRAMES, MAX_TEXT_BYTES, MAX_TOTAL_BYTES = 32, 16 * 1024, 256 * 1024
@@ -90,7 +103,7 @@ class ScriptedClient:
 
     async def close(self, code: int = 1000, reason: str | None = None) -> None:
         self.close_attempts += 1
-        self.closes.append(WIRE.validate_python([code, reason]))
+        self.closes.append([code, reason])
         if self.close_attempts - 1 in self.close_failures:
             raise ScriptedError(f"the scripted client close {self.close_attempts - 1} failed")
 
@@ -128,9 +141,8 @@ class ScriptedBackend(RealtimeBackend):
 class ScriptedGuardrail(CustomGuardrail, metaclass=_RelayMeta):
     def __init__(self, document: GuardrailDocument, applied: list[JsonValue]) -> None:
         super().__init__(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L190
-            guardrail_name="scripted",
+            guardrail_name="scripted", default_on=True,
             event_hook=[GuardrailEventHooks(name) for name in document["hooks"]],
-            default_on=True,
         )
         self.hooks = list(document["hooks"])
         self.block_on = document["block_on"]
@@ -149,9 +161,6 @@ class ScriptedGuardrail(CustomGuardrail, metaclass=_RelayMeta):
         input_type: Literal["request", "response"], logging_obj: Logging | None = None,
     ) -> GenericGuardrailAPIInputs:
         del request_data, input_type, logging_obj
-        return self.check(inputs)
-
-    def check(self, inputs: GenericGuardrailAPIInputs) -> GenericGuardrailAPIInputs:
         texts = inputs.get("texts")  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4536
         checked: list[str] = [] if texts is None else texts
         self.applied.append(WIRE.validate_python(checked))
@@ -167,18 +176,14 @@ class Probe(RealTimeStreaming):
         self.applied: list[JsonValue] = []
         self.timeline: list[JsonValue] = []
         super().__init__(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L127
-            websocket=self.client,
-            backend_ws=self.backend,
+            websocket=self.client, backend_ws=self.backend,
             logging_obj=Logging(
                 model="scripted", messages=[],  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L576
-                stream=False,
-                call_type="realtime",
+                stream=False, call_type="realtime",
                 start_time=dt.datetime.now(tz=dt.UTC),
-                litellm_call_id="scripted",
-                function_id="scripted",
+                litellm_call_id="scripted", function_id="scripted",
             ),
-            model="scripted",
-            backend_uses_beta_protocol=input_value["beta_backend"],
+            model="scripted", backend_uses_beta_protocol=input_value["beta_backend"],
         )
         setup = input_value["setup"]
         if setup["backend_setup_complete"] is not None:
@@ -192,23 +197,21 @@ class Probe(RealTimeStreaming):
         self._pending_messages_byte_total = sum(len(text.encode("utf-8")) for text in pending)
 
     def snapshot(self, mode: str, exit_name: str | None, result: JsonValue) -> JsonValue:
-        return WIRE.validate_python({
-            "mode": mode,
-            "exit": exit_name,
-            "result": result,
+        document = {
+            "mode": mode, "exit": exit_name, "result": result,
             "client": [recorded(text) for text in self.client.sent],
             "backend": [recorded(text) for text in self.backend.sent],
             "closes": self.client.closes,
             "pending": WIRE.validate_python(self._pending_messages_until_setup),
-            "applied": self.applied,
-            "timeline": self.timeline,
+            "applied": self.applied, "timeline": self.timeline,
             "flags": {
                 "turn_detection_sent": self._guardrail_turn_detection_update_sent,
                 "setup_complete": self._backend_setup_complete,
                 "flushing": self._flushing_pending_messages_until_setup,
                 "pending_guardrail": self._pending_guardrail_message,
             },
-        })
+        }
+        return WIRE.validate_python(document)
 
 
 class LifetimeProbe(Probe):
@@ -274,11 +277,8 @@ async def session(input_value: Input) -> JsonValue:
             except ScriptedError:
                 return probe.snapshot("lifetime", None, {"error": "backend"})
         exit_value = await probe.client_ack_messages()
-        exit_name = (
-            "client_disconnected"
-            if exit_value is ClientLoopExit.CLIENT_DISCONNECTED
-            else "backend_closed"
-        )
+        disconnected = exit_value is ClientLoopExit.CLIENT_DISCONNECTED
+        exit_name = "client_disconnected" if disconnected else "backend_closed"
         return probe.snapshot("ack", exit_name, None)
     finally:
         litellm.callbacks = previous
@@ -287,11 +287,9 @@ async def session(input_value: Input) -> JsonValue:
 def run(input_value: Input) -> JsonValue:
     messages, pending = input_value["messages"], input_value["setup"]["pending"]
     sizes = [len(text.encode("utf-8")) for text in messages + pending]
-    if (
-        max(len(messages), len(pending)) > MAX_FRAMES
-        or any(size > MAX_TEXT_BYTES for size in sizes)
-        or sum(sizes) > MAX_TOTAL_BYTES
-    ):
+    if max(len(messages), len(pending)) > MAX_FRAMES or any(
+        size > MAX_TEXT_BYTES for size in sizes
+    ) or sum(sizes) > MAX_TOTAL_BYTES:
         raise ValueError("the scripted client relay input is past its limits")
     lifetime, close = input_value["lifetime"], input_value["close"]
     if input_value["mode"] == "lifetime" and (lifetime is None or close is None):
