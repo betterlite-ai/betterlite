@@ -20,55 +20,23 @@ pub fn increment_cache_metrics<C>(
 where
     C: UsageCounters,
 {
-    increment_cache_lookup(counters, payload, labels, now)?;
-    increment_provider_cache(
-        counters,
-        payload.metadata.usage_object.as_ref(),
-        labels,
-        now,
-    )
-}
-
-fn increment_cache_lookup<C>(
-    counters: &C,
-    payload: &StandardLoggingPayload,
-    labels: UsageLabels<'_>,
-    now: Instant,
-) -> Result<(), PrometheusUsageError<<C::Counter as RemovableMetric>::Error>>
-where
-    C: UsageCounters,
-{
-    let Some(cache_hit) = payload.cache_hit else {
-        return Ok(());
-    };
-    let metric = if cache_hit {
-        UsageMetric::CacheHits
-    } else {
-        UsageMetric::CacheMisses
-    };
-    counters.inc(metric, labels, MetricValue::Finite(Decimal::ONE), now)?;
-    if cache_hit && payload.total_tokens > 0 {
-        let cached = Decimal::from(payload.total_tokens);
-        counters.inc(
-            UsageMetric::CachedTokens,
-            labels,
-            MetricValue::Finite(cached),
-            now,
-        )?;
+    if let Some(cache_hit) = payload.cache_hit {
+        let metric = if cache_hit {
+            UsageMetric::CacheHits
+        } else {
+            UsageMetric::CacheMisses
+        };
+        counters.inc(metric, labels, MetricValue::Finite(Decimal::ONE), now)?;
+        if cache_hit && payload.total_tokens > 0 {
+            counters.inc(
+                UsageMetric::CachedTokens,
+                labels,
+                MetricValue::Finite(Decimal::from(payload.total_tokens)),
+                now,
+            )?;
+        }
     }
-    Ok(())
-}
-
-fn increment_provider_cache<C>(
-    counters: &C,
-    usage_object: Option<&Json>,
-    labels: UsageLabels<'_>,
-    now: Instant,
-) -> Result<(), PrometheusUsageError<<C::Counter as RemovableMetric>::Error>>
-where
-    C: UsageCounters,
-{
-    let Some(usage) = object(usage_object) else {
+    let Some(usage) = object(payload.metadata.usage_object.as_ref()) else {
         return Ok(());
     };
     let (read, creation) = resolve_provider_cache_tokens(usage);
