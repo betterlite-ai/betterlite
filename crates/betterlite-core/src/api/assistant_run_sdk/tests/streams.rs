@@ -83,11 +83,9 @@ async fn azure_stream_drops_the_supplied_handler() {
         transport: Arc::clone(&recorder),
     });
     let sink = recording_handler();
-    let params = RunParams {
-        api_base: Some(String::from(BASE)),
-        api_key: Some(secret("az-key")),
-        ..RunParams::default()
-    };
+    let mut params = run_params();
+    params.api_base = Some(String::from(BASE));
+    params.api_key = Some(secret("az-key"));
     let mut input = azure_call(params);
     input.event_handler = Some(Arc::clone(&sink));
     let stream = sdk.run_thread_stream(input).unwrap();

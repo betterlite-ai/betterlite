@@ -16,7 +16,8 @@ use betterlite_redact::secret::Redactor;
 
 use crate::api::resource_sdk_settings::{ResourceSdkRequestOptions, ResourceSdkSettings};
 
-use super::call::{RunClient, RunClientClass, RunFlag, RunThreadCall};
+use super::call::RunClientClass::{AsyncAzure, Azure};
+use super::call::{RunClient, RunFlag, RunThreadCall};
 use super::convert::{
     azure_timeout, client_kind, facade_timeout, facade_token, openai_options, run_request,
     supplied_timeout,
@@ -79,8 +80,7 @@ where
         &self,
         call: RunThreadCall,
     ) -> Result<RunOutcome<O::Stream>, AssistantRunError> {
-        let arun = matches!(call.arun_thread, Some(RunFlag::Bool(true)));
-        let target = self.prepare(&call, arun)?;
+        let target = self.prepare(&call)?;
         if matches!(call.stream, Some(Some(RunFlag::Bool(true)))) {
             return self
                 .operations
@@ -104,8 +104,7 @@ where
             return Err(AssistantRunError::DuplicateStream);
         }
         call.stream = Some(Some(RunFlag::Bool(true)));
-        let arun = matches!(call.arun_thread, Some(RunFlag::Bool(true)));
-        let target = self.prepare(&call, arun)?;
+        let target = self.prepare(&call)?;
         self.operations
             .stream(target)
             .map_err(AssistantRunError::Dispatch)
@@ -125,11 +124,17 @@ where
         mut call: RunThreadCall,
     ) -> Result<RunOutcome<O::Stream>, AssistantRunError> {
         call.arun_thread = Some(RunFlag::Bool(true));
+        self.run_arun(call).await
+    }
+
+    async fn run_arun(
+        &self,
+        call: RunThreadCall,
+    ) -> Result<RunOutcome<O::Stream>, AssistantRunError> {
         let provider = call.provider.clone();
-        match self.run_thread(call).await {
-            Ok(outcome) => Ok(outcome),
-            Err(error) => Err(self.map_arun_error(&provider, error)),
-        }
+        self.run_thread(call)
+            .await
+            .map_err(|error| self.map_arun_error(&provider, error))
     }
 
     // arun_thread's except block: provider and wrapper failures are mapped, a litellm error passes through
@@ -158,13 +163,10 @@ where
     }
 
     // a supplied client stays the class it was built as, whatever provider the caller named
-    fn prepare(
-        &self,
-        call: &RunThreadCall,
-        arun: bool,
-    ) -> Result<RunTarget<'data>, AssistantRunError> {
+    fn prepare(&self, call: &RunThreadCall) -> Result<RunTarget<'data>, AssistantRunError> {
         let timeout = facade_timeout(call, &call.provider)?;
         let client_timeout = supplied_timeout(call)?;
+        let arun = matches!(call.arun_thread, Some(RunFlag::Bool(true)));
         let kind = client_kind(call, arun);
         // main.py passes event_handler to the openai wrapper only
         let handler = match call.provider.as_str() {
@@ -176,15 +178,10 @@ where
                 });
             }
         };
-        let azure = call.client.as_ref().map_or_else(
-            || call.provider.as_str() == "azure",
-            |client| {
-                matches!(
-                    client.class,
-                    RunClientClass::Azure | RunClientClass::AsyncAzure
-                )
-            },
-        );
+        let azure = match call.client.as_ref() {
+            Some(client) => matches!(client.class, AsyncAzure | Azure),
+            None => call.provider.as_str() == "azure",
+        };
         if azure {
             let run = self.azure_run(call, kind, handler, timeout)?;
             return Ok(RunTarget::Azure(Box::new(run)));

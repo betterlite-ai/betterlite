@@ -48,12 +48,10 @@ async fn azure_poll_posts_its_thread_path_and_api_version() {
     let sdk = fixture.sdk(ProviderRuns {
         transport: Arc::clone(&recorder),
     });
-    let params = RunParams {
-        api_base: Some(String::from(BASE)),
-        api_version: Some(String::from("2024-02-15-preview")),
-        api_key: Some(secret("az-key")),
-        ..RunParams::default()
-    };
+    let mut params = run_params();
+    params.api_base = Some(String::from(BASE));
+    params.api_version = Some(String::from("2024-02-15-preview"));
+    params.api_key = Some(secret("az-key"));
     let reply = polled(sdk.run_thread(azure_call(params)).await.unwrap()).unwrap();
     assert_eq!(reply.status, "completed");
     let seen = recorder.requests();
@@ -199,11 +197,9 @@ async fn azure_ad_token_is_sent_as_a_bearer() {
     let sdk = fixture.sdk(ProviderRuns {
         transport: Arc::clone(&recorder),
     });
-    let params = RunParams {
-        api_base: Some(String::from(BASE)),
-        azure_ad_token: Some(secret("tok")),
-        ..RunParams::default()
-    };
+    let mut params = run_params();
+    params.api_base = Some(String::from(BASE));
+    params.azure_ad_token = Some(secret("tok"));
     let reply = polled(sdk.run_thread(azure_call(params)).await.unwrap()).unwrap();
     assert_eq!(reply.status, "completed");
     let seen = recorder.requests();
@@ -218,12 +214,10 @@ async fn an_extra_body_token_never_authenticates() {
     let sdk = fixture.sdk(ProviderRuns {
         transport: Arc::clone(&recorder),
     });
-    let params = RunParams {
-        api_base: Some(String::from(BASE)),
-        api_key: Some(secret("az-key")),
-        extra_body: Some(json(r#"{"azure_ad_token": "body-token"}"#)),
-        ..RunParams::default()
-    };
+    let mut params = run_params();
+    params.api_base = Some(String::from(BASE));
+    params.api_key = Some(secret("az-key"));
+    params.extra_body = Some(json(r#"{"azure_ad_token": "body-token"}"#));
     let reply = polled(sdk.run_thread(azure_call(params)).await.unwrap()).unwrap();
     assert_eq!(reply.status, "completed");
     let seen = recorder.requests();
@@ -238,12 +232,10 @@ async fn azure_timeout_becomes_the_client_deadline() {
     let sdk = fixture.sdk(ProviderRuns {
         transport: Arc::clone(&recorder),
     });
-    let params = RunParams {
-        api_base: Some(String::from(BASE)),
-        api_key: Some(secret("az-key")),
-        timeout: Some(RunTimeout::Plain(TimeoutValue::Number(2.0_f64))),
-        ..RunParams::default()
-    };
+    let mut params = run_params();
+    params.api_base = Some(String::from(BASE));
+    params.api_key = Some(secret("az-key"));
+    params.timeout = Some(RunTimeout::Plain(TimeoutValue::Number(2.0_f64)));
     let reply = polled(sdk.run_thread(azure_call(params)).await.unwrap()).unwrap();
     assert_eq!(reply.status, "completed");
     assert_eq!(recorder.requests()[0].deadline, Duration::from_secs(2));
@@ -256,11 +248,9 @@ async fn azure_default_timeout_is_ten_minutes() {
     let sdk = fixture.sdk(ProviderRuns {
         transport: Arc::clone(&recorder),
     });
-    let params = RunParams {
-        api_base: Some(String::from(BASE)),
-        api_key: Some(secret("az-key")),
-        ..RunParams::default()
-    };
+    let mut params = run_params();
+    params.api_base = Some(String::from(BASE));
+    params.api_key = Some(secret("az-key"));
     let reply = polled(sdk.run_thread(azure_call(params)).await.unwrap()).unwrap();
     assert_eq!(reply.status, "completed");
     assert_eq!(recorder.requests()[0].deadline, Duration::from_secs(600));
@@ -280,10 +270,8 @@ async fn max_retries_reach_both_providers() {
     }
     let azure_operations = CaptureRuns::default();
     let azure_sdk = fixture.sdk(azure_operations);
-    let azure_params = RunParams {
-        max_retries: Some(3),
-        ..RunParams::default()
-    };
+    let mut azure_params = run_params();
+    azure_params.max_retries = Some(3);
     azure_sdk
         .run_thread(azure_call(azure_params))
         .await
@@ -306,12 +294,10 @@ async fn azure_base_key_and_version_stay_optional_strings() {
     let fixture = Fixture::new();
     let operations = CaptureRuns::default();
     let sdk = fixture.sdk(operations);
-    let params = RunParams {
-        api_base: Some(String::from(BASE)),
-        api_key: Some(secret("az-key")),
-        api_version: Some(String::from("2024-02-15-preview")),
-        ..RunParams::default()
-    };
+    let mut params = run_params();
+    params.api_base = Some(String::from(BASE));
+    params.api_key = Some(secret("az-key"));
+    params.api_version = Some(String::from("2024-02-15-preview"));
     sdk.run_thread(azure_call(params)).await.unwrap();
     match sdk.operations.targets().remove(0) {
         CapturedTarget::Azure {
@@ -393,12 +379,10 @@ async fn azure_string_timeout_reaches_litellm_params() {
     let fixture = Fixture::new();
     let operations = CaptureRuns::default();
     let sdk = fixture.sdk(operations);
-    let params = RunParams {
-        timeout: Some(RunTimeout::Plain(TimeoutValue::String(String::from(
-            " 2.5 ",
-        )))),
-        ..RunParams::default()
-    };
+    let mut params = run_params();
+    params.timeout = Some(RunTimeout::Plain(TimeoutValue::String(String::from(
+        " 2.5 ",
+    ))));
     sdk.run_thread(azure_call(params)).await.unwrap();
     match sdk.operations.targets().remove(0) {
         CapturedTarget::Azure {
@@ -415,12 +399,10 @@ async fn litellm_params_reach_only_the_azure_branch() {
     let fixture = Fixture::new();
     let operations = CaptureRuns::default();
     let sdk = fixture.sdk(operations);
-    let params = RunParams {
-        timeout: Some(RunTimeout::Plain(TimeoutValue::Number(2.0_f64))),
-        max_retries: Some(1),
-        azure_ad_token: Some(secret("raw-token")),
-        ..RunParams::default()
-    };
+    let mut params = run_params();
+    params.timeout = Some(RunTimeout::Plain(TimeoutValue::Number(2.0_f64)));
+    params.max_retries = Some(1);
+    params.azure_ad_token = Some(secret("raw-token"));
     sdk.run_thread(azure_call(params)).await.unwrap();
     match sdk.operations.targets().remove(0) {
         CapturedTarget::Azure {
