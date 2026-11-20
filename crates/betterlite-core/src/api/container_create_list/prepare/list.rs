@@ -32,7 +32,7 @@ pub(crate) struct ReadyList<'deps> {
 }
 
 impl ReadyList<'_> {
-    pub(crate) fn handler_call<'call>(
+    pub(crate) const fn handler_call<'call>(
         &'call self,
         call: &'call ContainerListCall,
         logging: &'call Mutex<LoggingState>,

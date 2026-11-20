@@ -148,11 +148,11 @@ pub(crate) fn full_create_call() -> ContainerCreateCall {
     call
 }
 
-pub(crate) fn declared_timeout() -> Duration {
+pub(crate) const fn declared_timeout() -> Duration {
     Duration::from_secs(600)
 }
 
-pub(crate) fn request_timeout() -> Duration {
+pub(crate) const fn request_timeout() -> Duration {
     Duration::from_secs(1234)
 }
 
