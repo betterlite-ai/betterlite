@@ -103,11 +103,11 @@ class FakeClient:
         self.scripted.policies.append(str(params["policy"]))
         return {}
 
-    def create_collection(self, **params: JsonValue) -> dict[str, JsonValue]:
+    def create_collection(self, **_params: JsonValue) -> dict[str, JsonValue]:
         self.scripted.operations.append("CreateCollection")
         return {"createCollectionDetail": {"id": "abc", "status": "CREATING"}}
 
-    def batch_get_collection(self, **params: JsonValue) -> dict[str, JsonValue]:
+    def batch_get_collection(self, **_params: JsonValue) -> dict[str, JsonValue]:
         self.scripted.operations.append("BatchGetCollection")
         status = self.next_status()
         return {
@@ -143,11 +143,11 @@ class FakeClient:
         self.scripted.content_type = str(params["ContentType"])
         return {}
 
-    def start_ingestion_job(self, **params: JsonValue) -> dict[str, JsonValue]:
+    def start_ingestion_job(self, **_params: JsonValue) -> dict[str, JsonValue]:
         self.scripted.operations.append("StartIngestionJob")
         return {"ingestionJob": {"ingestionJobId": "job1", "status": "STARTING"}}
 
-    def get_ingestion_job(self, **params: JsonValue) -> dict[str, JsonValue]:
+    def get_ingestion_job(self, **_params: JsonValue) -> dict[str, JsonValue]:
         self.scripted.operations.append("GetIngestionJob")
         return {"ingestionJob": {"ingestionJobId": "job1", "status": self.next_job_status()}}
 
@@ -158,26 +158,26 @@ class FakeClient:
         self.scripted.job_index += 1
         return self.scripted.job_statuses[index]
 
-    def get_caller_identity(self, **params: JsonValue) -> dict[str, JsonValue]:
+    def get_caller_identity(self, **_params: JsonValue) -> dict[str, JsonValue]:
         self.scripted.operations.append("GetCallerIdentity")
         return {
             "Account": "123456789012",
             "Arn": "arn:aws:iam::123456789012:role/caller",
         }
 
-    def create_bucket(self, **params: JsonValue) -> dict[str, JsonValue]:
+    def create_bucket(self, **_params: JsonValue) -> dict[str, JsonValue]:
         self.scripted.operations.append("CreateBucket")
         return {"Location": "/bucket"}
 
-    def list_data_sources(self, **params: JsonValue) -> dict[str, JsonValue]:
+    def list_data_sources(self, **_params: JsonValue) -> dict[str, JsonValue]:
         self.scripted.operations.append("ListDataSources")
         return {"dataSourceSummaries": self.scripted.data_sources}
 
-    def get_data_source(self, **params: JsonValue) -> dict[str, JsonValue]:
+    def get_data_source(self, **_params: JsonValue) -> dict[str, JsonValue]:
         self.scripted.operations.append("GetDataSource")
         return self.scripted.data_source
 
-    def create_knowledge_base(self, **params: JsonValue) -> dict[str, JsonValue]:
+    def create_knowledge_base(self, **_params: JsonValue) -> dict[str, JsonValue]:
         self.scripted.operations.append("CreateKnowledgeBase")
         return {
             "knowledgeBase": {
@@ -186,7 +186,7 @@ class FakeClient:
             }
         }
 
-    def get_knowledge_base(self, **params: JsonValue) -> dict[str, JsonValue]:
+    def get_knowledge_base(self, **_params: JsonValue) -> dict[str, JsonValue]:
         self.scripted.operations.append("GetKnowledgeBase")
         return {
             "knowledgeBase": {
@@ -195,6 +195,6 @@ class FakeClient:
             }
         }
 
-    def create_data_source(self, **params: JsonValue) -> dict[str, JsonValue]:
+    def create_data_source(self, **_params: JsonValue) -> dict[str, JsonValue]:
         self.scripted.operations.append("CreateDataSource")
         return {"dataSource": {"dataSourceId": self.scripted.data_source_id}}

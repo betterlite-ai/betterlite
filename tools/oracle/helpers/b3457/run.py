@@ -1,6 +1,7 @@
 import asyncio
 import os
 from typing import Final
+from unittest.mock import patch
 
 from litellm.rag.ingestion.bedrock_ingestion import BedrockRAGIngestion
 from litellm.types.rag import BedrockVectorStoreOptions, RAGIngestOptions
@@ -33,30 +34,15 @@ DETECTED_SOURCE: Final[dict[str, JsonValue]] = {
 }
 
 
-async def fast_sleep(delay: float, result: None = None) -> None:
+async def fast_sleep(delay: float) -> None:
     SLEEPS.append(delay)
-    return result
 
 
 class RecordingIngestion(BedrockRAGIngestion):
-    def __init__(
-        self,
-        vector: BedrockVectorStoreOptions,
-        environment: dict[str, str],
-        client: FakeClient,
-    ) -> None:
-        self.client = client
-        saved = dict(os.environ)
-        os.environ.clear()
-        os.environ.update(environment)
-        try:
-            super().__init__(ingest_options=RAGIngestOptions(vector_store=vector))
-        finally:
-            os.environ.clear()
-            os.environ.update(saved)
+    client: FakeClient
 
     @override
-    def _get_boto3_client(self, service_name: str) -> FakeClient:
+    def _get_boto3_client(self, _service_name: str) -> FakeClient:
         return self.client
 
     def collection(self, unique_id: str, account_id: str, caller_arn: str) -> tuple[str, str]:
@@ -85,6 +71,23 @@ class RecordingIngestion(BedrockRAGIngestion):
         return sorted(self._created_resources)
 
 
+def build(
+    vector: BedrockVectorStoreOptions, environment: dict[str, str], client: FakeClient
+) -> RecordingIngestion:
+    saved = dict(os.environ)
+    os.environ.clear()
+    os.environ.update(environment)
+    try:
+        ingestion = RecordingIngestion(
+            ingest_options=RAGIngestOptions(vector_store=vector)
+        )
+    finally:
+        os.environ.clear()
+        os.environ.update(saved)
+    ingestion.client = client
+    return ingestion
+
+
 def content_type_value(value: str) -> str | None:
     if value == "":
         return None
@@ -105,7 +108,7 @@ def scripted_client() -> FakeClient:
 def policies(input_value: PoliciesInput) -> JsonValue:
     client = scripted_client()
     client.scripted.statuses = ["ACTIVE"]
-    ingestion = RecordingIngestion(input_value["vector"], input_value["environment"], client)
+    ingestion = build(input_value["vector"], input_value["environment"], client)
     name, _arn = ingestion.collection(
         input_value["unique_id"], input_value["account_id"], input_value["caller_arn"]
     )
@@ -121,7 +124,7 @@ def policies(input_value: PoliciesInput) -> JsonValue:
 def collection(input_value: CollectionInput) -> JsonValue:
     client = scripted_client()
     client.scripted.statuses = list(input_value["statuses"])
-    ingestion = RecordingIngestion(input_value["vector"], input_value["environment"], client)
+    ingestion = build(input_value["vector"], input_value["environment"], client)
     try:
         name, arn = ingestion.collection(
             input_value["unique_id"], input_value["account_id"], input_value["caller_arn"]
@@ -146,7 +149,7 @@ def index(input_value: IndexInput) -> JsonValue:
     install_fakes(list(input_value["failures"]), client.scripted.operations)
     client.scripted.statuses = ["ACTIVE"]
     client.scripted.collection_endpoint = input_value["endpoint"]
-    ingestion = RecordingIngestion(input_value["vector"], input_value["environment"], client)
+    ingestion = build(input_value["vector"], input_value["environment"], client)
     outcome = "created"
     try:
         ingestion.flow()
@@ -167,7 +170,7 @@ def role(input_value: RoleInput) -> JsonValue:
     account_id = input_value["account_id"]
     client = scripted_client()
     client.scripted.role_arn = f"arn:aws:iam::{account_id}:role/litellm-bedrock-kb-{unique_id}"
-    ingestion = RecordingIngestion(input_value["vector"], input_value["environment"], client)
+    ingestion = build(input_value["vector"], input_value["environment"], client)
     arn = ingestion.role(unique_id, account_id, input_value["collection_arn"])
     return {
         "outcome": "created",
@@ -189,7 +192,7 @@ def flow(input_value: FlowInput) -> JsonValue:
     client = scripted_client()
     install_fakes([], client.scripted.operations)
     client.scripted.statuses = ["ACTIVE"]
-    ingestion = RecordingIngestion(input_value["vector"], input_value["environment"], client)
+    ingestion = build(input_value["vector"], input_value["environment"], client)
     knowledge_base, _file_key = ingestion.flow()
     return {
         "outcome": "initialized",
@@ -207,7 +210,7 @@ def store(input_value: StoreInput) -> JsonValue:
     client = scripted_client()
     install_fakes([], client.scripted.operations)
     client.scripted.job_statuses = list(input_value["job_statuses"])
-    ingestion = RecordingIngestion(input_value["vector"], input_value["environment"], client)
+    ingestion = build(input_value["vector"], input_value["environment"], client)
     knowledge_base, file_key = ingestion.stored(
         input_value["content"], input_value["filename"], input_value["content_type"]
     )
@@ -235,9 +238,5 @@ def dispatch(input_value: Input) -> JsonValue:
 
 
 def run(input_value: Input) -> JsonValue:
-    saved = asyncio.sleep
-    asyncio.__dict__["sleep"] = fast_sleep
-    try:
+    with patch.object(asyncio, "sleep", fast_sleep):
         return dispatch(input_value)
-    finally:
-        asyncio.__dict__["sleep"] = saved
