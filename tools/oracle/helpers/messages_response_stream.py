@@ -54,6 +54,7 @@ class EventSpec(TypedDict):
     attributes: NotRequired[AttributesSpec]
 
 
+EventPayload: TypeAlias = dict[str, JsonValue] | SimpleNamespace
 Step: TypeAlias = Literal["next", "drain", "sse"]
 
 
@@ -125,9 +126,10 @@ def attribute_event(spec: AttributesSpec) -> SimpleNamespace:
     )
 
 
-def build_event(spec: EventSpec) -> dict[str, JsonValue] | SimpleNamespace:
+def build_event(spec: EventSpec) -> EventPayload:
     if spec["shape"] == "mapping":
-        return spec.get("fields", EMPTY_FIELDS)
+        fields = spec.get("fields")
+        return EMPTY_FIELDS if fields is None else fields
     attributes = spec.get("attributes")
     return attribute_event(EMPTY_ATTRIBUTES if attributes is None else attributes)
 
@@ -144,14 +146,14 @@ def frame_value(raw: bytes) -> Frame:
     return {"event": event, "data": CHUNK.validate_json(data)}
 
 
-class ScriptedStream(AsyncIterator[object]):
+class ScriptedStream(AsyncIterator[EventPayload]):
     def __init__(self, events: list[EventSpec], failure: FailureSpec | None) -> None:
-        self._events = [build_event(event) for event in events]
+        self._events: list[EventPayload] = [build_event(event) for event in events]
         self._failure = failure
         self._index = 0
 
     @override
-    async def __anext__(self) -> object:
+    async def __anext__(self) -> EventPayload:
         if self._index < len(self._events):
             event = self._events[self._index]
             self._index += 1

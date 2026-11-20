@@ -1,3 +1,4 @@
+mod events;
 mod state;
 mod watch;
 
@@ -9,22 +10,21 @@ use async_trait::async_trait;
 use betterlite_anthropic::stream_state::state::IdSource;
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::messages_response_stream::source::{
-    ProviderError, ProviderEvent, ProviderResponse, ResponsesEvent, ResponsesEventSource,
+    ResponsesEvent, ResponsesEventSource,
 };
 use betterlite_core::api::messages_response_stream::{
     MessagesResponseStream, MessagesResponseStreamInput, MessagesResponseStreamResult,
 };
 use betterlite_core::api::responses_stream_errors::failure::{FailureCause, FailureKind};
 use betterlite_models::decisions::Json;
-use betterlite_openai::api::responses_objects::ResponseApiUsage;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use indexmap::IndexMap;
 use serde::Deserialize;
 use tokio::runtime::Builder;
 use uuid::Uuid;
 
+use events::EventSpec;
 use state::logging_state;
 use watch::Captured;
 
@@ -37,65 +37,6 @@ const MESSAGE_ID: &str = "msg_00000000-0000-0000-0000-000000000007";
 enum Redaction {
     Enabled,
     Disabled,
-}
-
-// The two event shapes __anext__ can pull: a decoded mapping, or a provider object whose attributes getattr reads.
-#[derive(Clone, Copy, Debug, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum EventShape {
-    Mapping,
-    Attributes,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct EventSpec {
-    shape: EventShape,
-    #[serde(default)]
-    fields: Option<IndexMap<String, Json>>,
-    #[serde(default)]
-    attributes: Option<AttributesSpec>,
-}
-
-#[derive(Clone, Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct AttributesSpec {
-    #[serde(rename = "type", default)]
-    event_type: Option<Json>,
-    #[serde(default)]
-    item: Option<Json>,
-    #[serde(default)]
-    item_id: Option<Json>,
-    #[serde(default)]
-    delta: Option<Json>,
-    #[serde(default)]
-    summary_index: Option<Json>,
-    #[serde(default)]
-    response: Option<ResponseSpec>,
-}
-
-#[derive(Clone, Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ResponseSpec {
-    #[serde(default)]
-    output: Vec<Json>,
-    #[serde(default)]
-    status: Option<String>,
-    #[serde(default)]
-    usage: Option<ResponseApiUsage>,
-    #[serde(default)]
-    error: Option<ErrorSpec>,
-}
-
-#[derive(Clone, Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ErrorSpec {
-    #[serde(default)]
-    message: Option<Json>,
-    #[serde(rename = "type", default)]
-    error_type: Option<Json>,
-    #[serde(default)]
-    code: Option<Json>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -181,58 +122,6 @@ struct FixedIds;
 impl IdSource for FixedIds {
     fn next_id(&self) -> Uuid {
         Uuid::from_u128(7)
-    }
-}
-
-impl EventSpec {
-    fn event(&self) -> ResponsesEvent {
-        match self.shape {
-            EventShape::Mapping => ResponsesEvent {
-                attributes: ProviderEvent::default(),
-                mapping: self.fields.clone(),
-            },
-            EventShape::Attributes => ResponsesEvent {
-                attributes: self
-                    .attributes
-                    .as_ref()
-                    .map_or_else(ProviderEvent::default, AttributesSpec::event),
-                mapping: None,
-            },
-        }
-    }
-}
-
-impl AttributesSpec {
-    fn event(&self) -> ProviderEvent {
-        ProviderEvent {
-            event_type: self.event_type.clone(),
-            item: self.item.clone(),
-            item_id: self.item_id.clone(),
-            delta: self.delta.clone(),
-            summary_index: self.summary_index.clone(),
-            response: self.response.as_ref().map(ResponseSpec::response),
-        }
-    }
-}
-
-impl ResponseSpec {
-    fn response(&self) -> ProviderResponse {
-        ProviderResponse {
-            output: self.output.clone(),
-            status: self.status.clone(),
-            usage: self.usage.clone(),
-            error: self.error.as_ref().map(ErrorSpec::error),
-        }
-    }
-}
-
-impl ErrorSpec {
-    fn error(&self) -> ProviderError {
-        ProviderError {
-            message: self.message.clone(),
-            error_type: self.error_type.clone(),
-            code: self.code.clone(),
-        }
     }
 }
 
