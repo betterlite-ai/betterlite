@@ -72,23 +72,21 @@ pub enum ImageProcessingError<E> {
 impl<E: Error> ImageProcessingError<E> {
     #[must_use]
     pub fn into_failure(self) -> GuardrailFailure {
-        match &self {
-            Self::Blocked { detail, text } => block_failure(detail, Some(text.as_str())),
-            Self::Completion { .. }
-            | Self::Filter(_)
-            | Self::NoChoices
-            | Self::SemaphoreClosed { .. } => self.other_failure(),
+        if let Self::Blocked { detail, text } = &self {
+            return block_failure(detail, Some(text.as_str()));
         }
+        self.other_failure()
     }
 
     fn other_failure(&self) -> GuardrailFailure {
-        match self {
-            Self::Completion { source } => GuardrailFailure::Other(source.to_string()),
-            Self::Filter(source) => GuardrailFailure::Other(source.to_string()),
+        let message = match self {
+            Self::Completion { source } => source.to_string(),
+            Self::Filter(source) => source.to_string(),
             Self::NoChoices | Self::Blocked { .. } | Self::SemaphoreClosed { .. } => {
-                GuardrailFailure::Other(self.to_string())
+                self.to_string()
             }
-        }
+        };
+        GuardrailFailure::Other(message)
     }
 }
 
