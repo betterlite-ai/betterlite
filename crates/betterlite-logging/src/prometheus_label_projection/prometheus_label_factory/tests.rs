@@ -108,6 +108,7 @@ fn an_equal_copy_of_the_values_is_accepted() {
     let settings = test_support::settings(&[]);
     let context = context_for(&values, &settings, Resolution::Missing);
     let copy = values.clone();
+    assert_eq!(values, copy);
     let projected = labels(&["user"], &copy, LabelSource::Context(&context));
     assert_eq!(projected, map_of(&[("user", Some("u1"))]));
 }
