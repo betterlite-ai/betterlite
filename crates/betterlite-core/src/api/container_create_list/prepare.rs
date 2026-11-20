@@ -85,12 +85,3 @@ pub(crate) fn resolved_timeout(
     Duration::try_from_secs_f64(seconds)
         .map_err(|source| ContainerOpError::Timeout { seconds, source })
 }
-
-// the Json, JsonValue and Object bridges before the provider work; a failure here is local, not a provider answer
-pub(crate) fn params_failure(
-    error: serde_json::Error,
-    provider: &str,
-    redactor: &Redactor,
-) -> ContainerOpFailure {
-    failure(ContainerOpError::Params(error), provider, redactor)
-}

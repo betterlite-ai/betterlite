@@ -119,8 +119,14 @@ fn handler_class(
 }
 
 fn provider_class(error: &BaseLlmException, provider: &str, redactor: &Redactor) -> ErrorClass {
-    let raw = exception(error.message.clone(), provider, Some(error.status_code));
-    dispatch(&DispatchInput::Raw(Box::new(raw)), redactor)
+    dispatch(
+        &DispatchInput::Raw(Box::new(exception(
+            error.message.clone(),
+            provider,
+            Some(error.status_code),
+        ))),
+        redactor,
+    )
 }
 
 fn value_error(message: String, provider: &str, redactor: &Redactor) -> ErrorClass {

@@ -8,7 +8,6 @@ use betterlite_openai::api::container_contracts::records::{
 use betterlite_openai::containers::container_file_http::request::ParamValue;
 use betterlite_openai::openai_base_config::Object;
 use indexmap::IndexMap;
-use serde::Serialize;
 use serde_json::json;
 
 use super::{ContainerCreateCall, ContainerListCall};
@@ -121,20 +120,4 @@ pub(crate) fn call_kwargs(
         kwargs.insert("litellm_metadata".to_owned(), value);
     }
     Ok(kwargs)
-}
-
-// dict(container_create_request_params): what update_from_kwargs logs as optional_params
-pub(crate) fn logged_params<T>(value: &T) -> Result<IndexMap<String, Json>, serde_json::Error>
-where
-    T: Serialize + ?Sized,
-{
-    serde_json::from_value(serde_json::to_value(value)?)
-}
-
-// the same params as the Object B3364's handler reads
-pub(crate) fn handler_params<T>(value: &T) -> Result<Object, serde_json::Error>
-where
-    T: Serialize + ?Sized,
-{
-    serde_json::from_value(serde_json::to_value(value)?)
 }

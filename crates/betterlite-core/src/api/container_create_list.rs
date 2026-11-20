@@ -26,7 +26,6 @@ use self::handler::ContainerCollectionHandler;
 use self::params::extra_body_json;
 use self::prepare::create::{PreparedCreate, prepare_create};
 use self::prepare::list::{PreparedList, prepare_list};
-use crate::api::container_collection_http::ContainerCollectionError;
 use crate::api::container_file_endpoints::handler::ContainerConfigLookup;
 // ast-grep-ignore: no-long-names
 use crate::containers::container_request_parameters::encode_container_id_in_response;
@@ -152,7 +151,13 @@ where
     };
     let created = handler
         .create(&ready.handler_call(call, deps.logging))
-        .map_err(|error| handler_failure(error, &call.custom_llm_provider, deps.redactor))?;
+        .map_err(|error| {
+            failure(
+                ContainerOpError::Handler(error),
+                &call.custom_llm_provider,
+                deps.redactor,
+            )
+        })?;
     encode_created(created, call, deps.redactor)
 }
 
@@ -174,7 +179,13 @@ where
     let created = handler
         .acreate(&ready.handler_call(call, deps.logging))
         .await
-        .map_err(|error| handler_failure(error, &call.custom_llm_provider, deps.redactor))?;
+        .map_err(|error| {
+            failure(
+                ContainerOpError::Handler(error),
+                &call.custom_llm_provider,
+                deps.redactor,
+            )
+        })?;
     encode_created(created, call, deps.redactor)
 }
 
@@ -195,7 +206,13 @@ where
     };
     handler
         .list(&ready.handler_call(call, deps.logging))
-        .map_err(|error| handler_failure(error, &call.custom_llm_provider, deps.redactor))
+        .map_err(|error| {
+            failure(
+                ContainerOpError::Handler(error),
+                &call.custom_llm_provider,
+                deps.redactor,
+            )
+        })
 }
 
 // LiteLLM's alist_containers: the same steps through the async handler
@@ -216,7 +233,13 @@ where
     handler
         .alist(&ready.handler_call(call, deps.logging))
         .await
-        .map_err(|error| handler_failure(error, &call.custom_llm_provider, deps.redactor))
+        .map_err(|error| {
+            failure(
+                ContainerOpError::Handler(error),
+                &call.custom_llm_provider,
+                deps.redactor,
+            )
+        })
 }
 
 // _encode_created_container_id's encode step: the object as returned, with a routed id
@@ -243,12 +266,4 @@ fn encode_created(
         id: encoded,
         ..container
     })
-}
-
-fn handler_failure(
-    error: ContainerCollectionError,
-    provider: &str,
-    redactor: &Redactor,
-) -> ContainerOpFailure {
-    failure(ContainerOpError::Handler(error), provider, redactor)
 }

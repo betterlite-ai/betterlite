@@ -11,24 +11,16 @@ pub(crate) fn mock_response<T>(
 where
     T: DeserializeOwned,
 {
-    match mock {
-        None | Some(Json::Null) => Ok(None),
+    let value = match mock {
+        None | Some(Json::Null) => return Ok(None),
         Some(Json::Text(text)) => {
-            let parsed = serde_json::from_str::<Json>(text)
-                .map_err(|source| MockDecodeError::Json { source })?;
-            decode(&parsed)
-                .map(Some)
-                .map_err(|source| MockDecodeError::Model { expected, source })
+            serde_json::from_str::<Json>(text).map_err(|source| MockDecodeError::Json { source })?
         }
-        Some(value) => decode(value)
-            .map(Some)
-            .map_err(|source| MockDecodeError::Model { expected, source }),
-    }
-}
-
-fn decode<T>(value: &Json) -> Result<T, serde_json::Error>
-where
-    T: DeserializeOwned,
-{
-    serde_json::to_value(value).and_then(serde_json::from_value)
+        Some(value) => value.clone(),
+    };
+    let encoded = serde_json::to_value(&value)
+        .map_err(|source| MockDecodeError::Model { expected, source })?;
+    serde_json::from_value(encoded)
+        .map(Some)
+        .map_err(|source| MockDecodeError::Model { expected, source })
 }
