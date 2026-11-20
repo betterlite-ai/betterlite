@@ -8,8 +8,8 @@ use crate::prometheus_latency::guardrail_series::{
     GuardrailCollectors, GuardrailObservation, GuardrailStatus, record_guardrail_metrics,
 };
 use crate::prometheus_latency::test_support::{
-    EventLog, FailingSeries, FailurePoint, RecordingMetric, RejectedLabels, capture_logs, dec,
-    incremented, observed, recorded,
+    EventLog, FailingSeries, FailurePoint, Recorded, RecordingMetric, RejectedLabels, capture_logs,
+    dec, incremented, observed, recorded,
 };
 
 fn guardrail_observation(
@@ -25,8 +25,7 @@ fn guardrail_observation(
     }
 }
 
-#[test]
-fn success_records_latency_and_requests_without_an_error() {
+fn events_for(status: GuardrailStatus, error_type: Option<&str>) -> Vec<Recorded> {
     let events = EventLog::default();
     let latency = RecordingMetric::with_log("latency", &events);
     let requests = RecordingMetric::with_log("requests", &events);
@@ -36,12 +35,14 @@ fn success_records_latency_and_requests_without_an_error() {
         requests: &requests,
         errors: &errors,
     };
-    record_guardrail_metrics(
-        &collectors,
-        &guardrail_observation(GuardrailStatus::Success, None),
-    );
+    record_guardrail_metrics(&collectors, &guardrail_observation(status, error_type));
+    recorded(&events)
+}
+
+#[test]
+fn success_records_latency_and_requests_without_an_error() {
     assert_eq!(
-        recorded(&events),
+        events_for(GuardrailStatus::Success, None),
         vec![
             observed(
                 "latency",
@@ -67,21 +68,8 @@ fn success_records_latency_and_requests_without_an_error() {
 
 #[test]
 fn an_error_with_a_type_increments_all_three_series() {
-    let events = EventLog::default();
-    let latency = RecordingMetric::with_log("latency", &events);
-    let requests = RecordingMetric::with_log("requests", &events);
-    let errors = RecordingMetric::with_log("errors", &events);
-    let collectors: GuardrailCollectors<'_, Infallible> = GuardrailCollectors {
-        latency: &latency,
-        requests: &requests,
-        errors: &errors,
-    };
-    record_guardrail_metrics(
-        &collectors,
-        &guardrail_observation(GuardrailStatus::Error, Some("timeout")),
-    );
     assert_eq!(
-        recorded(&events),
+        events_for(GuardrailStatus::Error, Some("timeout")),
         vec![
             observed(
                 "latency",
@@ -119,21 +107,8 @@ fn an_error_with_a_type_increments_all_three_series() {
 fn an_error_without_a_type_labels_none_and_skips_the_error_counter(
     #[case] error_type: Option<&str>,
 ) {
-    let events = EventLog::default();
-    let latency = RecordingMetric::with_log("latency", &events);
-    let requests = RecordingMetric::with_log("requests", &events);
-    let errors = RecordingMetric::with_log("errors", &events);
-    let collectors: GuardrailCollectors<'_, Infallible> = GuardrailCollectors {
-        latency: &latency,
-        requests: &requests,
-        errors: &errors,
-    };
-    record_guardrail_metrics(
-        &collectors,
-        &guardrail_observation(GuardrailStatus::Error, error_type),
-    );
     assert_eq!(
-        recorded(&events),
+        events_for(GuardrailStatus::Error, error_type),
         vec![
             observed(
                 "latency",
@@ -159,21 +134,8 @@ fn an_error_without_a_type_labels_none_and_skips_the_error_counter(
 
 #[test]
 fn an_intervened_status_with_a_type_skips_the_error_counter() {
-    let events = EventLog::default();
-    let latency = RecordingMetric::with_log("latency", &events);
-    let requests = RecordingMetric::with_log("requests", &events);
-    let errors = RecordingMetric::with_log("errors", &events);
-    let collectors: GuardrailCollectors<'_, Infallible> = GuardrailCollectors {
-        latency: &latency,
-        requests: &requests,
-        errors: &errors,
-    };
-    record_guardrail_metrics(
-        &collectors,
-        &guardrail_observation(GuardrailStatus::Intervened, Some("pii")),
-    );
     assert_eq!(
-        recorded(&events),
+        events_for(GuardrailStatus::Intervened, Some("pii")),
         vec![
             observed(
                 "latency",

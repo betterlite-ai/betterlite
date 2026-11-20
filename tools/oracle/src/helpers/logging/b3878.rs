@@ -85,25 +85,27 @@ impl Helper for Op {
 fn overhead_values(calls: &[OverheadCall]) -> HelperResult {
     let mut seconds: Vec<Value> = Vec::with_capacity(calls.len());
     for call in calls {
-        let records = guardrail_records(&call.guardrail_information)?;
-        seconds.push(seconds_value(guardrail_overhead_seconds(&records)));
+        let entries = guardrail_records(&call.guardrail_information)?;
+        let records = match entries.as_slice() {
+            [single] => GuardrailRecords::Single(single),
+            list => GuardrailRecords::Multiple(list),
+        };
+        seconds.push(seconds_value(guardrail_overhead_seconds(records)));
     }
     Ok(json!({ "seconds": seconds }))
 }
 
-fn guardrail_records(value: &Value) -> Result<GuardrailRecords, Box<HelperError>> {
+fn guardrail_records(value: &Value) -> Result<Vec<GuardrailInformation>, Box<HelperError>> {
     match value {
-        Value::Null => Ok(GuardrailRecords::Absent),
-        Value::Object(_) => Ok(GuardrailRecords::Single(serde_json::from_value(
-            value.clone(),
-        )?)),
+        Value::Null => Ok(Vec::new()),
+        Value::Object(_) => Ok(vec![serde_json::from_value(value.clone())?]),
         Value::Array(items) => {
             let records = items
                 .iter()
                 .cloned()
                 .map(serde_json::from_value::<GuardrailInformation>)
                 .collect::<Result<Vec<_>, _>>()?;
-            Ok(GuardrailRecords::Multiple(records))
+            Ok(records)
         }
         Value::Bool(_) | Value::Number(_) | Value::String(_) => Err(invalid(
             "guardrail_information must be a record, a list of records or null",

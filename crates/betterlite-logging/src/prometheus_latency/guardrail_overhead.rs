@@ -15,17 +15,17 @@ const ADDITIVE_GUARDRAIL_MODES: [&str; 2] = ["pre_call", "post_call"];
 const MILLIS_PER_SECOND: Decimal = Decimal::ONE_THOUSAND;
 
 // guardrail_information is typed as a list, but some guardrails assign a single record directly
-#[derive(Clone, Debug)]
-pub enum GuardrailRecords {
+#[derive(Clone, Copy, Debug)]
+pub enum GuardrailRecords<'records> {
     Absent,
-    Single(GuardrailInformation),
-    Multiple(Vec<GuardrailInformation>),
+    Single(&'records GuardrailInformation),
+    Multiple(&'records [GuardrailInformation]),
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct OverheadObservation<'observation> {
     pub overhead_ms: Option<Decimal>,
-    pub guardrail_records: &'observation GuardrailRecords,
+    pub guardrail_records: GuardrailRecords<'observation>,
 }
 
 #[must_use]
@@ -38,11 +38,11 @@ pub fn guardrail_is_additive(record: &GuardrailInformation) -> bool {
 }
 
 #[must_use]
-pub fn guardrail_overhead_seconds(records: &GuardrailRecords) -> Option<Decimal> {
+pub fn guardrail_overhead_seconds(records: GuardrailRecords<'_>) -> Option<Decimal> {
     let entries: &[GuardrailInformation] = match records {
         GuardrailRecords::Absent => &[],
         GuardrailRecords::Single(record) => from_ref(record),
-        GuardrailRecords::Multiple(records) => records.as_slice(),
+        GuardrailRecords::Multiple(list) => list,
     };
     let mut total = Decimal::ZERO;
     for record in entries

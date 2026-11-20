@@ -40,35 +40,40 @@ fn guardrail_additivity_follows_the_mode_values(#[case] text: &str, #[case] addi
 
 #[test]
 fn guardrail_overhead_sums_only_additive_durations() {
-    let records = GuardrailRecords::Multiple(vec![
+    let entries = [
         record(r#"{"guardrail_mode": "pre_call", "duration": 0.5}"#),
         record(r#"{"guardrail_mode": "during_call", "duration": 10}"#),
         record(r#"{"guardrail_mode": ["post_call"], "duration": 0.25}"#),
         record(r#"{"guardrail_mode": "post_call"}"#),
-    ]);
-    assert_eq!(guardrail_overhead_seconds(&records), Some(dec(75, 2)));
+    ];
+    assert_eq!(
+        guardrail_overhead_seconds(GuardrailRecords::Multiple(&entries)),
+        Some(dec(75, 2))
+    );
 }
 
 #[test]
 fn a_single_record_counts_as_a_list_of_one() {
-    let records =
-        GuardrailRecords::Single(record(r#"{"guardrail_mode": "pre_call", "duration": 1.5}"#));
-    assert_eq!(guardrail_overhead_seconds(&records), Some(dec(15, 1)));
+    let entry = record(r#"{"guardrail_mode": "pre_call", "duration": 1.5}"#);
+    assert_eq!(
+        guardrail_overhead_seconds(GuardrailRecords::Single(&entry)),
+        Some(dec(15, 1))
+    );
 }
 
 #[test]
 fn no_guardrail_records_sum_to_zero() {
     assert_eq!(
-        guardrail_overhead_seconds(&GuardrailRecords::Absent),
+        guardrail_overhead_seconds(GuardrailRecords::Absent),
         Some(Decimal::ZERO)
     );
     assert_eq!(
-        guardrail_overhead_seconds(&GuardrailRecords::Multiple(Vec::new())),
+        guardrail_overhead_seconds(GuardrailRecords::Multiple(&[])),
         Some(Decimal::ZERO)
     );
 }
 
-fn overhead_events(overhead_ms: Option<Decimal>, records: &GuardrailRecords) -> Vec<Recorded> {
+fn overhead_events(overhead_ms: Option<Decimal>, records: GuardrailRecords<'_>) -> Vec<Recorded> {
     let events = EventLog::default();
     let metric = RecordingMetric::with_log("overhead", &events);
     let supported_labels = supported(&["model"]);
@@ -94,32 +99,27 @@ fn overhead_events(overhead_ms: Option<Decimal>, records: &GuardrailRecords) -> 
 
 #[test]
 fn overhead_metric_adds_guardrail_seconds_to_the_millisecond_overhead() {
-    let records =
-        GuardrailRecords::Single(record(r#"{"guardrail_mode": "pre_call", "duration": 0.5}"#));
+    let entry = record(r#"{"guardrail_mode": "pre_call", "duration": 0.5}"#);
     assert_eq!(
-        overhead_events(Some(dec(500, 0)), &records),
+        overhead_events(Some(dec(500, 0)), GuardrailRecords::Single(&entry)),
         vec![observed("overhead", &[("model", "gpt-4o")], dec(10, 1))]
     );
 }
 
 #[test]
 fn guardrail_time_records_without_an_overhead() {
-    let records = GuardrailRecords::Single(record(
-        r#"{"guardrail_mode": "post_call", "duration": 0.5}"#,
-    ));
+    let entry = record(r#"{"guardrail_mode": "post_call", "duration": 0.5}"#);
     assert_eq!(
-        overhead_events(None, &records),
+        overhead_events(None, GuardrailRecords::Single(&entry)),
         vec![observed("overhead", &[("model", "gpt-4o")], dec(5, 1))]
     );
 }
 
 #[test]
 fn a_zero_overhead_still_records_with_guardrail_time() {
-    let records = GuardrailRecords::Single(record(
-        r#"{"guardrail_mode": "post_call", "duration": 0.5}"#,
-    ));
+    let entry = record(r#"{"guardrail_mode": "post_call", "duration": 0.5}"#);
     assert_eq!(
-        overhead_events(Some(Decimal::ZERO), &records),
+        overhead_events(Some(Decimal::ZERO), GuardrailRecords::Single(&entry)),
         vec![observed("overhead", &[("model", "gpt-4o")], dec(5, 1))]
     );
 }
@@ -127,20 +127,21 @@ fn a_zero_overhead_still_records_with_guardrail_time() {
 #[test]
 fn a_zero_overhead_without_guardrail_time_still_records() {
     assert_eq!(
-        overhead_events(Some(Decimal::ZERO), &GuardrailRecords::Absent),
+        overhead_events(Some(Decimal::ZERO), GuardrailRecords::Absent),
         vec![observed("overhead", &[("model", "gpt-4o")], dec(0, 0))]
     );
 }
 
 #[test]
 fn a_missing_overhead_without_guardrail_time_records_nothing() {
-    assert_eq!(overhead_events(None, &GuardrailRecords::Absent), Vec::new());
+    assert_eq!(overhead_events(None, GuardrailRecords::Absent), Vec::new());
 }
 
 #[test]
 fn non_additive_guardrail_time_is_not_recorded_on_its_own() {
-    let records = GuardrailRecords::Single(record(
-        r#"{"guardrail_mode": "during_call", "duration": 5}"#,
-    ));
-    assert_eq!(overhead_events(None, &records), Vec::new());
+    let entry = record(r#"{"guardrail_mode": "during_call", "duration": 5}"#);
+    assert_eq!(
+        overhead_events(None, GuardrailRecords::Single(&entry)),
+        Vec::new()
+    );
 }

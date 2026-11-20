@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -15,18 +16,21 @@ use crate::end_user::EndUserCostTrackingSettings;
 use crate::prometheus_helpers::bounded_series_tracker::{
     BoundedPrometheusSeriesTracker, ChildRemoval, RemovableMetric, SeriesLimits,
 };
+use crate::prometheus_label_projection::label_factory_context::PrometheusLabelFactoryContext;
 use crate::prometheus_label_schema::PrometheusLabelSettings;
 use crate::prometheus_latency::guardrail_series::GuardrailSeries;
 use crate::prometheus_latency::input_sequence_length::{
     CombinedUsage, InputLengthInputs, UsageMapping,
 };
+use crate::prometheus_latency::labels::LabelInputs;
 use crate::prometheus_latency::latency_histograms::{
     LatencyHistogram, LatencyHistograms, LatencyObservation, LatencyTimestamps, MetricHandle,
+    set_latency_metrics,
 };
 
 pub(crate) type EventLog = Arc<Mutex<Vec<Recorded>>>;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum Recorded {
     Update {
         metric: &'static str,
@@ -173,15 +177,42 @@ pub(crate) fn end_user_settings() -> EndUserCostTrackingSettings {
     }
 }
 
-pub(crate) fn label_values(
-    end_user: Option<&str>,
-    input_sequence_length: Option<&str>,
-) -> UserApiKeyLabelValues {
-    let mut values = UserApiKeyLabelValues::default();
-    values.end_user = end_user.map(ToOwned::to_owned);
-    values.model = Some("gpt-4o".to_owned());
-    values.input_sequence_length = input_sequence_length.map(ToOwned::to_owned);
-    values
+pub(crate) fn label_values(end_user: Option<&str>, length: Option<&str>) -> UserApiKeyLabelValues {
+    UserApiKeyLabelValues {
+        end_user: end_user.map(ToOwned::to_owned),
+        user: None,
+        user_email: None,
+        user_alias: None,
+        hashed_api_key: None,
+        api_key_alias: None,
+        team: None,
+        team_alias: None,
+        model_group: None,
+        requested_model: None,
+        model: Some("gpt-4o".to_owned()),
+        litellm_model_name: None,
+        tags: Vec::new(),
+        custom_metadata_labels: BTreeMap::new(),
+        model_id: None,
+        api_base: None,
+        api_provider: None,
+        exception_status: None,
+        exception_class: None,
+        rate_limit_category: None,
+        rate_limit_type: None,
+        status_code: None,
+        fallback_model: None,
+        route: None,
+        client_ip: None,
+        user_agent: None,
+        stream: None,
+        org_id: None,
+        org_alias: None,
+        mcp_tool_name: None,
+        mcp_server_name: None,
+        service_tier: None,
+        input_sequence_length: length.map(ToOwned::to_owned),
+    }
 }
 
 pub(crate) fn four_metrics(events: &EventLog) -> [RecordingMetric; 4] {
@@ -272,6 +303,82 @@ fn latency_histogram<'labels>(
         tracker,
         limits,
     }
+}
+
+pub(crate) fn recorded_events(
+    supported_labels: &[&str],
+    values: &UserApiKeyLabelValues,
+    context: Option<&PrometheusLabelFactoryContext>,
+    limits: SeriesLimits,
+    observed_request: &LatencyObservation<'_>,
+) -> Vec<Recorded> {
+    let events = EventLog::default();
+    let metrics = four_metrics(&events);
+    let labels = supported(supported_labels);
+    let tracker = BoundedPrometheusSeriesTracker::default();
+    let histograms = latency_histograms(
+        [&metrics[0], &metrics[1], &metrics[2], &metrics[3]],
+        &labels,
+        &tracker,
+        limits,
+    );
+    let settings = label_settings();
+    let inputs = LabelInputs {
+        values,
+        settings: &settings,
+        end_user_settings: end_user_settings(),
+        context,
+    };
+    set_latency_metrics(&histograms, observed_request, &inputs).unwrap();
+    recorded(&events)
+}
+
+pub(crate) fn observe_with(
+    histograms: &LatencyHistograms<'_, RecordingMetric>,
+    values: &UserApiKeyLabelValues,
+    observed_request: &LatencyObservation<'_>,
+) {
+    let settings = label_settings();
+    let inputs = LabelInputs {
+        values,
+        settings: &settings,
+        end_user_settings: end_user_settings(),
+        context: None,
+    };
+    set_latency_metrics(histograms, observed_request, &inputs).unwrap();
+}
+
+pub(crate) fn end_user_cap_events(requests: [&UserApiKeyLabelValues; 2]) -> Vec<Recorded> {
+    let events = EventLog::default();
+    let metrics = four_metrics(&events);
+    let labels = supported(&["model", "end_user"]);
+    let tracker = BoundedPrometheusSeriesTracker::default();
+    let limits = SeriesLimits {
+        max_series: Some(1),
+        ttl: None,
+        cleanup_interval: None,
+    };
+    let histograms = latency_histograms(
+        [&metrics[0], &metrics[1], &metrics[2], &metrics[3]],
+        &labels,
+        &tracker,
+        limits,
+    );
+    let observed_request = observation(
+        LatencyTimestamps {
+            start_time: None,
+            end_time: Some(dec(1010, 1)),
+            api_call_start: Some(dec(1000, 1)),
+            completion_start: None,
+        },
+        None,
+        None,
+        None,
+    );
+    for values in requests {
+        observe_with(&histograms, values, &observed_request);
+    }
+    recorded(&events)
 }
 
 pub(crate) fn recorded(events: &EventLog) -> Vec<Recorded> {
