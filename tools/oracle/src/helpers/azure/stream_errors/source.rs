@@ -56,7 +56,7 @@ pub(super) fn raised_of(spec: &ErrorSpec) -> Raised {
     } else {
         Reported::Absent
     };
-    let mut raised = Raised::raised(
+    let mut raised = Raised::new(
         "ScriptedError".to_owned(),
         status,
         message,
@@ -101,7 +101,7 @@ impl ChatStreamTransport for ScriptedTransport {
         &'call self,
         data: &'call Extra,
         _timeout: Option<f64>,
-    ) -> Pin<Box<dyn Future<Output = Result<StreamAnswer, Raised>> + Send + 'call>> {
+    ) -> Pin<Box<dyn Future<Output = Result<StreamAnswer, Box<Raised>>> + Send + 'call>> {
         self.requests
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -204,10 +204,10 @@ fn litellm_params_view(params: &LiteLlmParams) -> Json {
 }
 
 impl StreamSource for ScriptedSource {
-    fn get(&self, request: GetStreamClient<'_>) -> Result<StreamClient, Raised> {
+    fn get(&self, request: GetStreamClient<'_>) -> Result<StreamClient, Box<Raised>> {
         // get_azure_openai_client raises before recording anything, so a failure leaves no get
         if let Some(error) = &self.get_error {
-            return Err(error.clone());
+            return Err(Box::new(error.clone()));
         }
         self.gets
             .lock()

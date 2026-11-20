@@ -24,8 +24,7 @@ pub(super) fn assert_stream_failures(
         .expect("the stream opens before its bytes fail");
     let read_error = block_on(async { stream.chunks.next().await })
         .expect("one failing item")
-        .err()
-        .expect("the read failure is reported");
+        .expect_err("the read failure is reported");
     let read_failure = azure_failure(read_error);
     assert_eq!(read_failure.class, "APIError");
     assert_eq!(read_failure.status, Reported::Absent);

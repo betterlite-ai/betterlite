@@ -34,7 +34,7 @@ where
 // AzureChatCompletion.streaming: the unused client parameters are assembled first and then dropped
 pub async fn streaming<Source>(
     source: &Source,
-    sources: &dyn CredentialSources,
+    sources: &(dyn CredentialSources + Sync),
     call: &StreamCall<'_>,
     hooks: &mut dyn StreamHooks,
     runtime: StreamRuntime,
@@ -76,7 +76,9 @@ where
 {
     match async_inner(source, call, hooks, runtime).await {
         Ok(stream) => Ok(stream),
-        Err(raised) => Err(StreamingError::Azure(AzureStreamFailure::wrapped(raised))),
+        Err(raised) => Err(StreamingError::Azure(Box::new(
+            AzureStreamFailure::wrapped(*raised),
+        ))),
     }
 }
 
@@ -85,7 +87,7 @@ async fn async_inner<Source>(
     call: &StreamCall<'_>,
     hooks: &mut dyn StreamHooks,
     runtime: StreamRuntime,
-) -> Result<AzureChatStream, Raised>
+) -> Result<AzureChatStream, Box<Raised>>
 where
     Source: StreamSource,
 {
@@ -93,7 +95,7 @@ where
     prepare::require_stream_client(&client, true)?;
     hooks
         .pre_call(prepare::pre_call(call, &client, call.azure_ad_token)?)
-        .map_err(|error| Raised::plain(error.to_string()))?;
+        .map_err(|error| Box::new(Raised::plain(error.to_string())))?;
     let answer = client.transport.create(call.data, call.timeout).await?;
     let raw = stream::raw_headers(&answer.headers);
     hooks.response_headers(&raw);

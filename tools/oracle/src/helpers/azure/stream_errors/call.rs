@@ -119,5 +119,5 @@ pub(super) fn run(input: &Input) -> HelperResult {
         .iter()
         .map(|case| one(&input.function, case))
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(view::calls(values))
+    serde_json::to_value(view::calls(values)).or_value_error()
 }

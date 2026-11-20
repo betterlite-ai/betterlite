@@ -43,7 +43,7 @@ impl Raised {
 
     // an exception an SDK client or our transport raised: class plus whichever attributes it carries
     #[must_use]
-    pub const fn raised(
+    pub const fn new(
         class: String,
         status: Reported<Option<u16>>,
         message: Reported<Option<String>>,
@@ -76,7 +76,7 @@ impl Raised {
 
     #[must_use]
     pub fn plain(text: String) -> Self {
-        Self::raised(
+        Self::new(
             "Exception".to_owned(),
             Reported::Absent,
             Reported::Absent,
@@ -170,7 +170,7 @@ impl AzureStreamFailure {
 #[derive(Debug, Error)]
 pub enum StreamingError {
     #[error("{}", .0.message())]
-    Azure(AzureStreamFailure),
+    Azure(Box<AzureStreamFailure>),
     #[error(transparent)]
     Logging(#[from] PrePostError),
     #[error(transparent)]
@@ -179,9 +179,10 @@ pub enum StreamingError {
     Usage(#[from] serde_json::Error),
 }
 
-impl From<Raised> for StreamingError {
-    fn from(raised: Raised) -> Self {
-        Self::Azure(AzureStreamFailure::raised(raised))
+// Raised is 216 bytes, so every Result carries it boxed and only unwraps it here
+impl From<Box<Raised>> for StreamingError {
+    fn from(raised: Box<Raised>) -> Self {
+        Self::Azure(Box::new(AzureStreamFailure::raised(*raised)))
     }
 }
 

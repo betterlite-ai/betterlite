@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::sync::PoisonError;
 
 use betterlite_azure::azure_stream_errors::error::{AzureStreamFailure, Reported, StreamingError};
@@ -26,10 +25,10 @@ pub(super) fn calls(values: Vec<Json>) -> Json {
     Json::Object(fields)
 }
 
-fn text_map(fields: &BTreeMap<String, String>) -> Json {
+fn text_map<'fields>(fields: impl IntoIterator<Item = (&'fields String, &'fields String)>) -> Json {
     Json::Object(
         fields
-            .iter()
+            .into_iter()
             .map(|(name, value)| (name.clone(), Json::Text(value.clone())))
             .collect(),
     )
@@ -128,19 +127,10 @@ pub(super) fn response_headers(recorder: &Recorder) -> Json {
         .map_or(Json::Null, text_map)
 }
 
-fn raw_strings(headers: &indexmap::IndexMap<String, String>) -> Json {
-    Json::Object(
-        headers
-            .iter()
-            .map(|(name, value)| (name.clone(), Json::Text(value.clone())))
-            .collect(),
-    )
-}
-
 fn wrapper_headers(headers: &WrapperHeaders) -> Json {
     match headers {
         WrapperHeaders::Processed(fields) => text_map(fields),
-        WrapperHeaders::Raw(fields) => raw_strings(fields),
+        WrapperHeaders::Raw(fields) => text_map(fields.iter()),
     }
 }
 

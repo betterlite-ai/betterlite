@@ -60,7 +60,7 @@ pub(crate) struct StreamCase {
 
 // A python value that may be missing, explicitly None, or set
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, bound(deserialize = "T: Deserialize<'de>"))]
 pub(crate) struct Presence<T> {
     pub(crate) present: bool,
     #[serde(default)]

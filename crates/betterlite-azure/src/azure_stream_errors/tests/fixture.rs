@@ -32,20 +32,20 @@ use crate::endpoints::projection::{CallableProvider, ClientKind, LiteLlmParams};
 use crate::oidc_exchange::transport::{Clock, HttpReply, Transport};
 use crate::oidc_exchange::{AzureOidcExchange, OidcExchangeInput};
 
-pub const CLOCK: i64 = 1_700_000_000;
+pub(super) const CLOCK: i64 = 1_700_000_000;
 
-pub const fn stream_instant() -> StreamInstant {
+pub(super) const fn stream_instant() -> StreamInstant {
     StreamInstant {
         seconds: CLOCK,
         timestamp: 1_700_000_000.0,
     }
 }
 
-pub const fn identifier() -> Uuid {
+pub(super) const fn identifier() -> Uuid {
     Uuid::from_u128(7)
 }
 
-pub const fn runtime() -> StreamRuntime {
+pub(super) const fn runtime() -> StreamRuntime {
     StreamRuntime {
         now: stream_instant,
         next_id: identifier,
@@ -53,13 +53,13 @@ pub const fn runtime() -> StreamRuntime {
 }
 
 #[derive(Clone)]
-pub struct RequestRecord {
+pub(super) struct RequestRecord {
     pub data: Extra,
     pub timeout: Option<f64>,
 }
 
 #[derive(Clone)]
-pub struct GetRecord {
+pub(super) struct GetRecord {
     pub api_version: String,
     pub api_base: String,
     pub api_key: Option<String>,
@@ -70,7 +70,7 @@ pub struct GetRecord {
 }
 
 #[derive(Default)]
-pub struct ScriptedTransport {
+pub(super) struct ScriptedTransport {
     pub headers: Vec<(String, String)>,
     pub payload: Vec<Result<Vec<u8>, String>>,
     pub failure: Option<Raised>,
@@ -92,7 +92,7 @@ impl ChatStreamTransport for ScriptedTransport {
         &'call self,
         data: &'call Extra,
         timeout: Option<f64>,
-    ) -> Pin<Box<dyn Future<Output = Result<StreamAnswer, Raised>> + Send + 'call>> {
+    ) -> Pin<Box<dyn Future<Output = Result<StreamAnswer, Box<Raised>>> + Send + 'call>> {
         self.requests
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -114,7 +114,7 @@ impl ChatStreamTransport for ScriptedTransport {
             .collect();
         Box::pin(async move {
             if let Some(raised) = failure {
-                return Err(raised);
+                return Err(Box::new(raised));
             }
             let body: ByteStream = Box::pin(stream::iter(items));
             Ok(StreamAnswer { headers, body })
@@ -122,7 +122,7 @@ impl ChatStreamTransport for ScriptedTransport {
     }
 }
 
-pub struct ScriptedSource {
+pub(super) struct ScriptedSource {
     pub kind: ClientKind,
     pub api_key: Option<SecretString>,
     pub transport: Arc<ScriptedTransport>,
@@ -137,7 +137,7 @@ impl Default for ScriptedSource {
 }
 
 impl StreamSource for ScriptedSource {
-    fn get(&self, request: GetStreamClient<'_>) -> Result<StreamClient, Raised> {
+    fn get(&self, request: GetStreamClient<'_>) -> Result<StreamClient, Box<Raised>> {
         self.gets
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -151,10 +151,10 @@ impl StreamSource for ScriptedSource {
                 client_present: request.supplied.is_some(),
             });
         if let Some(error) = &self.get_error {
-            return Err(error.clone());
+            return Err(Box::new(error.clone()));
         }
-        let transport: Arc<ScriptedTransport> = Arc::clone(&self.transport);
-        let transport: Arc<dyn ChatStreamTransport> = transport;
+        let scripted: Arc<ScriptedTransport> = Arc::clone(&self.transport);
+        let transport: Arc<dyn ChatStreamTransport> = scripted;
         Ok(StreamClient {
             kind: self.kind,
             api_key: self.api_key.clone(),
@@ -164,7 +164,7 @@ impl StreamSource for ScriptedSource {
 }
 
 #[derive(Default)]
-pub struct Recorder {
+pub(super) struct Recorder {
     pub pre: Vec<PreCallRecord>,
     pub response_headers: Vec<IndexMap<String, String>>,
     pub fail_pre: bool,
@@ -208,10 +208,13 @@ enum RecordedBody {
     FromAssertion,
 }
 
+type FormFields = Vec<(String, String)>;
+type FormLog = Vec<(String, FormFields)>;
+
 struct RecordingTransport {
     status: u16,
     body: RecordedBody,
-    forms: Arc<Mutex<Vec<(String, Vec<(String, String)>)>>>,
+    forms: Arc<Mutex<FormLog>>,
 }
 
 fn assertion_of(form: &[(String, String)]) -> String {
@@ -255,18 +258,18 @@ impl SecretResolver for FixedResolver {
     }
 }
 
-pub struct ScriptedSources {
+pub(super) struct ScriptedSources {
     exchange: AzureOidcExchange,
-    forms: Arc<Mutex<Vec<(String, Vec<(String, String)>)>>>,
+    forms: Arc<Mutex<FormLog>>,
     resolver: FixedResolver,
 }
 
 impl ScriptedSources {
-    pub fn new(status: u16, body: &str, assertions: BTreeMap<String, SecretString>) -> Self {
+    pub(super) fn new(status: u16, body: &str, assertions: BTreeMap<String, SecretString>) -> Self {
         Self::build(status, RecordedBody::Fixed(body.to_owned()), assertions)
     }
 
-    pub fn echoing(assertions: BTreeMap<String, SecretString>) -> Self {
+    pub(super) fn echoing(assertions: BTreeMap<String, SecretString>) -> Self {
         Self::build(200, RecordedBody::FromAssertion, assertions)
     }
 
@@ -301,7 +304,7 @@ impl ScriptedSources {
         }
     }
 
-    pub fn forms(&self) -> Vec<(String, Vec<(String, String)>)> {
+    pub(super) fn forms(&self) -> FormLog {
         self.forms
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -368,14 +371,14 @@ impl CallableTokenProvider for DummyProvider {
     }
 }
 
-pub fn callable_provider(identity: u64) -> CallableProvider {
+pub(super) fn callable_provider(identity: u64) -> CallableProvider {
     CallableProvider {
         provider: Arc::new(DummyProvider),
         identity,
     }
 }
 
-pub struct CallFixture {
+pub(super) struct CallFixture {
     pub api_base: String,
     pub api_key: Option<SecretString>,
     pub api_version: String,
@@ -390,7 +393,7 @@ pub struct CallFixture {
     pub supplied: Option<StreamClient>,
 }
 
-pub fn chat_data() -> Extra {
+pub(super) fn chat_data() -> Extra {
     let mut data = Extra::new();
     let mut message = IndexMap::new();
     message.insert("role".to_owned(), Json::Text("user".to_owned()));
@@ -423,7 +426,7 @@ impl Default for CallFixture {
 }
 
 impl CallFixture {
-    pub fn call(&self) -> StreamCall<'_> {
+    pub(super) fn call(&self) -> StreamCall<'_> {
         StreamCall {
             api_base: &self.api_base,
             api_key: self.api_key.as_ref(),
@@ -441,7 +444,7 @@ impl CallFixture {
     }
 }
 
-pub const SSE_EVENTS: &str = concat!(
+pub(super) const SSE_EVENTS: &str = concat!(
     "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",",
     "\"created\":1700000000,\"model\":\"deployment\",",
     "\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Hello\"},",
@@ -449,11 +452,11 @@ pub const SSE_EVENTS: &str = concat!(
     "data: [DONE]\n\n"
 );
 
-pub fn sse_payload() -> Vec<Result<Vec<u8>, String>> {
+pub(super) fn sse_payload() -> Vec<Result<Vec<u8>, String>> {
     vec![Ok(SSE_EVENTS.as_bytes().to_vec())]
 }
 
-pub fn secret_headers(pairs: &[(&str, &str)]) -> SecretHeaders {
+pub(super) fn secret_headers(pairs: &[(&str, &str)]) -> SecretHeaders {
     SecretHeaders(
         pairs
             .iter()
@@ -462,8 +465,8 @@ pub fn secret_headers(pairs: &[(&str, &str)]) -> SecretHeaders {
     )
 }
 
-pub fn raised_with(status: Option<u16>, message: String) -> Raised {
-    Raised::raised(
+pub(super) fn raised_with(status: Option<u16>, message: String) -> Raised {
+    Raised::new(
         "ScriptedError".to_owned(),
         Reported::Present(status),
         Reported::Present(Some(message.clone())),
@@ -471,7 +474,7 @@ pub fn raised_with(status: Option<u16>, message: String) -> Raised {
     )
 }
 
-pub fn block_on<Fut>(future: Fut) -> Fut::Output
+pub(super) fn block_on<Fut>(future: Fut) -> Fut::Output
 where
     Fut: Future,
 {
@@ -482,7 +485,7 @@ where
         .block_on(future)
 }
 
-pub fn scripted_source(
+pub(super) fn scripted_source(
     kind: ClientKind,
     headers: &[(&str, &str)],
     payload: Vec<Result<Vec<u8>, String>>,
@@ -505,7 +508,7 @@ pub fn scripted_source(
     }
 }
 
-pub fn failing_source(kind: ClientKind, failure: Raised) -> ScriptedSource {
+pub(super) fn failing_source(kind: ClientKind, failure: Raised) -> ScriptedSource {
     ScriptedSource {
         transport: Arc::new(ScriptedTransport {
             headers: Vec::new(),
@@ -517,16 +520,16 @@ pub fn failing_source(kind: ClientKind, failure: Raised) -> ScriptedSource {
     }
 }
 
-pub fn azure_failure(error: StreamingError) -> AzureStreamFailure {
+pub(super) fn azure_failure(error: StreamingError) -> AzureStreamFailure {
     match error {
-        StreamingError::Azure(failure) => failure,
+        StreamingError::Azure(failure) => *failure,
         StreamingError::Logging(_) | StreamingError::Chunk(_) | StreamingError::Usage(_) => {
             panic!("expected an Azure failure, got {error:?}")
         }
     }
 }
 
-pub fn requests_of(source: &ScriptedSource) -> Vec<RequestRecord> {
+pub(super) fn requests_of(source: &ScriptedSource) -> Vec<RequestRecord> {
     source
         .transport
         .requests
@@ -535,7 +538,7 @@ pub fn requests_of(source: &ScriptedSource) -> Vec<RequestRecord> {
         .clone()
 }
 
-pub fn gets_of(source: &ScriptedSource) -> Vec<GetRecord> {
+pub(super) fn gets_of(source: &ScriptedSource) -> Vec<GetRecord> {
     source
         .gets
         .lock()

@@ -47,10 +47,10 @@ pub struct AzureChatStream {
 
 // httpx decodes header bytes as ascii, then utf-8, then latin-1
 fn header_text(value: &[u8]) -> String {
-    match str::from_utf8(value) {
-        Ok(text) => text.to_owned(),
-        Err(_) => value.iter().map(|byte| char::from(*byte)).collect(),
-    }
+    str::from_utf8(value).map_or_else(
+        |_| value.iter().map(|byte| char::from(*byte)).collect(),
+        str::to_owned,
+    )
 }
 
 // headers = dict(raw_response.headers): names lowercased, a repeated name's values joined by ", "
@@ -104,7 +104,7 @@ fn shaped_value(value: &Json) -> JsonValue {
         Json::Object(fields) => JsonValue::Object(
             fields
                 .iter()
-                .map(|(name, value)| (name.clone(), shaped_value(value)))
+                .map(|(name, field)| (name.clone(), shaped_value(field)))
                 .collect(),
         ),
     }
@@ -201,11 +201,12 @@ fn process_payload(state: &mut StreamState, payload: &[u8]) -> Option<Item> {
 
 // A byte read that is dropped here still advances the byte stream, so the loop in step ends.
 fn absorb(state: &mut StreamState, read: Result<Vec<u8>, SdkError>) -> Result<(), StreamingError> {
-    let bytes = read
-        .map_err(|error| StreamingError::Azure(AzureStreamFailure::raised(Raised::sdk(&error))))?;
+    let bytes = read.map_err(|error| {
+        StreamingError::Azure(Box::new(AzureStreamFailure::raised(Raised::sdk(&error))))
+    })?;
     let events = state.parser.push(&bytes).map_err(|error| {
-        StreamingError::Azure(AzureStreamFailure::raised(Raised::sdk(&SdkError::Sse(
-            error,
+        StreamingError::Azure(Box::new(AzureStreamFailure::raised(Raised::sdk(
+            &SdkError::Sse(error),
         ))))
     })?;
     state.pending.extend(events);

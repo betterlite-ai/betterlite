@@ -58,14 +58,18 @@ fn azure_chat_streams_credential_identity_isolation() {
     let sources = ScriptedSources::echoing(identity_assertions());
     let source = scripted_source(ClientKind::AzureOpenAi, &[], sse_payload());
 
-    let mut first = CallFixture::default();
-    first.api_key = None;
-    first.azure_ad_token = Some(SecretString::from("oidc/env/ASSERTION-A"));
+    let first = CallFixture {
+        api_key: None,
+        azure_ad_token: Some(SecretString::from("oidc/env/ASSERTION-A")),
+        ..CallFixture::default()
+    };
     let first_call = first.call();
 
-    let mut second = CallFixture::default();
-    second.api_key = None;
-    second.azure_ad_token = Some(SecretString::from("oidc/env/ASSERTION-B"));
+    let second = CallFixture {
+        api_key: None,
+        azure_ad_token: Some(SecretString::from("oidc/env/ASSERTION-B")),
+        ..CallFixture::default()
+    };
     let second_call = second.call();
 
     let mut recorder = Recorder::default();
@@ -116,7 +120,7 @@ fn repeated_response_headers_join_with_a_comma() {
 #[test]
 fn streaming_error_display_names_the_azure_message() {
     let failure = AzureStreamFailure::wrapped(Raised::plain("socket closed".to_owned()));
-    let error = StreamingError::Azure(failure);
+    let error = StreamingError::Azure(Box::new(failure));
     assert_eq!(error.to_string(), "socket closed");
 }
 
@@ -154,11 +158,11 @@ fn a_missing_messages_key_fails_before_pre_call() {
     ))
     .err()
     .expect("async wraps the missing key");
-    let failure = azure_failure(wrapped);
-    assert_eq!(failure.class, "AzureOpenAIError");
-    assert_eq!(failure.status, Reported::Present(Some(500)));
+    let wrapped_failure = azure_failure(wrapped);
+    assert_eq!(wrapped_failure.class, "AzureOpenAIError");
+    assert_eq!(wrapped_failure.status, Reported::Present(Some(500)));
     assert_eq!(
-        failure.message,
+        wrapped_failure.message,
         Reported::Present(Some("'messages'".to_owned()))
     );
 }
@@ -177,7 +181,7 @@ fn azure_chat_streams_secret_safe_failure() {
     raised.headers = Some(headers.clone());
     assert!(!format!("{raised:?}").contains(secret));
 
-    let error = StreamingError::Azure(failed);
+    let error = StreamingError::Azure(Box::new(failed));
     assert!(!error.to_string().contains(secret));
 
     let wrapped = AzureStreamFailure::wrapped(raised);

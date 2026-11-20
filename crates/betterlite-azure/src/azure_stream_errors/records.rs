@@ -56,7 +56,7 @@ pub trait ChatStreamTransport: Send + Sync {
         &'call self,
         data: &'call Extra,
         timeout: Option<f64>,
-    ) -> Pin<Box<dyn Future<Output = Result<StreamAnswer, Raised>> + Send + 'call>>;
+    ) -> Pin<Box<dyn Future<Output = Result<StreamAnswer, Box<Raised>>> + Send + 'call>>;
 }
 
 #[derive(Clone)]
@@ -68,7 +68,7 @@ pub struct StreamClient {
 
 // get_azure_openai_client: the supplied client, else the SDK client the arguments build
 pub trait StreamSource: Send + Sync {
-    fn get(&self, request: GetStreamClient<'_>) -> Result<StreamClient, Raised>;
+    fn get(&self, request: GetStreamClient<'_>) -> Result<StreamClient, Box<Raised>>;
 }
 
 #[derive(Clone, Copy)]
@@ -93,8 +93,9 @@ pub struct PreCallRecord {
     pub additional_args: AdditionalArgs,
 }
 
-// The logging object the streaming paths hold; production implements it over betterlite-logging
-pub trait StreamHooks {
+// The logging object the streaming paths hold; production implements it over betterlite-logging.
+// Send because the streaming futures hold it across the transport await.
+pub trait StreamHooks: Send {
     fn pre_call(&mut self, record: PreCallRecord) -> Result<(), PrePostError>;
 
     // logging_obj.model_call_details["response_headers"] = headers

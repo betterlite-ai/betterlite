@@ -37,11 +37,11 @@ pub(super) fn assert_send_failure(
 
     let async_source = failing_source(
         ClientKind::AsyncAzureOpenAi,
-        Raised::raised(
+        Raised::new(
             "ScriptedError".to_owned(),
             Reported::Present(None),
             Reported::Present(None),
-            "".to_owned(),
+            String::new(),
         ),
     );
     let async_failure = azure_failure(

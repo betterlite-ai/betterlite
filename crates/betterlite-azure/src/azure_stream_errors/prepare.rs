@@ -53,8 +53,8 @@ impl UnusedClientParams {
 // The whole map is discarded: get_azure_openai_client only gets the arguments the caller passed.
 pub fn unused_client_params(
     call: &StreamCall<'_>,
-    sources: &dyn CredentialSources,
-) -> Result<UnusedClientParams, Raised> {
+    sources: &(dyn CredentialSources + Sync),
+) -> Result<UnusedClientParams, Box<Raised>> {
     let endpoint = select_base_url_or_endpoint(EndpointSelection {
         azure_endpoint: Some(call.api_base.to_owned()),
         base_url: None,
@@ -76,8 +76,8 @@ pub fn unused_client_params(
 
 fn credential_entry(
     call: &StreamCall<'_>,
-    sources: &dyn CredentialSources,
-) -> Result<StreamCredential, Raised> {
+    sources: &(dyn CredentialSources + Sync),
+) -> Result<StreamCredential, Box<Raised>> {
     if call.api_key.is_some() {
         return Ok(StreamCredential::ApiKey);
     }
@@ -91,12 +91,12 @@ fn credential_entry(
                     scope: None,
                 })
                 .map_err(|failure| {
-                    Raised::raised(
+                    Box::new(Raised::new(
                         failure.class,
                         Reported::Present(failure.status),
                         Reported::Present(Some(failure.message.clone())),
                         failure.message,
-                    )
+                    ))
                 })?;
             return Ok(StreamCredential::AzureAdToken(exchanged));
         }
@@ -108,7 +108,7 @@ fn credential_entry(
     Ok(StreamCredential::Unset)
 }
 
-pub fn require_stream_client(client: &StreamClient, asynchronous: bool) -> Result<(), Raised> {
+pub fn require_stream_client(client: &StreamClient, asynchronous: bool) -> Result<(), Box<Raised>> {
     let fits = match client.kind {
         ClientKind::AzureOpenAi | ClientKind::OpenAi => !asynchronous,
         ClientKind::AsyncAzureOpenAi | ClientKind::AsyncOpenAi => asynchronous,
@@ -118,9 +118,11 @@ pub fn require_stream_client(client: &StreamClient, asynchronous: bool) -> Resul
         return Ok(());
     }
     if asynchronous {
-        return Err(Raised::value_error(ASYNC_CLIENT_MESSAGE.to_owned()));
+        return Err(Box::new(Raised::value_error(
+            ASYNC_CLIENT_MESSAGE.to_owned(),
+        )));
     }
-    Err(Raised::azure(500, SYNC_CLIENT_MESSAGE.to_owned()))
+    Err(Box::new(Raised::azure(500, SYNC_CLIENT_MESSAGE.to_owned())))
 }
 
 fn secret_json(value: Option<&SecretString>) -> Json {
@@ -134,14 +136,14 @@ pub fn pre_call(
     call: &StreamCall<'_>,
     client: &StreamClient,
     token: Option<&SecretString>,
-) -> Result<PreCallRecord, Raised> {
+) -> Result<PreCallRecord, Box<Raised>> {
     let input = call.data.get("messages").cloned().ok_or_else(|| {
-        Raised::raised(
+        Box::new(Raised::new(
             "KeyError".to_owned(),
             Reported::Absent,
             Reported::Absent,
             "'messages'".to_owned(),
-        )
+        ))
     })?;
     let headers = IndexMap::from([
         ("api_key".to_owned(), secret_json(call.api_key)),
