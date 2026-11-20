@@ -248,6 +248,20 @@ async fn permission_updated() {
 }
 
 #[tokio::test]
+async fn permission_without_client_errors() {
+    let mut data = payload(r#"{"team_id":"t","object_permission":{"mcp_servers":["srv-a"]}}"#);
+    let error = update_object_permission(&mut data, None, None, &[])
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(error, ObjectPermissionError::PrismaClientMissing),
+        "{error:?}"
+    );
+    assert!(data.contains_key("object_permission"));
+    assert!(!data.contains_key("object_permission_id"));
+}
+
+#[tokio::test]
 async fn permission_none_preserves_payload() {
     let database = TestDatabase::start().await;
     let mut data = payload(r#"{"team_id":"t","team_alias":"kept"}"#);
