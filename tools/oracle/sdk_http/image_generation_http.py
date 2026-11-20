@@ -112,7 +112,7 @@ class PositionalPreCallError(ValueError):
 
 class RecordingLogging(Logging):
     def __init__(self) -> None:
-        super().__init__(
+        super().__init__(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L576-L600
             model="", messages="", stream=False, call_type="image_generation",
             start_time=datetime(2026, 1, 1, tzinfo=UTC),
             litellm_call_id="image-generation-http", function_id="image-generation-http",
@@ -236,7 +236,7 @@ def execute(
     metadata = OBJECTS.validate_python(call.litellm_metadata)
     if call.mode == "sync":
         return IMAGE.validate_python(
-            HANDLER.image_generation_handler(
+            HANDLER.image_generation_handler(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6920-L6937
                 model=call.model, prompt=call.prompt,
                 image_generation_provider_config=config,
                 image_generation_optional_request_params=call.optional_params,
@@ -247,7 +247,7 @@ def execute(
             )
         )
     return asyncio.run(
-        HANDLER.async_image_generation_handler(
+        HANDLER.async_image_generation_handler(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7045-L7061
             model=call.model, prompt=call.prompt,
             image_generation_provider_config=config,
             image_generation_optional_request_params=call.optional_params,
