@@ -34,9 +34,14 @@ fn flags_supports_existing_file_id_matches_the_shared_state() {
 
 #[tokio::test]
 async fn flags_embed_returns_no_embeddings() {
+    let (logs, _guard) = capture();
     let harness = build(PROJECT_OPTIONS, &VertexSettings::default(), None, None, &[]);
     let chunks = ["one chunk".to_owned()];
     assert_eq!(harness.ingestion.embed(&chunks).await, None);
+    assert!(
+        logs.text()
+            .contains("Skipping the embedding step for 1 chunks")
+    );
 }
 
 #[tokio::test]
@@ -69,9 +74,7 @@ async fn flags_existing_file_id_is_ignored() {
         content_type: None,
         existing_file_id: Some("legacy"),
     };
-    let (_, file_id) = store(&idle, idle_file)
-        .await
-        .expect("a skipped upload");
+    let (_, file_id) = store(&idle, idle_file).await.expect("a skipped upload");
     assert_eq!(file_id, None);
 }
 
