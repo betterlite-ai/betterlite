@@ -74,6 +74,7 @@ impl ScriptedKeyDatabase {
                 KeyMembershipStatement::Attach | KeyMembershipStatement::Detach => {}
             }
         }
+        drop(groups);
         if self.reverse_rows {
             moved.reverse();
         }
@@ -93,6 +94,7 @@ impl ScriptedKeyDatabase {
                 access_group_id: access_group_id.clone(),
             });
         }
+        drop(groups);
         if self.reverse_rows {
             moved.reverse();
         }

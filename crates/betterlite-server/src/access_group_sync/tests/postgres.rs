@@ -17,7 +17,7 @@ use tokio_postgres::types::ToSql;
 use crate::access_group_sync::fixtures::ScriptedCache;
 use crate::access_group_sync::key::postgres::PostgresKeyMembership;
 use crate::access_group_sync::key::{
-    KeyMembershipDatabase, KeyMembershipStatement, KeySyncError, MovedGroupRow,
+    KeyMembershipDatabase as _, KeyMembershipStatement, KeySyncError, MovedGroupRow,
     sync_key_access_groups,
 };
 use crate::access_group_sync::team::{
@@ -204,43 +204,38 @@ pub(super) async fn key_pinned_rows(pool: &Pool) {
         .unwrap();
     assert_eq!(moved_names(&moved), vec!["g1".to_owned(), "g4".to_owned()]);
     assert_eq!(key_ids(pool, "g3").await, None);
-    let moved = membership
+    let detached = membership
         .move_key_membership(KeyMembershipStatement::Detach, "old", &groups)
         .await
         .unwrap();
-    assert_eq!(moved_names(&moved), vec!["g1".to_owned(), "g2".to_owned()]);
+    assert_eq!(
+        moved_names(&detached),
+        vec!["g1".to_owned(), "g2".to_owned()]
+    );
     assert_eq!(key_ids(pool, "g1").await, Some(vec!["tok".to_owned()]));
-    let moved = membership
+    let repointed = membership
         .repoint_key_membership("old", "new")
         .await
         .unwrap();
-    assert_eq!(moved_names(&moved), vec!["g5".to_owned(), "g7".to_owned()]);
+    assert_eq!(
+        moved_names(&repointed),
+        vec!["g5".to_owned(), "g7".to_owned()]
+    );
     assert_eq!(key_ids(pool, "g5").await, Some(vec!["new".to_owned()]));
     assert_eq!(key_ids(pool, "g6").await, Some(vec!["new".to_owned()]));
 }
 
-pub(super) async fn team_pinned_rows(pool: &Pool) {
-    let store = PostgresStore {
-        pool: Some(pool.clone()),
-    };
-    {
-        let mut client = store.session().await.unwrap();
-        let transaction = client.transaction().await.unwrap();
-        let mut affected = reconcile_team_access_groups(&transaction, "t1")
-            .await
-            .unwrap();
-        transaction.commit().await.unwrap();
-        affected.sort();
-        assert_eq!(
-            affected,
-            vec![
-                "g1".to_owned(),
-                "g2".to_owned(),
-                "g4".to_owned(),
-                "g8".to_owned(),
-            ]
-        );
-    }
+async fn commit_team_sync(store: &PostgresStore, team_id: &str) -> Vec<String> {
+    let mut client = store.session().await.unwrap();
+    let transaction = client.transaction().await.unwrap();
+    let affected = reconcile_team_access_groups(&transaction, team_id)
+        .await
+        .unwrap();
+    transaction.commit().await.unwrap();
+    affected
+}
+
+async fn assert_team_t1_rows(pool: &Pool) {
     assert_eq!(team_ids(pool, "g1").await, Some(vec!["t1".to_owned()]));
     assert_eq!(team_ids(pool, "g2").await, Some(Vec::new()));
     assert_eq!(team_ids(pool, "g4").await, Some(vec!["t1".to_owned()]));
@@ -248,13 +243,26 @@ pub(super) async fn team_pinned_rows(pool: &Pool) {
         team_ids(pool, "g8").await,
         Some(vec!["t3".to_owned(), "t1".to_owned()])
     );
-    let mut client = store.session().await.unwrap();
-    let transaction = client.transaction().await.unwrap();
-    let affected = reconcile_team_access_groups(&transaction, "t2")
-        .await
-        .unwrap();
-    transaction.commit().await.unwrap();
-    assert_eq!(affected, vec!["g7".to_owned()]);
+}
+
+pub(super) async fn team_pinned_rows(pool: &Pool) {
+    let store = PostgresStore {
+        pool: Some(pool.clone()),
+    };
+    let mut affected = commit_team_sync(&store, "t1").await;
+    affected.sort();
+    assert_eq!(
+        affected,
+        vec![
+            "g1".to_owned(),
+            "g2".to_owned(),
+            "g4".to_owned(),
+            "g8".to_owned(),
+        ]
+    );
+    assert_team_t1_rows(pool).await;
+    let retried = commit_team_sync(&store, "t2").await;
+    assert_eq!(retried, vec!["g7".to_owned()]);
     assert_eq!(team_ids(pool, "g7").await, Some(Vec::new()));
 }
 

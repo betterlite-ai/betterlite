@@ -31,9 +31,12 @@ pub(crate) struct ScriptedTeamTransaction {
 }
 
 impl ScriptedTeamTransaction {
-    pub(crate) const fn new(team_group_ids: Option<Vec<String>>, groups: GroupTeams) -> Self {
+    pub(crate) const fn new(
+        team_group_ids: Option<Vec<String>>,
+        seeded_groups: GroupTeams,
+    ) -> Self {
         let calls = Mutex::new(Vec::new());
-        let groups = Mutex::new(groups);
+        let groups = Mutex::new(seeded_groups);
         Self {
             calls,
             missing_team: false,
@@ -67,6 +70,7 @@ impl ScriptedTeamTransaction {
                 });
             }
         }
+        drop(groups);
         rows
     }
 

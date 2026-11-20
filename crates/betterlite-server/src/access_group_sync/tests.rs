@@ -16,7 +16,7 @@ use super::fixtures::team::{ScriptedTeamTransaction, TeamStep};
 use super::fixtures::{KeyCall, ScriptedCache, ScriptedKeyDatabase};
 use super::key::postgres::PostgresKeyMembership;
 use super::key::{
-    KeyAccessGroupUpdate, KeyMembershipDatabase, KeyMembershipStatement, KeyRegeneration,
+    KeyAccessGroupUpdate, KeyMembershipDatabase as _, KeyMembershipStatement, KeyRegeneration,
     KeySyncError, sync_key_access_groups, sync_key_regeneration, sync_key_update_access_groups,
 };
 use super::team::{
@@ -29,8 +29,8 @@ fn groups(entries: &[(&str, &[&str])]) -> BTreeMap<String, Vec<String>> {
     entries
         .iter()
         .map(|(access_group_id, tokens)| {
-            let tokens = tokens.iter().map(|token| (*token).to_owned()).collect();
-            ((*access_group_id).to_owned(), tokens)
+            let owned_tokens = tokens.iter().map(|token| (*token).to_owned()).collect();
+            ((*access_group_id).to_owned(), owned_tokens)
         })
         .collect()
 }
@@ -47,13 +47,6 @@ fn moved_call(
             .iter()
             .map(|access_group_id| (*access_group_id).to_owned())
             .collect(),
-    }
-}
-
-fn repoint_call(previous: &str, new: &str) -> KeyCall {
-    KeyCall::Repoint {
-        previous_key_token: previous.to_owned(),
-        new_key_token: new.to_owned(),
     }
 }
 
@@ -145,6 +138,7 @@ async fn attach_cache_failure_stops_detach() {
             ..
         })
     ));
+    drop(calls);
     let groups = database.groups.lock().expect("groups");
     assert_eq!(groups.get("b"), Some(&vec!["tok".to_owned()]));
     assert_eq!(groups.get("a"), Some(&vec!["tok".to_owned()]));
@@ -303,6 +297,7 @@ async fn regeneration_failure_order() {
             ..
         })
     ));
+    drop(calls);
 }
 
 #[tokio::test]
@@ -393,10 +388,10 @@ async fn team_null_arrays_and_unchanged_groups() {
         ("g2".to_owned(), None),
     ]);
     let unchanged = ScriptedTeamTransaction::new(Some(vec!["g1".to_owned()]), seeded_unchanged);
-    let affected = reconcile_team_access_groups(&unchanged, "t1")
+    let reconciled = reconcile_team_access_groups(&unchanged, "t1")
         .await
         .unwrap();
-    assert_eq!(affected, vec!["g1".to_owned()]);
+    assert_eq!(reconciled, vec!["g1".to_owned()]);
     assert_eq!(
         unchanged.groups.lock().expect("groups").get("g1"),
         Some(&Some(vec!["t1".to_owned()]))
