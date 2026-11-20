@@ -70,6 +70,11 @@ description: >-
   database; row grouping, totals and the error breakdown are covered by the native Postgres tests.
 scope:
   paths:
+    - "tools/oracle/src/oracle_comparison_contracts/compare.rs"
+    - "tools/oracle/src/compare.rs"
+    - "crates/betterlite-server/src/error_body.rs"
+    - "crates/betterlite-server/src/auth.rs"
+    - "crates/betterlite-server/src/auth/**"
     - "tools/oracle/src/gateway.rs"
     - "crates/betterlite-server/src/routes.rs"
     - "crates/betterlite-server/src/lib.rs"
