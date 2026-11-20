@@ -583,7 +583,7 @@ async fn speech_http_complete_url_error() {
     let result = run(&mut fixture, &deps, Mode::Sync, &call).await;
     assert!(matches!(result, Err(SpeechError::CompleteUrl(_))));
     assert!(harness.wire.requests().is_empty());
-    assert_eq!(fixture.input(), None);
+    assert_eq!(fixture.logged("api_base"), None);
 }
 
 #[tokio::test]
@@ -618,6 +618,6 @@ async fn speech_http_invalid_header(#[case] name: &str, #[case] value: &str) {
     } else {
         assert!(matches!(result, Err(SpeechError::HeaderValue { .. })));
     }
-    assert!(fixture.input().is_some());
+    assert_eq!(fixture.input(), Some(&Json::Text("hello".to_owned())));
     assert!(harness.wire.requests().is_empty());
 }
