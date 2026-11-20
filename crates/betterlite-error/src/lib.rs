@@ -18,6 +18,5 @@ pub mod proxy_exception;
 pub mod proxy_model_not_found;
 pub mod proxy_rate_limit_error;
 pub mod rate_limit;
-pub mod retry_policy;
 pub mod status;
 pub mod vertex_errors;
