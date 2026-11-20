@@ -179,7 +179,7 @@ fn duration_overflow_propagates() {
 #[test]
 fn window_failure_keeps_supplied_limits() {
     let request = update_request(
-        r#"{"team_id":"t","budget_limits":[{"budget_duration":"99999999999999999999d","max_budget":5.0}]}"#,
+        r#"{"team_id":"t","budget_duration":"1d","budget_limits":[{"budget_duration":"99999999999999999999d","max_budget":5.0}]}"#,
     );
     let mut updated_kv = updated(&request);
     let error = set_budget_reset_at(
@@ -189,6 +189,10 @@ fn window_failure_keeps_supplied_limits() {
     )
     .unwrap_err();
     assert!(matches!(error, BudgetResetError::Window(_)), "{error:?}");
+    assert_eq!(
+        updated_kv.get("budget_reset_at"),
+        Some(&JsonData::String("2026-05-02T00:00:00Z".to_owned()))
+    );
     assert!(matches!(
         updated_kv.get("budget_limits"),
         Some(JsonData::Array(_))
