@@ -308,8 +308,8 @@ async fn response_body_limit() {
 async fn request_deadline() {
     let mut run = Run::new(json_reply(TRANSCRIPT));
     run.asynchronous = true;
-    run.timeout = Some(Duration::from_millis(100));
-    run.pause = Duration::from_millis(500);
+    run.timeout = Some(Duration::from_millis(250));
+    run.pause = Duration::from_millis(600);
     let outcome = run
         .execute(
             environment(&[("WATSONX_TOKEN", "envtoken")]),
@@ -321,7 +321,7 @@ async fn request_deadline() {
     assert!(
         provider
             .message
-            .starts_with("litellm.Timeout: Connection timed out. Timeout passed=0.1"),
+            .starts_with("litellm.Timeout: Connection timed out. Timeout passed=0.25"),
         "the async deadline names the timeout: {}",
         provider.message
     );

@@ -113,7 +113,11 @@ fn record(
         if stream.set_read_timeout(Some(READ_TIMEOUT)).is_err() {
             continue;
         }
+        // The wake connection carries no request, so a failed read while stopping ends the recorder
         let Ok(request) = read_request(&mut stream) else {
+            if stop.load(Ordering::SeqCst) {
+                break;
+            }
             continue;
         };
         requests
