@@ -61,7 +61,7 @@ fn mcp_tool_argument_filtering() {
     let mut data = request_data("search", secret_arguments());
     let mut detections = Vec::new();
     scan_mcp_tool_call_arguments(
-        &base(pre_mcp_call_hook()),
+        &base(Some(pre_mcp_call_hook())),
         &filter,
         Some(MCP_CALL_TYPE),
         &mut data,
@@ -108,7 +108,7 @@ fn mcp_call_skips_other_call_types() {
     let mut other = request_data("search", arguments.clone());
     let mut detections = Vec::new();
     scan_mcp_tool_call_arguments(
-        &base(pre_mcp_call_hook()),
+        &base(Some(pre_mcp_call_hook())),
         &filter,
         Some("acompletion"),
         &mut other,
@@ -120,7 +120,7 @@ fn mcp_call_skips_other_call_types() {
     assert!(detections.is_empty());
     let mut untyped = request_data("search", arguments);
     scan_mcp_tool_call_arguments(
-        &base(pre_mcp_call_hook()),
+        &base(Some(pre_mcp_call_hook())),
         &filter,
         None,
         &mut untyped,
@@ -153,7 +153,7 @@ fn mcp_call_skips_without_a_readable_tool_name(#[case] name: ToolName) {
     };
     let mut detections = Vec::new();
     scan_mcp_tool_call_arguments(
-        &base(pre_mcp_call_hook()),
+        &base(Some(pre_mcp_call_hook())),
         &filter,
         Some(MCP_CALL_TYPE),
         &mut data,
@@ -183,7 +183,7 @@ fn mcp_call_skips_without_readable_arguments(#[case] shape: ArgumentsShape) {
     };
     let mut detections = Vec::new();
     scan_mcp_tool_call_arguments(
-        &base(pre_mcp_call_hook()),
+        &base(Some(pre_mcp_call_hook())),
         &filter,
         Some(MCP_CALL_TYPE),
         &mut data,
@@ -206,7 +206,7 @@ fn mcp_call_checks_object_keys() {
     let mut data = request_data("search", arguments.clone());
     let mut detections = Vec::new();
     let error = scan_mcp_tool_call_arguments(
-        &base(pre_mcp_call_hook()),
+        &base(Some(pre_mcp_call_hook())),
         &filter,
         Some(MCP_CALL_TYPE),
         &mut data,
@@ -233,7 +233,7 @@ fn mcp_call_depth_limit_names_the_mcp_label() {
     let mut data = request_data("search", arguments);
     let mut detections = Vec::new();
     let error = scan_mcp_tool_call_arguments(
-        &base(pre_mcp_call_hook()),
+        &base(Some(pre_mcp_call_hook())),
         &filter,
         Some(MCP_CALL_TYPE),
         &mut data,
@@ -261,7 +261,7 @@ fn mcp_call_keeps_unchanged_arguments_unmodified() {
     let mut data = request_data("search", arguments.clone());
     let mut detections = Vec::new();
     scan_mcp_tool_call_arguments(
-        &base(pre_mcp_call_hook()),
+        &base(Some(pre_mcp_call_hook())),
         &filter,
         Some(MCP_CALL_TYPE),
         &mut data,

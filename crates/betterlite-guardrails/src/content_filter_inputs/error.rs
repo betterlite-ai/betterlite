@@ -1,3 +1,5 @@
+use std::error::Error;
+
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use indexmap::IndexMap;
 
@@ -54,7 +56,7 @@ pub enum ImageProcessingError<E> {
     NoChoices,
     #[error("the content filter blocked an image description")]
     Blocked {
-        detail: ContentFilterBlockDetail,
+        detail: Box<ContentFilterBlockDetail>,
         description: String,
     },
     #[error(transparent)]
@@ -63,7 +65,7 @@ pub enum ImageProcessingError<E> {
 
 impl<E> ImageProcessingError<E>
 where
-    E: std::error::Error,
+    E: Error,
 {
     #[must_use]
     pub fn into_failure(self) -> GuardrailFailure {
@@ -72,7 +74,10 @@ where
             description,
         } = &self
         {
-            return blocked_failure(block_detail_map(detail, Some(description.as_str())));
+            return blocked_failure(block_detail_map(
+                detail.as_ref(),
+                Some(description.as_str()),
+            ));
         }
         GuardrailFailure::Other(self.other_message())
     }
@@ -91,17 +96,33 @@ pub(super) fn block_detail_map(
     detail: &ContentFilterBlockDetail,
     description: Option<&str>,
 ) -> IndexMap<String, GuardrailValue> {
-    let mut map = match detail {
+    let mut map = detail_map(detail);
+    if let Some(image_description) = description {
+        let appended = match map.get("error") {
+            Some(GuardrailValue::Text(error)) => {
+                format!("{error} (Image description): {image_description}")
+            }
+            Some(_) | None => {
+                format!("Content blocked: Image description detected{image_description}")
+            }
+        };
+        map.insert("error".to_owned(), GuardrailValue::Text(appended));
+    }
+    map
+}
+
+fn detail_map(detail: &ContentFilterBlockDetail) -> IndexMap<String, GuardrailValue> {
+    match detail {
         Conditional {
             error,
             category,
             matched_phrase,
             severity,
         } => detail_map_entries(&[
-            ("error", error),
-            ("category", category),
-            ("matched_phrase", matched_phrase),
-            ("severity", severity),
+            ("error", error.as_str()),
+            ("category", category.as_str()),
+            ("matched_phrase", matched_phrase.as_str()),
+            ("severity", severity.as_str()),
         ]),
         CategoryKeyword {
             error,
@@ -109,49 +130,52 @@ pub(super) fn block_detail_map(
             keyword,
             severity,
         } => detail_map_entries(&[
-            ("error", error),
-            ("category", category),
-            ("keyword", keyword),
-            ("severity", severity),
+            ("error", error.as_str()),
+            ("category", category.as_str()),
+            ("keyword", keyword.as_str()),
+            ("severity", severity.as_str()),
         ]),
-        Pattern { error, pattern } => detail_map_entries(&[("error", error), ("pattern", pattern)]),
+        Pattern { error, pattern } => {
+            detail_map_entries(&[("error", error.as_str()), ("pattern", pattern.as_str())])
+        }
         BlockedWord {
             error,
             keyword,
             description,
-        } => {
-            let mut map = detail_map_entries(&[("error", error), ("keyword", keyword)]);
-            map.insert(
-                "description".to_owned(),
-                description
-                    .clone()
-                    .map_or(GuardrailValue::Null, GuardrailValue::Text),
-            );
-            map
-        }
-    };
-    if let Some(description) = description {
-        let appended = match map.get("error") {
-            Some(GuardrailValue::Text(error)) => {
-                format!("{error} (Image description): {description}")
-            }
-            Some(_) | None => format!("Content blocked: Image description detected{description}"),
-        };
-        map.insert("error".to_owned(), GuardrailValue::Text(appended));
+        } => blocked_word_map(error, keyword, description.as_deref()),
     }
+}
+
+fn blocked_word_map(
+    error: &str,
+    keyword: &str,
+    description: Option<&str>,
+) -> IndexMap<String, GuardrailValue> {
+    let mut map = detail_map_entries(&[("error", error), ("keyword", keyword)]);
+    map.insert(
+        "description".to_owned(),
+        description.map_or(GuardrailValue::Null, |text| {
+            GuardrailValue::Text(text.to_owned())
+        }),
+    );
     map
 }
 
-fn blocked_failure(detail: IndexMap<String, GuardrailValue>) -> GuardrailFailure {
+const fn blocked_failure(detail: IndexMap<String, GuardrailValue>) -> GuardrailFailure {
     GuardrailFailure::HttpObject {
         status: BLOCKED_STATUS,
         detail,
     }
 }
 
-fn detail_map_entries(entries: &[(&str, &String)]) -> IndexMap<String, GuardrailValue> {
+fn detail_map_entries(entries: &[(&str, &str)]) -> IndexMap<String, GuardrailValue> {
     entries
         .iter()
-        .map(|(name, value)| ((*name).to_owned(), GuardrailValue::Text((*value).clone())))
+        .map(|(name, value)| {
+            (
+                (*name).to_owned(),
+                GuardrailValue::Text((*value).to_owned()),
+            )
+        })
         .collect()
 }

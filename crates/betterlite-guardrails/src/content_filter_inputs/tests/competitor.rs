@@ -81,7 +81,7 @@ fn competitor_intent_detection() {
     };
     assert_eq!(detection.r#type, "competitor_intent");
     assert_eq!(detection.intent, "competitor_comparison");
-    assert_eq!(detection.confidence, 0.82_f64);
+    assert!((detection.confidence - 0.82_f64).abs() < f64::EPSILON);
     assert_eq!(detection.action_hint, "allow");
     assert_eq!(detection.signals, ["ranking"]);
     assert_eq!(detection.entities["brand_self"], ["Acme"]);
@@ -250,14 +250,14 @@ fn competitor_defaults_fill_missing_result_fields() {
         panic!("the detection is a competitor intent");
     };
     assert_eq!(detection.intent, "other");
-    assert_eq!(detection.confidence, 0.0);
+    assert!((detection.confidence - 0.0).abs() < f64::EPSILON);
     assert_eq!(detection.action_hint, "allow");
 }
 
 #[test]
 fn competitor_intent_logging_names_the_action() {
     let data = request_data();
-    let (outcome, logs) = with_logs(|| {
+    let (allowed, allowed_logs) = with_logs(|| {
         apply_competitor_intent_policy(
             &base(None),
             &competitor_result("allow"),
@@ -266,12 +266,12 @@ fn competitor_intent_logging_names_the_action() {
             &mut Vec::new(),
         )
     });
-    outcome.expect("an allowed intent passes");
-    assert!(logs.contains("content filter competitor intent continues"));
-    assert!(logs.contains("intent=competitor_comparison"));
-    assert!(logs.contains("confidence=0.82"));
-    assert!(logs.contains("action_hint=allow"));
-    let (outcome, logs) = with_logs(|| {
+    allowed.expect("an allowed intent passes");
+    assert!(allowed_logs.contains("content filter competitor intent continues"));
+    assert!(allowed_logs.contains("intent=competitor_comparison"));
+    assert!(allowed_logs.contains("confidence=0.82"));
+    assert!(allowed_logs.contains("action_hint=allow"));
+    let (refused, refusal_logs) = with_logs(|| {
         apply_competitor_intent_policy(
             &base(None),
             &competitor_result("refuse"),
@@ -280,9 +280,9 @@ fn competitor_intent_logging_names_the_action() {
             &mut Vec::new(),
         )
     });
-    outcome.expect_err("a refused intent fails");
-    assert!(logs.contains("content filter competitor intent refuse"));
-    let (outcome, logs) = with_logs(|| {
+    refused.expect_err("a refused intent fails");
+    assert!(refusal_logs.contains("content filter competitor intent refuse"));
+    let (reframed, reframe_logs) = with_logs(|| {
         apply_competitor_intent_policy(
             &base(None),
             &competitor_result("reframe"),
@@ -291,7 +291,7 @@ fn competitor_intent_logging_names_the_action() {
             &mut Vec::new(),
         )
     });
-    outcome.expect_err("a reframed intent fails the response");
-    assert!(logs.contains("content filter competitor intent reframe"));
-    assert!(logs.contains("action_hint=reframe"));
+    reframed.expect_err("a reframed intent fails the response");
+    assert!(reframe_logs.contains("content filter competitor intent reframe"));
+    assert!(reframe_logs.contains("action_hint=reframe"));
 }

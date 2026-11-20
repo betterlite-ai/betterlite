@@ -55,13 +55,13 @@ pub async fn process_images<C>(
 where
     C: ImageDescriptionCompletion + ?Sized,
 {
-    let (Some(image_model), Some(completion)) = (scan.image_model, completion) else {
+    let (Some(image_model), Some(describer)) = (scan.image_model, completion) else {
         return Ok(());
     };
     if scan.images.is_empty() {
         return Ok(());
     }
-    let descriptions = describe_images(scan, image_model, completion).await?;
+    let descriptions = describe_images(scan, image_model, describer).await?;
     filter_image_descriptions(scan, &descriptions, detections)
 }
 
@@ -86,17 +86,16 @@ where
     let responses = join_all(calls).await;
 
     let mut descriptions = Vec::with_capacity(responses.len());
-    for response in responses {
-        let response = response.map_err(|source| ImageProcessingError::Completion { source })?;
+    for answer in responses {
+        let response = answer.map_err(|source| ImageProcessingError::Completion { source })?;
         let Some(choice) = response.choices.first() else {
             return Err(ImageProcessingError::NoChoices);
         };
-        match choice.content.as_deref().filter(|text| !text.is_empty()) {
-            Some(description) => {
-                tracing::debug!(description, "Image description");
-                descriptions.push(description.to_owned());
-            }
-            None => tracing::warn!("No image description found"),
+        if let Some(description) = choice.content.as_deref().filter(|text| !text.is_empty()) {
+            tracing::debug!(description, "Image description");
+            descriptions.push(description.to_owned());
+        } else {
+            tracing::warn!("No image description found");
         }
     }
 
@@ -117,7 +116,7 @@ fn filter_image_descriptions<E>(
             Ok(_filtered) => {}
             Err(ContentFilterActionError::Blocked { detail }) => {
                 return Err(ImageProcessingError::Blocked {
-                    detail,
+                    detail: Box::new(detail),
                     description: description.clone(),
                 });
             }

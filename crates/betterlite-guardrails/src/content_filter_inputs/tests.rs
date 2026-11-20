@@ -57,10 +57,6 @@ impl Fixture {
         Self::from_parts(patterns, Vec::new())
     }
 
-    pub(super) fn with_blocked_words(blocked_words: Vec<BlockedWord>) -> Self {
-        Self::from_parts(Vec::new(), blocked_words)
-    }
-
     fn from_parts(patterns: Vec<CompiledPattern>, blocked_words: Vec<BlockedWord>) -> Self {
         Self {
             categories: CategoryLoadResult::default(),
@@ -85,14 +81,6 @@ pub(super) fn regex_pattern(
         action,
     };
     compile(&config).expect("the test regex pattern compiles")
-}
-
-pub(super) fn blocked_word(keyword: &str, action: ContentFilterAction) -> BlockedWord {
-    BlockedWord {
-        keyword: keyword.to_owned(),
-        action,
-        description: None,
-    }
 }
 
 pub(super) fn pattern_names(detections: &[ContentFilterDetection]) -> Vec<&str> {
@@ -131,8 +119,8 @@ pub(super) fn base(event_hook: Option<LitellmParamsMode>) -> GuardrailBase {
     GuardrailBase::new(settings, true).expect("the test guardrail settings are valid")
 }
 
-pub(super) fn pre_mcp_call_hook() -> Option<LitellmParamsMode> {
-    Some(LitellmParamsMode::One("pre_mcp_call".to_owned()))
+pub(super) fn pre_mcp_call_hook() -> LitellmParamsMode {
+    LitellmParamsMode::One("pre_mcp_call".to_owned())
 }
 
 pub(super) fn nested_array(depth: i64) -> GuardrailValue {
@@ -219,12 +207,12 @@ fn depth_recursion_covers_objects_and_lists() {
 pub(super) struct Captured(Arc<Mutex<Vec<u8>>>);
 
 impl Write for Captured {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
             .map_err(|_poisoned| io::Error::other("poisoned log buffer"))?
-            .extend_from_slice(buffer);
-        Ok(buffer.len())
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {

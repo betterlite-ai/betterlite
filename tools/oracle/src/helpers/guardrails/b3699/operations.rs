@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::io;
 
 use async_trait::async_trait;
 use betterlite_config::sections::content_filter_inputs::DEFAULT_RECURSE_DEPTH;
@@ -36,7 +37,7 @@ struct ScriptedDescriptions(String);
 
 #[async_trait]
 impl ImageDescriptionCompletion for ScriptedDescriptions {
-    type Error = std::io::Error;
+    type Error = io::Error;
 
     async fn describe(
         &self,
@@ -51,9 +52,10 @@ impl ImageDescriptionCompletion for ScriptedDescriptions {
 }
 
 fn filtered_error(outcome: Result<(), ArgumentFilterError>) -> Value {
-    outcome.map_or(Value::Null, |failure| {
-        projection::failure(&failure.into_failure())
-    })
+    match outcome {
+        Ok(()) => Value::Null,
+        Err(error) => projection::failure(&error.into_failure()),
+    }
 }
 
 pub(super) fn run_images(input: &ImagesInput) -> HelperResult {
@@ -69,7 +71,7 @@ pub(super) fn run_images(input: &ImagesInput) -> HelperResult {
         &mut detections,
     )) {
         Ok(()) => Value::Null,
-        Err(failure) => projection::failure(&failure.into_failure()),
+        Err(error) => projection::failure(&error.into_failure()),
     };
     Ok(output(&[], &detections, &[], &BTreeMap::new(), error))
 }
@@ -144,7 +146,7 @@ fn policy_error(
         detections,
     ) {
         Ok(()) => Value::Null,
-        Err(failure) => projection::failure(&failure),
+        Err(error) => projection::failure(&error),
     }
 }
 
