@@ -18,4 +18,7 @@ deviations:
   - what: Guardrail dynamic extra_body parameters are applied unconditionally; LiteLLM ignores them unless litellm.proxy.proxy_server.premium_user is True.
     why: betterlite is MIT and has no premium-user gate; dropping the parameters would silently disable a documented feature, so the oracle helper sets premium_user for LiteLLM to compare the same behavior.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1182-L1189
-kept_bugs: []
+kept_bugs:
+  - what: A 200 whose Output.__type holds an Exception marker is allowed through, so unscanned content proceeds and the consolidated record reports guardrail_failed_to_respond.
+    why: A setup running today's LiteLLM sees those requests pass, and LiteLLM's fail-closed change is tracked separately behind unreachable_fallback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1203-L1209
