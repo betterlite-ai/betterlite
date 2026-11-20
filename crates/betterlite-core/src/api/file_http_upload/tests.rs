@@ -751,6 +751,38 @@ async fn two_step_upload_failure_skips_the_second_request(#[case] body: &str) {
     );
 }
 
+// a transport failure on the second step converts the same way and stops before the transform
+#[tokio::test]
+async fn two_step_upload_second_step_failure() {
+    let mut harness = Harness::new(
+        manus_plan(),
+        API_BASE,
+        vec![answer(
+            200,
+            &[],
+            b"{\"upload_url\":\"http://uploads.example.test/manus/1\"}",
+        )],
+    );
+    let error = harness
+        .run(Mode::Sync, &create_call(), &params())
+        .await
+        .unwrap_err();
+    match error {
+        UploadError::Provider(provider) => {
+            assert_eq!(provider.status_code, 500);
+            assert!(provider.status_code_is_synthesized);
+        }
+        other => panic!("expected a provider error, found {other}"),
+    }
+    assert_eq!(harness.seen().len(), 2);
+    assert!(
+        !harness
+            .config
+            .calls()
+            .contains(&"transform_create_file_response")
+    );
+}
+
 #[tokio::test]
 async fn two_step_upload_custom_key() {
     let plan = two_step_plan(TwoStepFileUploadConfig {
