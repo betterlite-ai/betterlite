@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use betterlite_config::sections::openai_credentials::Settings;
 use betterlite_http::proxy::pool::PoolError;
+use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_pre_post::args::AdditionalArgs;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_logging::logging_pre_post::pre_call::PreCall;

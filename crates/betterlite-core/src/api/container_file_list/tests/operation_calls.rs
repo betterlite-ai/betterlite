@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use betterlite_error::error::ErrorClass;
 use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
-use betterlite_openai::containers::container_file_http::request::ParamValue;
+use betterlite_openai::containers::container_file_http::request::{ParamValue, SslVerify};
 use betterlite_openai::containers::container_file_http::transport::ContainerMethod;
 use indexmap::IndexMap;
 use secrecy::SecretString;
@@ -422,6 +422,29 @@ fn an_api_key_reaches_validate_environment_and_authorizes_the_request() {
     assert_eq!(
         requests[0].headers.get("Authorization").map(String::as_str),
         Some("Bearer sk-test")
+    );
+}
+
+#[test]
+fn a_ssl_verify_kwarg_reaches_the_transform_and_the_client_builder() {
+    let mut fixture = Fixture::new();
+    fixture
+        .kwargs
+        .insert("ssl_verify".to_owned(), Json::Bool(true));
+
+    fixture.call().expect("the file list decodes");
+
+    assert_eq!(
+        fixture.source.blocking_ssl(),
+        vec![Some(SslVerify::Enabled(true))]
+    );
+    let transforms = fixture.config().transforms();
+    assert_eq!(
+        transforms[0]
+            .params
+            .get("ssl_verify")
+            .and_then(|value| value.as_bool()),
+        Some(true)
     );
 }
 
