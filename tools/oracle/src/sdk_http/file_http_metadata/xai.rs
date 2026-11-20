@@ -1,7 +1,7 @@
 use betterlite_config::sections::xai_identity::Settings;
 use betterlite_core::api::file_http_metadata::config::{
-    EnvironmentRequest, FileLogging, FileParams, FileRequest, FileResponse, Headers, ListRequest,
-    MetadataConfig, NextPageRequest, PreparedRequest,
+    EnvironmentRequest, FileParams, FileRequest, FileResponse, Headers, ListRequest,
+    MetadataConfig, NextPageRequest, PreparedRequest, ReplyContext,
 };
 use betterlite_core::api::vector_store_http_write::error::{BaseLlmException, HeaderMap};
 use betterlite_http::proxy::UpstreamResponse;
@@ -44,6 +44,30 @@ impl XaiFilesConfig<'_> {
         let api_base = params.get("api_base").and_then(|value| value.as_str());
         let url = files_url(api_base, target, self.settings).map_err(failure)?;
         Ok((url, FileParams::new()))
+    }
+
+    fn file_reply(&self, raw_response: &FileResponse) -> Result<FileObject, BaseLlmException> {
+        decode_file_reply(&reply(raw_response), &LIMITS, |file: XaiFile| {
+            to_file_object(&file, Utc::now().timestamp())
+        })
+        .map_err(failure)
+    }
+
+    fn deleted_reply(&self, raw_response: &FileResponse) -> Result<FileDeleted, BaseLlmException> {
+        decode_file_reply(&reply(raw_response), &LIMITS, |file: XaiFileDeleted| {
+            to_file_deleted(&file)
+        })
+        .map_err(failure)
+    }
+
+    fn listed_reply(
+        &self,
+        raw_response: &FileResponse,
+    ) -> Result<Vec<FileObject>, BaseLlmException> {
+        decode_file_reply(&reply(raw_response), &LIMITS, |page: XaiFileList| {
+            to_file_list(&page, Utc::now().timestamp())
+        })
+        .map_err(failure)
     }
 }
 
@@ -127,12 +151,9 @@ impl MetadataConfig for XaiFilesConfig<'_> {
     fn transform_retrieve_file_response(
         &self,
         raw_response: &FileResponse,
-        _logging_obj: &mut FileLogging<'_>,
-        _litellm_params: &FileParams,
+        _context: ReplyContext<'_>,
     ) -> Result<FileObject, BaseLlmException> {
-        let file = decode_file_reply(&reply(raw_response), &LIMITS, |record: XaiFile| record)
-            .map_err(failure)?;
-        Ok(to_file_object(&file, Utc::now().timestamp()))
+        self.file_reply(raw_response)
     }
 
     fn transform_delete_file_request(
@@ -145,14 +166,9 @@ impl MetadataConfig for XaiFilesConfig<'_> {
     fn transform_delete_file_response(
         &self,
         raw_response: &FileResponse,
-        _logging_obj: &mut FileLogging<'_>,
-        _litellm_params: &FileParams,
+        _context: ReplyContext<'_>,
     ) -> Result<FileDeleted, BaseLlmException> {
-        let deleted = decode_file_reply(&reply(raw_response), &LIMITS, |record: XaiFileDeleted| {
-            record
-        })
-        .map_err(failure)?;
-        Ok(to_file_deleted(&deleted))
+        self.deleted_reply(raw_response)
     }
 
     fn transform_list_files_request(
@@ -180,12 +196,9 @@ impl MetadataConfig for XaiFilesConfig<'_> {
     fn transform_list_files_response(
         &self,
         raw_response: &FileResponse,
-        _logging_obj: &mut FileLogging<'_>,
-        _litellm_params: &FileParams,
+        _context: ReplyContext<'_>,
     ) -> Result<Vec<FileObject>, BaseLlmException> {
-        let page = decode_file_reply(&reply(raw_response), &LIMITS, |record: XaiFileList| record)
-            .map_err(failure)?;
-        Ok(to_file_list(&page, Utc::now().timestamp()))
+        self.listed_reply(raw_response)
     }
 
     fn error_class(&self, message: &str, status_code: u16, headers: HeaderMap) -> BaseLlmException {
