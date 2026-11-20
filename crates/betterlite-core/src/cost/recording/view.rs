@@ -105,31 +105,32 @@ pub(super) const fn cost_response<'view>(
 
 // The usage projection get_usage_object reads, rebuilt here because prepare's view stays private.
 pub(super) fn billing_response<'view>(view: &'view ResponseView<'view>) -> BillingResponse<'view> {
-    match view {
-        ResponseView::Typed(typed) => BillingResponse {
-            kind: typed.kind,
-            usage: copied_usage(&typed.usage),
-            service_tier: typed.service_tier,
-            hidden_params: typed.hidden_params,
-        },
-        ResponseView::Dictionary(dictionary) => BillingResponse {
-            kind: ResponseKind::Other,
-            usage: copied_usage(&dictionary.usage),
-            service_tier: dictionary.service_tier,
-            hidden_params: None,
-        },
-        ResponseView::Realtime { record, usage } => BillingResponse {
-            kind: ResponseKind::Other,
-            usage: BillingUsage::Chat(usage),
-            service_tier: record.service_tier.as_deref(),
-            hidden_params: None,
-        },
-        ResponseView::Other => BillingResponse {
-            kind: ResponseKind::Other,
-            usage: BillingUsage::Absent,
-            service_tier: None,
-            hidden_params: None,
-        },
+    let (kind, usage, service_tier, hidden_params) = match view {
+        ResponseView::Typed(typed) => (
+            typed.kind,
+            copied_usage(&typed.usage),
+            typed.service_tier,
+            typed.hidden_params,
+        ),
+        ResponseView::Dictionary(dictionary) => (
+            ResponseKind::Other,
+            copied_usage(&dictionary.usage),
+            dictionary.service_tier,
+            None,
+        ),
+        ResponseView::Realtime { record, usage } => (
+            ResponseKind::Other,
+            BillingUsage::Chat(usage),
+            record.service_tier.as_deref(),
+            None,
+        ),
+        ResponseView::Other => (ResponseKind::Other, BillingUsage::Absent, None, None),
+    };
+    BillingResponse {
+        kind,
+        usage,
+        service_tier,
+        hidden_params,
     }
 }
 
