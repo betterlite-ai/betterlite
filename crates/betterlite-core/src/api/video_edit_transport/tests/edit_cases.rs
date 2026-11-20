@@ -84,7 +84,7 @@ fn dod_1_unknown_provider_unconverted() {
 fn dod_2_client_and_headers() {
     let events = Events::new();
     let wire = Wire::new(vec![Reply::json(200, "{}")], &events);
-    let mut harness = Harness::new(&events, wire.clone());
+    let mut harness = Harness::new(&events, wire);
     harness
         .params
         .insert("api_key".to_owned(), Json::Text("param-key".to_owned()));
@@ -144,7 +144,7 @@ fn assert_edit_prepare_records(harness: &Harness<Wire>) {
 fn dod_2_api_key_argument() {
     let events = Events::new();
     let wire = Wire::new(vec![Reply::json(200, "{}")], &events);
-    let mut harness = Harness::new(&events, wire.clone());
+    let mut harness = Harness::new(&events, wire);
     harness
         .params
         .insert("api_key".to_owned(), Json::Text("param-key".to_owned()));
@@ -316,6 +316,7 @@ fn dod_4_multipart_files() {
     assert!(!boundary.is_empty());
     assert_multipart_data(parts);
     assert_video_part(parts.last().expect("the video part"));
+    drop(requests);
 }
 
 fn assert_multipart_data(parts: &[MultipartPart]) {
@@ -362,6 +363,7 @@ fn dod_4_empty_files_sends_json() {
     let request = requests.first().expect("the main POST was sent");
     assert!(matches!(&request.body, RequestBody::Json(_)));
     assert_eq!(body_json(request), json_text("{\"prompt\":\"draw\"}"));
+    drop(requests);
 }
 
 fn dod_4_json_request_and_response() {
@@ -383,6 +385,7 @@ fn dod_4_json_request_and_response() {
     let request = requests.first().expect("the main POST was sent");
     assert_eq!(request.timeout, Some(Duration::from_secs(3)));
     assert_eq!(body_json(request), json_text("{\"prompt\":\"draw\"}"));
+    drop(requests);
     let reply = harness
         .config
         .edit_reply_seen()
@@ -397,7 +400,7 @@ fn dod_4_json_request_and_response() {
 fn dod_5_pre_call_record() {
     let events = Events::new();
     let wire = Wire::new(vec![Reply::json(200, "{}")], &events);
-    let mut harness = Harness::new(&events, wire.clone());
+    let mut harness = Harness::new(&events, wire);
     harness.extra_body = Some(object("{\"seed\":7}"));
     harness.config.validation = headers(&[("x-provider", "two")]);
     harness.config.edit = Some(EditPlan {

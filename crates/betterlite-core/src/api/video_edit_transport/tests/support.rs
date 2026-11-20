@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::future::Future;
+use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -158,7 +158,10 @@ impl WriteTransport for Wire {
         self.default_timeout
     }
 
-    async fn send(&self, request: WriteRequest) -> Result<UpstreamResponse, TransportError> {
+    fn send(
+        &self,
+        request: WriteRequest,
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
         self.events.push("send");
         let failure = self
             .failure
@@ -175,14 +178,14 @@ impl WriteTransport for Wire {
             .unwrap_or_else(PoisonError::into_inner)
             .push(request);
         if let Some(error) = failure {
-            return Err(error);
+            return ready(Err(error));
         }
-        let reply = reply.expect("the wire has a reply left");
-        Ok(UpstreamResponse {
-            status: reply.status,
-            headers: reply.headers,
-            body: reply.body,
-        })
+        let answer = reply.expect("the wire has a reply left");
+        ready(Ok(UpstreamResponse {
+            status: answer.status,
+            headers: answer.headers,
+            body: answer.body,
+        }))
     }
 }
 
@@ -816,7 +819,15 @@ pub(crate) fn done(handled: Handled<'_>) -> VideoObject {
 pub(crate) fn provider_error(error: VideoEditTransportError) -> ProviderError {
     match error {
         VideoEditTransportError::Provider(inner) => *inner,
-        other => panic!("expected a provider error, got {other:?}"),
+        other @ VideoEditTransportError::Config(_)
+        | other @ VideoEditTransportError::Logging(_)
+        | other @ VideoEditTransportError::Client(_)
+        | other @ VideoEditTransportError::PrefetchDecode(_)
+        | other @ VideoEditTransportError::FieldType(_)
+        | other @ VideoEditTransportError::SyncInRuntime { .. }
+        | other @ VideoEditTransportError::Runtime(_) => {
+            panic!("expected a provider error, got {other:?}")
+        }
     }
 }
 

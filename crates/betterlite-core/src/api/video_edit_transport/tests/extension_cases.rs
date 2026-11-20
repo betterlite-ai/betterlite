@@ -76,7 +76,7 @@ fn dod_1_unknown_provider_unconverted() {
 fn dod_2_client_and_headers() {
     let events = Events::new();
     let wire = Wire::new(vec![Reply::json(200, "{}")], &events);
-    let mut harness = Harness::new(&events, wire.clone());
+    let mut harness = Harness::new(&events, wire);
     harness
         .params
         .insert("ssl_verify".to_owned(), Json::Bool(false));
@@ -127,7 +127,7 @@ fn assert_extension_prepare_records(harness: &Harness<Wire>) {
 fn dod_2_api_key_argument() {
     let events = Events::new();
     let wire = Wire::new(vec![Reply::json(200, "{}")], &events);
-    let mut harness = Harness::new(&events, wire.clone());
+    let mut harness = Harness::new(&events, wire);
     harness
         .params
         .insert("api_key".to_owned(), Json::Text("param-key".to_owned()));
@@ -217,7 +217,7 @@ fn assert_extension_wire(request: &Request, reply: &ReplySeen) {
 fn dod_6_pre_call_record() {
     let events = Events::new();
     let wire = Wire::new(vec![Reply::json(200, "{}")], &events);
-    let mut harness = Harness::new(&events, wire.clone());
+    let mut harness = Harness::new(&events, wire);
     harness.config.validation = headers(&[("x-provider", "two")]);
     harness.config.extension = Some(ExtensionPlan {
         url: "https://upstream.test/extensions".to_owned(),
@@ -257,4 +257,5 @@ fn dod_6_json_post_timeout() {
     let request = requests.first().expect("the extension POST was sent");
     assert_eq!(request.timeout, Some(Duration::from_secs(7)));
     assert_eq!(body_json(request), json_text("{\"seconds\":\"4\"}"));
+    drop(requests);
 }

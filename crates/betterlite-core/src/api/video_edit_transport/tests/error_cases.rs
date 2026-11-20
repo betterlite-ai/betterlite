@@ -46,7 +46,15 @@ fn dod_7_extension_unconverted() {
         VideoEditTransportError::Config(source) => {
             assert_eq!(source.to_string(), "the extension transform refused");
         }
-        other => panic!("the transform error was converted: {other:?}"),
+        other @ VideoEditTransportError::Provider(_)
+        | other @ VideoEditTransportError::Logging(_)
+        | other @ VideoEditTransportError::Client(_)
+        | other @ VideoEditTransportError::PrefetchDecode(_)
+        | other @ VideoEditTransportError::FieldType(_)
+        | other @ VideoEditTransportError::SyncInRuntime { .. }
+        | other @ VideoEditTransportError::Runtime(_) => {
+            panic!("the transform error was converted: {other:?}")
+        }
     }
     harness
         .config
@@ -62,7 +70,16 @@ fn dod_7_extension_unconverted() {
         VideoEditTransportError::Logging(PrePostError::CallbackFailed { message }) => {
             assert_eq!(message, "the pre_call refused");
         }
-        other => panic!("the pre_call error was converted: {other:?}"),
+        other @ VideoEditTransportError::Provider(_)
+        | other @ VideoEditTransportError::Config(_)
+        | other @ VideoEditTransportError::Logging(_)
+        | other @ VideoEditTransportError::Client(_)
+        | other @ VideoEditTransportError::PrefetchDecode(_)
+        | other @ VideoEditTransportError::FieldType(_)
+        | other @ VideoEditTransportError::SyncInRuntime { .. }
+        | other @ VideoEditTransportError::Runtime(_) => {
+            panic!("the pre_call error was converted: {other:?}")
+        }
     }
     assert!(harness.config.errors().is_empty());
     assert!(harness.log.calls().is_empty());
@@ -210,7 +227,7 @@ fn dod_8_response_transform() {
         vec![Reply::json(200, body), Reply::json(200, body)],
         &events,
     );
-    let mut harness = Harness::new(&events, wire.clone());
+    let mut harness = Harness::new(&events, wire);
     harness.config.response_refusal = Some("cannot read the reply".to_owned());
     assert_reply_error(edit_error(&harness), 200, body);
     assert_reply_error(extension_error(&harness), 200, body);
@@ -276,14 +293,22 @@ fn assert_field_type(error: VideoEditTransportError, field: &str, expected: &str
             assert_eq!(seen.field, field);
             assert_eq!(seen.expected, expected);
         }
-        other => panic!("the wrong type travelled as {other:?}"),
+        other @ VideoEditTransportError::Provider(_)
+        | other @ VideoEditTransportError::Config(_)
+        | other @ VideoEditTransportError::Logging(_)
+        | other @ VideoEditTransportError::Client(_)
+        | other @ VideoEditTransportError::PrefetchDecode(_)
+        | other @ VideoEditTransportError::SyncInRuntime { .. }
+        | other @ VideoEditTransportError::Runtime(_) => {
+            panic!("the wrong type travelled as {other:?}")
+        }
     }
 }
 
 fn field_type() {
     let events = Events::new();
     let wire = Wire::new(Vec::new(), &events);
-    let mut harness = Harness::new(&events, wire.clone());
+    let mut harness = Harness::new(&events, wire);
     harness
         .params
         .insert("api_base".to_owned(), Json::Bool(true));
@@ -328,7 +353,15 @@ fn dod_9_sync_in_runtime() {
 fn assert_sync_in_runtime(handled: Result<Handled<'_>, VideoEditTransportError>) {
     match expect_failure(handled) {
         VideoEditTransportError::SyncInRuntime { status_code } => assert_eq!(status_code, 500),
-        other => panic!("the sync handler ran inside a runtime: {other:?}"),
+        other @ VideoEditTransportError::Provider(_)
+        | other @ VideoEditTransportError::Config(_)
+        | other @ VideoEditTransportError::Logging(_)
+        | other @ VideoEditTransportError::Client(_)
+        | other @ VideoEditTransportError::PrefetchDecode(_)
+        | other @ VideoEditTransportError::FieldType(_)
+        | other @ VideoEditTransportError::Runtime(_) => {
+            panic!("the sync handler ran inside a runtime: {other:?}")
+        }
     }
     let expected = VideoEditTransportError::SyncInRuntime { status_code: 500 };
     assert_eq!(
