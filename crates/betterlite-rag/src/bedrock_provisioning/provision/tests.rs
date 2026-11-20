@@ -502,6 +502,16 @@ async fn flow_creates_every_resource_in_order() {
     );
 }
 
+#[test]
+fn flow_debug_names_the_state_and_the_unique_id() {
+    let transport = ScriptedTransport::new(Vec::new());
+    let provisioner = new_provisioner(r#"{"aws_region_name":"us-west-2"}"#, transport);
+    let printed = format!("{provisioner:?}");
+    assert!(printed.contains("BedrockProvisioner"));
+    assert!(printed.contains(UNIQUE_ID));
+    assert!(printed.contains("initialized: false"));
+}
+
 #[tokio::test(start_paused = true)]
 async fn flow_keeps_the_flag_unset_after_a_failure() {
     let transport = ScriptedTransport::new(vec![status(500, "boom")]);

@@ -57,7 +57,6 @@ where
 {
     // Bedrock embeds the file inside the ingestion job, so there is no vector to hand back
     pub fn embed(&self, _chunks: &[String]) -> Option<Vec<Vec<f64>>> {
-        tracing::debug!("Bedrock embeds the uploaded file inside the ingestion job");
         None
     }
 

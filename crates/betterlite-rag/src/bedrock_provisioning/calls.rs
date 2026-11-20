@@ -67,3 +67,5 @@ impl Debug for CallRequest {
             .finish()
     }
 }
+
+mod tests;

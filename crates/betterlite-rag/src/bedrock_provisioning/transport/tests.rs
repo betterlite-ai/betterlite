@@ -145,6 +145,13 @@ async fn transport_reports_a_bad_header() {
 }
 
 #[test]
+fn transport_debug_names_the_type_only() {
+    let printed = format!("{:?}", client());
+    assert!(printed.contains("HttpRagTransport"));
+    assert!(!printed.contains("ProxiedClient"));
+}
+
+#[test]
 fn transport_error_never_prints_a_header_value() {
     let error = HttpRagTransportError::Header {
         name: "Authorization".to_owned(),

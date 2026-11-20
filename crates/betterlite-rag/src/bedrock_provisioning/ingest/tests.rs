@@ -9,7 +9,7 @@ use tokio::time::Instant;
 
 use crate::bedrock_provisioning::ingest::BedrockIngest;
 use crate::bedrock_provisioning::provision::tests::support::{
-    ScriptedTransport, answer, initialized, new_provisioner,
+    ScriptedTransport, answer, initialized, new_provisioner, status,
 };
 
 const NO_WAIT: &str =
@@ -183,6 +183,41 @@ async fn store_runs_out_of_time_silently() {
     assert_eq!(key.as_deref(), Some("data/file.txt"));
     assert_eq!(started.elapsed(), Duration::from_secs(6));
     assert_eq!(transport.requests().len(), 5);
+}
+
+#[tokio::test(start_paused = true)]
+async fn store_stops_when_the_timeout_is_reached_exactly() {
+    let transport = ScriptedTransport::new(vec![
+        answer(""),
+        answer(STARTED),
+        answer(STARTING),
+        answer(STARTING),
+    ]);
+    let mut provisioner = initialized(new_provisioner(
+        r#"{"aws_region_name":"us-west-2","knowledge_base_id":"kb1","s3_bucket":"bucket","wait_for_ingestion":true,"ingestion_timeout":4}"#,
+        transport.clone(),
+    ));
+    let started = Instant::now();
+    let (_, key) = provisioner
+        .store(request(Some(b"hello"), Some("file.txt"), None))
+        .await
+        .unwrap();
+    assert_eq!(key.as_deref(), Some("data/file.txt"));
+    assert_eq!(started.elapsed(), Duration::from_secs(4));
+    assert_eq!(transport.requests().len(), 4);
+}
+
+#[tokio::test(start_paused = true)]
+async fn store_reports_a_failed_ingestion_poll() {
+    let transport = ScriptedTransport::new(vec![answer(""), answer(STARTED), status(500, "boom")]);
+    let mut provisioner = initialized(new_provisioner(WAIT, transport.clone()));
+    assert!(
+        provisioner
+            .store(request(Some(b"hello"), Some("file.txt"), None))
+            .await
+            .is_err()
+    );
+    assert_eq!(transport.requests().len(), 3);
 }
 
 #[tokio::test(start_paused = true)]

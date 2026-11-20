@@ -116,6 +116,22 @@ fn call_iam_endpoints_are_global_per_partition() {
 }
 
 #[test]
+fn call_iso_iam_endpoints_are_global_per_partition() {
+    let iso = iam_request("us-iso-east-1", CREATE_ROLE, &[]);
+    assert_eq!(iso.url, "https://iam.us-iso-east-1.c2s.ic.gov/");
+    assert_eq!(iso.signing_region, "us-iso-east-1");
+    let iso_b = iam_request("us-isob-east-1", CREATE_ROLE, &[]);
+    assert_eq!(iso_b.url, "https://iam.us-isob-east-1.sc2s.sgov.gov/");
+    assert_eq!(iso_b.signing_region, "us-isob-east-1");
+    let iso_e = iam_request("eu-isoe-west-1", CREATE_ROLE, &[]);
+    assert_eq!(iso_e.url, "https://iam.eu-isoe-west-1.cloud.adc-e.uk/");
+    assert_eq!(iso_e.signing_region, "eu-isoe-west-1");
+    let iso_f = iam_request("us-isof-south-1", CREATE_ROLE, &[]);
+    assert_eq!(iso_f.url, "https://iam.us-isof-south-1.csp.hci.ic.gov/");
+    assert_eq!(iso_f.signing_region, "us-isof-south-1");
+}
+
+#[test]
 fn call_create_role_reads_the_role_arn() {
     let body = br#"<CreateRoleResponse><CreateRoleResult><Role><Path>/</Path><Arn>arn:aws:iam::123456789012:role/litellm-bedrock-kb-0123abcd</Arn></Role></CreateRoleResult></CreateRoleResponse>"#;
     assert_eq!(
