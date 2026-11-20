@@ -388,7 +388,7 @@ fn include_usage(body: &Json) -> Option<bool> {
 const LIMIT_ERROR: &str = r#"{"error":{"message":"You could not finish the message because max_tokens or model output limit was reached. Please try again with higher max_tokens.","type":"invalid_request_error","param":"max_tokens","code":"invalid_request_error"}}"#;
 
 // one booted application whose chat deployment points at a loopback provider answering the given reply
-async fn application_answer(body: &str, reply: &str) -> (StatusCode, Vec<u8>, Vec<u8>) {
+async fn application_answer(body: &str, reply: &str) -> (StatusCode, HeaderMap, Vec<u8>, Vec<u8>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let address = listener.local_addr().expect("address");
     let environment = BTreeMap::new();
@@ -416,11 +416,12 @@ async fn application_answer(body: &str, reply: &str) -> (StatusCode, Vec<u8>, Ve
     let (answered, sent) = tokio::join!(application.oneshot(request), answering(listener, reply));
     let response = answered.expect("response");
     let status = response.status();
+    let headers = response.headers().clone();
     let bytes = to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("body")
         .to_vec();
-    (status, bytes, sent)
+    (status, headers, bytes, sent)
 }
 
 // the provider's one answer, written as sent, and the body it was sent
@@ -440,13 +441,13 @@ fn provider_reply(status: &str, content_type: &str, body: &str) -> String {
 }
 
 // the output-limit 400 LiteLLM repairs, and the body the route was asked with
-async fn output_limit_answer(body: &str) -> (StatusCode, Vec<u8>, Vec<u8>) {
+async fn output_limit_answer(body: &str) -> (StatusCode, HeaderMap, Vec<u8>, Vec<u8>) {
     let reply = provider_reply("400 Bad Request", "application/json", LIMIT_ERROR);
     application_answer(body, &reply).await
 }
 
 // the route's frames for one chat-deployment stream, with the body the provider was sent
-async fn streamed_answer(body: &str, events: &str) -> (StatusCode, Vec<u8>, Vec<u8>) {
+async fn streamed_answer(body: &str, events: &str) -> (StatusCode, HeaderMap, Vec<u8>, Vec<u8>) {
     let reply = provider_reply("200 OK", "text/event-stream", events);
     application_answer(body, &reply).await
 }
@@ -505,9 +506,15 @@ fn frames(text: &str) -> Vec<&str> {
 // a chat deployment on the completions route answers LiteLLM's length-truncated text completion, not a 500
 #[tokio::test]
 async fn a_chat_deployment_recovers_the_output_limit_on_the_completions_route() {
-    let (status, body, sent) =
+    let (status, headers, body, sent) =
         output_limit_answer(r#"{"model":"chat-model","prompt":"hello world"}"#).await;
     assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        headers
+            .get("llm_provider-x-request-id")
+            .and_then(|value| value.to_str().ok()),
+        Some("upstream-answer")
+    );
     let reply: RecoveredText = serde_json::from_slice(&body).expect("reply");
     assert_eq!(reply.object, "text_completion");
     assert_eq!(reply.model, "chat-model");
@@ -524,7 +531,7 @@ async fn a_chat_deployment_recovers_the_output_limit_on_the_completions_route() 
 // the streamed answer is the two recovered chat frames read as the route's chunks, then the closing frame
 #[tokio::test]
 async fn a_chat_deployment_recovers_the_output_limit_on_the_completions_stream() {
-    let (status, body, sent) =
+    let (status, _headers, body, sent) =
         output_limit_answer(r#"{"model":"chat-model","prompt":"hello world","stream":true}"#).await;
     assert_eq!(status, StatusCode::OK);
     let text = String::from_utf8(body).expect("utf8");
@@ -557,7 +564,7 @@ async fn a_bridged_chat_stream_keeps_the_usage_frame_only_when_asked() {
         "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1700000000,\"model\":\"gpt-4o\",\"choices\":[],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":2,\"total_tokens\":5}}\n\n",
         "data: [DONE]\n\n"
     );
-    let (status, body, sent) = streamed_answer(
+    let (status, _headers, body, sent) = streamed_answer(
         r#"{"model":"chat-model","prompt":"hi","stream":true}"#,
         events,
     )
@@ -567,7 +574,7 @@ async fn a_bridged_chat_stream_keeps_the_usage_frame_only_when_asked() {
     assert_eq!(frames(&unasked).len(), 2, "{unasked}");
     let sent = String::from_utf8(sent).expect("sent body");
     assert!(sent.contains("\"stream\":true"), "{sent}");
-    let (asked_status, asked_body, _sent) = streamed_answer(
+    let (asked_status, _asked_headers, asked_body, _sent) = streamed_answer(
         r#"{"model":"chat-model","prompt":"hi","stream":true,"stream_options":{"include_usage":true}}"#,
         events,
     )
