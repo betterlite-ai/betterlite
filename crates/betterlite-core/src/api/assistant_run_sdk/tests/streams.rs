@@ -23,7 +23,9 @@ async fn openai_stream_posts_stream_true_with_the_assistants_header() {
     let sdk = fixture.sdk(ProviderRuns {
         transport: Arc::clone(&recorder),
     });
-    let names = event_names(sdk.run_thread_stream(call("openai")).unwrap()).await;
+    let mut input = call("openai");
+    input.params.api_base = Some(String::from(BASE));
+    let names = event_names(sdk.run_thread_stream(input).unwrap()).await;
     assert_eq!(
         names,
         vec![

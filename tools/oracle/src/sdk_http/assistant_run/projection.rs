@@ -18,16 +18,16 @@ use super::super::result::{Failure, Nullable};
 use super::{HandlerView, LastError, Outcome, ResponseView, RunView, StreamView};
 
 pub(super) fn run_outcome(reply: Option<&RunReply>) -> Outcome {
-    let run = reply.map(|reply| RunView {
-        id: reply.id.clone(),
-        status: reply.status.clone(),
-        tool_calls: reply
+    let run = reply.map(|polled| RunView {
+        id: polled.id.clone(),
+        status: polled.status.clone(),
+        tool_calls: polled
             .required_action
             .as_ref()
             .and_then(|action| action.pointer("/submit_tool_outputs/tool_calls"))
             .and_then(JsonValue::as_array)
             .map(Vec::len),
-        last_error: reply.last_error.as_ref().map(|error| LastError {
+        last_error: polled.last_error.as_ref().map(|error| LastError {
             code: error
                 .get("code")
                 .and_then(JsonValue::as_str)
@@ -87,7 +87,7 @@ pub(super) fn failure_outcome(error: &AssistantRunError) -> Outcome {
         | AssistantRunError::InvalidTimeout { .. }
         | AssistantRunError::InvalidTimeoutText { .. }
         | AssistantRunError::InvalidExtraBody => named("ValueError", 0, None, error.to_string()),
-        AssistantRunError::Dispatch(error) => raw_failure(error),
+        AssistantRunError::Dispatch(dispatch) => raw_failure(dispatch),
         AssistantRunError::Mapped(failure) => mapped_failure(failure),
     }
 }
@@ -155,7 +155,7 @@ fn named(class: &str, status: u16, field: Nullable, message: String) -> Outcome 
     })
 }
 
-fn outcome(failure: Failure) -> Outcome {
+const fn outcome(failure: Failure) -> Outcome {
     Outcome {
         run: None,
         stream: None,

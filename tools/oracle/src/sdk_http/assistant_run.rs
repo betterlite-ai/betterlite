@@ -50,6 +50,7 @@ pub struct Call {
     pub metadata: Option<JsonValue>,
     pub model: Option<String>,
     #[serde(default, with = "double_option")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub stream: Option<Option<RunFlag>>,
     pub tools: Option<JsonValue>,
     #[serde(default)]
