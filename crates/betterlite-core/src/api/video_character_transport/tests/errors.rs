@@ -3,10 +3,10 @@ use betterlite_http::proxy::multipart::MultipartPart;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_models::controls::json_value::JsonValue;
-use http::header::HeaderValue;
 
 use super::support::{
-    FakeWire, Fixture, Seen, TestError, create_call, extra_headers, get_call, params, secret, video,
+    CHARACTER_BODY, FakeWire, Fixture, Seen, TestError, create_call, extra_headers, get_call,
+    params, secret, video,
 };
 use crate::api::video_character_transport::error::CharacterError;
 use crate::api::video_character_transport::service::CharacterTransport;
@@ -16,12 +16,8 @@ const BASE: &str = "https://api.example/v1";
 #[test]
 fn creation_turns_a_failing_status_into_the_provider_error() {
     let mut fixture = Fixture::new();
-    fixture.wire.status = 503;
-    fixture.wire.body = b"upstream is down".to_vec();
-    fixture
-        .wire
-        .headers
-        .append("retry-after", HeaderValue::from_static("7"));
+    fixture.wire.answering(503, b"upstream is down");
+    fixture.wire.with_header("retry-after", "7");
     let litellm = params(&[("api_base", BASE)]);
     let clip = video();
     let call = create_call("Wren", &clip, &litellm);
@@ -52,8 +48,7 @@ fn creation_turns_a_failing_status_into_the_provider_error() {
 #[test]
 fn lookup_turns_a_failing_status_into_the_provider_error() {
     let mut fixture = Fixture::new();
-    fixture.wire.status = 404;
-    fixture.wire.body = b"no such character".to_vec();
+    fixture.wire.answering(404, b"no such character");
     let litellm = params(&[("api_base", BASE)]);
     let call = get_call("char-1", &litellm);
 
@@ -77,8 +72,7 @@ fn lookup_turns_a_failing_status_into_the_provider_error() {
 
 fn refused_statuses(status: u16) {
     let mut fixture = Fixture::new();
-    fixture.wire.status = status;
-    fixture.wire.body = b"no".to_vec();
+    fixture.wire.answering(status, b"no");
     let litellm = params(&[("api_base", BASE)]);
     let clip = video();
     let call = create_call("Wren", &clip, &litellm);
@@ -91,7 +85,7 @@ fn refused_statuses(status: u16) {
 
 fn accepted_statuses(status: u16) {
     let mut fixture = Fixture::new();
-    fixture.wire.status = status;
+    fixture.wire.answering(status, CHARACTER_BODY.as_bytes());
     let litellm = params(&[("api_base", BASE)]);
     let clip = video();
     let call = create_call("Wren", &clip, &litellm);

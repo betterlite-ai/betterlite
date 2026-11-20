@@ -25,7 +25,7 @@ use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
-use http::header::HeaderMap;
+use http::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::Client;
 use reqwest::blocking::Client as BlockingClient;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -398,13 +398,18 @@ fn default_parts(name: &str, video: &SuppliedMedia) -> Vec<MultipartPart> {
     ]
 }
 
+// the answer a wire gives, shared by every clone so a case can change it after the fixture built its clients
+struct FakeAnswer {
+    status: u16,
+    headers: HeaderMap,
+    body: Vec<u8>,
+}
+
 // the wire a character call sends through: it records the request and answers or fails with the fixture's choice
 #[derive(Clone)]
 pub(crate) struct FakeWire {
     events: Events,
-    pub(crate) status: u16,
-    pub(crate) headers: HeaderMap,
-    pub(crate) body: Vec<u8>,
+    answer: Arc<Mutex<FakeAnswer>>,
     requests: Arc<Mutex<Vec<CharacterRequest>>>,
     failure: Arc<Mutex<Option<RequestFailure>>>,
 }
@@ -413,9 +418,11 @@ impl FakeWire {
     pub(crate) fn new(events: &Events, status: u16, body: &str) -> Self {
         Self {
             events: events.clone(),
-            status,
-            headers: HeaderMap::new(),
-            body: body.as_bytes().to_vec(),
+            answer: Arc::new(Mutex::new(FakeAnswer {
+                status,
+                headers: HeaderMap::new(),
+                body: body.as_bytes().to_vec(),
+            })),
             requests: Arc::default(),
             failure: Arc::default(),
         }
@@ -425,6 +432,24 @@ impl FakeWire {
         let wire = Self::new(events, 200, "{}");
         *wire.failure.lock().unwrap_or_else(PoisonError::into_inner) = Some(failure);
         wire
+    }
+
+    // a case that needs a different answer replaces the one the fixture built
+    pub(crate) fn answering(&self, status: u16, body: &[u8]) {
+        let mut answer = self.answer.lock().unwrap_or_else(PoisonError::into_inner);
+        answer.status = status;
+        answer.body = body.to_vec();
+    }
+
+    pub(crate) fn with_header(&self, name: &'static str, value: &'static str) {
+        self.answer
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .headers
+            .append(
+                HeaderName::from_static(name),
+                HeaderValue::from_static(value),
+            );
     }
 
     pub(crate) fn requests(&self) -> MutexGuard<'_, Vec<CharacterRequest>> {
@@ -444,10 +469,11 @@ impl FakeWire {
             .push(request);
         failure.map_or_else(
             || {
+                let answer = self.answer.lock().unwrap_or_else(PoisonError::into_inner);
                 Ok(UpstreamResponse {
-                    status: self.status,
-                    headers: self.headers.clone(),
-                    body: self.body.clone(),
+                    status: answer.status,
+                    headers: answer.headers.clone(),
+                    body: answer.body.clone(),
                 })
             },
             Err,
