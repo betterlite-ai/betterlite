@@ -7,6 +7,8 @@ use std::time::Duration;
 use axum::body::{Body, to_bytes};
 use axum::http::Request;
 use betterlite_config::loader::ConfigLoader;
+use betterlite_openai::output_limits::RejectedFieldsError;
+use betterlite_provider::operation::OperationError;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use rstest::rstest;
@@ -19,6 +21,9 @@ use tower::ServiceExt as _;
 use crate::routes::chat::chat_routes_with_call_id;
 use crate::routes::chat::streaming::ChatCalls;
 use crate::server::chat_setup::chat_executor;
+
+use super::embedding::embedding_error;
+use super::{CallError, chat_error};
 
 mod defaults;
 mod embedding_mapping;
@@ -107,6 +112,29 @@ async fn call(
         .unwrap()
         .to_vec();
     (status, body, sent, forwarded)
+}
+
+// LiteLLM's AttributeError after the 422 loop surfaces as a 500, so the rejected-fields error stays an operation error
+#[test]
+fn a_rejected_fields_error_stays_with_the_provider_framework() {
+    let chat = chat_error(OperationError::RejectedFields {
+        source: RejectedFieldsError::MessageNotObject,
+    });
+    assert!(matches!(
+        chat,
+        CallError::Operation {
+            source: OperationError::RejectedFields { .. }
+        }
+    ));
+    let embedding = embedding_error(OperationError::RejectedFields {
+        source: RejectedFieldsError::MessageNotObject,
+    });
+    assert!(matches!(
+        embedding,
+        CallError::Operation {
+            source: OperationError::RejectedFields { .. }
+        }
+    ));
 }
 
 #[rstest]

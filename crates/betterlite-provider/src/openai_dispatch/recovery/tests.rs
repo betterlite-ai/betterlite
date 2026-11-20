@@ -7,6 +7,7 @@ use std::time::Duration;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
+use betterlite_models::controls::call_params::DropParams;
 use betterlite_models::controls::control_options::ControlOptions;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_openai::chat::ChatRequest;
@@ -273,7 +274,7 @@ async fn answered(
         DropFlag::None => deployment(&base, false),
         DropFlag::Global => deployment(&base, true),
         DropFlag::CallOnly => Deployment {
-            drop_params: Some(true),
+            drop_params: Some(DropParams::Flag(true)),
             ..deployment(&base, false)
         },
     };
