@@ -16,7 +16,7 @@ use super::budget::set_budget_reset_at;
 use super::permission::update_object_permission;
 use crate::key_policy_fields::KeyClock;
 use crate::object_permissions::error::ObjectPermissionError;
-use crate::team_request_contracts::shared::RequestProjection;
+use crate::team_request_contracts::shared::RequestProjection as _;
 use crate::team_request_contracts::update::UpdateTeamRequest;
 
 struct Clocks {

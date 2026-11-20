@@ -6,7 +6,7 @@ use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::key_policy_fields::KeyClock;
 use betterlite_server::team_patch::budget::set_budget_reset_at;
-use betterlite_server::team_request_contracts::shared::RequestProjection;
+use betterlite_server::team_request_contracts::shared::RequestProjection as _;
 use betterlite_server::team_request_contracts::update::UpdateTeamRequest;
 use chrono::{DateTime, Utc};
 use jiff::tz::TimeZoneDatabase;
@@ -61,7 +61,13 @@ fn answer(call: &Call) -> Result<Value, CallFailed> {
     };
     let reset = BudgetResetSettings::default();
     let database = TimeZoneDatabase::from_env();
-    let clock = clock_at(&call.now, &reset, &database)?;
+    // the oracle always runs the default UTC reset policy; the case freezes the request time
+    let now = DateTime::parse_from_rfc3339(&call.now)?.with_timezone(&Utc);
+    let clock = KeyClock {
+        now,
+        reset: &reset,
+        database: &database,
+    };
     set_budget_reset_at(&request.fields, &mut updated_kv, clock)?;
     parsed_windows(&mut updated_kv)?;
     Ok(serde_json::to_value(&updated_kv)?)
@@ -74,18 +80,4 @@ fn parsed_windows(updated_kv: &mut BTreeMap<String, JsonData>) -> Result<(), Cal
         updated_kv.insert("budget_limits".to_owned(), parsed);
     }
     Ok(())
-}
-
-// the oracle always runs the default UTC reset policy; the case freezes the request time
-fn clock_at<'context>(
-    now: &str,
-    reset: &'context BudgetResetSettings,
-    database: &'context TimeZoneDatabase,
-) -> Result<KeyClock<'context>, CallFailed> {
-    let parsed = DateTime::parse_from_rfc3339(now)?.with_timezone(&Utc);
-    Ok(KeyClock {
-        now: parsed,
-        reset,
-        database,
-    })
 }
