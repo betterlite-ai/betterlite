@@ -80,7 +80,7 @@ class FrozenDatetime(datetime):
 
 
 def model_param_index(value: IndexInput) -> JsonValue:
-    mapping: dict[str, list[ModelParam]] = health._build_model_param_to_info_mapping(value["deployments"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L679-L708
+    mapping: dict[str, list[ModelParam]] = health._build_model_param_to_info_mapping(value["deployments"])  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L679-L708
     output: dict[str, JsonValue] = {}
     for param, models in mapping.items():
         listed: list[dict[str, JsonValue]] = [
@@ -92,8 +92,8 @@ def model_param_index(value: IndexInput) -> JsonValue:
 
 
 def aggregate_results(value: AggregateInput) -> JsonValue:
-    mapping: dict[str, list[ModelParam]] = health._build_model_param_to_info_mapping(value["deployments"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L679-L708
-    results: dict[tuple[str | None, str], _AggregatedHealthResult] = health._aggregate_health_check_results(mapping, value["healthy"], value["unhealthy"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L711-L767
+    mapping: dict[str, list[ModelParam]] = health._build_model_param_to_info_mapping(value["deployments"])  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L679-L708
+    results: dict[tuple[str | None, str], _AggregatedHealthResult] = health._aggregate_health_check_results(mapping, value["healthy"], value["unhealthy"])  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L711-L767
     entries: list[dict[str, JsonValue]] = [
         {
             "model_name": result["model_name"],
