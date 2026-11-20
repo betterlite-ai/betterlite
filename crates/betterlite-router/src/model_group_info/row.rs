@@ -8,8 +8,8 @@ use crate::deployment_identity::spec::DeploymentSpec;
 use crate::model_group_info::cost::cost_value;
 use crate::model_group_info::error::GroupInfoError;
 use crate::model_group_info::fields::{
-    auth_field, constructor_params, json_float, mode_value, parse_decimal, parse_flag, parse_i64,
-    read_field, replacement_params, text_list,
+    auth_field, constructor_params, json_float, mode_value, parse_decimal, parse_i64, read_field,
+    replacement_params, text_list,
 };
 use crate::model_group_info::group::{Capability, ClientsideAuth, ModelGroupInfo};
 use crate::model_group_info::sources::ProviderAnswer;
@@ -155,7 +155,14 @@ pub fn first_group(
 pub fn capabilities(metadata: &JsonObject) -> Result<BTreeSet<Capability>, GroupInfoError> {
     let mut enabled = BTreeSet::new();
     for (field, capability) in Capability::ALL {
-        if read_field(metadata, field, parse_flag)? == Some(true) {
+        let flag = match metadata.get(field) {
+            None | Some(Json::Null) => false,
+            Some(Json::Bool(flag)) => *flag,
+            Some(Json::Text(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+                return Err(GroupInfoError::Field { field });
+            }
+        };
+        if flag {
             enabled.insert(capability);
         }
     }

@@ -58,18 +58,6 @@ pub(crate) fn parse_i64(value: &Json, name: &'static str) -> Result<Option<i64>,
         .map_err(|_error| GroupInfoError::Field { field: name })
 }
 
-pub(crate) const fn parse_flag(
-    value: &Json,
-    name: &'static str,
-) -> Result<Option<bool>, GroupInfoError> {
-    match value {
-        Json::Bool(flag) => Ok(Some(*flag)),
-        Json::Null | Json::Text(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-            Err(GroupInfoError::Field { field: name })
-        }
-    }
-}
-
 pub fn mode_value(map: &JsonObject) -> Result<Option<String>, GroupInfoError> {
     match map.get("mode") {
         None => Ok(Some("chat".to_owned())),
