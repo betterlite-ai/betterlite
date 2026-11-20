@@ -10,7 +10,9 @@ use betterlite_db::budget_permission_rows::JsonData;
 
 use crate::identity_descriptors::agent_descriptor::AgentDescriptorBuilder;
 use crate::identity_descriptors::agent_registry::AgentPolicyRegistry;
-use crate::limiter_records::{ModelGroupResolver, TagRateLimit, TagRateLimitResolver};
+use crate::limiter_records::{
+    ModelGroupResolver, RateLimitDescriptor, TagRateLimit, TagRateLimitResolver,
+};
 use crate::model_descriptors::ModelDescriptorBuilder;
 use crate::request_scopes::RequestScopeBuilder;
 use crate::request_scopes::deployment_health::{
@@ -31,11 +33,15 @@ pub(crate) fn data(wire: &str) -> RequestData {
     serde_json::from_str(wire).expect("request body")
 }
 
+pub(crate) fn descriptor_at(
+    descriptors: &[RateLimitDescriptor],
+    index: usize,
+) -> &RateLimitDescriptor {
+    descriptors.get(index).expect("the descriptor is present")
+}
+
 pub(crate) fn policy(agent_id: &str, rpm_limit: Option<i64>) -> AgentResponse {
-    let limit = match rpm_limit {
-        Some(limit) => format!(r#", "rpm_limit": {limit}"#),
-        None => String::new(),
-    };
+    let limit = rpm_limit.map_or_else(String::new, |limit| format!(r#", "rpm_limit": {limit}"#));
     let wire = format!(
         r#"{{"agent_id": "{agent_id}", "agent_name": "{agent_id}", "agent_card_params": {{}}{limit}}}"#
     );
@@ -135,7 +141,7 @@ pub(crate) struct MapResolver {
 
 impl MapResolver {
     pub(crate) fn new(limits: &[(&str, Option<i64>, Option<i64>)]) -> Self {
-        let limits = limits
+        let by_tag = limits
             .iter()
             .map(|(tag, rpm, tpm)| {
                 (
@@ -148,7 +154,7 @@ impl MapResolver {
             })
             .collect();
         Self {
-            limits,
+            limits: by_tag,
             calls: Mutex::new(Vec::new()),
         }
     }

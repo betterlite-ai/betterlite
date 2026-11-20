@@ -53,13 +53,13 @@ struct FixedSource {
 
 impl FixedSource {
     fn new(deployments: Option<Vec<DeploymentRef>>, counts: &[(&str, i64)]) -> Self {
-        let counts = counts
+        let by_id = counts
             .iter()
             .map(|(id, count)| ((*id).to_owned(), *count))
             .collect();
         Self {
             deployments,
-            counts,
+            counts: by_id,
             asked: Mutex::new(Vec::new()),
         }
     }

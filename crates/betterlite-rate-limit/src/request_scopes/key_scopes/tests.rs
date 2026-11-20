@@ -387,26 +387,65 @@ fn assert_every_builder_order(descriptors: &[RateLimitDescriptor]) {
     );
 }
 
-fn assert_every_builder_values(descriptors: &[RateLimitDescriptor]) {
-    assert_eq!(descriptors[5].value, "key-1:gpt-4");
-    assert_eq!(limits(&descriptors[5]).requests_per_unit, Some(7));
-    assert_eq!(descriptors[6].value, "key-1:t1");
-    assert_eq!(limits(&descriptors[6]).requests_per_unit, Some(8));
-    assert_eq!(descriptors[7].value, "key-1:server");
-    assert_eq!(limits(&descriptors[7]).requests_per_unit, Some(9));
-    assert_eq!(descriptors[8].value, "team-1:server");
-    assert_eq!(limits(&descriptors[8]).requests_per_unit, Some(5));
-    assert_eq!(descriptors[9].value, "team-2:server");
-    assert_eq!(limits(&descriptors[9]).requests_per_unit, Some(7));
-    assert_eq!(descriptors[10].value, "team-1:gpt-4");
-    assert_eq!(limits(&descriptors[10]).tokens_per_unit, Some(6));
-    assert_eq!(descriptors[11].key, "agent");
-    assert_eq!(descriptors[11].value, "agent-1");
-    assert_eq!(limits(&descriptors[11]).requests_per_unit, Some(11));
-    assert_eq!(descriptors[12].value, "agent-1:s1");
-    assert_eq!(limits(&descriptors[12]).requests_per_unit, Some(4));
-    assert_eq!(descriptors[13].value, "agent-2");
-    assert_eq!(limits(&descriptors[13]).requests_per_unit, Some(12));
+fn assert_model_tag_and_mcp_values(descriptors: &[RateLimitDescriptor]) {
+    assert_eq!(support::descriptor_at(descriptors, 5).value, "key-1:gpt-4");
+    assert_eq!(
+        limits(support::descriptor_at(descriptors, 5)).requests_per_unit,
+        Some(7)
+    );
+    assert_eq!(support::descriptor_at(descriptors, 6).value, "key-1:t1");
+    assert_eq!(
+        limits(support::descriptor_at(descriptors, 6)).requests_per_unit,
+        Some(8)
+    );
+    assert_eq!(support::descriptor_at(descriptors, 7).value, "key-1:server");
+    assert_eq!(
+        limits(support::descriptor_at(descriptors, 7)).requests_per_unit,
+        Some(9)
+    );
+    assert_eq!(
+        support::descriptor_at(descriptors, 8).value,
+        "team-1:server"
+    );
+    assert_eq!(
+        limits(support::descriptor_at(descriptors, 8)).requests_per_unit,
+        Some(5)
+    );
+    assert_eq!(
+        support::descriptor_at(descriptors, 9).value,
+        "team-2:server"
+    );
+    assert_eq!(
+        limits(support::descriptor_at(descriptors, 9)).requests_per_unit,
+        Some(7)
+    );
+}
+
+fn assert_agent_values(descriptors: &[RateLimitDescriptor]) {
+    assert_eq!(
+        support::descriptor_at(descriptors, 10).value,
+        "team-1:gpt-4"
+    );
+    assert_eq!(
+        limits(support::descriptor_at(descriptors, 10)).tokens_per_unit,
+        Some(6)
+    );
+    assert_eq!(support::descriptor_at(descriptors, 11).key, "agent");
+    assert_eq!(support::descriptor_at(descriptors, 11).value, "agent-1");
+    assert_eq!(
+        limits(support::descriptor_at(descriptors, 11)).requests_per_unit,
+        Some(11)
+    );
+    assert_eq!(support::descriptor_at(descriptors, 12).value, "agent-1:s1");
+    assert_eq!(
+        limits(support::descriptor_at(descriptors, 12)).requests_per_unit,
+        Some(4)
+    );
+    assert_eq!(support::descriptor_at(descriptors, 13).value, "agent-2");
+    assert_eq!(
+        limits(support::descriptor_at(descriptors, 13)).requests_per_unit,
+        Some(12)
+    );
 }
 
 #[test]
@@ -441,7 +480,8 @@ fn every_builder_runs_in_the_handlers_order() {
     )
     .expect("the key scopes build");
     assert_every_builder_order(&descriptors);
-    assert_every_builder_values(&descriptors);
+    assert_model_tag_and_mcp_values(&descriptors);
+    assert_agent_values(&descriptors);
 }
 
 #[test]

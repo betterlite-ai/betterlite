@@ -196,26 +196,65 @@ fn assert_late_scope_order(descriptors: &[RateLimitDescriptor]) {
     );
 }
 
-fn assert_late_scope_values(descriptors: &[RateLimitDescriptor]) {
-    assert_eq!(descriptors[5].value, "key-1:gpt-4");
-    assert_eq!(limits(&descriptors[5]).requests_per_unit, Some(7));
-    assert_eq!(descriptors[6].value, "key-1:t1");
-    assert_eq!(descriptors[7].value, "team-1:gpt-4");
-    assert_eq!(limits(&descriptors[7]).requests_per_unit, None);
-    assert_eq!(limits(&descriptors[7]).tokens_per_unit, Some(6));
-    assert_eq!(descriptors[8].value, "agent-1");
-    assert_eq!(descriptors[9].value, "project-1:gpt-4");
-    assert_eq!(limits(&descriptors[9]).requests_per_unit, Some(9));
-    assert_eq!(descriptors[10].value, "project-1:gpt-4");
-    assert_eq!(limits(&descriptors[10]).tokens_per_unit, Some(11));
-    assert_eq!(descriptors[11].value, "project-1:gpt-4");
-    assert_eq!(limits(&descriptors[11]).tokens_per_unit, Some(12));
-    assert_eq!(descriptors[12].value, "org-1");
-    assert_eq!(limits(&descriptors[12]).requests_per_unit, Some(21));
-    assert_eq!(descriptors[13].value, "org-1:gpt-4");
-    assert_eq!(limits(&descriptors[13]).requests_per_unit, Some(13));
-    assert_eq!(descriptors[14].value, "t1");
-    assert_eq!(limits(&descriptors[14]).requests_per_unit, Some(8));
+fn assert_key_scope_values(descriptors: &[RateLimitDescriptor]) {
+    assert_eq!(support::descriptor_at(descriptors, 5).value, "key-1:gpt-4");
+    assert_eq!(
+        limits(support::descriptor_at(descriptors, 5)).requests_per_unit,
+        Some(7)
+    );
+    assert_eq!(support::descriptor_at(descriptors, 6).value, "key-1:t1");
+    assert_eq!(support::descriptor_at(descriptors, 7).value, "team-1:gpt-4");
+    assert_eq!(
+        limits(support::descriptor_at(descriptors, 7)).requests_per_unit,
+        None
+    );
+    assert_eq!(
+        limits(support::descriptor_at(descriptors, 7)).tokens_per_unit,
+        Some(6)
+    );
+    assert_eq!(support::descriptor_at(descriptors, 8).value, "agent-1");
+    assert_eq!(
+        support::descriptor_at(descriptors, 9).value,
+        "project-1:gpt-4"
+    );
+    assert_eq!(
+        limits(support::descriptor_at(descriptors, 9)).requests_per_unit,
+        Some(9)
+    );
+}
+
+fn assert_project_org_tag_values(descriptors: &[RateLimitDescriptor]) {
+    assert_eq!(
+        support::descriptor_at(descriptors, 10).value,
+        "project-1:gpt-4"
+    );
+    assert_eq!(
+        limits(support::descriptor_at(descriptors, 10)).tokens_per_unit,
+        Some(11)
+    );
+    assert_eq!(
+        support::descriptor_at(descriptors, 11).value,
+        "project-1:gpt-4"
+    );
+    assert_eq!(
+        limits(support::descriptor_at(descriptors, 11)).tokens_per_unit,
+        Some(12)
+    );
+    assert_eq!(support::descriptor_at(descriptors, 12).value, "org-1");
+    assert_eq!(
+        limits(support::descriptor_at(descriptors, 12)).requests_per_unit,
+        Some(21)
+    );
+    assert_eq!(support::descriptor_at(descriptors, 13).value, "org-1:gpt-4");
+    assert_eq!(
+        limits(support::descriptor_at(descriptors, 13)).requests_per_unit,
+        Some(13)
+    );
+    assert_eq!(support::descriptor_at(descriptors, 14).value, "t1");
+    assert_eq!(
+        limits(support::descriptor_at(descriptors, 14)).requests_per_unit,
+        Some(8)
+    );
 }
 
 #[tokio::test]
@@ -244,7 +283,8 @@ async fn the_assembly_appends_every_late_scope_in_order() {
     let data = support::data(r#"{"model": "gpt4", "metadata": {"tags": ["t1"]}}"#);
     let descriptors = assemble(&builder, &auth, &data).await;
     assert_late_scope_order(&descriptors);
-    assert_late_scope_values(&descriptors);
+    assert_key_scope_values(&descriptors);
+    assert_project_org_tag_values(&descriptors);
     assert_eq!(tags.calls(), [vec!["t1".to_owned()]]);
 }
 
