@@ -1,0 +1,35 @@
+kind: sdk_http
+name: responses-lifecycle-write-lifecycle-write-rejections
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  responses_lifecycle_write:
+    runs:
+      - {operation: delete, mode: sync, response_id: resp_a}
+      - {operation: cancel, mode: async, response_id: resp_a}
+      - {operation: delete, mode: sync, response_id: resp_a, custom_llm_provider: anthropic}
+      - {operation: cancel, mode: async, response_id: resp_a, custom_llm_provider: anthropic}
+      - {operation: delete, mode: sync, response_id: resp_a, custom_llm_provider: openai}
+upstream:
+  - status: 404
+    headers: {content-type: application/json}
+    body:
+      error:
+        message: gone
+        type: invalid_request_error
+        param: response_id
+        code: not_found
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - pointer: /responses_lifecycle_write/value/runs/0/error/message
+      why: LiteLLM embeds the traceback and a bug-report notice for the ValueError it wraps, and B1116 records bounded shared error wording instead
+    - pointer: /responses_lifecycle_write/value/runs/1/error/message
+      why: LiteLLM embeds the traceback and a bug-report notice for the ValueError it wraps, and B1116 records bounded shared error wording instead
+    - pointer: /responses_lifecycle_write/value/runs/2/error/message
+      why: LiteLLM embeds the traceback and a bug-report notice for the ValueError it wraps, and B1116 records bounded shared error wording instead
+    - pointer: /responses_lifecycle_write/value/runs/3/error/message
+      why: LiteLLM embeds the traceback and a bug-report notice for the ValueError it wraps, and B1116 records bounded shared error wording instead
+    - pointer: /responses_lifecycle_write/value/runs/4/error/message
+      why: the pinned SDK prefixes the provider message with its exception class, and B1116 records the bounded shared error wording instead
