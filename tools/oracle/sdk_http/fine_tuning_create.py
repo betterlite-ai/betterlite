@@ -196,8 +196,8 @@ def run_one(run: Run, api_base: str) -> RunOutcome:
         job = TypeAdapter(JobView).validate_json(response.model_dump_json())
         failure = None
     finally:
-        Path(".git/betterlite/B1052/gate").mkdir(parents=True, exist_ok=True)  # temporary diagnostic
-        Path(".git/betterlite/B1052/gate/diagnostic.txt").write_text(traceback.format_exc())  # temporary diagnostic
+        Path(".git/betterlite/B1052/gate").mkdir(parents=True, exist_ok=True)
+        Path(".git/betterlite/B1052/gate/d").write_text(f"{run.model} {traceback.format_exc()}")
         fine_tuning_main.vertex_fine_tuning_apis_instance.async_handler = previous
     return {"job": job, "failure": failure, "request_url": urls[0] if urls else None}
 
