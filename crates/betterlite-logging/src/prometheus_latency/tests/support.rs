@@ -224,12 +224,12 @@ pub(crate) fn four_metrics(events: &EventLog) -> [RecordingMetric; 4] {
     ]
 }
 
-pub(crate) fn observation<'observation>(
+pub(crate) fn observation(
     timestamps: LatencyTimestamps,
     stream: Option<bool>,
     queue_time_seconds: Option<Decimal>,
-    input_sequence_length: Option<&'observation str>,
-) -> LatencyObservation<'observation> {
+    input_sequence_length: Option<&str>,
+) -> LatencyObservation<'_> {
     LatencyObservation {
         timestamps,
         now: dec(20000, 1),

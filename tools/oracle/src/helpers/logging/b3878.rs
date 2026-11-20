@@ -19,9 +19,16 @@ pub(crate) struct Op;
 #[derive(Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
 pub(crate) enum Input {
-    Overhead { overhead_calls: Vec<OverheadCall> },
-    InputSequenceLength { bucket_calls: Vec<BucketCall> },
-    SafeDuration { duration_calls: Vec<DurationCall> },
+    Overhead {
+        overhead_calls: Vec<OverheadCall>,
+    },
+    #[serde(rename = "input_sequence_length")]
+    SequenceLength {
+        bucket_calls: Vec<BucketCall>,
+    },
+    SafeDuration {
+        duration_calls: Vec<DurationCall>,
+    },
 }
 
 #[derive(Deserialize)]
@@ -65,7 +72,7 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::Overhead { overhead_calls } => overhead_values(overhead_calls),
-            Input::InputSequenceLength { bucket_calls } => {
+            Input::SequenceLength { bucket_calls } => {
                 let buckets: Vec<Value> = bucket_calls.iter().map(bucket_value).collect();
                 Ok(json!({ "buckets": buckets }))
             }
@@ -120,12 +127,12 @@ fn bucket_value(call: &BucketCall) -> Value {
             upstream_total_tokens: usage.upstream_total_tokens,
         }),
         response_has_usage: call.response_has_usage,
-        metadata_usage: match &call.metadata_usage {
-            Some(usage) => UsageMapping::Mapping {
+        metadata_usage: call
+            .metadata_usage
+            .as_ref()
+            .map_or(UsageMapping::Absent, |usage| UsageMapping::Mapping {
                 prompt_tokens: usage.prompt_tokens,
-            },
-            None => UsageMapping::Absent,
-        },
+            }),
         response_object: if call.response_is_object {
             UsageMapping::Mapping {
                 prompt_tokens: call.response_usage_prompt_tokens,
