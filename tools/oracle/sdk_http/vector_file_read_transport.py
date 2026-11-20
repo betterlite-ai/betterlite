@@ -1,7 +1,7 @@
 import asyncio
 from collections.abc import Coroutine
 from datetime import UTC, datetime
-from typing import Final, Literal, Protocol, TypeAlias, TypedDict, TypeVar, Unpack
+from typing import Final, Literal, Protocol, TypeAlias, TypedDict, TypeVar, Unpack, cast
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -81,7 +81,7 @@ class ReadHandlers(Protocol):
     ) -> ReadHandler[AsyncContentResult]: ...
 
 
-HANDLER: ReadHandlers = BaseLLMHTTPHandler()
+HANDLER: ReadHandlers = cast(ReadHandlers, BaseLLMHTTPHandler())  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11097-L11166
 
 
 class ReadCall(BaseModel):
