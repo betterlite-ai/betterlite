@@ -34,4 +34,27 @@ deviations:
       NULL fails model_validate and _init_agents_in_db drops every DB agent after the exception.
       The empty list keeps the agent loadable and is the only value the stored column can mean.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/agent_identity.py#L33-L46
+  - what: >-
+      agent_card_params decodes into the typed AgentCard and the permission's mcp_tool_permissions
+      into a map of server id to tool names, so a stored JSON value that does not fit those
+      records fails the whole listing.
+    why: >-
+      LiteLLM's AgentResponse types agent_card_params as dict[str, Any] and object_permission as
+      dict[str, object], so its registry load accepts any dict and a bad value fails only when a
+      later reader uses it; betterlite's typed records cannot hold arbitrary JSON.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L314-L339
+  - what: >-
+      tenant_id, client_id and service_principal_id on the identity row decode as UUIDs, so a
+      stored value that is not a UUID fails the listing.
+    why: >-
+      LiteLLM's AgentIdentityBinding declares all three as plain str and lists any value;
+      betterlite's AgentIdentityBinding holds Uuid values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/agent_identity.py#L33-L46
+  - what: >-
+      A spend of NaN or infinity fails the listing as an unreadable spend column.
+    why: >-
+      rust_decimal has no such values and JSON cannot carry them, so a LiteLLM proxy holding one
+      fails when it serializes the agent; betterlite rejects the row at the read, and the test
+      rejects_a_non_finite_spend proves it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L325
 kept_bugs: []
