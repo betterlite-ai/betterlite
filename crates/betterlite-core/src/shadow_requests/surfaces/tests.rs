@@ -65,7 +65,7 @@ async fn chat_row_keeps_model_parameters_and_filters_messages() {
 }
 
 #[rstest]
-#[case::missing(r#"{}"#)]
+#[case::missing("{}")]
 #[case::string(r#"{"messages":"hi"}"#)]
 #[case::array_of_strings(r#"{"messages":["hi","there"]}"#)]
 #[case::object(r#"{"messages":{"role":"user"}}"#)]
