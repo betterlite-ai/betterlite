@@ -37,7 +37,7 @@ use crate::api::vector_store_http_create_read::service::{
 };
 use crate::api::vector_store_http_write::config::{WriteConfig, WriteParams};
 use crate::api::vector_store_http_write::error::{
-    BaseLlmException, ClientError, HeaderMap, UrlFailure, WriteError, header_map,
+    BaseLlmException, ClientError, HeaderMap, UrlFailure, header_map,
 };
 use crate::api::vector_store_http_write::service::{
     ClientKind, ClientSource, LogContext, SuppliedClient, WriteRequest, WriteTransport,
@@ -96,7 +96,7 @@ impl Fixture {
             },
             &redactor,
             || String::from("generated"),
-            Duration::default(),
+            Duration::default,
         )
         .expect("the logging state builds");
         Self {
@@ -483,11 +483,14 @@ impl ClientSource for ProxiedSource {
     }
 }
 
-pub(crate) const fn deps<'deps, C: CreateReadConfig>(
+pub(crate) const fn deps<'deps, C>(
     config: &'deps C,
     source: &'deps Source,
     supplied: Option<SuppliedClient<'deps, Wire>>,
-) -> CreateReadDeps<'deps, C, Source> {
+) -> CreateReadDeps<'deps, C, Source>
+where
+    C: CreateReadConfig,
+{
     CreateReadDeps {
         config,
         source,
