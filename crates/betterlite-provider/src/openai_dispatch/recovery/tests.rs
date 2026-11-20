@@ -253,12 +253,14 @@ fn prepared(request: &str, stream: bool, inputs: &Deployment) -> PreparedRequest
         request: ChatRequest::parse(request.as_bytes()).unwrap(),
         control: ControlOptions::default(),
     };
-    let prepared = if stream {
+    let operation_request = if stream {
         OperationRequest::Stream(Box::new(operation))
     } else {
         OperationRequest::Chat(Box::new(operation))
     };
-    OpenAi.prepare(&prepared, inputs, &catalog()).unwrap()
+    OpenAi
+        .prepare(&operation_request, inputs, &catalog())
+        .unwrap()
 }
 
 // one prepare, execute and decode against a loopback upstream that answers the given replies in order
