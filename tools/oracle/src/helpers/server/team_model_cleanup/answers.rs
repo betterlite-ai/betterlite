@@ -1,10 +1,10 @@
-use betterlite_oracle_helper_api::error::HelperError;
+use std::sync::PoisonError;
+
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_server::team_model_cleanup::alias::delete_team_model_alias;
 use betterlite_server::team_model_cleanup::deployments::{
     team_deployments, team_public_model_names,
 };
-use betterlite_server::team_model_cleanup::error::CleanupError;
 use betterlite_server::team_model_cleanup::remove::{
     DeletedModel, ServingNames, remove_unbacked_team_models,
 };
@@ -34,7 +34,7 @@ async fn alias_answer(call: &AliasCall) -> HelperResult {
     let store = FakeStore::new("", None, call.aliases.clone(), Vec::new());
     let removed = delete_team_model_alias(&call.public_model_name, &store)
         .await
-        .map_err(cleanup_failure)?;
+        .map_err(|error| failure("CleanupError", error.to_string()))?;
     let pairs: Vec<Value> = removed
         .into_iter()
         .map(|(team_id, alias)| json!({ "team_id": team_id, "alias": alias }))
@@ -46,7 +46,7 @@ async fn deployments_answer(call: &DeploymentCall) -> HelperResult {
     let store = FakeStore::new(&call.team_id, None, Vec::new(), call.deployments.clone());
     let found = team_deployments(&call.team_id, &store)
         .await
-        .map_err(cleanup_failure)?;
+        .map_err(|error| failure("CleanupError", error.to_string()))?;
     let names: Vec<String> = found.into_iter().map(|row| row.model_name).collect();
     Ok(json!({ "deployments": names }))
 }
@@ -55,7 +55,7 @@ async fn public_names_answer(call: &DeploymentCall) -> HelperResult {
     let store = FakeStore::new(&call.team_id, None, Vec::new(), call.deployments.clone());
     let found = team_public_model_names(&call.team_id, &store)
         .await
-        .map_err(cleanup_failure)?;
+        .map_err(|error| failure("CleanupError", error.to_string()))?;
     let names: Vec<String> = found.into_iter().collect();
     Ok(json!({ "names": names }))
 }
@@ -80,14 +80,14 @@ async fn remove_answer(call: &RemoveCall) -> HelperResult {
     };
     remove_unbacked_team_models(&model, &context(&store, &cache, serving))
         .await
-        .map_err(cleanup_failure)?;
+        .map_err(|error| failure("CleanupError", error.to_string()))?;
     Ok(json!({
-        "team_models": store.current_models(),
+        "team_models": store
+            .team_models
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone(),
         "cache": cache.summary(),
         "aliases": store.alias_summary(),
     }))
-}
-
-fn cleanup_failure(error: CleanupError) -> Box<HelperError> {
-    failure("CleanupError", error.to_string())
 }

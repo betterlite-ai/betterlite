@@ -34,8 +34,7 @@ const UPDATE_TEAM_MODELS_SQL: &str = r#"UPDATE "LiteLLM_TeamTable" AS team
     WHERE team_id = $1
     RETURNING row_to_json(team)::TEXT"#;
 
-// The three tables the cleanup reads and writes, on the writer like LiteLLM's single Prisma client:
-// the deployment row is already deleted, so a lagging replica must not decide the sibling check.
+// All three tables on the writer: a lagging replica must not decide the sibling check.
 pub struct PostgresTeamModels<'db> {
     pub client: Option<PrismaClient<'db>>,
 }
@@ -136,19 +135,19 @@ impl TeamModelRows for PostgresTeamModels<'_> {
             .await
             .map_err(backend)?;
         let Some(row) = found else {
-            return Err(not_a_team_row());
+            return Err(CleanupError::from(TeamQueryError::from(
+                TeamRecordError::NotAnObject,
+            )));
         };
         let text: String = row.try_get(0).map_err(backend)?;
         let parsed = TeamRecord::parse(text.as_bytes()).map_err(TeamQueryError::from)?;
         match parsed {
             Some(record) => Ok(record),
-            None => Err(not_a_team_row()),
+            None => Err(CleanupError::from(TeamQueryError::from(
+                TeamRecordError::NotAnObject,
+            ))),
         }
     }
-}
-
-fn not_a_team_row() -> CleanupError {
-    CleanupError::from(TeamQueryError::from(TeamRecordError::NotAnObject))
 }
 
 fn alias_map(id: i64, stored: Option<String>) -> Result<Option<AliasMap>, CleanupError> {

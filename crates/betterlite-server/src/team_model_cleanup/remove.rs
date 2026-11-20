@@ -57,7 +57,10 @@ pub async fn remove_unbacked_team_models(
     let Some(team_id) = model.team_id.as_deref() else {
         return Ok(None);
     };
-    let removed = if served(model, context.serving) {
+    let removed = if context
+        .serving
+        .is_some_and(|names| names.serves(&model.model_name))
+    {
         Vec::new()
     } else {
         delete_team_model_alias(&model.model_name, context.aliases).await?
@@ -81,10 +84,6 @@ pub async fn remove_unbacked_team_models(
     let updated = context.teams.save_team_models(team_id, &kept).await?;
     refresh_cached_team(&updated, context.cache).await?;
     Ok(Some(updated))
-}
-
-fn served(model: &DeletedModel, serving: Option<&dyn ServingNames>) -> bool {
-    serving.is_some_and(|names| names.serves(&model.model_name))
 }
 
 fn candidate_names(
@@ -111,13 +110,9 @@ fn unbacked_names(
 ) -> BTreeSet<String> {
     let mut found = BTreeSet::new();
     for name in candidates {
-        if !backed.contains(name) && !served_name(name, serving) {
+        if !backed.contains(name) && !serving.is_some_and(|names| names.serves(name)) {
             found.insert(name.clone());
         }
     }
     found
-}
-
-fn served_name(name: &str, serving: Option<&dyn ServingNames>) -> bool {
-    serving.is_some_and(|names| names.serves(name))
 }

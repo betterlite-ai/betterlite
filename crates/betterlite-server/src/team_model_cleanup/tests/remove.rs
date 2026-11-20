@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_router::catalog_updates::catalog::DeploymentCatalog;
 
@@ -172,12 +170,8 @@ async fn a_missing_team_row_keeps_the_alias_cleanup() {
 
 #[tokio::test]
 async fn a_deployment_catalog_serves_only_the_names_it_indexes() {
-    let mut name_index = BTreeMap::new();
-    name_index.insert("shared".to_owned(), Vec::new());
-    let catalog = DeploymentCatalog {
-        name_index,
-        ..DeploymentCatalog::default()
-    };
+    let mut catalog = DeploymentCatalog::default();
+    catalog.name_index.insert("shared".to_owned(), Vec::new());
     let store = FakeStore::new(
         "t1",
         Some(names(&["shared", "pub"])),

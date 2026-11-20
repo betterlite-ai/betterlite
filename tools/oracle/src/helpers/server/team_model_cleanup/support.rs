@@ -1,4 +1,4 @@
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Mutex, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_auth::auth_invalidation::error::InvalidationError;
@@ -12,10 +12,6 @@ use betterlite_server::team_model_cleanup::error::CleanupError;
 use betterlite_server::team_model_cleanup::remove::{RemovalContext, ServingNames, TeamModelRows};
 use indexmap::IndexMap;
 use serde_json::{Value, json};
-
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
-}
 
 pub(super) struct FakeStore {
     pub(super) aliases: Mutex<Vec<AliasRow>>,
@@ -40,25 +36,32 @@ impl FakeStore {
     }
 
     pub(super) fn alias_summary(&self) -> Vec<Value> {
-        lock(&self.aliases)
+        self.aliases
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
             .iter()
             .map(|row| json!({ "id": row.id, "aliases": row.aliases }))
             .collect()
-    }
-
-    pub(super) fn current_models(&self) -> Option<Vec<String>> {
-        lock(&self.team_models).clone()
     }
 }
 
 #[async_trait]
 impl AliasRows for FakeStore {
     async fn alias_rows(&self) -> Result<Vec<AliasRow>, CleanupError> {
-        Ok(lock(&self.aliases).clone())
+        Ok(self
+            .aliases
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone())
     }
 
     async fn save_aliases(&self, id: i64, aliases: &AliasMap) -> Result<(), CleanupError> {
-        for row in lock(&self.aliases).iter_mut() {
+        for row in self
+            .aliases
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter_mut()
+        {
             if row.id == id {
                 row.aliases = Some(aliases.clone());
             }
@@ -86,7 +89,11 @@ impl DeploymentRows for FakeStore {
 impl TeamModelRows for FakeStore {
     async fn team_models(&self, team_id: &str) -> Result<Option<Vec<String>>, CleanupError> {
         if team_id == self.team_id {
-            return Ok(self.current_models());
+            return Ok(self
+                .team_models
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone());
         }
         Ok(None)
     }
@@ -96,7 +103,10 @@ impl TeamModelRows for FakeStore {
         team_id: &str,
         models: &[String],
     ) -> Result<TeamRecord, CleanupError> {
-        let mut guard = lock(&self.team_models);
+        let mut guard = self
+            .team_models
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         *guard = Some(models.to_vec());
         drop(guard);
         Ok(record(team_id, models))
@@ -143,7 +153,12 @@ pub(super) struct FakeCache {
 
 impl FakeCache {
     pub(super) fn summary(&self) -> Value {
-        match lock(&self.stored).last() {
+        match self
+            .stored
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .last()
+        {
             Some((team_id, models)) => json!({ "team_id": team_id, "models": models }),
             None => Value::Null,
         }
@@ -157,7 +172,10 @@ impl TeamObjectCache for FakeCache {
         team_id: &str,
         team: &mut LiteLLMTeamTableCachedObj,
     ) -> Result<(), InvalidationError> {
-        lock(&self.stored).push((team_id.to_owned(), team.team.fields.base.models.clone()));
+        self.stored
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((team_id.to_owned(), team.team.fields.base.models.clone()));
         Ok(())
     }
 }

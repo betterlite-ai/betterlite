@@ -79,38 +79,6 @@ PUBLIC_NAMES_CALL: Final = TypeAdapter(TeamPublicNamesCall)
 REMOVE_CALL: Final = TypeAdapter(RemoveCall)
 
 
-class AliasWhere(TypedDict):
-    id: int
-
-
-class AliasUpdate(TypedDict):
-    model_aliases: str
-
-
-class IncludeTeam(TypedDict):
-    team: bool
-
-
-class DeploymentFilter(TypedDict):
-    startswith: str
-
-
-class DeploymentWhere(TypedDict):
-    model_name: DeploymentFilter
-
-
-class TeamWhere(TypedDict):
-    team_id: str
-
-
-class TeamUpdate(TypedDict):
-    models: list[str]
-
-
-class IncludePermission(TypedDict):
-    object_permission: bool
-
-
 class FakeTeamRelation:
     team_id: str
 
@@ -132,11 +100,11 @@ class FakeAliasTable:
     def __init__(self, rows: list[AliasRowInput]) -> None:
         self.rows = [FakeAliasRow(row) for row in rows]
 
-    async def find_many(self, *, include: IncludeTeam) -> list[FakeAliasRow]:
+    async def find_many(self, *, include: dict[str, bool]) -> list[FakeAliasRow]:
         del include
         return list(self.rows)
 
-    async def update(self, *, where: AliasWhere, data: AliasUpdate) -> FakeAliasRow:
+    async def update(self, *, where: dict[str, int], data: dict[str, str]) -> FakeAliasRow:
         found = next(row for row in self.rows if row.id == where["id"])
         found.model_aliases = ALIAS_MAP.validate_json(data["model_aliases"])
         return found
@@ -154,7 +122,7 @@ class FakeDeploymentTable:
     def __init__(self, rows: list[DeploymentRowInput]) -> None:
         self.rows = [FakeDeploymentRow(row) for row in rows]
 
-    async def find_many(self, *, where: DeploymentWhere) -> list[FakeDeploymentRow]:
+    async def find_many(self, *, where: dict[str, dict[str, str]]) -> list[FakeDeploymentRow]:
         prefix = where["model_name"]["startswith"]
         return [row for row in self.rows if row.model_name.startswith(prefix)]
 
@@ -168,16 +136,16 @@ class FakeTeamTable:
         else:
             self.row = LiteLLM_TeamTable(team_id=team_id, models=list(models))
 
-    async def find_unique(self, *, where: TeamWhere) -> LiteLLM_TeamTable | None:
+    async def find_unique(self, *, where: dict[str, str]) -> LiteLLM_TeamTable | None:
         del where
         return self.row
 
     async def update(
         self,
         *,
-        where: TeamWhere,
-        data: TeamUpdate,
-        include: IncludePermission,
+        where: dict[str, str],
+        data: dict[str, list[str]],
+        include: dict[str, bool],
     ) -> LiteLLM_TeamTable:
         del where, include
         if self.row is None:
@@ -208,18 +176,6 @@ class FakeRouter(Router):
         self.model_name_to_deployment_indices = {name: [0] for name in names}
 
 
-def database(
-    aliases: FakeAliasTable,
-    deployments: FakeDeploymentTable,
-    teams: FakeTeamTable,
-) -> FakePrismaClient:
-    return FakePrismaClient(FakeDatabase(aliases, deployments, teams))
-
-
-def alias_summary(rows: Sequence[FakeAliasRow]) -> list[AliasState]:
-    return [AliasState(id=row.id, aliases=row.model_aliases) for row in rows]
-
-
 def cache_summary(cache: UserApiKeyCache, team_id: str | None) -> CacheState | None:
     if team_id is None:
         return None
@@ -231,7 +187,9 @@ def cache_summary(cache: UserApiKeyCache, team_id: str | None) -> CacheState | N
 
 def alias_answer(call: AliasCall) -> JsonValue:
     aliases = FakeAliasTable(call["aliases"])
-    client = database(aliases, FakeDeploymentTable([]), FakeTeamTable(None, None))
+    client = FakePrismaClient(
+        FakeDatabase(aliases, FakeDeploymentTable([]), FakeTeamTable(None, None))
+    )
     removed = asyncio.run(
         model_management_endpoints.delete_team_model_alias(
             public_model_name=call["public_model_name"],
@@ -240,16 +198,20 @@ def alias_answer(call: AliasCall) -> JsonValue:
     )
     report = {
         "removed": [{"team_id": team_id, "alias": alias} for team_id, alias in removed],
-        "aliases": alias_summary(aliases.rows),
+        "aliases": [
+            AliasState(id=row.id, aliases=row.model_aliases) for row in aliases.rows
+        ],
     }
     return JSON.validate_python(report)
 
 
 def deployments_answer(call: TeamDeploymentsCall) -> JsonValue:
     deployments = FakeDeploymentTable(call["deployments"])
-    client = database(FakeAliasTable([]), deployments, FakeTeamTable(None, None))
+    client = FakePrismaClient(
+        FakeDatabase(FakeAliasTable([]), deployments, FakeTeamTable(None, None))
+    )
     rows = asyncio.run(
-        model_management_endpoints._get_team_deployments(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1734-L1766
+        model_management_endpoints._get_team_deployments(  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1734-L1766
             team_id=call["team_id"],
             prisma_client=client,
         )
@@ -259,9 +221,11 @@ def deployments_answer(call: TeamDeploymentsCall) -> JsonValue:
 
 def public_names_answer(call: TeamPublicNamesCall) -> JsonValue:
     deployments = FakeDeploymentTable(call["deployments"])
-    client = database(FakeAliasTable([]), deployments, FakeTeamTable(None, None))
+    client = FakePrismaClient(
+        FakeDatabase(FakeAliasTable([]), deployments, FakeTeamTable(None, None))
+    )
     names = asyncio.run(
-        model_management_endpoints._get_team_public_model_names(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1812-L1831
+        model_management_endpoints._get_team_public_model_names(  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1812-L1831
             team_id=call["team_id"],
             prisma_client=client,
         )
@@ -273,7 +237,7 @@ def remove_answer(call: RemoveCall) -> JsonValue:
     aliases = FakeAliasTable(call["aliases"])
     deployments = FakeDeploymentTable(call["deployments"])
     teams = FakeTeamTable(call.get("team_id"), call.get("team_models"))
-    client = database(aliases, deployments, teams)
+    client = FakePrismaClient(FakeDatabase(aliases, deployments, teams))
     cache = UserApiKeyCache()
     served = call.get("served_names")
     router = None if served is None else FakeRouter(served)
@@ -286,18 +250,20 @@ def remove_answer(call: RemoveCall) -> JsonValue:
         },
     )
     asyncio.run(
-        model_management_endpoints._remove_unbacked_team_models(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1834-L1907
+        model_management_endpoints._remove_unbacked_team_models(  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1834-L1907
             model_params=model,
             prisma_client=client,
             user_api_key_cache=cache,
-            proxy_logging_obj=cast(ProxyLogging, None),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1834-L1844
+            proxy_logging_obj=cast(ProxyLogging, None),  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1834-L1844
             llm_router=router,
         )
     )
     report = {
         "team_models": None if teams.row is None else list(teams.row.models),
         "cache": cache_summary(cache, call.get("team_id")),
-        "aliases": alias_summary(aliases.rows),
+        "aliases": [
+            AliasState(id=row.id, aliases=row.model_aliases) for row in aliases.rows
+        ],
     }
     return JSON.validate_python(report)
 
