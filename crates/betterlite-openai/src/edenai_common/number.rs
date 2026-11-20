@@ -4,10 +4,10 @@ use rust_decimal::Decimal;
 // Python's float grammar minus the spellings Decimal cannot hold; anything else is no cost
 pub(super) fn cost_decimal(text: &str) -> Option<Decimal> {
     let trimmed = text.trim();
-    let (sign, rest) = match trimmed.strip_prefix('-') {
-        Some(rest) => ("-", rest),
-        None => ("", trimmed.strip_prefix('+').unwrap_or(trimmed)),
-    };
+    let (sign, rest) = trimmed.strip_prefix('-').map_or_else(
+        || ("", trimmed.strip_prefix('+').unwrap_or(trimmed)),
+        |rest| ("-", rest),
+    );
     let (mantissa, exponent) = match rest.split_once(['e', 'E']) {
         Some((mantissa, exponent)) => (mantissa, Some(exponent)),
         None => (rest, None),
@@ -23,15 +23,15 @@ pub(super) fn cost_decimal(text: &str) -> Option<Decimal> {
     if !digits_only || (whole.is_empty() && fraction.is_empty()) {
         return None;
     }
-    let mut lexeme = String::with_capacity(trimmed.len() + 2);
+    let mut lexeme = String::with_capacity(trimmed.len().saturating_add(2));
     lexeme.push_str(sign);
     lexeme.push_str(if whole.is_empty() { "0" } else { whole });
     if !fraction.is_empty() {
         lexeme.push('.');
         lexeme.push_str(fraction);
     }
-    if let Some(exponent) = exponent {
-        let normalized = normalized_exponent(exponent)?;
+    if let Some(found) = exponent {
+        let normalized = normalized_exponent(found)?;
         lexeme.push('e');
         lexeme.push_str(&normalized);
     }
@@ -39,10 +39,7 @@ pub(super) fn cost_decimal(text: &str) -> Option<Decimal> {
 }
 
 fn normalized_exponent(exponent: &str) -> Option<String> {
-    let unsigned = match exponent.strip_prefix(['+', '-']) {
-        Some(unsigned) => unsigned,
-        None => exponent,
-    };
+    let unsigned = exponent.strip_prefix(['+', '-']).unwrap_or(exponent);
     if unsigned.is_empty() {
         return None;
     }

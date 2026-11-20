@@ -33,7 +33,7 @@ pub struct Prepared {
 }
 
 // the resolved Eden base goes through the OpenAI URL builder alone, so no OpenAI or global base applies
-pub fn prepare(input: PrepareInput<'_>) -> Result<Prepared, MissingApiKey> {
+pub fn prepare(input: &PrepareInput<'_>) -> Result<Prepared, MissingApiKey> {
     let base = resolve_api_base(input.api_base, input.env);
     let url = get_complete_url(Some(&base), None, None, None);
     let headers = authorized_headers(&input.headers, input.api_key, input.model, input.env)?;

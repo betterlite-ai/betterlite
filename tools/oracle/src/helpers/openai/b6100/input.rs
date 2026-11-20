@@ -1,8 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_openai::embedding::EmbeddingInput;
-use betterlite_openai::openai_base_config::Headers;
-use betterlite_prompts::arguments::json::Object;
+use betterlite_openai::openai_base_config::{Headers, Object};
 use serde::Deserialize;
 use serde_json::Value;
 

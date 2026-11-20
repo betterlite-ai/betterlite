@@ -146,6 +146,7 @@ pub fn authorized_headers(
 }
 
 // the caller value under the same name in another case is dropped first, as httpx sends the last of the two
+#[must_use]
 pub fn with_header(headers: &Headers, name: &str, value: &str) -> Headers {
     let mut merged = removed(headers, name);
     merged.insert(name.to_owned(), value.to_owned());
@@ -216,20 +217,19 @@ fn header_value<'headers>(headers: &'headers Headers, name: &str) -> Option<&'he
 #[must_use]
 pub fn cost_value(value: &Value) -> Option<Decimal> {
     match value {
-        Value::Null => None,
         Value::Bool(flag) => Some(Decimal::from(u8::from(*flag))),
         Value::Number(number) => number::cost_decimal(&number.to_string()),
         Value::String(text) => number::cost_decimal(text),
-        Value::Array(_) | Value::Object(_) => None,
+        Value::Null | Value::Array(_) | Value::Object(_) => None,
     }
 }
 
 // LiteLLM's set_response_cost_in_hidden_params: no cost leaves the hidden params alone and keeps any caller headers
 pub fn set_response_cost(hidden: &mut HiddenParams, cost: Option<Decimal>) {
-    let Some(cost) = cost else {
+    let Some(found) = cost else {
         return;
     };
-    let Some(number) = Number::from_str(&cost.normalize().to_string()).ok() else {
+    let Some(number) = Number::from_str(&found.normalize().to_string()).ok() else {
         return;
     };
     let value = HiddenJson::Number(number);
@@ -246,10 +246,10 @@ pub fn set_response_cost(hidden: &mut HiddenParams, cost: Option<Decimal>) {
 
 // the same record for a reply whose hidden headers are already the map itself, as a Responses reply keeps them
 pub fn insert_response_cost(headers: &mut AdditionalHeaders, cost: Option<Decimal>) {
-    let Some(cost) = cost else {
+    let Some(found) = cost else {
         return;
     };
-    let Some(number) = Number::from_str(&cost.normalize().to_string()).ok() else {
+    let Some(number) = Number::from_str(&found.normalize().to_string()).ok() else {
         return;
     };
     headers.insert(RESPONSE_COST_HEADER.to_owned(), HiddenJson::Number(number));
@@ -277,10 +277,10 @@ pub fn parse_model_catalog(bytes: &[u8]) -> Result<Vec<String>, CatalogError> {
     };
     let mut ids = Vec::with_capacity(entries.len());
     for entry in entries {
-        let Value::Object(fields) = entry else {
+        let Value::Object(entry_fields) = entry else {
             return Err(CatalogError::Id);
         };
-        let Some(Value::String(id)) = fields.get("id") else {
+        let Some(Value::String(id)) = entry_fields.get("id") else {
             return Err(CatalogError::Id);
         };
         ids.push(id.clone());

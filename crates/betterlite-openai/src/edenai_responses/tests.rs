@@ -14,7 +14,7 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::DateTime;
 use indexmap::IndexMap;
 use secrecy::SecretString;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use super::{
     PrepareInput, ReplyRequest, SHOULD_FAKE_STREAM, SUPPORTS_NATIVE_WEBSOCKET, prepare,
@@ -74,14 +74,14 @@ fn headers(pairs: &[(&str, &str)]) -> Headers {
 
 #[test]
 fn the_responses_flags_are_false() {
-    assert!(!SHOULD_FAKE_STREAM);
-    assert!(!SUPPORTS_NATIVE_WEBSOCKET);
+    const { assert!(!SHOULD_FAKE_STREAM) };
+    const { assert!(!SUPPORTS_NATIVE_WEBSOCKET) };
 }
 
 #[test]
 fn prepare_uses_the_eden_default_base_without_any_base() {
     let env = EdenAiEnv::default();
-    let prepared = prepare(PrepareInput {
+    let prepared = prepare(&PrepareInput {
         headers: Headers::new(),
         api_key: Some(&key("eden")),
         model: "m",
@@ -95,7 +95,7 @@ fn prepare_uses_the_eden_default_base_without_any_base() {
 #[test]
 fn prepare_trims_the_trailing_slashes_of_an_explicit_base() {
     let env = EdenAiEnv::default();
-    let prepared = prepare(PrepareInput {
+    let prepared = prepare(&PrepareInput {
         headers: Headers::new(),
         api_key: Some(&key("eden")),
         model: "m",
@@ -113,7 +113,7 @@ fn prepare_reads_the_base_from_the_environment() {
         api_base: Some(String::from("https://gateway.example/v3")),
         global_api_key: None,
     };
-    let prepared = prepare(PrepareInput {
+    let prepared = prepare(&PrepareInput {
         headers: Headers::new(),
         api_key: Some(&key("eden")),
         model: "m",
@@ -127,7 +127,7 @@ fn prepare_reads_the_base_from_the_environment() {
 #[test]
 fn prepare_adds_only_the_authorization_header() {
     let env = EdenAiEnv::default();
-    let prepared = prepare(PrepareInput {
+    let prepared = prepare(&PrepareInput {
         headers: Headers::new(),
         api_key: Some(&key("eden")),
         model: "m",
@@ -144,7 +144,7 @@ fn prepare_adds_only_the_authorization_header() {
 #[test]
 fn prepare_keeps_the_callers_headers_but_replaces_their_authorization() {
     let env = EdenAiEnv::default();
-    let prepared = prepare(PrepareInput {
+    let prepared = prepare(&PrepareInput {
         headers: headers(&[("Content-Type", "text/plain"), ("x-trace", "1")]),
         api_key: Some(&key("eden")),
         model: "m",
@@ -169,7 +169,7 @@ fn prepare_prefers_the_explicit_key_over_the_environment() {
         api_base: None,
         global_api_key: None,
     };
-    let prepared = prepare(PrepareInput {
+    let prepared = prepare(&PrepareInput {
         headers: Headers::new(),
         api_key: Some(&key("explicit")),
         model: "m",
@@ -190,7 +190,7 @@ fn prepare_prefers_the_global_key_over_the_environment() {
         api_base: None,
         global_api_key: Some(key("global")),
     };
-    let prepared = prepare(PrepareInput {
+    let prepared = prepare(&PrepareInput {
         headers: Headers::new(),
         api_key: None,
         model: "m",
@@ -207,7 +207,7 @@ fn prepare_prefers_the_global_key_over_the_environment() {
 #[test]
 fn prepare_without_a_key_is_the_missing_key_error() {
     let env = EdenAiEnv::default();
-    let error = prepare(PrepareInput {
+    let error = prepare(&PrepareInput {
         headers: Headers::new(),
         api_key: None,
         model: "m",
@@ -250,8 +250,11 @@ fn transform_response_lifts_the_usage_cost_into_the_hidden_headers() {
     .unwrap();
     assert!(matches!(&transformed.response, ReplyBody::Typed(_)));
     let additional = serde_json::to_value(&transformed.additional_headers).unwrap();
-    assert_eq!(additional[RESPONSE_COST_HEADER], json!(0.25));
-    assert_eq!(additional["llm_provider-x-request-id"], json!("req-1"));
+    assert_eq!(additional[RESPONSE_COST_HEADER], Value::from(0.25_f64));
+    assert_eq!(
+        additional["llm_provider-x-request-id"],
+        Value::from("req-1")
+    );
 }
 
 #[test]
@@ -270,7 +273,10 @@ fn transform_response_without_a_cost_keeps_the_reply_headers() {
     .unwrap();
     let additional = serde_json::to_value(&transformed.additional_headers).unwrap();
     assert_eq!(additional[RESPONSE_COST_HEADER], Value::Null);
-    assert_eq!(additional["llm_provider-x-request-id"], json!("req-1"));
+    assert_eq!(
+        additional["llm_provider-x-request-id"],
+        Value::from("req-1")
+    );
 }
 
 #[test]

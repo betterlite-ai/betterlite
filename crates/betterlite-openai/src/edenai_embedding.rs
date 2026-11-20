@@ -115,12 +115,12 @@ struct WireReply {
 
 #[derive(Debug, Default, Deserialize)]
 struct WireUsage {
-    #[serde(default)]
-    prompt_tokens: u32,
-    #[serde(default)]
-    completion_tokens: u32,
-    #[serde(default)]
-    total_tokens: u32,
+    #[serde(default, rename = "prompt_tokens")]
+    prompt: u32,
+    #[serde(default, rename = "completion_tokens")]
+    completion: u32,
+    #[serde(default, rename = "total_tokens")]
+    total: u32,
 }
 
 #[derive(Debug)]
@@ -150,11 +150,11 @@ pub fn transform_response(body: &[u8]) -> Result<EmbeddingReply, EdenAiEmbedding
         data: reply.data,
         model: reply.model.unwrap_or_default(),
         usage: EmbeddingUsage {
-            prompt_tokens: usage.prompt_tokens,
-            completion_tokens: usage.completion_tokens,
+            prompt_tokens: usage.prompt,
+            completion_tokens: usage.completion,
             completion_tokens_details: None,
             prompt_tokens_details: None,
-            total_tokens: usage.total_tokens,
+            total_tokens: usage.total,
         },
     };
     let mut hidden_params = HiddenParams::new();

@@ -15,7 +15,7 @@ use betterlite_prompts::arguments::json::Object;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rstest::rstest;
 use secrecy::SecretString;
-use serde_json::{Number, json};
+use serde_json::{Number, Value};
 
 use super::{
     API_BASE_ENV, API_KEY_ENV, BASE_CLASS, EdenAiMessagesError, EnvironmentInput, ReplyInput,
@@ -260,10 +260,10 @@ fn transform_response_writes_the_cost_to_the_call_log() {
     })
     .unwrap();
     let reply = serde_json::to_value(&record).unwrap();
-    assert_eq!(reply["id"], json!("msg_1"));
-    assert_eq!(reply["cost"], json!(0.5));
+    assert_eq!(reply["id"], Value::from("msg_1"));
+    assert_eq!(reply["cost"], Value::from(0.5_f64));
     let details = serde_json::to_value(&state.model_call_details).unwrap();
-    assert_eq!(details["response_cost"], json!(0.5));
+    assert_eq!(details["response_cost"], Value::from(0.5_f64));
 }
 
 #[test]
@@ -278,7 +278,7 @@ fn transform_response_reads_the_cost_through_the_header_alias() {
     .unwrap();
     assert_eq!(record.fields.get("x-edenai-cost").unwrap().get(), "\"2\"");
     let details = serde_json::to_value(&state.model_call_details).unwrap();
-    assert_eq!(details["response_cost"], json!(2));
+    assert_eq!(details["response_cost"], Value::from(2_i32));
 }
 
 #[test]
@@ -296,7 +296,7 @@ fn transform_response_without_a_cost_leaves_the_call_log_alone() {
     })
     .unwrap();
     let details = serde_json::to_value(&state.model_call_details).unwrap();
-    assert_eq!(details["response_cost"], json!(1));
+    assert_eq!(details["response_cost"], Value::from(1_i32));
 }
 
 #[test]
@@ -368,5 +368,5 @@ fn transform_response_keeps_fields_it_does_not_model() {
     })
     .unwrap();
     let reply = serde_json::to_value(&record).unwrap();
-    assert_eq!(reply["custom_field"]["nested"], json!(true));
+    assert_eq!(reply["custom_field"]["nested"], Value::from(true));
 }

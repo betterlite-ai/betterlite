@@ -181,10 +181,10 @@ pub fn chunk_parser(
 ) -> Result<StreamReply, StreamError> {
     let mut parsed = stream::chunk_parser(chunk, identifier, clock)?;
     let cost = reported_cost(chunk);
-    if let (Some(cost), Some(Value::Object(usage))) = (cost, parsed.usage.as_mut()) {
-        if let Some(number) = Number::from_str(&cost.normalize().to_string()).ok() {
-            usage.insert(String::from("cost"), Value::Number(number));
-        }
+    if let (Some(found), Some(Value::Object(usage))) = (cost, parsed.usage.as_mut())
+        && let Ok(number) = Number::from_str(&found.normalize().to_string())
+    {
+        usage.insert(String::from("cost"), Value::Number(number));
     }
     Ok(parsed)
 }

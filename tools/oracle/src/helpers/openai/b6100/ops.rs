@@ -197,7 +197,7 @@ fn call_step(case: &Call, family: CallFamily) -> Result<Value, Box<HelperError>>
     if let CallFamily::Messages = family {
         return messages_answer(case, &env, explicit.as_ref());
     }
-    let prepared = prepare(PrepareInput {
+    let prepared = prepare(&PrepareInput {
         headers: case.headers.clone(),
         api_key: explicit.as_ref(),
         model: MODEL,
@@ -227,7 +227,11 @@ fn messages_answer(
     let validated = messages_validate_environment(
         &policy,
         EnvironmentInput {
-            headers: case.headers.clone(),
+            headers: case
+                .headers
+                .iter()
+                .map(|(name, value)| (name.clone(), value.clone()))
+                .collect(),
             api_key: explicit,
             model: MODEL,
             env,
@@ -238,7 +242,7 @@ fn messages_answer(
     );
     let headers = match validated {
         Ok(found) => found,
-        Err(error) => return Ok(json!({"status": error.status_code})),
+        Err(error) => return Ok(json!({"status": error.status_code()})),
     };
     let url = policy
         .complete_url(&MessagesCredentials {

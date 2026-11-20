@@ -19,7 +19,7 @@ use chrono::DateTime;
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::SecretString;
-use serde_json::{Number, Value, json};
+use serde_json::{Number, Value};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -82,18 +82,22 @@ fn message(text: &str) -> ChatMessage {
     }
 }
 
-fn body_with(optional: Object) -> Object {
+fn body_with(optional: &Object) -> Object {
     let messages = [message("hi")];
     let environment = BTreeMap::new();
     let downloads = RefuseDownloads;
     let input = TransformInput {
         model: "gpt-4o",
         messages: &messages,
-        optional_params: &optional,
+        optional_params: optional,
         environment: &environment,
         downloads: &downloads,
     };
     transform_request(&input, Mode::Sync).unwrap()
+}
+
+fn json(text: &str) -> Value {
+    serde_json::from_str(text).expect("the JSON fixture")
 }
 
 fn stream_options(body: &Object) -> &Object {
@@ -109,7 +113,7 @@ fn stream(flag: bool) -> Object {
 
 #[test]
 fn transform_request_adds_include_usage_to_a_stream_without_options() {
-    let body = body_with(stream(true));
+    let body = body_with(&stream(true));
     assert_eq!(body.get("model"), Some(&Json::Text(String::from("gpt-4o"))));
     assert_eq!(
         stream_options(&body),
@@ -130,7 +134,7 @@ fn transform_request_keeps_existing_stream_options_on_a_stream() {
             ),
         ])),
     );
-    let body = body_with(optional);
+    let body = body_with(&optional);
     assert_eq!(
         stream_options(&body),
         &Object::from_iter([
@@ -147,7 +151,7 @@ fn transform_request_keeps_existing_stream_options_on_a_stream() {
 fn transform_request_treats_a_null_stream_options_as_empty() {
     let mut optional = stream(true);
     optional.insert(String::from("stream_options"), Json::Null);
-    let body = body_with(optional);
+    let body = body_with(&optional);
     assert_eq!(
         stream_options(&body),
         &Object::from_iter([(String::from("include_usage"), Json::Bool(true))])
@@ -164,7 +168,7 @@ fn transform_request_without_a_stream_leaves_stream_options_alone() {
             Json::Bool(false),
         )])),
     );
-    let body = body_with(optional);
+    let body = body_with(&optional);
     assert_eq!(
         stream_options(&body),
         &Object::from_iter([(String::from("include_usage"), Json::Bool(false))])
@@ -173,7 +177,7 @@ fn transform_request_without_a_stream_leaves_stream_options_alone() {
 
 #[test]
 fn transform_request_without_options_or_stream_adds_no_stream_options() {
-    let body = body_with(Object::new());
+    let body = body_with(&Object::new());
     assert_eq!(body.get("stream_options"), None);
 }
 
@@ -326,8 +330,11 @@ fn transform_response_lifts_the_cost_into_hidden_params() {
     assert_eq!(reply.response.model, "edenai/m");
     assert_eq!(reply.hidden_model.as_deref(), Some("base"));
     let additional = additional_headers(&reply);
-    assert_eq!(additional[RESPONSE_COST_HEADER], json!(0.25));
-    assert_eq!(additional["llm_provider-x-request-id"], json!("req-1"));
+    assert_eq!(additional[RESPONSE_COST_HEADER], Value::from(0.25_f64));
+    assert_eq!(
+        additional["llm_provider-x-request-id"],
+        Value::from("req-1")
+    );
 }
 
 #[test]
@@ -347,70 +354,51 @@ fn transform_response_without_a_cost_keeps_only_the_reply_headers() {
     .unwrap();
     let additional = additional_headers(&reply);
     assert_eq!(additional[RESPONSE_COST_HEADER], Value::Null);
-    assert_eq!(additional["llm_provider-x-request-id"], json!("req-1"));
+    assert_eq!(
+        additional["llm_provider-x-request-id"],
+        Value::from("req-1")
+    );
 }
 
 #[test]
 fn chunk_parser_puts_the_cost_on_a_usage_the_chunk_carries() {
-    let chunk = json!({
-        "id": "c",
-        "object": "chat.completion.chunk",
-        "created": 1,
-        "model": "m",
-        "choices": [],
-        "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3},
-        "cost": 0.5
-    });
+    let chunk = json(
+        r#"{"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3},"cost":0.5}"#,
+    );
     let parsed = chunk_parser(&chunk, Uuid::nil, || 7).unwrap();
     let Some(Value::Object(usage)) = parsed.usage else {
         panic!("the chunk carries its usage");
     };
-    assert_eq!(usage.get("cost"), Some(&json!(0.5)));
-    assert_eq!(usage.get("total_tokens"), Some(&json!(3)));
+    assert_eq!(usage.get("cost"), Some(&Value::from(0.5_f64)));
+    assert_eq!(usage.get("total_tokens"), Some(&Value::from(3_i32)));
 }
 
 #[test]
 fn chunk_parser_reads_the_cost_through_the_header_alias() {
-    let chunk = json!({
-        "id": "c",
-        "object": "chat.completion.chunk",
-        "created": 1,
-        "model": "m",
-        "choices": [],
-        "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3},
-        "x-edenai-cost": "2"
-    });
+    let chunk = json(
+        r#"{"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3},"x-edenai-cost":"2"}"#,
+    );
     let parsed = chunk_parser(&chunk, Uuid::nil, || 7).unwrap();
     let Some(Value::Object(usage)) = parsed.usage else {
         panic!("the chunk carries its usage");
     };
-    assert_eq!(usage.get("cost"), Some(&json!(2)));
+    assert_eq!(usage.get("cost"), Some(&Value::from(2_i32)));
 }
 
 #[test]
 fn chunk_parser_drops_a_cost_when_the_chunk_has_no_usage() {
-    let chunk = json!({
-        "id": "c",
-        "object": "chat.completion.chunk",
-        "created": 1,
-        "model": "m",
-        "choices": [],
-        "cost": 0.5
-    });
+    let chunk = json(
+        r#"{"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[],"cost":0.5}"#,
+    );
     let parsed = chunk_parser(&chunk, Uuid::nil, || 7).unwrap();
     assert_eq!(parsed.usage, None);
 }
 
 #[test]
 fn chunk_parser_without_a_cost_leaves_the_usage_alone() {
-    let chunk = json!({
-        "id": "c",
-        "object": "chat.completion.chunk",
-        "created": 1,
-        "model": "m",
-        "choices": [],
-        "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}
-    });
+    let chunk = json(
+        r#"{"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#,
+    );
     let parsed = chunk_parser(&chunk, Uuid::nil, || 7).unwrap();
     let Some(Value::Object(usage)) = parsed.usage else {
         panic!("the chunk carries its usage");
@@ -420,13 +408,13 @@ fn chunk_parser_without_a_cost_leaves_the_usage_alone() {
 
 #[test]
 fn chunk_parser_rejects_a_chunk_that_is_not_an_object() {
-    let error = chunk_parser(&json!("chunk"), Uuid::nil, || 7).unwrap_err();
+    let error = chunk_parser(&Value::from("chunk"), Uuid::nil, || 7).unwrap_err();
     assert!(matches!(error, StreamError::Chunk(_)));
 }
 
 #[test]
 fn chunk_parser_reports_an_error_chunk() {
-    let chunk = json!({"error": {"message": "boom", "code": 429}});
+    let chunk = json(r#"{"error":{"message":"boom","code":429}}"#);
     let error = chunk_parser(&chunk, Uuid::nil, || 7).unwrap_err();
     let StreamError::Provider { message, status } = error else {
         panic!("the chunk carries a provider error");

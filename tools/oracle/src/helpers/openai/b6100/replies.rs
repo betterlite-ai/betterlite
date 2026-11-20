@@ -110,7 +110,7 @@ fn fixture_steps(bodies: &[String], family: ReplyFamily) -> Result<Value, Box<He
 }
 
 // the chat and Responses replies both log through a fixture state, and each reports its cost on the reply
-fn fixture_cost(body: &String, family: ReplyFamily) -> Result<Value, Box<HelperError>> {
+fn fixture_cost(body: &str, family: ReplyFamily) -> Result<Value, Box<HelperError>> {
     let fixture = Fixture::new()?;
     let mut state = fixture.state()?;
     let env = fixture.env();

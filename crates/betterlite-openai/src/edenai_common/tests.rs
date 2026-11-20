@@ -10,7 +10,7 @@ use indexmap::IndexMap;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::{Number, Value, json};
+use serde_json::{Number, Value};
 
 use super::{
     CatalogError, EDENAI_API_BASE, EdenAiEnv, MissingApiKey, authorized_headers, cost_value,
@@ -93,8 +93,8 @@ fn require_api_key_reads_explicit_then_global_then_environment(
         api_base: None,
         global_api_key: global.map(key),
     };
-    let explicit = explicit.or(beside);
-    let provided = explicit.map(key);
+    let chosen = explicit.or(beside);
+    let provided = chosen.map(key);
     let resolved = require_api_key(provided.as_ref(), "gpt-4o", &environment).unwrap();
     assert_eq!(resolved.expose_secret(), expected);
 }
@@ -171,53 +171,60 @@ fn endpoint_url_trims_trailing_slashes_then_appends_the_path(
 #[test]
 fn pick_keeps_only_the_listed_keys_from_the_params() {
     let params = Object::from_iter([
-        (String::from("user"), json!("alice")),
-        (String::from("dimensions"), json!(8)),
-        (String::from("model"), json!("m")),
+        (String::from("user"), Value::String(String::from("alice"))),
+        (
+            String::from("dimensions"),
+            Value::Number(Number::from(8_u64)),
+        ),
+        (String::from("model"), Value::String(String::from("m"))),
     ]);
     let picked = pick(&params, &["dimensions", "user"]);
     assert_eq!(
         picked,
         Object::from_iter([
-            (String::from("dimensions"), json!(8)),
-            (String::from("user"), json!("alice")),
+            (
+                String::from("dimensions"),
+                Value::Number(Number::from(8_u64)),
+            ),
+            (String::from("user"), Value::String(String::from("alice"))),
         ])
     );
     assert!(pick(&params, &[]).is_empty());
 }
 
 #[rstest]
-#[case::integer(json!({"cost": 2}), Some("2"))]
-#[case::fraction(json!({"cost": 2.25}), Some("2.25"))]
-#[case::numeric_string(json!({"cost": "2.25"}), Some("2.25"))]
-#[case::padded_string(json!({"cost": " 0.10 "}), Some("0.10"))]
-#[case::scientific_string(json!({"cost": "1e3"}), Some("1000"))]
-#[case::sign_and_leading_dot(json!({"cost": "+.5"}), Some("0.5"))]
-#[case::trailing_dot(json!({"cost": "1."}), Some("1"))]
-#[case::negative(json!({"cost": "-2"}), Some("-2"))]
-#[case::boolean_true(json!({"cost": true}), Some("1"))]
-#[case::boolean_false(json!({"cost": false}), Some("0"))]
-#[case::null(json!({"cost": null}), None)]
-#[case::absent(json!({"other": 1}), None)]
-#[case::header_alias(json!({"x-edenai-cost": 3}), Some("3"))]
-#[case::cost_wins(json!({"cost": 1, "x-edenai-cost": 2}), Some("1"))]
-#[case::null_cost_wins(json!({"cost": null, "x-edenai-cost": 2}), None)]
-#[case::invalid_cost_wins(json!({"cost": "abc", "x-edenai-cost": 2}), None)]
-#[case::invalid_header_alias(json!({"x-edenai-cost": {}}), None)]
-#[case::empty_string(json!({"cost": ""}), None)]
-#[case::blank_string(json!({"cost": "   "}), None)]
-#[case::underscore(json!({"cost": "1_0"}), None)]
-#[case::infinity(json!({"cost": "inf"}), None)]
-#[case::out_of_range(json!({"cost": "1e400"}), None)]
-#[case::list(json!({"cost": [1]}), None)]
-#[case::object_value(json!({"cost": {"amount": 1}}), None)]
-#[case::not_an_object(json!(5), None)]
-#[case::array_body(json!([{"cost": 1}]), None)]
-#[case::null_body(json!(null), None)]
+#[case::integer(r#"{"cost": 2}"#, Some("2"))]
+#[case::fraction(r#"{"cost": 2.25}"#, Some("2.25"))]
+#[case::numeric_string(r#"{"cost": "2.25"}"#, Some("2.25"))]
+#[case::padded_string(r#"{"cost": " 0.10 "}"#, Some("0.10"))]
+#[case::scientific_string(r#"{"cost": "1e3"}"#, Some("1000"))]
+#[case::sign_and_leading_dot(r#"{"cost": "+.5"}"#, Some("0.5"))]
+#[case::trailing_dot(r#"{"cost": "1."}"#, Some("1"))]
+#[case::negative(r#"{"cost": "-2"}"#, Some("-2"))]
+#[case::boolean_true(r#"{"cost": true}"#, Some("1"))]
+#[case::boolean_false(r#"{"cost": false}"#, Some("0"))]
+#[case::null(r#"{"cost": null}"#, None)]
+#[case::absent(r#"{"other": 1}"#, None)]
+#[case::header_alias(r#"{"x-edenai-cost": 3}"#, Some("3"))]
+#[case::cost_wins(r#"{"cost": 1, "x-edenai-cost": 2}"#, Some("1"))]
+#[case::null_cost_wins(r#"{"cost": null, "x-edenai-cost": 2}"#, None)]
+#[case::invalid_cost_wins(r#"{"cost": "abc", "x-edenai-cost": 2}"#, None)]
+#[case::invalid_header_alias(r#"{"x-edenai-cost": {}}"#, None)]
+#[case::empty_string(r#"{"cost": ""}"#, None)]
+#[case::blank_string(r#"{"cost": "   "}"#, None)]
+#[case::underscore(r#"{"cost": "1_0"}"#, None)]
+#[case::infinity(r#"{"cost": "inf"}"#, None)]
+#[case::out_of_range(r#"{"cost": "1e400"}"#, None)]
+#[case::list(r#"{"cost": [1]}"#, None)]
+#[case::object_value(r#"{"cost": {"amount": 1}}"#, None)]
+#[case::not_an_object("5", None)]
+#[case::array_body(r#"[{"cost": 1}]"#, None)]
+#[case::null_body("null", None)]
 fn reported_cost_reads_the_cost_alias_from_a_json_value(
-    #[case] payload: Value,
+    #[case] text: &str,
     #[case] expected: Option<&str>,
 ) {
+    let payload: Value = serde_json::from_str(text).expect("the JSON fixture");
     let found = reported_cost(&payload);
     assert_eq!(
         found,
@@ -227,13 +234,13 @@ fn reported_cost_reads_the_cost_alias_from_a_json_value(
 
 #[test]
 fn cost_value_reads_a_bare_cost() {
-    assert_eq!(cost_value(&json!("1.5")), Some(Decimal::new(15, 1)));
-    assert_eq!(cost_value(&json!(null)), None);
+    assert_eq!(cost_value(&Value::from("1.5")), Some(Decimal::new(15, 1)));
+    assert_eq!(cost_value(&Value::Null), None);
 }
 
 #[rstest]
 #[case::object(br#"{"cost": 1.5}"#, Some(Decimal::new(15, 1)))]
-#[case::header_alias(br#"{"x-edenai-cost": "4"}"#, Some(Decimal::from(4)))]
+#[case::header_alias(br#"{"x-edenai-cost": "4"}"#, Some(Decimal::from(4_i64)))]
 #[case::not_json(b"not json", None)]
 #[case::json_text(br#""text""#, None)]
 #[case::json_null(b"null", None)]
@@ -247,10 +254,10 @@ fn reported_cost_from_bytes_reads_only_a_json_object(
 }
 
 #[rstest]
-#[case::header(&[("x-edenai-cost", "2.5")], Some(2.5))]
-#[case::upper_case(&[("X-EdenAI-Cost", "2.5")], Some(2.5))]
-#[case::plain_cost(&[("cost", "3")], Some(3.0))]
-#[case::cost_wins(&[("x-edenai-cost", "2"), ("cost", "1")], Some(1.0))]
+#[case::header(&[("x-edenai-cost", "2.5")], Some(2.5_f64))]
+#[case::upper_case(&[("X-EdenAI-Cost", "2.5")], Some(2.5_f64))]
+#[case::plain_cost(&[("cost", "3")], Some(3.0_f64))]
+#[case::cost_wins(&[("x-edenai-cost", "2"), ("cost", "1")], Some(1.0_f64))]
 #[case::invalid(&[("x-edenai-cost", "abc")], None)]
 #[case::absent(&[("x-request-id", "1")], None)]
 fn reported_cost_from_headers_tries_both_aliases_in_any_case(
@@ -274,7 +281,7 @@ fn set_response_cost_leaves_hidden_params_alone_without_a_cost() {
 #[test]
 fn set_response_cost_builds_the_additional_headers_object() {
     let mut hidden = HiddenParams::new();
-    set_response_cost(&mut hidden, Some(Decimal::new(25, 1)));
+    set_response_cost(&mut hidden, Some(Decimal::new(25, 2)));
     let additional = HiddenJson::Object(IndexMap::from([(
         String::from("llm_provider-x-litellm-response-cost"),
         HiddenJson::Number(Number::from_str("0.25").unwrap()),
@@ -296,7 +303,7 @@ fn set_response_cost_keeps_existing_additional_headers() {
             HiddenJson::Text(String::from("req-1")),
         )])),
     );
-    set_response_cost(&mut hidden, Some(Decimal::from(1)));
+    set_response_cost(&mut hidden, Some(Decimal::from(1_i64)));
     let Some(HiddenJson::Object(additional)) = hidden.get("additional_headers") else {
         panic!("the additional headers stay an object");
     };
@@ -317,7 +324,7 @@ fn set_response_cost_replaces_additional_headers_that_are_not_an_object() {
         String::from("additional_headers"),
         HiddenJson::Text(String::from("broken")),
     );
-    set_response_cost(&mut hidden, Some(Decimal::from(2)));
+    set_response_cost(&mut hidden, Some(Decimal::from(2_i64)));
     let Some(HiddenJson::Object(additional)) = hidden.get("additional_headers") else {
         panic!("a non-object becomes the cost object");
     };

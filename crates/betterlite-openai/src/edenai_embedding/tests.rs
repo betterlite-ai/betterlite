@@ -2,7 +2,7 @@
 
 use rstest::rstest;
 use secrecy::SecretString;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use super::{
     EdenAiEmbeddingError, SUPPORTED_PARAMS, TransformInput, map_openai_params, plan_embedding,
@@ -31,8 +31,8 @@ fn caller_headers(pairs: &[(&str, &str)]) -> Headers {
         .collect()
 }
 
-fn object(value: Value) -> Object {
-    value.as_object().unwrap().clone()
+fn object(text: &str) -> Object {
+    serde_json::from_str(text).expect("the JSON fixture")
 }
 
 #[test]
@@ -42,56 +42,48 @@ fn supported_params_are_the_three_eden_keys() {
 
 #[test]
 fn map_openai_params_overlays_only_the_supported_keys() {
-    let optional = object(json!({"user": "alice", "model": "kept"}));
-    let non_default = object(json!({
-        "dimensions": 8,
-        "encoding_format": "base64",
-        "user": "bob",
-        "unknown": 1
-    }));
+    let optional = object(r#"{"user": "alice", "model": "kept"}"#);
+    let non_default =
+        object(r#"{"dimensions": 8, "encoding_format": "base64", "user": "bob", "unknown": 1}"#);
     let mapped = map_openai_params(&non_default, &optional);
     assert_eq!(
         mapped,
-        object(json!({
-            "user": "bob",
-            "model": "kept",
-            "dimensions": 8,
-            "encoding_format": "base64"
-        }))
+        object(r#"{"user": "bob", "model": "kept", "dimensions": 8, "encoding_format": "base64"}"#)
     );
 }
 
 #[test]
 fn map_openai_params_without_non_defaults_keeps_the_optional_params() {
-    let optional = object(json!({"user": "alice"}));
+    let optional = object(r#"{"user": "alice"}"#);
     assert_eq!(
         map_openai_params(&Object::new(), &optional),
-        object(json!({"user": "alice"}))
+        object(r#"{"user": "alice"}"#)
     );
 }
 
 #[rstest]
-#[case::text(EmbeddingInput::Text(String::from("hi")), json!("hi"))]
-#[case::texts(EmbeddingInput::Texts(vec![String::from("a"), String::from("b")]), json!(["a", "b"]))]
-#[case::tokens(EmbeddingInput::Tokens(vec![1, 2]), json!([1, 2]))]
-#[case::token_lists(EmbeddingInput::TokenLists(vec![vec![1], vec![2, 3]]), json!([[1], [2, 3]]))]
+#[case::text(EmbeddingInput::Text(String::from("hi")), r#""hi""#)]
+#[case::texts(EmbeddingInput::Texts(vec![String::from("a"), String::from("b")]), r#"["a", "b"]"#)]
+#[case::tokens(EmbeddingInput::Tokens(vec![1, 2]), "[1, 2]")]
+#[case::token_lists(EmbeddingInput::TokenLists(vec![vec![1], vec![2, 3]]), "[[1], [2, 3]]")]
 fn request_body_serializes_every_declared_input_shape(
     #[case] input: EmbeddingInput,
-    #[case] expected: Value,
+    #[case] expected: &str,
 ) {
+    let parsed: Value = serde_json::from_str(expected).expect("the JSON fixture");
     let body = request_body("m", &input, &Object::new()).unwrap();
-    assert_eq!(body.get("model"), Some(&json!("m")));
-    assert_eq!(body.get("input"), Some(&expected));
+    assert_eq!(body.get("model"), Some(&Value::from("m")));
+    assert_eq!(body.get("input"), Some(&parsed));
     assert_eq!(body.len(), 2);
 }
 
 #[test]
 fn request_body_lets_optional_params_overwrite_model_and_input() {
-    let optional = object(json!({"model": "other", "input": "other", "user": "alice"}));
+    let optional = object(r#"{"model": "other", "input": "other", "user": "alice"}"#);
     let body = request_body("m", &EmbeddingInput::Text(String::from("hi")), &optional).unwrap();
-    assert_eq!(body.get("model"), Some(&json!("other")));
-    assert_eq!(body.get("input"), Some(&json!("other")));
-    assert_eq!(body.get("user"), Some(&json!("alice")));
+    assert_eq!(body.get("model"), Some(&Value::from("other")));
+    assert_eq!(body.get("input"), Some(&Value::from("other")));
+    assert_eq!(body.get("user"), Some(&Value::from("alice")));
 }
 
 #[test]
@@ -120,8 +112,8 @@ fn plan_embedding_builds_the_url_headers_and_body() {
         Some("application/json")
     );
     assert_eq!(plan.headers.get("x-trace").map(String::as_str), Some("1"));
-    assert_eq!(plan.body.get("model"), Some(&json!("m")));
-    assert_eq!(plan.body.get("input"), Some(&json!("hi")));
+    assert_eq!(plan.body.get("model"), Some(&Value::from("m")));
+    assert_eq!(plan.body.get("input"), Some(&Value::from("hi")));
 }
 
 #[rstest]
@@ -231,16 +223,19 @@ const BODY: &str = r#"{"object":"list","data":[{"object":"embedding","embedding"
 fn transform_response_reads_the_embedding_and_lifts_the_cost() {
     let reply = transform_response(BODY.as_bytes()).unwrap();
     let response = serde_json::to_value(&reply.response).unwrap();
-    assert_eq!(response["object"], json!("list"));
-    assert_eq!(response["model"], json!("text-embedding-3-small"));
-    assert_eq!(response["data"][0]["embedding"], json!([0.1, 0.2]));
-    assert_eq!(response["data"][0]["index"], json!(0));
-    assert_eq!(response["usage"]["prompt_tokens"], json!(2));
-    assert_eq!(response["usage"]["completion_tokens"], json!(0));
-    assert_eq!(response["usage"]["total_tokens"], json!(2));
+    assert_eq!(response["object"], Value::from("list"));
+    assert_eq!(response["model"], Value::from("text-embedding-3-small"));
+    assert_eq!(
+        response["data"][0]["embedding"],
+        Value::Array(vec![Value::from(0.1_f64), Value::from(0.2_f64)])
+    );
+    assert_eq!(response["data"][0]["index"], Value::from(0_i32));
+    assert_eq!(response["usage"]["prompt_tokens"], Value::from(2_i32));
+    assert_eq!(response["usage"]["completion_tokens"], Value::from(0_i32));
+    assert_eq!(response["usage"]["total_tokens"], Value::from(2_i32));
     let additional =
         serde_json::to_value(reply.hidden_params.get("additional_headers").unwrap()).unwrap();
-    assert_eq!(additional[RESPONSE_COST_HEADER], json!(0.5));
+    assert_eq!(additional[RESPONSE_COST_HEADER], Value::from(0.5_f64));
 }
 
 #[test]
@@ -256,7 +251,7 @@ fn transform_response_reads_the_cost_through_the_header_alias() {
     let reply = transform_response(body).unwrap();
     let additional =
         serde_json::to_value(reply.hidden_params.get("additional_headers").unwrap()).unwrap();
-    assert_eq!(additional[RESPONSE_COST_HEADER], json!(2));
+    assert_eq!(additional[RESPONSE_COST_HEADER], Value::from(2_i32));
 }
 
 #[test]
@@ -264,11 +259,11 @@ fn transform_response_applies_the_embedding_response_defaults() {
     let body = br#"{"data":[]}"#;
     let reply = transform_response(body).unwrap();
     let response = serde_json::to_value(&reply.response).unwrap();
-    assert_eq!(response["object"], json!("list"));
-    assert_eq!(response["model"], json!(""));
-    assert_eq!(response["usage"]["prompt_tokens"], json!(0));
-    assert_eq!(response["usage"]["completion_tokens"], json!(0));
-    assert_eq!(response["usage"]["total_tokens"], json!(0));
+    assert_eq!(response["object"], Value::from("list"));
+    assert_eq!(response["model"], Value::from(""));
+    assert_eq!(response["usage"]["prompt_tokens"], Value::from(0_i32));
+    assert_eq!(response["usage"]["completion_tokens"], Value::from(0_i32));
+    assert_eq!(response["usage"]["total_tokens"], Value::from(0_i32));
 }
 
 #[test]
