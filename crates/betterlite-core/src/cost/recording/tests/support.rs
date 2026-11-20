@@ -104,7 +104,7 @@ impl CostCalculation for FakeCalculator {
                 vertex_location: request.vertex_location.map(str::to_owned),
                 region_name: request.region_name.map(str::to_owned),
                 usage,
-            })
+            });
         };
         match self.result {
             Ok(cost) => Ok(cost),
