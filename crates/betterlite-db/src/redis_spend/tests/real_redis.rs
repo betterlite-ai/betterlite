@@ -23,9 +23,8 @@ use crate::redis_spend::keys::{
     REDIS_DAILY_TAG_BUFFER_KEY, REDIS_DAILY_USER_BUFFER_KEY, REDIS_SPEND_LOGS_BUFFER_KEY,
     REDIS_SPEND_LOGS_MAX_ROWS, REDIS_UPDATE_BUFFER_KEY, REDIS_WINDOW_BUFFER_KEY,
 };
-use crate::redis_spend::lists::{RedisSpendLists, SpendBufferLists, SpendBufferPush};
+use crate::redis_spend::lists::{RedisSpendLists, SpendBufferLists};
 use crate::redis_spend::log_row::{SpendLogRow, SpendLogValue};
-use crate::redis_spend::publication::{RedisSpendPublisher, SpendStaging};
 
 use super::support::{amount, captured_logs, decoded_row, transactions};
 
@@ -94,18 +93,6 @@ pub(crate) fn buffer(cache: &Arc<RedisCache>) -> RedisUpdateBuffer {
         enabled: true,
         dequeue_count: 5,
         events: Arc::new(NoRedisBufferEventSink),
-    }
-}
-
-pub(crate) fn publisher(cache: &Arc<RedisCache>) -> RedisSpendPublisher {
-    let lists = RedisSpendLists {
-        cache: Arc::clone(cache),
-    };
-    let port: Arc<dyn SpendBufferPush> = Arc::new(lists);
-    RedisSpendPublisher {
-        lists: Some(port),
-        events: Arc::new(NoRedisBufferEventSink),
-        staging: SpendStaging::default(),
     }
 }
 

@@ -29,8 +29,14 @@ use crate::window_queue::WindowSpendWirePayload;
 async fn without_a_redis_client_an_oversized_cohort_is_never_encoded() {
     let oversized = "x".repeat(MAX_STORED_BYTES + 1);
     let cohorts = UncommittedCohorts {
+        entity: None,
+        daily_user: None,
+        daily_team: None,
+        daily_org: None,
+        daily_end_user: None,
+        daily_agent: None,
         daily_tag: Some(daily_row(&oversized, "1.5", 1)),
-        ..UncommittedCohorts::default()
+        window: None,
     };
     restore_transactions_to_redis(&detached_publisher(), cohorts)
         .await
@@ -47,9 +53,11 @@ async fn falsey_cohorts_are_skipped_and_the_rest_go_out_in_restore_order() {
         entity: Some(transactions(&[("user-1", "1.5")])),
         daily_user: Some(BTreeMap::new()),
         daily_team: Some(daily_row("day-2", "2.5", 2)),
+        daily_org: None,
+        daily_end_user: None,
+        daily_agent: None,
         daily_tag: Some(daily_row("day-3", "3.5", 3)),
         window: Some(vec![window_transaction("key", "key-1", "4.5")]),
-        ..UncommittedCohorts::default()
     };
     restore_transactions_to_redis(&publisher, cohorts)
         .await
@@ -105,9 +113,14 @@ async fn empty_cohorts_send_no_pipeline() {
     let lists = Arc::new(FakeLists::default());
     let publisher = publisher(&lists);
     let cohorts = UncommittedCohorts {
+        entity: None,
+        daily_user: None,
+        daily_team: None,
+        daily_org: None,
+        daily_end_user: None,
+        daily_agent: None,
         daily_tag: Some(BTreeMap::new()),
         window: Some(Vec::new()),
-        ..UncommittedCohorts::default()
     };
     restore_transactions_to_redis(&publisher, cohorts)
         .await
@@ -122,8 +135,14 @@ async fn a_redis_failure_loses_the_cohorts_and_says_so() {
     let publisher = publisher(&lists);
     lists.fail_push();
     let cohorts = UncommittedCohorts {
+        entity: None,
+        daily_user: None,
+        daily_team: None,
+        daily_org: None,
+        daily_end_user: None,
+        daily_agent: None,
         daily_tag: Some(daily_row("day-3", "3.5", 3)),
-        ..UncommittedCohorts::default()
+        window: None,
     };
     restore_transactions_to_redis(&publisher, cohorts)
         .await
@@ -140,8 +159,14 @@ async fn an_encoding_failure_propagates_instead_of_being_logged_as_lost() {
     let publisher = publisher(&lists);
     let oversized = "x".repeat(MAX_STORED_BYTES + 1);
     let cohorts = UncommittedCohorts {
+        entity: None,
+        daily_user: None,
+        daily_team: None,
+        daily_org: None,
+        daily_end_user: None,
+        daily_agent: None,
         daily_tag: Some(daily_row(&oversized, "1.5", 1)),
-        ..UncommittedCohorts::default()
+        window: None,
     };
     let error = restore_transactions_to_redis(&publisher, cohorts)
         .await

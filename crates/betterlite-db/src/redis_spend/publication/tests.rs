@@ -22,15 +22,16 @@ use crate::redis_spend::keys::{
     REDIS_WINDOW_BUFFER_KEY, SpendBufferQueue,
 };
 use crate::redis_spend::publication::{
-    SpendPublishError, SpendUpdateQueues, store_in_memory_spend_updates_in_redis,
+    SpendPublishError, SpendUpdateQueues, store_spend_updates_in_redis,
 };
 use crate::redis_spend::tests::support::{
     FakeLists, FillOnPush, amount, captured_logs, daily_queue, daily_row, detached_publisher,
-    entity_queue, merged_daily_row, publisher, publisher_recording, queue_item, transactions,
-    window_queue, window_transaction,
+    merged_daily_row, publisher, publisher_recording, queue_item, transactions, window_queue,
+    window_transaction,
 };
 use crate::spend_queues::daily::DailySpendUpdateQueue;
 use crate::spend_queues::entity::{EntityType, SpendUpdateQueue, SpendUpdateTransactions};
+use crate::spend_queues::events::NoSpendQueueEventSink;
 use crate::window_queue::queue::WindowSpendUpdateQueue;
 
 mod real_redis;
@@ -53,7 +54,10 @@ struct Fixtures {
 impl Fixtures {
     fn new() -> Self {
         Self {
-            entity: Arc::new(entity_queue(CAPACITY, THRESHOLD, FLUSH)),
+            entity: Arc::new(
+                SpendUpdateQueue::new(CAPACITY, THRESHOLD, FLUSH, Arc::new(NoSpendQueueEventSink))
+                    .unwrap(),
+            ),
             daily_user: Arc::new(daily_queue(CAPACITY, THRESHOLD, FLUSH)),
             daily_team: Arc::new(daily_queue(CAPACITY, THRESHOLD, FLUSH)),
             daily_org: Arc::new(daily_queue(CAPACITY, THRESHOLD, FLUSH)),
@@ -87,20 +91,55 @@ const fn gauge(queue: SpendBufferQueue, queue_size: i64) -> RedisBufferEvent {
     RedisBufferEvent { queue, queue_size }
 }
 
-const fn eleven_kinds() -> [(EntityType, &'static str, &'static str); 11] {
-    [
-        (EntityType::User, "user-1", "1"),
-        (EntityType::EndUser, "end-user-1", "2"),
-        (EntityType::Key, "key-1", "3"),
-        (EntityType::Team, "team-1", "4"),
-        (EntityType::TeamMember, "team-member-1", "5"),
-        (EntityType::Organization, "org-1", "6"),
-        (EntityType::OrganizationMember, "org-member-1", "7"),
-        (EntityType::Project, "project-1", "8"),
-        (EntityType::Tag, "tag-1", "9"),
-        (EntityType::Agent, "agent-1", "10"),
-        (EntityType::ModelAccessGroup, "group-1", "11"),
-    ]
+async fn seed_eleven_kinds(queue: &SpendUpdateQueue) {
+    queue
+        .add_update(queue_item(EntityType::User, "user-1", "1"))
+        .await
+        .unwrap();
+    queue
+        .add_update(queue_item(EntityType::EndUser, "end-user-1", "2"))
+        .await
+        .unwrap();
+    queue
+        .add_update(queue_item(EntityType::Key, "key-1", "3"))
+        .await
+        .unwrap();
+    queue
+        .add_update(queue_item(EntityType::Team, "team-1", "4"))
+        .await
+        .unwrap();
+    queue
+        .add_update(queue_item(EntityType::TeamMember, "team-member-1", "5"))
+        .await
+        .unwrap();
+    queue
+        .add_update(queue_item(EntityType::Organization, "org-1", "6"))
+        .await
+        .unwrap();
+    queue
+        .add_update(queue_item(
+            EntityType::OrganizationMember,
+            "org-member-1",
+            "7",
+        ))
+        .await
+        .unwrap();
+    queue
+        .add_update(queue_item(EntityType::Project, "project-1", "8"))
+        .await
+        .unwrap();
+    queue
+        .add_update(queue_item(EntityType::Tag, "tag-1", "9"))
+        .await
+        .unwrap();
+    queue
+        .add_update(queue_item(EntityType::Agent, "agent-1", "10"))
+        .await
+        .unwrap();
+    queue
+        .add_update(queue_item(EntityType::ModelAccessGroup, "group-1", "11"))
+        .await
+        .unwrap();
 }
 
 fn eleven_kinds_transactions() -> SpendUpdateTransactions {
@@ -138,7 +177,7 @@ async fn without_a_redis_client_publication_leaves_memory_untouched() {
         .add_update(window_transaction("key", "key-1", "1.5"))
         .await
         .unwrap();
-    store_in_memory_spend_updates_in_redis(&publisher, fixtures.queues())
+    store_spend_updates_in_redis(&publisher, fixtures.queues())
         .await
         .unwrap();
     assert_eq!(
@@ -185,7 +224,7 @@ async fn publication_drains_every_queue_into_one_pipeline_in_order() {
         .add_update(window_transaction("key", "key-1", "3.5"))
         .await
         .unwrap();
-    store_in_memory_spend_updates_in_redis(&publisher, fixtures.queues())
+    store_spend_updates_in_redis(&publisher, fixtures.queues())
         .await
         .unwrap();
     let pipelines = lists.pushed_pipelines();
@@ -252,7 +291,7 @@ async fn a_publication_without_a_window_queue_pushes_only_the_entity_cohort() {
         .add_update(window_transaction("key", "key-1", "3.5"))
         .await
         .unwrap();
-    store_in_memory_spend_updates_in_redis(&publisher, fixtures.queues_without_window())
+    store_spend_updates_in_redis(&publisher, fixtures.queues_without_window())
         .await
         .unwrap();
     let pipelines = lists.pushed_pipelines();
@@ -275,7 +314,7 @@ async fn the_entity_cohort_is_pushed_even_with_every_bucket_empty() {
     let (publisher, events) = publisher_recording(&lists);
     lists.script_push_lengths(vec![11]);
     let fixtures = Fixtures::new();
-    store_in_memory_spend_updates_in_redis(&publisher, fixtures.queues())
+    store_spend_updates_in_redis(&publisher, fixtures.queues())
         .await
         .unwrap();
     let pipelines = lists.pushed_pipelines();
@@ -326,7 +365,7 @@ async fn a_failed_pipeline_restores_every_drained_cohort() {
         .add_update(window_transaction("key", "key-1", "3.5"))
         .await
         .unwrap();
-    store_in_memory_spend_updates_in_redis(&publisher, fixtures.queues())
+    store_spend_updates_in_redis(&publisher, fixtures.queues())
         .await
         .unwrap();
     let text = logs.text();
@@ -368,14 +407,8 @@ async fn a_failed_pipeline_returns_all_eleven_entity_kinds_to_the_queue() {
     let publisher = publisher(&lists);
     lists.fail_push();
     let fixtures = Fixtures::new();
-    for (kind, id, value) in eleven_kinds() {
-        fixtures
-            .entity
-            .add_update(queue_item(kind, id, value))
-            .await
-            .unwrap();
-    }
-    store_in_memory_spend_updates_in_redis(&publisher, fixtures.queues())
+    seed_eleven_kinds(&fixtures.entity).await;
+    store_spend_updates_in_redis(&publisher, fixtures.queues())
         .await
         .unwrap();
     assert_eq!(
@@ -400,7 +433,7 @@ async fn an_encoding_failure_propagates_before_the_pipeline_and_loses_the_drain(
         .add_update(daily_row(&oversized, "1.5", 1))
         .await
         .unwrap();
-    let error = store_in_memory_spend_updates_in_redis(&publisher, fixtures.queues())
+    let error = store_spend_updates_in_redis(&publisher, fixtures.queues())
         .await
         .unwrap_err();
     assert!(matches!(error, SpendPublishError::Encode(_)), "{error:?}");
@@ -436,7 +469,7 @@ async fn gauges_follow_the_returned_lengths_only() {
         .await
         .unwrap();
     lists.script_push_lengths(vec![11, 30, 50, 70]);
-    store_in_memory_spend_updates_in_redis(&publisher, fixtures.queues())
+    store_spend_updates_in_redis(&publisher, fixtures.queues())
         .await
         .unwrap();
     assert_eq!(
@@ -449,7 +482,7 @@ async fn gauges_follow_the_returned_lengths_only() {
         "a length without a pushed queue is ignored"
     );
     lists.script_push_lengths(Vec::new());
-    store_in_memory_spend_updates_in_redis(&publisher, fixtures.queues())
+    store_spend_updates_in_redis(&publisher, fixtures.queues())
         .await
         .unwrap();
     assert_eq!(
@@ -478,7 +511,7 @@ async fn a_full_daily_queue_stages_the_restored_cohort_for_the_next_tick() {
         daily_row("day-1", "2.0", 2),
     ));
     lists.fail_push();
-    store_in_memory_spend_updates_in_redis(&publisher, fixtures.queues())
+    store_spend_updates_in_redis(&publisher, fixtures.queues())
         .await
         .unwrap();
     let held = fixtures
@@ -494,7 +527,7 @@ async fn a_full_daily_queue_stages_the_restored_cohort_for_the_next_tick() {
         .unwrap();
     lists.allow_push();
     lists.script_push_lengths(vec![11, 3]);
-    store_in_memory_spend_updates_in_redis(&publisher, fixtures.queues())
+    store_spend_updates_in_redis(&publisher, fixtures.queues())
         .await
         .unwrap();
     let pipelines = lists.pushed_pipelines();
@@ -526,7 +559,7 @@ async fn a_full_window_queue_stages_restored_increments_for_the_next_tick() {
         window_transaction("key", "key-2", "2.5"),
     ));
     lists.fail_push();
-    store_in_memory_spend_updates_in_redis(&publisher, fixtures.queues())
+    store_spend_updates_in_redis(&publisher, fixtures.queues())
         .await
         .unwrap();
     assert_eq!(
@@ -540,7 +573,7 @@ async fn a_full_window_queue_stages_restored_increments_for_the_next_tick() {
         .unwrap();
     lists.allow_push();
     lists.script_push_lengths(vec![11, 3]);
-    store_in_memory_spend_updates_in_redis(&publisher, fixtures.queues())
+    store_spend_updates_in_redis(&publisher, fixtures.queues())
         .await
         .unwrap();
     let pipelines = lists.pushed_pipelines();
@@ -570,7 +603,7 @@ async fn the_published_daily_row_keeps_its_decimal_money() {
         .add_update(daily_row("day-1", "0.30000000000000004", 1))
         .await
         .unwrap();
-    store_in_memory_spend_updates_in_redis(&publisher, fixtures.queues())
+    store_spend_updates_in_redis(&publisher, fixtures.queues())
         .await
         .unwrap();
     let pipelines = lists.pushed_pipelines();

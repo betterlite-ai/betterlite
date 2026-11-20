@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::PoisonError;
 
 use futures_util::future::FutureExt as _;
 
@@ -53,11 +54,10 @@ pub(super) async fn restore_cohorts(
 }
 
 // The entity buckets in the order the source re-enqueues them.
-async fn restore_entity(
+const fn entity_buckets(
     transactions: &SpendUpdateTransactions,
-    queue: &SpendUpdateQueue,
-) -> Result<(), SpendPublishError> {
-    let buckets = [
+) -> [(EntityType, &BTreeMap<String, SpendAmount>); 11] {
+    [
         (EntityType::User, &transactions.user_list_transactions),
         (
             EntityType::EndUser,
@@ -84,27 +84,24 @@ async fn restore_entity(
             EntityType::ModelAccessGroup,
             &transactions.model_access_group_spend,
         ),
-    ];
-    for (entity_type, increments) in buckets {
-        restore_increments(entity_type, increments, queue).await?;
-    }
-    Ok(())
+    ]
 }
 
 // One SpendUpdateQueueItem per entity id, exactly the increment the drain aggregated away.
-async fn restore_increments(
-    entity_type: EntityType,
-    increments: &BTreeMap<String, SpendAmount>,
+async fn restore_entity(
+    transactions: &SpendUpdateTransactions,
     queue: &SpendUpdateQueue,
 ) -> Result<(), SpendPublishError> {
-    for (entity_id, cost) in increments {
-        queue
-            .add_update(SpendUpdateQueueItem {
-                entity_type: Some(entity_type.clone()),
-                entity_id: Some(entity_id.clone()),
-                response_cost: Some(*cost),
-            })
-            .await?;
+    for (entity_type, increments) in entity_buckets(transactions) {
+        for (entity_id, cost) in increments {
+            queue
+                .add_update(SpendUpdateQueueItem {
+                    entity_type: Some(entity_type.clone()),
+                    entity_id: Some(entity_id.clone()),
+                    response_cost: Some(*cost),
+                })
+                .await?;
+        }
     }
     Ok(())
 }
@@ -120,7 +117,12 @@ fn restore_daily(
         return Ok(());
     }
     let Some(outcome) = queue.add_update(update.clone()).now_or_never() else {
-        publisher.staging.stage_daily(queue_name, update);
+        let mut staging = publisher
+            .staging
+            .inner
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        staging.daily.entry(queue_name).or_default().push(update);
         return Ok(());
     };
     outcome.map_err(SpendPublishError::from)
@@ -133,7 +135,12 @@ fn restore_window(
 ) -> Result<(), SpendPublishError> {
     for transaction in transactions {
         let Some(outcome) = queue.add_update(transaction.clone()).now_or_never() else {
-            publisher.staging.stage_window(transaction);
+            let mut staging = publisher
+                .staging
+                .inner
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            staging.window.push(transaction);
             continue;
         };
         outcome?;

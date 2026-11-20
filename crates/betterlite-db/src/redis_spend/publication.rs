@@ -63,28 +63,6 @@ struct StagedCohorts {
     window: Vec<WindowSpendTransaction>,
 }
 
-impl SpendStaging {
-    fn stage_daily(&self, queue: SpendBufferQueue, update: DailySpendUpdate) {
-        let mut staged = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
-        staged.daily.entry(queue).or_default().push(update);
-    }
-
-    fn stage_window(&self, transaction: WindowSpendTransaction) {
-        let mut staged = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
-        staged.window.push(transaction);
-    }
-
-    fn take_daily(&self, queue: SpendBufferQueue) -> Vec<DailySpendUpdate> {
-        let mut staged = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
-        staged.daily.remove(&queue).unwrap_or_default()
-    }
-
-    fn take_window(&self) -> Vec<WindowSpendTransaction> {
-        let mut staged = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
-        take(&mut staged.window)
-    }
-}
-
 // Everything one tick drained before the push, kept whole so a failed pipeline can put it all back.
 struct DrainedCohorts {
     entity: SpendUpdateTransactions,
@@ -97,7 +75,7 @@ struct DrainedCohorts {
 }
 
 // store_in_memory_spend_updates_in_redis: drain every memory queue, encode each nonempty cohort into one RPUSH pipeline, and put the whole drain back when Redis refuses the pipeline.
-pub async fn store_in_memory_spend_updates_in_redis(
+pub async fn store_spend_updates_in_redis(
     publisher: &RedisSpendPublisher,
     queues: SpendUpdateQueues<'_>,
 ) -> Result<(), SpendPublishError> {
@@ -163,10 +141,16 @@ async fn drain_daily(
     queue: &DailySpendUpdateQueue,
     queue_name: SpendBufferQueue,
 ) -> Result<DailySpendUpdate, SpendPublishError> {
-    merge_daily(
-        queue.flush_aggregated_daily_rows().await?,
-        publisher.staging.take_daily(queue_name),
-    )
+    let drained = queue.flush_aggregated_daily_rows().await?;
+    let staged = {
+        let mut staging = publisher
+            .staging
+            .inner
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        staging.daily.remove(&queue_name).unwrap_or_default()
+    };
+    merge_daily(drained, staged)
 }
 
 // The window cohort only exists when the deployment runs a window queue.
@@ -178,8 +162,15 @@ fn drain_window(
         return Ok(Vec::new());
     };
     let drained = queue.flush()?;
-    aggregate_window_spend(&[publisher.staging.take_window(), drained])
-        .map_err(SpendPublishError::from)
+    let staged = {
+        let mut staging = publisher
+            .staging
+            .inner
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        take(&mut staging.window)
+    };
+    aggregate_window_spend(&[staged, drained]).map_err(SpendPublishError::from)
 }
 
 // The staged cohort came from an earlier tick, so it keeps its place ahead of what this tick drained.

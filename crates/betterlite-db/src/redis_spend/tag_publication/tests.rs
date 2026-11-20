@@ -6,9 +6,7 @@ use crate::mcp_stored_contracts::MAX_STORED_BYTES;
 use crate::redis_spend::codec::decode_daily_batch;
 use crate::redis_spend::events::RedisBufferEvent;
 use crate::redis_spend::keys::{REDIS_DAILY_TAG_BUFFER_KEY, SpendBufferQueue};
-use crate::redis_spend::tag_publication::{
-    TagPublishError, store_in_memory_daily_tag_spend_updates_in_redis,
-};
+use crate::redis_spend::tag_publication::{TagPublishError, store_daily_tag_spend_updates};
 use crate::redis_spend::tests::support::{
     FakeLists, captured_logs, daily_queue, daily_row, detached_publisher, publisher,
     publisher_recording,
@@ -24,7 +22,7 @@ async fn the_tag_queue_is_drained_even_without_a_redis_client() {
         .add_update(daily_row("day-1", "1.5", 1))
         .await
         .unwrap();
-    store_in_memory_daily_tag_spend_updates_in_redis(&publisher, &queue)
+    store_daily_tag_spend_updates(&publisher, &queue)
         .await
         .unwrap();
     assert!(
@@ -48,7 +46,7 @@ async fn a_tag_cohort_is_pushed_as_one_value_and_gauged() {
         .add_update(daily_row("day-1", "1.5", 1))
         .await
         .unwrap();
-    store_in_memory_daily_tag_spend_updates_in_redis(&publisher, &queue)
+    store_daily_tag_spend_updates(&publisher, &queue)
         .await
         .unwrap();
     let pushes = lists.single_pushes();
@@ -83,7 +81,7 @@ async fn a_failed_tag_push_is_logged_without_restoring() {
         .add_update(daily_row("day-1", "1.5", 1))
         .await
         .unwrap();
-    store_in_memory_daily_tag_spend_updates_in_redis(&publisher, &queue)
+    store_daily_tag_spend_updates(&publisher, &queue)
         .await
         .unwrap();
     let text = logs.text();
@@ -106,7 +104,7 @@ async fn an_empty_tag_queue_pushes_nothing() {
     let lists = Arc::new(FakeLists::default());
     let (publisher, events) = publisher_recording(&lists);
     let queue = daily_queue(32, 16, 32);
-    store_in_memory_daily_tag_spend_updates_in_redis(&publisher, &queue)
+    store_daily_tag_spend_updates(&publisher, &queue)
         .await
         .unwrap();
     assert!(lists.single_pushes().is_empty());
@@ -122,7 +120,7 @@ async fn tag_encoding_runs_before_the_client_check() {
         .add_update(daily_row(&oversized, "1.5", 1))
         .await
         .unwrap();
-    let error = store_in_memory_daily_tag_spend_updates_in_redis(&publisher, &queue)
+    let error = store_daily_tag_spend_updates(&publisher, &queue)
         .await
         .unwrap_err();
     assert!(matches!(error, TagPublishError::Encode(_)), "{error:?}");

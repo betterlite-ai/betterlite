@@ -21,7 +21,7 @@ use crate::redis_spend::log_row::SpendLogRow;
 use crate::redis_spend::publication::{RedisSpendPublisher, SpendStaging};
 use crate::spend_queues::daily::{DailySpendUpdate, DailySpendUpdateQueue};
 use crate::spend_queues::entity::{
-    EntityType, SpendAmount, SpendUpdateQueue, SpendUpdateQueueItem, SpendUpdateTransactions,
+    EntityType, SpendAmount, SpendUpdateQueueItem, SpendUpdateTransactions,
 };
 use crate::spend_queues::events::NoSpendQueueEventSink;
 use crate::window_queue::WindowSpendTransaction;
@@ -145,6 +145,22 @@ impl FakeLists {
     pub(crate) fn single_pushes(&self) -> Vec<(String, Vec<String>)> {
         self.lock().singles.clone()
     }
+
+    // Records the pipeline, then lets a producer refill the bounded queue before the caller restores the drained cohort.
+    async fn pipeline_push(
+        &self,
+        operations: &[BufferPush],
+    ) -> Result<Vec<i64>, SpendBufferListError> {
+        let fill = {
+            let mut state = self.lock();
+            state.pushes.push(operations.to_vec());
+            state.fill_on_push.take()
+        };
+        if let Some(fill) = fill {
+            fill.apply().await;
+        }
+        pipeline_result(&mut self.lock())
+    }
 }
 
 impl SpendBufferLists for FakeLists {
@@ -197,35 +213,14 @@ impl SpendBufferPush for FakeLists {
         key: &'call str,
         values: &'call [String],
     ) -> SpendListFuture<'call, i64> {
-        Box::pin(async move {
-            let mut state = self.lock();
-            state.singles.push((key.to_owned(), values.to_vec()));
-            if state.failure == Failure::Push {
-                return Err(list_failure("async_rpush"));
-            }
-            Ok(state.single_length)
-        })
+        Box::pin(async move { single_push(&mut self.lock(), key, values, self.single_length) })
     }
 
     fn rpush_pipeline<'call>(
         &'call self,
         operations: &'call [BufferPush],
     ) -> SpendListFuture<'call, Vec<i64>> {
-        Box::pin(async move {
-            let fill = {
-                let mut state = self.lock();
-                state.pushes.push(operations.to_vec());
-                state.fill_on_push.take()
-            };
-            if let Some(fill) = fill {
-                fill.apply().await;
-            }
-            let mut state = self.lock();
-            if state.failure == Failure::Push {
-                return Err(list_failure("async_rpush_pipeline"));
-            }
-            Ok(state.push_lengths.pop_front().unwrap_or_default())
-        })
+        Box::pin(async move { self.pipeline_push(operations).await })
     }
 }
 
@@ -240,6 +235,27 @@ fn pop_once(
         return Err(list_failure("async_lpop"));
     }
     Ok(reply.unwrap_or(BufferReply::Missing))
+}
+
+// A rejected push records nothing: the source's append either lands or fails whole.
+fn single_push(
+    state: &mut State,
+    key: &str,
+    values: &[String],
+    length: i64,
+) -> Result<i64, SpendBufferListError> {
+    if state.failure == Failure::Push {
+        return Err(list_failure("async_rpush"));
+    }
+    state.singles.push((key.to_owned(), values.to_vec()));
+    Ok(length)
+}
+
+fn pipeline_result(state: &mut State) -> Result<Vec<i64>, SpendBufferListError> {
+    if state.failure == Failure::Push {
+        return Err(list_failure("async_rpush_pipeline"));
+    }
+    Ok(state.push_lengths.pop_front().unwrap_or_default())
 }
 
 fn list_failure(operation: &'static str) -> SpendBufferListError {
@@ -346,13 +362,8 @@ pub(crate) fn buffer_with_sink(events: Arc<dyn RedisBufferEventSink>) -> RedisUp
 }
 
 pub(crate) fn publisher(lists: &Arc<FakeLists>) -> RedisSpendPublisher {
-    let owned: Arc<FakeLists> = Arc::clone(lists);
-    let port: Arc<dyn SpendBufferPush> = owned;
-    RedisSpendPublisher {
-        lists: Some(port),
-        events: Arc::new(RecordingEvents::default()),
-        staging: SpendStaging::default(),
-    }
+    let (publisher, _events) = publisher_recording(lists);
+    publisher
 }
 
 pub(crate) fn publisher_recording(
@@ -379,16 +390,6 @@ pub(crate) fn detached_publisher() -> RedisSpendPublisher {
 }
 
 // The queues a scheduler tick publishes from, each unbounded enough that only a test asking for a full one gets one.
-pub(crate) fn entity_queue(capacity: i64, threshold: i64, flush_count: i64) -> SpendUpdateQueue {
-    SpendUpdateQueue::new(
-        capacity,
-        threshold,
-        flush_count,
-        Arc::new(NoSpendQueueEventSink),
-    )
-    .unwrap()
-}
-
 pub(crate) fn daily_queue(
     capacity: i64,
     threshold: i64,

@@ -10,14 +10,15 @@ use crate::redis_spend::keys::{
 };
 use crate::redis_spend::lists::{RedisSpendLists, SpendBufferPush};
 use crate::redis_spend::publication::{
-    RedisSpendPublisher, SpendStaging, SpendUpdateQueues, store_in_memory_spend_updates_in_redis,
+    RedisSpendPublisher, SpendStaging, SpendUpdateQueues, store_spend_updates_in_redis,
 };
 use crate::redis_spend::tests::real_redis::{buffer, cache_for, length, raw};
 use crate::redis_spend::tests::support::{
-    RecordingEvents, amount, daily_queue, daily_row, entity_queue, queue_item, transactions,
-    window_queue, window_transaction,
+    RecordingEvents, amount, daily_queue, daily_row, queue_item, transactions, window_queue,
+    window_transaction,
 };
-use crate::spend_queues::entity::EntityType;
+use crate::spend_queues::entity::{EntityType, SpendUpdateQueue};
+use crate::spend_queues::events::NoSpendQueueEventSink;
 
 use super::gauge;
 
@@ -35,7 +36,7 @@ async fn publication_appends_each_cohort_to_its_real_redis_list() {
         events: sink,
         staging: SpendStaging::default(),
     };
-    let entity = entity_queue(32, 16, 32);
+    let entity = SpendUpdateQueue::new(32, 16, 32, Arc::new(NoSpendQueueEventSink)).unwrap();
     let daily_user = daily_queue(32, 16, 32);
     let daily_team = daily_queue(32, 16, 32);
     let daily_org = daily_queue(32, 16, 32);
@@ -63,7 +64,7 @@ async fn publication_appends_each_cohort_to_its_real_redis_list() {
         daily_agent: &daily_agent,
         window: Some(&window),
     };
-    store_in_memory_spend_updates_in_redis(&publisher, queues)
+    store_spend_updates_in_redis(&publisher, queues)
         .await
         .unwrap();
     let mut connection = raw(&fixture).await;
