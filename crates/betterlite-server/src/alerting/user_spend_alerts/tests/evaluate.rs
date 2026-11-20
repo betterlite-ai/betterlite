@@ -156,6 +156,16 @@ fn evaluate_anomaly_fires_without_a_baseline_at_the_minimum() {
     );
 }
 
+// pydantic's gt=0 keeps a zero minimum out of LiteLLM, and the multiplier guard still only applies to a positive baseline
+#[test]
+fn evaluate_anomaly_fires_at_zero_spend_without_a_baseline() {
+    let mut settings = args();
+    settings.spend_anomaly_min_spend = decimal("0");
+    let events = evaluate(&row("user-7", 0.0, 0.0, 0.0), &settings, anomaly_only());
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].kind, UserSpendAlertKind::Anomaly);
+}
+
 #[rstest]
 #[case::below_the_minimum(9.999, 100.0, 0)]
 #[case::at_the_minimum(10.0, 0.0, 1)]

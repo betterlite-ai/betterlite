@@ -186,6 +186,40 @@ async fn send_sends_thresholds_then_anomalies() {
 }
 
 #[tokio::test]
+async fn send_runs_with_only_the_thresholds_enabled() {
+    let mut alerts = reporting(FakeCache::default(), FakeSender::default(), spender());
+    alerts.alert_types = vec![AlertType::UserSpendThresholds];
+    alerts.send_user_spend_alerts(true).await;
+    let sent = alerts.sender.alerts();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].alert_type, AlertType::UserSpendThresholds);
+    assert_eq!(
+        sent[0].message,
+        format!("{DAILY_MESSAGE}\n\n{MONTHLY_MESSAGE}")
+    );
+    assert_eq!(alerts.cache.written().len(), 2);
+}
+
+#[tokio::test]
+async fn send_runs_with_only_the_anomalies_enabled() {
+    let mut alerts = reporting(FakeCache::default(), FakeSender::default(), spender());
+    alerts.alert_types = vec![AlertType::UserSpendAnomalies];
+    alerts.send_user_spend_alerts(true).await;
+    let sent = alerts.sender.alerts();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].alert_type, AlertType::UserSpendAnomalies);
+    assert_eq!(sent[0].message, ANOMALY_MESSAGE);
+    assert_eq!(
+        alerts.cache.written(),
+        vec![CacheWrite {
+            key: "user_spend_alert_anomaly_user-1_2026-01-15".to_owned(),
+            value: "SENT".to_owned(),
+            ttl_seconds: 86_400,
+        }]
+    );
+}
+
+#[tokio::test]
 async fn send_writes_each_key_after_its_type_was_sent() {
     let alerts = reporting(FakeCache::default(), FakeSender::default(), spender());
     alerts.send_user_spend_alerts(true).await;
