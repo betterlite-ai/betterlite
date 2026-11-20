@@ -145,10 +145,11 @@ def stored_entries(assertions: CountingAssertions) -> list[StoredEntry]:
 
 async def answer(input_value: Input, proxy: ProxyServerStub, capture: WarningLog) -> Answer:
     assertions = CountingAssertions(input_value["failure"])
-    servers = CountingServers(
-        [ServerRow(f"server-{index}", auth_type) for index, auth_type in enumerate(input_value["db_servers"])],
-        input_value["failure"],
-    )
+    rows = [
+        ServerRow(f"server-{index}", auth_type)
+        for index, auth_type in enumerate(input_value["db_servers"])
+    ]
+    servers = CountingServers(rows, input_value["failure"])
     if input_value["database"]:
         proxy.prisma_client = FakePrismaClient(assertions, servers)
     cache = SSOAssertionCache()
