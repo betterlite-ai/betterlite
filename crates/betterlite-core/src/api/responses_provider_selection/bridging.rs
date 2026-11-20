@@ -15,10 +15,10 @@ pub fn bridge_kwargs(
     let forwarded = config.map(|_resolved| forwarded_names(allowed_openai_params));
     let mut kept = ParameterMap::new();
     for (name, value) in kwargs {
-        let keep = match &forwarded {
-            None => name != NEVER_BRIDGED,
-            Some(names) => names.iter().any(|known| known == name),
-        };
+        let keep = forwarded.as_ref().map_or_else(
+            || name != NEVER_BRIDGED,
+            |names| names.iter().any(|known| known == name),
+        );
         if keep {
             kept.insert(name.clone(), value.clone());
         }

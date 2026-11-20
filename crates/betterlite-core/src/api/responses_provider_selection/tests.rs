@@ -7,7 +7,7 @@ mod provider_capability_selection;
 mod supplied_file_mapping;
 
 use std::collections::BTreeMap;
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::resolution::{
@@ -103,7 +103,6 @@ fn dynamic_resolution(
 struct ResolutionCall {
     model: String,
     custom_llm_provider: Option<String>,
-    api_base: Option<String>,
     api_key: Option<String>,
 }
 
@@ -143,11 +142,10 @@ impl ModelResolver for ScriptedResolver {
     ) -> Result<ResolvedModel, ResolutionError> {
         self.calls
             .lock()
-            .expect("the resolver call log lock")
+            .unwrap_or_else(PoisonError::into_inner)
             .push(ResolutionCall {
                 model: request.model.to_owned(),
                 custom_llm_provider: request.custom_llm_provider.map(str::to_owned),
-                api_base: request.api_base.map(str::to_owned),
                 api_key: request.api_key.map(|key| key.expose_secret().to_owned()),
             });
         let answer =
@@ -254,7 +252,7 @@ impl PromptManager for ScriptedManager {
     ) -> Result<MergeAnswer, PromptManagerError> {
         self.calls
             .lock()
-            .expect("the hook call log lock")
+            .unwrap_or_else(PoisonError::into_inner)
             .push(HookRecord {
                 model: request.model.to_owned(),
                 messages: request

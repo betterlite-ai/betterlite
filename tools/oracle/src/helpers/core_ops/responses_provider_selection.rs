@@ -11,7 +11,7 @@ use serde::Deserialize;
 use std::collections::BTreeMap;
 #[derive(Debug, Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
-enum Call {
+pub(crate) enum Call {
     Selection(Selection),
     Prefixes(Prefixes),
     Compatible(Compatible),
@@ -20,7 +20,7 @@ enum Call {
     FileMapping(FileMapping),
 }
 #[derive(Debug, Deserialize)]
-struct Selection {
+pub(crate) struct Selection {
     provider: String,
     model: String,
     use_chat_completions_api: bool,
@@ -29,20 +29,20 @@ struct Selection {
     allowed_openai_params: Vec<String>,
 }
 #[derive(Debug, Deserialize)]
-struct Prefixes {
+pub(crate) struct Prefixes {
     model: String,
     flag_present: bool,
     flag: Option<JsonValue>,
 }
 #[derive(Debug, Deserialize)]
-struct Compatible {
+pub(crate) struct Compatible {
     environment: BTreeMap<String, String>,
     api_key: Option<String>,
     api_base: Option<String>,
     headers: BTreeMap<String, String>,
 }
 #[derive(Debug, Deserialize)]
-struct CredentialBoundary {
+pub(crate) struct CredentialBoundary {
     original_model: String,
     swapped_model: String,
     provider: Option<String>,
@@ -51,7 +51,7 @@ struct CredentialBoundary {
     model_info: Option<JsonValue>,
 }
 #[derive(Debug, Deserialize)]
-struct PromptCall {
+pub(crate) struct PromptCall {
     input: JsonValue,
     model: String,
     provider: Option<String>,
@@ -62,7 +62,7 @@ struct PromptCall {
     kwargs: ParameterMap,
 }
 #[derive(Debug, Deserialize)]
-struct FileMapping {
+pub(crate) struct FileMapping {
     input: ResponsesInput,
     tools: Option<Vec<ResponsesTool>>,
     model_info: Option<JsonValue>,

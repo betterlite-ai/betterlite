@@ -162,16 +162,15 @@ pub fn apply_prompt_management(
         prompt_id: text_value(kwargs, "prompt_id"),
         non_default_params: kwargs,
     };
-    let prompt_manager = match manager {
-        Some(prompt_manager) if prompt_manager.runs_prompt_hooks(&hook) => prompt_manager,
-        None | Some(_) => return Ok(untouched(input, model, custom_llm_provider, info)),
+    let Some(found) = manager.filter(|found| found.runs_prompt_hooks(&hook)) else {
+        return Ok(untouched(input, model, custom_llm_provider, info));
     };
     let call = HookCall {
         model,
         custom_llm_provider,
         use_chat_completions_api,
     };
-    let Some(answer) = run_hook(prompt_manager, &call, kwargs, &client_input, lookup)? else {
+    let Some(answer) = run_hook(found, &call, kwargs, &client_input, lookup)? else {
         return Ok(untouched(input, model, custom_llm_provider, info));
     };
     finish(FinishRequest {

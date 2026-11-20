@@ -51,10 +51,7 @@ pub(super) fn merge_request<'request>(
     }
 }
 fn provider_value(provider: Option<&str>) -> JsonValue {
-    match provider {
-        Some(name) => JsonValue::Text(name.to_owned()),
-        None => JsonValue::Null,
-    }
+    provider.map_or_else(|| JsonValue::Null, |name| JsonValue::Text(name.to_owned()))
 }
 fn resolve_prompt_provider(
     model: &str,

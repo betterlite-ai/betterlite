@@ -6,6 +6,7 @@ use betterlite_prompts::file_ids::responses::{
 };
 use betterlite_prompts::file_ids::tools::ResponsesTool;
 use rstest::rstest;
+use std::iter::repeat_with;
 
 use super::json;
 use crate::api::responses_provider_selection::ParameterMap;
@@ -197,12 +198,12 @@ fn an_empty_tool_list_is_skipped() {
 
 #[test]
 fn a_too_large_input_is_a_file_ids_error() {
-    let parts = (0..257_u32)
-        .map(|_| ResponsesContentPart {
-            kind: Some(String::from("input_text")),
-            fields: Object::new(),
-        })
-        .collect();
+    let parts = repeat_with(|| ResponsesContentPart {
+        kind: Some(String::from("input_text")),
+        fields: Object::new(),
+    })
+    .take(257)
+    .collect();
     let input = ResponsesInput::Items(vec![ResponsesItem {
         content: Some(ResponsesContent::Parts(parts)),
         fields: Object::new(),

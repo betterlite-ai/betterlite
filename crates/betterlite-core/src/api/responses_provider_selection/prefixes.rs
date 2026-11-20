@@ -23,7 +23,9 @@ pub fn pop_use_chat_completions_api(kwargs: &mut ParameterMap) -> bool {
     match kwargs.shift_remove("use_chat_completions_api") {
         Some(JsonValue::Null) | None => false,
         Some(JsonValue::Bool(flag)) => flag,
-        Some(JsonValue::Number(number)) => number.as_f64().is_some_and(|float| float.abs() > 0.0),
+        Some(JsonValue::Number(number)) => {
+            number.as_f64().is_some_and(|float| float.abs() > 0.0_f64)
+        }
         Some(JsonValue::Text(text)) => !text.is_empty(),
         Some(JsonValue::Array(items)) => !items.is_empty(),
         Some(JsonValue::Object(fields)) => !fields.is_empty(),

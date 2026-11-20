@@ -154,9 +154,8 @@ pub(super) fn prompt_call(case: &PromptCall) -> HelperResult {
     if let Some(outcome) = &case.async_outcome {
         kwargs.insert(String::from(ASYNC_PROMPT_MERGED_PARAMS), outcome.clone());
     }
-    let manager = case
-        .logging
-        .then(|| ScriptedManager::new(case.hook.as_ref()));
+    let scripted = ScriptedManager::new(case.hook.as_ref());
+    let port: Option<&dyn PromptManager> = case.logging.then_some(&scripted);
     let mut local_vars = ParameterMap::new();
     let outcome = apply_prompt_management(
         PromptRequest {
@@ -167,16 +166,12 @@ pub(super) fn prompt_call(case: &PromptCall) -> HelperResult {
             kwargs: &mut kwargs,
             local_vars: &mut local_vars,
         },
-        manager
-            .as_ref()
-            .map(|scripted| scripted as &dyn PromptManager),
+        port,
         &Registry,
         &ModelNames,
     )
     .map_err(prompt_error)?;
-    let (calls, requests) = manager
-        .as_ref()
-        .map_or((Vec::new(), Vec::new()), |scripted| scripted.records());
+    let (calls, requests) = port.map_or((Vec::new(), Vec::new()), |_| scripted.records());
     Ok(json!({
         "input": outcome.input,
         "model": outcome.model,
