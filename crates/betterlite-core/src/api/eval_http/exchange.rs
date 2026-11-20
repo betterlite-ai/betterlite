@@ -84,7 +84,7 @@ impl EvalReply {
         EvalsHttpResponse {
             status_code: self.status_code,
             headers: &self.headers,
-            text: &self.text,
+            text: self.text.as_str(),
         }
     }
 }
