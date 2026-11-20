@@ -453,6 +453,14 @@ fn retrieve_async_sends_the_same_request_with_the_async_client() {
     let request = only(&fixture.source.seen());
     assert_eq!(request.method, ContainerMethod::Get);
     assert_eq!(request.url, format!("{API_BASE}/containers/{CONTAINER_ID}"));
+    assert_eq!(
+        request.headers,
+        header_map(&[
+            ("authorization", "Bearer sk-test"),
+            ("x-provider", "validated"),
+        ])
+    );
+    assert_eq!(fixture.hook.seen().len(), 1);
 }
 
 #[test]
