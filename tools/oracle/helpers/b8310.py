@@ -236,7 +236,7 @@ def params_view(recorded: RequestRecord | None) -> JsonValue:
         return None
     params: dict[str, JsonValue] = {}
     for name, value in body.items():
-        if name in ("model", "messages", "stream"):
+        if name in ("model", "messages"):
             continue
         params[name] = value
     return params

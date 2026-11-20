@@ -30,14 +30,20 @@ pub(super) fn request_view(
     json!({"url": url, "headers": kept})
 }
 
-// the request body the shared handler builds from the arm's params, minus the fields the case fixes
-pub(super) fn params_view(optional_params: &Object) -> Result<Value, Box<HelperError>> {
+// the request body the shared handler builds from the arm's params and stream, minus the fields the case fixes
+pub(super) fn params_view(
+    optional_params: &Object,
+    stream: Option<bool>,
+) -> Result<Value, Box<HelperError>> {
     let mut value = serde_json::to_value(optional_params)?;
-    if let Value::Object(body) = &mut value
-        && let Some(Value::Object(extra)) = body.remove("extra_body")
-    {
-        for (key, entry) in extra {
-            body.insert(key, entry);
+    if let Value::Object(body) = &mut value {
+        if let Some(Value::Object(extra)) = body.remove("extra_body") {
+            for (key, entry) in extra {
+                body.insert(key, entry);
+            }
+        }
+        if let Some(flag) = stream {
+            body.insert(String::from("stream"), Value::Bool(flag));
         }
     }
     Ok(value)

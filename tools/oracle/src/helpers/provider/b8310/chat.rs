@@ -86,7 +86,7 @@ pub(super) fn run(runtime: &Runtime, case: &Case) -> HelperResult {
     };
     Ok(json!({
         "request": request_view(&url, call.api_key.as_ref(), call.headers.as_ref()),
-        "params": params_view(&call.optional_params)?,
+        "params": params_view(&call.optional_params, call.stream)?,
         "error": error_or_null(&outcome),
     }))
 }
