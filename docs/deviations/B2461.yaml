@@ -1,0 +1,25 @@
+task: B2461
+deviations: []
+kept_bugs:
+  - what: >-
+      A sync upload whose transform returns raw bytes decodes them as UTF-8 before sending, so a
+      body that is not valid UTF-8 fails with a decode error and no HTTP request; the async path
+      sends the same bytes unchanged.
+    why: >-
+      The two paths are one service with a mode flag, and the existing sync/async difference is
+      observable to callers, so betterlite keeps it instead of making both paths send bytes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L3572-L3586
+  - what: >-
+      The sync path hands transform_create_file_response a params copy that carries api_base as
+      upload_url when the provider transform set none; the async path adds no such fallback.
+    why: >-
+      Provider response transforms read upload_url, and the asymmetry between the two paths is
+      visible to them, so betterlite reproduces it rather than changing which transforms see it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L3607-L3619
+  - what: >-
+      A streaming media upload that answers 204 is treated as a failure, since only 200 and 201
+      count as success.
+    why: >-
+      The status check runs before any body read, so a provider that answers 204 to a media upload
+      fails in LiteLLM; a setup that sees the failure relies on it, and betterlite keeps it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L3789-L3792
