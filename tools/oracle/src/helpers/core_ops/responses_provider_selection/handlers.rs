@@ -100,28 +100,35 @@ pub(super) fn prefixes(case: &Prefixes) -> HelperResult {
     }))
 }
 pub(super) fn compatible(case: &Compatible) -> HelperResult {
-    let loaded = ConfigLoader {
-        lookup: case.environment.clone(),
-    }
-    .load("")
-    .or_config_error()?;
     let config = OpenAiLikeResponsesConfig {
-        settings: loaded.sections.openai_like_settings.clone(),
+        settings: ConfigLoader {
+            lookup: case.environment.clone(),
+        }
+        .load("")
+        .or_config_error()?
+        .sections
+        .openai_like_settings
+        .clone(),
     };
     let explicit_key = case
         .api_key
         .as_ref()
         .map(|key| SecretString::from(String::from(key.as_str())));
+    let identity = <&'static str>::from(OpenAiLikeResponsesConfig::IDENTITY.custom_llm_provider);
+    let native_file_search = OpenAiLikeResponsesConfig::IDENTITY.supports_native_file_search;
+    let encrypted = OpenAiLikeResponsesConfig::IDENTITY.encrypted_agent_messages;
+    let headers = config.validate_environment(case.headers.clone(), explicit_key.as_ref());
     let url = config
         .get_complete_url(case.api_base.as_deref())
         .or_value_error()?;
-    Ok(json!({
-        "identity": <&'static str>::from(OpenAiLikeResponsesConfig::IDENTITY.custom_llm_provider),
-        "native_file_search": OpenAiLikeResponsesConfig::IDENTITY.supports_native_file_search,
-        "encrypted": OpenAiLikeResponsesConfig::IDENTITY.encrypted_agent_messages,
-        "headers": config.validate_environment(case.headers.clone(), explicit_key.as_ref()),
+    let answer: Value = json!({
+        "identity": identity,
+        "native_file_search": native_file_search,
+        "encrypted": encrypted,
+        "headers": headers,
         "url": url,
-    }))
+    });
+    Ok(answer)
 }
 pub(super) fn credential_boundary(case: &CredentialBoundary) -> HelperResult {
     let provider = resolve_swapped_provider(
