@@ -8,7 +8,6 @@ use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::reasoning_models::{
     is_model_gpt_5_4_plus_model, is_model_gpt_5_search_model,
 };
-// B5651's facts for the chat-to-Responses bridge, from B2219's model info, B500's OpenAI base rules and B502's GPT-5 checks
 pub struct ModelBridgeFacts<'facts, Rules: FoundryRules + ?Sized> {
     pub facts: &'facts dyn ModelFacts,
     pub foundry: &'facts Rules,

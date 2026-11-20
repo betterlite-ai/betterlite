@@ -263,7 +263,7 @@ async fn target_palm_raises_its_value_error() {
     assert!(
         mapped
             .to_string()
-            .contains("Palm was decommissioned on October 2024")
+            .contains("Palm was decommisioned on October 2024")
     );
 }
 

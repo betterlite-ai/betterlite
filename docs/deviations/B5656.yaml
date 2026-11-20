@@ -18,4 +18,7 @@ deviations:
   - what: batch_completion_models ends with a named error when every deployment fails, where LiteLLM returns None from completion.
     why: None is the empty answer the fallback and handler code reads as no response, and a caller of the Rust entry cannot tell it from a missing result.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batch_completion/main.py#L127-L200
-kept_bugs: []
+kept_bugs:
+  - what: A later deployment in a model list inherits the fields of the deployments before it for the keys it leaves out.
+    why: LiteLLM mutates the kwargs it passes to completion inside the deployment loop, so a working config can rely on the earlier deployment's api_base or temperature.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batch_completion/main.py#L163-L171

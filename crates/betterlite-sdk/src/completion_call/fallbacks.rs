@@ -18,7 +18,6 @@ const INTERNAL_PARAMS: [&str; 3] = [
     "mcp_handler_context",
     "_skip_mcp_handler",
 ];
-// async_completion_with_fallbacks: the original model first, then every fallback, one litellm_call_id
 pub async fn run_fallbacks(
     requester: &dyn CallTarget,
     call: FallbackCall,

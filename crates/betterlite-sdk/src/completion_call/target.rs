@@ -37,7 +37,6 @@ pub struct CompletionTarget<'ports> {
     pub sleeper: &'ports dyn Sleeper,
 }
 impl CompletionTarget<'_> {
-    // Every error leaves through exception_type, with the call's model and the provider the branch named
     pub fn error(&self, error: CompletionCallError, model: &str) -> CallError {
         into_call_error(&error, model, "", &self.redactor)
     }
@@ -132,13 +131,13 @@ impl CompletionTarget<'_> {
         logging: Option<&LoggingHandle>,
     ) -> Result<CallOutcome, CompletionCallError> {
         let mut last_failure: Option<CompletionCallError> = None;
+        let mut request = request::args_to_map(&call.args)?;
+        request.shift_remove("model_list");
         for deployment in &call.deployments {
-            let mut request = request::args_to_map(&call.args)?;
-            request.shift_remove("model_list");
             for (name, value) in deployment {
                 request.insert(name.clone(), value.clone());
             }
-            match self.call(request, logging).await {
+            match self.call(request.clone(), logging).await {
                 Ok(outcome) if !super::fallbacks::is_empty(&outcome) => return Ok(outcome),
                 Ok(_) => {}
                 Err(error) => last_failure = Some(CompletionCallError::Call(error)),

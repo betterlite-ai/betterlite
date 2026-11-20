@@ -37,7 +37,7 @@ pub enum CompletionCallError {
     Call(#[from] CallError),
     // main.py's palm branch raises a ValueError with this text
     #[error(
-        "Palm was decommissioned on October 2024. Please use the `gemini/` route for Gemini Google AI Studio Models. Announcement: https://ai.google.dev/palm_docs/palm?hl=en"
+        "Palm was decommisioned on October 2024. Please use the `gemini/` route for Gemini Google AI Studio Models. Announcement: https://ai.google.dev/palm_docs/palm?hl=en"
     )]
     Palm,
     #[error("the MCP gateway loop is not available for this call")]

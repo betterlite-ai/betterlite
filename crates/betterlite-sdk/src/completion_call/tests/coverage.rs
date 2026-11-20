@@ -100,6 +100,38 @@ async fn target_model_list_tries_the_next_deployment_after_an_empty_answer() {
     );
 }
 
+#[tokio::test]
+async fn target_model_list_keeps_litellms_deployment_parameter_leak() {
+    let harness = Harness::new();
+    harness.chat.answers_null("empty-model");
+    let target = harness.target();
+    let deployments = vec![
+        JsonObject::from([
+            (
+                String::from("model"),
+                Json::Text(String::from("empty-model")),
+            ),
+            (String::from("temperature"), json("0.4")),
+        ]),
+        JsonObject::from([(String::from("model"), Json::Text(String::from("gpt-4o")))]),
+    ];
+    let call = ModelListCall {
+        deployments,
+        args: args_from(&format!(r#"{{"model":"gpt-4o","messages":[{USER}]}}"#)),
+    };
+    target
+        .run(PreparedCompletion::ModelList(call), false, None)
+        .await
+        .unwrap();
+    let seen = harness.chat.seen();
+    assert_eq!(seen.len(), 2);
+    assert!(
+        seen[1].body.contains("\"temperature\":0.4"),
+        "{}",
+        seen[1].body
+    );
+}
+
 // ---- fallback_ ----
 
 #[tokio::test]
