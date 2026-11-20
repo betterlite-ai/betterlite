@@ -11,6 +11,7 @@ use betterlite_openai::openai_base_config::Object;
 use http::Method;
 use http::header::HeaderValue;
 use indexmap::IndexMap;
+use rstest::rstest;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
@@ -875,33 +876,34 @@ async fn speech_http_invalid_url() {
     assert!(wire.requests().is_empty());
 }
 
+#[rstest]
+#[case::name("x y", "ok")]
+#[case::value("x-ok", "line\nbreak")]
 #[tokio::test]
-async fn speech_http_invalid_header() {
+async fn speech_http_invalid_header(#[case] name: &str, #[case] value: &str) {
     let wire = Wire::replying(Reply::bytes(200, b"audio"));
     let source = Source::new(wire.clone());
-    for (name, value) in [("x y", "ok"), ("x-ok", "line\nbreak")] {
-        let config = RecordingConfig::new(
-            Ok(URL.to_owned()),
-            data(Some(r#"{"input":"hello"}"#), None, None),
-            headers(&[(name, value)]),
-        );
-        let deps = SpeechDeps {
-            config: &config,
-            source: &source,
-            supplied: None,
-        };
-        let declared = params(None, Some(URL), None);
-        let optional = Object::new();
-        let litellm = Object::new();
-        let call = simple_call(&declared, &optional, &litellm);
-        let mut fixture = Fixture::new();
-        let result = run(&mut fixture, &deps, Mode::Sync, &call).await;
-        if name.contains(' ') {
-            assert!(matches!(result, Err(SpeechError::HeaderName { .. })));
-        } else {
-            assert!(matches!(result, Err(SpeechError::HeaderValue { .. })));
-        }
-        assert!(fixture.input().is_some());
+    let config = RecordingConfig::new(
+        Ok(URL.to_owned()),
+        data(Some(r#"{"input":"hello"}"#), None, None),
+        headers(&[(name, value)]),
+    );
+    let deps = SpeechDeps {
+        config: &config,
+        source: &source,
+        supplied: None,
+    };
+    let declared = params(None, Some(URL), None);
+    let optional = Object::new();
+    let litellm = Object::new();
+    let call = simple_call(&declared, &optional, &litellm);
+    let mut fixture = Fixture::new();
+    let result = run(&mut fixture, &deps, Mode::Sync, &call).await;
+    if name.contains(' ') {
+        assert!(matches!(result, Err(SpeechError::HeaderName { .. })));
+    } else {
+        assert!(matches!(result, Err(SpeechError::HeaderValue { .. })));
     }
+    assert!(fixture.input().is_some());
     assert!(wire.requests().is_empty());
 }
