@@ -11,7 +11,7 @@ pub async fn attach_object_permission_to_dict(
     data_dict: &mut BTreeMap<String, JsonData>,
     client: Option<PrismaClient<'_>>,
 ) -> Result<(), ObjectPermissionError> {
-    let Some(client) = client else {
+    let Some(prisma) = client else {
         return Err(ObjectPermissionError::PrismaClientMissing);
     };
     let Some(JsonData::String(object_permission_id)) = data_dict.get("object_permission_id") else {
@@ -20,7 +20,7 @@ pub async fn attach_object_permission_to_dict(
     if object_permission_id.is_empty() {
         return Ok(());
     }
-    let found = find_object_permission(client, object_permission_id).await?;
+    let found = find_object_permission(prisma, object_permission_id).await?;
     if let Some(row) = found {
         // The row dump replaces an attached object wholesale, the same value model_dump and the v1 dict fallback return.
         data_dict.insert("object_permission".to_owned(), row);

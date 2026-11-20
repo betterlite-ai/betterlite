@@ -80,10 +80,10 @@ async fn attach_db_first() {
     assert_eq!(data, fields(r#"{"object_permission_id": "perm-1"}"#));
 
     let mut empty = BTreeMap::new();
-    let error = attach_object_permission_to_dict(&mut empty, None)
+    let empty_error = attach_object_permission_to_dict(&mut empty, None)
         .await
         .unwrap_err();
-    assert_eq!(error.to_string(), "Prisma client not found");
+    assert_eq!(empty_error.to_string(), "Prisma client not found");
 
     let database = TestDatabase::start().await;
     let mut without_id = fields(r#"{"team_id": "t"}"#);
@@ -294,35 +294,36 @@ async fn safe_json_tool_map() {
     );
 
     let null_update = fields(r#"{"mcp_tool_permissions": null}"#);
-    let prepared = prepare_object_permission_upsert(&null_update, None, database.prisma(), &[])
-        .await
-        .unwrap();
+    let prepared_null =
+        prepare_object_permission_upsert(&null_update, None, database.prisma(), &[])
+            .await
+            .unwrap();
     assert_eq!(
-        prepared.record.get("mcp_tool_permissions"),
+        prepared_null.record.get("mcp_tool_permissions"),
         Some(&string("null"))
     );
 
     // A stored grant is already the column's JSON string and is not encoded a second time
     database
-        .seed_permission("perm-1", r#"[]"#, Some(r#"{"srv-a": ["t1"]}"#))
+        .seed_permission("perm-1", "[]", Some(r#"{"srv-a": ["t1"]}"#))
         .await;
     let unrelated = fields(r#"{"mcp_servers": ["srv-b"]}"#);
-    let prepared =
+    let prepared_unrelated =
         prepare_object_permission_upsert(&unrelated, Some("perm-1"), database.prisma(), &[])
             .await
             .unwrap();
     assert_eq!(
-        prepared.record.get("mcp_tool_permissions"),
+        prepared_unrelated.record.get("mcp_tool_permissions"),
         Some(&string(r#"{"srv-a": ["t1"]}"#))
     );
 
     let echoed = fields(r#"{"mcp_tool_permissions": "{\"srv-a\": [\"t2\"]}"}"#);
-    let prepared =
+    let prepared_echoed =
         prepare_object_permission_upsert(&echoed, Some("perm-1"), database.prisma(), &[])
             .await
             .unwrap();
     assert_eq!(
-        prepared.record.get("mcp_tool_permissions"),
+        prepared_echoed.record.get("mcp_tool_permissions"),
         Some(&string(r#"{"srv-a": ["t2"]}"#))
     );
     database.close().await;
@@ -331,25 +332,25 @@ async fn safe_json_tool_map() {
 #[tokio::test]
 async fn update_pop_before_parse() {
     let mut data = fields(r#"{"team_id": "t", "object_permission": {"mcp_servers": ["a"]}}"#);
-    let error = handle_update_object_permission_common(&mut data, None, None, &[])
+    let pop_error = handle_update_object_permission_common(&mut data, None, None, &[])
         .await
         .unwrap_err();
-    assert_eq!(error.to_string(), "Prisma client not found");
+    assert_eq!(pop_error.to_string(), "Prisma client not found");
     assert!(data.contains_key("object_permission"));
 
     let database = TestDatabase::start().await;
     let mut invalid = fields(r#"{"object_permission": "{", "team_id": "t"}"#);
-    let error =
+    let invalid_error =
         handle_update_object_permission_common(&mut invalid, None, Some(database.prisma()), &[])
             .await
             .unwrap_err();
-    assert!(matches!(error, ObjectPermissionError::Document(_)));
+    assert!(matches!(invalid_error, ObjectPermissionError::Document(_)));
     assert!(!invalid.contains_key("object_permission"));
     assert_eq!(invalid.get("team_id"), Some(&string("t")));
     assert_eq!(database.permission_count().await, 0);
 
     let mut explicit_null = fields(r#"{"object_permission": null}"#);
-    let returned = handle_update_object_permission_common(
+    let null_returned = handle_update_object_permission_common(
         &mut explicit_null,
         None,
         Some(database.prisma()),
@@ -357,14 +358,14 @@ async fn update_pop_before_parse() {
     )
     .await
     .unwrap();
-    assert_eq!(returned, None);
+    assert_eq!(null_returned, None);
     assert!(!explicit_null.contains_key("object_permission"));
     let mut missing = fields(r#"{"team_id": "t"}"#);
-    let returned =
+    let missing_returned =
         handle_update_object_permission_common(&mut missing, None, Some(database.prisma()), &[])
             .await
             .unwrap();
-    assert_eq!(returned, None);
+    assert_eq!(missing_returned, None);
     assert_eq!(missing, fields(r#"{"team_id": "t"}"#));
     assert_eq!(database.permission_count().await, 0);
     database.close().await;
@@ -533,12 +534,12 @@ async fn changed_collision_400() {
     database.seed_server("srv-1", Some("shared"), None).await;
     database.seed_server("srv-2", Some("shared"), None).await;
     let mut data = permission_input(r#"{"mcp_tool_permissions": {"shared": ["t1"]}}"#);
-    let error = set_object_permission(&mut data, Some(database.prisma()), &[])
+    let create_error = set_object_permission(&mut data, Some(database.prisma()), &[])
         .await
         .unwrap_err();
-    assert_eq!(error.status_code(), Some(StatusCode::BAD_REQUEST));
+    assert_eq!(create_error.status_code(), Some(StatusCode::BAD_REQUEST));
     assert_eq!(
-        error.to_string(),
+        create_error.to_string(),
         collision_message("'shared' matches MCP servers ['srv-1', 'srv-2']")
     );
     assert_eq!(
@@ -549,10 +550,10 @@ async fn changed_collision_400() {
 
     // A changed empty tool set on a stored legacy collision is rejected like a new entry
     database
-        .seed_permission("perm-1", r#"[]"#, Some(r#"{"shared": ["t1"]}"#))
+        .seed_permission("perm-1", "[]", Some(r#"{"shared": ["t1"]}"#))
         .await;
     let mut update = permission_input(r#"{"mcp_tool_permissions": {"shared": []}}"#);
-    let error = handle_update_object_permission_common(
+    let change_error = handle_update_object_permission_common(
         &mut update,
         Some("perm-1"),
         Some(database.prisma()),
@@ -560,7 +561,7 @@ async fn changed_collision_400() {
     )
     .await
     .unwrap_err();
-    assert_eq!(error.status_code(), Some(StatusCode::BAD_REQUEST));
+    assert_eq!(change_error.status_code(), Some(StatusCode::BAD_REQUEST));
     assert_eq!(
         database
             .permission_row("perm-1")
@@ -749,7 +750,8 @@ async fn cache_id_filter_order() {
 
     let empty_eviction = RecordingEviction::default();
     let quiet = PublishTasks::default();
-    invalidate_cached_object_permissions(&[], &empty_eviction, &quiet, None).await;
+    invalidate_cached_object_permissions::<RecordingEndpoint>(&[], &empty_eviction, &quiet, None)
+        .await;
     quiet.shutdown().await;
     assert!(empty_eviction.keys.lock().unwrap().is_empty());
 }
@@ -781,7 +783,7 @@ async fn eviction_failure() {
     );
 
     let quiet = PublishTasks::default();
-    invalidate_cached_object_permissions(
+    invalidate_cached_object_permissions::<RecordingEndpoint>(
         &[Some("third")],
         &RecordingEviction::failing(),
         &quiet,
@@ -794,27 +796,27 @@ async fn eviction_failure() {
 #[tokio::test]
 async fn postgres_pinned_rows() {
     let database = TestDatabase::start().await;
-    let mut created = permission_input(
+    let mut initial = permission_input(
         r#"{"object_permission_id": "override", "mcp_servers": ["srv-a"], "mcp_tool_permissions": {"srv-a": ["t1"]}}"#,
     );
     let returned =
-        handle_update_object_permission_common(&mut created, None, Some(database.prisma()), &[])
+        handle_update_object_permission_common(&mut initial, None, Some(database.prisma()), &[])
             .await
             .unwrap();
     let Some(id) = returned else {
         panic!("the upsert returns the pinned id");
     };
     assert_ne!(id, "override");
-    let row = database.permission_row(&id).await.unwrap();
-    assert_eq!(row.get("object_permission_id"), Some(&string(&id)));
-    assert_eq!(row.get("mcp_servers"), Some(&json(r#"["srv-a"]"#)));
+    let created_row = database.permission_row(&id).await.unwrap();
+    assert_eq!(created_row.get("object_permission_id"), Some(&string(&id)));
+    assert_eq!(created_row.get("mcp_servers"), Some(&json(r#"["srv-a"]"#)));
     assert_eq!(
-        row.get("mcp_tool_permissions"),
+        created_row.get("mcp_tool_permissions"),
         Some(&string(r#"{"srv-a":["t1"]}"#))
     );
 
     let mut updated = permission_input(r#"{"models": ["m"], "object_permission_id": "other"}"#);
-    let returned = handle_update_object_permission_common(
+    let update_result = handle_update_object_permission_common(
         &mut updated,
         Some(&id),
         Some(database.prisma()),
@@ -822,12 +824,12 @@ async fn postgres_pinned_rows() {
     )
     .await
     .unwrap();
-    assert_eq!(returned.as_deref(), Some(id.as_str()));
-    let row = database.permission_row(&id).await.unwrap();
-    assert_eq!(row.get("models"), Some(&json(r#"["m"]"#)));
-    assert_eq!(row.get("mcp_servers"), Some(&json(r#"["srv-a"]"#)));
+    assert_eq!(update_result.as_deref(), Some(id.as_str()));
+    let stored_row = database.permission_row(&id).await.unwrap();
+    assert_eq!(stored_row.get("models"), Some(&json(r#"["m"]"#)));
+    assert_eq!(stored_row.get("mcp_servers"), Some(&json(r#"["srv-a"]"#)));
     assert_eq!(
-        row.get("mcp_tool_permissions"),
+        stored_row.get("mcp_tool_permissions"),
         Some(&string(r#"{"srv-a":["t1"]}"#))
     );
     assert_eq!(database.permission_count().await, 1);
@@ -840,34 +842,34 @@ async fn postgres_failure_effects() {
     database.seed_server("srv-1", Some("shared"), None).await;
     database.seed_server("srv-2", Some("shared"), None).await;
     let mut ambiguous = permission_input(r#"{"mcp_tool_permissions": {"shared": ["t1"]}}"#);
-    let error =
+    let ambiguous_error =
         handle_update_object_permission_common(&mut ambiguous, None, Some(database.prisma()), &[])
             .await
             .unwrap_err();
-    assert_eq!(error.status_code(), Some(StatusCode::BAD_REQUEST));
+    assert_eq!(ambiguous_error.status_code(), Some(StatusCode::BAD_REQUEST));
     assert!(!ambiguous.contains_key("object_permission"));
     assert_eq!(database.permission_count().await, 0);
 
     database.drop_permission_table().await;
-    let mut failed_update =
+    let mut failed_upsert =
         fields(r#"{"team_id": "t", "object_permission": {"mcp_servers": ["a"]}}"#);
-    let error = handle_update_object_permission_common(
-        &mut failed_update,
+    let upsert_error = handle_update_object_permission_common(
+        &mut failed_upsert,
         None,
         Some(database.prisma()),
         &[],
     )
     .await
     .unwrap_err();
-    assert!(matches!(error, ObjectPermissionError::Database(_)));
-    assert_eq!(failed_update, fields(r#"{"team_id": "t"}"#));
+    assert!(matches!(upsert_error, ObjectPermissionError::Database(_)));
+    assert_eq!(failed_upsert, fields(r#"{"team_id": "t"}"#));
 
     let original = fields(r#"{"team_id": "t", "object_permission": {"mcp_servers": ["a"]}}"#);
     let mut failed_create = original.clone();
-    let error = set_object_permission(&mut failed_create, Some(database.prisma()), &[])
+    let create_error = set_object_permission(&mut failed_create, Some(database.prisma()), &[])
         .await
         .unwrap_err();
-    assert!(matches!(error, ObjectPermissionError::Database(_)));
+    assert!(matches!(create_error, ObjectPermissionError::Database(_)));
     assert_eq!(failed_create, original);
     database.close().await;
 }

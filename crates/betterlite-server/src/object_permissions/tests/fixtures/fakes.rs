@@ -16,7 +16,7 @@ pub(crate) struct RecordingEviction {
 }
 
 impl RecordingEviction {
-    pub(crate) fn failing() -> Self {
+    pub(crate) const fn failing() -> Self {
         Self {
             keys: Mutex::new(Vec::new()),
             fail: true,

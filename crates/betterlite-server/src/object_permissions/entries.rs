@@ -49,24 +49,23 @@ fn entries_from_object(
 ) -> Result<ToolPermissionEntries, ToolPermissionEntriesError> {
     let mut entries = BTreeMap::new();
     for (identifier, tools) in fields {
-        let mut names = BTreeSet::new();
-        match tools {
-            JsonData::Null => {}
-            JsonData::Array(items) => {
-                for item in items {
-                    let JsonData::String(name) = item else {
-                        return Err(ToolPermissionEntriesError::Value {
-                            identifier: identifier.clone(),
-                        });
-                    };
-                    names.insert(name.clone());
-                }
-            }
+        let items: &[JsonData] = match tools {
+            JsonData::Null => &[],
+            JsonData::Array(array) => array.as_slice(),
             JsonData::Bool(_) | JsonData::Number(_) | JsonData::String(_) | JsonData::Object(_) => {
                 return Err(ToolPermissionEntriesError::Value {
                     identifier: identifier.clone(),
                 });
             }
+        };
+        let mut names = BTreeSet::new();
+        for item in items {
+            let JsonData::String(name) = item else {
+                return Err(ToolPermissionEntriesError::Value {
+                    identifier: identifier.clone(),
+                });
+            };
+            names.insert(name.clone());
         }
         entries.insert(identifier.clone(), names);
     }

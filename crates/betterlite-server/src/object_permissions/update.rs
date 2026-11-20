@@ -24,7 +24,7 @@ pub async fn handle_update_object_permission_common(
     client: Option<PrismaClient<'_>>,
     registry: &[&MCPServer],
 ) -> Result<Option<String>, ObjectPermissionError> {
-    let Some(client) = client else {
+    let Some(prisma) = client else {
         return Err(ObjectPermissionError::PrismaClientMissing);
     };
     let Some(new_object_permission) = data_json.remove("object_permission") else {
@@ -36,13 +36,13 @@ pub async fn handle_update_object_permission_common(
     let fields = permission_fields(new_object_permission)?;
     let prepared =
         // ast-grep-ignore: no-long-names
-        prepare_object_permission_upsert(&fields, existing_object_permission_id, client, registry)
+        prepare_object_permission_upsert(&fields, existing_object_permission_id, prisma, registry)
             .await?;
     let PreparedUpsert {
         object_permission_id,
         record,
     } = prepared;
-    let row = ObjectPermissionRepository::new(Some(client), true)
+    let row = ObjectPermissionRepository::new(Some(prisma), true)
         .table()
         .map_err(TableError::Database)?
         .upsert(object_permission_id, RowWrite(record))
@@ -90,7 +90,7 @@ pub async fn set_object_permission(
     client: Option<PrismaClient<'_>>,
     registry: &[&MCPServer],
 ) -> Result<(), ObjectPermissionError> {
-    let Some(client) = client else {
+    let Some(prisma) = client else {
         return Ok(());
     };
     let Some(value) = data_json.get("object_permission").cloned() else {
@@ -105,7 +105,7 @@ pub async fn set_object_permission(
     reject_ambiguous_mcp_tool_permission_keys(
         clean.get("mcp_tool_permissions"),
         None,
-        Some(client),
+        Some(prisma),
         registry,
     )
     .await?;
@@ -115,7 +115,7 @@ pub async fn set_object_permission(
             serialized_tool_permissions(&tools)?,
         );
     }
-    let created = ObjectPermissionRepository::new(Some(client), true)
+    let created = ObjectPermissionRepository::new(Some(prisma), true)
         .table()
         .map_err(TableError::Database)?
         .create(RowWrite(clean))
