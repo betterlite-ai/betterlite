@@ -6,8 +6,10 @@ use super::super::ports::HookPorts;
 use super::super::spec::{HookSettings, HookSpec};
 use super::super::wire;
 
+type ClassKind = (&'static str, fn(Box<LitellmParams>) -> HookKind);
+
 // B8666's dispatch builds the class, so these folders keep the params under the variant their wire name picks
-const CLASS_KINDS: &[(&str, fn(Box<LitellmParams>) -> HookKind)] = &[
+const CLASS_KINDS: &[ClassKind] = &[
     (wire::BLOCK_CODE_EXECUTION, HookKind::BlockCodeExecution),
     (wire::COMPRESR, HookKind::Compresr),
     (wire::CUSTOM_CODE, HookKind::CustomCode),
