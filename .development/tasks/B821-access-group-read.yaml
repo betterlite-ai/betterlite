@@ -28,9 +28,12 @@ description: >-
   Empty _attached_team_ids_for returns {} without a query. Cases team_mirror_projection,
   stored_then_carrying_order and empty_projection_no_io cover both directions of drift.
 
-  After the team query, concurrently obtain MCP, agent and key display names via B065 resource_display_names,
-  passing B4731 config_mcp_servers and B4776 global_agent_registry snapshots. Each category receives
-  first-seen IDs across all groups. B065 owns DB-over-config precedence and key_alias lookup; this task
+  After the team query, concurrently obtain MCP, agent and key display names through B1645's
+  management_display_names (mcp_server_display_names, agent_display_names, key_display_names), passing an empty
+  config server map and the B4776 global_agent_registry snapshot. The map stays empty because B8614 stops startup
+  when config.yaml sets mcp_servers, so no config MCP server exists yet; B9997 hands in its registry's config
+  servers once it puts the MCP registry in Shared. Each category receives
+  first-seen IDs across all groups. B1645 owns DB-over-config precedence and key_alias lookup; this task
   maps names back to every original resource ID, retaining duplicates/order and null for missing labels.
   Keys are identified by their stored hashes and names by aliases, never by plaintext key material.
   _record_to_response preserves the raw row except corrected team IDs and four expanded lists; response

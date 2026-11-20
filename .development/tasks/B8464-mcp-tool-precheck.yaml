@@ -52,7 +52,7 @@ description: >-
   returns the task handle for B8465 to await next to the tool call.
 
 
-  McpGuardrailHooks is a trait for the proxy logging calls, so tests use a fake. B8399 implements it over their owners: pre_call_hook is B8393's `PreCallHook::run`, during_call_hook is B8392's `during_call_hook` (guardrails/hook_execution/during_call.rs), and the payload conversions are B8401's.
+  McpGuardrailHooks is a trait for the proxy logging calls, so tests use a fake. This task also implements it over B8399's ProxyLogging, through their owners: pre_call_hook is B8393's `PreCallHook::run`, during_call_hook is B8392's `during_call_hook` (guardrails/hook_execution/during_call.rs), and the payload conversions are B8401's.
 
 scope:
   paths:
@@ -104,7 +104,7 @@ oracle_cases:
 deviations: []
 
 out_of_scope:
-  - "ProxyLogging.pre_call_hook (B8393, PreCallHook::run) and during_call_hook (B8392, during_call_hook): this task calls them through McpGuardrailHooks, which B8399 implements."
+  - "ProxyLogging.pre_call_hook (B8393, PreCallHook::run) and during_call_hook (B8392, during_call_hook): this task calls them through McpGuardrailHooks and implements that trait over B8399's ProxyLogging."
   - "MCP hook payload conversion (_create_mcp_request_object_from_kwargs, _convert_mcp_to_llm_format, _convert_mcp_hook_response_to_kwargs): B8401."
   - "is_tool_allowed_for_server: B4672. match_known_tool_name and server_applies_tool_allowlist: B6594."
   - The HTTP cases for a denied tools/call come with the MCP routes in B136; helper cases cover the 403 details.

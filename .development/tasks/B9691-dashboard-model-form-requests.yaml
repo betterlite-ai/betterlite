@@ -67,9 +67,10 @@ description: >-
   model_info with access_groups}, or for a member-managed router only {litellm_params:
   {complexity_router_config, complexity_router_default_model}}; the legacy semantic router
   sends auto_router_config, auto_router_default_model and auto_router_embedding_model (B835).
-  Add the default-prompt GET and POST, an availability call with a missing tier model, a
-  failing and a passing validation, a test_routing call against saved and unsaved configs, the
-  create, both edit bodies, a delete and the member-managed edit by a team member.
+  Add the tier connection tests, the create, both edit bodies, a delete and the member-managed
+  edit by a team member. The scorer defaults and presets reads (B3192, mounted by B077), the
+  default-prompt GET and POST (B840), availability and validation (B379) and test_routing
+  (B349) are later work: those tasks add their own page cases, so no case here sends them.
 
   Use B860's Postgres fixture with B9942's bootstrap, store_model_in_db true and mock upstream
   deployments for every tier model so no case reaches a provider. Compare status, error
@@ -119,7 +120,7 @@ references:
 dod:
   - text: Add-model creates, the form connection test and the provider, credential and access-group reads match LiteLLM through the booted proxy.
     proof: [model-form-cases, oracle]
-  - text: Auto-router prompt, availability, validation, routing test, create, both edit bodies and delete match LiteLLM.
+  - text: Auto-router tier connection tests, create, both edit bodies and delete match LiteLLM.
     proof: [model-form-cases, oracle]
   - text: The Team-BYOK controls work without a paid claim while team scope rules and server checks stay in force.
     proof: [model-form-components, model-form-cases, oracle]
@@ -142,9 +143,6 @@ oracle_cases:
   - tools/oracle/cases/ui/model-forms/create-team-model-admin-eligible-mit.yaml
   - tools/oracle/cases/ui/model-forms/create-team-model-foreign-team-denied.yaml
   - tools/oracle/cases/ui/model-forms/unsaved-form-connection-test.yaml
-  - tools/oracle/cases/ui/model-forms/classifier-default-and-assembled-prompt.yaml
-  - tools/oracle/cases/ui/model-forms/availability-and-validation.yaml
-  - tools/oracle/cases/ui/model-forms/routing-test-saved-and-unsaved.yaml
   - tools/oracle/cases/ui/model-forms/tier-connection-tests.yaml
   - tools/oracle/cases/ui/model-forms/auto-router-create-edit-delete.yaml
   - tools/oracle/cases/ui/model-forms/member-managed-router-edit.yaml

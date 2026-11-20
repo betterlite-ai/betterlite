@@ -1,0 +1,92 @@
+kind: helper
+name: messages-response-events-completed-dictionary-shape
+call:
+  messages_response_events:
+    message_id: msg_dictionary
+    model: model_a
+    redaction: enabled
+    steps:
+      - function: process_event
+        event:
+          shape: mapping
+          fields:
+            type: response.completed
+            response:
+              status: incomplete
+              usage: {input_tokens: 10, input_tokens_details: {cached_tokens: 3}, output_tokens: 2, total_tokens: 12}
+              output:
+                - {type: function_call, call_id: call_a, name: lookup, arguments: "{}"}
+calls:
+  - messages_response_events:
+      message_id: msg_attribute
+      model: model_a
+      redaction: enabled
+      steps:
+        - function: process_event
+          event:
+            shape: attributes
+            attributes:
+              type: response.completed
+              response:
+                shape: object
+                output:
+                  - {type: function_call, call_id: call_a, name: lookup, arguments: "{}"}
+                status: incomplete
+                usage: {input_tokens: 10, input_tokens_details: {cached_tokens: 3}, output_tokens: 2, total_tokens: 12}
+  - messages_response_events:
+      message_id: msg_twice
+      model: model_a
+      redaction: enabled
+      steps:
+        - {function: process_event, event: {shape: mapping, fields: {type: response.completed}}}
+        - {function: process_event, event: {shape: mapping, fields: {type: response.completed}}}
+  - messages_response_events:
+      message_id: msg_null
+      model: model_a
+      redaction: enabled
+      steps:
+        - {function: process_event, event: {shape: mapping, fields: {type: response.completed, response: null}}}
+  - messages_response_events:
+      message_id: msg_scalar_attribute
+      model: model_a
+      redaction: enabled
+      steps:
+        - function: process_event
+          event:
+            shape: attributes
+            attributes: {type: response.completed, response: {shape: value, value: 5}}
+  - messages_response_events:
+      message_id: msg_null_attribute
+      model: model_a
+      redaction: enabled
+      steps:
+        - function: process_event
+          event:
+            shape: attributes
+            attributes: {type: response.completed, response: {shape: value, value: null}}
+  - messages_response_events:
+      message_id: msg_text_attribute
+      model: model_a
+      redaction: enabled
+      steps:
+        - function: process_event
+          event:
+            shape: attributes
+            attributes: {type: response.completed, response: {shape: value, value: x}}
+  - messages_response_events:
+      message_id: msg_attributed
+      model: model_a
+      redaction: enabled
+      steps:
+        - function: process_event
+          event:
+            shape: attributed
+            attributes: {}
+            fields:
+              type: response.completed
+              response:
+                status: incomplete
+                output:
+                  - {type: function_call}
+env: {}
+compare: {ignore: []}

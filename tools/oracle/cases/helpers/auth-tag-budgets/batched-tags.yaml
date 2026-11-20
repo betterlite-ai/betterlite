@@ -1,0 +1,22 @@
+kind: helper
+name: auth-tag-budgets-batched-tags
+call:
+  auth_tag_budgets:
+    function: tags
+    database: true
+    names: [tag-a, tag-b, tag-a]
+    cached: []
+    rows:
+      - tag_name: tag-a
+        models: [model-one]
+        spend: 1.5
+        litellm_budget_table:
+          budget_id: budget-a
+          max_budget: 12.5
+      - tag_name: tag-b
+        models: []
+        spend: 0.0
+    fail_query: false
+env: {}
+compare:
+  ignore: []
