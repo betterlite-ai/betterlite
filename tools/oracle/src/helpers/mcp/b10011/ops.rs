@@ -36,11 +36,7 @@ pub(crate) async fn answer(input: &Input, logs: &Logs) -> HelperResult {
         clock: Box::new(SystemClock),
         state: Mutex::new(CacheState::default()),
     });
-    let rows = if input.database {
-        Some(memory_rows(input))
-    } else {
-        None
-    };
+    let rows = input.database.then(|| memory_rows(input));
     let store = DbSsoAssertionStore {
         rows,
         cipher: cipher_with(SALT_KEY),
@@ -98,10 +94,10 @@ async fn run_step(
             "enabled": store.retention_enabled().await.or_value_error()?,
         })),
         Step::Retain { user_id, assertion } => {
-            let built = match assertion.as_deref() {
-                Some(seed) => Some(decode_payload(&serde_json::to_string(seed)?).or_value_error()?),
-                None => None,
-            };
+            let built = assertion
+                .as_deref()
+                .map(|seed| decode_payload(&serde_json::to_string(seed)?).or_value_error())
+                .transpose()?;
             store.retain(user_id, built.as_ref()).await;
             Ok(json!({"step": "retain"}))
         }
@@ -121,13 +117,13 @@ fn memory_rows(input: &Input) -> MemoryAssertionRows {
     MemoryAssertionRows {
         rows: Mutex::new(Vec::new()),
         id_jag: input.db_servers.iter().flatten().any(|auth| auth == ID_JAG),
-        failures: failures(&input.failure),
+        failures: failures(input.failure.as_ref()),
         reads: AtomicUsize::new(0),
         writes: AtomicUsize::new(0),
     }
 }
 
-fn failures(failure: &Option<Failure>) -> MemoryFailures {
+fn failures(failure: Option<&Failure>) -> MemoryFailures {
     let mut configured = MemoryFailures::default();
     let Some(configured_failure) = failure else {
         return configured;
