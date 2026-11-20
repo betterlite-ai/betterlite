@@ -153,12 +153,11 @@ where
 
     // a caller's clients by the class each one is; a sync call ignores an async-only client, as isinstance does
     #[must_use]
-    pub fn supplying(mut self, supplied: SuppliedClients<'deps, S>) -> Self {
+    pub const fn supplying(mut self, supplied: SuppliedClients<'deps, S>) -> Self {
         self.supplied = supplied;
         self
     }
 
-    #[must_use]
     // ast-grep-ignore: no-one-line-functions - LiteLLM's entry point, and the whole flow is this call
     pub fn video_create_character_handler<'call>(
         &'call mut self,
@@ -167,7 +166,6 @@ where
         self.video_character_handler(CharacterCall::Create(call))
     }
 
-    #[must_use]
     // ast-grep-ignore: no-one-line-functions - the same entry point for a lookup, with no other work
     pub fn video_get_character_handler<'call>(
         &'call mut self,
@@ -176,7 +174,6 @@ where
         self.video_character_handler(CharacterCall::Get(call))
     }
 
-    #[must_use]
     // ast-grep-ignore: no-long-names
     pub async fn async_video_create_character_handler(
         &mut self,
@@ -186,7 +183,6 @@ where
             .await
     }
 
-    #[must_use]
     // ast-grep-ignore: no-long-names
     pub async fn async_video_get_character_handler(
         &mut self,

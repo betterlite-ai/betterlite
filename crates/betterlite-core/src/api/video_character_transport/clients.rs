@@ -79,7 +79,7 @@ impl CharacterClients for HttpClients {
         params: &Params,
         supplied: Option<&BlockingClient>,
     ) -> Result<BlockingClient, ClientError> {
-        HttpClients::sync_client(self, params, supplied.cloned())
+        Self::sync_client(self, params, supplied.cloned())
     }
 
     fn select_async(

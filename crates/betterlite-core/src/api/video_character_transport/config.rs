@@ -22,6 +22,9 @@ pub struct CharacterContext<'call> {
     pub headers: &'call RequestHeaders,
 }
 
+// the url and query params a lookup transform hands back
+pub type LookupRequest = (String, Vec<(String, String)>);
+
 // the BaseVideoConfig members the four character handlers call; a provider adapter implements them
 pub trait CharacterConfig: ErrorClasses {
     fn validate_environment(&self, environment: CharacterEnvironment<'_>) -> RequestHeaders;
@@ -44,7 +47,7 @@ pub trait CharacterConfig: ErrorClasses {
         &self,
         character_id: &str,
         context: CharacterContext<'_>,
-    ) -> Result<(String, Vec<(String, String)>), Self::Error>;
+    ) -> Result<LookupRequest, Self::Error>;
 
     fn transform_create_response(
         &self,

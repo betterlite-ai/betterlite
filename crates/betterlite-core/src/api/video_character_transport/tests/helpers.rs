@@ -44,7 +44,7 @@ fn response_headers_reads_a_latin1_value() {
 
     let mapped = response_headers(&headers);
 
-    assert_eq!(mapped.get("x-name").map(String::as_str), Some("é"));
+    assert_eq!(mapped.get("x-name").map(String::as_str), Some("\u{e9}"));
     assert_eq!(mapped.get("x-plain").map(String::as_str), Some("plain"));
 }
 
@@ -60,7 +60,7 @@ fn status_failure_carries_the_status_text_and_headers() {
 
     let RequestFailure::Status {
         status_code,
-        headers,
+        headers: failed_headers,
         body,
     } = status_failure(&reply)
     else {
@@ -69,7 +69,10 @@ fn status_failure_carries_the_status_text_and_headers() {
 
     assert_eq!(status_code, 429);
     assert_eq!(body, "slow down \u{FFFD}");
-    assert_eq!(headers.get("retry-after").map(String::as_str), Some("30"));
+    assert_eq!(
+        failed_headers.get("retry-after").map(String::as_str),
+        Some("30")
+    );
 }
 
 #[test]

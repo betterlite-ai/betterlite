@@ -76,12 +76,15 @@ impl LogSink for Sink {
     fn emit(&self, _record: LogRecord) {}
 }
 
+// the logger the env's pre-call runs, sendable so an async case's future can hold the fixture
+type CallLogger = Box<dyn Fn(&Json) -> Result<(), PrePostError> + Send + Sync>;
+
 // the logging environment a pre-call needs, with a logger fn that records the call in the shared events
 pub(crate) struct LogEnv {
     redactor: Redactor,
     sink: Sink,
     now: DateTime<FixedOffset>,
-    logger: Box<dyn Fn(&Json) -> Result<(), PrePostError> + Sync>,
+    logger: CallLogger,
 }
 
 impl LogEnv {
@@ -658,12 +661,12 @@ impl Fixture {
             sync: supplied,
             asynchronous: None,
         });
-        match transport.video_character_handler(call)? {
-            CharacterHandled::Done(object) => Ok(object),
-            CharacterHandled::Pending(_) => {
-                panic!("a sync call without the async flag answers in place")
-            }
-        }
+        let handled = transport.video_character_handler(call)?;
+        let object = match handled {
+            CharacterHandled::Done(object) => Some(object),
+            CharacterHandled::Pending(_) => None,
+        };
+        Ok(object.expect("a sync call without the async flag answers in place"))
     }
 
     async fn async_flow(

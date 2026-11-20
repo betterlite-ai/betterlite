@@ -32,14 +32,16 @@ fn lookup_sends_a_get_with_the_transforms_params() {
             "transform-get-response",
         ]
     );
-    let requests = fixture.wire.requests();
-    let request = &requests[0];
-    assert_eq!(request.method, Method::GET);
-    assert_eq!(
-        request.url.as_str(),
-        "https://api.example/v1/characters/char-1?expand=1"
-    );
-    assert!(matches!(&request.body, CharacterBody::Empty));
+    {
+        let requests = fixture.wire.requests();
+        let request = &requests[0];
+        assert_eq!(request.method, Method::GET);
+        assert_eq!(
+            request.url.as_str(),
+            "https://api.example/v1/characters/char-1?expand=1"
+        );
+        assert!(matches!(&request.body, CharacterBody::Empty));
+    }
     assert_eq!(
         fixture.config.seen()[2],
         Seen::GetRequest {
@@ -63,8 +65,10 @@ fn lookup_keeps_the_urls_own_query_value() {
 
     fixture.sync_get(&call, None).unwrap();
 
-    let requests = fixture.wire.requests();
-    let query: Vec<(String, String)> = requests[0].url.query_pairs().into_owned().collect();
+    let query: Vec<(String, String)> = {
+        let requests = fixture.wire.requests();
+        requests[0].url.query_pairs().into_owned().collect()
+    };
     assert_eq!(
         query,
         vec![

@@ -37,13 +37,12 @@ struct Exchange {
     timeout: Option<Duration>,
 }
 
-impl<'call> CharacterCall<'call> {
-    const fn parts(&self) -> CallParts<'call> {
-        CallParts {
-            extra_headers: self.extra_headers(),
-            litellm_params: self.litellm_params(),
-            api_key: self.api_key(),
-        }
+// what a call reads before any transform sees it
+const fn parts<'call>(call: CharacterCall<'call>) -> CallParts<'call> {
+    CallParts {
+        extra_headers: call.extra_headers(),
+        litellm_params: call.litellm_params(),
+        api_key: call.api_key(),
     }
 }
 
@@ -64,7 +63,7 @@ where
     C: CharacterConfig,
 {
     let params = call.litellm_params();
-    let (headers, base) = validated(config, &call.parts())?;
+    let (headers, base) = validated(config, &parts(call))?;
     let context = CharacterContext {
         api_base: &base,
         litellm_params: params,
