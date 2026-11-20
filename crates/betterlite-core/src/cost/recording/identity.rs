@@ -153,11 +153,11 @@ pub(super) fn stored_cache_hit(log: &LoggingState) -> Option<bool> {
 
 // additional_response_cost adds only a positive number; Python's bool counts as 1 or 0.
 pub(super) fn additional_cost(log: &LoggingState) -> Option<Decimal> {
-    match log.model_call_details.get("additional_response_cost") {
-        Some(Json::Bool(true)) => Some(Decimal::ONE),
-        Some(Json::Bool(false)) => Some(Decimal::ZERO),
-        Some(value) => amount(value),
-        None => None,
+    let value = log.model_call_details.get("additional_response_cost")?;
+    match value {
+        Json::Bool(flag) => Some(if *flag { Decimal::ONE } else { Decimal::ZERO }),
+        Json::Number(_) => amount(value),
+        Json::Null | Json::Text(_) | Json::List(_) | Json::Object(_) => None,
     }
 }
 

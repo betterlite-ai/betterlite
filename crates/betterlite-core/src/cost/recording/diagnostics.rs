@@ -109,7 +109,7 @@ where
         let provider = identity::text_field(&log.model_call_details, "custom_llm_provider")?;
         let warning = zero_cost_warning(
             &diagnostic,
-            model_group(&metadata),
+            metadata.get("model_group").and_then(identity::text_value),
             &model,
             provider.as_deref(),
             &tokens,
@@ -220,10 +220,6 @@ fn text_or_null(text: Option<&str>) -> Json {
         Some(found) => Json::Text(found.to_owned()),
         None => Json::Null,
     }
-}
-
-fn model_group(metadata: &IndexMap<String, Json>) -> Option<&str> {
-    metadata.get("model_group").and_then(identity::text_value)
 }
 
 fn token_usage(usage: &Usage) -> TokenUsage {

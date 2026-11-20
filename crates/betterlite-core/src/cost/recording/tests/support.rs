@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
-use std::error::Error;
-use std::fmt::{self, Debug};
+use std::fmt::Debug;
 use std::future::Future;
 use std::mem;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -39,16 +38,9 @@ use crate::cost::usage::{BillingUsage, ResponseKind, get_usage_object};
 pub(super) const INIT: &str = r#"{"model":"gpt-4o","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1"}"#;
 pub(super) const MANAGEMENT: &str = r#"{"model":"gpt-4o","call_type":"get_responses","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1"}"#;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("boom")]
 pub(super) struct TestFailure;
-
-impl fmt::Display for TestFailure {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("boom")
-    }
-}
-
-impl Error for TestFailure {}
 
 #[derive(Debug, Default, PartialEq)]
 pub(super) struct Observed {

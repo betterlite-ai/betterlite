@@ -29,7 +29,7 @@ pub(super) fn body_view(body: &Json) -> Result<Option<ResponseView<'_>>, JsonRes
     };
     Ok(Some(ResponseView::Dictionary(DictionaryResponse {
         model: fields.get("model").and_then(text_value),
-        usage: usage_of(fields)?,
+        usage: usage_of(fields.get("usage"))?,
         service_tier: fields.get("service_tier").and_then(text_value),
     })))
 }
@@ -51,7 +51,7 @@ pub(super) fn event_view(event: &Json) -> Result<Option<ResponseView<'_>>, JsonR
     Ok(Some(ResponseView::Typed(TypedResponse {
         kind: ResponseKind::Responses,
         model: response.get("model").and_then(text_value),
-        usage: usage_of(response)?,
+        usage: usage_of(response.get("usage"))?,
         service_tier: response.get("service_tier").and_then(text_value),
         hidden_params: hidden(response)?,
     })))
@@ -65,11 +65,13 @@ pub(super) fn background(body: &Json) -> bool {
 }
 
 // The variant carrying response attributes; the others expose no kind or hidden params.
-pub(super) fn typed<'view>(view: &'view ResponseView<'_>) -> Option<&'view TypedResponse<'view>> {
-    match view {
-        ResponseView::Typed(typed) => Some(typed),
-        ResponseView::Realtime { .. } | ResponseView::Dictionary(_) | ResponseView::Other => None,
+pub(super) const fn typed<'view>(
+    view: &'view ResponseView<'_>,
+) -> Option<&'view TypedResponse<'view>> {
+    if let ResponseView::Typed(typed) = view {
+        return Some(typed);
     }
+    None
 }
 
 pub(super) fn hidden_text<'view>(view: &'view ResponseView<'_>, key: &str) -> Option<&'view str> {
@@ -80,29 +82,25 @@ pub(super) fn hidden_text<'view>(view: &'view ResponseView<'_>, key: &str) -> Op
         .filter(|value| !value.is_empty())
 }
 
-pub(super) fn cost_response<'view>(
+pub(super) const fn cost_response<'view>(
     view: &'view ResponseView<'view>,
 ) -> Option<CostResponse<'view>> {
-    if let Some(typed) = typed(view) {
-        return Some(CostResponse::Object {
+    match view {
+        ResponseView::Typed(typed) => Some(CostResponse::Object {
             model: typed.model,
             hidden_params: typed.hidden_params,
             response_ms: None,
-        });
-    }
-    if let ResponseView::Realtime { .. } = view {
-        return Some(CostResponse::Object {
+        }),
+        ResponseView::Realtime { .. } => Some(CostResponse::Object {
             model: None,
             hidden_params: None,
             response_ms: None,
-        });
+        }),
+        ResponseView::Dictionary(dictionary) => Some(CostResponse::Dictionary {
+            model: dictionary.model,
+        }),
+        ResponseView::Other => None,
     }
-    let ResponseView::Dictionary(dictionary) = view else {
-        return None;
-    };
-    Some(CostResponse::Dictionary {
-        model: dictionary.model,
-    })
 }
 
 // The usage projection get_usage_object reads, rebuilt here because prepare's view stays private.
@@ -151,8 +149,8 @@ const fn copied_usage<'usage>(usage: &'usage BillingUsage<'_>) -> BillingUsage<'
     }
 }
 
-fn usage_of(fields: &IndexMap<String, Json>) -> Result<BillingUsage<'_>, JsonResponseError> {
-    match fields.get("usage") {
+const fn usage_of(found: Option<&Json>) -> Result<BillingUsage<'_>, JsonResponseError> {
+    match found {
         None => Ok(BillingUsage::Absent),
         Some(Json::Null) => Ok(BillingUsage::Null),
         Some(Json::Object(usage)) => Ok(BillingUsage::Mapping(usage)),
@@ -165,10 +163,9 @@ fn usage_of(fields: &IndexMap<String, Json>) -> Result<BillingUsage<'_>, JsonRes
 fn hidden(
     fields: &IndexMap<String, Json>,
 ) -> Result<Option<&IndexMap<String, Json>>, JsonResponseError> {
-    match fields.get("_hidden_params") {
-        None | Some(Json::Null) => Ok(None),
-        Some(value) => object_value(value)
-            .map(Some)
-            .ok_or(JsonResponseError::Hidden),
-    }
+    fields
+        .get("_hidden_params")
+        .filter(|value| !matches!(value, Json::Null))
+        .map(|value| object_value(value).ok_or(JsonResponseError::Hidden))
+        .transpose()
 }
