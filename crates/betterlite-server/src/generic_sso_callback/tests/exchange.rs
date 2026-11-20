@@ -133,6 +133,28 @@ async fn a_conversion_failure_keeps_the_verifier() {
 }
 
 #[tokio::test]
+async fn an_access_token_fills_in_the_missing_teams() {
+    let mut replies = Replies::new();
+    replies.token = TokenReply {
+        access_token: token(r#"{"teams":["team-a"]}"#),
+        id_token: None,
+        refresh_token: None,
+    };
+    let mut fixture = Fixture::start(replies).await;
+    fixture.sso_jwt_handler = Some(team_handler("teams"));
+    let result = call(
+        &fixture,
+        &fixture.callback_url("code=abc"),
+        None,
+        &FakeRows::absent(),
+        &FakeCache::empty(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.identity.team_ids, vec!["team-a".to_owned()]);
+}
+
+#[tokio::test]
 async fn an_access_token_augmentation_failure_keeps_the_verifier() {
     let mut replies = Replies::new();
     replies.token = TokenReply {
