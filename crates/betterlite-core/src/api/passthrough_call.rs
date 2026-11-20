@@ -236,7 +236,7 @@ fn provider_error(status: u16, message: String, synthesized: bool) -> ProviderEr
     ProviderError::from(ProviderErrorParts {
         status_code: status,
         message,
-        headers: Some(ResponseHeaders::default()),
+        headers: Some(Vec::new()),
         request: None,
         response: None,
         body: None,

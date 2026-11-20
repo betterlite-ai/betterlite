@@ -41,6 +41,17 @@ pub(crate) fn build(args: &PassthroughCallArgs, resolved: &ResolvedModel) -> Cal
             .cloned()
             .unwrap_or(JsonValue::Null),
     );
+    insert_named(&mut params, extra, resolved);
+    // llm_passthrough_route re-adds model_id after get_litellm_params dropped it
+    if let Some(model_id) = extra.get("model_id") {
+        params.insert("model_id".to_owned(), model_id.clone());
+    }
+    let logged = json_object(&params);
+    CallParams { params, logged }
+}
+
+// every key llm_passthrough_route sets itself, after the kwargs it was handed
+fn insert_named(params: &mut Object, extra: &Object, resolved: &ResolvedModel) {
     params.insert(
         "api_key".to_owned(),
         secret_value(resolved.api_key.as_ref()),
@@ -70,12 +81,6 @@ pub(crate) fn build(args: &PassthroughCallArgs, resolved: &ResolvedModel) -> Cal
     params.insert("metadata".to_owned(), resolved_metadata(extra));
     params.insert("no-log".to_owned(), no_log(extra));
     params.insert("base_model".to_owned(), base_model(extra));
-    // llm_passthrough_route re-adds model_id after get_litellm_params dropped it
-    if let Some(model_id) = extra.get("model_id") {
-        params.insert("model_id".to_owned(), model_id.clone());
-    }
-    let logged = json_object(&params);
-    CallParams { params, logged }
 }
 
 fn secret_value(api_key: Option<&SecretString>) -> JsonValue {
