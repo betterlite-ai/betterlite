@@ -108,23 +108,24 @@ pub(crate) struct ScriptedSource {
     pub(crate) decode_calls: Vec<Option<bool>>,
 }
 
+pub(crate) fn closed(document: Option<&CloseDocument>) -> ConnectionClosed {
+    let received = document.map(|close| CloseFrame {
+        code: close.code,
+        reason: close.reason.clone(),
+    });
+    let message = match &received {
+        Some(frame) => frame.reason.clone(),
+        None => String::from("no close frame received or sent"),
+    };
+    ConnectionClosed { message, received }
+}
+
 #[async_trait]
 impl RealtimeBackendSource for ScriptedSource {
     async fn recv(&mut self, decode: Option<bool>) -> Result<RealtimeMessage, RelayReceiveError> {
         self.decode_calls.push(decode);
         let Some(text) = self.frames.pop_front() else {
-            let received = self.close.as_ref().map(|document| CloseFrame {
-                code: document.code,
-                reason: document.reason.clone(),
-            });
-            let message = match &received {
-                Some(frame) => frame.reason.clone(),
-                None => String::from("no close frame received or sent"),
-            };
-            return Err(RelayReceiveError::Closed(ConnectionClosed {
-                message,
-                received,
-            }));
+            return Err(RelayReceiveError::Closed(closed(self.close.as_ref())));
         };
         Ok(RealtimeMessage::Text(text))
     }

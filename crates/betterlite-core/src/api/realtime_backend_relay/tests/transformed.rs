@@ -365,6 +365,99 @@ async fn transformed_conversational_turn_asks_for_a_response() {
 }
 
 #[tokio::test]
+async fn transformed_blocked_transcript_forwards_before_the_guardrail_notice() {
+    let mut fixture = Fixture::default();
+    fixture.provider.requires_session_configuration = true;
+    respond(&fixture, completed_json());
+    let mut source = fixture.source.clone();
+    source.text(r#"{"type":"provider.frame"}"#);
+    source.close_with(1000, "");
+    let options = StateOptions::default().provider();
+    let guardrail = ScriptedGuardrail::blocking();
+    let records = Arc::clone(&guardrail.records);
+    let guardrails: [&dyn RealtimeGuardrail<Error = Infallible>; 1] = [&guardrail];
+    let token = CancellationToken::new();
+    let (result, _state) = run(&options, &fixture, &mut source, &guardrails, &token).await;
+    assert_eq!(result.unwrap().code, 1000);
+    assert_eq!(
+        fixture.client.parsed(),
+        vec![
+            completed_json(),
+            json(
+                r#"{"type":"error","error":{"type":"guardrail_violation","message":"denied","code":"content_policy_violation"}}"#
+            )
+        ]
+    );
+    let backend = fixture.backend.parsed();
+    assert_eq!(backend.len(), 3);
+    assert_eq!(
+        json_types(&backend),
+        vec![
+            String::from("response.cancel"),
+            String::from("conversation.item.create"),
+            String::from("response.create")
+        ]
+    );
+    assert_eq!(lock(&records).applied.len(), 1);
+}
+
+#[tokio::test]
+async fn transformed_none_response_fields_clear_the_transform_input() {
+    let fixture = Fixture::default();
+    {
+        let mut script = lock(&fixture.provider.script);
+        let mut first = ScriptedResponse::new(json(r#"{"type":"a"}"#))
+            .output_item("out-1")
+            .response_id("resp-1")
+            .conversation_id("conv-1")
+            .delta_type(AllDeltaType::Text)
+            .session_configuration_request("cfg-1");
+        first.current_delta_chunks = Some(vec![json(
+            r#"{"type":"response.output_text.delta","delta":"hi"}"#,
+        )]);
+        first.current_item_chunks = Some(vec![json(r#"{"type":"response.output_item.done"}"#)]);
+        script.responses.push_back(first);
+        script
+            .responses
+            .push_back(ScriptedResponse::new(json(r#"{"type":"b"}"#)));
+        script
+            .responses
+            .push_back(ScriptedResponse::new(json(r#"{"type":"c"}"#)));
+    };
+    let mut source = fixture.source.clone();
+    source.text(r#"{"type":"provider.frame","n":1}"#);
+    source.text(r#"{"type":"provider.frame","n":2}"#);
+    source.text(r#"{"type":"provider.frame","n":3}"#);
+    source.close_with(1000, "");
+    let options = StateOptions::default().provider();
+    let token = CancellationToken::new();
+    let (result, _state) = run(&options, &fixture, &mut source, &[], &token).await;
+    assert_eq!(result.unwrap().code, 1000);
+    let inputs = lock(&fixture.provider.script).inputs.clone();
+    assert_eq!(inputs.len(), 3);
+    assert_eq!(
+        (
+            inputs[1].current_output_item_id.as_deref(),
+            inputs[1].current_response_id.as_deref(),
+            inputs[1].current_conversation_id.as_deref(),
+            inputs[1].session_configuration_request.as_deref(),
+        ),
+        (Some("out-1"), Some("resp-1"), Some("conv-1"), Some("cfg-1"))
+    );
+    assert_eq!(inputs[1].current_delta_type, Some(AllDeltaType::Text));
+    assert!(inputs[1].current_delta_chunks.is_some());
+    assert!(inputs[1].current_item_chunks.is_some());
+    let third = &inputs[2];
+    assert!(third.current_output_item_id.is_none());
+    assert!(third.current_response_id.is_none());
+    assert!(third.current_delta_chunks.is_none());
+    assert!(third.current_conversation_id.is_none());
+    assert!(third.current_item_chunks.is_none());
+    assert!(third.current_delta_type.is_none());
+    assert!(third.session_configuration_request.is_none());
+}
+
+#[tokio::test]
 async fn transformed_session_events_do_not_mark_transcription_mode() {
     let mut fixture = Fixture::default();
     fixture.provider.requires_session_configuration = true;
