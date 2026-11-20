@@ -531,7 +531,7 @@ fn chunk_hook_failure_ends_stream() {
     assert_eq!(results.len(), 1);
     match results.first() {
         Some(Ok(Emitted::AnthropicError(frame))) => assert_eq!(frame.status_code, 400),
-        Some(Ok(Emitted::Frame(_))) | Some(Err(_)) => panic!("expected the error frame"),
+        Some(Ok(Emitted::Frame(_)) | Err(_)) => panic!("expected the error frame"),
         None => panic!("no frame"),
     }
     assert_eq!(

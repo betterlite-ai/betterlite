@@ -104,7 +104,7 @@ where
         self.write(prepared)
     }
 
-    pub(super) fn finish(&mut self, completed: bool) {
+    pub(super) const fn finish(&mut self, completed: bool) {
         if completed {
             self.guard.mark_completed();
         }

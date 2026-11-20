@@ -36,7 +36,7 @@ fn error_frame_after_closed_frame() {
             assert_eq!(frame.status_code, 429);
             assert_eq!(frame.body, error_frame("slow down", "rate_limit_error"));
         }
-        Some(Ok(Emitted::Frame(_))) | Some(Err(_)) => panic!("expected the typed error frame"),
+        Some(Ok(Emitted::Frame(_)) | Err(_)) => panic!("expected the typed error frame"),
         None => panic!("no frame"),
     }
     assert_eq!(
@@ -94,7 +94,7 @@ fn no_deployments_becomes_429() {
                 )
             );
         }
-        Some(Ok(Emitted::Frame(_))) | Some(Err(_)) => panic!("expected the typed error frame"),
+        Some(Ok(Emitted::Frame(_)) | Err(_)) => panic!("expected the typed error frame"),
         None => panic!("no frame"),
     }
 }
@@ -121,7 +121,7 @@ fn tag_routing_becomes_401() {
                 )
             );
         }
-        Some(Ok(Emitted::Frame(_))) | Some(Err(_)) => panic!("expected the typed error frame"),
+        Some(Ok(Emitted::Frame(_)) | Err(_)) => panic!("expected the typed error frame"),
         None => panic!("no frame"),
     }
 }
@@ -178,7 +178,7 @@ fn generator_redacts_failure() {
         Some(Ok(Emitted::AnthropicError(frame))) => {
             assert_eq!(frame.body, error_frame("REDACTED", "invalid_request_error"));
         }
-        Some(Ok(Emitted::Frame(_))) | Some(Err(_)) => panic!("expected the typed error frame"),
+        Some(Ok(Emitted::Frame(_)) | Err(_)) => panic!("expected the typed error frame"),
         None => panic!("no frame"),
     }
 }
