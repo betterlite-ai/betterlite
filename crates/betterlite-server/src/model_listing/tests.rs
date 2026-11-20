@@ -114,11 +114,10 @@ impl DeploymentLookup for FakeRouter {
         _model: &str,
         team_id: Option<&str>,
     ) -> Result<Vec<ModelParameters>, WildcardError> {
-        let mut seen = self
-            .seen_teams
+        self.seen_teams
             .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        seen.push(team_id.map(str::to_owned));
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(team_id.map(str::to_owned));
         if self.rows_fail {
             return Err(WildcardError::Lookup);
         }
