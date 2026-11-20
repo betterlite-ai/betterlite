@@ -1,0 +1,18 @@
+kind: helper
+name: topaz-variation-distinct-timing-sources
+call:
+  topaz_variation:
+    calls:
+      - function: response_sync
+        body: [255, 216, 255, 0, 16]
+        elapsed_ms: 2500
+        created: 17
+      - function: response_async
+        body: [255, 216, 255, 0, 16]
+        response_ms: 1500.0
+        created: 17
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/0/response/created, why: "the source stamps int(time.time())"}
+    - {pointer: /value/1/response/created, why: "the source stamps int(time.time())"}
