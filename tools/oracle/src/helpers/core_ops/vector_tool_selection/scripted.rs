@@ -121,16 +121,15 @@ impl VectorStoreSelectionDatabase for ScriptedDatabase {
         vector_store_id: &str,
     ) -> impl Future<Output = Result<Option<LiteLlmManagedVectorStore>, TableError>> + Send {
         self.record(json!({"table": "stores", "where": {"vector_store_id": vector_store_id}}));
-        let found = if self.verify_failed {
-            Err(Self::read_failure())
-        } else {
-            Ok(self
-                .verified
-                .iter()
-                .find(|row| row.vector_store_id.as_deref() == Some(vector_store_id))
-                .cloned())
-        };
-        ready(found)
+        if self.verify_failed {
+            return ready(Err(Self::read_failure()));
+        }
+        let found = self
+            .verified
+            .iter()
+            .find(|row| row.vector_store_id.as_deref() == Some(vector_store_id))
+            .cloned();
+        ready(Ok(found))
     }
 }
 

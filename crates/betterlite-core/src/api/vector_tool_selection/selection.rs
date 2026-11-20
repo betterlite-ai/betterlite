@@ -140,28 +140,30 @@ where
 }
 
 // B1062's get_litellm_managed_vector_store_from_registry_or_db reads every row and caches the first match
-async fn fallback_store<D>(
+async fn fallback_store<D: VectorStoreDatabase>(
     registry: &mut VectorStoreRegistry,
     vector_store_id: &str,
     database: &D,
-) -> Option<LiteLlmManagedVectorStore>
-where
-    D: VectorStoreDatabase,
-{
-    let rows = match rows_from_database(Some(database)).await {
-        Ok(rows) => rows,
-        Err(error) => {
-            tracing::debug!("Error fetching vector store {vector_store_id} from database: {error}");
-            return None;
-        }
-    };
+) -> Option<LiteLlmManagedVectorStore> {
+    let rows = read_rows(database, vector_store_id).await?;
     let found = rows
         .into_iter()
-        .find(|row| row.vector_store_id.as_deref() == Some(vector_store_id));
-    if let Some(row) = &found {
-        registry.add_store(row.clone());
+        .find(|row| row.vector_store_id.as_deref() == Some(vector_store_id))?;
+    registry.add_store(found.clone());
+    Some(found)
+}
+
+async fn read_rows<D: VectorStoreDatabase>(
+    database: &D,
+    vector_store_id: &str,
+) -> Option<Vec<LiteLlmManagedVectorStore>> {
+    match rows_from_database(Some(database)).await {
+        Ok(rows) => Some(rows),
+        Err(error) => {
+            tracing::debug!("Error fetching vector store {vector_store_id} from database: {error}");
+            None
+        }
     }
-    found
 }
 
 // VectorStoreToolParams.to_dict drops absent options and the stored value overwrites each shared key

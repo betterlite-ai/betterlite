@@ -92,13 +92,7 @@ pub(crate) struct ScriptedDatabase {
 
 impl ScriptedDatabase {
     pub(crate) fn without_rows() -> Self {
-        Self {
-            rows: Vec::new(),
-            verifiable: BTreeMap::new(),
-            verification_fails: false,
-            read_fails: false,
-            recorded: Mutex::new(Vec::new()),
-        }
+        Self::with_rows(Vec::new())
     }
 
     pub(crate) fn with_rows(rows: Vec<LiteLlmManagedVectorStore>) -> Self {
