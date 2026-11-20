@@ -132,7 +132,7 @@ impl PassthroughServices {
     }
 }
 
-fn passthrough_url_request<'call>(
+const fn passthrough_url_request<'call>(
     params: &'call Object,
     endpoint: &'call str,
 ) -> PassthroughUrlRequest<'call> {

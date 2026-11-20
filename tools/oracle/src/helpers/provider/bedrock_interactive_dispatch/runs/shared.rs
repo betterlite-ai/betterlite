@@ -14,6 +14,7 @@ use betterlite_provider::bedrock_interactive_dispatch::http::{
 pub(crate) use indexmap::IndexMap;
 pub(crate) use secrecy::SecretString;
 pub(crate) use serde_json::{Map, Value, json};
+use tokio::runtime::Builder;
 
 pub(crate) const RESPONSES_HOST: &str = "https://bedrock-runtime.us-west-2.amazonaws.com";
 pub(crate) const GATEWAY: &str = "https://gateway.example.com/mcp";
@@ -44,7 +45,7 @@ pub(crate) fn block_on<F>(future: F) -> Result<F::Output, Box<HelperError>>
 where
     F: Future,
 {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .or_config_error()?;

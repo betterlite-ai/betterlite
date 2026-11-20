@@ -19,7 +19,7 @@ impl ReasoningCapabilities for Fakes {
         &mut self,
         _request: &CapabilityRequest<'_>,
         _key: &str,
-    ) -> impl shared::Future<Output = bool> + Send {
+    ) -> impl Future<Output = bool> + Send {
         shared::ready(false)
     }
 
@@ -27,7 +27,7 @@ impl ReasoningCapabilities for Fakes {
         &mut self,
         _request: &CapabilityRequest<'_>,
         _key: &str,
-    ) -> impl shared::Future<Output = Option<String>> + Send {
+    ) -> impl Future<Output = Option<String>> + Send {
         shared::ready(None)
     }
 
@@ -35,14 +35,14 @@ impl ReasoningCapabilities for Fakes {
         &mut self,
         _request: &CapabilityRequest<'_>,
         _key: &str,
-    ) -> impl shared::Future<Output = bool> + Send {
+    ) -> impl Future<Output = bool> + Send {
         shared::ready(false)
     }
 
     fn supports_response_schema(
         &mut self,
         _request: &CapabilityRequest<'_>,
-    ) -> impl shared::Future<Output = bool> + Send {
+    ) -> impl Future<Output = bool> + Send {
         shared::ready(false)
     }
 
@@ -52,7 +52,7 @@ impl ReasoningCapabilities for Fakes {
 }
 
 impl ResponsesCapabilities for Fakes {
-    fn model_info(&mut self, _model: &str) -> impl shared::Future<Output = ModelInfo> + Send {
+    fn model_info(&mut self, _model: &str) -> impl Future<Output = ModelInfo> + Send {
         shared::ready(ModelInfo::Unavailable)
     }
 }
@@ -60,10 +60,7 @@ impl ResponsesCapabilities for Fakes {
 struct MapFetcher;
 
 impl RemoteMediaFetcher for MapFetcher {
-    fn convert_url(
-        &self,
-        url: &str,
-    ) -> impl shared::Future<Output = Result<String, ImageFetchError>> {
+    fn convert_url(&self, url: &str) -> impl Future<Output = Result<String, ImageFetchError>> {
         shared::ready(Err(ImageFetchError::Rejected {
             url: url.to_owned(),
         }))
@@ -72,7 +69,7 @@ impl RemoteMediaFetcher for MapFetcher {
     fn convert_urls(
         &self,
         urls: &[String],
-    ) -> impl shared::Future<Output = Result<Vec<String>, ImageFetchError>> {
+    ) -> impl Future<Output = Result<Vec<String>, ImageFetchError>> {
         shared::ready(Err(ImageFetchError::Rejected {
             url: urls.first().cloned().unwrap_or_default(),
         }))
