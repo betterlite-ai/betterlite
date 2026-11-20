@@ -7,22 +7,23 @@ description: >-
   builtin kind or, through B8521, a `CallbackSpec::Hook(HookSpec)` with one variant per third-party wire name. Each class
   task built its class behind B5471's `GuardrailContract` and its own hook methods, and B3682 says the classes attach by
   matching on the spec. No task writes that match, so nothing can run a guardrail that the handler holds. This task
-  writes it once and implements every port that waits on it: B8390's `ProxyCallback` and `GuardrailCallback` for
-  guardrail callbacks, B3808's `SemanticRouterBuilder`, B3247's call into a non-unified guardrail's own pre-call and
-  post-call hooks, B3251's `ComplianceGuardrails`, B3249's `ContentFilterRunner` and the guardrail seam of B1077's
-  vector retrieval context.
+  writes it once and implements the ports the request path needs: B8390's `ProxyCallback` and `GuardrailCallback` for
+  guardrail callbacks, B3808's `SemanticRouterBuilder` and B3247's call into a non-unified guardrail's own pre-call and
+  post-call hooks. The ports of later features (B3251's `ComplianceGuardrails`, B3249's `ContentFilterRunner` and B1077's vector retrieval
+  guardrail seam) are each implemented over `GuardrailClasses` by the task that declares the trait, and that task depends on this one.
 
 
   Where. A public module of betterlite-server, crates/betterlite-server/src/guardrail_dispatch.rs (the skeleton declares
   `pub mod guardrail_dispatch;` in lib.rs), with guardrail_dispatch/ holding live.rs, classes.rs, callback.rs,
-  semantic.rs, pipeline.rs, compliance.rs, content_filter.rs, context.rs, error.rs and tests.rs. It is public because the
+  semantic.rs, pipeline.rs, error.rs and tests.rs. It is public because the
   lifespan in crates/betterlite builds the one `GuardrailClasses` right after ProxyLogging and hands its callbacks to
   ProxyLogging (B8613), before the server state exists. So nothing in this module reads `ServerState` or `Shared`.
 
 
   live.rs. `LiveGuardrail` is an enum with one variant per class: the builtin kinds of B3682's `CallbackSpec` (Bedrock,
   Lakera, LakeraV2, Presidio, ToolPermission, ToolPolicy and the Compression marker) and one variant per `HookSpec` variant
-  of B8521. Each variant holds the class value that class's task builds from the spec's arguments (read each class
+  of B8521. B8210, B3792 and B3815 add the decision_model, prompt_security and two MCP HookSpec variants later, each with its
+  arm here, and until then B8521 answers NotBuilt for those names, so this match has no arm for them. Each variant holds the class value that class's task builds from the spec's arguments (read each class
   module in crates/betterlite-guardrails for its constructor). `LiveGuardrail::build(callback: &GuardrailCallback, ports:
   &ClassPorts) -> Result<LiveGuardrail, DispatchError>` matches on the spec. `ClassPorts` carries what class
   constructors take beyond their arguments: the outbound `ProxiedClient`, the semantic router builder (semantic.rs) and
@@ -74,7 +75,7 @@ description: >-
   Model Armor. `LiveGuardrail::build` constructs each Model Armor guardrail with B9440's `VertexArmorTokens::new(credentials, project_id, ...)`, the production implementation of B3733's `ArmorTokens`. B3732 to B3734 put the Model Armor code in crates/betterlite-guardrails/src/model_armor and B3735 puts the stream code in crates/betterlite-core/src/guardrails/model_armor, so the variant reaches both.
 
 
-  Vendor variants. B9460 (Pillar), B9461 (TypeSafe), B9462 (XecGuard) and B9463 (Presidio) each own their runtime; this task builds their variants. Resolve the TYPESAFE_* and PRESIDIO_*_API_BASE settings through B8500's secret lookup, the way it does for Vigil. For the Cisco AI Defense variant, `streaming_iterator` forwards to B9450's `cisco_stream_scan::scan_stream`. For AIM, Akto, the legacy Lakera guardrail and Lasso, the hook methods forward to the functions of B9451's `third_party_hooks_a`. The Conduct variant is built through B9451's `conduct::build`. That build always fails with LiteLLM's MISSING_PACKAGE_MESSAGE, because LiteLLM does not ship conduct-litellm-guard, and LiteLLM stops startup on that ImportError. So a Conduct build failure is returned to the caller and stops startup, and is not skipped like the other build failures.
+  Vendor variants. B9461 (TypeSafe), B9462 (XecGuard) and B9463 (Presidio) each own their runtime; this task builds their variants. Pillar's runtime is B9460, not built yet: its arm answers `DispatchError::NotBuilt { kind: "pillar" }`, and unlike other build failures that error is not skipped but stops startup with the guardrail name, as B8521's NotBuilt does. B9460 later puts its variant in place and depends on this task. Resolve the TYPESAFE_* and PRESIDIO_*_API_BASE settings through B8500's secret lookup, the way it does for Vigil. For the Cisco AI Defense variant, `streaming_iterator` forwards to B9450's `cisco_stream_scan::scan_stream`. For AIM, Akto, the legacy Lakera guardrail and Lasso, the hook methods forward to the functions of B9451's `third_party_hooks_a`. The Conduct variant is built through B9451's `conduct::build`. That build always fails with LiteLLM's MISSING_PACKAGE_MESSAGE, because LiteLLM does not ship conduct-litellm-guard, and LiteLLM stops startup on that ImportError. So a Conduct build failure is returned to the caller and stops startup, and is not skipped like the other build failures.
 
 
   callback.rs. `LiveCallback` pairs a `GuardrailCallback` with its `Arc<LiveGuardrail>` and implements B8390's
@@ -90,22 +91,14 @@ description: >-
   `shared.guardrails.classes`.
 
 
+
+
   pipeline.rs implements the trait B3247 declares for a non-unified guardrail's own pre-call and post-call hooks on
   `GuardrailClasses`, forwarding to `LiveGuardrail::pre_call` with `cache` none and to `post_call_success`.
-  compliance.rs implements B3251's `ComplianceGuardrails`: NotFound when `by_name` finds nothing, NoApplyGuardrail when
-  the class does not override apply_guardrail, otherwise `Done` with the result of `apply_guardrail`.
-  content_filter.rs implements B3249's `ContentFilterRunner`: build the content filter guardrail from the given
-  `ContentFilterParams` through B8219's initializer arguments and the content filter class, run its apply_guardrail on
-  the one text with empty request data and input type `request`, and return the texts. context.rs implements the
-  guardrail seam B1077 declares in crates/betterlite-core/src/api/vector_retrieval_context (read its trait name there):
-  the callbacks in order, each asked through B3665's should_run_guardrail with event `pre_call` and the scan request,
-  and each one that runs gets apply_guardrail on the retrieved context; a failure is returned, not swallowed.
-
 
   Tests in guardrail_dispatch/tests.rs build real classes that need no network (tool_permission, tool_policy with
   B8665's adapters over fakes, a Compression marker, the hide-secrets error), a fake `GuardEmbedder` and fakes for the
-  runtime rows. Name them with the prefixes `live_`, `classes_`, `callback_`, `semantic_`, `pipeline_`, `compliance_`,
-  `content_filter_` and `context_`. The client sees this code through the chat route once B8613 installs the callbacks,
+  runtime rows. Name them with the prefixes `live_`, `classes_`, `callback_`, `semantic_` and `pipeline_`. The client sees this code through the chat route once B8613 installs the callbacks,
   and B8399's HTTP cases cover it, so this task adds no oracle case.
 scope:
   paths:
@@ -128,6 +121,8 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/pipeline_executor.py#L311-L426
     why: The pipeline executor calls a non-unified guardrail's own hooks.
 dod:
+  - text: The pipeline hook port forwards to the held classes with the answers its trait defines.
+    proof: [dispatch-tests]
   - text: LiveGuardrail::build matches every builtin spec kind and every HookSpec variant to its class, and a build failure skips that guardrail with a log line that holds no parameter.
     proof: [dispatch-tests]
   - text: Each LiveGuardrail method forwards to the class hook when the class defines it, answers the CustomGuardrail default otherwise, and overrides reports exactly the hooks the class defines.
@@ -137,8 +132,6 @@ dod:
   - text: LiveCallback implements ProxyCallback and GuardrailCallback from the base settings, B3665's gate and B3666's marker.
     proof: [dispatch-tests]
   - text: RouterSemanticBuilder builds the route index once and embeds through the slot's embedder, and a semantic guard built with an empty slot fails with LiteLLM's text.
-    proof: [dispatch-tests]
-  - text: The pipeline hook port, ComplianceGuardrails, ContentFilterRunner and the vector retrieval guardrail seam forward to the held classes with the answers their traits define.
     proof: [dispatch-tests]
 checks:
   optional: []
@@ -151,13 +144,12 @@ deviations:
   - what: A held guardrail reaches its class through one match on its spec instead of a Python subclass instance.
     why: Guardrail callbacks are data in betterlite (B3682), and Rust has no class dictionary to inspect; clients see the same hooks run.
 out_of_scope:
-  - "The classes and their hooks: each class task under B105 to B109, including B8773 for the content filter class. The spec types: B3682 and B8521."
+  - "The classes and their hooks: each class task under B105 to B109, including B8773 for the content filter class. The spec types: B3682 and B8521, with the decision_model, prompt_security and two MCP variants from B8210, B3792 and B3815."
   - "Building the one GuardrailClasses and installing its callbacks: B8613. ProxyLogging and its add_guardrail_callbacks: B8399. The unified hook path: B3680."
   - "Setting the embedder slot from the router embedder, and the routes that use ComplianceGuardrails, ContentFilterRunner and the pipeline hooks: B8790."
   - "The tool policy adapters, the read-through and the suggestion model: B8665."
 pitfalls:
   - "Presidio builds up to three callbacks for one guardrail id (input scan, restore, output mask); the cache holds one live value per callback, not per id, and keeps their order."
-  - "An apply_guardrail that the class does not override returns the inputs unchanged, but ComplianceGuardrails must answer NoApplyGuardrail for it, not Done."
   - "A guardrail rebuilt after a parameter change must not keep serving the old class value from the cache."
   - "Logging a build failure with the parameters would print api keys; log only the guardrail name and the error text."
   - "This module must not name ServerState, Shared or anything under app::, since crates/betterlite builds it before the server state exists and app is private to the crate."

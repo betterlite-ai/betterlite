@@ -1,0 +1,10 @@
+kind: helper
+name: bedrock-mantle-settings-chat
+call:
+  bedrock_mantle_settings:
+    chat_provider_prefix:
+      cases:
+        - model: openai.gpt-oss-120b
+          error: {message: mantle fixture failure, status_code: 400}
+env: {}
+compare: {ignore: []}

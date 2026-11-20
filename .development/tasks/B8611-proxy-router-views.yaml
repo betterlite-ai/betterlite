@@ -4,9 +4,9 @@ description: >-
   LiteLLM's proxy keeps one module global, llm_router, that load_config builds from config.yaml at startup (proxy_server.py
   L6890-L7007) and every route, hook and logger reads. betterlite has the router pieces (B368's catalog updates, B367's
   pattern catalog, B302's aliases, B323's routing groups, B844's lookup indexes, B847's group info, B016's pipeline and
-  B8351's CatalogQueries) but nothing builds them into one value from the config, and six tasks in crates that may not
-  depend on betterlite-router declared a port for the same few catalog reads. This task builds that value and one adapter
-  for the six ports. Both live in betterlite-server, because deny.toml lets only betterlite-server, betterlite-oracle and
+  B8351's CatalogQueries) but nothing builds them into one value from the config, and tasks in crates that may not
+  depend on betterlite-router declared ports for the same few catalog reads. This task builds that value and one adapter
+  for five of those ports. Both live in betterlite-server, because deny.toml lets only betterlite-server, betterlite-oracle and
   betterlite-router-fuzz depend on betterlite-router. The binary crate names only the betterlite-server types below and
   never a betterlite-router type.
 
@@ -62,15 +62,13 @@ description: >-
   `RouterViews` holds an Arc<RouterHandle> and has `current(&self) -> Option<RouterView>`, None when the handle holds no
   router. Every port below is passed to its users as an optional trait object where None means "no router", so a caller
   asks current() once per request and passes `view.as_ref()` cast to the port. `RouterView` holds the Arc<ProxyRouter>
-  and implements all six ports, each method a direct call into the router service named:
+  and implements the five ports below, each method a direct call into the router service named:
 
   B3001's `RouterModelInfo` (betterlite-auth reservation_cost): get_model_list over B844, cached_deployment_model_info over
   B846's deployment info and cached_model_group_info over CatalogQueries::cached_model_group_info.
   B3880's `RequestedModelCatalog` (betterlite-logging prometheus failure): is_recognized_model over CatalogQueries,
   is_team_public_model over B302's team public names, matches_pattern_route over the global pattern catalog and then
   every team pattern catalog.
-  B940's `ServedModelLookup` (betterlite-core cursor_responses_compat): is_recognized_model, is_team_public_model and
-  matches_model_pattern over the same three services.
   B3269's `PolicyRouterView` (betterlite-policy response_retrieval): deployment_model_name(model_id) over B844's
   get_deployment and model_group_aliases() over the alias map with B302's alias resolution.
   B8603's `KeepaliveRouter` (stream_keepalive): deployment_params(model_id) gives the deployment's litellm_params as a
@@ -79,7 +77,8 @@ description: >-
 
   Read each trait in its merged module for the exact signatures. B3618's RouterPassthrough and B3622's
   VertexDeploymentLookup run a call or a strategy selection instead of reading the catalog, so the pass-through wiring
-  part backs them; they are not views.
+  part backs them; they are not views. B940's `ServedModelLookup` (betterlite-core cursor_responses_compat) is later work: B940 implements it for
+  RouterView itself over the same three services as RequestedModelCatalog.
 
 
   Tests in proxy_router/tests.rs (names start with `build_`, `handle_`, `flags_`) build a Config through the production
@@ -88,7 +87,7 @@ description: >-
   that install stores once and refuses a second router, that attach_redis keeps the first client, that
   enable_cache_responses flips the flag, and that a fake DeploymentSyncPort called through an `Arc<dyn DeploymentSyncPort>`
   runs its add_deployment once. Tests in router_views/tests.rs (names start with `view_`) call every method of
-  the six ports on a view of that router and on `current()` of an empty handle. No HTTP oracle case: no route reads the
+  the five ports on a view of that router and on `current()` of an empty handle. No HTTP oracle case: no route reads the
   router through this task; the inference, spend, callbacks, admin and pass-through wiring parts add the cases for the
   routes that do.
 scope:
@@ -115,7 +114,7 @@ dod:
     proof: [router-tests]
   - text: DeploymentSyncPort is a dyn-compatible Send and Sync trait with one add_deployment method returning a boxed future.
     proof: [router-tests]
-  - text: RouterView answers every method of RouterModelInfo, RequestedModelCatalog, ServedModelLookup, PolicyRouterView, KeepaliveRouter and DeploymentLookup from the router services, and RouterViews::current is None without a router.
+  - text: RouterView answers every method of RouterModelInfo, RequestedModelCatalog, PolicyRouterView, KeepaliveRouter and DeploymentLookup from the router services, and RouterViews::current is None without a router.
     proof: [views-tests]
 checks:
   optional: []
@@ -124,7 +123,7 @@ checks:
       why: the router is not built from the config like LiteLLM's, an invalid deployment stops startup, or the handle replaces a held router
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^proxy_router::/)'
     - id: views-tests
-      why: one of the six router ports answers from something other than the router services, or answers wrongly without a router
+      why: one of the five router ports answers from something other than the router services, or answers wrongly without a router
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^router_views::/)'
 oracle_cases: []
 deviations:
@@ -141,7 +140,7 @@ out_of_scope:
 pitfalls:
   - router_params sets cache_responses from whether litellm.cache exists, not from a cache_responses key in router_settings, so a config with litellm_settings.cache true starts with cache_responses true.
   - attach_redis must not overwrite a Redis the router already has, since L7006 checks router.cache.redis_cache is None first.
-  - is_team_public_model and the pattern match are separate answers in B3880 and B940, so a team public name that is also a wildcard match must answer true to both, not stop at the first.
+  - is_team_public_model and the pattern match are separate answers in B3880, so a team public name that is also a wildcard match must answer true to both, not stop at the first.
   - A held router is never swapped for a new one; B8381's later rows go through upsert and delete on the same catalog, or readers holding the old Arc would see stale deployments forever.
 review_level: standard
 budget:

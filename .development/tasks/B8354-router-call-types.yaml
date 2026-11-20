@@ -18,17 +18,29 @@ description: >-
   - `ResponsesById` is `_init_responses_api_endpoints` (L7108-L7126): decode the model id from `response_id` with B903's `get_model_id_from_response_id`; when it gives one, set `model` to it; then run the generic call.
   - `Interactions` is `_init_interactions_api_endpoints` (L7128-L7155): fill `custom_llm_provider` from the argument, else `gemini`; when `agent` is set and equals `model`, set `model` to null; with a `model` run the generic call, otherwise call the executor directly.
   - `ManagedAgents` and `SyncManagedAgent` are `_init_managed_agents_api_endpoints` (L7157-L7173): fill `custom_llm_provider` the same way and call the executor directly.
-  - `Passthrough` puts `client` back when one was given and runs the generic call with `passthrough_on_no_deployment` true.
+  - `Passthrough` forwards the request to B8691's `route_passthrough_call`; that call puts `client` back when one was given and runs the generic call with `passthrough_on_no_deployment` true; do not write that branch again.
   - `Generic` passes `custom_llm_provider` only for `afile_delete` and `afile_content`, and `client` for those and the realtime names.
 
   Every wrapper takes `custom_llm_provider` and `client` as named arguments and drops them unless the branch above passes them on.
 
 
   Tests are in `router_call_types/tests.rs`, with fake executors and fake branch owners; names start with `table_`, `moderation_`, `vector_`, `responses_`, `interactions_`, `agents_` and `passthrough_`. There is no fuzz target.
+
+
+  Router adapters. B8631 builds `RouterCalls` in crates/betterlite-server/src/app/inference/router_calls but leaves
+  this table out, since no core route uses it. Once this module is merged, add `call_types` to RouterCalls there, built
+  from RouterGeneric plus the branch adapters, with one plain adapter per trait as B8631 does: update-before-fallbacks
+  (B310, router.py L3837-L3860), the model list (B844), selection (B016) and the request update (B303) reuse the
+  adapters of B8631 and B8630 when this task takes B6020's traits, and get their own adapter when it declares a local
+  trait. The branch traits declared here for B2489, B3273, B7430, B6460 and B370 get the implementation each of those
+  tasks merged; where one merged only an entry function, the adapter calls that function. Test there that each call
+  type in the table reaches its branch adapter (fakes for branches whose provider needs a network).
 scope:
   paths:
   - crates/betterlite-sdk/src/router_call_types.rs
   - crates/betterlite-sdk/src/router_call_types/**
+  - crates/betterlite-server/src/app/inference/router_calls.rs
+  - crates/betterlite-server/src/app/inference/router_calls/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L6566-L6590

@@ -9,6 +9,7 @@ publish.workspace = true
 testing = []
 
 [dependencies]
+aes = "0.9.3"
 aho-corasick = "1.1.5"
 async-stream = "0.3.6"
 async-trait = "0.1.92"
@@ -61,8 +62,10 @@ betterlite-transcribe = { path = "../betterlite-transcribe" }
 betterlite-vertex = { path = "../betterlite-vertex" }
 bytes = "1.12.1"
 caseless = "0.2.2"
+cbc = { version = "0.2.1", features = ["alloc"] }
 chrono = { workspace = true }
 crc32fast = "1.5.3"
+deadpool-postgres.workspace = true
 email_address = "0.2.9"
 encoding_rs = "0.8.42"
 flate2 = "1.1.5"
@@ -71,6 +74,7 @@ futures-channel = { version = "0.3.34", features = ["sink"] }
 futures-util = { version = "0.3.34", default-features = false, features = ["alloc", "async-await", "sink"] }
 getrandom = "0.4.3"
 hex.workspace = true
+hmac = "0.13.0"
 http = "1.5.0"
 http-body = "1.1.0"
 hyper-util = { workspace = true, features = ["server-auto", "tokio", "service"] }
@@ -78,6 +82,7 @@ icu_properties = "2.4.0"
 indexmap = { version = "2.14.2", features = ["serde"] }
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 jsonwebtoken = { version = "11.1.0", default-features = false, features = ["aws_lc_rs"] }
+mime_guess = { version = "2.0.5", default-features = false }
 multipart-rs = "0.2.3"
 num-traits = "0.2.19"
 opentelemetry = { version = "0.33.1", default-features = false, features = ["trace"] }
@@ -120,7 +125,6 @@ betterlite-router = { path = "../betterlite-router", features = ["testing"] }
 betterlite-secrets = { path = "../betterlite-secrets" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
 clap = { version = "4.6.7", features = ["derive", "env"] }
-deadpool-postgres.workspace = true
 mutants = "0.0.4"
 opentelemetry_sdk = { version = "0.33.1", default-features = false, features = ["testing", "trace"] }
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }
@@ -128,6 +132,7 @@ rquickjs = "0.14.0"
 rstest = "=0.27.0"
 rustls = { workspace = true, features = ["std", "tls12"] }
 signal-hook = { version = "0.4.6", default-features = false }
+temp-env = { version = "0.3.6", features = ["async_closure"] }
 tempfile = "3.27.0"
 tokio = { workspace = true, features = ["test-util"] }
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs", "tls12"] }

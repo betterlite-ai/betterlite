@@ -1,0 +1,14 @@
+id: B10012
+milestone: M9 agents and mcp
+title: Agent row reads and the agents listing
+status: todo
+depends_on: [B700, B4770, B4772, B4775]
+file: tasks/B10012-agent-row-reads.yaml
+covers:
+  - "litellm/proxy/agent_endpoints/agent_registry.py"
+parent: B141
+split_from: B4777
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

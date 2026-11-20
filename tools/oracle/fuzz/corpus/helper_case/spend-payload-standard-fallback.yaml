@@ -1,0 +1,18 @@
+kind: helper
+name: spend-payload-standard-fallback-seed
+call:
+  spend_payload:
+    function: payload
+    kwargs:
+      model: gpt-4o
+      litellm_trace_id: trace-seed
+      litellm_params: {metadata: {tags: [alpha]}}
+      standard_logging_object: {id: row-1, model: openai/gpt-4o, total_tokens: null, prompt_tokens: 3, completion_tokens: 2, request_tags: [beta]}
+    response: {mapping: {usage: {total_tokens: 5, prompt_tokens: 3, completion_tokens: 2}}}
+    start_time: "2024-01-01T00:00:00+00:00"
+    end_time: "2024-01-01T00:00:02+00:00"
+    settings: {store_bodies: false}
+    clock: 1700000000.0
+    session_uuid: "00000000-0000-0000-0000-000000000001"
+env: {}
+compare: {ignore: []}

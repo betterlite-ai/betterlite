@@ -1,0 +1,12 @@
+kind: helper
+name: multipart_missing_file
+call:
+  b3462:
+    mode: multipart
+    parts:
+      - name: request
+        kind: text
+        text: '{"ingest_options": {"vector_store": {}}}'
+env: {}
+compare:
+  ignore: []

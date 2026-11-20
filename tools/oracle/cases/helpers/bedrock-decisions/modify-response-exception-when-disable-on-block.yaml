@@ -1,0 +1,18 @@
+kind: helper
+name: modify-response-exception-when-disable-on-block
+call:
+  b3722:
+    bedrock_decisions:
+      http_exception:
+        response:
+          outputs:
+            - text: blocked
+        request_data:
+          model: bedrock/claude
+        guardrail:
+          name: gr-name
+          identifier: null
+          version: null
+          disable_exception_on_block: true
+env: {}
+compare: {ignore: []}

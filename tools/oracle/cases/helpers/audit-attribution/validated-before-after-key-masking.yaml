@@ -1,0 +1,19 @@
+kind: helper
+name: audit-attribution-validated-before-after-key-masking
+call:
+  audit_attribution:
+    function: payload
+    id: audit-2
+    updated_at: "2024-05-06T07:08:09.123456+00:00"
+    changed_by: admin
+    changed_by_api_key: sk-key
+    action: updated
+    table_name: LiteLLM_TeamTable
+    object_id: team-1
+    before_value:
+      api_key: sk-1234567890
+      name: team
+    updated_values:
+      api_key: sk-1234567890
+env: {}
+compare: {ignore: []}

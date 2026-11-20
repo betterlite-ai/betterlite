@@ -1,0 +1,41 @@
+task: B541
+deviations:
+  - what: >-
+      A synchronous create handed an AsyncAzureOpenAI or AsyncOpenAI client sends the request and returns the batch,
+      where LiteLLM calls the async SDK method, receives a coroutine and fails with AttributeError when it asks
+      that coroutine for model_dump.
+    why: >-
+      A sync call returns a value; the un-awaited coroutine is a leak no working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/batches/handler.py#L73-L74
+  - what: >-
+      A synchronous retrieve handed an AsyncAzureOpenAI or AsyncOpenAI client sends the request and returns the
+      batch, where LiteLLM calls the async SDK method, receives a coroutine and fails with AttributeError at
+      model_dump.
+    why: >-
+      A sync call returns a value; the un-awaited coroutine is a leak no working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/batches/handler.py#L115-L116
+  - what: >-
+      A synchronous list handed an AsyncAzureOpenAI or AsyncOpenAI client sends the request and answers with the
+      page, where LiteLLM's list_batches returns the un-awaited coroutine that alist_batches produced.
+    why: >-
+      A sync call returns a page, and handing back a coroutine no caller can read is a leak no working setup
+      relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/batches/handler.py#L207-L208
+  - what: >-
+      A create, retrieve or cancel reply that is not a batch fails with AzureBatchesError::Invalid carrying the
+      shared decoder's message "the SDK answer is not a batch: ...", where LiteLLM lets pydantic.ValidationError
+      escape from LiteLLMBatch.model_validate; the oracle helper reports the same class name, ValidationError.
+    why: >-
+      Byte decoding belongs to B517's wire records, which name the mismatched reply with a typed error; the class
+      and the failure stay the same, only the message text is betterlite's own.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/batches/handler.py#L73-L74
+  - what: >-
+      A batch call whose client builder cannot build an SDK for lack of an api_key, ad token or provider reports
+      the not-initialized ValueError, where LiteLLM's AsyncAzureOpenAI or AzureOpenAI constructor raises
+      OpenAIError("Missing credentials. Please pass one of ...") before the handler's None check is reached.
+    why: >-
+      The Azure client builder owns credential resolution (B531); it reports an SDK it cannot build as None, and
+      the batch handler keeps LiteLLM's not-initialized message for that case. A caller sees a different error
+      class and message for the same missing credentials.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L586-L591
+kept_bugs: []

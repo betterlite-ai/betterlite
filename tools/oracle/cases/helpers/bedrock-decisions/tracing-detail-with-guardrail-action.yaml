@@ -1,0 +1,13 @@
+kind: helper
+name: tracing-detail-with-guardrail-action
+call:
+  b3722:
+    bedrock_decisions:
+      tracing_detail:
+        response:
+          action: NONE
+          outputs:
+            - text: ok
+        aws_region_name: null
+env: {}
+compare: {ignore: []}

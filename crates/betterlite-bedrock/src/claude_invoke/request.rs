@@ -70,6 +70,12 @@ pub struct ClaudeInvokePrepared {
     pub tool_name_reverse: BTreeMap<String, String>,
 }
 
+pub(crate) struct BaseRequest {
+    pub(crate) body: Object,
+    pub(crate) headers: AnthropicHeaders,
+    pub(crate) tool_name_reverse: BTreeMap<String, String>,
+}
+
 pub async fn transform_request<Source, Transport, Fetcher, Blocks, Ids, Lookup>(
     request: &ClaudeInvokeRequest<'_>,
     sources: &mut TransformSources<'_, '_, Source, Transport, Fetcher, Blocks, Ids, Lookup>,
@@ -82,61 +88,40 @@ where
     Ids: Fn() -> String + Sync,
     Lookup: ModelInfoLookup,
 {
-    let mut optional_params = authentication_filtered(&request.optional_params);
+    let base = sources.build_base_request(request).await?;
+    let mut body = base.body;
+    convert_document_url_sources(&mut body, sources.prompts.fetcher).await?;
     sources
-        .normalize_output_config_effort(request.model, &mut optional_params)
-        .await?;
-    normalize_tool_search_tools(&mut optional_params)?;
-    let anthropic_request = AnthropicRequest {
-        model: request.model,
-        custom_llm_provider: Some(CUSTOM_LLM_PROVIDER),
-        messages: request.messages.clone(),
-        optional_params,
-        litellm_params: request.litellm_params.clone(),
-        headers: request.headers.clone(),
-        defaults: request.defaults,
-        catalog: request.catalog,
-        default_chat_max_tokens: request.default_chat_max_tokens,
-        billing_header: BillingHeader::from(STRIPS_BILLING_METADATA),
-        modify_params: request.modify_params,
-        global_drop_params: request.global_drop_params,
-    };
-    let prepared = anthropic_request
-        .prepare(&mut *sources.environment, sources.catalogs, sources.prompts)
-        .await?;
-    let mut body: Object = serde_json::from_value(serde_json::to_value(&prepared.body)?)?;
-    body.shift_remove(MODELS);
-    body.shift_remove(STREAM);
-    sources.rewrite_body(request, &mut body).await?;
-    sources
-        .apply_beta_headers(request, &prepared.headers, &mut body)
+        .apply_beta_headers(request, &base.headers, &mut body)
         .await?;
     Ok(ClaudeInvokePrepared {
         body,
-        tool_name_reverse: prepared.tool_name_reverse,
+        tool_name_reverse: base.tool_name_reverse,
     })
 }
 
 // LiteLLM inlines every remote part before the synchronous transform, so its failures come first.
-pub async fn async_transform_request<Source, Transport, Fetcher, Blocks, Ids, Lookup>(
+pub async fn async_transform_request<Metadata, Client, Media, Files, Ids, Lookup>(
     request: &ClaudeInvokeRequest<'_>,
-    sources: &mut TransformSources<'_, '_, Source, Transport, Fetcher, Blocks, Ids, Lookup>,
-) -> Result<ClaudeInvokePrepared, ClaudeInvokeError<Blocks::Failure>>
+    sources: &mut TransformSources<'_, '_, Metadata, Client, Media, Files, Ids, Lookup>,
+) -> Result<ClaudeInvokePrepared, ClaudeInvokeError<Files::Failure>>
 where
-    Source: DynamicMetadataSource,
-    Transport: ModelInfoClient,
-    Fetcher: RemoteMediaFetcher + Sync,
-    Blocks: FileBlocks + Sync,
+    Metadata: DynamicMetadataSource,
+    Client: ModelInfoClient,
+    Media: RemoteMediaFetcher + Sync,
+    Files: FileBlocks + Sync,
     Ids: Fn() -> String + Sync,
     Lookup: ModelInfoLookup,
 {
-    let mut inlined_request = ClaudeInvokeRequest::clone(request);
-    inlined_request.messages =
-        inlined_messages::<Fetcher, Blocks>(&request.messages, sources.prompts.fetcher).await?;
+    let inlined_request = ClaudeInvokeRequest {
+        messages: inlined_messages::<Media, Files>(&request.messages, sources.prompts.fetcher)
+            .await?,
+        ..ClaudeInvokeRequest::clone(request)
+    };
     transform_request(&inlined_request, sources).await
 }
 
-async fn inlined_messages<Fetcher, Blocks>(
+pub(crate) async fn inlined_messages<Fetcher, Blocks>(
     messages: &[Json],
     fetcher: &Fetcher,
 ) -> Result<Vec<Json>, ClaudeInvokeError<Blocks::Failure>>
@@ -160,11 +145,44 @@ where
     Ids: Fn() -> String + Sync,
     Lookup: ModelInfoLookup,
 {
-    async fn rewrite_body(
+    // _build_bedrock_anthropic_request_base: every step both the invoke and mantle chat transforms share, without the invoke surface's document conversion and computed beta list.
+    pub(crate) async fn build_base_request(
         &mut self,
         request: &ClaudeInvokeRequest<'_>,
-        body: &mut Object,
-    ) -> Result<(), ClaudeInvokeError<Blocks::Failure>> {
+    ) -> Result<BaseRequest, ClaudeInvokeError<Blocks::Failure>> {
+        let mut optional_params = authentication_filtered(&request.optional_params);
+        self.normalize_output_config_effort(request.model, &mut optional_params)
+            .await?;
+        normalize_tool_search_tools(&mut optional_params)?;
+        let anthropic_request = AnthropicRequest {
+            model: request.model,
+            custom_llm_provider: Some(CUSTOM_LLM_PROVIDER),
+            messages: request.messages.clone(),
+            optional_params,
+            litellm_params: request.litellm_params.clone(),
+            headers: request.headers.clone(),
+            defaults: request.defaults,
+            catalog: request.catalog,
+            default_chat_max_tokens: request.default_chat_max_tokens,
+            billing_header: BillingHeader::from(STRIPS_BILLING_METADATA),
+            modify_params: request.modify_params,
+            global_drop_params: request.global_drop_params,
+        };
+        let prepared = anthropic_request
+            .prepare(&mut *self.environment, self.catalogs, self.prompts)
+            .await?;
+        let mut body: Object = serde_json::from_value(serde_json::to_value(&prepared.body)?)?;
+        body.shift_remove(MODELS);
+        body.shift_remove(STREAM);
+        self.rewrite_shared_body(request, &mut body).await;
+        Ok(BaseRequest {
+            body,
+            headers: prepared.headers,
+            tool_name_reverse: prepared.tool_name_reverse,
+        })
+    }
+
+    async fn rewrite_shared_body(&mut self, request: &ClaudeInvokeRequest<'_>, body: &mut Object) {
         self.apply_schema_rewrites(request, body).await;
         if !body.contains_key("anthropic_version") {
             body.insert(
@@ -175,8 +193,6 @@ where
         normalize_tool_custom_field(body);
         normalize_tool_schema_types(body);
         strip_eager_streaming_tools(body);
-        convert_document_url_sources(body, self.prompts.fetcher).await?;
-        Ok(())
     }
 
     // The schema helpers read both capability answers through the Bedrock provider.

@@ -44,12 +44,12 @@ description: >-
   /openai/deployments/{model:path}/{family}, with family chat/completions or embeddings.
   FIM text uses /v1/completions, /completions, /engines/{model:path}/completions and
   /openai/deployments/{model:path}/completions. Responses uses /v1/responses, /responses,
-  /openai/v1/responses; realtime uses /v1/realtime, /realtime, /openai/v1/realtime.
+  /openai/v1/responses.
   Speech/transcription use /v1/audio/{speech,transcriptions} and /audio/{speech,transcriptions}.
-  Files use /{provider}/v1/files, /v1/files, /files, with list/create at the root,
-  retrieve/delete at /{file_id:path}, and content at /{file_id:path}/content. Batches use
-  /{provider}/v1/batches, /v1/batches, /batches, with list/create at the root, retrieve
-  at /{batch_id:path} and cancel at /{batch_id:path}/cancel. OCR uses /v1/ocr and /ocr.
+  The files, batches, realtime and OCR routes (B1032, B1033, B1034, B087, B1050, B1051, B086,
+  B1125, B1133 and B092) are later work, so prove those bindings natively through B678's
+  dispatcher; the route tasks add the booted cases native-files-lifecycle,
+  batch-poll-cancel-content, realtime-event-repair and ocr-hook-aliases.
   Use B900 multipart fixtures, B901 websocket cases and B1139 ordered HTTP scenarios;
   assert upstream URL/auth/body, response headers, status and error type/param/code,
   including unauthenticated proxy 401 and native 400/401/429. Ignore only error.message
@@ -109,7 +109,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L695-L699
     why: B210's Codestral chat defaults differ from FIM.
 dod:
-  - text: Every supplied provider operation reaches its own adapter through the configured proxy aliases.
+  - text: Every supplied provider operation reaches its own adapter, through the configured proxy aliases where its route exists and through B678's dispatcher for files, batches, realtime and OCR.
     proof: [xai-mistral-tests, xai-mistral-settings, oracle]
   - text: Public xAI search switches to Responses and Codestral preserves FIM base consumption order.
     proof: [xai-mistral-tests, oracle]
@@ -137,11 +137,7 @@ oracle_cases:
   - tools/oracle/cases/providers/xai-mistral/search-responses-bridge.yaml
   - tools/oracle/cases/providers/xai-mistral/codestral-chat-and-fim.yaml
   - tools/oracle/cases/providers/xai-mistral/audio-multipart-and-binary.yaml
-  - tools/oracle/cases/providers/xai-mistral/native-files-lifecycle.yaml
-  - tools/oracle/cases/providers/xai-mistral/batch-poll-cancel-content.yaml
-  - tools/oracle/cases/providers/xai-mistral/realtime-event-repair.yaml
   - tools/oracle/cases/providers/xai-mistral/auth-and-provider-errors.yaml
-  - tools/oracle/cases/providers/xai-mistral/ocr-hook-aliases.yaml
   - tools/oracle/cases/helpers/mistral-ocr-translation/reference-return-ignored.yaml
   - tools/oracle/cases/helpers/mistral-ocr-translation/sparse-pages-and-short-result.yaml
   - tools/oracle/cases/helpers/mistral-ocr-translation/present-null-metadata.yaml
@@ -150,7 +146,7 @@ out_of_scope:
   - B1400–B1413 own the provider files listed by their covers; this entry retains package exports, documentation-only mistral/embedding.py, empty mistral_embedding_transformation.py, OCR translation and the listed shared-file spans.
   - B500's main.py callable inventory remains authoritative for all other dispatchers; only its three named provider dispatchers, Mistral embedding arm and the xAI bridge arm move here.
   - B500 and the OpenAI leaf tasks retain every other class/function in openai/openai.py; MistralEmbeddingConfig is the sole extraction.
-  - B004, B006, B202, B080, B083, B1125, B1032, B1033, B1034, B087, B1050, B1051, B1133, B086 and B092 own route factories; this task adds bindings and alias cases without registering routes.
+  - B004, B006, B202, B080 and B083 own the route factories this task exercises; B1125, B1032, B1033, B1034, B087, B1050, B1051, B1133, B086 and B092 own the later files, batches, realtime and OCR routes and add their cases. This task adds bindings and alias cases without registering routes.
   - B3661 owns generic guardrail metadata conversion (BaseTranslation user metadata), B8375 the login command and B068 final pricing integration; no managed-file hook is introduced here.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as mistral_ocr_translation in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/mistral_ocr_translation.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/mistral_ocr_translation.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

@@ -59,8 +59,8 @@ description: >-
   check, since every JSON object reads as a chunk whose fields are all optional. Every other result goes to
   ChatStreamAssembler unchanged, so a Chat result or a text completion still comes back as is and anything else gives
   None. The mode does not change any branch, and the type keeps no state, so one value serves sync and async handlers.
-  This task builds the type and its tests and edits no server file: B8610 builds one value and
-  hands that Arc to every production success handler.
+  This task builds the type and its tests, then replaces B8610's Arc::new(ChatStreamAssembler) in application()
+  (crates/betterlite-server/src/server.rs) with the LoggedStreamAssembler literal, so every production success handler gets it.
 
 
   4. Logged-result conversion (L2519-L2527 and L4177-L4343). The port: give StreamAssembler in ports.rs a provided
@@ -169,6 +169,7 @@ scope:
     - tools/oracle/helpers/b9840/**
     - tools/oracle/src/helpers/core_ops/b9840.rs
     - tools/oracle/src/helpers/core_ops/b9840/**
+    - crates/betterlite-server/src/server.rs
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4108-L4171
@@ -299,7 +300,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - "The stream gate and chat branch of _get_assembled_streaming_response (L4116-L4119) are B252's ChatStreamAssembler, which this type calls; the success handlers that call the port are B250's."
-  - "Building the one production value and handing it to the server's success handlers (the chat and embeddings logging B012 wires, B8931's pass-through runtime, the cache-hit handler B4301 built) belongs to B8610, not to this task. Until it is swapped in, B012's server logging runs on B252's ChatStreamAssembler."
+  - "Handing the one Arc to the server's success handlers (the chat and embeddings logging B012 wires, B8931's pass-through runtime, the cache-hit handler B4301 built) is B8610's; this task only swaps the value B8610 builds."
   - "Anthropic /v1/messages has no assembly branch: its stream hands the success handlers an assembled ModelResponse, which part 4 converts and the chat branch returns."
   - "record_streamed_anthropic_message_id (L4174-L4175) and the streamed_anthropic_message_id field are B976's, written when its stream wrapper starts; the Responses bridge stream that also records the id (responses_adapters/streaming_iterator.py L127) belongs to that file's owner."
   - "Storing the upstream response in LoggingState.httpx_response is the job of the calls that receive it, as LiteLLM's native /v1/messages call (llm_http_handler.py L2276) and GenAI transform (google_genai/transformation.py L389) do; B3488 adds the field and sets it for GenAI, and this task reads it. Nothing sets it for the native /v1/messages call yet, so that call logs from the served body without the upstream llm_provider-* headers."
