@@ -8,10 +8,12 @@ description: >-
   login without mixing two configurations inside one exchange. Keep each login's bearer
   material in its own provider instance and keep the CLI, PKCE and SAML cache namespaces
   separate. Compose the route owners rather than registering their paths again: B1628 owns
-  GET /sso/key/generate; B1615 GET /sso/callback; B1613 POST /sso/cli/start and
-  POST /sso/cli/complete/{login_id}; B1614 GET /sso/cli/poll/{key_id}; B1625 GET
-  /sso/saml/login and /sso/saml/metadata; B1626 POST /sso/saml/callback; B1627 GET
-  /sso/get/ui_settings, /sso/readiness, /sso/debug/login and /sso/debug/callback.
+  GET /sso/key/generate; B1615 GET /sso/callback; B1625 GET /sso/saml/login and
+  /sso/saml/metadata; B1627 GET /sso/get/ui_settings, /sso/readiness, /sso/debug/login and
+  /sso/debug/callback. The CLI routes (B1613's POST /sso/cli/start and POST
+  /sso/cli/complete/{login_id}, B1614's GET /sso/cli/poll/{key_id}) and B1626's POST /sso/saml/callback
+  are deferred: each of those tasks later adds its router here and depends on this task, so
+  those paths answer 404 until then.
   Preserve authenticated versus public routing from those owners; no additional aliases are
   present at the pin. B1608's identity types cross service boundaries without reserializing
   secret-bearing values. Constructor wiring must support the open-source custom post-SSO
@@ -19,8 +21,8 @@ description: >-
   The old _raise_if_sso_exceeds_free_user_limit is deliberately absent under the no-paid-tier
   decision. The three custom-SSO example functions listed below have no reachable caller at
   the pin and add no product handlers. Test router composition, isolation of simultaneous
-  provider logins, config refresh between logins, and a CLI flow followed by a browser login
-  using B1630/B1631's real-proxy fixtures. loads_sso_service_snapshot verifies loaded provider
+  provider logins, config refresh between logins using B1630's real-proxy fixtures; the CLI flow followed by a
+  browser login comes with B1614, the task that adds the last CLI router. loads_sso_service_snapshot verifies loaded provider
   settings reach the assembled graph; add its config_yaml seed without inventing new keys.
   Test a published SSO runtime overlay between requests and pin each in-flight exchange to
   the snapshot it began with; custom Python os.environ access retains B1646's stated limitation.

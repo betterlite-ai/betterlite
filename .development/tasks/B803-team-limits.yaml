@@ -34,8 +34,8 @@ description: >-
   Reject a proposed null cap, increased amount OR changed budget_duration with HTTP 403; allow equal
   or reduced amounts with the same duration. Include model and governing entry in the diagnostic.
   B3005 owns wildcard specificity, not a second matcher here. Unchanged model maps and proxy-admin
-  edits skip these checks; B158 owns BudgetConfig at types/utils.py L3992-L4007, including its
-  time_period/budget_limit aliases. B2317's reset-clock settings are not called here.
+  edits skip these checks; BudgetConfig (types/utils.py L3992-L4007) with its time_period/budget_limit aliases
+  is B1231's, on main as `team_request_contracts::values::BudgetConfig` in this crate; use it. B2317's reset-clock settings are not called here.
 
   _should_auto_add_team_creator returns false for user_id=None, true for any other non-proxy-admin,
   and for proxy admin returns false only when general_settings.disable_auto_add_proxy_admin_to_teams

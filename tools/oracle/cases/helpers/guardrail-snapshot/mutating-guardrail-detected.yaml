@@ -1,0 +1,13 @@
+kind: helper
+name: guardrail-snapshot-mutating-guardrail-detected
+call:
+  b9999:
+    function: mutating_ran
+    metadata:
+      standard_logging_guardrail_information:
+        - guardrail_name: pii
+          guardrail_mode: pre_call
+        - guardrail_name: topic
+          guardrail_mode: during_call
+env: {}
+compare: {ignore: []}

@@ -35,8 +35,10 @@ description: >-
   `ProviderLogHandlers::production(...)` builds the real adapters. Each adapter is a short function that reshapes ProviderLogInput into
   the arguments of one leaf handler and calls it. The leaves are the merged tasks this one depends on: Gemini B3640, Vertex B3642,
   Anthropic B3634, Cohere B3650, OpenAI B3637, Cursor, Typesafe and ComprehendMedical B3651, Tinyfish B3649, AzureSpeech B3652,
-  Transcribe B3646, VertexAiLive B3643, DeepgramListen and FalAi B3653. Read each leaf's public handler function in the merged code and
-  call it; do not copy its logic. Tests inject fakes through the trait, so the real adapters need no test beyond one per branch that
+  Transcribe B3646, DeepgramListen and FalAi B3653. Read each leaf's public handler function in the merged code and
+  call it; do not copy its logic. VertexAiLive's leaf is B3643 and is not built yet: its production adapter returns
+  `ProviderLogError::NotBuilt { branch: "vertex_ai_live" }`, a variant this task owns, and that error goes back to B3607's caller
+  like any handler error, never a silent None. B3643 later swaps in the real adapter and depends on this task. Tests inject fakes through the trait, so the real adapters need no test beyond one per branch that
   checks the reshaped arguments with the leaf stubbed at its input.
 
   `ProviderLogDispatcher::new(handlers: ProviderLogHandlers)` has `normalize_llm_passthrough_logging_payload(&self, input:
@@ -53,7 +55,7 @@ description: >-
   response_headers: &http::HeaderMap, response_body: &[u8], request_body, start_time, end_time, kwargs) and maps the HandlerOutcome into a
   ProviderLogOutcome. The module path is betterlite_server::pass_through_logging::gemini_passthrough_logging, in the same crate as this task. It gets no result string and no cache_hit. Tinyfish gets the object or None. AzureSpeech gets the body as
   it is (object, list or None). Vertex, ComprehendMedical and Transcribe get no response body. Typesafe also gets custom_llm_provider, or ""
-  when it is None. VertexAiLive gets only the websocket messages (the list body, or an empty list for anything else), the logging object,
+  when it is None. VertexAiLive (B3643's adapter) gets only the websocket messages (the list body, or an empty list for anything else), the logging object,
   url_route, the times and the request body; no response, result or cache_hit. DeepgramListen gets only the object members of the list body
   (empty for anything else), the logging object, the upstream request URL as text, and the kwargs as one map. FalAi gets the object body or
   an empty object, request_body, the logging object, url_route and the kwargs as one map; it gets no times or result. Every other

@@ -1,0 +1,298 @@
+use betterlite_azure::azure_assistant_definitions::error::DefinitionsError;
+use betterlite_error::dispatch::{DispatchInput, RawException, RawExceptionBody, dispatch};
+use betterlite_error::envelope::WireField;
+use betterlite_error::error::ErrorClass;
+use betterlite_redact::secret::Redactor;
+use serde::Deserialize;
+
+use betterlite_openai::assistants::error::AssistantsError;
+
+// The SDK's own message when the client is built without a key; exception_type maps its prefix to an auth failure.
+const MISSING_KEY: &str = "The api_key client option must be set either by passing api_key \
+to the client or by setting the OPENAI_API_KEY environment variable";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Entry {
+    Sync,
+    Async,
+}
+
+// What one create_assistants call can fail with before the provider's error projection runs.
+pub enum Raised {
+    Local(String),
+    Assistants(AssistantsError),
+    // An Azure endpoint error outside the SDK client: class, status and message are the error's own.
+    Projected {
+        class: String,
+        status: Option<u16>,
+        message: String,
+    },
+}
+
+// The Azure façade wraps its own SDK error; unwrap the SDK one and project the rest as they raise.
+impl From<DefinitionsError> for Raised {
+    fn from(error: DefinitionsError) -> Self {
+        match error {
+            DefinitionsError::Assistants(inner) => Self::Assistants(inner),
+            DefinitionsError::Endpoint(endpoint) => Self::Projected {
+                class: endpoint.class().to_owned(),
+                status: endpoint.status(),
+                message: endpoint.to_string(),
+            },
+            DefinitionsError::Provider { class, message } => Self::Projected {
+                class,
+                status: None,
+                message,
+            },
+            other @ (DefinitionsError::BaseUrl { .. }
+            | DefinitionsError::MissingCredentials
+            | DefinitionsError::MissingEndpoint
+            | DefinitionsError::ProviderReply
+            | DefinitionsError::Timeout { .. }) => Self::Projected {
+                class: String::from("ValueError"),
+                status: None,
+                message: other.to_string(),
+            },
+        }
+    }
+}
+
+// The exception the LiteLLM façade raises: its class name, status and the type/param/code attributes it carries.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AssistantCreateFailure {
+    pub class: String,
+    pub status: Option<u16>,
+    pub kind: WireField,
+    pub param: WireField,
+    pub code: WireField,
+    pub message: String,
+}
+
+#[must_use]
+pub fn unsupported(provider: &str) -> AssistantCreateFailure {
+    AssistantCreateFailure {
+        class: String::from("BadRequestError"),
+        status: Some(400),
+        kind: WireField::Null,
+        param: WireField::Null,
+        code: WireField::Null,
+        message: format!(
+            "LiteLLM doesn't support {provider} for 'create_assistants'. Only 'openai' is supported."
+        ),
+    }
+}
+
+#[must_use]
+pub fn no_response() -> AssistantCreateFailure {
+    AssistantCreateFailure {
+        class: String::from("InternalServerError"),
+        status: Some(500),
+        kind: WireField::Text(String::from("internal_server_error")),
+        param: WireField::Null,
+        code: WireField::Null,
+        message: String::from("No response returned from 'create_assistants'"),
+    }
+}
+
+// acreate_assistants wraps every failure in exception_type; create_assistants lets the SDK's own exception out
+#[must_use]
+pub fn raised(
+    raised: &Raised,
+    model: &str,
+    provider: &str,
+    entry: Entry,
+    redactor: &Redactor,
+) -> AssistantCreateFailure {
+    match entry {
+        Entry::Sync => {
+            let (class, status, message) = source(raised);
+            let (kind, param, code) = sdk_fields(raised);
+            AssistantCreateFailure {
+                class,
+                status,
+                kind,
+                param,
+                code,
+                message,
+            }
+        }
+        Entry::Async => wrapped(source(raised), raised, model, provider, redactor),
+    }
+}
+
+// openai.APIError's subclasses read type/param/code off body["error"]; every other exception carries none
+fn sdk_fields(raised: &Raised) -> (WireField, WireField, WireField) {
+    match raised {
+        Raised::Assistants(AssistantsError::Status { body, .. }) => flattened(body).map_or(
+            (WireField::Null, WireField::Null, WireField::Null),
+            |fields| {
+                (
+                    fields.kind.map_or(WireField::Null, WireField::Text),
+                    fields.param.map_or(WireField::Null, WireField::Text),
+                    fields.code.map_or(WireField::Null, WireField::Text),
+                )
+            },
+        ),
+        Raised::Assistants(
+            AssistantsError::Transport { .. }
+            | AssistantsError::Malformed { .. }
+            | AssistantsError::Truncated { .. }
+            | AssistantsError::Shape { .. },
+        ) => (WireField::Null, WireField::Null, WireField::Null),
+        Raised::Local(_) | Raised::Assistants(_) | Raised::Projected { .. } => {
+            (WireField::MISSING, WireField::MISSING, WireField::MISSING)
+        }
+    }
+}
+
+fn source(raised: &Raised) -> (String, Option<u16>, String) {
+    match raised {
+        Raised::Local(message) => (String::from("ValueError"), None, message.clone()),
+        Raised::Assistants(error) => assistants(error),
+        Raised::Projected {
+            class,
+            status,
+            message,
+        } => (class.clone(), *status, message.clone()),
+    }
+}
+
+fn assistants(error: &AssistantsError) -> (String, Option<u16>, String) {
+    match error {
+        AssistantsError::Status { status, body } => (
+            sdk_class(*status).to_owned(),
+            Some(*status),
+            format!("Error code: {status} - {}", replaced_text(body)),
+        ),
+        AssistantsError::Transport { .. } => {
+            (String::from("APIConnectionError"), None, error.to_string())
+        }
+        AssistantsError::MissingApiKey => {
+            (String::from("OpenAIError"), None, String::from(MISSING_KEY))
+        }
+        AssistantsError::Malformed { .. }
+        | AssistantsError::Truncated { .. }
+        | AssistantsError::Shape { .. } => (
+            String::from("APIResponseValidationError"),
+            None,
+            error.to_string(),
+        ),
+        AssistantsError::BaseUrl { .. }
+        | AssistantsError::Header { .. }
+        | AssistantsError::Encode { .. }
+        | AssistantsError::EmptyAssistantId
+        | AssistantsError::DotSegment { .. } => {
+            (String::from("ValueError"), None, error.to_string())
+        }
+    }
+}
+
+// the pinned openai SDK's status-to-class table inside _make_status_error
+const fn sdk_class(status: u16) -> &'static str {
+    match status {
+        400 => "BadRequestError",
+        401 => "AuthenticationError",
+        403 => "PermissionDeniedError",
+        404 => "NotFoundError",
+        409 => "ConflictError",
+        422 => "UnprocessableEntityError",
+        429 => "RateLimitError",
+        _ if status >= 500 => "InternalServerError",
+        _ => "APIStatusError",
+    }
+}
+
+fn wrapped(
+    source: (String, Option<u16>, String),
+    raised: &Raised,
+    model: &str,
+    provider: &str,
+    redactor: &Redactor,
+) -> AssistantCreateFailure {
+    let (class, status, message) = source;
+    let body = match raised {
+        Raised::Assistants(AssistantsError::Status { body, .. }) => flattened(body),
+        Raised::Local(_) | Raised::Assistants(_) | Raised::Projected { .. } => None,
+    };
+    let error_str = status.map_or_else(
+        || message.clone(),
+        |code| format!("Error code: {code} - {message}"),
+    );
+    let projected = dispatch(
+        &DispatchInput::Raw(Box::new(RawException {
+            model: model.to_owned(),
+            custom_llm_provider: provider.to_owned(),
+            error_str,
+            status_code: status,
+            status_code_is_synthesized: false,
+            message: Some(message.clone()),
+            body,
+            exception_type: class,
+        })),
+        redactor,
+    );
+    let metadata = projected.metadata();
+    AssistantCreateFailure {
+        class: class_name(&projected).to_owned(),
+        status: Some(metadata.status_code),
+        kind: metadata.error_type,
+        param: metadata.param,
+        code: metadata
+            .openai_code
+            .map_or(WireField::Null, WireField::Text),
+        message,
+    }
+}
+
+// openai.APIError reads type/param/code from body["error"] when it is a mapping, else from the body itself
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ErrorBody {
+    Nested { error: RawExceptionBody },
+    Flat(RawExceptionBody),
+}
+
+fn flattened(body: &[u8]) -> Option<RawExceptionBody> {
+    match serde_json::from_slice::<ErrorBody>(body).ok()? {
+        ErrorBody::Nested { error } => Some(error),
+        ErrorBody::Flat(flat) => Some(flat),
+    }
+}
+
+// httpx replaces each invalid sequence with one U+FFFD, which clippy.toml keeps String::from_utf8_lossy from doing
+fn replaced_text(body: &[u8]) -> String {
+    let mut text = String::with_capacity(body.len());
+    for chunk in body.utf8_chunks() {
+        text.push_str(chunk.valid());
+        if !chunk.invalid().is_empty() {
+            text.push(char::REPLACEMENT_CHARACTER);
+        }
+    }
+    text
+}
+
+const fn class_name(class: &ErrorClass) -> &'static str {
+    match class {
+        ErrorClass::Authentication(_) => "AuthenticationError",
+        ErrorClass::NotFound(_) => "NotFoundError",
+        ErrorClass::PermissionDenied(_) => "PermissionDeniedError",
+        ErrorClass::BadRequest(_) => "BadRequestError",
+        ErrorClass::UnprocessableEntity(_) => "UnprocessableEntityError",
+        ErrorClass::ContextWindowExceeded(_) => "ContextWindowExceededError",
+        ErrorClass::ContentPolicyViolation(_) => "ContentPolicyViolationError",
+        ErrorClass::ServiceUnavailable(_) => "ServiceUnavailableError",
+        ErrorClass::BadGateway(_) => "BadGatewayError",
+        ErrorClass::InternalServer(_) => "InternalServerError",
+        ErrorClass::Timeout(_) => "Timeout",
+        ErrorClass::RateLimit(_) => "RateLimitError",
+        ErrorClass::ApiConnection(_) => "APIConnectionError",
+        ErrorClass::ApiResponseValidation(_) => "APIResponseValidationError",
+        ErrorClass::BudgetExceeded(_) => "BudgetExceededError",
+        ErrorClass::UnsupportedParams(_) => "UnsupportedParamsError",
+        ErrorClass::Api(_)
+        | ErrorClass::JsonSchemaValidation(_)
+        | ErrorClass::GuardrailRaised(_)
+        | ErrorClass::MidStreamFallback(_)
+        | ErrorClass::Unclassified(_) => "APIError",
+    }
+}

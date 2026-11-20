@@ -10,6 +10,7 @@ async-trait = "0.1.92"
 base64 = "0.23.1"
 betterlite-anthropic = { path = "../betterlite-anthropic" }
 betterlite-auth = { path = "../betterlite-auth" }
+betterlite-azure = { path = "../betterlite-azure" }
 betterlite-cache = { path = "../betterlite-cache" }
 betterlite-compression = { path = "../betterlite-compression" }
 betterlite-config = { path = "../betterlite-config" }
