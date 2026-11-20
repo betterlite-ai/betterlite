@@ -1,0 +1,35 @@
+kind: helper
+name: deployment-model-info-deployment-and-params-errors
+call:
+  deployment_model_info:
+    function: router_info
+    model_list: []
+    model_cost: {}
+    arguments:
+      received_model_name: gpt-4o
+      id: ghost
+calls:
+  - deployment_model_info:
+      function: router_info
+      model_list: []
+      model_cost: {}
+      arguments:
+        received_model_name: gpt-4o
+        deployment:
+          model_name: supplied
+          model_info:
+            id: supplied
+  - deployment_model_info:
+      function: router_info
+      model_list: []
+      model_cost: {}
+      arguments:
+        received_model_name: gpt-4o
+        deployment:
+          model_name: baddict
+          litellm_params:
+            api_base: https://bad.test
+          model_info:
+            id: baddict
+env: {}
+compare: {ignore: []}

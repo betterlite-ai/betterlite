@@ -20,6 +20,10 @@ description: 'Add typed team candidate filtering and model_info.access_windows, 
   B016 registers RouteStage::AccessWindows as a stub, so replace only that stub and its not-built test in crates/betterlite-router/src/context/access_windows.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.'
 scope:
   paths:
+  - "tools/oracle/src/routing_component_oracle/tests/routing_component_oracle_boundaries.rs"
+  - "tools/oracle/src/router_probes/mod.rs"
+  - "crates/betterlite-router/src/router_core/tests.rs"
+  - "crates/betterlite-router/src/router_core/tests/boundaries.rs"
   - crates/betterlite-router/src/access_windows.rs
   - crates/betterlite-router/src/access_windows/**
   - crates/betterlite-router/src/context/access_windows.rs
