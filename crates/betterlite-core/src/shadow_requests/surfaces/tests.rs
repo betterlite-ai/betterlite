@@ -1,10 +1,14 @@
 #![cfg(test)]
 
+use betterlite_models::full_model_metadata::parameters::SupportedParameterSource;
 use rstest::rstest;
 
+use crate::api::responses_chat_options::capabilities::CompletionBridgeProbe;
+use crate::responses_bridge::BridgeRequest;
 use crate::shadow_requests::Object;
 use crate::shadow_requests::error::ShadowRequestError;
 
+use super::environment::{NoBridge, NoParameters};
 use super::{Surface, proxy_wire_body, surface_ops};
 
 fn object(source: &str) -> Object {
@@ -256,6 +260,23 @@ async fn responses_row_never_forwards_surface_only_keys() {
         request,
         object(r#"{"messages":[{"role":"user","content":"hello"}],"model":"gpt-4o"}"#)
     );
+}
+
+#[test]
+fn the_shadow_environment_declares_no_parameters_and_no_completion_bridge() {
+    let declared = NoParameters.supported_openai_params("m", None).unwrap();
+    assert!(declared.is_none());
+    let request = BridgeRequest {
+        model: "m",
+        custom_llm_provider: "openai",
+        web_search_options: None,
+        tools: &[],
+        reasoning_effort: None,
+        reasoning_summary: None,
+        api_base: None,
+        route_all_openai_to_responses: false,
+    };
+    assert!(!NoBridge.bridges_back(&request).unwrap());
 }
 
 #[tokio::test]
