@@ -204,30 +204,25 @@ fn refuse_unbuilt_chain(
         .as_ref()
         .is_none_or(|key| key.expose_secret().is_empty());
     let base_missing = params.api_base.as_deref().is_none_or(str::is_empty);
-    let missing = match legacy {
-        Legacy::AlephAlpha | Legacy::LitellmProxy if key_missing => Some("api_key"),
-        Legacy::AlephAlpha | Legacy::LitellmProxy if base_missing => Some("api_base"),
-        Legacy::Custom if base_missing => Some("api_base"),
-        Legacy::AlephAlpha | Legacy::LitellmProxy | Legacy::Custom => None,
+    let field = match legacy {
+        Legacy::AlephAlpha | Legacy::LitellmProxy if key_missing => "api_key",
+        Legacy::AlephAlpha | Legacy::LitellmProxy if base_missing => "api_base",
+        Legacy::Custom if base_missing => "api_base",
+        Legacy::AlephAlpha | Legacy::LitellmProxy | Legacy::Custom => return Ok(()),
     };
-    match missing {
-        Some(field) => Err(ChatSetupError::UnbuiltChain {
-            model_name: resolved.model_group.clone(),
-            provider: legacy.slug(),
-            field,
-        }),
-        None => Ok(()),
-    }
+    Err(ChatSetupError::UnbuiltChain {
+        model_name: resolved.model_group.clone(),
+        provider: legacy.slug(),
+        field,
+    })
 }
 
 // the resolver keeps only the model, so the provider LiteLLM took from custom_llm_provider goes back on as a prefix
 fn prefix_provider(resolved: &mut ChatDeployment, custom_llm_provider: Option<&str>) {
-    let (Some(slug), DeploymentProvider::Unsupported { model }) =
+    if let (Some(slug), DeploymentProvider::Unsupported { model }) =
         (custom_llm_provider, &mut resolved.provider)
-    else {
-        return;
-    };
-    if !model.starts_with(&format!("{slug}/")) {
+        && !model.starts_with(&format!("{slug}/"))
+    {
         *model = format!("{slug}/{model}");
     }
 }
@@ -280,10 +275,8 @@ fn outbound_client(
         environment,
     )?);
     // one entry for the default policy and one more for each deployment whose ssl_verify differs
-    let pool = ClientPool::new(
-        deployments.len().saturating_add(1),
-        TransportLimits::DEFAULT,
-    );
+    let capacity = deployments.len().saturating_add(1);
+    let pool = ClientPool::new(capacity, TransportLimits::DEFAULT);
     let default_tls = TlsPolicy::resolve(config, environment, None)?;
     let network_mock = config.sections.openai_mock_transport.network_mock;
     let mut client = match pool.select(None, network_mock, &default_tls, &policy)? {
