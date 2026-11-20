@@ -20,6 +20,9 @@ use crate::api::transcription_http::TranscriptionDeps;
 use crate::api::transcription_http::error::TranscriptionHttpError;
 use crate::api::transcription_http::reply::TranscriptionReply;
 
+// The declared Content-Type header a redirected multipart post must keep on the second request
+const DECLARED_CONTENT_TYPE: &str = "content-type: multipart/form-data; boundary=fixture-boundary";
+
 #[tokio::test]
 async fn transcription_http_over_a_socket() {
     assert_json_post_reaches_the_server().await;
@@ -38,7 +41,6 @@ async fn transcription_http_raw_bytes_report_a_redirect() {
         Duration::ZERO,
     )
     .expect("the redirect serves");
-    let api_base = format!("http://{}/v1", redirecting.address);
     let events = Events::new();
     let source = proxied_source();
     let mut config = RecordingConfig::new(
@@ -47,24 +49,14 @@ async fn transcription_http_raw_bytes_report_a_redirect() {
     );
     config.response =
         serde_json::from_str(r#"{"text":"live"}"#).expect("the response fixture is valid");
-    let optional = object("{}");
-    let litellm = object("{}");
-    let mut request_call = call(&optional, &litellm);
-    request_call.api_base = Some(&api_base);
-    let deps = TranscriptionDeps {
-        config: Some(&config),
-        source: &source,
-        supplied: None,
-    };
-    let mut fixture = Fixture::new("transcription");
-    let error = fixture
-        .run(&events, &deps, &request_call, Entry::Audio)
+    let api_base = format!("http://{}/v1", redirecting.address);
+    let error = send(&events, &source, &config, &api_base)
         .await
         .expect_err("a raw-byte post does not follow the redirect");
-    let TranscriptionHttpError::Provider(error) = error else {
+    let TranscriptionHttpError::Provider(provider) = error else {
         panic!("the redirect answer is a provider error");
     };
-    assert_eq!(error.status_code, 307);
+    assert_eq!(provider.status_code, 307);
     let request = redirecting.finish().expect("the redirect answers");
     assert!(request.line.starts_with("POST /v1/audio/transcriptions "));
     assert_eq!(request.body, "abc");
@@ -94,31 +86,10 @@ async fn transcription_http_follows_a_redirect() {
     let api_base = format!("http://{}/v1", redirecting.address);
     let events = Events::new();
     let source = proxied_source();
-    let mut declared = record(AudioTranscriptionData::Object(object(
-        r#"{"query":"hello"}"#,
-    )));
-    declared.files = Some(AudioTranscriptionFiles::from([(
-        String::from("a.wav"),
-        AudioTranscriptionFileValue::Text(String::from("abc")),
-    )]));
-    declared.content_type = Some(String::from(
-        "multipart/form-data; boundary=fixture-boundary",
-    ));
-    let mut config = RecordingConfig::new(declared, &events);
+    let mut config = RecordingConfig::new(declared_multipart(), &events);
     config.response =
         serde_json::from_str(r#"{"text":"live"}"#).expect("the response fixture is valid");
-    let optional = object("{}");
-    let litellm = object("{}");
-    let mut request_call = call(&optional, &litellm);
-    request_call.api_base = Some(&api_base);
-    let deps = TranscriptionDeps {
-        config: Some(&config),
-        source: &source,
-        supplied: None,
-    };
-    let mut fixture = Fixture::new("transcription");
-    let answer = fixture
-        .run(&events, &deps, &request_call, Entry::Audio)
+    let answer = send(&events, &source, &config, &api_base)
         .await
         .expect("the redirected post reaches the transcription");
     assert_eq!(answer.response.text.as_deref(), Some("live"));
@@ -127,11 +98,42 @@ async fn transcription_http_follows_a_redirect() {
     assert!(first.line.starts_with("POST /v1/audio/transcriptions "));
     assert!(second.line.starts_with("POST /v1/audio/transcriptions "));
     assert_eq!(first.body, second.body);
-    assert!(
-        second
-            .head
-            .contains("content-type: multipart/form-data; boundary=fixture-boundary")
-    );
+    assert!(second.head.contains(DECLARED_CONTENT_TYPE));
+}
+
+fn declared_multipart() -> AudioTranscriptionRequestData {
+    let mut data = record(AudioTranscriptionData::Object(object(
+        r#"{"query":"hello"}"#,
+    )));
+    data.files = Some(AudioTranscriptionFiles::from([(
+        String::from("a.wav"),
+        AudioTranscriptionFileValue::Text(String::from("abc")),
+    )]));
+    data.content_type = Some(String::from(
+        "multipart/form-data; boundary=fixture-boundary",
+    ));
+    data
+}
+
+async fn send(
+    events: &Events,
+    source: &ProxiedSource,
+    config: &RecordingConfig,
+    api_base: &str,
+) -> Result<TranscriptionReply, TranscriptionHttpError> {
+    let optional = object("{}");
+    let litellm = object("{}");
+    let mut request_call = call(&optional, &litellm);
+    request_call.api_base = Some(api_base);
+    let deps = TranscriptionDeps {
+        config: Some(config),
+        source,
+        supplied: None,
+    };
+    let mut fixture = Fixture::new("transcription");
+    fixture
+        .run(events, &deps, &request_call, Entry::Audio)
+        .await
 }
 
 fn proxied_source() -> ProxiedSource {
@@ -163,18 +165,7 @@ async fn exchange(data: AudioTranscriptionRequestData) -> (Request, Transcriptio
     let mut config = RecordingConfig::new(data, &events);
     config.response =
         serde_json::from_str(r#"{"text":"live"}"#).expect("the response fixture is valid");
-    let optional = object("{}");
-    let litellm = object("{}");
-    let mut request_call = call(&optional, &litellm);
-    request_call.api_base = Some(&api_base);
-    let deps = TranscriptionDeps {
-        config: Some(&config),
-        source: &source,
-        supplied: None,
-    };
-    let mut fixture = Fixture::new("transcription");
-    let answer = fixture
-        .run(&events, &deps, &request_call, Entry::Audio)
+    let answer = send(&events, &source, &config, &api_base)
         .await
         .expect("the live call succeeds");
     let request = serving.finish().expect("the fixture answers");

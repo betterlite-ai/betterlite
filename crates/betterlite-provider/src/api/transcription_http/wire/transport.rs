@@ -1,7 +1,11 @@
+use std::time::Duration;
+
 use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use http::Method;
+use http::header::HeaderMap;
+use url::Url;
 
 use super::{TranscriptionBody, TranscriptionRequest, TranscriptionTransport};
 
@@ -36,26 +40,36 @@ impl TranscriptionTransport for ProxiedClient {
                 .buffered(self.limits.body_bytes)
                 .await
             }
-            TranscriptionBody::Raw(data) => {
-                let mut built = self
-                    .client
-                    .post(url)
-                    .timeout(deadline)
-                    .headers(headers)
-                    .body(data)
-                    .build()
-                    .map_err(TransportError::Build)?;
-                for (_name, value) in built
-                    .headers_mut()
-                    .iter_mut()
-                    .filter(|(name, _value)| SECRET_HEADERS.contains(&name.as_str()))
-                {
-                    value.set_sensitive(true);
-                }
-                self.execute_buffered(built, self.limits.body_bytes)
-                    .await
-                    .map_err(TransportError::Rejected)
-            }
+            TranscriptionBody::Raw(data) => send_raw(self, url, headers, data, deadline).await,
         }
     }
+}
+
+// Raw bytes keep the client's own send: betterlite-http has no body variant that adds no Content-Type
+async fn send_raw(
+    client: &ProxiedClient,
+    url: Url,
+    headers: HeaderMap,
+    data: Vec<u8>,
+    deadline: Duration,
+) -> Result<UpstreamResponse, TransportError> {
+    let mut built = client
+        .client
+        .post(url)
+        .timeout(deadline)
+        .headers(headers)
+        .body(data)
+        .build()
+        .map_err(TransportError::Build)?;
+    for (_name, value) in built
+        .headers_mut()
+        .iter_mut()
+        .filter(|(name, _value)| SECRET_HEADERS.contains(&name.as_str()))
+    {
+        value.set_sensitive(true);
+    }
+    client
+        .execute_buffered(built, client.limits.body_bytes)
+        .await
+        .map_err(TransportError::Rejected)
 }

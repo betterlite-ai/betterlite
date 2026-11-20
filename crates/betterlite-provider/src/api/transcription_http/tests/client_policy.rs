@@ -94,10 +94,10 @@ async fn assert_only_a_matching_supplied_client_is_reused() {
     assert!(harness.source_wire.requests().is_empty());
     assert!(harness.source.calls().is_empty());
     let wrong_kind = Wire::replying(Reply::json(200, r#"{"text":"hi"}"#), &harness.events);
-    let mut fixture = Fixture::new("transcription");
+    let mut fallback = Fixture::new("transcription");
     run(
         &harness,
-        &mut fixture,
+        &mut fallback,
         Some((&wrong_kind, ClientKind::Asynchronous)),
         r#"{"ssl_verify":false}"#,
         Entry::Audio,
@@ -301,10 +301,8 @@ async fn assert_send_failure_stops_transformation() {
     let events = Events::new();
     let wire = Wire::failing(TransportError::Closed, &events);
     let source = Source::new(wire.clone());
-    let mut config = RecordingConfig::new(
-        record(AudioTranscriptionData::Object(Object::new())),
-        &events,
-    );
+    let data = record(AudioTranscriptionData::Object(Object::new()));
+    let mut config = RecordingConfig::new(data, &events);
     config.subtitles = true;
     config.response = serde_json::from_str(r#"{"text":"old","words":[]}"#)
         .expect("the response fixture is a transcription response");
@@ -321,22 +319,18 @@ async fn assert_send_failure_stops_transformation() {
         )
         .await
         .expect_err("the send fails");
-    let TranscriptionHttpError::Provider(error) = error else {
+    let TranscriptionHttpError::Provider(provider) = error else {
         panic!("a send failure is converted");
     };
-    assert_eq!(error.status_code, 500);
-    assert!(error.status_code_is_synthesized);
+    assert_eq!(provider.status_code, 500);
+    assert!(provider.status_code_is_synthesized);
     assert_eq!(
-        error.message,
+        provider.message,
         "the client is shutting down and takes no new requests"
     );
-    assert!(error.headers.is_empty());
+    assert!(provider.headers.is_empty());
     assert_eq!(config.calls().responses, 0);
-    assert!(
-        !events
-            .recorded()
-            .iter()
-            .any(|event| event == "transform-response")
-    );
+    let recorded = events.recorded();
+    assert!(!recorded.contains(&String::from("transform-response")));
     assert_eq!(wire.requests().len(), 1);
 }

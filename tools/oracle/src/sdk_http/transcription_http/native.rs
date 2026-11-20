@@ -31,25 +31,7 @@ pub(super) async fn execute(
         ProviderConfig::Present => Some(&fixture_config),
         ProviderConfig::Missing => None,
     };
-    let audio_file = AudioFile {
-        filename: "a.wav",
-        content: b"abc",
-        content_type: "audio/wav",
-    };
-    let request = TranscriptionCall {
-        model: &call.model,
-        audio_file,
-        optional_params: &call.optional_params,
-        litellm_params: &call.litellm_params,
-        api_key: call.api_key.as_deref(),
-        api_base: Some(api_base),
-        custom_llm_provider: "openai",
-        headers: None,
-        atranscription: Json::Bool(call.atranscription),
-        timeout: call.timeout_seconds.map(Duration::from_secs),
-        max_retries: call.max_retries,
-        shared_session: None,
-    };
+    let request = transcription_call(call, api_base);
     let deps = TranscriptionDeps {
         config: configured,
         source: &origin,
@@ -60,6 +42,28 @@ pub(super) async fn execute(
     Ok(SdkResult::TranscriptionHttp {
         value: Box::new(outcome(call, answer)?),
     })
+}
+
+// The arguments both handlers hand their client, with the case's audio file and call parameters
+fn transcription_call<'call>(call: &'call Call, api_base: &'call str) -> TranscriptionCall<'call> {
+    TranscriptionCall {
+        model: &call.model,
+        audio_file: AudioFile {
+            filename: "a.wav",
+            content: b"abc",
+            content_type: "audio/wav",
+        },
+        optional_params: &call.optional_params,
+        litellm_params: &call.litellm_params,
+        api_key: call.api_key.as_deref(),
+        api_base: Some(api_base),
+        custom_llm_provider: "openai",
+        headers: None,
+        atranscription: Json::Bool(call.atranscription),
+        timeout: call.timeout_seconds.map(Duration::from_secs),
+        max_retries: call.max_retries,
+        shared_session: None,
+    }
 }
 
 // A provider failure and a missing config are what both sides can observe; anything else is betterlite-only
@@ -106,14 +110,15 @@ fn view(call: &Call, reply: TranscriptionReply) -> Result<View, SdkHttpError> {
             headers.insert(name.clone(), value.clone());
         }
     }
+    let words = response_words(&transformed)?;
     Ok(View {
         text: transformed.text,
-        words: words(&transformed)?,
+        words,
         headers,
     })
 }
 
-fn words(transformed: &TranscriptionResponse) -> Result<Option<Json>, SdkHttpError> {
+fn response_words(transformed: &TranscriptionResponse) -> Result<Option<Json>, SdkHttpError> {
     transformed
         .extra
         .get("words")

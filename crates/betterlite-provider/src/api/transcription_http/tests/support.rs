@@ -1,3 +1,4 @@
+use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -224,10 +225,10 @@ impl Wire {
 }
 
 impl TranscriptionTransport for Wire {
-    async fn send(
+    fn send(
         &self,
         request: TranscriptionRequest,
-    ) -> Result<UpstreamResponse, TransportError> {
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
         self.events.push("send");
         let failure = self
             .failure
@@ -238,14 +239,14 @@ impl TranscriptionTransport for Wire {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(request);
-        if let Some(error) = failure {
-            return Err(error);
+        match failure {
+            Some(error) => ready(Err(error)),
+            None => ready(Ok(UpstreamResponse {
+                status: self.reply.status,
+                headers: self.reply.headers.clone(),
+                body: self.reply.body.clone(),
+            })),
         }
-        Ok(UpstreamResponse {
-            status: self.reply.status,
-            headers: self.reply.headers.clone(),
-            body: self.reply.body.clone(),
-        })
     }
 }
 
@@ -369,10 +370,10 @@ impl AudioTranscriptionConfig for RecordingConfig {
         _optional_params: &Object,
         _litellm_params: &Object,
     ) -> Result<AudioTranscriptionRequestData, TranscriptionContractError> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .transforms += 1;
+        {
+            let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
+            calls.transforms = calls.transforms.saturating_add(1);
+        }
         self.events.push("transform-request");
         if self.failure == StageFailure::Transform {
             return Err(TranscriptionContractError::MissingRequestTransform);
@@ -398,10 +399,10 @@ impl AudioTranscriptionConfig for RecordingConfig {
         &self,
         _raw_response: &UpstreamResponse,
     ) -> Result<TranscriptionResponse, TranscriptionContractError> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .responses += 1;
+        {
+            let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
+            calls.responses = calls.responses.saturating_add(1);
+        }
         self.events.push("transform-response");
         if self.failure == StageFailure::Response {
             return Err(TranscriptionContractError::UnexpectedResponseTransform);
@@ -532,9 +533,10 @@ pub(crate) fn deps<'deps>(
 pub(crate) fn body_bytes(body: &TranscriptionBody) -> Option<&[u8]> {
     match body {
         TranscriptionBody::Raw(data) => Some(data),
-        TranscriptionBody::Encoded(RequestBody::Json(data)) => Some(data),
-        TranscriptionBody::Encoded(RequestBody::Bytes { data, .. }) => Some(data),
-        TranscriptionBody::Encoded(RequestBody::Empty | RequestBody::Multipart { .. }) => None,
+        TranscriptionBody::Encoded(encoded) => match encoded {
+            RequestBody::Json(data) | RequestBody::Bytes { data, .. } => Some(data),
+            RequestBody::Empty | RequestBody::Multipart { .. } => None,
+        },
     }
 }
 

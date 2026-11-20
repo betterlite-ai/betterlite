@@ -138,7 +138,7 @@ async fn assert_other_formats_keep_words() {
         .expect("the call succeeds");
     assert_eq!(upper.response.text.as_deref(), Some("old"));
     assert_eq!(extra_words(&upper.response), expected);
-    let number = run_reply(&words_response(), Json::Number(Number::from(1)), true)
+    let number = run_reply(&words_response(), Json::Number(Number::from(1_i32)), true)
         .await
         .expect("the call succeeds");
     assert_eq!(number.response.text.as_deref(), Some("old"));

@@ -10,8 +10,8 @@ use betterlite_openai::transcription::client::SharedSession;
 use serde_json::Number;
 
 use super::support::{
-    ClientCall, Entry, Events, Fixture, RecordingConfig, Reply, Source, Wire, call, deps, object,
-    record,
+    ClientCall, Entry, Events, Fixture, RecordingConfig, Reply, Source, Wire, call, deps, json,
+    object, record,
 };
 use crate::api::transcription_http::TranscriptionDeps;
 use crate::api::transcription_http::error::TranscriptionHttpError;
@@ -103,7 +103,7 @@ async fn assert_boolean_atranscription_selects_async() {
 }
 
 async fn assert_integer_atranscription_stays_sync() {
-    let calls = run_switching_atranscription(Json::Number(Number::from(1))).await;
+    let calls = run_switching_atranscription(Json::Number(Number::from(1_i32))).await;
     assert_eq!(
         calls,
         vec![ClientCall {
@@ -137,11 +137,11 @@ async fn assert_max_retries_sends_once() {
         .expect_err("the status fails the call");
     assert_eq!(wire.requests().len(), 1);
     assert_eq!(source.calls().len(), 1);
-    let TranscriptionHttpError::Provider(error) = error else {
+    let TranscriptionHttpError::Provider(provider) = error else {
         panic!("the status error is a provider error");
     };
-    assert_eq!(error.status_code, 429);
-    assert_eq!(error.message, "slow down");
+    assert_eq!(provider.status_code, 429);
+    assert_eq!(provider.message, "slow down");
 }
 
 async fn assert_status_failure_keeps_status_body_and_headers() {
@@ -151,42 +151,28 @@ async fn assert_status_failure_keeps_status_body_and_headers() {
         .with_header("retry-after", "3");
     let wire = Wire::replying(reply, &events);
     let source = Source::new(wire.clone());
-    let config = RecordingConfig::new(
-        record(AudioTranscriptionData::Object(Object::new())),
-        &events,
-    );
+    let data = record(AudioTranscriptionData::Object(Object::new()));
+    let config = RecordingConfig::new(data, &events);
     let optional = object("{}");
     let litellm = object("{}");
     let request_call = call(&optional, &litellm);
     let mut fixture = Fixture::new("transcription");
+    let dependencies = deps(&config, &source);
     let error = fixture
-        .run(
-            &events,
-            &deps(&config, &source),
-            &request_call,
-            Entry::Audio,
-        )
+        .run(&events, &dependencies, &request_call, Entry::Audio)
         .await
         .expect_err("the status fails the call");
-    let TranscriptionHttpError::Provider(error) = error else {
+    let TranscriptionHttpError::Provider(provider) = error else {
         panic!("the status error is a provider error");
     };
-    assert_eq!(error.status_code, 429);
-    assert_eq!(error.message, "slow down");
-    assert!(!error.status_code_is_synthesized);
-    assert_eq!(
-        error.headers.get("content-type"),
-        Some(&Json::Text(String::from("text/plain")))
-    );
-    assert_eq!(
-        error.headers.get("retry-after"),
-        Some(&Json::Text(String::from("3")))
-    );
-    assert_eq!(
-        error.headers.get("content-length"),
-        Some(&Json::Text(String::from("9")))
-    );
-    assert_eq!(error.headers.get("content-encoding"), None);
+    assert_eq!(provider.status_code, 429);
+    assert_eq!(provider.message, "slow down");
+    assert!(!provider.status_code_is_synthesized);
+    let headers = &provider.headers;
+    assert_eq!(headers.get("content-type"), Some(&json(r#""text/plain""#)));
+    assert_eq!(headers.get("retry-after"), Some(&json(r#""3""#)));
+    assert_eq!(headers.get("content-length"), Some(&json(r#""9""#)));
+    assert_eq!(headers.get("content-encoding"), None);
 }
 
 async fn assert_status_failure_with_an_empty_body_has_no_length() {
@@ -210,12 +196,12 @@ async fn assert_status_failure_with_an_empty_body_has_no_length() {
         )
         .await
         .expect_err("the status fails the call");
-    let TranscriptionHttpError::Provider(error) = error else {
+    let TranscriptionHttpError::Provider(provider) = error else {
         panic!("the status error is a provider error");
     };
-    assert_eq!(error.status_code, 429);
-    assert_eq!(error.message, "");
-    assert_eq!(error.headers.get("content-length"), None);
+    assert_eq!(provider.status_code, 429);
+    assert_eq!(provider.message, "");
+    assert_eq!(provider.headers.get("content-length"), None);
 }
 
 async fn failing_call(
@@ -248,13 +234,13 @@ async fn assert_timeouts_report_the_timeout() {
         Entry::Audio,
     )
     .await;
-    let TranscriptionHttpError::Provider(sync) = sync else {
+    let TranscriptionHttpError::Provider(sync_timeout) = sync else {
         panic!("a timeout is converted");
     };
-    assert_eq!(sync.status_code, 408);
-    assert!(!sync.status_code_is_synthesized);
+    assert_eq!(sync_timeout.status_code, 408);
+    assert!(!sync_timeout.status_code_is_synthesized);
     assert_eq!(
-        sync.message,
+        sync_timeout.message,
         "litellm.Timeout: Connection timed out after 30 seconds."
     );
     let asynchronous = failing_call(
@@ -263,12 +249,12 @@ async fn assert_timeouts_report_the_timeout() {
         Entry::Async,
     )
     .await;
-    let TranscriptionHttpError::Provider(asynchronous) = asynchronous else {
+    let TranscriptionHttpError::Provider(async_timeout) = asynchronous else {
         panic!("a timeout is converted");
     };
-    assert_eq!(asynchronous.status_code, 408);
+    assert_eq!(async_timeout.status_code, 408);
     assert!(
-        asynchronous
+        async_timeout
             .message
             .starts_with("litellm.Timeout: Connection timed out. Timeout passed=1.5, time taken=")
     );
@@ -281,11 +267,11 @@ async fn assert_whole_second_timeouts_print_exactly() {
         Entry::Audio,
     )
     .await;
-    let TranscriptionHttpError::Provider(error) = error else {
+    let TranscriptionHttpError::Provider(provider) = error else {
         panic!("a timeout is converted");
     };
     assert_eq!(
-        error.message,
+        provider.message,
         "litellm.Timeout: Connection timed out after 18446744073709551615 seconds."
     );
 }

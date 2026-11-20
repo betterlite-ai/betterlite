@@ -1,3 +1,5 @@
+use std::str::from_utf8;
+
 use betterlite_http::proxy::outbound::RequestBody;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::transcription_contract::{
@@ -16,22 +18,22 @@ use crate::api::transcription_http::wire::{TranscriptionBody, TranscriptionReque
 
 #[tokio::test]
 async fn transcription_http_encoding() {
-    assert_json_body();
-    assert_empty_object_data_is_json();
-    assert_empty_files_selects_form();
-    assert_empty_files_and_fields_send_no_body();
-    assert_form_repeats_list_values();
-    assert_named_files_are_multipart();
-    assert_declared_boundary_is_kept();
-    assert_declared_type_without_boundary_gets_one();
-    assert_bytes_are_raw();
-    assert_bytes_with_empty_files_are_raw();
-    assert_bytes_with_files_are_rejected();
-    assert_content_type_override();
-    assert_validation_and_url_arguments();
-    assert_logging_input();
-    assert_logging_complete_input();
-    assert_logged_headers_are_masked();
+    assert_json_body().await;
+    assert_empty_object_data_is_json().await;
+    assert_empty_files_selects_form().await;
+    assert_empty_files_and_fields_send_no_body().await;
+    assert_form_repeats_list_values().await;
+    assert_named_files_are_multipart().await;
+    assert_declared_boundary_is_kept().await;
+    assert_declared_type_without_boundary_gets_one().await;
+    assert_bytes_are_raw().await;
+    assert_bytes_with_empty_files_are_raw().await;
+    assert_bytes_with_files_are_rejected().await;
+    assert_content_type_override().await;
+    assert_validation_and_url_arguments().await;
+    assert_logging_input().await;
+    assert_logging_complete_input().await;
+    assert_logged_headers_are_masked().await;
 }
 
 async fn send(
@@ -64,7 +66,7 @@ async fn send(
 
 async fn assert_json_body() {
     let optional = object(r#"{"query":"hello"}"#);
-    let (request, _fixture, _config, _events, _wire) = send(
+    let (request, _, _, _, _) = send(
         record(AudioTranscriptionData::Object(object(
             r#"{"query":"hello"}"#,
         ))),
@@ -85,7 +87,7 @@ async fn assert_json_body() {
 
 async fn assert_empty_object_data_is_json() {
     let optional = object("{}");
-    let (request, _fixture, _config, _events, _wire) = send(
+    let (request, _, _, _, _) = send(
         record(AudioTranscriptionData::Object(Object::new())),
         &optional,
     )
@@ -99,11 +101,11 @@ async fn assert_empty_object_data_is_json() {
 
 async fn assert_empty_files_selects_form() {
     let optional = object(r#"{"query":"hello"}"#);
-    let mut data = record(AudioTranscriptionData::Object(object(
+    let mut request_data = record(AudioTranscriptionData::Object(object(
         r#"{"query":"hello"}"#,
     )));
-    data.files = Some(AudioTranscriptionFiles::new());
-    let (request, _fixture, _config, _events, _wire) = send(data, &optional).await;
+    request_data.files = Some(AudioTranscriptionFiles::new());
+    let (request, _, _, _, _) = send(request_data, &optional).await;
     let TranscriptionBody::Encoded(RequestBody::Bytes { content_type, data }) = &request.body
     else {
         panic!("the empty files case sends a form");
@@ -119,7 +121,7 @@ async fn assert_empty_files_and_fields_send_no_body() {
     let optional = object("{}");
     let mut data = record(AudioTranscriptionData::Object(Object::new()));
     data.files = Some(AudioTranscriptionFiles::new());
-    let (request, _fixture, _config, _events, _wire) = send(data, &optional).await;
+    let (request, _, _, _, _) = send(data, &optional).await;
     assert!(matches!(
         &request.body,
         TranscriptionBody::Encoded(RequestBody::Empty)
@@ -132,7 +134,7 @@ async fn assert_form_repeats_list_values() {
         r#"{"tag":["a","b"]}"#,
     )));
     data.files = Some(AudioTranscriptionFiles::new());
-    let (request, _fixture, _config, _events, _wire) = send(data, &optional).await;
+    let (request, _, _, _, _) = send(data, &optional).await;
     let bytes = body_bytes(&request.body).expect("the form carries bytes");
     assert_eq!(bytes, b"tag=a&tag=b");
 }
@@ -146,7 +148,7 @@ async fn assert_named_files_are_multipart() {
         String::from("a.wav"),
         AudioTranscriptionFileValue::Text(String::from("abc")),
     )]));
-    let (request, _fixture, _config, _events, _wire) = send(data, &optional).await;
+    let (request, _, _, _, _) = send(data, &optional).await;
     let TranscriptionBody::Encoded(RequestBody::Multipart { boundary, parts }) = &request.body
     else {
         panic!("the files case sends multipart");
@@ -179,7 +181,7 @@ fn multipart_data(content_type: &str) -> AudioTranscriptionRequestData {
 
 async fn assert_declared_boundary_is_kept() {
     let optional = object(r#"{"query":"hello"}"#);
-    let (request, _fixture, _config, _events, _wire) = send(
+    let (request, _, _, _, _) = send(
         multipart_data("multipart/form-data; boundary=fixture-boundary"),
         &optional,
     )
@@ -189,21 +191,20 @@ async fn assert_declared_boundary_is_kept() {
         Some("multipart/form-data; boundary=fixture-boundary")
     );
     let bytes = body_bytes(&request.body).expect("the declared boundary sends raw bytes");
-    let text = std::str::from_utf8(bytes).expect("the multipart body is text");
+    let text = from_utf8(bytes).expect("the multipart body is text");
     assert!(text.starts_with("--fixture-boundary\r\n"));
     assert!(text.contains("name=\"query\""));
 }
 
 async fn assert_declared_type_without_boundary_gets_one() {
     let optional = object(r#"{"query":"hello"}"#);
-    let (request, _fixture, _config, _events, _wire) =
-        send(multipart_data("multipart/form-data"), &optional).await;
+    let (request, _, _, _, _) = send(multipart_data("multipart/form-data"), &optional).await;
     assert_eq!(
         header(&request.headers, "content-type"),
         Some("multipart/form-data")
     );
     let bytes = body_bytes(&request.body).expect("the generated boundary sends raw bytes");
-    let text = std::str::from_utf8(bytes).expect("the multipart body is text");
+    let text = from_utf8(bytes).expect("the multipart body is text");
     let boundary = text
         .strip_prefix("--")
         .and_then(|rest| rest.split_once("\r\n"))
@@ -215,7 +216,7 @@ async fn assert_declared_type_without_boundary_gets_one() {
 
 async fn assert_bytes_are_raw() {
     let optional = object("{}");
-    let (request, _fixture, _config, _events, _wire) = send(
+    let (request, _, _, _, _) = send(
         record(AudioTranscriptionData::Bytes(b"abc".to_vec())),
         &optional,
     )
@@ -229,7 +230,7 @@ async fn assert_bytes_with_empty_files_are_raw() {
     let optional = object("{}");
     let mut data = record(AudioTranscriptionData::Bytes(b"abc".to_vec()));
     data.files = Some(AudioTranscriptionFiles::new());
-    let (request, _fixture, _config, _events, _wire) = send(data, &optional).await;
+    let (request, _, _, _, _) = send(data, &optional).await;
     assert_eq!(body_bytes(&request.body), Some(&b"abc"[..]));
 }
 
@@ -264,14 +265,14 @@ async fn assert_content_type_override() {
     let optional = object("{}");
     let mut custom = record(AudioTranscriptionData::Object(Object::new()));
     custom.content_type = Some(String::from("audio/custom"));
-    let (custom_request, _fixture, _config, _events, _wire) = send(custom, &optional).await;
+    let (custom_request, _, _, _, _) = send(custom, &optional).await;
     assert_eq!(
         header(&custom_request.headers, "content-type"),
         Some("audio/custom")
     );
     let mut empty = record(AudioTranscriptionData::Object(Object::new()));
     empty.content_type = Some(String::new());
-    let (empty_request, _fixture, _config, _events, _wire) = send(empty, &optional).await;
+    let (empty_request, _, _, _, _) = send(empty, &optional).await;
     assert_eq!(header(&empty_request.headers, "content-type"), Some(""));
 }
 
@@ -317,7 +318,7 @@ async fn assert_validation_and_url_arguments() {
 
 async fn assert_logging_input() {
     let optional = object(r#"{"query":"hello"}"#);
-    let (_request, query_fixture, _config, _events, _wire) = send(
+    let (_request, query_fixture, _, _, _) = send(
         record(AudioTranscriptionData::Object(object("{}"))),
         &optional,
     )
@@ -327,14 +328,14 @@ async fn assert_logging_input() {
         Some(&Json::Text(String::from("hello")))
     );
     let bare = object("{}");
-    let (_request, bare_fixture, _config, _events, _wire) =
+    let (_request, bare_fixture, _, _, _) =
         send(record(AudioTranscriptionData::Object(object("{}"))), &bare).await;
     assert_eq!(bare_fixture.input(), Some(&Json::Text(String::new())));
 }
 
 async fn assert_logging_complete_input() {
     let optional = object("{}");
-    let (_request, empty_fixture, _config, _events, _wire) = send(
+    let (_request, empty_fixture, _, _, _) = send(
         record(AudioTranscriptionData::Object(Object::new())),
         &optional,
     )
@@ -343,12 +344,12 @@ async fn assert_logging_complete_input() {
     let populated = record(AudioTranscriptionData::Object(object(
         r#"{"query":"hello"}"#,
     )));
-    let (_request, object_fixture, _config, _events, _wire) = send(populated, &optional).await;
+    let (_request, object_fixture, _, _, _) = send(populated, &optional).await;
     assert_eq!(
         object_fixture.complete_input(),
         Some(&json(r#"{"query":"hello"}"#))
     );
-    let (_request, text_fixture, _config, _events, _wire) = send(
+    let (_request, text_fixture, _, _, _) = send(
         record(AudioTranscriptionData::Bytes(b"abc".to_vec())),
         &optional,
     )
@@ -357,20 +358,20 @@ async fn assert_logging_complete_input() {
         text_fixture.complete_input(),
         Some(&Json::Text(String::from("abc")))
     );
-    let (_request, bytes_fixture, _config, _events, _wire) =
+    let (_request, bytes_fixture, _, _, _) =
         send(record(AudioTranscriptionData::Bytes(Vec::new())), &optional).await;
     assert_eq!(bytes_fixture.complete_input(), Some(&json("{}")));
 }
 
 async fn assert_logged_headers_are_masked() {
     let optional = object("{}");
-    let (_request, fixture, _config, _events, _wire) = send(
+    let (_request, fixture, _, _, _) = send(
         record(AudioTranscriptionData::Object(Object::new())),
         &optional,
     )
     .await;
-    let headers = fixture.logged("headers").expect("the headers are logged");
-    let Json::Object(headers) = headers else {
+    let logged = fixture.logged("headers").expect("the headers are logged");
+    let Json::Object(headers) = logged else {
         panic!("the logged headers are an object");
     };
     assert_eq!(
