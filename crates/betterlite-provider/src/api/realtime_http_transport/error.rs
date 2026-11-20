@@ -85,10 +85,10 @@ pub enum RealtimeHttpError {
 }
 
 // _handle_error: the shared converter picks the status, text and headers, and the provider config names the error class
-pub(crate) fn provider_failure<C: BaseRealtimeHttpConfig>(
-    config: &C,
-    facts: &FailureFacts,
-) -> ProviderError {
+pub(crate) fn provider_failure<C>(config: &C, facts: &FailureFacts) -> ProviderError
+where
+    C: BaseRealtimeHttpConfig,
+{
     let converted = handle_error(facts, None);
     let error = config.get_error_class(&ErrorInfo {
         message: &converted.message,
@@ -121,7 +121,7 @@ pub(crate) fn status_failure(answer: &UpstreamResponse) -> StatusFailure {
     }
 }
 
-pub(crate) fn display_facts(display: String) -> FailureFacts {
+pub(crate) const fn display_facts(display: String) -> FailureFacts {
     FailureFacts {
         response_status: None,
         status: None,

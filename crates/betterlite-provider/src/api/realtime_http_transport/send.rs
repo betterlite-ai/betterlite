@@ -26,11 +26,14 @@ pub(crate) struct WireRequest<'wire> {
 }
 
 // One POST, no retry: a transport failure or a status of 400 or more becomes the provider's error when a config is present
-pub(crate) async fn send<C: BaseRealtimeHttpConfig>(
+pub(crate) async fn send<C>(
     config: Option<&C>,
     client: &ProxiedClient,
     request: WireRequest<'_>,
-) -> Result<UpstreamResponse, RealtimeHttpError> {
+) -> Result<UpstreamResponse, RealtimeHttpError>
+where
+    C: BaseRealtimeHttpConfig,
+{
     let deadline = request.timeout.unwrap_or(client.limits.read_timeout);
     let built = build(request, deadline)?;
     let started = Instant::now();
@@ -87,10 +90,10 @@ fn wire_headers(headers: &HeaderMap) -> Result<HttpHeaders, RealtimeHttpError> {
     Ok(wire)
 }
 
-fn rejected<C: BaseRealtimeHttpConfig>(
-    config: Option<&C>,
-    answer: &UpstreamResponse,
-) -> RealtimeHttpError {
+fn rejected<C>(config: Option<&C>, answer: &UpstreamResponse) -> RealtimeHttpError
+where
+    C: BaseRealtimeHttpConfig,
+{
     let StatusFailure {
         status_code,
         message,
@@ -118,12 +121,15 @@ fn rejected<C: BaseRealtimeHttpConfig>(
     RealtimeHttpError::Provider(provider_failure(provider, &facts))
 }
 
-fn failed<C: BaseRealtimeHttpConfig>(
+fn failed<C>(
     config: Option<&C>,
     error: TransportError,
     timeout: Duration,
     elapsed: Duration,
-) -> RealtimeHttpError {
+) -> RealtimeHttpError
+where
+    C: BaseRealtimeHttpConfig,
+{
     let timed_out = matches!(
         &error,
         TransportError::ConnectTimeout(_) | TransportError::Deadline(_)

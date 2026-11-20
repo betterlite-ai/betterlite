@@ -32,11 +32,14 @@ pub struct CallsCall<'call> {
 }
 
 // The SDP exchange goes out as multipart: the offer as text/plain and the session as application/json, both unnamed
-pub async fn calls_post<C: BaseRealtimeHttpConfig>(
+pub async fn calls_post<C>(
     deps: &TransportDeps<'_, C>,
     call: &CallsCall<'_>,
     log: &mut LogContext<'_, '_>,
-) -> Result<UpstreamResponse, RealtimeHttpError> {
+) -> Result<UpstreamResponse, RealtimeHttpError>
+where
+    C: BaseRealtimeHttpConfig,
+{
     let client = select(deps.source, deps.supplied)?;
     let model = call.model.unwrap_or_default();
     let (url, mut headers) = endpoint(deps.config, call, model);
@@ -76,11 +79,10 @@ pub async fn calls_post<C: BaseRealtimeHttpConfig>(
     .await
 }
 
-fn endpoint<C: BaseRealtimeHttpConfig>(
-    config: Option<&C>,
-    call: &CallsCall<'_>,
-    model: &str,
-) -> (String, HeaderMap) {
+fn endpoint<C>(config: Option<&C>, call: &CallsCall<'_>, model: &str) -> (String, HeaderMap)
+where
+    C: BaseRealtimeHttpConfig,
+{
     let Some(provider) = config else {
         let base = call.api_base.trim_end_matches('/');
         let mut headers = HeaderMap::new();

@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::net::TcpListener as StdListener;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
@@ -38,7 +39,7 @@ use indexmap::IndexMap;
 use rstest::rstest;
 use serde_json::Number;
 use thiserror::Error;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime::{Builder, Runtime};
 use tokio::time::sleep;
@@ -102,7 +103,7 @@ fn source_with(limits: TransportLimits) -> Source {
 }
 
 // A transport with no provider config: the handlers take their fallback paths, and C names the config they would take
-fn fallback_deps<'deps>(
+const fn fallback_deps<'deps>(
     source: &'deps Source,
     supplied: Option<SuppliedClient<'deps>>,
     limits: ApiLimits,
@@ -206,7 +207,7 @@ struct Reply {
     hold: bool,
 }
 
-fn ok_reply() -> Reply {
+const fn ok_reply() -> Reply {
     Reply {
         status: 200,
         headers: "",
@@ -216,8 +217,7 @@ fn ok_reply() -> Reply {
 }
 
 fn runtime() -> Runtime {
-    let builder = Builder::new_current_thread().enable_all();
-    builder.build().unwrap()
+    Builder::new_current_thread().enable_all().build().unwrap()
 }
 
 fn logging_state(redactor: &Redactor) -> LoggingState {
@@ -305,7 +305,8 @@ async fn read_request(stream: &mut TcpStream) -> Request {
             continue;
         };
         let head = String::from_utf8(raw[..at].to_vec()).unwrap();
-        let body = raw[at + marker.len()..].to_vec();
+        let body_start = at.checked_add(marker.len()).unwrap();
+        let body = raw[body_start..].to_vec();
         if body.len() >= content_length(&head) {
             return Request { head, body };
         }
@@ -356,7 +357,7 @@ where
 }
 
 // A server that reads the request and never answers, so the client's own deadline is what ends the send
-fn held_reply() -> Reply {
+const fn held_reply() -> Reply {
     Reply {
         status: 200,
         headers: "",
@@ -365,7 +366,7 @@ fn held_reply() -> Reply {
     }
 }
 
-fn session_call<'call>(
+const fn session_call<'call>(
     endpoint: SessionEndpoint,
     api_base: &'call str,
     request_data: &'call IndexMap<String, Json>,
@@ -550,8 +551,8 @@ fn client_selection_reuses_an_async_client_and_replaces_a_sync_one(
     let data = session_request();
     let (_, _, answers) = exchange(&[ok_reply()], |api_base| {
         runtime().block_on(async {
-            let supplied_client = kind.map(|kind| SuppliedClient {
-                kind,
+            let supplied_client = kind.map(|selected| SuppliedClient {
+                kind: selected,
                 transport: &supplied,
             });
             let deps = fallback_deps(&source, supplied_client, ApiLimits::default());
@@ -947,8 +948,8 @@ fn a_pre_call_failure_stops_the_send() {
     assert!(matches!(answer, Err(RealtimeHttpError::Logging(_))));
 }
 
-fn corpus() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/realtime_sdp")
+fn corpus() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/realtime_sdp")
 }
 
 #[test]

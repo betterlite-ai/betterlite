@@ -46,11 +46,14 @@ pub struct SessionCall<'call> {
 }
 
 // _async_realtime_session_post: the config names the URL and the validated headers, or the OpenAI-style fallback does
-pub async fn session_post<C: BaseRealtimeHttpConfig>(
+pub async fn session_post<C>(
     deps: &TransportDeps<'_, C>,
     call: &SessionCall<'_>,
     log: &mut LogContext<'_, '_>,
-) -> Result<UpstreamResponse, RealtimeHttpError> {
+) -> Result<UpstreamResponse, RealtimeHttpError>
+where
+    C: BaseRealtimeHttpConfig,
+{
     let client = select(deps.source, deps.supplied)?;
     let model = call.model.unwrap_or_default();
     let (url, mut headers) = endpoint(deps.config, call, model)?;
@@ -84,11 +87,14 @@ pub async fn session_post<C: BaseRealtimeHttpConfig>(
     .await
 }
 
-fn endpoint<C: BaseRealtimeHttpConfig>(
+fn endpoint<C>(
     config: Option<&C>,
     call: &SessionCall<'_>,
     model: &str,
-) -> Result<(String, HeaderMap), RealtimeHttpError> {
+) -> Result<(String, HeaderMap), RealtimeHttpError>
+where
+    C: BaseRealtimeHttpConfig,
+{
     let Some(provider) = config else {
         let base = call.api_base.trim_end_matches('/');
         let mut headers = HeaderMap::new();
