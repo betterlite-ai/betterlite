@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::future::Future;
 
-use aggregate::{Aggregates, count_healthy, count_unhealthy, first_error};
+use aggregate::{Aggregates, aggregate_entry, endpoint_error, endpoint_models, first_error};
 use betterlite_db::health_check_rows::{
     HealthCheckRow, HealthCheckRows, HealthCheckRowsError, NewHealthCheck,
 };
@@ -130,8 +130,25 @@ pub fn aggregate_results(
     unhealthy: &[JsonObject],
 ) -> Vec<AggregatedHealthResult> {
     let mut aggregates = Aggregates::new();
-    count_healthy(&mut aggregates, index, healthy);
-    count_unhealthy(&mut aggregates, index, unhealthy);
+    for model in healthy
+        .iter()
+        .flat_map(|endpoint| endpoint_models(endpoint, index))
+    {
+        let entry = aggregate_entry(&mut aggregates, model);
+        entry.healthy_count = entry.healthy_count.saturating_add(1);
+    }
+    // every unhealthy endpoint raises the count, but only the first non-empty error is kept for the key
+    for endpoint in unhealthy {
+        let error = endpoint_error(endpoint)
+            .map(|text| text.chars().take(MAX_ERROR_CHARS).collect::<String>());
+        for model in endpoint_models(endpoint, index) {
+            let entry = aggregate_entry(&mut aggregates, model);
+            entry.unhealthy_count = entry.unhealthy_count.saturating_add(1);
+            if entry.error_message.is_none() {
+                entry.error_message.clone_from(&error);
+            }
+        }
+    }
     aggregates.into_values().collect()
 }
 

@@ -4,6 +4,7 @@ mod support;
 
 use betterlite_models::decisions::Json;
 use chrono::{DateTime, TimeZone as _, Utc};
+use rstest::rstest;
 use support::{Seed, capture_logs, insert_seed, unconnected};
 
 use crate::health_check_rows::{HealthCheckRow, HealthCheckRowsError, NewHealthCheck};
@@ -282,28 +283,22 @@ async fn save_stores_empty_optional_fields_as_null() {
     database.finish().await;
 }
 
+#[rstest]
+#[case::nan(f64::NAN)]
+#[case::infinity(f64::INFINITY)]
+#[case::negative_infinity(f64::NEG_INFINITY)]
 #[tokio::test]
-async fn save_stores_a_non_finite_time_as_null() {
+async fn save_stores_a_non_finite_time_as_null(#[case] value: f64) {
     let database = support::start().await;
-    let rows = database.rows();
-    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-        let row = rows
-            .save_result(NewHealthCheck {
-                response_time_ms: Some(value),
-                ..check("gpt-4o")
-            })
-            .await
-            .unwrap();
-        assert!(row.response_time_ms.is_none());
-    }
-    let stored = rows
+    let row = database
+        .rows()
         .save_result(NewHealthCheck {
-            response_time_ms: Some(0.5_f64),
+            response_time_ms: Some(value),
             ..check("gpt-4o")
         })
         .await
         .unwrap();
-    assert_eq!(stored.response_time_ms, Some(0.5_f64));
+    assert!(row.response_time_ms.is_none());
     database.finish().await;
 }
 

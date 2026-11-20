@@ -77,21 +77,6 @@ pub struct NewHealthCheck {
     pub checked_by: Option<String>,
 }
 
-impl NewHealthCheck {
-    // _validate_response_time: a non-finite time is dropped without a warning
-    #[must_use]
-    pub fn stored_response_time(&self) -> Option<f64> {
-        let value = self.response_time_ms?;
-        value.is_finite().then_some(value)
-    }
-
-    // error_message is kept only when it has text, and cut to its first 500 characters as str(value)[:500] does
-    fn stored_error_message(&self) -> Option<String> {
-        let message = self.error_message.as_deref()?;
-        (!message.is_empty()).then(|| message.chars().take(MAX_ERROR_CHARS).collect())
-    }
-}
-
 #[derive(Debug, Error)]
 pub enum HealthCheckRowsError {
     #[error(transparent)]
@@ -125,8 +110,10 @@ pub struct HealthCheckRows {
 impl HealthCheckRows {
     // query_latest_health_checks: the erroring form the background save reads
     pub async fn query_latest(&self) -> Result<Vec<HealthCheckRow>, HealthCheckRowsError> {
-        let client = self.store.session().await?;
-        decode_all(&client, LATEST_SQL, &[]).await
+        match self.store.session().await {
+            Ok(client) => decode_all(&client, LATEST_SQL, &[]).await,
+            Err(error) => Err(HealthCheckRowsError::from(error)),
+        }
     }
 
     // fetch_latest_health_checks: a driver error is logged and reads as no rows
@@ -145,13 +132,11 @@ impl HealthCheckRows {
         if model_names.is_empty() {
             return Vec::new();
         }
-        match self.latest_for_models(model_names).await {
-            Ok(rows) => rows,
-            Err(error) => {
-                tracing::error!("Error getting latest health checks for models: {error}");
-                Vec::new()
-            }
+        let rows = self.latest_for_models(model_names).await;
+        if let Err(error) = &rows {
+            tracing::error!("Error getting latest health checks for models: {error}");
         }
+        rows.unwrap_or_default()
     }
 
     async fn latest_for_models(
@@ -242,8 +227,14 @@ impl HealthCheckRows {
         let health_check_id = (self.new_id)();
         let model_id = new.model_id.as_deref().filter(|id| !id.is_empty());
         let checked_by = new.checked_by.as_deref().filter(|user| !user.is_empty());
-        let error_message = new.stored_error_message();
-        let response_time_ms = new.stored_response_time();
+        // error_message is kept only when it has text, cut to 500 characters as str(value)[:500] does
+        let error_message: Option<String> = new
+            .error_message
+            .as_deref()
+            .filter(|message| !message.is_empty())
+            .map(|message| message.chars().take(MAX_ERROR_CHARS).collect());
+        // _validate_response_time: a non-finite time is dropped without a warning
+        let response_time_ms = new.response_time_ms.filter(|value| value.is_finite());
         let row = client
             .query_opt(
                 INSERT_SQL,

@@ -1,5 +1,5 @@
 use betterlite_models::decisions::Json;
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::NaiveDateTime;
 use deadpool_postgres::Client;
 use tokio_postgres::Row;
 use tokio_postgres::types::{FromSql, ToSql};
@@ -15,12 +15,6 @@ where
             column: name,
             source,
         })
-}
-
-// _assume_utc: the columns are timestamp without time zone and their values are UTC
-fn timestamp(row: &Row, name: &'static str) -> Result<DateTime<Utc>, HealthCheckRowsError> {
-    let naive: NaiveDateTime = column(row, name)?;
-    Ok(naive.and_utc())
 }
 
 // the validator on details: a JSON text value is parsed once more, and text that is not JSON fails the row
@@ -41,6 +35,7 @@ fn details_value(row: &Row) -> Result<Option<Json>, HealthCheckRowsError> {
     }
 }
 
+// _assume_utc: the table's timestamp columns carry no zone and hold UTC
 pub(super) fn decode(row: &Row) -> Result<HealthCheckRow, HealthCheckRowsError> {
     Ok(HealthCheckRow {
         health_check_id: column(row, "health_check_id")?,
@@ -53,9 +48,9 @@ pub(super) fn decode(row: &Row) -> Result<HealthCheckRow, HealthCheckRowsError> 
         response_time_ms: column(row, "response_time_ms")?,
         details: details_value(row)?,
         checked_by: column(row, "checked_by")?,
-        checked_at: timestamp(row, "checked_at")?,
-        created_at: timestamp(row, "created_at")?,
-        updated_at: timestamp(row, "updated_at")?,
+        checked_at: column::<NaiveDateTime>(row, "checked_at")?.and_utc(),
+        created_at: column::<NaiveDateTime>(row, "created_at")?.and_utc(),
+        updated_at: column::<NaiveDateTime>(row, "updated_at")?.and_utc(),
     })
 }
 

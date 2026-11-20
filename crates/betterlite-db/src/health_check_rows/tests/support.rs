@@ -12,13 +12,8 @@ use tracing_subscriber::fmt::{MakeWriter, fmt};
 
 use crate::health_check_rows::{HealthCheckIdSource, HealthCheckRows};
 use crate::postgres_store::session::PostgresStore;
-
-// B703's table and B706's per-model index, in a schema of this test's own inside the fixture's database
-const TABLE_DDL: &str =
-    include_str!("../../schema_contract/fixtures/sql/20250618225828_add_health_check_table.sql");
-const INDEX_DDL: &str = include_str!(
-    "../../schema_policy_resources/fixtures/20260415120000_health_check_latest_per_model_index.sql"
-);
+use crate::schema_daily_usage::ADD_HEALTH_CHECK_TABLE;
+use crate::schema_policy_resources::HEALTH_CHECK_LATEST_PER_MODEL;
 
 const SCHEMA: &str = "health_check_rows_tests";
 
@@ -48,11 +43,16 @@ pub(crate) struct Database {
 }
 
 pub(crate) async fn start() -> Database {
+    // B703's table and B706's per-model index, in a schema of this test's own inside the fixture's database
     let statements = vec![
         format!("CREATE SCHEMA IF NOT EXISTS \"{SCHEMA}\""),
         format!("SET search_path TO \"{SCHEMA}\""),
-        String::from(TABLE_DDL),
-        String::from(INDEX_DDL),
+        str::from_utf8(ADD_HEALTH_CHECK_TABLE.bytes)
+            .unwrap()
+            .to_owned(),
+        str::from_utf8(HEALTH_CHECK_LATEST_PER_MODEL.bytes)
+            .unwrap()
+            .to_owned(),
     ];
     let fixture = PostgresFixture::provision_with_statements(configured_url().as_ref(), statements)
         .resolve()

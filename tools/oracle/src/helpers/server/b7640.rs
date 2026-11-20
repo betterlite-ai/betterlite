@@ -1,4 +1,4 @@
-use betterlite_db::health_check_rows::{HealthCheckRow, NewHealthCheck};
+use betterlite_db::health_check_rows::HealthCheckRow;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
@@ -101,8 +101,9 @@ enum TimeInput {
 }
 
 fn index(deployments: &[DeploymentInput]) -> HelperResult {
+    let deployed = deployments.iter().map(spec).collect::<Vec<_>>();
     let mut output = serde_json::Map::new();
-    for (param, models) in model_param_index(&specs(deployments)) {
+    for (param, models) in model_param_index(&deployed) {
         let listed = models
             .iter()
             .map(|model| {
@@ -122,7 +123,8 @@ fn aggregate(
     healthy: &[JsonObject],
     unhealthy: &[JsonObject],
 ) -> HelperResult {
-    let results = aggregate_results(&model_param_index(&specs(deployments)), healthy, unhealthy);
+    let deployed = deployments.iter().map(spec).collect::<Vec<_>>();
+    let results = aggregate_results(&model_param_index(&deployed), healthy, unhealthy);
     let entries = results
         .iter()
         .map(|result| {
@@ -181,23 +183,11 @@ fn row(input: &RowInput) -> Result<HealthCheckRow, Box<HelperError>> {
 fn response_times(values: &[TimeInput]) -> HelperResult {
     let mut results = Vec::new();
     for value in values {
-        results.push(json!(stored_time(time(value)?)));
+        // PrismaClient._validate_response_time drops a non-finite time without a warning
+        let response_time = time(value)?.filter(|millis| millis.is_finite());
+        results.push(json!(response_time));
     }
     Ok(Value::Array(results))
-}
-
-fn stored_time(value: Option<f64>) -> Option<f64> {
-    NewHealthCheck {
-        model_name: String::new(),
-        model_id: None,
-        status: String::new(),
-        healthy_count: 0,
-        unhealthy_count: 0,
-        error_message: None,
-        response_time_ms: value,
-        checked_by: None,
-    }
-    .stored_response_time()
 }
 
 fn time(input: &TimeInput) -> Result<Option<f64>, Box<HelperError>> {
@@ -215,10 +205,6 @@ fn special(text: &str) -> Result<f64, Box<HelperError>> {
         "-inf" => Ok(f64::NEG_INFINITY),
         _ => Err(invalid(format!("unknown response time: {text}"))),
     }
-}
-
-fn specs(deployments: &[DeploymentInput]) -> Vec<DeploymentSpec> {
-    deployments.iter().map(spec).collect()
 }
 
 fn spec(input: &DeploymentInput) -> DeploymentSpec {

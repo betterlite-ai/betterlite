@@ -1,5 +1,5 @@
 from datetime import datetime, tzinfo
-from typing import ClassVar, Final, Self, TypedDict
+from typing import ClassVar, Final, Self, TypeAlias, TypedDict
 
 import litellm
 from litellm.proxy.db.health_check_latest import LatestHealthCheckRow
@@ -68,6 +68,7 @@ AGGREGATE_INPUT: Final[TypeAdapter[AggregateInput]] = TypeAdapter(AggregateInput
 DECISION_INPUT: Final[TypeAdapter[DecisionInput]] = TypeAdapter(DecisionInput)
 TIME_INPUT: Final[TypeAdapter[TimeInput]] = TypeAdapter(TimeInput)
 ROWS: Final[TypeAdapter[list[LatestHealthCheckRow]]] = TypeAdapter(list[LatestHealthCheckRow])
+AggregatedResults: TypeAlias = dict[tuple[str | None, str], _AggregatedHealthResult]
 
 
 class FrozenDatetime(datetime):
@@ -80,10 +81,12 @@ class FrozenDatetime(datetime):
 
 
 def model_param_index(value: IndexInput) -> JsonValue:
-    mapping: dict[str, list[ModelParam]] = health._build_model_param_to_info_mapping(value["deployments"])  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L679-L708
+    mapping: dict[str, list[ModelParam]] = health._build_model_param_to_info_mapping(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L679-L708
+        value["deployments"],
+    )
     output: dict[str, JsonValue] = {}
     for param, models in mapping.items():
-        listed: list[dict[str, JsonValue]] = [
+        listed: list[JsonValue] = [
             {"model_name": model["model_name"], "model_id": model["model_id"]}
             for model in models
         ]
@@ -92,9 +95,14 @@ def model_param_index(value: IndexInput) -> JsonValue:
 
 
 def aggregate_results(value: AggregateInput) -> JsonValue:
-    mapping: dict[str, list[ModelParam]] = health._build_model_param_to_info_mapping(value["deployments"])  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L679-L708
-    results: dict[tuple[str | None, str], _AggregatedHealthResult] = health._aggregate_health_check_results(mapping, value["healthy"], value["unhealthy"])  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L711-L767
-    entries: list[dict[str, JsonValue]] = [
+    deployments = value["deployments"]
+    mapping: dict[str, list[ModelParam]] = health._build_model_param_to_info_mapping(deployments)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L679-L708
+    results: AggregatedResults = health._aggregate_health_check_results(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L711-L767
+        mapping,
+        value["healthy"],
+        value["unhealthy"],
+    )
+    entries: list[JsonValue] = [
         {
             "model_name": result["model_name"],
             "model_id": result["model_id"],
@@ -108,23 +116,14 @@ def aggregate_results(value: AggregateInput) -> JsonValue:
 
 
 def persist_decision(value: DecisionInput) -> JsonValue:
+    latest: dict[str, LatestHealthCheckRow] = {}
+    for row in ROWS.validate_python(value["latest"]):
+        latest.setdefault(row.model_id or row.model_name, row)
     FrozenDatetime.instant = datetime.fromisoformat(value["now"])
     health.datetime = FrozenDatetime  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L4
     try:
-        rows = ROWS.validate_python(value["latest"])
-        latest: dict[str, LatestHealthCheckRow] = {}
-        for row in rows:
-            key = row.model_id if row.model_id else row.model_name
-            if key not in latest:
-                latest[key] = row
         return health._should_persist_health_check_result(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L784-L796
-            {
-                "model_name": value["result"]["model_name"],
-                "model_id": value["result"]["model_id"],
-                "healthy_count": value["result"]["healthy_count"],
-                "unhealthy_count": value["result"]["unhealthy_count"],
-                "error_message": value["result"]["error_message"],
-            },
+            value["result"],
             latest,
         )
     finally:
@@ -132,7 +131,7 @@ def persist_decision(value: DecisionInput) -> JsonValue:
 
 
 def response_times(value: TimeInput) -> JsonValue:
-    client = PrismaClient.__new__(PrismaClient)
+    client = PrismaClient.__new__(PrismaClient)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4395
     return [
         client._validate_response_time(item)  # type: ignore[arg-type]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportArgumentType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L6894-L6903
         for item in value["values"]
