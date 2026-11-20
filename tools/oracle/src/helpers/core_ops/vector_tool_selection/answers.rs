@@ -19,21 +19,18 @@ use super::values::{params_map, store_value, stores_value};
 
 pub(super) fn drive(input: &Input) -> HelperResult {
     match input.operation {
-        Operation::Consumed => consumed_answer(&registry_of(decode_all(&input.stores)?), input),
+        Operation::Consumed => consumed_answer(input),
         Operation::Selection => Ok(answer(&select_stores(input, None)?, None)),
-        Operation::Lookup => lookup_answer(
-            &registry_of(decode_all(&input.stores)?),
-            input,
-            &input.tools,
-        ),
+        Operation::Lookup => lookup_answer(&registry_of(decode_all(&input.stores)?), input),
         Operation::Fallback => fallback(input),
     }
 }
 
-fn consumed_answer(registry: &VectorStoreRegistry, input: &Input) -> HelperResult {
+fn consumed_answer(input: &Input) -> HelperResult {
+    let registry = registry_of(decode_all(&input.stores)?);
     let mut tools = input.tools.clone().unwrap_or_default();
     let mut ids = input.ids.clone();
-    let (params, raised_text) = match pop_recognised_tools(registry, &mut tools, &mut ids) {
+    let (params, raised_text) = match pop_recognised_tools(&registry, &mut tools, &mut ids) {
         Ok(records) => (params_map(&records), Value::Null),
         Err(error) => (json!({}), Value::String(error.to_string())),
     };
@@ -45,22 +42,18 @@ fn consumed_answer(registry: &VectorStoreRegistry, input: &Input) -> HelperResul
     }))
 }
 
-fn lookup_answer(
-    registry: &VectorStoreRegistry,
-    input: &Input,
-    tools: &Option<Vec<JsonObject>>,
-) -> HelperResult {
-    let first = get_vector_store_to_run(registry, &input.non_default_params, tools.as_deref())
-        .or_value_error()?;
+fn lookup_answer(registry: &VectorStoreRegistry, input: &Input) -> HelperResult {
+    let first =
+        get_vector_store_to_run(registry, &input.non_default_params, input.tools.as_deref())
+            .or_value_error()?;
     let named = get_vector_store_by_name(registry, &input.name);
-    let fields = LookupAnswer {
+    Ok(json!(LookupAnswer {
         first: first.as_ref().map_or(Value::Null, store_value),
         named: named.as_ref().map_or(Value::Null, store_value),
         params: &input.non_default_params,
-        tools,
+        tools: &input.tools,
         registry: stores_value(&registry.stores),
-    };
-    Ok(json!(fields))
+    }))
 }
 
 // the two lookups answer as a record, so the shape no longer reads like the selection answer

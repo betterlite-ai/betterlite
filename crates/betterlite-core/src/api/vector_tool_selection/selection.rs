@@ -139,8 +139,8 @@ where
         }
     }
     let outcome = rows_from_database(Some(database)).await;
-    if let Some(error) = outcome.as_ref().err() {
-        tracing::debug!("Error fetching vector store {vector_store_id} from database: {error}");
+    if let Some(failure) = outcome.as_ref().err() {
+        tracing::debug!("Error fetching vector store {vector_store_id} from database: {failure}");
     }
     let rows: Vec<LiteLlmManagedVectorStore> = outcome.ok()?;
     let found = rows

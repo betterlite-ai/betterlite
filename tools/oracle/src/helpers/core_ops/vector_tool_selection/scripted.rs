@@ -133,9 +133,10 @@ impl VectorStoreSelectionDatabase for ScriptedDatabase {
     }
 }
 
-pub(crate) fn decode_all<Record: DeserializeOwned>(
-    values: &[Value],
-) -> Result<Vec<Record>, HelperFailure> {
+pub(crate) fn decode_all<Record>(values: &[Value]) -> Result<Vec<Record>, HelperFailure>
+where
+    Record: DeserializeOwned,
+{
     let mut items = Vec::with_capacity(values.len());
     for value in values {
         items.push(decode(value)?);
@@ -143,7 +144,10 @@ pub(crate) fn decode_all<Record: DeserializeOwned>(
     Ok(items)
 }
 
-pub(crate) fn decode<Record: DeserializeOwned>(value: &Value) -> Result<Record, HelperFailure> {
+pub(crate) fn decode<Record>(value: &Value) -> Result<Record, HelperFailure>
+where
+    Record: DeserializeOwned,
+{
     let decoded = serde_json::from_value(value.clone())
         .map_err(|error| raised("InvalidInput", error.to_string()))?;
     Ok(decoded)
