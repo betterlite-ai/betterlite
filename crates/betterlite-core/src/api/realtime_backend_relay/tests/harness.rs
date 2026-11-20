@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::convert::Infallible;
+use std::fmt::Debug;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
@@ -87,10 +88,13 @@ impl SendLog {
     }
 
     fn begin(&self) -> Result<(), WebSocketError> {
-        let mut data = lock(&self.0);
-        let attempt = data.attempts;
-        data.attempts = data.attempts.saturating_add(1);
-        if data.failures.contains(&attempt) {
+        let (attempt, refused) = {
+            let mut data = lock(&self.0);
+            let attempt = data.attempts;
+            data.attempts = data.attempts.saturating_add(1);
+            (attempt, data.failures.contains(&attempt))
+        };
+        if refused {
             return Err(WebSocketError {
                 message: format!("the scripted send {attempt} failed"),
             });
@@ -199,11 +203,12 @@ impl ScriptedSource {
     }
 
     pub(super) fn close(&self, frame: Option<CloseFrame>) {
+        let message = frame.as_ref().map_or_else(
+            || String::from("the scripted backend closed without a frame"),
+            |close| close.reason.clone(),
+        );
         self.push(Err(RelayReceiveError::Closed(ConnectionClosed {
-            message: match &frame {
-                Some(frame) => frame.reason.clone(),
-                None => String::from("the scripted backend closed without a frame"),
-            },
+            message,
             received: frame,
         })));
     }
@@ -243,13 +248,15 @@ impl RealtimeBackendSource for ScriptedSource {
                 message: format!("the scripted receive {attempt} failed"),
             }));
         }
-        match data.outcomes.pop_front() {
-            Some(outcome) => outcome,
-            None => Err(RelayReceiveError::Closed(ConnectionClosed {
-                received: None,
-                message: String::from("the scripted source has no frames left"),
-            })),
-        }
+        data.outcomes.pop_front().map_or_else(
+            || {
+                Err(RelayReceiveError::Closed(ConnectionClosed {
+                    received: None,
+                    message: String::from("the scripted source has no frames left"),
+                }))
+            },
+            Ok,
+        )
     }
 }
 
@@ -382,11 +389,14 @@ impl BaseRealtimeConfig for ScriptedProvider {
         _model: &str,
         _session_configuration_request: Option<&str>,
     ) -> Result<Vec<RealtimeMessage>, ScriptedFailure> {
-        let mut script = lock(&self.script);
-        let attempt = script.request_attempts;
-        script.request_attempts = script.request_attempts.saturating_add(1);
-        script.requests.push(message.to_owned());
-        if script.request_failures.contains(&attempt) {
+        let refused = {
+            let mut script = lock(&self.script);
+            let attempt = script.request_attempts;
+            script.request_attempts = script.request_attempts.saturating_add(1);
+            script.requests.push(message.to_owned());
+            script.request_failures.contains(&attempt)
+        };
+        if refused {
             return Err(ScriptedFailure::Request);
         }
         Ok(vec![RealtimeMessage::Text(message.to_owned())])
@@ -398,9 +408,12 @@ impl BaseRealtimeConfig for ScriptedProvider {
         _model: &str,
         input: &RealtimeResponseTransformInput,
     ) -> Result<RealtimeResponseTypedDict, ScriptedFailure> {
-        let mut script = lock(&self.script);
-        script.inputs.push(input.clone());
-        let Some(next) = script.responses.pop_front() else {
+        let next = {
+            let mut script = lock(&self.script);
+            script.inputs.push(input.clone());
+            script.responses.pop_front()
+        };
+        let Some(next) = next else {
             return Err(ScriptedFailure::Transform);
         };
         if next.fail {
@@ -472,8 +485,10 @@ impl RealtimeLogging for RecordingLogging {
     }
 
     fn dispatch_success_handlers(&self, _messages: &[IndexMap<String, Json>]) -> SuccessWork {
-        let mut data = lock(&self.0);
-        data.dispatches = data.dispatches.saturating_add(1);
+        {
+            let mut data = lock(&self.0);
+            data.dispatches = data.dispatches.saturating_add(1);
+        };
         Box::pin(async {})
     }
 }
@@ -501,8 +516,10 @@ impl RecordingQueue {
 
 impl RealtimeSuccessQueue for RecordingQueue {
     fn enqueue(&self, _work: SuccessWork) -> bool {
-        let mut count = lock(&self.enqueues);
-        *count = count.saturating_add(1);
+        {
+            let mut count = lock(&self.enqueues);
+            *count = count.saturating_add(1);
+        };
         self.accept.load(Ordering::SeqCst)
     }
 }
@@ -532,9 +549,11 @@ impl RealtimeFailureDispatch for RecordingDispatch {
         refusal: &BackendRefusal,
         prefer_async_handlers: bool,
     ) -> SuccessWork {
-        let mut data = lock(&self.0);
-        data.refusals.push(refusal.clone());
-        data.prefer_async.push(prefer_async_handlers);
+        {
+            let mut data = lock(&self.0);
+            data.refusals.push(refusal.clone());
+            data.prefer_async.push(prefer_async_handlers);
+        };
         Box::pin(async {})
     }
 }
@@ -696,7 +715,6 @@ pub(super) enum Sockets {
 pub(super) enum Logging {
     Off,
     LoggerAndWorker,
-    LoggerOnly,
 }
 
 pub(super) struct StateOptions {
@@ -828,28 +846,27 @@ impl Logging {
     fn logger(self, fixture: &Fixture) -> Option<Box<dyn RealtimeLogging>> {
         match self {
             Self::Off => None,
-            Self::LoggerAndWorker | Self::LoggerOnly => Some(Box::new(fixture.logging.clone())),
+            Self::LoggerAndWorker => Some(Box::new(fixture.logging.clone())),
         }
     }
 
     fn worker(self, fixture: &Fixture) -> Option<Box<dyn RealtimeSuccessQueue>> {
         match self {
-            Self::Off | Self::LoggerOnly => None,
+            Self::Off => None,
             Self::LoggerAndWorker => Some(Box::new(fixture.queue.clone())),
         }
     }
 }
 
 pub(super) fn streaming(options: &StateOptions, fixture: &Fixture) -> RealtimeStreaming {
-    let provider: Option<Box<dyn RealtimeProviderConfig>> = if options.provider.0 {
-        Some(Box::new(fixture.provider.clone()))
-    } else {
-        None
-    };
+    let provider: Option<Box<dyn RealtimeProviderConfig>> = options
+        .provider
+        .0
+        .then(|| Box::new(fixture.provider.clone()));
     let normalizer: Option<Box<dyn RealtimeEventNormalizer>> = options
         .normalizer
         .clone()
-        .map(|normalizer| Box::new(normalizer) as Box<dyn RealtimeEventNormalizer>);
+        .map(|normalizer| Box::new(normalizer));
     let mut state = RealtimeStreaming::new(ConnectionSetup {
         client: options.sockets.client(options, fixture),
         backend: options.sockets.backend(fixture),
@@ -885,11 +902,7 @@ pub(super) async fn run(
     guardrails: &[&dyn RealtimeGuardrail<Error = Infallible>],
     token: &CancellationToken,
 ) -> (RelayResult, RealtimeStreaming) {
-    let provider: Option<&ScriptedProvider> = if options.provider.0 {
-        Some(&fixture.provider)
-    } else {
-        None
-    };
+    let provider: Option<&ScriptedProvider> = options.provider.0.then_some(&fixture.provider);
     let mut state = streaming(options, fixture);
     let mut relay = RealtimeBackendRelay {
         state: &mut state,
@@ -927,7 +940,7 @@ impl Captured {
 struct Message(String);
 
 impl Visit for Message {
-    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
         if field.name() == "message" {
             self.0 = format!("{value:?}");
         }

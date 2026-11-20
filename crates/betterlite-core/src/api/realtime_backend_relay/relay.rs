@@ -113,10 +113,11 @@ where
     Config: BaseRealtimeConfig,
     CallbackError: Error + Send + 'static,
 {
-    let received = tokio::select! {
-        biased;
-        () = cancellation.cancelled() => return Err(RealtimeRelayError::Cancelled),
-        received = source.recv(Some(false)) => received,
+    let Some(received) = cancellation
+        .run_until_cancelled(source.recv(Some(false)))
+        .await
+    else {
+        return Err(RealtimeRelayError::Cancelled);
     };
     let message = match received {
         Ok(message) => message,
@@ -129,13 +130,13 @@ where
     relay.state.backend_sent_frames.0 = true;
     let text = match message {
         RealtimeMessage::Text(text) => text,
-        RealtimeMessage::Binary(bytes) => match String::from_utf8(bytes) {
-            Ok(text) => text,
-            Err(_) => {
+        RealtimeMessage::Binary(bytes) => {
+            let Ok(text) = String::from_utf8(bytes) else {
                 tracing::warn!("Received non-UTF-8 binary frame from backend, skipping.");
                 return Ok(());
-            }
-        },
+            };
+            text
+        }
     };
     if let Some(provider) = relay.provider {
         if let Err(error) = handle_provider_config_message(relay, provider, &text).await {

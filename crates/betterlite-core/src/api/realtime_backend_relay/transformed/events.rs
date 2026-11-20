@@ -47,6 +47,70 @@ where
     drained
 }
 
+// The first session.created completes deferred setup; a later one is re-emitted as session.updated because the client already has one
+async fn prepare_session_event<Config, CallbackError>(
+    relay: &mut RealtimeBackendRelay<'_, Config, CallbackError>,
+    mut event: Json,
+) -> Result<Json, RealtimeRelayError<Config::Error, CallbackError>>
+where
+    Config: BaseRealtimeConfig,
+    CallbackError: Error + Send + 'static,
+{
+    complete_deferred_setup(relay).await?;
+    if relay.state.setup.session_created_sent_to_client.0 {
+        event = retype_as_session_updated(event);
+    } else {
+        relay.state.setup.session_created_sent_to_client.0 = true;
+    }
+    Ok(event)
+}
+
+// A guardrailed session.created is stored and forwarded before the one-time auto-response disable is attempted
+async fn relay_guardrailed_session_created<Config, CallbackError>(
+    relay: &mut RealtimeBackendRelay<'_, Config, CallbackError>,
+    event: &Json,
+    event_str: &str,
+) -> Result<(), RealtimeRelayError<Config::Error, CallbackError>>
+where
+    Config: BaseRealtimeConfig,
+    CallbackError: Error + Send + 'static,
+{
+    relay
+        .state
+        .store_message(SessionMessage::Text(event_str))
+        .map_err(RealtimeRelayError::State)?;
+    relay.send(Outbound::Event(event, event_str)).await?;
+    relay.send(Outbound::DisableAutoResponse).await
+}
+
+// A completed transcript is logged and forwarded before the guardrails see it, and only a clean conversational turn asks for a reply
+async fn relay_completed_transcript<Config, CallbackError>(
+    relay: &mut RealtimeBackendRelay<'_, Config, CallbackError>,
+    event: &Json,
+    event_str: &str,
+) -> Result<(), RealtimeRelayError<Config::Error, CallbackError>>
+where
+    Config: BaseRealtimeConfig,
+    CallbackError: Error + Send + 'static,
+{
+    let Json::Object(fields) = event else {
+        return Ok(());
+    };
+    let (transcript, item_id) = transcript_and_item_id(fields);
+    relay.state.collect_backend_input(fields);
+    relay
+        .state
+        .store_message(SessionMessage::Text(event_str))
+        .map_err(RealtimeRelayError::State)?;
+    relay.state.capture_transcription_usage(fields);
+    relay.send(Outbound::Event(event, event_str)).await?;
+    let blocked = relay.run_guardrails(&transcript, item_id).await?;
+    if !blocked && !relay.state.is_transcription_session.0 {
+        relay.send(Outbound::Backend(RESPONSE_CREATE)).await?;
+    }
+    Ok(())
+}
+
 // One transformed event: the session-ready flush and guardrail turns run before the plain store-and-forward
 pub(super) async fn provider_event<Config, CallbackError>(
     relay: &mut RealtimeBackendRelay<'_, Config, CallbackError>,
@@ -61,12 +125,7 @@ where
     }
     let session_created = event_type(&event) == Some("session.created");
     if session_created {
-        complete_deferred_setup(relay).await?;
-        if relay.state.setup.session_created_sent_to_client.0 {
-            event = retype_as_session_updated(event);
-        } else {
-            relay.state.setup.session_created_sent_to_client.0 = true;
-        }
+        event = prepare_session_event(relay, event).await?;
     }
     let event_str = serde_json::to_string(&event).map_err(RealtimeRelayError::Encode)?;
     if session_created
@@ -77,31 +136,10 @@ where
         )
         .map_err(RealtimeRelayError::Predicate)?
     {
-        relay
-            .state
-            .store_message(SessionMessage::Text(&event_str))
-            .map_err(RealtimeRelayError::State)?;
-        relay.send(Outbound::Event(&event, &event_str)).await?;
-        relay.send(Outbound::DisableAutoResponse).await?;
-        return Ok(());
+        return relay_guardrailed_session_created(relay, &event, &event_str).await;
     }
     if event_type(&event) == Some(TRANSCRIPTION_COMPLETED) {
-        // A completed transcript is logged and forwarded before the guardrails see it, and only a clean turn asks for a reply
-        if let Json::Object(fields) = &event {
-            let (transcript, item_id) = transcript_and_item_id(fields);
-            relay.state.collect_backend_input(fields);
-            relay
-                .state
-                .store_message(SessionMessage::Text(&event_str))
-                .map_err(RealtimeRelayError::State)?;
-            relay.state.capture_transcription_usage(fields);
-            relay.send(Outbound::Event(&event, &event_str)).await?;
-            let blocked = relay.run_guardrails(&transcript, item_id).await?;
-            if !blocked && !relay.state.is_transcription_session.0 {
-                relay.send(Outbound::Backend(RESPONSE_CREATE)).await?;
-            }
-        }
-        return Ok(());
+        return relay_completed_transcript(relay, &event, &event_str).await;
     }
     relay
         .state

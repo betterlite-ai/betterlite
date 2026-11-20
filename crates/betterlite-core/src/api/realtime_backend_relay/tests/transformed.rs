@@ -79,16 +79,17 @@ async fn transformed_session_list_result_keeps_event_order() {
 #[tokio::test]
 async fn transformed_session_ready_updates_transform_input() {
     let fixture = Fixture::default();
-    let mut script = lock(&fixture.provider.script);
-    script.responses.push_back(
-        ScriptedResponse::new(json(r#"{"type":"a"}"#))
-            .output_item("out-1")
-            .response_id("resp-1")
-            .conversation_id("conv-1")
-            .delta_type(AllDeltaType::Text)
-            .session_configuration_request("cfg-1"),
-    );
-    drop(script);
+    {
+        let mut script = lock(&fixture.provider.script);
+        script.responses.push_back(
+            ScriptedResponse::new(json(r#"{"type":"a"}"#))
+                .output_item("out-1")
+                .response_id("resp-1")
+                .conversation_id("conv-1")
+                .delta_type(AllDeltaType::Text)
+                .session_configuration_request("cfg-1"),
+        );
+    };
     let mut source = fixture.source.clone();
     source.text(r#"{"type":"provider.frame"}"#);
     source.text(r#"{"type":"provider.frame"}"#);
@@ -190,7 +191,7 @@ async fn transformed_flush_failure_retains_frames_and_resets_flushing() {
             .responses
             .push_back(ScriptedResponse::new(json(SESSION_CREATED)));
         script.request_failures.push(0);
-    }
+    };
     let mut source = fixture.source.clone();
     source.text(r#"{"type":"provider.frame"}"#);
     source.close_with(1000, "");
@@ -276,15 +277,16 @@ async fn transformed_client_send_failure_keeps_updated_state() {
     let (logs, _guard) = capture();
     let mut fixture = Fixture::default();
     fixture.provider.requires_session_configuration = true;
-    let mut script = lock(&fixture.provider.script);
-    script.responses.push_back(
-        ScriptedResponse::new(json(
-            r#"{"type":"response.output_text.delta","delta":"hi"}"#,
-        ))
-        .output_item("out-9")
-        .response_id("resp-9"),
-    );
-    drop(script);
+    {
+        let mut script = lock(&fixture.provider.script);
+        script.responses.push_back(
+            ScriptedResponse::new(json(
+                r#"{"type":"response.output_text.delta","delta":"hi"}"#,
+            ))
+            .output_item("out-9")
+            .response_id("resp-9"),
+        );
+    };
     let mut source = fixture.source.clone();
     source.text(r#"{"type":"provider.frame"}"#);
     source.close_with(1000, "");
