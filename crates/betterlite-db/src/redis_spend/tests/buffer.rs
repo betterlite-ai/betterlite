@@ -278,6 +278,24 @@ async fn parking_logs_the_number_of_oldest_rows_the_cap_dropped() {
 }
 
 #[tokio::test]
+async fn parking_at_the_cap_logs_no_drop() {
+    let (logs, _guard) = captured_logs();
+    let lists = Arc::new(FakeLists::default());
+    lists.trim_size(REDIS_SPEND_LOGS_MAX_ROWS);
+    let row = decoded_row(r#"{"spend":1.5}"#);
+    assert!(
+        attached(&lists)
+            .park_spend_logs(std::slice::from_ref(&row))
+            .await
+    );
+    assert!(
+        !logs.text().contains("row cap"),
+        "a push that stays within the cap must not warn: {}",
+        logs.text()
+    );
+}
+
+#[tokio::test]
 async fn a_trim_failure_keeps_the_rows_in_memory() {
     let (logs, _guard) = captured_logs();
     let lists = Arc::new(FakeLists::default());

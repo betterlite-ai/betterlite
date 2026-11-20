@@ -157,6 +157,19 @@ fn a_record_over_the_byte_ceiling_fails_with_the_limit() {
 }
 
 #[test]
+fn a_record_of_exactly_the_byte_ceiling_is_parsed() {
+    let at_limit = vec![b' '; MAX_SPEND_BUFFER_BYTES];
+    assert!(matches!(
+        decode_spend_buffer(SpendBufferKind::Log, &at_limit),
+        Err(SpendBufferError::Log(_))
+    ));
+    assert!(matches!(
+        decode_spend_buffer(SpendBufferKind::Daily, &at_limit),
+        Err(SpendBufferError::Json(_))
+    ));
+}
+
+#[test]
 fn a_tagged_entry_reports_its_kind_and_the_ignored_log_row() {
     assert!(matches!(
         decode_tagged_spend_buffer(&[0, b'{', b'}']),

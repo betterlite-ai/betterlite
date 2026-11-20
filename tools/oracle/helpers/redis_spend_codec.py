@@ -176,7 +176,7 @@ async def drained(buffer: RedisUpdateBuffer) -> JsonValue:
         rows = await buffer.get_spend_logs_from_redis_buffer(LIMIT)
     except (AttributeError, KeyError, TypeError, ValueError):
         return INVALID
-    return JSON.validate_python(rows)
+    return JSON.validate_python(list(rows))
 
 
 async def pipelined(buffer: RedisUpdateBuffer) -> JsonValue:
@@ -186,7 +186,7 @@ async def pipelined(buffer: RedisUpdateBuffer) -> JsonValue:
         )
     except (AttributeError, KeyError, TypeError, ValueError):
         return INVALID
-    window_value: JsonValue = None if window is None else JSON.validate_python(window)
+    window_value: JsonValue = None if window is None else JSON.validate_python(list(window))
     slots: dict[str, JsonValue] = {
         "entity": JSON.validate_python(entity),
         "daily_user": JSON.validate_python(daily_user),
