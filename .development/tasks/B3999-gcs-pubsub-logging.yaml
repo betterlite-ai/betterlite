@@ -19,11 +19,14 @@ description: >-
 
 scope:
   paths:
+    - "crates/betterlite-logging/src/spend_metadata.rs"
     - crates/betterlite-logging/src/gcs_pubsub.rs
     - crates/betterlite-logging/src/gcs_pubsub/tests.rs
     - crates/betterlite-logging/src/gcs_pubsub/tests/**
     - crates/betterlite-logging/src/registry/catalog/gcs_pubsub.rs
     - crates/betterlite-logging/src/registry/catalog/gcs_pubsub/**
+    - crates/betterlite-server/src/spend/payload.rs
+    - crates/betterlite-server/src/spend/payload/build.rs
   lint_tables: false
 
 references:
