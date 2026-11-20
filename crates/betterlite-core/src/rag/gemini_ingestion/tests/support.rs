@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::future::Future;
+use std::mem::take;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
@@ -9,6 +10,7 @@ use betterlite_models::decisions::Json;
 use http::HeaderMap;
 use secrecy::SecretString;
 use serde_json::value::{RawValue, to_raw_value};
+use tokio::runtime::Builder;
 use tracing::field::{Field, Visit};
 use tracing::subscriber::with_default;
 use tracing::{Event, Level, Subscriber};
@@ -144,7 +146,7 @@ pub(super) fn block_on<F>(future: F) -> F::Output
 where
     F: Future,
 {
-    tokio::runtime::Builder::new_current_thread()
+    Builder::new_current_thread()
         .build()
         .unwrap()
         .block_on(future)
@@ -241,6 +243,6 @@ where
     let logs = CapturedLogs::default();
     let subscriber = registry().with(logs.clone());
     let value = with_default(subscriber, call);
-    let captured = std::mem::take(&mut *logs.0.lock().unwrap_or_else(PoisonError::into_inner));
+    let captured = take(&mut *logs.0.lock().unwrap_or_else(PoisonError::into_inner));
     (value, captured)
 }

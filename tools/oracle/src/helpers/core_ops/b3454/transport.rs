@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
+use std::io::Error;
 use std::sync::{Mutex, PoisonError};
 
 use async_trait::async_trait;
@@ -49,12 +50,12 @@ impl Scripted {
     }
 
     fn answer(&self) -> Result<GeminiReply, TransportError> {
-        match self
+        let next = self
             .steps
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .pop_front()
-        {
+            .pop_front();
+        match next {
             Some(Step::Reply {
                 status,
                 headers,
@@ -83,7 +84,7 @@ impl GeminiTransport for Scripted {
 
 fn failure_error(message: &str) -> TransportError {
     TransportError {
-        source: Box::new(std::io::Error::other(message.to_owned())),
+        source: Box::new(Error::other(message.to_owned())),
     }
 }
 

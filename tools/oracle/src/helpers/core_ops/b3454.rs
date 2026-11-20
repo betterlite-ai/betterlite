@@ -1,6 +1,7 @@
 mod transport;
 
 use std::collections::BTreeMap;
+use std::mem::take;
 use std::sync::{Arc, PoisonError};
 
 use async_trait::async_trait;
@@ -17,7 +18,7 @@ use betterlite_core::rag::ingestion::IngestionState;
 use betterlite_core::rag::ingestion::config::IngestionOptions;
 use betterlite_core::rag::ingestion::credentials::{CredentialLookup, CredentialLookupError};
 use betterlite_core::rag::ingestion::ocr::{OcrError, OcrOperation, OcrRequest, OcrResponse};
-use betterlite_core::rag::ingestion::store::{RagStore, StoreRequest};
+use betterlite_core::rag::ingestion::store::{RagStore as _, StoreRequest};
 use betterlite_core::rag::ingestion::upload::{FetchedResponse, UrlFetch, UrlFetchError};
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
@@ -121,8 +122,8 @@ fn store(input: &Input) -> HelperResult {
     let runtime = Builder::new_current_thread().build().or_value_error()?;
     let (vector_store_id, file_id) = runtime
         .block_on(ingestion.store(request))
-        .map_err(gemini_error)?;
-    let sent = std::mem::take(
+        .map_err(|error| gemini_error(&error))?;
+    let sent = take(
         &mut *transport
             .sent
             .lock()
@@ -189,7 +190,7 @@ fn defaults(environment: &BTreeMap<String, String>) -> GeminiDefaults {
     GeminiDefaults { api_key, api_base }
 }
 
-fn gemini_error(error: GeminiIngestionError) -> Box<HelperError> {
+fn gemini_error(error: &GeminiIngestionError) -> Box<HelperError> {
     Box::new(HelperError {
         class: "Exception".to_owned(),
         status: None,

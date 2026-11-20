@@ -1,5 +1,7 @@
 use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter, Result as FmtResult};
+use std::io::Error;
+use std::mem::take;
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
@@ -53,7 +55,7 @@ impl Scripted {
     }
 
     pub(super) fn take_sent(&self) -> Vec<Sent> {
-        std::mem::take(&mut *self.sent.lock().unwrap_or_else(PoisonError::into_inner))
+        take(&mut *self.sent.lock().unwrap_or_else(PoisonError::into_inner))
     }
 
     fn answer(&self) -> Result<GeminiReply, TransportError> {
@@ -99,7 +101,7 @@ impl GeminiTransport for Scripted {
 
 fn transport_failure(message: String) -> TransportError {
     TransportError {
-        source: Box::new(std::io::Error::other(message)),
+        source: Box::new(Error::other(message)),
     }
 }
 
