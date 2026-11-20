@@ -401,29 +401,31 @@ async fn transformed_blocked_transcript_forwards_before_the_guardrail_notice() {
     assert_eq!(lock(&records).applied.len(), 1);
 }
 
+fn script_three_responses(fixture: &Fixture) {
+    let mut script = lock(&fixture.provider.script);
+    let mut first = ScriptedResponse::new(json(r#"{"type":"a"}"#))
+        .output_item("out-1")
+        .response_id("resp-1")
+        .conversation_id("conv-1")
+        .delta_type(AllDeltaType::Text)
+        .session_configuration_request("cfg-1");
+    first.current_delta_chunks = Some(vec![json(
+        r#"{"type":"response.output_text.delta","delta":"hi"}"#,
+    )]);
+    first.current_item_chunks = Some(vec![json(r#"{"type":"response.output_item.done"}"#)]);
+    script.responses.push_back(first);
+    script
+        .responses
+        .push_back(ScriptedResponse::new(json(r#"{"type":"b"}"#)));
+    script
+        .responses
+        .push_back(ScriptedResponse::new(json(r#"{"type":"c"}"#)));
+}
+
 #[tokio::test]
 async fn transformed_none_response_fields_clear_the_transform_input() {
     let fixture = Fixture::default();
-    {
-        let mut script = lock(&fixture.provider.script);
-        let mut first = ScriptedResponse::new(json(r#"{"type":"a"}"#))
-            .output_item("out-1")
-            .response_id("resp-1")
-            .conversation_id("conv-1")
-            .delta_type(AllDeltaType::Text)
-            .session_configuration_request("cfg-1");
-        first.current_delta_chunks = Some(vec![json(
-            r#"{"type":"response.output_text.delta","delta":"hi"}"#,
-        )]);
-        first.current_item_chunks = Some(vec![json(r#"{"type":"response.output_item.done"}"#)]);
-        script.responses.push_back(first);
-        script
-            .responses
-            .push_back(ScriptedResponse::new(json(r#"{"type":"b"}"#)));
-        script
-            .responses
-            .push_back(ScriptedResponse::new(json(r#"{"type":"c"}"#)));
-    };
+    script_three_responses(&fixture);
     let mut source = fixture.source.clone();
     source.text(r#"{"type":"provider.frame","n":1}"#);
     source.text(r#"{"type":"provider.frame","n":2}"#);

@@ -28,7 +28,6 @@ use tokio::runtime::Builder;
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
-use super::Failure;
 use super::failure;
 use super::input::Input;
 use super::provider::ScriptedProvider;
@@ -87,7 +86,7 @@ impl Probe {
         let provider = input.provider.map(|document| ScriptedProvider {
             requires_session_configuration: document.requires_session_configuration,
         });
-        let mut state = RealtimeStreaming::new(ConnectionSetup {
+        let state = RealtimeStreaming::new(ConnectionSetup {
             client: Some(Box::new(ClientSink {
                 scope: WebSocketScope::default(),
                 log: Arc::clone(&client),
@@ -108,12 +107,6 @@ impl Probe {
             client_wants_beta: false,
             backend_uses_beta_protocol: None,
         });
-        state.setup.pending_messages_until_setup = input.pending.clone();
-        state.setup.pending_messages_byte_total = input
-            .pending
-            .iter()
-            .map(String::len)
-            .fold(0_usize, usize::saturating_add);
         Self {
             state,
             source: ScriptedSource {
@@ -166,6 +159,13 @@ fn detail(details: &[(String, Json)], key: &str) -> Option<bool> {
 
 async fn observe(input: &Input) -> HelperResult {
     let mut probe = Probe::new(input);
+    let setup = &mut probe.state.setup;
+    let pending = &input.pending;
+    setup.pending_messages_until_setup.clone_from(pending);
+    setup.pending_messages_byte_total = pending
+        .iter()
+        .map(String::len)
+        .fold(0_usize, usize::saturating_add);
     let guardrails: [&dyn RealtimeGuardrail<Error = Infallible>; 0] = [];
     let token = CancellationToken::new();
     let close = {

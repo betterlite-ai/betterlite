@@ -113,10 +113,10 @@ pub(crate) fn closed(document: Option<&CloseDocument>) -> ConnectionClosed {
         code: close.code,
         reason: close.reason.clone(),
     });
-    let message = match &received {
-        Some(frame) => frame.reason.clone(),
-        None => String::from("no close frame received or sent"),
-    };
+    let message = received.as_ref().map_or_else(
+        || String::from("no close frame received or sent"),
+        |frame| frame.reason.clone(),
+    );
     ConnectionClosed { message, received }
 }
 

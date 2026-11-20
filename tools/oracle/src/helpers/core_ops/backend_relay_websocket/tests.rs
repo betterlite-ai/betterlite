@@ -6,17 +6,25 @@ use serde_json::json;
 use super::input::{Input, MAX_FRAMES, MAX_TEXT_BYTES};
 use super::transport::{closed, recorded};
 
+fn input_with_frames(frames: Vec<String>) -> Input {
+    Input {
+        provider: None,
+        frames,
+        close: None,
+        pending: Vec::new(),
+        force_transcription_model: None,
+    }
+}
+
 #[test]
 fn input_rejects_more_frames_than_the_cap() {
-    let mut input = Input::default();
-    input.frames = vec![String::from("{}"); MAX_FRAMES + 1];
+    let input = input_with_frames(vec![String::from("{}"); MAX_FRAMES + 1]);
     assert!(input.check().unwrap_err().contains("limits"));
 }
 
 #[test]
 fn input_rejects_a_frame_over_the_byte_cap() {
-    let mut input = Input::default();
-    input.frames = vec![String::from("x").repeat(MAX_TEXT_BYTES + 1)];
+    let input = input_with_frames(vec![String::from("x").repeat(MAX_TEXT_BYTES + 1)]);
     assert!(input.check().unwrap_err().contains("limits"));
 }
 
