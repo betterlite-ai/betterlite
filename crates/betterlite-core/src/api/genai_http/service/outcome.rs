@@ -13,9 +13,12 @@ use super::{Answer, AsyncStream, GenerateContentOutcome, SyncStream};
 use crate::google_genai::streaming::{AsyncGoogleGenAiStream, GoogleGenAiStream};
 
 // The sync handler's outcome: the response it already transformed, or the iterator over a buffered reply
-pub(super) fn sync_outcome<C: GenerateContentHttpConfig>(
+pub(super) fn sync_outcome<C>(
     answer: Answer<'_, '_, C>,
-) -> Result<GenerateContentOutcome<C::Response>, GenAiHttpError<C::Error>> {
+) -> Result<GenerateContentOutcome<C::Response>, GenAiHttpError<C::Error>>
+where
+    C: GenerateContentHttpConfig,
+{
     match answer {
         Answer::Response(response) => Ok(GenerateContentOutcome::Response(response)),
         Answer::SyncEvents(wire, reply) => {
