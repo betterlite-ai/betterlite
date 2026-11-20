@@ -45,7 +45,7 @@ fn prompt_error(error: PromptError) -> Box<HelperError> {
         message,
     })
 }
-pub(super) fn selection(case: &Selection) -> HelperResult {
+pub(super) fn selection(case: &Selection) -> Value {
     let api_base = api_base_kwarg(&case.kwargs);
     let config = resolve_provider_config(
         &Registry,
@@ -74,7 +74,7 @@ pub(super) fn selection(case: &Selection) -> HelperResult {
         },
     );
     let kept = bridge_kwargs(&case.kwargs, config.as_ref(), &case.allowed_openai_params);
-    Ok(json!({
+    json!({
         "config": config_kind,
         "bridges": bridges_to_chat_completions(config.as_ref(), case.use_chat_completions_api),
         "encrypted": encrypted,
@@ -82,9 +82,9 @@ pub(super) fn selection(case: &Selection) -> HelperResult {
         "api_base": api_base,
         "bridge_kwargs": kept,
         "will_bridge": will_bridge,
-    }))
+    })
 }
-pub(super) fn prefixes(case: &Prefixes) -> HelperResult {
+pub(super) fn prefixes(case: &Prefixes) -> Value {
     let mut kwargs = ParameterMap::new();
     if case.flag_present {
         kwargs.insert(
@@ -94,12 +94,12 @@ pub(super) fn prefixes(case: &Prefixes) -> HelperResult {
     }
     let popped = pop_use_chat_completions_api(&mut kwargs);
     let (normalized, prefixed) = normalize_openai_chat_model(&case.model);
-    Ok(json!({
+    json!({
         "normalized": [normalized, prefixed],
         "stripped": strip_responses_routing_prefix(&case.model),
         "popped": popped,
         "remaining": kwargs,
-    }))
+    })
 }
 pub(super) fn compatible(case: &Compatible) -> HelperResult {
     let config = OpenAiLikeResponsesConfig {
@@ -123,7 +123,7 @@ pub(super) fn compatible(case: &Compatible) -> HelperResult {
     let url = config
         .get_complete_url(case.api_base.as_deref())
         .or_value_error()?;
-    let answer: Value = json!({
+    let answer = json!({
         "identity": identity,
         "native_file_search": native_file_search,
         "encrypted": encrypted,

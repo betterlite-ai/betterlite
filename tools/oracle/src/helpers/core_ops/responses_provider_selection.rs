@@ -73,8 +73,8 @@ impl Helper for Op {
     type Input = Call;
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Call::Selection(case) => handlers::selection(case),
-            Call::Prefixes(case) => handlers::prefixes(case),
+            Call::Selection(case) => Ok(handlers::selection(case)),
+            Call::Prefixes(case) => Ok(handlers::prefixes(case)),
             Call::Compatible(case) => handlers::compatible(case),
             Call::CredentialBoundary(case) => handlers::credential_boundary(case),
             Call::PromptCall(case) => handlers::prompt_call(case),
