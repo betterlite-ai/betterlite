@@ -4,6 +4,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::files::records::{FileDeleted, FileObject};
 use betterlite_openai::openai_base_config::Object;
 use indexmap::IndexMap;
+use secrecy::SecretString;
 
 use crate::api::vector_store_http_write::error::{BaseLlmException, HeaderMap};
 
@@ -12,13 +13,12 @@ pub type Headers = BTreeMap<String, String>;
 pub type PreparedRequest = (String, FileParams);
 pub type NextPageRequest = (String, BTreeMap<String, String>);
 
-// httpx.Response, with the body kept as bytes and the request URL the transform may read
+// httpx.Response, with the body kept as bytes
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileResponse {
     pub status_code: u16,
     pub headers: Headers,
     pub body: Vec<u8>,
-    pub url: Option<String>,
 }
 
 // What a response transform reads: the logging object's model_call_details, borrowed so the transform's writes stick, and the request's litellm_params
@@ -29,7 +29,7 @@ pub struct ReplyContext<'call> {
 
 // The six arguments validate_environment receives, all of them empty except the headers, the key and litellm_params
 pub struct EnvironmentRequest<'request> {
-    pub api_key: Option<&'request str>,
+    pub api_key: Option<&'request SecretString>,
     pub headers: Headers,
     pub model: &'request str,
     pub messages: &'request [Json],

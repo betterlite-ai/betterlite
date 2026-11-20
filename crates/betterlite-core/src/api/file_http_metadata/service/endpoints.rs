@@ -2,6 +2,7 @@ use betterlite_logging::logging_pre_post::args::AdditionalArgs;
 use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use secrecy::SecretString;
 
 use super::super::config::{
     EnvironmentRequest, FileParams, FileRequest, Headers, ListRequest, MetadataConfig,
@@ -67,10 +68,12 @@ pub(super) fn validate_environment<C>(
 where
     C: MetadataConfig,
 {
+    let api_key = litellm_params
+        .get("api_key")
+        .and_then(|value| value.as_str())
+        .map(SecretString::from);
     let environment = EnvironmentRequest {
-        api_key: litellm_params
-            .get("api_key")
-            .and_then(|value| value.as_str()),
+        api_key: api_key.as_ref(),
         headers,
         model: "",
         messages: &[],

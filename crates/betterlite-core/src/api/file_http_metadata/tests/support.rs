@@ -27,6 +27,7 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
 use http::header::HeaderMap as HttpHeaders;
 use indexmap::IndexMap;
+use secrecy::ExposeSecret as _;
 use serde_json::{Number, Value};
 
 use crate::api::file_http_metadata::config::{
@@ -666,7 +667,7 @@ impl MetadataConfig for RecordingConfig {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(Validated {
-                api_key: request.api_key.map(str::to_owned),
+                api_key: request.api_key.map(|key| key.expose_secret().to_owned()),
                 model: request.model.to_owned(),
                 messages: request.messages.len(),
                 optional_empty: request.optional_params.is_empty(),
@@ -676,7 +677,10 @@ impl MetadataConfig for RecordingConfig {
         let mut headers = request.headers;
         headers.insert(
             "authorization".to_owned(),
-            format!("Bearer {}", request.api_key.unwrap_or_default()),
+            format!(
+                "Bearer {}",
+                request.api_key.map_or("", |key| key.expose_secret())
+            ),
         );
         headers.insert("x-validation".to_owned(), format!("{}", index + 1));
         Ok(headers)

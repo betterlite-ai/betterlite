@@ -5,7 +5,6 @@ use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::RequestBody;
 use betterlite_openai::files::records::{FileDeleted, FileObject};
 use http::Method;
-use serde::Serialize;
 
 use self::endpoints::{log_pre_call, request_endpoint, select_client, validate_environment};
 use self::listing::{Listing, list_pages};
@@ -79,7 +78,7 @@ pub enum MetadataCall<'call> {
     List(ListCall<'call>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MetadataValue {
     File(FileObject),
     Deleted(FileDeleted),
@@ -177,11 +176,10 @@ where
         request,
     } = prepared;
     let timeout = request.timeout;
-    let url = request.url.to_string();
     let reply = send_once(config, client.get(), request, attempt).await?;
     match attempt.operation {
         Operation::Retrieve => {
-            let response = file_response(&reply, &url);
+            let response = file_response(&reply);
             let file = config.transform_retrieve_file_response(
                 &response,
                 ReplyContext {
@@ -191,7 +189,7 @@ where
             )?;
             Ok(MetadataValue::File(file))
         }
-        Operation::Delete => deleted(config, &reply, &url, log, &litellm_params),
+        Operation::Delete => deleted(config, &reply, log, &litellm_params),
         Operation::List => {
             let mut listing = Listing {
                 config,
@@ -201,7 +199,7 @@ where
                 headers,
                 timeout,
             };
-            list_pages(&mut listing, log, reply, url)
+            list_pages(&mut listing, log, reply)
                 .await
                 .map(MetadataValue::Listed)
         }
@@ -212,7 +210,6 @@ where
 fn deleted<C: MetadataConfig>(
     config: &C,
     reply: &UpstreamResponse,
-    url: &str,
     log: &mut LogContext<'_, '_>,
     litellm_params: &FileParams,
 ) -> Result<MetadataValue, MetadataError> {
@@ -220,7 +217,7 @@ fn deleted<C: MetadataConfig>(
         let facts = status_facts(reply);
         return Err(MetadataError::Provider(provider_error(&facts, config)));
     }
-    let response = file_response(reply, url);
+    let response = file_response(reply);
     let deleted = config.transform_delete_file_response(
         &response,
         ReplyContext {

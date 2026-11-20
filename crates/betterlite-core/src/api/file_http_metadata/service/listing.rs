@@ -27,18 +27,16 @@ pub(super) async fn list_pages<C, Client>(
     listing: &mut Listing<'_, C, Client>,
     log: &mut LogContext<'_, '_>,
     first: UpstreamResponse,
-    first_url: String,
 ) -> Result<Vec<FileObject>, MetadataError>
 where
     C: MetadataConfig,
     Client: WriteTransport,
 {
     let mut reply = first;
-    let mut url = first_url;
     let mut listed: i64 = 0;
     let mut collected = Vec::new();
     loop {
-        let response = file_response(&reply, &url);
+        let response = file_response(&reply);
         let page = listing.config.transform_list_files_response(
             &response,
             ReplyContext {
@@ -52,11 +50,10 @@ where
         listed = i64::try_from(page.len())
             .unwrap_or(i64::MAX)
             .saturating_add(listed);
-        let Some((next, next_url)) = continuation(listing, &response, listed).await? else {
+        let Some(next) = continuation(listing, &response, listed).await? else {
             break;
         };
         reply = next;
-        url = next_url;
     }
     Ok(collected)
 }
@@ -66,7 +63,7 @@ async fn continuation<C, Client>(
     listing: &Listing<'_, C, Client>,
     response: &FileResponse,
     listed: i64,
-) -> Result<Option<(UpstreamResponse, String)>, MetadataError>
+) -> Result<Option<UpstreamResponse>, MetadataError>
 where
     C: MetadataConfig,
     Client: WriteTransport,
@@ -97,7 +94,6 @@ where
         body: RequestBody::Empty,
         timeout: listing.timeout,
     };
-    let sent_url = request.url.to_string();
     let reply = send_once(listing.config, listing.client, request, listing.attempt).await?;
-    Ok(Some((reply, sent_url)))
+    Ok(Some(reply))
 }
