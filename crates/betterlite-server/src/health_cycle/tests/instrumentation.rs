@@ -242,6 +242,6 @@ async fn the_cycle_lines_carry_the_live_process_metrics() {
         .nth(1)
         .and_then(|rest| rest.split_whitespace().next())
         .expect("the start line carries a thread count");
-    let threads: usize = threads.parse().expect("the thread count is a number");
-    assert!(threads >= 1, "{start}");
+    let thread_count: usize = threads.parse().expect("the thread count is a number");
+    assert!(thread_count >= 1, "{start}");
 }
