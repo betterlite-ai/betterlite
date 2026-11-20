@@ -193,7 +193,7 @@ async fn setup_failure_sends_nothing(#[case] case: SetupCase) {
     };
     scenario.params = params("http://unused.test");
     let (_, result) = scenario.buffered().await;
-    let error = result.err().expect("the setup fails");
+    let error = result.expect_err("the setup fails");
     match case {
         SetupCase::Transform => assert!(matches!(error, ContentError::Transform(_))),
         SetupCase::Url => {
@@ -222,7 +222,7 @@ async fn status_error_uses_the_body_text_and_raw_headers() {
         QueryParams::new(),
     );
     let (_, result) = scenario.buffered().await;
-    let failure = provider_failure(result.err().expect("a 404 is a provider error"));
+    let failure = provider_failure(result.expect_err("a 404 is a provider error"));
     assert_eq!(failure.status_code, 404);
     assert!(!failure.status_code_is_synthesized);
     assert_eq!(failure.message, "missing");
@@ -248,7 +248,7 @@ async fn invalid_utf8_status_body_reads_as_replacement_characters() {
         QueryParams::new(),
     );
     let (_, result) = scenario.buffered().await;
-    let failure = provider_failure(result.err().expect("a 500 is a provider error"));
+    let failure = provider_failure(result.expect_err("a 500 is a provider error"));
     assert_eq!(failure.status_code, 500);
     assert!(!failure.status_code_is_synthesized);
     assert_eq!(failure.message, "bad\u{fffd}");
@@ -263,11 +263,7 @@ async fn transport_failure_is_a_synthesized_500() {
         QueryParams::new(),
     );
     let (_, result) = scenario.buffered().await;
-    let failure = provider_failure(
-        result
-            .err()
-            .expect("a transport failure is a provider error"),
-    );
+    let failure = provider_failure(result.expect_err("a transport failure is a provider error"));
     assert_eq!(failure.status_code, 500);
     assert!(failure.status_code_is_synthesized);
     assert_eq!(failure.message, TransportError::Closed.to_string());

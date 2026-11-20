@@ -69,7 +69,8 @@ fn assert_stream_transformed(scenario: &MockScenario) {
 fn assert_decoded_stream_headers(scenario: &MockScenario) {
     let streams = locked(&scenario.config.streams);
     assert_eq!(streams.len(), 1);
-    let headers = &streams[0].headers;
+    let headers = streams[0].headers.clone();
+    drop(streams);
     assert!(headers.get("content-encoding").is_none());
     assert!(headers.get("content-length").is_none());
     assert_eq!(headers.get_all("x-repeat").iter().count(), 2);
