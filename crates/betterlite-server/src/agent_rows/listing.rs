@@ -37,10 +37,10 @@ pub async fn get_all_agents_from_db(
         })?;
     let mut agents = Vec::with_capacity(rows.len());
     for row in &rows {
-        let stored = AgentRowCodec
+        if let Some(stored) = AgentRowCodec
             .decode(row)
-            .map_err(|source| AgentListError::Decode { source })?;
-        if let Some(stored) = stored {
+            .map_err(|source| AgentListError::Decode { source })?
+        {
             agents.push(stored.agent);
         }
     }

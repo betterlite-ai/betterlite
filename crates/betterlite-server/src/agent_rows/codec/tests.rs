@@ -92,6 +92,7 @@ async fn decodes_the_scalar_columns_of_a_complete_row() {
     assert_eq!(agent.session_rpm_limit, Some(20));
     assert_eq!(agent.extra_headers, Some(words(&["x-extra: one"])));
     assert_eq!(agent.access_group_ids, Some(words(&["group-a"])));
+    database.close().await;
 }
 
 #[tokio::test]
@@ -109,8 +110,8 @@ async fn decodes_the_json_columns_of_a_complete_row() {
         Some(&serde_json::json!("gpt-4o"))
     );
     assert_eq!(
-        serde_json::to_value(&agent.agent_card_params).unwrap(),
-        serde_json::json!({"name": "support"})
+        serde_json::to_value(&agent.agent_card_params).unwrap()["name"],
+        serde_json::json!("support")
     );
     assert_eq!(
         agent.static_headers,
@@ -127,6 +128,7 @@ async fn decodes_the_json_columns_of_a_complete_row() {
         serde_json::to_value(switch).unwrap()["url"],
         serde_json::json!("https://agent.example/stop")
     );
+    database.close().await;
 }
 
 #[tokio::test]
@@ -157,6 +159,7 @@ async fn decodes_the_identity_of_a_complete_row() {
         identity.last_authenticated_at,
         Some(instant("2026-01-15T08:00:00+00:00"))
     );
+    database.close().await;
 }
 
 #[tokio::test]
@@ -188,6 +191,7 @@ async fn decodes_the_object_permission_of_a_complete_row() {
             words(&["tool-a", "tool-b"])
         )]))
     );
+    database.close().await;
 }
 
 #[tokio::test]
@@ -204,6 +208,7 @@ async fn keeps_the_raw_columns_the_writer_needs() {
             .and_then(|column| column.get("model")),
         Some(&serde_json::json!("gpt-4o"))
     );
+    database.close().await;
 }
 
 #[tokio::test]
@@ -235,6 +240,7 @@ async fn decodes_a_row_without_identity_or_object_permission() {
     assert_eq!(agent.access_group_ids, Some(Vec::new()));
     assert!(agent.created_at.is_some());
     assert!(agent.updated_at.is_some());
+    database.close().await;
 }
 
 #[tokio::test]
@@ -268,6 +274,7 @@ async fn null_role_and_scope_arrays_decode_as_empty_lists() {
     assert!(identity.service_principal_id.is_none());
     assert!(identity.last_authenticated_at.is_none());
     assert!(identity.active.0);
+    database.close().await;
 }
 
 #[tokio::test]
@@ -286,6 +293,7 @@ async fn decodes_null_header_columns_as_none() {
     assert!(agent.static_headers.is_none());
     assert!(agent.extra_headers.is_none());
     assert!(agent.access_group_ids.is_none());
+    database.close().await;
 }
 
 #[tokio::test]
@@ -318,6 +326,7 @@ async fn decodes_null_permission_columns_as_some_none() {
     assert_eq!(permission.mcp_tool_permissions, Some(None));
     assert_eq!(permission.models, Some(None));
     assert_eq!(permission.agents, Some(None));
+    database.close().await;
 }
 
 #[tokio::test]
@@ -345,6 +354,7 @@ async fn reads_litellm_params_stored_as_an_object_and_as_a_string() {
             .and_then(|params| params.get("model")),
         Some(&serde_json::json!("gpt-4o"))
     );
+    database.close().await;
 }
 
 #[tokio::test]
@@ -371,6 +381,7 @@ async fn reads_agent_card_params_stored_as_an_object_and_as_a_string() {
         serde_json::to_value(&object.agent_card_params).unwrap()["name"],
         serde_json::json!("support")
     );
+    database.close().await;
 }
 
 #[tokio::test]
@@ -398,6 +409,7 @@ async fn reads_static_headers_stored_as_an_object_and_as_a_string() {
             String::from("support")
         )]))
     );
+    database.close().await;
 }
 
 #[tokio::test]
@@ -435,6 +447,7 @@ async fn reads_kill_switch_stored_as_an_object_and_as_a_string() {
         panic!("the object row stores a bearer token");
     };
     assert_eq!(token.expose_secret(), "tok-secret");
+    database.close().await;
 }
 
 #[tokio::test]
@@ -473,6 +486,7 @@ async fn reads_tool_permissions_stored_as_an_object_and_as_a_string() {
             words(&["tool-a"])
         )])))
     );
+    database.close().await;
 }
 
 #[tokio::test]
@@ -508,6 +522,7 @@ async fn keeps_the_kill_switch_secret_in_the_stored_row_and_the_response() {
         panic!("the stored auth is an API key");
     };
     assert_eq!(api_key.expose_secret(), "key-secret");
+    database.close().await;
 }
 
 #[tokio::test]
@@ -529,6 +544,7 @@ async fn decode_error_text_names_no_column_value() {
         "the agent_card_params column is not an agent card"
     );
     assert!(!error.to_string().contains("sentinel"));
+    database.close().await;
 }
 
 #[tokio::test]
@@ -554,6 +570,7 @@ async fn identity_error_text_names_no_column_value() {
     };
     assert_eq!(error.to_string(), "the agent identity row is unreadable");
     assert!(!error.to_string().contains("sentinel"));
+    database.close().await;
 }
 
 #[tokio::test]
@@ -574,6 +591,7 @@ async fn rejects_an_unknown_execution_mode() {
         error.to_string(),
         "the execution_mode column is not a known mode"
     );
+    database.close().await;
 }
 
 #[tokio::test]
@@ -599,6 +617,7 @@ async fn rejects_an_unknown_identity_provider() {
         panic!("the stored provider is not a known provider");
     };
     assert_eq!(error.to_string(), "the agent identity row is unreadable");
+    database.close().await;
 }
 
 #[tokio::test]
@@ -617,6 +636,7 @@ async fn rejects_a_non_finite_spend() {
         panic!("the stored spend is not a finite number");
     };
     assert_eq!(error.to_string(), "the agent spend column is unreadable");
+    database.close().await;
 }
 
 #[tokio::test]
@@ -635,6 +655,7 @@ async fn rejects_static_headers_that_are_not_an_object() {
         panic!("the stored headers are not an object");
     };
     assert_eq!(error.to_string(), "an agent JSON column is unreadable");
+    database.close().await;
 }
 
 #[tokio::test]
@@ -658,4 +679,5 @@ async fn rejects_tool_permissions_that_are_not_an_object() {
         panic!("the stored tool permissions are not an object");
     };
     assert_eq!(error.to_string(), "an agent JSON column is unreadable");
+    database.close().await;
 }

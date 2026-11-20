@@ -19,6 +19,7 @@ struct Environment {
 }
 
 pub(crate) struct Database {
+    fixture: PostgresFixture,
     pool: Pool,
 }
 
@@ -42,7 +43,7 @@ impl Database {
             .max_size(2)
             .build()
             .expect("the fixture pool builds");
-        Self { pool }
+        Self { fixture, pool }
     }
 
     pub(crate) fn store(&self) -> PostgresStore {
@@ -77,5 +78,13 @@ impl Database {
             .await
             .expect("the agent row decodes")
             .expect("the agent row exists")
+    }
+
+    pub(crate) async fn close(self) {
+        self.pool.close();
+        self.fixture
+            .close_async()
+            .await
+            .expect("the fixture closes");
     }
 }

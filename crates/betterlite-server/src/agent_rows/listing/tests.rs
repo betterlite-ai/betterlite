@@ -42,6 +42,7 @@ async fn listing_returns_every_agent_newest_first() {
     let middle = agents.get(1).expect("the middle agent is listed");
     assert!(middle.identity.is_none());
     assert!(middle.object_permission.is_none());
+    database.close().await;
 }
 
 #[tokio::test]
@@ -83,4 +84,5 @@ async fn listing_wraps_a_decode_failure() {
         "Error getting agents from DB: the agent identity row is unreadable"
     );
     assert!(matches!(error, AgentListError::Decode { .. }));
+    database.close().await;
 }
