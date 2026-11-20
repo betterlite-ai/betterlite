@@ -262,11 +262,10 @@ where
 }
 
 // The reply's own step: under 400 an update's reply is transformed and a delete's decoded, and 400 or more becomes the provider's error
-fn answer<C: WriteConfig>(
-    reply: &UpstreamResponse,
-    operation: Operation,
-    config: &C,
-) -> Result<Json, WriteError> {
+fn answer<C>(reply: &UpstreamResponse, operation: Operation, config: &C) -> Result<Json, WriteError>
+where
+    C: WriteConfig,
+{
     if reply.status < 400 {
         return match operation {
             Operation::Update => config
