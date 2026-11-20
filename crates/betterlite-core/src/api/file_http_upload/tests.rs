@@ -541,6 +541,8 @@ async fn upload_plan_order() {
         vec![b"{\"display_name\":\"rows.jsonl\"}".to_vec()]
     );
     assert_eq!(field(&result, "status"), &status(200));
+    // the transform sees the reply body the transport read
+    assert_eq!(field(&result, "body"), &bytes_json(b"{}"));
     // the sync handler hands the transform a copy carrying api_base as upload_url
     assert_eq!(
         field(field(&result, "params"), "upload_url"),
@@ -626,10 +628,11 @@ async fn two_step_upload() {
             answer(200, &[], b"{\"id\":\"file-1\"}"),
         ],
     );
-    let result = harness
-        .run(Mode::Sync, &create_call(), &params())
-        .await
-        .unwrap();
+    let mut call = create_call();
+    // the transform's own header replaces the one validate_environment returned under the same name
+    call.extra_headers = IndexMap::from([(String::from("api-key"), String::from("sk-base"))]);
+    call.timeout = Some(Duration::from_secs(30));
+    let result = harness.run(Mode::Sync, &call, &params()).await.unwrap();
     let seen = harness.seen();
     assert_eq!(seen.len(), 2);
     assert_eq!(seen[0].method, Method::POST);
@@ -642,11 +645,14 @@ async fn two_step_upload() {
         seen[0].headers.get("api_key").expect("the initial key"),
         "sk-manus"
     );
+    // the caller's timeout reaches both steps, as LiteLLM passes it to each request
+    assert_eq!(seen[0].timeout, Some(Duration::from_secs(30)));
     // the second request carries only upload_request headers and data
     assert_eq!(seen[1].method, Method::PUT);
     assert_eq!(seen[1].url, "http://uploads.example.test/manus/1");
     assert_eq!(seen[1].body, vec![b"{\"row\":1}\n".to_vec()]);
     assert!(seen[1].headers.is_empty());
+    assert_eq!(seen[1].timeout, Some(Duration::from_secs(30)));
     // the truthy response body is kept for the transform
     let saved = field(field(&result, "params"), "initial_file_response");
     assert_eq!(field(saved, "extra"), &Json::Bool(true));
