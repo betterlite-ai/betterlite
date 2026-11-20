@@ -50,7 +50,7 @@ def settings_for(settings: SettingsInput) -> SlackAlertingArgs:
 def event_value(event: UserSpendAlertEvent) -> dict[str, str | int]:
     return {
         "kind": event.kind,
-        "alert_type": event.alert_type.value,
+        "alert_type": event.alert_type,
         "message": event.message,
         "cache_key": event.cache_key,
         "cache_ttl": event.cache_ttl,
