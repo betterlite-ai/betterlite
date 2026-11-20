@@ -3,7 +3,6 @@ use std::time::{Duration, Instant};
 use betterlite_core::api::vector_store_http_write::error::{ClientError, handle_error};
 use betterlite_core::api::vector_store_http_write::service::{WriteRequest, WriteTransport};
 use betterlite_http::proxy::outbound::RequestBody;
-use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::call_helpers::headers::{
@@ -16,7 +15,7 @@ use http::Method;
 use uuid::Uuid;
 
 use super::error::{ImageEditHttpError, RequestError};
-use super::facts::{self, Failure, SendError, Sent};
+use super::facts::{self, Failure, Sent};
 use super::request::{self, Logged};
 use crate::api::image_contracts::edit::{
     BaseImageEditConfig, ImageEditEnvironment, ImageEditReply, ImageEditRequest,
@@ -186,17 +185,7 @@ where
     };
     let answer = match reply {
         Ok(answer) => answer,
-        Err(error) => {
-            let failure = if matches!(
-                &error,
-                TransportError::ConnectTimeout(_) | TransportError::Deadline(_)
-            ) {
-                facts::send_failure(SendError::TimedOut, sent)
-            } else {
-                facts::send_failure(SendError::Failed(&error), sent)
-            };
-            return Err(provider(config, &failure));
-        }
+        Err(error) => return Err(provider(config, &facts::transport_failure(&error, sent))),
     };
     if answer.status >= 400 {
         return Err(provider(config, &facts::reply_failure(&answer)));

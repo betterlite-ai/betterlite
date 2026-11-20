@@ -88,6 +88,18 @@ pub(super) fn send_failure(error: SendError<'_>, sent: Sent) -> Failure {
     }
 }
 
+// LiteLLM writes its own 408 for httpx's connect and read timeouts, so those two classify apart from any other send error
+pub(super) fn transport_failure(error: &TransportError, sent: Sent) -> Failure {
+    if matches!(
+        error,
+        TransportError::ConnectTimeout(_) | TransportError::Deadline(_)
+    ) {
+        send_failure(SendError::TimedOut, sent)
+    } else {
+        send_failure(SendError::Failed(error), sent)
+    }
+}
+
 // httpx rebuilds the masked response from the decoded body, so only a non-empty one carries a content-length
 fn answer_headers(reply: &UpstreamResponse) -> ImageHeaders {
     let mut headers: ImageHeaders = provider_headers(&reply.headers).into_iter().collect();

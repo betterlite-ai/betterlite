@@ -22,7 +22,7 @@ use self::support::{
     assert_async_transform_once, assert_sync_logging, assert_sync_request, assert_sync_result,
     assert_validation_never_selects, body_json, call_deps, edit_call, edit_transport, fact_headers,
     headers, image, image_response, json, litellm_params, params, params_json, part_facts,
-    recorded_events, validated_transform_event,
+    recorded_events, validated_transform_event, with_requests,
 };
 use super::error::{ImageEditHttpError, RequestError};
 use super::facts::{self, Failure, SendError, Sent};
@@ -105,10 +105,10 @@ async fn edit_json_and_unused_arguments() {
             validated_transform_event(ClientKind::Sync)
         )
     );
-    let requests = transport.requests();
-    assert_eq!(requests.len(), 1);
-    assert_eq!(body_json(&requests[0]), params_json());
-    drop(requests);
+    with_requests(&transport, |requests| {
+        assert_eq!(requests.len(), 1);
+        assert_eq!(body_json(&requests[0]), params_json());
+    });
 
     let async_config = RecordingConfig::new(API_BASE).without_multipart();
     let async_transport = Transport::replying(Reply::json(200, RESPONSE_BODY));
