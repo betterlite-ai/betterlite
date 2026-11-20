@@ -35,7 +35,7 @@ fn configured_windows_parse_into_the_router_types() {
     let first = parsed.first().unwrap().as_ref().unwrap();
     assert_eq!(first.first().unwrap().timezone, "Europe/Berlin");
     assert_eq!(first.first().unwrap().team_ids, ["t1"]);
-    assert!(parsed.get(1).unwrap().is_none());
+    assert!(parsed[1].is_none());
 }
 
 #[test]
