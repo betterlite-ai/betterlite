@@ -1,7 +1,7 @@
 use std::time::Duration;
 
-use betterlite_http::interactions::base::RequestFailure;
 use betterlite_http::interactions::base::clients::HttpClients;
+use betterlite_http::interactions::base::{MAX_RESPONSE_BYTES, RequestFailure};
 use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::serve;
 use betterlite_logging::logging_state::LoggingState;
@@ -273,4 +273,28 @@ async fn async_lookup_reads_the_real_reply() {
     assert_get_reply_seen(&config);
     let request = serving.finish().unwrap();
     assert_eq!(request.line, "GET /v1/characters/char-1 HTTP/1.1");
+}
+
+#[test]
+fn creation_accepts_a_reply_at_the_response_cap() {
+    let body = "a".repeat(MAX_RESPONSE_BYTES);
+    let serving = serve(reply("200 OK", &[], &body), Duration::ZERO).unwrap();
+    let base = format!("http://{}", serving.address);
+    let (mut config, log, mut state, mut clients) = parts("video_create_character");
+    config.create_url = format!("{base}/v1/characters");
+    let env = log.env();
+    let mut transport =
+        CharacterTransport::with_generated_boundary(&config, &mut clients, &mut state, &env);
+    let litellm = params(&[("api_base", base.as_str())]);
+    let clip = video();
+    let call = create_call("Wren", &clip, &litellm);
+
+    let object = match transport.video_create_character_handler(&call) {
+        Ok(CharacterHandled::Done(object)) => object,
+        Ok(CharacterHandled::Pending(_)) => panic!("a sync call answers in place"),
+        Err(error) => panic!("a reply at the cap is read whole: {error:?}"),
+    };
+
+    assert_eq!(object, config.object);
+    serving.finish().unwrap();
 }
