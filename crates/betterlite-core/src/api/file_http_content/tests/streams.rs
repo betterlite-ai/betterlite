@@ -11,6 +11,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::files::error::FilesError;
 use betterlite_openai::files::stream::{FileContentStreamingResult, StreamExit};
 use futures_util::StreamExt as _;
+use futures_util::future::join_all;
 use http::Method;
 use indexmap::IndexMap;
 use rstest::rstest;
@@ -375,10 +376,7 @@ async fn streaming_error_body_reads_at_most_64_kib() {
     let events = Events::new();
     let drops = Arc::new(AtomicUsize::new(0));
     let (sender, body) = gated(&drops, 100);
-    let queued = futures_util::future::join_all(
-        (0..100_u16).map(|_index| sender.send(Ok(vec![b'a'; 1024]))),
-    )
-    .await;
+    let queued = join_all((0..100_u16).map(|_index| sender.send(Ok(vec![b'a'; 1024])))).await;
     drop(sender);
     queued
         .into_iter()
