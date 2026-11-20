@@ -93,6 +93,20 @@ fn test_source() -> Source {
     }
 }
 
+// A transport with no provider config: the handlers take their fallback paths, and C names the config they would take
+fn fallback_deps<'deps>(
+    source: &'deps Source,
+    supplied: Option<SuppliedClient<'deps>>,
+    limits: ApiLimits,
+) -> TransportDeps<'deps, TestConfig> {
+    TransportDeps {
+        config: None,
+        source,
+        supplied,
+        limits,
+    }
+}
+
 #[derive(Debug, Error)]
 #[error("the test config refuses the environment")]
 struct Refused;
@@ -419,12 +433,7 @@ fn session_posts_to_the_client_secrets_fallback() {
     let (_, requests, answers) = exchange(&replies, |base| {
         let trimmed = format!("{base}/v1/");
         runtime().block_on(async {
-            let deps = TransportDeps {
-                config: None,
-                source: &source,
-                supplied: None,
-                limits: ApiLimits::default(),
-            };
+            let deps = fallback_deps(&source, None, ApiLimits::default());
             let call = session_call(SessionEndpoint::ClientSecrets, &trimmed, &data);
             let mut log = LogContext {
                 state: &mut state,
@@ -446,12 +455,7 @@ fn session_posts_to_the_transcription_fallback() {
     let data = session_request();
     let (api_base, requests, answers) = exchange(&[ok_reply()], |base| {
         runtime().block_on(async {
-            let deps = TransportDeps {
-                config: None,
-                source: &source,
-                supplied: None,
-                limits: ApiLimits::default(),
-            };
+            let deps = fallback_deps(&source, None, ApiLimits::default());
             let call = session_call(SessionEndpoint::TranscriptionSessions, base, &data);
             let mut log = LogContext {
                 state: &mut state,
@@ -534,12 +538,7 @@ fn client_selection_reuses_an_async_client_and_replaces_a_sync_one() {
                     kind,
                     transport: &supplied,
                 });
-                let deps = TransportDeps {
-                    config: None,
-                    source: &source,
-                    supplied: supplied_client,
-                    limits: ApiLimits::default(),
-                };
+                let deps = fallback_deps(&source, supplied_client, ApiLimits::default());
                 let call = session_call(SessionEndpoint::ClientSecrets, api_base, &data);
                 let mut log = LogContext {
                     state: &mut state,
@@ -568,12 +567,7 @@ fn the_supplied_timeout_reaches_the_deadline() {
     let data = session_request();
     let answer = held(|api_base| {
         runtime().block_on(async {
-            let deps = TransportDeps {
-                config: None,
-                source: &source,
-                supplied: None,
-                limits: ApiLimits::default(),
-            };
+            let deps = fallback_deps(&source, None, ApiLimits::default());
             let mut call = session_call(SessionEndpoint::ClientSecrets, api_base, &data);
             call.timeout = Some(Duration::from_millis(50));
             let mut log = LogContext {
@@ -603,12 +597,7 @@ fn a_status_without_a_config_is_the_masked_response() {
     }];
     let (_, _, answers) = exchange(&replies, |api_base| {
         runtime().block_on(async {
-            let deps = TransportDeps {
-                config: None,
-                source: &source,
-                supplied: None,
-                limits: ApiLimits::default(),
-            };
+            let deps = fallback_deps(&source, None, ApiLimits::default());
             let call = session_call(SessionEndpoint::ClientSecrets, api_base, &data);
             let mut log = LogContext {
                 state: &mut state,
@@ -653,12 +642,7 @@ fn a_bad_request_status_is_rejected() {
     }];
     let (_, _, answers) = exchange(&replies, |api_base| {
         runtime().block_on(async {
-            let deps = TransportDeps {
-                config: None,
-                source: &source,
-                supplied: None,
-                limits: ApiLimits::default(),
-            };
+            let deps = fallback_deps(&source, None, ApiLimits::default());
             let call = session_call(SessionEndpoint::ClientSecrets, api_base, &data);
             let mut log = LogContext {
                 state: &mut state,
@@ -853,12 +837,7 @@ fn a_pre_call_failure_stops_the_send() {
     let source = test_source();
     let data = session_request();
     let answer = runtime().block_on(async {
-        let deps = TransportDeps {
-            config: None,
-            source: &source,
-            supplied: None,
-            limits: ApiLimits::default(),
-        };
+        let deps = fallback_deps(&source, None, ApiLimits::default());
         let call = session_call(SessionEndpoint::ClientSecrets, "http://127.0.0.1:9", &data);
         let mut log = LogContext {
             state: &mut state,

@@ -9,13 +9,12 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
 use rstest::rstest;
 
-use crate::api::realtime_http_transport::TransportDeps;
 use crate::api::realtime_http_transport::calls::{CallsCall, calls_post, session_data};
 use crate::api::realtime_http_transport::error::RealtimeHttpError;
 
 use super::{
-    BOUNDARY, Reply, Request, exchange, input_untouched, json_object, logging_env, logging_state,
-    ok_reply, runtime, test_source,
+    BOUNDARY, Reply, Request, exchange, fallback_deps, input_untouched, json_object, logging_env,
+    logging_state, ok_reply, runtime, test_source,
 };
 
 // Three bytes of every cap: the SDP text is longer than the JSON body cap the decoder enforces
@@ -79,12 +78,7 @@ fn calls_send_the_sdp_as_unnamed_multipart_parts() {
     }];
     let (_, requests, answers) = exchange(&replies, |api_base| {
         runtime().block_on(async {
-            let deps = TransportDeps {
-                config: None,
-                source: &source,
-                supplied: None,
-                limits: ApiLimits::default(),
-            };
+            let deps = fallback_deps(&source, None, ApiLimits::default());
             let call = CallsCall {
                 api_base,
                 ephemeral_key: "ep-test",
@@ -114,12 +108,7 @@ fn calls_record_the_offer_the_url_and_the_session() {
     let session = alloy_session();
     let (api_base, _, answers) = exchange(&[ok_reply()], |api_base| {
         runtime().block_on(async {
-            let deps = TransportDeps {
-                config: None,
-                source: &source,
-                supplied: None,
-                limits: ApiLimits::default(),
-            };
+            let deps = fallback_deps(&source, None, ApiLimits::default());
             let call = CallsCall {
                 api_base,
                 ephemeral_key: "ep-test",
@@ -204,12 +193,7 @@ fn calls_extra_headers_override_the_ephemeral_authorization() {
     let replies = [ok_reply()];
     let (_, requests, answers) = exchange(&replies, |api_base| {
         runtime().block_on(async {
-            let deps = TransportDeps {
-                config: None,
-                source: &source,
-                supplied: None,
-                limits: ApiLimits::default(),
-            };
+            let deps = fallback_deps(&source, None, ApiLimits::default());
             let call = CallsCall {
                 api_base,
                 ephemeral_key: "ep-test",
@@ -240,12 +224,7 @@ fn invalid_or_oversized_sdp_fails_before_the_pre_call() {
     let envelope = logging_env(&redactor);
     let source = test_source();
     let answers = runtime().block_on(async {
-        let deps = TransportDeps {
-            config: None,
-            source: &source,
-            supplied: None,
-            limits: TINY,
-        };
+        let deps = fallback_deps(&source, None, TINY);
         let mut answers = Vec::new();
         for sdp in [b"\xff\xfe".as_slice(), b"v=0\r\n".as_slice()] {
             let call = CallsCall {
