@@ -846,6 +846,16 @@ fn malformed_alias_error() {
             ..
         }))
     ));
+    alias_item(
+        &mut scenario,
+        "number-model",
+        Some(Json::Number(Number::from(5_i64))),
+        Some(Json::Bool(false)),
+    );
+    assert!(matches!(
+        scenario.group("number-model"),
+        Err(GroupInfoError::AliasModel { alias }) if alias == "number-model"
+    ));
 }
 
 #[test]
