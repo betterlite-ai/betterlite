@@ -1,8 +1,10 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::future::{Future, pending};
 use std::time::Duration;
 
+use betterlite_http::proxy::pool::PoolError;
 use betterlite_logging::logging_pre_post::args::RawBody;
 use betterlite_models::decisions::Json;
 use betterlite_openai::containers::container_file_http::request::SslVerify;
@@ -15,7 +17,9 @@ use super::tests::{
     RecordingHook, deadline_failure, provider_error, url_failure,
 };
 use super::{
-    ContainerCollectionError, DEFAULT_TIMEOUT, acontainer_create_handler, container_create_handler,
+    CollectionBase, CollectionClientSource, CollectionReply, CollectionRequest,
+    CollectionTransport, ContainerCollectionError, ContainerCreateCall, DEFAULT_TIMEOUT,
+    acontainer_create_handler, container_create_handler,
 };
 
 fn api_key_params(value: &str) -> Object {
@@ -349,4 +353,54 @@ async fn create_async_sends_through_the_async_client() {
     assert_eq!(fixture.sent().len(), 1);
     assert_eq!(fixture.order(), vec!["log", "send"]);
     assert_eq!(fixture.sent()[0].timeout, Some(DEFAULT_TIMEOUT));
+}
+
+// Holds its answer forever, so the blocking handler's one poll finds the send still pending
+struct HeldClient;
+
+impl CollectionTransport for HeldClient {
+    fn send(&self, _request: &CollectionRequest) -> impl Future<Output = CollectionReply> + Send {
+        pending()
+    }
+}
+
+struct HeldSource;
+
+impl CollectionClientSource for HeldSource {
+    type Blocking = HeldClient;
+    type Asynchronous = HeldClient;
+
+    fn blocking_client(&self, _ssl_verify: Option<&SslVerify>) -> Result<HeldClient, PoolError> {
+        Ok(HeldClient)
+    }
+
+    fn async_client(&self, _ssl_verify: Option<&SslVerify>) -> Result<HeldClient, PoolError> {
+        Ok(HeldClient)
+    }
+}
+
+#[test]
+fn create_reports_a_client_that_never_answers_as_suspended() {
+    let fixture = Fixture::new(200, CREATE_BODY);
+    let source = HeldSource;
+    let call = ContainerCreateCall {
+        base: CollectionBase {
+            config: &fixture.config,
+            litellm_params: &fixture.params,
+            logging: &fixture.logging,
+            extra_headers: None,
+            timeout: None,
+            source: &source,
+            blocking: None,
+            asynchronous: None,
+            hook: &fixture.hook,
+        },
+        name: "box",
+        params: &fixture.create_params,
+    };
+    let failure = container_create_handler(&call).unwrap_err();
+    assert!(
+        matches!(failure, ContainerCollectionError::Suspended),
+        "a blocking caller gets an error instead of waiting on a client that has not answered"
+    );
 }
