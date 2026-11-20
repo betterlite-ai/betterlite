@@ -42,6 +42,7 @@ enum Expectation {
     RejectedFieldKept,
     RejectedFieldsError,
     Resent,
+    ResentStream,
 }
 
 const STREAM_REQUEST: &str =
@@ -65,6 +66,13 @@ const UNRELATED: &str = r#"{"error":{"message":"bad"}}"#;
     true,
     &[(422, REJECTED_TEMPERATURE), (200, CHAT_REPLY)],
     Expectation::Resent
+)]
+#[case::retry_resends_a_stream(
+    STREAM_REQUEST,
+    true,
+    true,
+    &[(422, REJECTED_TEMPERATURE), (200, "")],
+    Expectation::ResentStream
 )]
 #[case::retry_needs_global_flag(
     CHAT_WITH_TEMPERATURE,
@@ -90,38 +98,64 @@ async fn openai_recovery_cases(
 ) {
     let (result, bodies) = answered(request, stream, global_drop_params, replies.to_vec()).await;
     match expected {
-        Expectation::RecoveredRequest => {
-            let OperationResult::OutputLimit { sent } = result.unwrap() else {
-                panic!("the output-limit 400 decodes to the recovered request");
-            };
-            let sent_on_the_wire: JsonValue = serde_json::from_slice(bodies[0].as_bytes()).unwrap();
-            assert_eq!(*sent, sent_on_the_wire);
-        }
-        Expectation::ProviderError(attempts) => {
-            assert!(matches!(result, Err(OperationError::Provider { .. })));
-            assert_eq!(bodies.len(), attempts);
-        }
-        Expectation::RejectedFieldKept => {
-            assert!(matches!(result, Err(OperationError::Provider { .. })));
-            assert_eq!(bodies.len(), 1);
-            assert!(bodies[0].contains("\"temperature\":0.5"), "{}", bodies[0]);
-        }
-        Expectation::RejectedFieldsError => {
-            assert!(matches!(result, Err(OperationError::RejectedFields { .. })));
-            assert_eq!(bodies.len(), 1);
-        }
-        Expectation::Resent => {
-            let OperationResult::Chat(ChatCompletion::OpenAi(completion)) = result.unwrap() else {
-                panic!("the resent call answers the provider's completion");
-            };
-            assert_eq!(completion.model, "g");
-            assert_eq!(bodies.len(), 2);
-            assert!(bodies[0].contains("\"temperature\":0.5"), "{}", bodies[0]);
-            assert!(!bodies[1].contains("temperature"), "{}", bodies[1]);
-            assert!(bodies[1].contains("\"messages\""), "{}", bodies[1]);
-            assert!(bodies[1].contains("\"model\":\"up\""), "{}", bodies[1]);
-        }
+        Expectation::RecoveredRequest => recovered_request(result, bodies),
+        Expectation::ProviderError(attempts) => provider_error(result, bodies, attempts),
+        Expectation::RejectedFieldKept => rejected_field_kept(result, bodies),
+        Expectation::RejectedFieldsError => rejected_fields_error(result, bodies),
+        Expectation::Resent => resent(result, bodies),
+        Expectation::ResentStream => resent_stream(result, bodies),
     }
+}
+
+fn recovered_request(result: Result<OperationResult, OperationError>, bodies: Vec<String>) {
+    let OperationResult::OutputLimit { sent } = result.unwrap() else {
+        panic!("the output-limit 400 decodes to the recovered request");
+    };
+    let sent_on_the_wire: JsonValue = serde_json::from_slice(bodies[0].as_bytes()).unwrap();
+    assert_eq!(*sent, sent_on_the_wire);
+}
+
+fn provider_error(
+    result: Result<OperationResult, OperationError>,
+    bodies: Vec<String>,
+    attempts: usize,
+) {
+    assert!(matches!(result, Err(OperationError::Provider { .. })));
+    assert_eq!(bodies.len(), attempts);
+}
+
+fn rejected_field_kept(result: Result<OperationResult, OperationError>, bodies: Vec<String>) {
+    let Err(OperationError::Provider { response }) = result else {
+        panic!("the 422 reaches the client as the provider's error");
+    };
+    assert_eq!(response.status, 422);
+    assert_eq!(bodies.len(), 1);
+    assert!(bodies[0].contains("\"temperature\":0.5"), "{}", bodies[0]);
+}
+
+fn rejected_fields_error(result: Result<OperationResult, OperationError>, bodies: Vec<String>) {
+    let Err(OperationError::RejectedFields { source }) = result else {
+        panic!("a malformed detail fails the call");
+    };
+    assert!(source.to_string().contains("not a JSON object"), "{source}");
+    assert_eq!(bodies.len(), 1);
+}
+
+fn resent(result: Result<OperationResult, OperationError>, bodies: Vec<String>) {
+    let OperationResult::Chat(ChatCompletion::OpenAi(completion)) = result.unwrap() else {
+        panic!("the resent call answers the provider's completion");
+    };
+    assert_eq!(completion.model, "g");
+    assert_eq!(bodies.len(), 2);
+    assert!(bodies[0].contains("\"temperature\":0.5"), "{}", bodies[0]);
+    assert!(!bodies[1].contains("temperature"), "{}", bodies[1]);
+    assert!(bodies[1].contains("\"messages\""), "{}", bodies[1]);
+    assert!(bodies[1].contains("\"model\":\"up\""), "{}", bodies[1]);
+}
+
+fn resent_stream(result: Result<OperationResult, OperationError>, bodies: Vec<String>) {
+    assert!(matches!(result, Ok(OperationResult::Stream(_))));
+    assert!(!bodies[1].contains("temperature"), "{}", bodies[1]);
 }
 
 async fn serve(listener: TcpListener, replies: Vec<(u16, &'static str)>) -> Vec<String> {
