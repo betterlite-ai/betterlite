@@ -8,7 +8,7 @@ import openai
 from litellm.types.llms.openai import ResponsesAPIResponse
 from pydantic import BaseModel, ConfigDict, JsonValue
 
-from openai_chat import Failure, optional_text, status_code
+from openai_chat import Failure, project_failure
 
 
 # the values both retrieve entries read; the four input-items arguments come on their own dict
@@ -263,17 +263,6 @@ def settle_items(
             return result
 
 
-def project_failure(error: openai.APIError) -> StepOutcome:
-    fields: dict[str, str | int | None] = {
-        "cls": type(error).__name__,
-        "status": status_code(error),
-        "message": error.message,
-    }
-    for name in ("type", "param", "code"):
-        fields.update(optional_text(error, name))
-    return StepOutcome(failure=Failure.model_validate(fields))
-
-
 def project_response(response: ResponsesAPIResponse) -> StepOutcome:
     return StepOutcome(
         retrieved=Retrieved(
@@ -295,7 +284,7 @@ def run_retrieve(step: RetrieveStep, harness: str, asynchronous: bool) -> StepOu
         )
         response = settle_response(result)
     except openai.APIError as error:
-        return project_failure(error)
+        return StepOutcome(failure=project_failure(error).failure)
     return project_response(response)
 
 
@@ -309,7 +298,7 @@ def run_items(step: InputItemsStep, harness: str, asynchronous: bool) -> StepOut
         )
         listed = settle_items(result)
     except openai.APIError as error:
-        return project_failure(error)
+        return StepOutcome(failure=project_failure(error).failure)
     return StepOutcome(items=listed)
 
 
