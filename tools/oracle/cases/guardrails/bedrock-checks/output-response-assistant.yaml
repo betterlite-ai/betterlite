@@ -1,0 +1,25 @@
+kind: helper
+name: output-response-assistant
+call:
+  b3725:
+    source: OUTPUT
+    messages: null
+    response:
+      choices:
+        - message: {role: assistant, content: "model says hi"}
+    logging_event_type: null
+    checks: {contentFilter: {}, promptAttack: {}, sensitiveInformation: {}}
+    content_filter_threshold: null
+    prompt_attack_threshold: null
+    pii_confidence_threshold: null
+    disable_exception_on_block: false
+    data: {model: gpt-4o}
+    reply:
+      status: 200
+      body: {}
+      raw: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/requests/0/authorization
+      why: "Each side signs its own request at its own clock time, so the SigV4 signature differs"
