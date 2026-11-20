@@ -61,9 +61,9 @@ async fn header_case(case: HeaderCase) {
         HeaderCase::SuppliedClient => supplied_client_used().await,
         HeaderCase::SuppliedMismatch => supplied_mismatch().await,
         HeaderCase::NullVerify => null_verify_absent().await,
-        HeaderCase::BadName => invalid_header_case(InvalidCase::BadName).await,
-        HeaderCase::BadValue => invalid_header_case(InvalidCase::BadValue).await,
-        HeaderCase::BadUrl => invalid_header_case(InvalidCase::BadUrl).await,
+        HeaderCase::BadName => invalid_header_case(InvalidCase::Name).await,
+        HeaderCase::BadValue => invalid_header_case(InvalidCase::Value).await,
+        HeaderCase::BadUrl => invalid_header_case(InvalidCase::Url).await,
         HeaderCase::TransformFailure => transform_failure().await,
         HeaderCase::AddedContentType => added_content_type().await,
         HeaderCase::RawRequest => raw_request_capture().await,
@@ -274,9 +274,9 @@ async fn null_verify_absent() {
 
 #[derive(Debug, Clone, Copy)]
 enum InvalidCase {
-    BadName,
-    BadValue,
-    BadUrl,
+    Name,
+    Value,
+    Url,
 }
 
 async fn invalid_header_case(case: InvalidCase) {
@@ -300,14 +300,22 @@ async fn invalid_header_case(case: InvalidCase) {
             .await,
     );
     assert_invalid_error(&error, case);
-    assert_eq!(events.recorded(), ["log"]);
+    assert_eq!(events.recorded(), expected_events(case));
     assert!(wire.requests().is_empty());
+}
+
+// httpx parses the URL while it builds the request, after the signing and the pre-call have run
+const fn expected_events(case: InvalidCase) -> &'static [&'static str] {
+    match case {
+        InvalidCase::Name | InvalidCase::Value => &["log"],
+        InvalidCase::Url => &["sign", "log"],
+    }
 }
 
 fn config_for(case: InvalidCase, events: &Events) -> Arc<dyn SearchConfig> {
     match case {
-        InvalidCase::BadName | InvalidCase::BadValue => Arc::new(openai_search_config()),
-        InvalidCase::BadUrl => {
+        InvalidCase::Name | InvalidCase::Value => Arc::new(openai_search_config()),
+        InvalidCase::Url => {
             Arc::new(RecordingConfig::new("http://mock.test/v1", events).with_url("not a url"))
         }
     }
@@ -315,9 +323,9 @@ fn config_for(case: InvalidCase, events: &Events) -> Arc<dyn SearchConfig> {
 
 fn headers_for(case: InvalidCase) -> Option<BTreeMap<String, String>> {
     match case {
-        InvalidCase::BadName => Some(caller_headers(&[("bad name", "ok")])),
-        InvalidCase::BadValue => Some(caller_headers(&[("X-Trace", "bad\nvalue")])),
-        InvalidCase::BadUrl => None,
+        InvalidCase::Name => Some(caller_headers(&[("bad name", "ok")])),
+        InvalidCase::Value => Some(caller_headers(&[("X-Trace", "bad\nvalue")])),
+        InvalidCase::Url => None,
     }
 }
 
@@ -330,19 +338,19 @@ fn failure_of<T>(result: Result<T, SearchError>) -> SearchError {
 
 fn assert_invalid_error(error: &SearchError, case: InvalidCase) {
     match case {
-        InvalidCase::BadName => {
+        InvalidCase::Name => {
             let SearchError::HeaderName { name, .. } = error else {
                 panic!("a header name HTTP cannot carry fails the header name");
             };
             assert_eq!(name, "bad name");
         }
-        InvalidCase::BadValue => {
+        InvalidCase::Value => {
             let SearchError::HeaderValue { name, .. } = error else {
                 panic!("a header value HTTP cannot carry fails the header value");
             };
             assert_eq!(name, "X-Trace");
         }
-        InvalidCase::BadUrl => {
+        InvalidCase::Url => {
             let SearchError::RequestUrl { url, .. } = error else {
                 panic!("a url that is not a URL fails the request URL");
             };
