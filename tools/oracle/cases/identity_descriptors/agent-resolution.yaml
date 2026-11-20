@@ -1,0 +1,43 @@
+kind: helper
+name: identity-descriptors-agent-resolution
+call:
+  b3039:
+    function: agent_resolution
+    key_agent_id: key-agent
+    data:
+      metadata:
+        agent_id: meta-agent
+calls:
+  - b3039:
+      function: agent_resolution
+      key_agent_id: null
+      data:
+        metadata:
+          agent_id: meta-agent
+  - b3039:
+      function: agent_resolution
+      key_agent_id: null
+      data: {}
+  - b3039:
+      function: agent_resolution
+      key_agent_id: null
+      data:
+        metadata:
+          agent_id: null
+  - b3039:
+      function: agent_resolution
+      key_agent_id: null
+      data:
+        metadata: {}
+  - b3039:
+      function: agent_resolution
+      key_agent_id: key-agent
+      data: {}
+  - b3039:
+      function: agent_resolution
+      key_agent_id: null
+      data:
+        litellm_metadata:
+          agent_id: lm-agent
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,44 @@
+kind: sdk_http
+name: messages-native-final-dispatch-preserves-context
+env: {}
+call:
+  messages_native_execute:
+    request:
+      max_tokens: 2048
+      messages:
+        - {role: user, content: "run the tool"}
+      model: claude-sonnet-4-20250514
+      metadata: {user_id: u_9}
+      stop_sequences: [END]
+      stream: false
+      system: sys
+      temperature: 0.25
+      thinking:
+      tool_choice: {type: auto}
+      tools:
+        - {name: Bash, description: run, input_schema: {type: object, properties: {}}}
+      top_k: 3
+      top_p: 0.75
+      api_key: sk-test
+      custom_llm_provider: anthropic
+      kwargs:
+        client_marker: keep
+        trace_id: t-1
+    provider:
+    hooks: []
+    searches: []
+    interceptors: []
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: msg_06
+      type: message
+      role: assistant
+      model: claude-sonnet-4-20250514
+      content:
+        - {type: text, text: ok}
+      stop_reason: end_turn
+      stop_sequence:
+      usage: {input_tokens: 7, output_tokens: 2}
+compare: {headers: [], headers_present: [], upstream_headers: [x-api-key, anthropic-version], ignore: []}

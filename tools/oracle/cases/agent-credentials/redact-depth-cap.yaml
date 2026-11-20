@@ -1,0 +1,18 @@
+kind: helper
+name: agent-credential-redact-depth-cap
+call:
+  b4775:
+    op: redact
+    params: {"k":{"k":{"k":{"k":{"k":{"k":{"k":{"k":{"k":"value"}}}}}}}}}
+calls:
+  - b4775:
+      op: redact
+      params: {"k":{"k":{"k":{"k":{"k":{"k":{"k":{"k":{"k":{"k":"value"}}}}}}}}}}
+  - b4775:
+      op: redact
+      params: {"k":{"k":{"k":{"k":{"k":{"k":{"k":{"k":["value"]}}}}}}}}
+  - b4775:
+      op: redact
+      params: {"k":{"k":{"k":{"k":{"k":{"k":{"k":{"k":{"k":["value"]}}}}}}}}}
+env: {}
+compare: {ignore: []}
