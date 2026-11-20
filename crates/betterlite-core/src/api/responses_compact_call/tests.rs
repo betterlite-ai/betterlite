@@ -332,6 +332,10 @@ async fn compact_timeout_and_residency() {
         log.state.optional_params.get("instructions"),
         Some(&Json::Text(String::from("short")))
     );
+    assert_eq!(
+        log.state.litellm_params.get("input"),
+        Some(&Json::Text(String::from("hello")))
+    );
     let seen = resolver.seen();
     let preliminary = seen
         .iter()
