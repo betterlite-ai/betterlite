@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
+use std::io;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -333,7 +334,7 @@ impl FilesConfig for RecordingConfig {
     ) -> Result<String, UrlFailure> {
         let Some(base) = &self.base else {
             return Err(UrlFailure {
-                source: Box::new(std::io::Error::other("the base is missing")),
+                source: Box::new(io::Error::other("the base is missing")),
             });
         };
         Ok(base.clone())

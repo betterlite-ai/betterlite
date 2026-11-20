@@ -141,29 +141,29 @@ async fn create_timeout_messages_follow_the_mode() {
         "http://{}/v1/vector_stores/vs_a/files",
         async_slow.address
     ));
-    let deps = FileDeps {
+    let async_deps = FileDeps {
         config: &async_config,
         source: &source,
         supplied: None,
     };
-    let result = run(
+    let async_result = run(
         &mut fixture,
-        &deps,
+        &async_deps,
         ClientKind::Asynchronous,
         &call,
         &events,
     )
     .await;
-    let Err(FileTransportError::Provider(error)) = result else {
+    let Err(FileTransportError::Provider(async_error)) = async_result else {
         panic!("an async timeout is a provider error");
     };
-    assert_eq!(error.status_code, 408);
+    assert_eq!(async_error.status_code, 408);
     assert!(
-        error
+        async_error
             .message
             .starts_with("litellm.Timeout: Connection timed out. Timeout passed=0.1, time taken=")
     );
-    assert!(error.message.ends_with(" seconds"));
+    assert!(async_error.message.ends_with(" seconds"));
 }
 
 #[tokio::test]

@@ -165,7 +165,14 @@ async fn malformed_reply_fails_outside_handle_error() {
             extra_query: None,
         }),
     ] {
-        let result = run(&mut fixture, &deps, ClientKind::Synchronous, &call, &events).await;
+        let result = run(
+            &mut fixture,
+            &deps,
+            ClientKind::Asynchronous,
+            &call,
+            &events,
+        )
+        .await;
         let Err(FileTransportError::Provider(error)) = result else {
             panic!("an unparsable reply is a provider error");
         };
@@ -190,41 +197,44 @@ async fn preparation_failures_send_nothing() {
     let missing = RecordingConfig::without_base();
     let wire = Wire::replying(Reply::json(200, FILE), &events);
     let source = Source::new(wire.clone());
-    let deps = FileDeps {
+    let missing_deps = FileDeps {
         config: &missing,
         source: &source,
         supplied: None,
     };
-    let result = run(
+    let missing_result = run(
         &mut fixture,
-        &deps,
+        &missing_deps,
         ClientKind::Sync,
         &create_call(&request, &original),
         &events,
     )
     .await;
-    assert!(matches!(result, Err(FileTransportError::Url(_))));
+    assert!(matches!(missing_result, Err(FileTransportError::Url(_))));
     assert!(wire.requests().is_empty());
     assert!(events.recorded().is_empty());
     let unparsable = RecordingConfig::new("not a url");
-    let deps = FileDeps {
+    let unparsable_deps = FileDeps {
         config: &unparsable,
         source: &source,
         supplied: None,
     };
-    let result = run(
+    let unparsable_result = run(
         &mut fixture,
-        &deps,
+        &unparsable_deps,
         ClientKind::Sync,
         &create_call(&request, &original),
         &events,
     )
     .await;
-    assert!(matches!(result, Err(FileTransportError::RequestUrl { .. })));
+    assert!(matches!(
+        unparsable_result,
+        Err(FileTransportError::RequestUrl { .. })
+    ));
     assert!(wire.requests().is_empty());
     assert!(events.recorded().is_empty());
     let config = RecordingConfig::new("http://mock.test/v1/vector_stores");
-    let deps = FileDeps {
+    let named_deps = FileDeps {
         config: &config,
         source: &source,
         supplied: None,
@@ -234,15 +244,18 @@ async fn preparation_failures_send_nothing() {
         headers: Some(&bad_name),
         ..CallRequest::new("vs_a", &files)
     };
-    let result = run(
+    let named_result = run(
         &mut fixture,
-        &deps,
+        &named_deps,
         ClientKind::Sync,
         &create_call(&named, &original),
         &events,
     )
     .await;
-    assert!(matches!(result, Err(FileTransportError::HeaderName { .. })));
+    assert!(matches!(
+        named_result,
+        Err(FileTransportError::HeaderName { .. })
+    ));
     assert!(wire.requests().is_empty());
     assert_eq!(events.recorded(), ["log"]);
     let bad_value = caller_headers(&[("X-Trace", "bad\nvalue")]);
@@ -250,16 +263,16 @@ async fn preparation_failures_send_nothing() {
         headers: Some(&bad_value),
         ..CallRequest::new("vs_a", &files)
     };
-    let result = run(
+    let valued_result = run(
         &mut fixture,
-        &deps,
+        &named_deps,
         ClientKind::Sync,
         &create_call(&valued, &original),
         &events,
     )
     .await;
     assert!(matches!(
-        result,
+        valued_result,
         Err(FileTransportError::HeaderValue { .. })
     ));
     assert!(wire.requests().is_empty());
@@ -330,31 +343,31 @@ async fn wrong_mode_clients_use_the_pool() {
     assert_eq!(source.calls(), [Some(false)]);
     assert!(supplied.requests().is_empty());
     assert_eq!(pooled.requests().len(), 1);
-    let supplied = Wire::replying(Reply::json(200, FILE), &events);
-    let pooled = Wire::replying(Reply::json(200, FILE), &events);
-    let list_source = Source::new(pooled.clone());
+    let supplied_list = Wire::replying(Reply::json(200, FILE), &events);
+    let pooled_list = Wire::replying(Reply::json(200, FILE), &events);
+    let list_source = Source::new(pooled_list.clone());
     let plain = params("http://mock.test/v1");
-    let request = CallRequest::new("vs_a", &plain);
+    let list_request = CallRequest::new("vs_a", &plain);
     let query = file_params(r#"{"limit":2}"#);
-    let deps = FileDeps {
+    let list_deps = FileDeps {
         config: &config,
         source: &list_source,
         supplied: Some(SuppliedClient {
             kind: ClientKind::Asynchronous,
-            transport: &supplied,
+            transport: &supplied_list,
         }),
     };
     let list = FileCall::List(ListCall {
-        target: request.target(),
+        target: list_request.target(),
         query_params: &query,
         extra_query: None,
     });
-    run(&mut fixture, &deps, ClientKind::Sync, &list, &events)
+    run(&mut fixture, &list_deps, ClientKind::Sync, &list, &events)
         .await
         .expect("the list succeeds on the pool");
     assert_eq!(list_source.calls(), [None]);
-    assert!(supplied.requests().is_empty());
-    assert_eq!(pooled.requests().len(), 1);
+    assert!(supplied_list.requests().is_empty());
+    assert_eq!(pooled_list.requests().len(), 1);
 }
 
 #[tokio::test]
@@ -389,16 +402,16 @@ async fn matching_clients_are_reused() {
     assert!(source.calls().is_empty());
     assert_eq!(supplied.requests().len(), 1);
     assert!(pooled.requests().is_empty());
-    let supplied = Wire::replying(Reply::json(200, FILE), &events);
-    let pooled = Wire::replying(Reply::json(200, FILE), &events);
-    let list_source = Source::new(pooled.clone());
+    let supplied_list = Wire::replying(Reply::json(200, FILE), &events);
+    let pooled_list = Wire::replying(Reply::json(200, FILE), &events);
+    let list_source = Source::new(pooled_list.clone());
     let query = file_params(r#"{"limit":2}"#);
-    let deps = FileDeps {
+    let list_deps = FileDeps {
         config: &config,
         source: &list_source,
         supplied: Some(SuppliedClient {
             kind: ClientKind::Asynchronous,
-            transport: &supplied,
+            transport: &supplied_list,
         }),
     };
     let list = FileCall::List(ListCall {
@@ -408,7 +421,7 @@ async fn matching_clients_are_reused() {
     });
     run(
         &mut fixture,
-        &deps,
+        &list_deps,
         ClientKind::Asynchronous,
         &list,
         &events,
@@ -416,6 +429,6 @@ async fn matching_clients_are_reused() {
     .await
     .expect("the list reuses the supplied client");
     assert!(list_source.calls().is_empty());
-    assert_eq!(supplied.requests().len(), 1);
-    assert!(pooled.requests().is_empty());
+    assert_eq!(supplied_list.requests().len(), 1);
+    assert!(pooled_list.requests().is_empty());
 }

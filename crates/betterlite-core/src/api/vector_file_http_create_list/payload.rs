@@ -1,3 +1,5 @@
+use std::slice::from_ref;
+
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::vector_file_contracts::records::FileParams;
 use betterlite_openai::openai_base_config::metadata_filter_limit;
@@ -62,7 +64,7 @@ pub(crate) fn query_pairs(
     for (name, value) in fields {
         let items: &[Json] = match value {
             Json::List(items) => items.as_slice(),
-            single => std::slice::from_ref(single),
+            single => from_ref(single),
         };
         for item in items {
             pairs.push((name.clone(), query_text(name, item)?));

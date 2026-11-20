@@ -57,6 +57,10 @@ async fn create_list_credentials() {
         .expect("the create succeeds");
     assert_eq!(fixture.input(), Some(&json(r#""""#)));
     assert_eq!(
+        fixture.logged("api_base"),
+        Some(&json(r#""http://mock.test/v1/vector_stores/vs_a/files""#))
+    );
+    assert_eq!(
         fixture.logged("complete_input_dict"),
         Some(&json(r#"{"file_id":"file_a"}"#))
     );
