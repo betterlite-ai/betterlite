@@ -693,7 +693,7 @@ impl<Client: WriteTransport + Clone> Harness<Client> {
         }
     }
 
-    pub(crate) fn transport(
+    pub(crate) const fn transport(
         &self,
     ) -> VideoTransport<'_, FakeSource<Client>, FakeLog, SharedErrorConvert> {
         VideoTransport::new(&self.source, &self.log, &self.converter)
