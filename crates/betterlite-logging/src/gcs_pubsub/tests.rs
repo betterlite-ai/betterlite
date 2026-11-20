@@ -574,14 +574,15 @@ fn v1_environment() -> [(&'static str, &'static str); 3] {
 }
 
 async fn projected(fixture: &support::Fixture, event: LoggerEvent) -> Json {
+    let sent = fixture.delivery.requests().len();
     fixture
         .logger
         .async_log_success_event(Arc::new(event))
         .await
         .expect("the event is accepted");
     let requests = fixture.delivery.requests();
-    assert_eq!(requests.len(), 1);
-    published(&requests[0])
+    assert_eq!(requests.len(), sent + 1);
+    published(&requests[sent])
 }
 
 fn cleaned(body: &Json) -> Json {
