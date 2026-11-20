@@ -1,0 +1,61 @@
+task: B3370
+deviations:
+  - what: >-
+      The four operations are plain Rust functions. An async call is its own method that prepares the same call and
+      awaits B3365's async handler, where LiteLLM's aretrieve_container and adelete_container run the sync body on an
+      executor thread under a copied contextvars context, force the async flag on, and await the coroutine the sync
+      body returned.
+    why: >-
+      A Rust function returns one type, so it cannot return either a finished record or a future, and there is no
+      event loop to hop off and no contextvars to copy. Both entry points share prepare, so the two paths cannot
+      drift apart.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L491-L553
+  - what: >-
+      The request is a typed struct, mock_response is a typed JSON value, and a mock body that does not decode is a
+      ContainerOpError that reaches the dispatch as a ValueError. LiteLLM takes untyped kwargs, and pydantic raises
+      its own validation error for a body that does not fit ContainerObject or DeleteContainerResult.
+    why: >-
+      Rust has no pydantic; the struct holds the arguments the LiteLLM signature declares, and both rejections come
+      out as the same ValueError class a caller branches on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L612-L620
+  - what: >-
+      The metadata handed to the encoder is a copy of the caller's map holding the injected model_info.id; the
+      caller's own map is left untouched.
+    why: >-
+      docs/compatibility.md leaves changes made to the caller's dict out of parity, and the request holds the
+      metadata behind a shared reference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L676-L683
+  - what: >-
+      An absent timeout is None in the request and keeps the declared 600 seconds, while an explicit zero takes the
+      request timeout. LiteLLM's explicit None falls through `timeout or DEFAULT_REQUEST_TIMEOUT` to the request
+      timeout exactly as its zero does.
+    why: >-
+      Option<Duration> cannot tell an omitted argument from an explicit null, and docs/compatibility.md makes an
+      absent or null value take the declared default, which is 600.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L668
+  - what: >-
+      The request timeout enters through ContainerOperations rather than being read here, and it reaches the handler
+      as a Duration.
+    why: >-
+      Configuration enters betterlite through the config crate and clippy.toml forbids std::env::var outside it;
+      B198 owns the RequestTimeout value the route passes in, and this module holds it only where LiteLLM's
+      `timeout or DEFAULT_REQUEST_TIMEOUT` reads it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L562-L577
+  - what: >-
+      The params the decoder and the handler receive are the caller's named credentials plus the kwargs the request
+      models (the call id, the metadata and a null mock response). Pydantic fields the caller did not set are left
+      out instead of appearing as null.
+    why: >-
+      GenericLiteLLMParams is a pydantic model whose dict() carries a None for every declared field; betterlite's
+      params are a JSON object, where docs/compatibility.md makes an absent and a null value the same, and every
+      transform reads only the keys it names.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L623-L628
+  - what: >-
+      An unknown provider name and a known provider with no container config fail with two different messages, both
+      as ValueError through the dispatch. LiteLLM builds litellm.LlmProviders(name) first, so an unknown name fails
+      inside pydantic with its own text before the None check runs.
+    why: >-
+      B3361's provider lookup answers a config or nothing and has no enum constructor to fail in, so this module
+      names the unknown provider itself; the class a caller branches on is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L641-L645
+kept_bugs: []
