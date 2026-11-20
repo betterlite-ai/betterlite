@@ -235,7 +235,7 @@ def run_edit(call: EditCall, api_base: str) -> Outcome:
     try:
         if call.mode == "sync":
             answer = IMAGE_RESPONSE.validate_python(
-                HANDLER.image_edit_handler(
+                HANDLER.image_edit_handler(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6700-L6717
                     model=call.model,
                     image=image,
                     prompt=call.prompt,
@@ -254,7 +254,7 @@ def run_edit(call: EditCall, api_base: str) -> Outcome:
         else:
             answer = IMAGE_RESPONSE.validate_python(
                 asyncio.run(
-                    HANDLER.async_image_edit_handler(
+                    HANDLER.async_image_edit_handler(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6819-L6835
                         model=call.model,
                         image=image,
                         prompt=call.prompt,
