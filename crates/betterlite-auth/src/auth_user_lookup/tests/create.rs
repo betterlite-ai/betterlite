@@ -101,6 +101,22 @@ async fn unknown_default_field_fails_lookup() {
     }
     assert_eq!(harness.store.methods(), vec!["find_by_id"]);
     assert!(harness.cache.writes.lock().unwrap().is_empty());
+
+    let relation = harness_with_defaults(Some(defaults(&[(
+        "organization_memberships",
+        JsonData::Array(Vec::new()),
+    )])));
+    let relation_lookup = relation.lookup();
+    let result = relation_lookup
+        .get_user_object(upsert_request("u1", None))
+        .await;
+    match result {
+        Err(UserLookupError::UserMissing(failure)) => assert!(
+            failure.to_string().contains("organization_memberships"),
+            "the failure names the relation key: {failure}"
+        ),
+        other => panic!("a relation default fails the lookup: {other:?}"),
+    }
 }
 
 #[tokio::test]
