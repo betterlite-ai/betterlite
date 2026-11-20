@@ -120,6 +120,21 @@ impl Harness {
         }
     }
 
+    pub(super) fn push_hook(&mut self, hook: &Arc<Hook>) {
+        let shared = Arc::clone(hook);
+        self.hooks.push(shared);
+    }
+
+    pub(super) fn push_searcher(&mut self, searcher: &Arc<Searcher>) {
+        let shared = Arc::clone(searcher);
+        self.searchers.push(shared);
+    }
+
+    pub(super) fn push_interceptor(&mut self, interceptor: &Arc<Interceptor>) {
+        let shared = Arc::clone(interceptor);
+        self.interceptors.push(shared);
+    }
+
     pub(super) fn seams(&self) -> MessagesEntrySeams<'_> {
         MessagesEntrySeams {
             cache: &self.cache,

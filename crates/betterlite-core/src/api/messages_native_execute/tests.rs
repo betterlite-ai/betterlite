@@ -24,7 +24,7 @@ use support::{
 async fn sanitize_before_hooks() {
     let hook = Arc::new(Hook::new(HookEffect::Pass));
     let mut harness = Harness::new(Resolver::new(Some("anthropic")));
-    harness.hooks.push(Arc::clone(&hook));
+    harness.push_hook(&hook);
     let seams = harness.seams();
     let tools = vec![json(r#"{"name":"Bash","input_schema":{"type":"object"}}"#)];
     let mut entry = request("claude-sonnet-4-20250514", history(RAW_HISTORY));
@@ -59,7 +59,7 @@ async fn cache_hook_replaces_messages_and_system() {
     let mut harness = Harness::new(Resolver::new(Some("anthropic")));
     harness.cache.replacement_messages = Some(vec![json(r#"{"role":"user","content":"swapped"}"#)]);
     harness.cache.replacement_system = Some(json(r#""be brief""#));
-    harness.hooks.push(Arc::clone(&hook));
+    harness.push_hook(&hook);
     let seams = harness.seams();
     let mut entry = hi_request();
     entry.system = Some(json(r#""original""#));
@@ -72,11 +72,13 @@ async fn cache_hook_replaces_messages_and_system() {
     );
     assert_eq!(prepared.dispatch.system, Some(json(r#""be brief""#)));
     let hook_calls = hook.calls();
+    assert_eq!(hook_calls.len(), 1_usize);
     assert_eq!(
         hook_calls[0].messages,
         vec![json(r#"{"role":"user","content":"swapped"}"#)]
     );
     let cache_calls = harness.cache.calls();
+    assert_eq!(cache_calls.len(), 1_usize);
     assert_eq!(cache_calls[0].system, Some(json(r#""original""#)));
     assert_eq!(cache_calls[0].provider, Some("anthropic".to_owned()));
     assert_eq!(
@@ -90,8 +92,8 @@ async fn prerequest_hook_order() {
     let first = Arc::new(Hook::new(HookEffect::Mutate("temperature", json("0"))));
     let second = Arc::new(Hook::new(HookEffect::Pass));
     let mut harness = Harness::new(Resolver::new(Some("anthropic")));
-    harness.hooks.push(Arc::clone(&first));
-    harness.hooks.push(Arc::clone(&second));
+    harness.push_hook(&first);
+    harness.push_hook(&second);
     let seams = harness.seams();
     let entry = request(
         "claude-sonnet-4-20250514",
@@ -162,7 +164,7 @@ async fn empty_hook_list_keeps_named_arguments() {
 async fn provider_resolution_failure_is_ignored() {
     let hook = Arc::new(Hook::new(HookEffect::Pass));
     let mut harness = Harness::new(Resolver::new(None));
-    harness.hooks.push(Arc::clone(&hook));
+    harness.push_hook(&hook);
     let seams = harness.seams();
     let entry = request(
         "unknown-model",
@@ -171,6 +173,7 @@ async fn provider_resolution_failure_is_ignored() {
     let prepared = continuation(execute(entry, &seams).await.unwrap());
     assert_eq!(prepared.dispatch.custom_llm_provider, None);
     let hook_calls = hook.calls();
+    assert_eq!(hook_calls.len(), 1_usize);
     assert_eq!(
         hook_calls[0].kwargs["litellm_params"],
         json(r#"{"custom_llm_provider":null}"#)
@@ -236,7 +239,7 @@ async fn hook_named_overrides() {
         r#"{"tools":[{"name":"Search"}],"stream":false,"metadata":null,"temperature":0,"top_k":0,"top_p":null,"litellm_params":{"custom_llm_provider":"bedrock"}}"#,
     ))));
     let mut harness = Harness::new(Resolver::new(Some("anthropic")));
-    harness.hooks.push(Arc::clone(&hook));
+    harness.push_hook(&hook);
     let seams = harness.seams();
     let mut entry = hi_request();
     entry.tools = Some(vec![json(r#"{"name":"Bash"}"#)]);
@@ -245,6 +248,7 @@ async fn hook_named_overrides() {
     entry.top_p = Some(json("0.5"));
     let prepared = continuation(execute(entry, &seams).await.unwrap());
     let calls = hook.calls();
+    assert_eq!(calls.len(), 1_usize);
     assert_eq!(
         calls[0].kwargs["tools"],
         Json::List(vec![json(r#"{"name":"Bash"}"#)]),
@@ -369,7 +373,7 @@ async fn duplicate_hook_extras_raise_type_error(#[case] name: &str) {
 async fn original_litellm_params_survives_merge() {
     let hook = Arc::new(Hook::new(HookEffect::Pass));
     let mut harness = Harness::new(Resolver::new(Some("anthropic")));
-    harness.hooks.push(Arc::clone(&hook));
+    harness.push_hook(&hook);
     let seams = harness.seams();
     let mut entry = hi_request();
     entry.kwargs.insert(
@@ -402,8 +406,8 @@ async fn original_stream_survives_websearch_conversion() {
     let hook = Arc::new(Hook::new(HookEffect::Mutate("stream", Json::Bool(false))));
     let mut harness = Harness::new(Resolver::new(Some("anthropic")));
     harness.hooks.push(hook);
-    harness.searchers.push(Arc::clone(&searcher));
-    harness.interceptors.push(Arc::clone(&interceptor));
+    harness.push_searcher(&searcher);
+    harness.push_interceptor(&interceptor);
     let seams = harness.seams();
     let mut entry = request(
         "claude-sonnet-4-20250514",
@@ -421,6 +425,7 @@ async fn original_stream_survives_websearch_conversion() {
     assert_eq!(frames.len(), 6_usize);
     assert!(frames[0].starts_with("event: message_start\n"));
     let calls = searcher.calls();
+    assert_eq!(calls.len(), 1_usize);
     assert_eq!(calls[0].kwargs["metadata"], Json::Null);
     let can_calls = interceptor.can_calls();
     assert_eq!(
@@ -443,7 +448,7 @@ async fn interceptor_sees_original_stream_after_hook() {
         Json::Bool(false),
     ))));
     harness.searchers.push(Arc::new(Searcher::new(None, None)));
-    harness.interceptors.push(Arc::clone(&interceptor));
+    harness.push_interceptor(&interceptor);
     let seams = harness.seams();
     let mut entry = hi_request();
     entry.stream = Some(true);
@@ -453,6 +458,7 @@ async fn interceptor_sees_original_stream_after_hook() {
     };
     assert_eq!(value, json(r#"{"handled":true}"#));
     let handled = interceptor.handled();
+    assert_eq!(handled.len(), 1_usize);
     assert_eq!(
         handled[0]["stream"],
         Json::Bool(true),
@@ -509,9 +515,9 @@ async fn search_result_skips_interceptors() {
     let second = Arc::new(Searcher::new(Some(json(r#"{"second":true}"#)), None));
     let interceptor = Arc::new(Interceptor::new(true, InterceptorAnswer::None));
     let mut harness = Harness::new(Resolver::new(Some("anthropic")));
-    harness.searchers.push(Arc::clone(&first));
-    harness.searchers.push(Arc::clone(&second));
-    harness.interceptors.push(Arc::clone(&interceptor));
+    harness.push_searcher(&first);
+    harness.push_searcher(&second);
+    harness.push_interceptor(&interceptor);
     let seams = harness.seams();
     let entry = request(
         "claude-sonnet-4-20250514",
@@ -554,8 +560,8 @@ async fn search_and_interceptor_see_the_hooks_result() {
     ))));
     let mut harness = Harness::new(Resolver::new(Some("anthropic")));
     harness.hooks.push(hook);
-    harness.searchers.push(Arc::clone(&searcher));
-    harness.interceptors.push(Arc::clone(&interceptor));
+    harness.push_searcher(&searcher);
+    harness.push_interceptor(&interceptor);
     let seams = harness.seams();
     let mut entry = request("claude-sonnet-4-20250514", history(RAW_HISTORY));
     entry.tools = Some(vec![json(r#"{"name":"Bash"}"#)]);
@@ -591,8 +597,8 @@ async fn first_matching_interceptor_wins() {
         InterceptorAnswer::Response(json(r#"{"handled":"second"}"#)),
     ));
     let mut harness = Harness::new(Resolver::new(Some("anthropic")));
-    harness.interceptors.push(Arc::clone(&first));
-    harness.interceptors.push(Arc::clone(&second));
+    harness.push_interceptor(&first);
+    harness.push_interceptor(&second);
     let seams = harness.seams();
     let entry = full_entry();
     let result = returned(execute(entry, &seams).await.unwrap());
@@ -725,8 +731,8 @@ async fn hook_error_stops_before_search_and_interceptors() {
     harness
         .hooks
         .push(Arc::new(Hook::new(HookEffect::Raise(raised()))));
-    harness.searchers.push(Arc::clone(&searcher));
-    harness.interceptors.push(Arc::clone(&interceptor));
+    harness.push_searcher(&searcher);
+    harness.push_interceptor(&interceptor);
     let seams = harness.seams();
     let error = failure(execute(hi_request(), &seams).await);
     let MessagesExecuteError::Raised(inner) = error else {
@@ -746,7 +752,7 @@ async fn searcher_error_stops_before_interceptors() {
     harness
         .searchers
         .push(Arc::new(Searcher::new(None, Some(raised()))));
-    harness.interceptors.push(Arc::clone(&interceptor));
+    harness.push_interceptor(&interceptor);
     let seams = harness.seams();
     let error = failure(execute(hi_request(), &seams).await);
     assert!(matches!(error, MessagesExecuteError::Raised(_)));
