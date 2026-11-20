@@ -1,7 +1,7 @@
 id: B541
 milestone: M3 providers
 title: Azure batch lifecycle
-status: todo
+status: done
 depends_on: [B531, B516, B517, B173, B171, B694]
 file: tasks/B541-azure-files.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/azure/batches/handler.py"
 parent: B025
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2604

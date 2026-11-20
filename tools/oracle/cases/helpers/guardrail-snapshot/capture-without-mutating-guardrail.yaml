@@ -1,0 +1,16 @@
+kind: helper
+name: guardrail-snapshot-capture-without-mutating-guardrail
+call:
+  b9999:
+    function: capture
+    body:
+      model: gpt-4o
+      messages:
+        - role: user
+          content: hi
+    metadata:
+      standard_logging_guardrail_information:
+        - guardrail_mode: during_call
+        - guardrail_mode: post_call
+env: {}
+compare: {ignore: []}

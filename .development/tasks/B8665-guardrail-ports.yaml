@@ -2,15 +2,14 @@ id: B8665
 title: Guardrail ports for tool policies, OCR, read-through and policy suggestions
 description: >-
   Several guardrail and policy tasks declare a trait and leave its production implementation to the wiring. Without
-  these adapters the guardrail factory cannot build a `tool_policy` guardrail, the unified guardrail registry has no OCR entry, a guardrail created on another replica is never found, and the policy
-  suggestion route has no model. This task writes those adapters. Each one is a plain struct that holds what it needs and
+  these adapters the guardrail factory cannot build a `tool_policy` guardrail, the unified guardrail registry has no OCR entry and a guardrail created on another replica is never found. This task writes those adapters. Each one is a plain struct that holds what it needs and
   forwards one call; none of them reads `Shared`, so the lifespan in crates/betterlite can build the tool policy adapters
   before the server state exists.
 
 
   Where. A public module of betterlite-server, crates/betterlite-server/src/guardrail_ports.rs (the skeleton declares
   `pub mod guardrail_ports;` in lib.rs), with guardrail_ports/ holding tool_policy.rs, read_through.rs,
-  suggest.rs, error.rs and tests.rs. It is public because crates/betterlite builds the guardrail factories at startup
+  error.rs and tests.rs. It is public because crates/betterlite builds the guardrail factories at startup
   and must name the tool policy adapters. Plus two edits to B3680's files for the OCR entries (item 3).
 
 
@@ -47,18 +46,12 @@ description: >-
   (litellm/llms/mistral/ocr/guardrail_translation/__init__.py). Change nothing else in those two files.
 
 
-  4. Policy suggestions (suggest.rs). `SdkSuggestModel` implements B3253's `PolicySuggestModel`. `supported_params(model,
-  provider)` is B175's supported OpenAI parameter query from crates/betterlite-models/src/params, unchanged.
-  `select_templates(request)` makes one chat completion the way `litellm.acompletion` does, not through the router: the
-  model from the request, a system message and a user message from the two prompts, the tool from the request as the
-  only tool, and the temperature. It goes through B5656's `AsyncCompletionTarget` built with the outbound
-  `ProxiedClient`, so the provider key comes from the environment as in LiteLLM. The reply's `tool_arguments` is the
-  first choice's first tool call arguments, None when there is none. A provider error becomes `SuggestModelError` with
-  its text. No retry and no fallback.
+  4. Policy suggestions are not here. B3253 builds `SdkSuggestModel`, the production `PolicySuggestModel`, beside the
+  POST /policy/templates/suggest route it serves, since nothing else uses it.
 
 
   error.rs holds `GuardrailPortError` for the adapters that can fail. Tests in guardrail_ports/tests.rs use in-memory
-  values and fakes for the database and the provider: name them with the prefixes `tool_policy_`, `read_through_` and `suggest_`. The OCR entries get tests in unified_guardrail's own tests whose names start with
+  values and fakes for the database: name them with the prefixes `tool_policy_` and `read_through_`. The OCR entries get tests in unified_guardrail's own tests whose names start with
   `ocr_`.
 scope:
   paths:
@@ -82,8 +75,6 @@ dod:
     proof: [ports-tests]
   - text: The guardrail read-through loads an active row through sync_locked and answers whether the guardrail is initialized, and a sync error answers false.
     proof: [ports-tests]
-  - text: SdkSuggestModel sends one chat call with the tool and returns the first tool call arguments, and maps a provider error to SuggestModelError.
-    proof: [ports-tests]
   - text: The unified guardrail registry resolves ocr and aocr to the OCR translation and every other call type as before.
     proof: [ocr-entries]
 checks:
@@ -105,7 +96,6 @@ out_of_scope:
 pitfalls:
   - "`load_row` must call `sync_locked`, which takes the reconcile mutex before the handler write lock; taking the write lock first deadlocks against the database poll."
   - "The guardrail read-through answers false on a sync error and does not remember the miss, so the next request may try again; only a missing row is remembered."
-  - "`select_templates` must not go through the router: LiteLLM calls litellm.acompletion, so a model that is only in the config model_list still needs its provider key in the environment."
 review_level: security
 budget:
   max_changed_lines: 1500

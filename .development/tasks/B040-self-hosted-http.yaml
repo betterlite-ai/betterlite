@@ -108,7 +108,9 @@ description: >-
   decisions makes both OpenAI-format and SystemOne-format requests to hosted_vllm
   with a named choice question, uses B3510's declared request/response records and
   verifies B3513/B3514's selected config, upstream /v1/systemone URL and absent
-  Authorization when the placeholder key resolves to None. xinference-image sends prompt, n, size and
+  Authorization when the placeholder key resolves to None. The video, video-unsafe and decisions cases
+  need the video routes (B3343) and the decisions mount (B8634 over B8276), which are later
+  work, so those tasks add these three cases and this task does not. xinference-image sends prompt, n, size and
   response_format through the generation route and compares the existing selected
   XInferenceImageGenerationConfig's options and returned image data.
 
@@ -117,10 +119,11 @@ description: >-
   /openai/v1/responses; image edits is POST /v1/images/edits, /images/edits and
   /openai/deployments/{model:path}/images/edits; generation has the same three forms
   ending /images/generations. Transcription is POST /v1/audio/transcriptions and
-  /audio/transcriptions; video create is POST /v1/videos and /videos; decisions is
-  POST /v1/decisions and /decisions; SystemOne is POST /v1/systemone and /systemone.
+  /audio/transcriptions; video create (POST /v1/videos and /videos), decisions
+  (POST /v1/decisions and /decisions) and SystemOne (POST /v1/systemone and /systemone) are
+  steps for those later tasks.
   Route owners already supply their other verbs and resource routes. The media-auth
-  case repeats these representative family calls without a key and compares 401
+  case repeats these representative family calls, except video and decisions, without a key and compares 401
   without an upstream call. upstream-error supplies a hosted-vLLM 429 with a fixed
   provider request-id header and checks the public error and retry/header projection
   with retries disabled. These are real HTTP errors, not helper exception classes.
@@ -201,7 +204,7 @@ dod:
     proof: [embedding-cases, oracle]
   - text: The README encoding-format precedence is observable on the OpenAI-compatible upstream request while hosted_vllm does not inject the environment default.
     proof: [encoding-cases, embedding-cases, oracle]
-  - text: All hosted-vLLM media configurations and Xinference image generation work through the already registered public route aliases and preserve validation failures before upstream traffic.
+  - text: The hosted-vLLM media configurations other than video and decisions, and Xinference image generation, work through the already registered public route aliases and preserve validation failures before upstream traffic.
     proof: [media-cases, oracle]
   - text: Proxy authentication and a provider 429 retain status, error type, param, code and stable headers without exposing configured credentials.
     proof: [error-cases, oracle]
@@ -244,9 +247,6 @@ oracle_cases:
   - tools/oracle/cases/self-hosted-compatible/media/responses.yaml
   - tools/oracle/cases/self-hosted-compatible/media/image-edit.yaml
   - tools/oracle/cases/self-hosted-compatible/media/transcription.yaml
-  - tools/oracle/cases/self-hosted-compatible/media/video.yaml
-  - tools/oracle/cases/self-hosted-compatible/media/video-unsafe.yaml
-  - tools/oracle/cases/self-hosted-compatible/media/decisions.yaml
   - tools/oracle/cases/self-hosted-compatible/media/xinference-image.yaml
   - tools/oracle/cases/self-hosted-compatible/errors/media-auth.yaml
   - tools/oracle/cases/self-hosted-compatible/errors/upstream-error.yaml
