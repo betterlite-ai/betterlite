@@ -15,20 +15,13 @@ pub const MAX_PIN_BYTES: usize = 1024 * 1024;
 pub struct AffinityPin(pub IndexMap<String, String>);
 
 impl AffinityPin {
-    // the text LiteLLM's json.dumps(dict(pin)) gives its Redis claim script
-    #[must_use]
-    pub fn wire_text(&self) -> String {
-        serde_json::to_string(&self.0).unwrap_or_default()
-    }
-
     #[must_use]
     pub fn decoded(&self) -> Json {
-        Json::Object(
-            self.0
-                .iter()
-                .map(|(field, value)| (field.clone(), Json::Text(value.clone())))
-                .collect(),
-        )
+        let mut fields = IndexMap::with_capacity(self.0.len());
+        for (field, value) in &self.0 {
+            fields.insert(field.clone(), Json::Text(value.clone()));
+        }
+        Json::Object(fields)
     }
 }
 
@@ -94,7 +87,7 @@ impl StoredPin {
     #[must_use]
     pub fn wire_text(&self) -> String {
         match self {
-            Self::Pin(pin) => pin.wire_text(),
+            Self::Pin(pin) => serde_json::to_string(&pin.0).unwrap_or_default(),
             Self::Text(text) => text.clone(),
             Self::Other(value) => serde_json::to_string(value).unwrap_or_default(),
         }

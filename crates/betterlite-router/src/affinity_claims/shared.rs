@@ -32,7 +32,7 @@ pub(super) async fn claim(
 ) -> Result<StoredPin, SharedFallback> {
     let ttl = Some(f64::from(ttl_seconds));
     let ours = RouteValue::Pin(PinValue {
-        model_id: pin.wire_text(),
+        model_id: serde_json::to_string(&pin.0).unwrap_or_default(),
     });
     let mut current = read(store, key).await?;
     for _attempt in 0..MAX_CLAIM_ATTEMPTS {
