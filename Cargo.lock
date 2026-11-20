@@ -1658,6 +1658,7 @@ dependencies = [
  "betterlite-semantic",
  "betterlite-streaming",
  "betterlite-tokenizer",
+ "bytes",
  "caseless",
  "chrono",
  "clap",
