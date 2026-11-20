@@ -60,16 +60,6 @@ pub(super) fn required_timestamp(row: &Row, name: &str) -> Result<NaiveDateTime,
         })
 }
 
-pub(super) fn optional_timestamp(
-    row: &Row,
-    name: &str,
-) -> Result<Option<NaiveDateTime>, RowDecodeError> {
-    row.try_get(name)
-        .map_err(|driver| RowDecodeError::Timestamp {
-            source: ColumnFailure::Driver(DriverError { driver }),
-        })
-}
-
 pub(super) fn spend_value(row: &Row) -> Result<Decimal, RowDecodeError> {
     let stored: f64 = row
         .try_get("spend")

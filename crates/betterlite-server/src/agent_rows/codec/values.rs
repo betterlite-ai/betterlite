@@ -3,14 +3,15 @@ use betterlite_auth::identity::{
 };
 use betterlite_core::agents::json::AgentJson;
 use betterlite_core::agents::{AgentCard, AgentObjectPermission};
-use chrono::{DateTime, Utc};
+use betterlite_db::postgres_store::diagnostics::DriverError;
+use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::de::DeserializeOwned;
 use tokio_postgres::Row;
 use uuid::Uuid;
 
 use super::columns::{
-    optional_json, optional_text, optional_text_array, optional_timestamp, required_boolean,
-    required_json, required_text,
+    optional_json, optional_text, optional_text_array, required_boolean, required_json,
+    required_text,
 };
 use super::{ColumnFailure, RowDecodeError};
 
@@ -18,7 +19,12 @@ pub(super) fn decode_identity(row: &Row) -> Result<Option<AgentIdentityBinding>,
     let Some(agent_id) = optional_text(row, "i_agent_id")? else {
         return Ok(None);
     };
-    Ok(Some(AgentIdentityBinding {
+    let last_authenticated_at: Option<NaiveDateTime> = row
+        .try_get("i_last_authenticated_at")
+        .map_err(|driver| RowDecodeError::Timestamp {
+            source: ColumnFailure::Driver(DriverError { driver }),
+        })?;
+    let binding = AgentIdentityBinding {
         agent_id,
         active: ActiveState(required_boolean(row, "i_active")?),
         provider: decode_identity_provider(row)?,
@@ -29,9 +35,10 @@ pub(super) fn decode_identity(row: &Row) -> Result<Option<AgentIdentityBinding>,
         required_roles: optional_text_array(row, "i_required_roles")?.unwrap_or_default(),
         required_scopes: optional_text_array(row, "i_required_scopes")?.unwrap_or_default(),
         revision: required_text(row, "i_revision")?,
-        last_authenticated_at: optional_timestamp(row, "i_last_authenticated_at")?
+        last_authenticated_at: last_authenticated_at
             .map(|naive| DateTime::from_naive_utc_and_offset(naive, Utc)),
-    }))
+    };
+    Ok(Some(binding))
 }
 
 fn decode_identity_provider(row: &Row) -> Result<IdentityProvider, RowDecodeError> {
@@ -66,13 +73,19 @@ pub(super) fn decode_object_permission(
     if object_permission_id.is_none() {
         return Ok(None);
     }
+    let mcp_servers = optional_text_array(row, "p_mcp_servers")?;
+    let mcp_access_groups = optional_text_array(row, "p_mcp_access_groups")?;
+    let mcp_toolsets = optional_text_array(row, "p_mcp_toolsets")?;
+    let mcp_tool_permissions = json_object_column(row, "p_mcp_tool_permissions")?;
+    let models = optional_text_array(row, "p_models")?;
+    let agents = optional_text_array(row, "p_agents")?;
     Ok(Some(AgentObjectPermission {
-        mcp_servers: Some(optional_text_array(row, "p_mcp_servers")?),
-        mcp_access_groups: Some(optional_text_array(row, "p_mcp_access_groups")?),
-        mcp_toolsets: Some(optional_text_array(row, "p_mcp_toolsets")?),
-        mcp_tool_permissions: Some(json_object_column(row, "p_mcp_tool_permissions")?),
-        models: Some(optional_text_array(row, "p_models")?),
-        agents: Some(optional_text_array(row, "p_agents")?),
+        mcp_servers: Some(mcp_servers),
+        mcp_access_groups: Some(mcp_access_groups),
+        mcp_toolsets: Some(mcp_toolsets),
+        mcp_tool_permissions: Some(mcp_tool_permissions),
+        models: Some(models),
+        agents: Some(agents),
     }))
 }
 
