@@ -76,7 +76,7 @@ where
                 })?,
         )),
         RawValue::Number(RawNumber::Float(float)) => Ok(PingSetting::Seconds(float)),
-        // coerce_keepalive_interval parses this text later, so nan, inf and unusable text reach it as written
+        // the reader's coerce_keepalive_interval parses this later, so nan and inf stay as written
         RawValue::Number(RawNumber::Text(text)) => {
             Ok(PingSetting::Text(resolve_string(text, KEY, lookup)?))
         }
