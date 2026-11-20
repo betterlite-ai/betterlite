@@ -5,6 +5,7 @@ import litellm
 from pydantic import JsonValue, TypeAdapter
 
 from .inputs import (
+    PROVIDER_METRIC,
     CustomerCall,
     CustomerInput,
     CustomerRowCall,
@@ -14,7 +15,6 @@ from .inputs import (
     KeyListCall,
     OrgCall,
     OrgListCall,
-    PROVIDER_METRIC,
     ProviderCall,
     RemainingBudgetCall,
     RemainingHoursCall,

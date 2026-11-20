@@ -22,7 +22,7 @@ BUDGET_METRICS: Final[tuple[DEFINED_PROMETHEUS_METRICS, ...]] = (
     "litellm_customer_budget_remaining_hours_metric",
 )
 
-# LiteLLM gives this gauge a fixed api_provider label and leaves its name out of DEFINED_PROMETHEUS_METRICS
+# LiteLLM fixes an api_provider label and leaves this name out of DEFINED_PROMETHEUS_METRICS
 PROVIDER_METRIC: Final = "litellm_provider_remaining_budget_metric"
 ALL_METRICS: Final = (*BUDGET_METRICS, PROVIDER_METRIC)
 

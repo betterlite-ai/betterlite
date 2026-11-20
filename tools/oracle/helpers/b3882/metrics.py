@@ -1,6 +1,6 @@
 import asyncio
 from datetime import datetime
-from typing import Final, TypedDict
+from typing import TypedDict
 
 from litellm.integrations.prometheus import PrometheusLogger
 from litellm.integrations.prometheus_helpers.bounded_prometheus_series_tracker import (
@@ -26,9 +26,7 @@ from .inputs import (
     ProviderCall,
     RemainingBudgetCall,
     RemainingHoursCall,
-    TeamCall,
     TeamMembersCall,
-    UserCall,
     budget_row,
     parse_optional,
 )
@@ -218,7 +216,7 @@ class ProbeLogger(PrometheusLogger):
             )
             for row in call["rows"]
         ]
-        asyncio.run(self._set_org_list_budget_metrics(rows))  # type: ignore[misc]  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3893
+        asyncio.run(self._set_org_list_budget_metrics(rows))  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3893
 
     def customer_row(self, call: CustomerRowCall) -> None:
         customer = CustomerRow(
