@@ -21,9 +21,9 @@ while [[ "${lane}" -eq 0 ]]; do
     fi
   done
   if [[ "${lane}" -eq 0 ]]; then
-    if [[ $((EPOCHSECONDS - started)) -ge 600 ]]; then
-      printf '%(%FT%T)T,%s,0,600,0,busy,%s,0\n' -1 "${id}" "${packages}" >> "${root}/runs.csv"
-      echo "every lint lane stayed busy for 10 minutes, so CI lints this change"
+    if [[ $((EPOCHSECONDS - started)) -ge 1200 ]]; then
+      printf '%(%FT%T)T,%s,0,1200,0,busy,%s,0\n' -1 "${id}" "${packages}" >> "${root}/runs.csv"
+      echo "every lint lane stayed busy for 20 minutes, so CI lints this change"
       exit 0
     fi
     sleep 5
