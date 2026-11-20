@@ -684,7 +684,6 @@ macro_rules! call_request {
 
 // One call's inputs and its recording collaborators; a case changes only the fields it exercises
 pub(crate) struct Harness<Client> {
-    pub(crate) events: Events,
     pub(crate) source: FakeSource<Client>,
     pub(crate) log: FakeLog,
     pub(crate) config: FakeConfig,
@@ -719,7 +718,6 @@ impl<Client: WriteTransport + Clone> Harness<Client> {
             refusal: None,
         });
         Self {
-            events: events.clone(),
             source: FakeSource::new(client),
             log: FakeLog::new(events),
             config,

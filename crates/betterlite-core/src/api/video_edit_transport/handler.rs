@@ -32,7 +32,7 @@ pub(crate) struct Prepared<'call, Client> {
 
 impl<Client> Prepared<'_, Client> {
     // the last three arguments of every video request transform
-    pub(crate) const fn context<'borrow>(
+    pub(crate) fn context<'borrow>(
         &'borrow self,
         litellm_params: &'borrow Params,
     ) -> VideoRequestContext<'borrow> {
