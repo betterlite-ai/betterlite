@@ -613,6 +613,19 @@ async fn upload_skipped_without_content_or_filename(
 }
 
 #[tokio::test]
+async fn upload_skips_an_empty_filename() {
+    let harness = harness(r#"{"vector_store": {"vector_store_id": "vs_1"}}"#);
+    let (store_id, file_id) = harness
+        .ingestion
+        .store(request(Some(b"hello"), Some(""), None, None))
+        .await
+        .expect("the store");
+    assert_eq!(store_id.as_deref(), Some("vs_1"));
+    assert!(file_id.is_none());
+    assert!(harness.calls.snapshot().is_empty());
+}
+
+#[tokio::test]
 async fn credentials_reach_every_port() {
     let harness = harness(
         r#"{"vector_store": {"api_key": "sk-live", "api_base": "https://openai.test/v1"}}"#,
