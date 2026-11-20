@@ -4004,6 +4004,7 @@ dependencies = [
  "betterlite-error",
  "betterlite-foundry",
  "betterlite-http",
+ "betterlite-http-fixture",
  "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
