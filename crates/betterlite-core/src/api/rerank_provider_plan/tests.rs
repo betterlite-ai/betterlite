@@ -1,8 +1,10 @@
+#![cfg(test)]
+
 use std::collections::BTreeMap;
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
-use betterlite_config::api::rerank_provider_plan::RerankSettings;
+use betterlite_config::api::rerank_provider_plan::{Environment, RerankSettings};
 use betterlite_error::dispatch::RawException;
 use betterlite_error::error::ErrorClass;
 use betterlite_logging::logging_state::correlation::{
@@ -84,8 +86,10 @@ struct FakeOps {
 impl FakeOps {
     fn failing_send(status: u16, message: &str) -> Self {
         Self {
+            options: Mutex::new(Vec::new()),
+            sends: Mutex::new(Vec::new()),
+            mapping_failure: None,
             send_failure: Some((status, message.to_owned())),
-            ..Self::default()
         }
     }
 
@@ -203,33 +207,11 @@ struct FakeIdentity {
 }
 
 impl FakeIdentity {
-    fn new(key: Option<&str>, base: Option<&str>) -> Self {
-        Self {
-            resolved: Some(ResolvedModel {
-                model: String::from("rerank-v1"),
-                provider: ProviderIdentity::Known(ProviderId::Cohere),
-                api_base: base.map(str::to_owned),
-                api_key: key.map(|key| SecretString::from(key.to_owned())),
-            }),
-        }
-    }
-
-    fn provider(key: Option<&str>, base: Option<&str>, provider: &str) -> Self {
-        Self {
-            resolved: Some(ResolvedModel {
-                model: String::from("rerank-v1"),
-                provider: ProviderIdentity::Custom(provider.to_owned()),
-                api_base: base.map(str::to_owned),
-                api_key: key.map(|key| SecretString::from(key.to_owned())),
-            }),
-        }
-    }
-
-    fn model(model: &str, provider: &str, key: Option<&str>, base: Option<&str>) -> Self {
+    fn new(model: &str, provider: ProviderIdentity, key: Option<&str>, base: Option<&str>) -> Self {
         Self {
             resolved: Some(ResolvedModel {
                 model: model.to_owned(),
-                provider: ProviderIdentity::Custom(provider.to_owned()),
+                provider,
                 api_base: base.map(str::to_owned),
                 api_key: key.map(|key| SecretString::from(key.to_owned())),
             }),
@@ -295,8 +277,12 @@ fn logging_state() -> LoggingState {
 
 fn defaults() -> RerankSettings {
     RerankSettings {
+        api_key: None,
+        api_base: None,
         headers: None,
-        ..RerankSettings::default()
+        togetherai_api_key: None,
+        drop_params: false,
+        environment: Environment::default(),
     }
 }
 
@@ -358,7 +344,12 @@ fn dispatch<Identity: RerankIdentity>(
 #[test]
 fn rerank_defaults_and_options() {
     let ops = FakeOps::default();
-    let identity = FakeIdentity::new(Some("dynamic-key"), Some("https://dynamic.test/v1"));
+    let identity = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Known(ProviderId::Cohere),
+        Some("dynamic-key"),
+        Some("https://dynamic.test/v1"),
+    );
     let mut logging = logging_state();
     let response = dispatch(
         &identity,
@@ -394,7 +385,12 @@ fn rerank_defaults_and_options() {
 #[test]
 fn zero_valued_options_reach_the_mapping() {
     let ops = FakeOps::default();
-    let identity = FakeIdentity::new(Some("k"), Some("https://d/v1"));
+    let identity = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Known(ProviderId::Cohere),
+        Some("k"),
+        Some("https://d/v1"),
+    );
     let mut logging = logging_state();
     let mut call = call("cohere");
     call.top_n = Some(0);
@@ -425,7 +421,12 @@ fn zero_valued_options_reach_the_mapping() {
 #[test]
 fn a_string_timeout_becomes_a_float_after_mapping() {
     let ops = FakeOps::default();
-    let identity = FakeIdentity::new(Some("k"), Some("https://d/v1"));
+    let identity = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Known(ProviderId::Cohere),
+        Some("k"),
+        Some("https://d/v1"),
+    );
     let mut logging = logging_state();
     let mut call = call("cohere");
     call.kwargs = with(&[("timeout", Json::Text(String::from("2.5")))]);
@@ -444,7 +445,12 @@ fn a_string_timeout_becomes_a_float_after_mapping() {
 #[test]
 fn a_bad_timeout_fails_before_the_provider_call() {
     let ops = FakeOps::default();
-    let identity = FakeIdentity::new(Some("k"), Some("https://d/v1"));
+    let identity = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Known(ProviderId::Cohere),
+        Some("k"),
+        Some("https://d/v1"),
+    );
     let mut logging = logging_state();
     let mut call = call("cohere");
     call.kwargs = with(&[("timeout", Json::Text(String::from("bad")))]);
@@ -466,7 +472,12 @@ fn a_bad_timeout_fails_before_the_provider_call() {
 #[test]
 fn only_the_boolean_true_arerank_selects_async() {
     let ops = FakeOps::default();
-    let identity = FakeIdentity::new(Some("k"), Some("https://d/v1"));
+    let identity = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Known(ProviderId::Cohere),
+        Some("k"),
+        Some("https://d/v1"),
+    );
     let mut logging = logging_state();
     let mut call = call("cohere");
     call.kwargs = with(&[("arerank", Json::Bool(true))]);
@@ -500,7 +511,12 @@ fn only_the_boolean_true_arerank_selects_async() {
 #[test]
 fn mock_response_does_not_bypass_the_provider_call() {
     let ops = FakeOps::default();
-    let identity = FakeIdentity::new(Some("k"), Some("https://d/v1"));
+    let identity = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Known(ProviderId::Cohere),
+        Some("k"),
+        Some("https://d/v1"),
+    );
     let mut logging = logging_state();
     let mut call = call("cohere");
     call.kwargs = with(&[("mock_response", Json::Text(String::from("hello")))]);
@@ -524,7 +540,12 @@ fn mock_response_does_not_bypass_the_provider_call() {
 #[test]
 fn drop_params_uses_the_call_value_then_the_global_value() {
     let ops = FakeOps::default();
-    let identity = FakeIdentity::new(Some("k"), Some("https://d/v1"));
+    let identity = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Known(ProviderId::Cohere),
+        Some("k"),
+        Some("https://d/v1"),
+    );
     let mut global = defaults();
     global.drop_params = true;
     let mut logging = logging_state();
@@ -571,7 +592,12 @@ fn drop_params_uses_the_call_value_then_the_global_value() {
 #[test]
 fn logger_params_carry_the_call_identity_and_no_invented_stream_response() {
     let ops = FakeOps::default();
-    let identity = FakeIdentity::new(Some("k"), Some("https://d/v1"));
+    let identity = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Known(ProviderId::Cohere),
+        Some("k"),
+        Some("https://d/v1"),
+    );
     let mut logging = logging_state();
     let mut call = call("cohere");
     call.kwargs = with(&[
@@ -642,7 +668,12 @@ fn logger_params_carry_the_call_identity_and_no_invented_stream_response() {
 #[test]
 fn version_params_choose_the_cohere_client() {
     let ops = FakeOps::default();
-    let identity = FakeIdentity::new(Some("k"), Some("https://d/v1"));
+    let identity = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Known(ProviderId::Cohere),
+        Some("k"),
+        Some("https://d/v1"),
+    );
     let mut logging = logging_state();
     let mut call = call("cohere");
     call.max_chunks_per_doc = Some(0);
@@ -677,12 +708,19 @@ fn version_params_choose_the_cohere_client() {
 #[test]
 fn a_mapping_failure_raises_through_the_error_mapping() {
     let ops = FakeOps {
+        options: Mutex::new(Vec::new()),
+        sends: Mutex::new(Vec::new()),
         mapping_failure: Some(String::from(
             "Invalid parameter: stream. Only ['query', 'documents'] are supported.",
         )),
-        ..FakeOps::default()
+        send_failure: None,
     };
-    let identity = FakeIdentity::new(Some("k"), Some("https://d/v1"));
+    let identity = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Known(ProviderId::Cohere),
+        Some("k"),
+        Some("https://d/v1"),
+    );
     let mut logging = logging_state();
     let error = dispatch(
         &identity,

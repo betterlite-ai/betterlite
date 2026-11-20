@@ -46,7 +46,12 @@ fn rerank_cohere_foundry_infinity() {
     let mut settings = defaults();
     settings.api_key = Some(SecretString::from("global-key"));
     settings.api_base = Some(String::from("https://global.test/v1"));
-    let identity = FakeIdentity::new(Some("dynamic-key"), Some("https://dynamic.test/v1"));
+    let identity = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Known(ProviderId::Cohere),
+        Some("dynamic-key"),
+        Some("https://dynamic.test/v1"),
+    );
     let mut call = call("cohere");
     call.kwargs = with(&[
         ("api_key", text("call-key")),
@@ -62,7 +67,12 @@ fn rerank_cohere_foundry_infinity() {
     // the selector reads the call's api_base, not the resolved one
     assert_eq!(send.config, SelectedConfig::CohereV2);
 
-    let identity = FakeIdentity::new(None, None);
+    let identity = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Known(ProviderId::Cohere),
+        None,
+        None,
+    );
     let mut settings = defaults();
     settings.api_base = Some(String::from("https://global.test/v1"));
     let mut call = call("cohere");
@@ -103,7 +113,12 @@ fn rerank_cohere_foundry_infinity() {
         Some("https://api.cohere.com")
     );
 
-    let proxy = FakeIdentity::provider(None, None, "litellm_proxy");
+    let proxy = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Custom("litellm_proxy".to_owned()),
+        None,
+        None,
+    );
     run_one(&proxy, &ops, &defaults(), &[], call("litellm_proxy")).expect("the proxy dispatches");
     assert_eq!(last(&ops).provider, "litellm_proxy");
     assert_eq!(
@@ -111,7 +126,12 @@ fn rerank_cohere_foundry_infinity() {
         Some("https://api.cohere.com")
     );
 
-    let azure = FakeIdentity::provider(Some("dyn"), Some("https://dynamic.test"), "azure_ai");
+    let azure = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Custom("azure_ai".to_owned()),
+        Some("dyn"),
+        Some("https://dynamic.test"),
+    );
     let mut settings = defaults();
     settings.api_base = Some(String::from("https://global.test"));
     let mut call = call("azure_ai");
@@ -125,7 +145,12 @@ fn rerank_cohere_foundry_infinity() {
     assert_eq!(send.api_key.as_deref(), Some("dyn"));
     assert_eq!(send.api_base.as_deref(), Some("https://dynamic.test"));
 
-    let azure = FakeIdentity::provider(None, None, "azure_ai");
+    let azure = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Custom("azure_ai".to_owned()),
+        None,
+        None,
+    );
     let mut call = call("azure_ai");
     call.kwargs = with(&[
         ("api_key", text("call-key")),
@@ -152,7 +177,12 @@ fn rerank_cohere_foundry_infinity() {
         .expect("azure without any base still dispatches");
     assert_eq!(last(&ops).api_base, None);
 
-    let infinity = FakeIdentity::provider(None, Some("https://dynamic.test"), "infinity");
+    let infinity = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Custom("infinity".to_owned()),
+        None,
+        Some("https://dynamic.test"),
+    );
     let mut settings = defaults();
     settings.api_base = Some(String::from("https://global.test"));
     settings.api_key = Some(SecretString::from("global-key"));
@@ -165,7 +195,12 @@ fn rerank_cohere_foundry_infinity() {
     // the branch computed a global key and never sent it
     assert_eq!(send.api_key, None);
 
-    let infinity = FakeIdentity::provider(None, None, "infinity");
+    let infinity = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Custom("infinity".to_owned()),
+        None,
+        None,
+    );
     run_one(
         &infinity,
         &ops,
@@ -192,10 +227,11 @@ fn rerank_together_jina_nvidia() {
     let mut settings = defaults();
     settings.api_key = Some(SecretString::from("global-key"));
     settings.togetherai_api_key = Some(SecretString::from("settings-key"));
-    let identity = FakeIdentity::provider(
+    let identity = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Custom("together_ai".to_owned()),
         Some("dynamic-key"),
         Some("https://dynamic.test/v1"),
-        "together_ai",
     );
     run_one(
         &identity,
@@ -209,7 +245,12 @@ fn rerank_together_jina_nvidia() {
     assert_eq!(send.api_key.as_deref(), Some("dynamic-key"));
     assert_eq!(send.api_base.as_deref(), Some("https://dynamic.test/v1"));
 
-    let identity = FakeIdentity::provider(None, None, "together_ai");
+    let identity = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Custom("together_ai".to_owned()),
+        None,
+        None,
+    );
     let mut call = call("together_ai");
     call.kwargs = with(&[("api_key", text("call-key"))]);
     run_one(
@@ -268,10 +309,11 @@ fn rerank_together_jina_nvidia() {
     );
     assert_eq!(ops.sends().len(), sent_before);
 
-    let identity = FakeIdentity::provider(
+    let identity = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Custom("together_ai".to_owned()),
         Some("dynamic-key"),
         Some("https://dynamic.test/v1"),
-        "together_ai",
     );
     let mut call = call("together_ai");
     call.top_n = Some(1_i64);
@@ -290,7 +332,12 @@ fn rerank_together_jina_nvidia() {
     assert_eq!(send.instruction.as_deref(), Some("brief"));
     assert_eq!(send.timeout_seconds, Some(4.0_f64));
 
-    let jina = FakeIdentity::provider(None, None, "jina_ai");
+    let jina = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Custom("jina_ai".to_owned()),
+        None,
+        None,
+    );
     let mut call = call("jina_ai");
     call.kwargs = with(&[("api_key", text("call-key"))]);
     let sent_before = ops.sends().len();
@@ -302,7 +349,12 @@ fn rerank_together_jina_nvidia() {
     );
     assert_eq!(ops.sends().len(), sent_before);
 
-    let jina = FakeIdentity::provider(Some("dynamic-key"), None, "jina_ai");
+    let jina = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Custom("jina_ai".to_owned()),
+        Some("dynamic-key"),
+        None,
+    );
     run_one(
         &jina,
         &ops,
@@ -315,7 +367,12 @@ fn rerank_together_jina_nvidia() {
     assert_eq!(send.config, SelectedConfig::JinaAi);
     assert_eq!(send.api_base.as_deref(), Some("https://bedrock-env.test"));
 
-    let nvidia = FakeIdentity::provider(None, Some("https://dynamic.test"), "nvidia_nim");
+    let nvidia = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Custom("nvidia_nim".to_owned()),
+        None,
+        Some("https://dynamic.test"),
+    );
     let sent_before = ops.sends().len();
     let error = run_one(&nvidia, &ops, &defaults(), &[], call("nvidia_nim"))
         .expect_err("a missing nvidia key raises");
@@ -325,10 +382,11 @@ fn rerank_together_jina_nvidia() {
     );
     assert_eq!(ops.sends().len(), sent_before);
 
-    let nvidia = FakeIdentity::provider(
+    let nvidia = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Custom("nvidia_nim".to_owned()),
         Some("dynamic-key"),
         Some("https://dynamic.test"),
-        "nvidia_nim",
     );
     let mut settings = defaults();
     settings.api_base = Some(String::from("https://global.test"));
@@ -357,9 +415,9 @@ fn rerank_together_jina_nvidia() {
         Some("https://ai.api.nvidia.com")
     );
 
-    let ranking = FakeIdentity::model(
+    let ranking = FakeIdentity::new(
         "ranking/nvidia/rerank-qa",
-        "nvidia_nim",
+        ProviderIdentity::Custom("nvidia_nim".to_owned()),
         Some("dynamic-key"),
         None,
     );
@@ -375,7 +433,12 @@ fn rerank_local_and_hosted_credentials() {
     settings.api_key = Some(SecretString::from("global-key"));
     settings.api_base = Some(String::from("https://global.test/v1"));
 
-    let hosted = FakeIdentity::provider(None, None, "hosted_vllm");
+    let hosted = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Custom("hosted_vllm".to_owned()),
+        None,
+        None,
+    );
     let mut call = call("hosted_vllm");
     call.kwargs = with(&[
         ("api_key", text("call-key")),
@@ -418,7 +481,12 @@ fn rerank_local_and_hosted_credentials() {
     );
     assert_eq!(ops.sends().len(), sent_before);
 
-    let deepinfra = FakeIdentity::provider(None, None, "deepinfra");
+    let deepinfra = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Custom("deepinfra".to_owned()),
+        None,
+        None,
+    );
     let mut call = call("deepinfra");
     call.kwargs = with(&[("api_key", text("call-key"))]);
     run_one(
@@ -446,10 +514,11 @@ fn rerank_local_and_hosted_credentials() {
     );
     assert_eq!(ops.sends().len(), sent_before);
 
-    let fireworks = FakeIdentity::provider(
+    let fireworks = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Custom("fireworks_ai".to_owned()),
         Some("dynamic-key"),
         Some("https://dynamic.test"),
-        "fireworks_ai",
     );
     run_one(&fireworks, &ops, &settings, &[], call("fireworks_ai"))
         .expect("fireworks takes the dynamic values");
@@ -479,7 +548,12 @@ fn rerank_local_and_hosted_credentials() {
         "fireworks without a base sends none"
     );
 
-    let voyage = FakeIdentity::provider(None, None, "voyage");
+    let voyage = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Custom("voyage".to_owned()),
+        None,
+        None,
+    );
     let mut voyage_settings = defaults();
     voyage_settings.environment.voyage_ai_api_key = Some(SecretString::from("second-key"));
     run_one(&voyage, &ops, &voyage_settings, &[], call("voyage"))
@@ -506,8 +580,12 @@ fn rerank_local_and_hosted_credentials() {
 #[test]
 fn rerank_bedrock_watsonx_and_generic() {
     let ops = FakeOps::default();
-    let identity =
-        FakeIdentity::provider(Some("dynamic-key"), Some("https://dynamic.test"), "bedrock");
+    let identity = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Custom("bedrock".to_owned()),
+        Some("dynamic-key"),
+        Some("https://dynamic.test"),
+    );
     let mut call = call("bedrock");
     call.kwargs = with(&[
         ("headers", head(&[("x", "a")])),
@@ -526,7 +604,12 @@ fn rerank_bedrock_watsonx_and_generic() {
         Some(&head(&[("x", "b"), ("y", "c")]))
     );
 
-    let bedrock = FakeIdentity::provider(None, None, "bedrock");
+    let bedrock = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Custom("bedrock".to_owned()),
+        None,
+        None,
+    );
     let mut settings = defaults();
     settings.api_base = Some(String::from("https://global.test"));
     run_one(&bedrock, &ops, &settings, &[], call("bedrock"))
@@ -545,7 +628,12 @@ fn rerank_bedrock_watsonx_and_generic() {
         Some("https://bedrock-env.test")
     );
 
-    let watsonx = FakeIdentity::provider(None, None, "watsonx");
+    let watsonx = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Custom("watsonx".to_owned()),
+        None,
+        None,
+    );
     let credentials = Json::Object(IndexMap::from([
         (String::from("apikey"), text("wx-key")),
         (String::from("url"), text("https://watsonx.test")),
@@ -569,20 +657,35 @@ fn rerank_bedrock_watsonx_and_generic() {
     run_one(&watsonx, &ops, &defaults(), &[], call).expect("watsonx without a token dispatches");
     assert_eq!(last(&ops).optional_params.get("token"), None);
 
-    let generic = FakeIdentity::provider(None, None, "openai");
+    let generic = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Custom("openai".to_owned()),
+        None,
+        None,
+    );
     let sent_before = ops.sends().len();
     let error = run_one(&generic, &ops, &defaults(), &[], call("openai"))
         .expect_err("an unknown provider with a cohere config raises");
     assert_eq!(error.message, "Unsupported provider: openai");
     assert_eq!(ops.sends().len(), sent_before);
 
-    let chat = FakeIdentity::model("rerank-v1", "cohere_chat", None, None);
+    let chat = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Custom("cohere_chat".to_owned()),
+        None,
+        None,
+    );
     let error = run_one(&chat, &ops, &defaults(), &[], call("cohere_chat"))
         .expect_err("the cohere chat provider keeps the cohere config");
     assert_eq!(error.message, "Unsupported provider: cohere_chat");
 
     let failing = FakeOps::failing_send(429, "slow down");
-    let identity = FakeIdentity::new(Some("k"), Some("https://dynamic.test"));
+    let identity = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Known(ProviderId::Cohere),
+        Some("k"),
+        Some("https://dynamic.test"),
+    );
     let error = run_one(&identity, &failing, &defaults(), &[], call("cohere"))
         .expect_err("the provider failure raises");
     assert_eq!(error.message, "slow down");
