@@ -5,12 +5,13 @@ use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::file_http_upload::config::{
     FileParams, FileResponse, FileUploadConfig, Headers, UploadParams,
 };
-use betterlite_core::api::file_http_upload::error::{TransformFailure, UrlFailure};
+use betterlite_core::api::file_http_upload::error::{TransformFailure, UploadError, UrlFailure};
 use betterlite_core::api::file_http_upload::plan::UploadPlan;
 use betterlite_core::api::file_http_upload::service::{
     LogContext, Mode, UploadCall, UploadDeps, prepare, send,
 };
 use betterlite_core::api::vector_store_http_write::error::BaseLlmException;
+use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_openai::files::records::{CreatePurpose, FileCreate, FileUpload};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
@@ -20,7 +21,7 @@ use tokio_util::task::TaskTracker;
 
 use super::super::error::SdkHttpError;
 use super::super::result::kinds::SdkResult;
-use super::{Call, RunMode, UploadMethod};
+use super::{Call, Outcome, RunMode, UploadMethod};
 
 mod fixture;
 mod observe;
@@ -76,14 +77,24 @@ pub(super) async fn execute(
     let prepared = prepare(&deps, mode(call.mode), &upload_call, &mut log)
         .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
     let result = send(prepared).await;
-    let diagnostics = match call.mode {
-        RunMode::Sync => None,
-        RunMode::Asynchronous => Some(diagnostics(&state, &origin)),
-    };
-    let answer = outcome(result, diagnostics, &origin)?;
+    let answer = finish(call, &state, result, &origin)?;
     Ok(SdkResult::FileHttpUpload {
         value: Box::new(answer),
     })
+}
+
+// Only the async handler logs, so only it reports diagnostics; a provider error becomes the case's outcome
+fn finish(
+    call: &Call,
+    state: &LoggingState,
+    result: Result<Json, UploadError>,
+    origin: &str,
+) -> Result<Outcome, SdkHttpError> {
+    let reported = match call.mode {
+        RunMode::Sync => None,
+        RunMode::Asynchronous => Some(diagnostics(state, origin)),
+    };
+    outcome(result, reported, origin)
 }
 
 struct FixtureConfig<'call> {

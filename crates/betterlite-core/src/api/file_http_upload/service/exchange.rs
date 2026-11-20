@@ -79,21 +79,7 @@ where
                 UploadBody::Bytes(body),
             )
             .await?;
-        let (url, data) = match plan.url_location {
-            Some(UploadUrlLocation::Body) => {
-                let located = decode_file_upload_location(
-                    &initial.response.body,
-                    UploadUrlLocation::Body,
-                    plan.url_key.as_deref().unwrap_or("upload_url"),
-                    self.limits,
-                )?;
-                (located.url, located.data)
-            }
-            // the location defaults to headers, and no key is read there
-            Some(UploadUrlLocation::Headers) | None => {
-                (upload_url_from_headers(&initial.response.headers), None)
-            }
-        };
+        let (url, data) = located_upload(&initial.response, plan, self.limits)?;
         let Some(url) = url else {
             return Err(UploadError::provider(&failure_facts(
                 Some(String::from(
@@ -263,6 +249,28 @@ where
         Box::pin(stream::unfold(receiver, |mut receiver| async move {
             receiver.recv().await.map(|block| (block, receiver))
         }))
+    }
+}
+
+// the headers location is the default and reads no key; only a body location parses the answer
+fn located_upload(
+    response: &UpstreamResponse,
+    plan: &TwoStepPlan,
+    limits: ApiLimits,
+) -> Result<(Option<String>, Option<IndexMap<String, Json>>), UploadError> {
+    match plan.url_location {
+        Some(UploadUrlLocation::Body) => {
+            let located = decode_file_upload_location(
+                &response.body,
+                UploadUrlLocation::Body,
+                plan.url_key.as_deref().unwrap_or("upload_url"),
+                limits,
+            )?;
+            Ok((located.url, located.data))
+        }
+        Some(UploadUrlLocation::Headers) | None => {
+            Ok((upload_url_from_headers(&response.headers), None))
+        }
     }
 }
 

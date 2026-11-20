@@ -26,7 +26,7 @@ mod pre_call;
 mod proxied;
 mod wire;
 
-use exchange::{Exchange, traditional_body};
+use exchange::{Exchange, Reply, traditional_body};
 use pre_call::{caller_headers, log_pre_call};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -200,20 +200,39 @@ where
         timeout,
         limits,
     };
-    let reply = match plan {
-        UploadPlan::TwoStep(plan) => exchange.two_step(&plan).await?,
-        UploadPlan::Presigned(plan) => exchange.presigned(&plan).await?,
-        UploadPlan::Media(plan) => exchange.media(*plan).await?,
-        UploadPlan::Text(text) => exchange.traditional(text.into_bytes()).await?,
+    let reply = run_plan(&mut exchange, plan).await?;
+    let response = upload_response(reply);
+    let transformed_params = result_params(mode, &params, &api_base);
+    config
+        .transform_create_file_response(&response, &transformed_params)
+        .map_err(UploadError::Provider)
+}
+
+// The plan's shape picks the branch; only a sync byte body is decoded before the traditional send
+async fn run_plan<C, S>(
+    exchange: &mut Exchange<'_, '_, C, S>,
+    plan: UploadPlan,
+) -> Result<Reply, UploadError>
+where
+    C: FileUploadConfig,
+    S: ClientSource,
+{
+    match plan {
+        UploadPlan::TwoStep(plan) => exchange.two_step(&plan).await,
+        UploadPlan::Presigned(plan) => exchange.presigned(&plan).await,
+        UploadPlan::Media(plan) => exchange.media(*plan).await,
+        UploadPlan::Text(text) => exchange.traditional(text.into_bytes()).await,
         UploadPlan::Bytes(bytes) => {
-            exchange
-                .traditional(traditional_body(mode, &bytes)?)
-                .await?
+            let body = traditional_body(exchange.mode, &bytes)?;
+            exchange.traditional(body).await
         }
-        UploadPlan::Multipart(plan) => exchange.multipart(plan.parts).await?,
-        UploadPlan::Unsupported(_) => return Err(UploadError::UnsupportedPlan),
-    };
-    let response = FileResponse {
+        UploadPlan::Multipart(plan) => exchange.multipart(plan.parts).await,
+        UploadPlan::Unsupported(_) => Err(UploadError::UnsupportedPlan),
+    }
+}
+
+fn upload_response(reply: Reply) -> FileResponse {
+    FileResponse {
         status_code: reply.response.status,
         headers: reply
             .response
@@ -223,15 +242,16 @@ where
             .collect(),
         body: reply.response.body,
         url: Some(reply.url),
-    };
-    // the sync handler hands the transform a copy with api_base as upload_url when it set none
-    let mut transformed_params = params.clone();
-    if mode == Mode::Sync && !transformed_params.contains_key("upload_url") {
-        transformed_params.insert("upload_url".to_owned(), Json::Text(api_base.to_owned()));
     }
-    config
-        .transform_create_file_response(&response, &transformed_params)
-        .map_err(UploadError::Provider)
+}
+
+// the sync handler hands the transform a copy with api_base as upload_url when it set none
+fn result_params(mode: Mode, params: &FileParams, api_base: &str) -> FileParams {
+    let mut transformed = params.clone();
+    if mode == Mode::Sync && !transformed.contains_key("upload_url") {
+        transformed.insert("upload_url".to_owned(), Json::Text(api_base.to_owned()));
+    }
+    transformed
 }
 
 fn select_client<'borrow, 'deps, C, S>(
