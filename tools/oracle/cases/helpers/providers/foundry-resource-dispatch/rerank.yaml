@@ -1,0 +1,14 @@
+kind: helper
+name: foundry-resource-dispatch-rerank
+call:
+  foundry_resource_dispatch:
+    case: rerank
+    status: 200
+    body: '{"id":"r1","results":[{"index":1,"relevance_score":0.5,"document":{"text":"first"}},{"index":0,"relevance_score":0.25,"document":{"text":"second"}}],"meta":{"tokens":{"input_tokens":3}}}'
+    model_group: offer-cohere-rerank-mul-paygo
+calls:
+  - foundry_resource_dispatch:
+      case: rerank
+      body: '{"id":"r2","results":[]}'
+env: {}
+compare: {ignore: []}

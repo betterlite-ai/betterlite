@@ -1,0 +1,17 @@
+kind: helper
+name: foundry-resource-dispatch-passthrough
+call:
+  foundry_resource_dispatch:
+    case: passthrough
+    model: azure/azureml_model
+    endpoint: /providers/custom/route
+    status: 200
+    body: '{"result":"ok"}'
+calls:
+  - foundry_resource_dispatch:
+      case: passthrough
+      model: azure/azureml_model
+      endpoint: /providers/custom/route
+      body: not json
+env: {}
+compare: {ignore: []}

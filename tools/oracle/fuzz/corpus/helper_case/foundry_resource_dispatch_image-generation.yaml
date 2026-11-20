@@ -1,0 +1,8 @@
+kind: helper
+name: foundry-resource-dispatch-image-generation-seed
+call:
+  foundry_resource_dispatch:
+    case: image_generation
+    model: flux-pro-1.1
+env: {}
+compare: {ignore: []}
