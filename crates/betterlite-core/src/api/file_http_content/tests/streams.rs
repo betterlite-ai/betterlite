@@ -202,18 +202,17 @@ async fn streaming_answer_within_the_client_timeout_is_read() {
     serving.finish().expect("the fixture answers");
 }
 
-#[tokio::test]
-async fn streaming_error_body_is_lossy_and_closed_once() {
-    let drops = Arc::new(AtomicUsize::new(0));
-    let (sender, body) = gated(&drops, 4);
-    sender
-        .send(Ok(b"bad".to_vec()))
-        .await
-        .expect("the chunk is queued");
-    sender
-        .send(Ok(vec![0xFF]))
-        .await
-        .expect("the chunk is queued");
+async fn gated_error_body(
+    drops: &Arc<AtomicUsize>,
+    chunks: Vec<Result<Vec<u8>, HttpError>>,
+) -> (
+    MockScenario,
+    Result<FileContentStreamingResult, ContentError>,
+) {
+    let (sender, body) = gated(drops, chunks.len());
+    for chunk in chunks {
+        sender.send(chunk).await.expect("the chunk is queued");
+    }
     drop(sender);
     let scenario = MockScenario::new(
         streaming(400, &ERROR_PAIRS, body),
@@ -222,6 +221,14 @@ async fn streaming_error_body_is_lossy_and_closed_once() {
     );
     let chunk = NonZeroUsize::new(3).expect("3 is not zero");
     let (_, result) = scenario.streaming(chunk).await;
+    (scenario, result)
+}
+
+#[tokio::test]
+async fn streaming_error_body_is_lossy_and_closed_once() {
+    let drops = Arc::new(AtomicUsize::new(0));
+    let chunks = vec![Ok(b"bad".to_vec()), Ok(vec![0xFF])];
+    let (scenario, result) = gated_error_body(&drops, chunks).await;
     let failure = provider_failure(result.err().expect("a 400 is a provider error"));
     assert_eq!(failure.status_code, 400);
     assert!(!failure.status_code_is_synthesized);
@@ -238,6 +245,18 @@ async fn streaming_error_body_is_lossy_and_closed_once() {
             caller_headers(&ERROR_PAIRS)
         )]
     );
+}
+
+#[tokio::test]
+async fn streaming_error_body_keeps_the_text_read_before_a_failure() {
+    let drops = Arc::new(AtomicUsize::new(0));
+    let chunks = vec![Ok(b"part".to_vec()), Err(HttpError::Timeout)];
+    let (_, result) = gated_error_body(&drops, chunks).await;
+    let failure = provider_failure(result.err().expect("a 400 is a provider error"));
+    assert_eq!(failure.status_code, 400);
+    assert!(!failure.status_code_is_synthesized);
+    assert_eq!(failure.message, "part");
+    assert_eq!(drops.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]
