@@ -7,8 +7,8 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use betterlite_core::api::container_collection_http::{
-    ContainerCollectionError, ContainerCreateCall, ContainerListCall, container_create_handler,
-    container_list_handler,
+    CollectionBase, ContainerCollectionError, ContainerCreateCall, ContainerListCall,
+    container_create_handler, container_list_handler,
 };
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_openai::api::container_contracts::config::{
@@ -48,11 +48,7 @@ impl Helper for Op {
             logging: &logging,
             hook: &hook,
         };
-        let outcome = match input.operation {
-            Operation::Create => create(input, &harness),
-            Operation::List => list(input, &harness),
-        };
-        answer(outcome, &source, &hook)
+        answer(execute(input, &harness), &source, &hook)
     }
 }
 
@@ -87,6 +83,27 @@ struct Harness<'run> {
     hook: &'run RecordingHook,
 }
 
+impl<'run> Harness<'run> {
+    // The client is never supplied here, so each handler builds one from the fake source, as a caller without a pool would
+    fn base<'call>(
+        &'call self,
+        params: &'call Map<String, Value>,
+        timeout: Option<Duration>,
+    ) -> CollectionBase<'call, Fake> {
+        CollectionBase {
+            config: self.provider,
+            litellm_params: params,
+            logging: self.logging,
+            extra_headers: None,
+            timeout,
+            source: self.source,
+            blocking: None,
+            asynchronous: None,
+            hook: self.hook,
+        }
+    }
+}
+
 // The two litellm_params a case sets; every transform reads only these two, as LiteLLM's do
 fn litellm_params(input: &Input) -> Map<String, Value> {
     let mut params = Map::new();
@@ -99,36 +116,31 @@ fn litellm_params(input: &Input) -> Map<String, Value> {
     params
 }
 
-fn create(input: &Input, harness: &Harness<'_>) -> Result<Value, ContainerCollectionError> {
+// The one operation the case asks for: a create call with its name and params, or a list query and its page
+fn execute(input: &Input, harness: &Harness<'_>) -> Result<Value, ContainerCollectionError> {
     let params = litellm_params(input);
-    let call = ContainerCreateCall {
-        name: &input.name,
-        params: &input.create_params,
-        config: harness.provider,
-        litellm_params: &params,
-        logging: harness.logging,
-        extra_headers: None,
-        timeout: input.timeout.map(Duration::from_secs),
-    };
-    let record = container_create_handler(&call, harness.source, None, harness.hook)?;
-    Ok(projection::container(&record))
-}
-
-fn list(input: &Input, harness: &Harness<'_>) -> Result<Value, ContainerCollectionError> {
-    let params = litellm_params(input);
-    let call = ContainerListCall {
-        config: harness.provider,
-        litellm_params: &params,
-        logging: harness.logging,
-        extra_headers: None,
-        query: ContainerListQuery {
-            after: input.after.as_deref(),
-            limit: input.limit,
-            order: input.order.as_deref(),
-            extra_query: None,
-        },
-        timeout: None,
-    };
-    let page = container_list_handler(&call, harness.source, None, harness.hook)?;
-    Ok(projection::page(&page))
+    match input.operation {
+        Operation::Create => {
+            let call = ContainerCreateCall {
+                base: harness.base(&params, input.timeout.map(Duration::from_secs)),
+                name: &input.name,
+                params: &input.create_params,
+            };
+            let record = container_create_handler(&call)?;
+            Ok(projection::container(&record))
+        }
+        Operation::List => {
+            let call = ContainerListCall {
+                base: harness.base(&params, None),
+                query: ContainerListQuery {
+                    after: input.after.as_deref(),
+                    limit: input.limit,
+                    order: input.order.as_deref(),
+                    extra_query: None,
+                },
+            };
+            let page = container_list_handler(&call)?;
+            Ok(projection::page(&page))
+        }
+    }
 }

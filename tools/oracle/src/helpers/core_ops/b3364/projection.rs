@@ -132,13 +132,13 @@ pub(super) fn container(record: &ContainerObject) -> Value {
 
 pub(super) fn page(record: &ContainerListResponse) -> Value {
     let data: Vec<Value> = record.data.iter().map(container).collect();
-    json!({
-        "object": "list",
-        "data": data,
-        "first_id": &record.first_id,
-        "last_id": &record.last_id,
-        "has_more": record.has_more,
-    })
+    let mut fields = Map::new();
+    fields.insert(String::from("object"), Value::String(String::from("list")));
+    fields.insert(String::from("data"), Value::Array(data));
+    fields.insert(String::from("first_id"), json!(&record.first_id));
+    fields.insert(String::from("last_id"), json!(&record.last_id));
+    fields.insert(String::from("has_more"), Value::Bool(record.has_more));
+    Value::Object(fields)
 }
 
 pub(super) fn provider(exception: &BaseLlmException) -> Value {
