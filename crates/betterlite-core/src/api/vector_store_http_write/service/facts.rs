@@ -3,7 +3,7 @@ use std::time::Duration;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::transport_error::TransportError;
 
-use super::super::error::{FailureFacts, HeaderMap, display_facts, timeout_facts};
+use super::super::error::{FailureFacts, display_facts, timeout_facts};
 use super::{ClientKind, Operation};
 
 // What the timeout message needs from the send that just failed
