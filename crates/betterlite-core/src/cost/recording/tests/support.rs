@@ -266,10 +266,9 @@ pub(super) struct FakeConversion {
 
 impl GenerateContentConversion for FakeConversion {
     fn convert(&self, _body: &Json, _model: &str) -> Result<Json, PortFailure> {
-        self.converted.clone().map_or_else(
-            || Err(PortFailure::from(TestFailure)),
-            |converted| Ok(converted),
-        )
+        self.converted
+            .clone()
+            .map_or_else(|| Err(PortFailure::from(TestFailure)), Ok)
     }
 }
 
