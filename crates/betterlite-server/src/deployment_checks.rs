@@ -42,10 +42,7 @@ pub enum DeploymentCheckError {
     #[error("{message}")]
     CapabilityLimits { message: String },
     #[error("the rejected value could not be rendered as Python text")]
-    Render {
-        #[from]
-        source: python::FormatError,
-    },
+    Render(#[from] python::FormatError),
 }
 
 // A per-deployment ceiling the agentic loop cannot honor would otherwise be dropped or fail every request.
