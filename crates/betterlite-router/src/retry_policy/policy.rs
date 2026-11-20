@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::retry_policy::RetryPolicySettings;
+use betterlite_error::error::retry_policy::{RetryFamily, RetryPolicy as SharedRetryPolicy};
 use serde::{Deserialize, Serialize};
 
 use crate::cooldown_decisions::failure::FailureClass;
@@ -45,34 +46,21 @@ impl From<&RetryPolicySettings> for RetryPolicy {
     }
 }
 
-impl RetryPolicy {
-    // LiteLLM checks a 404 answer before the exception's class, then walks its MRO most specific first
-    #[must_use]
-    pub fn retries_for(&self, class: FailureClass, status: Option<u16>) -> Option<i64> {
-        if status == Some(404)
-            && let Some(retries) = self.not_found
-        {
-            return Some(retries);
-        }
-        if let Some(retries) = self.by_class(class).into_iter().flatten().next() {
-            return Some(retries);
-        }
-        self.fallback
-    }
-
-    const fn by_class(&self, class: FailureClass) -> [Option<i64>; 2] {
+// a failure class names the retry slot the shared policy is keyed on
+impl From<FailureClass> for RetryFamily {
+    fn from(class: FailureClass) -> Self {
         match class {
-            FailureClass::Authentication => [self.authentication, None],
-            FailureClass::Timeout => [self.timeout, None],
-            FailureClass::RateLimit => [self.rate_limit, None],
-            FailureClass::ContentPolicyViolation => [self.content_policy, self.bad_request],
+            FailureClass::Authentication => Self::Authentication,
+            FailureClass::Timeout => Self::Timeout,
+            FailureClass::RateLimit => Self::RateLimit,
+            FailureClass::ContentPolicyViolation => Self::ContentPolicyViolation,
             FailureClass::BadRequest
             | FailureClass::ContextWindowExceeded
-            | FailureClass::UnsupportedParams => [self.bad_request, None],
+            | FailureClass::UnsupportedParams => Self::BadRequest,
             FailureClass::ServiceUnavailable | FailureClass::MidStreamFallback => {
-                [self.service_unavailable, None]
+                Self::ServiceUnavailable
             }
-            FailureClass::InternalServer => [self.internal_server, None],
+            FailureClass::InternalServer => Self::InternalServer,
             FailureClass::NotFound
             | FailureClass::PermissionDenied
             | FailureClass::UnprocessableEntity
@@ -83,8 +71,27 @@ impl RetryPolicy {
             | FailureClass::ApiResponseValidation
             | FailureClass::JsonSchemaValidation
             | FailureClass::GuardrailRaised
-            | FailureClass::Unclassified => [None, None],
+            | FailureClass::Unclassified => Self::None,
         }
+    }
+}
+
+impl RetryPolicy {
+    // the config wire names the counts; LiteLLM checks a 404 answer before the exception's class, and the shared policy owns that order
+    #[must_use]
+    pub fn retries_for(&self, class: FailureClass, status: Option<u16>) -> Option<i64> {
+        let counts = SharedRetryPolicy {
+            bad_request: self.bad_request,
+            authentication: self.authentication,
+            timeout: self.timeout,
+            rate_limit: self.rate_limit,
+            content_policy: self.content_policy,
+            internal_server: self.internal_server,
+            service_unavailable: self.service_unavailable,
+            not_found: self.not_found,
+            fallback: self.fallback,
+        };
+        counts.retries_for(RetryFamily::from(class), status)
     }
 }
 
