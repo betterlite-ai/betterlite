@@ -53,7 +53,7 @@ fn handler_args_a_zero_timeout_is_the_configured_request_timeout() {
 
     assert_eq!(
         fixture.calls().first().expect("one call").timeout,
-        Some(Duration::from_secs(6000))
+        Some(Duration::from_mins(100))
     );
 }
 
@@ -98,16 +98,8 @@ fn handler_args_the_callers_kwargs_travel_in_the_params() {
             .and_then(|value| value.as_str()),
         Some("call-1")
     );
-    assert!(
-        params
-            .get("litellm_metadata")
-            .is_some_and(|value| value.is_object())
-    );
-    assert!(
-        params
-            .get("mock_response")
-            .is_some_and(|value| value.is_null())
-    );
+    assert!(params["litellm_metadata"].is_object());
+    assert!(params["mock_response"].is_null());
     assert!(params.get("extra_body").is_none());
 }
 

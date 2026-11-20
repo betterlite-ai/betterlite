@@ -180,12 +180,12 @@ impl StubHandler {
         slot: &Mutex<Option<T>>,
         missing: &str,
     ) -> Result<T, ContainerResourceHttpError> {
-        if let Some(error) = self
+        let failure = self
             .failure
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .take()
-        {
+            .take();
+        if let Some(error) = failure {
             return Err(error);
         }
         let reply = slot
@@ -278,16 +278,16 @@ impl BaseContainerConfig for StubConfig {
         Ok((format!("{api_base}/containers/{container_id}"), Object::new()))
     }
 
-    fn transform_container_retrieve_response(&self, raw: &[u8]) -> Result<ContainerObject, ContainerError> {
-        serde_json::from_slice(raw).map_err(|error| ContainerError::Decode(error.to_string()))
+    fn transform_container_retrieve_response(&self, raw_response: &[u8]) -> Result<ContainerObject, ContainerError> {
+        serde_json::from_slice(raw_response).map_err(|error| ContainerError::Decode(error.to_string()))
     }
 
     fn transform_container_delete_request(&self, container_id: &str, api_base: &str, _context: ContainerRequestContext<'_>) -> Result<(String, Object), ContainerError> {
         Ok((format!("{api_base}/containers/{container_id}"), Object::new()))
     }
 
-    fn transform_container_delete_response(&self, raw: &[u8]) -> Result<DeleteContainerResult, ContainerError> {
-        serde_json::from_slice(raw).map_err(|error| ContainerError::Decode(error.to_string()))
+    fn transform_container_delete_response(&self, raw_response: &[u8]) -> Result<DeleteContainerResult, ContainerError> {
+        serde_json::from_slice(raw_response).map_err(|error| ContainerError::Decode(error.to_string()))
     }
 
     fn transform_container_file_list_request(&self, _id: &str, _api_base: &str, _context: ContainerRequestContext<'_>, _query: &ContainerListQuery<'_>) -> Result<(String, Object), ContainerError> { Ok((String::new(), Object::new())) }

@@ -106,8 +106,7 @@ fn logging_the_callers_litellm_metadata_reaches_the_state() {
     fixture.retrieve().expect("the call runs");
 
     let state = fixture.logging.lock().unwrap();
-    assert!(matches!(
-        state.litellm_params.get("litellm_metadata"),
-        Some(Json::Object(_))
-    ));
+    let metadata = state.litellm_params.get("litellm_metadata").cloned();
+    drop(state);
+    assert!(matches!(metadata, Some(Json::Object(_))));
 }

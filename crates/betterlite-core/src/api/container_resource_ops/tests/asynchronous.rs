@@ -3,7 +3,7 @@
 use betterlite_error::error::ErrorClass;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use serde_json::json;
+use serde_json::Number;
 
 use super::test_support::{
     CONTAINER_ID, Fixture, Form, StubDecoder, StubHandler, StubLookup, decoding_to, deleted_result,
@@ -11,14 +11,14 @@ use super::test_support::{
 };
 use crate::api::response_id_codecs::container::build_container_id;
 
-fn metadata_with_id(model: &str) -> Option<IndexMap<String, Json>> {
-    Some(IndexMap::from([(
+fn metadata_with_id(model: &str) -> IndexMap<String, Json> {
+    IndexMap::from([(
         "model_info".to_owned(),
         Json::Object(IndexMap::from([(
             "id".to_owned(),
             Json::Text(model.to_owned()),
         )])),
-    )]))
+    )])
 }
 
 #[tokio::test]
@@ -26,7 +26,7 @@ async fn async_retrieve_returns_the_raw_provider_id_without_re_encoding() {
     let mut fixture = Fixture::new();
     fixture.container_id = build_container_id(Some("openai"), Some("old-model"), CONTAINER_ID);
     fixture.decoder = StubDecoder::answering(decoding_to(CONTAINER_ID, "openai", Some("decoded")));
-    fixture.litellm_metadata = metadata_with_id("caller-model");
+    fixture.litellm_metadata = Some(metadata_with_id("caller-model"));
 
     let object = fixture.aretrieve().await.expect("the call runs");
 
@@ -57,15 +57,12 @@ async fn async_delete_returns_the_raw_provider_id_without_re_encoding() {
 #[tokio::test]
 async fn async_mock_returns_the_record_without_the_handler() {
     let mut fixture = Fixture::new();
-    fixture.mock_response = Some(
-        serde_json::from_value(json!({
-            "id": "cntr_mock",
-            "object": "container",
-            "created_at": 1_i64,
-            "status": "running"
-        }))
-        .expect("the mock body is JSON"),
-    );
+    fixture.mock_response = Some(Json::Object(IndexMap::from([
+        ("id".to_owned(), Json::Text("cntr_mock".to_owned())),
+        ("object".to_owned(), Json::Text("container".to_owned())),
+        ("created_at".to_owned(), Json::Number(Number::from(1_i64))),
+        ("status".to_owned(), Json::Text("running".to_owned())),
+    ])));
 
     let object = fixture.aretrieve().await.expect("the mock answers");
 

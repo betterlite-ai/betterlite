@@ -11,14 +11,14 @@ use super::test_support::{
 };
 use crate::api::response_id_codecs::container::build_container_id;
 
-fn metadata_with_id(model: &str) -> Option<IndexMap<String, Json>> {
-    Some(IndexMap::from([(
+fn metadata_with_id(model: &str) -> IndexMap<String, Json> {
+    IndexMap::from([(
         "model_info".to_owned(),
         Json::Object(IndexMap::from([(
             "id".to_owned(),
             Json::Text(model.to_owned()),
         )])),
-    )]))
+    )])
 }
 
 #[test]
@@ -49,7 +49,7 @@ fn encode_a_managed_id_is_re_encoded_with_the_decoded_provider_and_model() {
 #[test]
 fn encode_a_metadata_model_info_id_encodes_even_a_plain_id() {
     let mut fixture = Fixture::new();
-    fixture.litellm_metadata = metadata_with_id("router-model");
+    fixture.litellm_metadata = Some(metadata_with_id("router-model"));
 
     let object = fixture.retrieve().expect("the call runs");
 
@@ -64,7 +64,7 @@ fn encode_the_decoded_model_id_replaces_a_metadata_id_for_a_managed_input() {
     let mut fixture = Fixture::new();
     fixture.container_id = build_container_id(Some("openai"), Some("old-model"), CONTAINER_ID);
     fixture.decoder = StubDecoder::answering(decoding_to(CONTAINER_ID, "openai", Some("decoded")));
-    fixture.litellm_metadata = metadata_with_id("caller-model");
+    fixture.litellm_metadata = Some(metadata_with_id("caller-model"));
 
     let object = fixture.retrieve().expect("the call runs");
 
@@ -80,11 +80,14 @@ fn encode_the_callers_metadata_is_left_untouched() {
     let mut fixture = Fixture::new();
     fixture.container_id = build_container_id(Some("openai"), Some("old-model"), CONTAINER_ID);
     fixture.decoder = StubDecoder::answering(decoding_to(CONTAINER_ID, "openai", Some("decoded")));
-    fixture.litellm_metadata = metadata_with_id("caller-model");
+    fixture.litellm_metadata = Some(metadata_with_id("caller-model"));
 
     fixture.retrieve().expect("the call runs");
 
-    assert_eq!(fixture.litellm_metadata, metadata_with_id("caller-model"));
+    assert_eq!(
+        fixture.litellm_metadata,
+        Some(metadata_with_id("caller-model"))
+    );
 }
 
 #[test]
