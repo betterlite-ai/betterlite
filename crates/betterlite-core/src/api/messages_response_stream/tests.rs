@@ -584,6 +584,34 @@ async fn attribute_failed_events_carry_their_error() {
     );
 }
 
+// A completed provider event's output items decide tool_use, so its stop reason reaches the terminal delta.
+#[tokio::test]
+async fn attribute_output_items_decide_the_stop_reason() {
+    let completed = ResponsesEvent {
+        attributes: ProviderEvent {
+            response: Some(ProviderResponse {
+                output: vec![json(
+                    r#"{"type":"function_call","call_id":"call_a","name":"lookup","arguments":"{}"}"#,
+                )],
+                ..ProviderResponse::default()
+            }),
+            ..provider_event("response.completed")
+        },
+        ..ResponsesEvent::default()
+    };
+    let mut stream = stream(scripted_events(vec![completed]));
+    assert_eq!(next(&mut stream).await, message_start());
+    assert_eq!(
+        drain(&mut stream).await,
+        vec![
+            json(
+                r#"{"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"input_tokens":0,"output_tokens":0}}"#
+            ),
+            json(MESSAGE_STOP),
+        ]
+    );
+}
+
 // Text, tool arguments, the block stop and the terminal pair keep their order and block indexes.
 #[tokio::test]
 async fn block_indexes_survive_the_queue() {
