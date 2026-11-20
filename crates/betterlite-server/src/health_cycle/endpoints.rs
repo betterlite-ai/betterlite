@@ -6,7 +6,7 @@ use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use serde_json::Number;
 
 use crate::health::router::deployment_id;
-use crate::health_cycle::ports::ProbeFailure;
+use crate::health_cycle::ports::{ProbeFailure, ProbeResponse};
 use crate::health_cycle::probe::ProbeOutcome;
 use crate::health_probe_settings::display::clean_endpoint_data;
 
@@ -36,6 +36,24 @@ fn endpoint_json(deployment: &DeploymentSpec, result: &JsonObject, details: bool
     clean_endpoint_data(&merged, details)
 }
 
+// _create_health_check_response: the rate-limit headers a healthy provider answered, each kept only when it was sent
+fn response_json(response: &ProbeResponse) -> JsonObject {
+    let mut headers = JsonObject::new();
+    for (key, value) in [
+        (
+            "x-ratelimit-remaining-requests",
+            &response.remaining_requests,
+        ),
+        ("x-ratelimit-remaining-tokens", &response.remaining_tokens),
+        ("x-ms-region", &response.region),
+    ] {
+        if let Some(value) = value {
+            headers.insert(key.to_owned(), Json::Text(value.clone()));
+        }
+    }
+    headers
+}
+
 // The exception object never enters the JSON: its status becomes the integer a shared cache can reconstruct the filter from
 fn separate_one(
     deployment: &DeploymentSpec,
@@ -45,7 +63,7 @@ fn separate_one(
 ) {
     let (mut row, failure) = match outcome {
         ProbeOutcome::Healthy(response) => {
-            let mut healthy = endpoint_json(deployment, &response.to_json(), details);
+            let mut healthy = endpoint_json(deployment, &response_json(response), details);
             if let Some(model_id) = deployment_id(deployment) {
                 healthy.insert("model_id".to_owned(), Json::Text(model_id.to_owned()));
             }

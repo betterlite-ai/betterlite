@@ -11,29 +11,12 @@ pub struct ProbeRequest {
     pub input: Vec<String>,
 }
 
-// _create_health_check_response: the rate-limit headers a healthy provider answered, each kept only when it was sent
+// A healthy provider's answer from ahealth_check: the rate-limit headers it sent, each optional
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ProbeResponse {
     pub remaining_requests: Option<String>,
     pub remaining_tokens: Option<String>,
     pub region: Option<String>,
-}
-
-impl ProbeResponse {
-    #[must_use]
-    pub fn to_json(&self) -> JsonObject {
-        let mut response = JsonObject::new();
-        for (key, value) in [
-            ("x-ratelimit-remaining-requests", &self.remaining_requests),
-            ("x-ratelimit-remaining-tokens", &self.remaining_tokens),
-            ("x-ms-region", &self.region),
-        ] {
-            if let Some(value) = value {
-                response.insert(key.to_owned(), Json::Text(value.clone()));
-            }
-        }
-        response
-    }
 }
 
 // The Python exception ahealth_check hands back beside its error text: the status a cache reader keeps and the raw request it logged.
