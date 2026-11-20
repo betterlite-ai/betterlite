@@ -46,8 +46,8 @@ fn the_event_logger_name_defaults_to_litellm(
     #[case] expected: &str,
 ) {
     let mut environment = BTreeMap::new();
-    if let Some(configured) = configured {
-        environment.insert("LITELLM_LOGGER_NAME".to_owned(), configured.to_owned());
+    if let Some(name) = configured {
+        environment.insert("LITELLM_LOGGER_NAME".to_owned(), name.to_owned());
     }
     assert_eq!(env::logger_name(&environment), expected);
 }
