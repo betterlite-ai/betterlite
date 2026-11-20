@@ -4,7 +4,6 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use betterlite_db::auxiliary_repository::bindings::TeamMembership;
 use betterlite_db::auxiliary_repository::repository::{PrismaClient, PrismaTableRepository};
-use betterlite_db::database_failures::deadline::DbLookupError;
 use betterlite_db::database_failures::gate::{DbLookupStallTracker, LookupClock, SystemClock};
 use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::postgres_store::diagnostics::DriverError;
@@ -157,7 +156,7 @@ pub fn listed<'query>(
     limit: &'query Option<i64>,
     with_budget: bool,
 ) -> Query<'query> {
-    let Some(filter) = filter else {
+    let Some(chosen) = filter else {
         return Query {
             sql: LIST_SQL,
             parameters: vec![limit],
@@ -170,7 +169,7 @@ pub fn listed<'query>(
     };
     Query {
         sql,
-        parameters: vec![&filter.user_id, &filter.team_id, limit],
+        parameters: vec![&chosen.user_id, &chosen.team_id, limit],
     }
 }
 
@@ -265,9 +264,32 @@ impl TeamMembershipRows for DatabaseTeamMembership {
     }
 }
 
-// The store reports DbError<Infallible>, a lookup-level database failure, before any row is decoded.
+// A session or table fault is B700's repository error; the row decoder adds the record failure.
 fn read_fault(source: DbError) -> MembershipReadFailure {
     MembershipReadFailure {
-        source: Box::new(AuthReadError::Lookup(DbLookupError::Database(source))),
+        source: Box::new(AuthReadError::Repository(widen(source))),
+    }
+}
+
+// access and session build DbError<Infallible>, so only the source-free variants pass through
+fn widen(error: DbError) -> DbError<MembershipRowError> {
+    match error {
+        DbError::NoDbConnected => DbError::NoDbConnected,
+        DbError::Pool { source } => DbError::Pool { source },
+        DbError::Backend { source } => DbError::Backend { source },
+        DbError::InvalidRecord { source } => match source {},
+        DbError::CreateNull => DbError::CreateNull,
+        DbError::UniqueViolation { constraint, source } => {
+            DbError::UniqueViolation { constraint, source }
+        }
+        DbError::SqlState {
+            code,
+            constraint,
+            source,
+        } => DbError::SqlState {
+            code,
+            constraint,
+            source,
+        },
     }
 }
