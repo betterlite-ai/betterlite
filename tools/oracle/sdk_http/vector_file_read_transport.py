@@ -1,6 +1,7 @@
 import asyncio
+from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime
-from typing import Final, Literal
+from typing import Final, Literal, Protocol, TypedDict
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -20,7 +21,41 @@ Mode = Literal["sync", "async"]
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
-HANDLER: Final = BaseLLMHTTPHandler()
+# the handlers are keyword-only and their returns carry Any-bearing fields, so the calls go through these shapes
+ReadHandler = Callable[..., object]
+AsyncReadHandler = Callable[..., Coroutine[object, object, object]]
+
+
+class ReadArguments(TypedDict):
+    vector_store_id: str
+    file_id: str
+    vector_store_files_provider_config: BaseVectorStoreFilesConfig
+    custom_llm_provider: str
+    litellm_params: GenericLiteLLMParams
+    logging_obj: Logging
+    extra_headers: dict[str, str]
+    timeout: float | httpx.Timeout | None
+
+
+class ReadHandlers(Protocol):
+    @property
+    def vector_store_file_retrieve_handler(self) -> ReadHandler: ...
+
+    @property
+    def async_vector_store_file_retrieve_handler(  # ast-grep-ignore: no-long-names
+        self,
+    ) -> AsyncReadHandler: ...
+
+    @property
+    def vector_store_file_content_handler(self) -> ReadHandler: ...
+
+    @property
+    def async_vector_store_file_content_handler(  # ast-grep-ignore: no-long-names
+        self,
+    ) -> AsyncReadHandler: ...
+
+
+HANDLER: ReadHandlers = BaseLLMHTTPHandler()
 
 
 class ReadCall(BaseModel):
@@ -80,70 +115,39 @@ def read_timeout(call: ReadCall) -> float | httpx.Timeout | None:
     return float(call.timeout_seconds)
 
 
-def sync_read(call: ReadCall, operation: Operation, api_base: str) -> JsonValue:
-    config: BaseVectorStoreFilesConfig = OpenAIVectorStoreFilesConfig()
-    params = GenericLiteLLMParams(api_base=api_base)
-    headers = caller_headers(call)
-    logging_obj = logging_fixture(operation)
-    timeout = read_timeout(call)
+def read_arguments(call: ReadCall, operation: Operation, api_base: str) -> ReadArguments:
+    return {
+        "vector_store_id": call.vector_store_id,
+        "file_id": call.file_id,
+        "vector_store_files_provider_config": OpenAIVectorStoreFilesConfig(),
+        "custom_llm_provider": "openai",
+        "litellm_params": GenericLiteLLMParams(api_base=api_base),
+        "logging_obj": logging_fixture(operation),
+        "extra_headers": caller_headers(call),
+        "timeout": read_timeout(call),
+    }
+
+
+def sync_handler(operation: Operation) -> ReadHandler:
     if operation == "retrieve":
-        return JSON.validate_python(
-            HANDLER.vector_store_file_retrieve_handler(
-                vector_store_id=call.vector_store_id,
-                file_id=call.file_id,
-                vector_store_files_provider_config=config,
-                custom_llm_provider="openai",
-                litellm_params=params,
-                logging_obj=logging_obj,
-                extra_headers=headers,
-                timeout=timeout,
-            )
-        )
-    return JSON.validate_python(
-        HANDLER.vector_store_file_content_handler(
-            vector_store_id=call.vector_store_id,
-            file_id=call.file_id,
-            vector_store_files_provider_config=config,
-            custom_llm_provider="openai",
-            litellm_params=params,
-            logging_obj=logging_obj,
-            extra_headers=headers,
-            timeout=timeout,
-        )
-    )
+        return HANDLER.vector_store_file_retrieve_handler
+    return HANDLER.vector_store_file_content_handler
+
+
+def async_handler(operation: Operation) -> AsyncReadHandler:
+    if operation == "retrieve":
+        return HANDLER.async_vector_store_file_retrieve_handler
+    return HANDLER.async_vector_store_file_content_handler
+
+
+def sync_read(call: ReadCall, operation: Operation, api_base: str) -> JsonValue:
+    arguments = read_arguments(call, operation, api_base)
+    return JSON.validate_python(sync_handler(operation)(**arguments))
 
 
 async def async_read(call: ReadCall, operation: Operation, api_base: str) -> JsonValue:
-    config: BaseVectorStoreFilesConfig = OpenAIVectorStoreFilesConfig()
-    params = GenericLiteLLMParams(api_base=api_base)
-    headers = caller_headers(call)
-    logging_obj = logging_fixture(operation)
-    timeout = read_timeout(call)
-    if operation == "retrieve":
-        return JSON.validate_python(
-            await HANDLER.async_vector_store_file_retrieve_handler(
-                vector_store_id=call.vector_store_id,
-                file_id=call.file_id,
-                vector_store_files_provider_config=config,
-                custom_llm_provider="openai",
-                litellm_params=params,
-                logging_obj=logging_obj,
-                extra_headers=headers,
-                timeout=timeout,
-            )
-        )
-    return JSON.validate_python(
-        await HANDLER.async_vector_store_file_content_handler(
-            vector_store_id=call.vector_store_id,
-            file_id=call.file_id,
-            vector_store_files_provider_config=config,
-            custom_llm_provider="openai",
-            litellm_params=params,
-            logging_obj=logging_obj,
-            extra_headers=headers,
-            timeout=timeout,
-        )
-    )
+    arguments = read_arguments(call, operation, api_base)
+    return JSON.validate_python(await async_handler(operation)(**arguments))
 
 
 def run_sync_operations(call: ReadCall, api_base: str) -> Outcome:
