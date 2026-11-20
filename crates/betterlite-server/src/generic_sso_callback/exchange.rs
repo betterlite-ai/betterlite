@@ -178,14 +178,14 @@ where
         exchanged.assertion_id_token.as_ref(),
         exchanged.assertion_refresh_token.as_ref(),
     );
-    let (identity, access_token_payload) = process_sso_jwt_access_token(
+    let (processed_identity, access_token_payload) = process_sso_jwt_access_token(
         exchanged.access_token.as_deref(),
         config.sso_jwt_handler,
         Some(converted.identity),
         setup.role_mappings.as_ref(),
         &config.attributes.role,
     )?;
-    let Some(identity) = identity else {
+    let Some(identity) = processed_identity else {
         return Err(GenericSsoError::Response(ResponseError::IdentityMissing));
     };
     // the single-use verifier survives every failure above so the login can be retried

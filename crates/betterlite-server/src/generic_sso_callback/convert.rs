@@ -39,13 +39,14 @@ pub(super) fn convert_response(
 ) -> Result<ConvertedResponse, GenericSsoError> {
     let id_token = text_claim(claims.get("id_token")).or(tokens.id_token.as_deref());
     let access_token = text_claim(claims.get("access_token")).or(tokens.access_token.as_deref());
-    let claims = if include_token_claims {
+    let resolved_claims = if include_token_claims {
         merge_sso_token_claims(claims, id_token, access_token)
     } else {
         claims.clone()
     };
-    let received_response = without_token_fields(&claims);
-    let identity = convert_generic_response(&claims_document(&claims)?, config, attributes)?;
+    let received_response = without_token_fields(&resolved_claims);
+    let identity =
+        convert_generic_response(&claims_document(&resolved_claims)?, config, attributes)?;
     Ok(ConvertedResponse {
         identity,
         received_response,
