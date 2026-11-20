@@ -241,16 +241,20 @@ pub(super) struct Replies {
 
 impl Replies {
     pub(super) fn new() -> Self {
-        Self {
+        let mut replies = Self {
             token_status: 200,
             token: TokenReply::opaque("access-opaque"),
             userinfo_status: 200,
-            userinfo: BTreeMap::from([
-                ("sub".to_owned(), text("subject-1")),
-                ("preferred_username".to_owned(), text("user-1")),
-                ("email".to_owned(), text("User@Example.test")),
-            ]),
-        }
+            userinfo: BTreeMap::new(),
+        };
+        replies.userinfo.insert("sub".to_owned(), text("subject-1"));
+        replies
+            .userinfo
+            .insert("preferred_username".to_owned(), text("user-1"));
+        replies
+            .userinfo
+            .insert("email".to_owned(), text("User@Example.test"));
+        replies
     }
 }
 
@@ -363,13 +367,10 @@ async fn userinfo_answer(
     headers: HeaderMap,
 ) -> Response {
     provider.record("GET", uri.path(), &headers, "");
-    let replies = provider.replies.as_ref();
-    if replies.userinfo_status != 200 {
-        return StatusCode::from_u16(replies.userinfo_status)
-            .unwrap()
-            .into_response();
+    match provider.replies.userinfo_status {
+        200 => Json(provider.replies.userinfo.clone()).into_response(),
+        status => StatusCode::from_u16(status).unwrap().into_response(),
     }
-    Json(replies.userinfo.clone()).into_response()
 }
 
 pub(super) async fn serve(replies: Replies) -> Running {

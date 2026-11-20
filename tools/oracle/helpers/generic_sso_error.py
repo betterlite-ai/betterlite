@@ -47,7 +47,7 @@ def run(input_value: Input) -> Denial:
     os.environ.clear()
     os.environ.update(input_value["environment"])
     try:
-        ui_sso._handle_generic_sso_error(error, None, None, headers)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1417
+        ui_sso._handle_generic_sso_error(error, None, None, headers)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1417
     except ProxyException as raised:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325
         return denial_of(raised)
     finally:
