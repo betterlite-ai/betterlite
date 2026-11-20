@@ -140,7 +140,7 @@ pub(crate) fn set(metric: &str, labels: &[(&str, &str)], value: MetricValue) -> 
         metric: metric.to_owned(),
         labels: labels
             .iter()
-            .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+            .map(|(name, label_value)| ((*name).to_owned(), (*label_value).to_owned()))
             .collect(),
         value,
     }

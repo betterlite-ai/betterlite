@@ -40,8 +40,8 @@ const USER_REMAINING: &str = "litellm_remaining_user_budget_metric";
 const USER_MAX: &str = "litellm_user_max_budget_metric";
 const USER_HOURS: &str = "litellm_user_budget_remaining_hours_metric";
 
-fn reset() -> Option<DateTime<Utc>> {
-    Some(DateTime::from_timestamp(7200, 0).unwrap())
+fn reset() -> DateTime<Utc> {
+    DateTime::from_timestamp(7200, 0).unwrap()
 }
 
 #[test]
@@ -60,7 +60,7 @@ fn the_key_list_setter_skips_string_entries() {
             key_alias: Some("paid".to_owned()),
             spend: Some(decimal("1")),
             max_budget: Some(decimal("5")),
-            budget_reset_at: reset(),
+            budget_reset_at: Some(reset()),
         }),
     ];
     set_key_list_budget_metrics(
@@ -249,7 +249,7 @@ fn the_customer_row_falls_back_to_the_default_budget() {
     };
     let default = BudgetTableSnapshot {
         max_budget: Some(decimal("10")),
-        budget_reset_at: reset(),
+        budget_reset_at: Some(reset()),
     };
     set_customer_row_gauges(
         &gauges,
@@ -290,7 +290,7 @@ fn the_customer_row_prefers_its_own_budget_table() {
     };
     let default = BudgetTableSnapshot {
         max_budget: Some(decimal("10")),
-        budget_reset_at: reset(),
+        budget_reset_at: Some(reset()),
     };
     set_customer_row_gauges(
         &gauges,

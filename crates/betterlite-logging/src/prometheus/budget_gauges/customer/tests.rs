@@ -143,12 +143,12 @@ fn no_series_limits_leave_the_gauges_untracked() {
         context(&settings, prometheus_only(), &tracker, &limits),
     )
     .unwrap();
+    let labels = [("end_user", "e1")];
     assert_eq!(
         events(&log),
-        vec![set(
-            REMAINING,
-            &[("end_user", "e1")],
-            MetricValue::PositiveInfinity,
-        )]
+        vec![
+            set(REMAINING, &labels, MetricValue::PositiveInfinity),
+            set(HOURS, &labels, hours_value(2.0)),
+        ]
     );
 }
