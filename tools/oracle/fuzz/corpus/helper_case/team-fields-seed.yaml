@@ -1,0 +1,5 @@
+kind: helper
+name: team-fields-seed
+call: {team_fields: {function: schema, schema: [{key: owner, label: Owner}]}}
+env: {}
+compare: {ignore: []}

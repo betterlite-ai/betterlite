@@ -237,15 +237,6 @@ const fn cache_hit(value: Option<&Json>) -> Result<Option<bool>, SpendPayloadErr
     }
 }
 
-// str(cache_hit): Python capitalizes its booleans and writes None.
-pub(crate) fn cache_hit_text(value: Option<bool>) -> String {
-    match value {
-        Some(true) => "True".to_owned(),
-        Some(false) => "False".to_owned(),
-        None => "None".to_owned(),
-    }
-}
-
 // The declared counter fields: absent keeps the caller's default and null stays null.
 pub(crate) fn counter(
     value: Option<&Json>,
