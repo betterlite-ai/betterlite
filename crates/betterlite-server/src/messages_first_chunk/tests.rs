@@ -94,14 +94,14 @@ impl HeaderRefresh for RefusedRefresh {
     }
 }
 
-fn frame(text: &str) -> Result<Emitted, StreamAbort> {
-    Ok(Emitted::Frame(Bytes::from(text.to_owned())))
+fn frame(text: &str) -> Emitted {
+    Emitted::Frame(Bytes::from(text.to_owned()))
 }
 
-fn anthropic_error(status: u16, message: &str) -> Result<Emitted, StreamAbort> {
+fn anthropic_error(status: u16, message: &str) -> Emitted {
     let upstream =
         anthropic_error_sse_frame(status, message, DEFAULT_LIMITS).expect("an error frame");
-    Ok(Emitted::AnthropicError(Box::new(upstream)))
+    Emitted::AnthropicError(Box::new(upstream))
 }
 
 fn failure(status: u16, detail: &str) -> Result<Emitted, StreamAbort> {
@@ -354,8 +354,8 @@ fn frame_error_object_refuses_bytes_that_are_not_utf8() {
 async fn an_anthropic_error_first_frame_answers_plain_json_with_its_status() {
     let produced = answer(
         vec![
-            anthropic_error(429, "slow down"),
-            frame("data: {\"late\": true}"),
+            Ok(anthropic_error(429, "slow down")),
+            Ok(frame("data: {\"late\": true}")),
         ],
         headers(&[("x-litellm-call-id", "call-1"), ("x-custom", "kept")]),
         None,
@@ -389,7 +389,7 @@ async fn an_anthropic_error_body_carries_the_call_id_only_when_enabled(
     #[case] call_id_in_body: bool,
 ) {
     let produced = answer(
-        vec![anthropic_error(400, "bad request")],
+        vec![Ok(anthropic_error(400, "bad request"))],
         headers(&[("x-litellm-call-id", "call-1")]),
         None,
         call_id_in_body,
@@ -406,7 +406,7 @@ async fn an_anthropic_error_body_carries_the_call_id_only_when_enabled(
 async fn an_anthropic_error_reads_the_call_id_from_the_refreshed_headers() {
     let refresh = FixedHeaders(headers(&[("x-litellm-call-id", "call-2")]));
     let produced = answer(
-        vec![anthropic_error(400, "bad request")],
+        vec![Ok(anthropic_error(400, "bad request"))],
         headers(&[("x-litellm-call-id", "call-1")]),
         Some(Arc::new(refresh)),
         true,
@@ -421,8 +421,10 @@ async fn an_anthropic_error_reads_the_call_id_from_the_refreshed_headers() {
 async fn a_first_frame_with_a_code_answers_plain_json_with_that_status() {
     let produced = answer(
         vec![
-            frame("data: {\"error\": {\"message\": \"boom\", \"code\": 503}}"),
-            frame("data: never read"),
+            Ok(frame(
+                "data: {\"error\": {\"message\": \"boom\", \"code\": 503}}",
+            )),
+            Ok(frame("data: never read")),
         ],
         headers(&[("x-custom", "kept"), ("cache-control", "max-age=60")]),
         None,
@@ -454,7 +456,7 @@ async fn a_first_frame_with_a_code_answers_plain_json_with_that_status() {
 async fn a_first_frame_error_body_carries_the_refreshed_call_id_last() {
     let refresh = FixedHeaders(headers(&[("x-litellm-call-id", "call-2")]));
     let produced = answer(
-        vec![frame("data: {\"error\": {\"code\": 400}}")],
+        vec![Ok(frame("data: {\"error\": {\"code\": 400}}"))],
         headers(&[("x-litellm-call-id", "call-1")]),
         Some(Arc::new(refresh)),
         true,
@@ -474,7 +476,7 @@ async fn a_first_frame_error_body_carries_the_refreshed_call_id_last() {
 #[tokio::test]
 async fn a_first_frame_error_body_leaves_the_call_id_out_when_disabled() {
     let produced = answer(
-        vec![frame("data: {\"error\": {\"code\": 400}}")],
+        vec![Ok(frame("data: {\"error\": {\"code\": 400}}"))],
         headers(&[("x-litellm-call-id", "call-1")]),
         None,
         false,
@@ -489,9 +491,9 @@ async fn a_first_frame_error_body_leaves_the_call_id_out_when_disabled() {
 #[tokio::test]
 async fn a_first_frame_error_body_replaces_an_upstream_call_id_in_place() {
     let produced = answer(
-        vec![frame(
+        vec![Ok(frame(
             "data: {\"error\": {\"litellm_call_id\": \"upstream\", \"code\": 400}}",
-        )],
+        ))],
         headers(&[("x-litellm-call-id", "call-9")]),
         None,
         true,
@@ -507,7 +509,7 @@ async fn a_first_frame_error_body_replaces_an_upstream_call_id_in_place() {
 async fn a_first_frame_with_a_code_logs_the_debug_line() {
     let (logs, _guard) = capture_logs(tracing::Level::DEBUG);
     let produced = answer(
-        vec![frame("data: {\"error\": {\"code\": 404}}")],
+        vec![Ok(frame("data: {\"error\": {\"code\": 404}}"))],
         HeaderMap::new(),
         None,
         false,
@@ -523,9 +525,9 @@ async fn a_first_frame_with_a_code_logs_the_debug_line() {
 async fn a_normal_first_chunk_streams_every_item_in_order() {
     let produced = answer(
         vec![
-            frame("data: first\n\n"),
-            anthropic_error(500, "late failure"),
-            frame("data: last\n\n"),
+            Ok(frame("data: first\n\n")),
+            Ok(anthropic_error(500, "late failure")),
+            Ok(frame("data: last\n\n")),
         ],
         headers(&[("x-custom", "kept")]),
         None,
@@ -579,7 +581,7 @@ async fn a_first_frame_that_is_not_utf8_streams_its_bytes() {
 #[tokio::test]
 async fn the_sse_headers_replace_the_callers_own_values() {
     let produced = answer(
-        vec![frame("data: x")],
+        vec![Ok(frame("data: x"))],
         headers(&[
             ("cache-control", "max-age=60"),
             ("x-accel-buffering", "yes"),
@@ -603,7 +605,7 @@ async fn the_sse_headers_replace_the_callers_own_values() {
 async fn a_refresher_replaces_the_headers_before_the_sse_ones_are_added() {
     let refresh = FixedHeaders(headers(&[("x-custom", "refreshed")]));
     let produced = answer(
-        vec![frame("data: x")],
+        vec![Ok(frame("data: x"))],
         headers(&[("x-custom", "original")]),
         Some(Arc::new(refresh)),
         false,
@@ -624,7 +626,7 @@ async fn a_refresher_replaces_the_headers_before_the_sse_ones_are_added() {
 async fn a_failing_refresher_keeps_the_original_headers_and_logs() {
     let (logs, _guard) = capture_logs(tracing::Level::ERROR);
     let produced = answer(
-        vec![frame("data: x")],
+        vec![Ok(frame("data: x"))],
         headers(&[("x-custom", "original")]),
         Some(Arc::new(RefusedRefresh)),
         false,
@@ -697,10 +699,10 @@ async fn a_later_failure_ends_the_body_after_the_bytes_already_sent() {
     let (logs, _guard) = capture_logs(tracing::Level::ERROR);
     let produced = answer(
         vec![
-            frame("data: first"),
-            frame("data: second"),
+            Ok(frame("data: first")),
+            Ok(frame("data: second")),
             failure(502, "broken later"),
-            frame("data: never"),
+            Ok(frame("data: never")),
         ],
         HeaderMap::new(),
         None,
