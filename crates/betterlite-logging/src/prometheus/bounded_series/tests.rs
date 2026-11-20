@@ -216,10 +216,10 @@ fn increments_before_tracking_the_series() {
     assert_eq!(
         events(&fixture.counter),
         vec![
-            increment(&[("model", "m"), ("end_user", "e1")], ONE),
-            increment(&[("model", "m"), ("end_user", "e2")], ONE),
+            increment(&[("end_user", "e1"), ("model", "m")], ONE),
+            increment(&[("end_user", "e2"), ("model", "m")], ONE),
             removal(&["m", "e1"]),
-            increment(&[("model", "m"), ("end_user", "e3")], ONE),
+            increment(&[("end_user", "e3"), ("model", "m")], ONE),
             removal(&["m", "e2"]),
         ]
     );
@@ -334,9 +334,9 @@ fn skips_tracking_when_the_end_user_is_none() {
     assert_eq!(
         events(&fixture.counter),
         vec![
-            increment(&[("model", "m1"), ("end_user", "None")], ONE),
-            increment(&[("model", "m2"), ("end_user", "None")], ONE),
-            increment(&[("model", "m3"), ("end_user", "None")], ONE),
+            increment(&[("end_user", "None"), ("model", "m1")], ONE),
+            increment(&[("end_user", "None"), ("model", "m2")], ONE),
+            increment(&[("end_user", "None"), ("model", "m3")], ONE),
         ]
     );
 }

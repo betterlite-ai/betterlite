@@ -98,9 +98,9 @@ fn track_end_user(scenario: &TrackScenario) -> HelperResult {
             step.ttl_seconds,
             step.cleanup_interval_seconds,
         )?;
-        let counter = metrics
-            .get(&step.metric)
-            .ok_or_else(|| invalid(&format!("no metric named {}", step.metric)))?;
+        let counter = metrics.get(&step.metric).ok_or_else(|| {
+            helper_error("InvalidInput", &format!("no metric named {}", step.metric))
+        })?;
         let now = time_at(base, step.at_seconds)?;
         let emission = CounterEmission {
             counter,
@@ -109,9 +109,9 @@ fn track_end_user(scenario: &TrackScenario) -> HelperResult {
             tracker: &tracker,
             limits: &limits,
         };
-        emission
-            .track_end_user(&step.labels, now)
-            .map_err(|error| invalid(&error.to_string()))?;
+        if emission.track_end_user(&step.labels, now).is_err() {
+            return Err(helper_error("RuntimeError", &step.metric));
+        }
     }
     Ok(events_value(&log))
 }
@@ -152,7 +152,7 @@ fn inc_labeled_counter(scenario: &EmissionScenario) -> HelperResult {
         let now = time_at(base, step.at_seconds)?;
         emission
             .inc_labeled_counter(&values, source, amount, now)
-            .map_err(|error| invalid(&error.to_string()))?;
+            .map_err(|error| helper_error("InvalidInput", &error.to_string()))?;
     }
     Ok(events_value(&log))
 }
@@ -170,9 +170,9 @@ fn label_values(values: &BTreeMap<String, Option<String>>) -> UserApiKeyLabelVal
     UserApiKeyLabelValues::from_entries(&entries)
 }
 
-fn invalid(message: &str) -> Box<HelperError> {
+fn helper_error(class: &str, message: &str) -> Box<HelperError> {
     Box::new(HelperError {
-        class: "InvalidInput".to_owned(),
+        class: class.to_owned(),
         status: None,
         error_type: None,
         param: None,
