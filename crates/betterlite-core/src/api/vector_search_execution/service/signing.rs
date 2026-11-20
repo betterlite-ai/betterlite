@@ -3,7 +3,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use betterlite_openai::vector_stores::Headers as OpenAiHeaders;
-use secrecy::SecretString;
 
 use super::super::config::{Params, SearchConfig, SignRequest};
 use super::super::error::{SearchError, SigningFailure};
@@ -19,7 +18,6 @@ pub struct SignInput {
     pub optional_params: Params,
     pub request_data: Params,
     pub api_base: String,
-    pub api_key: Option<SecretString>,
 }
 
 impl SignInput {
@@ -30,7 +28,6 @@ impl SignInput {
             optional_params: &self.optional_params,
             request_data: &self.request_data,
             api_base: &self.api_base,
-            api_key: self.api_key.as_ref(),
         }
     }
 }

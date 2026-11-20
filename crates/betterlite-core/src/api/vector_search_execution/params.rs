@@ -34,16 +34,17 @@ pub(super) fn ssl_verify(params: &Params) -> Result<Option<bool>, SearchError> {
 }
 
 // dict.get(key, None) reads an explicit null as the absent value
-pub(super) fn present(json: &Json) -> Option<&Json> {
-    if matches!(json, Json::Null) {
-        None
-    } else {
-        Some(json)
+pub(super) const fn present(json: &Json) -> Option<&Json> {
+    match json {
+        Json::Null => None,
+        Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
+            Some(json)
+        }
     }
 }
 
 pub(super) fn integer(json: &Json, name: &'static str) -> Result<Option<i64>, SearchError> {
-    if json.is_null() {
+    if matches!(json, Json::Null) {
         return Ok(None);
     }
     if let Json::Number(number) = json {

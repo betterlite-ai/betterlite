@@ -5,11 +5,12 @@ use std::time::Duration;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::RequestBody;
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_logging::logging_state::LoggingState;
 use betterlite_openai::api::vector_store_records::records::vector::VectorStoreSearchResponse;
 use betterlite_openai::vector_stores::Headers as OpenAiHeaders;
 use http::header::{HeaderName, HeaderValue};
 use http::{HeaderMap as HttpHeaders, Method};
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::ExposeSecret as _;
 use url::Url;
 
 use self::logging::log_http;
@@ -20,7 +21,7 @@ use super::config::{
     VectorStoreResponse,
 };
 use super::error::{SearchError, TIMEOUT_MESSAGE, convert_error, reply_facts, transport_facts};
-use super::params::{ssl_verify, text};
+use super::params::ssl_verify;
 use crate::api::vector_store_http_write::error::{HeaderMap, header_text};
 use crate::api::vector_store_http_write::service::{
     ClientKind, ClientSource, LogContext, SuppliedClient, WriteRequest, WriteTransport,
@@ -87,12 +88,12 @@ where
     let api_base = deps.config.complete_url(call.litellm_params)?;
     let mut logging = VectorStoreLogging::default();
     let (url, body) = transform(deps.config.as_ref(), mode, call, &api_base, &mut logging).await?;
+    merge_details(log.state, &logging);
     let input = SignInput {
         headers,
         optional_params: merged_params(call.litellm_params, call.optional_params),
         request_data: body.clone(),
         api_base: url.clone(),
-        api_key: text(call.litellm_params, "api_key")?.map(SecretString::from),
     };
     let (headers, signed) = sign(deps.config.clone(), seam, mode, input).await?;
     log_http(&api_base, &headers, &body, log)?;
@@ -107,8 +108,26 @@ where
         config: deps.config.clone(),
         client,
         request,
-        logging,
+        logging: VectorStoreLogging {
+            model_call_details: logged_details(log.state),
+        },
     })
+}
+
+// LiteLLM hands the transform and the pre-call one logging object, so what a transform records reaches the pre-call's metadata
+fn merge_details(state: &mut LoggingState, logging: &VectorStoreLogging) {
+    state
+        .model_call_details
+        .extend(logging.model_call_details.clone());
+}
+
+// After the pre-call the same object carries the call metadata, which the response transform reads
+fn logged_details(state: &LoggingState) -> Params {
+    state
+        .model_call_details
+        .iter()
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect()
 }
 
 // One send, no retry: a timeout takes the handler's own 408, and any other failure goes through _handle_error

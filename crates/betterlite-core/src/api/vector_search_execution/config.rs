@@ -7,7 +7,6 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::api::vector_store_records::records::vector::VectorStoreSearchResponse;
 use betterlite_openai::embedding::EmbeddingResponse;
 use betterlite_openai::vector_stores::Headers;
-use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 
 use super::error::{DirectFailure, SearchError};
@@ -56,7 +55,6 @@ pub struct SignRequest<'request> {
     pub optional_params: &'request Params,
     pub request_data: &'request Params,
     pub api_base: &'request str,
-    pub api_key: Option<&'request SecretString>,
 }
 
 pub struct VectorStoreResponse {

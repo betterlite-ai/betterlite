@@ -1,9 +1,12 @@
+use std::fmt::Display;
+
 use betterlite_config::sections::openai_credentials::Settings as OpenAiCredentialsSettings;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::vector_store_records::records::vector::VectorStoreSearchResponse;
 use betterlite_openai::credentials::LiteLlmGlobals;
 use betterlite_openai::vector_stores::Headers;
 use betterlite_openai::vector_stores::complete_url as openai_complete_url;
+use betterlite_openai::vector_stores::reply::{ReplyKind, VectorReply, decode_vector_reply};
 use betterlite_openai::vector_stores::store::{Query, SearchParams, search_request};
 use betterlite_openai::vector_stores::validate_environment as openai_validate_environment;
 use secrecy::SecretString;
@@ -12,8 +15,9 @@ use super::config::{
     Params, PreparedSearch, ResponseHeaders, SearchConfig, SearchQuery, SearchRequest,
     VectorStoreLogging, VectorStoreResponse,
 };
-use super::error::{BaseLlmException, HeaderMap, SearchError};
+use super::error::SearchError;
 use super::params::{boolean, integer, present, text};
+use crate::api::vector_store_http_write::error::{BaseLlmException, HeaderMap};
 
 // OpenAIVectorStoreConfig's search members over B527, which owns the credential and body shapes
 pub struct OpenAiSearchConfig {
@@ -37,6 +41,18 @@ impl OpenAiSearchConfig {
             env_api_key,
             litellm_api_base,
         }
+    }
+
+    fn transform_error<D: Display + ?Sized>(
+        &self,
+        source: &D,
+        response: &VectorStoreResponse,
+    ) -> SearchError {
+        SearchError::Provider(self.error_class(
+            &source.to_string(),
+            response.status_code,
+            response_headers(&response.headers),
+        ))
     }
 }
 
@@ -79,18 +95,19 @@ impl SearchConfig for OpenAiSearchConfig {
         Ok((prepared.url, body))
     }
 
+    // B527's shared reply decoder applies the reply byte, depth and item limits before the typed record is read
     fn transform_search_response(
         &self,
         response: &VectorStoreResponse,
         _logging: &mut VectorStoreLogging,
     ) -> Result<VectorStoreSearchResponse, SearchError> {
-        serde_json::from_slice(&response.body).map_err(|source| {
-            SearchError::Provider(self.error_class(
-                &source.to_string(),
-                response.status_code,
-                response_headers(&response.headers),
-            ))
-        })
+        let converted = match decode_vector_reply(ReplyKind::Search, &response.body) {
+            Ok(VectorReply::Record(record)) => serde_json::to_value(&*record),
+            Ok(VectorReply::Json(value)) => serde_json::to_value(&value),
+            Err(source) => return Err(self.transform_error(&source, response)),
+        };
+        let encoded = converted.map_err(|source| self.transform_error(&source, response))?;
+        serde_json::from_value(encoded).map_err(|source| self.transform_error(&source, response))
     }
 
     // BaseVectorStoreConfig.get_error_class raises this exception, so asking it and building one are the same answer here
