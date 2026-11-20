@@ -84,12 +84,13 @@ where
         params: call.params,
         headers,
     };
-    config
-        .transform_compact_request(&request)
-        .map_err(|source| CompactError::Step {
+    match config.transform_compact_request(&request) {
+        Ok(transformed) => Ok(transformed),
+        Err(source) => Err(CompactError::Step {
             stage: Stage::Transform,
             source,
-        })
+        }),
+    }
 }
 
 pub(super) fn normalized_request<C>(config: &C, data: Object) -> Result<Object, CompactError>
