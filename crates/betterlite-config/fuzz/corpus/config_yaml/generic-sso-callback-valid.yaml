@@ -1,0 +1,7 @@
+model_list:
+  - model_name: generic-sso-callback-seed
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/GENERIC_SSO_CALLBACK_SEED_KEY
+general_settings:
+  master_key: sk-generic-sso-callback-seed
