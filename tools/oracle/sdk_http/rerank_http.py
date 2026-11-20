@@ -253,7 +253,7 @@ def run_once(call: TransportCall, mode: Mode, api_base: str) -> RunOutcome:
     logging_obj = logging_fixture()
     logging_obj.add_dynamic_callback(recorder)
     try:
-        work = HANDLER.rerank(
+        work = HANDLER.rerank(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L1289-L1416
             model=call.model,
             custom_llm_provider="cohere",
             logging_obj=logging_obj,
