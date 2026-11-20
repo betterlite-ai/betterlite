@@ -201,3 +201,10 @@ path = "fuzz_targets/spend_counter_key.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "spend_buffer"
+path = "fuzz_targets/spend_buffer.rs"
+test = false
+doc = false
+bench = false
