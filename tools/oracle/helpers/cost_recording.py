@@ -120,14 +120,11 @@ class CalculatorKwargs(TypedDict):
     response_object: SubjectResponse | ModelResponse
 
 
-class HiddenCarrier(BaseModel):
-    _hidden_params: dict[str, JsonValue] = PrivateAttr(default_factory=dict)
-
+class HiddenCarrier:
     def __init__(self, hidden: dict[str, JsonValue] | None) -> None:
-        super().__init__()
+        self._hidden_params: dict[str, object] = {}  # ast-grep-ignore: no-loose-types
         if hidden is not None:
-            for name, value in hidden.items():
-                self._hidden_params[name] = value
+            self._hidden_params.update(hidden)
 
 
 class CalculatorState:
