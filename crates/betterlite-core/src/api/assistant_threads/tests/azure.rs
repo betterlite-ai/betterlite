@@ -14,11 +14,11 @@ use secrecy::SecretString;
 
 use super::super::target::{Operation, PrepareRequest, PreparedThread, Target};
 use super::super::{
-    FacadeCall, GetThreadCall, SuppliedClient, ThreadFacade, ThreadOperation, execute,
+    FacadeCall, GetThreadCall, SuppliedClient, ThreadFacade as _, ThreadOperation, execute,
 };
 use super::{
-    Capture, Harness, Recorder, THREAD, UNTYPED_404, create_call, empty_create, json, kwargs_of,
-    message, secret_text,
+    Capture, Harness, Recorder, THREAD, UNTYPED_404, assert_sdk_failure, create_call, empty_create,
+    json, kwargs_of, message, secret_text,
 };
 
 fn azure_prepare<'call>(
@@ -59,15 +59,15 @@ fn azure_gets_litellm_params_and_the_shared_settings() {
     assert_eq!(request.api_version.as_deref(), Some("2024-02-01"));
     assert!(request.azure_ad_token.is_none());
     assert_eq!(
-        secret_text(request.params.azure_ad_token.as_ref()),
+        request.params.azure_ad_token.as_ref().map(secret_text),
         Some(String::from("param-token"))
     );
     assert_eq!(request.params.auth.tenant_id.as_deref(), Some("tenant"));
     assert_eq!(request.params.max_retries, Some(5));
-    assert_eq!(request.params.timeout, Some(7.5));
+    assert_eq!(request.params.timeout, Some(7.5_f64));
     assert_eq!(client.kind, ClientKind::Sync);
     assert_eq!(client.api_version, "2024-02-01");
-    assert_eq!(client.deadline, Duration::from_secs_f64(7.5));
+    assert_eq!(client.deadline, Duration::from_millis(7500));
 }
 
 #[rstest]
@@ -95,7 +95,7 @@ fn azure_token_sources_are_absent_null_or_body(
     } else {
         Some(String::from(expected))
     };
-    assert_eq!(secret_text(request.azure_ad_token.as_ref()), wanted);
+    assert_eq!(request.azure_ad_token.as_ref().map(secret_text), wanted);
 }
 
 fn azure_client(
@@ -189,12 +189,14 @@ async fn a_facade_extra_body_token_without_a_key_is_refused_before_the_request()
     let mut kwargs = kwargs_of(r#"{"extra_body":null}"#);
     let mut call = create_call(&mut kwargs, None);
     call.custom_llm_provider = String::from("azure");
-    let error = harness
+    let failure = harness
         .threads()
-        .create_thread(call)
+        .acreate_thread(call)
         .await
         .expect_err("the facade token never reaches the azure client");
-    assert!(error.to_string().contains("Missing credentials"));
+    assert!(failure.error.to_string().contains("Missing credentials"));
+    assert!(matches!(failure.class, ErrorClass::ApiConnection(_)));
+    assert_sdk_failure(&failure, 500, "APIConnectionError");
     assert!(harness.recorder.seen().is_empty());
 }
 

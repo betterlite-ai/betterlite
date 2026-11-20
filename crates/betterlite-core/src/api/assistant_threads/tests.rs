@@ -29,15 +29,16 @@ use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::net::TcpListener;
 
-use super::error::{ThreadError, sdk_class};
+use super::error::{ThreadError, ThreadFailure, sdk_class};
 use super::params::{
-    ThreadParams, ThreadTimeout, ThreadTimeoutValue, forwarded_azure_timeout, resolve_timeout,
+    ThreadExtraBody, ThreadParams, ThreadTimeout, ThreadTimeoutValue, forwarded_azure_timeout,
+    resolve_timeout,
 };
 use super::runtime::ThreadRuntime;
 use super::target::{Operation, PrepareRequest, PreparedThread, Target, create_body};
 use super::{
-    AssistantThreads, CreateThreadCall, FacadeCall, GetThreadCall, SuppliedClient, ThreadFacade,
-    ThreadOperation, execute,
+    AssistantThreads, CreateThreadCall, FacadeCall, GetThreadCall, SuppliedClient,
+    ThreadFacade as _, ThreadOperation, execute,
 };
 use crate::api::resource_sdk_settings::ResourceSdkSettings;
 use crate::api::resource_sdk_settings::timeout::{StructuredTimeout, TimeoutError};
@@ -239,8 +240,38 @@ fn kwargs_of(text: &str) -> BTreeMap<String, Json> {
     serde_json::from_str(text).expect("the kwargs are JSON")
 }
 
-fn secret_text(value: Option<&SecretString>) -> Option<String> {
-    value.map(|token| token.expose_secret().to_owned())
+fn secret_text(token: &SecretString) -> String {
+    token.expose_secret().to_owned()
+}
+
+// every field absent, the base the timeout tests change one field of at a time
+const NO_PARAMS: ThreadParams = ThreadParams {
+    api_key: None,
+    api_base: None,
+    api_version: None,
+    organization: None,
+    max_retries: None,
+    timeout: None,
+    request_timeout: None,
+    azure_ad_token: None,
+    tenant_id: None,
+    client_id: None,
+    client_secret: None,
+    azure_username: None,
+    azure_password: None,
+    azure_scope: None,
+    extra_body: ThreadExtraBody::Absent,
+};
+
+// the async wrapper's envelope names no provider fields besides the class and the status it derives
+fn assert_sdk_failure(failure: &ThreadFailure, status: u16, class: &str) {
+    let metadata = failure.class.metadata();
+    assert_eq!(metadata.status_code, status);
+    assert_eq!(metadata.error_type, WireField::Null);
+    assert_eq!(metadata.param, WireField::Null);
+    let sdk = failure.error.sdk_failure();
+    assert_eq!(sdk.class, class);
+    assert_eq!(sdk.status, status);
 }
 
 fn supplied_openai(transport: Arc<Recorder>) -> SdkClient<Recorder> {
@@ -255,25 +286,25 @@ fn supplied_openai(transport: Arc<Recorder>) -> SdkClient<Recorder> {
     }
 }
 
-fn create_call<'call>(
-    kwargs: &'call mut BTreeMap<String, Json>,
+fn create_call(
+    kwargs: &mut BTreeMap<String, Json>,
     messages: Option<Vec<ThreadMessageData>>,
-) -> CreateThreadCall<'call, Recorder> {
+) -> CreateThreadCall<'_, Recorder> {
     CreateThreadCall {
         custom_llm_provider: String::from("openai"),
         messages,
-        metadata: Some([("tag".to_owned(), json(r#""x""#))].into_iter().collect()),
+        metadata: Some(BTreeMap::from([("tag".to_owned(), json(r#""x""#))])),
         tool_resources: Some(json(r#"{"file_search":{"vector_store_ids":["vs_a"]}}"#)),
         client: None,
         kwargs,
     }
 }
 
-fn prepare_request<'call>(
+fn prepare_request(
     operation: Operation,
-    kwargs: &'call BTreeMap<String, Json>,
+    kwargs: &BTreeMap<String, Json>,
     flag: Option<bool>,
-) -> PrepareRequest<'call, Recorder> {
+) -> PrepareRequest<'_, Recorder> {
     PrepareRequest {
         provider: String::from("openai"),
         operation,
@@ -450,7 +481,7 @@ async fn a_supplied_openai_client_reaches_its_own_recorder_untouched() {
         seen[0].authorization.as_deref(),
         Some("Bearer supplied-key")
     );
-    assert_eq!(seen[0].deadline, 42.0);
+    assert_eq!(seen[0].deadline.to_bits(), 42.0_f64.to_bits());
     assert_eq!(seen[1].url, "https://supplied.test/v1/threads/thread_a");
     assert!(harness.recorder.seen().is_empty());
 }
@@ -465,14 +496,8 @@ async fn a_missing_api_key_maps_as_authentication_from_the_async_wrapper() {
         .acreate_thread(create_call(&mut kwargs, None))
         .await
         .expect_err("no api key reaches the client");
-    let metadata = failure.class.metadata();
     assert!(matches!(failure.class, ErrorClass::Authentication(_)));
-    assert_eq!(metadata.status_code, 401);
-    assert_eq!(metadata.error_type, WireField::Null);
-    assert_eq!(metadata.param, WireField::Null);
-    let sdk = failure.error.sdk_failure();
-    assert_eq!(sdk.class, "AuthenticationError");
-    assert_eq!(sdk.status, 401);
+    assert_sdk_failure(&failure, 401, "AuthenticationError");
 }
 
 #[tokio::test]
@@ -489,15 +514,9 @@ async fn a_status_less_call_failure_maps_as_api_connection() {
         })
         .await
         .expect_err("an empty thread id fails before the request");
-    let metadata = failure.class.metadata();
     assert!(matches!(failure.class, ErrorClass::ApiConnection(_)));
-    assert_eq!(metadata.status_code, 500);
-    assert_eq!(metadata.error_type, WireField::Null);
-    assert_eq!(metadata.param, WireField::Null);
-    assert_eq!(metadata.openai_code, None);
-    let sdk = failure.error.sdk_failure();
-    assert_eq!(sdk.class, "APIConnectionError");
-    assert_eq!(sdk.status, 500);
+    assert_sdk_failure(&failure, 500, "APIConnectionError");
+    assert_eq!(failure.class.metadata().openai_code, None);
     assert!(harness.recorder.seen().is_empty());
 }
 
@@ -512,20 +531,15 @@ async fn a_transport_timeout_maps_as_apitimeout_from_the_async_wrapper() {
     );
     let transport = ProxiedClient::build(base_builder().http1_only(), &policy, TIMEOUT_LIMITS)
         .expect("the client");
-    let mut resources = empty_resources();
-    resources.openai_base_url = Some(format!("http://{address}/v1"));
-    resources.openai_api_key = Some(SecretString::from("sk-test"));
-    let azure = azure_endpoints::Settings::default();
-    let env: BTreeMap<String, String> = BTreeMap::new();
-    let sources = NoSources;
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("a redactor");
+    let mut harness = Harness::new();
+    harness.resources.openai_base_url = Some(format!("http://{address}/v1"));
     let threads = AssistantThreads {
         transport: Arc::new(transport),
-        resources: &resources,
-        azure: &azure,
-        environment: &env,
-        sources: &sources,
-        redactor: &redactor,
+        resources: &harness.resources,
+        azure: &harness.azure,
+        environment: &harness.env,
+        sources: &harness.sources,
+        redactor: &harness.redactor,
         refresh_enabled: false,
         session: SessionKind::Dedicated,
     };
@@ -541,15 +555,9 @@ async fn a_transport_timeout_maps_as_apitimeout_from_the_async_wrapper() {
         })
         .await
         .expect_err("the silent listener runs into its deadline");
-    let metadata = failure.class.metadata();
     assert!(matches!(failure.class, ErrorClass::Timeout(_)));
-    assert_eq!(metadata.status_code, 408);
-    assert_eq!(metadata.error_type, WireField::Null);
-    assert_eq!(metadata.param, WireField::Null);
-    assert_eq!(metadata.openai_code, None);
-    let sdk = failure.error.sdk_failure();
-    assert_eq!(sdk.class, "APITimeoutError");
-    assert_eq!(sdk.status, 408);
+    assert_sdk_failure(&failure, 408, "APITimeoutError");
+    assert_eq!(failure.class.metadata().openai_code, None);
 }
 
 #[rstest]
@@ -582,9 +590,10 @@ async fn only_the_literal_true_flag_selects_the_async_client(
 }
 
 #[rstest]
-#[case::default("{}", 600.0)]
-#[case::zero_falls_to_request_timeout(r#"{"timeout":0,"request_timeout":4}"#, 4.0)]
-#[case::text(r#"{"timeout":"7.5"}"#, 7.5)]
+#[case::default("{}", 600.0_f64)]
+#[case::zero_falls_to_request_timeout(r#"{"timeout":0,"request_timeout":4}"#, 4.0_f64)]
+#[case::text(r#"{"timeout":"7.5"}"#, 7.5_f64)]
+#[case::empty_text(r#"{"timeout":""}"#, 600.0_f64)]
 #[test]
 fn timeouts_resolve_like_litellm(#[case] text: &'static str, #[case] expected: f64) {
     let params = ThreadParams::from_kwargs(&kwargs_of(text)).expect("the kwargs parse");
@@ -623,8 +632,8 @@ fn a_read_only_structured_timeout_stays_structured() {
     assert_eq!(
         resolve_timeout(&params),
         Ok(ThreadTimeout::Phases(StructuredTimeout {
-            connect: Some(1.0),
-            read: Some(3.0),
+            connect: Some(1.0_f64),
+            read: Some(3.0_f64),
             write: None,
             pool: None,
         }))
@@ -639,7 +648,7 @@ fn a_read_phase_alone_is_not_absent() {
         resolve_timeout(&params),
         Ok(ThreadTimeout::Phases(StructuredTimeout {
             connect: None,
-            read: Some(3.0),
+            read: Some(3.0_f64),
             write: None,
             pool: None,
         }))
@@ -653,7 +662,7 @@ fn a_connect_phase_alone_is_not_absent() {
     assert_eq!(
         resolve_timeout(&params),
         Ok(ThreadTimeout::Phases(StructuredTimeout {
-            connect: Some(1.0),
+            connect: Some(1.0_f64),
             read: None,
             write: None,
             pool: None,
@@ -671,7 +680,7 @@ fn a_pool_phase_alone_is_not_absent() {
             connect: None,
             read: None,
             write: None,
-            pool: Some(2.0),
+            pool: Some(2.0_f64),
         }))
     );
 }
@@ -681,6 +690,17 @@ fn an_empty_phase_map_falls_back_to_the_default() {
     let params =
         ThreadParams::from_kwargs(&kwargs_of(r#"{"timeout":{}}"#)).expect("the kwargs parse");
     assert_eq!(resolve_timeout(&params), Ok(ThreadTimeout::Seconds(600.0)));
+}
+
+#[rstest]
+#[case::boolean(r#"{"timeout":true}"#)]
+#[case::list(r#"{"timeout":[1]}"#)]
+#[case::text_phase(r#"{"timeout":{"read":"3"}}"#)]
+#[test]
+fn a_wrongly_typed_timeout_is_refused_with_the_field_named(#[case] text: &'static str) {
+    let refused = ThreadParams::from_kwargs(&kwargs_of(text));
+    let error = refused.expect_err("the timeout type is refused");
+    assert_eq!(error.field.as_deref(), Some("timeout"));
 }
 
 #[test]
@@ -707,11 +727,8 @@ fn openai_credentials_follow_the_shared_chain() {
     let Target::Openai(client) = prepared.target else {
         panic!("openai prepares an openai client");
     };
-    assert_eq!(client.kind, ClientKind::Sync);
-    assert_eq!(
-        secret_text(client.api_key.as_ref()),
-        Some(String::from("request-key"))
-    );
+    let key = client.api_key.as_ref().map(secret_text);
+    assert_eq!(key, Some(String::from("request-key")));
     assert_eq!(client.base_url.as_deref(), Some("https://request.test/v1"));
     assert_eq!(client.organization.as_deref(), Some("request-org"));
     assert_eq!(client.max_retries, Some(3));
@@ -876,10 +893,10 @@ fn sdk_class_names_every_status_like_the_pinned_sdk(
 }
 
 #[test]
-fn forwarded_azure_timeout_reads_numbers_and_phases() {
-    let mut params = ThreadParams::default();
-    params.timeout = Some(ThreadTimeoutValue::Seconds(30.0));
-    assert_eq!(forwarded_azure_timeout(&params), Ok(Some(30.0)));
+fn forwarded_azure_timeout_reads_numbers() {
+    let mut params = NO_PARAMS;
+    params.timeout = Some(ThreadTimeoutValue::Seconds(30.0_f64));
+    assert_eq!(forwarded_azure_timeout(&params), Ok(Some(30.0_f64)));
     params.timeout = Some(ThreadTimeoutValue::Seconds(f64::INFINITY));
     assert_eq!(
         forwarded_azure_timeout(&params),
@@ -894,44 +911,49 @@ fn forwarded_azure_timeout_reads_numbers_and_phases() {
     assert_eq!(forwarded_azure_timeout(&params), Ok(None));
     params.timeout = Some(ThreadTimeoutValue::Seconds(0.0));
     assert_eq!(forwarded_azure_timeout(&params), Ok(None));
+    params.timeout = None;
+    assert_eq!(forwarded_azure_timeout(&params), Ok(None));
+}
+
+#[test]
+fn forwarded_azure_timeout_reads_phases() {
+    let mut params = NO_PARAMS;
     params.timeout = Some(ThreadTimeoutValue::Phases(StructuredTimeout {
         connect: None,
-        read: Some(3.0),
+        read: Some(3.0_f64),
         write: None,
         pool: None,
     }));
-    assert_eq!(forwarded_azure_timeout(&params), Ok(Some(3.0)));
+    assert_eq!(forwarded_azure_timeout(&params), Ok(Some(3.0_f64)));
     params.timeout = Some(ThreadTimeoutValue::Phases(StructuredTimeout {
         connect: None,
-        read: Some(0.0),
+        read: Some(0.0_f64),
         write: None,
         pool: None,
     }));
     assert_eq!(forwarded_azure_timeout(&params), Ok(None));
     params.timeout = Some(ThreadTimeoutValue::Phases(StructuredTimeout {
-        connect: Some(1.0),
+        connect: Some(1.0_f64),
         read: None,
         write: None,
         pool: None,
     }));
     assert_eq!(forwarded_azure_timeout(&params), Ok(None));
-    params.timeout = None;
-    assert_eq!(forwarded_azure_timeout(&params), Ok(None));
 }
 
 #[rstest]
-#[case::plain("7.5", 7.5, true)]
-#[case::underscores("7_5", 75.0, true)]
-#[case::underscore_after_sign("-_1", 0.0, false)]
-#[case::trailing_underscore("75_", 0.0, false)]
-#[case::leading_underscore("_75", 0.0, false)]
-#[case::double_underscore("1__2", 0.0, false)]
+#[case::plain("7.5", 7.5_f64, true)]
+#[case::underscores("7_5", 75.0_f64, true)]
+#[case::underscore_after_sign("-_1", 0.0_f64, false)]
+#[case::trailing_underscore("75_", 0.0_f64, false)]
+#[case::leading_underscore("_75", 0.0_f64, false)]
+#[case::double_underscore("1__2", 0.0_f64, false)]
 fn forwarded_azure_timeout_reads_text_like_python_float(
     #[case] text: &'static str,
     #[case] expected: f64,
     #[case] valid: bool,
 ) {
-    let mut params = ThreadParams::default();
+    let mut params = NO_PARAMS;
     params.timeout = Some(ThreadTimeoutValue::Text(String::from(text)));
     let result = forwarded_azure_timeout(&params);
     if valid {
