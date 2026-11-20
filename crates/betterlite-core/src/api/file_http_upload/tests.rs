@@ -42,6 +42,7 @@ use super::plan::{
     MultipartPlan, PresignedPlan, TwoStepPlan, UploadPlan, bytes_json, initial_data_json,
 };
 
+mod cancellation;
 mod decoder;
 mod diagnostics;
 mod failures;
