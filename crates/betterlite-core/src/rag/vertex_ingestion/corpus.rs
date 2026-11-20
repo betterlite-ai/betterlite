@@ -66,7 +66,10 @@ impl VertexIngestion {
             return Err(failure);
         }
         debug!("Create corpus response: {}", response_text(&reply.body));
-        parse_body(&reply.body, "create corpus")
+        serde_json::from_slice(&reply.body).map_err(|source| VertexIngestionError::Decode {
+            step: "create corpus",
+            source,
+        })
     }
 
     async fn corpus_from_operation(
@@ -79,12 +82,18 @@ impl VertexIngestion {
                 step: "create corpus",
             });
         };
-        if !is_done(fields)? {
-            let name = operation_name(fields)?;
-            debug!("Polling operation: {name}");
-            return self.poll_operation(&name, token).await;
+        if is_done(fields)? {
+            return response_name(fields);
         }
-        corpus_name(fields)
+        let operation_name = match fields.get("name") {
+            None | Some(Json::Null) => String::new(),
+            Some(Json::Text(name)) => name.clone(),
+            Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+                return Err(VertexIngestionError::TextField { field: "name" });
+            }
+        };
+        debug!("Polling operation: {operation_name}");
+        self.poll_operation(&operation_name, token).await
     }
 
     fn corpus_body(&self, display_name: &str) -> Result<Json, VertexIngestionError> {
@@ -164,7 +173,13 @@ impl VertexIngestion {
                 error!("{failure}");
                 return Err(failure);
             }
-            if let Some(corpus) = done_corpus(&parse_body(&reply.body, "poll")?)? {
+            let operation: Json = serde_json::from_slice(&reply.body).map_err(|source| {
+                VertexIngestionError::Decode {
+                    step: "poll",
+                    source,
+                }
+            })?;
+            if let Some(corpus) = done_corpus(&operation)? {
                 return Ok(corpus);
             }
             debug!(
@@ -185,12 +200,20 @@ fn done_corpus(operation: &Json) -> Result<Option<String>, VertexIngestionError>
         return Ok(None);
     }
     if let Some(error_value) = fields.get("error") {
-        let text = compact(error_value, "poll")?;
+        let text =
+            serde_json::to_string(error_value).map_err(|source| VertexIngestionError::Write {
+                step: "poll",
+                source,
+            })?;
         return Err(VertexIngestionError::OperationFailed { error: text });
     }
-    let name = corpus_name(fields)?;
+    let name = response_name(fields)?;
     if name.is_empty() {
-        let operation_text = compact(operation, "poll")?;
+        let operation_text =
+            serde_json::to_string(operation).map_err(|source| VertexIngestionError::Write {
+                step: "poll",
+                source,
+            })?;
         return Err(VertexIngestionError::MissingCorpusName {
             operation: operation_text,
         });
@@ -200,25 +223,15 @@ fn done_corpus(operation: &Json) -> Result<Option<String>, VertexIngestionError>
 
 fn is_done(fields: &Extra) -> Result<bool, VertexIngestionError> {
     match fields.get("done") {
-        None | Some(Json::Null) => Ok(false),
         Some(Json::Bool(done)) => Ok(*done),
         Some(Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
             Err(VertexIngestionError::BooleanField { field: "done" })
         }
+        None | Some(Json::Null) => Ok(false),
     }
 }
 
-fn operation_name(fields: &Extra) -> Result<String, VertexIngestionError> {
-    match fields.get("name") {
-        None | Some(Json::Null) => Ok(String::new()),
-        Some(Json::Text(name)) => Ok(name.clone()),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(VertexIngestionError::TextField { field: "name" })
-        }
-    }
-}
-
-fn corpus_name(fields: &Extra) -> Result<String, VertexIngestionError> {
+fn response_name(fields: &Extra) -> Result<String, VertexIngestionError> {
     let response = match fields.get("response") {
         None | Some(Json::Null) => return Ok(String::new()),
         Some(Json::Object(response)) => response,
@@ -235,12 +248,4 @@ fn corpus_name(fields: &Extra) -> Result<String, VertexIngestionError> {
             })
         }
     }
-}
-
-fn parse_body(body: &[u8], step: &'static str) -> Result<Json, VertexIngestionError> {
-    serde_json::from_slice(body).map_err(|source| VertexIngestionError::Decode { step, source })
-}
-
-fn compact(value: &Json, step: &'static str) -> Result<String, VertexIngestionError> {
-    serde_json::to_string(value).map_err(|source| VertexIngestionError::Write { step, source })
 }

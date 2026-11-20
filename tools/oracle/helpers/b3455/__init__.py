@@ -62,10 +62,7 @@ class Script:
         reply = self.replies.pop(0)
         return httpx.Response(reply["status"], content=reply["body"].encode())
 
-    def record(self, request: dict[str, JsonValue]) -> None:
-        self.requests.append(request)
-
-    async def sleep(self, delay: float) -> None:
+    def __call__(self, delay: float) -> None:
         self.slept.append(delay)
 
 
@@ -83,7 +80,7 @@ class FakeClient:
         headers: dict[str, str] | None = None,  # noqa: ARG002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L212-L219
     ) -> httpx.Response:
         kind = "post_json" if files is None else "post_multipart"
-        self.script.record(request_record(kind, url, self.timeout, json, files))
+        self.script.requests.append(request_record(kind, url, self.timeout, json, files))
         return self.script.answer()
 
     async def get(
@@ -91,7 +88,7 @@ class FakeClient:
         url: str,
         headers: dict[str, str] | None = None,  # noqa: ARG002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L281-L286
     ) -> httpx.Response:
-        self.script.record(request_record("get", url, self.timeout, None, None))
+        self.script.requests.append(request_record("get", url, self.timeout, None, None))
         return self.script.answer()
 
 
@@ -118,9 +115,12 @@ def request_record(
 def multipart_parts(files: MULTIPART_FILES) -> Multipart:
     metadata = files["metadata"]
     part = files["file"]
+    filename = part[0]
+    if filename is None:
+        raise ValueError("the multipart part carries no filename")
     return {
         "metadata": JSON.validate_json(metadata[1]),
-        "filename": part[0] or "",
+        "filename": filename,
         "file_bytes": len(part[1]),
         "content_type": part[2],
     }
@@ -136,8 +136,8 @@ def make_client(
 
 
 def install(script: Script) -> None:
-    vertex_ai_ingestion.get_async_httpx_client = partial(make_client, script)  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L207-L210
-    asyncio.sleep = script.sleep  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L310
+    vertex_ai_ingestion.get_async_httpx_client = partial(make_client, script)  # type: ignore[assignment, attr-defined]  # pyright: ignore[reportAssignmentType, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L207-L210
+    asyncio.sleep = script  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L310
 
 
 class Ingestion(vertex_ai_ingestion.VertexAIRAGIngestion):
@@ -151,18 +151,19 @@ class Ingestion(vertex_ai_ingestion.VertexAIRAGIngestion):
         self,
         credentials: VERTEX_CREDENTIALS_TYPES | None,
         project_id: str | None,
-        custom_llm_provider: Literal["vertex_ai", "vertex_ai_beta", "gemini"],  # noqa: ARG002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L602-L609
+        custom_llm_provider: Literal["vertex_ai", "vertex_ai_beta", "gemini"],  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L602-L609
     ) -> tuple[str, str]:
         self.token_calls.append({"project": project_id, "credentials": credentials is not None})
-        return "oracle-token", project_id or ""
+        if project_id is None:
+            raise ValueError("the ingestion resolved no project")
+        return "oracle-token", project_id
 
 
 def ingest_options(options: OptionsInput) -> RAGIngestOptions:
-    fields: dict[str, JsonValue] = {
-        "name": options.get("name"),
-        "chunking_strategy": options.get("chunking_strategy"),
-        "vector_store": options.get("vector_store"),
-    }
+    fields: dict[str, JsonValue] = {}
+    fields["name"] = options.get("name")
+    fields["chunking_strategy"] = options.get("chunking_strategy")
+    fields["vector_store"] = options.get("vector_store")
     return cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/rag.py#L183
         RAGIngestOptions, fields
     )

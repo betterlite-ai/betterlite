@@ -14,6 +14,7 @@ use betterlite_config::rag::document::ingest::VertexAIVectorStoreOptions;
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
 use secrecy::{ExposeSecret as _, SecretString};
+use tracing::debug;
 
 use crate::api::vertex_location::validate_vertex_location;
 use crate::rag::ingestion::IngestionState;
@@ -66,8 +67,9 @@ impl VertexIngestion {
         }
     }
 
-    // Vertex AI embeds when the file joins the corpus, so the pipeline's embedding step has no work
-    pub async fn embed(&self, _chunks: &[String]) -> Option<Vec<Vec<f64>>> {
+    pub async fn embed(&self, chunks: &[String]) -> Option<Vec<Vec<f64>>> {
+        // Vertex AI embeds when the file joins the corpus, so the pipeline's embedding step has no work
+        debug!("Skipping the embedding step for {} chunks", chunks.len());
         ready(None).await
     }
 
@@ -173,18 +175,15 @@ fn resolved_project(
 }
 
 fn resolved_location(options: &VertexAIVectorStoreOptions, settings: &VertexSettings) -> String {
-    options
-        .vertex_location
-        .as_deref()
-        .filter(|value| !value.is_empty())
-        .or_else(|| {
-            options
-                .vertex_ai_location
-                .as_deref()
-                .filter(|value| !value.is_empty())
-        })
-        .or(settings.location.as_deref())
-        .filter(|value| !value.is_empty())
+    let candidates = [
+        options.vertex_location.as_deref(),
+        options.vertex_ai_location.as_deref(),
+        settings.location.as_deref(),
+    ];
+    candidates
+        .into_iter()
+        .flatten()
+        .find(|location| !location.is_empty())
         .unwrap_or(DEFAULT_LOCATION)
         .to_owned()
 }

@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use betterlite_models::decisions::{Extra, Json};
 use serde_json::Number;
+use thiserror::Error;
 use tracing::{debug, error, warn};
 
 use super::API_VERSION;
@@ -146,12 +147,13 @@ fn named(fields: &Extra) -> Option<String> {
     }
 }
 
-fn file_id(body: &[u8]) -> Result<String, &'static str> {
-    let Ok(parsed) = serde_json::from_slice::<Json>(body) else {
-        return Err("the response body is not valid JSON");
+fn file_id(body: &[u8]) -> Result<String, UploadResponseError> {
+    let parsed: Json = match serde_json::from_slice(body) {
+        Ok(parsed) => parsed,
+        Err(source) => return Err(UploadResponseError::Decode { source }),
     };
     let Json::Object(fields) = parsed else {
-        return Err("the response body is not a JSON object");
+        return Err(UploadResponseError::NotObject);
     };
     match fields.get("ragFile") {
         None => {}
@@ -161,8 +163,22 @@ fn file_id(body: &[u8]) -> Result<String, &'static str> {
             }
         }
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            return Err("`ragFile` is not an object");
+            return Err(UploadResponseError::RagFileNotObject);
         }
     }
     Ok(named(&fields).unwrap_or_default())
+}
+
+// the upload still succeeds when the reply cannot be read, so these reasons only reach the log
+#[derive(Debug, Error)]
+enum UploadResponseError {
+    #[error("the response body is not valid JSON")]
+    Decode {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("the response body is not a JSON object")]
+    NotObject,
+    #[error("`ragFile` is not an object")]
+    RagFileNotObject,
 }

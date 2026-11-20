@@ -1,34 +1,17 @@
 #![cfg(test)]
 
-use std::collections::VecDeque;
-use std::io;
-use std::sync::{Arc, Mutex, PoisonError};
+mod harness;
+
 use std::time::Duration;
 
-use async_trait::async_trait;
-use betterlite_config::credentials::CredentialValues;
-use betterlite_config::rag::document::ingest::VertexAIVectorStoreOptions;
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
-use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
-use betterlite_models::decisions::Extra;
-use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::value::RawValue;
-use tracing::subscriber::{DefaultGuard, set_default};
+use rstest::rstest;
 
-use crate::rag::ingestion::IngestionPorts;
 use crate::rag::ingestion::IngestionState;
-use crate::rag::ingestion::config::{ChunkingStrategyMap, IngestionOptions};
-use crate::rag::ingestion::credentials::{CredentialLookup, CredentialLookupError};
-use crate::rag::ingestion::ocr::{OcrError, OcrOperation, OcrRequest, OcrResponse};
-use crate::rag::ingestion::store::{StoreRequest, StoreResult};
-use crate::rag::ingestion::upload::{FetchedResponse, UrlFetch, UrlFetchError};
 
 use super::VertexIngestion;
-use super::error::VertexIngestionError;
-use super::ports::{
-    GetRequest, HttpReply, JsonRequest, MultipartRequest, PortError, VertexIngestionPorts,
-    VertexRagHttp, VertexTokenPort,
-};
+
+use harness::{File, Kind, build, capture, chunking, expected, json_body, settings, store};
 
 const TOKEN: &str = "tok-123";
 const PROJECT_OPTIONS: &str = r#"{"vertex_project":"proj"}"#;
@@ -39,317 +22,6 @@ const FILE_REPLY: &str = r#"{"ragFile":{"name":"files/1"}}"#;
 const CORPUS_URL: &str = "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/proj/locations/us-central1/ragCorpora";
 const UPLOAD_URL: &str =
     "https://us-central1-aiplatform.googleapis.com/upload/v1beta1/corpora/7/ragFiles:upload";
-
-struct Unused;
-
-#[async_trait]
-impl OcrOperation for Unused {
-    async fn aocr(&self, _request: OcrRequest) -> Result<OcrResponse, OcrError> {
-        Err(OcrError::Failed {
-            message: "unused".to_owned(),
-        })
-    }
-}
-
-#[async_trait]
-impl UrlFetch for Unused {
-    async fn fetch(&self, _url: &str) -> Result<FetchedResponse, UrlFetchError> {
-        Err(UrlFetchError::Failed {
-            message: "unused".to_owned(),
-        })
-    }
-}
-
-impl CredentialLookup for Unused {
-    fn credential_values(
-        &self,
-        credential_name: &str,
-    ) -> Result<CredentialValues, CredentialLookupError> {
-        Err(CredentialLookupError::NotFound {
-            credential_name: credential_name.to_owned(),
-        })
-    }
-}
-
-#[derive(Default)]
-struct FakeToken {
-    calls: Mutex<Vec<(bool, Option<String>)>>,
-}
-
-impl FakeToken {
-    fn credentials_seen(&self) -> Vec<bool> {
-        self.records()
-            .into_iter()
-            .map(|(credentials, _)| credentials)
-            .collect()
-    }
-
-    fn projects_seen(&self) -> Vec<Option<String>> {
-        self.records()
-            .into_iter()
-            .map(|(_, project)| project)
-            .collect()
-    }
-
-    fn records(&self) -> Vec<(bool, Option<String>)> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-}
-
-#[async_trait]
-impl VertexTokenPort for FakeToken {
-    async fn access_token(
-        &self,
-        credentials: Option<&ConfiguredCredentials>,
-        project: Option<&str>,
-    ) -> Result<SecretString, PortError> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((credentials.is_some(), project.map(str::to_owned)));
-        Ok(SecretString::from(TOKEN.to_owned()))
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Kind {
-    Json,
-    Get,
-    Multipart,
-}
-
-#[derive(Debug, Clone)]
-struct Call {
-    kind: Kind,
-    url: String,
-    token: String,
-    body: String,
-    filename: String,
-    file: Vec<u8>,
-    content_type: String,
-    timeout: Duration,
-}
-
-struct ScriptedHttp {
-    replies: Mutex<VecDeque<(u16, Vec<u8>)>>,
-    calls: Mutex<Vec<Call>>,
-}
-
-impl ScriptedHttp {
-    fn new(replies: &[(u16, &'static str)]) -> Self {
-        Self {
-            replies: Mutex::new(
-                replies
-                    .iter()
-                    .map(|(status, body)| (*status, body.as_bytes().to_vec()))
-                    .collect(),
-            ),
-            calls: Mutex::new(Vec::new()),
-        }
-    }
-
-    fn push_reply(&self, status: u16, body: &[u8]) {
-        self.replies
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push_back((status, body.to_vec()));
-    }
-
-    fn reply(&self) -> HttpReply {
-        let mut replies = self.replies.lock().unwrap_or_else(PoisonError::into_inner);
-        let (status, body) = replies.pop_front().expect("a scripted reply");
-        HttpReply { status, body }
-    }
-
-    fn record(&self, call: Call) {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(call);
-    }
-
-    fn calls(&self) -> Vec<Call> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-}
-
-fn text(bytes: &[u8]) -> String {
-    std::str::from_utf8(bytes)
-        .expect("a UTF-8 request part")
-        .to_owned()
-}
-
-#[async_trait]
-impl VertexRagHttp for ScriptedHttp {
-    async fn post_json(&self, request: JsonRequest<'_>) -> Result<HttpReply, PortError> {
-        self.record(Call {
-            kind: Kind::Json,
-            url: request.url.to_owned(),
-            token: request.token.expose_secret().clone(),
-            body: text(request.body),
-            filename: String::new(),
-            file: Vec::new(),
-            content_type: String::new(),
-            timeout: request.timeout,
-        });
-        Ok(self.reply())
-    }
-
-    async fn get(&self, request: GetRequest<'_>) -> Result<HttpReply, PortError> {
-        self.record(Call {
-            kind: Kind::Get,
-            url: request.url.to_owned(),
-            token: request.token.expose_secret().clone(),
-            body: String::new(),
-            filename: String::new(),
-            file: Vec::new(),
-            content_type: String::new(),
-            timeout: request.timeout,
-        });
-        Ok(self.reply())
-    }
-
-    async fn post_multipart(&self, request: MultipartRequest<'_>) -> Result<HttpReply, PortError> {
-        self.record(Call {
-            kind: Kind::Multipart,
-            url: request.url.to_owned(),
-            token: request.token.expose_secret().clone(),
-            body: text(request.metadata),
-            filename: request.filename.to_owned(),
-            file: request.file.to_vec(),
-            content_type: request.file_content_type.to_owned(),
-            timeout: request.timeout,
-        });
-        Ok(self.reply())
-    }
-}
-
-struct Harness {
-    ingestion: VertexIngestion,
-    token: Arc<FakeToken>,
-    http: Arc<ScriptedHttp>,
-}
-
-fn raw(source: &str) -> Box<RawValue> {
-    serde_json::from_str(source).expect("a raw JSON value")
-}
-
-fn chunking(entries: &[(&str, &str)]) -> ChunkingStrategyMap {
-    entries
-        .iter()
-        .map(|(name, value)| ((*name).to_owned(), raw(value)))
-        .collect()
-}
-
-fn state(name: Option<&str>, strategy: Option<ChunkingStrategyMap>) -> IngestionState {
-    IngestionState::new(
-        IngestionOptions {
-            name: name.map(str::to_owned),
-            chunking_strategy: strategy,
-            ..IngestionOptions::default()
-        },
-        None,
-        IngestionPorts {
-            ocr: Arc::new(Unused),
-            uploader: Arc::new(Unused),
-            credentials: Arc::new(Unused),
-        },
-    )
-    .expect("an ingestion state")
-}
-
-fn build(
-    options: &str,
-    settings: &VertexSettings,
-    name: Option<&str>,
-    strategy: Option<ChunkingStrategyMap>,
-    replies: &[(u16, &'static str)],
-) -> Harness {
-    let http = Arc::new(ScriptedHttp::new(replies));
-    let token = Arc::new(FakeToken::default());
-    let ports = VertexIngestionPorts {
-        token: Arc::<FakeToken>::clone(&token),
-        http: Arc::<ScriptedHttp>::clone(&http),
-    };
-    let options: VertexAIVectorStoreOptions =
-        serde_json::from_str(options).expect("vector store options");
-    Harness {
-        ingestion: VertexIngestion::new(state(name, strategy), options, settings, ports),
-        token,
-        http,
-    }
-}
-
-#[derive(Default, Clone, Copy)]
-struct File<'call> {
-    content: Option<&'call [u8]>,
-    filename: Option<&'call str>,
-    content_type: Option<&'call str>,
-    existing_file_id: Option<&'call str>,
-}
-
-async fn store(harness: &Harness, file: File<'_>) -> Result<StoreResult, VertexIngestionError> {
-    harness
-        .ingestion
-        .store(StoreRequest {
-            file_content: file.content,
-            filename: file.filename,
-            content_type: file.content_type,
-            chunks: &[],
-            embeddings: None,
-            existing_file_id: file.existing_file_id,
-        })
-        .await
-}
-
-fn json_body(call: &Call) -> Extra {
-    serde_json::from_str(&call.body).expect("a JSON request body")
-}
-
-fn expected(source: &str) -> Extra {
-    serde_json::from_str(source).expect("an expected JSON body")
-}
-
-#[derive(Clone, Default)]
-struct Captured(Arc<Mutex<Vec<u8>>>);
-
-impl Captured {
-    fn text(&self) -> String {
-        let bytes = self.0.lock().expect("the capture lock").clone();
-        String::from_utf8(bytes).expect("the captured log is UTF-8")
-    }
-}
-
-impl io::Write for Captured {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0
-            .lock()
-            .map_err(|error| io::Error::other(error.to_string()))?
-            .extend_from_slice(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-fn capture() -> (Captured, DefaultGuard) {
-    let captured = Captured::default();
-    let writer = captured.clone();
-    let subscriber = tracing_subscriber::fmt()
-        .with_writer(move || writer.clone())
-        .with_max_level(tracing::Level::DEBUG)
-        .with_ansi(false)
-        .finish();
-    (captured, set_default(subscriber))
-}
 
 #[test]
 fn flags_supports_existing_file_id_matches_the_shared_state() {
@@ -379,8 +51,8 @@ async fn flags_existing_file_id_is_ignored() {
     let file = File {
         content: Some(b"data".as_slice()),
         filename: Some("n.txt"),
+        content_type: None,
         existing_file_id: Some("legacy"),
-        ..File::default()
     };
     let (_, file_id) = store(&harness, file).await.expect("a stored file");
     assert_eq!(file_id.as_deref(), Some("files/1"));
@@ -391,11 +63,15 @@ async fn flags_existing_file_id_is_ignored() {
         None,
         &[],
     );
-    let file = File {
+    let idle_file = File {
+        content: None,
+        filename: None,
+        content_type: None,
         existing_file_id: Some("legacy"),
-        ..File::default()
     };
-    let (_, file_id) = store(&idle, file).await.expect("a skipped upload");
+    let (_, file_id) = store(&idle, idle_file)
+        .await
+        .expect("a skipped upload");
     assert_eq!(file_id, None);
 }
 
@@ -415,11 +91,13 @@ async fn project_missing_project_fails_without_any_port_call() {
 
 #[tokio::test]
 async fn project_empty_project_option_is_missing() {
-    let settings = VertexSettings {
-        project: Some("settings-proj".to_owned()),
-        ..VertexSettings::default()
-    };
-    let harness = build(r#"{"vertex_project":""}"#, &settings, None, None, &[]);
+    let harness = build(
+        r#"{"vertex_project":""}"#,
+        &settings(Some("settings-proj"), None),
+        None,
+        None,
+        &[],
+    );
     let error = store(&harness, File::default())
         .await
         .expect_err("an empty project");
@@ -432,11 +110,13 @@ async fn project_empty_project_option_is_missing() {
 
 #[tokio::test]
 async fn project_settings_project_is_used_when_the_options_omit_one() {
-    let settings = VertexSettings {
-        project: Some("settings-proj".to_owned()),
-        ..VertexSettings::default()
-    };
-    let harness = build("{}", &settings, None, None, &[(200, DONE)]);
+    let harness = build(
+        "{}",
+        &settings(Some("settings-proj"), None),
+        None,
+        None,
+        &[(200, DONE)],
+    );
     store(&harness, File::default())
         .await
         .expect("a created corpus");
@@ -448,12 +128,14 @@ async fn project_settings_project_is_used_when_the_options_omit_one() {
 
 #[tokio::test]
 async fn project_vertex_project_wins_over_the_vertex_ai_alias() {
-    let settings = VertexSettings {
-        project: Some("settings-proj".to_owned()),
-        ..VertexSettings::default()
-    };
     let options = r#"{"vertex_project":"primary","vertex_ai_project":"alias"}"#;
-    let harness = build(options, &settings, None, None, &[(200, DONE)]);
+    let harness = build(
+        options,
+        &settings(Some("settings-proj"), None),
+        None,
+        None,
+        &[(200, DONE)],
+    );
     store(&harness, File::default())
         .await
         .expect("a created corpus");
@@ -481,11 +163,13 @@ async fn project_location_defaults_to_us_central1() {
 
 #[tokio::test]
 async fn project_location_uses_the_settings_value() {
-    let settings = VertexSettings {
-        location: Some("europe-west4".to_owned()),
-        ..VertexSettings::default()
-    };
-    let harness = build(PROJECT_OPTIONS, &settings, None, None, &[(200, DONE)]);
+    let harness = build(
+        PROJECT_OPTIONS,
+        &settings(None, Some("europe-west4")),
+        None,
+        None,
+        &[(200, DONE)],
+    );
     store(&harness, File::default())
         .await
         .expect("a created corpus");
@@ -595,24 +279,25 @@ async fn corpus_create_sends_the_camel_case_body() {
     assert_eq!(harness.token.credentials_seen().len(), 1);
 }
 
+#[rstest]
+#[case::absent(None)]
+#[case::empty(Some(""))]
 #[tokio::test]
-async fn corpus_create_defaults_the_display_name() {
-    for name in [None, Some("")] {
-        let harness = build(
-            PROJECT_OPTIONS,
-            &VertexSettings::default(),
-            name,
-            None,
-            &[(200, DONE)],
-        );
-        store(&harness, File::default())
-            .await
-            .expect("a created corpus");
-        assert_eq!(
-            json_body(&harness.http.calls()[0]),
-            expected(r#"{"displayName":"litellm-rag-corpus"}"#)
-        );
-    }
+async fn corpus_create_defaults_the_display_name(#[case] name: Option<&str>) {
+    let harness = build(
+        PROJECT_OPTIONS,
+        &VertexSettings::default(),
+        name,
+        None,
+        &[(200, DONE)],
+    );
+    store(&harness, File::default())
+        .await
+        .expect("a created corpus");
+    assert_eq!(
+        json_body(&harness.http.calls()[0]),
+        expected(r#"{"displayName":"litellm-rag-corpus"}"#)
+    );
 }
 
 #[tokio::test]
@@ -730,12 +415,9 @@ async fn corpus_create_done_without_a_name_returns_an_empty_corpus() {
         None,
         &[(200, r#"{"done":true}"#)],
     );
-    let file = File {
-        content: Some(b"data".as_slice()),
-        filename: Some("n.txt"),
-        ..File::default()
-    };
-    let (corpus, file_id) = store(&harness, file).await.expect("an empty corpus");
+    let (corpus, file_id) = store(&harness, File::new(b"data", "n.txt"))
+        .await
+        .expect("an empty corpus");
     assert_eq!(corpus.as_deref(), Some(""));
     assert_eq!(file_id, None);
     assert_eq!(harness.http.calls().len(), 1);
@@ -960,7 +642,7 @@ async fn upload_description_comes_from_file_description() {
         content: Some(b"data".as_slice()),
         filename: Some("notes.txt"),
         content_type: Some(""),
-        ..File::default()
+        existing_file_id: None,
     };
     store(&harness, file).await.expect("an uploaded file");
     assert_eq!(
@@ -983,12 +665,9 @@ async fn upload_chunking_config_carries_only_nonzero_sizes() {
         Some(strategy),
         &[(200, FILE_REPLY)],
     );
-    let file = File {
-        content: Some(b"data".as_slice()),
-        filename: Some("notes.txt"),
-        ..File::default()
-    };
-    store(&harness, file).await.expect("an uploaded file");
+    store(&harness, File::new(b"data", "notes.txt"))
+        .await
+        .expect("an uploaded file");
     assert_eq!(
         json_body(&harness.http.calls()[0]),
         expected(
@@ -1007,12 +686,9 @@ async fn upload_omits_the_chunking_config_for_zero_sizes() {
         Some(strategy),
         &[(200, FILE_REPLY)],
     );
-    let file = File {
-        content: Some(b"data".as_slice()),
-        filename: Some("notes.txt"),
-        ..File::default()
-    };
-    store(&harness, file).await.expect("an uploaded file");
+    store(&harness, File::new(b"data", "notes.txt"))
+        .await
+        .expect("an uploaded file");
     assert_eq!(
         json_body(&harness.http.calls()[0]),
         expected(r#"{"rag_file":{"display_name":"notes.txt"}}"#)
@@ -1028,11 +704,7 @@ async fn upload_skips_empty_content() {
         None,
         &[],
     );
-    let file = File {
-        content: Some(b"".as_slice()),
-        filename: Some("notes.txt"),
-        ..File::default()
-    };
+    let file = File::new(b"", "notes.txt");
     let (corpus, file_id) = store(&harness, file).await.expect("a skipped upload");
     assert_eq!(corpus.as_deref(), Some("corpora/7"));
     assert_eq!(file_id, None);
@@ -1049,11 +721,7 @@ async fn upload_skips_an_empty_filename() {
         None,
         &[],
     );
-    let file = File {
-        content: Some(b"data".as_slice()),
-        filename: Some(""),
-        ..File::default()
-    };
+    let file = File::new(b"data", "");
     let (_, file_id) = store(&harness, file).await.expect("a skipped upload");
     assert_eq!(file_id, None);
     assert!(harness.http.calls().is_empty());
@@ -1068,12 +736,9 @@ async fn upload_skips_an_empty_corpus_id() {
         None,
         &[(200, r#"{"done":true}"#)],
     );
-    let file = File {
-        content: Some(b"data".as_slice()),
-        filename: Some("notes.txt"),
-        ..File::default()
-    };
-    let (corpus, file_id) = store(&harness, file).await.expect("an empty corpus");
+    let (corpus, file_id) = store(&harness, File::new(b"data", "notes.txt"))
+        .await
+        .expect("an empty corpus");
     assert_eq!(corpus.as_deref(), Some(""));
     assert_eq!(file_id, None);
     assert_eq!(harness.http.calls()[0].kind, Kind::Json);
@@ -1090,12 +755,9 @@ async fn upload_file_id_prefers_rag_file_name() {
         None,
         &[(200, reply)],
     );
-    let file = File {
-        content: Some(b"data".as_slice()),
-        filename: Some("notes.txt"),
-        ..File::default()
-    };
-    let (_, file_id) = store(&harness, file).await.expect("an uploaded file");
+    let (_, file_id) = store(&harness, File::new(b"data", "notes.txt"))
+        .await
+        .expect("an uploaded file");
     assert_eq!(file_id.as_deref(), Some("files/1"));
 }
 
@@ -1108,12 +770,9 @@ async fn upload_file_id_falls_back_to_the_top_level_name() {
         None,
         &[(201, r#"{"name":"top"}"#)],
     );
-    let file = File {
-        content: Some(b"data".as_slice()),
-        filename: Some("notes.txt"),
-        ..File::default()
-    };
-    let (_, file_id) = store(&harness, file).await.expect("an uploaded file");
+    let (_, file_id) = store(&harness, File::new(b"data", "notes.txt"))
+        .await
+        .expect("an uploaded file");
     assert_eq!(file_id.as_deref(), Some("top"));
 }
 
@@ -1126,17 +785,14 @@ async fn upload_file_id_is_empty_when_absent() {
         None,
         &[(200, "{}")],
     );
-    let file = File {
-        content: Some(b"data".as_slice()),
-        filename: Some("notes.txt"),
-        ..File::default()
-    };
-    let (_, file_id) = store(&harness, file).await.expect("an uploaded file");
+    let (_, file_id) = store(&harness, File::new(b"data", "notes.txt"))
+        .await
+        .expect("an uploaded file");
     assert_eq!(file_id.as_deref(), Some(""));
 }
 
 #[tokio::test]
-async fn upload_unparseable_response_returns_uploaded() {
+async fn upload_unparsable_response_returns_uploaded() {
     let harness = build(
         EXISTING_OPTIONS,
         &VertexSettings::default(),
@@ -1144,12 +800,9 @@ async fn upload_unparseable_response_returns_uploaded() {
         None,
         &[(200, "not json")],
     );
-    let file = File {
-        content: Some(b"data".as_slice()),
-        filename: Some("notes.txt"),
-        ..File::default()
-    };
-    let (_, file_id) = store(&harness, file).await.expect("an uploaded file");
+    let (_, file_id) = store(&harness, File::new(b"data", "notes.txt"))
+        .await
+        .expect("an uploaded file");
     assert_eq!(file_id.as_deref(), Some("uploaded"));
 }
 
@@ -1163,12 +816,9 @@ async fn upload_non_object_rag_file_returns_uploaded() {
         None,
         &[(200, reply)],
     );
-    let file = File {
-        content: Some(b"data".as_slice()),
-        filename: Some("notes.txt"),
-        ..File::default()
-    };
-    let (_, file_id) = store(&harness, file).await.expect("an uploaded file");
+    let (_, file_id) = store(&harness, File::new(b"data", "notes.txt"))
+        .await
+        .expect("an uploaded file");
     assert_eq!(file_id.as_deref(), Some("uploaded"));
 }
 
@@ -1230,12 +880,9 @@ async fn error_upload_status_failure_keeps_the_created_corpus() {
         None,
         &[(200, DONE), (500, "boom")],
     );
-    let file = File {
-        content: Some(b"data".as_slice()),
-        filename: Some("notes.txt"),
-        ..File::default()
-    };
-    let error = store(&harness, file).await.expect_err("an upload failure");
+    let error = store(&harness, File::new(b"data", "notes.txt"))
+        .await
+        .expect_err("an upload failure");
     assert_eq!(error.to_string(), "Failed to upload file: boom");
     let calls = harness.http.calls();
     assert_eq!(calls.len(), 2);
@@ -1306,12 +953,9 @@ async fn secret_token_never_reaches_the_logs() {
         None,
         &[(200, FILE_REPLY)],
     );
-    let file = File {
-        content: Some(b"data".as_slice()),
-        filename: Some("notes.txt"),
-        ..File::default()
-    };
-    store(&harness, file).await.expect("an uploaded file");
+    store(&harness, File::new(b"data", "notes.txt"))
+        .await
+        .expect("an uploaded file");
     let text = logs.text();
     assert!(text.contains("Uploading file to RAG corpus"));
     assert!(text.contains("Upload complete. File ID: files/1"));
@@ -1336,12 +980,9 @@ async fn secret_credentials_stay_out_of_logs_and_errors() {
         None,
         &[(200, DONE), (500, "boom")],
     );
-    let file = File {
-        content: Some(b"data".as_slice()),
-        filename: Some("notes.txt"),
-        ..File::default()
-    };
-    let error = store(&harness, file).await.expect_err("an upload failure");
+    let error = store(&harness, File::new(b"data", "notes.txt"))
+        .await
+        .expect_err("an upload failure");
     assert_eq!(harness.token.credentials_seen(), vec![true]);
     assert!(!logs.text().contains(SECRET));
     assert!(!error.to_string().contains(SECRET));

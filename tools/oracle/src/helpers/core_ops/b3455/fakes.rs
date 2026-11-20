@@ -1,6 +1,4 @@
 use std::collections::VecDeque;
-use std::error::Error as StdError;
-use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::sync::{Mutex, PoisonError};
 
 use async_trait::async_trait;
@@ -14,6 +12,7 @@ use betterlite_core::rag::vertex_ingestion::ports::{
 };
 use secrecy::SecretString;
 use serde_json::{Value, json};
+use thiserror::Error;
 
 const TOKEN: &str = "oracle-token";
 
@@ -127,74 +126,67 @@ impl ScriptedHttp {
     }
 }
 
+enum Part<'request> {
+    Json(&'request JsonRequest<'request>),
+    Get(&'request GetRequest<'request>),
+    Multipart(&'request MultipartRequest<'request>),
+}
+
+impl Part<'_> {
+    fn into_value(self) -> Value {
+        match self {
+            Part::Json(request) => json!({
+                "kind": "post_json",
+                "url": request.url,
+                "timeout": request.timeout.as_secs_f64(),
+                "json": serde_json::from_slice::<Value>(request.body).unwrap_or(Value::Null),
+                "metadata": null,
+                "filename": null,
+                "file_bytes": null,
+                "file_content_type": null,
+            }),
+            Part::Get(request) => json!({
+                "kind": "get",
+                "url": request.url,
+                "timeout": request.timeout.as_secs_f64(),
+                "json": null,
+                "metadata": null,
+                "filename": null,
+                "file_bytes": null,
+                "file_content_type": null,
+            }),
+            Part::Multipart(request) => json!({
+                "kind": "post_multipart",
+                "url": request.url,
+                "timeout": request.timeout.as_secs_f64(),
+                "json": null,
+                "metadata": serde_json::from_slice::<Value>(request.metadata).unwrap_or(Value::Null),
+                "filename": request.filename,
+                "file_bytes": request.file.len(),
+                "file_content_type": request.file_content_type,
+            }),
+        }
+    }
+}
+
 #[async_trait]
 impl VertexRagHttp for ScriptedHttp {
     async fn post_json(&self, request: JsonRequest<'_>) -> Result<HttpReply, PortError> {
-        self.push(record(vec![
-            ("kind", Value::String("post_json".to_owned())),
-            ("url", Value::String(request.url.to_owned())),
-            ("timeout", json!(request.timeout.as_secs_f64())),
-            ("json", json_body(request.body)),
-            ("metadata", Value::Null),
-            ("filename", Value::Null),
-            ("file_bytes", Value::Null),
-            ("file_content_type", Value::Null),
-        ]));
+        self.push(Part::Json(&request).into_value());
         self.reply()
     }
 
     async fn get(&self, request: GetRequest<'_>) -> Result<HttpReply, PortError> {
-        self.push(record(vec![
-            ("kind", Value::String("get".to_owned())),
-            ("url", Value::String(request.url.to_owned())),
-            ("timeout", json!(request.timeout.as_secs_f64())),
-            ("json", Value::Null),
-            ("metadata", Value::Null),
-            ("filename", Value::Null),
-            ("file_bytes", Value::Null),
-            ("file_content_type", Value::Null),
-        ]));
+        self.push(Part::Get(&request).into_value());
         self.reply()
     }
 
     async fn post_multipart(&self, request: MultipartRequest<'_>) -> Result<HttpReply, PortError> {
-        self.push(record(vec![
-            ("kind", Value::String("post_multipart".to_owned())),
-            ("url", Value::String(request.url.to_owned())),
-            ("timeout", json!(request.timeout.as_secs_f64())),
-            ("json", Value::Null),
-            ("metadata", json_body(request.metadata)),
-            ("filename", Value::String(request.filename.to_owned())),
-            ("file_bytes", json!(request.file.len())),
-            (
-                "file_content_type",
-                Value::String(request.file_content_type.to_owned()),
-            ),
-        ]));
+        self.push(Part::Multipart(&request).into_value());
         self.reply()
     }
 }
 
-fn record(entries: Vec<(&str, Value)>) -> Value {
-    Value::Object(
-        entries
-            .into_iter()
-            .map(|(name, value)| (name.to_owned(), value))
-            .collect(),
-    )
-}
-
-fn json_body(body: &[u8]) -> Value {
-    serde_json::from_slice(body).unwrap_or(Value::Null)
-}
-
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error("the reply script is exhausted")]
 struct ExhaustedScript;
-
-impl Display for ExhaustedScript {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
-        formatter.write_str("the reply script is exhausted")
-    }
-}
-
-impl StdError for ExhaustedScript {}
