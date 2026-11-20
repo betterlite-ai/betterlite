@@ -159,14 +159,14 @@ pub fn apply_prompt_management(
     }
     let client_input = input_to_chat_messages(Some(&input))?;
     let model_info = present(kwargs, "model_info").cloned();
-    let Some(manager) = manager else {
+    let Some(prompt_manager) = manager else {
         return Ok(untouched(input, model, custom_llm_provider, model_info));
     };
     let hook = HookRequest {
         prompt_id: text_value(kwargs, "prompt_id"),
         non_default_params: kwargs,
     };
-    if !manager.runs_prompt_hooks(&hook) {
+    if !prompt_manager.runs_prompt_hooks(&hook) {
         return Ok(untouched(input, model, custom_llm_provider, model_info));
     }
     let call = HookCall {
@@ -174,7 +174,7 @@ pub fn apply_prompt_management(
         custom_llm_provider,
         use_chat_completions_api,
     };
-    let Some(answer) = run_hook(manager, &call, kwargs, &client_input, lookup)? else {
+    let Some(answer) = run_hook(prompt_manager, &call, kwargs, &client_input, lookup)? else {
         return Ok(untouched(input, model, custom_llm_provider, model_info));
     };
     finish(FinishRequest {

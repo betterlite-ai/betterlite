@@ -34,9 +34,12 @@ impl OpenAiLikeResponsesConfig {
         api_base: Option<&str>,
     ) -> Result<String, CompatibleConfigError> {
         let (base, _key) = self.settings.resolve(api_base, None);
-        let Some(base) = base else {
+        let Some(resolved) = base else {
             return Err(CompatibleConfigError::MissingApiBase);
         };
-        Ok(format!("{}{RESPONSES_PATH}", base.trim_end_matches('/')))
+        Ok(format!(
+            "{}{RESPONSES_PATH}",
+            resolved.trim_end_matches('/')
+        ))
     }
 }

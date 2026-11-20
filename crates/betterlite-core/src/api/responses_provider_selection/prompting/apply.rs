@@ -52,7 +52,7 @@ pub(super) fn merge_request<'request>(
 }
 fn provider_value(provider: Option<&str>) -> JsonValue {
     match provider {
-        Some(provider) => JsonValue::Text(provider.to_owned()),
+        Some(name) => JsonValue::Text(name.to_owned()),
         None => JsonValue::Null,
     }
 }
@@ -99,7 +99,7 @@ pub(super) fn finish(request: FinishRequest<'_>) -> Result<PromptOutcome, Prompt
     for (name, value) in answer.optional_params {
         local_vars.insert(name, value);
     }
-    let deployment_model_info = model_info_after_swap(
+    let model_info = model_info_after_swap(
         custom_llm_provider,
         provider.as_deref(),
         deployment_model_info,
@@ -108,6 +108,6 @@ pub(super) fn finish(request: FinishRequest<'_>) -> Result<PromptOutcome, Prompt
         input: merged.input,
         model: answer.model,
         custom_llm_provider: provider,
-        deployment_model_info,
+        deployment_model_info: model_info,
     })
 }
