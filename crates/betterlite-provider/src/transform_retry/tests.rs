@@ -23,13 +23,14 @@ use crate::prepared::{PreparedChat, PreparedHttp, PreparedRequest, Upstream};
 
 mod bounds;
 
-struct Rewrite;
+enum Transform {
+    Rewrite,
+    Refuse,
+}
 
 struct Always;
 
 struct Declines;
-
-struct Refuses;
 
 impl TransformOnUnprocessable for Declines {}
 
@@ -39,22 +40,7 @@ impl TransformOnUnprocessable for Always {
     }
 }
 
-impl TransformOnUnprocessable for Refuses {
-    fn should_retry(&self, response: &UpstreamResponse, _deployment: &Deployment) -> bool {
-        response.status == 422
-    }
-
-    fn transform_request(
-        &self,
-        _prepared: &mut PreparedRequest,
-        _response: &UpstreamResponse,
-        _deployment: &Deployment,
-    ) -> Result<(), OperationError> {
-        Err(OperationError::MissingApiKey)
-    }
-}
-
-impl TransformOnUnprocessable for Rewrite {
+impl TransformOnUnprocessable for Transform {
     fn should_retry(&self, response: &UpstreamResponse, _deployment: &Deployment) -> bool {
         response.status == 422
     }
@@ -65,6 +51,9 @@ impl TransformOnUnprocessable for Rewrite {
         _response: &UpstreamResponse,
         _deployment: &Deployment,
     ) -> Result<(), OperationError> {
+        let Self::Rewrite = self else {
+            return Err(OperationError::MissingApiKey);
+        };
         if let PreparedRequest::Chat(chat) = prepared {
             chat.http.body = b"rewritten".to_vec();
         }
@@ -127,10 +116,10 @@ fn deployment() -> Deployment {
 }
 
 #[rstest]
-#[case::disabled_makes_one_attempt(TransformRetry::DISABLED, &Rewrite, vec![422], 422, vec!["original"])]
-#[case::retries_until_success(TransformRetry::bounded(3).unwrap(), &Rewrite, vec![422, 422, 200], 200, vec!["original", "rewritten", "rewritten"])]
-#[case::stops_at_the_bound(TransformRetry::bounded(2).unwrap(), &Rewrite, vec![422, 422], 422, vec!["original", "rewritten"])]
-#[case::hook_declines_other_statuses(TransformRetry::bounded(3).unwrap(), &Rewrite, vec![500], 500, vec!["original"])]
+#[case::disabled_makes_one_attempt(TransformRetry::DISABLED, &Transform::Rewrite, vec![422], 422, vec!["original"])]
+#[case::retries_until_success(TransformRetry::bounded(3).unwrap(), &Transform::Rewrite, vec![422, 422, 200], 200, vec!["original", "rewritten", "rewritten"])]
+#[case::stops_at_the_bound(TransformRetry::bounded(2).unwrap(), &Transform::Rewrite, vec![422, 422], 422, vec!["original", "rewritten"])]
+#[case::hook_declines_other_statuses(TransformRetry::bounded(3).unwrap(), &Transform::Rewrite, vec![500], 500, vec!["original"])]
 #[case::hook_declines_by_default(TransformRetry::bounded(3).unwrap(), &Declines, vec![422], 422, vec!["original"])]
 #[case::a_success_is_never_retried(TransformRetry::bounded(3).unwrap(), &Always, vec![200], 200, vec!["original"])]
 #[tokio::test]
@@ -174,7 +163,7 @@ async fn a_failing_transform_fails_the_call() {
     let inputs = deployment();
     let (bodies, answer) = tokio::join!(
         serve(listener, vec![422, 200]),
-        send_with_retry(&client, &request, &inputs, &Refuses)
+        send_with_retry(&client, &request, &inputs, &Transform::Refuse)
     );
     assert!(matches!(answer, Err(OperationError::MissingApiKey)));
     assert_eq!(bodies, vec!["original"]);

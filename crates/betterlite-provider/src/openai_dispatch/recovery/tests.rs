@@ -1,8 +1,6 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -37,18 +35,86 @@ const LIMIT_ERROR: &str = r#"{"error":{"message":"You could not finish the messa
 const REJECTED_TEMPERATURE: &str = r#"{"error":{"message":"{\"detail\":[{\"loc\":[\"body\",\"temperature\"],\"msg\":\"extra inputs are not permitted\"}]}","type":"invalid_request_error","param":"temperature","code":"invalid_request_error"}}"#;
 const MALFORMED_DETAIL: &str = r#"{"error":{"message":"[1, 2]","type":"invalid_request_error","code":"invalid_request_error"}}"#;
 
-type Check = fn() -> Pin<Box<dyn Future<Output = ()>>>;
+#[derive(Clone, Copy)]
+enum Expectation {
+    RecoveredRequest,
+    ProviderError,
+    RejectedFieldKept,
+    RejectedFieldsError,
+    Resent,
+}
+
+const STREAM_REQUEST: &str =
+    r#"{"model":"g","messages":[{"role":"user","content":"hi"}],"stream":true}"#;
+const UNRELATED: &str = r#"{"error":{"message":"bad"}}"#;
 
 #[rstest]
-#[case::output_limit_chat(output_limit_chat)]
-#[case::output_limit_stream(output_limit_stream)]
-#[case::unrelated_400_stays_provider(unrelated_400_stays_provider)]
-#[case::retry_drops_rejected_fields(retry_drops_rejected_fields)]
-#[case::retry_needs_global_flag(retry_needs_global_flag)]
-#[case::malformed_detail_fails_the_call(malformed_detail_fails_the_call)]
+#[case::output_limit_chat(CHAT, false, false, &[(400, LIMIT_ERROR)], Expectation::RecoveredRequest)]
+#[case::output_limit_stream(STREAM_REQUEST, true, false, &[(400, LIMIT_ERROR)], Expectation::RecoveredRequest)]
+#[case::unrelated_400_stays_provider(CHAT, false, false, &[(400, UNRELATED)], Expectation::ProviderError)]
+#[case::retry_drops_rejected_fields(
+    CHAT_WITH_TEMPERATURE,
+    false,
+    true,
+    &[(422, REJECTED_TEMPERATURE), (200, CHAT_REPLY)],
+    Expectation::Resent
+)]
+#[case::retry_needs_global_flag(
+    CHAT_WITH_TEMPERATURE,
+    false,
+    false,
+    &[(422, REJECTED_TEMPERATURE), (200, CHAT_REPLY)],
+    Expectation::RejectedFieldKept
+)]
+#[case::malformed_detail_fails_the_call(
+    CHAT,
+    false,
+    true,
+    &[(422, MALFORMED_DETAIL), (200, CHAT_REPLY)],
+    Expectation::RejectedFieldsError
+)]
 #[tokio::test]
-async fn openai_recovery_cases(#[case] check: Check) {
-    check().await;
+async fn openai_recovery_cases(
+    #[case] request: &'static str,
+    #[case] stream: bool,
+    #[case] global_drop_params: bool,
+    #[case] replies: &'static [(u16, &'static str)],
+    #[case] expected: Expectation,
+) {
+    let (result, bodies) = answered(request, stream, global_drop_params, replies.to_vec()).await;
+    match expected {
+        Expectation::RecoveredRequest => {
+            let OperationResult::OutputLimit { sent } = result.unwrap() else {
+                panic!("the output-limit 400 decodes to the recovered request");
+            };
+            let sent_on_the_wire: JsonValue = serde_json::from_slice(bodies[0].as_bytes()).unwrap();
+            assert_eq!(*sent, sent_on_the_wire);
+        }
+        Expectation::ProviderError => {
+            assert!(matches!(result, Err(OperationError::Provider { .. })));
+            assert_eq!(bodies.len(), 1);
+        }
+        Expectation::RejectedFieldKept => {
+            assert!(matches!(result, Err(OperationError::Provider { .. })));
+            assert_eq!(bodies.len(), 1);
+            assert!(bodies[0].contains("\"temperature\":0.5"), "{}", bodies[0]);
+        }
+        Expectation::RejectedFieldsError => {
+            assert!(matches!(result, Err(OperationError::RejectedFields { .. })));
+            assert_eq!(bodies.len(), 1);
+        }
+        Expectation::Resent => {
+            let OperationResult::Chat(ChatCompletion::OpenAi(completion)) = result.unwrap() else {
+                panic!("the resent call answers the provider's completion");
+            };
+            assert_eq!(completion.model, "g");
+            assert_eq!(bodies.len(), 2);
+            assert!(bodies[0].contains("\"temperature\":0.5"), "{}", bodies[0]);
+            assert!(!bodies[1].contains("temperature"), "{}", bodies[1]);
+            assert!(bodies[1].contains("\"messages\""), "{}", bodies[1]);
+            assert!(bodies[1].contains("\"model\":\"up\""), "{}", bodies[1]);
+        }
+    }
 }
 
 async fn serve(listener: TcpListener, replies: Vec<(u16, &'static str)>) -> Vec<String> {
@@ -142,90 +208,4 @@ async fn answered(
     );
     let decoded = upstream.and_then(|answer| OpenAi.decode(&prepared, answer));
     (decoded, bodies)
-}
-
-fn output_limit_chat() -> Pin<Box<dyn Future<Output = ()>>> {
-    Box::pin(async {
-        let (result, bodies) = answered(CHAT, false, false, vec![(400, LIMIT_ERROR)]).await;
-        let OperationResult::OutputLimit { sent } = result.unwrap() else {
-            panic!("the output-limit 400 decodes to the recovered request");
-        };
-        let sent_on_the_wire: JsonValue = serde_json::from_slice(bodies[0].as_bytes()).unwrap();
-        assert_eq!(*sent, sent_on_the_wire);
-    })
-}
-
-fn output_limit_stream() -> Pin<Box<dyn Future<Output = ()>>> {
-    Box::pin(async {
-        let request = r#"{"model":"g","messages":[{"role":"user","content":"hi"}],"stream":true}"#;
-        let (result, bodies) = answered(request, true, false, vec![(400, LIMIT_ERROR)]).await;
-        let OperationResult::OutputLimit { sent } = result.unwrap() else {
-            panic!("the output-limit 400 decodes to the recovered request");
-        };
-        let sent_on_the_wire: JsonValue = serde_json::from_slice(bodies[0].as_bytes()).unwrap();
-        assert_eq!(*sent, sent_on_the_wire);
-    })
-}
-
-fn unrelated_400_stays_provider() -> Pin<Box<dyn Future<Output = ()>>> {
-    Box::pin(async {
-        let (result, _bodies) = answered(
-            CHAT,
-            false,
-            false,
-            vec![(400, r#"{"error":{"message":"bad"}}"#)],
-        )
-        .await;
-        assert!(matches!(result, Err(OperationError::Provider { .. })));
-    })
-}
-
-fn retry_drops_rejected_fields() -> Pin<Box<dyn Future<Output = ()>>> {
-    Box::pin(async {
-        let (result, bodies) = answered(
-            CHAT_WITH_TEMPERATURE,
-            false,
-            true,
-            vec![(422, REJECTED_TEMPERATURE), (200, CHAT_REPLY)],
-        )
-        .await;
-        let OperationResult::Chat(ChatCompletion::OpenAi(completion)) = result.unwrap() else {
-            panic!("the resent call answers the provider's completion");
-        };
-        assert_eq!(completion.model, "g");
-        assert_eq!(bodies.len(), 2);
-        assert!(bodies[0].contains("\"temperature\":0.5"), "{}", bodies[0]);
-        assert!(!bodies[1].contains("temperature"), "{}", bodies[1]);
-        assert!(bodies[1].contains("\"messages\""), "{}", bodies[1]);
-        assert!(bodies[1].contains("\"model\":\"up\""), "{}", bodies[1]);
-    })
-}
-
-fn retry_needs_global_flag() -> Pin<Box<dyn Future<Output = ()>>> {
-    Box::pin(async {
-        let (result, bodies) = answered(
-            CHAT_WITH_TEMPERATURE,
-            false,
-            false,
-            vec![(422, REJECTED_TEMPERATURE), (200, CHAT_REPLY)],
-        )
-        .await;
-        assert!(matches!(result, Err(OperationError::Provider { .. })));
-        assert_eq!(bodies.len(), 1);
-        assert!(bodies[0].contains("temperature"));
-    })
-}
-
-fn malformed_detail_fails_the_call() -> Pin<Box<dyn Future<Output = ()>>> {
-    Box::pin(async {
-        let (result, bodies) = answered(
-            CHAT,
-            false,
-            true,
-            vec![(422, MALFORMED_DETAIL), (200, CHAT_REPLY)],
-        )
-        .await;
-        assert!(matches!(result, Err(OperationError::RejectedFields { .. })));
-        assert_eq!(bodies.len(), 1);
-    })
 }

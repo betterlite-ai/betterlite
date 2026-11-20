@@ -1,8 +1,6 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -36,16 +34,38 @@ const DROP_PARAMS: &str = "litellm_settings: {drop_params: true}\n";
 const RECOVERED_ID: &str = "chatcmpl-00000000-0000-0000-0000-000000000007";
 const RECOVERED_CREATED: u64 = 1_700_000_000;
 
-type Check = fn() -> Pin<Box<dyn Future<Output = ()>>>;
+#[derive(Clone, Copy)]
+enum Expectation {
+    BufferedLength,
+    StreamFrames,
+    ProviderError,
+    Resent,
+}
 
 #[rstest]
-#[case::buffered_length_reply(buffered_length_reply)]
-#[case::stream_two_frames(stream_two_frames)]
-#[case::unrelated_400_answers_400(unrelated_400_answers_400)]
-#[case::drop_params_resend(drop_params_resend)]
+#[case::buffered_length_reply(CHAT, "", &[(400, LIMIT_ERROR)], Expectation::BufferedLength)]
+#[case::stream_two_frames(STREAM, "", &[(400, LIMIT_ERROR)], Expectation::StreamFrames)]
+#[case::unrelated_400_answers_400(CHAT, "", &[(400, UNRELATED)], Expectation::ProviderError)]
+#[case::drop_params_resend(
+    WITH_TEMPERATURE,
+    DROP_PARAMS,
+    &[(422, REJECTED_TEMPERATURE), (200, ANSWER)],
+    Expectation::Resent
+)]
 #[tokio::test]
-async fn output_limit_route_cases(#[case] check: Check) {
-    check().await;
+async fn output_limit_route_cases(
+    #[case] sent: &'static str,
+    #[case] config_tail: &'static str,
+    #[case] replies: &'static [(u16, &'static str)],
+    #[case] expected: Expectation,
+) {
+    let answer = answered(sent, config_tail, replies.to_vec()).await;
+    match expected {
+        Expectation::BufferedLength => buffered_reply(&answer),
+        Expectation::StreamFrames => stream_frames(&answer),
+        Expectation::ProviderError => provider_failure(&answer),
+        Expectation::Resent => resent_after_rejection(&answer),
+    }
 }
 
 #[derive(Deserialize)]
@@ -110,6 +130,13 @@ struct FailureBody {
     error_type: String,
 }
 
+struct Answer {
+    status: StatusCode,
+    headers: HeaderMap,
+    body: Vec<u8>,
+    bodies: Vec<String>,
+}
+
 fn fixed_clock() -> u64 {
     RECOVERED_CREATED
 }
@@ -154,7 +181,7 @@ async fn answered(
     sent: &'static str,
     config_tail: &str,
     replies: Vec<(u16, &'static str)>,
-) -> (StatusCode, HeaderMap, Vec<u8>, Vec<String>) {
+) -> Answer {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}/v1", listener.local_addr().unwrap());
     let source = format!(
@@ -183,108 +210,126 @@ async fn answered(
         .await
         .unwrap()
         .to_vec();
-    (status, headers, body, bodies)
+    Answer {
+        status,
+        headers,
+        body,
+        bodies,
+    }
 }
 
-fn buffered_length_reply() -> Pin<Box<dyn Future<Output = ()>>> {
-    Box::pin(async {
-        let (status, headers, body, bodies) = answered(CHAT, "", vec![(400, LIMIT_ERROR)]).await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(
-            headers
-                .get("llm_provider-x-request-id")
-                .map(|value| value.to_str().unwrap()),
-            Some("up-1")
-        );
-        let reply: Completion = serde_json::from_slice(&body).unwrap();
-        assert_eq!(reply.id, RECOVERED_ID);
-        assert_eq!(reply.object, "chat.completion");
-        assert_eq!(reply.created, RECOVERED_CREATED);
-        assert_eq!(reply.model, "g");
-        assert_eq!(reply.choices.len(), 1);
-        assert_eq!(reply.choices[0].message.role, "assistant");
-        assert_eq!(reply.choices[0].message.content.as_deref(), Some(""));
-        assert_eq!(reply.choices[0].finish_reason.as_deref(), Some("length"));
-        assert!(reply.usage.prompt_tokens > 0);
-        assert_eq!(reply.usage.completion_tokens, 0);
-        assert_eq!(reply.usage.total_tokens, reply.usage.prompt_tokens);
-        assert_eq!(bodies.len(), 1);
-        assert!(bodies[0].contains("\"model\":\"up\""), "{}", bodies[0]);
-        assert!(bodies[0].contains("\"messages\""), "{}", bodies[0]);
-    })
+fn buffered_reply(answer: &Answer) {
+    assert_eq!(answer.status, StatusCode::OK);
+    assert_eq!(
+        answer
+            .headers
+            .get("llm_provider-x-request-id")
+            .map(|value| value.to_str().unwrap()),
+        Some("up-1")
+    );
+    let reply: Completion = serde_json::from_slice(&answer.body).unwrap();
+    assert_eq!(reply.id, RECOVERED_ID);
+    assert_eq!(reply.object, "chat.completion");
+    assert_eq!(reply.created, RECOVERED_CREATED);
+    assert_eq!(reply.model, "g");
+    assert_eq!(reply.choices.len(), 1);
+    assert_eq!(reply.choices[0].message.role, "assistant");
+    assert_eq!(reply.choices[0].message.content.as_deref(), Some(""));
+    assert_eq!(reply.choices[0].finish_reason.as_deref(), Some("length"));
+    assert!(reply.usage.prompt_tokens > 0);
+    assert_eq!(reply.usage.completion_tokens, 0);
+    assert_eq!(reply.usage.total_tokens, reply.usage.prompt_tokens);
+    assert_eq!(answer.bodies.len(), 1);
+    assert!(
+        answer.bodies[0].contains("\"model\":\"up\""),
+        "{}",
+        answer.bodies[0]
+    );
+    assert!(
+        answer.bodies[0].contains("\"messages\""),
+        "{}",
+        answer.bodies[0]
+    );
 }
 
 fn frame_json(frame: &str) -> Frame {
     serde_json::from_str(frame.strip_prefix("data: ").unwrap()).unwrap()
 }
 
-fn stream_two_frames() -> Pin<Box<dyn Future<Output = ()>>> {
-    Box::pin(async {
-        let (status, headers, body, bodies) = answered(STREAM, "", vec![(400, LIMIT_ERROR)]).await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(
-            headers
-                .get("content-type")
-                .map(|value| value.to_str().unwrap()),
-            Some("text/event-stream; charset=utf-8")
-        );
-        let text = String::from_utf8(body).unwrap();
-        let frames: Vec<&str> = text
-            .split("\n\n")
-            .filter(|frame| !frame.is_empty())
-            .collect();
-        assert_eq!(frames.len(), 3, "{text}");
-        let first = frame_json(frames[0]);
-        assert_eq!(first.id, RECOVERED_ID);
-        assert_eq!(first.object, "chat.completion.chunk");
-        assert_eq!(first.created, RECOVERED_CREATED);
-        assert_eq!(first.model, "g");
-        assert_eq!(first.choices.len(), 1);
-        assert_eq!(first.choices[0].delta.role.as_deref(), Some("assistant"));
-        assert_eq!(first.choices[0].delta.content.as_deref(), Some(""));
-        assert_eq!(first.choices[0].finish_reason, None);
-        let second = frame_json(frames[1]);
-        assert_eq!(second.id, first.id);
-        assert_eq!(second.choices[0].delta.role, None);
-        assert_eq!(second.choices[0].delta.content, None);
-        assert_eq!(second.choices[0].finish_reason.as_deref(), Some("length"));
-        assert_eq!(frames[2], "data: [DONE]");
-        assert_eq!(bodies.len(), 1);
-        assert!(bodies[0].contains("\"stream\":true"), "{}", bodies[0]);
-    })
+fn stream_frames(answer: &Answer) {
+    assert_eq!(answer.status, StatusCode::OK);
+    assert_eq!(
+        answer
+            .headers
+            .get("content-type")
+            .map(|value| value.to_str().unwrap()),
+        Some("text/event-stream; charset=utf-8")
+    );
+    let text = std::str::from_utf8(&answer.body).unwrap();
+    let frames: Vec<&str> = text
+        .split("\n\n")
+        .filter(|frame| !frame.is_empty())
+        .collect();
+    assert_eq!(frames.len(), 3, "{text}");
+    let first = frame_json(frames[0]);
+    assert_eq!(first.id, RECOVERED_ID);
+    assert_eq!(first.object, "chat.completion.chunk");
+    assert_eq!(first.created, RECOVERED_CREATED);
+    assert_eq!(first.model, "g");
+    assert_eq!(first.choices.len(), 1);
+    assert_eq!(first.choices[0].delta.role.as_deref(), Some("assistant"));
+    assert_eq!(first.choices[0].delta.content.as_deref(), Some(""));
+    assert_eq!(first.choices[0].finish_reason, None);
+    let second = frame_json(frames[1]);
+    assert_eq!(second.id, first.id);
+    assert_eq!(second.choices[0].delta.role, None);
+    assert_eq!(second.choices[0].delta.content, None);
+    assert_eq!(second.choices[0].finish_reason.as_deref(), Some("length"));
+    assert_eq!(frames[2], "data: [DONE]");
+    assert_eq!(answer.bodies.len(), 1);
+    assert!(
+        answer.bodies[0].contains("\"stream\":true"),
+        "{}",
+        answer.bodies[0]
+    );
 }
 
-fn unrelated_400_answers_400() -> Pin<Box<dyn Future<Output = ()>>> {
-    Box::pin(async {
-        let (status, _headers, body, bodies) = answered(CHAT, "", vec![(400, UNRELATED)]).await;
-        assert_eq!(status, StatusCode::BAD_REQUEST);
-        let failure: Failure = serde_json::from_slice(&body).unwrap();
-        assert_eq!(failure.error.error_type, "invalid_request_error");
-        assert!(
-            failure.error.message.contains("bad request"),
-            "{}",
-            failure.error.message
-        );
-        assert_eq!(bodies.len(), 1);
-    })
+fn provider_failure(answer: &Answer) {
+    assert_eq!(answer.status, StatusCode::BAD_REQUEST);
+    let failure: Failure = serde_json::from_slice(&answer.body).unwrap();
+    assert_eq!(failure.error.error_type, "invalid_request_error");
+    assert!(
+        failure.error.message.contains("bad request"),
+        "{}",
+        failure.error.message
+    );
+    assert_eq!(answer.bodies.len(), 1);
 }
 
-fn drop_params_resend() -> Pin<Box<dyn Future<Output = ()>>> {
-    Box::pin(async {
-        let (status, _headers, body, bodies) = answered(
-            WITH_TEMPERATURE,
-            DROP_PARAMS,
-            vec![(422, REJECTED_TEMPERATURE), (200, ANSWER)],
-        )
-        .await;
-        assert_eq!(status, StatusCode::OK);
-        let reply: Completion = serde_json::from_slice(&body).unwrap();
-        assert_eq!(reply.model, "g");
-        assert_eq!(reply.choices[0].finish_reason.as_deref(), Some("stop"));
-        assert_eq!(bodies.len(), 2);
-        assert!(bodies[0].contains("\"temperature\":0.5"), "{}", bodies[0]);
-        assert!(!bodies[1].contains("temperature"), "{}", bodies[1]);
-        assert!(bodies[1].contains("\"messages\""), "{}", bodies[1]);
-        assert!(bodies[1].contains("\"model\":\"up\""), "{}", bodies[1]);
-    })
+fn resent_after_rejection(answer: &Answer) {
+    assert_eq!(answer.status, StatusCode::OK);
+    let reply: Completion = serde_json::from_slice(&answer.body).unwrap();
+    assert_eq!(reply.model, "g");
+    assert_eq!(reply.choices[0].finish_reason.as_deref(), Some("stop"));
+    assert_eq!(answer.bodies.len(), 2);
+    assert!(
+        answer.bodies[0].contains("\"temperature\":0.5"),
+        "{}",
+        answer.bodies[0]
+    );
+    assert!(
+        !answer.bodies[1].contains("temperature"),
+        "{}",
+        answer.bodies[1]
+    );
+    assert!(
+        answer.bodies[1].contains("\"messages\""),
+        "{}",
+        answer.bodies[1]
+    );
+    assert!(
+        answer.bodies[1].contains("\"model\":\"up\""),
+        "{}",
+        answer.bodies[1]
+    );
 }
