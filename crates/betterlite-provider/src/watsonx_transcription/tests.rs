@@ -8,10 +8,13 @@ use std::time::Duration;
 use betterlite_core::api::vector_store_http_write::error::BaseLlmException;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http_fixture::reply::reply;
+use betterlite_openai::watsonx_audio::error::WatsonxAudioError;
 use rstest::rstest;
 use secrecy::SecretString;
 
-use self::support::{AUDIO, Iam, MODEL, Run, SUPPLIED_BODY_BYTES, environment, object};
+use self::support::{
+    AUDIO, Iam, MODEL, Run, SUPPLIED_BODY_BYTES, environment, object, probe_supported_options,
+};
 use crate::api::transcription_http::error::TranscriptionHttpError;
 use crate::watsonx_transcription::error::WatsonxTranscriptionError;
 
@@ -31,6 +34,8 @@ enum Case {
     ResponseBodyLimit,
     RequestDeadline,
     SuppliedClient,
+    ProviderNotText,
+    SupportedOptions,
 }
 
 #[rstest]
@@ -45,6 +50,8 @@ enum Case {
 #[case::response_body_limit(Case::ResponseBodyLimit)]
 #[case::request_deadline(Case::RequestDeadline)]
 #[case::supplied_client(Case::SuppliedClient)]
+#[case::provider_not_text(Case::ProviderNotText)]
+#[case::supported_options(Case::SupportedOptions)]
 #[tokio::test]
 async fn watsonx_transcription_binding(#[case] case: Case) {
     match case {
@@ -59,6 +66,8 @@ async fn watsonx_transcription_binding(#[case] case: Case) {
         Case::ResponseBodyLimit => response_body_limit().await,
         Case::RequestDeadline => request_deadline().await,
         Case::SuppliedClient => supplied_client().await,
+        Case::ProviderNotText => provider_not_text().await,
+        Case::SupportedOptions => supported_options(),
     }
 }
 
@@ -345,4 +354,36 @@ async fn supplied_client() {
         1,
         "the supplied client sent the call"
     );
+}
+
+async fn provider_not_text() {
+    let mut run = Run::new(json_reply(TRANSCRIPT));
+    run.optional = object(r#"{"space_id":7}"#);
+    let outcome = run
+        .execute(
+            environment(&[("WATSONX_TOKEN", "envtoken")]),
+            Iam::refusing(),
+        )
+        .await;
+    let WatsonxTranscriptionError::Audio(WatsonxAudioError::NotText { field }) =
+        outcome.result.expect_err("a number is not a space id")
+    else {
+        panic!("the adapter keeps B5842's error class");
+    };
+    assert_eq!(field, "space_id");
+    assert!(outcome.requests.is_empty(), "nothing reaches the provider");
+}
+
+fn supported_options() {
+    let supported = probe_supported_options(environment(&[("WATSONX_TOKEN", "envtoken")]));
+    let expected = [
+        "language",
+        "prompt",
+        "response_format",
+        "temperature",
+        "timestamp_granularities",
+    ]
+    .map(String::from)
+    .to_vec();
+    assert_eq!(supported, expected);
 }

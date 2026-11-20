@@ -37,8 +37,10 @@ use chrono::{DateTime, FixedOffset};
 use http::header::HeaderMap;
 use secrecy::SecretString;
 
-use crate::api::transcription_contract::AudioFile;
+use crate::api::transcription_contract::{AudioFile, AudioTranscriptionConfig as _};
+use crate::api::transcription_http::config::Headers;
 use crate::api::transcription_http::reply::TranscriptionReply;
+use crate::watsonx_transcription::config::BoundConfig;
 use crate::watsonx_transcription::error::WatsonxTranscriptionError;
 use crate::watsonx_transcription::{WatsonxTranscription, WatsonxTranscriptionCall};
 
@@ -324,6 +326,13 @@ pub(crate) fn proxied(limits: TransportLimits) -> ProxiedClient {
     );
     ProxiedClient::build(base_builder().http1_only(), &policy, limits)
         .expect("the proxied client builds")
+}
+
+// The options B5842's transform may carry into the form, read through the adapter the operation builds
+pub(crate) fn probe_supported_options(resolved: WatsonxEnvironment) -> Vec<String> {
+    let auth =
+        WatsonxAuth::new(resolved, Iam::refusing(), Arc::new(|| 0.0_f64)).expect("the auth builds");
+    BoundConfig::new(&auth, Headers::new()).supported_openai_params(MODEL)
 }
 
 pub(crate) fn environment(values: &[(&str, &str)]) -> WatsonxEnvironment {
