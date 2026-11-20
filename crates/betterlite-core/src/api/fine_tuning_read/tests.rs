@@ -357,14 +357,19 @@ async fn page_shapes_a_multi_grader() {
     assert_eq!(multi.get("calculate_output"), Some(&json!("inner")));
     let nested = multi
         .get("graders")
-        .and_then(serde_json::Value::as_object)
+        .and_then(|value| value.as_object())
         .expect("a label model grader object");
     assert_eq!(nested.len(), 6);
     assert_eq!(nested.get("type"), Some(&json!("label_model")));
-    assert_eq!(
-        nested.get("input"),
-        Some(&json!([{"content": "rate", "role": "user", "type": null}]))
-    );
+    let items = nested
+        .get("input")
+        .and_then(|value| value.as_array())
+        .expect("the label model's input items");
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].as_object().expect("an input item").len(), 3);
+    assert_eq!(items[0].get("content"), Some(&json!("rate")));
+    assert_eq!(items[0].get("role"), Some(&json!("user")));
+    assert_eq!(items[0].get("type"), Some(&json!(null)));
 }
 
 // a grader type the union names no member for keeps the first member's keys with its own after them
@@ -388,10 +393,14 @@ async fn page_shapes_an_unknown_grader_as_the_union_fallback() {
         .as_object()
         .expect("a fallback grader object");
     assert_eq!(fallback.len(), 8);
-    assert_eq!(
-        fallback.get("input"),
-        Some(&json!([{"role": "user", "content": "rate"}]))
-    );
+    let items = fallback
+        .get("input")
+        .and_then(|value| value.as_array())
+        .expect("the fallback's input items");
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].as_object().expect("an input item").len(), 2);
+    assert_eq!(items[0].get("role"), Some(&json!("user")));
+    assert_eq!(items[0].get("content"), Some(&json!("rate")));
     assert_eq!(fallback.get("operation"), Some(&json!(null)));
     assert_eq!(fallback.get("reference"), Some(&json!(null)));
     assert_eq!(fallback.get("type"), Some(&json!("label_model")));
