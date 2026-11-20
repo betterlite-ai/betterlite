@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_error::error::ErrorClass;
+use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::containers::container_file_http::request::{ParamValue, SslVerify};
@@ -414,6 +415,21 @@ fn extra_headers_are_laid_over_the_provider_headers() {
         requests[0].headers.get("X-Custom").map(String::as_str),
         Some("1")
     );
+}
+
+#[test]
+fn extra_body_never_reaches_the_transform_or_the_request() {
+    let mut fixture = Fixture::new();
+    fixture.extra_body = Some(IndexMap::from([(
+        "metadata".to_owned(),
+        JsonValue::Text("x".to_owned()),
+    )]));
+
+    fixture.call().expect("the file list decodes");
+
+    let transforms = fixture.config().transforms();
+    assert!(transforms[0].params.get("metadata").is_none());
+    assert!(fixture.requests()[0].query.is_empty());
 }
 
 #[test]
