@@ -1,0 +1,54 @@
+task: B3335
+deviations:
+  - what: >-
+      Character creation forwards the caller's timeout to the POST, while character lookup omits the
+      per-send timeout from the GET even though both public handlers accept one.
+    why: >-
+      LiteLLM's lookup calls sync_httpx_client.get and async_httpx_client.get without a timeout argument, so a
+      provider lookup waits as long as its client allows; the creation POST alone receives the caller's deadline.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7810
+  - what: >-
+      A creation with no timeout carries no per-request deadline, so the shared HTTP client's 600 second deadline
+      applies; LiteLLM passes timeout=None to httpx, which waits without a deadline.
+    why: >-
+      Every betterlite HTTP client bounds a request (B173); the transport never sends an unbounded call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7806-L7811
+  - what: >-
+      A transport failure, an unreadable reply body or a reply over the response cap reaches the caller as
+      CharacterError::Transport with its typed reason; LiteLLM's _handle_error turns every caught exception without
+      a status code into the provider's error class with a synthesized 500.
+    why: >-
+      The shared handle_error (B2402) passes a failure without a status through typed, so a network fault is not
+      reported as a provider 500 with the fault's text as its message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6077-L6085
+  - what: >-
+      The provider error built from a synthesized 500 does not carry LiteLLM's status_code_is_synthesized marker.
+    why: >-
+      The shared ErrorClasses::get_error_class takes a message, a status and headers only; the marker belongs to the
+      error conversion layer B2402 owns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6109-L6110
+  - what: >-
+      An error reply's body reads as UTF-8 with U+FFFD for each invalid sequence, whatever charset its content type
+      names; httpx decodes response.text with the charset the reply carries.
+    why: >-
+      Reply bodies are read as bytes here and decoded once, so the same bytes give the same message everywhere.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6083
+  - what: >-
+      A query key that both the transform's URL and its params carry keeps the URL's value, and a key only the
+      params carry is appended; httpx's params argument replaces the URL's value for a shared key.
+    why: >-
+      The shared outbound query merge keeps the absolute URL the transform built authoritative.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7952
+  - what: >-
+      A multipart part whose data holds the encoding boundary, or whose content type carries a line break, fails
+      with a typed transport error before the send; httpx encodes the body without checking either.
+    why: >-
+      Encoding is explicit here, and sending a body the provider would read wrong is worse than refusing it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7806-L7811
+  - what: >-
+      A reply larger than the shared response cap fails as a body-too-large transport error before status checking;
+      httpx reads a reply without a size cap.
+    why: >-
+      Every provider reply goes through the shared bounded reader, so one answer cannot grow without bound.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7812
+kept_bugs: []
