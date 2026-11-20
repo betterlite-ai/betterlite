@@ -107,18 +107,18 @@ async fn the_sync_hook_receives_the_call_values() {
     let result = call(&mut state, &mut lists, &factory, None, request)
         .await
         .unwrap();
-    let records = fake.calls();
-    assert_eq!(records.len(), 1);
-    let recorded = &records[0];
-    assert_eq!(recorded.model, "gpt-4");
-    assert_eq!(recorded.messages, messages);
-    assert_eq!(recorded.non_default_params, params);
-    assert_eq!(recorded.prompt_id.as_deref(), Some("prompt-1"));
-    assert_eq!(recorded.prompt_variables.as_ref(), Some(&variables));
-    assert_eq!(recorded.dynamic_callback_params, dynamic);
-    assert_eq!(recorded.prompt_label.as_deref(), Some("prod"));
-    assert_eq!(recorded.prompt_version, Some(3));
-    assert!(!recorded.asynchronous);
+    let calls = fake.calls();
+    assert_eq!(calls.len(), 1);
+    let entry = &calls[0];
+    assert_eq!(entry.model, "gpt-4");
+    assert_eq!(entry.messages, messages);
+    assert_eq!(entry.non_default_params, params);
+    assert_eq!(entry.prompt_id.as_deref(), Some("prompt-1"));
+    assert_eq!(entry.prompt_variables.as_ref(), Some(&variables));
+    assert_eq!(entry.dynamic_callback_params, dynamic);
+    assert_eq!(entry.prompt_label.as_deref(), Some("prod"));
+    assert_eq!(entry.prompt_version, Some(3));
+    assert!(!entry.asynchronous);
     assert_eq!(result.messages, messages);
     assert_eq!(result.non_default_params, params);
     assert_eq!(state.messages.as_ref(), Some(&messages));
@@ -148,10 +148,10 @@ async fn the_async_hook_receives_the_call_values() {
     let result = async_call(&mut state, &mut lists, &factory, None, async_request)
         .await
         .unwrap();
-    let records = fake.calls();
-    assert_eq!(records.len(), 1);
-    assert!(records[0].asynchronous);
-    assert_eq!(records[0].prompt_id.as_deref(), Some("prompt-1"));
+    let calls = fake.calls();
+    assert_eq!(calls.len(), 1);
+    assert!(calls[0].asynchronous);
+    assert_eq!(calls[0].prompt_id.as_deref(), Some("prompt-1"));
     assert_eq!(result.messages, messages);
     assert_eq!(state.messages.as_ref(), Some(&messages));
 }

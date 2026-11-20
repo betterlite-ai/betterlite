@@ -122,12 +122,12 @@ fn a_factory_name_without_a_manager_falls_through_to_auto_detection() {
 #[test]
 fn a_factory_manager_wins_over_auto_detection() {
     let selected = fake("factory_manager", Ok(false));
-    let detected = fake("detected_manager", Ok(true));
+    let auto_manager = fake("detected_manager", Ok(true));
     let manager = backend(&selected);
     let factory = FakeFactory::new(vec!["dotprompt"], vec![("dotprompt", Arc::clone(&manager))]);
     let mut state = logging_state();
     let mut lists = Lists {
-        managers: vec![backend(&detected)],
+        managers: vec![backend(&auto_manager)],
         callbacks: Vec::new(),
     };
     let params = JsonObject::new();
@@ -137,7 +137,7 @@ fn a_factory_manager_wins_over_auto_detection() {
     request.dynamic_callback_params = Some(&dynamic);
     let found = select(&mut state, &mut lists, &factory, None, &request);
     assert!(Arc::ptr_eq(found.as_ref().unwrap(), &manager));
-    assert!(detected.checks().is_empty());
+    assert!(auto_manager.checks().is_empty());
     assert_eq!(
         integration(&state),
         Some(&Json::Text("dotprompt".to_owned()))
