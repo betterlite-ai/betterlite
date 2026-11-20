@@ -6,6 +6,7 @@ mod logging;
 mod posting;
 mod request;
 mod retry;
+mod signing;
 
 use std::collections::{BTreeMap, VecDeque};
 use std::future::{Future, ready};
@@ -141,6 +142,11 @@ impl Scripted {
         let sent = self.sent.lock().unwrap_or_else(PoisonError::into_inner);
         sent.iter().map(authorization_of).collect()
     }
+
+    fn dates(&self) -> Vec<Option<String>> {
+        let sent = self.sent.lock().unwrap_or_else(PoisonError::into_inner);
+        sent.iter().map(date_of).collect()
+    }
 }
 
 fn body_of(request: &OutboundRequest) -> Json {
@@ -156,6 +162,14 @@ fn authorization_of(request: &OutboundRequest) -> Option<String> {
     request
         .headers
         .get("authorization")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned)
+}
+
+fn date_of(request: &OutboundRequest) -> Option<String> {
+    request
+        .headers
+        .get("x-amz-date")
         .and_then(|value| value.to_str().ok())
         .map(str::to_owned)
 }
@@ -359,6 +373,19 @@ async fn run<T>(
 where
     T: GuardrailTransport,
 {
+    run_at(guardrail, data, scan, transport, fixed_now).await
+}
+
+async fn run_at<T>(
+    guardrail: &BedrockGuardrail,
+    data: &mut BTreeMap<String, GuardrailValue>,
+    scan: ChecksScan<'_>,
+    transport: &T,
+    clock: fn() -> SystemTime,
+) -> Result<Response, GuardrailFailure>
+where
+    T: GuardrailTransport,
+{
     let settings = base();
     let catalog = BundledCatalog::default().get();
     let mut invocation = ApiInvocation {
@@ -368,7 +395,7 @@ where
         log_target: None,
         environment: ENVIRONMENT,
         catalog: catalog.as_ref(),
-        now: fixed_now,
+        now: clock,
     };
     let credentials = StaticCredentials;
     make_bedrock_api_request(&mut invocation, scan, &credentials, transport).await

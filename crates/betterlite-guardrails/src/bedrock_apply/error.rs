@@ -4,7 +4,7 @@ use betterlite_bedrock_guardrails::constants::BEDROCK_TOO_LARGE_SUBSTRINGS;
 
 use crate::guardrail_base::failure::GuardrailFailure;
 
-// a Reported failure already wrote its own record; the consolidated catch in apply_guardrail logs only Unreported ones
+// a Reported failure either wrote its record already or deliberately wrote none, so apply_guardrail's consolidated catch logs only Unreported ones
 #[derive(Debug)]
 pub(super) enum ApplyError {
     Reported(GuardrailFailure),

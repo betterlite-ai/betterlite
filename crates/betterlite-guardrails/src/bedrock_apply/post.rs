@@ -62,7 +62,8 @@ where
             api_key: call.api_key.as_ref(),
             extra_headers: &[],
             request_path: None,
-            now: call.logs.started,
+            // SigV4 signs each send with the clock at that moment, as LiteLLM's per-send _prepare_request does
+            now: (call.logs.now)(),
         },
         &body,
     )?;
