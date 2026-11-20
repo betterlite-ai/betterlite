@@ -1,6 +1,6 @@
 kind: sdk_http
 name: rerank-http-execution-order
-env: {}
+env: {DISABLE_AIOHTTP_TRANSPORT: "True"}
 call:
   rerank_http:
     model: rerank-test

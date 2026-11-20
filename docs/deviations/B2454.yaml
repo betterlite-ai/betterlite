@@ -27,4 +27,12 @@ deviations:
       A configuration value httpx refuses is not a provider answer, and reporting it as one would name the
       wrong culprit and hide the bad field.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L1360-L1368
+  - what: >-
+      An async rerank request carries no Content-Type; LiteLLM's default async transport is aiohttp, and
+      aiohttp labels a bytes body that has none as application/octet-stream, so the provider sees that header
+      on the async path and not on the sync one.
+    why: >-
+      The rerank handler adds no Content-Type and betterlite sends one request shape over its pooled client
+      for both paths; the label is the Python async transport's default rather than a header of this handler.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/aiohttp_transport.py#L368-L375
 kept_bugs: []
