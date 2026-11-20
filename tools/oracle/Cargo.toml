@@ -13,6 +13,7 @@ betterlite = { path = "../../crates/betterlite" }
 betterlite-a2a = { path = "../../crates/betterlite-a2a" }
 betterlite-anthropic = { path = "../../crates/betterlite-anthropic" }
 betterlite-auth = { path = "../../crates/betterlite-auth" }
+betterlite-azure = { path = "../../crates/betterlite-azure" }
 betterlite-cli = { path = "../../crates/betterlite-cli" }
 betterlite-compression = { path = "../../crates/betterlite-compression" }
 betterlite-config = { path = "../../crates/betterlite-config" }
