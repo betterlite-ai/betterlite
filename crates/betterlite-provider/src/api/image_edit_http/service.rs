@@ -2,7 +2,6 @@ use std::time::{Duration, Instant};
 
 use betterlite_core::api::vector_store_http_write::error::{ClientError, handle_error};
 use betterlite_core::api::vector_store_http_write::service::{WriteRequest, WriteTransport};
-use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::RequestBody;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_pre_post::env::PrePostEnv;

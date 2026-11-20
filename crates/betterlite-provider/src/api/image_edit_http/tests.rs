@@ -301,7 +301,7 @@ async fn a_url_failure_propagates_before_the_transform() {
     let Err(error) = fixture.run(ClientKind::Sync, &deps, &call).await else {
         panic!("a refused URL fails the call");
     };
-    let ImageEditHttpError::Config { source } = error else {
+    let ImageEditHttpError::Config(source) = error else {
         panic!("the refused URL is a config failure");
     };
     assert!(matches!(
@@ -351,7 +351,7 @@ async fn a_transform_failure_propagates() {
 }
 
 fn assert_transform_failure(error: ImageEditHttpError<FixtureError>) {
-    let ImageEditHttpError::Config { source } = error else {
+    let ImageEditHttpError::Config(source) = error else {
         panic!("a refusing transform is a config failure");
     };
     assert!(matches!(
@@ -375,7 +375,7 @@ async fn a_response_transform_failure_propagates() {
     let Err(error) = fixture.run(ClientKind::Sync, &deps, &call).await else {
         panic!("a refusing response transform fails the call");
     };
-    let ImageEditHttpError::Config { source } = error else {
+    let ImageEditHttpError::Config(source) = error else {
         panic!("a refusing response transform is a config failure");
     };
     assert!(matches!(
@@ -408,7 +408,7 @@ async fn finalizer_failures_send_nothing() {
     assert!(transport.requests().is_empty());
     assert!(config.events().contains(&Event::Finalize {
         url: String::from(EDITS_URL),
-        data: params(r#"{"nested":{"a":1},"revision":"final"}"#),
+        data: params(r#"{"prompt":"change","nested":{"a":1},"revision":"final"}"#),
     }));
 }
 
@@ -440,6 +440,7 @@ async fn a_resolved_url_that_is_not_a_url_fails_the_request() {
     let source = Source::new(transport.clone());
     let deps = deps(&config, &source, None);
     let options = ImageParams::new();
+    let litellm = ImageParams::new();
     let call = edit_call(Some("change"), None, &options, &litellm, None);
     let mut fixture = Fixture::new();
     let Err(error) = fixture.run(ClientKind::Sync, &deps, &call).await else {
@@ -499,7 +500,7 @@ async fn an_absent_prompt_logs_null_input() {
     let call = edit_call(None, None, &options, &litellm, None);
     let mut fixture = Fixture::new();
     fixture
-        .run(ClientKind::Sync, &deps, &call)
+        .run(ClientKind::Asynchronous, &deps, &call)
         .await
         .expect("an edit without a prompt succeeds");
     assert_eq!(fixture.input(), Some(&Json::Null));

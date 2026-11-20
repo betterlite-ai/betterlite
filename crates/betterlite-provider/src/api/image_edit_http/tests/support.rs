@@ -600,10 +600,10 @@ pub(super) fn provider_error<ConfigError: Error + 'static>(
 pub(super) fn request_error<ConfigError: Error + 'static>(
     error: ImageEditHttpError<ConfigError>,
 ) -> RequestError {
-    if let ImageEditHttpError::Request(request) = error {
-        return request;
-    }
-    panic!("the call failed outside the request build: {error}")
+    let ImageEditHttpError::Request(request) = error else {
+        panic!("the call failed outside the request build: {error}");
+    };
+    request
 }
 
 pub(super) fn pre_post_error<ConfigError: Error + 'static>(

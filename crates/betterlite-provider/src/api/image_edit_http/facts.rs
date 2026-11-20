@@ -90,9 +90,9 @@ pub(super) fn send_failure(error: SendError<'_>, sent: Sent) -> Failure {
 
 // httpx rebuilds the masked response from the decoded body, so only a non-empty one carries a content-length
 fn answer_headers(reply: &UpstreamResponse) -> ImageHeaders {
-    let mut headers = provider_headers(&reply.headers);
-    headers.remove("content-encoding");
-    headers.remove("content-length");
+    let mut headers: ImageHeaders = provider_headers(&reply.headers).into_iter().collect();
+    headers
+        .retain(|name, _| name.as_str() != "content-encoding" && name.as_str() != "content-length");
     if !reply.body.is_empty() {
         headers.insert(String::from("content-length"), reply.body.len().to_string());
     }
