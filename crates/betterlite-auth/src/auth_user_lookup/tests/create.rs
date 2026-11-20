@@ -3,7 +3,9 @@ use std::sync::atomic::Ordering;
 
 use betterlite_db::budget_permission_rows::JsonData;
 
-use super::support::{Call, Harness, defaults, membership, user_with};
+use super::support::{
+    Harness, cadence_entry, defaults, harness_with_defaults, membership, request, user_with,
+};
 use crate::auth_user_lookup::error::UserLookupError;
 use crate::auth_user_lookup::lookup::UserLookupRequest;
 
@@ -11,27 +13,22 @@ fn upsert_request<'request>(
     user_id: &'request str,
     email: Option<&'request str>,
 ) -> UserLookupRequest<'request> {
-    UserLookupRequest {
-        user_id: Some(user_id),
-        user_email: email,
-        user_id_upsert: true,
-        ..UserLookupRequest::default()
-    }
+    let mut built = request(Some(user_id));
+    built.user_email = email;
+    built.user_id_upsert = true;
+    built
 }
 
 #[tokio::test]
 async fn scalar_defaults_override_id_and_email() {
-    let harness = Harness {
-        defaults: Some(defaults(&[
-            ("user_id", JsonData::String("override".to_owned())),
-            (
-                "user_email",
-                JsonData::String("default@example.com".to_owned()),
-            ),
-            ("user_alias", JsonData::String("alias".to_owned())),
-        ])),
-        ..Harness::default()
-    };
+    let harness = harness_with_defaults(Some(defaults(&[
+        ("user_id", JsonData::String("override".to_owned())),
+        (
+            "user_email",
+            JsonData::String("default@example.com".to_owned()),
+        ),
+        ("user_alias", JsonData::String("alias".to_owned())),
+    ])));
     let lookup = harness.lookup();
     let user = lookup
         .get_user_object(upsert_request("requested", Some("request@example.com")))
@@ -46,10 +43,7 @@ async fn scalar_defaults_override_id_and_email() {
         Some(&JsonData::String("alias".to_owned()))
     );
 
-    let nulled = Harness {
-        defaults: Some(defaults(&[("user_email", JsonData::Null)])),
-        ..Harness::default()
-    };
+    let nulled = harness_with_defaults(Some(defaults(&[("user_email", JsonData::Null)])));
     let nulled_lookup = nulled.lookup();
     let nulled_user = nulled_lookup
         .get_user_object(upsert_request("requested", Some("request@example.com")))
@@ -63,24 +57,21 @@ async fn scalar_defaults_override_id_and_email() {
 
 #[tokio::test]
 async fn team_fields_not_user_columns() {
-    let harness = Harness {
-        defaults: Some(defaults(&[
-            (
-                "teams",
-                JsonData::Array(vec![JsonData::String("t1".to_owned())]),
-            ),
-            (
-                "available_teams",
-                JsonData::Array(vec![JsonData::String("t2".to_owned())]),
-            ),
-            ("user_role", JsonData::String("internal_user".to_owned())),
-            (
-                "custom_unknown",
-                JsonData::Number(serde_json::Number::from(1_i64)),
-            ),
-        ])),
-        ..Harness::default()
-    };
+    let harness = harness_with_defaults(Some(defaults(&[
+        (
+            "teams",
+            JsonData::Array(vec![JsonData::String("t1".to_owned())]),
+        ),
+        (
+            "available_teams",
+            JsonData::Array(vec![JsonData::String("t2".to_owned())]),
+        ),
+        ("user_role", JsonData::String("internal_user".to_owned())),
+        (
+            "custom_unknown",
+            JsonData::Number(serde_json::Number::from(1_i64)),
+        ),
+    ])));
     let lookup = harness.lookup();
     let user = lookup
         .get_user_object(upsert_request("u1", None))
@@ -106,8 +97,9 @@ async fn absent_sso_not_added_to_create() {
         .get_user_object(UserLookupRequest {
             user_id: Some("u1"),
             sso_user_id: Some("sso-supplied"),
+            user_email: None,
             user_id_upsert: true,
-            ..UserLookupRequest::default()
+            check_db_only: None,
         })
         .await
         .expect("the upsert")
@@ -119,13 +111,10 @@ async fn absent_sso_not_added_to_create() {
 
 #[tokio::test]
 async fn missing_reset_computed_before_create() {
-    let harness = Harness {
-        defaults: Some(defaults(&[
-            ("budget_duration", JsonData::String("1d".to_owned())),
-            ("budget_reset_at", JsonData::Null),
-        ])),
-        ..Harness::default()
-    };
+    let harness = harness_with_defaults(Some(defaults(&[
+        ("budget_duration", JsonData::String("1d".to_owned())),
+        ("budget_reset_at", JsonData::Null),
+    ])));
     let lookup = harness.lookup();
     lookup
         .get_user_object(upsert_request("u1", None))
@@ -147,13 +136,10 @@ async fn missing_reset_computed_before_create() {
         "the reset is computed before the row is written"
     );
 
-    let absent = Harness {
-        defaults: Some(defaults(&[(
-            "budget_duration",
-            JsonData::String("1d".to_owned()),
-        )])),
-        ..Harness::default()
-    };
+    let absent = harness_with_defaults(Some(defaults(&[(
+        "budget_duration",
+        JsonData::String("1d".to_owned()),
+    )])));
     let absent_lookup = absent.lookup();
     absent_lookup
         .get_user_object(upsert_request("u1", None))
@@ -165,16 +151,13 @@ async fn missing_reset_computed_before_create() {
 
 #[tokio::test]
 async fn explicit_reset_preserved() {
-    let harness = Harness {
-        defaults: Some(defaults(&[
-            ("budget_duration", JsonData::String("1d".to_owned())),
-            (
-                "budget_reset_at",
-                JsonData::String("2025-05-05T00:00:00+00:00".to_owned()),
-            ),
-        ])),
-        ..Harness::default()
-    };
+    let harness = harness_with_defaults(Some(defaults(&[
+        ("budget_duration", JsonData::String("1d".to_owned())),
+        (
+            "budget_reset_at",
+            JsonData::String("2025-05-05T00:00:00+00:00".to_owned()),
+        ),
+    ])));
     let lookup = harness.lookup();
     lookup
         .get_user_object(upsert_request("u1", None))
@@ -210,16 +193,13 @@ async fn create_before_default_enrollment() {
 
 #[tokio::test]
 async fn original_identity_and_admin_enrollment() {
-    let harness = Harness {
-        defaults: Some(defaults(&[
-            ("user_id", JsonData::String("override".to_owned())),
-            (
-                "user_email",
-                JsonData::String("default@example.com".to_owned()),
-            ),
-        ])),
-        ..Harness::default()
-    };
+    let harness = harness_with_defaults(Some(defaults(&[
+        ("user_id", JsonData::String("override".to_owned())),
+        (
+            "user_email",
+            JsonData::String("default@example.com".to_owned()),
+        ),
+    ])));
     let lookup = harness.lookup();
     let user = lookup
         .get_user_object(upsert_request("requested", Some("request@example.com")))
@@ -257,7 +237,7 @@ async fn enrollment_port_error_keeps_created_user() {
         vec!["find_by_id", "create", "enroll"]
     );
     assert!(harness.cache.writes.lock().unwrap().is_empty());
-    assert_eq!(harness.cadence.entry("user_id:u1"), None);
+    assert_eq!(cadence_entry(&harness.cadence, "user_id:u1"), None);
 }
 
 #[tokio::test]
@@ -280,10 +260,7 @@ async fn null_memberships_filtered_in_order() {
     *harness.store.by_id.lock().unwrap() = Some(JsonData::Object(fields));
     let lookup = harness.lookup();
     let user = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("u1"),
-            ..UserLookupRequest::default()
-        })
+        .get_user_object(request(Some("u1")))
         .await
         .expect("the stored user")
         .expect("the stored user is present");
@@ -306,10 +283,7 @@ async fn null_memberships_filtered_in_order() {
     *empty.store.by_id.lock().unwrap() = Some(JsonData::Object(empty_fields));
     let empty_lookup = empty.lookup();
     let empty_user = empty_lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("u2"),
-            ..UserLookupRequest::default()
-        })
+        .get_user_object(request(Some("u2")))
         .await
         .expect("the stored user")
         .expect("the stored user is present");
@@ -324,15 +298,10 @@ async fn row_validation_before_cache() {
         JsonData::Number(serde_json::Number::from(7_i64)),
     )])));
     let lookup = harness.lookup();
-    let result = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("u1"),
-            ..UserLookupRequest::default()
-        })
-        .await;
+    let result = lookup.get_user_object(request(Some("u1"))).await;
     assert!(matches!(result, Err(UserLookupError::UserMissing(_))));
     assert!(harness.cache.writes.lock().unwrap().is_empty());
-    assert_eq!(harness.cadence.entry("user_id:u1"), None);
+    assert_eq!(cadence_entry(&harness.cadence, "user_id:u1"), None);
     assert!(harness.store.create_fields().is_none());
 }
 
@@ -342,16 +311,13 @@ async fn cache_before_positive_cadence() {
     *harness.store.by_id.lock().unwrap() = Some(user_with("u1", None, None));
     let lookup = harness.lookup();
     let user = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("u1"),
-            ..UserLookupRequest::default()
-        })
+        .get_user_object(request(Some("u1")))
         .await
         .expect("the stored user")
         .expect("the stored user is present");
     assert_eq!(user.user_id, "u1");
     assert_eq!(harness.cache.writes.lock().unwrap().len(), 1);
-    let entry = harness.cadence.entry("user_id:u1").unwrap();
+    let entry = cadence_entry(&harness.cadence, "user_id:u1").unwrap();
     assert!(entry.record.is_some());
     assert_eq!(entry.checked_at, std::time::Duration::ZERO);
 }
@@ -365,7 +331,7 @@ async fn cache_failure_keeps_committed_user() {
     assert!(matches!(result, Err(UserLookupError::UserMissing(_))));
     assert!(harness.store.create_fields().is_some());
     assert_eq!(harness.enrollment.calls.lock().unwrap().len(), 1);
-    assert_eq!(harness.cadence.entry("user_id:u1"), None);
+    assert_eq!(cadence_entry(&harness.cadence, "user_id:u1"), None);
 }
 
 #[tokio::test]
@@ -382,6 +348,6 @@ async fn upsert_after_suppressed_miss() {
         .expect("the created user");
     assert_eq!(user.user_id, "u1");
     assert_eq!(harness.store.methods(), vec!["create"]);
-    let entry = harness.cadence.entry("user_id:u1").unwrap();
+    let entry = cadence_entry(&harness.cadence, "user_id:u1").unwrap();
     assert!(entry.record.is_some());
 }

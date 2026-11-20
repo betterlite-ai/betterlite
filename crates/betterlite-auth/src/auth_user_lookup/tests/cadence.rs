@@ -1,7 +1,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use super::support::{ManualClock, ScriptedClock, user_row};
+use rstest::rstest;
+
+use super::support::{ManualClock, ScriptedClock, cadence_entry, user_row};
 use crate::auth_user_lookup::cadence::{Cadence, CadenceClock};
 
 fn cadence_with(max_size: usize) -> (Arc<ManualClock>, Cadence) {
@@ -14,7 +16,7 @@ fn cadence_with(max_size: usize) -> (Arc<ManualClock>, Cadence) {
 fn absent_cadence_reads() {
     let (_clock, cadence) = cadence_with(100);
     assert!(cadence.should_check_db("user_id:u1", 5));
-    assert_eq!(cadence.entry("user_id:u1"), None);
+    assert_eq!(cadence_entry(&cadence, "user_id:u1"), None);
 }
 
 #[test]
@@ -60,17 +62,19 @@ fn read_does_not_refresh() {
     assert!(cadence.should_check_db("user_id:u1", 5));
 }
 
+#[rstest]
+#[case::zero(0)]
+#[case::negative_one(-1)]
+#[case::negative_sixty(-60)]
 #[test]
-fn zero_negative_ttl_expired() {
-    for expiry in [0_i64, -1_i64, -60_i64] {
-        let (clock, cadence) = cadence_with(100);
-        clock.set(Duration::from_secs(100));
-        cadence.update("user_id:u1", None);
-        assert!(
-            cadence.should_check_db("user_id:u1", expiry),
-            "expiry {expiry} expires a stored miss at once"
-        );
-    }
+fn zero_negative_ttl_expired(#[case] expiry: i64) {
+    let (clock, cadence) = cadence_with(100);
+    clock.set(Duration::from_secs(100));
+    cadence.update("user_id:u1", None);
+    assert!(
+        cadence.should_check_db("user_id:u1", expiry),
+        "expiry {expiry} expires a stored miss at once"
+    );
 }
 
 #[test]
@@ -80,17 +84,17 @@ fn capacity_update_evicts_oldest() {
     cadence.update("user_id:b", Some(user_row("b")));
     cadence.update("user_id:a", Some(user_row("new-a")));
     assert_eq!(
-        cadence.entry("user_id:a").unwrap().record,
+        cadence_entry(&cadence, "user_id:a").unwrap().record,
         Some(user_row("new-a"))
     );
-    assert!(cadence.entry("user_id:b").is_some());
+    assert!(cadence_entry(&cadence, "user_id:b").is_some());
     cadence.update("user_id:c", None);
     assert!(
-        cadence.entry("user_id:b").is_none(),
+        cadence_entry(&cadence, "user_id:b").is_none(),
         "the entry left oldest by the update is evicted next"
     );
-    assert!(cadence.entry("user_id:a").is_some());
-    assert!(cadence.entry("user_id:c").is_some());
+    assert!(cadence_entry(&cadence, "user_id:a").is_some());
+    assert!(cadence_entry(&cadence, "user_id:c").is_some());
 }
 
 #[test]
@@ -103,11 +107,11 @@ fn update_samples_clock() {
     cadence.update("user_id:a", None);
     cadence.update("user_id:b", None);
     assert_eq!(
-        cadence.entry("user_id:a").unwrap().checked_at,
+        cadence_entry(&cadence, "user_id:a").unwrap().checked_at,
         Duration::from_secs(100)
     );
     assert_eq!(
-        cadence.entry("user_id:b").unwrap().checked_at,
+        cadence_entry(&cadence, "user_id:b").unwrap().checked_at,
         Duration::from_secs(250)
     );
     assert!(cadence.should_check_db("user_id:a", 5));

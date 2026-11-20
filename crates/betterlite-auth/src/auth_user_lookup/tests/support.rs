@@ -1,8 +1,6 @@
 use std::collections::{BTreeMap, VecDeque};
-use std::error::Error;
-use std::fmt;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -18,23 +16,16 @@ use tokio_util::task::TaskTracker;
 use crate::auth_cache::AuthCacheError;
 use crate::auth_cache::payload::PayloadError;
 use crate::auth_user_lookup::cache::{UserCache, UserCacheError};
-use crate::auth_user_lookup::cadence::{Cadence, CadenceClock};
-use crate::auth_user_lookup::lookup::UserLookup;
+use crate::auth_user_lookup::cadence::{Cadence, CadenceClock, CadenceEntry};
+use crate::auth_user_lookup::lookup::{UserLookup, UserLookupRequest};
 use crate::auth_user_lookup::ports::{BudgetResetCalculator, DefaultTeamEnrollment, PortError};
 use crate::auth_user_lookup::rows::UserCreateData;
-use crate::auth_user_lookup::store::{UserStore, UserStoreError};
+use crate::auth_user_lookup::store::{UserStore, UserStoreError, UserStoreResult};
 use crate::resolved_key::auth::{UserAPIKeyAuth, user_api_key_has_admin_view};
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
 pub(crate) struct NamedFailure(pub(crate) String);
-
-impl fmt::Display for NamedFailure {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.0)
-    }
-}
-
-impl Error for NamedFailure {}
 
 #[derive(Clone, Debug)]
 pub(crate) enum FailureKind {
@@ -87,7 +78,10 @@ pub(crate) struct ScriptedClock {
 }
 
 impl ScriptedClock {
-    pub(crate) fn new(times: impl IntoIterator<Item = Duration>, fallback: Duration) -> Self {
+    pub(crate) fn new<T>(times: T, fallback: Duration) -> Self
+    where
+        T: IntoIterator<Item = Duration>,
+    {
         Self {
             times: Mutex::new(times.into_iter().collect()),
             fallback,
@@ -133,6 +127,7 @@ pub(crate) enum Call {
     },
 }
 
+#[derive(Default)]
 pub(crate) struct FakeStore {
     pub(crate) calls: Mutex<Vec<Call>>,
     pub(crate) events: Events,
@@ -147,20 +142,16 @@ pub(crate) struct FakeStore {
     pub(crate) update_release: Notify,
 }
 
-impl Default for FakeStore {
-    fn default() -> Self {
-        Self {
-            calls: Mutex::new(Vec::new()),
-            events: events(),
-            by_id: Mutex::new(None),
-            by_sso: Mutex::new(None),
-            by_email: Mutex::new(None),
-            reread: Mutex::new(None),
-            failures: Mutex::new(BTreeMap::new()),
-            hang: AtomicBool::new(false),
-            block_update: AtomicBool::new(false),
-            update_started: Notify::new(),
-            update_release: Notify::new(),
+impl Call {
+    fn name(&self) -> &'static str {
+        match self {
+            Call::FindById { .. } => "find_by_id",
+            Call::FindBySso { .. } => "find_by_sso_id",
+            Call::FindByEmail { .. } => "find_by_email",
+            Call::Create { .. } => "create",
+            Call::UpdateSso { .. } => "update_sso",
+            Call::Backfill { .. } => "backfill",
+            Call::Reread { .. } => "reread",
         }
     }
 }
@@ -168,19 +159,7 @@ impl Default for FakeStore {
 impl FakeStore {
     pub(crate) fn methods(&self) -> Vec<String> {
         let calls = self.calls.lock().unwrap();
-        calls
-            .iter()
-            .map(|call| match call {
-                Call::FindById { .. } => "find_by_id",
-                Call::FindBySso { .. } => "find_by_sso_id",
-                Call::FindByEmail { .. } => "find_by_email",
-                Call::Create { .. } => "create",
-                Call::UpdateSso { .. } => "update_sso",
-                Call::Backfill { .. } => "backfill",
-                Call::Reread { .. } => "reread",
-            })
-            .map(str::to_owned)
-            .collect()
+        calls.iter().map(Call::name).map(str::to_owned).collect()
     }
 
     pub(crate) fn create_fields(&self) -> Option<BTreeMap<String, JsonData>> {
@@ -204,53 +183,51 @@ impl FakeStore {
     }
 }
 
+fn answer<T>(
+    failed: Option<UserStoreError>,
+    stored: &Mutex<Option<T>>,
+) -> UserStoreResult<Option<T>>
+where
+    T: Clone,
+{
+    if let Some(error) = failed {
+        return Err(error);
+    }
+    Ok(stored.lock().unwrap().clone())
+}
+
 #[async_trait]
 impl UserStore for FakeStore {
     async fn find_by_id(
         &self,
         user_id: &str,
         use_writer: bool,
-    ) -> Result<Option<JsonData>, UserStoreError> {
-        let failed = self.observe(
-            "find_by_id",
-            Call::FindById {
-                user_id: user_id.to_owned(),
-                use_writer,
-            },
-        );
+    ) -> UserStoreResult<Option<JsonData>> {
+        let call = Call::FindById {
+            user_id: user_id.to_owned(),
+            use_writer,
+        };
+        let failed = self.observe("find_by_id", call);
         if self.hang.load(Ordering::SeqCst) {
             std::future::pending::<()>().await;
         }
-        if let Some(error) = failed {
-            return Err(error);
-        }
-        Ok(self.by_id.lock().unwrap().clone())
+        answer(failed, &self.by_id)
     }
 
-    async fn find_by_sso_id(&self, sso_user_id: &str) -> Result<Option<JsonData>, UserStoreError> {
-        let failed = self.observe(
-            "find_by_sso_id",
-            Call::FindBySso {
-                sso_user_id: sso_user_id.to_owned(),
-            },
-        );
-        if let Some(error) = failed {
-            return Err(error);
-        }
-        Ok(self.by_sso.lock().unwrap().clone())
+    async fn find_by_sso_id(&self, sso_user_id: &str) -> UserStoreResult<Option<JsonData>> {
+        let call = Call::FindBySso {
+            sso_user_id: sso_user_id.to_owned(),
+        };
+        let failed = self.observe("find_by_sso_id", call);
+        answer(failed, &self.by_sso)
     }
 
-    async fn find_by_email(&self, email: &str) -> Result<Option<JsonData>, UserStoreError> {
-        let failed = self.observe(
-            "find_by_email",
-            Call::FindByEmail {
-                email: email.to_owned(),
-            },
-        );
-        if let Some(error) = failed {
-            return Err(error);
-        }
-        Ok(self.by_email.lock().unwrap().clone())
+    async fn find_by_email(&self, email: &str) -> UserStoreResult<Option<JsonData>> {
+        let call = Call::FindByEmail {
+            email: email.to_owned(),
+        };
+        let failed = self.observe("find_by_email", call);
+        answer(failed, &self.by_email)
     }
 
     async fn create(&self, data: UserCreateData) -> Result<JsonData, UserStoreError> {
@@ -308,17 +285,14 @@ impl UserStore for FakeStore {
     async fn reread_for_backfill(
         &self,
         user_id: &str,
-    ) -> Result<Option<LiteLLMUserTable>, UserStoreError> {
+    ) -> UserStoreResult<Option<LiteLLMUserTable>> {
         let failed = self.observe(
             "reread",
             Call::Reread {
                 user_id: user_id.to_owned(),
             },
         );
-        if let Some(error) = failed {
-            return Err(error);
-        }
-        Ok(self.reread.lock().unwrap().clone())
+        answer(failed, &self.reread)
     }
 }
 
@@ -473,16 +447,29 @@ impl Harness {
         let clock = Arc::new(ManualClock::default());
         let cadence = Arc::new(Cadence::new(100, clock.clone()));
         let store = Arc::new(FakeStore {
+            calls: Mutex::new(Vec::new()),
             events: Arc::clone(&events),
-            ..FakeStore::default()
+            by_id: Mutex::new(None),
+            by_sso: Mutex::new(None),
+            by_email: Mutex::new(None),
+            reread: Mutex::new(None),
+            failures: Mutex::new(BTreeMap::new()),
+            hang: AtomicBool::new(false),
+            block_update: AtomicBool::new(false),
+            update_started: Notify::new(),
+            update_release: Notify::new(),
         });
         let reset = Arc::new(FakeReset {
+            calls: Mutex::new(Vec::new()),
             events: Arc::clone(&events),
-            ..FakeReset::default()
+            fail: AtomicBool::new(false),
+            reset: serde_json::from_str("\"2026-01-01T00:00:00+00:00\"")
+                .expect("the fixture timestamp is RFC 3339"),
         });
         let enrollment = Arc::new(FakeEnrollment {
+            calls: Mutex::new(Vec::new()),
             events: Arc::clone(&events),
-            ..FakeEnrollment::default()
+            fail: AtomicBool::new(false),
         });
         Self {
             store,
@@ -528,6 +515,44 @@ impl Default for Harness {
     fn default() -> Self {
         Self::new(5)
     }
+}
+
+pub(crate) fn harness_without_store() -> Harness {
+    let mut harness = Harness::default();
+    harness.with_store = false;
+    harness
+}
+
+pub(crate) fn harness_with_defaults(defaults: Option<DefaultUserParams>) -> Harness {
+    let mut harness = Harness::default();
+    harness.defaults = defaults;
+    harness
+}
+
+pub(crate) fn request<'request>(user_id: Option<&'request str>) -> UserLookupRequest<'request> {
+    request_with(user_id, None, None)
+}
+
+pub(crate) fn request_with<'request>(
+    user_id: Option<&'request str>,
+    sso_user_id: Option<&'request str>,
+    user_email: Option<&'request str>,
+) -> UserLookupRequest<'request> {
+    UserLookupRequest {
+        user_id,
+        sso_user_id,
+        user_email,
+        user_id_upsert: false,
+        check_db_only: None,
+    }
+}
+
+pub(crate) fn cadence_entry(cadence: &Cadence, key: &str) -> Option<CadenceEntry> {
+    let entries = cadence
+        .entries
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    entries.entries.get(key).cloned()
 }
 
 pub(crate) fn defaults(values: &[(&str, JsonData)]) -> DefaultUserParams {

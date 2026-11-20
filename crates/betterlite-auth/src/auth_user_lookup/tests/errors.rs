@@ -2,10 +2,9 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use super::logs::Logs;
-use super::support::{FailureKind, Harness, user_with};
+use super::support::{FailureKind, Harness, request, request_with, user_with};
 use crate::auth_identity::errors::AuthError;
 use crate::auth_user_lookup::error::UserLookupError;
-use crate::auth_user_lookup::lookup::UserLookupRequest;
 
 #[tokio::test]
 async fn not_found_rethrown_without_log() {
@@ -13,12 +12,7 @@ async fn not_found_rethrown_without_log() {
     let logs = Logs::default();
     let _guard = logs.install();
     let lookup = harness.lookup();
-    let result = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("u1"),
-            ..UserLookupRequest::default()
-        })
-        .await;
+    let result = lookup.get_user_object(request(Some("u1"))).await;
     match result {
         Err(UserLookupError::NotFound(AuthError::UserNotFound { user_id })) => {
             assert_eq!(user_id, "u1");
@@ -38,12 +32,7 @@ async fn unavailable_identity_preserved() {
     let logs = Logs::default();
     let _guard = logs.install();
     let lookup = harness.lookup();
-    let result = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("u1"),
-            ..UserLookupRequest::default()
-        })
-        .await;
+    let result = lookup.get_user_object(request(Some("u1"))).await;
     match result {
         Err(UserLookupError::Unavailable(error)) => {
             assert_eq!(error.to_string(), "connection refused");
@@ -63,12 +52,7 @@ async fn other_read_error_keeps_cause() {
         .unwrap()
         .insert("find_by_id", FailureKind::Named("boom".to_owned()));
     let lookup = harness.lookup();
-    let result = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("u1"),
-            ..UserLookupRequest::default()
-        })
-        .await;
+    let result = lookup.get_user_object(request(Some("u1"))).await;
     match result {
         Err(UserLookupError::UserMissing(failure)) => {
             assert!(
@@ -92,12 +76,7 @@ async fn user_new_guidance() {
         .unwrap()
         .insert("find_by_id", FailureKind::Named("boom".to_owned()));
     let lookup = harness.lookup();
-    let result = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("u1"),
-            ..UserLookupRequest::default()
-        })
-        .await;
+    let result = lookup.get_user_object(request(Some("u1"))).await;
     let rendered = result.as_ref().err().map(ToString::to_string);
     assert_eq!(
         rendered.as_deref(),
@@ -119,12 +98,7 @@ async fn budget_failure_logged_once() {
     let logs = Logs::default();
     let _guard = logs.install();
     let lookup = harness.lookup();
-    let result = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("u1"),
-            ..UserLookupRequest::default()
-        })
-        .await;
+    let result = lookup.get_user_object(request(Some("u1"))).await;
     assert!(matches!(result, Err(UserLookupError::UserMissing(_))));
     let errors = logs.errors();
     assert_eq!(errors.len(), 1);
@@ -145,11 +119,7 @@ async fn inside_backfill_failure_wrapped() {
     let _guard = logs.install();
     let lookup = harness.lookup();
     let result = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("u1"),
-            user_email: Some("a@example.com"),
-            ..UserLookupRequest::default()
-        })
+        .get_user_object(request_with(Some("u1"), None, Some("a@example.com")))
         .await;
     match result {
         Err(UserLookupError::UserMissing(failure)) => {
@@ -178,10 +148,7 @@ async fn cancellation_not_wrapped() {
     let lookup = harness.lookup();
     let outcome = tokio::time::timeout(
         Duration::from_millis(10),
-        lookup.get_user_object(UserLookupRequest {
-            user_id: Some("u1"),
-            ..UserLookupRequest::default()
-        }),
+        lookup.get_user_object(request(Some("u1"))),
     )
     .await;
     match outcome {

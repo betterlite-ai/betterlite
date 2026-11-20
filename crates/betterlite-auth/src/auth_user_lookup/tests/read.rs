@@ -1,8 +1,13 @@
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
+use rstest::rstest;
+
 use super::logs::Logs;
-use super::support::{Call, FailureKind, Harness, model, user_with};
+use super::support::{
+    Call, FailureKind, Harness, cadence_entry, harness_without_store, model, request, request_with,
+    user_with,
+};
 use crate::auth_identity::errors::AuthError;
 use crate::auth_user_lookup::error::UserLookupError;
 use crate::auth_user_lookup::lookup::UserLookupRequest;
@@ -24,12 +29,7 @@ async fn none_id_skips_lookup() {
 async fn empty_id_lookup() {
     let harness = Harness::default();
     let lookup = harness.lookup();
-    let result = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some(""),
-            ..UserLookupRequest::default()
-        })
-        .await;
+    let result = lookup.get_user_object(request(Some(""))).await;
     match result {
         Err(UserLookupError::NotFound(AuthError::UserNotFound { user_id })) => {
             assert_eq!(user_id, "");
@@ -48,18 +48,12 @@ async fn empty_id_lookup() {
 
 #[tokio::test]
 async fn typed_hit_without_database() {
-    let harness = Harness {
-        with_store: false,
-        ..Harness::default()
-    };
+    let harness = harness_without_store();
     *harness.cache.cached.lock().unwrap() =
         Some(model(&user_with("u1", Some("a@example.com"), None)));
     let lookup = harness.lookup();
     let user = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("u1"),
-            ..UserLookupRequest::default()
-        })
+        .get_user_object(request(Some("u1")))
         .await
         .expect("the cached user")
         .expect("the cached user is present");
@@ -83,11 +77,7 @@ async fn hit_backfill_error_outside_catch() {
     let _guard = logs.install();
     let lookup = harness.lookup();
     let result = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("u1"),
-            user_email: Some("a@example.com"),
-            ..UserLookupRequest::default()
-        })
+        .get_user_object(request_with(Some("u1"), None, Some("a@example.com")))
         .await;
     match result {
         Err(UserLookupError::PreLookup(error)) => {
@@ -105,12 +95,7 @@ async fn cache_error_outside_catch() {
     let logs = Logs::default();
     let _guard = logs.install();
     let lookup = harness.lookup();
-    let result = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("u1"),
-            ..UserLookupRequest::default()
-        })
-        .await;
+    let result = lookup.get_user_object(request(Some("u1"))).await;
     match result {
         Err(UserLookupError::PreLookup(error)) => {
             assert_eq!(error.to_string(), "the cached user could not be read");
@@ -123,19 +108,11 @@ async fn cache_error_outside_catch() {
 
 #[tokio::test]
 async fn missing_db_outside_catch() {
-    let harness = Harness {
-        with_store: false,
-        ..Harness::default()
-    };
+    let harness = harness_without_store();
     let logs = Logs::default();
     let _guard = logs.install();
     let lookup = harness.lookup();
-    let result = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("u1"),
-            ..UserLookupRequest::default()
-        })
-        .await;
+    let result = lookup.get_user_object(request(Some("u1"))).await;
     let rendered = result.as_ref().err().map(ToString::to_string);
     assert_eq!(
         rendered.as_deref(),
@@ -155,8 +132,10 @@ async fn db_only_skips_cache_and_cadence() {
     let user = lookup
         .get_user_object(UserLookupRequest {
             user_id: Some("u1"),
+            sso_user_id: None,
+            user_email: None,
+            user_id_upsert: false,
             check_db_only: Some(true),
-            ..UserLookupRequest::default()
         })
         .await
         .expect("the forced read")
@@ -172,34 +151,39 @@ async fn db_only_skips_cache_and_cadence() {
     );
 }
 
+#[rstest]
+#[case::absent(None, false)]
+#[case::explicit_false(Some(false), false)]
+#[case::explicit_true(Some(true), true)]
 #[tokio::test]
-async fn primary_writer_only_when_requested() {
-    for (check_db_only, expected_writer) in
-        [(None, false), (Some(false), false), (Some(true), true)]
-    {
-        let harness = Harness::default();
-        *harness.store.by_id.lock().unwrap() = Some(user_with("u1", None, None));
-        let lookup = harness.lookup();
-        let user = lookup
-            .get_user_object(UserLookupRequest {
-                user_id: Some("u1"),
-                check_db_only,
-                ..UserLookupRequest::default()
-            })
-            .await
-            .expect("the primary read")
-            .expect("the stored user");
-        assert_eq!(user.user_id, "u1");
-        let calls = harness.store.calls.lock().unwrap().clone();
-        match calls.as_slice() {
-            [Call::FindById { use_writer, .. }] => {
-                assert_eq!(
-                    *use_writer, expected_writer,
-                    "check_db_only {check_db_only:?}"
-                );
-            }
-            other => panic!("expected one primary read, got {other:?}"),
+async fn primary_writer_only_when_requested(
+    #[case] check_db_only: Option<bool>,
+    #[case] expected_writer: bool,
+) {
+    let harness = Harness::default();
+    *harness.store.by_id.lock().unwrap() = Some(user_with("u1", None, None));
+    let lookup = harness.lookup();
+    let user = lookup
+        .get_user_object(UserLookupRequest {
+            user_id: Some("u1"),
+            sso_user_id: None,
+            user_email: None,
+            user_id_upsert: false,
+            check_db_only,
+        })
+        .await
+        .expect("the primary read")
+        .expect("the stored user");
+    assert_eq!(user.user_id, "u1");
+    let calls = harness.store.calls.lock().unwrap().clone();
+    match calls.as_slice() {
+        [Call::FindById { use_writer, .. }] => {
+            assert_eq!(
+                *use_writer, expected_writer,
+                "check_db_only {check_db_only:?}"
+            );
         }
+        other => panic!("expected one primary read, got {other:?}"),
     }
 }
 
@@ -212,8 +196,9 @@ async fn fuzzy_still_normal_routing() {
         .get_user_object(UserLookupRequest {
             user_id: Some("requested"),
             sso_user_id: Some("sso-1"),
+            user_email: None,
+            user_id_upsert: false,
             check_db_only: Some(true),
-            ..UserLookupRequest::default()
         })
         .await
         .expect("the fuzzy read")
@@ -240,12 +225,11 @@ async fn suppressed_miss_skips_primary_and_fuzzy() {
     *harness.store.by_sso.lock().unwrap() = Some(user_with("fuzzy-row", None, Some("sso-1")));
     let lookup = harness.lookup();
     let result = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("u1"),
-            sso_user_id: Some("sso-1"),
-            user_email: Some("a@example.com"),
-            ..UserLookupRequest::default()
-        })
+        .get_user_object(request_with(
+            Some("u1"),
+            Some("sso-1"),
+            Some("a@example.com"),
+        ))
         .await;
     match result {
         Err(UserLookupError::NotFound(_)) => {}
@@ -261,14 +245,9 @@ async fn negative_not_extended() {
     harness.cadence.update("user_id:u1", None);
     harness.clock.set(Duration::from_secs(102));
     let lookup = harness.lookup();
-    let result = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("u1"),
-            ..UserLookupRequest::default()
-        })
-        .await;
+    let result = lookup.get_user_object(request(Some("u1"))).await;
     assert!(matches!(result, Err(UserLookupError::NotFound(_))));
-    let entry = harness.cadence.entry("user_id:u1").unwrap();
+    let entry = cadence_entry(&harness.cadence, "user_id:u1").unwrap();
     assert_eq!(entry.checked_at, Duration::from_secs(100));
     assert_eq!(entry.record, None);
 }
@@ -277,21 +256,11 @@ async fn negative_not_extended() {
 async fn passed_expiry_sets_window() {
     let harness = Harness::new(7);
     let lookup = harness.lookup();
-    let first = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("u1"),
-            ..UserLookupRequest::default()
-        })
-        .await;
+    let first = lookup.get_user_object(request(Some("u1"))).await;
     assert!(matches!(first, Err(UserLookupError::NotFound(_))));
     assert_eq!(harness.store.calls.lock().unwrap().len(), 1);
     harness.clock.set(Duration::from_secs(3));
-    let second = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("u1"),
-            ..UserLookupRequest::default()
-        })
-        .await;
+    let second = lookup.get_user_object(request(Some("u1"))).await;
     assert!(matches!(second, Err(UserLookupError::NotFound(_))));
     assert_eq!(
         harness.store.calls.lock().unwrap().len(),
@@ -299,12 +268,7 @@ async fn passed_expiry_sets_window() {
         "the negative window suppresses the primary read"
     );
     harness.clock.set(Duration::from_secs(7));
-    let third = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("u1"),
-            ..UserLookupRequest::default()
-        })
-        .await;
+    let third = lookup.get_user_object(request(Some("u1"))).await;
     assert!(matches!(third, Err(UserLookupError::NotFound(_))));
     assert_eq!(
         harness.store.calls.lock().unwrap().len(),
@@ -312,7 +276,9 @@ async fn passed_expiry_sets_window() {
         "the window expires at exactly the expiry"
     );
     assert_eq!(
-        harness.cadence.entry("user_id:u1").unwrap().checked_at,
+        cadence_entry(&harness.cadence, "user_id:u1")
+            .unwrap()
+            .checked_at,
         Duration::from_secs(7)
     );
 }
@@ -321,14 +287,9 @@ async fn passed_expiry_sets_window() {
 async fn actual_absence_populates_negative() {
     let harness = Harness::default();
     let lookup = harness.lookup();
-    let result = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("u1"),
-            ..UserLookupRequest::default()
-        })
-        .await;
+    let result = lookup.get_user_object(request(Some("u1"))).await;
     assert!(matches!(result, Err(UserLookupError::NotFound(_))));
-    let entry = harness.cadence.entry("user_id:u1").unwrap();
+    let entry = cadence_entry(&harness.cadence, "user_id:u1").unwrap();
     assert_eq!(entry.record, None);
     assert_eq!(entry.checked_at, Duration::ZERO);
     assert_eq!(harness.store.calls.lock().unwrap().len(), 1);
@@ -345,15 +306,10 @@ async fn no_negative_on_read_failure() {
         .unwrap()
         .insert("find_by_id", FailureKind::Named("boom".to_owned()));
     let lookup = harness.lookup();
-    let result = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("u1"),
-            ..UserLookupRequest::default()
-        })
-        .await;
+    let result = lookup.get_user_object(request(Some("u1"))).await;
     match result {
         Err(UserLookupError::UserMissing(_)) => {}
         other => panic!("an ordinary read failure is rewritten: {other:?}"),
     }
-    assert_eq!(harness.cadence.entry("user_id:u1"), None);
+    assert_eq!(cadence_entry(&harness.cadence, "user_id:u1"), None);
 }

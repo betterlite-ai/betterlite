@@ -5,9 +5,10 @@ use std::time::Duration;
 use betterlite_db::budget_permission_rows::JsonData;
 
 use super::logs::Logs;
-use super::support::{Call, FailureKind, Harness, model, user_with};
+use super::support::{
+    Call, FailureKind, Harness, harness_without_store, model, request, request_with, user_with,
+};
 use crate::auth_user_lookup::error::UserLookupError;
-use crate::auth_user_lookup::lookup::UserLookupRequest;
 
 #[tokio::test]
 async fn sso_before_email() {
@@ -16,12 +17,11 @@ async fn sso_before_email() {
     *harness.store.by_email.lock().unwrap() = Some(user_with("email-row", None, None));
     let lookup = harness.lookup();
     let user = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("requested"),
-            sso_user_id: Some("sso-1"),
-            user_email: Some("a@example.com"),
-            ..UserLookupRequest::default()
-        })
+        .get_user_object(request_with(
+            Some("requested"),
+            Some("sso-1"),
+            Some("a@example.com"),
+        ))
         .await
         .expect("the sso lookup")
         .expect("the sso row");
@@ -37,12 +37,7 @@ async fn empty_fuzzy_values_preserved() {
     let harness = Harness::default();
     let lookup = harness.lookup();
     let result = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("u1"),
-            sso_user_id: Some(""),
-            user_email: Some(""),
-            ..UserLookupRequest::default()
-        })
+        .get_user_object(request_with(Some("u1"), Some(""), Some("")))
         .await;
     assert!(matches!(result, Err(UserLookupError::NotFound(_))));
     assert_eq!(
@@ -73,12 +68,11 @@ async fn sso_update_overwrites_in_background() {
     harness.store.block_update.store(true, Ordering::SeqCst);
     let lookup = harness.lookup();
     let user = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("requested"),
-            sso_user_id: Some("new-sso"),
-            user_email: Some("a@example.com"),
-            ..UserLookupRequest::default()
-        })
+        .get_user_object(request_with(
+            Some("requested"),
+            Some("new-sso"),
+            Some("a@example.com"),
+        ))
         .await
         .expect("the email lookup")
         .expect("the matched user");
@@ -117,11 +111,7 @@ async fn fuzzy_never_creates_user() {
         Some(user_with("matched", Some("a@example.com"), None));
     let lookup = harness.lookup();
     let user = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("requested"),
-            user_email: Some("A@EXAMPLE.COM"),
-            ..UserLookupRequest::default()
-        })
+        .get_user_object(request_with(Some("requested"), None, Some("A@EXAMPLE.COM")))
         .await
         .expect("the fuzzy read")
         .expect("the matched user");
@@ -135,28 +125,18 @@ async fn backfill_skip_without_input_or_db() {
     *without_input.store.by_id.lock().unwrap() = Some(user_with("u1", None, None));
     let lookup = without_input.lookup();
     let user = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("u1"),
-            ..UserLookupRequest::default()
-        })
+        .get_user_object(request(Some("u1")))
         .await
         .expect("the stored user")
         .expect("the stored user is present");
     assert_eq!(user.user_email, None);
     assert_eq!(without_input.store.methods(), vec!["find_by_id"]);
 
-    let without_db = Harness {
-        with_store: false,
-        ..Harness::default()
-    };
+    let without_db = harness_without_store();
     *without_db.cache.cached.lock().unwrap() = Some(model(&user_with("u1", None, None)));
     let cached_lookup = without_db.lookup();
     let cached = cached_lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("u1"),
-            user_email: Some("a@example.com"),
-            ..UserLookupRequest::default()
-        })
+        .get_user_object(request_with(Some("u1"), None, Some("a@example.com")))
         .await
         .expect("the cached user")
         .expect("the cached user is present");
@@ -170,11 +150,7 @@ async fn backfill_empty_input_allowed() {
     *harness.store.by_id.lock().unwrap() = Some(user_with("u1", None, None));
     let lookup = harness.lookup();
     let user = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("u1"),
-            user_email: Some(""),
-            ..UserLookupRequest::default()
-        })
+        .get_user_object(request_with(Some("u1"), None, Some("")))
         .await
         .expect("the stored user")
         .expect("the stored user is present");
@@ -203,11 +179,7 @@ async fn backfill_missing_reread_keeps_original() {
     *harness.store.by_id.lock().unwrap() = Some(user_with("u1", None, None));
     let lookup = harness.lookup();
     let user = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("u1"),
-            user_email: Some("input@example.com"),
-            ..UserLookupRequest::default()
-        })
+        .get_user_object(request_with(Some("u1"), None, Some("input@example.com")))
         .await
         .expect("the stored user")
         .expect("the stored user is present");
@@ -240,11 +212,7 @@ async fn backfill_uses_reread_email_only() {
     *harness.store.reread.lock().unwrap() = Some(model(&JsonData::Object(reread)));
     let lookup = harness.lookup();
     let user = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("u1"),
-            user_email: Some("input@example.com"),
-            ..UserLookupRequest::default()
-        })
+        .get_user_object(request_with(Some("u1"), None, Some("input@example.com")))
         .await
         .expect("the stored user")
         .expect("the stored user is present");
@@ -268,12 +236,11 @@ async fn canonical_then_requested_cache_keys() {
     )));
     let lookup = harness.lookup();
     let user = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("requested"),
-            sso_user_id: Some("sso-1"),
-            user_email: Some("input@example.com"),
-            ..UserLookupRequest::default()
-        })
+        .get_user_object(request_with(
+            Some("requested"),
+            Some("sso-1"),
+            Some("input@example.com"),
+        ))
         .await
         .expect("the fuzzy read")
         .expect("the matched user");
@@ -303,12 +270,11 @@ async fn background_failure_does_not_fail_lookup() {
     let _guard = logs.install();
     let lookup = harness.lookup();
     let user = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("requested"),
-            sso_user_id: Some("new-sso"),
-            user_email: Some("a@example.com"),
-            ..UserLookupRequest::default()
-        })
+        .get_user_object(request_with(
+            Some("requested"),
+            Some("new-sso"),
+            Some("a@example.com"),
+        ))
         .await
         .expect("the email lookup")
         .expect("the matched user");
@@ -335,12 +301,11 @@ async fn background_task_drained() {
         Some(user_with("canon", Some("stored@example.com"), None));
     let lookup = harness.lookup();
     let user = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("requested"),
-            sso_user_id: Some("new-sso"),
-            user_email: Some("a@example.com"),
-            ..UserLookupRequest::default()
-        })
+        .get_user_object(request_with(
+            Some("requested"),
+            Some("new-sso"),
+            Some("a@example.com"),
+        ))
         .await
         .expect("the email lookup")
         .expect("the matched user");

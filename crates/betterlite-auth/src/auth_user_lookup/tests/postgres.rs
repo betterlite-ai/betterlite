@@ -14,7 +14,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
 use tokio_util::task::TaskTracker;
 
-use super::tests::support::{FakeCache, FakeEnrollment, FakeReset};
+use super::tests::support::{FakeCache, FakeEnrollment, FakeReset, request_with};
 use crate::auth_user_lookup::cache::UserCache;
 use crate::auth_user_lookup::cadence::{Cadence, WallClock};
 use crate::auth_user_lookup::lookup::{UserLookup, UserLookupRequest};
@@ -101,40 +101,33 @@ async fn seed(store: &PostgresStore, sql: &str) {
     client.batch_execute(sql).await.expect("the seeded rows");
 }
 
-async fn stored_email(store: &PostgresStore, user_id: &str) -> Option<String> {
+async fn stored_column(store: &PostgresStore, column: &str, user_id: &str) -> Option<String> {
+    let sql = format!("SELECT {column} FROM \"LiteLLM_UserTable\" WHERE user_id = $1");
     let client = store.session().await.expect("the database connection");
     let row = client
-        .query_one(
-            "SELECT user_email FROM \"LiteLLM_UserTable\" WHERE user_id = $1",
-            &[&user_id],
-        )
+        .query_one(&sql, &[&user_id])
         .await
         .expect("the stored user");
-    row.try_get(0).expect("the user email column")
+    row.try_get(0).expect("the stored column")
+}
+
+async fn stored_email(store: &PostgresStore, user_id: &str) -> Option<String> {
+    stored_column(store, "user_email", user_id).await
 }
 
 async fn stored_sso(store: &PostgresStore, user_id: &str) -> Option<String> {
-    let client = store.session().await.expect("the database connection");
-    let row = client
-        .query_one(
-            "SELECT sso_user_id FROM \"LiteLLM_UserTable\" WHERE user_id = $1",
-            &[&user_id],
-        )
-        .await
-        .expect("the stored user");
-    row.try_get(0).expect("the sso id column")
+    stored_column(store, "sso_user_id", user_id).await
 }
 
 async fn user_count(store: &PostgresStore, user_id: &str) -> i64 {
+    let sql = "SELECT count(*) FROM \"LiteLLM_UserTable\" WHERE user_id = $1";
     let client = store.session().await.expect("the database connection");
-    let row = client
-        .query_one(
-            "SELECT count(*) FROM \"LiteLLM_UserTable\" WHERE user_id = $1",
-            &[&user_id],
-        )
+    client
+        .query_one(sql, &[&user_id])
         .await
-        .expect("the user count");
-    row.try_get(0).expect("the count column")
+        .expect("the user count")
+        .try_get(0)
+        .expect("the count column")
 }
 
 #[tokio::test]
@@ -143,11 +136,11 @@ async fn email_case_insensitive_first() {
     seed(&store.reader, SEED_CASE_EMAIL).await;
     let lookup = lookup_for(&store, Arc::new(FakeCache::new(60.0)));
     let user = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("requested-case"),
-            user_email: Some("mixedcase@example.com"),
-            ..UserLookupRequest::default()
-        })
+        .get_user_object(request_with(
+            Some("requested-case"),
+            None,
+            Some("mixedcase@example.com"),
+        ))
         .await
         .expect("the fuzzy email lookup")
         .expect("the matched user");
@@ -163,11 +156,11 @@ async fn backfill_only_null_email() {
     let lookup = lookup_for(&store, Arc::new(FakeCache::new(60.0)));
 
     let filled = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("filled-user"),
-            user_email: Some("new@example.com"),
-            ..UserLookupRequest::default()
-        })
+        .get_user_object(request_with(
+            Some("filled-user"),
+            None,
+            Some("new@example.com"),
+        ))
         .await
         .expect("the stored user")
         .expect("the stored user is present");
@@ -178,11 +171,11 @@ async fn backfill_only_null_email() {
     );
 
     let empty = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("empty-user"),
-            user_email: Some("new@example.com"),
-            ..UserLookupRequest::default()
-        })
+        .get_user_object(request_with(
+            Some("empty-user"),
+            None,
+            Some("new@example.com"),
+        ))
         .await
         .expect("the stored user")
         .expect("the stored user is present");
@@ -193,11 +186,11 @@ async fn backfill_only_null_email() {
     );
 
     let null = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("null-user"),
-            user_email: Some("new@example.com"),
-            ..UserLookupRequest::default()
-        })
+        .get_user_object(request_with(
+            Some("null-user"),
+            None,
+            Some("new@example.com"),
+        ))
         .await
         .expect("the stored user")
         .expect("the stored user is present");
@@ -215,12 +208,11 @@ async fn sso_update_overwrite_reaches_rows() {
     seed(&store.reader, SEED_SSO).await;
     let lookup = lookup_for(&store, Arc::new(FakeCache::new(60.0)));
     let user = lookup
-        .get_user_object(UserLookupRequest {
-            user_id: Some("wanted"),
-            sso_user_id: Some("new-sso"),
-            user_email: Some("sso@example.com"),
-            ..UserLookupRequest::default()
-        })
+        .get_user_object(request_with(
+            Some("wanted"),
+            Some("new-sso"),
+            Some("sso@example.com"),
+        ))
         .await
         .expect("the fuzzy lookup")
         .expect("the matched user");
@@ -241,9 +233,10 @@ async fn created_row_and_memberships_persist() {
     let user = lookup
         .get_user_object(UserLookupRequest {
             user_id: Some("fresh-user"),
+            sso_user_id: None,
             user_email: Some("fresh@example.com"),
             user_id_upsert: true,
-            ..UserLookupRequest::default()
+            check_db_only: None,
         })
         .await
         .expect("the upsert")
@@ -270,9 +263,10 @@ async fn partial_failure_keeps_created_row() {
     let result = lookup
         .get_user_object(UserLookupRequest {
             user_id: Some("partial-user"),
+            sso_user_id: None,
             user_email: Some("partial@example.com"),
             user_id_upsert: true,
-            ..UserLookupRequest::default()
+            check_db_only: None,
         })
         .await;
     match result {

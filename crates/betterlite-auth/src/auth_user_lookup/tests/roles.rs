@@ -42,8 +42,7 @@ fn role_defaults_none() {
     let null = RolePermissions::from_json(&JsonData::Null).unwrap();
     assert_eq!(null.models(RbacRole::InternalUser), None);
     assert_eq!(null.routes(RbacRole::ProxyAdmin), None);
-    let unconfigured = RolePermissions::configured(None);
-    assert_eq!(unconfigured.models(RbacRole::Team), None);
+    assert_eq!(empty.models(RbacRole::Team), None);
 }
 
 #[test]
