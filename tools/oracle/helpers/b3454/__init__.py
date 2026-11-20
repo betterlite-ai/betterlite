@@ -78,10 +78,10 @@ def parsed_body(request: httpx.Request) -> JsonValue | None:
 def record_request(request: httpx.Request, timeout: float | None) -> Projection:
     headers: dict[str, str] = {}
     for name in HEADERS:
-        value = request.headers.get(name)
-        if value is None:
+        values = request.headers.get_list(name)
+        if not values:
             continue
-        headers[name] = MASKED_KEY if name == API_KEY_HEADER else value
+        headers[name] = MASKED_KEY if name == API_KEY_HEADER else values[0]
     seconds = None if timeout is None else int(timeout)
     decoded = parsed_body(request)
     raw_bytes = None if decoded is not None else len(request.content)
