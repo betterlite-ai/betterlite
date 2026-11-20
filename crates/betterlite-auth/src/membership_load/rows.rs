@@ -4,6 +4,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use betterlite_db::auxiliary_repository::bindings::TeamMembership;
 use betterlite_db::auxiliary_repository::repository::{PrismaClient, PrismaTableRepository};
+use betterlite_db::database_failures::deadline::DbLookupError;
 use betterlite_db::database_failures::gate::{DbLookupStallTracker, LookupClock, SystemClock};
 use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::postgres_store::diagnostics::DriverError;
@@ -264,31 +265,9 @@ impl TeamMembershipRows for DatabaseTeamMembership {
     }
 }
 
+// The store reports DbError<Infallible>, a lookup-level database failure, before any row is decoded.
 fn read_fault(source: DbError) -> MembershipReadFailure {
     MembershipReadFailure {
-        source: Box::new(AuthReadError::Repository(widen(source))),
-    }
-}
-
-// The repository and the store report DbError<Infallible>, so only the source-free variants pass through.
-fn widen(error: DbError) -> DbError<MembershipRowError> {
-    match error {
-        DbError::NoDbConnected => DbError::NoDbConnected,
-        DbError::Pool { source } => DbError::Pool { source },
-        DbError::Backend { source } => DbError::Backend { source },
-        DbError::InvalidRecord { source } => match source {},
-        DbError::CreateNull => DbError::CreateNull,
-        DbError::UniqueViolation { constraint, source } => {
-            DbError::UniqueViolation { constraint, source }
-        }
-        DbError::SqlState {
-            code,
-            constraint,
-            source,
-        } => DbError::SqlState {
-            code,
-            constraint,
-            source,
-        },
+        source: Box::new(AuthReadError::Lookup(DbLookupError::Database(source))),
     }
 }

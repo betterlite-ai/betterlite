@@ -86,6 +86,7 @@ pub(crate) struct RecordedWrite {
 }
 
 // Two tiers like B733: a local read sees the memory map only, and any other read falls through to Redis.
+#[derive(Default)]
 pub(crate) struct FakeCache {
     local: Mutex<BTreeMap<String, Json>>,
     redis: Mutex<BTreeMap<String, Json>>,
@@ -99,13 +100,8 @@ pub(crate) struct FakeCache {
 impl FakeCache {
     pub(crate) fn new(management_ttl: f64) -> Arc<Self> {
         Arc::new(Self {
-            local: Mutex::new(BTreeMap::new()),
-            redis: Mutex::new(BTreeMap::new()),
-            reads: Mutex::new(Vec::new()),
-            writes: Mutex::new(Vec::new()),
-            failing_read: Mutex::new(None),
-            failing_write: AtomicBool::new(false),
             management_ttl,
+            ..Self::default()
         })
     }
 
