@@ -250,7 +250,9 @@ fn a_code_string_that_overflows_an_integer_warns_twice() {
     );
     let contents = logs.contents();
     assert!(contents.contains("not a valid integer: 99999999999999999999999999"));
-    assert!(contents.contains("not-convertible code: 99999999999999999999999999"));
+    assert!(
+        contents.contains("Error has invalid or non-convertible code: 99999999999999999999999999")
+    );
 }
 
 #[rstest]
@@ -302,7 +304,9 @@ fn a_code_string_of_non_ascii_digits_warns_twice() {
     assert_eq!(frame_error_code(chunk.as_bytes()), None);
     let contents = logs.contents();
     assert!(contents.contains(&format!("not a valid integer: {digits}")));
-    assert!(contents.contains(&format!("not-convertible code: {digits}")));
+    assert!(contents.contains(&format!(
+        "Error has invalid or non-convertible code: {digits}"
+    )));
 }
 
 #[test]
@@ -412,7 +416,16 @@ async fn an_anthropic_error_reads_the_call_id_from_the_refreshed_headers() {
         true,
     )
     .await;
-    let text = String::from_utf8(body(plain(produced)).await.to_vec()).expect("a JSON body");
+    let response = plain(produced);
+    assert_eq!(
+        header(response.headers(), "x-litellm-call-id").as_deref(),
+        Some("call-2")
+    );
+    assert_ne!(
+        header(response.headers(), "x-litellm-call-id").as_deref(),
+        Some("call-1")
+    );
+    let text = String::from_utf8(body(response).await.to_vec()).expect("a JSON body");
     assert!(text.contains("\"litellm_call_id\":\"call-2\""));
     assert!(!text.contains("call-1"));
 }
@@ -645,7 +658,14 @@ async fn a_failing_refresher_keeps_the_original_headers_and_logs() {
 
 #[tokio::test]
 async fn an_empty_stream_answers_an_empty_200_sse_body() {
-    let produced = answer(vec![], headers(&[("x-custom", "kept")]), None, false).await;
+    let refresh = FixedHeaders(headers(&[("x-custom", "refreshed")]));
+    let produced = answer(
+        vec![],
+        headers(&[("x-custom", "kept")]),
+        Some(Arc::new(refresh)),
+        false,
+    )
+    .await;
     let streamed = streaming(produced);
     assert_eq!(streamed.status, StatusCode::OK);
     assert_eq!(
@@ -654,7 +674,7 @@ async fn an_empty_stream_answers_an_empty_200_sse_body() {
     );
     assert_eq!(
         header(&streamed.headers, "x-custom").as_deref(),
-        Some("kept")
+        Some("refreshed")
     );
     assert_eq!(
         header(&streamed.headers, "cache-control").as_deref(),
@@ -666,10 +686,11 @@ async fn an_empty_stream_answers_an_empty_200_sse_body() {
 #[tokio::test]
 async fn a_first_item_failure_answers_the_two_sse_error_frames_with_its_status() {
     let (logs, _guard) = capture_logs(tracing::Level::ERROR);
+    let refresh = FixedHeaders(headers(&[("x-custom", "refreshed")]));
     let produced = answer(
         vec![failure(503, "upstream unavailable")],
         headers(&[("x-custom", "kept")]),
-        None,
+        Some(Arc::new(refresh)),
         false,
     )
     .await;
@@ -678,6 +699,10 @@ async fn a_first_item_failure_answers_the_two_sse_error_frames_with_its_status()
     assert_eq!(
         header(&streamed.headers, CONTENT_TYPE.as_str()).as_deref(),
         Some("text/event-stream; charset=utf-8")
+    );
+    assert_eq!(
+        header(&streamed.headers, "x-custom").as_deref(),
+        Some("refreshed")
     );
     assert_eq!(
         header(&streamed.headers, "cache-control").as_deref(),
