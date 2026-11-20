@@ -107,31 +107,13 @@ where
         api_key: request.api_key,
         litellm_params: Some(request.litellm_params),
         headers: Some(request.headers),
-        timeout: match request.timeout_seconds {
-            Some(seconds) if seconds.is_finite() && seconds >= 0.0 => {
-                Duration::try_from_secs_f64(seconds).ok()
-            }
-            Some(_) | None => None,
-        },
+        timeout: timeout_seconds(request.timeout_seconds),
         is_async: Json::Bool(request.is_async),
         model_response: RerankResponse::default(),
         logging: &mut http_logging,
     };
     let sink = Sink;
-    let env = PrePostEnv {
-        debug: DebugSettings::default(),
-        globals: GlobalFlags::default(),
-        decision: Decision {
-            content: false,
-            key_info: false,
-        },
-        redactor: http.redactor,
-        log: &sink,
-        input_callbacks: &[],
-        sentry: None,
-        logger_fn: None,
-        now: http.now,
-    };
+    let env = prepost_env(&sink, http.redactor, http.now);
     let mut log = RerankLogContext {
         state: logging,
         env: &env,
@@ -155,5 +137,35 @@ where
             request.model,
             request.provider,
         )),
+    }
+}
+
+fn timeout_seconds(value: Option<f64>) -> Option<Duration> {
+    match value {
+        Some(seconds) if seconds.is_finite() && seconds >= 0.0 => {
+            Duration::try_from_secs_f64(seconds).ok()
+        }
+        Some(_) | None => None,
+    }
+}
+
+fn prepost_env<'visit>(
+    sink: &'visit Sink,
+    redactor: &'visit Redactor,
+    now: DateTime<FixedOffset>,
+) -> PrePostEnv<'visit> {
+    PrePostEnv {
+        debug: DebugSettings::default(),
+        globals: GlobalFlags::default(),
+        decision: Decision {
+            content: false,
+            key_info: false,
+        },
+        redactor,
+        log: sink,
+        input_callbacks: &[],
+        sentry: None,
+        logger_fn: None,
+        now,
     }
 }

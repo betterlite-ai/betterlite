@@ -13,7 +13,15 @@ use super::error::SdkHttpError;
 use super::result::SyncDiagnostic;
 use super::result::kinds::SdkResult;
 
+mod input;
 mod native;
+mod providers;
+mod report;
+
+// A `{mock}` value names the harness origin, replaced in settings, env and kwargs alike
+const MOCK: &str = "{mock}";
+// The logging init the fixture's logger starts from
+const FIXTURE_INIT: &str = r#"{"model":"rerank-test","call_type":"rerank","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
 
 // One call of LiteLLM's rerank: the declared arguments, the remaining kwargs and the settings a proxy config carries
 #[derive(Debug, Clone, Serialize, Deserialize)]
