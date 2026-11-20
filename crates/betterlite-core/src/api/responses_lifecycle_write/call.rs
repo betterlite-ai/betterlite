@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
-use std::fmt;
 
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
@@ -19,18 +18,12 @@ pub enum LifecycleOperation {
 }
 
 impl LifecycleOperation {
-    const fn label(self) -> &'static str {
+    // LiteLLM's refusal ValueError spells the operation in upper case
+    pub(super) const fn label(self) -> &'static str {
         match self {
             Self::Delete => "DELETE",
             Self::Cancel => "CANCEL",
         }
-    }
-}
-
-// LiteLLM's unsupported-provider ValueError spells the operation in upper case
-impl fmt::Display for LifecycleOperation {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.label())
     }
 }
 

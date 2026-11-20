@@ -4,7 +4,6 @@ use betterlite_logging::logging_state::LoggingStateError;
 use betterlite_redact::secret::Redactor;
 use thiserror::Error;
 
-use super::call::LifecycleOperation;
 use crate::api::responses_write_http::error::WriteError;
 
 // What one entry point can refuse with before or instead of the handler's answer
@@ -12,14 +11,15 @@ use crate::api::responses_write_http::error::WriteError;
 pub enum LifecycleWriteError {
     #[error("custom_llm_provider is required but passed as None")]
     MissingProvider,
-    #[error("{operation} responses is not supported for {provider}")]
+    // the label is the operation as LiteLLM's ValueError spells it
+    #[error("{label} responses is not supported for {provider}")]
     Unsupported {
-        operation: LifecycleOperation,
+        label: &'static str,
         provider: String,
     },
     // send() answers with the operation prepare() was given, so the other operation's result means the two disagree
-    #[error("the {operation} handler answered with the other operation's result")]
-    WrongAnswer { operation: LifecycleOperation },
+    #[error("the {label} handler answered with the other operation's result")]
+    WrongAnswer { label: &'static str },
     #[error(transparent)]
     Logging(#[from] LoggingStateError),
     #[error(transparent)]
@@ -40,12 +40,7 @@ impl ResponsesLifecycleWriteError {
     // LiteLLM's exception_type(model=None, custom_llm_provider=..., original_exception=cause)
     #[must_use]
     pub fn error_class(&self, redactor: &Redactor) -> ErrorClass {
-        let raw = self.raw_exception();
-        dispatch(&DispatchInput::Raw(Box::new(raw)), redactor)
-    }
-
-    fn raw_exception(&self) -> RawException {
-        match &self.error {
+        let raw = match &self.error {
             // the handler's own exception is what exception_type received
             LifecycleWriteError::Transport(WriteError::Provider(error)) => RawException {
                 model: String::new(),
@@ -75,6 +70,7 @@ impl ResponsesLifecycleWriteError {
                     exception_type: String::from("ValueError"),
                 }
             }
-        }
+        };
+        dispatch(&DispatchInput::Raw(Box::new(raw)), redactor)
     }
 }

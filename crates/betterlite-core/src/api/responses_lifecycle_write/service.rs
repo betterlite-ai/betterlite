@@ -12,6 +12,7 @@ use super::call::{
 use super::error::{LifecycleWriteError, ResponsesLifecycleWriteError};
 use super::logging::update_logging;
 use crate::api::responses_write_http::config::{ResponsesConfig, WriteParams};
+use crate::api::responses_write_http::error::WriteError;
 use crate::api::responses_write_http::service::{
     CancelCall, ClientSource, DeleteCall, LogContext, WriteCall, WriteDeps, WriteOutcome,
     WriteTarget, prepare, send,
@@ -24,58 +25,54 @@ pub struct ResponsesLifecycleWrite<'deps, C: ResponsesConfig, S: ClientSource> {
     pub request_timeout: RequestTimeout,
 }
 
+// LiteLLM's delete and cancel entries run one body each and differ in the operation and the outcome variant; each async twin decodes first and awaits its sync entry once
+macro_rules! lifecycle_entries {
+    ($sync:ident, $asynchronous:ident, $outcome:ident, $other:ident, $output:ident) => {
+        // the sync entry: decode, refuse, log, then send through the client its own kwargs flag picks
+        pub async fn $sync(
+            &self,
+            call: &ResponsesLifecycleWriteCall,
+            state: &mut LoggingState,
+            env: &PrePostEnv<'_>,
+        ) -> Result<$output, ResponsesLifecycleWriteError> {
+            match self.write(call, state, env).await? {
+                WriteOutcome::$outcome(answer) => Ok(*answer),
+                WriteOutcome::$other(_) => Err(self.wrong_answer(call)),
+            }
+        }
+
+        // the async entry: mark its own mode flag true, then await the sync entry's answer once
+        pub async fn $asynchronous(
+            &self,
+            call: &ResponsesLifecycleWriteCall,
+            state: &mut LoggingState,
+            env: &PrePostEnv<'_>,
+        ) -> Result<$output, ResponsesLifecycleWriteError> {
+            let marked = call.decoded(&resolve(call));
+            self.$sync(&marked, state, env).await
+        }
+    };
+}
+
 impl<'deps, C, S> ResponsesLifecycleWrite<'deps, C, S>
 where
     C: ResponsesConfig,
     S: ClientSource,
 {
-    // delete_responses: decode, refuse, log, then send through the client its own kwargs flag picks
-    pub async fn delete_responses(
-        &self,
-        call: &ResponsesLifecycleWriteCall,
-        state: &mut LoggingState,
-        env: &PrePostEnv<'_>,
-    ) -> Result<DeleteResponseResult, ResponsesLifecycleWriteError> {
-        match self.write(call, state, env).await? {
-            WriteOutcome::Deleted(record) => Ok(*record),
-            WriteOutcome::Cancelled(_) => Err(self.wrong_answer(call)),
-        }
-    }
-
-    // adelete_responses: decode first, mark this entry's own flag true, then await the sync entry's answer once
-    pub async fn adelete_responses(
-        &self,
-        call: &ResponsesLifecycleWriteCall,
-        state: &mut LoggingState,
-        env: &PrePostEnv<'_>,
-    ) -> Result<DeleteResponseResult, ResponsesLifecycleWriteError> {
-        let marked = call.decoded(&resolve(call));
-        self.delete_responses(&marked, state, env).await
-    }
-
-    // cancel_responses: decode, refuse, log, then send through the client its own kwargs flag picks
-    pub async fn cancel_responses(
-        &self,
-        call: &ResponsesLifecycleWriteCall,
-        state: &mut LoggingState,
-        env: &PrePostEnv<'_>,
-    ) -> Result<TypedReply, ResponsesLifecycleWriteError> {
-        match self.write(call, state, env).await? {
-            WriteOutcome::Cancelled(reply) => Ok(*reply),
-            WriteOutcome::Deleted(_) => Err(self.wrong_answer(call)),
-        }
-    }
-
-    // acancel_responses: decode first, mark this entry's own flag true, then await the sync entry's answer once
-    pub async fn acancel_responses(
-        &self,
-        call: &ResponsesLifecycleWriteCall,
-        state: &mut LoggingState,
-        env: &PrePostEnv<'_>,
-    ) -> Result<TypedReply, ResponsesLifecycleWriteError> {
-        let marked = call.decoded(&resolve(call));
-        self.cancel_responses(&marked, state, env).await
-    }
+    lifecycle_entries!(
+        delete_responses,
+        adelete_responses,
+        Deleted,
+        Cancelled,
+        DeleteResponseResult
+    );
+    lifecycle_entries!(
+        cancel_responses,
+        acancel_responses,
+        Cancelled,
+        Deleted,
+        TypedReply
+    );
 
     async fn write(
         &self,
@@ -97,17 +94,50 @@ where
             api_key: call.params.api_key.clone(),
             ssl_verify: call.params.ssl_verify,
         };
+        let write = self.prepared_call(call, &resolved.response_id, &params);
+        self.send_write(call, state, env, &write)
+            .await
+            .map_err(|error| {
+                boundary(
+                    LifecycleWriteError::Transport(error),
+                    resolved.provider.as_deref(),
+                )
+            })
+    }
+
+    async fn send_write(
+        &self,
+        call: &ResponsesLifecycleWriteCall,
+        state: &mut LoggingState,
+        env: &PrePostEnv<'_>,
+        write: &WriteCall<'_>,
+    ) -> Result<WriteOutcome, WriteError> {
+        let prepared = prepare(
+            &self.deps,
+            call.client_kind(),
+            write,
+            &mut LogContext { state, env },
+        )?;
+        send(prepared).await
+    }
+
+    fn prepared_call<'call>(
+        &self,
+        call: &'call ResponsesLifecycleWriteCall,
+        response_id: &'call str,
+        params: &'call WriteParams,
+    ) -> WriteCall<'call> {
         let target = WriteTarget {
-            response_id: &resolved.response_id,
-            params: &params,
+            response_id,
+            params,
             extra_headers: call.extra_headers.as_ref(),
-            // LiteLLM's `timeout or request_timeout`: only a falsy zero falls back, and the value is a float it hands to httpx
-            timeout: Some(deadline(resolved_timeout(
-                call.timeout,
-                self.request_timeout,
-            ))),
+            // LiteLLM's `timeout or request_timeout`: only a falsy zero falls back, and a negative or non-finite float becomes an already elapsed deadline
+            timeout: Some(
+                Duration::try_from_secs_f64(resolved_timeout(call.timeout, self.request_timeout))
+                    .unwrap_or_default(),
+            ),
         };
-        let write = match call.operation {
+        match call.operation {
             LifecycleOperation::Delete => WriteCall::Delete(DeleteCall {
                 target,
                 extra_body: call.extra_body.as_ref(),
@@ -116,32 +146,14 @@ where
                 target,
                 extra_body: call.extra_body.as_ref(),
             }),
-        };
-        let prepared = prepare(
-            &self.deps,
-            call.client_kind(),
-            &write,
-            &mut LogContext { state, env },
-        )
-        .map_err(|error| {
-            boundary(
-                LifecycleWriteError::Transport(error),
-                resolved.provider.as_deref(),
-            )
-        })?;
-        send(prepared).await.map_err(|error| {
-            boundary(
-                LifecycleWriteError::Transport(error),
-                resolved.provider.as_deref(),
-            )
-        })
+        }
     }
 
     fn wrong_answer(&self, call: &ResponsesLifecycleWriteCall) -> ResponsesLifecycleWriteError {
         let resolved = resolve(call);
         boundary(
             LifecycleWriteError::WrongAnswer {
-                operation: call.operation,
+                label: call.operation.label(),
             },
             resolved.provider.as_deref(),
         )
@@ -157,7 +169,7 @@ fn validated(
     };
     if ResponsesLifecycleProvider::resolve(provider).is_none() {
         return Err(LifecycleWriteError::Unsupported {
-            operation,
+            label: operation.label(),
             provider: provider.to_owned(),
         });
     }
@@ -170,11 +182,6 @@ const fn resolved_timeout(timeout: Option<f64>, request_timeout: RequestTimeout)
         Some(seconds) if seconds != 0.0_f64 => seconds,
         Some(_) | None => request_timeout.seconds,
     }
-}
-
-// Duration cannot hold a negative interval, so a negative or non-finite timeout becomes an already elapsed deadline
-fn deadline(seconds: f64) -> Duration {
-    Duration::try_from_secs_f64(seconds).unwrap_or_default()
 }
 
 fn boundary(error: LifecycleWriteError, provider: Option<&str>) -> ResponsesLifecycleWriteError {
