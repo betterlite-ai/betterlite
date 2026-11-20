@@ -64,11 +64,15 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L9529-L9538
   - what: >-
       A caught transport failure carries betterlite's transport message, for example "the client is shutting down and
-      takes no new requests", where LiteLLM uses str(exception); the class and the synthesized 500 match.
+      takes no new requests" or "the request ran past its read timeout or total deadline", where LiteLLM uses
+      str(exception), for a read timeout "APITimeoutError - Request timed out. Error_str: The read operation timed out".
+      The class and status match: a client deadline is a 408 Timeout as LiteLLM's httpx read timeout becomes, and any
+      other transport failure is the synthesized 500.
     why: >-
       B3363's TransferError is the only description of the failure that reaches the handler, and its variants carry no
-      provider response with text of its own.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6081-L6105
+      provider response with text of its own; the Deadline variant names the read timeout, so the 408 and the Timeout
+      class are built from its text instead of LiteLLM's phrase.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2444-L2457
   - what: >-
       A kwargs entry named api_key, api_base or api_version is replaced by the matching named argument. LiteLLM's
       signature binds those names as parameters, so its kwargs never carries them and it has no precedence to state.
@@ -101,6 +105,14 @@ deviations:
       B173's client source answers one asynchronous client per call and owns provider selection, and ssl_verify is the
       only input this handler has for it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L9585-L9592
+  - what: >-
+      The mock short circuit is a second copy of container_file_upload/mock.rs's mock_response and decode, typed to
+      ContainerFileListResponse, rather than one shared decode under crates/betterlite-core/src/api.
+    why: >-
+      A shared module would need a declaration in api's module root and an edit to the upload module, both outside this
+      task's scope; the copied body is six lines over a serde target type, and the two copies change together only when
+      LiteLLM's mock handling changes, so the move is left to the task that adds the next file operation.
+    link: ""
 kept_bugs:
   - what: >-
       The timeout argument never reaches the HTTP client: the GET is sent with url, headers and params only, so the
