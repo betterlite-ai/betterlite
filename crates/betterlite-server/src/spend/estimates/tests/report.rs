@@ -246,7 +246,7 @@ async fn postgres_team_totals_order_by_spend_over_the_inclusive_end_day() {
     )
     .await;
     let rows = store(&pool)
-        .totals(SpendTotals::Teams, midnight_window(), end_window())
+        .totals(SpendTotals::Teams, midnight(15), midnight(15))
         .await
         .unwrap();
     let summary: Vec<(Option<&str>, rust_decimal::Decimal)> = rows
@@ -280,7 +280,7 @@ async fn postgres_tag_totals_expand_each_request_tag() {
     )
     .await;
     let rows = store(&pool)
-        .totals(SpendTotals::Tags, midnight_window(), end_window())
+        .totals(SpendTotals::Tags, midnight(15), midnight(15))
         .await
         .unwrap();
     let summary: Vec<(Option<&str>, rust_decimal::Decimal)> = rows
@@ -317,13 +317,13 @@ async fn postgres_report_window_ignores_the_session_timezone() {
     execute(&pool, "SET TIME ZONE 'Pacific/Kiritimati'").await;
     assert_eq!(session_timezone(&pool).await, "Pacific/Kiritimati");
     let east = store
-        .totals(SpendTotals::Teams, midnight_window(), end_window())
+        .totals(SpendTotals::Teams, midnight(1), midnight(31))
         .await
         .unwrap();
     execute(&pool, "SET TIME ZONE 'Pacific/Pago_Pago'").await;
     assert_eq!(session_timezone(&pool).await, "Pacific/Pago_Pago");
     let west = store
-        .totals(SpendTotals::Teams, midnight_window(), end_window())
+        .totals(SpendTotals::Teams, midnight(1), midnight(31))
         .await
         .unwrap();
     assert_eq!(east, west);
@@ -332,14 +332,9 @@ async fn postgres_report_window_ignores_the_session_timezone() {
     fixture.close_async().await.unwrap();
 }
 
-fn midnight_window() -> DateTime<Utc> {
-    DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
-        .unwrap()
-        .with_timezone(&Utc)
-}
-
-fn end_window() -> DateTime<Utc> {
-    DateTime::parse_from_rfc3339("2026-01-31T00:00:00Z")
+fn midnight(day: u32) -> DateTime<Utc> {
+    let text = format!("2026-01-{day:02}T00:00:00Z");
+    DateTime::parse_from_rfc3339(&text)
         .unwrap()
         .with_timezone(&Utc)
 }
