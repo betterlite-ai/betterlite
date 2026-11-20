@@ -50,9 +50,6 @@ pub(super) fn merge_request<'request>(
         request_kwargs: kwargs,
     }
 }
-fn provider_value(provider: Option<&str>) -> JsonValue {
-    provider.map_or_else(|| JsonValue::Null, |name| JsonValue::Text(name.to_owned()))
-}
 fn resolve_prompt_provider(
     model: &str,
     provider: Option<&str>,
@@ -91,7 +88,9 @@ pub(super) fn finish(request: FinishRequest<'_>) -> Result<PromptOutcome, Prompt
     local_vars.insert(String::from("model"), JsonValue::Text(answer.model.clone()));
     let provider =
         resolve_prompt_provider(model, custom_llm_provider, &answer.model, kwargs, resolver)?;
-    let local = provider_value(provider.as_deref());
+    let local = provider
+        .as_deref()
+        .map_or_else(|| JsonValue::Null, |name| JsonValue::Text(name.to_owned()));
     local_vars.insert(String::from("custom_llm_provider"), local);
     for (name, value) in answer.optional_params {
         local_vars.insert(name, value);
