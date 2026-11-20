@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use secrecy::zeroize::Zeroize as _;
 
 use super::LifecycleApiKey;

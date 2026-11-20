@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::time::Duration;
 
 use betterlite_context::resource_config_selection::responses::ResponsesConfigTag;
@@ -75,8 +77,8 @@ async fn retrieve_routes_encoded_id() {
     ]);
     let encoded = build_response_id(Some("openai"), Some("deployment-a"), "resp/a");
     let mut call = retrieve(CALL);
-    call.response_id = encoded;
-    call.custom_llm_provider = Some(String::from("anthropic"));
+    call.identity.response_id = encoded;
+    call.identity.custom_llm_provider = Some(String::from("anthropic"));
 
     let reply = retrieved(
         fixture
@@ -262,11 +264,11 @@ async fn read_ignored_extras_and_context() {
     let mut extras = retrieve(CALL);
     let headers = caller_headers(&[("X-Trace", "trace-a")]);
     assert_eq!(headers.get("X-Trace").map(String::as_str), Some("trace-a"));
-    extras.extra_headers = Some(headers.clone());
+    extras.identity.extra_headers = Some(headers.clone());
     extras.extra_query = Some(map(r#"{"after":"ignored"}"#));
     extras.extra_body = Some(map(r#"{"ignored":true}"#));
-    extras.timeout = Some(LifecycleTimeout::Seconds(Number::from(7)));
-    extras.params.metadata = Some(map(r#"{"request_id":"r1"}"#));
+    extras.identity.timeout = Some(LifecycleTimeout::Seconds(Number::from(7)));
+    extras.identity.metadata = Some(map(r#"{"request_id":"r1"}"#));
     let _ = fixture
         .retrieve(&extras)
         .await
@@ -277,13 +279,13 @@ async fn read_ignored_extras_and_context() {
         .await
         .expect("the default-timeout retrieve succeeds");
     let mut zero = retrieve(NO_CALL_ID);
-    zero.timeout = Some(LifecycleTimeout::Seconds(Number::from(0)));
+    zero.identity.timeout = Some(LifecycleTimeout::Seconds(Number::from(0)));
     let _ = fixture
         .retrieve(&zero)
         .await
         .expect("the zero-timeout retrieve succeeds");
     let mut phases = retrieve(NO_CALL_ID);
-    phases.timeout = Some(LifecycleTimeout::Phases(LifecyclePhases {
+    phases.identity.timeout = Some(LifecycleTimeout::Phases(LifecyclePhases {
         connect: None,
         read: Some(Number::from(9)),
         write: None,
@@ -294,7 +296,7 @@ async fn read_ignored_extras_and_context() {
         .await
         .expect("the phased retrieve succeeds");
     let mut no_read = retrieve(NO_CALL_ID);
-    no_read.timeout = Some(LifecycleTimeout::Phases(LifecyclePhases {
+    no_read.identity.timeout = Some(LifecycleTimeout::Phases(LifecyclePhases {
         connect: Some(Number::from(3)),
         read: None,
         write: None,
@@ -337,7 +339,7 @@ async fn read_ignored_extras_and_context() {
         .expect("the bool-flagged listing succeeds");
 
     let mut zero_read = retrieve(NO_CALL_ID);
-    zero_read.timeout = Some(LifecycleTimeout::Phases(LifecyclePhases {
+    zero_read.identity.timeout = Some(LifecycleTimeout::Phases(LifecyclePhases {
         connect: None,
         read: Some(Number::from(0)),
         write: None,

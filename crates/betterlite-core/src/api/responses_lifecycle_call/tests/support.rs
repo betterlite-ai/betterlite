@@ -95,7 +95,7 @@ pub(crate) struct FakeExecutor {
 impl FakeExecutor {
     fn new(answers: Vec<Answer>) -> Self {
         Self {
-            answers: Mutex::new(answers.into()),
+            answers: Mutex::new(VecDeque::from(answers)),
             records: Mutex::default(),
         }
     }
@@ -197,6 +197,19 @@ pub(crate) struct Fixture {
     now: DateTime<FixedOffset>,
 }
 
+// the log one fixture read hands the service, built from the fixture's own sink, state and clock
+fn log_of<'env>(
+    service: &'env ResponsesLifecycle<FakeExecutor>,
+    sink: &'env Sink,
+    state: &'env mut LoggingState,
+    now: DateTime<FixedOffset>,
+) -> LifecycleLog<'env, 'env> {
+    LifecycleLog {
+        state,
+        env: pre_post(&service.redactor, sink, now),
+    }
+}
+
 impl Fixture {
     pub(crate) fn new(answers: Vec<Answer>) -> Self {
         Self::with_timeout(answers, DEFAULT_TIMEOUT)
@@ -239,11 +252,7 @@ impl Fixture {
         &mut self,
         call: &ResponsesRetrieveCall,
     ) -> Result<TypedReply, LifecycleFailure> {
-        let env = pre_post(&self.service.redactor, &self.sink, self.now);
-        let log = LifecycleLog {
-            state: &mut self.state,
-            env: &env,
-        };
+        let log = log_of(&self.service, &self.sink, &mut self.state, self.now);
         self.service.get_responses(call, log).await
     }
 
@@ -251,11 +260,7 @@ impl Fixture {
         &mut self,
         call: &ResponsesRetrieveCall,
     ) -> Result<TypedReply, LifecycleFailure> {
-        let env = pre_post(&self.service.redactor, &self.sink, self.now);
-        let log = LifecycleLog {
-            state: &mut self.state,
-            env: &env,
-        };
+        let log = log_of(&self.service, &self.sink, &mut self.state, self.now);
         self.service.aget_responses(call, log).await
     }
 
@@ -263,11 +268,7 @@ impl Fixture {
         &mut self,
         call: &ResponsesInputItemsCall,
     ) -> Result<Json, LifecycleFailure> {
-        let env = pre_post(&self.service.redactor, &self.sink, self.now);
-        let log = LifecycleLog {
-            state: &mut self.state,
-            env: &env,
-        };
+        let log = log_of(&self.service, &self.sink, &mut self.state, self.now);
         self.service.list_input_items(call, log).await
     }
 
@@ -275,11 +276,7 @@ impl Fixture {
         &mut self,
         call: &ResponsesInputItemsCall,
     ) -> Result<Json, LifecycleFailure> {
-        let env = pre_post(&self.service.redactor, &self.sink, self.now);
-        let log = LifecycleLog {
-            state: &mut self.state,
-            env: &env,
-        };
-        self.service.alist_input_items(call, log).await
+        let log = log_of(&self.service, &self.sink, &mut self.state, self.now);
+        self.service.alist_input_items(call.clone(), log).await
     }
 }
