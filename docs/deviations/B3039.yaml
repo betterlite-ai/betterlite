@@ -1,0 +1,44 @@
+task: B3039
+deviations:
+  - what: >-
+      Tag and agent policy resolution use injected registry and batch lookup services; when a service or registry is
+      unavailable, tag limits return an empty mapping and agent lookup returns None, so those rate-limit descriptors
+      are absent.
+    why: >-
+      LiteLLM's tag resolution calls get_tag_objects_batch and returns an empty mapping when prisma_client is None;
+      agent lookup behavior depends on the global_agent_registry implementation. betterlite mirrors this pattern with
+      ports the pre-call hook can hold.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L680-L698
+  - what: >-
+      MCP source-team charging appends descriptors for all applicable teams (both key.team_id and all
+      source_team_rpm_limits entries); no team is arbitrarily selected when a keyless MCP request is granted by
+      multiple teams.
+    why: >-
+      A keyless MCP subject reaches servers through several teams at once and has no single team_id; every applicable
+      team's ceiling must bind, preserving the grant structure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2927-L2937
+  - what: >-
+      Key-owned agent_id takes precedence over metadata-supplied agent_id; session_id is resolved from
+      litellm_session_id, then metadata.session_id, then litellm_metadata.session_id in that order.
+    why: >-
+      API key agent assignment is stronger than a per-request override; session resolution spans multiple metadata
+      sources for backward compatibility.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3029-L3053
+  - what: >-
+      Source teams charge in ascending team-id order, because betterlite keeps mcp_source_team_rpm_limits in a sorted
+      map; LiteLLM walks the mapping's insertion order. The set of descriptors and their values are the same, only
+      their order in the descriptor list differs.
+    why: >-
+      The descriptor list is consumed by the limiter, which enforces every descriptor and has no order-dependent
+      behavior, so a sorted map trades Python dict order for a deterministic, hash-free iteration.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2936
+  - what: >-
+      The default tag resolver fails open on every lookup error, including a registry load failure: the tag
+      descriptors are left out and the request continues. LiteLLM guards only its database tag fetch that way; a
+      registry load error propagates out of the pre-call hook.
+    why: >-
+      A pre-call hook that fails the request on a tag read turns a management-table read error into an outage of
+      every request that carries a tag; the batch lookup reports its errors as values, so the resolver can log them
+      and return no limits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3107-L3116
+kept_bugs: []
