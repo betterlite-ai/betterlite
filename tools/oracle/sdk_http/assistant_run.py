@@ -1,16 +1,17 @@
 import asyncio
+from functools import partial
 from typing import Literal
 
 import litellm.assistants.main as runs
 import openai
-from litellm.exceptions import BadRequestError
 from openai.lib.streaming import AssistantStreamManager, AsyncAssistantStreamManager
 from openai.types.beta import AssistantStreamEvent
 from openai.types.beta.threads import Run
-from pydantic import BaseModel, ConfigDict, JsonValue as Json
+from pydantic import BaseModel, ConfigDict
+from pydantic import JsonValue as Json
 from typing_extensions import override
 
-from openai_chat import Failure, optional_text, status_code
+from openai_chat import Failure, project_failure
 
 
 class Recorder(openai.AssistantEventHandler):
@@ -50,7 +51,7 @@ class RunView(BaseModel):
     id: str
     status: str
     tool_calls: int | None
-    last_error: dict[str, str | None] | None
+    last_error: dict[str, str] | None
 
 
 class HandlerView(BaseModel):
@@ -95,8 +96,9 @@ class AssistantRunRequest(BaseModel):
         )
 
 
-def request_options(call: Call, api_base: str) -> dict[str, Json]:
-    values: dict[str, Json] = {
+def run(call: Call, api_base: str) -> Outcome:
+    handler = Recorder() if call.event_handler else None
+    options: dict[str, Json] = {
         "custom_llm_provider": call.provider,
         "thread_id": call.thread_id,
         "assistant_id": call.assistant_id,
@@ -110,57 +112,75 @@ def request_options(call: Call, api_base: str) -> dict[str, Json]:
         "api_base": api_base,
     }
     if "stream" in call.model_fields_set:
-        values["stream"] = call.stream
-    return values
-
-
-def run(call: Call, api_base: str) -> Outcome:
-    handler = Recorder() if call.event_handler else None
-    options = request_options(call, api_base)
+        options["stream"] = call.stream
     try:
-        match call.mode:
-            case "run":
-                return run_call(call, options, handler)
-            case "arun":
-                return arun_call(call, options, handler)
-            case "run_stream":
-                return run_stream_call(call, options, handler)
-            case "arun_stream":
-                manager = runs.arun_thread_stream(**options, event_handler=handler)
-                return async_manager(manager, handler)
+        return mode_outcome(call, options, handler)
     except (TypeError, ValueError) as error:
-        failure = Failure(cls=error.__class__.__name__, status=0, message=str(error))
+        failure = Failure(cls=type(error).__name__, status=0, message=str(error))
         return Outcome(run=None, stream=None, failure=failure, response=None)
+    except openai.BadRequestError as error:
+        response = (
+            ResponseView(
+                content=error.response.content.decode(),
+                method=error.response.request.method,
+            )
+            if call.provider not in ("openai", "azure")
+            else None
+        )
+        return api_failure(error, response)
     except openai.APIError as error:
-        return api_failure(call, error)
+        return api_failure(error)
+
+
+def mode_outcome(call: Call, options: dict[str, Json], handler: Recorder | None) -> Outcome:
+    match call.mode:
+        case "run":
+            return run_call(call, options, handler)
+        case "arun":
+            return arun_call(call, options, handler)
+        case "run_stream":
+            return run_stream_call(call, options, handler)
+        case "arun_stream":
+            manager = partial(runs.arun_thread_stream, **options)(event_handler=handler)
+            return async_manager(manager, handler)
+
+
+def api_failure(error: openai.APIError, response: ResponseView | None = None) -> Outcome:
+    return Outcome(
+        run=None,
+        stream=None,
+        failure=project_failure(error).failure,
+        response=response,
+    )
 
 
 def run_call(call: Call, options: dict[str, Json], handler: Recorder | None) -> Outcome:
     if call.stream is not True:
-        response: Run = runs.run_thread(**options, event_handler=handler)
+        response: Run = partial(runs.run_thread, **options)(event_handler=handler)
         return run_outcome(response)
     stream_options = {name: value for name, value in options.items() if name != "stream"}
     if call.arun_thread is True:
-        manager = runs.arun_thread_stream(**stream_options, event_handler=handler)
+        manager = partial(runs.arun_thread_stream, **stream_options)(event_handler=handler)
         return async_manager(manager, handler)
-    sync = runs.run_thread_stream(**stream_options, event_handler=handler)
+    sync = partial(runs.run_thread_stream, **stream_options)(event_handler=handler)
     return sync_manager(sync, handler)
 
 
 def arun_call(call: Call, options: dict[str, Json], handler: Recorder | None) -> Outcome:
     if call.stream is not True:
-        response: Run = asyncio.run(runs.arun_thread(**options, event_handler=handler))
+        held = partial(runs.arun_thread, **options)(event_handler=handler)
+        response: Run = asyncio.run(held)
         return run_outcome(response)
     stream_options = {name: value for name, value in options.items() if name != "stream"}
-    manager = runs.arun_thread_stream(**stream_options, event_handler=handler)
+    manager = partial(runs.arun_thread_stream, **stream_options)(event_handler=handler)
     return async_manager(manager, handler)
 
 
 def run_stream_call(call: Call, options: dict[str, Json], handler: Recorder | None) -> Outcome:
     if call.arun_thread is True:
-        manager = runs.arun_thread_stream(**options, event_handler=handler)
+        manager = partial(runs.arun_thread_stream, **options)(event_handler=handler)
         return async_manager(manager, handler)
-    sync = runs.run_thread_stream(**options, event_handler=handler)
+    sync = partial(runs.run_thread_stream, **options)(event_handler=handler)
     return sync_manager(sync, handler)
 
 
@@ -205,23 +225,3 @@ def run_outcome(response: Run) -> Outcome:
         last_error=last_error,
     )
     return Outcome(run=view, stream=None, failure=None, response=None)
-
-
-def api_failure(call: Call, error: openai.APIError) -> Outcome:
-    fields: dict[str, str | int | None] = {
-        "cls": error.__class__.__name__,
-        "status": status_code(error),
-        "message": error.message,
-    }
-    for name in ("type", "param", "code"):
-        fields.update(optional_text(error, name))
-    failure = Failure.model_validate(fields)
-    if call.provider not in ("openai", "azure"):
-        match error:
-            case BadRequestError():
-                response = ResponseView(
-                    content=error.response.content.decode(),
-                    method=error.response.request.method,
-                )
-                return Outcome(run=None, stream=None, failure=failure, response=response)
-    return Outcome(run=None, stream=None, failure=failure, response=None)
