@@ -270,6 +270,7 @@ impl ClientSource for Source {
     type Client = Wire;
 
     fn client(&self, ssl_verify: Option<bool>) -> Result<Wire, ClientError> {
+        self.wire.events.push("client");
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -456,6 +457,20 @@ pub(crate) fn header<'request>(request: &'request WriteRequest, name: &str) -> &
         .get(name)
         .and_then(|value| value.to_str().ok())
         .expect("the request carries the header")
+}
+
+pub(crate) fn header_values(request: &WriteRequest, name: &str) -> Vec<String> {
+    request
+        .headers
+        .get_all(name)
+        .iter()
+        .map(|value| {
+            value
+                .to_str()
+                .expect("the header value is ASCII")
+                .to_owned()
+        })
+        .collect()
 }
 
 pub(crate) const IMPATIENT: TransportLimits = TransportLimits {

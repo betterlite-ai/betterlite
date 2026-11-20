@@ -4,8 +4,8 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::vector_stores::store::CreateParams;
 
 use super::support::{
-    Events, Fixture, Reply, Source, Wire, caller_headers, deps, header, openai_config,
-    openai_settings, params, target,
+    Events, Fixture, Reply, Source, Wire, caller_headers, deps, header, header_values,
+    openai_config, openai_settings, params, target,
 };
 use super::{json, run};
 use crate::api::vector_store_http_create_read::service::{
@@ -120,45 +120,19 @@ async fn case_variant_caller_headers_keep_both_values() {
     let deps = deps(&config, &source, None);
     let params = params("http://mock.test/v1");
     let caller = caller_headers(&[("authorization", "Bearer caller"), ("openai-beta", "x")]);
+    let call = retrieve_call(with_headers(&params, &caller));
     let mut fixture = Fixture::new("vector_store_retrieve");
-    run(
-        &mut fixture,
-        &deps,
-        ClientKind::Sync,
-        &retrieve_call(with_headers(&params, &caller)),
-        &events,
-    )
-    .await
-    .expect("the retrieve succeeds");
-    let authorization: Vec<String> = {
+    run(&mut fixture, &deps, ClientKind::Sync, &call, &events)
+        .await
+        .expect("the retrieve succeeds");
+    let (authorization, beta) = {
         let requests = wire.requests();
-        requests[0]
-            .headers
-            .get_all("authorization")
-            .iter()
-            .map(|value| {
-                value
-                    .to_str()
-                    .expect("the header value is ASCII")
-                    .to_owned()
-            })
-            .collect()
+        (
+            header_values(&requests[0], "authorization"),
+            header_values(&requests[0], "openai-beta"),
+        )
     };
     assert_eq!(authorization, vec!["Bearer caller", "Bearer sk-p"]);
-    let beta: Vec<String> = {
-        let requests = wire.requests();
-        requests[0]
-            .headers
-            .get_all("openai-beta")
-            .iter()
-            .map(|value| {
-                value
-                    .to_str()
-                    .expect("the header value is ASCII")
-                    .to_owned()
-            })
-            .collect()
-    };
     assert_eq!(beta, vec!["x", "assistants=v2"]);
 }
 
@@ -174,40 +148,27 @@ async fn absent_and_empty_headers_use_the_provider_defaults() {
     let params = params("http://mock.test/v1");
     let empty: BTreeMap<String, String> = BTreeMap::new();
     let mut fixture = Fixture::new("vector_store_retrieve");
-    run(
-        &mut fixture,
-        &deps,
-        ClientKind::Sync,
-        &retrieve_call(target(&params)),
-        &events,
-    )
-    .await
-    .expect("the retrieve without a header map succeeds");
+    let retrieve = retrieve_call(target(&params));
+    run(&mut fixture, &deps, ClientKind::Sync, &retrieve, &events)
+        .await
+        .expect("the retrieve without a header map succeeds");
     // the retrieve logs neither a body nor a query map
     assert!(fixture.logged("complete_input_dict").is_none());
     assert!(fixture.logged("params").is_none());
-    run(
-        &mut fixture,
-        &deps,
-        ClientKind::Sync,
-        &list_call(with_headers(&params, &empty), None, None, None, None),
-        &events,
-    )
-    .await
-    .expect("the list with an empty header map succeeds");
-    let (first, second) = {
+    let list = list_call(with_headers(&params, &empty), None, None, None, None);
+    run(&mut fixture, &deps, ClientKind::Sync, &list, &events)
+        .await
+        .expect("the list with an empty header map succeeds");
+    let (first, second, absent) = {
         let requests = wire.requests();
         (
             header(&requests[0], "openai-beta").to_owned(),
             header(&requests[1], "openai-beta").to_owned(),
+            requests[0].headers.get("x-trace").is_none(),
         )
     };
     assert_eq!(first, "assistants=v2");
     assert_eq!(second, "assistants=v2");
-    let absent = {
-        let requests = wire.requests();
-        requests[0].headers.get("x-trace").is_none()
-    };
     assert!(absent);
 }
 
