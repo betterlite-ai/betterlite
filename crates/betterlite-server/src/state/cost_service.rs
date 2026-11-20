@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use crate::cost_service::{CostService, CostServiceError, Policies, name_normalizers};
-use crate::savings::DeploymentPricing;
+use crate::savings::Context;
 use crate::state::shared::Shared;
 use betterlite_config::types::Config;
 use betterlite_core::cost::completion::lookup::{CatalogLookup, LookupSettings};
@@ -24,7 +24,6 @@ pub enum SlotError {
 // The shared cost resource, built once from the bundled price map, the configured model names and the cost adjustments.
 pub struct Slot {
     pub service: Result<CostService<ProviderFormulas>, SlotError>,
-    pub(crate) deployments: DeploymentPricing,
 }
 
 impl Slot {
@@ -36,8 +35,16 @@ impl Slot {
                 Arc::clone(&shared.bundled_catalog),
                 TimeZoneDatabase::from_env(),
             ),
-            deployments: DeploymentPricing::default(),
         }
+    }
+
+    // No router is bound to this resource, so savings prices by the public lookup alone.
+    #[must_use]
+    pub fn savings(&self) -> Option<Context<'_>> {
+        let Ok(service) = &self.service else {
+            return None;
+        };
+        Some(Context::new(&service.lookup, None))
     }
 }
 

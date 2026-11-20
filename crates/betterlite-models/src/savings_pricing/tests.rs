@@ -198,5 +198,5 @@ fn public_price_reports_a_missing_entry() {
         model: String::from("claude"),
         provider: String::from("anthropic"),
     };
-    assert_eq!(public_price(&context, &identity), None);
+    assert!(public_price(&context, &identity).is_none());
 }

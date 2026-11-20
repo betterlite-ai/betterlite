@@ -96,17 +96,17 @@ impl DeploymentPricing {
     }
 }
 
-// The savings side of the cost resource: B174 identities, B845 deployment prices and its public lookup.
+// The savings side of the cost resource: B174 identities, its bound public lookup and a proxy's deployment prices.
 pub struct Context<'state> {
     lookup: &'state CatalogLookup,
-    deployments: &'state DeploymentPricing,
+    deployments: Option<DeploymentPricing>,
 }
 
 impl<'state> Context<'state> {
     #[must_use]
     pub const fn new(
         lookup: &'state CatalogLookup,
-        deployments: &'state DeploymentPricing,
+        deployments: Option<DeploymentPricing>,
     ) -> Self {
         Self {
             lookup,
@@ -141,7 +141,8 @@ impl SavingsPricingContext for Context<'_> {
         model: &str,
     ) -> Option<PricedModel> {
         let deployment = deployment_id?;
-        self.deployments.price(self.lookup, deployment, model).await
+        let deployments = self.deployments.as_ref()?;
+        deployments.price(self.lookup, deployment, model).await
     }
 
     fn public_lookup(&self) -> &dyn PriceLookup {
