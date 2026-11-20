@@ -1,3 +1,8 @@
+use std::collections::BTreeMap;
+
+use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_router::catalog_updates::catalog::DeploymentCatalog;
+
 use crate::team_model_cleanup::remove::{DeletedModel, remove_unbacked_team_models};
 
 use super::support::{
@@ -21,8 +26,12 @@ async fn last_sibling_removed() {
         &context(&store, &cache, None),
     )
     .await
-    .unwrap();
-    assert!(updated.is_some());
+    .unwrap()
+    .expect("the team row is returned for cache invalidation");
+    assert_eq!(
+        updated.fields.get("team_id"),
+        Some(&JsonData::String("t1".to_owned()))
+    );
     assert_eq!(store.current_models(), Some(names(&["other"])));
     assert_eq!(cache.stored(), vec![("t1".to_owned(), names(&["other"]))]);
 }
@@ -144,6 +153,39 @@ async fn a_missing_team_row_keeps_the_alias_cleanup() {
     assert_eq!(store.remaining_aliases(), vec![Some(aliases("{}"))]);
     assert!(store.saved_models.lock().unwrap().is_empty());
     assert!(cache.stored().is_empty());
+}
+
+#[tokio::test]
+async fn a_deployment_catalog_serves_only_the_names_it_indexes() {
+    let mut name_index = BTreeMap::new();
+    name_index.insert("shared".to_owned(), Vec::new());
+    let catalog = DeploymentCatalog {
+        name_index,
+        ..DeploymentCatalog::default()
+    };
+    let store = FakeStore::new(
+        "t1",
+        Some(names(&["shared", "pub"])),
+        Vec::new(),
+        Vec::new(),
+    );
+    let cache = FakeCache::default();
+    let kept = remove_unbacked_team_models(
+        &deleted("shared", Some("t1"), Some("shared")),
+        &context(&store, &cache, Some(&catalog)),
+    )
+    .await
+    .unwrap();
+    assert!(kept.is_none());
+    assert_eq!(store.current_models(), Some(names(&["shared", "pub"])));
+    let removed = remove_unbacked_team_models(
+        &deleted("pub", Some("t1"), Some("pub")),
+        &context(&store, &cache, Some(&catalog)),
+    )
+    .await
+    .unwrap();
+    assert!(removed.is_some());
+    assert_eq!(store.current_models(), Some(names(&["shared"])));
 }
 
 #[tokio::test]
