@@ -1,0 +1,8 @@
+task: B9999
+deviations:
+  - what: >-
+      The fingerprint is the SHA-256 of serde_json's compact text with sorted keys, so its hex differs from LiteLLM's digest of json.dumps text (spaces after separators, ASCII escapes, default=str).
+    why: >-
+      The fingerprint is only compared with another fingerprint built in the same process and is never stored, logged or shown, and docs/compatibility.md leaves json.dumps formatting out of the contract; the oracle cases compare whether two fingerprints match, never their text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L331-L344
+kept_bugs: []

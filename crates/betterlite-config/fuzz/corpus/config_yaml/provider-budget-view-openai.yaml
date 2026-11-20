@@ -1,0 +1,14 @@
+model_list:
+  - model_name: chat
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: sk-provider-budget
+
+router_settings:
+  provider_budget_config:
+    openai:
+      budget_limit: 100
+      time_period: 1d
+    azure:
+      budget_limit: 12.5
+      time_period: 30d

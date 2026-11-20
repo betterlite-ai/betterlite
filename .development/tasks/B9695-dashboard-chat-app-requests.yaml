@@ -1,8 +1,8 @@
 id: B9695
 title: Prove the standalone chat app requests and let users rotate their own keys without the paid gate
 description: >-
-  Add HTTP oracle cases for the requests the /ui/chat app sends (chat, keys, usage, logs,
-  MCP apps and credentials, connect flow) and a reviewed 81-chat-keys.patch for its one paid
+  Add HTTP oracle cases for the requests the /ui/chat app sends (chat, keys, usage and logs;
+  the MCP app, credential and connect flow cases belong to the MCP tasks) and a reviewed 81-chat-keys.patch for its one paid
   gate. B9090 takes in app/chat and components/chat unchanged and B9091 builds them; nothing is
   ported. Every route has an owner and nothing is registered here.
 
@@ -45,8 +45,8 @@ description: >-
   POST /responses through the SDK with {model, input, litellm_trace_id,
   previous_response_id on later turns, tools of type "mcp" with server_url "<proxy
   base>/mcp/<encoded server_name>" and server_label the server name when apps are picked,
-  tool_choice "auto"} and stream true (B080). Add a two-turn streamed chat and a turn with one
-  MCP app against a mock MCP server.
+  tool_choice "auto"} and stream true (B080). Add a two-turn streamed chat. The turn with an MCP app needs the
+  proxy's /mcp/ gateway, which later MCP tasks build, so no case here sends one.
 
   MCP apps and credentials. MCPAppsPanel lists GET /v1/mcp/server?connected_app_view=true in
   connect mode (B4720, mounted by B8625; B9735 never sends this flag), lists tools with GET
@@ -58,7 +58,8 @@ description: >-
   B8700's user-credentials-hides-unseen-server-names the bare list; add the connect-mode list
   with connected_app_reachable for a session caller, and a list, revoke, list transcript.
   ConnectFlowSurface reads GET /authorize/flow?flow=<handle> with cookies and no bearer (B7971,
-  mounted by B8702); add the read after starting a flow, and with an unknown handle.
+  mounted by B8702); add the read after starting a flow, and with an unknown handle. The
+  cases this paragraph describes belong to those later MCP tasks; this task adds none of them.
 
   Use B860's Postgres fixture with B9942's bootstrap, an internal_user with two keys, and mock
   upstreams for the model and MCP server. Compare status, content type, stream frames the page
@@ -97,8 +98,6 @@ references:
 dod:
   - text: The chat app's key list, own-key rotation, usage, logs, detail and Responses chat match LiteLLM through the booted proxy.
     proof: [chat-app-cases, oracle]
-  - text: The MCP app list in connect mode, credential list and revoke, and the connect-flow read match LiteLLM.
-    proof: [chat-app-cases, oracle]
   - text: Any chat app user can open Rotate without a paid claim, and only the filled fields are sent.
     proof: [chat-app-components, chat-app-cases, oracle]
 checks:
@@ -119,10 +118,6 @@ oracle_cases:
   - tools/oracle/cases/ui/chat-app/user-usage-windows.yaml
   - tools/oracle/cases/ui/chat-app/user-logs-pages-and-detail.yaml
   - tools/oracle/cases/ui/chat-app/responses-chat-two-turns.yaml
-  - tools/oracle/cases/ui/chat-app/responses-chat-with-mcp-app.yaml
-  - tools/oracle/cases/ui/chat-app/mcp-apps-connect-mode.yaml
-  - tools/oracle/cases/ui/chat-app/mcp-credentials-list-and-revoke.yaml
-  - tools/oracle/cases/ui/chat-app/connect-flow-status.yaml
 deviations:
   - what: The chat app shows key rotation to every user instead of only premium users.
     why: README decision of 2026-10-24 has no paid tier; B895 already drops the backend license check.

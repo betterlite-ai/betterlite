@@ -1,0 +1,8 @@
+kind: helper
+name: bedrock-mantle-messages-response-seed
+call:
+  bedrock_mantle_chat:
+    function: messages_response
+    body: '{"id":"msg_1","type":"message","role":"assistant","model":"claude","content":[],"usage":{"input_tokens":1}}'
+env: {}
+compare: {ignore: []}

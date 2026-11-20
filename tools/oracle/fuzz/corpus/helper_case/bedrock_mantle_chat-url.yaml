@@ -1,0 +1,10 @@
+kind: helper
+name: bedrock-mantle-chat-url-seed
+call:
+  bedrock_mantle_chat:
+    function: chat_url
+    calls:
+      - model: bedrock/mantle/anthropic.claude-sonnet-4-5-20250929-v1:0
+        environment: {AWS_REGION_NAME: us-east-1}
+env: {}
+compare: {ignore: []}

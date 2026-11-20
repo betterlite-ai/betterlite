@@ -1,0 +1,14 @@
+id: B10015
+milestone: M4 keys, spend and management
+title: Org admin key generation switch
+status: todo
+depends_on: [B002, B003, B171, B732, B856]
+file: tasks/B10015-org-admin-key-generation.yaml
+covers:
+  - "litellm/proxy/common_utils/rbac_utils.py"
+parent: B124
+split_from: B864
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

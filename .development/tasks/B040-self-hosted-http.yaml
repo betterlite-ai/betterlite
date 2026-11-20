@@ -108,7 +108,9 @@ description: >-
   decisions makes both OpenAI-format and SystemOne-format requests to hosted_vllm
   with a named choice question, uses B3510's declared request/response records and
   verifies B3513/B3514's selected config, upstream /v1/systemone URL and absent
-  Authorization when the placeholder key resolves to None. xinference-image sends prompt, n, size and
+  Authorization when the placeholder key resolves to None. The video, video-unsafe and decisions cases
+  need the video routes (B3343) and the decisions mount (B8634 over B8276), which are later
+  work, so those tasks add these three cases and this task does not. xinference-image sends prompt, n, size and
   response_format through the generation route and compares the existing selected
   XInferenceImageGenerationConfig's options and returned image data.
 
@@ -117,10 +119,11 @@ description: >-
   /openai/v1/responses; image edits is POST /v1/images/edits, /images/edits and
   /openai/deployments/{model:path}/images/edits; generation has the same three forms
   ending /images/generations. Transcription is POST /v1/audio/transcriptions and
-  /audio/transcriptions; video create is POST /v1/videos and /videos; decisions is
-  POST /v1/decisions and /decisions; SystemOne is POST /v1/systemone and /systemone.
+  /audio/transcriptions; video create (POST /v1/videos and /videos), decisions
+  (POST /v1/decisions and /decisions) and SystemOne (POST /v1/systemone and /systemone) are
+  steps for those later tasks.
   Route owners already supply their other verbs and resource routes. The media-auth
-  case repeats these representative family calls without a key and compares 401
+  case repeats these representative family calls, except video and decisions, without a key and compares 401
   without an upstream call. upstream-error supplies a hosted-vLLM 429 with a fixed
   provider request-id header and checks the public error and retry/header projection
   with retries disabled. These are real HTTP errors, not helper exception classes.
@@ -201,7 +204,7 @@ dod:
     proof: [embedding-cases, oracle]
   - text: The README encoding-format precedence is observable on the OpenAI-compatible upstream request while hosted_vllm does not inject the environment default.
     proof: [encoding-cases, embedding-cases, oracle]
-  - text: All hosted-vLLM media configurations and Xinference image generation work through the already registered public route aliases and preserve validation failures before upstream traffic.
+  - text: The hosted-vLLM media configurations other than video and decisions, and Xinference image generation, work through the already registered public route aliases and preserve validation failures before upstream traffic.
     proof: [media-cases, oracle]
   - text: Proxy authentication and a provider 429 retain status, error type, param, code and stable headers without exposing configured credentials.
     proof: [error-cases, oracle]
@@ -244,9 +247,6 @@ oracle_cases:
   - tools/oracle/cases/self-hosted-compatible/media/responses.yaml
   - tools/oracle/cases/self-hosted-compatible/media/image-edit.yaml
   - tools/oracle/cases/self-hosted-compatible/media/transcription.yaml
-  - tools/oracle/cases/self-hosted-compatible/media/video.yaml
-  - tools/oracle/cases/self-hosted-compatible/media/video-unsafe.yaml
-  - tools/oracle/cases/self-hosted-compatible/media/decisions.yaml
   - tools/oracle/cases/self-hosted-compatible/media/xinference-image.yaml
   - tools/oracle/cases/self-hosted-compatible/errors/media-auth.yaml
   - tools/oracle/cases/self-hosted-compatible/errors/upstream-error.yaml
@@ -257,7 +257,7 @@ out_of_scope:
   - "B8157 owns the eight self-hosted _complete_* functions and embedding dispatch arms in main.py, Lemonade custom_llm_provider/get_config/get_models/transform_response and Ollama listing. B1440 owns the shared llamafile/lm_studio embedding branch. The OpenAI encoding resolution is B024 composition over B006; B044 applies the same main.py branch to litellm_proxy. B2220/B2224 retain Lemonade constructors/metadata."
   - "B010 owns the closed executable provider/operation registries. Preregistering B8157's missing self_hosted_dispatch seam is an architect correction recorded in the planner report; neither HTTP fixture task edits those shared files."
   - "All other main.py functions retain their existing owners, enumerated in B024's function inventory; this task's covers no longer claim main.py. utils.py parameter dispatch remains B5363/B175 and selection remains B2230/B5360/B3332/B3513. B1686 owns calling Lemonade cost_per_token."
-  - "B004/B005/B006, B080, B082, B083, B085 and B3343 own the inference route families. B8610 owns root composition, B8634 Decisions/SystemOne mounting and B8636 production rerank/Responses ports. B8626/B8701/B8728 mount MCP, not self-hosted provider routes. B8609 with B8640/B8690 already owns the VLLM passthrough route and its HTTP cases."
+  - "B004/B005/B006, B080, B082, B083, B085 and B3343 own the inference route families. B8610 owns root composition, B8634 Decisions/SystemOne mounting and B8636 production rerank/Responses ports. B8626/B8701/B8728 mount MCP, not self-hosted provider routes. B10026 with B8640/B8690 already owns the VLLM passthrough route and its HTTP cases."
   - "B9200 owns native Ollama/Triton/Petals and dynamic metadata HTTP cases; B8153/B8154/B8155/B8156 and B2223 implement them. vllm in-process and Petals local inference retain B8153's existing unapproved error-policy question, not a new deviation here. Python provider type exports remain B7929."
 pitfalls:
   - "The README's encoding-format environment fallback belongs to the OpenAI embedding branch; applying it to hosted_vllm would break servers that reject the field."

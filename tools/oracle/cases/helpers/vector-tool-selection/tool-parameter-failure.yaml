@@ -1,0 +1,20 @@
+kind: helper
+name: vector-tool-selection-tool-parameter-failure
+call:
+  vector_tool_selection:
+    operation: selection
+    stores:
+      - vector_store_id: vs_a
+        custom_llm_provider: openai
+    non_default_params:
+      model: gpt-4o
+      vector_store_ids: [vs_b]
+    tools:
+      - type: file_search
+        vector_store_ids: [vs_a]
+        rewrite_query: false
+env: {}
+compare:
+  ignore:
+    - pointer: /value/raised
+      why: betterlite writes its own message

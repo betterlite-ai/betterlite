@@ -81,6 +81,8 @@ description: >-
   docstrings; SDK overloads share an async implementation): 185 production lines, 220 behavior/config-test lines,
   105 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
   wiring lines; 535 planned, 550 maximum changed lines.
+
+  Selector arm. B028's Bedrock invoke config selector answers moonshot and deepseek_r1 with "no Bedrock invoke config is installed for 'moonshot'". Replace that arm in B028's selector with this config.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -93,6 +95,8 @@ scope:
   - tools/oracle/helpers/bedrock_moonshot/**
   - tools/oracle/cases/helpers/providers/bedrock-moonshot/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_moonshot*
+  - crates/betterlite-provider/src/bedrock_dispatch.rs
+  - crates/betterlite-provider/src/bedrock_dispatch/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_moonshot_transformation.py#L55-L249

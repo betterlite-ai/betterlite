@@ -2,7 +2,7 @@ id: B071
 milestone: M4 keys, spend and management
 title: Budgets, budget resets and reservations
 status: todo
-depends_on: [B086, B310, B773, B778, B860, B1019, B1225, B1690, B3007, B8270, B8372, B8381, B8481, B8613, B8630, B8660, B8662, B8680, B8742, B9240]
+depends_on: [B310, B773, B778, B860, B1019, B1225, B1690, B3007, B8270, B8372, B8381, B8481, B8613, B8630, B8660, B8662, B8680, B8742, B9240]
 file: tasks/B071-budget-lifecycle-http.yaml
 covers:
   - "litellm/proxy/spend_tracking/budget_reservation.py"
