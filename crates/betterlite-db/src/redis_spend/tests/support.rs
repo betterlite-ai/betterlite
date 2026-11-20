@@ -1,7 +1,8 @@
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use betterlite_redis::list_operations::error::RedisListOperationsError;
+use rust_decimal::Decimal;
 
 use crate::redis_spend::buffer::RedisUpdateBuffer;
 use crate::redis_spend::codec::decode_log_record;
@@ -10,6 +11,7 @@ use crate::redis_spend::lists::{
     BufferPop, BufferReply, SpendBufferListError, SpendBufferLists, SpendListFuture,
 };
 use crate::redis_spend::log_row::SpendLogRow;
+use crate::spend_queues::entity::{SpendAmount, SpendUpdateTransactions};
 
 #[derive(Debug, Clone, Default)]
 pub(super) struct Pushed {
@@ -79,14 +81,7 @@ impl SpendBufferLists for FakeLists {
         key: &'call str,
         count: Option<i64>,
     ) -> SpendListFuture<'call, BufferReply> {
-        Box::pin(async move {
-            let mut state = self.lock();
-            state.popped.push((key.to_owned(), count));
-            if state.fail_reads {
-                return Err(list_failure("async_lpop"));
-            }
-            Ok(state.pops.pop_front().unwrap_or(BufferReply::Missing))
-        })
+        Box::pin(async move { pop_once(&mut self.lock(), key, count) })
     }
 
     fn pop_pipeline<'call>(
@@ -122,6 +117,19 @@ impl SpendBufferLists for FakeLists {
             Ok(state.trim_size)
         })
     }
+}
+
+fn pop_once(
+    state: &mut State,
+    key: &str,
+    count: Option<i64>,
+) -> Result<BufferReply, SpendBufferListError> {
+    let reply = state.pops.pop_front();
+    state.popped.push((key.to_owned(), count));
+    if state.fail_reads {
+        return Err(list_failure("async_lpop"));
+    }
+    Ok(reply.unwrap_or(BufferReply::Missing))
 }
 
 fn list_failure(operation: &'static str) -> SpendBufferListError {
@@ -177,6 +185,29 @@ pub(super) fn buffer_with_sink(events: Arc<dyn RedisBufferEventSink>) -> RedisUp
         enabled: false,
         dequeue_count: 5,
         events,
+    }
+}
+
+pub(super) fn amount(value: &str) -> SpendAmount {
+    SpendAmount(value.parse::<Decimal>().unwrap())
+}
+
+pub(super) fn transactions(user: &[(&str, &str)]) -> SpendUpdateTransactions {
+    SpendUpdateTransactions {
+        user_list_transactions: user
+            .iter()
+            .map(|(id, value)| ((*id).to_owned(), amount(value)))
+            .collect(),
+        end_user_list_transactions: BTreeMap::new(),
+        key_list_transactions: BTreeMap::new(),
+        team_list_transactions: BTreeMap::new(),
+        team_member_list_transactions: BTreeMap::new(),
+        org_list_transactions: BTreeMap::new(),
+        org_member_list_transactions: BTreeMap::new(),
+        project_list_transactions: BTreeMap::new(),
+        tag_list_transactions: BTreeMap::new(),
+        agent_list_transactions: BTreeMap::new(),
+        model_access_group_spend: BTreeMap::new(),
     }
 }
 

@@ -15,7 +15,6 @@ use betterlite_redis::redis_live_client::LiveClientFactory;
 use betterlite_redis_fixture::server::RedisFixture;
 use redis::aio::MultiplexedConnection;
 use redis::{Client, cmd};
-use rust_decimal::Decimal;
 
 use crate::daily_spend_sql::values::SpendColumnValue;
 use crate::queues::test_support::captured_logs;
@@ -27,9 +26,8 @@ use crate::redis_spend::keys::{
 };
 use crate::redis_spend::lists::{RedisSpendLists, SpendBufferLists};
 use crate::redis_spend::log_row::{SpendLogRow, SpendLogValue};
-use crate::spend_queues::entity::{SpendAmount, SpendUpdateTransactions};
 
-use super::support::decoded_row;
+use super::support::{amount, decoded_row, transactions};
 
 const CACHE_TTL_SECONDS: i64 = 60;
 const SEEDED_ROWS: i64 = 100_000;
@@ -55,20 +53,6 @@ impl BreakerGate for OpenGate {
     fn record_failure(&self, _error: &(dyn Error + Send + Sync)) {}
 
     fn swallowed(&self, _admission: &BreakerAdmission, _error: &(dyn Error + Send + Sync)) {}
-}
-
-fn amount(value: &str) -> SpendAmount {
-    SpendAmount(value.parse::<Decimal>().unwrap())
-}
-
-fn transactions(user: &[(&str, &str)]) -> SpendUpdateTransactions {
-    SpendUpdateTransactions {
-        user_list_transactions: user
-            .iter()
-            .map(|(id, value)| ((*id).to_owned(), amount(value)))
-            .collect(),
-        ..SpendUpdateTransactions::default()
-    }
 }
 
 fn daily_payload(prompt_tokens: i64) -> String {

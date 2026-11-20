@@ -110,7 +110,7 @@ impl RedisUpdateBuffer {
         let operations: Vec<BufferPop> = SpendBufferQueue::PIPELINE
             .iter()
             .map(|queue| BufferPop {
-                key: queue.key().to_owned(),
+                key: queue.names().key.to_owned(),
                 count: Some(self.dequeue_count),
             })
             .collect();

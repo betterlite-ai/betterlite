@@ -95,10 +95,7 @@ pub fn decode_tagged_spend_buffer(
 // DBSpendUpdateTransactions: an object of the eleven entity maps, where a map that is absent or not an object contributes nothing.
 pub fn decode_entity_batch(bytes: &[u8]) -> Result<SpendUpdateTransactions, SpendBufferError> {
     let raw = parse_raw(bytes)?;
-    decode_entity_object(raw.get())
-}
-
-fn decode_entity_object(text: &str) -> Result<SpendUpdateTransactions, SpendBufferError> {
+    let text = raw.get();
     if !text.starts_with('{') {
         return Err(SpendBufferError::EntityShape);
     }
@@ -202,24 +199,17 @@ fn accumulate(
 
 // A daily buffer record: one JSON object of daily transaction keys, each holding its payload object.
 pub fn decode_daily_batch(bytes: &[u8]) -> Result<DailySpendUpdate, SpendBufferError> {
-    let raw = parse_raw(bytes)?;
-    decode_daily_object(raw.get())
-}
-
-fn decode_daily_object(text: &str) -> Result<DailySpendUpdate, SpendBufferError> {
-    if !text.starts_with('{') {
-        return Err(SpendBufferError::DailyShape);
+    let text = parse_raw(bytes)?.get();
+    if text.starts_with('{') {
+        return serde_json::from_str(text).map_err(SpendBufferError::DailyPayload);
     }
-    serde_json::from_str(text).map_err(SpendBufferError::DailyPayload)
+    Err(SpendBufferError::DailyShape)
 }
 
 // A window buffer record: one JSON array of wire payloads, `request_ids` tolerated as the rolling-deploy residue it is.
 pub fn decode_window_batch(bytes: &[u8]) -> Result<Vec<WindowSpendTransaction>, SpendBufferError> {
     let raw = parse_raw(bytes)?;
-    decode_window_text(raw.get())
-}
-
-fn decode_window_text(text: &str) -> Result<Vec<WindowSpendTransaction>, SpendBufferError> {
+    let text = raw.get();
     if !text.starts_with('[') {
         return Err(SpendBufferError::WindowShape);
     }

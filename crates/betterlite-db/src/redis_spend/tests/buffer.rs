@@ -17,29 +17,15 @@ use crate::redis_spend::keys::{
 };
 use crate::redis_spend::lists::BufferReply;
 use crate::spend_queues::daily::DailySpendUpdate;
-use crate::spend_queues::entity::{SpendAmount, SpendUpdateTransactions};
 use crate::window_queue::WindowSpendTransaction;
 
 use super::support::{
-    FakeLists, RecordingEvents, attached, buffer_with_sink, bytes, decoded_row, detached,
+    FakeLists, RecordingEvents, amount, attached, buffer_with_sink, bytes, decoded_row, detached,
+    transactions,
 };
-
-fn amount(value: &str) -> SpendAmount {
-    SpendAmount(value.parse::<Decimal>().unwrap())
-}
 
 fn dec(value: &str) -> Decimal {
     value.parse::<Decimal>().unwrap()
-}
-
-fn transactions(user: &[(&str, &str)]) -> SpendUpdateTransactions {
-    SpendUpdateTransactions {
-        user_list_transactions: user
-            .iter()
-            .map(|(id, value)| ((*id).to_owned(), amount(value)))
-            .collect(),
-        ..SpendUpdateTransactions::default()
-    }
 }
 
 fn daily_payload(prompt_tokens: i64) -> Vec<u8> {
@@ -396,11 +382,11 @@ fn the_queue_size_event_keeps_the_source_label_and_gauge_values() {
         "_emit_new_item_added_to_queue_event"
     );
     assert_eq!(
-        SpendBufferQueue::Window.service(),
+        SpendBufferQueue::Window.names().service,
         "redis_window_spend_update_queue"
     );
     assert_eq!(
-        SpendBufferQueue::DailyTag.service(),
+        SpendBufferQueue::DailyTag.names().service,
         "redis_daily_tag_spend_update_queue"
     );
 }
