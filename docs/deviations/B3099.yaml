@@ -6,4 +6,7 @@ deviations:
   - what: A database error in any of the four statements answers with the server's generic internal error body, not Python's exception text.
     why: The wording of an internal error cannot match Python's exception strings; the status and the uncaught path from the handler are the same.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/analytics_endpoints/analytics_endpoints.py#L55-L61
+  - what: A proxy without general_settings.master_key answers 401 on the route, where LiteLLM treats the caller as an anonymous internal user and reads the report.
+    why: The route's own guard refuses a request that carries no AuthContext as defense in depth; every oracle case configures a master key, where both proxies answer 401.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1871-L1877
 kept_bugs: []
