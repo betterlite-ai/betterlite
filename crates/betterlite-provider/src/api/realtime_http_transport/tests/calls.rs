@@ -248,3 +248,31 @@ fn invalid_or_oversized_sdp_fails_before_the_pre_call(#[case] sdp: &[u8]) {
     assert!(input_untouched(&state));
     assert!(!state.model_call_details.contains_key("additional_args"));
 }
+
+// The fallback URL is the one the client dials: a broken one would fail here as a URL error instead
+#[test]
+fn calls_to_an_unreachable_base_are_a_transport_error() {
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+    let mut state = logging_state(&redactor);
+    let envelope = logging_env(&redactor);
+    let source = test_source();
+    let answer = runtime().block_on(async {
+        let deps = fallback_deps(&source, None, ApiLimits::default());
+        let call = CallsCall {
+            api_base: "http://127.0.0.1:9",
+            ephemeral_key: "ep-test",
+            sdp: b"v=0\r\n",
+            model: None,
+            session: None,
+            extra_headers: None,
+            api_version: None,
+            timeout: None,
+        };
+        let mut log = LogContext {
+            state: &mut state,
+            env: &envelope,
+        };
+        calls_post(&deps, &call, &mut log).await
+    });
+    assert!(matches!(answer, Err(RealtimeHttpError::Transport(_))));
+}
