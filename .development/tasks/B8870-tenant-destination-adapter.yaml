@@ -5,8 +5,9 @@ description: >-
   port. B1109 resolves key/team callback metadata, B3851 builds destinations, and B3849 filters
   out destinations the published fan-out cannot deliver. Build the concrete adapter between
   those services in betterlite-server::app::callbacks::tenant_destinations, with its own
-  TenantDestinationError. It accepts resolved settings and B8910's shared LoggerRuntime, implements
-  B855's port, and writes B3847's RequestTraceContext for this request. Do not create another
+  TenantDestinationError. It accepts resolved settings and the shared LoggerRuntime (B8910's type, built
+  by B10007's build_proxy_runtime), implements B855's port, and writes the request's destinations into
+  B10007's request slot with set_destinations. Do not create another
   tracer provider, fan-out registry, auth object or process-global context.
 
   Call B1109's resolve_tenant_otel_destinations with the authenticated identity and B1100's safe
@@ -32,8 +33,9 @@ description: >-
   metadata lookup, never from an arbitrary body metadata object.
 
   Request context must remain request-local across await and the spawned logging work that
-  closes the auth/LLM spans. Use the existing B3847 context handle supplied by the server;
-  finish the seed while the auth phase is open. A database span already ended before identity
+  closes the auth/LLM spans. Use B10007's request slot, which B8680's layer enters for each request;
+  tests enter it with request_slot_scope and build the runtime with build_proxy_runtime.
+  Finish the seed while the auth phase is open. A database span already ended before identity
   resolution keeps its original operator destinations. Test concurrent requests with two
   distinct keys using a real B3849 fan-out and recording destination processors: neither
   credentials nor suppression decisions may cross requests. Reuse the tracing and processor
@@ -98,7 +100,7 @@ out_of_scope:
   - B855 owns all four auth admission functions, their ordering and the exception boundary; this task implements its telemetry port only, and B8544 implements its managed-agent port.
   - B1100 owns safe request headers, and B1109 owns every metadata-selection, callback-merge and service-name function in litellm_pre_call_utils.py L1034-L1170; no copy moves into this adapter.
   - B3842 owns OTel settings, B3847 request context and span emission, B3849 processor construction and filtering, and B3851 destination presets and destination URL validation.
-  - B3853 owns V2 callback methods; B8910 owns fan_out_provider, provider selection and publication, and B110 installs that runtime after callback initialization. This adapter reads the same runtime.
+  - B3853 owns V2 callback methods; B8910 owns fan_out_provider, provider selection and publication, B10007 owns the production runtime and the request slot, and B110 builds that runtime at startup. This adapter reads the same runtime.
   - B124 owns HTTP integration cases; B732 and B855 retain auth installation and rejection of a configured capability without its port.
 pitfalls:
   - Filtering after writing context can suppress the operator exporter even though the tenant exporter cannot be built.
