@@ -1,7 +1,8 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::sync::Mutex;
+use std::io;
+use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Utc};
 
@@ -46,7 +47,10 @@ fn text(value: &str) -> KeyScalar {
 }
 
 fn equals(column: KeyColumn, value: &str) -> WhereClause {
-    WhereClause::single(KeyPredicate::Equals(column, text(value)))
+    WhereClause(vec![WhereEntry::Predicate(KeyPredicate::Equals(
+        column,
+        text(value),
+    ))])
 }
 
 fn clause_of(entries: Vec<WhereEntry>) -> WhereClause {
@@ -207,11 +211,13 @@ impl KeyListSource for FakeSource {
 #[test]
 fn ui_team_null_or_not_dashboard() {
     let expected = clause_of(vec![or_of(vec![
-        WhereClause::single(KeyPredicate::IsNull(KeyColumn::TeamId)),
-        WhereClause::single(KeyPredicate::NotEquals(
+        WhereClause(vec![WhereEntry::Predicate(KeyPredicate::IsNull(
+            KeyColumn::TeamId,
+        ))]),
+        WhereClause(vec![WhereEntry::Predicate(KeyPredicate::NotEquals(
             KeyColumn::TeamId,
             text("litellm-dashboard"),
-        )),
+        ))]),
     ])]);
     assert_eq!(filter_out_ui_session_tokens(), expected);
 }
@@ -225,16 +231,18 @@ fn own_admin_member_visibility() {
         ..KeyFilters::default()
     };
     let own = equals(KeyColumn::UserId, "alice");
-    let admin = WhereClause::single(KeyPredicate::In(
+    let admin = WhereClause(vec![WhereEntry::Predicate(KeyPredicate::In(
         KeyColumn::TeamId,
         vec![String::from("team-a")],
-    ));
+    ))]);
     let member = WhereClause(vec![and_of(vec![
-        WhereClause::single(KeyPredicate::In(
+        WhereClause(vec![WhereEntry::Predicate(KeyPredicate::In(
             KeyColumn::TeamId,
             vec![String::from("team-b")],
-        )),
-        WhereClause::single(KeyPredicate::IsNull(KeyColumn::UserId)),
+        ))]),
+        WhereClause(vec![WhereEntry::Predicate(KeyPredicate::IsNull(
+            KeyColumn::UserId,
+        ))]),
     ])]);
     let expected = clause_of(vec![and_of(vec![
         filter_out_ui_session_tokens(),
@@ -260,10 +268,10 @@ fn own_arm_org_and_excluded_team_not_global() {
             text("org-1"),
         )),
     ]);
-    let admin = WhereClause::single(KeyPredicate::In(
+    let admin = WhereClause(vec![WhereEntry::Predicate(KeyPredicate::In(
         KeyColumn::TeamId,
         vec![String::from("team-a")],
-    ));
+    ))]);
     let expected = clause_of(vec![and_of(vec![
         filter_out_ui_session_tokens(),
         clause_of(vec![or_of(vec![own, admin])]),
@@ -306,7 +314,9 @@ fn creator_none_empty_current_teams() {
     };
     let empty_created = clause_of(vec![and_of(vec![
         created.clone(),
-        WhereClause::single(KeyPredicate::IsNull(KeyColumn::TeamId)),
+        WhereClause(vec![WhereEntry::Predicate(KeyPredicate::IsNull(
+            KeyColumn::TeamId,
+        ))]),
     ])]);
     let expected = clause_of(vec![and_of(vec![
         ui.clone(),
@@ -319,11 +329,13 @@ fn creator_none_empty_current_teams() {
         ..base
     };
     let scoped_teams = clause_of(vec![or_of(vec![
-        WhereClause::single(KeyPredicate::In(
+        WhereClause(vec![WhereEntry::Predicate(KeyPredicate::In(
             KeyColumn::TeamId,
             vec![String::from("team-a"), String::from("team-b")],
-        )),
-        WhereClause::single(KeyPredicate::IsNull(KeyColumn::TeamId)),
+        ))]),
+        WhereClause(vec![WhereEntry::Predicate(KeyPredicate::IsNull(
+            KeyColumn::TeamId,
+        ))]),
     ])]);
     let scoped_created = clause_of(vec![and_of(vec![created, scoped_teams])]);
     let expected = clause_of(vec![and_of(vec![
@@ -341,11 +353,13 @@ fn member_service_accounts_only() {
     };
     let mut entries = filter_out_ui_session_tokens().0;
     entries.push(and_of(vec![
-        WhereClause::single(KeyPredicate::In(
+        WhereClause(vec![WhereEntry::Predicate(KeyPredicate::In(
             KeyColumn::TeamId,
             vec![String::from("team-a")],
-        )),
-        WhereClause::single(KeyPredicate::IsNull(KeyColumn::UserId)),
+        ))]),
+        WhereClause(vec![WhereEntry::Predicate(KeyPredicate::IsNull(
+            KeyColumn::UserId,
+        ))]),
     ]));
     assert_eq!(
         build_key_filter_conditions(&member_only, now()),
@@ -362,10 +376,10 @@ fn member_service_accounts_only() {
     assert_eq!(arms.len(), 1);
     assert_eq!(
         arms[0],
-        WhereClause::single(KeyPredicate::In(
+        WhereClause(vec![WhereEntry::Predicate(KeyPredicate::In(
             KeyColumn::TeamId,
             vec![String::from("team-a"), String::from("team-b")],
-        ))
+        ))])
     );
 }
 
@@ -400,10 +414,10 @@ fn all_global_filters_intersect() {
         build_key_search_where("term"),
         equals(KeyColumn::TeamId, "team"),
         equals(KeyColumn::ProjectId, "project"),
-        WhereClause::single(KeyPredicate::HasSome(
+        WhereClause(vec![WhereEntry::Predicate(KeyPredicate::HasSome(
             KeyColumn::AccessGroupIds,
             vec![String::from("group")],
-        )),
+        ))]),
         equals(KeyColumn::AgentId, "agent"),
         build_expires_where_clause("active", now()),
         build_status_where_clause(Some("active"), now()).unwrap(),
@@ -415,10 +429,9 @@ fn all_global_filters_intersect() {
 fn exact_token_or_alias_substring_search() {
     let expected = clause_of(vec![or_of(vec![
         equals(KeyColumn::Token, "abc"),
-        WhereClause::single(KeyPredicate::ContainsInsensitive(
-            KeyColumn::KeyAlias,
-            String::from("abc"),
-        )),
+        WhereClause(vec![WhereEntry::Predicate(
+            KeyPredicate::ContainsInsensitive(KeyColumn::KeyAlias, String::from("abc")),
+        )]),
     ])]);
     assert_eq!(build_key_search_where("abc"), expected);
 
@@ -436,10 +449,9 @@ fn exact_token_or_alias_substring_search() {
     )));
     let expected_substring = clause_of(vec![and_of(vec![
         clause_of(own_entries),
-        WhereClause::single(KeyPredicate::ContainsInsensitive(
-            KeyColumn::KeyAlias,
-            String::from("Ali"),
-        )),
+        WhereClause(vec![WhereEntry::Predicate(
+            KeyPredicate::ContainsInsensitive(KeyColumn::KeyAlias, String::from("Ali")),
+        )]),
     ])]);
     assert_eq!(
         build_key_filter_conditions(&substring, now()),
@@ -515,16 +527,26 @@ fn expiry_before_equal_after() {
     assert_eq!(
         expired_clause,
         clause_of(vec![and_of(vec![
-            WhereClause::single(KeyPredicate::IsNotNull(KeyColumn::Expires)),
-            WhereClause::single(KeyPredicate::Before(KeyColumn::Expires, now())),
+            WhereClause(vec![WhereEntry::Predicate(KeyPredicate::IsNotNull(
+                KeyColumn::Expires
+            ))]),
+            WhereClause(vec![WhereEntry::Predicate(KeyPredicate::Before(
+                KeyColumn::Expires,
+                now()
+            ))]),
         ])])
     );
     let active_clause = build_expires_where_clause("active", now());
     assert_eq!(
         active_clause,
         clause_of(vec![or_of(vec![
-            WhereClause::single(KeyPredicate::IsNull(KeyColumn::Expires)),
-            WhereClause::single(KeyPredicate::AtOrAfter(KeyColumn::Expires, now())),
+            WhereClause(vec![WhereEntry::Predicate(KeyPredicate::IsNull(
+                KeyColumn::Expires
+            ))]),
+            WhereClause(vec![WhereEntry::Predicate(KeyPredicate::AtOrAfter(
+                KeyColumn::Expires,
+                now()
+            ))]),
         ])])
     );
 }
@@ -559,19 +581,20 @@ fn blocked_null_false_true() {
     assert_eq!(
         not_blocked_where_clause(),
         clause_of(vec![or_of(vec![
-            WhereClause::single(KeyPredicate::IsNull(KeyColumn::Blocked)),
-            WhereClause::single(KeyPredicate::Equals(
+            WhereClause(vec![WhereEntry::Predicate(KeyPredicate::IsNull(
+                KeyColumn::Blocked
+            ))]),
+            WhereClause(vec![WhereEntry::Predicate(KeyPredicate::Equals(
                 KeyColumn::Blocked,
                 KeyScalar::Bool(false),
-            )),
+            ))]),
         ])])
     );
     assert_eq!(
         build_status_where_clause(Some("revoked"), now()),
-        Some(WhereClause::single(KeyPredicate::Equals(
-            KeyColumn::Blocked,
-            KeyScalar::Bool(true),
-        )))
+        Some(WhereClause(vec![WhereEntry::Predicate(
+            KeyPredicate::Equals(KeyColumn::Blocked, KeyScalar::Bool(true),)
+        )]))
     );
 }
 
@@ -697,14 +720,14 @@ fn sort_errors_400() {
         error.to_string(),
         "Invalid sort column. Must be one of: spend, max_budget, created_at, updated_at, token, key_alias"
     );
-    assert_eq!(error.status_code(), 400);
+    assert_eq!(SortError::STATUS_CODE, 400);
     let order = validate_sort_params(Some("token"), "up").unwrap_err();
     assert_eq!(order, SortError::Order);
     assert_eq!(
         order.to_string(),
         "Invalid sort order. Must be 'asc' or 'desc'"
     );
-    assert_eq!(order.status_code(), 400);
+    assert_eq!(SortError::STATUS_CODE, 400);
 }
 
 #[test]
@@ -812,16 +835,34 @@ fn full_live_vs_archived_rows() {
     ));
 }
 
+#[derive(Clone)]
+struct Captured(Arc<Mutex<Vec<u8>>>);
+
+impl io::Write for Captured {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .map_err(|poisoned| io::Error::other(poisoned.to_string()))?
+            .extend_from_slice(buffer);
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 #[tokio::test]
 async fn page_then_count_not_snapshot() {
-    let log = tempfile::NamedTempFile::new().unwrap();
+    let captured = Captured(Arc::new(Mutex::new(Vec::new())));
+    let writer = captured.clone();
     let subscriber = tracing_subscriber::fmt()
         .without_time()
         .with_ansi(false)
         .with_max_level(tracing::Level::DEBUG)
-        .with_writer(std::sync::Arc::new(log.reopen().unwrap()))
+        .with_writer(move || writer.clone())
         .finish();
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let guard = tracing::subscriber::set_default(subscriber);
     let source = FakeSource {
         page: vec![row(r#"{"token":"k1"}"#)],
         total: 7,
@@ -842,7 +883,9 @@ async fn page_then_count_not_snapshot() {
     assert_eq!(response.total_count, Some(7));
     assert_eq!(response.total_pages, Some(4));
     assert_eq!(response.current_page, Some(2));
-    let output = std::fs::read_to_string(log.path()).unwrap();
+    drop(guard);
+    let bytes = captured.0.lock().unwrap().clone();
+    let output = String::from_utf8(bytes).unwrap();
     assert!(output.contains("Filter conditions"));
     assert!(output.contains("skip=2"));
     assert!(output.contains("take=2"));

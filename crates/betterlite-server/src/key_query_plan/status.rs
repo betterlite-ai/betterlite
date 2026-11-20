@@ -89,24 +89,36 @@ fn parse_utc(text: &str) -> Option<DateTime<Utc>> {
 pub fn build_expires_where_clause(expires_filter: &str, now: DateTime<Utc>) -> WhereClause {
     if expires_filter == "expired" {
         return WhereClause(vec![WhereEntry::And(vec![
-            WhereClause::single(KeyPredicate::IsNotNull(KeyColumn::Expires)),
-            WhereClause::single(KeyPredicate::Before(KeyColumn::Expires, now)),
+            WhereClause(vec![WhereEntry::Predicate(KeyPredicate::IsNotNull(
+                KeyColumn::Expires,
+            ))]),
+            WhereClause(vec![WhereEntry::Predicate(KeyPredicate::Before(
+                KeyColumn::Expires,
+                now,
+            ))]),
         ])]);
     }
     WhereClause(vec![WhereEntry::Or(vec![
-        WhereClause::single(KeyPredicate::IsNull(KeyColumn::Expires)),
-        WhereClause::single(KeyPredicate::AtOrAfter(KeyColumn::Expires, now)),
+        WhereClause(vec![WhereEntry::Predicate(KeyPredicate::IsNull(
+            KeyColumn::Expires,
+        ))]),
+        WhereClause(vec![WhereEntry::Predicate(KeyPredicate::AtOrAfter(
+            KeyColumn::Expires,
+            now,
+        ))]),
     ])])
 }
 
 #[must_use]
 pub fn not_blocked_where_clause() -> WhereClause {
     WhereClause(vec![WhereEntry::Or(vec![
-        WhereClause::single(KeyPredicate::IsNull(KeyColumn::Blocked)),
-        WhereClause::single(KeyPredicate::Equals(
+        WhereClause(vec![WhereEntry::Predicate(KeyPredicate::IsNull(
+            KeyColumn::Blocked,
+        ))]),
+        WhereClause(vec![WhereEntry::Predicate(KeyPredicate::Equals(
             KeyColumn::Blocked,
             KeyScalar::Bool(false),
-        )),
+        ))]),
     ])])
 }
 
@@ -117,10 +129,9 @@ pub fn build_status_where_clause(
 ) -> Option<WhereClause> {
     let filter = status_filter?;
     match filter {
-        "revoked" => Some(WhereClause::single(KeyPredicate::Equals(
-            KeyColumn::Blocked,
-            KeyScalar::Bool(true),
-        ))),
+        "revoked" => Some(WhereClause(vec![WhereEntry::Predicate(
+            KeyPredicate::Equals(KeyColumn::Blocked, KeyScalar::Bool(true)),
+        )])),
         "active" | "expired" => Some(WhereClause(vec![WhereEntry::And(vec![
             not_blocked_where_clause(),
             build_expires_where_clause(filter, now),

@@ -72,13 +72,6 @@ pub enum WhereEntry {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct WhereClause(pub Vec<WhereEntry>);
 
-impl WhereClause {
-    #[must_use]
-    pub fn single(predicate: KeyPredicate) -> Self {
-        Self(vec![WhereEntry::Predicate(predicate)])
-    }
-}
-
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum TextMatching {
     #[default]
@@ -110,25 +103,26 @@ pub struct KeyFilters {
 #[must_use]
 pub fn filter_out_ui_session_tokens() -> WhereClause {
     WhereClause(vec![WhereEntry::Or(vec![
-        WhereClause::single(KeyPredicate::IsNull(KeyColumn::TeamId)),
-        WhereClause::single(KeyPredicate::NotEquals(
+        WhereClause(vec![WhereEntry::Predicate(KeyPredicate::IsNull(
+            KeyColumn::TeamId,
+        ))]),
+        WhereClause(vec![WhereEntry::Predicate(KeyPredicate::NotEquals(
             KeyColumn::TeamId,
             KeyScalar::Text(String::from(UI_SESSION_TOKEN_TEAM_ID)),
-        )),
+        ))]),
     ])])
 }
 
 #[must_use]
 pub fn build_key_search_where(search: &str) -> WhereClause {
     WhereClause(vec![WhereEntry::Or(vec![
-        WhereClause::single(KeyPredicate::Equals(
+        WhereClause(vec![WhereEntry::Predicate(KeyPredicate::Equals(
             KeyColumn::Token,
             KeyScalar::Text(String::from(search)),
-        )),
-        WhereClause::single(KeyPredicate::ContainsInsensitive(
-            KeyColumn::KeyAlias,
-            String::from(search),
-        )),
+        ))]),
+        WhereClause(vec![WhereEntry::Predicate(
+            KeyPredicate::ContainsInsensitive(KeyColumn::KeyAlias, String::from(search)),
+        )]),
     ])])
 }
 

@@ -106,10 +106,8 @@ pub enum SortError {
 }
 
 impl SortError {
-    #[must_use]
-    pub const fn status_code(&self) -> u16 {
-        400
-    }
+    // LiteLLM raises HTTPException(status_code=400) for both the column and the order
+    pub const STATUS_CODE: u16 = 400;
 }
 
 pub fn validate_sort_params(

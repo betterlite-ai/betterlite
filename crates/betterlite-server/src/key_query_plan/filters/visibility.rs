@@ -17,10 +17,10 @@ pub fn visibility_arms(filters: &KeyFilters) -> Vec<WhereClause> {
         arms.push(created_by_arm(user_id, filters.member_team_ids.as_deref()));
     }
     if let Some(admin_team_ids) = member_list(&filters.admin_team_ids) {
-        arms.push(WhereClause::single(KeyPredicate::In(
+        arms.push(WhereClause(vec![WhereEntry::Predicate(KeyPredicate::In(
             KeyColumn::TeamId,
             admin_team_ids.to_vec(),
-        )));
+        ))]));
     }
     if let Some(arm) = member_service_account_arm(filters) {
         arms.push(arm);
@@ -55,19 +55,26 @@ fn own_arm(filters: &KeyFilters) -> WhereClause {
 
 // creator visibility is scoped to the teams the caller still belongs to when that list is known
 fn created_by_arm(user_id: &str, member_team_ids: Option<&[String]>) -> WhereClause {
-    let created = WhereClause::single(KeyPredicate::Equals(
+    let created = WhereClause(vec![WhereEntry::Predicate(KeyPredicate::Equals(
         KeyColumn::CreatedBy,
         KeyScalar::Text(String::from(user_id)),
-    ));
+    ))]);
     match member_team_ids {
         None => created,
         Some(ids) if ids.is_empty() => WhereClause(vec![WhereEntry::And(vec![
             created,
-            WhereClause::single(KeyPredicate::IsNull(KeyColumn::TeamId)),
+            WhereClause(vec![WhereEntry::Predicate(KeyPredicate::IsNull(
+                KeyColumn::TeamId,
+            ))]),
         ])]),
         Some(ids) => {
-            let in_arm = WhereClause::single(KeyPredicate::In(KeyColumn::TeamId, ids.to_vec()));
-            let null_arm = WhereClause::single(KeyPredicate::IsNull(KeyColumn::TeamId));
+            let in_arm = WhereClause(vec![WhereEntry::Predicate(KeyPredicate::In(
+                KeyColumn::TeamId,
+                ids.to_vec(),
+            ))]);
+            let null_arm = WhereClause(vec![WhereEntry::Predicate(KeyPredicate::IsNull(
+                KeyColumn::TeamId,
+            ))]);
             WhereClause(vec![WhereEntry::And(vec![
                 created,
                 WhereClause(vec![WhereEntry::Or(vec![in_arm, null_arm])]),
@@ -89,8 +96,13 @@ fn member_service_account_arm(filters: &KeyFilters) -> Option<WhereClause> {
         return None;
     }
     Some(WhereClause(vec![WhereEntry::And(vec![
-        WhereClause::single(KeyPredicate::In(KeyColumn::TeamId, member_only)),
-        WhereClause::single(KeyPredicate::IsNull(KeyColumn::UserId)),
+        WhereClause(vec![WhereEntry::Predicate(KeyPredicate::In(
+            KeyColumn::TeamId,
+            member_only,
+        ))]),
+        WhereClause(vec![WhereEntry::Predicate(KeyPredicate::IsNull(
+            KeyColumn::UserId,
+        ))]),
     ])]))
 }
 

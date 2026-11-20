@@ -18,7 +18,7 @@ use betterlite_db::user_repository::tables::USER_TABLE;
 use crate::key_query_plan::error::KeyQueryPlanError;
 use crate::key_query_plan::plan::{KeyQueryPlan, KeyTable};
 use crate::key_query_plan::response::KeyRow;
-use crate::key_query_plan::sql::{RenderedQuery, SqlValue, count_query, page_query};
+use crate::key_query_plan::sql::{SqlValue, count_query, page_query};
 use crate::object_permissions::attach::attach_object_permission_to_dict;
 
 // the seam a key list reads through; production goes to Postgres and tests record the call order
@@ -46,14 +46,7 @@ pub trait KeyListSource {
 
 #[derive(Debug, Clone, Copy)]
 pub struct PostgresKeyListSource<'db> {
-    client: PrismaClient<'db>,
-}
-
-impl<'db> PostgresKeyListSource<'db> {
-    #[must_use]
-    pub const fn new(client: PrismaClient<'db>) -> Self {
-        Self { client }
-    }
+    pub(crate) client: PrismaClient<'db>,
 }
 
 impl KeyListSource for PostgresKeyListSource<'_> {
@@ -91,9 +84,10 @@ async fn fetch_page(
     plan: &KeyQueryPlan,
 ) -> Result<Vec<KeyRow>, KeyQueryPlanError> {
     let query = page_query(plan);
+    let params: Vec<&(dyn ToSql + Sync)> = query.params.iter().map(SqlValue::bind).collect();
     let session = read_store(client).session().await?;
     let rows = session
-        .query(query.sql.as_str(), &bindings(&query))
+        .query(query.sql.as_str(), &params)
         .await
         .map_err(backend::<Infallible>)?;
     match plan.table {
@@ -104,9 +98,10 @@ async fn fetch_page(
 
 async fn count(client: PrismaClient<'_>, plan: &KeyQueryPlan) -> Result<i64, KeyQueryPlanError> {
     let query = count_query(plan);
+    let params: Vec<&(dyn ToSql + Sync)> = query.params.iter().map(SqlValue::bind).collect();
     let session = read_store(client).session().await?;
     let row = session
-        .query_one(query.sql.as_str(), &bindings(&query))
+        .query_one(query.sql.as_str(), &params)
         .await
         .map_err(backend::<Infallible>)?;
     let total: i64 = row.try_get(0).map_err(backend::<Infallible>)?;
@@ -143,10 +138,6 @@ fn read_store<'db>(client: PrismaClient<'db>) -> &'db PostgresStore {
     } else {
         client.reader
     }
-}
-
-fn bindings(query: &RenderedQuery) -> Vec<&(dyn ToSql + Sync)> {
-    query.params.iter().map(SqlValue::bind).collect()
 }
 
 fn decode_live_row(row: &Row) -> Result<KeyRow, KeyQueryPlanError> {

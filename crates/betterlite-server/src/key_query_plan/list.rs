@@ -19,7 +19,7 @@ pub async fn list_keys(
     let Some(prisma) = client else {
         return Err(KeyQueryPlanError::Database(DbError::NoDbConnected));
     };
-    list_keys_with(&PostgresKeyListSource::new(prisma), query).await
+    list_keys_with(&PostgresKeyListSource { client: prisma }, query).await
 }
 
 // page first, then count, with no surrounding transaction, so a concurrent write can show up in total_count
@@ -49,7 +49,7 @@ async fn load_user_map<S: KeyListSource>(
     rows: &[KeyRow],
     query: &KeyListQuery,
 ) -> Result<BTreeMap<String, LiteLLMUserTable>, KeyQueryPlanError> {
-    if !wants_user_expansion(query) {
+    if !query.expand.iter().any(|name| name == "user") {
         return Ok(BTreeMap::new());
     }
     let mut ids = BTreeSet::new();
@@ -79,7 +79,7 @@ async fn render_rows<S: KeyListSource>(
     user_map: &BTreeMap<String, LiteLLMUserTable>,
     query: &KeyListQuery,
 ) -> Result<Vec<KeyListEntry>, KeyQueryPlanError> {
-    let expand_user = wants_user_expansion(query);
+    let expand_user = query.expand.iter().any(|name| name == "user");
     let mut keys = Vec::with_capacity(rows.len());
     for mut row in rows {
         if plan.table.includes_relations() {
@@ -95,8 +95,4 @@ async fn render_rows<S: KeyListSource>(
         )?);
     }
     Ok(keys)
-}
-
-fn wants_user_expansion(query: &KeyListQuery) -> bool {
-    query.expand.iter().any(|name| name == "user")
 }

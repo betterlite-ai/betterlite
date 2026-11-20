@@ -57,11 +57,9 @@ fn global_filters(filters: &KeyFilters, now: DateTime<Utc>) -> Vec<WhereClause> 
 fn text_globals(filters: &KeyFilters) -> Vec<WhereClause> {
     let mut globals = Vec::new();
     if let Some(key_alias) = truthy(&filters.key_alias) {
-        globals.push(WhereClause::single(matching_predicate(
-            KeyColumn::KeyAlias,
-            filters.key_alias_matching,
-            key_alias,
-        )));
+        globals.push(WhereClause(vec![WhereEntry::Predicate(
+            matching_predicate(KeyColumn::KeyAlias, filters.key_alias_matching, key_alias),
+        )]));
     }
     if let Some(key_hash) = truthy(&filters.key_hash) {
         globals.push(equals_text(KeyColumn::Token, key_hash));
@@ -76,10 +74,12 @@ fn text_globals(filters: &KeyFilters) -> Vec<WhereClause> {
         globals.push(equals_text(KeyColumn::ProjectId, project_id));
     }
     if let Some(access_group_id) = truthy(&filters.access_group_id) {
-        globals.push(WhereClause::single(KeyPredicate::HasSome(
-            KeyColumn::AccessGroupIds,
-            vec![String::from(access_group_id)],
-        )));
+        globals.push(WhereClause(vec![WhereEntry::Predicate(
+            KeyPredicate::HasSome(
+                KeyColumn::AccessGroupIds,
+                vec![String::from(access_group_id)],
+            ),
+        )]));
     }
     if let Some(agent_id) = truthy(&filters.agent_id) {
         globals.push(equals_text(KeyColumn::AgentId, agent_id));
@@ -88,8 +88,8 @@ fn text_globals(filters: &KeyFilters) -> Vec<WhereClause> {
 }
 
 fn equals_text(column: KeyColumn, value: &str) -> WhereClause {
-    WhereClause::single(KeyPredicate::Equals(
+    WhereClause(vec![WhereEntry::Predicate(KeyPredicate::Equals(
         column,
         KeyScalar::Text(String::from(value)),
-    ))
+    ))])
 }
