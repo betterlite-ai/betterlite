@@ -121,8 +121,7 @@ class CalculatorKwargs(TypedDict):
 
 
 class HiddenCarrier(BaseModel):
-    # ast-grep-ignore: no-loose-types
-    _hidden_params: dict[str, object] = PrivateAttr(default_factory=dict)
+    _hidden_params: dict[str, JsonValue] = PrivateAttr(default_factory=dict)
 
     def __init__(self, hidden: dict[str, JsonValue] | None) -> None:
         super().__init__()
