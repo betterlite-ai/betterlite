@@ -142,10 +142,10 @@ pub fn check_capability_limits(
             .filter(|entry| claimed_capability_of(entry) == Some(capability))
             .count();
         if held > bound {
+            let wording = capability.wording();
             violations.push(format!(
                 "At most {bound} auto-router(s) {} can be registered but this would make {held}. {}",
-                capability.subject(),
-                capability.remedy()
+                wording.subject, wording.remedy
             ));
         }
     }
@@ -212,6 +212,11 @@ enum GatedCapability {
     Customization,
 }
 
+struct Wording {
+    subject: &'static str,
+    remedy: &'static str,
+}
+
 impl GatedCapability {
     const ALL: [Self; 4] = [
         Self::HeuristicV2,
@@ -220,29 +225,24 @@ impl GatedCapability {
         Self::Customization,
     ];
 
-    const fn subject(self) -> &'static str {
+    const fn wording(self) -> Wording {
         match self {
-            Self::HeuristicV2 => "with classifier_type 'heuristic_v2'",
-            Self::Capability => "with classifier_type 'capability' (Capability)",
-            Self::LlmV2 => "with classifier_type 'llm_v2' (Fuse v2)",
-            Self::Customization => {
-                "with operator-defined tier_definitions or an operator-written classifier prompt"
-            }
-        }
-    }
-
-    const fn remedy(self) -> &'static str {
-        match self {
-            Self::HeuristicV2 => {
-                "Use classifier_type 'heuristic' for this router or remove an existing heuristic_v2 router."
-            }
-            Self::Capability => {
-                "Use a different classifier or remove an existing Capability router."
-            }
-            Self::LlmV2 => "Use a different classifier or remove an existing Fuse v2 router.",
-            Self::Customization => {
-                "Use the shipped tiers and classifier prompt for this router or remove an existing router with tier_definitions or its own classifier prompt."
-            }
+            Self::HeuristicV2 => Wording {
+                subject: "with classifier_type 'heuristic_v2'",
+                remedy: "Use classifier_type 'heuristic' for this router or remove an existing heuristic_v2 router.",
+            },
+            Self::Capability => Wording {
+                subject: "with classifier_type 'capability' (Capability)",
+                remedy: "Use a different classifier or remove an existing Capability router.",
+            },
+            Self::LlmV2 => Wording {
+                subject: "with classifier_type 'llm_v2' (Fuse v2)",
+                remedy: "Use a different classifier or remove an existing Fuse v2 router.",
+            },
+            Self::Customization => Wording {
+                subject: "with operator-defined tier_definitions or an operator-written classifier prompt",
+                remedy: "Use the shipped tiers and classifier prompt for this router or remove an existing router with tier_definitions or its own classifier prompt.",
+            },
         }
     }
 
