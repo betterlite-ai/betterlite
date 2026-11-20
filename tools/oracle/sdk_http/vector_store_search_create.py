@@ -144,11 +144,11 @@ class VectorStores(Protocol):
     async def asearch(self, **kwargs: Unpack[SearchOptions]) -> JsonValue: ...
 
 
-FACADE: VectorStores = vector_stores  # type: ignore  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py
+FACADE: VectorStores = vector_stores  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py
 
 
-def optionals(run: Run, api_base: str, logging_obj: Logging) -> GenericOptions:
-    options = GenericOptions(
+def optionals(run: Run, api_base: str, logging_obj: Logging) -> CreateOptions:
+    return CreateOptions(
         api_base=api_base,
         api_key=run.options.api_key,
         litellm_call_id=run.options.litellm_call_id,
@@ -160,15 +160,13 @@ def optionals(run: Run, api_base: str, logging_obj: Logging) -> GenericOptions:
         extra_body=run.extra_body,
         timeout=run.timeout_seconds,
     )
-    return options
 
 
 def create_options(run: Run, api_base: str, logging_obj: Logging) -> CreateOptions:
     args = run.create
     if args is None:
         raise ValueError("a create run carries no create arguments")
-    options: CreateOptions = {}
-    options.update(optionals(run, api_base, logging_obj))
+    options = optionals(run, api_base, logging_obj)
     options["name"] = args.name
     options["file_ids"] = args.file_ids
     options["expires_after"] = args.expires_after
@@ -230,13 +228,13 @@ def context_of(logging_obj: Logging) -> Context | None:
     provider = details.get("custom_llm_provider")
     if provider is None:
         return None
-    params = details.get("litellm_params", {})
+    params = details["litellm_params"]
     return Context(
         model=details["model"],
         optional_params=details["optional_params"],
         custom_llm_provider=provider,
-        litellm_call_id=params.get("litellm_call_id", None),
-        vector_store_id=params.get("vector_store_id", None),
+        litellm_call_id=params.get("litellm_call_id"),
+        vector_store_id=params.get("vector_store_id"),
     )
 
 
@@ -271,8 +269,8 @@ def credentials_for(case: Registry, vector_store_id: str) -> dict[str, JsonValue
 
 
 def apply_registry(case: Registry) -> None:
-    registry = VectorStoreRegistry(vector_stores=[])
-    registry.get_credentials_for_vector_store = partial(credentials_for, case)  # type: ignore  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py
+    registry = VectorStoreRegistry()
+    registry.get_credentials_for_vector_store = partial(credentials_for, case)  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py
     litellm.vector_store_registry = registry
 
 
