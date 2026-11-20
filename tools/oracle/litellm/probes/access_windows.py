@@ -11,6 +11,8 @@ from typing_extensions import override
 from probes.protocol import Operation, ProbeError, Strict
 
 # pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true, reportMissingTypeStubs=false
+# LiteLLM's filter_team_based_models takes and returns bare dicts, which strict mode types as partially unknown
+# pyright: reportUnknownVariableType=false
 
 BAD_REQUEST_PREFIX: Final = "litellm.BadRequestError: "
 
