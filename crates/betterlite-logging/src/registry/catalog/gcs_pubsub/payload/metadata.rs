@@ -48,14 +48,7 @@ fn metadata_arguments(
         )?
         .cloned(),
         vector_store_request_metadata: stored.vector_store_request_metadata.clone(),
-        guardrail_information: payload
-            .guardrail_information
-            .as_ref()
-            .map(|information| {
-                serde_json::to_value(information).and_then(serde_json::from_value::<Json>)
-            })
-            .transpose()
-            .map_err(ProjectionError::Encode)?,
+        guardrail_information: guardrail_information(payload)?,
         usage_object: optional_field(stored.usage_object.as_ref(), "usage_object", as_object)?
             .cloned(),
         model_map_information: Some(payload.model_map_information.clone()),
@@ -76,6 +69,19 @@ fn metadata_arguments(
         azure_spillover: spillover(payload)?,
         used_client_oauth_token: oauth_token(merged, payload.custom_llm_provider.as_deref())?,
     })
+}
+
+// The standard payload's guardrail information as the metadata argument, absent when the payload has none.
+fn guardrail_information(
+    payload: &StandardLoggingPayload,
+) -> Result<Option<Json>, ProjectionError> {
+    let Some(information) = payload.guardrail_information.as_ref() else {
+        return Ok(None);
+    };
+    let value = serde_json::to_value(information).map_err(ProjectionError::Encode)?;
+    serde_json::from_value(value)
+        .map(Some)
+        .map_err(ProjectionError::Encode)
 }
 
 // azure_spillover over the additional headers the standard payload kept; an event carries no response headers
@@ -117,7 +123,7 @@ fn oauth_token(
     Ok(stamped.map(|sent| sent && forwarded))
 }
 
-fn as_bool(value: &Json) -> Option<bool> {
+const fn as_bool(value: &Json) -> Option<bool> {
     match value {
         Json::Bool(flag) => Some(*flag),
         Json::Null | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => None,

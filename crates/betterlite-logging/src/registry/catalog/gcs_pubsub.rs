@@ -14,7 +14,7 @@ use crate::spend_metadata::SpendMetadataError;
 
 pub(crate) mod flush;
 pub(crate) mod payload;
-mod publish;
+pub(crate) mod publish;
 
 mod tests;
 
@@ -52,7 +52,7 @@ pub fn build(inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogE
         message: error.to_string(),
     })?;
     let process = Arc::new(logger);
-    flush::spawn_flush_loop(&process, inputs.tracker.clone(), inputs.shutdown.clone());
+    flush::spawn_flush_loop(&process, &inputs.tracker, inputs.shutdown.clone());
     let callback: Arc<dyn CallbackLogger> = process;
     Ok(callback)
 }

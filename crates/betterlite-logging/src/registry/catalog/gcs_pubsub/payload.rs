@@ -49,36 +49,46 @@ struct Times {
     completion_start: DateTime<Utc>,
 }
 
+// The values the SpendLogsPayload literal reads besides the event's payload and metadata.
+struct Parts {
+    stamps: Times,
+    request_id: String,
+    session_id: Option<String>,
+    cache_key: String,
+    request_tags: String,
+    messages: String,
+    duration: Option<i64>,
+}
+
 pub(crate) fn spend_log_payload(event: &LoggerEvent) -> Result<Json, ProjectionError> {
     let payload = event.payload.as_ref();
     let merged = event.litellm_metadata.as_ref();
     let clean = clean_metadata(payload, merged)?;
-    let projected = record(payload, merged, &clean)?;
+    let parts = parts(payload)?;
+    let projected = payload_row(payload, merged, &clean, parts)?;
     serde_json::to_value(projected)
         .and_then(serde_json::from_value::<Json>)
         .map_err(ProjectionError::Encode)
 }
 
 // get_logging_payload's SpendLogsPayload literal, over the fields a logger event carries
-fn record(
+fn payload_row(
     payload: &StandardLoggingPayload,
     merged: &JsonObject,
     clean: &SpendLogsMetadata,
+    parts: Parts,
 ) -> Result<SpendLogsPayload, ProjectionError> {
-    let stamps = times(payload)?;
-    let request_id = request_id(payload);
-    let session = session_id(payload, &request_id);
     Ok(SpendLogsPayload {
-        request_id,
+        request_id: parts.request_id,
         call_type: payload.call_type.clone(),
         api_key: api_key(payload, clean),
         spend: spend(payload),
         total_tokens: Some(payload.total_tokens),
         prompt_tokens: Some(payload.prompt_tokens),
         completion_tokens: Some(payload.completion_tokens),
-        start_time: isoformat(stamps.start),
-        end_time: isoformat(stamps.end),
-        completion_start_time: Some(isoformat(stamps.completion_start)),
+        start_time: isoformat(parts.stamps.start),
+        end_time: isoformat(parts.stamps.end),
+        completion_start_time: Some(isoformat(parts.stamps.completion_start)),
         model: payload.model.clone(),
         model_id: payload.model_id.clone().unwrap_or_default(),
         model_group: payload.model_group.clone().unwrap_or_default(),
@@ -90,6 +100,31 @@ fn record(
         user: text_or_empty(merged, "user_api_key_user_id")?,
         metadata: metadata_text(clean)?,
         cache_hit: cache_hit_text(payload.cache_hit),
+        cache_key: parts.cache_key,
+        request_tags: parts.request_tags,
+        team_id: text_or_empty(merged, "user_api_key_team_id")?,
+        organization_id: text_or_empty(merged, "user_api_key_org_id")?,
+        end_user: end_user(payload, merged)?,
+        requester_ip_address: clean.requester_ip_address.clone(),
+        custom_llm_provider: payload.custom_llm_provider.clone().unwrap_or_default(),
+        messages: parts.messages,
+        response: storage_response(payload.response.as_ref(), None, NO_BODY_STORAGE),
+        proxy_server_request: storage_request_body(&Json::Null, None, NO_BODY_STORAGE),
+        session_id: parts.session_id,
+        request_duration_ms: parts.duration,
+        status: status_for_spend_log(merged),
+        litellm_call_id: payload.litellm_call_id.clone(),
+    })
+}
+
+fn parts(payload: &StandardLoggingPayload) -> Result<Parts, ProjectionError> {
+    let stamps = times(payload)?;
+    let request_id = request_id(payload);
+    let session = session_id(payload, &request_id);
+    Ok(Parts {
+        stamps,
+        request_id,
+        session_id: session,
         cache_key: payload
             .cache_key
             .clone()
@@ -103,24 +138,14 @@ fn record(
             record: "request_tags",
             source,
         })?,
-        team_id: text_or_empty(merged, "user_api_key_team_id")?,
-        organization_id: text_or_empty(merged, "user_api_key_org_id")?,
-        end_user: end_user(payload, merged)?,
-        requester_ip_address: clean.requester_ip_address.clone(),
-        custom_llm_provider: payload.custom_llm_provider.clone().unwrap_or_default(),
         messages: storage_messages(
             payload.messages.as_ref(),
             NO_BODY_STORAGE.sanitize.store_bodies,
         ),
-        response: storage_response(payload.response.as_ref(), None, NO_BODY_STORAGE),
-        proxy_server_request: storage_request_body(&Json::Null, None, NO_BODY_STORAGE),
-        session_id: session,
-        request_duration_ms: request_duration_ms(
+        duration: request_duration_ms(
             SpendTimestamp::Aware(stamps.start.fixed_offset()),
             SpendTimestamp::Aware(stamps.end.fixed_offset()),
         ),
-        status: status_for_spend_log(merged),
-        litellm_call_id: payload.litellm_call_id.clone(),
     })
 }
 
@@ -152,10 +177,9 @@ fn spend(payload: &StandardLoggingPayload) -> Option<Decimal> {
         .cost_breakdown
         .as_ref()
         .and_then(|fields| fields.guardrail_cost);
-    match charged {
-        Some(amount) => payload.response_cost.checked_sub(amount),
-        None => Some(payload.response_cost),
-    }
+    charged.map_or(Some(payload.response_cost), |amount| {
+        payload.response_cost.checked_sub(amount)
+    })
 }
 
 // get_spend_logs_id and the cache-hit suffix over the event: the response id, then the payload id, then the call id

@@ -15,6 +15,7 @@ use crate::callback_logger::event::LoggerEvent;
 use crate::gcs_mock::auth::VertexAuth;
 use crate::http_analytics_loggers::delivery::Delivery;
 use crate::registry::catalog::gcs_pubsub::ProjectionError;
+use crate::registry::catalog::gcs_pubsub::publish;
 
 pub const CALLBACK_NAME: &str = "gcs_pubsub";
 pub const PROJECT_VARIABLE: &str = "GCS_PUBSUB_PROJECT_ID";
@@ -111,6 +112,18 @@ where
     project: fn(&LoggerEvent) -> Result<Json, ProjectionError>,
 }
 
+// A project or topic id from the constructor or the environment; an empty value reads as unset.
+fn identifier(
+    given: Option<String>,
+    environment: &dyn EnvironmentLookup,
+    variable: &'static str,
+) -> Option<String> {
+    given
+        .filter(|id| !id.is_empty())
+        .or_else(|| environment.lookup(variable))
+        .filter(|id| !id.is_empty())
+}
+
 impl<Auth, D> GcsPubSubLogger<Auth, D>
 where
     Auth: VertexAuth,
@@ -121,17 +134,9 @@ where
         overrides: Overrides,
         deps: GcsPubSubDeps<Auth, D>,
     ) -> Result<Self, PubSubError<Auth, D>> {
-        let project_id = overrides
-            .project_id
-            .filter(|id| !id.is_empty())
-            .or_else(|| environment.lookup(PROJECT_VARIABLE))
-            .filter(|id| !id.is_empty())
+        let project_id = identifier(overrides.project_id, environment, PROJECT_VARIABLE)
             .ok_or(PubSubError::MissingProjectId)?;
-        let topic_id = overrides
-            .topic_id
-            .filter(|id| !id.is_empty())
-            .or_else(|| environment.lookup(TOPIC_VARIABLE))
-            .filter(|id| !id.is_empty())
+        let topic_id = identifier(overrides.topic_id, environment, TOPIC_VARIABLE)
             .ok_or(PubSubError::MissingTopicId)?;
         let credentials = overrides
             .credentials
@@ -194,6 +199,21 @@ where
                 record: "standard logging payload",
                 source,
             })
+    }
+
+    pub(crate) async fn send_batch(&self) {
+        let report = self.queue.flush(self).await;
+        tracing::debug!(
+            batch = report.batch,
+            delivered = report.delivered,
+            "PubSub - flushed the log queue"
+        );
+    }
+
+    pub(crate) async fn publish_message(&self, message: &Json) {
+        if let Err(error) = publish::publish(self, message).await {
+            tracing::error!(%error, "Pub/Sub publish error");
+        }
     }
 }
 

@@ -1,4 +1,3 @@
-use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -12,44 +11,27 @@ use crate::gcs_mock::auth::VertexAuth;
 use crate::gcs_pubsub::GcsPubSubLogger;
 use crate::http_analytics_loggers::delivery::Delivery;
 
-impl<Auth, D> GcsPubSubLogger<Auth, D>
-where
-    Auth: VertexAuth + 'static,
-    D: Delivery + 'static,
-{
-    pub(crate) async fn send_batch(&self) {
-        let report = self.queue.flush(self).await;
-        tracing::debug!(
-            batch = report.batch,
-            delivered = report.delivered,
-            "PubSub - flushed the log queue"
-        );
-    }
-}
-
 impl<Auth, D> BatchDelivery<Json> for GcsPubSubLogger<Auth, D>
 where
     Auth: VertexAuth + 'static,
     D: Delivery + 'static,
 {
-    fn deliver(
+    async fn deliver(
         &self,
         batch: &[Json],
         settled: &AtomicUsize,
-    ) -> impl Future<Output = Result<Vec<Json>, BatchCancelled<Json>>> + Send {
-        async move {
-            for message in batch {
-                self.publish_message(message).await;
-                settled.fetch_add(1, Ordering::SeqCst);
-            }
-            Ok(Vec::new())
+    ) -> Result<Vec<Json>, BatchCancelled<Json>> {
+        for message in batch {
+            self.publish_message(message).await;
+            settled.fetch_add(1, Ordering::SeqCst);
         }
+        Ok(Vec::new())
     }
 }
 
 pub(crate) fn spawn_flush_loop<Auth, D>(
     logger: &Arc<GcsPubSubLogger<Auth, D>>,
-    tasks: TaskTracker,
+    tasks: &TaskTracker,
     shutdown: CancellationToken,
 ) where
     Auth: VertexAuth + 'static,
