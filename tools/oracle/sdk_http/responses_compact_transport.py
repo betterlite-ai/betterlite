@@ -1,6 +1,7 @@
 import asyncio
+from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime
-from typing import Final, Literal
+from typing import Final, Literal, Protocol
 
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
@@ -21,6 +22,40 @@ OBJECTS: Final = TypeAdapter(dict[str, object])
 NULLABLE_OBJECTS: Final = TypeAdapter(dict[str, object] | None)
 RESPONSES_API: Final[TypeAdapter[ResponsesAPIResponse]] = TypeAdapter(ResponsesAPIResponse)
 PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
+
+CompactWork = ResponsesAPIResponse | Coroutine[object, object, ResponsesAPIResponse]
+AsyncCompactWork = Coroutine[object, object, ResponsesAPIResponse]
+
+CompactCall = Callable[
+    [
+        str,
+        str | ResponseInputParam,
+        BaseResponsesAPIConfig,
+        dict[str, object],
+        GenericLiteLLMParams,
+        Logging,
+        str | None,
+        dict[str, object] | None,
+        dict[str, object] | None,
+        float | None,
+    ],
+    CompactWork,
+]
+AsyncCompactCall = Callable[
+    [
+        str,
+        str | ResponseInputParam,
+        BaseResponsesAPIConfig,
+        dict[str, object],
+        GenericLiteLLMParams,
+        Logging,
+        str | None,
+        dict[str, object] | None,
+        dict[str, object] | None,
+        float | None,
+    ],
+    AsyncCompactWork,
+]
 
 
 class TransportCall(BaseModel):
@@ -58,7 +93,17 @@ class TransportEnvelope(BaseModel):
     responses_compact_transport: TransportValue
 
 
-HANDLER: BaseLLMHTTPHandler = BaseLLMHTTPHandler()
+class Handlers(Protocol):
+    @property
+    def compact_response_api_handler(self) -> CompactCall: ...
+
+    @property
+    def async_compact_response_api_handler(  # ast-grep-ignore: no-long-names
+        self,
+    ) -> AsyncCompactCall: ...
+
+
+HANDLER: Handlers = BaseLLMHTTPHandler()
 
 
 def logging_fixture() -> Logging:
