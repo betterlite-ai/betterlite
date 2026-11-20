@@ -18,4 +18,13 @@ deviations:
   - what: The logging helpers write the telemetry record into an empty request dict; LiteLLM replaces an empty dict with a fresh one through `request_data or {}`, so its record is dropped.
     why: A record that is thrown away is lost telemetry, and the proxy request body that reaches these helpers is never empty in practice, so the only payload affected is one that could not carry the record in LiteLLM either.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1304-L1312
+  - what: A response whose Output.__type is a list or an object has no exception marker; LiteLLM tests membership with `in`, so a list such as ["Exception"] counts as a marker and a number there raises TypeError out of the status probe.
+    why: AWS declares __type as a string, so a container or a number there is not a shape a working setup sends; the typed check keeps the status on the declared string instead of failing a request over it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2123
+  - what: A merged response whose Output.__type is not a string has no exception marker; LiteLLM stringifies the value in _log_apply_guardrail_success, so ["Exception"] counts as a marker.
+    why: The success log reads the same declared string as the body probe, so both status decisions agree on the same response shape.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1345
+  - what: The invocation record's GuardrailValue copy is built by bedrock_decisions/value.rs's json_to_value instead of calling model_armor/request_files/metadata_value.rs's json_to_guardrail_value, which does the same conversion.
+    why: metadata_value.rs belongs to the Model Armor file scan and is outside this task's scope.paths, so this task cannot widen that helper's visibility or move it to a shared module; a task that owns both files can merge them without changing behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1309-L1318
 kept_bugs: []
