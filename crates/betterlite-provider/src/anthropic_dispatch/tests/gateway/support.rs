@@ -8,7 +8,6 @@ use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::controls::control_options::ControlOptions;
-use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::openai_base_config::CatalogCapabilities;
 use secrecy::SecretString;
 use tokio::net::TcpListener;
@@ -95,10 +94,11 @@ pub(super) async fn complete(
     provider.decode(&prepared, upstream)
 }
 
+// LiteLLM reads extra_headers as a call kwarg; the route's body check that refuses it is B052's.
 pub(super) fn chat(body: &str) -> OperationRequest {
     OperationRequest::Chat(Box::new(ChatOperation {
         model: String::from(MODEL),
-        request: ChatRequest::parse(body.as_bytes()).expect("the test request"),
+        request: serde_json::from_str(body).expect("the test request"),
         control: ControlOptions::default(),
     }))
 }
@@ -106,7 +106,7 @@ pub(super) fn chat(body: &str) -> OperationRequest {
 pub(super) fn stream(body: &str) -> OperationRequest {
     OperationRequest::Stream(Box::new(ChatOperation {
         model: String::from(MODEL),
-        request: ChatRequest::parse(body.as_bytes()).expect("the test request"),
+        request: serde_json::from_str(body).expect("the test request"),
         control: ControlOptions::default(),
     }))
 }
