@@ -370,7 +370,7 @@ fn parse_model_catalog_reads_the_ids_in_order(#[case] body: &[u8], #[case] expec
 #[case::not_json(b"not json", CatalogError::Json)]
 #[case::json_null(b"null", CatalogError::Data)]
 #[case::json_array(b"[]", CatalogError::Data)]
-#[case::no_data(br#"{}"#, CatalogError::Data)]
+#[case::no_data(b"{}", CatalogError::Data)]
 #[case::data_not_a_list(br#"{"data":{}}"#, CatalogError::Data)]
 #[case::entry_not_an_object(br#"{"data":[1]}"#, CatalogError::Id)]
 #[case::no_id(br#"{"data":[{}]}"#, CatalogError::Id)]
