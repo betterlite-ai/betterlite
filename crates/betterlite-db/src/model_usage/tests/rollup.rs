@@ -194,7 +194,7 @@ fn rollups_sort_by_date_group_model_provider_and_task() {
         .collect();
     assert_eq!(
         keys,
-        [earliest, azure, model, debugging, tuned, other_group]
+        [earliest, azure, debugging, model, tuned, other_group]
     );
 }
 
