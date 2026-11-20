@@ -720,39 +720,23 @@ impl DirectSearchConfig for DirectStore {
 
 // A config that overrides neither async transform, so the trait's sync-to-async defaults run
 pub(crate) struct DelegatingConfig {
-    base: String,
-    url: String,
-    body: Params,
-    query_embedding: bool,
-    recorded: Arc<Mutex<Recorded>>,
+    inner: RecordingConfig,
 }
 
 impl DelegatingConfig {
     pub(crate) fn new() -> Self {
-        let base = String::from("http://mock.test/v1");
         Self {
-            url: format!("{base}/vector_stores/vs_a/search"),
-            base,
-            body: Params::from([(
-                "query".to_owned(),
-                Json::List(vec![Json::Text("a".to_owned())]),
-            )]),
-            query_embedding: false,
-            recorded: Arc::default(),
+            inner: RecordingConfig::new("http://mock.test/v1", &Events::default()),
         }
     }
 
     pub(crate) const fn with_query_embedding(mut self) -> Self {
-        self.query_embedding = true;
+        self.inner.query_embedding = true;
         self
     }
 
     pub(crate) fn recorder(&self) -> Arc<Mutex<Recorded>> {
-        Arc::clone(&self.recorded)
-    }
-
-    fn recorded(&self) -> MutexGuard<'_, Recorded> {
-        self.recorded.lock().unwrap_or_else(PoisonError::into_inner)
+        self.inner.recorder()
     }
 }
 
@@ -766,41 +750,32 @@ impl SearchConfig for DelegatingConfig {
     fn validate_environment(
         &self,
         headers: OpenAiHeaders,
-        _litellm_params: &Params,
+        litellm_params: &Params,
     ) -> Result<OpenAiHeaders, SearchError> {
-        Ok(headers)
+        self.inner.validate_environment(headers, litellm_params)
     }
 
-    fn complete_url(&self, _litellm_params: &Params) -> Result<String, SearchError> {
-        Ok(self.base.clone())
+    fn complete_url(&self, litellm_params: &Params) -> Result<String, SearchError> {
+        self.inner.complete_url(litellm_params)
     }
 
     fn transform_search_request(
         &self,
         request: SearchRequest<'_>,
     ) -> Result<PreparedSearch, SearchError> {
-        self.recorded()
-            .transforms
-            .push(transform_record(&request, false));
-        Ok((self.url.clone(), self.body.clone()))
+        self.inner.transform_search_request(request)
     }
 
     fn transform_search_response(
         &self,
         response: &VectorStoreResponse,
-        _logging: &mut VectorStoreLogging,
+        logging: &mut VectorStoreLogging,
     ) -> Result<VectorStoreSearchResponse, SearchError> {
-        serde_json::from_slice(&response.body).map_err(|source| {
-            SearchError::Provider(self.error_class(
-                &source.to_string(),
-                response.status_code,
-                HeaderMap::new(),
-            ))
-        })
+        self.inner.transform_search_response(response, logging)
     }
 
     fn query_embedding_config(&self) -> Option<&dyn QueryEmbeddingConfig> {
-        if self.query_embedding {
+        if self.inner.query_embedding {
             Some(self)
         } else {
             None
@@ -808,12 +783,7 @@ impl SearchConfig for DelegatingConfig {
     }
 
     fn error_class(&self, message: &str, status_code: u16, headers: HeaderMap) -> BaseLlmException {
-        BaseLlmException {
-            status_code,
-            message: message.to_owned(),
-            headers,
-            status_code_is_synthesized: false,
-        }
+        self.inner.error_class(message, status_code, headers)
     }
 }
 
@@ -823,10 +793,7 @@ impl QueryEmbeddingConfig for DelegatingConfig {
         &self,
         request: QuerySearchRequest<'_>,
     ) -> Result<PreparedSearch, SearchError> {
-        let mut record = transform_record(&request.search, false);
-        record.executor = request.embedding_executor.is_some();
-        self.recorded().query_transforms.push(record);
-        Ok((self.url.clone(), self.body.clone()))
+        self.inner.transform_query_search(request)
     }
 }
 
