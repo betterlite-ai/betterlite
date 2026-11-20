@@ -48,6 +48,46 @@ pub(super) struct BillingIdentity {
     pub(super) prompt: String,
 }
 
+// StandardLoggingModelCostFailureDebugInformation: the identity that was attempted, when it was known.
+pub(super) fn failure_information(
+    message: &str,
+    billing: Option<&BillingIdentity>,
+    call_type: &str,
+) -> Json {
+    let mut fields = IndexMap::from([
+        ("error_str".to_owned(), Json::Text(message.to_owned())),
+        ("traceback_str".to_owned(), Json::Text(String::new())),
+    ]);
+    if let Some(billing) = billing {
+        fields.insert("model".to_owned(), Json::Text(billing.model.clone()));
+        fields.insert(
+            "cache_hit".to_owned(),
+            billing.cache_hit.map_or(Json::Null, Json::Bool),
+        );
+        fields.insert(
+            "custom_llm_provider".to_owned(),
+            text_or_null(billing.custom_llm_provider.as_deref()),
+        );
+        fields.insert(
+            "base_model".to_owned(),
+            text_or_null(billing.base_model.as_deref()),
+        );
+        fields.insert("call_type".to_owned(), Json::Text(call_type.to_owned()));
+        fields.insert(
+            "custom_pricing".to_owned(),
+            Json::Bool(billing.custom_pricing),
+        );
+    }
+    Json::Object(fields)
+}
+
+fn text_or_null(text: Option<&str>) -> Json {
+    match text {
+        Some(found) => Json::Text(found.to_owned()),
+        None => Json::Null,
+    }
+}
+
 // A logging field declared as a string; a value of another type names the field.
 pub(super) fn text_field(
     map: &IndexMap<String, Json>,
@@ -62,7 +102,7 @@ pub(super) fn text_field(
     }
 }
 
-pub(super) const fn text_value(value: &Json) -> Option<&str> {
+pub(super) fn text_value(value: &Json) -> Option<&str> {
     match value {
         Json::Text(text) => Some(text),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
@@ -196,14 +236,6 @@ fn cost_poll_origin(litellm_params: &IndexMap<String, Json>) -> Option<Origin> {
         Some(Json::Text(origin)) if origin == BACKGROUND_COST_POLL_ORIGIN => {
             Some(Origin::BackgroundResponseCostPoll)
         }
-        Some(
-            Json::Null
-            | Json::Bool(_)
-            | Json::Number(_)
-            | Json::Text(_)
-            | Json::List(_)
-            | Json::Object(_),
-        )
-        | None => None,
+        Some(_) | None => None,
     }
 }

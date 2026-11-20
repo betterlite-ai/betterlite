@@ -39,7 +39,7 @@ enum HiddenOutcome {
     Invalid,
 }
 
-impl<'call, 'services, Inference> CostCall<'call, 'services, Inference>
+impl<Inference> CostCall<'_, '_, Inference>
 where
     Inference: ProviderInference,
 {
@@ -107,7 +107,7 @@ where
                 identity::additional_cost(self.log),
             )),
             Err(error) => {
-                let info = diagnostics::failure_information(
+                let info = identity::failure_information(
                     &error.to_string(),
                     Some(&billing),
                     &self.log.call_type,
@@ -177,7 +177,7 @@ where
     }
 }
 
-// The mapping, event and generateContent arms all arrive as this result.
+// Runs one call over a parsed view; a view that failed to parse records only the short failure.
 pub(super) async fn record_prepared<Inference>(
     recorder: &CostRecorder<'_, Inference>,
     log: &mut LoggingState,
@@ -187,32 +187,22 @@ pub(super) async fn record_prepared<Inference>(
 where
     Inference: ProviderInference,
 {
-    match prepared {
-        Ok(Some(parsed)) => {
-            CostCall {
-                recorder,
-                log,
-                view: &parsed,
-                request,
-            }
-            .run()
-            .await
-        }
-        Ok(None) => {
-            CostCall {
-                recorder,
-                log,
-                view: &ResponseView::Other,
-                request,
-            }
-            .run()
-            .await
-        }
+    let parsed = match prepared {
+        Ok(parsed) => parsed,
         Err(error) => {
             preparation_failure(log, &error.to_string());
-            None
+            return None;
         }
+    };
+    let view = parsed.unwrap_or(ResponseView::Other);
+    CostCall {
+        recorder,
+        log,
+        view: &view,
+        request,
     }
+    .run()
+    .await
 }
 
 // Ports _generate_content_result_as_model_response: a failed conversion leaves the body as it was.
@@ -235,28 +225,17 @@ where
             return record_prepared(recorder, log, view::body_view(body), request).await;
         }
     };
-    match view::body_view(&converted) {
-        Ok(Some(parsed)) => {
-            CostCall {
-                recorder,
-                log,
-                view: &parsed,
-                request,
-            }
-            .run()
-            .await
-        }
-        Ok(None) => record_prepared(recorder, log, view::body_view(body), request).await,
-        Err(error) => {
-            preparation_failure(log, &error.to_string());
-            None
-        }
-    }
+    let prepared = match view::body_view(&converted) {
+        Ok(Some(parsed)) => Ok(Some(parsed)),
+        Ok(None) => view::body_view(body),
+        Err(error) => Err(error),
+    };
+    record_prepared(recorder, log, prepared, request).await
 }
 
 // The kwargs step failed, so only the short failure diagnostic is recorded.
 pub(super) fn preparation_failure(log: &mut LoggingState, message: &str) {
-    let info = diagnostics::failure_information(message, None, &log.call_type);
+    let info = identity::failure_information(message, None, &log.call_type);
     log.model_call_details
         .insert(diagnostics::FAILURE_KEY.to_owned(), info);
 }

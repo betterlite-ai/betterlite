@@ -106,14 +106,8 @@ where
                 background,
             } => {
                 request.background = background;
-                flow::CostCall {
-                    recorder: self,
-                    log,
-                    view: &ResponseView::Typed(response),
-                    request: &request,
-                }
-                .run()
-                .await
+                let view = ResponseView::Typed(response);
+                flow::record_prepared(self, log, Ok(Some(view)), &request).await
             }
             RecordResponse::Event(event) => {
                 flow::record_prepared(self, log, view::event_view(event), &request).await
@@ -132,16 +126,7 @@ where
                 })
                 .await
             }
-            RecordResponse::Absent => {
-                flow::CostCall {
-                    recorder: self,
-                    log,
-                    view: &ResponseView::Other,
-                    request: &request,
-                }
-                .run()
-                .await
-            }
+            RecordResponse::Absent => flow::record_prepared(self, log, Ok(None), &request).await,
         }
     }
 }

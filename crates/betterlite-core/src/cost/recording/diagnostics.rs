@@ -2,7 +2,8 @@ use betterlite_logging::fields::usage::Usage;
 use betterlite_logging::logging_metadata::setup::merge_litellm_metadata;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
-use betterlite_models::price_lookup::PriceRecord;
+use betterlite_models::off_peak::schema::RateField;
+use betterlite_models::price_lookup::{PriceRecord, PricedModel};
 use betterlite_models::tiered_pricing::Scalar;
 use betterlite_models::zero_cost::{
     TokenUsage, ZeroCostDiagnostic, diagnose_zero_cost, zero_cost_warning,
@@ -11,11 +12,12 @@ use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
 use super::CostRecorder;
-use super::identity::{self, BillingIdentity, PreparationError};
-use super::view::{self, ResponseView};
+use super::identity::{self, PreparationError};
+use super::view;
 use crate::cost::context::error::BillingContextError;
-use crate::cost::context::pricing::pricing_entry;
+use crate::cost::context::pricing::{PricingQuery, deployment_info, pricing_entry};
 use crate::cost::context::{IdentityRequest, ProviderInference};
+use crate::cost::prepare::ResponseView;
 use crate::cost::usage::{BillingUsageError, get_usage_object};
 
 const DIAGNOSTIC_KEY: &str = "zero_cost_diagnostic";
@@ -92,14 +94,14 @@ where
         let Some(usage) = get_usage_object(&view::billing_response(input.view))? else {
             return Ok(None);
         };
-        let Some((model, pricing_model, entry)) = self.priced_entry(log, input)? else {
+        let Some((model, pricing_model, priced)) = self.priced_entry(log, input)? else {
             return Ok(None);
         };
         let tokens = token_usage(&usage);
         let Some(diagnostic) = diagnose_zero_cost(
             &tokens,
             &pricing_model,
-            &pricing_json(&entry),
+            &pricing_json(&priced),
             input.calculation_failed,
         ) else {
             return Ok(None);
@@ -125,7 +127,7 @@ where
         &self,
         log: &LoggingState,
         input: &DiagnosticInput<'_>,
-    ) -> Result<Option<(String, String, PriceRecord)>, DiagnosticError> {
+    ) -> Result<Option<(String, String, PricedModel)>, DiagnosticError> {
         let model = input
             .litellm_model_name
             .as_deref()
@@ -139,13 +141,12 @@ where
             Some(_) | None => identity::metadata::router_model_id(log)?,
         };
         let region = identity::mantle_region(log, self.mantle)?;
-        let custom_pricing = self.custom_pricing(log, input.view)?;
         let response = view::cost_response(input.view);
         let request = IdentityRequest {
             model: Some(model.as_str()),
             response: response.as_ref(),
             base_model: base.as_deref(),
-            custom_pricing: Some(custom_pricing),
+            custom_pricing: Some(self.custom_pricing(log, input.view)?),
             custom_llm_provider: provider.as_deref(),
             router_model_id: router.as_deref(),
             region_name: region.as_deref(),
@@ -159,40 +160,52 @@ where
         else {
             return Ok(None);
         };
-        Ok(Some((model, pricing_model, entry)))
+        let priced = self.priced_model(&request, log, &pricing_model, entry)?;
+        Ok(Some((model, pricing_model, priced)))
     }
-}
 
-pub(super) fn failure_information(
-    message: &str,
-    billing: Option<&BillingIdentity>,
-    call_type: &str,
-) -> Json {
-    let mut fields = IndexMap::from([
-        ("error_str".to_owned(), Json::Text(message.to_owned())),
-        ("traceback_str".to_owned(), Json::Text(String::new())),
-    ]);
-    if let Some(billing) = billing {
-        fields.insert("model".to_owned(), Json::Text(billing.model.clone()));
-        fields.insert(
-            "cache_hit".to_owned(),
-            billing.cache_hit.map_or(Json::Null, Json::Bool),
-        );
-        fields.insert(
-            "custom_llm_provider".to_owned(),
-            text_or_null(billing.custom_llm_provider.as_deref()),
-        );
-        fields.insert(
-            "base_model".to_owned(),
-            text_or_null(billing.base_model.as_deref()),
-        );
-        fields.insert("call_type".to_owned(), Json::Text(call_type.to_owned()));
-        fields.insert(
-            "custom_pricing".to_owned(),
-            Json::Bool(billing.custom_pricing),
-        );
+    // A deployment model_info keeps its own rates; only a cost-map entry takes the map's tables.
+    fn priced_model(
+        &self,
+        request: &IdentityRequest<'_>,
+        log: &LoggingState,
+        key: &str,
+        record: PriceRecord,
+    ) -> Result<PricedModel, BillingContextError> {
+        let raw_router_entry = request
+            .router_model_id
+            .is_some_and(|id| self.lookup.raw_cost_map_entry(id).is_some());
+        let from_deployment = deployment_info(
+            &PricingQuery {
+                custom_pricing: request.custom_pricing,
+                router_model_id: request.router_model_id,
+                logging_params: Some(&log.litellm_params),
+            },
+            self.lookup,
+        )?
+        .is_some();
+        let mut priced = PricedModel {
+            record,
+            ..PricedModel::default()
+        };
+        if (!from_deployment || raw_router_entry)
+            && let Some(tables) = self.effective_tables(key, request.custom_llm_provider)
+        {
+            priced.tiered_pricing = tables.tiered_pricing;
+            priced.off_peak_pricing = tables.off_peak_pricing;
+        }
+        Ok(priced)
     }
-    Json::Object(fields)
+
+    // The record keeps only a nested table's shape; resolving its own key keeps the decoded rates.
+    fn effective_tables(&self, key: &str, provider: Option<&str>) -> Option<PricedModel> {
+        let priced = self.lookup.effective_priced_model(key, provider)?;
+        matches!(
+            priced.record.get("key"),
+            Some(Scalar::Text(found)) if found.as_str() == key
+        )
+        .then_some(priced)
+    }
 }
 
 pub(super) fn finding_json(finding: &Finding) -> Json {
@@ -215,13 +228,6 @@ pub(super) fn finding_json(finding: &Finding) -> Json {
     ]))
 }
 
-fn text_or_null(text: Option<&str>) -> Json {
-    match text {
-        Some(found) => Json::Text(found.to_owned()),
-        None => Json::Null,
-    }
-}
-
 fn token_usage(usage: &Usage) -> TokenUsage {
     TokenUsage {
         prompt_tokens: usage.prompt_tokens,
@@ -239,12 +245,45 @@ fn audio_tokens(details: Option<&IndexMap<String, Json>>) -> i64 {
     }
 }
 
-// diagnose_zero_cost reads Json, and a Scalar array or object keeps only its shape.
-fn pricing_json(record: &PriceRecord) -> IndexMap<String, Json> {
-    record
+// The record keeps only each table's shape, so diagnose_zero_cost gets the decoded rates beside it.
+fn pricing_json(priced: &PricedModel) -> IndexMap<String, Json> {
+    let mut entry: IndexMap<String, Json> = priced
+        .record
         .iter()
         .map(|(key, value)| (key.clone(), scalar_json(value)))
-        .collect()
+        .collect();
+    let rates = priced.tiered_pricing.iter().flat_map(|tier| {
+        [
+            tier.input_token.as_ref(),
+            tier.output_token.as_ref(),
+            tier.output_reasoning_token.as_ref(),
+            tier.cache_read_input_token_cost.as_ref(),
+            tier.cache_creation_token_cost.as_ref(),
+            tier.cache_creation_above_1hr_cost.as_ref(),
+            tier.input_cost_per_query.as_ref(),
+        ]
+    });
+    let values = rates.flatten().flatten().map(scalar_json).collect();
+    entry.insert("tiered_pricing".to_owned(), Json::List(values));
+    if let Some(block) = &priced.off_peak_pricing {
+        let block_rates = [
+            block.input_cost_per_token.as_ref(),
+            block.output_cost_per_token.as_ref(),
+            block.reasoning_token_cost.as_ref(),
+            block.cache_read_input_token_cost.as_ref(),
+            block.cache_creation_cost.as_ref(),
+        ];
+        let peak_values = block_rates.into_iter().flatten().map(rate_json).collect();
+        entry.insert("off_peak_pricing".to_owned(), Json::List(peak_values));
+    }
+    entry
+}
+
+fn rate_json(rate: &RateField) -> Json {
+    match rate {
+        RateField::Number(number) => Json::Number(number.clone()),
+        RateField::Bool(_) | RateField::Text(_) | RateField::Other(_) => Json::Null,
+    }
 }
 
 fn scalar_json(value: &Scalar) -> Json {

@@ -12,9 +12,10 @@ use betterlite_logging::logging_state::correlation::{
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
+use betterlite_models::off_peak::schema::OffPeakBlock;
 use betterlite_models::price_lookup::{PriceLookup, PriceRecord, PricedModel};
 use betterlite_models::resolution::ProviderIdentity;
-use betterlite_models::tiered_pricing::Scalar;
+use betterlite_models::tiered_pricing::{Scalar, Tier};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
@@ -114,7 +115,7 @@ impl CostCalculation for FakeCalculator {
 
 #[derive(Default)]
 pub(super) struct FakeCatalog {
-    entries: BTreeMap<String, PriceRecord>,
+    entries: BTreeMap<String, PricedModel>,
 }
 
 impl FakeCatalog {
@@ -124,16 +125,40 @@ impl FakeCatalog {
             record.insert((*name).to_owned(), value.clone());
         }
         record.insert("key".to_owned(), Scalar::Text(model.to_owned()));
-        let mut entries = BTreeMap::new();
-        entries.insert(model.to_owned(), record);
-        Self { entries }
+        Self::from_record(model, record)
     }
 
     pub(super) fn with_unkeyed_entry(model: &str, name: &str, value: Scalar) -> Self {
         let mut record = PriceRecord::new();
         record.insert(name.to_owned(), value);
+        Self::from_record(model, record)
+    }
+
+    pub(super) fn with_tiered(model: &str, tiers: Vec<Tier>) -> Self {
+        let mut catalog = Self::with_entry(model, &[]);
+        if let Some(priced) = catalog.entries.get_mut(model) {
+            priced.tiered_pricing = tiers;
+        }
+        catalog
+    }
+
+    pub(super) fn with_off_peak(model: &str, block: OffPeakBlock) -> Self {
+        let mut catalog = Self::with_entry(model, &[]);
+        if let Some(priced) = catalog.entries.get_mut(model) {
+            priced.off_peak_pricing = Some(block);
+        }
+        catalog
+    }
+
+    fn from_record(model: &str, record: PriceRecord) -> Self {
         let mut entries = BTreeMap::new();
-        entries.insert(model.to_owned(), record);
+        entries.insert(
+            model.to_owned(),
+            PricedModel {
+                record,
+                ..PricedModel::default()
+            },
+        );
         Self { entries }
     }
 }
@@ -144,25 +169,19 @@ impl PriceLookup for FakeCatalog {
         model: &str,
         _custom_llm_provider: Option<&str>,
     ) -> Option<PriceRecord> {
-        self.entries.get(model).cloned()
+        self.entries.get(model).map(|priced| priced.record.clone())
     }
 
     fn raw_cost_map_entry(&self, key: &str) -> Option<PriceRecord> {
-        self.entries.get(key).cloned()
+        self.entries.get(key).map(|priced| priced.record.clone())
     }
 
     fn effective_priced_model(
         &self,
         model: &str,
-        custom_llm_provider: Option<&str>,
+        _custom_llm_provider: Option<&str>,
     ) -> Option<PricedModel> {
-        self.effective_model_info(model, custom_llm_provider)
-            .map(|record| PricedModel {
-                record,
-                tiered_pricing: Vec::new(),
-                off_peak_pricing: None,
-                off_peak_cache_read_present: false,
-            })
+        self.entries.get(model).cloned()
     }
 }
 
@@ -476,7 +495,7 @@ pub(super) fn state(init: &str) -> LoggingState {
         },
         &redactor,
         || String::from("trace"),
-        Duration::default(),
+        Duration::default,
     ) {
         Ok(state) => state,
         Err(error) => panic!("logging state: {error}"),

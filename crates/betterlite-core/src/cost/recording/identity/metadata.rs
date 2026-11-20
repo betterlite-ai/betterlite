@@ -127,11 +127,7 @@ pub(crate) fn params_view(litellm_params: &IndexMap<String, Json>) -> LitellmPar
             .get("litellm_metadata")
             .and_then(object_value)
             .cloned(),
-        litellm_session_id: None,
-        litellm_trace_id: None,
-        prompt_id: None,
-        prompt_variables: None,
-        langfuse_masking_function: None,
+        ..LitellmParams::default()
     }
 }
 

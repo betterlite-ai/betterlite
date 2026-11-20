@@ -104,7 +104,7 @@ pub(super) const fn cost_response<'view>(
 }
 
 // The usage projection get_usage_object reads, rebuilt here because prepare's view stays private.
-pub(super) fn billing_response(view: &ResponseView<'_>) -> BillingResponse<'_> {
+pub(super) fn billing_response<'view>(view: &'view ResponseView<'view>) -> BillingResponse<'view> {
     match view {
         ResponseView::Typed(typed) => BillingResponse {
             kind: typed.kind,

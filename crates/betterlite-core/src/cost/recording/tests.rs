@@ -1,9 +1,12 @@
 #![cfg(test)]
 
 use betterlite_models::decisions::Json;
+use betterlite_models::off_peak::schema::{OffPeakBlock, RateField};
+use betterlite_models::tiered_pricing::Tier;
 use indexmap::IndexMap;
 use rstest::rstest;
 use rust_decimal::Decimal;
+use serde_json::Number;
 
 use super::RecordResponse;
 use super::diagnostics::DiagnosticInput;
@@ -375,6 +378,157 @@ fn a_priced_zero_cost_reports_the_missing_keys_and_warns_once() {
     assert!(log.cost.zero_cost_warned);
     assert_eq!(warnings.len(), 1);
     assert!(warnings[0].contains("Billable request priced at $0"));
+}
+
+#[test]
+fn a_tiered_only_entry_reports_the_missing_keys() {
+    let tier = Tier {
+        input_token: Some(a_price(1)),
+        output_token: Some(a_price(1)),
+        ..Tier::default()
+    };
+    let fakes = Fakes::default().with_catalog(FakeCatalog::with_tiered("gpt-4o", vec![tier]));
+    let mut log = state(INIT);
+    openai(&mut log);
+    let usage = chat_usage();
+    let hidden = IndexMap::new();
+    let recorder = fakes.recorder();
+    let (cost, warnings) =
+        capture(|| record(&recorder, &mut log, typed(typed_response(&usage, &hidden))));
+    assert_eq!(cost, Some(Decimal::ZERO));
+    assert_eq!(
+        stored_diagnostic(&log),
+        Some(json_text(
+            r#"{"reason":"missing_pricing_key","pricing_model":"gpt-4o","missing_pricing_keys":["input_cost_per_token","output_cost_per_token"]}"#
+        ))
+    );
+    assert!(log.cost.zero_cost_warned);
+    assert_eq!(warnings.len(), 1);
+}
+
+#[test]
+fn a_tiered_only_entry_reports_a_calculation_error() {
+    let tier = Tier {
+        input_token: Some(a_price(1)),
+        ..Tier::default()
+    };
+    let fakes = Fakes::default()
+        .with_catalog(FakeCatalog::with_tiered("gpt-4o", vec![tier]))
+        .with_failure();
+    let mut log = state(INIT);
+    openai(&mut log);
+    let usage = chat_usage();
+    let hidden = IndexMap::new();
+    let cost = record(
+        &fakes.recorder(),
+        &mut log,
+        typed(typed_response(&usage, &hidden)),
+    );
+    assert_eq!(cost, None);
+    assert_eq!(
+        stored_diagnostic(&log),
+        Some(json_text(
+            r#"{"reason":"cost_calculation_error","pricing_model":"gpt-4o","missing_pricing_keys":[]}"#
+        ))
+    );
+    assert!(log.cost.zero_cost_warned);
+}
+
+#[test]
+fn a_deployment_model_info_keeps_its_own_rates_instead_of_the_cost_map_tables() {
+    let tier = Tier {
+        input_token: Some(a_price(1)),
+        output_token: Some(a_price(1)),
+        ..Tier::default()
+    };
+    let fakes = Fakes::default().with_catalog(FakeCatalog::with_tiered("gpt-4o", vec![tier]));
+    let mut log = state(
+        r#"{"model":"gpt-4o","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_params":{"metadata":{"model_info":{"input_cost_per_token":0}}}}"#,
+    );
+    openai(&mut log);
+    let usage = chat_usage();
+    let hidden = IndexMap::new();
+    let recorder = fakes.recorder();
+    let (cost, warnings) =
+        capture(|| record(&recorder, &mut log, typed(typed_response(&usage, &hidden))));
+    assert_eq!(cost, Some(Decimal::ZERO));
+    assert_eq!(stored_diagnostic(&log), Some(Json::Null));
+    assert!(!log.cost.zero_cost_warned);
+    assert_eq!(warnings.len(), 0);
+}
+
+#[test]
+fn a_router_cost_map_entry_keeps_its_decoded_tables() {
+    let tier = Tier {
+        input_token: Some(a_price(1)),
+        output_token: Some(a_price(1)),
+        ..Tier::default()
+    };
+    let fakes = Fakes::default().with_catalog(FakeCatalog::with_tiered("deploy-1", vec![tier]));
+    let mut log = state(
+        r#"{"model":"gpt-4o","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_params":{"input_cost_per_token":0,"litellm_metadata":{"model_info":{"id":"deploy-1"}}}}"#,
+    );
+    openai(&mut log);
+    let usage = chat_usage();
+    let hidden = IndexMap::new();
+    let recorder = fakes.recorder();
+    let (cost, warnings) =
+        capture(|| record(&recorder, &mut log, typed(typed_response(&usage, &hidden))));
+    assert_eq!(cost, Some(Decimal::ZERO));
+    assert_eq!(
+        stored_diagnostic(&log),
+        Some(json_text(
+            r#"{"reason":"missing_pricing_key","pricing_model":"deploy-1","missing_pricing_keys":["input_cost_per_token","output_cost_per_token"]}"#
+        ))
+    );
+    assert!(log.cost.zero_cost_warned);
+    assert_eq!(warnings.len(), 1);
+}
+
+#[test]
+fn an_off_peak_only_entry_reports_the_missing_keys() {
+    let block = OffPeakBlock {
+        input_cost_per_token: Some(RateField::Number(Number::from(1_i64))),
+        ..OffPeakBlock::default()
+    };
+    let fakes = Fakes::default().with_catalog(FakeCatalog::with_off_peak("gpt-4o", block));
+    let mut log = state(INIT);
+    openai(&mut log);
+    let usage = chat_usage();
+    let hidden = IndexMap::new();
+    let recorder = fakes.recorder();
+    let (cost, warnings) =
+        capture(|| record(&recorder, &mut log, typed(typed_response(&usage, &hidden))));
+    assert_eq!(cost, Some(Decimal::ZERO));
+    assert_eq!(
+        stored_diagnostic(&log),
+        Some(json_text(
+            r#"{"reason":"missing_pricing_key","pricing_model":"gpt-4o","missing_pricing_keys":["input_cost_per_token","output_cost_per_token"]}"#
+        ))
+    );
+    assert!(log.cost.zero_cost_warned);
+    assert_eq!(warnings.len(), 1);
+}
+
+#[test]
+fn the_router_model_id_falls_back_to_metadata() {
+    let fakes = Fakes::default();
+    let mut log = state(
+        r#"{"model":"gpt-4o","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_params":{"metadata":{"model_info":{"id":"deployment-metadata"}}}}"#,
+    );
+    openai(&mut log);
+    let usage = chat_usage();
+    let hidden = IndexMap::new();
+    record(
+        &fakes.recorder(),
+        &mut log,
+        typed(typed_response(&usage, &hidden)),
+    );
+    let observed = fakes.observe();
+    assert_eq!(
+        observed[0].router_model_id.as_deref(),
+        Some("deployment-metadata")
+    );
 }
 
 #[test]
