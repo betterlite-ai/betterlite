@@ -1,0 +1,14 @@
+id: B10008
+milestone: M8 platform
+title: AgentOps catalog arm with its startup JWT fetch
+status: blocked
+depends_on: [B8746, B3863, B3868, B8910]
+file: tasks/B10008-agentops-catalog-arm.yaml
+covers:
+  - "litellm/litellm_core_utils/litellm_logging.py"
+parent: B110
+split_from: B8746
+resolution: null
+superseded_by: null
+blocked_reason: "deferred until the core is done (Max, 11-19): niche, AgentOps catalog arm with its init-time JWT fetch"
+pr: null

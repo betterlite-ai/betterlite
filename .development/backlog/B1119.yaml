@@ -1,14 +1,14 @@
 id: B1119
 milestone: M5 API families
 title: Responses to Messages event transitions
-status: todo
+status: done
 depends_on: [B983, B1113, B171, B925, B963, B958, B220, B187]
 file: tasks/B1119-messages-response-events.yaml
 covers:
   - "litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py"
 parent: B081
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2631
