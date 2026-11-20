@@ -2,7 +2,7 @@ import asyncio
 from collections.abc import Mapping, Sequence
 from typing import NotRequired, TypedDict
 
-from litellm.proxy.health_check import perform_health_check
+from litellm.proxy.health_check import perform_health_check  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L847
 from litellm.router import Router
 from pydantic import Field, JsonValue, TypeAdapter
 from typing_extensions import override
@@ -10,7 +10,6 @@ from typing_extensions import override
 from probes.protocol import Operation, Strict
 
 # pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true, reportMissingTypeStubs=false
-# pyright: reportUnknownVariableType=false
 
 
 class EndpointRow(TypedDict):
