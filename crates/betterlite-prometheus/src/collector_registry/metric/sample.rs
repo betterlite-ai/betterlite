@@ -1,5 +1,4 @@
-use num_traits::CheckedAdd as _;
-use num_traits::ToPrimitive as _;
+use rust_decimal::prelude::ToPrimitive as _;
 
 use crate::collector_factory::collector::MetricValue;
 
