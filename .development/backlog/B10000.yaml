@@ -1,14 +1,14 @@
 id: B10000
 milestone: M4 keys, spend and management
 title: Resolve MCP server identifiers to server IDs
-status: todo
+status: done
 depends_on: [B726, B6590, B860, B171]
 file: tasks/B10000-mcp-identifier-resolution.yaml
 covers:
   - "litellm/proxy/management_helpers/object_permission_utils.py"
 parent: B058
 split_from: B817
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2643

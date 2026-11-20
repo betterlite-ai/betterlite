@@ -1,0 +1,9 @@
+kind: helper
+name: auth-invalidation-management-write-projection
+call:
+  auth_invalidation:
+    scenario: management
+    management_ttl: null
+    team: {team_id: oracle-team, team_alias: oracle-alias}
+env: {}
+compare: {ignore: []}
