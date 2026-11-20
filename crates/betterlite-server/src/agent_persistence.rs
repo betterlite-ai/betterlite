@@ -34,7 +34,6 @@ use self::error::open_failure;
 use self::patch::UpdateRequest;
 use self::patch::commit_update;
 use self::patch::existing_agent;
-use self::patch::require_agent;
 use self::remove::delete_agent;
 use self::replace::patch_request;
 use self::write_plan::ColumnSource;
@@ -132,8 +131,11 @@ impl<P: AgentChangePublisher> AgentStore<P> {
     ) -> Result<AgentResponse, AgentPersistenceError> {
         let source = PatchSource { agent };
         let missing = source.not_found(agent_id);
-        let existing = require_agent(&self.store, agent_id, &missing).await?;
-        self.commit(agent_id, &source, Some(&existing), updated_by)
+        let existing = existing_agent(&self.store, agent_id).await?;
+        let Some(stored) = existing else {
+            return Err(AgentPersistenceError::NotFound(missing));
+        };
+        self.commit(agent_id, &source, Some(&stored), updated_by)
             .await
     }
 

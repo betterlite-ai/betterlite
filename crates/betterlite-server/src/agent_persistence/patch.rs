@@ -35,15 +35,6 @@ pub(super) async fn existing_agent(
     Ok(existing)
 }
 
-pub(super) async fn require_agent(
-    store: &PostgresStore,
-    agent_id: &str,
-    missing: &str,
-) -> Result<StoredAgent, AgentPersistenceError> {
-    let existing = existing_agent(store, agent_id).await?;
-    existing.ok_or_else(|| AgentPersistenceError::NotFound(String::from(missing)))
-}
-
 pub(super) async fn commit_update<P: AgentChangePublisher>(
     store: &AgentStore<P>,
     update: &UpdateRequest<'_>,
