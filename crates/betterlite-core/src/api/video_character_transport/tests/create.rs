@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use reqwest::Method;
@@ -208,8 +209,63 @@ fn creation_falls_back_to_the_params_api_key() {
 }
 
 #[test]
+fn creation_passes_absent_and_null_params_as_none() {
+    let mut fixture = Fixture::new();
+    let litellm = params(&[]);
+    let clip = video();
+    let call = create_call("Wren", &clip, &litellm);
+
+    fixture.sync_create(&call, None).unwrap();
+
+    assert_eq!(
+        fixture.config.seen()[0],
+        Seen::Environment {
+            api_key: None,
+            model: String::new(),
+            headers: Vec::new(),
+        }
+    );
+    assert_eq!(
+        fixture.config.seen()[1],
+        Seen::Url {
+            model: String::new(),
+            api_base: None,
+        }
+    );
+
+    let mut null_fixture = Fixture::new();
+    let mut null_litellm = params(&[]);
+    null_litellm.insert("api_base".to_owned(), JsonValue::Null);
+    null_litellm.insert("api_key".to_owned(), JsonValue::Null);
+    let null_clip = video();
+    let null_call = create_call("Wren", &null_clip, &null_litellm);
+
+    null_fixture.sync_create(&null_call, None).unwrap();
+
+    assert_eq!(
+        null_fixture.config.seen()[0],
+        Seen::Environment {
+            api_key: None,
+            model: String::new(),
+            headers: Vec::new(),
+        }
+    );
+    assert_eq!(
+        null_fixture.config.seen()[1],
+        Seen::Url {
+            model: String::new(),
+            api_base: None,
+        }
+    );
+}
+
+#[test]
 fn creation_logs_the_name_as_the_pre_call_input_with_a_name_body() {
     let mut fixture = Fixture::new();
+    fixture
+        .config
+        .environment
+        .insert("x-provider".to_owned(), secret("acme"));
     let litellm = params(&[("api_base", BASE)]);
     let clip = video();
     let call = create_call("Wren", &clip, &litellm);
@@ -236,5 +292,12 @@ fn creation_logs_the_name_as_the_pre_call_input_with_a_name_body() {
         Some(&Json::Text(String::from(
             "https://api.example/v1/characters"
         )))
+    );
+    assert_eq!(
+        details.get("headers"),
+        Some(&Json::Object(IndexMap::from([(
+            String::from("x-provider"),
+            Json::Text(String::from("acme")),
+        )]))),
     );
 }

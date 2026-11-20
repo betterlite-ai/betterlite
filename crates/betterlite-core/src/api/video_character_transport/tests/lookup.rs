@@ -1,9 +1,10 @@
 use std::time::Duration;
 
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use reqwest::Method;
 
-use super::support::{CHARACTER_BODY, Fixture, Seen, character_object, get_call, params};
+use super::support::{CHARACTER_BODY, Fixture, Seen, character_object, get_call, params, secret};
 use crate::api::video_character_transport::clients::CharacterBody;
 
 const BASE: &str = "https://api.example/v1";
@@ -88,6 +89,10 @@ fn lookup_never_forwards_the_calls_timeout() {
 #[test]
 fn lookup_logs_the_character_id_without_a_body() {
     let mut fixture = Fixture::new();
+    fixture
+        .config
+        .environment
+        .insert("x-provider".to_owned(), secret("acme"));
     let litellm = params(&[("api_base", BASE)]);
     let call = get_call("char-1", &litellm);
 
@@ -105,6 +110,13 @@ fn lookup_logs_the_character_id_without_a_body() {
     assert_eq!(
         details.get("api_base"),
         Some(&Json::Text(String::from(CHARACTER_URL)))
+    );
+    assert_eq!(
+        details.get("headers"),
+        Some(&Json::Object(IndexMap::from([(
+            String::from("x-provider"),
+            Json::Text(String::from("acme")),
+        )]))),
     );
 }
 
