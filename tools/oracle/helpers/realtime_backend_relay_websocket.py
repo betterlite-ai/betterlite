@@ -110,7 +110,7 @@ class ScriptedProvider(ProviderMethods):
         _logging_obj: Logging,
         realtime_response_transform_input: TransformInput,  # ast-grep-ignore: no-long-names
     ) -> ResponseDocument:
-        # LiteLLM replaces all seven assembly fields with the input it passed in, and relays the response it gets back
+        # LiteLLM copies the assembly fields it passed in into the answer and relays its response
         return {
             **realtime_response_transform_input,  # ast-grep-ignore: no-long-names
             "response": JSON.validate_json(message),
