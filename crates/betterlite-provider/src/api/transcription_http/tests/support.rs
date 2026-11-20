@@ -247,7 +247,7 @@ impl TranscriptionTransport for Wire {
                     body: self.reply.body.clone(),
                 }))
             },
-            ready,
+            |error| ready(Err(error)),
         )
     }
 }
