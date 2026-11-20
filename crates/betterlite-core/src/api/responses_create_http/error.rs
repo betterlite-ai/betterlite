@@ -95,6 +95,11 @@ pub enum CreateError {
     Encode(#[source] serde_json::Error),
 }
 
+// Every provider config step reports its ConfigFailure under the stage that called it
+pub fn step<T>(result: Result<T, ConfigFailure>, stage: Stage) -> Result<T, CreateError> {
+    result.map_err(|source| CreateError::Step { stage, source })
+}
+
 // _handle_error's funnel: an HTTP error keeps its status, text and masked headers; anything else becomes a synthesized 500
 #[must_use]
 pub fn provider_error<C>(facts: &FailureFacts, config: &C) -> BaseLlmException

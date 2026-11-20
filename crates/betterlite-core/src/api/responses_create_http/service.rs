@@ -27,7 +27,7 @@ use crate::api::vector_store_http_write::error::ClientError;
 
 use self::finish::{Finish, checked, transformed, typed};
 use self::hook::Applied;
-use self::request::{begin, wire};
+use self::request::wire;
 use super::config::{CreateConfig, CreateParams, Headers, Params};
 use super::error::CreateError;
 
@@ -228,7 +228,25 @@ where
         ClientKind::Asynchronous => Applied::original(call),
     };
     let client = request::select_client(deps, mode, &applied.params, call.shared_session)?;
-    let staged = begin(deps.config, mode, call, applied).await?;
+    let (headers, api_base) = request::validated_environment(deps.config, call, &applied)?;
+    let mut data = request::transformed_data(deps.config, mode, &applied, &headers).await?;
+    data = request::overlaid(deps.config, call, &applied, data)?;
+    let (stream_requested, effective_stream) =
+        request::stream_flags(call, &applied.optional_params, &mut data);
+    let params = applied.params.to_map();
+    let context = hook::request_context(&applied.input, &applied.optional_params, &params)?;
+    let staged = Staged {
+        applied,
+        mode,
+        effective_stream,
+        stream_requested,
+        data,
+        context,
+        headers,
+        api_base,
+        params,
+        litellm_metadata: call.litellm_metadata.cloned(),
+    };
     let (post, timeout) = wire(deps.config, mode, call, &staged, log).await?;
     let started = Instant::now();
     let reply = client.get().send(post, staged.effective_stream).await;

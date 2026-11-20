@@ -729,8 +729,7 @@ async fn create_transport_failure(#[case] scenario: FailureCase) {
     }
 }
 
-// HTTP 429 text=slow down with Retry-After=3 becomes B2402's 429 with the header preserved,
-// whether the call asked for a stream or not: the buffered error answer fails the same way
+// HTTP 429 text=slow down with Retry-After=3 becomes B2402's 429 with the header preserved, streamed or not
 async fn status_failure(
     input: &ResponsesInput,
     optional: &Object,

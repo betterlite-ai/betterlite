@@ -8,6 +8,7 @@ from litellm.integrations.custom_logger import CustomLogger
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.base_llm.anthropic_messages.transformation import BaseAnthropicMessagesConfig
 from litellm.llms.base_llm.responses.transformation import BaseResponsesAPIConfig
+from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
 from litellm.llms.custom_httpx.llm_http_handler import BaseLLMHTTPHandler
 from litellm.responses.streaming_iterator import BaseResponsesAPIStreamingIterator as StreamingBase
 from litellm.responses.streaming_iterator import MockResponsesAPIStreamingIterator as MockSynthetic
@@ -15,12 +16,20 @@ from litellm.types.llms.openai import ResponseCompletedEvent, ResponsesAPIRespon
 from litellm.types.router import GenericLiteLLMParams
 from litellm.types.utils import CallTypes
 from litellm.utils import ProviderConfigManager
+from openai.types.responses.response_input_param import ResponseInputParam
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 from typing_extensions import override
 
-from responses_compact_transport import Failure, INPUT, JSON, Mode, OBJECTS
-from responses_compact_transport import NULLABLE_OBJECTS, PROVIDER_ERROR, RESPONSES_API
-from responses_compact_transport import TransportEnvelope, TransportValue
+from responses_compact_transport import (
+    INPUT,
+    JSON,
+    NULLABLE_OBJECTS,
+    OBJECTS,
+    PROVIDER_ERROR,
+    RESPONSES_API,
+    Failure,
+    Mode,
+)
 
 StreamKind = Literal["live", "synthetic"]
 
@@ -35,8 +44,43 @@ CreateWork = (
     | Coroutine[object, object, ResponsesAPIResponse | StreamingBase]
 )
 
-SyncCreateCall = Callable[..., CreateWork]
-AsyncCreateCall = Callable[..., Coroutine[object, object, ResponsesAPIResponse | StreamingBase]]
+SyncCreateCall = Callable[
+    [
+        str,
+        str | ResponseInputParam,
+        BaseResponsesAPIConfig,
+        dict[str, object],
+        str,
+        GenericLiteLLMParams,
+        Logging,
+        dict[str, object] | None,
+        dict[str, object] | None,
+        float | None,
+        HTTPHandler | AsyncHTTPHandler | None,
+        bool,
+        bool,
+        dict[str, object] | None,
+    ],
+    CreateWork,
+]
+AsyncCreateCall = Callable[
+    [
+        str,
+        str | ResponseInputParam,
+        BaseResponsesAPIConfig,
+        dict[str, object],
+        str,
+        GenericLiteLLMParams,
+        Logging,
+        dict[str, object] | None,
+        dict[str, object] | None,
+        float | None,
+        HTTPHandler | AsyncHTTPHandler | None,
+        bool,
+        dict[str, object] | None,
+    ],
+    Coroutine[object, object, ResponsesAPIResponse | StreamingBase],
+]
 
 
 class Handlers(Protocol):
@@ -44,9 +88,7 @@ class Handlers(Protocol):
     def response_api_handler(self) -> SyncCreateCall: ...
 
     @property
-    def async_response_api_handler(  # ast-grep-ignore: no-long-names
-        self,
-    ) -> AsyncCreateCall: ...
+    def async_response_api_handler(self) -> AsyncCreateCall: ...
 
 
 HANDLER: Handlers = BaseLLMHTTPHandler()
@@ -94,6 +136,14 @@ class Outcome(BaseModel):
     stream: StreamView | None = None
 
 
+class CreateTransportValue(BaseModel):
+    value: Outcome
+
+
+class CreateTransportEnvelope(BaseModel):
+    responses_create_transport: CreateTransportValue
+
+
 # The sync handler's _run_sync_responses_pre_call_deployment_hook, over the case's patch
 class PatchHook(CustomLogger):
     patch: dict[str, JsonValue]
@@ -104,7 +154,6 @@ class PatchHook(CustomLogger):
     @override
     async def async_pre_call_deployment_hook(
         self,
-        # ast-grep-ignore: no-loose-types
         kwargs: dict[str, object],
         call_type: CallTypes | None,
     ) -> dict[str, JsonValue] | None:
@@ -121,7 +170,6 @@ class ScriptedAgentic(CustomLogger):
     @override
     async def async_should_run_agentic_loop(
         self,
-        # ast-grep-ignore: no-loose-types
         response: object,
         model: str,
         messages: list[dict[str, JsonValue]],
@@ -138,11 +186,8 @@ class ScriptedAgentic(CustomLogger):
         tools: dict[str, JsonValue],
         model: str,
         messages: list[dict[str, JsonValue]],
-        # ast-grep-ignore: no-loose-types
         response: object,
-        # ast-grep-ignore: no-long-names
         anthropic_messages_provider_config: BaseAnthropicMessagesConfig | None,
-        # ast-grep-ignore: no-long-names
         anthropic_messages_optional_request_params: dict[str, JsonValue],
         logging_obj: Logging,
         stream: bool,
@@ -189,33 +234,36 @@ def invoke(
     response_input = INPUT.validate_python(call.input)
     if call.mode == "sync":
         return HANDLER.response_api_handler(
-            model=call.model,
-            input=response_input,
-            responses_api_provider_config=config,
-            response_api_optional_request_params=optional_params,
-            custom_llm_provider="openai",
-            litellm_params=litellm_params,
-            logging_obj=logging_obj,
-            extra_headers=extra_headers,
-            extra_body=extra_body,
-            timeout=timeout,
-            fake_stream=fake_stream,
-            litellm_metadata=metadata,
+            call.model,
+            response_input,
+            config,
+            optional_params,
+            "openai",
+            litellm_params,
+            logging_obj,
+            extra_headers,
+            extra_body,
+            timeout,
+            None,
+            False,
+            fake_stream,
+            metadata,
         )
     return asyncio.run(
         HANDLER.async_response_api_handler(
-            model=call.model,
-            input=response_input,
-            responses_api_provider_config=config,
-            response_api_optional_request_params=optional_params,
-            custom_llm_provider="openai",
-            litellm_params=litellm_params,
-            logging_obj=logging_obj,
-            extra_headers=extra_headers,
-            extra_body=extra_body,
-            timeout=timeout,
-            fake_stream=fake_stream,
-            litellm_metadata=metadata,
+            call.model,
+            response_input,
+            config,
+            optional_params,
+            "openai",
+            litellm_params,
+            logging_obj,
+            extra_headers,
+            extra_body,
+            timeout,
+            None,
+            fake_stream,
+            metadata,
         )
     )
 
@@ -276,5 +324,7 @@ class CreateTransportRequest(BaseModel):
 
     def serialize(self, api_base: str) -> str:
         outcome = run_transport(self.responses_create_transport, api_base)
-        value = TransportValue(value=outcome)
-        return TransportEnvelope(responses_create_transport=value).model_dump_json(by_alias=True)
+        value = CreateTransportValue(value=outcome)
+        return CreateTransportEnvelope(responses_create_transport=value).model_dump_json(
+            by_alias=True
+        )

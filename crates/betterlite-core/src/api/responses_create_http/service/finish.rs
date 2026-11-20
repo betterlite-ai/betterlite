@@ -27,7 +27,7 @@ use crate::api::responses_stream_hooks::cache::{converted_stream_requested, valu
 use crate::api::vector_store_http_write::error::{header_text, status_facts};
 
 use super::super::config::CreateConfig;
-use super::super::error::{CreateError, Stage, provider_error};
+use super::super::error::{CreateError, Stage, provider_error, step};
 use super::hook::Applied;
 use super::{CreateOutcome, CreateSynthetic, LogContext, SentReply, StreamSetup};
 
@@ -73,6 +73,28 @@ where
     }
 }
 
+// Both reply paths reach transform_response_api_response with a status, headers and the text it reads
+fn transform_reply<C>(
+    config: &C,
+    status: u16,
+    headers: &IndexMap<String, String>,
+    text: &str,
+    log: &mut LogContext<'_, '_>,
+) -> Result<ResponsesReply, CreateError>
+where
+    C: CreateConfig,
+{
+    let raw = RawResponse {
+        status,
+        headers,
+        text,
+    };
+    step(
+        config.transform_response(&raw, log.state, log.env),
+        Stage::Response,
+    )
+}
+
 // The buffered reply reaches transform_response_api_response after the send catch, as the source does
 pub(super) fn transformed<C>(
     config: &C,
@@ -82,22 +104,12 @@ pub(super) fn transformed<C>(
 where
     C: CreateConfig,
 {
-    let headers = response_headers(&answer.headers);
     let text = from_utf8(&answer.body).map_err(|source| CreateError::Step {
         stage: Stage::Response,
         source: ConfigFailure::new(source),
     })?;
-    let raw = RawResponse {
-        status: answer.status,
-        headers: &headers,
-        text,
-    };
-    config
-        .transform_response(&raw, log.state, log.env)
-        .map_err(|source| CreateError::Step {
-            stage: Stage::Response,
-            source,
-        })
+    let headers = response_headers(&answer.headers);
+    transform_reply(config, answer.status, &headers, text, log)
 }
 
 // The mock iterator transforms a complete response again; only a typed response can become synthetic events
@@ -135,7 +147,19 @@ where
     if !converted_stream_requested(&kwargs) || value_is_set(kwargs.get("_agentic_loop_depth")) {
         return Ok(CreateOutcome::Value(result));
     }
-    wrap(config, applied, &result, log)
+    // _wrap_responses_response_as_fake_stream: no request_data, litellm_metadata or call_type here
+    let reply = transform_reply(config, 200, &IndexMap::new(), result.get(), log)?;
+    let response = typed(reply.response)?;
+    Ok(CreateOutcome::Synthetic(Box::new(CreateSynthetic {
+        setup: StreamSetup {
+            model: applied.model.clone(),
+            custom_llm_provider: applied.custom_llm_provider.clone(),
+            litellm_metadata: None,
+            request_data: None,
+            call_type: None,
+        },
+        response,
+    })))
 }
 
 // _call_agentic_completion_hooks: a non-null result replaces the initial response, a null one keeps it
@@ -169,41 +193,6 @@ where
         Some(AgenticResult::Stream(_)) => Err(CreateError::AgenticStream),
         None => Ok(initial),
     }
-}
-
-// _wrap_responses_response_as_fake_stream: no request_data, litellm_metadata or call_type here
-pub(super) fn wrap<C>(
-    config: &C,
-    applied: &Applied,
-    result: &RawValue,
-    log: &mut LogContext<'_, '_>,
-) -> Result<CreateOutcome, CreateError>
-where
-    C: CreateConfig,
-{
-    let headers = IndexMap::new();
-    let raw = RawResponse {
-        status: 200,
-        headers: &headers,
-        text: result.get(),
-    };
-    let reply = config
-        .transform_response(&raw, log.state, log.env)
-        .map_err(|source| CreateError::Step {
-            stage: Stage::Response,
-            source,
-        })?;
-    let response = typed(reply.response)?;
-    Ok(CreateOutcome::Synthetic(Box::new(CreateSynthetic {
-        setup: StreamSetup {
-            model: applied.model.clone(),
-            custom_llm_provider: applied.custom_llm_provider.clone(),
-            litellm_metadata: None,
-            request_data: None,
-            call_type: None,
-        },
-        response,
-    })))
 }
 
 #[derive(Serialize)]
