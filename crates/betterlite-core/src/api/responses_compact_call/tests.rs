@@ -214,7 +214,7 @@ async fn compact_timeout_and_residency() {
     let events = Events::new();
     let mut harness = Harness::new();
     let wire = Wire::new(&events);
-    wire.repeat(200, COMPACT_OK, 12);
+    wire.repeat(200, COMPACT_OK, 13);
     let source = Source::new(&wire);
     let resolver = ModelNames::default();
     let lookup = Registry;
@@ -348,6 +348,21 @@ async fn compact_timeout_and_residency() {
     assert_eq!(
         preliminary[preliminary.len() - 1].api_base,
         Some(String::from("https://eu.api.openai.com/v1"))
+    );
+
+    let resolved_before = resolver.seen().len();
+    let mut explicit = call("openai/gpt-4o", text_input("hello"));
+    explicit.custom_llm_provider = Some(String::from("openai"));
+    acompact_responses(&deps, &explicit, &mut log)
+        .await
+        .expect("the async call with an explicit provider succeeds");
+    let explicit_seen = resolver.seen();
+    assert_eq!(explicit_seen.len(), resolved_before + 1);
+    assert_eq!(
+        explicit_seen[resolved_before]
+            .custom_llm_provider
+            .as_deref(),
+        Some("openai")
     );
 
     let off_loop_before = events
