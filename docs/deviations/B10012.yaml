@@ -1,0 +1,24 @@
+task: B10012
+deviations:
+  - what: >-
+      get_all_agents_from_db returns typed AgentResponse values instead of the dicts LiteLLM's
+      Prisma find_many produces.
+    why: >-
+      LiteLLM's dicts are read only by the registry reload, which validates them into AgentResponse;
+      typed values replace that round trip.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L893-L918
+  - what: >-
+      The codec accepts a JSON string stored in a jsonb column (litellm_params, agent_card_params,
+      static_headers, kill_switch, mcp_tool_permissions) as well as an object.
+    why: >-
+      B4777 writes parsed jsonb values, and older rows can hold the string form; B4775's parsers
+      already accept both and the response JSON is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L893-L918
+  - what: >-
+      A NULL required_roles or required_scopes array on an identity row decodes as an empty list.
+    why: >-
+      LiteLLM's AgentIdentityBinding declares both as tuples with defaults, so a row holding SQL
+      NULL fails model_validate and _init_agents_in_db drops every DB agent after the exception.
+      The empty list keeps the agent loadable and is the only value the stored column can mean.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/agent_identity.py#L33-L46
+kept_bugs: []
