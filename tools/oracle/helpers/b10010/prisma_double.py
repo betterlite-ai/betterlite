@@ -32,8 +32,8 @@ class ModelsModule(ModuleType):
 
 
 def install_models() -> None:
-    models = ModelsModule(MODELS_MODULE)
-    sys.modules.setdefault(MODELS_MODULE, models)
+    if MODELS_MODULE not in sys.modules:
+        sys.modules[MODELS_MODULE] = ModelsModule(MODELS_MODULE)
 
 
 # the store imports prisma.models inside the call, and no client is generated here
