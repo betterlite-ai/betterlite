@@ -14,7 +14,8 @@ use tokio_postgres::types::ToSql;
 use crate::access_group_sync::fixtures::ScriptedCache;
 use crate::access_group_sync::key::postgres::PostgresKeyMembership;
 use crate::access_group_sync::key::{
-    KeyMembershipStatement, KeySyncError, MovedGroupRow, sync_key_access_groups,
+    KeyMembershipDatabase, KeyMembershipStatement, KeySyncError, MovedGroupRow,
+    sync_key_access_groups,
 };
 use crate::access_group_sync::team::{
     TeamSyncError, reconcile_team_access_groups, sync_team_access_groups,
@@ -321,6 +322,24 @@ pub(super) async fn commit_then_cache_failure(pool: &Pool) {
     assert_eq!(team_ids(pool, "g1").await, Some(vec!["t1".to_owned()]));
     assert_eq!(team_ids(pool, "g2").await, Some(Vec::new()));
     assert_eq!(team_ids(pool, "g4").await, Some(vec!["t1".to_owned()]));
+}
+
+pub(super) async fn concurrent_team_appends(pool: &Pool) {
+    insert_group(pool, "gc", Some(&[]), Some(&[])).await;
+    insert_team(pool, "ta", Some(&["gc".to_owned()])).await;
+    insert_team(pool, "tb", Some(&["gc".to_owned()])).await;
+    let store = PostgresStore {
+        pool: Some(pool.clone()),
+    };
+    let cache = ScriptedCache::new();
+    let left_sync = sync_team_access_groups(&store, &cache, "ta");
+    let right_sync = sync_team_access_groups(&store, &cache, "tb");
+    let (left, right) = tokio::join!(left_sync, right_sync);
+    left.unwrap();
+    right.unwrap();
+    let mut teams = team_ids(pool, "gc").await.unwrap();
+    teams.sort();
+    assert_eq!(teams, vec!["ta".to_owned(), "tb".to_owned()]);
 }
 
 pub(super) async fn retry_evicts_desired(pool: &Pool) {

@@ -486,6 +486,13 @@ async fn team_retry_invalidates_desired() {
 }
 
 #[tokio::test]
+async fn concurrent_team_appends() {
+    let (fixture, pool) = postgres::database().await;
+    postgres::concurrent_team_appends(&pool).await;
+    postgres::close(fixture, pool).await;
+}
+
+#[tokio::test]
 async fn post_commit_eviction_failure() {
     let (fixture, pool) = postgres::database().await;
     postgres::seed_groups(&pool).await;
