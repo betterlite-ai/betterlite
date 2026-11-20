@@ -134,7 +134,8 @@ where
         let azure = matches!(&call.provider, AssistantProviderCall::Azure(_));
         // the Azure API calls the supplied client's list() bare, so its entry never takes the async defaults
         let asynchronous = call.kind == ClientKind::Async && !azure;
-        let params = azure.then_some(UNPAGED).unwrap_or_default();
+        let sdk_defaults = ListParams::default();
+        let params = if azure { UNPAGED } else { sdk_defaults };
         let reply = match call.operation {
             AssistantOperation::List => AssistantReply::Page(
                 api.get_assistants(options.clone(), supplied, asynchronous, &params)
