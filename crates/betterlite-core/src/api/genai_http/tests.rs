@@ -942,6 +942,29 @@ async fn a_reply_the_provider_cannot_decode_is_returned_as_the_provider_error() 
 }
 
 #[tokio::test]
+async fn an_async_open_stream_for_a_call_that_did_not_stream_is_reported() {
+    let events = Events::new();
+    let wire = Wire::streaming("async", Reply::json(200, SSE), &events).always_streaming();
+    let source = Source::new(wire);
+    let config = TestConfig::new("https://gemini.test");
+    let deps = GenerateContentDeps {
+        config: &config,
+        source: &source,
+        supplied: None,
+        stream: StreamSettings::default(),
+    };
+    let contents = json(CONTENTS);
+    let generation = object(CONFIG);
+    let params = kwargs("{}");
+    let target = call(&contents, &generation, &params, false, None);
+    let mut fixture = Fixture::new("agenerate_content");
+
+    let outcome = fixture.async_call(events.clone(), &deps, &target).await;
+
+    assert!(matches!(outcome, Err(GenAiHttpError::UnexpectedStream)));
+}
+
+#[tokio::test]
 async fn an_open_stream_for_a_call_that_did_not_stream_is_reported() {
     let events = Events::new();
     let wire = Wire::streaming("sync", Reply::json(200, SSE), &events).always_streaming();
@@ -985,4 +1008,106 @@ async fn a_sync_stream_that_receives_an_open_stream_is_reported() {
     let outcome = fixture.sync_call(&deps, &target, &events).await;
 
     assert!(matches!(outcome, Err(GenAiHttpError::UnexpectedStream)));
+}
+
+#[tokio::test]
+async fn a_400_reply_is_a_provider_error() {
+    let events = Events::new();
+    let wire = Wire::replying("sync", Reply::json(400, ERROR_BODY), &events);
+    let source = Source::new(wire);
+    let config = TestConfig::new("https://gemini.test");
+    let deps = GenerateContentDeps {
+        config: &config,
+        source: &source,
+        supplied: None,
+        stream: StreamSettings::default(),
+    };
+    let contents = json(CONTENTS);
+    let generation = object(CONFIG);
+    let params = kwargs("{}");
+    let target = call(&contents, &generation, &params, false, None);
+    let mut fixture = Fixture::new("generate_content");
+
+    let outcome = fixture.sync_call(&deps, &target, &events).await;
+
+    let Err(GenAiHttpError::Provider(error)) = outcome else {
+        panic!("the smallest error status is a provider error");
+    };
+    assert_eq!(error.status_code, 400);
+    assert!(!error.status_code_is_synthesized);
+    assert_eq!(error.message, ERROR_BODY);
+}
+
+#[rstest]
+#[case::client_error("400 Bad Request", 400_u16)]
+#[case::server_error("500 Internal Server Error", 500_u16)]
+#[tokio::test]
+async fn a_streaming_call_with_an_error_reply_reports_the_provider_error(
+    #[case] status: &str,
+    #[case] code: u16,
+) {
+    let serving = serve(
+        reply(status, &[("content-type", "application/json")], ERROR_BODY),
+        Duration::ZERO,
+    )
+    .expect("the fixture serves");
+    let source = ProxiedSource::new(IMPATIENT);
+    let config = TestConfig::new(&format!("http://{}", serving.address));
+    let deps = GenerateContentDeps {
+        config: &config,
+        source: &source,
+        supplied: None,
+        stream: StreamSettings::default(),
+    };
+    let contents = json(CONTENTS);
+    let generation = object(CONFIG);
+    let params = kwargs("{}");
+    let target = call(&contents, &generation, &params, true, None);
+    let mut fixture = Fixture::new("generate_content");
+
+    let outcome = fixture.sync_call(&deps, &target, &Events::new()).await;
+
+    let Err(GenAiHttpError::Provider(error)) = outcome else {
+        panic!("an error status is a provider error even when the call streams");
+    };
+    assert_eq!(error.status_code, code);
+    assert_eq!(error.message, ERROR_BODY);
+}
+
+#[tokio::test]
+async fn a_request_header_that_is_not_a_header_name_is_reported() {
+    let events = Events::new();
+    let wire = Wire::replying("sync", Reply::json(200, REPLY), &events);
+    let source = Source::new(wire);
+    let config = TestConfig::new("https://gemini.test");
+    let deps = GenerateContentDeps {
+        config: &config,
+        source: &source,
+        supplied: None,
+        stream: StreamSettings::default(),
+    };
+    let contents = json(CONTENTS);
+    let generation = object(CONFIG);
+    let params = kwargs("{}");
+    let mut headers = IndexMap::new();
+    headers.insert("bad name".to_owned(), "value".to_owned());
+    let mut target = call(&contents, &generation, &params, false, None);
+    target.extra_headers = Some(&headers);
+    let mut fixture = Fixture::new("generate_content");
+
+    let outcome = fixture.sync_call(&deps, &target, &events).await;
+
+    let Err(GenAiHttpError::Provider(error)) = outcome else {
+        panic!("a header the wire cannot carry is a provider error");
+    };
+    assert_eq!(error.status_code, 500);
+    assert!(error.status_code_is_synthesized);
+    assert!(
+        error
+            .message
+            .starts_with("the bad name header name is not a header name"),
+        "the offending header is named: {}",
+        error.message
+    );
+    assert_eq!(events.recorded(), vec!["log".to_owned()]);
 }
