@@ -241,7 +241,7 @@ async fn assert_stored_rows(pool: &Pool) {
             None,
             Some(Vec::new()),
             Some(expected(&["old", "new"])),
-            Some(expected(&["x", "x"])),
+            Some(expected(&["x"])),
             Some(Vec::new()),
             Some(expected(&["new2", "x", "new2"])),
             Some(expected(&["new2"])),
