@@ -203,11 +203,8 @@ where
 // effective_baseline_info == selected_model_info, with nested values conservatively unequal.
 #[must_use]
 pub fn same_prices(left: Option<&ModelInfo>, right: Option<&ModelInfo>) -> bool {
-    if left.is_none() && right.is_none() {
-        return true;
-    }
     let (Some(first), Some(second)) = (left, right) else {
-        return false;
+        return left.is_none() && right.is_none();
     };
     first.len() == second.len()
         && first.iter().all(|(key, value)| {
