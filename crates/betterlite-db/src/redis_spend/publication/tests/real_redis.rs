@@ -30,7 +30,7 @@ async fn publication_appends_each_cohort_to_its_real_redis_list() {
         cache: Arc::clone(&cache),
     });
     let events = Arc::new(RecordingEvents::default());
-    let sink: Arc<dyn RedisBufferEventSink> = Arc::clone(&events);
+    let sink: Arc<dyn RedisBufferEventSink> = Arc::<RecordingEvents>::clone(&events);
     let publisher = RedisSpendPublisher {
         lists: Some(lists),
         events: sink,

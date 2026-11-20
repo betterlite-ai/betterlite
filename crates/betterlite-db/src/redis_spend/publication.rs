@@ -191,18 +191,27 @@ fn encode_cohorts(
     cohorts: &DrainedCohorts,
 ) -> Result<(Vec<BufferPush>, Vec<SpendBufferQueue>), SpendPublishError> {
     let entity = safe_dumps(&cohorts.entity).map_err(SpendPublishError::Encode)?;
-    let mut operations = vec![buffer_push(SpendBufferQueue::Entity, entity)];
+    let mut operations = vec![BufferPush {
+        key: SpendBufferQueue::Entity.names().key.to_owned(),
+        values: vec![entity],
+    }];
     let mut queues = vec![SpendBufferQueue::Entity];
     for (queue, daily) in daily_cohorts(cohorts) {
         if daily.is_empty() {
             continue;
         }
         let encoded = safe_dumps(daily).map_err(SpendPublishError::Encode)?;
-        operations.push(buffer_push(queue, encoded));
+        operations.push(BufferPush {
+            key: queue.names().key.to_owned(),
+            values: vec![encoded],
+        });
         queues.push(queue);
     }
     if let Some(encoded) = encode_window(&cohorts.window).map_err(SpendPublishError::Encode)? {
-        operations.push(buffer_push(SpendBufferQueue::Window, encoded));
+        operations.push(BufferPush {
+            key: SpendBufferQueue::Window.names().key.to_owned(),
+            values: vec![encoded],
+        });
         queues.push(SpendBufferQueue::Window);
     }
     Ok((operations, queues))
@@ -217,14 +226,6 @@ const fn daily_cohorts(cohorts: &DrainedCohorts) -> [(SpendBufferQueue, &DailySp
         (SpendBufferQueue::DailyEndUser, &cohorts.daily_end_user),
         (SpendBufferQueue::DailyAgent, &cohorts.daily_agent),
     ]
-}
-
-// One encoded cohort as the single-value append the source builds.
-fn buffer_push(queue: SpendBufferQueue, encoded: String) -> BufferPush {
-    BufferPush {
-        key: queue.names().key.to_owned(),
-        values: vec![encoded],
-    }
 }
 
 // Window tuples go to Redis wearing B1734's wire payload; an empty cohort has nothing to append.

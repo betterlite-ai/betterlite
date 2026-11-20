@@ -213,7 +213,7 @@ impl SpendBufferPush for FakeLists {
         key: &'call str,
         values: &'call [String],
     ) -> SpendListFuture<'call, i64> {
-        Box::pin(async move { single_push(&mut self.lock(), key, values, self.single_length) })
+        Box::pin(async move { single_push(&mut self.lock(), key, values) })
     }
 
     fn rpush_pipeline<'call>(
@@ -242,13 +242,12 @@ fn single_push(
     state: &mut State,
     key: &str,
     values: &[String],
-    length: i64,
 ) -> Result<i64, SpendBufferListError> {
     if state.failure == Failure::Push {
         return Err(list_failure("async_rpush"));
     }
     state.singles.push((key.to_owned(), values.to_vec()));
-    Ok(length)
+    Ok(state.single_length)
 }
 
 fn pipeline_result(state: &mut State) -> Result<Vec<i64>, SpendBufferListError> {
@@ -372,7 +371,7 @@ pub(crate) fn publisher_recording(
     let events = Arc::new(RecordingEvents::default());
     let owned: Arc<FakeLists> = Arc::clone(lists);
     let port: Arc<dyn SpendBufferPush> = owned;
-    let sink: Arc<dyn RedisBufferEventSink> = Arc::clone(&events);
+    let sink: Arc<dyn RedisBufferEventSink> = Arc::<RecordingEvents>::clone(&events);
     let publisher = RedisSpendPublisher {
         lists: Some(port),
         events: sink,
