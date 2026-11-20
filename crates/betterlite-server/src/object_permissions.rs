@@ -7,10 +7,6 @@ pub mod prepare;
 pub mod update;
 
 mod store;
-
-#[cfg(test)]
-mod fixtures;
-#[cfg(test)]
 mod tests;
 
 use betterlite_db::budget_permission_rows::JsonData;

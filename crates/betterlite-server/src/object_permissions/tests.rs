@@ -1,3 +1,7 @@
+#![cfg(test)]
+
+mod fixtures;
+
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
@@ -11,15 +15,15 @@ use betterlite_mcp::server_record::MCPServer;
 use rstest::rstest;
 use uuid::Uuid;
 
+use self::fixtures::database::TestDatabase;
+use self::fixtures::fakes::RecordingEndpoint;
+use self::fixtures::fakes::RecordingEviction;
+use self::fixtures::fakes::wait_for_publishes;
 use super::attach::attach_object_permission_to_dict;
 use super::cache::invalidate_cached_object_permissions;
 use super::decode_object_permission;
 use super::entries::mcp_tool_permission_entries;
 use super::error::ObjectPermissionError;
-use super::fixtures::database::TestDatabase;
-use super::fixtures::fakes::RecordingEndpoint;
-use super::fixtures::fakes::RecordingEviction;
-use super::fixtures::fakes::wait_for_publishes;
 use super::prepare::non_null_fields;
 use super::prepare::prepare_object_permission_upsert;
 use super::update::handle_update_object_permission_common;
