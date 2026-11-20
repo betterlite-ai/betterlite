@@ -10,7 +10,7 @@ pub enum DirectExecutor<'executor> {
 }
 
 // B1059's query_embedding_executor over the request metadata: the supplied executor wins, else the router one, else direct
-pub trait EmbeddingExecutorSource {
+pub trait EmbeddingExecutorSource: Send + Sync {
     fn select<'selection>(
         &'selection self,
         supplied: Option<&'selection dyn QueryEmbeddingExecutor>,
@@ -24,6 +24,7 @@ pub enum SelectedExecutor<'selection> {
 }
 
 impl SelectedExecutor<'_> {
+    #[must_use]
     pub fn as_executor(&self) -> &dyn QueryEmbeddingExecutor {
         match self {
             Self::Supplied(executor) => *executor,

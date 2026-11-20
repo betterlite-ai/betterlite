@@ -48,13 +48,13 @@ pub fn entry_from_flag(kwargs: &Params, flag: &'static str) -> Entry {
 }
 
 // B1058: the declared keys whose values are not null, then the provider config's map_params for a search
-pub trait OptionalParamFilters {
+pub trait OptionalParamFilters: Send + Sync {
     fn create_params(&self, params: &Params) -> Params;
     fn search_params(&self, params: &Params, tag: VectorStoresConfigTag) -> Params;
 }
 
 // The provider configs B010 selected, which the caller builds for the tags it serves
-pub trait VectorStoreConfigs {
+pub trait VectorStoreConfigs: Send + Sync {
     fn create_config(&self, tag: VectorStoresConfigTag) -> Option<Box<dyn CreateReadConfig + '_>>;
     fn search_config(&self, tag: VectorStoresConfigTag) -> Option<Arc<dyn SearchConfig>>;
 }

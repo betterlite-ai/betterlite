@@ -150,7 +150,7 @@ fn create_params(filtered: &Params) -> Result<CreateParams, VectorStoreSearchErr
         expected: "the five declared create fields",
     };
     let value = serde_json::to_value(filtered)?;
-    serde_json::from_value(value).map_err(|_| invalid)
+    serde_json::from_value(value).map_err(|_unexpected| invalid)
 }
 
 fn flag(kwargs: &Params, field: &'static str) -> Result<Option<bool>, VectorStoreSearchError> {
@@ -194,7 +194,7 @@ fn log_create(
     log_update(
         state,
         kwargs,
-        litellm_params,
+        &litellm_params,
         CallUpdate {
             model: None,
             user: None,

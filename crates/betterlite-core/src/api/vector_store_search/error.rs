@@ -1,3 +1,5 @@
+use std::time::TryFromFloatSecsError;
+
 use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
 use betterlite_error::envelope::WireField;
 use betterlite_error::error::ErrorClass;
@@ -44,16 +46,29 @@ pub enum VectorStoreSearchError {
     #[error(transparent)]
     Logging(#[from] LoggingStateError),
     #[error("the timeout is not a number of seconds")]
-    Timeout(#[source] std::time::TryFromFloatSecsError),
+    Timeout(#[source] TryFromFloatSecsError),
     #[error(transparent)]
     Encode(#[from] serde_json::Error),
+}
+
+// What a caller sees: the SDK exception exception_type builds, or the bare TypeError raised before its try block
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SdkRaise {
+    Exception(SdkFailure),
+    TypeError(TypeFailure),
+}
+
+// _direct_vector_store_embedding_executor raises this before the try, so the client decorator re-raises it unchanged: no status, type, param or code
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeFailure {
+    pub message: String,
 }
 
 // The exception the SDK raises: its class, status and the type/param/code attributes it carries
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SdkFailure {
     pub class: String,
-    pub status: Option<u16>,
+    pub status: u16,
     pub kind: WireField,
     pub param: WireField,
     pub code: WireField,
@@ -62,7 +77,13 @@ pub struct SdkFailure {
 
 // LiteLLM's exception_type(model=None, custom_llm_provider=..., original_exception=...)
 #[must_use]
-pub fn failure(error: &VectorStoreSearchError, redactor: &Redactor) -> SdkFailure {
+pub fn failure(error: &VectorStoreSearchError, redactor: &Redactor) -> SdkRaise {
+    // the direct executor check runs before the try block, so its TypeError never reaches exception_type
+    if matches!(error, VectorStoreSearchError::InvalidEmbeddingExecutor) {
+        return SdkRaise::TypeError(TypeFailure {
+            message: error.to_string(),
+        });
+    }
     let (provider, status, class, message) = raised(error);
     let projected = dispatch(
         &DispatchInput::Raw(Box::new(RawException {
@@ -78,16 +99,16 @@ pub fn failure(error: &VectorStoreSearchError, redactor: &Redactor) -> SdkFailur
         redactor,
     );
     let metadata = projected.metadata();
-    SdkFailure {
+    SdkRaise::Exception(SdkFailure {
         class: class_name(&projected).to_owned(),
-        status: Some(metadata.status_code),
+        status: metadata.status_code,
         kind: metadata.error_type,
         param: metadata.param,
         code: metadata
             .openai_code
             .map_or(WireField::Null, WireField::Text),
         message,
-    }
+    })
 }
 
 // The provider, its status, the exception class exception_type saw and the text it mapped
@@ -117,14 +138,14 @@ fn raised(error: &VectorStoreSearchError) -> (&str, Option<u16>, String, String)
     (provider, status, class, error.to_string())
 }
 
-fn search_status(source: &SearchError) -> Option<u16> {
+const fn search_status(source: &SearchError) -> Option<u16> {
     if let SearchError::Provider(exception) = source {
         return Some(exception.status_code);
     }
     None
 }
 
-fn create_status(source: &CreateReadError) -> Option<u16> {
+const fn create_status(source: &CreateReadError) -> Option<u16> {
     match source {
         CreateReadError::Write(WriteError::Provider(exception)) => Some(exception.status_code),
         CreateReadError::Write(

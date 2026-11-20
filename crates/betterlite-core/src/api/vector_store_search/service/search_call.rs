@@ -192,7 +192,7 @@ fn log_search(
     log_update(
         state,
         kwargs,
-        litellm_params,
+        &litellm_params,
         CallUpdate {
             model: resolved.api_type.clone(),
             user: None,

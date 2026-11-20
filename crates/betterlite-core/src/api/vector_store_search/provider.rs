@@ -23,16 +23,15 @@ pub fn resolve_provider(
     custom_llm_provider: Option<&str>,
 ) -> Result<ResolvedProvider, VectorStoreSearchError> {
     let requested = custom_llm_provider.unwrap_or("openai");
-    let (provider, api_type) = match requested.split_once('/') {
-        Some(_) => prefixed(requested)?,
-        None => {
-            let parsed = requested.parse::<ProviderId>().map_err(|_| {
-                VectorStoreSearchError::InvalidProvider {
-                    name: requested.to_owned(),
-                }
-            })?;
-            (parsed, None)
-        }
+    let (provider, api_type) = if requested.contains('/') {
+        prefixed(requested)?
+    } else {
+        let parsed = requested.parse::<ProviderId>().map_err(|_unparsed| {
+            VectorStoreSearchError::InvalidProvider {
+                name: requested.to_owned(),
+            }
+        })?;
+        (parsed, None)
     };
     let tag = select_vector_stores_config(provider, api_type.as_deref()).ok_or_else(|| {
         VectorStoreSearchError::Unsupported {

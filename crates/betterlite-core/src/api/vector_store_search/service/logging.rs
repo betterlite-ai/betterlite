@@ -9,10 +9,10 @@ use crate::api::vector_store_search::error::VectorStoreSearchError;
 pub(super) fn log_update(
     state: &mut LoggingState,
     kwargs: &Params,
-    litellm_params: IndexMap<String, Json>,
+    litellm_params: &IndexMap<String, Json>,
     update: CallUpdate,
 ) -> Result<(), VectorStoreSearchError> {
-    update_from_kwargs(state, &as_index_map(kwargs), Some(&litellm_params), update)?;
+    update_from_kwargs(state, &as_index_map(kwargs), Some(litellm_params), update)?;
     Ok(())
 }
 
