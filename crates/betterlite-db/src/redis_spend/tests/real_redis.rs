@@ -17,7 +17,6 @@ use redis::aio::MultiplexedConnection;
 use redis::{Client, cmd};
 
 use crate::daily_spend_sql::values::SpendColumnValue;
-use crate::queues::test_support::captured_logs;
 use crate::redis_spend::buffer::{RedisSpendError, RedisUpdateBuffer, SpendBufferPipeline};
 use crate::redis_spend::events::NoRedisBufferEventSink;
 use crate::redis_spend::keys::{
@@ -27,7 +26,7 @@ use crate::redis_spend::keys::{
 use crate::redis_spend::lists::{RedisSpendLists, SpendBufferLists};
 use crate::redis_spend::log_row::{SpendLogRow, SpendLogValue};
 
-use super::support::{amount, decoded_row, transactions};
+use super::support::{amount, captured_logs, decoded_row, transactions};
 
 const CACHE_TTL_SECONDS: i64 = 60;
 const SEEDED_ROWS: i64 = 100_000;
@@ -141,6 +140,23 @@ async fn lengths(connection: &mut MultiplexedConnection, keys: &[&str]) -> Vec<i
     measured
 }
 
+async fn seed_pipeline_queues(connection: &mut MultiplexedConnection) {
+    push(
+        connection,
+        REDIS_UPDATE_BUFFER_KEY,
+        &[r#"{"user_list_transactions":{"user-1":1.5}}"#.to_owned()],
+    )
+    .await;
+    push(connection, REDIS_DAILY_USER_BUFFER_KEY, &[daily_payload(1)]).await;
+    push(
+        connection,
+        REDIS_WINDOW_BUFFER_KEY,
+        &[r#"[{"entity_type":"key","entity_id":"key-1","window_duration":"1h","window_start":"2024-01-01T00:00:00+00:00","spend":2.5}]"#.to_owned()],
+    )
+    .await;
+    push(connection, REDIS_DAILY_TAG_BUFFER_KEY, &[daily_payload(1)]).await;
+}
+
 #[tokio::test]
 async fn parking_then_draining_takes_the_rows_out_of_redis() {
     let fixture = RedisFixture::start().await.unwrap();
@@ -201,30 +217,7 @@ async fn the_pipeline_pops_every_queue_and_leaves_the_daily_tag_queue() {
     let cache = cache_for(&fixture).await;
     let buffer = buffer(&cache);
     let mut connection = raw(&fixture).await;
-    push(
-        &mut connection,
-        REDIS_UPDATE_BUFFER_KEY,
-        &[r#"{"user_list_transactions":{"user-1":1.5}}"#.to_owned()],
-    )
-    .await;
-    push(
-        &mut connection,
-        REDIS_DAILY_USER_BUFFER_KEY,
-        &[daily_payload(1)],
-    )
-    .await;
-    push(
-        &mut connection,
-        REDIS_WINDOW_BUFFER_KEY,
-        &[r#"[{"entity_type":"key","entity_id":"key-1","window_duration":"1h","window_start":"2024-01-01T00:00:00+00:00","spend":2.5}]"#.to_owned()],
-    )
-    .await;
-    push(
-        &mut connection,
-        REDIS_DAILY_TAG_BUFFER_KEY,
-        &[daily_payload(1)],
-    )
-    .await;
+    seed_pipeline_queues(&mut connection).await;
     let pipeline = buffer.drain_pipeline().await.unwrap();
     assert_eq!(pipeline.entity, Some(transactions(&[("user-1", "1.5")])));
     let window = pipeline.window.unwrap();

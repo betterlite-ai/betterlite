@@ -4,9 +4,9 @@ use serde_json::Error as JsonError;
 use serde_json::value::RawValue;
 
 use crate::spend_queues::SpendQueueError;
-use crate::spend_queues::daily::{DailySpendUpdate, aggregate_daily_rows};
+use crate::spend_queues::daily::DailySpendUpdate;
 use crate::spend_queues::entity::{SpendAmount, SpendUpdateTransactions};
-use crate::window_queue::{WindowQueueError, WindowSpendTransaction, aggregate_window_spend};
+use crate::window_queue::{WindowQueueError, WindowSpendTransaction};
 
 use super::log_row::{SpendLogError, SpendLogRow, decode_spend_log_row};
 

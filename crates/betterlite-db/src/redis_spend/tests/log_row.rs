@@ -51,7 +51,7 @@ fn a_nul_inside_a_text_survives_the_round_trip() {
     assert_eq!(row["messages"], SpendLogValue::Text("a\0b".to_owned()));
     let parked = serde_json::to_string(&row).unwrap();
     assert!(
-        parked.contains(r#"\u0000"#),
+        parked.contains(r"\u0000"),
         "the encoder stripped the nul: {parked}"
     );
     let reread = decode_spend_log_row(parked.as_bytes()).unwrap().unwrap();

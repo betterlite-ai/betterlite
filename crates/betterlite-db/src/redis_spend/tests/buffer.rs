@@ -3,7 +3,6 @@ use std::sync::Arc;
 use rust_decimal::Decimal;
 
 use crate::daily_spend_sql::values::SpendColumnValue;
-use crate::queues::test_support::captured_logs;
 use crate::redis_spend::buffer::{RedisSpendError, SpendBufferPipeline};
 use crate::redis_spend::codec::decode_log_record;
 use crate::redis_spend::events::{
@@ -20,8 +19,8 @@ use crate::spend_queues::daily::DailySpendUpdate;
 use crate::window_queue::WindowSpendTransaction;
 
 use super::support::{
-    FakeLists, RecordingEvents, amount, attached, buffer_with_sink, bytes, decoded_row, detached,
-    transactions,
+    FakeLists, RecordingEvents, amount, attached, buffer_with_sink, bytes, captured_logs,
+    decoded_row, detached, transactions,
 };
 
 fn dec(value: &str) -> Decimal {
@@ -249,7 +248,7 @@ async fn parking_pushes_the_encoded_rows_to_the_capped_key() {
     assert_eq!(pushed[0].key, REDIS_SPEND_LOGS_BUFFER_KEY);
     assert_eq!(pushed[0].max_len, REDIS_SPEND_LOGS_MAX_ROWS);
     assert!(
-        pushed[0].values[0].contains(r#"\u0000"#),
+        pushed[0].values[0].contains(r"\u0000"),
         "the encoder stripped the nul: {}",
         pushed[0].values[0]
     );
@@ -367,7 +366,8 @@ async fn a_detached_buffer_drains_nothing() {
 #[test]
 fn the_queue_size_event_keeps_the_source_label_and_gauge_values() {
     let events = Arc::new(RecordingEvents::default());
-    let sink: Arc<dyn RedisBufferEventSink> = Arc::clone(&events);
+    let recorded: Arc<RecordingEvents> = Arc::clone(&events);
+    let sink: Arc<dyn RedisBufferEventSink> = recorded;
     let buffer = buffer_with_sink(sink);
     buffer.events.emit_queue_size(SpendBufferQueue::Window, 12);
     assert_eq!(

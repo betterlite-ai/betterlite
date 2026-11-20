@@ -1,8 +1,13 @@
 use std::collections::{BTreeMap, VecDeque};
+use std::io::{self, Write};
+use std::str::from_utf8;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use betterlite_redis::list_operations::error::RedisListOperationsError;
 use rust_decimal::Decimal;
+use tracing::subscriber::DefaultGuard;
+use tracing_subscriber::fmt::MakeWriter;
+use tracing_subscriber::util::SubscriberInitExt as _;
 
 use crate::redis_spend::buffer::RedisUpdateBuffer;
 use crate::redis_spend::codec::decode_log_record;
@@ -160,8 +165,55 @@ impl RedisBufferEventSink for RecordingEvents {
     }
 }
 
+#[derive(Clone, Default)]
+pub(super) struct CapturedLogs(Arc<Mutex<String>>);
+
+impl CapturedLogs {
+    pub(super) fn text(&self) -> String {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
+impl Write for CapturedLogs {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        let text =
+            from_utf8(buffer).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push_str(text);
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl MakeWriter<'_> for CapturedLogs {
+    type Writer = Self;
+
+    fn make_writer(&self) -> Self::Writer {
+        self.clone()
+    }
+}
+
+pub(super) fn captured_logs() -> (CapturedLogs, DefaultGuard) {
+    let logs = CapturedLogs::default();
+    let guard = tracing_subscriber::fmt()
+        .with_writer(logs.clone())
+        .with_ansi(false)
+        .with_max_level(tracing::Level::TRACE)
+        .set_default();
+    (logs, guard)
+}
+
 pub(super) fn attached(lists: &Arc<FakeLists>) -> RedisUpdateBuffer {
-    let port: Arc<dyn SpendBufferLists> = Arc::clone(lists);
+    let owned: Arc<FakeLists> = Arc::clone(lists);
+    let port: Arc<dyn SpendBufferLists> = owned;
     RedisUpdateBuffer {
         lists: Some(port),
         enabled: true,
