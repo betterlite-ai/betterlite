@@ -133,6 +133,15 @@ fn rejects_a_ttl_that_is_not_a_number() {
 }
 
 #[test]
+fn rejects_a_negative_ttl() {
+    let error = load_with(&format!("{TTL}-5\n"), &[]).unwrap_err();
+    assert!(matches!(
+        error,
+        ConfigError::InvalidScalar { path, .. } if path == TTL_PATH
+    ));
+}
+
+#[test]
 fn reads_an_environment_reference() {
     let settings = load_with(
         &format!("{MAX_SERIES}os.environ/MAX_SERIES\n"),

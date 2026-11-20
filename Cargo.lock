@@ -3238,6 +3238,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-oracle-helper-api",
  "betterlite-oracle-runner",
+ "betterlite-prometheus",
  "betterlite-prompts",
  "betterlite-provider",
  "betterlite-redact",
