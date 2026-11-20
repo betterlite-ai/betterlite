@@ -14,7 +14,9 @@ use betterlite_core::rag::ingestion::config::IngestionOptions;
 use betterlite_core::rag::ingestion::store::{RagStore as _, StoreRequest, StoreResult};
 use betterlite_core::rag::vertex_ingestion::VertexIngestion;
 use betterlite_core::rag::vertex_ingestion::error::VertexIngestionError;
-use betterlite_core::rag::vertex_ingestion::ports::VertexIngestionPorts;
+use betterlite_core::rag::vertex_ingestion::ports::{
+    VertexIngestionPorts, VertexRagHttp, VertexTokenPort,
+};
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde_json::{Value, json};
@@ -33,7 +35,11 @@ impl Helper for Op {
         let content = file_content(&input.file).map_err(invalid_input)?;
         let token = Arc::new(ScriptedToken::default());
         let http = Arc::new(ScriptedHttp::new(replies(input)));
-        let ingestion = vertex_ingestion(input, &token, &http).map_err(invalid_input)?;
+        let token_handle: Arc<ScriptedToken> = Arc::clone(&token);
+        let token_port: Arc<dyn VertexTokenPort> = token_handle;
+        let http_handle: Arc<ScriptedHttp> = Arc::clone(&http);
+        let http_port: Arc<dyn VertexRagHttp> = http_handle;
+        let ingestion = vertex_ingestion(input, token_port, http_port).map_err(invalid_input)?;
         let runtime = Builder::new_current_thread()
             .enable_time()
             .start_paused(true)
@@ -66,8 +72,8 @@ fn file_content(file: &FileInput) -> Result<Option<Vec<u8>>, String> {
 // LiteLLM reads the same object twice: once as ingest options and once as the vector store config
 fn vertex_ingestion(
     input: &Input,
-    token: &Arc<ScriptedToken>,
-    http: &Arc<ScriptedHttp>,
+    token: Arc<dyn VertexTokenPort>,
+    http: Arc<dyn VertexRagHttp>,
 ) -> Result<VertexIngestion, String> {
     let options: IngestionOptions =
         serde_json::from_value(input.options.clone()).map_err(|error| error.to_string())?;
@@ -89,10 +95,7 @@ fn vertex_ingestion(
         state,
         store_options,
         &VertexSettings::default(),
-        VertexIngestionPorts {
-            token: Arc::clone(token),
-            http: Arc::clone(http),
-        },
+        VertexIngestionPorts { token, http },
     ))
 }
 
