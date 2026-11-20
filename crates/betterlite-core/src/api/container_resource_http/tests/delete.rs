@@ -246,6 +246,26 @@ fn delete_raises_a_redirect_status_before_decoding() {
 }
 
 #[test]
+fn delete_decodes_the_last_status_inside_2xx() {
+    let fixture = Fixture::new();
+    fixture.source.answer(reply(299, DELETED_JSON));
+    let call = fixture.call();
+    assert_eq!(run_delete(&fixture, &call), deleted_container());
+    assert!(fixture.config.errors().is_empty());
+}
+
+#[test]
+fn delete_raises_the_first_status_outside_2xx() {
+    let fixture = Fixture::new();
+    fixture.source.answer(reply(300, DELETED_JSON));
+    let call = fixture.call();
+    let (exception, synthesized) = provider_error(delete_error(&fixture, &call));
+    assert!(!synthesized);
+    assert_eq!(exception.status_code, 300);
+    assert_eq!(exception.message, DELETED_JSON);
+}
+
+#[test]
 fn delete_reports_a_body_that_does_not_decode() {
     let fixture = Fixture::new();
     fixture.source.answer(reply(200, "not json"));
