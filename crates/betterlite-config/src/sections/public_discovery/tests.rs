@@ -87,6 +87,11 @@ fn mcp_hub_strict_whitelist_absent_null_and_false(#[case] source: &str, #[case] 
     &[(BLOG_POSTS_URL_ENV, "https://env.test/rss.xml")],
     "https://env.test/rss.xml"
 )]
+#[case::empty_configured_key(
+    "litellm_settings:\n  blog_posts_url: \"\"\n",
+    &[(BLOG_POSTS_URL_ENV, "https://env.test/rss.xml")],
+    ""
+)]
 #[case::configured_key(
     "litellm_settings:\n  blog_posts_url: https://config.test/rss.xml\n",
     &[],
