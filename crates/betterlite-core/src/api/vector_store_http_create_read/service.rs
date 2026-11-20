@@ -24,7 +24,7 @@ use super::error::CreateReadError;
 use crate::api::vector_store_http_write::config::{WriteConfig, WriteParams};
 use crate::api::vector_store_http_write::error::{WriteError, handle_error};
 use crate::api::vector_store_http_write::service::{
-    ClientKind, ClientSource, LogContext, SuppliedClient, WriteRequest, WriteTransport,
+    ClientKind, ClientSource, LogContext, SuppliedClient, WriteRequest, WriteTransport as _,
 };
 
 mod facts;
@@ -156,10 +156,13 @@ where
     })
 }
 
+// The complete base URL, the URL to call and, for a create, the body it sends
+type Endpoint = (String, Url, Option<IndexMap<String, Json>>);
+
 fn endpoint(
     provider: &dyn WriteConfig,
     call: &CreateReadCall<'_>,
-) -> Result<(String, Url, Option<IndexMap<String, Json>>), CreateReadError> {
+) -> Result<Endpoint, CreateReadError> {
     match call {
         CreateReadCall::Create(create) => {
             let (api_base, url, body) = create_endpoint(provider, create)?;

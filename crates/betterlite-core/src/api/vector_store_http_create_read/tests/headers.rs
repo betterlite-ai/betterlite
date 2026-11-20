@@ -130,20 +130,35 @@ async fn case_variant_caller_headers_keep_both_values() {
     )
     .await
     .expect("the retrieve succeeds");
-    let requests = wire.requests();
-    let authorization: Vec<&str> = requests[0]
-        .headers
-        .get_all("authorization")
-        .iter()
-        .map(|value| value.to_str().expect("the header value is ASCII"))
-        .collect();
+    let authorization: Vec<String> = {
+        let requests = wire.requests();
+        requests[0]
+            .headers
+            .get_all("authorization")
+            .iter()
+            .map(|value| {
+                value
+                    .to_str()
+                    .expect("the header value is ASCII")
+                    .to_owned()
+            })
+            .collect()
+    };
     assert_eq!(authorization, vec!["Bearer caller", "Bearer sk-p"]);
-    let beta: Vec<&str> = requests[0]
-        .headers
-        .get_all("openai-beta")
-        .iter()
-        .map(|value| value.to_str().expect("the header value is ASCII"))
-        .collect();
+    let beta: Vec<String> = {
+        let requests = wire.requests();
+        requests[0]
+            .headers
+            .get_all("openai-beta")
+            .iter()
+            .map(|value| {
+                value
+                    .to_str()
+                    .expect("the header value is ASCII")
+                    .to_owned()
+            })
+            .collect()
+    };
     assert_eq!(beta, vec!["x", "assistants=v2"]);
 }
 
@@ -180,10 +195,20 @@ async fn absent_and_empty_headers_use_the_provider_defaults() {
     )
     .await
     .expect("the list with an empty header map succeeds");
-    let requests = wire.requests();
-    assert_eq!(header(&requests[0], "openai-beta"), "assistants=v2");
-    assert_eq!(header(&requests[1], "openai-beta"), "assistants=v2");
-    assert!(requests[0].headers.get("x-trace").is_none());
+    let (first, second) = {
+        let requests = wire.requests();
+        (
+            header(&requests[0], "openai-beta").to_owned(),
+            header(&requests[1], "openai-beta").to_owned(),
+        )
+    };
+    assert_eq!(first, "assistants=v2");
+    assert_eq!(second, "assistants=v2");
+    let absent = {
+        let requests = wire.requests();
+        requests[0].headers.get("x-trace").is_none()
+    };
+    assert!(absent);
 }
 
 // LiteLLM logs the pre-call with the empty input and api_key, the base and the headers it will send
