@@ -830,7 +830,7 @@ pub(super) fn assert_async_transform_once(config: &RecordingConfig) {
     ));
 }
 
-fn assert_field_error(
+async fn assert_field_error(
     fixture: &mut Fixture,
     deps: &ImageEditDeps<'_, RecordingConfig, Source>,
     optional: &ImageParams,
