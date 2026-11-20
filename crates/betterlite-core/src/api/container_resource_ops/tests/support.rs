@@ -234,18 +234,18 @@ impl ContainerHandler for StubHandler {
         self.answer(&self.deleted, "the fixture answers one delete")
     }
 
-    fn aretrieve(
-        &self,
-        call: &ContainerHandlerCall<'_>,
-    ) -> impl Future<Output = RetrieveResult> + Send {
+    fn aretrieve<'call>(
+        &'call self,
+        call: &'call ContainerHandlerCall<'_>,
+    ) -> impl Future<Output = RetrieveResult> + Send + 'call {
         self.record(call, Form::Async);
         ready(self.answer(&self.object, "the fixture answers one retrieve"))
     }
 
-    fn adelete(
-        &self,
-        call: &ContainerHandlerCall<'_>,
-    ) -> impl Future<Output = DeleteResult> + Send {
+    fn adelete<'call>(
+        &'call self,
+        call: &'call ContainerHandlerCall<'_>,
+    ) -> impl Future<Output = DeleteResult> + Send + 'call {
         self.record(call, Form::Async);
         ready(self.answer(&self.deleted, "the fixture answers one delete"))
     }

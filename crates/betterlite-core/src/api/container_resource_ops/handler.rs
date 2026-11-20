@@ -33,13 +33,15 @@ pub trait ContainerHandler: Send + Sync {
 
     fn delete(&self, call: &ContainerHandlerCall<'_>) -> DeleteResult;
 
-    fn aretrieve(
-        &self,
-        call: &ContainerHandlerCall<'_>,
-    ) -> impl Future<Output = RetrieveResult> + Send;
+    fn aretrieve<'call>(
+        &'call self,
+        call: &'call ContainerHandlerCall<'_>,
+    ) -> impl Future<Output = RetrieveResult> + Send + 'call;
 
-    fn adelete(&self, call: &ContainerHandlerCall<'_>)
-    -> impl Future<Output = DeleteResult> + Send;
+    fn adelete<'call>(
+        &'call self,
+        call: &'call ContainerHandlerCall<'_>,
+    ) -> impl Future<Output = DeleteResult> + Send + 'call;
 }
 
 // B3365 answers the finished record or a future for it; the blocking form keeps only the finished record
@@ -59,10 +61,10 @@ macro_rules! blocking_endpoint {
 
 macro_rules! asynchronous_endpoint {
     ($($method:ident, $handler:ident, $reply:ty;)+) => { $(
-        fn $method(
-            &self,
-            call: &ContainerHandlerCall<'_>,
-        ) -> impl Future<Output = $reply> + Send {
+        fn $method<'call>(
+            &'call self,
+            call: &'call ContainerHandlerCall<'_>,
+        ) -> impl Future<Output = $reply> + Send + 'call {
             let request = http_call::<Source>(call);
             async move { Self::$handler(self, &request).await }
         }
@@ -86,9 +88,12 @@ where
 }
 
 // the handler builds its own client, since this module owns no transport
-const fn http_call<'call, Source: ClientSource>(
+const fn http_call<'call, Source>(
     call: &'call ContainerHandlerCall<'_>,
-) -> ContainerResourceCall<'call, Source> {
+) -> ContainerResourceCall<'call, Source>
+where
+    Source: ClientSource,
+{
     ContainerResourceCall {
         container_id: call.container_id,
         config: call.config,

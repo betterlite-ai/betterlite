@@ -1,14 +1,10 @@
-use std::future::Future;
-
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::container_contracts::records::{
     ContainerObject, DeleteContainerResult,
 };
 
 use super::error::ContainerOpError;
-use super::handler::{ContainerHandler, ContainerHandlerCall};
 use super::mock::{DELETE_TYPE, RETRIEVE_TYPE, mock_reply};
-use crate::api::container_resource_http::ContainerResourceHttpError;
 
 pub(crate) const RETRIEVE_CALL_TYPE: &str = "retrieve_container";
 pub(crate) const DELETE_CALL_TYPE: &str = "delete_container";
@@ -18,14 +14,6 @@ pub(crate) trait Kind {
     type Reply;
     const CALL_TYPE: &'static str;
     fn mock(mock: Option<&Json>) -> Result<Option<Self::Reply>, ContainerOpError>;
-    fn call<Handler: ContainerHandler>(
-        handler: &Handler,
-        call: &ContainerHandlerCall<'_>,
-    ) -> Result<Self::Reply, ContainerResourceHttpError>;
-    fn call_async<Handler: ContainerHandler>(
-        handler: &Handler,
-        call: &ContainerHandlerCall<'_>,
-    ) -> impl Future<Output = Result<Self::Reply, ContainerResourceHttpError>> + Send;
     fn id(reply: &Self::Reply) -> &str;
     fn replace_id(reply: &mut Self::Reply, id: String);
 }
@@ -38,20 +26,6 @@ impl Kind for Retrieve {
 
     fn mock(mock: Option<&Json>) -> Result<Option<Self::Reply>, ContainerOpError> {
         mock_reply(mock, RETRIEVE_TYPE)
-    }
-
-    fn call<Handler: ContainerHandler>(
-        handler: &Handler,
-        call: &ContainerHandlerCall<'_>,
-    ) -> Result<Self::Reply, ContainerResourceHttpError> {
-        handler.retrieve(call)
-    }
-
-    fn call_async<Handler: ContainerHandler>(
-        handler: &Handler,
-        call: &ContainerHandlerCall<'_>,
-    ) -> impl Future<Output = Result<Self::Reply, ContainerResourceHttpError>> + Send {
-        handler.aretrieve(call)
     }
 
     fn id(reply: &Self::Reply) -> &str {
@@ -71,20 +45,6 @@ impl Kind for Delete {
 
     fn mock(mock: Option<&Json>) -> Result<Option<Self::Reply>, ContainerOpError> {
         mock_reply(mock, DELETE_TYPE)
-    }
-
-    fn call<Handler: ContainerHandler>(
-        handler: &Handler,
-        call: &ContainerHandlerCall<'_>,
-    ) -> Result<Self::Reply, ContainerResourceHttpError> {
-        handler.delete(call)
-    }
-
-    fn call_async<Handler: ContainerHandler>(
-        handler: &Handler,
-        call: &ContainerHandlerCall<'_>,
-    ) -> impl Future<Output = Result<Self::Reply, ContainerResourceHttpError>> + Send {
-        handler.adelete(call)
     }
 
     fn id(reply: &Self::Reply) -> &str {

@@ -63,7 +63,7 @@ enum Begin<'deps, Reply> {
 
 // LiteLLM spells the blocking and async form of each operation out twice; one body pair serves both
 macro_rules! operations {
-    ($($sync:ident, $asynchronous:ident, $kind:ident, $reply:ty;)+) => { $(
+    ($($sync:ident, $asynchronous:ident, $kind:ident, $blocking:ident, $async_handler:ident, $reply:ty;)+) => { $(
         // LiteLLM's operation: the mock short circuit, then the blocking handler and the id re-encoding
         pub fn $sync(
             &self,
@@ -74,7 +74,7 @@ macro_rules! operations {
                 Begin::Call(prepared) => prepared,
             };
             let call = prepared.handler_call(request, self.logging);
-            let mut reply = $kind::call(self.handler, &call).map_err(|error| {
+            let mut reply = self.handler.$blocking(&call).map_err(|error| {
                 failure(
                     ContainerOpError::Handler(error),
                     &prepared.provider,
@@ -96,15 +96,13 @@ macro_rules! operations {
                 Begin::Call(prepared) => prepared,
             };
             let call = prepared.handler_call(request, self.logging);
-            $kind::call_async(self.handler, &call)
-                .await
-                .map_err(|error| {
-                    failure(
-                        ContainerOpError::Handler(error),
-                        request.custom_llm_provider.unwrap_or(DEFAULT_PROVIDER),
-                        self.redactor,
-                    )
-                })
+            self.handler.$async_handler(&call).await.map_err(|error| {
+                failure(
+                    ContainerOpError::Handler(error),
+                    request.custom_llm_provider.unwrap_or(DEFAULT_PROVIDER),
+                    self.redactor,
+                )
+            })
         }
     )+ };
 }
@@ -116,10 +114,13 @@ where
     Configs: ContainerConfigLookup,
 {
     // LiteLLM checks the mock first: only a real call decodes the id, looks up the config and updates the logging
-    fn begin<Operation: Kind>(
+    fn begin<Operation>(
         &self,
         request: &ContainerOperationRequest<'_>,
-    ) -> Result<Begin<'deps, Operation::Reply>, ContainerOpFailure> {
+    ) -> Result<Begin<'deps, Operation::Reply>, ContainerOpFailure>
+    where
+        Operation: Kind,
+    {
         if let Some(reply) = Operation::mock(request.mock_response).map_err(|error| {
             failure(
                 error,
@@ -134,8 +135,8 @@ where
     }
 
     operations! {
-        retrieve_container, aretrieve_container, Retrieve, ContainerObject;
-        delete_container, adelete_container, Delete, DeleteContainerResult;
+        retrieve_container, aretrieve_container, Retrieve, retrieve, aretrieve, ContainerObject;
+        delete_container, adelete_container, Delete, delete, adelete, DeleteContainerResult;
     }
 }
 
