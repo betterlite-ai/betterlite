@@ -43,10 +43,9 @@ pub(super) fn diagnostics(state: &LoggingState, origin: &str) -> Diagnostics {
 }
 
 fn observed(details: &IndexMap<String, Json>, name: &str, origin: &str) -> Json {
-    match details.get(name) {
-        Some(value) => unalias(value.clone(), origin),
-        None => Json::Null,
-    }
+    details
+        .get(name)
+        .map_or(Json::Null, |value| unalias(value.clone(), origin))
 }
 
 fn argument(details: &IndexMap<String, Json>, name: &str, origin: &str) -> Json {
