@@ -116,6 +116,9 @@ fn master_context(master_key: &SecretString) -> AuthContext {
         Err(StageFailure::TagBudgets(_)) => {
             panic!("the master key stage reports no tag budgets")
         }
+        Err(StageFailure::RequestBodySafety(_)) => {
+            panic!("the master key stage runs no body safety check")
+        }
     }
 }
 
