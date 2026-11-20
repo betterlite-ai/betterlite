@@ -25,7 +25,7 @@ JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 OBJECTS: Final = TypeAdapter(dict[str, object] | None)
 PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
 
-# the file object's last_error holds Any, so the handlers answer the JSON mapping shape this adapter validates
+# the file object's last_error holds Any, so the handlers answer the mapping this adapter validates
 Answer = Mapping[str, object]
 AsyncAnswer = Coroutine[object, object, Answer]
 Work = Answer | AsyncAnswer
@@ -73,16 +73,20 @@ class AsyncDeleteHandler(Protocol):
 
 class Handlers(Protocol):
     @property
-    def vector_store_file_update_handler(self) -> UpdateHandler: ...  # ast-grep-ignore: no-long-names
+    # ast-grep-ignore: no-long-names
+    def vector_store_file_update_handler(self) -> UpdateHandler: ...
 
     @property
-    def async_vector_store_file_update_handler(self) -> AsyncUpdateHandler: ...  # ast-grep-ignore: no-long-names
+    # ast-grep-ignore: no-long-names
+    def async_vector_store_file_update_handler(self) -> AsyncUpdateHandler: ...
 
     @property
-    def vector_store_file_delete_handler(self) -> DeleteHandler: ...  # ast-grep-ignore: no-long-names
+    # ast-grep-ignore: no-long-names
+    def vector_store_file_delete_handler(self) -> DeleteHandler: ...
 
     @property
-    def async_vector_store_file_delete_handler(self) -> AsyncDeleteHandler: ...  # ast-grep-ignore: no-long-names
+    # ast-grep-ignore: no-long-names
+    def async_vector_store_file_delete_handler(self) -> AsyncDeleteHandler: ...
 
 
 HANDLER: Handlers = BaseLLMHTTPHandler()
