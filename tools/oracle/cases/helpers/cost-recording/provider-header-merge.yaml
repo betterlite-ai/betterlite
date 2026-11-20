@@ -1,0 +1,14 @@
+kind: helper
+name: cost-recording-provider-header-merge
+call:
+  cost_recording:
+    function: set_response_cost
+    model_cost: {}
+    vertex_location: null
+    ptu_cost_attribution: false
+    logs: []
+    hidden_params:
+      additional_headers: {x-custom: kept}
+    cost: 0.25
+env: {}
+compare: {ignore: []}
