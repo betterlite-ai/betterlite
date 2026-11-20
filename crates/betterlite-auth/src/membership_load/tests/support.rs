@@ -18,7 +18,7 @@ use betterlite_db::team_rows::membership::{Counter, LiteLLMTeamMembership};
 use betterlite_models::decisions::Json;
 use rust_decimal::Decimal;
 use tokio::sync::Semaphore;
-use tokio::task::{Id, yield_now};
+use tokio::task::{Id, JoinHandle, yield_now};
 use tokio::time::timeout;
 use tokio_util::task::TaskTracker;
 use tracing::Level;
@@ -30,6 +30,8 @@ use crate::auth_cache::payload::{self, PayloadError};
 use crate::auth_cache::{AuthCacheError, gateway_cache};
 use crate::auth_invalidation::AuthInvalidation;
 use crate::auth_invalidation::clock::SystemClock;
+use crate::auth_invalidation::error::InvalidationError;
+use crate::auth_invalidation::keys::InvalidationKey;
 use crate::auth_invalidation::ports::{AuthInvalidationCache, SpendCounterCache};
 use crate::auth_invalidation::registry::{InflightLoad, MembershipInflight};
 use crate::auth_invalidation::transport::InvalidationTransport;
@@ -423,6 +425,32 @@ pub(crate) fn reset_rig() -> ResetRig {
     }
 }
 
+pub(crate) fn spend_key() -> String {
+    InvalidationKey::SpendCounter {
+        user_id: "user-1",
+        team_id: "team-1",
+    }
+    .render()
+}
+
+pub(crate) fn spawn_reset(
+    invalidation: AuthInvalidation,
+    registry: &Arc<MembershipInflight<MembershipLoad>>,
+    tasks: &TaskTracker,
+) -> JoinHandle<Result<(), InvalidationError>> {
+    let registry_handle = Arc::clone(registry);
+    tasks.spawn(async move {
+        invalidation
+            .invalidate_team_member_spend(
+                &registry_handle,
+                "user-1",
+                "team-1",
+                Some(Decimal::new(4, 0)),
+            )
+            .await
+    })
+}
+
 pub(crate) fn lookup(
     cache: Arc<FakeCache>,
     rows: Option<Arc<FakeRows>>,
@@ -431,10 +459,24 @@ pub(crate) fn lookup(
 ) -> MembershipLookup {
     MembershipLookup {
         cache,
-        rows: rows.map(|rows| -> Arc<dyn TeamMembershipRows> { rows }),
+        rows: rows.map(|handle| -> Arc<dyn TeamMembershipRows> { handle }),
         index,
         tasks: tasks.clone(),
     }
+}
+
+pub(crate) fn spawn_call(
+    cache: Arc<FakeCache>,
+    rows: &Arc<FakeRows>,
+    index: Arc<dyn MembershipIndex>,
+    tasks: &TaskTracker,
+) -> JoinHandle<Result<Option<LiteLLMTeamMembership>, MembershipLoadError>> {
+    let subject = lookup(cache, Some(Arc::clone(rows)), index, tasks);
+    tasks.spawn(async move {
+        subject
+            .get_team_membership(Some("user-1"), Some("team-1"))
+            .await
+    })
 }
 
 pub(crate) fn expect_present(
@@ -461,7 +503,14 @@ pub(crate) fn expect_error(
 pub(crate) fn shared(error: MembershipLoadError) -> Arc<MembershipLoadError> {
     match error {
         MembershipLoadError::Shared(shared) => shared,
-        other => panic!("the waiter sees the shared failure, got {other}"),
+        other @ MembershipLoadError::NoDatabase
+        | other @ MembershipLoadError::CacheRead(_)
+        | other @ MembershipLoadError::CacheWrite(_)
+        | other @ MembershipLoadError::Decode(_)
+        | other @ MembershipLoadError::Read(_)
+        | other @ MembershipLoadError::LoadLost => {
+            panic!("the waiter sees the shared failure, got {other}")
+        }
     }
 }
 

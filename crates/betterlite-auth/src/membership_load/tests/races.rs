@@ -4,20 +4,35 @@ use std::future::pending;
 use std::sync::Arc;
 
 use betterlite_models::decisions::Json;
-use rust_decimal::Decimal;
 use tokio::sync::{oneshot, watch};
+use tokio::task::JoinHandle;
 use tokio_util::task::TaskTracker;
 
 use super::support::{
     CountingIndex, FakeCache, FakeRows, ResetRig, RowsAnswer, drain, expect_present, index, key,
-    lookup, membership, reset_rig, wait_until_popped,
+    lookup, membership, reset_rig, spawn_call, spawn_reset, spend_key, wait_until_popped,
 };
-use crate::auth_invalidation::keys::InvalidationKey;
 use crate::auth_invalidation::registry::InflightLoad;
 use crate::membership_load::cache::MembershipCache;
 use crate::membership_load::index::MembershipIndex;
 use crate::membership_load::load::{LoadRequest, MembershipLoad, run_load};
 use crate::membership_load::rows::TeamMembershipRows;
+
+// The source hands the entry back to the index when the load ends, so the test registers one too.
+fn register_load(
+    shared: &dyn MembershipIndex,
+    reservation: &str,
+    task: &JoinHandle<()>,
+    completion: watch::Receiver<Option<MembershipLoad>>,
+) {
+    shared.install(
+        reservation,
+        InflightLoad {
+            id: task.id(),
+            completion,
+        },
+    );
+}
 
 #[tokio::test]
 async fn simultaneous_requests_share_load() {
@@ -117,8 +132,7 @@ async fn replacement_survives_old_completion() {
     let reservation = key("user-1", "team-1");
     let (start, started) = oneshot::channel();
     let (completion, receiver) = watch::channel(None::<MembershipLoad>);
-    let rows_clone = Arc::clone(&rows);
-    let rows_handle: Arc<dyn TeamMembershipRows> = rows_clone;
+    let rows_handle: Arc<dyn TeamMembershipRows> = Arc::clone(&rows);
     let cache_handle: Arc<dyn MembershipCache> = cache;
     let old = tasks.spawn(run_load(LoadRequest {
         start: started,
@@ -132,22 +146,15 @@ async fn replacement_survives_old_completion() {
     }));
     start.send(()).expect("the load starts");
     rows.wait_started().await;
-    shared.install(
-        &reservation,
-        InflightLoad {
-            id: old.id(),
-            completion: receiver,
-        },
-    );
+    register_load(shared.as_ref(), &reservation, &old, receiver);
     assert!(registry.pop(&reservation).is_some());
     let replacement = tasks.spawn(pending::<()>());
     let (_replacement_completion, replacement_receiver) = watch::channel(None::<MembershipLoad>);
-    shared.install(
+    register_load(
+        shared.as_ref(),
         &reservation,
-        InflightLoad {
-            id: replacement.id(),
-            completion: replacement_receiver,
-        },
+        &replacement,
+        replacement_receiver,
     );
     rows.release();
     old.await.expect("the old load finishes");
@@ -160,39 +167,20 @@ async fn replacement_survives_old_completion() {
 }
 
 #[tokio::test]
-async fn reset_waits_for_load_before_writes() {
+async fn reset_pops_reservation_before_load_finishes() {
     let cache = FakeCache::new(60.0_f64);
     let rows = FakeRows::blocked(RowsAnswer::Found);
     let (registry, shared) = index();
     let tasks = TaskTracker::new();
-    let subject = lookup(Arc::clone(&cache), Some(Arc::clone(&rows)), shared, &tasks);
-    let caller = tasks.spawn(async move {
-        subject
-            .get_team_membership(Some("user-1"), Some("team-1"))
-            .await
-    });
+    let caller = spawn_call(cache, &rows, shared, &tasks);
     rows.wait_started().await;
     let ResetRig {
         invalidation,
         spend,
     } = reset_rig();
-    let counter = InvalidationKey::SpendCounter {
-        user_id: "user-1",
-        team_id: "team-1",
-    }
-    .render();
+    let counter = spend_key();
     assert!(spend.get_cache(&counter, true).is_none());
-    let reset_registry = Arc::clone(&registry);
-    let reset = tasks.spawn(async move {
-        invalidation
-            .invalidate_team_member_spend(
-                &reset_registry,
-                "user-1",
-                "team-1",
-                Some(Decimal::new(4, 0)),
-            )
-            .await
-    });
+    let reset = spawn_reset(invalidation, &registry, &tasks);
     let reservation = key("user-1", "team-1");
     wait_until_popped(&registry, &reservation).await;
     assert!(
@@ -208,6 +196,29 @@ async fn reset_waits_for_load_before_writes() {
         expect_present(caller.await.expect("the caller")),
         membership()
     );
+    reset
+        .await
+        .expect("the reset task")
+        .expect("the reset succeeds");
+    drain(&tasks).await;
+}
+
+#[tokio::test]
+async fn reset_writes_spend_after_load() {
+    let cache = FakeCache::new(60.0_f64);
+    let rows = FakeRows::blocked(RowsAnswer::Found);
+    let (registry, shared) = index();
+    let tasks = TaskTracker::new();
+    let caller = spawn_call(cache, &rows, shared, &tasks);
+    rows.wait_started().await;
+    let ResetRig {
+        invalidation,
+        spend,
+    } = reset_rig();
+    let counter = spend_key();
+    let reset = spawn_reset(invalidation, &registry, &tasks);
+    rows.release();
+    expect_present(caller.await.expect("the caller"));
     reset
         .await
         .expect("the reset task")

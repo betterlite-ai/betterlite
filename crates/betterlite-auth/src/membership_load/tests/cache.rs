@@ -8,8 +8,9 @@ use serde_json::Number;
 
 use super::support::{Logs, dual_settings, key, lock, membership, stored_membership};
 use crate::auth_cache::gateway_cache;
-use crate::membership_load::cache::MembershipCache as _;
-use crate::membership_load::cache::{CachedMembership, CachedPayload, classify_cached};
+use crate::membership_load::cache::{
+    CachedMembership, CachedPayload, MembershipCache, classify_cached,
+};
 
 fn classify(cached: CachedPayload) -> CachedMembership {
     classify_cached(cached).expect("the payload classifies")
@@ -115,6 +116,15 @@ fn movable_memory(now: &SharedClock) -> Arc<LocalMemoryOps> {
     Arc::new(LocalMemoryOps::new(1024_i64, clock).expect("the local memory cache builds"))
 }
 
+// Reads one key through the cache port and classifies what it holds, as the lookup does.
+async fn read_cached<C>(cache: &C, key: &str) -> Option<CachedMembership>
+where
+    C: MembershipCache,
+{
+    let stored = cache.read(key, true).await.expect("the cache read")?;
+    Some(classify_cached(CachedPayload::from(Some(stored))).expect("the payload classifies"))
+}
+
 #[tokio::test]
 async fn auth_cache_port_round_trips_and_expires_negative() {
     let now: SharedClock = Arc::new(Mutex::new(1_000.0_f64));
@@ -131,46 +141,26 @@ async fn auth_cache_port_round_trips_and_expires_negative() {
         .write_membership(&present, &membership(), None)
         .await
         .expect("the membership write");
-    let stored = cache
-        .read(&present, true)
-        .await
-        .expect("the present read")
-        .expect("the stored membership");
-    let CachedMembership::Membership(found) =
-        classify_cached(CachedPayload::from(Some(stored))).expect("the membership classifies")
-    else {
-        panic!("the cached membership classifies as present");
-    };
-    assert_eq!(*found, membership());
+    assert_eq!(
+        read_cached(&cache, &present).await,
+        Some(CachedMembership::Membership(Box::new(membership())))
+    );
     let absent = key("user-2", "team-1");
     cache
         .write_absent(&absent, Some(42.5_f64))
         .await
         .expect("the absence write");
-    let negative = cache
-        .read(&absent, true)
-        .await
-        .expect("the negative read")
-        .expect("the stored sentinel");
     assert_eq!(
-        classify_cached(CachedPayload::from(Some(negative))).expect("the sentinel classifies"),
-        CachedMembership::Absent
+        read_cached(&cache, &absent).await,
+        Some(CachedMembership::Absent)
     );
     *lock(&now) = 1_050.0_f64;
     assert!(
-        cache
-            .read(&absent, true)
-            .await
-            .expect("the expired read")
-            .is_none(),
+        read_cached(&cache, &absent).await.is_none(),
         "the negative entry expires with the management ttl"
     );
     assert!(
-        cache
-            .read(&present, true)
-            .await
-            .expect("the live read")
-            .is_some(),
+        read_cached(&cache, &present).await.is_some(),
         "the positive entry keeps the backend default ttl"
     );
 }

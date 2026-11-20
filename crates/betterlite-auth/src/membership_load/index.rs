@@ -27,7 +27,7 @@ pub struct SharedMembershipIndex {
 
 impl SharedMembershipIndex {
     #[must_use]
-    pub fn new(registry: Arc<MembershipInflight<MembershipLoad>>) -> Self {
+    pub const fn new(registry: Arc<MembershipInflight<MembershipLoad>>) -> Self {
         Self {
             registry,
             guard: Mutex::new(()),

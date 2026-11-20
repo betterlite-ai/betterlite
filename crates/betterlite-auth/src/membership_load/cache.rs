@@ -25,10 +25,7 @@ pub enum CachedPayload {
 
 impl From<Option<Json>> for CachedPayload {
     fn from(cached: Option<Json>) -> Self {
-        match cached {
-            Some(stored) => Self::Stored(Box::new(stored)),
-            None => Self::Pending,
-        }
+        cached.map_or(Self::Pending, |stored| Self::Stored(Box::new(stored)))
     }
 }
 
@@ -43,10 +40,10 @@ pub fn classify_cached(cached: CachedPayload) -> Result<CachedMembership, Payloa
     if absent {
         return Ok(CachedMembership::Absent);
     }
-    match payload::decode::<LiteLLMTeamMembership>(&stored)? {
-        Some(membership) => Ok(CachedMembership::Membership(Box::new(membership))),
-        None => Ok(CachedMembership::Miss),
-    }
+    let membership = payload::decode::<LiteLLMTeamMembership>(&stored)?;
+    Ok(membership.map_or(CachedMembership::Miss, |found| {
+        CachedMembership::Membership(Box::new(found))
+    }))
 }
 
 // The cache operations the lookup needs; the first read is local, and the load's read also reaches Redis.
