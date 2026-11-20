@@ -11,9 +11,32 @@ use betterlite_rag::bedrock_provisioning::provision::error::ProvisionError;
 use serde_json::{Value, json};
 use tokio::runtime::Runtime;
 
-use super::answers::{STARTED_JOB, collection_answers, create_all_answers, detect_answers};
-use super::cases::{Flow, Index, Input, Role, Store, failed};
+use super::answers::{collection_answers, create_all_answers, detect_answers, store_answers};
+use super::cases::{Collection, Flow, Index, Input, Role, Store, failed};
 use super::harness::{answer, form_fields, operation, provisioned, settings, status};
+
+// one function per step that builds its answers, runs one provisioning call and renders the outcome
+macro_rules! aws_step {
+    (
+        $name:ident,
+        input: $case:ident: $case_ty:ty,
+        answers: $answers:expr,
+        call: $method:ident ( $($argument:expr),* $(,)? ),
+        payload: | $provisioner:ident, $outcome:ident, $requests:ident, $calls:ident | $payload:block
+    ) => {
+        fn $name(runtime: &Runtime, $case: &$case_ty) -> HelperResult {
+            let (harness, mut $provisioner) = provisioned(
+                &$case.vector,
+                &$case.environment,
+                $answers,
+                &$case.unique_id,
+            )?;
+            let $outcome = runtime.block_on($provisioner.$method($($argument),*));
+            let ($requests, $calls) = harness.recorded();
+            $payload
+        }
+    };
+}
 
 pub(super) fn run(runtime: &Runtime, input: &Input) -> HelperResult {
     match input {
@@ -34,160 +57,154 @@ pub(super) fn run(runtime: &Runtime, input: &Input) -> HelperResult {
                 "collection": name,
             }))
         }
-        Input::Collection(case) => {
-            let answers = collection_answers(&case.statuses);
-            let (harness, mut provisioner) =
-                provisioned(&case.vector, &case.environment, answers, &case.unique_id)?;
-            let outcome = runtime.block_on(provisioner.create_opensearch_collection(
-                &case.unique_id,
-                &case.account_id,
-                &case.caller_arn,
-            ));
-            let (_, calls) = harness.recorded();
-            let created = provisioner
-                .state
-                .created_resources
-                .opensearch_collection
-                .clone();
-            match outcome {
-                Ok((name, arn)) => Ok(json!({
-                    "outcome": "created",
-                    "name": name,
-                    "arn": arn,
-                    "created": created,
-                    "operations": calls,
-                })),
-                Err(ProvisionError::CollectionTimeout) => Ok(json!({
-                    "outcome": "timeout",
-                    "created": created,
-                    "operations": calls,
-                })),
-                Err(error) => failed(error.to_string()),
-            }
-        }
-        Input::Index(case) => {
-            let answers = index_answers(case);
-            let (harness, provisioner) =
-                provisioned(&case.vector, &case.environment, answers, &case.unique_id)?;
-            let outcome =
-                runtime.block_on(provisioner.create_opensearch_index(&case.collection_name));
-            let (requests, _) = harness.recorded();
-            let attempts = requests
-                .iter()
-                .filter(|request| operation(request) == "CreateIndex")
-                .count();
-            let name = index_name(&requests);
-            let body = if attempts == 0 {
-                Value::Null
-            } else {
-                json!(plan::index::index_body())
-            };
-            match outcome {
-                Ok(()) => Ok(json!({
-                    "outcome": "created",
-                    "attempts": attempts,
-                    "index_name": name,
-                    "index_body": body,
-                })),
-                Err(ProvisionError::IndexRetriesExhausted { .. }) => Ok(json!({
-                    "outcome": "exhausted",
-                    "attempts": attempts,
-                    "index_name": name,
-                    "index_body": body,
-                })),
-                Err(_error) => Ok(json!({
-                    "outcome": "raised",
-                    "attempts": attempts,
-                    "index_name": name,
-                    "index_body": body,
-                })),
-            }
-        }
-        Input::Role(case) => {
-            let answers = role_answers(case);
-            let (harness, mut provisioner) =
-                provisioned(&case.vector, &case.environment, answers, &case.unique_id)?;
-            let outcome = runtime.block_on(provisioner.create_bedrock_role(
-                &case.unique_id,
-                &case.account_id,
-                &case.collection_arn,
-            ));
-            let (requests, calls) = harness.recorded();
-            let created = provisioner.state.created_resources.iam_role.clone();
-            match outcome {
-                Ok(arn) => {
-                    let create = form_fields(&requests[0]);
-                    let attach = form_fields(&requests[1]);
-                    Ok(json!({
-                        "outcome": "created",
-                        "role_arn": arn,
-                        "created": created,
-                        "operations": calls,
-                        "role_name": create.get("RoleName"),
-                        "policy_name": attach.get("PolicyName"),
-                        "trust_document": create
-                            .get("AssumeRolePolicyDocument")
-                            .and_then(|text| serde_json::from_str::<Value>(text).ok()),
-                        "permissions_document": attach
-                            .get("PolicyDocument")
-                            .and_then(|text| serde_json::from_str::<Value>(text).ok()),
-                    }))
-                }
-                Err(error) => failed(error.to_string()),
-            }
-        }
-        Input::Flow(case) => {
-            let answers = flow_answers(&case.vector);
-            let (harness, mut provisioner) =
-                provisioned(&case.vector, &case.environment, answers, &case.unique_id)?;
-            let outcome = runtime.block_on(provisioner.ensure_config_initialized());
-            let (_, calls) = harness.recorded();
-            let index_body = if calls.iter().any(|name| name == "CreateIndex") {
-                json!(plan::index::index_body())
-            } else {
-                Value::Null
-            };
-            match outcome {
-                Ok(()) => Ok(json!({
-                    "outcome": "initialized",
-                    "operations": calls,
-                    "knowledge_base_id": provisioner.clients.settings.knowledge_base_id,
-                    "data_source_id": provisioner.state.data_source_id,
-                    "s3_bucket": provisioner.state.s3_bucket,
-                    "s3_prefix": provisioner.state.s3_prefix,
-                    "created_keys": created_keys(&provisioner.state.created_resources),
-                    "index_body": index_body,
-                })),
-                Err(error) => failed(error.to_string()),
-            }
-        }
-        Input::Store(case) => {
-            let mut answers = detect_answers();
-            answers.push(answer(String::new()));
-            answers.push(answer(STARTED_JOB.to_owned()));
-            for status in &case.job_statuses {
-                answers.push(answer(
-                    json!({"ingestionJob": {"ingestionJobId": "job1", "status": status}})
-                        .to_string(),
-                ));
-            }
-            let (harness, mut provisioner) =
-                provisioned(&case.vector, &case.environment, answers, &case.unique_id)?;
-            let outcome = runtime.block_on(provisioner.store(store_request(case)));
-            let (requests, calls) = harness.recorded();
-            match outcome {
-                Ok((knowledge_base_id, file_key)) => Ok(json!({
-                    "outcome": "stored",
-                    "knowledge_base_id": knowledge_base_id,
-                    "file_key": file_key,
-                    "operations": calls,
-                    "content_type": put_content_type(&requests),
-                })),
-                Err(error) => failed(error.to_string()),
-            }
-        }
+        Input::Collection(case) => collection(runtime, case),
+        Input::Index(case) => index(runtime, case),
+        Input::Role(case) => role(runtime, case),
+        Input::Flow(case) => flow(runtime, case),
+        Input::Store(case) => store(runtime, case),
     }
 }
+
+aws_step!(
+    collection,
+    input: case: Collection,
+    answers: collection_answers(&case.statuses),
+    call: create_opensearch_collection(&case.unique_id, &case.account_id, &case.caller_arn),
+    payload: |provisioner, outcome, _requests, calls| {
+        let created = provisioner
+            .state
+            .created_resources
+            .opensearch_collection
+            .clone();
+        match outcome {
+            Ok((name, arn)) => Ok(json!({
+                "outcome": "created",
+                "name": name,
+                "arn": arn,
+                "created": created,
+                "operations": calls,
+            })),
+            Err(ProvisionError::CollectionTimeout) => Ok(json!({
+                "outcome": "timeout",
+                "created": created,
+                "operations": calls,
+            })),
+            Err(error) => Err(Box::new(failed(error.to_string()))),
+        }
+    }
+);
+
+fn index(runtime: &Runtime, case: &Index) -> HelperResult {
+    let answers = index_answers(case);
+    let (harness, provisioner) =
+        provisioned(&case.vector, &case.environment, answers, &case.unique_id)?;
+    let outcome = runtime.block_on(provisioner.create_opensearch_index(&case.collection_name));
+    let (requests, _) = harness.recorded();
+    let attempts = requests
+        .iter()
+        .filter(|request| operation(request) == "CreateIndex")
+        .count();
+    let name = index_name(&requests);
+    let body = if attempts == 0 {
+        Value::Null
+    } else {
+        json!(plan::index::index_body())
+    };
+    match outcome {
+        Ok(()) => Ok(json!({
+            "outcome": "created",
+            "attempts": attempts,
+            "index_name": name,
+            "index_body": body,
+        })),
+        Err(ProvisionError::IndexRetriesExhausted { .. }) => Ok(json!({
+            "outcome": "exhausted",
+            "attempts": attempts,
+            "index_name": name,
+            "index_body": body,
+        })),
+        Err(_error) => Ok(json!({
+            "outcome": "raised",
+            "attempts": attempts,
+            "index_name": name,
+            "index_body": body,
+        })),
+    }
+}
+
+aws_step!(
+    role,
+    input: case: Role,
+    answers: role_answers(case),
+    call: create_bedrock_role(&case.unique_id, &case.account_id, &case.collection_arn),
+    payload: |provisioner, outcome, requests, calls| {
+        let create = requests.first().map_or_else(BTreeMap::default, form_fields);
+        let attach = requests.get(1).map_or_else(BTreeMap::default, form_fields);
+        match outcome {
+            Ok(arn) => Ok(json!({
+                "outcome": "created",
+                "role_arn": arn,
+                "created": provisioner.state.created_resources.iam_role,
+                "operations": calls,
+                "role_name": create.get("RoleName"),
+                "policy_name": attach.get("PolicyName"),
+                "trust_document": create
+                    .get("AssumeRolePolicyDocument")
+                    .and_then(|text| serde_json::from_str::<Value>(text).ok()),
+                "permissions_document": attach
+                    .get("PolicyDocument")
+                    .and_then(|text| serde_json::from_str::<Value>(text).ok()),
+            })),
+            Err(error) => Err(Box::new(failed(error.to_string()))),
+        }
+    }
+);
+
+aws_step!(
+    flow,
+    input: case: Flow,
+    answers: flow_answers(&case.vector),
+    call: ensure_config_initialized(),
+    payload: |provisioner, outcome, _requests, calls| {
+        let index_body = if calls.iter().any(|name| name == "CreateIndex") {
+            json!(plan::index::index_body())
+        } else {
+            Value::Null
+        };
+        match outcome {
+            Ok(()) => Ok(json!({
+                "outcome": "initialized",
+                "operations": calls,
+                "knowledge_base_id": provisioner.clients.settings.knowledge_base_id,
+                "data_source_id": provisioner.state.data_source_id,
+                "s3_bucket": provisioner.state.s3_bucket,
+                "s3_prefix": provisioner.state.s3_prefix,
+                "created_keys": created_keys(&provisioner.state.created_resources),
+                "index_body": index_body,
+            })),
+            Err(error) => Err(Box::new(failed(error.to_string()))),
+        }
+    }
+);
+
+aws_step!(
+    store,
+    input: case: Store,
+    answers: store_answers(case),
+    call: store(store_request(case)),
+    payload: |_provisioner, outcome, requests, calls| {
+        match outcome {
+            Ok((knowledge_base_id, file_key)) => Ok(json!({
+                "outcome": "stored",
+                "knowledge_base_id": knowledge_base_id,
+                "file_key": file_key,
+                "operations": calls,
+                "content_type": put_content_type(&requests),
+            })),
+            Err(error) => Err(Box::new(failed(error.to_string()))),
+        }
+    }
+);
 
 fn index_answers(case: &Index) -> Vec<AwsRagResponse> {
     let mut answers = vec![answer(

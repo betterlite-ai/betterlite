@@ -1,6 +1,7 @@
 use betterlite_rag::bedrock_ingestion::client::AwsRagResponse;
 use serde_json::json;
 
+use super::cases::Store;
 use super::harness::answer;
 
 const COLLECTION_POLLS: usize = 60;
@@ -61,6 +62,18 @@ pub(super) fn detect_answers() -> Vec<AwsRagResponse> {
         DATA_SOURCE_SUMMARIES.to_owned(),
         DETECTED_DATA_SOURCE.to_owned(),
     ])
+}
+
+pub(super) fn store_answers(case: &Store) -> Vec<AwsRagResponse> {
+    let mut answers = detect_answers();
+    answers.push(answer(String::new()));
+    answers.push(answer(STARTED_JOB.to_owned()));
+    for job_status in &case.job_statuses {
+        answers.push(answer(
+            json!({"ingestionJob": {"ingestionJobId": "job1", "status": job_status}}).to_string(),
+        ));
+    }
+    answers
 }
 
 pub(super) fn create_all_answers() -> Vec<AwsRagResponse> {

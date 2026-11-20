@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use betterlite_oracle_helper_api::error::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -80,14 +80,13 @@ pub(crate) struct Store {
     pub(super) job_statuses: Vec<String>,
 }
 
-pub(super) fn failed(message: String) -> HelperResult {
-    let error = HelperError {
+pub(super) fn failed(message: String) -> HelperError {
+    HelperError {
         class: "ValueError".to_owned(),
         status: None,
         error_type: None,
         param: None,
         code: None,
         message,
-    };
-    Err(Box::new(error))
+    }
 }

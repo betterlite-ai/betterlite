@@ -166,7 +166,7 @@ pub(super) const fn answer(body: String) -> AwsRagResponse {
     }
 }
 
-pub(super) fn status(code: u16, body: String) -> AwsRagResponse {
+pub(super) const fn status(code: u16, body: String) -> AwsRagResponse {
     AwsRagResponse {
         status: code,
         body: body.into_bytes(),
