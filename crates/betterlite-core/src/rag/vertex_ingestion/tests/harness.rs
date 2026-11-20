@@ -11,6 +11,7 @@ use betterlite_config::sections::vertex_credential_sources::credential_source::C
 use betterlite_models::decisions::Extra;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::value::RawValue;
+use thiserror::Error;
 use tracing::subscriber::{DefaultGuard, set_default};
 
 use crate::rag::ingestion::IngestionPorts;
@@ -157,10 +158,12 @@ impl ScriptedHttp {
             .clone()
     }
 
-    fn reply(&self) -> HttpReply {
+    fn reply(&self) -> Result<HttpReply, PortError> {
         let mut replies = self.replies.lock().unwrap_or_else(PoisonError::into_inner);
-        let (status, body) = replies.pop_front().expect("a scripted reply");
-        HttpReply { status, body }
+        let Some((status, body)) = replies.pop_front() else {
+            return Err(PortError::new(ExhaustedScript));
+        };
+        Ok(HttpReply { status, body })
     }
 
     fn record(&self, call: Call) {
@@ -224,19 +227,23 @@ impl Part<'_> {
 impl VertexRagHttp for ScriptedHttp {
     async fn post_json(&self, request: JsonRequest<'_>) -> Result<HttpReply, PortError> {
         self.record(Part::Json(&request).into_call());
-        Ok(self.reply())
+        self.reply()
     }
 
     async fn get(&self, request: GetRequest<'_>) -> Result<HttpReply, PortError> {
         self.record(Part::Get(&request).into_call());
-        Ok(self.reply())
+        self.reply()
     }
 
     async fn post_multipart(&self, request: MultipartRequest<'_>) -> Result<HttpReply, PortError> {
         self.record(Part::Multipart(&request).into_call());
-        Ok(self.reply())
+        self.reply()
     }
 }
+
+#[derive(Debug, Error)]
+#[error("the reply script is exhausted")]
+struct ExhaustedScript;
 
 pub(super) struct Harness {
     pub(super) ingestion: VertexIngestion,

@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+mod edges;
 mod harness;
 
 use std::time::Duration;
