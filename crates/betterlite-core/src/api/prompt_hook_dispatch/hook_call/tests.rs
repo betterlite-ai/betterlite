@@ -15,7 +15,7 @@ use crate::api::prompt_hook_dispatch::hook_call::{
 };
 use crate::api::prompt_hook_dispatch::tests::support::{
     FakeFactory, FakeManager, HookBehavior, Lists, TestError, backend, json, list, logging_state,
-    object, registry, store, text,
+    object, prompt_spec, registry, store, text,
 };
 use crate::api::vector_store_registry::store::VectorStoreRegistry;
 
@@ -75,6 +75,7 @@ async fn the_sync_hook_receives_the_call_values() {
     let messages = vec![json(r#"{"role":"user","content":"hi"}"#)];
     let params = object(vec![("temperature", json("0.5"))]);
     let variables = object(vec![("name", text("world"))]);
+    let spec = prompt_spec();
     state
         .callback_dynamic_params
         .insert("user_id".to_owned(), text("u-1"));
@@ -83,6 +84,7 @@ async fn the_sync_hook_receives_the_call_values() {
     request.manager = Some(backend(&fake));
     request.prompt_variables = Some(&variables);
     request.prompt_id = Some("prompt-1");
+    request.prompt_spec = Some(&spec);
     request.prompt_label = Some("prod");
     request.prompt_version = Some(3);
     let result = call(&mut state, &mut lists, &factory, None, request)
@@ -95,6 +97,7 @@ async fn the_sync_hook_receives_the_call_values() {
     assert_eq!(entry.messages, messages);
     assert_eq!(entry.non_default_params, params);
     assert_eq!(entry.prompt_id.as_deref(), Some("prompt-1"));
+    assert_eq!(entry.prompt_spec.as_ref().unwrap().prompt_id, "prompt-1");
     assert_eq!(entry.prompt_variables.as_ref(), Some(&variables));
     assert_eq!(entry.dynamic_callback_params, dynamic);
     assert_eq!(entry.prompt_label.as_deref(), Some("prod"));
@@ -119,9 +122,11 @@ async fn the_async_hook_receives_the_call_values() {
     let factory = FakeFactory::new(Vec::new(), Vec::new());
     let messages = vec![json(r#"{"role":"user","content":"hi"}"#)];
     let params = JsonObject::new();
+    let spec = prompt_spec();
     let mut request = request("gpt-4", messages.as_slice(), &params);
     request.manager = Some(Arc::clone(&manager));
     request.prompt_id = Some("prompt-1");
+    request.prompt_spec = Some(&spec);
     let async_request = AsyncPromptCallRequest {
         call: request,
         tools: None,
@@ -138,8 +143,10 @@ async fn the_async_hook_receives_the_call_values() {
         .unwrap();
     let calls = fake.calls();
     assert_eq!(calls.len(), 1);
-    assert!(calls[0].asynchronous);
-    assert_eq!(calls[0].prompt_id.as_deref(), Some("prompt-1"));
+    let entry = &calls[0];
+    assert!(entry.asynchronous);
+    assert_eq!(entry.prompt_id.as_deref(), Some("prompt-1"));
+    assert_eq!(entry.prompt_spec.as_ref().unwrap().prompt_id, "prompt-1");
     assert_eq!(result.messages, messages);
     assert_eq!(state.messages.as_ref(), Some(&messages));
 }
@@ -243,6 +250,27 @@ async fn a_hook_without_new_breakpoints_leaves_the_request_kwargs_untouched() {
     let before = marked.clone();
     let mut request = request("gpt-4", messages.as_slice(), &params);
     request.manager = Some(Arc::clone(&manager));
+    request.request_kwargs = Some(&mut marked);
+    call(&mut state, &mut lists, &factory, None, request)
+        .await
+        .unwrap();
+    assert_eq!(marked, before);
+}
+
+#[tokio::test]
+async fn an_existing_breakpoint_is_not_recorded_as_an_injection() {
+    let fake = Arc::new(FakeManager::new("echo", Ok(false), HookBehavior::Echo));
+    let mut state = logging_state();
+    let mut lists = Lists::default();
+    let factory = FakeFactory::new(Vec::new(), Vec::new());
+    let messages = vec![json(
+        r#"{"role":"user","content":[{"type":"text","text":"hi","cache_control":{"type":"ephemeral"}}]}"#,
+    )];
+    let params = JsonObject::new();
+    let mut marked = kwargs("dep-1");
+    let before = marked.clone();
+    let mut request = request("gpt-4", messages.as_slice(), &params);
+    request.manager = Some(backend(&fake));
     request.request_kwargs = Some(&mut marked);
     call(&mut state, &mut lists, &factory, None, request)
         .await

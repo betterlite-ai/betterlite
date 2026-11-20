@@ -47,12 +47,13 @@ pub(crate) enum HookBehavior {
     Fail,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub(crate) struct RecordedCall {
     pub(crate) model: String,
     pub(crate) messages: Vec<Json>,
     pub(crate) non_default_params: JsonObject,
     pub(crate) prompt_id: Option<String>,
+    pub(crate) prompt_spec: Option<PromptSpec>,
     pub(crate) prompt_variables: Option<JsonObject>,
     pub(crate) dynamic_callback_params: Json,
     pub(crate) prompt_label: Option<String>,
@@ -60,11 +61,18 @@ pub(crate) struct RecordedCall {
     pub(crate) asynchronous: bool,
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct RecordedCheck {
+    pub(crate) prompt_id: Option<String>,
+    pub(crate) prompt_spec: Option<PromptSpec>,
+    pub(crate) dynamic_callback_params: Json,
+}
+
 pub(crate) struct FakeManager {
     name: &'static str,
     check: Result<bool, PromptCheckError>,
     behavior: HookBehavior,
-    checks: Mutex<Vec<Option<String>>>,
+    checks: Mutex<Vec<RecordedCheck>>,
     calls: Mutex<Vec<RecordedCall>>,
 }
 
@@ -84,6 +92,13 @@ impl FakeManager {
     }
 
     pub(crate) fn checks(&self) -> Vec<Option<String>> {
+        self.check_details()
+            .into_iter()
+            .map(|check| check.prompt_id)
+            .collect()
+    }
+
+    pub(crate) fn check_details(&self) -> Vec<RecordedCheck> {
         self.checks
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -97,11 +112,21 @@ impl FakeManager {
             .clone()
     }
 
-    fn record_check(&self, prompt_id: Option<&str>) {
+    fn record_check(
+        &self,
+        prompt_id: Option<&str>,
+        prompt_spec: Option<&PromptSpec>,
+        dynamic_callback_params: &StandardCallbackDynamicParams,
+    ) {
+        let check = RecordedCheck {
+            prompt_id: prompt_id.map(str::to_owned),
+            prompt_spec: prompt_spec.cloned(),
+            dynamic_callback_params: dynamic_callback_params.clone(),
+        };
         self.checks
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(prompt_id.map(str::to_owned));
+            .push(check);
     }
 
     fn record_call(&self, request: &ChatCompletionPromptRequest<'_>, asynchronous: bool) {
@@ -110,6 +135,7 @@ impl FakeManager {
             messages: request.messages.clone(),
             non_default_params: request.non_default_params.clone(),
             prompt_id: request.prompt_id.map(str::to_owned),
+            prompt_spec: request.prompt_spec.cloned(),
             prompt_variables: request.prompt_variables.cloned(),
             dynamic_callback_params: request.dynamic_callback_params.clone(),
             prompt_label: request.prompt_label.map(str::to_owned),
@@ -141,10 +167,10 @@ impl PromptManager<TestError> for FakeManager {
     fn should_run(
         &self,
         prompt_id: Option<&str>,
-        _prompt_spec: Option<&PromptSpec>,
-        _dynamic_callback_params: &StandardCallbackDynamicParams,
+        prompt_spec: Option<&PromptSpec>,
+        dynamic_callback_params: &StandardCallbackDynamicParams,
     ) -> Result<bool, PromptCheckError> {
-        self.record_check(prompt_id);
+        self.record_check(prompt_id, prompt_spec, dynamic_callback_params);
         self.check
     }
 
@@ -301,6 +327,13 @@ pub(crate) fn store(id: &str) -> LiteLlmManagedVectorStore {
         is_config: None,
         extra: BTreeMap::new(),
     }
+}
+
+pub(crate) fn prompt_spec() -> PromptSpec {
+    serde_json::from_str(
+        r#"{"prompt_id":"prompt-1","litellm_params":{"prompt_id":"prompt-1","prompt_integration":"dotprompt"},"version":3}"#,
+    )
+    .expect("a prompt spec")
 }
 
 pub(crate) fn json(text: &str) -> Json {

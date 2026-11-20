@@ -11,7 +11,7 @@ use crate::api::prompt_hook_dispatch::PromptHookDispatch;
 use crate::api::prompt_hook_dispatch::selection::{PromptSelectionRequest, select_prompt_manager};
 use crate::api::prompt_hook_dispatch::tests::support::{
     Backend, FakeFactory, FakeManager, HookBehavior, Lists, backend, list, logging_state, object,
-    registry, store,
+    prompt_spec, registry, store, text,
 };
 use crate::api::vector_store_registry::store::VectorStoreRegistry;
 
@@ -76,6 +76,27 @@ fn a_model_prefix_selects_the_factory_manager() {
     );
     assert!(lists.managers.is_empty());
     assert!(lists.callbacks.is_empty());
+}
+
+#[test]
+fn the_stamp_is_the_model_prefix_not_the_callback_name() {
+    let selected = fake("langfuse_manager", Ok(false));
+    let manager = backend(&selected);
+    let factory = FakeFactory::new(
+        vec!["langfuse", "langfuse_otel"],
+        vec![("langfuse", Arc::clone(&manager))],
+    );
+    let mut state = logging_state();
+    let mut lists = Lists::default();
+    let params = JsonObject::new();
+    let request = request("langfuse_otel/gpt-4", &params);
+    let found = select(&mut state, &mut lists, &factory, None, &request);
+    assert!(Arc::ptr_eq(found.as_ref().unwrap(), &manager));
+    assert_eq!(factory.inits(), ["langfuse".to_owned()]);
+    assert_eq!(
+        integration(&state),
+        Some(&Json::Text("langfuse_otel".to_owned()))
+    );
 }
 
 #[test]
@@ -155,14 +176,20 @@ fn auto_detection_returns_the_first_manager_that_runs() {
     let factory = FakeFactory::new(Vec::new(), Vec::new());
     let mut state = logging_state();
     let params = JsonObject::new();
-    let dynamic = empty_dynamic();
+    let dynamic = Json::Object(object(vec![("user_id", text("u-1"))]));
+    let spec = prompt_spec();
     let mut request = request("gpt-4", &params);
     request.prompt_id = Some("prompt-1");
+    request.prompt_spec = Some(&spec);
     request.dynamic_callback_params = Some(&dynamic);
     let found = select(&mut state, &mut lists, &factory, None, &request);
     assert!(Arc::ptr_eq(found.as_ref().unwrap(), &backend(&second)));
     assert_eq!(first.checks(), [Some("prompt-1".to_owned())]);
     assert_eq!(second.checks(), [Some("prompt-1".to_owned())]);
+    let checks = first.check_details();
+    let checked = &checks[0];
+    assert_eq!(checked.dynamic_callback_params, dynamic);
+    assert_eq!(checked.prompt_spec.as_ref().unwrap().prompt_id, "prompt-1");
     assert_eq!(
         integration(&state),
         Some(&Json::Text("second_manager".to_owned()))
@@ -249,6 +276,24 @@ fn the_fallback_skips_a_manager_that_does_not_run_without_a_prompt_id() {
         integration(&state),
         Some(&Json::Text("second_manager".to_owned()))
     );
+}
+
+#[test]
+fn the_fallback_checks_with_an_empty_dynamic_map() {
+    let declining = fake("declining_manager", Ok(false));
+    let mut lists = Lists {
+        managers: vec![backend(&declining)],
+        callbacks: Vec::new(),
+    };
+    let factory = FakeFactory::new(Vec::new(), Vec::new());
+    let mut state = logging_state();
+    let params = JsonObject::new();
+    let request = request("gpt-4", &params);
+    let found = select(&mut state, &mut lists, &factory, None, &request);
+    assert!(found.is_none());
+    let checks = declining.check_details();
+    assert_eq!(checks[0].dynamic_callback_params, empty_dynamic());
+    assert!(checks[0].prompt_spec.is_none());
 }
 
 #[test]
