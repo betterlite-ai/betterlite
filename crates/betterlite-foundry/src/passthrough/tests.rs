@@ -100,6 +100,11 @@ impl RecordingOcr {
     }
 }
 
+// Arc::clone(&concrete) does not widen to the trait object in place, so widen on return
+pub(super) fn ocr_projector(ocr: Arc<RecordingOcr>) -> Arc<dyn NativeOcrPassthrough> {
+    ocr
+}
+
 impl NativeOcrPassthrough for RecordingOcr {
     fn passthrough_response(
         &self,

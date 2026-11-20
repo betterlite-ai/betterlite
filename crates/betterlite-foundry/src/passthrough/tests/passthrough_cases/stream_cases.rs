@@ -6,7 +6,7 @@ use betterlite_openai::passthrough::transformation::BasePassthroughConfig as _;
 
 use crate::passthrough::logging::FoundryRelayedLog;
 use crate::passthrough::tests::{
-    RecordingLogging, RecordingStream, build_plan, plan_with_stream, target,
+    RecordingLogging, RecordingStream, build_plan, ocr_projector, plan_with_stream, target,
 };
 
 use super::ocr_cases::scripted_ocr;
@@ -71,7 +71,7 @@ fn stream_collection_skips_ocr() {
     let chunks = vec![String::from(RESPONSES_CHUNK)];
     let ocr = scripted_ocr();
     let mut plan = build_plan(None, None, None, None, Object::new());
-    plan.ocr = Some(Arc::clone(&ocr));
+    plan.ocr = Some(ocr_projector(Arc::clone(&ocr)));
     let mut logging = RecordingLogging::default();
     let logged = plan.handle_collected_chunks(
         &chunks,
