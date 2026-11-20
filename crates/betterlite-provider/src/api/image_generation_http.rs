@@ -6,7 +6,6 @@ use betterlite_models::call_helpers::headers::ProviderHeaderProjection;
 use betterlite_openai::api::image_contracts::records::{
     ImageHeaders, ImageHttpResponse, ImageParams, ImageResponse, ImageUsage,
 };
-use betterlite_openai::error::ProviderError;
 use betterlite_openai::image_generation::transport::ImageGenerationTransport;
 
 use self::error::{ConfigFailure, ImageGenerationError};
@@ -62,15 +61,6 @@ pub struct ImageGenerationDeps<'deps, C, S: ClientSource> {
 enum Selected<'client, Client> {
     Supplied(&'client Client),
     Created(Client),
-}
-
-impl<Client> Selected<'_, Client> {
-    const fn transport(&self) -> &Client {
-        match self {
-            Self::Supplied(client) => client,
-            Self::Created(client) => client,
-        }
-    }
 }
 
 pub struct PreparedGeneration<'prepared, 'call, C, S: ClientSource> {
@@ -130,7 +120,7 @@ where
 
 // One send, no retry: a transport or status failure becomes a provider error, and the response transform runs after both
 pub async fn send<C, S>(
-    prepared: PreparedGeneration<'_, C, S>,
+    prepared: PreparedGeneration<'_, '_, C, S>,
 ) -> Result<ImageGenerationOutcome, ImageGenerationError>
 where
     C: BaseImageGenerationConfig,
@@ -146,7 +136,11 @@ where
     } = prepared;
     let timeout = request.deadline;
     let started = Instant::now();
-    let reply = client.transport().generate(request).await;
+    let transport: &S::Client = match &client {
+        Selected::Supplied(supplied) => *supplied,
+        Selected::Created(supplied) => supplied,
+    };
+    let reply = transport.generate(request).await;
     let sent = facts::Sent {
         mode,
         timeout,
@@ -164,12 +158,15 @@ where
     })
 }
 
-fn transform_response<C: BaseImageGenerationConfig>(
+fn transform_response<C>(
     config: &C,
     call: &ImageGenerationCall<'_>,
     data: &ImageParams,
     response: &ImageHttpResponse,
-) -> Result<ImageResponse, ImageGenerationError> {
+) -> Result<ImageResponse, ImageGenerationError>
+where
+    C: BaseImageGenerationConfig,
+{
     let mut target = ImageResponse {
         created: 0,
         data: Some(Vec::new()),

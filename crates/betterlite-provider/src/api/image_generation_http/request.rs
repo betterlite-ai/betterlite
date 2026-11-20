@@ -43,10 +43,13 @@ where
     }
 }
 
-pub(super) fn validated_headers<C: BaseImageGenerationConfig>(
+pub(super) fn validated_headers<C>(
     config: &C,
     call: &ImageGenerationCall<'_>,
-) -> Result<ImageHeaders, ImageGenerationError> {
+) -> Result<ImageHeaders, ImageGenerationError>
+where
+    C: BaseImageGenerationConfig,
+{
     let caller = caller_headers(call.optional_params)?;
     let explicit = call.api_key.map(|key| SecretString::from(key.to_owned()));
     let mut headers = config.validate_environment(ImageEnvironment {
@@ -82,10 +85,13 @@ fn caller_headers(optional_params: &ImageParams) -> Result<ImageHeaders, ImageGe
     }
 }
 
-pub(super) fn endpoint<C: BaseImageGenerationConfig>(
+pub(super) fn endpoint<C>(
     config: &C,
     call: &ImageGenerationCall<'_>,
-) -> Result<(String, Url), ImageGenerationError> {
+) -> Result<(String, Url), ImageGenerationError>
+where
+    C: BaseImageGenerationConfig,
+{
     let params = call.litellm_params;
     let stored = match params.get("api_key") {
         None | Some(Json::Null) => None,
@@ -122,11 +128,14 @@ pub(super) fn endpoint<C: BaseImageGenerationConfig>(
     Ok((api_base, url))
 }
 
-pub(super) fn transform<C: BaseImageGenerationConfig>(
+pub(super) fn transform<C>(
     config: &C,
     call: &ImageGenerationCall<'_>,
     headers: &ImageHeaders,
-) -> Result<ImageParams, ImageGenerationError> {
+) -> Result<ImageParams, ImageGenerationError>
+where
+    C: BaseImageGenerationConfig,
+{
     config
         .transform_image_generation_request(ImageGenerationRequest {
             model: call.model,

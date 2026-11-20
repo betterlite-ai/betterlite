@@ -28,10 +28,10 @@ pub(super) struct Sent {
 }
 
 // httpx's HTTPStatusError hands the handler the decoded body and the response headers it will name, without content-encoding
-pub(super) fn status_error<C: BaseImageGenerationConfig>(
-    reply: &UpstreamResponse,
-    config: &C,
-) -> ImageGenerationError {
+pub(super) fn status_error<C>(reply: &UpstreamResponse, config: &C) -> ImageGenerationError
+where
+    C: BaseImageGenerationConfig,
+{
     let (text, headers) = masked_reply(reply);
     let facts = FailureFacts {
         response_status: Some(i64::from(reply.status)),
@@ -67,11 +67,14 @@ fn reply_text(reply: &UpstreamResponse) -> String {
     )
 }
 
-pub(super) fn transport_error<C: BaseImageGenerationConfig>(
+pub(super) fn transport_error<C>(
     error: &TransportError,
     sent: &Sent,
     config: &C,
-) -> ImageGenerationError {
+) -> ImageGenerationError
+where
+    C: BaseImageGenerationConfig,
+{
     if matches!(
         error,
         TransportError::ConnectTimeout(_) | TransportError::Deadline(_)
@@ -125,11 +128,10 @@ fn seconds(timeout: Duration) -> String {
 }
 
 // _handle_error picks the status, text and headers, then the provider config names the error class
-fn classify<C: BaseImageGenerationConfig>(
-    facts: &FailureFacts,
-    headers: &ImageHeaders,
-    config: &C,
-) -> ProviderError {
+fn classify<C>(facts: &FailureFacts, headers: &ImageHeaders, config: &C) -> ProviderError
+where
+    C: BaseImageGenerationConfig,
+{
     let base = handle_error(facts, None);
     let mut error = config.get_error_class(&base.message, base.status_code, headers);
     error.status_code_is_synthesized = base.status_code_is_synthesized;
