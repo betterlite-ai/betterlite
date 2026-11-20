@@ -25,8 +25,8 @@ compare:
   headers_present: []
   upstream_headers: [content-type]
   ignore:
-    - {pointer: /speech_http/value/steps/0/failure/message, why: betterlite writes its own missing-body text}
-    - {pointer: /speech_http/value/steps/1/failure/message, why: betterlite writes its own missing-body text}
-    - {pointer: /speech_http/value/steps/2/failure/message, why: betterlite writes its own missing-body text}
-    - {pointer: /speech_http/value/steps/3/failure/message, why: LiteLLM masks the provider text and betterlite keeps it}
+    - {pointer: /speech_http/value/steps/0/failure/message, why: SDK parity ignores message wording; class, status and headers stay compared}
+    - {pointer: /speech_http/value/steps/1/failure/message, why: SDK parity ignores message wording; class, status and headers stay compared}
+    - {pointer: /speech_http/value/steps/2/failure/message, why: SDK parity ignores message wording; class, status and headers stay compared}
+    - {pointer: /speech_http/value/steps/3/failure/message, why: SDK parity ignores message wording; class, status and headers stay compared}
     - {pointer: /speech_http/value/steps/3/failure/headers/date, why: each mock stamps its own date header}
