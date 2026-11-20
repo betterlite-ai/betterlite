@@ -1,0 +1,11 @@
+kind: helper
+name: exception-marker-detection-text-fallback
+call:
+  b3722:
+    bedrock_decisions:
+      has_exception:
+        view:
+          kind: text
+          text: '{"Output": {"__type": "ValidationException"}}'
+env: {}
+compare: {ignore: []}
