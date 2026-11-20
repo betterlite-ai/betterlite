@@ -112,7 +112,7 @@ where
             },
             params.api_base.as_deref(),
             ResponsesProvider::OpenAi,
-            &mut identity,
+            &mut *identity,
         )
     }
 

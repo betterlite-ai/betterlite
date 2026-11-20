@@ -6,10 +6,10 @@ use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::TlsPolicy;
 use betterlite_config::types::{Config, ProxyTrust};
 use betterlite_core::api::responses_read_http::config::ReadConfig;
-use betterlite_core::api::responses_read_http::error::ClientError;
 use betterlite_core::api::responses_read_http::service::{
     ClientKind, ClientSource, LogContext, PreparedRead, ReadCall, ReadDeps, prepare,
 };
+use betterlite_core::api::vector_store_http_write::error::ClientError;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::pool::ClientPool;
