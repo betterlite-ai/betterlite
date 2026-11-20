@@ -113,7 +113,10 @@ impl ResponsesEventSource for Scripted {
         if let Some(event) = self.events.pop_front() {
             return Ok(Some(event));
         }
-        self.failure.take().map_or_else(|| Ok(None), Err)
+        match self.failure.take() {
+            Some(failure) => Err(failure),
+            None => Ok(None),
+        }
     }
 }
 
@@ -220,14 +223,14 @@ fn frame_value(raw: &[u8]) -> Result<Frame, Box<HelperError>> {
         .strip_suffix("\n\n")
         .ok_or_else(|| invalid_frame(text))?;
     let mut lines = body.split('\n');
-    let event = lines.next().and_then(|line| line.strip_prefix("event: "));
-    let data = lines.next().and_then(|line| line.strip_prefix("data: "));
-    let (Some(event), Some(data), None) = (event, data, lines.next()) else {
+    let event_line = lines.next().and_then(|line| line.strip_prefix("event: "));
+    let data_line = lines.next().and_then(|line| line.strip_prefix("data: "));
+    let (Some(name), Some(payload), None) = (event_line, data_line, lines.next()) else {
         return Err(invalid_frame(text));
     };
-    let parsed = serde_json::from_str::<Json>(data).or_value_error()?;
+    let parsed = serde_json::from_str::<Json>(payload).or_value_error()?;
     Ok(Frame {
-        event: event.to_owned(),
+        event: name.to_owned(),
         data: parsed,
     })
 }

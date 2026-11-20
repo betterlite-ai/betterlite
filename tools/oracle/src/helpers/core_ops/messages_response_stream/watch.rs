@@ -52,6 +52,7 @@ impl Captured {
                 kept.push(line.clone());
             }
         }
+        drop(lines);
         kept
     }
 }
