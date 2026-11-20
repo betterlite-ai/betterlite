@@ -36,7 +36,7 @@ pub(crate) fn window_counters(
         if max_budget <= Decimal::ZERO {
             continue;
         }
-        let Some(start) = budget_window_start(&window, now, durations) else {
+        let Some(window_start) = budget_window_start(&window, now, durations) else {
             // LiteLLM prints the entity id here; a key's id is the key token, so only the type and duration go out
             tracing::warn!(
                 entity_type = entity.entity_type.wire_value(),
@@ -45,7 +45,7 @@ pub(crate) fn window_counters(
             );
             continue;
         };
-        let Some(start) = system_time(start) else {
+        let Some(clock_start) = system_time(window_start) else {
             tracing::warn!(
                 entity_type = entity.entity_type.wire_value(),
                 budget_duration = %duration,
@@ -62,7 +62,7 @@ pub(crate) fn window_counters(
             source_cache_key: None,
             spend_log_entity_id: Some(entity.entity_id.clone()),
             window_duration: Some(duration),
-            window_start: Some(start),
+            window_start: Some(clock_start),
         });
     }
     counters

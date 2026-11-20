@@ -21,11 +21,11 @@ pub(crate) async fn tag_counters(
         let Some(object) = objects.get(name) else {
             continue;
         };
-        let max_budget = object
+        let cap = object
             .litellm_budget_table
             .as_ref()
             .and_then(|budget| budget.max_budget);
-        let Some(max_budget) = max_budget.filter(|value| *value > Decimal::ZERO) else {
+        let Some(max_budget) = cap.filter(|value| *value > Decimal::ZERO) else {
             continue;
         };
         counters.push(BudgetCounter {

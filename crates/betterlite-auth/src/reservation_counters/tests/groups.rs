@@ -7,7 +7,7 @@ use super::support::{FakeRows, Fixture, auth, dec, group_budget, group_row};
 async fn group_matched_uses_only_the_token_groups() {
     let mut fixture = Fixture::new();
     fixture.token = auth(r#"{"token":"tok","matched_model_access_groups":["a","b"]}"#);
-    fixture.rows = FakeRows::new().with_groups(vec![
+    fixture.rows = FakeRows::default().with_groups(vec![
         group_row("a", "1", r#"{"max_budget":5}"#),
         group_row("c", "1", r#"{"max_budget":9}"#),
     ]);
@@ -30,7 +30,8 @@ async fn group_batch_merges_the_cached_and_fetched_budgets() {
     fixture
         .cache
         .put("model_access_group:a", &group_budget("a", "3", "5"));
-    fixture.rows = FakeRows::new().with_groups(vec![group_row("b", "2", r#"{"max_budget":7}"#)]);
+    fixture.rows =
+        FakeRows::default().with_groups(vec![group_row("b", "2", r#"{"max_budget":7}"#)]);
     let list = fixture.counters().await;
     let caps: Vec<Decimal> = list.iter().map(|counter| counter.max_budget).collect();
     assert_eq!(caps, vec![dec("5"), dec("7")]);
@@ -65,7 +66,7 @@ async fn group_skip_zero_or_missing_budget(#[case] budget: Option<&str>) {
     let mut fixture = Fixture::new();
     fixture.token = auth(r#"{"token":"tok","matched_model_access_groups":["a"]}"#);
     if let Some(spec) = budget {
-        fixture.rows = FakeRows::new().with_groups(vec![group_row("a", "0", spec)]);
+        fixture.rows = FakeRows::default().with_groups(vec![group_row("a", "0", spec)]);
     }
     assert!(fixture.counters().await.is_empty());
 }

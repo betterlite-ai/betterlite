@@ -12,7 +12,7 @@ async fn tag_dedup_keeps_first_seen_order_and_queries_once() {
         "b".to_owned(),
         "a".to_owned(),
     ];
-    fixture.rows = FakeRows::new().with_tags(vec![
+    fixture.rows = FakeRows::default().with_tags(vec![
         tag_row("a", "1", r#"{"max_budget":2}"#),
         tag_row("b", "2", r#"{"max_budget":3}"#),
     ]);
@@ -35,7 +35,7 @@ async fn tag_batch_merges_the_cached_and_fetched_rows() {
     fixture
         .cache
         .put("tag:a", &tag_row("a", "1", r#"{"max_budget":2}"#));
-    fixture.rows = FakeRows::new().with_tags(vec![tag_row("b", "3", r#"{"max_budget":4}"#)]);
+    fixture.rows = FakeRows::default().with_tags(vec![tag_row("b", "3", r#"{"max_budget":4}"#)]);
     let list = fixture.counters().await;
     let caps: Vec<Decimal> = list.iter().map(|counter| counter.max_budget).collect();
     assert_eq!(caps, vec![dec("2"), dec("4")]);
@@ -59,7 +59,7 @@ async fn tag_skip_zero_or_missing_budget(#[case] budget: Option<&str>) {
     let mut fixture = Fixture::new();
     fixture.tag_names = vec!["a".to_owned()];
     if let Some(spec) = budget {
-        fixture.rows = FakeRows::new().with_tags(vec![tag_row("a", "0", spec)]);
+        fixture.rows = FakeRows::default().with_tags(vec![tag_row("a", "0", spec)]);
     }
     assert!(fixture.counters().await.is_empty());
 }

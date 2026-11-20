@@ -241,6 +241,7 @@ impl ReservationCounterCache for FakeCache {
     }
 }
 
+#[derive(Default)]
 pub(super) struct FakeRows {
     tags: Vec<TagTable>,
     groups: Vec<ModelAccessGroupBudgetRow>,
@@ -249,15 +250,6 @@ pub(super) struct FakeRows {
 }
 
 impl FakeRows {
-    pub(super) fn new() -> Self {
-        Self {
-            tags: Vec::new(),
-            groups: Vec::new(),
-            tag_queries: Mutex::new(Vec::new()),
-            group_queries: Mutex::new(Vec::new()),
-        }
-    }
-
     pub(super) fn with_tags(self, tags: Vec<TagTable>) -> Self {
         Self { tags, ..self }
     }
@@ -354,7 +346,7 @@ impl Fixture {
             apply_override: false,
             database: true,
             cache: FakeCache::new(),
-            rows: FakeRows::new(),
+            rows: FakeRows::default(),
             durations: FixedDurations::new(),
             now: now(),
         }
@@ -493,7 +485,7 @@ pub(super) fn full_fixture() -> Fixture {
         r#"{"user_id":"eu-1","blocked":false,"spend":4,"litellm_budget_table":{"max_budget":40}}"#,
     ));
     fixture.tag_names = vec!["tag-a".to_owned()];
-    fixture.rows = FakeRows::new()
+    fixture.rows = FakeRows::default()
         .with_tags(vec![tag_row("tag-a", "9", r#"{"max_budget":30}"#)])
         .with_groups(vec![group_row("group-a", "8", r#"{"max_budget":20}"#)]);
     fixture.cache.put(
