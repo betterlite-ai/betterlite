@@ -784,25 +784,26 @@ pub(crate) fn async_http_client() -> AsyncSender {
         .expect("the async client builds")
 }
 
+// the server that accepts the request and answers after the send deadline the fixture carries
+fn slow_server() -> Serving {
+    let delay = Duration::from_millis(300);
+    serve(reply("200 OK", &[], "{}"), delay).expect("the slow server starts")
+}
+
 // the failure a blocking send raises when its deadline passes, taken from a real client so a fake wire can replay it
 pub(crate) fn timeout_failure() -> RequestFailure {
-    let serving = serve(reply("200 OK", &[], "{}"), Duration::from_millis(300))
-        .expect("the slow server starts");
-    let failure = blocking_client()
-        .send_blocking(slow_request(&serving))
-        .expect_err("the deadline ends the send");
+    let serving = slow_server();
+    let outcome = blocking_client().send_blocking(slow_request(&serving));
+    let failure = outcome.expect_err("the deadline ends the send");
     drop(serving.finish());
     failure
 }
 
 // the same failure from the async client, which a test that already runs a runtime must take this way
 pub(crate) async fn async_timeout_failure() -> RequestFailure {
-    let serving = serve(reply("200 OK", &[], "{}"), Duration::from_millis(300))
-        .expect("the slow server starts");
-    let failure = async_http_client()
-        .send(slow_request(&serving))
-        .await
-        .expect_err("the deadline ends the send");
+    let serving = slow_server();
+    let outcome = async_http_client().send(slow_request(&serving)).await;
+    let failure = outcome.expect_err("the deadline ends the send");
     drop(serving.finish());
     failure
 }
