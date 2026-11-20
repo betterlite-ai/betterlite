@@ -97,7 +97,7 @@ pub(super) fn assemble<E>(
 pub(super) fn update_metadata<E>(
     wrapper: &CallWrapper<E>,
     logging: Option<&LoggingHandle>,
-    call: CallView<'_>,
+    call: &CallView<'_>,
     times: CallTimes,
     outcome: &CallOutcome,
 ) {

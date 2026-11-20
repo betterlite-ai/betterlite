@@ -59,18 +59,15 @@ async fn the_completion_with_fallbacks_parent_is_skipped() {
 #[tokio::test]
 async fn a_deferred_log_waits_for_the_stream_to_end() {
     let mut fixture = fixture();
+    let request = chat_request(r#"{"litellm_call_id":"call-1"}"#);
     let (handle, _prepared) = fixture
         .wrapper
-        .start_logging(
-            "acompletion",
-            chat_request(r#"{"litellm_call_id":"call-1"}"#),
-            true,
-        )
+        .start_logging("acompletion", request, true)
         .expect("the logging state builds");
     {
         let mut state = handle.state.lock().expect("the state lock is free");
-        state.deferred.defer_async_logging = true;
-    }
+        state.deferred.defer_async_logging = true
+    };
     let stub = Stub::new("acompletion");
     fixture
         .wrapper

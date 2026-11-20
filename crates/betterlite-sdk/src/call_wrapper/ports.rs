@@ -2,6 +2,7 @@ use std::future::Future;
 use std::time::Duration;
 
 use chrono::{DateTime, FixedOffset};
+use tokio::runtime::{Handle, Runtime};
 
 // Wraps time.time(), datetime.datetime.now() and the monotonic clock message copying reads
 pub trait WrapperClock: Send + Sync {
@@ -21,21 +22,21 @@ pub trait BlockingBridge {
         F: Future;
 }
 
-impl BlockingBridge for tokio::runtime::Runtime {
+impl BlockingBridge for Runtime {
     fn block_on<F>(&self, future: F) -> F::Output
     where
         F: Future,
     {
-        tokio::runtime::Runtime::block_on(self, future)
+        Self::block_on(self, future)
     }
 }
 
-impl BlockingBridge for tokio::runtime::Handle {
+impl BlockingBridge for Handle {
     fn block_on<F>(&self, future: F) -> F::Output
     where
         F: Future,
     {
-        tokio::runtime::Handle::block_on(self, future)
+        Self::block_on(self, future)
     }
 }
 

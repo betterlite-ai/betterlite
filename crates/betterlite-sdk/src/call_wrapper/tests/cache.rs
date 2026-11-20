@@ -12,10 +12,11 @@ use super::support::response;
 use super::support::responses_stream;
 use super::support::run_sync;
 use super::support::value;
+use crate::call_setup::RequestMap;
 use crate::call_wrapper::cache::CacheMode;
 use crate::call_wrapper::state::WrapperOptions;
 
-fn embedding_request() -> crate::call_setup::RequestMap {
+fn embedding_request() -> RequestMap {
     request(r#"{"model":"text-embedding-3-small","input":["cached","uncached"]}"#)
 }
 

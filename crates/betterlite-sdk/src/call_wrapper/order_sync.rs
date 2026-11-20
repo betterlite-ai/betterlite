@@ -133,7 +133,7 @@ where
         steps::update_metadata(
             self.wrapper,
             self.logging.as_ref(),
-            CallView {
+            &CallView {
                 request: &self.request,
                 model: self.model.as_deref(),
             },
@@ -161,7 +161,7 @@ where
         Ok(())
     }
 
-    fn cached(&mut self) -> Result<Option<CallOutcome>, CallError> {
+    fn cached(&self) -> Result<Option<CallOutcome>, CallError> {
         if !self.cache_enabled()? {
             return Ok(None);
         }
@@ -177,7 +177,7 @@ where
     // (caching is unset and litellm.cache exists) or caching is true, unless cache.no-cache disables it
     fn cache_enabled(&self) -> Result<bool, CallError> {
         let caching: Option<bool> = field(&self.request, "caching")?;
-        let enabled = caching.unwrap_or(self.wrapper.cache.is_some());
+        let enabled = caching.unwrap_or_else(|| self.wrapper.cache.is_some());
         if !enabled {
             return Ok(false);
         }
@@ -186,14 +186,14 @@ where
         Ok(!no_cache)
     }
 
-    fn send_call(&mut self) -> Result<CallOutcome, CallError> {
+    fn send_call(&self) -> Result<CallOutcome, CallError> {
         let request = self.request.clone();
         let bridge = self.bridge;
         let target = self.target;
         bridge.block_on(target.call(request, self.logging.as_ref()))
     }
 
-    fn store(&mut self, outcome: &CallOutcome) -> Result<(), CallError> {
+    fn store(&self, outcome: &CallOutcome) -> Result<(), CallError> {
         let Some(cache) = self.wrapper.cache.as_ref().map(Arc::clone) else {
             return Ok(());
         };

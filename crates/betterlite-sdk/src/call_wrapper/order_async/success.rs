@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use betterlite_core::rules::RuleEvaluator;
 
-use super::AsyncRun;
+use super::{AsyncRun, CallOrigin, FallbackParent};
 use crate::call_setup::correlation::CallOutcome;
 use crate::call_setup::hooks::{
     hook_call_type, run_success_hook_on_stream, success_deployment_hook,
@@ -18,12 +18,12 @@ use crate::call_wrapper::state::LoggingHandle;
 use crate::call_wrapper::steps::{self, CallView};
 
 pub(super) async fn stream_result<E>(
-    run: &mut AsyncRun<'_, E>,
+    run: &AsyncRun<'_, E>,
     mut outcome: CallOutcome,
     streaming_requested: bool,
 ) -> Result<CallOutcome, CallError>
 where
-    E: RuleEvaluator,
+    E: RuleEvaluator + Send + Sync,
 {
     super::cache::mark_stream(run);
     if !streaming_requested {
@@ -42,7 +42,7 @@ where
     steps::update_metadata(
         run.wrapper,
         run.logging.as_ref(),
-        CallView {
+        &CallView {
             request: &run.request,
             model: run.model.as_deref(),
         },
@@ -75,41 +75,44 @@ where
 }
 
 pub(super) async fn finish<E>(
-    run: &mut AsyncRun<'_, E>,
+    run: &AsyncRun<'_, E>,
     outcome: CallOutcome,
 ) -> Result<CallOutcome, CallError>
 where
-    E: RuleEvaluator,
+    E: RuleEvaluator + Send + Sync,
 {
-    let outcome = success_hook(run, outcome).await?;
+    let hooked = success_hook(run, outcome).await?;
     if let Some(cache) = run.wrapper.cache.as_ref().map(Arc::clone) {
         cache
-            .store(&run.call_kwargs, &outcome, &run.call_type, CacheMode::Async)
+            .store(&run.call_kwargs, &hooked, &run.call_type, CacheMode::Async)
             .await?;
     }
     if embedding_partial_hit(run) {
-        log_success(run, &outcome);
-        return Ok(combine_embedding(run, outcome));
+        log_success(run, &hooked);
+        return Ok(combine_embedding(run, hooked));
     }
     steps::update_metadata(
         run.wrapper,
         run.logging.as_ref(),
-        CallView {
+        &CallView {
             request: &run.request,
             model: run.model.as_deref(),
         },
         steps::times(run.start, run.end, run.wrapper.clock.as_ref()),
-        &outcome,
+        &hooked,
     );
-    log_success(run, &outcome);
-    Ok(outcome)
+    log_success(run, &hooked);
+    Ok(hooked)
 }
 
 // async_post_call_success_deployment_hook runs only when the call type names a CallTypes variant
 async fn success_hook<E>(
     run: &AsyncRun<'_, E>,
     outcome: CallOutcome,
-) -> Result<CallOutcome, CallError> {
+) -> Result<CallOutcome, CallError>
+where
+    E: RuleEvaluator + Send + Sync,
+{
     if hook_call_type(&run.call_type).is_none() {
         return Ok(outcome);
     }
@@ -166,8 +169,11 @@ fn dispatch_success<E>(run: &AsyncRun<'_, E>, handle: &LoggingHandle, outcome: &
             result: success_result(outcome, &run.call_type),
             times,
             flags: DispatchFlags {
-                is_completion_with_fallbacks: run.is_completion_with_fallbacks,
-                is_internal_call: run.internal_call,
+                is_completion_with_fallbacks: matches!(
+                    run.fallback_parent,
+                    FallbackParent::Present
+                ),
+                is_internal_call: matches!(run.origin, CallOrigin::Internal),
             },
         },
     );

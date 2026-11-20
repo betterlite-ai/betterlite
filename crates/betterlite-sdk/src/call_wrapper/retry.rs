@@ -49,10 +49,8 @@ pub fn max_retries_per_request_hit(request: &RequestMap, limit: Option<i64>) -> 
 
 // The router keeps model_group in the request's own metadata, never in litellm_metadata
 pub fn is_router_call(request: &RequestMap) -> Result<bool, CallError> {
-    match object_field(request, "metadata")? {
-        None => Ok(false),
-        Some(fields) => Ok(fields.contains_key("model_group")),
-    }
+    let metadata = object_field(request, "metadata")?;
+    Ok(metadata.is_some_and(|fields| fields.contains_key("model_group")))
 }
 
 // Only a plain Exception, BudgetExceededError and GuardrailRaisedException sit outside openai.APIError

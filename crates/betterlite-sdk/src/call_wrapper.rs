@@ -94,7 +94,7 @@ pub struct CallWrapper<E> {
 
 impl<E> CallWrapper<E>
 where
-    E: RuleEvaluator,
+    E: RuleEvaluator + Send + Sync,
 {
     // function_setup with the caller's copies of the lists, the providers and the correlation context
     pub(crate) fn start_logging(

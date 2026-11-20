@@ -13,7 +13,7 @@ pub enum CacheMode {
 }
 
 // What B4305's _sync_get_cache and _async_get_cache answer with, without the Python objects the wrapper cannot carry
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CacheOutcome {
     pub cached: Option<CallOutcome>,
     pub final_embedding: Option<Json>,

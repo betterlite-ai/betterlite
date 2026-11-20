@@ -104,9 +104,10 @@ pub fn success_result(outcome: &CallOutcome, call_type: &str) -> SuccessResult {
         CallOutcome::Response(response) if matches!(call_type, "embedding" | "aembedding") => {
             SuccessResult::Embeddings(response.clone())
         }
-        CallOutcome::Response(response) => SuccessResult::Other(response.clone()),
+        CallOutcome::Response(response) | CallOutcome::ResponsesStream(response) => {
+            SuccessResult::Other(response.clone())
+        }
         CallOutcome::ChatStream(stream) => SuccessResult::Chunk(stream.model_response.clone()),
-        CallOutcome::ResponsesStream(response) => SuccessResult::Other(response.clone()),
     }
 }
 

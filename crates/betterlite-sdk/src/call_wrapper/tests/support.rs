@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
+use std::mem::take;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -19,16 +20,17 @@ use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset, TimeDelta};
 use indexmap::IndexMap;
+use tokio::runtime::Runtime;
 
 use crate::call_setup::RequestMap;
 use crate::call_setup::callbacks::CallbackLists;
-use crate::call_setup::correlation::CallOutcome;
+use crate::call_setup::correlation::{CallOutcome, ChatStream};
 use crate::call_setup::credentials::{Credential, CredentialLookup};
 use crate::call_setup::hooks::{DeploymentHook, HookError};
 use crate::call_setup::providers::ProviderRegistry;
 use crate::call_wrapper::budget::BudgetState;
 use crate::call_wrapper::cache::{CacheHandler, CacheMode, CacheOutcome};
-use crate::call_wrapper::error::CallError;
+use crate::call_wrapper::error::{CallError, plain_error};
 use crate::call_wrapper::logging::{AsyncSuccessLog, CallLogging, SuccessLogScheduler};
 use crate::call_wrapper::max_tokens::MaxTokensModifier;
 use crate::call_wrapper::metadata::{MetadataUpdate, ResponseMetadataUpdater};
@@ -113,7 +115,7 @@ fn rate_limited(message: &str, category: RateLimitCategory) -> CallError {
 }
 
 pub(crate) fn plain(message: &str) -> CallError {
-    CallError::from(crate::call_wrapper::error::plain_error(message))
+    CallError::from(plain_error(message))
 }
 
 pub(crate) fn response(body: Json) -> CallOutcome {
@@ -121,7 +123,7 @@ pub(crate) fn response(body: Json) -> CallOutcome {
 }
 
 pub(crate) fn chat_stream(body: Json, converted_from_mock: bool) -> CallOutcome {
-    CallOutcome::ChatStream(crate::call_setup::correlation::ChatStream {
+    CallOutcome::ChatStream(ChatStream {
         model_response: body,
         json_mode: false,
         converted_from_mock,
@@ -214,7 +216,9 @@ impl StepClock {
 impl WrapperClock for StepClock {
     fn now(&self) -> DateTime<FixedOffset> {
         let tick = self.next_tick();
-        moment() + TimeDelta::seconds(tick)
+        moment()
+            .checked_add_signed(TimeDelta::seconds(tick))
+            .expect("the step clock stays in range")
     }
 
     fn monotonic(&self) -> Duration {
@@ -232,12 +236,13 @@ impl IdSource for SequenceIds {
         let mut next = self.next.lock().expect("the id lock is free");
         *next = next.saturating_add(1);
         let id = *next;
+        drop(next);
         format!("generated-{id}")
     }
 }
 
-fn default_outcome() -> Result<CallOutcome, CallError> {
-    Ok(CallOutcome::Response(Json::Object(IndexMap::new())))
+fn default_outcome() -> CallOutcome {
+    CallOutcome::Response(Json::Object(IndexMap::new()))
 }
 
 #[derive(Default)]
@@ -381,7 +386,7 @@ impl CallTarget for Stub {
                 .model_call_details
                 .insert("raw_request_typed_dict".to_owned(), value);
         }
-        take_outcome(&self.outcomes).unwrap_or_else(default_outcome)
+        take_outcome(&self.outcomes).unwrap_or_else(|| Ok(default_outcome()))
     }
 
     async fn retry(
@@ -390,7 +395,7 @@ impl CallTarget for Stub {
         logging: Option<&LoggingHandle>,
     ) -> Result<CallOutcome, CallError> {
         record_request(&self.retries, &self.handles, request, logging);
-        take_outcome(&self.retry_outcomes).unwrap_or_else(default_outcome)
+        take_outcome(&self.retry_outcomes).unwrap_or_else(|| Ok(default_outcome()))
     }
 }
 
@@ -404,18 +409,8 @@ pub(crate) struct ScriptedCache {
 }
 
 impl ScriptedCache {
-    pub(crate) fn with_found(found: CacheOutcome) -> Self {
-        let cache = Self::default();
-        *cache.found.lock().expect("the found lock is free") = Some(found);
-        cache
-    }
-
     pub(crate) fn set_found(&self, found: CacheOutcome) {
         *self.found.lock().expect("the found lock is free") = Some(found);
-    }
-
-    pub(crate) fn found(&self) -> Option<CacheOutcome> {
-        self.found.lock().expect("the found lock is free").clone()
     }
 
     pub(crate) fn lookups(&self) -> Vec<CacheMode> {
@@ -555,7 +550,7 @@ impl RecordingScheduler {
 
     pub(crate) fn take(&self) -> Vec<AsyncSuccessLog> {
         let mut jobs = self.jobs.lock().expect("the scheduler lock is free");
-        std::mem::take(&mut *jobs)
+        take(&mut *jobs)
     }
 }
 
@@ -626,13 +621,6 @@ impl RecordingMetadata {
             .lock()
             .expect("the metadata lock is free")
             .len()
-    }
-
-    pub(crate) fn updates(&self) -> Vec<(Option<String>, RequestMap)> {
-        self.updates
-            .lock()
-            .expect("the metadata lock is free")
-            .clone()
     }
 }
 
@@ -719,7 +707,7 @@ impl Fixture {
     }
 
     pub(crate) fn with_cache(mut self) -> Self {
-        let cache: Arc<dyn CacheHandler> = self.cache.clone();
+        let cache: Arc<dyn CacheHandler> = Arc::clone(&self.cache);
         self.wrapper.cache = Some(cache);
         self
     }
@@ -730,23 +718,41 @@ pub(crate) fn run_sync(
     stub: &Stub,
     request: RequestMap,
 ) -> Result<CallOutcome, CallError> {
-    let runtime = tokio::runtime::Runtime::new().expect("the test runtime builds");
-    let outcome = fixture
+    let runtime = Runtime::new().map_err(|error| plain_error(&error.to_string()))?;
+    fixture
         .wrapper
-        .call_blocking(stub, request, WrapperOptions::default(), &runtime);
-    outcome
+        .call_blocking(stub, request, WrapperOptions::default(), &runtime)
 }
 
 pub(crate) fn fixture() -> Fixture {
-    let clock = Arc::new(StepClock::default());
-    let ids = Arc::new(SequenceIds::default());
     let cache = Arc::new(ScriptedCache::default());
     let logging = Arc::new(RecordingLogging::default());
     let scheduler = Arc::new(RecordingScheduler::default());
-    let stream = Arc::new(FakeStream);
     let tokens = Arc::new(FakeTokens::default());
     let metadata = Arc::new(RecordingMetadata::default());
-    let wrapper = CallWrapper {
+    let wrapper = fixture_wrapper(
+        Arc::clone(&logging),
+        Arc::clone(&scheduler),
+        Arc::clone(&tokens),
+        Arc::clone(&metadata),
+    );
+    Fixture {
+        wrapper,
+        cache,
+        logging,
+        scheduler,
+        tokens,
+        metadata,
+    }
+}
+
+fn fixture_wrapper(
+    logging: Arc<RecordingLogging>,
+    scheduler: Arc<RecordingScheduler>,
+    tokens: Arc<FakeTokens>,
+    metadata: Arc<RecordingMetadata>,
+) -> CallWrapper<NoRules> {
+    CallWrapper {
         rules: NoRules,
         setup: SetupState {
             lists: CallbackLists::default(),
@@ -763,27 +769,19 @@ pub(crate) fn fixture() -> Fixture {
         cache: None,
         budget: BudgetState::default(),
         retry: WrapperRetryDefaults::default(),
-        clock: clock.clone(),
-        ids: ids.clone(),
-        max_tokens: tokens.clone(),
-        stream_assembly: stream.clone(),
-        metadata: metadata.clone(),
+        clock: Arc::new(StepClock::default()),
+        ids: Arc::new(SequenceIds::default()),
+        max_tokens: tokens,
+        stream_assembly: Arc::new(FakeStream),
+        metadata,
         credentials: Arc::new(NoCredentials),
-        logging: logging.clone(),
-        scheduler: scheduler.clone(),
+        logging,
+        scheduler,
         debugging: false,
         flags: WrapperFlags {
             modify_params: true,
             enable_json_schema_validation: false,
             schema_limits: SchemaLimits::default(),
         },
-    };
-    Fixture {
-        wrapper,
-        cache,
-        logging,
-        scheduler,
-        tokens,
-        metadata,
     }
 }

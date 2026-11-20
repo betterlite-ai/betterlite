@@ -20,6 +20,20 @@ mod cache;
 mod failure;
 mod success;
 
+// whether the call is the caller's own or an internal one, which only runs the sync success callbacks
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum CallOrigin {
+    Internal,
+    External,
+}
+
+// a completion_with_fallbacks parent schedules no background log of its own, so its children log once
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum FallbackParent {
+    Present,
+    Absent,
+}
+
 // One run of wrapper_async(): the request, the kwargs the deployment saw, and the except block's state
 pub(super) struct AsyncRun<'run, E> {
     wrapper: &'run mut CallWrapper<E>,
@@ -32,8 +46,8 @@ pub(super) struct AsyncRun<'run, E> {
     start: DateTime<FixedOffset>,
     end: Option<DateTime<FixedOffset>>,
     deployment_end: Option<DateTime<FixedOffset>>,
-    internal_call: bool,
-    is_completion_with_fallbacks: bool,
+    origin: CallOrigin,
+    fallback_parent: FallbackParent,
     cache: Option<CacheOutcome>,
     // the local `result` the finally block inspects: only a chat stream skips the correlation restore
     chat_stream_result: bool,
@@ -41,7 +55,7 @@ pub(super) struct AsyncRun<'run, E> {
 
 impl<'run, E> AsyncRun<'run, E>
 where
-    E: RuleEvaluator,
+    E: RuleEvaluator + Send + Sync,
 {
     pub(super) fn new(
         wrapper: &'run mut CallWrapper<E>,
@@ -64,8 +78,16 @@ where
             start,
             end: None,
             deployment_end: None,
-            internal_call: options.internal_call,
-            is_completion_with_fallbacks,
+            origin: if options.internal_call {
+                CallOrigin::Internal
+            } else {
+                CallOrigin::External
+            },
+            fallback_parent: if is_completion_with_fallbacks {
+                FallbackParent::Present
+            } else {
+                FallbackParent::Absent
+            },
             cache: None,
             chat_stream_result: false,
         }
@@ -145,7 +167,7 @@ where
     }
 
     // the tail after the provider answered: post-call validation, the cache write and the success log
-    async fn complete(&mut self, outcome: CallOutcome) -> Result<CallOutcome, CallError> {
+    async fn complete(&self, outcome: CallOutcome) -> Result<CallOutcome, CallError> {
         if matches!(
             self.call_type.as_str(),
             "arealtime" | "aresponses_websocket"
@@ -169,6 +191,7 @@ where
         if state.stream != Some(stream_value) {
             state.stream = Some(stream_value);
         }
+        drop(state);
         Ok(())
     }
 

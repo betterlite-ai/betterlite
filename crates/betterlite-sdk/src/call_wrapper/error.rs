@@ -16,7 +16,7 @@ pub enum CallErrorKind {
     RawRequestCaptured,
 }
 
-#[derive(Debug, Clone, PartialEq, Error)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[error("{}", error_message(.class))]
 pub struct CallError {
     pub class: ErrorClass,
@@ -41,7 +41,12 @@ impl From<CallSetupError> for CallError {
     fn from(error: CallSetupError) -> Self {
         match error {
             CallSetupError::Rule(rule) => Self::from(rule.classify()),
-            other => Self::from(plain_error(&other.to_string())),
+            other @ CallSetupError::Logging(_)
+            | other @ CallSetupError::Guardrail(_)
+            | other @ CallSetupError::Callback(_)
+            | other @ CallSetupError::FieldType { .. }
+            | other @ CallSetupError::MissingField { .. }
+            | other @ CallSetupError::Json { .. } => Self::from(plain_error(&other.to_string())),
         }
     }
 }

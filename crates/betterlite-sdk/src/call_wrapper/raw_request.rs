@@ -16,12 +16,12 @@ use super::state::LoggingHandle;
 use super::target::CallTarget;
 use crate::call_setup::RequestMap;
 
-pub const RAW_REQUEST_MODEL: &str = "gpt-3.5-turbo";
-pub const RAW_REQUEST_CALL_ID: &str = "1234";
-pub const RAW_REQUEST_FAKE_KEY: &str = "my-fake-api-key";
-pub const RAW_REQUEST_CAPTURED: &str = "raw request was not captured before the provider call; check the proxy logs for the pre_call error";
+pub(super) const RAW_REQUEST_MODEL: &str = "gpt-3.5-turbo";
+pub(super) const RAW_REQUEST_CALL_ID: &str = "1234";
+pub(super) const RAW_REQUEST_FAKE_KEY: &str = "my-fake-api-key";
+pub(super) const RAW_REQUEST_CAPTURED: &str = "raw request was not captured before the provider call; check the proxy logs for the pre_call error";
 
-struct RawLogging {
+pub(super) struct RawLogging {
     state: LoggingState,
     correlation: CorrelationContext,
 }
@@ -89,10 +89,7 @@ pub(super) async fn capture(
         correlation: Arc::new(Mutex::new(raw.correlation)),
         deferred: Arc::new(Mutex::new(None)),
     };
-    let failure = match target.call(request, Some(&handle)).await {
-        Ok(_outcome) => None,
-        Err(error) => Some(error),
-    };
+    let failure = target.call(request, Some(&handle)).await.err();
     let captured = {
         let state = handle.state.lock().unwrap_or_else(PoisonError::into_inner);
         state

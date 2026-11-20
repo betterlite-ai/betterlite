@@ -6,7 +6,7 @@ use betterlite_logging::logging_state::correlation::restore_correlation_context;
 use betterlite_models::decisions::Json;
 use serde_json::Number;
 
-use super::AsyncRun;
+use super::{AsyncRun, CallOrigin};
 use crate::call_setup::correlation::CallOutcome;
 use crate::call_wrapper::error::CallError;
 use crate::call_wrapper::retry::{
@@ -20,13 +20,13 @@ pub(super) async fn handle<E>(
     mut error: CallError,
 ) -> Result<CallOutcome, CallError>
 where
-    E: RuleEvaluator,
+    E: RuleEvaluator + Send + Sync,
 {
     let end = run
         .deployment_end
         .unwrap_or_else(|| run.wrapper.clock.now());
     run.end = Some(end);
-    if !run.internal_call {
+    if matches!(run.origin, CallOrigin::External) {
         log_failure(run, &error).await;
     }
     let count = num_retries(
@@ -56,7 +56,10 @@ where
     Err(error)
 }
 
-async fn log_failure<E>(run: &AsyncRun<'_, E>, error: &CallError) {
+async fn log_failure<E>(run: &AsyncRun<'_, E>, error: &CallError)
+where
+    E: RuleEvaluator + Send + Sync,
+{
     let Some(handle) = &run.logging else {
         return;
     };
@@ -76,7 +79,7 @@ async fn retry_branch<E>(
     context_fallback_allowed: bool,
 ) -> Result<Option<CallOutcome>, CallError>
 where
-    E: RuleEvaluator,
+    E: RuleEvaluator + Send + Sync,
 {
     if is_router_call(&run.request)? {
         return Ok(None);
@@ -115,7 +118,7 @@ async fn context_fallback<E>(
     error: &CallError,
 ) -> Result<Option<CallOutcome>, CallError>
 where
-    E: RuleEvaluator,
+    E: RuleEvaluator + Send + Sync,
 {
     if !matches!(&error.class, ErrorClass::ContextWindowExceeded(_))
         || is_router_call(&run.request)?

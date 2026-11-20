@@ -72,10 +72,8 @@ fn json_schema_validation_enabled(
     request: &RequestMap,
     validation: Validation,
 ) -> Result<bool, CallError> {
-    match field::<bool>(request, "enable_json_schema_validation")? {
-        Some(value) => Ok(value),
-        None => Ok(validation.enable_json_schema_validation),
-    }
+    let flag: Option<bool> = field(request, "enable_json_schema_validation")?;
+    Ok(flag.unwrap_or(validation.enable_json_schema_validation))
 }
 
 fn validate_json(schema: &Json, response: &str, limits: SchemaLimits) -> Result<(), CallError> {
