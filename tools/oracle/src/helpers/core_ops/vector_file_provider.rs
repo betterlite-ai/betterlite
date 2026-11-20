@@ -43,21 +43,18 @@ impl Answer {
 fn answer(input: &Input) -> Answer {
     let provider = ensure_provider(input.custom_llm_provider.as_deref()).to_owned();
     let mut kwargs = input.kwargs.clone();
-    let lookups = match input.registry.as_ref() {
-        None => Vec::new(),
-        Some(script) => {
-            let lookup = RecordingLookup {
-                script,
-                calls: Mutex::new(Vec::new()),
-            };
-            prepare_registry_credentials(&input.vector_store_id, &mut kwargs, Some(&lookup));
-            lookup
-                .calls
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .clone()
-        }
-    };
+    let lookups = input.registry.as_ref().map_or_else(Vec::new, |script| {
+        let lookup = RecordingLookup {
+            script,
+            calls: Mutex::new(Vec::new()),
+        };
+        prepare_registry_credentials(&input.vector_store_id, &mut kwargs, Some(&lookup));
+        lookup
+            .calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    });
     Answer {
         provider,
         kwargs,

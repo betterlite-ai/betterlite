@@ -31,8 +31,8 @@ pub(crate) enum ScriptedClass {
     RuntimeError,
 }
 
-pub(crate) struct RecordingLookup<'a> {
-    pub(crate) script: &'a RegistryScript,
+pub(crate) struct RecordingLookup<'script> {
+    pub(crate) script: &'script RegistryScript,
     pub(crate) calls: Mutex<Vec<String>>,
 }
 
@@ -41,10 +41,10 @@ impl CredentialLookup for RecordingLookup<'_> {
         &self,
         vector_store_id: &str,
     ) -> Result<OperationKwargs, CredentialLookupError> {
-        {
-            let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
-            calls.push(vector_store_id.to_owned());
-        }
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(vector_store_id.to_owned());
         if let Some(error) = &self.script.error {
             let class = match error.class_name {
                 ScriptedClass::ValueError => "ValueError",

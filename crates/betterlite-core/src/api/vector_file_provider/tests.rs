@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
@@ -62,7 +62,10 @@ impl CredentialLookup for ScriptedLookup {
         &self,
         vector_store_id: &str,
     ) -> Result<OperationKwargs, CredentialLookupError> {
-        self.calls.lock().unwrap().push(vector_store_id.to_owned());
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(vector_store_id.to_owned());
         self.result.clone()
     }
 }
