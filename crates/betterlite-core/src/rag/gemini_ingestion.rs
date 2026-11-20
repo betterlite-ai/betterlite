@@ -1,21 +1,23 @@
 mod tests;
 mod wire;
 
+pub mod port;
 pub mod reply;
 
-use std::error::Error as StdError;
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_models::decisions::Json;
-use http::HeaderMap;
 use http::header::InvalidHeaderValue;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 use tracing::error;
 
+use self::port::{
+    GeminiTransport, TransportBody, TransportError, TransportMethod, TransportRequest,
+};
 use self::reply::{ReplyError, decode_upload_reply};
 use self::wire::{
     API_VERSION, body_text, initiate_body, initiate_headers, initiate_url, json_headers,
@@ -33,39 +35,6 @@ const FINALIZE_TIMEOUT: Duration = Duration::from_secs(300);
 pub struct GeminiDefaults {
     pub api_key: Option<SecretString>,
     pub api_base: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct GeminiReply {
-    pub status: u16,
-    pub headers: HeaderMap,
-    pub body: Vec<u8>,
-}
-
-#[derive(Debug, Error)]
-#[error("the Gemini transport failed: {source}")]
-pub struct TransportError {
-    #[source]
-    pub source: Box<dyn StdError + Send + Sync + 'static>,
-}
-
-#[async_trait]
-pub trait GeminiTransport: Send + Sync {
-    async fn post_json(
-        &self,
-        url: &str,
-        headers: HeaderMap,
-        body: Json,
-        timeout: Duration,
-    ) -> Result<GeminiReply, TransportError>;
-
-    async fn put_bytes(
-        &self,
-        url: &str,
-        headers: HeaderMap,
-        body: Vec<u8>,
-        timeout: Duration,
-    ) -> Result<GeminiReply, TransportError>;
 }
 
 pub struct GeminiIngestion {
@@ -175,12 +144,13 @@ impl GeminiIngestion {
         body.insert("displayName".to_owned(), Json::Text(name.to_owned()));
         let reply = self
             .transport
-            .post_json(
-                &format!("{base_url}/fileSearchStores"),
-                json_headers(api_key)?,
-                Json::Object(body),
-                CREATE_TIMEOUT,
-            )
+            .send(TransportRequest {
+                method: TransportMethod::Post,
+                url: format!("{base_url}/fileSearchStores"),
+                headers: json_headers(api_key)?,
+                body: TransportBody::Json(Json::Object(body)),
+                timeout: CREATE_TIMEOUT,
+            })
             .await?;
         if reply.status != 200 {
             let body = body_text(&reply.body);
@@ -204,12 +174,13 @@ impl GeminiIngestion {
         )?;
         let reply = self
             .transport
-            .post_json(
-                &initiate_url(site.base_url, site.store_id),
-                initiate_headers(api_key, file_size, content_type)?,
-                body,
-                CREATE_TIMEOUT,
-            )
+            .send(TransportRequest {
+                method: TransportMethod::Post,
+                url: initiate_url(site.base_url, site.store_id),
+                headers: initiate_headers(api_key, file_size, content_type)?,
+                body: TransportBody::Json(body),
+                timeout: CREATE_TIMEOUT,
+            })
             .await?;
         if !matches!(reply.status, 200 | 201) {
             let body = body_text(&reply.body);
@@ -232,12 +203,13 @@ impl GeminiIngestion {
     ) -> Result<String, GeminiIngestionError> {
         let reply = self
             .transport
-            .put_bytes(
-                upload_url,
-                put_headers(content.len())?,
-                content.to_vec(),
-                FINALIZE_TIMEOUT,
-            )
+            .send(TransportRequest {
+                method: TransportMethod::Put,
+                url: upload_url.to_owned(),
+                headers: put_headers(content.len())?,
+                body: TransportBody::Bytes(content.to_vec()),
+                timeout: FINALIZE_TIMEOUT,
+            })
             .await?;
         if !matches!(reply.status, 200 | 201) {
             let body = body_text(&reply.body);

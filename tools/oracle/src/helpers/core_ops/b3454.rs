@@ -8,8 +8,9 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use betterlite_config::credentials::CredentialValues;
 use betterlite_config::sections::studio_identity::DEFAULT_API_BASE;
+use betterlite_core::rag::gemini_ingestion::port::GeminiTransport;
 use betterlite_core::rag::gemini_ingestion::{
-    GeminiDefaults, GeminiIngestion, GeminiIngestionError, GeminiTransport,
+    GeminiDefaults, GeminiIngestion, GeminiIngestionError,
 };
 use betterlite_core::rag::ingestion::IngestionPorts;
 use betterlite_core::rag::ingestion::IngestionState;

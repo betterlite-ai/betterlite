@@ -4,11 +4,12 @@ use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use betterlite_models::decisions::Json;
 use http::HeaderMap;
 use http::header::{HeaderName, HeaderValue};
 
-use crate::rag::gemini_ingestion::{GeminiReply, GeminiTransport, TransportError};
+use crate::rag::gemini_ingestion::port::{
+    GeminiReply, GeminiTransport, TransportError, TransportRequest,
+};
 
 pub(super) struct Sent {
     pub(super) method: &'static str,
@@ -52,26 +53,6 @@ impl Scripted {
         }
     }
 
-    fn record(
-        &self,
-        method: &'static str,
-        url: &str,
-        headers: HeaderMap,
-        body: Vec<u8>,
-        timeout: Duration,
-    ) {
-        self.sent
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(Sent {
-                method,
-                url: url.to_owned(),
-                headers,
-                body,
-                timeout,
-            });
-    }
-
     pub(super) fn take_sent(&self) -> Vec<Sent> {
         std::mem::take(&mut *self.sent.lock().unwrap_or_else(PoisonError::into_inner))
     }
@@ -102,31 +83,17 @@ impl Scripted {
 
 #[async_trait]
 impl GeminiTransport for Scripted {
-    async fn post_json(
-        &self,
-        url: &str,
-        headers: HeaderMap,
-        body: Json,
-        timeout: Duration,
-    ) -> Result<GeminiReply, TransportError> {
-        self.record(
-            "POST",
-            url,
-            headers,
-            serde_json::to_vec(&body).unwrap(),
-            timeout,
-        );
-        self.answer()
-    }
-
-    async fn put_bytes(
-        &self,
-        url: &str,
-        headers: HeaderMap,
-        body: Vec<u8>,
-        timeout: Duration,
-    ) -> Result<GeminiReply, TransportError> {
-        self.record("PUT", url, headers, body, timeout);
+    async fn send(&self, request: TransportRequest) -> Result<GeminiReply, TransportError> {
+        self.sent
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(Sent {
+                method: request.method.as_str(),
+                url: request.url,
+                headers: request.headers,
+                body: request.body.into_bytes().unwrap(),
+                timeout: request.timeout,
+            });
         self.answer()
     }
 }

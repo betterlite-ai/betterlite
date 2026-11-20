@@ -21,7 +21,8 @@ use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
 use self::transport::{Scripted, ScriptedReply, Sent, reply};
-use super::{EmbedStep, GeminiDefaults, GeminiIngestion, GeminiIngestionError, GeminiTransport};
+use super::port::GeminiTransport;
+use super::{EmbedStep, GeminiDefaults, GeminiIngestion, GeminiIngestionError};
 use crate::rag::ingestion::config::IngestionOptions;
 use crate::rag::ingestion::credentials::{CredentialLookup, CredentialLookupError};
 use crate::rag::ingestion::ocr::{OcrError, OcrOperation, OcrRequest, OcrResponse};

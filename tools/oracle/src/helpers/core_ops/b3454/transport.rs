@@ -1,10 +1,10 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Mutex, PoisonError};
-use std::time::Duration;
 
 use async_trait::async_trait;
-use betterlite_core::rag::gemini_ingestion::{GeminiReply, GeminiTransport, TransportError};
-use betterlite_models::decisions::Json;
+use betterlite_core::rag::gemini_ingestion::port::{
+    GeminiReply, GeminiTransport, TransportError, TransportRequest,
+};
 use http::HeaderMap;
 use http::header::{HeaderName, HeaderValue};
 use serde::Deserialize;
@@ -48,20 +48,6 @@ impl Scripted {
         }
     }
 
-    fn record(
-        &self,
-        method: &'static str,
-        url: &str,
-        headers: HeaderMap,
-        body: Vec<u8>,
-        timeout: Duration,
-    ) {
-        self.sent
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(project(method, url, &headers, &body, timeout));
-    }
-
     fn answer(&self) -> Result<GeminiReply, TransportError> {
         match self
             .steps
@@ -86,27 +72,11 @@ impl Scripted {
 
 #[async_trait]
 impl GeminiTransport for Scripted {
-    async fn post_json(
-        &self,
-        url: &str,
-        headers: HeaderMap,
-        body: Json,
-        timeout: Duration,
-    ) -> Result<GeminiReply, TransportError> {
-        let encoded =
-            serde_json::to_vec(&body).map_err(|error| failure_error(&error.to_string()))?;
-        self.record("POST", url, headers, encoded, timeout);
-        self.answer()
-    }
-
-    async fn put_bytes(
-        &self,
-        url: &str,
-        headers: HeaderMap,
-        body: Vec<u8>,
-        timeout: Duration,
-    ) -> Result<GeminiReply, TransportError> {
-        self.record("PUT", url, headers, body, timeout);
+    async fn send(&self, request: TransportRequest) -> Result<GeminiReply, TransportError> {
+        self.sent
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(project(request)?);
         self.answer()
     }
 }
@@ -129,16 +99,14 @@ fn header_map(pairs: &BTreeMap<String, String>) -> Result<HeaderMap, TransportEr
     Ok(headers)
 }
 
-fn project(
-    method: &'static str,
-    url: &str,
-    headers: &HeaderMap,
-    body: &[u8],
-    timeout: Duration,
-) -> Value {
+fn project(request: TransportRequest) -> Result<Value, TransportError> {
+    let body = request
+        .body
+        .into_bytes()
+        .map_err(|error| failure_error(&error.to_string()))?;
     let mut shown = Map::new();
     for name in HEADERS {
-        let Some(value) = headers.get(name) else {
+        let Some(value) = request.headers.get(name) else {
             continue;
         };
         let masked = if name == "x-goog-api-key" {
@@ -148,14 +116,14 @@ fn project(
         };
         shown.insert(name.to_owned(), Value::String(masked));
     }
-    let decoded = serde_json::from_slice::<Value>(body).ok();
+    let decoded = serde_json::from_slice::<Value>(&body).ok();
     let raw_bytes = decoded.is_none().then(|| Value::from(body.len()));
-    json!({
-        "method": method,
-        "url": url,
+    Ok(json!({
+        "method": request.method.as_str(),
+        "url": request.url,
         "headers": Value::Object(shown),
         "body": decoded.unwrap_or(Value::Null),
         "raw_body_bytes": raw_bytes.unwrap_or(Value::Null),
-        "timeout_seconds": timeout.as_secs(),
-    })
+        "timeout_seconds": request.timeout.as_secs(),
+    }))
 }
