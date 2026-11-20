@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
@@ -28,7 +27,7 @@ use crate::api::responses_lifecycle_write::call::{
     LifecycleOperation, LifecycleWriteParams, ResponsesLifecycleWriteCall,
 };
 use crate::api::responses_lifecycle_write::error::ResponsesLifecycleWriteError;
-use crate::api::responses_write_http::config::{OpenAiResponsesConfig, WriteParams};
+use crate::api::responses_write_http::config::OpenAiResponsesConfig;
 use crate::api::responses_write_http::service::{
     ClientSource, SharedSession, WriteRequest, WriteTransport,
 };
@@ -56,12 +55,6 @@ impl Wire {
             failure: Arc::default(),
             requests: Arc::default(),
         }
-    }
-
-    pub(crate) fn failing(error: TransportError) -> Self {
-        let mut wire = Self::returning(200, "{}");
-        *wire.failure.lock().unwrap_or_else(PoisonError::into_inner) = Some(error);
-        wire
     }
 
     pub(crate) fn requests(&self) -> MutexGuard<'_, Vec<WriteRequest>> {
@@ -128,14 +121,6 @@ pub(crate) fn openai_config(settings: &OpenAiCredentialsSettings) -> OpenAiRespo
         Some(SecretString::from("sk-provider")),
         None,
     )
-}
-
-pub(crate) fn params(api_base: &str) -> WriteParams {
-    WriteParams {
-        api_base: Some(api_base.to_owned()),
-        api_key: None,
-        ssl_verify: None,
-    }
 }
 
 // A call with only its operation and id set; each test adds the overrides it exercises

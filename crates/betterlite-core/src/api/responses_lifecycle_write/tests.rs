@@ -62,8 +62,8 @@ fn writing<'deps, 'settings>(
     }
 }
 
-async fn deleted<'settings>(
-    service: &ResponsesLifecycleWrite<'_, OpenAiResponsesConfig<'settings>, Source>,
+async fn deleted(
+    service: &ResponsesLifecycleWrite<'_, OpenAiResponsesConfig<'_>, Source>,
     call: &ResponsesLifecycleWriteCall,
     state: &mut LoggingState,
     env: &PrePostEnv<'_>,
@@ -76,8 +76,8 @@ async fn deleted<'settings>(
     }
 }
 
-async fn cancelled<'settings>(
-    service: &ResponsesLifecycleWrite<'_, OpenAiResponsesConfig<'settings>, Source>,
+async fn cancelled(
+    service: &ResponsesLifecycleWrite<'_, OpenAiResponsesConfig<'_>, Source>,
     call: &ResponsesLifecycleWriteCall,
     state: &mut LoggingState,
     env: &PrePostEnv<'_>,
