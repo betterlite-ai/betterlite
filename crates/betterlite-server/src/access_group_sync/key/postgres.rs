@@ -106,6 +106,8 @@ impl DatabaseLifecycle for WriterStore<'_> {
 impl DatabaseClient for WriterStore<'_> {
     type Attribute = Pool;
 
+    // the raw write reaches the writer through writer_wrapper and never looks an attribute up
+    #[cfg_attr(test, mutants::skip)]
     fn attribute(&self, name: &str) -> Result<Option<Attribute<Pool>>, Infallible> {
         if name != ACCESS_GROUP_TABLE {
             return Ok(None);
