@@ -130,7 +130,10 @@ pub(crate) struct SessionCase {
     pub(crate) data: RequestData,
 }
 
-fn block_on<Run: Future>(future: Run) -> Result<Run::Output, Box<HelperError>> {
+fn block_on<Run>(future: Run) -> Result<Run::Output, Box<HelperError>>
+where
+    Run: Future,
+{
     let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
@@ -141,24 +144,26 @@ fn block_on<Run: Future>(future: Run) -> Result<Run::Output, Box<HelperError>> {
 fn tag_tables(fixtures: &[TagFixture]) -> Result<Vec<TagTable>, Box<HelperError>> {
     let mut tables = Vec::with_capacity(fixtures.len());
     for fixture in fixtures {
-        let wire = match &fixture.budget {
-            Some(budget) => json!({
-                "tag_name": fixture.tag_name,
-                "models": [],
-                "spend": 0,
-                "litellm_budget_table": {
-                    "rpm_limit": budget.rpm_limit,
-                    "tpm_limit": budget.tpm_limit,
-                },
-            }),
-            None => json!({"tag_name": fixture.tag_name, "models": [], "spend": 0}),
-        };
+        let wire = fixture.budget.as_ref().map_or_else(
+            || json!({"tag_name": fixture.tag_name, "models": [], "spend": 0_i32}),
+            |budget| {
+                json!({
+                    "tag_name": fixture.tag_name,
+                    "models": [],
+                    "spend": 0_i32,
+                    "litellm_budget_table": {
+                        "rpm_limit": budget.rpm_limit,
+                        "tpm_limit": budget.tpm_limit,
+                    },
+                })
+            },
+        );
         tables.push(serde_json::from_value(wire).or_value_error()?);
     }
     Ok(tables)
 }
 
-pub(super) fn tag_descriptor(case: &TagDescriptorCase) -> HelperResult {
+pub(super) fn tag_descriptor(case: &TagDescriptorCase) -> serde_json::Value {
     let limit = TagRateLimit {
         rpm_limit: case.rpm_limit,
         tpm_limit: case.tpm_limit,
@@ -168,7 +173,7 @@ pub(super) fn tag_descriptor(case: &TagDescriptorCase) -> HelperResult {
         limit,
         case.window_size,
     )];
-    Ok(json!({"descriptors": descriptors}))
+    json!({"descriptors": descriptors})
 }
 
 pub(super) fn tag_create(case: &TagCreateCase) -> HelperResult {
@@ -248,7 +253,7 @@ pub(super) fn mcp_per_team(case: &McpPerTeamCase) -> HelperResult {
     })
 }
 
-pub(super) fn agent_descriptors(case: &AgentCase) -> HelperResult {
+pub(super) fn agent_descriptors(case: &AgentCase) -> serde_json::Value {
     let mut by_id = BTreeMap::new();
     for agent in &case.registry {
         by_id.insert(agent.agent_id.clone(), agent.clone());
@@ -260,5 +265,5 @@ pub(super) fn agent_descriptors(case: &AgentCase) -> HelperResult {
     };
     let descriptors =
         builder.create_agent_descriptors(&case.agent_id, &case.data, case.policy.as_ref());
-    Ok(json!({"descriptors": descriptors}))
+    json!({"descriptors": descriptors})
 }

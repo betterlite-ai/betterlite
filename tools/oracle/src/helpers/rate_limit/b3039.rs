@@ -30,13 +30,13 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::TagDescriptor(case) => answers::tag_descriptor(case),
+            Input::TagDescriptor(case) => Ok(answers::tag_descriptor(case)),
             Input::TagCreate(case) => answers::tag_create(case),
             Input::TagResolution(case) => answers::tag_resolution(case),
             Input::TagPerKey(case) => answers::tag_per_key(case),
             Input::McpPerKey(case) => answers::mcp_per_key(case),
             Input::McpPerTeam(case) => answers::mcp_per_team(case),
-            Input::AgentDescriptors(case) => answers::agent_descriptors(case),
+            Input::AgentDescriptors(case) => Ok(answers::agent_descriptors(case)),
             Input::AgentResolution(case) => {
                 let agent_id = resolved_agent_id(case.key_agent_id.as_deref(), &case.data);
                 Ok(json!({"agent_id": agent_id}))

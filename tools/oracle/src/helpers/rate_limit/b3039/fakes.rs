@@ -19,7 +19,7 @@ pub(super) struct MapResolver {
 }
 
 impl MapResolver {
-    pub(super) fn new(limits: BTreeMap<String, TagRateLimit>) -> Self {
+    pub(super) const fn new(limits: BTreeMap<String, TagRateLimit>) -> Self {
         Self {
             limits,
             calls: Mutex::new(Vec::new()),

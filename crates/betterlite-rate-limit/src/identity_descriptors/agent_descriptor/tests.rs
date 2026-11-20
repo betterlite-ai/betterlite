@@ -30,15 +30,15 @@ struct PolicyWire {
 }
 
 fn policy(limits: [Option<i64>; 4]) -> AgentResponse {
-    let [rpm_limit, tpm_limit, session_rpm_limit, session_tpm_limit] = limits;
+    let [rpm_limit, tpm_limit, session_requests, session_tokens] = limits;
     let wire = serde_json::to_string(&PolicyWire {
         agent_id: "agent-1",
         agent_name: "agent-one",
         agent_card_params: BTreeMap::new(),
         rpm_limit,
         tpm_limit,
-        session_rpm_limit,
-        session_tpm_limit,
+        session_rpm_limit: session_requests,
+        session_tpm_limit: session_tokens,
     })
     .expect("the policy fixture serializes");
     serde_json::from_str(&wire).expect("the policy fixture decodes")
