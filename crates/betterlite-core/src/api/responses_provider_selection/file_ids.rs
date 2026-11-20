@@ -28,7 +28,9 @@ pub fn apply_managed_file_id_mapping(
     let fallback = FileIdMapping::default();
     let resolved_mapping = mapping.unwrap_or(&fallback);
     let updated_input = update_responses_file_ids(input, model_id.as_deref(), resolved_mapping)?;
-    local_vars.insert(String::from("input"), json_value(&updated_input)?);
+    let input_raw = serde_json::to_value(&updated_input).map_err(FileMappingError::Encode)?;
+    let input_value = JsonValue::deserialize(input_raw).map_err(FileMappingError::Encode)?;
+    local_vars.insert(String::from("input"), input_value);
     let Some(present) = tools.filter(|present| !present.is_empty()) else {
         return Ok(FileMappingOutcome {
             input: updated_input,
@@ -38,7 +40,9 @@ pub fn apply_managed_file_id_mapping(
     let updated_tools =
         update_tools_with_file_ids(Some(present), model_id.as_deref(), resolved_mapping)?
             .unwrap_or_else(|| present.to_vec());
-    local_vars.insert(String::from("tools"), json_value(&updated_tools)?);
+    let tools_raw = serde_json::to_value(&updated_tools).map_err(FileMappingError::Encode)?;
+    let tools_value = JsonValue::deserialize(tools_raw).map_err(FileMappingError::Encode)?;
+    local_vars.insert(String::from("tools"), tools_value);
     Ok(FileMappingOutcome {
         input: updated_input,
         tools: Some(updated_tools),
@@ -60,8 +64,4 @@ pub fn model_info_id(model_info: Option<&JsonValue>) -> Option<String> {
         )
         | None => None,
     }
-}
-fn json_value<T: serde::Serialize>(value: &T) -> Result<JsonValue, FileMappingError> {
-    let raw = serde_json::to_value(value).map_err(FileMappingError::Encode)?;
-    JsonValue::deserialize(raw).map_err(FileMappingError::Encode)
 }
