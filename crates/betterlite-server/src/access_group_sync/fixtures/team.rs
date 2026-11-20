@@ -29,7 +29,7 @@ pub(crate) struct ScriptedTeamTransaction {
 }
 
 impl ScriptedTeamTransaction {
-    pub(crate) fn new(
+    pub(crate) const fn new(
         team_group_ids: Option<Vec<String>>,
         groups: BTreeMap<String, Option<Vec<String>>>,
     ) -> Self {
