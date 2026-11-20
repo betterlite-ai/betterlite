@@ -30,20 +30,18 @@ impl PerUserMetric {
         if self.user_agent.is_none() {
             self.user_agent.clone_from(&record.tag);
         }
-        let successful = record.successful_requests.unwrap_or(0);
-        let failed = record.failed_requests.unwrap_or(0);
-        let requests = record.api_requests.unwrap_or(0);
         let tokens = record
             .prompt_tokens
-            .unwrap_or(0)
-            .saturating_add(record.completion_tokens.unwrap_or(0));
-        self.successful_requests = self.successful_requests.saturating_add(successful);
-        self.failed_requests = self.failed_requests.saturating_add(failed);
-        self.total_requests = self.total_requests.saturating_add(requests);
+            .saturating_add(record.completion_tokens);
+        self.successful_requests = self
+            .successful_requests
+            .saturating_add(record.successful_requests);
+        self.failed_requests = self.failed_requests.saturating_add(record.failed_requests);
+        self.total_requests = self.total_requests.saturating_add(record.api_requests);
         self.total_tokens = self.total_tokens.saturating_add(tokens);
         self.spend = self
             .spend
-            .checked_add(record.spend.unwrap_or_default())
+            .checked_add(record.spend)
             .ok_or(AnalyticsError::Overflow)?;
         Ok(())
     }

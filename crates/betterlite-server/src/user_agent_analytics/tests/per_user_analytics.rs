@@ -68,24 +68,21 @@ fn record(api_key: &str, tag: &str, successful: i64) -> TagSpendRecord {
     TagSpendRecord {
         tag: Some(tag.to_owned()),
         api_key: api_key.to_owned(),
-        api_requests: Some(successful),
-        successful_requests: Some(successful),
-        failed_requests: Some(0),
-        prompt_tokens: Some(10),
-        completion_tokens: Some(5),
-        spend: Some(Decimal::new(1, 1)),
+        api_requests: successful,
+        successful_requests: successful,
+        failed_requests: 0,
+        prompt_tokens: 10,
+        completion_tokens: 5,
+        spend: Decimal::new(1, 1),
     }
 }
 
 fn two_users() -> Arc<FakeStore> {
     let mut sparse = record("sk-b", "User-Agent:beta", 0);
     sparse.tag = None;
-    sparse.successful_requests = None;
-    sparse.failed_requests = None;
-    sparse.api_requests = None;
-    sparse.prompt_tokens = None;
-    sparse.completion_tokens = None;
-    sparse.spend = None;
+    sparse.prompt_tokens = 0;
+    sparse.completion_tokens = 0;
+    sparse.spend = Decimal::ZERO;
     Arc::new(
         FakeStore::empty()
             .with_records(vec![
@@ -364,9 +361,9 @@ async fn per_user_report_folds_several_keys_into_one_user() {
 #[tokio::test]
 async fn per_user_report_reports_an_aggregate_overflow() {
     let mut first = record("sk-a", "User-Agent:alpha", 1);
-    first.spend = Some(Decimal::MAX);
+    first.spend = Decimal::MAX;
     let mut second = record("sk-a", "User-Agent:beta", 1);
-    second.spend = Some(Decimal::MAX);
+    second.spend = Decimal::MAX;
     let store = Arc::new(
         FakeStore::empty()
             .with_records(vec![first, second])

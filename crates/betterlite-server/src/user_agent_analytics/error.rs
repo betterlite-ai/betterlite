@@ -1,6 +1,6 @@
 use axum::Json;
 use axum::http::StatusCode;
-use axum::response::IntoResponse as _;
+use axum::response::IntoResponse;
 use axum::response::Response;
 use betterlite_db::postgres_store::errors::DbError;
 use betterlite_error::proxy_error_types::common::CommonProxyErrors;

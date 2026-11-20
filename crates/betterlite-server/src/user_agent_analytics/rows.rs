@@ -40,12 +40,12 @@ pub struct TagSummaryRow {
 pub struct TagSpendRecord {
     pub tag: Option<String>,
     pub api_key: String,
-    pub api_requests: Option<i64>,
-    pub successful_requests: Option<i64>,
-    pub failed_requests: Option<i64>,
-    pub prompt_tokens: Option<i64>,
-    pub completion_tokens: Option<i64>,
-    pub spend: Option<Decimal>,
+    pub api_requests: i64,
+    pub successful_requests: i64,
+    pub failed_requests: i64,
+    pub prompt_tokens: i64,
+    pub completion_tokens: i64,
+    pub spend: Decimal,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

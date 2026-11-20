@@ -52,6 +52,23 @@ deviations:
       can store is the range the report returns; reaching it needs more requests or tokens in one
       tag or user window than bigint can hold.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L766-L772
+  - what: >-
+      A page or page_size value above the signed 64-bit range fails with 422 int_parsing, where
+      LiteLLM's page: int and page_size: int take a Python arbitrary-precision integer: for example
+      page=9223372036854775808 answers 200 with an empty slice, and a page_size that large fails
+      less_than_equal instead.
+    why: >-
+      The page and page size are stored as i64, the width the page arithmetic and the response fields
+      use; LiteLLM only stops a huge page when its offset reaches the database.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L667-L668
+  - what: >-
+      start_date and end_date accept ASCII digits only, while strptime's %Y, %m and %d match any
+      Unicode decimal digit and int() converts it; start_date=٢٠٢٤-01-05 parses in LiteLLM and
+      answers 400 here.
+    why: >-
+      The date parser checks bytes as ASCII digits instead of mapping Unicode decimal digits to
+      values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L588-L589
 kept_bugs:
   - what: >-
       The monthly report orders rows by month_offset descending, which returns the oldest of the seven
