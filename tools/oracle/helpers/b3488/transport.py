@@ -7,7 +7,7 @@ import litellm
 from litellm.litellm_core_utils.litellm_logging import Logging
 from pydantic import JsonValue, TypeAdapter
 
-from .case import Case
+from .call import Case
 
 litellm.suppress_debug_info = True
 JSON: Final = TypeAdapter(JsonValue)
