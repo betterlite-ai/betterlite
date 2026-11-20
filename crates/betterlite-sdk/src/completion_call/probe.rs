@@ -1,6 +1,7 @@
-use std::future::Future;
-use std::time::Duration;
-
+use super::target::CompletionTarget;
+use crate::call_setup::RequestMap;
+use crate::call_wrapper::error::CallError;
+use crate::call_wrapper::target::CallTarget;
 use betterlite_core::environment_validation::probe::{ModelProbe, ProbeCompletion};
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
@@ -10,14 +11,10 @@ use http::header::AUTHORIZATION;
 use http::{HeaderMap, HeaderValue, Method};
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
+use std::future::Future;
+use std::time::Duration;
 use thiserror::Error;
 use url::Url;
-
-use super::target::CompletionTarget;
-use crate::call_setup::RequestMap;
-use crate::call_wrapper::error::CallError;
-use crate::call_wrapper::target::CallTarget;
-
 #[derive(Debug, Error)]
 pub enum ProbeFailure {
     #[error("the probe has no api_base to send a model lookup to")]
@@ -38,7 +35,6 @@ pub enum ProbeFailure {
     #[error(transparent)]
     Call(#[from] CallError),
 }
-
 // B5364's real probe: the model lookup openai.models.retrieve makes, and a real completion
 pub struct CompletionProbe<'probe, 'ports> {
     pub client: &'probe ProxiedClient,
@@ -47,7 +43,6 @@ pub struct CompletionProbe<'probe, 'ports> {
     pub api_key: Option<SecretString>,
     pub timeout: Duration,
 }
-
 impl CompletionProbe<'_, '_> {
     async fn retrieve(&self, model: &str) -> Result<(), ProbeFailure> {
         let Some(base) = self.api_base.as_deref() else {
@@ -97,17 +92,14 @@ impl CompletionProbe<'_, '_> {
         }
     }
 }
-
 impl ModelProbe for CompletionProbe<'_, '_> {
     type Failure = ProbeFailure;
-
     fn retrieve_openai_model(
         &self,
         model: &str,
     ) -> impl Future<Output = Result<(), Self::Failure>> + Send {
         async move { self.retrieve(model).await }
     }
-
     fn complete(
         &self,
         request: &ProbeCompletion<'_>,

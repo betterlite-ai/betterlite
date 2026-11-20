@@ -1,17 +1,3 @@
-use std::sync::Arc;
-
-use async_trait::async_trait;
-use betterlite_config::sections::mock_response::failure::MockError;
-use betterlite_config::sections::mock_response::selection::resolve_mock;
-use betterlite_config::sections::mock_response::{MockResponse, MockToolCall};
-use betterlite_core::dispatch::Dispatch;
-use betterlite_core::mock;
-use betterlite_core::operation::Operation;
-use betterlite_core::operation::chat::ChatCall;
-use betterlite_models::decisions::Json;
-use betterlite_openai::chat::MockSettings;
-use betterlite_redact::secret::Redactor;
-
 use super::error::{CompletionCallError, into_call_error};
 use super::ports::{McpLoopRunner, Sleeper};
 use super::request;
@@ -26,7 +12,17 @@ use crate::completion_request::args::CompletionSettings;
 use crate::completion_request::call::{MockCall, ModelListCall, PreparedCall, PreparedCompletion};
 use crate::completion_request::ports::CompletionPorts;
 use crate::completion_request::prepare_completion;
-
+use async_trait::async_trait;
+use betterlite_config::sections::mock_response::failure::MockError;
+use betterlite_config::sections::mock_response::selection::resolve_mock;
+use betterlite_core::dispatch::Dispatch;
+use betterlite_core::mock;
+use betterlite_core::operation::Operation;
+use betterlite_core::operation::chat::ChatCall;
+use betterlite_models::decisions::Json;
+use betterlite_openai::chat::MockSettings;
+use betterlite_redact::secret::Redactor;
+use std::sync::Arc;
 // main.py's completion: prepare the call, then run the outcome B5655 chose
 pub struct CompletionTarget<'ports> {
     pub settings: CompletionSettings,
@@ -40,13 +36,11 @@ pub struct CompletionTarget<'ports> {
     pub mcp: &'ports dyn McpLoopRunner,
     pub sleeper: &'ports dyn Sleeper,
 }
-
 impl CompletionTarget<'_> {
     // Every error leaves through exception_type, with the call's model and the provider the branch named
     pub fn error(&self, error: CompletionCallError, model: &str) -> CallError {
         into_call_error(&error, model, "", &self.redactor)
     }
-
     pub(crate) async fn run(
         &self,
         prepared: PreparedCompletion,
@@ -64,7 +58,6 @@ impl CompletionTarget<'_> {
             PreparedCompletion::ModelList(call) => self.model_list(call, logging).await,
         }
     }
-
     // The provider chain's end: palm raised its ValueError, and everything else goes to B014's dispatch
     pub(crate) async fn dispatch_call(
         &self,
@@ -77,7 +70,6 @@ impl CompletionTarget<'_> {
         let operation = request::chat_operation(call, &body, Arc::clone(&self.calls))?;
         request::execute(&self.dispatch, operation).await
     }
-
     // The Responses API bridge B5655 chose; its entry owns the request shape
     async fn bridge_call(&self, call: &PreparedCall) -> Result<CallOutcome, CompletionCallError> {
         if call.custom_llm_provider.as_deref() == Some("palm") {
@@ -85,16 +77,15 @@ impl CompletionTarget<'_> {
         }
         request::execute(&self.dispatch, request::responses_operation()).await
     }
-
     // B255's mock calls: the answer the caller or the operator injected, never a provider
     fn mock_call(&self, call: &MockCall) -> Result<CallOutcome, CompletionCallError> {
         let response = match call.call.kwargs.get("mock_response") {
             None | Some(Json::Null) => None,
-            Some(value) => Some(mock_response(value)?),
+            Some(value) => Some(kwarg(value, "mock_response")?),
         };
         let tool_calls = match call.call.kwargs.get("mock_tool_calls") {
             None | Some(Json::Null) => None,
-            Some(value) => Some(mock_tool_calls(value)?),
+            Some(value) => Some(kwarg(value, "mock_tool_calls")?),
         };
         let choice_count = call
             .call
@@ -121,13 +112,9 @@ impl CompletionTarget<'_> {
                 id: &id,
                 created,
             };
-            let mut chunks = Vec::new();
-            for chunk in mock::stream::chunks(&spec) {
-                let encoded = serde_json::to_value(&chunk)?;
-                chunks.push(serde_json::from_value(encoded)?);
-            }
+            let chunks: Vec<_> = mock::stream::chunks(&spec).collect();
             return Ok(CallOutcome::ChatStream(ChatStream {
-                model_response: Json::List(chunks),
+                model_response: serde_json::from_value(serde_json::to_value(&chunks)?)?,
                 json_mode: false,
                 converted_from_mock: true,
             }));
@@ -137,7 +124,6 @@ impl CompletionTarget<'_> {
         let encoded = serde_json::to_value(&response)?;
         Ok(CallOutcome::Response(serde_json::from_value(encoded)?))
     }
-
     // batch_completion_models: each deployment runs with the request's params overlaid by its own,
     // and a failing deployment is skipped for the next one
     async fn model_list(
@@ -161,13 +147,11 @@ impl CompletionTarget<'_> {
         Err(last_failure.unwrap_or(CompletionCallError::NoModelListAnswer))
     }
 }
-
 #[async_trait]
 impl CallTarget for CompletionTarget<'_> {
     fn name(&self) -> &str {
         "completion"
     }
-
     async fn call(
         &self,
         request: RequestMap,
@@ -182,7 +166,6 @@ impl CallTarget for CompletionTarget<'_> {
             .await
             .map_err(|error| self.error(error, &model))
     }
-
     async fn retry(
         &self,
         request: RequestMap,
@@ -191,17 +174,10 @@ impl CallTarget for CompletionTarget<'_> {
         retry::with_retries(self, request, logging, self.sleeper).await
     }
 }
-
-fn mock_response(value: &Json) -> Result<MockResponse, CompletionCallError> {
+fn kwarg<T: serde::de::DeserializeOwned>(
+    value: &Json,
+    field: &'static str,
+) -> Result<T, CompletionCallError> {
     let encoded = serde_json::to_value(value)?;
-    serde_json::from_value(encoded).map_err(|_error| CompletionCallError::Field {
-        field: "mock_response",
-    })
-}
-
-fn mock_tool_calls(value: &Json) -> Result<Vec<MockToolCall>, CompletionCallError> {
-    let encoded = serde_json::to_value(value)?;
-    serde_json::from_value(encoded).map_err(|_error| CompletionCallError::Field {
-        field: "mock_tool_calls",
-    })
+    serde_json::from_value(encoded).map_err(|_error| CompletionCallError::Field { field })
 }

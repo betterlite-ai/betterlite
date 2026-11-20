@@ -1,6 +1,8 @@
-use std::sync::Arc;
-use std::time::SystemTime;
-
+use super::error::CompletionCallError;
+use crate::call_setup::RequestMap;
+use crate::call_setup::correlation::{CallOutcome, ChatStream};
+use crate::completion_request::args::CompletionArgs;
+use crate::completion_request::call::PreparedCall;
 use betterlite_context::call_context::{CallContext, CallInputs};
 use betterlite_core::dispatch::Dispatch;
 use betterlite_core::operation::chat::first_message::first_message_has_content;
@@ -14,19 +16,13 @@ use betterlite_openai::chat::ChatRequest;
 use futures_util::StreamExt as _;
 use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
+use std::sync::Arc;
+use std::time::SystemTime;
 use uuid::Uuid;
-
-use super::error::CompletionCallError;
-use crate::call_setup::RequestMap;
-use crate::call_setup::correlation::{CallOutcome, ChatStream};
-use crate::completion_request::args::CompletionArgs;
-use crate::completion_request::call::PreparedCall;
-
 pub fn args_from_map(request: &RequestMap) -> Result<CompletionArgs, CompletionCallError> {
     let encoded = serde_json::to_value(request)?;
     Ok(serde_json::from_value(encoded)?)
 }
-
 // The call's kwargs as the map completion() was handed, with the secret the struct never serializes
 pub fn args_to_map(args: &CompletionArgs) -> Result<RequestMap, CompletionCallError> {
     let encoded = serde_json::to_value(args)?;
@@ -39,7 +35,6 @@ pub fn args_to_map(args: &CompletionArgs) -> Result<RequestMap, CompletionCallEr
     }
     Ok(map)
 }
-
 // The provider-mapped optional params in the OpenAI request shape dispatch reads
 pub fn chat_body(call: &PreparedCall) -> Result<Vec<u8>, CompletionCallError> {
     let mut fields = IndexMap::new();
@@ -53,7 +48,6 @@ pub fn chat_body(call: &PreparedCall) -> Result<Vec<u8>, CompletionCallError> {
     fields.insert(String::from("stream"), Json::Bool(call.stream));
     Ok(serde_json::to_vec(&Json::Object(fields))?)
 }
-
 pub fn chat_operation(
     call: &PreparedCall,
     body: &[u8],
@@ -68,7 +62,6 @@ pub fn chat_operation(
         calls,
     }))
 }
-
 pub fn call_id(call: &PreparedCall) -> String {
     match call.kwargs.get("litellm_call_id") {
         Some(Json::Text(id)) => id.clone(),
@@ -80,7 +73,6 @@ pub fn call_id(call: &PreparedCall) -> String {
         | None => Uuid::new_v4().to_string(),
     }
 }
-
 pub async fn execute(
     dispatch: &Dispatch,
     operation: Operation,
@@ -119,7 +111,6 @@ pub async fn execute(
         }
     }
 }
-
 async fn stream_outcome(answer: ChatStreamAnswer) -> Result<CallOutcome, CompletionCallError> {
     let mut body = answer.body;
     let mut bytes = Vec::new();
@@ -132,7 +123,6 @@ async fn stream_outcome(answer: ChatStreamAnswer) -> Result<CallOutcome, Complet
         converted_from_mock: false,
     }))
 }
-
 // The SSE frames the provider stream carried, as the chunk objects a stream answer holds
 pub fn sse_chunks(bytes: &[u8]) -> Result<Json, CompletionCallError> {
     let text = String::from_utf8_lossy(bytes);
@@ -151,7 +141,6 @@ pub fn sse_chunks(bytes: &[u8]) -> Result<Json, CompletionCallError> {
     }
     Ok(Json::List(chunks))
 }
-
 pub fn responses_operation() -> Operation {
     Operation::Responses(ResponsesRequest)
 }

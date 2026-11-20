@@ -1,8 +1,3 @@
-use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
-use serde_json::Number;
-use uuid::Uuid;
-
 use super::error::CompletionCallError;
 use super::request::args_to_map;
 use crate::call_setup::RequestMap;
@@ -10,7 +5,10 @@ use crate::call_setup::correlation::CallOutcome;
 use crate::call_wrapper::state::LoggingHandle;
 use crate::call_wrapper::target::CallTarget;
 use crate::completion_request::call::FallbackCall;
-
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
+use serde_json::Number;
+use uuid::Uuid;
 pub const ATTEMPTED_FALLBACKS_HEADER: &str = "x-litellm-attempted-fallbacks";
 const HIDDEN_PARAMS: &str = "_hidden_params";
 const ADDITIONAL_HEADERS: &str = "additional_headers";
@@ -20,7 +18,6 @@ const INTERNAL_PARAMS: [&str; 3] = [
     "mcp_handler_context",
     "_skip_mcp_handler",
 ];
-
 // async_completion_with_fallbacks: the original model first, then every fallback, one litellm_call_id
 pub async fn run_fallbacks(
     requester: &dyn CallTarget,
@@ -72,14 +69,12 @@ pub async fn run_fallbacks(
         last: last_error.unwrap_or_else(|| String::from("None")),
     })
 }
-
 fn overlay(mut base: RequestMap, fields: &IndexMap<String, Json>) -> RequestMap {
     for (name, value) in fields {
         base.insert(name.clone(), value.clone());
     }
     base
 }
-
 fn model_name(value: Json) -> Result<String, CompletionCallError> {
     match value {
         Json::Text(name) => Ok(name),
@@ -88,24 +83,16 @@ fn model_name(value: Json) -> Result<String, CompletionCallError> {
         }
     }
 }
-
 fn filter_internal_params(mut request: RequestMap) -> RequestMap {
     for name in INTERNAL_PARAMS {
         request.shift_remove(name);
     }
     request
 }
-
 #[must_use]
 pub fn is_empty(outcome: &CallOutcome) -> bool {
-    match outcome {
-        CallOutcome::Response(Json::Null) => true,
-        CallOutcome::Response(_) | CallOutcome::ChatStream(_) | CallOutcome::ResponsesStream(_) => {
-            false
-        }
-    }
+    matches!(outcome, CallOutcome::Response(Json::Null))
 }
-
 // add_fallback_headers_to_response: the zero-based attempt number under _hidden_params.additional_headers
 fn with_attempt_header(outcome: CallOutcome, attempted: usize) -> CallOutcome {
     let value = Json::Number(Number::from(u64::try_from(attempted).unwrap_or(u64::MAX)));
@@ -120,7 +107,6 @@ fn with_attempt_header(outcome: CallOutcome, attempted: usize) -> CallOutcome {
         }
     }
 }
-
 fn with_header(json: Json, value: Json) -> Json {
     match json {
         Json::Object(mut fields) => {

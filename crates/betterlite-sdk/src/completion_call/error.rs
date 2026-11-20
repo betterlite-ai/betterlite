@@ -1,5 +1,9 @@
+use crate::call_wrapper::error::CallError;
+use crate::completion_request::error::CompletionRequestError;
+use betterlite_config::sections::mock_response::failure::MockError;
 use betterlite_core::api::chat_agentic_loop::error::AgenticLoopError;
 use betterlite_core::dispatch::error::DispatchError;
+use betterlite_core::operation::chat::ChatFailure;
 use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
 use betterlite_http::error::HttpError;
 use betterlite_models::resolution::ResolutionError;
@@ -8,13 +12,6 @@ use betterlite_openai::chat::execution::ChatError;
 use betterlite_openai::text_completion_execution::failure::CompletionFailure;
 use betterlite_redact::secret::Redactor;
 use thiserror::Error;
-
-use betterlite_config::sections::mock_response::failure::MockError;
-use betterlite_core::operation::chat::ChatFailure;
-
-use crate::call_wrapper::error::CallError;
-use crate::completion_request::error::CompletionRequestError;
-
 // Every failure the completion call can name before exception_type classifies it
 #[derive(Debug, Error)]
 pub enum CompletionCallError {
@@ -62,7 +59,6 @@ pub enum CompletionCallError {
     #[error("the {field} value is not valid here")]
     Field { field: &'static str },
 }
-
 // exception_type(): the raw exception carries the provider, the model and any status the branch knew
 pub fn into_call_error(
     error: &CompletionCallError,
@@ -81,7 +77,6 @@ pub fn into_call_error(
         ),
     }
 }
-
 fn dispatch_error(
     error: &DispatchError,
     model: &str,
@@ -108,7 +103,6 @@ fn dispatch_error(
         ),
     }
 }
-
 fn status_for_dispatch(error: &DispatchError) -> Option<u16> {
     match error {
         DispatchError::MissingDeployment { .. }
@@ -122,7 +116,6 @@ fn status_for_dispatch(error: &DispatchError) -> Option<u16> {
         DispatchError::Rejected { status, .. } => Some(*status),
     }
 }
-
 fn chat_failure(
     failure: &ChatFailure,
     model: &str,
@@ -142,7 +135,6 @@ fn chat_failure(
         }
     }
 }
-
 fn chat_error(error: &ChatError, model: &str, provider: &str, redactor: &Redactor) -> CallError {
     let status = match error {
         ChatError::Timeout => Some(408),
@@ -157,7 +149,6 @@ fn chat_error(error: &ChatError, model: &str, provider: &str, redactor: &Redacto
     };
     classify(model, provider, error.to_string(), status, redactor)
 }
-
 fn status_of(error: &CompletionCallError) -> Option<u16> {
     match error {
         CompletionCallError::Request(_)
@@ -180,7 +171,6 @@ fn status_of(error: &CompletionCallError) -> Option<u16> {
         | CompletionCallError::UnexpectedResult { .. } => None,
     }
 }
-
 fn classify(
     model: &str,
     provider: &str,

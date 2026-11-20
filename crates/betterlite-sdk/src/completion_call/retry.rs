@@ -1,8 +1,3 @@
-use std::time::Duration;
-
-use betterlite_models::decisions::Json;
-use serde_json::Number;
-
 use super::error::CompletionCallError;
 use super::ports::Sleeper;
 use crate::call_setup::RequestMap;
@@ -10,18 +5,18 @@ use crate::call_setup::correlation::CallOutcome;
 use crate::call_wrapper::error::{CallError, field_error, plain_error};
 use crate::call_wrapper::state::LoggingHandle;
 use crate::call_wrapper::target::CallTarget;
-
+use betterlite_models::decisions::Json;
+use serde_json::Number;
+use std::time::Duration;
 // completion_with_retries pops num_retries with this default
 pub const DEFAULT_NUM_RETRIES: i64 = 3;
 // wait_exponential(multiplier=1, max=10)
 pub const MAX_BACKOFF_SECONDS: u64 = 10;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RetryStrategy {
     Constant,
     ExponentialBackoff,
 }
-
 impl RetryStrategy {
     // LiteLLM names exponential_backoff_retry and takes its else branch for every other string
     pub fn parse(value: Option<&Json>) -> Result<Self, CompletionCallError> {
@@ -38,7 +33,6 @@ impl RetryStrategy {
             }
         }
     }
-
     // tenacity's wait_exponential: 2^(attempt-1) seconds, never more than ten
     #[must_use]
     pub fn wait(self, attempt: u32) -> Duration {
@@ -55,7 +49,6 @@ impl RetryStrategy {
         }
     }
 }
-
 // The retry entry: num_retries counts attempts, the inner call gets zero retries, the last error is raised unchanged
 pub async fn with_retries(
     target: &dyn CallTarget,
@@ -87,7 +80,6 @@ pub async fn with_retries(
         "the retry entry ran no attempt",
     )))
 }
-
 fn retry_count(request: &RequestMap) -> Result<i64, CallError> {
     match request.get("num_retries") {
         None | Some(Json::Null) => Ok(DEFAULT_NUM_RETRIES),
