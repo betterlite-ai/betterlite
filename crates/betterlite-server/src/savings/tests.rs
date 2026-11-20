@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_models::catalog::BundledCatalog;
+use betterlite_models::decisions::Json;
 use betterlite_models::model_catalog_keys::ModelCostKeys;
 use betterlite_models::model_registration::{JsonObject, ModelCostEntries, ModelRegistry};
 use betterlite_models::price_fields::decimal_lexeme::parse_decimal_lexeme;
@@ -93,6 +94,50 @@ async fn deployment_price_falls_back_to_the_model_name() {
         number(&priced.record, "input_cost_per_token"),
         Some(decimal("0.0000025"))
     );
+}
+
+#[tokio::test]
+async fn deployment_info_reads_the_public_model_info() {
+    let bytes = bundled_bytes();
+    let service = service_from(&bytes).expect("the cost service builds");
+    let deployments = DeploymentPricing::default();
+    let info = deployments
+        .deployment_info(&service.lookup, "no-such-deployment", "gpt-4o")
+        .await
+        .expect("the public entry stands in");
+    assert!(matches!(
+        info.get("input_cost_per_token"),
+        Some(Json::Number(_))
+    ));
+}
+
+#[tokio::test]
+async fn deployment_price_keeps_the_deployment_tables() {
+    let bytes = bundled_bytes();
+    let service = service_from(&bytes).expect("the cost service builds");
+    let deployments = deployment_pricing(
+        r#"{"dep-t": {"input_cost_per_token": 1.0,
+            "tiered_pricing": [{"input_cost_per_token": 0.5, "range": [0, 1000]}],
+            "off_peak_pricing": {"input_cost_per_token": 0.25, "cache_read_input_token_cost": 0.1}}}"#,
+    );
+    let context = Context::new(&service.lookup, &deployments);
+    let priced = context
+        .deployment_price(Some("dep-t"), "gpt-4o")
+        .await
+        .expect("the deployment answers with its tables");
+    assert!(matches!(
+        priced
+            .tiered_pricing
+            .first()
+            .and_then(|tier| tier.input_token.as_ref()),
+        Some(Scalar::Number(_))
+    ));
+    let block = priced
+        .off_peak_pricing
+        .as_ref()
+        .expect("the off-peak block is kept");
+    assert!(block.input_cost_per_token.is_some());
+    assert!(priced.off_peak_cache_read_present);
 }
 
 #[tokio::test]

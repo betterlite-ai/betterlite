@@ -355,6 +355,64 @@ fn modeled_costs(snapshot: &BaselineCostSnapshot, usage: &RequestUsage) -> Optio
 }
 
 #[test]
+fn modeled_keeps_a_zero_token_cost_and_a_zero_baseline() {
+    let snapshot = snapshot_json(
+        r#"{"model": "claude", "provider": "anthropic",
+            "prices": {"input_cost_per_token": 0.5}, "actual_spend": 10, "actual_token_cost": 10}"#,
+    );
+    let usage = request_usage(0, 0);
+    assert_eq!(
+        modeled_costs(&snapshot, &usage),
+        Some(BaselineCosts {
+            actual: decimal("10"),
+            baseline: decimal("0"),
+        })
+    );
+}
+
+#[test]
+fn cost_of_usage_keeps_anthropic_out_of_residency_and_location() {
+    let context = TestContext::new();
+    let usage = request_usage(10, 0);
+    let info = priced(&record(
+        r#"{"input_cost_per_token": 1.0, "regional_endpoint_uplift_multiplier": 3}"#,
+    ));
+    let basis = PricingBasis {
+        service_tier: None,
+        data_residency: None,
+        vertex_location: Some(String::from("us-east5")),
+    };
+    let anthropic = identity("claude", "anthropic");
+    let total = cost_of_usage(
+        &context,
+        &CostOfUsageInput {
+            identity: &anthropic,
+            usage: &usage,
+            model_info: Some(&info),
+            basis: &basis,
+            moment: moment(),
+            database: &database(),
+        },
+    )
+    .expect("the anthropic rates price the usage");
+    assert_eq!(total, decimal("10"));
+    let generic = identity("gpt-4o", "openai");
+    let total = cost_of_usage(
+        &context,
+        &CostOfUsageInput {
+            identity: &generic,
+            usage: &usage,
+            model_info: Some(&info),
+            basis: &basis,
+            moment: moment(),
+            database: &database(),
+        },
+    )
+    .expect("the generic rates apply the location uplift");
+    assert_eq!(total, decimal("30"));
+}
+
+#[test]
 fn modeled_rejects_a_negative_token_cost() {
     let snapshot = snapshot_json(
         r#"{"model": "claude", "provider": "anthropic",
@@ -412,6 +470,26 @@ fn same_prices_compares_flat_values() {
     assert!(!same_prices(None, Some(&one)));
     assert!(same_prices(None, None));
     assert!(!same_prices(Some(&nested), Some(&nested)));
+}
+
+#[test]
+fn same_prices_compares_bool_text_and_null_values() {
+    let one = record(r#"{"supports_vision": true, "mode": "chat", "note": null}"#);
+    let equivalent = record(r#"{"supports_vision": true, "mode": "chat", "note": null}"#);
+    let different_bool = record(r#"{"supports_vision": false, "mode": "chat", "note": null}"#);
+    let different_text = record(r#"{"supports_vision": true, "mode": "embedding", "note": null}"#);
+    let different_null = record(r#"{"supports_vision": true, "mode": "chat", "note": "x"}"#);
+    assert!(same_prices(Some(&one), Some(&equivalent)));
+    assert!(!same_prices(Some(&one), Some(&different_bool)));
+    assert!(!same_prices(Some(&one), Some(&different_text)));
+    assert!(!same_prices(Some(&one), Some(&different_null)));
+}
+
+#[test]
+fn same_prices_compares_unparsable_numbers_by_lexeme() {
+    let one = record(r#"{"input_cost_per_token": 1e308}"#);
+    let equivalent = record(r#"{"input_cost_per_token": 1e308}"#);
+    assert!(same_prices(Some(&one), Some(&equivalent)));
 }
 
 #[test]

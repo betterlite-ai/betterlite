@@ -100,7 +100,7 @@ pub fn baseline_request_usage(
     baseline_info: Option<&ModelInfo>,
 ) -> RequestUsage {
     let (cache_read, cache_creation) = cache_token_split(&source.usage);
-    if source.usage.prompt_tokens_details.is_none() || (cache_read <= 0 && cache_creation <= 0) {
+    if cache_read <= 0 && cache_creation <= 0 {
         return source.clone();
     }
     let (prices_reads, prices_writes) = baseline_cache_rate_keys(baseline_info);

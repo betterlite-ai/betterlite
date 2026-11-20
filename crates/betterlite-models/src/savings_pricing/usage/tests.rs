@@ -179,6 +179,40 @@ fn baseline_request_usage_keeps_ttl_when_writes_stay_priced() {
 }
 
 #[test]
+fn baseline_request_usage_folds_unpriced_reads_into_text() {
+    let original = usage(r#"{"prompt_tokens": 10, "prompt_tokens_details": {"cached_tokens": 4}}"#);
+    let info = record("{}");
+    let normalized = baseline_request_usage(&original, Some(&info));
+    let details = normalized
+        .usage
+        .prompt_tokens_details
+        .expect("details stay");
+    assert_eq!(details.cached_tokens, 0);
+    assert_eq!(details.text_tokens, 10);
+    assert_eq!(normalized.usage.cache_read_input_tokens, 0);
+}
+
+#[test]
+fn baseline_request_usage_folds_unpriced_writes_into_text() {
+    let mut original =
+        usage(r#"{"prompt_tokens": 10, "prompt_tokens_details": {"cache_write_tokens": 6}}"#);
+    original.cache_creation_token_details = Some(CacheCreationTokenDetails {
+        ephemeral_5m_input_tokens: Some(1),
+        ephemeral_1h_input_tokens: None,
+    });
+    let info = record("{}");
+    let normalized = baseline_request_usage(&original, Some(&info));
+    let details = normalized
+        .usage
+        .prompt_tokens_details
+        .expect("details stay");
+    assert_eq!(details.cache_write_tokens, 0);
+    assert_eq!(details.text_tokens, 10);
+    assert_eq!(normalized.usage.cache_creation_input_tokens, 0);
+    assert!(normalized.cache_creation_token_details.is_none());
+}
+
+#[test]
 fn baseline_request_usage_returns_the_same_record_without_cache_tokens() {
     let original = usage(r#"{"prompt_tokens": 10, "completion_tokens": 2, "total_tokens": 12}"#);
     let info = record(r#"{"cache_read_input_token_cost": 0.5}"#);

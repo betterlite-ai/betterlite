@@ -179,10 +179,9 @@ where
     C: SavingsPricingContext,
 {
     let usage = input.usage?;
-    let model = input.model.filter(|value| !value.is_empty())?;
+    let model = input.model?;
     let decision = input.routing_decision?;
-    let baseline_model =
-        text_value(decision.savings_baseline_model.as_ref()).filter(|value| !value.is_empty())?;
+    let baseline_model = text_value(decision.savings_baseline_model.as_ref())?;
     let baseline_id = text_value(decision.savings_baseline_deployment_id.as_ref());
     let selected_info = context.deployment_price(input.model_id, model).await;
     let baseline_info = match baseline_id {

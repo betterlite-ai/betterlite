@@ -206,8 +206,8 @@ pub fn same_prices(left: Option<&ModelInfo>, right: Option<&ModelInfo>) -> bool 
 fn same_scalar(left: &Scalar, right: &Scalar) -> bool {
     match left {
         Scalar::Null => matches!(right, Scalar::Null),
-        Scalar::Bool(_) => right == left,
-        Scalar::Text(_) => right == left,
+        Scalar::Bool(flag) => matches!(right, Scalar::Bool(other) if other == flag),
+        Scalar::Text(text) => matches!(right, Scalar::Text(other) if other == text),
         Scalar::Number(value) => {
             matches!(right, Scalar::Number(other) if same_number(value, other))
         }
@@ -273,9 +273,6 @@ fn same_prompt_counters(baseline: &PromptTokensDetails, selected: &PromptTokensD
 // math.isclose with the source's rel_tol=1e-9 and abs_tol=1e-12, in Decimal.
 #[must_use]
 pub fn amounts_close(left: Decimal, right: Decimal) -> bool {
-    if left == right {
-        return true;
-    }
     let Some(difference) = left.checked_sub(right).map(Decimal::abs) else {
         return false;
     };

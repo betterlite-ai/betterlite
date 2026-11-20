@@ -156,6 +156,12 @@ fn resolve_model_requires_a_nonempty_name() {
 }
 
 #[test]
+fn resolve_model_rejects_an_empty_name_even_when_the_context_knows_it() {
+    let context = TestContext::new().with_identity("", None, ("", "anthropic"));
+    assert_eq!(resolve_model(&context, Some(""), None), None);
+}
+
+#[test]
 fn resolve_model_drops_an_empty_custom_provider() {
     let context = TestContext::new().with_identity("claude", None, ("claude", "anthropic"));
     assert!(resolve_model(&context, Some("claude"), Some("")).is_some());
