@@ -117,6 +117,10 @@ fn message_settings_and_failures_reads_timeouts() {
         Duration::from_secs(30)
     );
     assert_eq!(
+        timeout_deadline("12.5", None),
+        Duration::from_millis(12_500)
+    );
+    assert_eq!(
         timeout_deadline(r#""12.5""#, None),
         Duration::from_millis(12_500)
     );
