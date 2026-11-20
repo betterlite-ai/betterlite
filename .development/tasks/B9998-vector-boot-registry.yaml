@@ -63,6 +63,8 @@ description: >-
   lifespan test (`handoff_vector_stores`) asserts BootRegistries, DbObjectSync and Started hold the same VectorStores.
   Counts: about 40 non-blank LiteLLM lines (the config block and the two database loaders). No oracle case: the
   routes that read the registries are mounted by the vector store and RAG route tasks, which add the cases.
+
+  Pass-through vector adapters. B8641 writes no-vector-store adapters in crates/betterlite-server/src/app/pass_through/ports/vector.rs. Replace them with the real ones over this task's vector_stores field: VectorRegistryAdapter over B1062 (is_index, index by name) and B1063 (store by name), with has_index_registry and has_store_registry true only when that registry exists; VectorAccessAdapter with B1061's assert_user_can_access_vector_store and is_allowed_to_call_vector_store_endpoint (keep only its error) and B1060's assert_proxy_admin_for_vector_store_index_management with operation create, also backing B3623's VertexStoreAccess with B1061's get_litellm_managed_vector_store; and the Milvus arm of VectorProviderAdapter over B7892's MilvusProviderPorts (auth_headers is get_auth_credentials, complete_url is get_complete_url).
 scope:
   paths:
     - crates/betterlite-server/Cargo.toml
@@ -85,6 +87,8 @@ scope:
     - crates/betterlite/src/lifespan/**
     - docs/deviations/B8614.yaml
     - docs/deviations/B8384.yaml
+    - crates/betterlite-server/src/app/pass_through/ports/vector.rs
+    - crates/betterlite-server/src/app/pass_through/ports/vector/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L1517-L1518

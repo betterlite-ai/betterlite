@@ -1,0 +1,32 @@
+kind: helper
+name: bedrock-mantle-message-url
+call:
+  bedrock_mantle_chat:
+    function: message_url
+    calls:
+      - model: bedrock/mantle/anthropic.claude-sonnet-4-5-20250929-v1:0
+        api_base: null
+        optional_params: {}
+        headers: {}
+        metadata: {}
+        project_id: null
+        policy_fields: null
+        environment: {AWS_REGION: us-west-2}
+      - model: bedrock/mantle/anthropic.claude-sonnet-4-5-20250929-v1:0
+        api_base: null
+        optional_params: {}
+        headers: {Anthropic-Version: ''}
+        metadata: {}
+        project_id: proj-2
+        policy_fields: null
+        environment: {}
+      - model: bedrock/mantle/anthropic.claude-sonnet-4-5-20250929-v1:0
+        api_base: https://mantle.example.test/base
+        optional_params: {}
+        headers: {Anthropic-Workspace: caller}
+        metadata: {}
+        project_id: null
+        policy_fields: null
+        environment: {AWS_REGION_NAME: eu-central-1}
+env: {}
+compare: {ignore: []}

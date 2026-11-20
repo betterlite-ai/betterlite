@@ -31,6 +31,8 @@ description: >-
   Native fault tests prove persistence rollback and original-boot restoration after multiple
   updates. The 220 handler lines budget 245 implementation, 235 tests and 170 HTTP/decoder
   fixtures, with a 725-line limit.
+
+  Mounting. B066's settings_api composition does not mount this task's routes, so add this router to settings_api's keyed or public router yourself, keeping its public or authenticated side, and extend B066's construction test so a duplicate or missing registration fails.
 scope:
   paths:
     - crates/betterlite-server/Cargo.toml
@@ -43,6 +45,8 @@ scope:
     - tools/oracle/helpers/b1648/**
     - tools/oracle/src/helpers/server/b1648.rs
     - tools/oracle/src/helpers/server/b1648/**
+    - crates/betterlite-server/src/settings_api.rs
+    - crates/betterlite-server/src/settings_api/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/config_override_endpoints.py#L651-L932

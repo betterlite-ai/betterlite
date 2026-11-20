@@ -1,0 +1,200 @@
+use std::sync::Arc;
+
+use betterlite_azure::azure_assistant_definitions::operations::{
+    AssistantsApi as AzureAssistantsApi, DefinitionCall, DefinitionReply,
+};
+use betterlite_azure::credentials::source::CredentialSources;
+use betterlite_config::loader::EnvironmentLookup;
+use betterlite_config::sections::{azure_endpoints, resource_sdk_settings};
+use betterlite_models::resolution::ResolutionContext;
+use betterlite_openai::assistants::operations::AssistantsApi;
+use betterlite_openai::assistants::records::AssistantObject;
+use betterlite_openai::assistants::transport::AssistantsTransport;
+use betterlite_redact::secret::Redactor;
+
+use super::call::{AssistantCreateCall, AssistantCreateOutcome, AssistantCreateResult};
+use super::error::{AssistantCreateFailure, Entry, Raised};
+use super::{AssistantCreateInput, AsyncFlag, error, projection};
+
+const INVALID_FLAG: &str =
+    "Invalid value passed in for async_create_assistants. Only bool or None allowed";
+
+// create_assistants and acreate_assistants, with every value the two façades read passed in.
+pub struct AssistantRecords<'context, 'resolution, Transport> {
+    pub settings: resource_sdk_settings::Settings,
+    pub azure: azure_endpoints::Settings,
+    pub environment: &'context (dyn EnvironmentLookup + Sync),
+    pub sources: &'context (dyn CredentialSources + Sync),
+    pub resolution: &'resolution ResolutionContext<'context>,
+    pub redactor: &'context Redactor,
+    pub transport: Arc<Transport>,
+}
+
+// Which façade runs, the provider its call uses, and the provider its failure mapping names.
+struct Selection {
+    provider: String,
+    mapped: String,
+    entry: Entry,
+    flag: Option<bool>,
+}
+
+// The two providers create_assistants branches on; every other declaration is its BadRequestError.
+fn call_kind(provider: &str) -> Option<projection::CallKind> {
+    match provider {
+        "openai" => Some(projection::CallKind::OpenAi),
+        "azure" => Some(projection::CallKind::Azure),
+        _ => None,
+    }
+}
+
+impl<Transport: AssistantsTransport> AssistantRecords<'_, '_, Transport> {
+    pub async fn create_assistants(&self, input: &AssistantCreateInput) -> AssistantCreateOutcome {
+        let selected = self.selection(input, Entry::Sync)?;
+        let call = self.call(input, &selected, matches!(selected.flag, Some(true)))?;
+        self.answer(input, &selected, call).await
+    }
+
+    pub async fn acreate_assistants(&self, input: &AssistantCreateInput) -> AssistantCreateOutcome {
+        let selected = self.selection(input, Entry::Async)?;
+        let call = self.call(input, &selected, true)?;
+        self.answer(input, &selected, call).await
+    }
+
+    async fn answer(
+        &self,
+        input: &AssistantCreateInput,
+        selected: &Selection,
+        call: AssistantCreateCall,
+    ) -> AssistantCreateOutcome {
+        match self.execute(&call, selected.flag).await {
+            Ok(Some(assistant)) => Ok(AssistantCreateResult { call, assistant }),
+            Ok(None) => Err(Box::new(error::no_response())),
+            Err(raised) => Err(Box::new(error::raised(
+                &raised,
+                &input.model,
+                &selected.mapped,
+                selected.entry,
+                self.redactor,
+            ))),
+        }
+    }
+
+    // Every façade failure carries the model, the provider it was called with and the entry raising it.
+    fn failure(
+        &self,
+        input: &AssistantCreateInput,
+        provider: &str,
+        entry: Entry,
+        message: &str,
+    ) -> AssistantCreateFailure {
+        error::raised(
+            &Raised::Local(message.to_owned()),
+            input.model.as_str(),
+            provider,
+            entry,
+            self.redactor,
+        )
+    }
+
+    // acreate resolves the model and forces the flag true; the sync façade refuses a non-bool flag.
+    fn selection(
+        &self,
+        input: &AssistantCreateInput,
+        entry: Entry,
+    ) -> Result<Selection, Box<AssistantCreateFailure>> {
+        if entry == Entry::Async {
+            let mapped = self.resolved_provider(input)?;
+            return Ok(Selection {
+                provider: input.provider.clone(),
+                mapped,
+                entry,
+                flag: Some(true),
+            });
+        }
+        let flag = match &input.async_create_assistants {
+            Some(AsyncFlag::Bool(value)) => Some(*value),
+            Some(AsyncFlag::Other(_)) => {
+                return Err(Box::new(self.failure(
+                    input,
+                    &input.provider,
+                    Entry::Sync,
+                    INVALID_FLAG,
+                )));
+            }
+            None => None,
+        };
+        Ok(Selection {
+            provider: input.provider.clone(),
+            mapped: input.provider.clone(),
+            entry,
+            flag,
+        })
+    }
+
+    // get_llm_provider prepends the declared provider the model doesn't name, then reads it back.
+    fn resolved_provider(
+        &self,
+        input: &AssistantCreateInput,
+    ) -> Result<String, Box<AssistantCreateFailure>> {
+        projection::provider(input, self.resolution).map_err(|source| {
+            Box::new(self.failure(input, &input.provider, Entry::Async, &source.to_string()))
+        })
+    }
+
+    fn call(
+        &self,
+        input: &AssistantCreateInput,
+        selected: &Selection,
+        is_async: bool,
+    ) -> Result<AssistantCreateCall, Box<AssistantCreateFailure>> {
+        let Some(kind) = call_kind(selected.provider.as_str()) else {
+            return Err(Box::new(error::unsupported(&selected.provider)));
+        };
+        let timeout = projection::timeout(input, &selected.provider).map_err(|source| {
+            Box::new(self.failure(input, &selected.mapped, selected.entry, &source.to_string()))
+        })?;
+        Ok(projection::call(&projection::CallRequest {
+            kind,
+            settings: &self.settings,
+            environment: self.environment,
+            input,
+            timeout,
+            is_async,
+        }))
+    }
+
+    // B519 runs the create with the assigned flag; B686 reports the reply kind, so a page or a delete is no assistant
+    async fn execute(
+        &self,
+        call: &AssistantCreateCall,
+        flag: Option<bool>,
+    ) -> Result<Option<AssistantObject>, Raised> {
+        match call {
+            AssistantCreateCall::OpenAi(openai) => {
+                let options = projection::openai_options(openai)
+                    .map_err(|source| Raised::Local(source.to_string()))?;
+                let assistant = AssistantsApi {
+                    transport: Arc::clone(&self.transport),
+                }
+                .create_assistants(options, &openai.create, None, matches!(flag, Some(true)))
+                .await
+                .map_err(Raised::Assistants)?;
+                Ok(Some(assistant))
+            }
+            AssistantCreateCall::Azure(azure) => {
+                let request =
+                    projection::azure_request(&self.azure, self.environment, self.sources, azure);
+                let reply = AzureAssistantsApi {
+                    transport: Arc::clone(&self.transport),
+                }
+                .call(&request, None, flag, DefinitionCall::Create(&azure.create))
+                .await
+                .map_err(Raised::from)?;
+                match reply.reply {
+                    DefinitionReply::Assistant(assistant) => Ok(Some(*assistant)),
+                    DefinitionReply::Page(_) | DefinitionReply::Deleted(_) => Ok(None),
+                }
+            }
+        }
+    }
+}
