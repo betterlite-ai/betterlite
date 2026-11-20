@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_config::loader::ConfigLoader;
@@ -21,10 +21,7 @@ use secrecy::ExposeSecret as _;
 use super::super::error::SdkHttpError;
 use super::super::result::kinds::SdkResult;
 use super::support::{Source, source};
-use super::{
-    Call, Effects, Failure, Outcome, PreCallEffect, RequestEffect, ResponseEffect, UrlEffect,
-    ValidateEffect,
-};
+use super::{Call, Effects, Failure, Outcome, PreCallEffect, UrlEffect, ValidateEffect};
 
 // The production handler over the mock's base: the same config section and pooled client a request would build
 pub(super) async fn execute(
@@ -129,8 +126,6 @@ enum FixtureError {
 struct Recorded {
     validate: Option<ValidateEffect>,
     url: Option<UrlEffect>,
-    request: Option<RequestEffect>,
-    response: Option<ResponseEffect>,
     pre_call: Option<PreCallEffect>,
 }
 
@@ -148,20 +143,11 @@ impl Fixture {
         }
     }
 
-    fn recorded(&self) -> MutexGuard<'_, Recorded> {
-        self.recorded.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
     fn effects(&self) -> Result<Effects, SdkHttpError> {
-        let recorded = self.recorded();
+        let recorded = self.recorded.lock().unwrap_or_else(PoisonError::into_inner);
         Ok(Effects {
             validation: required(recorded.validate.as_ref(), "validate_environment")?,
             url: required(recorded.url.as_ref(), "get_complete_url")?,
-            request: required(
-                recorded.request.as_ref(),
-                "transform_image_generation_request",
-            )?,
-            response: recorded.response.clone(),
             pre_call: required(recorded.pre_call.as_ref(), "pre_call")?,
         })
     }
@@ -190,7 +176,7 @@ impl BaseImageGenerationConfig for Fixture {
     }
 
     fn validate_environment(&self, request: ImageEnvironment<'_>) -> ImageHeaders {
-        let mut recorded = self.recorded();
+        let mut recorded = self.recorded.lock().unwrap_or_else(PoisonError::into_inner);
         recorded.validate = Some(ValidateEffect {
             api_key: request.api_key.map(|key| key.expose_secret().to_owned()),
             api_base: request.api_base.map(str::to_owned),
@@ -200,12 +186,12 @@ impl BaseImageGenerationConfig for Fixture {
             optional_params: request.optional_params.clone(),
             litellm_params: request.litellm_params.clone(),
         });
-        headers([("x", "validated")])
+        ImageHeaders::from([(String::from("x"), String::from("validated"))])
     }
 
     fn get_complete_url(&self, request: ImageUrlRequest<'_>) -> String {
         let base = request.api_base.unwrap_or_default();
-        let mut recorded = self.recorded();
+        let mut recorded = self.recorded.lock().unwrap_or_else(PoisonError::into_inner);
         recorded.url = Some(UrlEffect {
             api_base: request.api_base.map(str::to_owned),
             api_key: request.api_key.map(|key| key.expose_secret().to_owned()),
@@ -220,13 +206,13 @@ impl BaseImageGenerationConfig for Fixture {
         &self,
         request: ImageGenerationRequest<'_>,
     ) -> Result<ImageParams, FixtureError> {
-        let mut recorded = self.recorded();
-        recorded.request = Some(RequestEffect {
-            model: request.model.to_owned(),
-            prompt: request.prompt.to_owned(),
-            headers: header_fields(request.headers),
-        });
-        Ok(identity_body(request.model, request.prompt))
+        let mut data = ImageParams::new();
+        data.insert(String::from("model"), Json::Text(request.model.to_owned()));
+        data.insert(
+            String::from("prompt"),
+            Json::Text(request.prompt.to_owned()),
+        );
+        Ok(data)
     }
 
     // ast-grep-ignore: no-long-names
@@ -234,14 +220,6 @@ impl BaseImageGenerationConfig for Fixture {
         &self,
         reply: ImageGenerationReply<'_>,
     ) -> Result<ImageResponse, FixtureError> {
-        let mut recorded = self.recorded();
-        recorded.response = Some(ResponseEffect {
-            model: reply.model.to_owned(),
-            request_data: reply.request_data.clone(),
-            encoding: None,
-            api_key: reply.api_key.map(|key| key.expose_secret().to_owned()),
-            json_mode: reply.json_mode,
-        });
         fill_from_reply(reply.model_response, &reply.raw_response.body)
     }
 
@@ -250,26 +228,10 @@ impl BaseImageGenerationConfig for Fixture {
     }
 }
 
-// The identity body: the prompt and the model, which is all the handler's own request assembly adds
-fn identity_body(model: &str, prompt: &str) -> ImageParams {
-    let entries = [
-        (String::from("model"), Json::Text(model.to_owned())),
-        (String::from("prompt"), Json::Text(prompt.to_owned())),
-    ];
-    entries.into_iter().collect()
-}
-
 fn header_fields(headers: &ImageHeaders) -> ImageParams {
     headers
         .iter()
         .map(|(name, value)| (name.clone(), Json::Text(value.clone())))
-        .collect()
-}
-
-fn headers(pairs: &[(&str, &str)]) -> ImageHeaders {
-    pairs
-        .iter()
-        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
         .collect()
 }
 
@@ -288,7 +250,11 @@ struct Logger<'fixture> {
 
 impl ImageGenerationLogger for Logger<'_> {
     fn pre_call(&mut self, record: PreCallRecord<'_>) {
-        let mut recorded = self.fixture.recorded();
+        let mut recorded = self
+            .fixture
+            .recorded
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         recorded.pre_call = Some(PreCallEffect {
             input: record.input.to_owned(),
             api_key: record.api_key.to_owned(),

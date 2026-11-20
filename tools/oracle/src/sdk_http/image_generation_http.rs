@@ -36,9 +36,7 @@ impl Mode {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Params {
-    #[serde(default)]
     pub api_key: Option<String>,
-    #[serde(default)]
     pub ssl_verify: Option<bool>,
 }
 
@@ -49,19 +47,15 @@ pub struct Call {
     pub model: String,
     pub prompt: String,
     pub mode: Mode,
-    #[serde(default)]
     pub api_key: Option<String>,
     #[serde(default)]
     pub litellm_params: Params,
     #[serde(default)]
     pub optional_params: ImageParams,
-    #[serde(default)]
     pub extra_headers: Option<BTreeMap<String, String>>,
-    #[serde(default)]
     pub extra_body: Option<ImageParams>,
     #[serde(default)]
     pub fake_stream: bool,
-    #[serde(default)]
     pub litellm_metadata: Option<ImageParams>,
     #[serde(default)]
     pub multipart: bool,
@@ -70,7 +64,6 @@ pub struct Call {
 
 // What validate_environment was handed: the explicit key, the options' own header dict, and both params maps
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct ValidateEffect {
     pub api_key: Option<String>,
     pub api_base: Option<String>,
@@ -83,7 +76,6 @@ pub struct ValidateEffect {
 
 // What get_complete_url was handed: the deployment's api_base and key, never the explicit key
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct UrlEffect {
     pub api_base: Option<String>,
     pub api_key: Option<String>,
@@ -91,29 +83,8 @@ pub struct UrlEffect {
     pub stream: Option<bool>,
 }
 
-// What the request transform was handed: the prompt and the headers the caller's overrides already reached
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RequestEffect {
-    pub model: String,
-    pub prompt: String,
-    pub headers: ImageParams,
-}
-
-// What the response transform was handed, including the encoding LiteLLM always passes as None
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ResponseEffect {
-    pub model: String,
-    pub request_data: ImageParams,
-    pub encoding: Option<Json>,
-    pub api_key: Option<String>,
-    pub json_mode: Option<bool>,
-}
-
 // What logging_obj.pre_call was handed: the prompt and the empty key the handler logs
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct PreCallEffect {
     pub input: String,
     pub api_key: String,
@@ -123,18 +94,14 @@ pub struct PreCallEffect {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct Effects {
     pub validation: ValidateEffect,
     pub url: UrlEffect,
-    pub request: RequestEffect,
-    pub response: Option<ResponseEffect>,
     pub pre_call: PreCallEffect,
 }
 
 // The exception _handle_error raises, as its callers can observe it
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct Failure {
     pub status: u16,
     pub synthesized: bool,
@@ -143,7 +110,6 @@ pub struct Failure {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct Outcome {
     pub result: Option<Json>,
     pub failure: Option<Failure>,
