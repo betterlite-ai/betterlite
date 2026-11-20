@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::future::Future;
+use std::io;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -7,13 +8,15 @@ use betterlite_azure::azure_stream_errors::error::{Raised, Reported};
 use betterlite_azure::azure_stream_errors::records::{
     ChatStreamTransport, GetStreamClient, StreamAnswer, StreamClient, StreamSource,
 };
-use betterlite_azure::endpoints::projection::ClientKind;
+use betterlite_azure::endpoints::projection::{ClientKind, LiteLlmParams};
 use betterlite_models::decisions::{Extra, Json};
 use betterlite_openai::text_completion_transport::logging::SecretHeaders;
 use betterlite_openai::text_completion_transport::sdk::{ByteStream, SdkError};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use futures_util::stream;
 use http::{HeaderMap, HeaderName, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
+use serde_json::Number;
 
 use super::{ClientKindSpec, ErrorSpec, SendSpec, StreamCase};
 
@@ -33,7 +36,7 @@ pub(super) struct FormView {
     pub(super) form: BTreeMap<String, String>,
 }
 
-fn kind_of(spec: &ClientKindSpec) -> ClientKind {
+const fn kind_of(spec: &ClientKindSpec) -> ClientKind {
     match spec {
         ClientKindSpec::AzureSync => ClientKind::AzureOpenAi,
         ClientKindSpec::AzureAsync => ClientKind::AsyncAzureOpenAi,
@@ -77,14 +80,14 @@ pub(super) fn raised_of(spec: &ErrorSpec) -> Raised {
     raised
 }
 
-fn send_headers(spec: &SendSpec) -> HeaderMap {
+fn send_headers(spec: &SendSpec) -> Result<HeaderMap, Box<HelperError>> {
     let mut map = HeaderMap::new();
     for (name, value) in &spec.headers {
-        let name = HeaderName::from_bytes(name.as_bytes()).expect("send header name");
-        let value = HeaderValue::from_str(value).expect("send header value");
-        map.insert(name, value);
+        let header_name = HeaderName::from_bytes(name.as_bytes()).or_value_error()?;
+        let header_value = HeaderValue::from_str(value).or_value_error()?;
+        map.insert(header_name, header_value);
     }
-    map
+    Ok(map)
 }
 
 pub(super) struct ScriptedTransport {
@@ -136,8 +139,14 @@ pub(super) fn requests(source: &ScriptedSource) -> Vec<Json> {
 }
 
 impl ScriptedSource {
-    pub(super) fn new(case: &StreamCase) -> Self {
-        let spec = case.supplied.as_ref().expect("the case supplies a client");
+    pub(super) fn new(case: &StreamCase) -> Result<Self, Box<HelperError>> {
+        let spec = case
+            .supplied
+            .as_ref()
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::InvalidInput, "the case supplies a client")
+            })
+            .or_value_error()?;
         let key = spec.api_key.clone().map(SecretString::from);
         let kind = kind_of(&spec.kind);
         let events = case.send.events.concat().into_bytes();
@@ -153,11 +162,11 @@ impl ScriptedSource {
         };
         let requests = Arc::new(Mutex::new(Vec::new()));
         let transport = ScriptedTransport {
-            headers: send_headers(&case.send),
+            headers: send_headers(&case.send)?,
             payload,
             requests: Arc::clone(&requests),
         };
-        ScriptedSource {
+        Ok(Self {
             client: StreamClient {
                 kind,
                 api_key: key,
@@ -166,11 +175,11 @@ impl ScriptedSource {
             get_error: case.get_error.as_ref().map(raised_of),
             gets: Arc::new(Mutex::new(Vec::new())),
             requests,
-        }
+        })
     }
 }
 
-fn litellm_params_view(params: &betterlite_azure::endpoints::projection::LiteLlmParams) -> Json {
+fn litellm_params_view(params: &LiteLlmParams) -> Json {
     let mut fields = Extra::new();
     fields.insert(
         "azure_ad_token".to_owned(),
@@ -180,14 +189,14 @@ fn litellm_params_view(params: &betterlite_azure::endpoints::projection::LiteLlm
     );
     fields.insert(
         "max_retries".to_owned(),
-        params.max_retries.map_or(Json::Null, |value| {
-            Json::Number(serde_json::Number::from(value))
-        }),
+        params
+            .max_retries
+            .map_or(Json::Null, |value| Json::Number(Number::from(value))),
     );
     fields.insert(
         "timeout".to_owned(),
         match params.timeout {
-            Some(value) => serde_json::Number::from_f64(value).map_or(Json::Null, Json::Number),
+            Some(value) => Number::from_f64(value).map_or(Json::Null, Json::Number),
             None => Json::Null,
         },
     );

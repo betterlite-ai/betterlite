@@ -144,8 +144,8 @@ fn wrapper_headers(headers: &WrapperHeaders) -> Json {
     }
 }
 
-fn stream_options_value(options: &Option<StreamOptions>) -> Json {
-    options.as_ref().map_or(Json::Null, |options| {
+fn stream_options_value(options: Option<&StreamOptions>) -> Json {
+    options.map_or(Json::Null, |options| {
         let mut fields = Extra::new();
         fields.insert(
             "include_usage".to_owned(),
@@ -164,7 +164,7 @@ pub(super) fn wrapper_value(stream: &AzureChatStream) -> Json {
     );
     fields.insert(
         "stream_options".to_owned(),
-        stream_options_value(&stream.stream_options),
+        stream_options_value(stream.stream_options.as_ref()),
     );
     fields.insert(
         "response_headers".to_owned(),

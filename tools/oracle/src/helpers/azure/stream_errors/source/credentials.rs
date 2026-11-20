@@ -11,6 +11,7 @@ use betterlite_azure::endpoints::projection::CallableProvider;
 use betterlite_azure::oidc_exchange::transport::{Clock, HttpReply, Transport};
 use betterlite_azure::oidc_exchange::{AzureOidcExchange, OidcExchangeInput};
 use betterlite_config::sections::azure_oidc_exchange::Settings;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::super::ExchangeSpec;
@@ -70,7 +71,7 @@ pub(crate) struct ScriptedSources {
 }
 
 impl ScriptedSources {
-    pub(crate) fn new(spec: &ExchangeSpec) -> Self {
+    pub(crate) fn new(spec: &ExchangeSpec) -> Result<Self, Box<HelperError>> {
         let forms = Arc::new(Mutex::new(Vec::new()));
         let exchange = AzureOidcExchange::new(
             Settings::default(),
@@ -82,14 +83,14 @@ impl ScriptedSources {
             }),
             Arc::new(FixedClock),
         )
-        .expect("the OIDC exchange builds");
-        ScriptedSources {
+        .or_value_error()?;
+        Ok(Self {
             exchange,
             resolver: FixedResolver {
                 assertion: SecretString::from(spec.assertion.clone()),
             },
             forms,
-        }
+        })
     }
 }
 

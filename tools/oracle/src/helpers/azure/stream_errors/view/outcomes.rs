@@ -33,7 +33,9 @@ pub(crate) fn error_report(
                 error: error_value(raised),
             },
         )),
-        other => Err(failure(other)),
+        StreamingError::Logging(_) | StreamingError::Chunk(_) | StreamingError::Usage(_) => {
+            Err(failure(error))
+        }
     }
 }
 

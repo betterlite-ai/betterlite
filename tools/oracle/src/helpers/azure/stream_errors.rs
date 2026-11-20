@@ -131,7 +131,7 @@ impl Default for SendSpec {
     }
 }
 
-fn default_status() -> u16 {
+const fn default_status() -> u16 {
     200
 }
 

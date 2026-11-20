@@ -21,14 +21,17 @@ use super::{Function, Input, StreamCase};
 const CLOCK: i64 = 1_700_000_000;
 const STREAM_TIMESTAMP: f64 = 1_700_000_000.0;
 
-fn now() -> StreamInstant {
+const fn now() -> StreamInstant {
     StreamInstant {
         seconds: CLOCK,
         timestamp: STREAM_TIMESTAMP,
     }
 }
 
-fn block_on<Fut: Future>(future: Fut) -> Result<Fut::Output, Box<HelperError>> {
+fn block_on<Fut>(future: Fut) -> Result<Fut::Output, Box<HelperError>>
+where
+    Fut: Future,
+{
     let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
@@ -37,8 +40,8 @@ fn block_on<Fut: Future>(future: Fut) -> Result<Fut::Output, Box<HelperError>> {
 }
 
 fn one(function: &Function, case: &StreamCase) -> Result<Json, Box<HelperError>> {
-    let source = ScriptedSource::new(case);
-    let sources = ScriptedSources::new(&case.exchange);
+    let source = ScriptedSource::new(case)?;
+    let sources = ScriptedSources::new(&case.exchange)?;
     let mut recorder = Recorder::default();
     let client = source.client.clone();
     let key = case.api_key.clone().map(SecretString::from);
@@ -49,6 +52,7 @@ fn one(function: &Function, case: &StreamCase) -> Result<Json, Box<HelperError>>
         api_base: &case.api_base,
         api_key: key.as_ref(),
         api_version: &case.api_version,
+        dynamic_params: case.dynamic_params,
         data: &case.data,
         model: &case.model,
         timeout: case.timeout,
@@ -58,7 +62,6 @@ fn one(function: &Function, case: &StreamCase) -> Result<Json, Box<HelperError>>
         litellm_params: &litellm_params,
         supplied: Some(&client),
     };
-    let _dynamic = case.dynamic_params;
     let runtime = StreamRuntime {
         now,
         next_id: || Uuid::from_u128(11),
