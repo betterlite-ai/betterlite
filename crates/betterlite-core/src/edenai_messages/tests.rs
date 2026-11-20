@@ -159,12 +159,12 @@ fn validate_environment_reads_the_explicit_then_the_global_then_the_environment_
     };
     let lookup = lookup(&[]);
     let optional = Object::new();
-    let explicit = explicit.map(key);
+    let chosen = explicit.map(key);
     let headers = validate_environment(
         &policy(),
         EnvironmentInput {
             headers: Headers::new(),
-            api_key: explicit.as_ref(),
+            api_key: chosen.as_ref(),
             model: "m",
             env: &environment,
             lookup: &lookup,
@@ -173,10 +173,10 @@ fn validate_environment_reads_the_explicit_then_the_global_then_the_environment_
         },
     )
     .unwrap();
-    let expected = format!("Bearer {expected}");
+    let bearer = format!("Bearer {expected}");
     assert_eq!(
         headers.get("authorization").map(String::as_str),
-        Some(expected.as_str())
+        Some(bearer.as_str())
     );
 }
 
@@ -310,7 +310,7 @@ fn transform_response_lets_a_null_cost_beat_the_header_alias() {
     })
     .unwrap();
     let details = serde_json::to_value(&state.model_call_details).unwrap();
-    assert_eq!(details["response_cost"], serde_json::Value::Null);
+    assert_eq!(details["response_cost"], Value::Null);
 }
 
 #[test]
@@ -324,7 +324,7 @@ fn transform_response_ignores_an_invalid_cost() {
     })
     .unwrap();
     let details = serde_json::to_value(&state.model_call_details).unwrap();
-    assert_eq!(details["response_cost"], serde_json::Value::Null);
+    assert_eq!(details["response_cost"], Value::Null);
 }
 
 #[test]
