@@ -52,6 +52,7 @@ description: >-
   ids retain ownership on the provider and keys/data branches.
 scope:
   paths:
+  - "crates/betterlite-core/src/api/messages_response_events.rs"
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/messages_response_stream.rs
   - crates/betterlite-core/src/api/messages_response_stream/**
