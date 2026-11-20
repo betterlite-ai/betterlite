@@ -7,7 +7,7 @@ use betterlite_prompts::media::inline::RemoteMediaFetcher;
 
 use crate::bedrock_model_capabilities::ModelInfoLookup;
 use crate::claude_invoke::error::ClaudeInvokeError;
-use crate::claude_invoke::request::{ClaudeInvokeRequest, TransformSources, build_base_request};
+use crate::claude_invoke::request::{ClaudeInvokeRequest, TransformSources};
 
 use super::MANTLE_PREFIX;
 
@@ -40,7 +40,7 @@ where
         modify_params: request.modify_params,
         global_drop_params: request.global_drop_params,
     };
-    let mut body = build_base_request(&stripped, sources).await?.body;
+    let mut body = sources.build_base_request(&stripped).await?.body;
     restore_body_fields(
         &mut body,
         &model_id,
