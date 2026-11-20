@@ -3,6 +3,7 @@
 mod per_user;
 
 use std::collections::{BTreeMap, VecDeque};
+use std::iter::repeat_with;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
@@ -115,7 +116,7 @@ impl M2mTokenEndpointPost for ScriptedPost {
         let mut outcomes = self.outcomes.lock().unwrap_or_else(PoisonError::into_inner);
         outcomes
             .pop_front()
-            .unwrap_or(TokenEndpointOutcome::Unreachable {
+            .unwrap_or_else(|| TokenEndpointOutcome::Unreachable {
                 detail: "the test scripted no outcome".to_owned(),
             })
     }
@@ -323,7 +324,7 @@ async fn async_get_token_fetches_once_for_concurrent_callers() {
     let clock = Arc::new(ManualClock::new());
     let cache = cache_with(&post, &clock);
     let server = client_server();
-    let results = join_all((0..8).map(|_index| cache.async_get_token(&server))).await;
+    let results = join_all(repeat_with(|| cache.async_get_token(&server)).take(8)).await;
     assert_eq!(post.calls().len(), 1);
     let tokens = results
         .into_iter()
@@ -446,7 +447,7 @@ async fn fetch_token_names_an_unusable_access_token() {
     let clock = Arc::new(ManualClock::new());
     let cache = cache_with(&post, &clock);
     let server = client_server();
-    let errors = join_all((0..3).map(|_index| cache.fetch_token(&server)))
+    let errors = join_all(repeat_with(|| cache.fetch_token(&server)).take(3))
         .await
         .into_iter()
         .map(|result| result.expect_err("the response has no usable access token"))
@@ -651,6 +652,7 @@ fn the_lock_map_is_capped_and_drops_the_oldest_identity() {
     assert!(!locks.contains_key("srv-1:0"));
     assert!(locks.contains_key("srv-1:1"));
     assert!(locks.contains_key(&format!("srv-1:{}", super::OAUTH2_TOKEN_CACHE_MAX_LOCKS)));
+    drop(locks);
 }
 
 #[test]
@@ -662,6 +664,7 @@ fn the_cache_matches_litellm_inmemory_defaults() {
     let limits = entries.as_ref();
     assert_eq!(limits.capacity, 200);
     assert!((limits.default_ttl - 3600.0_f64).abs() < f64::EPSILON);
+    drop(entries);
 }
 
 #[tokio::test]

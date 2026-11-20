@@ -15,6 +15,7 @@ use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces, StoredValue};
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
+use tracing::subscriber::set_default;
 use tracing_subscriber::fmt::MakeWriter;
 
 use super::flow::backfill_null_oauth2_flows;
@@ -55,11 +56,8 @@ fn credential_fields(client_id: Option<&str>, client_secret: Option<&str>) -> Cr
     fields
 }
 
-fn credentials_value(client_id: Option<&str>, client_secret: Option<&str>) -> Option<JsonValue> {
-    Some(JsonValue::Object(credential_fields(
-        client_id,
-        client_secret,
-    )))
+fn credentials_value(client_id: Option<&str>, client_secret: Option<&str>) -> JsonValue {
+    JsonValue::Object(credential_fields(client_id, client_secret))
 }
 
 fn oauth_payload_b64() -> String {
@@ -415,7 +413,7 @@ fn flow_and_rule_names_match_litellm() {
 fn flow_decrypted_credentials_reads_an_object_and_an_encoded_string() {
     let cipher = test_cipher();
     let object = credentials_value(Some("id"), Some("secret"));
-    let from_object = decrypted_credentials(object.as_ref(), &cipher).expect("the blob reads");
+    let from_object = decrypted_credentials(Some(&object), &cipher).expect("the blob reads");
     assert_eq!(
         from_object.get("client_id"),
         Some(&JsonValue::String("id".to_owned()))
@@ -468,14 +466,14 @@ fn five_rule_table() -> FakeFlowTable {
     let mut authorization = flow_row("srv-authorization");
     authorization.authorization_url = Some("https://idp/authorize".to_owned());
     authorization.registration_url = Some("https://idp/register".to_owned());
-    authorization.credentials = credentials_value(Some("id"), Some("secret"));
+    authorization.credentials = Some(credentials_value(Some("id"), Some("secret")));
     let mut registration = flow_row("srv-registration");
     registration.registration_url = Some("https://idp/register".to_owned());
     registration.token_url = Some("https://idp/token".to_owned());
-    registration.credentials = credentials_value(Some("id"), Some("secret"));
+    registration.credentials = Some(credentials_value(Some("id"), Some("secret")));
     let mut ambiguous = flow_row("srv-ambiguous");
     ambiguous.token_url = Some("https://idp/token".to_owned());
-    ambiguous.credentials = credentials_value(Some("id"), Some("secret"));
+    ambiguous.credentials = Some(credentials_value(Some("id"), Some("secret")));
     let tokens = vec![UserCredentialRow {
         server_id: "srv-per-user".to_owned(),
         credential_b64: oauth_payload_b64(),
@@ -551,7 +549,7 @@ async fn flow_backfill_warns_on_ambiguous_rows() {
 async fn flow_backfill_never_stamps_client_credentials() {
     let mut ambiguous = flow_row("srv-m2m");
     ambiguous.token_url = Some("https://idp/token".to_owned());
-    ambiguous.credentials = credentials_value(Some("id"), Some("secret"));
+    ambiguous.credentials = Some(credentials_value(Some("id"), Some("secret")));
     let table = FakeFlowTable::new(vec![ambiguous], Vec::new());
     let log = CapturedLog::default();
     let counts = backfill_null_oauth2_flows(&table, &test_cipher(), &log)
@@ -591,7 +589,7 @@ fn tracing_log_names_every_backfill_event(#[case] needle: &str) {
         .with_target(false)
         .with_writer(captured.clone())
         .finish();
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = set_default(subscriber);
     let log = TracingBackfillLog;
     let counts: BTreeMap<BackfillRule, usize> = BTreeMap::from([(BackfillRule::PerUserTokens, 1)]);
     log.event(BackfillEvent::FlowAmbiguous { server_id: "srv-1" });
