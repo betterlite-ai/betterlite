@@ -82,7 +82,7 @@ impl Helper for Op {
     }
 }
 
-fn alerting_args(settings: &SettingsInput) -> SlackAlertingArgs {
+const fn alerting_args(settings: &SettingsInput) -> SlackAlertingArgs {
     SlackAlertingArgs {
         daily_report_frequency: 43_200,
         report_check_interval: 300,

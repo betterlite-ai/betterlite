@@ -24,13 +24,13 @@ fn replays_the_user_spend_alert_cases(
 #[test]
 fn rejects_an_unknown_input_field() {
     let input = serde_json::json!({
-        "row": {"user_id": "user-1", "daily_spend": 1.0, "monthly_spend": 1.0, "baseline_spend": 0.0},
+        "row": {"user_id": "user-1", "daily_spend": 1.0_f64, "monthly_spend": 1.0_f64, "baseline_spend": 0.0_f64},
         "settings": {
             "daily_threshold": null,
             "monthly_threshold": null,
-            "spend_anomaly_multiplier": 3.0,
-            "spend_anomaly_baseline_days": 7,
-            "spend_anomaly_min_spend": 10.0,
+            "spend_anomaly_multiplier": 3.0_f64,
+            "spend_anomaly_baseline_days": 7_i32,
+            "spend_anomaly_min_spend": 10.0_f64,
         },
         "today": "2026-01-15",
         "thresholds_enabled": true,

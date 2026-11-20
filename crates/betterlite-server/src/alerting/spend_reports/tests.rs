@@ -204,11 +204,10 @@ impl Captured {
 
 impl io::Write for Captured {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let mut captured = self
-            .0
+        self.0
             .lock()
-            .map_err(|_poisoned| io::Error::other("the captured logs were poisoned"))?;
-        captured.extend_from_slice(buf);
+            .map_err(|_poisoned| io::Error::other("the captured logs were poisoned"))?
+            .extend_from_slice(buf);
         Ok(buf.len())
     }
 
