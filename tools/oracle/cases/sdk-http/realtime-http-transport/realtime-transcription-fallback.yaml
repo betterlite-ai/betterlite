@@ -1,0 +1,18 @@
+kind: sdk_http
+name: realtime-http-transport-transcription-fallback
+call:
+  realtime_http_transport:
+    handler: transcription_sessions
+    api_key: sk-test
+    request_data: {session: {}}
+    model: m
+    timeout_seconds: 30
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: realtime.session}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore: []

@@ -1,0 +1,20 @@
+kind: sdk_http
+name: realtime-http-transport-session-model-empty
+call:
+  realtime_http_transport:
+    handler: client_secrets
+    echo_config: true
+    api_key: ""
+    request_data: {session: {}}
+    model: ""
+    api_version: v9
+    timeout_seconds: 30
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {client_secret: {value: ek}}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [api-key, content-type]
+  ignore: []

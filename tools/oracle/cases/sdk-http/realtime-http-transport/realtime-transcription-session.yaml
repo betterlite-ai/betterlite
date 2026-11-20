@@ -1,0 +1,22 @@
+kind: sdk_http
+name: realtime-http-transport-transcription-config
+call:
+  realtime_http_transport:
+    handler: transcription_sessions
+    echo_config: true
+    api_key: sk-test
+    request_data:
+      session: {model: m}
+    extra_headers: {api-key: override, x-test: t}
+    model: m
+    api_version: v9
+    timeout_seconds: 30
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: realtime.session}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [api-key, content-type, x-test]
+  ignore: []

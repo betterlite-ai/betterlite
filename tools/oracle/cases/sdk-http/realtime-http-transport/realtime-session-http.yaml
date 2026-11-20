@@ -1,0 +1,19 @@
+kind: sdk_http
+name: realtime-http-transport-session-fallback
+call:
+  realtime_http_transport:
+    handler: client_secrets
+    api_key: sk-test
+    request_data:
+      session: {model: m}
+    model: m
+    timeout_seconds: 30
+upstream:
+  - status: 201
+    headers: {content-type: application/json}
+    body: {client_secret: {value: ek}}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore: []
