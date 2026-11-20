@@ -25,7 +25,7 @@ fn load(source: &str, variables: &[(&str, &str)]) -> Result<Settings, ConfigErro
 
 #[test]
 fn loads_public_lists() {
-    let source = "litellm_settings:\n  public_mcp_servers:\n    - alpha\n    - beta\n  public_mcp_hub_strict_whitelist: false\n  public_model_groups_links:\n    Docs: https://docs.test\n    Status:\n      url: https://status.test\n      index: 2\n";
+    let source = "litellm_settings:\n  public_mcp_servers:\n    - alpha\n    - beta\n  public_mcp_hub_strict_whitelist: false\n  public_model_groups_links:\n    Status:\n      url: https://status.test\n      index: 2\n    Docs: https://docs.test\n";
     let settings = load(source, &[]).unwrap();
     assert_eq!(
         settings.public_mcp_servers,
@@ -37,7 +37,7 @@ fn loads_public_lists() {
             .public_model_groups_links
             .keys()
             .collect::<Vec<_>>(),
-        ["Docs", "Status"]
+        ["Status", "Docs"]
     );
     assert_eq!(
         settings.public_model_groups_links.get("Docs"),
@@ -73,6 +73,11 @@ fn public_mcp_servers_absent_null_and_empty(
     "https://env.test/rss.xml"
 )]
 #[case::empty_environment("", &[(BLOG_POSTS_URL_ENV, "")], DEFAULT_BLOG_POSTS_URL)]
+#[case::null_key(
+    "litellm_settings:\n  blog_posts_url:\n",
+    &[(BLOG_POSTS_URL_ENV, "https://env.test/rss.xml")],
+    "https://env.test/rss.xml"
+)]
 #[case::configured_key(
     "litellm_settings:\n  blog_posts_url: https://config.test/rss.xml\n",
     &[],
@@ -138,6 +143,12 @@ fn useful_link_variants(#[case] source: &str, #[case] expected: UsefulLink) {
         settings.public_model_groups_links.get("Docs"),
         Some(&expected)
     );
+}
+
+#[test]
+fn a_null_link_map_is_empty() {
+    let settings = load("litellm_settings:\n  public_model_groups_links:\n", &[]).unwrap();
+    assert!(settings.public_model_groups_links.is_empty());
 }
 
 #[test]
