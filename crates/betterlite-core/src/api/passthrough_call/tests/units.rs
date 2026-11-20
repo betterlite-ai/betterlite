@@ -15,6 +15,7 @@ use betterlite_openai::passthrough::transformation::types::{
     PassthroughTarget, PassthroughUrlRequest,
 };
 use indexmap::IndexMap;
+use rstest::rstest;
 use serde_json::Number;
 
 use super::super::allm_passthrough_route;
@@ -237,25 +238,25 @@ fn auth_optional_text_reads_only_strings() {
     }
 }
 
+#[rstest]
+#[case::azure(PassthroughConfigTag::Azure, "azure_ad_token")]
+#[case::gigachat(PassthroughConfigTag::GigaChat, "gigachat_access_token")]
 #[tokio::test]
-async fn auth_refuses_non_string_provider_credentials() {
+async fn auth_refuses_non_string_provider_credentials(
+    #[case] tag: PassthroughConfigTag,
+    #[case] name: &str,
+) {
     let http = proxy_client(1024);
-    let cases = [
-        (PassthroughConfigTag::Azure, "azure_ad_token"),
-        (PassthroughConfigTag::GigaChat, "gigachat_access_token"),
-    ];
-    for (tag, name) in cases {
-        let params = object(&[(name, JsonValue::Bool(true))]);
-        let Err(failure) = auth::validate(tag, None, &params, "https://example.test", &http).await
-        else {
-            panic!("a boolean credential is refused");
-        };
-        match failure {
-            ConfigError::ValueError { message } => {
-                assert_eq!(message, format!("litellm_params.{name} must be a string"));
-            }
-            other => panic!("unexpected error: {other}"),
+    let params = object(&[(name, JsonValue::Bool(true))]);
+    let Err(failure) = auth::validate(tag, None, &params, "https://example.test", &http).await
+    else {
+        panic!("a boolean credential is refused");
+    };
+    match failure {
+        ConfigError::ValueError { message } => {
+            assert_eq!(message, format!("litellm_params.{name} must be a string"));
         }
+        other => panic!("unexpected error: {other}"),
     }
 }
 
