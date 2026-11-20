@@ -1,0 +1,29 @@
+kind: helper
+name: create-successful
+call:
+  b3364:
+    operation: create
+    name: box
+    create_params:
+      expires_after: {anchor: last_active_at, minutes: 20}
+    api_key: sk-test
+    api_base: https://api.example.com/v1
+    timeout: 900
+    status: 200
+    reply_headers: {}
+    body: '{"id":"cntr_abc","object":"container","created_at":1700000000,"status":"running","expires_after":{"anchor":"last_active_at","minutes":20},"last_active_at":null,"name":"box"}'
+    failure: null
+calls:
+  - b3364:
+      operation: create
+      name: bare
+      create_params: {}
+      api_key: sk-test
+      api_base: https://api.example.com/v1
+      timeout: null
+      status: 201
+      reply_headers: {}
+      body: '{"id":"cntr_def","object":"container","created_at":1700000001,"status":"running","expires_after":null,"last_active_at":1740000000,"name":"bare"}'
+      failure: null
+env: {}
+compare: {ignore: []}

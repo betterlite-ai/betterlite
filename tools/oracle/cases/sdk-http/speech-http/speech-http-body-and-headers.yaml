@@ -1,0 +1,57 @@
+kind: sdk_http
+name: sdk-http-speech-http-body-and-headers
+env: {}
+call:
+  speech_http:
+    steps:
+      - mode: sync
+        input: hello
+        voice: alloy
+        api_key: key
+        timeout_seconds: 5
+        extra_headers: {x: caller}
+        validated: {x: validated}
+        transformed:
+          dict_body: {input: hello}
+          ssml_body: ignored
+          headers: {x: provider}
+      - mode: async
+        input: hello
+        voice: alloy
+        api_key: key
+        timeout_seconds: 5
+        extra_headers: {x: caller}
+        validated: {x: validated}
+        transformed:
+          dict_body: {input: hello}
+          ssml_body: ignored
+          headers: {x: provider}
+      - mode: sync
+        input: hello
+        voice: alloy
+        api_key: key
+        timeout_seconds: 5
+        extra_headers: {x: caller}
+        validated: {x: validated}
+        transformed:
+          dict_body: {}
+          ssml_body: ignored
+          headers: {x: provider}
+upstream:
+  - status: 200
+    headers: {x-request-id: speech_1}
+    body: {body_kind: bytes, fixture: binary-response.bin, content_type: audio/wav}
+  - status: 200
+    headers: {x-request-id: speech_1}
+    body: {body_kind: bytes, fixture: binary-response.bin, content_type: audio/wav}
+  - status: 200
+    headers: {x-request-id: speech_1}
+    body: {body_kind: bytes, fixture: binary-response.bin, content_type: audio/wav}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [content-type, content-length, x]
+  ignore:
+    - {pointer: /speech_http/value/steps/0/value/headers/date, why: each mock stamps its own date header}
+    - {pointer: /speech_http/value/steps/1/value/headers/date, why: each mock stamps its own date header}
+    - {pointer: /speech_http/value/steps/2/value/headers/date, why: each mock stamps its own date header}
