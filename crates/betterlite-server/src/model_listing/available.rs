@@ -91,10 +91,10 @@ async fn requested_team(
     team_id: Option<&str>,
     access: &dyn AccessLookups,
 ) -> Result<Option<TeamListing>, ModelListingError> {
-    let Some(team_id) = team_id else {
+    let Some(requested_id) = team_id else {
         return Ok(None);
     };
-    match access.team(team_id).await {
+    match access.team(requested_id).await {
         Ok(Some(team)) => {
             access.validate_membership(key, &team).await?;
             Ok(Some(team))
@@ -149,8 +149,8 @@ async fn team_for_access_groups(
     team_id: Option<&str>,
     access: &dyn AccessLookups,
 ) -> Option<TeamListing> {
-    let team_id = team_id?;
-    match access.team(team_id).await {
+    let lookup_id = team_id?;
+    match access.team(lookup_id).await {
         Ok(team) => team,
         Err(missing) => {
             tracing::debug!(

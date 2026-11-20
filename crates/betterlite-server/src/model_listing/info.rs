@@ -188,19 +188,19 @@ fn resolve_listing_model_info(
     listed_info: Option<&JsonObject>,
     cost_map: &dyn ModelInfoSource,
 ) -> Vec<JsonObject> {
-    let Some(deployment_model) = deployment_model.filter(|model| *model != listed_model) else {
+    let Some(deployment) = deployment_model.filter(|model| *model != listed_model) else {
         return listed_info.map_or_else(Vec::new, |info| vec![info.clone()]);
     };
-    let Some(deployment_info) = safe_model_info(cost_map, deployment_model) else {
+    let Some(deployment_info) = safe_model_info(cost_map, deployment) else {
         return listed_info.map_or_else(Vec::new, |info| vec![info.clone()]);
     };
-    let Some(listed_info) = listed_info else {
+    let Some(listed) = listed_info else {
         return vec![deployment_info];
     };
-    if cost_map.is_generalized(&deployment_info) && !cost_map.is_generalized(listed_info) {
-        return vec![listed_info.clone(), deployment_info];
+    if cost_map.is_generalized(&deployment_info) && !cost_map.is_generalized(listed) {
+        return vec![listed.clone(), deployment_info];
     }
-    vec![deployment_info, listed_info.clone()]
+    vec![deployment_info, listed.clone()]
 }
 
 // _first_token_limit: the first candidate that declares a usable limit for the field.

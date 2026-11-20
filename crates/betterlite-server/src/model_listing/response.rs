@@ -21,11 +21,11 @@ pub fn model_dump_with_preserved_fields(
         return dumped;
     };
     for (choice, original) in choices.iter_mut().zip(original_choices) {
-        let Json::Object(choice) = choice else {
+        let Json::Object(choice_object) = choice else {
             continue;
         };
         for (sub_object, field) in PRESERVED_NONE_FIELDS {
-            restore_field(choice, original, sub_object, field);
+            restore_field(choice_object, original, sub_object, field);
         }
     }
     dumped

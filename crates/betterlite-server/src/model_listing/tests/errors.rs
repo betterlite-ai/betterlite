@@ -63,19 +63,17 @@ fn assert_error_statuses(cases: Vec<(ModelListingError, StatusCode)>) {
 #[test]
 fn the_listing_error_statuses_follow_the_lite_llm_exceptions() {
     let key_fields = serde_json::from_str::<u8>("bad").expect_err("the fixture is not a number");
-    let missing = TeamMissing {
-        team_id: "t1".to_owned(),
-    };
-    let not_member = NotAMember {
-        team_id: "t1".to_owned(),
-    };
     assert_error_statuses(vec![
         (
-            ModelListingError::TeamNotFound(missing),
+            ModelListingError::TeamNotFound(TeamMissing {
+                team_id: "t1".to_owned(),
+            }),
             StatusCode::NOT_FOUND,
         ),
         (
-            ModelListingError::NotAMember(not_member),
+            ModelListingError::NotAMember(NotAMember {
+                team_id: "t1".to_owned(),
+            }),
             StatusCode::FORBIDDEN,
         ),
         (

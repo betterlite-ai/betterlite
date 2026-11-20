@@ -6,8 +6,8 @@ mod info;
 mod response;
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Mutex, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_auth::auth_model_lists::access_groups::AccessGroupScope;
@@ -114,10 +114,11 @@ impl DeploymentLookup for FakeRouter {
         _model: &str,
         team_id: Option<&str>,
     ) -> Result<Vec<ModelParameters>, WildcardError> {
-        self.seen_teams
+        let mut seen = self
+            .seen_teams
             .lock()
-            .expect("the fixture lock")
-            .push(team_id.map(str::to_owned));
+            .unwrap_or_else(PoisonError::into_inner);
+        seen.push(team_id.map(str::to_owned));
         if self.rows_fail {
             return Err(WildcardError::Lookup);
         }

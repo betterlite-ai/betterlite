@@ -119,12 +119,12 @@ pub struct RouterCatalog {
 impl RouterCatalog {
     #[must_use]
     pub fn read(router: Option<&dyn ListingRouter>) -> Self {
-        let Some(router) = router else {
+        let Some(source) = router else {
             return Self::default();
         };
         Self {
-            model_names: router.model_names(),
-            access_groups: router.model_access_groups(),
+            model_names: source.model_names(),
+            access_groups: source.model_access_groups(),
         }
     }
 }
