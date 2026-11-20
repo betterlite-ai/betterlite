@@ -214,7 +214,7 @@ async fn compact_timeout_and_residency() {
     let events = Events::new();
     let mut harness = Harness::new();
     let wire = Wire::new(&events);
-    wire.repeat(200, COMPACT_OK, 11);
+    wire.repeat(200, COMPACT_OK, 12);
     let source = Source::new(&wire);
     let resolver = ModelNames::default();
     let lookup = Registry;
@@ -350,19 +350,39 @@ async fn compact_timeout_and_residency() {
         Some(String::from("https://eu.api.openai.com/v1"))
     );
 
+    let off_loop_before = events
+        .recorded()
+        .iter()
+        .filter(|event| event.as_str() == "off_loop")
+        .count();
     let before = wire.requests().len();
     let mut marked_off = call("openai/gpt-4o", text_input("hello"));
     marked_off.acompact_responses = Some(Json::Bool(false));
     compact_responses(&deps, &marked_off, &mut log)
         .await
         .expect("the false marker call succeeds");
+    let mut marked_text = call("openai/gpt-4o", text_input("hello"));
+    marked_text.acompact_responses = Some(Json::Text(String::from("true")));
+    compact_responses(&deps, &marked_text, &mut log)
+        .await
+        .expect("the text marker call succeeds");
     let mut marked_on = call("openai/gpt-4o", text_input("hello"));
     marked_on.acompact_responses = Some(Json::Bool(true));
     compact_responses(&deps, &marked_on, &mut log)
         .await
         .expect("the true marker call succeeds");
-    assert_eq!(wire.requests().len(), before + 2);
-    assert_eq!(source.created().len(), before + 2);
+    assert_eq!(wire.requests().len(), before + 3);
+    assert_eq!(source.created().len(), before + 3);
+    let off_loop_after = events
+        .recorded()
+        .iter()
+        .filter(|event| event.as_str() == "off_loop")
+        .count();
+    assert_eq!(
+        off_loop_after,
+        off_loop_before + 1,
+        "only the boolean true marker selects the async path"
+    );
 }
 
 #[tokio::test]
