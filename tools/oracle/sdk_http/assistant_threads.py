@@ -6,7 +6,7 @@ import openai
 from litellm.types.llms import openai as litellm_types
 from litellm.types.llms.openai import Thread
 from openai.types.beta.thread_create_params import Message
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, SkipValidation, TypeAdapter
 from pydantic import JsonValue as Json
 
 from openai_chat import project_failure
@@ -48,7 +48,7 @@ class AssistantThreadsCall(BaseModel):
     mode: Literal["sync", "async"]
     provider: Literal["openai", "azure"]
     thread_id: str | None = None
-    messages: list[Message] | None = None
+    messages: SkipValidation[list[Message] | None] = None
     metadata: dict[str, Json] | None = None
     tool_resources: litellm_types.OpenAICreateThreadParamsToolResources | None = None
     kwargs: dict[str, Json] = Field(default_factory=dict)
