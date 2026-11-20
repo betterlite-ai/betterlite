@@ -363,7 +363,7 @@ pub(crate) struct TransformRecord {
     pub(crate) async_entry: bool,
 }
 
-fn transform_record(request: SearchRequest<'_>, async_entry: bool) -> TransformRecord {
+fn transform_record(request: &SearchRequest<'_>, async_entry: bool) -> TransformRecord {
     let SearchRequest {
         vector_store_id,
         query,
@@ -372,7 +372,7 @@ fn transform_record(request: SearchRequest<'_>, async_entry: bool) -> TransformR
         litellm_params,
         extra_body,
         ..
-    } = request;
+    } = *request;
     TransformRecord {
         vector_store_id: vector_store_id.to_owned(),
         query: query.clone(),
@@ -450,7 +450,7 @@ impl RecordingConfig {
 
     fn transform_with(
         &self,
-        request: SearchRequest<'_>,
+        request: &mut SearchRequest<'_>,
         async_entry: bool,
     ) -> Result<PreparedSearch, SearchError> {
         if let Some(field) = self.transform_failure {
@@ -471,10 +471,10 @@ impl RecordingConfig {
 
     fn query_transform_with(
         &self,
-        request: QuerySearchRequest<'_>,
+        request: &QuerySearchRequest<'_>,
         async_entry: bool,
     ) -> PreparedSearch {
-        let mut record = transform_record(request.search, async_entry);
+        let mut record = transform_record(&request.search, async_entry);
         record.executor = request.embedding_executor.is_some();
         self.recorded().query_transforms.push(record);
         (self.url.clone(), self.body.clone())
@@ -509,16 +509,16 @@ impl SearchConfig for RecordingConfig {
 
     fn transform_search_request(
         &self,
-        request: SearchRequest<'_>,
+        mut request: SearchRequest<'_>,
     ) -> Result<PreparedSearch, SearchError> {
-        self.transform_with(request, false)
+        self.transform_with(&mut request, false)
     }
 
     async fn atransform_search_request(
         &self,
-        request: SearchRequest<'_>,
+        mut request: SearchRequest<'_>,
     ) -> Result<PreparedSearch, SearchError> {
-        self.transform_with(request, true)
+        self.transform_with(&mut request, true)
     }
 
     fn transform_search_response(
@@ -581,14 +581,14 @@ impl QueryEmbeddingConfig for RecordingConfig {
         &self,
         request: QuerySearchRequest<'_>,
     ) -> Result<PreparedSearch, SearchError> {
-        Ok(self.query_transform_with(request, false))
+        Ok(self.query_transform_with(&request, false))
     }
 
     async fn atransform_query_search(
         &self,
         request: QuerySearchRequest<'_>,
     ) -> Result<PreparedSearch, SearchError> {
-        Ok(self.query_transform_with(request, true))
+        Ok(self.query_transform_with(&request, true))
     }
 }
 
