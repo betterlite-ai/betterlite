@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::serve;
@@ -444,6 +445,72 @@ async fn a_streaming_call_with_an_error_reply_reports_the_provider_error(
     let mut fixture = Fixture::new("generate_content");
 
     let outcome = fixture.sync_call(&deps, &target, &Events::new()).await;
+
+    let Err(GenAiHttpError::Provider(error)) = outcome else {
+        panic!("an error status is a provider error even when the call streams");
+    };
+    assert_eq!(error.status_code, code);
+    assert_eq!(error.message, ERROR_BODY);
+}
+
+#[tokio::test]
+async fn a_unary_call_through_the_pooled_client_returns_the_response() {
+    let serving = serve(
+        reply("200 OK", &[("content-type", "application/json")], REPLY),
+        Duration::ZERO,
+    )
+    .expect("the fixture serves");
+    let source = ProxiedSource::new(TransportLimits::DEFAULT);
+    let config = TestConfig::new(&format!("http://{}", serving.address));
+    let deps = GenerateContentDeps {
+        config: &config,
+        source: &source,
+        supplied: None,
+        stream: StreamSettings::default(),
+    };
+    let contents = json(CONTENTS);
+    let generation = object(CONFIG);
+    let params = kwargs("{}");
+    let target = call(&contents, &generation, &params, false, None);
+    let mut fixture = Fixture::new("generate_content");
+
+    let outcome = fixture.sync_call(&deps, &target, &Events::new()).await;
+
+    let Ok(GenerateContentOutcome::Response(response)) = outcome else {
+        panic!("a 200 reply through the pooled client is a response");
+    };
+    assert_eq!(response, json(REPLY));
+    assert!(fixture.state.httpx_response.is_some());
+}
+
+#[rstest]
+#[case::client_error("400 Bad Request", 400_u16)]
+#[case::server_error("500 Internal Server Error", 500_u16)]
+#[tokio::test]
+async fn an_async_stream_that_receives_an_error_reply_reports_the_provider_error(
+    #[case] status: &str,
+    #[case] code: u16,
+) {
+    let serving = serve(
+        reply(status, &[("content-type", "application/json")], ERROR_BODY),
+        Duration::ZERO,
+    )
+    .expect("the fixture serves");
+    let source = ProxiedSource::new(TransportLimits::DEFAULT);
+    let config = TestConfig::new(&format!("http://{}", serving.address));
+    let deps = GenerateContentDeps {
+        config: &config,
+        source: &source,
+        supplied: None,
+        stream: StreamSettings::default(),
+    };
+    let contents = json(CONTENTS);
+    let generation = object(CONFIG);
+    let params = kwargs("{}");
+    let target = call(&contents, &generation, &params, true, None);
+    let mut fixture = Fixture::new("agenerate_content");
+
+    let outcome = fixture.async_call(Events::new(), &deps, &target).await;
 
     let Err(GenAiHttpError::Provider(error)) = outcome else {
         panic!("an error status is a provider error even when the call streams");
