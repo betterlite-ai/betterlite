@@ -36,14 +36,6 @@ deviations:
       these orders changes what the webhook receives.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/kill_switch.py#L129-L136
   - what: >-
-      The request URL and the reported URL come from the standard URL parser, which lowercases scheme and host,
-      drops a default port, resolves dot segments and writes "/" for an empty path; httpx keeps an empty path
-      empty, so LiteLLM reports "https://agent.example" where betterlite reports "https://agent.example/".
-    why: >-
-      The config URL is parsed by the same parser when it is read, so the parsed form builds the request; both
-      send the same request target.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/kill_switch.py#L129-L131
-  - what: >-
       An auth-derived header replaces a configured header whose name matches in any case. LiteLLM merges the
       two dicts case-sensitively, so a config with an "authorization" header plus Bearer auth sends both the
       stale header and the token.

@@ -4,9 +4,9 @@ use std::collections::BTreeMap;
 
 use betterlite_core::agents::json::AgentJson;
 use betterlite_core::agents::{AgentKillSwitchAuth, AgentKillSwitchConfig, AgentKillSwitchMethod};
+use betterlite_http::user_url::error::InvalidUrl;
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
-use url::ParseError;
 
 use super::{KillSwitchRequest, KillSwitchRequestError, build_kill_switch_request, method_text};
 use crate::kill_switch_management::support::{
@@ -66,6 +66,18 @@ fn a_configured_param_replaces_the_url_value_in_place() {
 }
 
 #[test]
+fn a_configured_param_replaces_every_url_value_for_its_key() {
+    let mut config = config_at("https://agent.example/stop?a=1&a=3&b=2");
+    config
+        .query_params
+        .insert(String::from("a"), String::from("9"));
+    assert_eq!(
+        request_for(&config).url,
+        "https://agent.example/stop?a=9&b=2"
+    );
+}
+
+#[test]
 fn a_new_param_is_appended_after_the_url_params() {
     let mut config = config_at("https://agent.example/stop?a=1");
     config
@@ -101,7 +113,7 @@ fn an_existing_query_value_is_decoded_and_encoded_again() {
 #[case::space("a b", "a+b")]
 #[case::plus("a+b", "a%2Bb")]
 #[case::slash("/", "%2F")]
-#[case::non_ascii("é", "%C3%A9")]
+#[case::non_ascii("\u{e9}", "%C3%A9")]
 fn a_query_value_is_encoded_like_python_quote_plus(#[case] value: &str, #[case] encoded: &str) {
     let mut config = config_at("https://agent.example/stop");
     config
@@ -125,9 +137,17 @@ fn the_fragment_survives_the_merge_and_is_left_out_of_the_reported_url() {
 }
 
 #[test]
-fn the_url_is_normalized_by_the_standard_parser() {
-    let config = config_at("HTTPS://Agent.Example:443/stop");
-    assert_eq!(request_for(&config).url, "https://agent.example/stop");
+fn the_url_is_normalized_like_httpx() {
+    // httpx lowercases the scheme after choosing the default port, so an uppercase scheme keeps :443
+    let upper_scheme = config_at("HTTPS://Agent.Example:443/stop");
+    assert_eq!(
+        request_for(&upper_scheme).url,
+        "https://agent.example:443/stop"
+    );
+    let lower_scheme = config_at("https://agent.example:443/stop");
+    assert_eq!(request_for(&lower_scheme).url, "https://agent.example/stop");
+    let empty_path = config_at("https://agent.example");
+    assert_eq!(request_for(&empty_path).url, "https://agent.example");
 }
 
 #[test]
@@ -211,7 +231,7 @@ fn the_auth_header_replaces_a_configured_header_of_the_same_name(
 #[rstest]
 #[case::lower("authorization")]
 #[case::upper("AUTHORIZATION")]
-#[case::mixed("AuThOrIsAtIoN")]
+#[case::mixed("authoriZation")]
 fn the_auth_header_replaces_a_configured_header_whatever_its_case(#[case] name: &str) {
     let mut config = config_with_auth(Some(bearer_auth("tok")));
     config
@@ -249,8 +269,14 @@ fn method_text_maps_every_method(#[case] method: AgentKillSwitchMethod, #[case] 
 
 #[test]
 fn an_invalid_url_is_a_request_error() {
-    let config = config_at("not a url");
+    let config = config_at("https://agent.example/stop\n");
     let error = build_kill_switch_request(&config).expect_err("the URL is refused");
     let KillSwitchRequestError::Url(source) = error;
-    assert_eq!(source, ParseError::RelativeUrlWithoutBase);
+    assert_eq!(
+        source,
+        InvalidUrl::NonPrintable {
+            character: String::from("'\\n'"),
+            position: 26,
+        }
+    );
 }

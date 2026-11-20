@@ -1,54 +1,24 @@
 use std::collections::BTreeMap;
 
+use betterlite_azure::azure_urls::url_parts::{encoded_query, query_pairs};
 use indexmap::IndexMap;
-use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
-use url::Url;
 
-// Python's quote_plus leaves alphanumerics and _.-~ alone and writes a space as a plus
-const QUOTE_PLUS: &AsciiSet = &NON_ALPHANUMERIC
-    .remove(b'_')
-    .remove(b'-')
-    .remove(b'.')
-    .remove(b'~');
-
+// httpx's QueryParams keeps every value of a repeated name, in first-seen order
 #[must_use]
-pub fn merged_query(url: &Url, configured: &BTreeMap<String, String>) -> Option<String> {
+pub fn merged_query(query: Option<&str>, configured: &BTreeMap<String, String>) -> Option<String> {
     let mut groups: IndexMap<String, Vec<String>> = IndexMap::new();
-    for (key, value) in url.query_pairs() {
-        groups
-            .entry(key.into_owned())
-            .or_default()
-            .push(value.into_owned());
+    for (key, value) in query_pairs(query) {
+        groups.entry(key).or_default().push(value);
     }
-    // IndexMap::insert keeps the position of a key the URL already has, as httpx's dict merge does
+    // IndexMap::insert keeps the position of a key the URL already has, as QueryParams.merge does
     for (key, value) in configured {
         groups.insert(key.clone(), vec![value.clone()]);
     }
-    if groups.is_empty() {
-        return None;
-    }
-    let mut encoded = String::new();
-    let mut written = false;
-    for (key, group) in &groups {
-        for item in group {
-            if written {
-                encoded.push('&');
-            }
-            push_quote_plus(&mut encoded, key);
-            encoded.push('=');
-            push_quote_plus(&mut encoded, item);
-            written = true;
+    let mut pairs: Vec<(String, String)> = Vec::new();
+    for (key, values) in groups {
+        for value in values {
+            pairs.push((key.clone(), value));
         }
     }
-    Some(encoded)
-}
-
-fn push_quote_plus(encoded: &mut String, value: &str) {
-    for part in utf8_percent_encode(value, QUOTE_PLUS) {
-        if part == "%20" {
-            encoded.push('+');
-        } else {
-            encoded.push_str(part);
-        }
-    }
+    encoded_query(&pairs)
 }

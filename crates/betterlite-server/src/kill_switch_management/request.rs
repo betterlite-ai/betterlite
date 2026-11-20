@@ -4,9 +4,10 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use betterlite_core::agents::json::AgentJson;
 use betterlite_core::agents::{AgentKillSwitchAuth, AgentKillSwitchConfig, AgentKillSwitchMethod};
+use betterlite_http::user_url::error::InvalidUrl;
+use betterlite_http::user_url::httpx_url::HttpxUrl;
 use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
-use url::{ParseError, Url};
 
 use super::query::merged_query;
 
@@ -22,17 +23,16 @@ pub struct KillSwitchRequest {
 #[derive(Debug, Error)]
 pub enum KillSwitchRequestError {
     #[error("the kill switch URL is not valid: {0}")]
-    Url(#[from] ParseError),
+    Url(#[from] InvalidUrl),
 }
 
 pub fn build_kill_switch_request(
     config: &AgentKillSwitchConfig,
 ) -> Result<KillSwitchRequest, KillSwitchRequestError> {
-    let mut url = Url::parse(&config.url)?;
-    let query = merged_query(&url, &config.query_params);
-    url.set_query(query.as_deref());
+    let mut url = HttpxUrl::parse(&config.url)?;
+    url.query = merged_query(url.query.as_deref(), &config.query_params);
     let mut reported = url.clone();
-    reported.set_query(None);
+    reported.query = None;
     let mut headers = BTreeMap::new();
     for (name, value) in &config.headers {
         headers.insert(name.clone(), SecretString::from(value.as_str()));
@@ -40,8 +40,8 @@ pub fn build_kill_switch_request(
     add_auth_headers(&mut headers, config.auth.as_ref());
     Ok(KillSwitchRequest {
         method: config.method.clone(),
-        url: url.to_string(),
-        reported_url: reported.to_string(),
+        url: url.href(),
+        reported_url: reported.href(),
         headers,
         body: config.body.clone(),
     })
