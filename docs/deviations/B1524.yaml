@@ -29,6 +29,15 @@ deviations:
       never sets. The shared image response record has no such fields, they carry no meaning, and
       the distinct-timing-sources case compares the three declared values on both sides.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2613-L2622
+  - what: >-
+      transform_response takes the created timestamp as an argument and keeps the value it is
+      given, where LiteLLM stamps int(time.time()) inside the shared reply transform and its
+      ImageResponse constructor replaces a zero with the wall clock.
+    why: >-
+      The clock belongs to the caller, as in B513, so the transform stays a pure function the
+      cases and tests can pin; the executor passes the request's current time. A zero timestamp
+      reaches the reply as zero instead of being replaced.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/topaz/image_variations/transformation.py#L121
 kept_bugs:
   - what: >-
       An explicit api_key of "" falls back to TOPAZ_API_KEY, and an explicit api_base of "" falls
