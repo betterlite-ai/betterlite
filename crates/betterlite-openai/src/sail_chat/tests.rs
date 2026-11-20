@@ -433,3 +433,57 @@ fn the_request_strips_cache_control_as_the_sail_provider() {
         Some(&Json::Text(String::from("hi")))
     );
 }
+
+#[test]
+fn transform_extra_body_rejects_a_tier_and_a_caller_window() {
+    let request = object(json!({"metadata": {"completion_window": "flex"}}));
+    let tier = config(false)
+        .transform_extra_body(
+            &object(json!({"service_tier": "flex"})),
+            &request,
+            MODEL,
+            false,
+        )
+        .unwrap_err();
+    assert_eq!(tier.status_code(), 400);
+    let window = config(false)
+        .transform_extra_body(
+            &object(json!({"metadata": {"completion_window": "asap"}})),
+            &request,
+            MODEL,
+            false,
+        )
+        .unwrap_err();
+    assert_eq!(window.status_code(), 400);
+}
+
+#[test]
+fn transform_extra_body_merges_the_request_metadata_over_the_caller_one() {
+    let request = object(json!({"metadata": {"completion_window": "flex"}}));
+    let merged = config(false)
+        .transform_extra_body(
+            &object(json!({"user": "u", "metadata": {"trace": "t-1"}})),
+            &request,
+            MODEL,
+            false,
+        )
+        .unwrap();
+    assert_eq!(
+        value(&merged),
+        json!({"user": "u", "metadata": {"trace": "t-1", "completion_window": "flex"}})
+    );
+}
+
+#[test]
+fn transform_extra_body_drops_a_tier_through_the_argument_or_the_setting() {
+    let request = object(json!({}));
+    let extra = object(json!({"service_tier": "flex", "user": "u"}));
+    let by_argument = config(false)
+        .transform_extra_body(&extra, &request, MODEL, true)
+        .unwrap();
+    assert_eq!(value(&by_argument), json!({"user": "u"}));
+    let by_setting = config(true)
+        .transform_extra_body(&extra, &request, MODEL, false)
+        .unwrap();
+    assert_eq!(value(&by_setting), json!({"user": "u"}));
+}

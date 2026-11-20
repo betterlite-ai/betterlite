@@ -6,7 +6,7 @@ use crate::openai_base_config::{
     OpenAiSettings,
 };
 use crate::reasoning_models::copy_supported;
-use crate::sail_common::{PROVIDER, SailSettings, chat_request_for_sail};
+use crate::sail_common::{PROVIDER, SailSettings, chat_request_for_sail, extra_body_for_sail};
 
 // ast-grep-ignore: no-long-names
 use crate::sail_common::completion_window_for_service_tier as window_for_tier;
@@ -26,6 +26,7 @@ const REJECTED_BY_SAIL: [&str; 7] = [
     "top_logprobs",
 ];
 const ACCEPTED_BY_SAIL: [&str; 2] = ["reasoning_effort", "user"];
+const METADATA: &str = "metadata";
 const SERVICE_TIER: &str = "service_tier";
 
 #[derive(Debug, Clone, Default)]
@@ -102,5 +103,23 @@ impl SailChatConfig {
             drop_params,
             &self.settings,
         )?)
+    }
+
+    // the handler merges this over the body, so the request metadata wins over the caller's
+    pub fn transform_extra_body(
+        &self,
+        extra_body: &Object,
+        request: &Object,
+        model: &str,
+        drop_params: bool,
+    ) -> Result<Object, SailChatError> {
+        extra_body_for_sail(
+            extra_body,
+            request.get(METADATA),
+            model,
+            drop_params,
+            &self.settings,
+        )
+        .map_err(SailChatError::from)
     }
 }

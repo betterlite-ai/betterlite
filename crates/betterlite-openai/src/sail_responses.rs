@@ -8,7 +8,7 @@ use crate::response_params;
 use crate::response_params::bundled::BundledReasoningModels;
 use crate::response_params::capabilities::ResponsesCapabilities;
 use crate::response_params::params::{ResponsesOptions, ResponsesParams};
-use crate::sail_common::SailSettings;
+use crate::sail_common::{SailSettings, extra_body_for_sail};
 
 // ast-grep-ignore: no-long-names
 use crate::sail_common::responses::responses_params_with_completion_window as window_params;
@@ -19,6 +19,7 @@ mod tests;
 use self::error::SailResponsesError;
 
 const PROVIDER: ProviderId = ProviderId::Sail;
+const METADATA: &str = "metadata";
 const SERVICE_TIER: &str = "service_tier";
 
 #[derive(Debug, Clone)]
@@ -79,5 +80,25 @@ impl SailResponsesConfig {
             .transform_request(model, input, params, model_info)?;
         body.shift_remove(SERVICE_TIER);
         Ok(body)
+    }
+
+    // the handler merges this over the body, so the request metadata wins over the caller's
+    pub fn transform_extra_body(
+        &self,
+        extra_body: &Object,
+        request: &Object,
+        model: &str,
+        drop_params: DropParams,
+    ) -> Result<Object, SailResponsesError> {
+        // LiteLLM's one drop flag is litellm.drop_params or the call's argument, whichever is set
+        let dropping = drop_params.global || drop_params.request;
+        extra_body_for_sail(
+            extra_body,
+            request.get(METADATA),
+            model,
+            dropping,
+            &self.settings,
+        )
+        .map_err(SailResponsesError::from)
     }
 }

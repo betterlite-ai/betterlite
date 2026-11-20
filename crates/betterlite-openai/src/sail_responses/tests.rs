@@ -234,3 +234,71 @@ fn a_non_list_tools_value_keeps_its_bad_request_status() {
     assert_eq!(error.status_code(), 400);
     assert!(error.class().is_none());
 }
+
+#[test]
+fn transform_extra_body_rejects_a_tier_and_a_caller_window() {
+    let request = object(json!({"metadata": {"completion_window": "flex"}}));
+    let tier = config(false)
+        .transform_extra_body(
+            &object(json!({"service_tier": "flex"})),
+            &request,
+            MODEL,
+            DropParams::default(),
+        )
+        .unwrap_err();
+    assert_eq!(tier.status_code(), 400);
+    let window = config(false)
+        .transform_extra_body(
+            &object(json!({"metadata": {"completion_window": "asap"}})),
+            &request,
+            MODEL,
+            DropParams::default(),
+        )
+        .unwrap_err();
+    assert_eq!(window.status_code(), 400);
+}
+
+#[test]
+fn transform_extra_body_merges_the_request_metadata_over_the_caller_one() {
+    let request = object(json!({"metadata": {"completion_window": "balanced"}}));
+    let merged = config(false)
+        .transform_extra_body(
+            &object(json!({"user": "u", "metadata": {"trace": "t-1"}})),
+            &request,
+            MODEL,
+            DropParams::default(),
+        )
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(&merged).unwrap(),
+        json!({"user": "u", "metadata": {"trace": "t-1", "completion_window": "balanced"}})
+    );
+}
+
+#[test]
+fn transform_extra_body_drops_a_tier_through_the_request_or_the_global_flag() {
+    let request = object(json!({}));
+    let extra = object(json!({"service_tier": "flex", "user": "u"}));
+    let by_request = config(false)
+        .transform_extra_body(
+            &extra,
+            &request,
+            MODEL,
+            DropParams {
+                global: false,
+                request: true,
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(&by_request).unwrap(),
+        json!({"user": "u"})
+    );
+    let by_global = config(true)
+        .transform_extra_body(&extra, &request, MODEL, DropParams::default())
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(&by_global).unwrap(),
+        json!({"user": "u"})
+    );
+}
