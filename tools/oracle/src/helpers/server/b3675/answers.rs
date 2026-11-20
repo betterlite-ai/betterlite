@@ -62,7 +62,9 @@ pub(super) fn output_apply_answer(scenario: &Scenario) -> Result<Value, Box<Help
 }
 
 pub(super) fn post_call_hook_answer(scenario: &Scenario) -> Result<Value, Box<HelperError>> {
-    let response = scenario.response.as_ref().unwrap_or(&GuardrailValue::Null);
+    // Python defaults an absent response to None, which the hook passes through unchanged.
+    let fallback = GuardrailValue::Null;
+    let response = scenario.response.as_ref().unwrap_or(&fallback);
     let translated = post_call_hook_response(response).or_value_error()?;
     Ok(json!({
         "response": translated
