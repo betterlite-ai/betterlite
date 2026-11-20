@@ -1,11 +1,9 @@
 use betterlite_openai::api::file_type_records::ByteStream;
 
-// _MEDIA_UPLOAD_BLOCK_SIZE: one stream piece per JSONL row is regrouped into blocks this size, and
-// never more than one block is buffered
+// _MEDIA_UPLOAD_BLOCK_SIZE: JSONL rows regroup into blocks this size, one block buffered at most
 pub const MEDIA_UPLOAD_BLOCK_SIZE: usize = 4 * 1024 * 1024;
 
-// _iter_in_blocks: a block leaves as soon as the buffer holds one, and the last partial block leaves
-// only when the stream is over, so an empty stream yields nothing at all
+// _iter_in_blocks: a block leaves once it is full, the tail at the end, so an empty stream yields none
 pub struct BlockIter {
     pieces: ByteStream,
     buffer: Vec<u8>,

@@ -7,8 +7,7 @@ use reqwest::Body;
 
 use super::{UploadBody, UploadRequest, UploadTransport};
 
-// The pooled client's wire adapter. A multipart body rides the redirect-aware path; a text, bytes or
-// streamed body goes out exactly as the transform built it, so no default content type is added
+// The pooled client's wire adapter: multipart follows redirects, every other body goes out as built
 impl UploadTransport for ProxiedClient {
     async fn send(&self, request: UploadRequest) -> Result<UpstreamResponse, TransportError> {
         let deadline = request.timeout.unwrap_or(self.limits.read_timeout);

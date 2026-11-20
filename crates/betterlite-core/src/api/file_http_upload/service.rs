@@ -5,17 +5,12 @@ use std::time::Duration;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::multipart::MultipartPart;
 use betterlite_http::proxy::transport_error::TransportError;
-use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
-use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_openai::files::records::FileCreate;
 use futures_util::Stream;
-use http::header::{HeaderName, HeaderValue};
 use http::{HeaderMap as HttpHeaders, Method};
-use indexmap::IndexMap;
-use secrecy::{ExposeSecret as _, SecretString};
 use tokio_util::task::TaskTracker;
 use url::Url;
 
@@ -27,9 +22,12 @@ use super::error::UploadError;
 use super::plan::UploadPlan;
 
 mod exchange;
+mod pre_call;
 mod proxied;
+mod wire;
 
-use exchange::{Exchange, Reply, traditional_body};
+use exchange::{Exchange, traditional_body};
+use pre_call::{caller_headers, log_pre_call};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -124,8 +122,7 @@ pub struct PreparedUpload<'deps, 'env, C: FileUploadConfig, S: ClientSource> {
     limits: ApiLimits,
 }
 
-// create_file's front half: credentials, the complete URL, the transformed plan, the client, and the
-// pre_call only the async handler records
+// create_file's front half: credentials, the complete URL, the transformed plan, the client, the async pre_call
 pub fn prepare<'deps, 'state, 'env, C, S>(
     deps: &'deps UploadDeps<'deps, C, S>,
     mode: Mode,
@@ -216,19 +213,6 @@ where
         UploadPlan::Multipart(plan) => exchange.multipart(plan.parts).await?,
         UploadPlan::Unsupported(_) => return Err(UploadError::UnsupportedPlan),
     };
-    transform_reply(&exchange, reply)
-}
-
-// The sync handler hands transform_create_file_response a copy with api_base as upload_url when the
-// transform set none; the async handler hands its own litellm_params
-fn transform_reply<C, S>(
-    exchange: &Exchange<'_, '_, C, S>,
-    reply: Reply,
-) -> Result<Json, UploadError>
-where
-    C: FileUploadConfig,
-    S: ClientSource,
-{
     let response = FileResponse {
         status_code: reply.response.status,
         headers: reply
@@ -240,16 +224,13 @@ where
         body: reply.response.body,
         url: Some(reply.url),
     };
-    let mut params = exchange.params.clone();
-    if exchange.mode == Mode::Sync && !params.contains_key("upload_url") {
-        params.insert(
-            "upload_url".to_owned(),
-            Json::Text(exchange.api_base.to_owned()),
-        );
+    // the sync handler hands the transform a copy with api_base as upload_url when it set none
+    let mut transformed_params = params.clone();
+    if mode == Mode::Sync && !transformed_params.contains_key("upload_url") {
+        transformed_params.insert("upload_url".to_owned(), Json::Text(api_base.to_owned()));
     }
-    exchange
-        .config
-        .transform_create_file_response(&response, &params)
+    config
+        .transform_create_file_response(&response, &transformed_params)
         .map_err(UploadError::Provider)
 }
 
@@ -269,80 +250,4 @@ where
         return Ok(Selected::Supplied(supplied.transport));
     }
     Ok(Selected::Created(deps.source.client(ssl_verify)?))
-}
-
-fn caller_headers(data: &FileCreate) -> Headers {
-    data.extra_headers
-        .iter()
-        .map(|(name, value)| (name.clone(), SecretString::from(value.as_str())))
-        .collect()
-}
-
-fn log_pre_call(
-    api_base: &str,
-    headers: &Headers,
-    plan: &UploadPlan,
-    log: &mut LogContext<'_, '_>,
-) -> Result<(), UploadError> {
-    let logged = headers
-        .iter()
-        .map(|(name, value)| (name.clone(), Json::Text(value.expose_secret().to_owned())))
-        .collect();
-    let record = PreCall {
-        input: Json::Text(String::new()),
-        model: None,
-        additional_args: AdditionalArgs {
-            api_base: Some(api_base.to_owned()),
-            headers: Some(logged),
-            complete_input_dict: plan.logged_input().map(raw_body),
-            request_str: None,
-            openai_sdk: None,
-            passthrough: IndexMap::new(),
-        },
-    };
-    pre_call(log.state, &record, log.env)?;
-    // LiteLLM passes api_key="" beside input, and B249's pre_call record has no member to carry it
-    log.state
-        .model_call_details
-        .insert("api_key".to_owned(), Json::Text(String::new()));
-    Ok(())
-}
-
-// a plan logs an object or a placeholder text; any other JSON keeps the shape it was built with
-fn raw_body(value: Json) -> RawBody {
-    match value {
-        Json::Object(fields) => RawBody::Object(fields),
-        Json::Text(text) => RawBody::Text(text),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => {
-            RawBody::Text(serde_json::to_string(&value).unwrap_or_default())
-        }
-    }
-}
-
-pub(super) fn headers_from<'pair, H>(pairs: H) -> Result<HttpHeaders, UploadError>
-where
-    H: Iterator<Item = (&'pair str, &'pair str)>,
-{
-    let mut map = HttpHeaders::new();
-    for (name, value) in pairs {
-        let header_name =
-            HeaderName::from_bytes(name.as_bytes()).map_err(|source| UploadError::HeaderName {
-                name: name.to_owned(),
-                source,
-            })?;
-        let header_value =
-            HeaderValue::from_str(value).map_err(|source| UploadError::HeaderValue {
-                name: name.to_owned(),
-                source,
-            })?;
-        map.insert(header_name, header_value);
-    }
-    Ok(map)
-}
-
-pub(super) fn request_url(text: &str) -> Result<Url, UploadError> {
-    Url::parse(text).map_err(|source| UploadError::RequestUrl {
-        url: text.to_owned(),
-        source,
-    })
 }

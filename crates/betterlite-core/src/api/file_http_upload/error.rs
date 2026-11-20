@@ -14,8 +14,7 @@ use crate::api::vector_store_http_write::error::{
     BaseLlmException, ClientError, FailureFacts, ResponseFacts, handle_error, header_text,
 };
 
-// A provider transform that fails before any request is made raises its own error, so the reason
-// travels as a source, the way BaseVectorStoreConfig.get_complete_url's does
+// A provider transform that fails before any request raises its own error, so it travels as a source
 #[derive(Debug, Error)]
 #[error(transparent)]
 pub struct UrlFailure {
@@ -74,35 +73,24 @@ pub enum UploadError {
     Encode(#[source] serde_json::Error),
 }
 
-// _handle_error's conversion, over the facts B2402 reads off the caught exception
-#[must_use]
-pub fn converted(facts: &FailureFacts) -> UploadError {
-    UploadError::Provider(handle_error(facts, None))
-}
-
-// Anything that is not an HTTPStatusError keeps only its display text and becomes a synthesized 500
-#[must_use]
-pub const fn display_failure(display: String) -> FailureFacts {
-    FailureFacts {
-        response_status: None,
-        status: None,
-        text: None,
-        headers: None,
-        response: None,
-        display,
+impl UploadError {
+    // _handle_error's conversion, over the facts B2402 reads off the caught exception
+    #[must_use]
+    pub fn provider(facts: &FailureFacts) -> Self {
+        Self::Provider(handle_error(facts, None))
     }
 }
 
-// A ValueError the handler raises itself: its str() is the whole message, and the status is synthesized
+// The exception facts when no response exists: text is a ValueError's message, display a failure's text
 #[must_use]
-pub const fn value_failure(message: String) -> FailureFacts {
+pub const fn failure_facts(text: Option<String>, display: String) -> FailureFacts {
     FailureFacts {
         response_status: None,
         status: None,
-        text: Some(message),
+        text,
         headers: None,
         response: None,
-        display: String::new(),
+        display,
     }
 }
 
@@ -119,7 +107,7 @@ pub fn status_failure(status: u16, body: &[u8], headers: &http::HeaderMap) -> Fa
         .filter(|(name, _value)| !matches!(name.as_str(), "content-encoding" | "content-length"))
         .map(|(name, value)| (name.as_str().to_owned(), Json::Text(header_text(value))))
         .collect();
-    // httpx re-encodes the decoded body into the masked response, so a non-empty one carries a new length
+    // httpx re-encodes the decoded body, so a non-empty one carries a new content-length
     if !body.is_empty() {
         error_headers.insert(
             "content-length".to_owned(),
@@ -138,10 +126,4 @@ pub fn status_failure(status: u16, body: &[u8], headers: &http::HeaderMap) -> Fa
         }),
         display: String::new(),
     }
-}
-
-// A transport failure carries no status, so the converter synthesizes the 500 from its text
-#[must_use]
-pub fn transport_failure(error: &TransportError) -> FailureFacts {
-    display_failure(error.to_string())
 }

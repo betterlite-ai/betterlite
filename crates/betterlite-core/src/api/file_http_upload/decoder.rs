@@ -23,8 +23,7 @@ pub fn upload_url_from_headers(headers: &HeaderMap) -> Option<String> {
     (!url.is_empty()).then(|| url.to_owned())
 }
 
-// _extract_upload_url_from_response's body branch, bounded by B1087: a body that is not a JSON object,
-// or whose key is missing, null, empty or not a string, names no URL and keeps no response data
+// _extract_upload_url_from_response's body branch: a body naming no URL keeps no response data
 pub fn decode_file_upload_location(
     response_bytes: &[u8],
     location: UploadUrlLocation,

@@ -14,8 +14,7 @@ use super::plan::UploadPlan;
 pub type Headers = BTreeMap<String, SecretString>;
 pub type FileParams = IndexMap<String, Json>;
 
-// The litellm_params members the upload methods read directly; everything else a provider transform
-// needs travels in the map it is handed
+// the litellm_params the upload methods read directly; a transform's other inputs travel in that map
 pub struct UploadParams<'params> {
     pub api_base: Option<&'params str>,
     pub api_key: Option<&'params SecretString>,
@@ -32,8 +31,7 @@ pub struct FileResponse {
     pub url: Option<String>,
 }
 
-// The BaseFilesConfig members create_file and async_create_file call; B1015 adapts a provider config
-// to this, so the upload service never sees a provider type
+// The BaseFilesConfig members create_file calls; B1015 adapts a provider config to this trait
 pub trait FileUploadConfig: Send + Sync {
     fn validate_environment(&self, headers: Headers, params: &UploadParams<'_>) -> Headers;
 

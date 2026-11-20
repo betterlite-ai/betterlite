@@ -17,23 +17,12 @@ use tokio_util::task::TaskTracker;
 use crate::api::api_boundaries::ApiLimits;
 use crate::api::file_http_upload::config::{FileParams, FileUploadConfig, Headers};
 use crate::api::file_http_upload::decoder::{decode_file_upload_location, upload_url_from_headers};
-use crate::api::file_http_upload::error::{
-    UploadError, converted, display_failure, status_failure, value_failure,
-};
+use crate::api::file_http_upload::error::{UploadError, failure_facts, status_failure};
 use crate::api::file_http_upload::media::BlockIter;
-use crate::api::file_http_upload::plan::{
-    MediaPlan, PresignedPlan, TwoStepPlan, encoded_body, initial_body,
-};
+use crate::api::file_http_upload::plan::{MediaPlan, PresignedPlan, TwoStepPlan, encoded_body};
 
-use super::{
-    BlockStream, ClientSource, Mode, Reply, UploadBody, UploadRequest, UploadTransport,
-    headers_from, request_url,
-};
-
-const MISSING_UPLOAD_URL: &str = "Failed to get upload URL from initial request";
-const DEFAULT_UPLOAD_METHOD: &str = "POST";
-const DEFAULT_UPLOAD_URL_KEY: &str = "upload_url";
-const DEFAULT_MEDIA_CONTENT_TYPE: &str = "application/octet-stream";
+use super::wire::{headers_from, request_url};
+use super::{BlockStream, ClientSource, Mode, UploadBody, UploadRequest, UploadTransport};
 
 // The answer transform_create_file_response reads, with the URL the last request was sent to
 pub struct Reply {
@@ -60,35 +49,42 @@ where
     C: FileUploadConfig,
     S: ClientSource,
 {
-    // The two-step branch is the one LiteLLM wraps in try/except: its failures become provider errors,
-    // and the async handler logs one line first
+    // The two-step branch is the one LiteLLM wraps in try/except, so its failures become provider errors
     pub async fn two_step(&mut self, plan: &TwoStepPlan) -> Result<Reply, UploadError> {
         match self.run_two_step(plan).await {
             Ok(reply) => Ok(reply),
-            Err(error) => {
-                if self.mode == Mode::Asynchronous {
-                    self.emit_error(&error);
-                }
-                match error {
-                    UploadError::Provider(_) => Err(error),
-                    other => Err(converted(&display_failure(other.to_string()))),
-                }
-            }
+            Err(error) => Err(self.converted_failure(error)),
+        }
+    }
+
+    // The async handler logs one line before converting; a provider error already carries its status
+    fn converted_failure(&self, error: UploadError) -> UploadError {
+        if self.mode == Mode::Asynchronous {
+            self.emit_error(&error);
+        }
+        match error {
+            UploadError::Provider(_) => error,
+            other => UploadError::provider(&failure_facts(None, other.to_string())),
         }
     }
 
     async fn run_two_step(&mut self, plan: &TwoStepPlan) -> Result<Reply, UploadError> {
         let headers = self.merged_headers(&plan.initial_headers)?;
-        let body = initial_body(&plan.initial_data).map_err(UploadError::Encode)?;
+        let body = serde_json::to_vec(&plan.initial_data).map_err(UploadError::Encode)?;
         let initial = self
-            .reply(Method::POST, self.api_base, headers, body)
+            .reply(
+                Method::POST,
+                self.api_base,
+                headers,
+                UploadBody::Bytes(body),
+            )
             .await?;
         let (url, data) = match plan.url_location {
             Some(UploadUrlLocation::Body) => {
                 let located = decode_file_upload_location(
                     &initial.response.body,
                     UploadUrlLocation::Body,
-                    plan.url_key.as_deref().unwrap_or(DEFAULT_UPLOAD_URL_KEY),
+                    plan.url_key.as_deref().unwrap_or("upload_url"),
                     self.limits,
                 )?;
                 (located.url, located.data)
@@ -99,20 +95,23 @@ where
             }
         };
         let Some(url) = url else {
-            return Err(converted(&value_failure(String::from(MISSING_UPLOAD_URL))));
+            return Err(UploadError::provider(&failure_facts(
+                Some(String::from(
+                    "Failed to get upload URL from initial request",
+                )),
+                String::new(),
+            )));
         };
-        let method = upload_method(
-            plan.upload_method
-                .as_deref()
-                .unwrap_or(DEFAULT_UPLOAD_METHOD),
-        )?;
+        let method = upload_method(plan.upload_method.as_deref().unwrap_or("POST"))?;
         let headers = headers_from(
             plan.upload_headers
                 .iter()
                 .map(|(name, value)| (name.as_str(), value.as_str())),
         )?;
         let body = encoded_body(&plan.upload_data).map_err(UploadError::Encode)?;
-        let reply = self.reply(method, &url, headers, body).await?;
+        let reply = self
+            .reply(method, &url, headers, UploadBody::Bytes(body))
+            .await?;
         if let Some(fields) = data {
             self.params
                 .insert(String::from("initial_file_response"), Json::Object(fields));
@@ -120,7 +119,7 @@ where
         Ok(reply)
     }
 
-    // A presigned request is sent exactly as the transform built it, and its failures are not converted
+    // A presigned request is sent as the transform built it, and its failures are not converted
     pub async fn presigned(&mut self, plan: &PresignedPlan) -> Result<Reply, UploadError> {
         let method = upload_method(&plan.method)?;
         let headers = headers_from(
@@ -129,7 +128,8 @@ where
                 .map(|(name, value)| (name.as_str(), value.as_str())),
         )?;
         let body = encoded_body(&plan.data).map_err(UploadError::Encode)?;
-        self.reply(method, &plan.url, headers, body).await
+        self.reply(method, &plan.url, headers, UploadBody::Bytes(body))
+            .await
     }
 
     // The media branch streams one POST and checks 200/201 itself, both inside LiteLLM's try/except
@@ -145,17 +145,23 @@ where
         match self.media_reply(plan).await {
             Ok(reply) => match reply.response.status {
                 200 | 201 => Ok(reply),
-                202..=299 => Err(converted(&value_failure(format!(
-                    "media upload: unexpected status {}",
-                    reply.response.status
-                )))),
-                _ => Err(converted(&status_failure(
+                202..=299 => Err(UploadError::provider(&failure_facts(
+                    Some(format!(
+                        "media upload: unexpected status {}",
+                        reply.response.status
+                    )),
+                    String::new(),
+                ))),
+                _ => Err(UploadError::provider(&status_failure(
                     reply.response.status,
                     &reply.response.body,
                     &reply.response.headers,
                 ))),
             },
-            Err(error) => Err(converted(&display_failure(error.to_string()))),
+            Err(error) => Err(UploadError::provider(&failure_facts(
+                None,
+                error.to_string(),
+            ))),
         }
     }
 
@@ -167,25 +173,19 @@ where
 
     // Traditional uploads pick PUT only when the provider config asks for it, and fail as they are
     pub async fn traditional(&mut self, body: Vec<u8>) -> Result<Reply, UploadError> {
-        let method = match self.config.file_upload_http_method() {
-            Method::PUT => Method::PUT,
-            _ => Method::POST,
-        };
         let headers = self.base_headers()?;
+        let method = traditional_method(self.config.file_upload_http_method());
         self.reply(method, self.api_base, headers, UploadBody::Bytes(body))
             .await
     }
 
     pub async fn multipart(&mut self, parts: Vec<MultipartPart>) -> Result<Reply, UploadError> {
         let headers = self.base_headers()?;
-        let boundary = (self.boundaries)();
-        self.reply(
-            Method::POST,
-            self.api_base,
-            headers,
-            UploadBody::Multipart { boundary, parts },
-        )
-        .await
+        let body = UploadBody::Multipart {
+            boundary: (self.boundaries)(),
+            parts,
+        };
+        self.reply(Method::POST, self.api_base, headers, body).await
     }
 
     pub fn emit_error(&self, error: &UploadError) {
@@ -203,26 +203,16 @@ where
         headers: HeaderMap,
         body: UploadBody,
     ) -> Result<Reply, UploadError> {
-        let request = self.request(method, url, headers, body)?;
-        Ok(Reply {
-            url: request.url.to_string(),
-            response: self.client.send(request).await?,
-        })
-    }
-
-    fn request(
-        &self,
-        method: Method,
-        url: &str,
-        headers: HeaderMap,
-        body: UploadBody,
-    ) -> Result<UploadRequest, UploadError> {
-        Ok(UploadRequest {
+        let request = UploadRequest {
             method,
             url: request_url(url)?,
             headers,
             body,
             timeout: self.timeout,
+        };
+        Ok(Reply {
+            url: request.url.to_string(),
+            response: self.client.send(request).await?,
         })
     }
 
@@ -250,7 +240,7 @@ where
         let mut headers = self.base_headers()?;
         let content_type = content_type
             .filter(|value| !value.is_empty())
-            .unwrap_or(DEFAULT_MEDIA_CONTENT_TYPE);
+            .unwrap_or("application/octet-stream");
         let value =
             HeaderValue::from_str(content_type).map_err(|source| UploadError::HeaderValue {
                 name: String::from("content-type"),
@@ -276,8 +266,7 @@ where
     }
 }
 
-// The sync handler decodes a bytes body to text before sending it, so invalid UTF-8 fails before HTTP;
-// the async handler hands the bytes to httpx as they are
+// The sync handler decodes a bytes body before sending it, so invalid UTF-8 fails before HTTP
 pub fn traditional_body(mode: Mode, bytes: &[u8]) -> Result<Vec<u8>, UploadError> {
     match mode {
         Mode::Sync => {
@@ -285,6 +274,13 @@ pub fn traditional_body(mode: Mode, bytes: &[u8]) -> Result<Vec<u8>, UploadError
             Ok(bytes.to_vec())
         }
         Mode::Asynchronous => Ok(bytes.to_vec()),
+    }
+}
+
+fn traditional_method(configured: Method) -> Method {
+    match configured {
+        Method::PUT => Method::PUT,
+        _ => Method::POST,
     }
 }
 

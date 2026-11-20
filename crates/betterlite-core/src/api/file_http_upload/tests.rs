@@ -1,5 +1,6 @@
+#![cfg(test)]
+
 use std::collections::{BTreeMap, VecDeque};
-use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -23,12 +24,12 @@ use betterlite_openai::api::file_type_records::{
 use betterlite_openai::files::records::{CreatePurpose, FileCreate, FileUpload};
 use betterlite_prompts::media_metadata::{FileBody, FileData};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use betterlite_vertex::studio_files::plan::create_file_plan;
 use chrono::DateTime;
 use futures_util::StreamExt as _;
 use http::header::CONTENT_TYPE;
 use http::{HeaderMap, HeaderValue, Method};
 use indexmap::IndexMap;
+use rstest::rstest;
 use serde_json::Number;
 use tokio_util::task::TaskTracker;
 
@@ -36,18 +37,18 @@ use crate::api::api_boundaries::ApiLimits;
 use crate::api::vector_store_http_write::error::{BaseLlmException, ClientError};
 
 use super::config::{FileParams, FileResponse, FileUploadConfig, Headers, UploadParams};
-use super::decoder::{decode_file_upload_location, upload_url_from_headers};
 use super::error::{TransformFailure, UploadError, UrlFailure};
-use super::media::MEDIA_UPLOAD_BLOCK_SIZE;
 use super::plan::{
-    MediaPlan, MultipartPlan, PresignedPlan, TwoStepPlan, UploadPlan, bytes_json, initial_data_json,
+    MultipartPlan, PresignedPlan, TwoStepPlan, UploadPlan, bytes_json, initial_data_json,
 };
+
+mod decoder;
+mod media;
 use super::service::{
     ClientSource, LogContext, Mode, UploadBody, UploadCall, UploadDeps, UploadRequest,
     UploadTransport, prepare, send,
 };
 
-const NOW: i64 = 1_767_225_600;
 const BOUNDARY: &str = "b2461-boundary";
 const API_BASE: &str = "http://api.example.test/v1/files";
 const UPLOAD_URL: &str = "http://uploads.example.test/gcs/upload-1";
@@ -452,27 +453,45 @@ fn two_step_plan(config: TwoStepFileUploadConfig) -> UploadPlan {
 }
 
 fn manus_plan() -> UploadPlan {
-    two_step_plan(TwoStepFileUploadConfig {
-        initial_request: TwoStepFileUploadRequest {
-            method: String::from("POST"),
-            url: String::from(API_BASE),
-            headers: BTreeMap::from([(String::from("API_KEY"), String::from("sk-manus"))]),
-            data: UploadData::Provider(ProviderUploadPayload {
+    two_step_plan(manus_config())
+}
+
+fn manus_config() -> TwoStepFileUploadConfig {
+    TwoStepFileUploadConfig {
+        initial_request: request(
+            "POST",
+            API_BASE,
+            BTreeMap::from([(String::from("API_KEY"), String::from("sk-manus"))]),
+            UploadData::Provider(ProviderUploadPayload {
                 provider: FileContentProvider::Manus,
                 value: ProviderUploadValue {
                     filename: String::from("rows.jsonl"),
                 },
             }),
-        },
-        upload_request: TwoStepFileUploadRequest {
-            method: String::from("PUT"),
-            url: String::new(),
-            headers: BTreeMap::new(),
-            data: UploadData::Bytes(b"{\"row\":1}\n".to_vec()),
-        },
+        ),
+        upload_request: request(
+            "PUT",
+            "",
+            BTreeMap::new(),
+            UploadData::Bytes(b"{\"row\":1}\n".to_vec()),
+        ),
         upload_url_location: UploadUrlLocation::Body,
         upload_url_key: Some(String::from("upload_url")),
-    })
+    }
+}
+
+fn request(
+    method: &str,
+    url: &str,
+    headers: BTreeMap<String, String>,
+    data: UploadData,
+) -> TwoStepFileUploadRequest {
+    TwoStepFileUploadRequest {
+        method: String::from(method),
+        url: String::from(url),
+        headers,
+        data,
+    }
 }
 
 fn text_plan() -> UploadPlan {
@@ -547,39 +566,6 @@ async fn upload_plan_order_unsupported_plan() {
             .calls()
             .contains(&"transform_create_file_response")
     );
-}
-
-#[tokio::test]
-async fn upload_plan_order_real_vertex_plan() {
-    let file = FileData::Tuple3 {
-        filename: Some(String::from("report.csv")),
-        content: FileBody::Bytes(b"a,b\n1,2\n".to_vec()),
-        content_type: Some(String::from("text/csv")),
-    };
-    let config = create_file_plan(Some(&file), API_BASE, NOW).expect("a vertex plan");
-    let mut harness = Harness::new(
-        two_step_plan(config),
-        API_BASE,
-        vec![
-            answer(200, &[("x-goog-upload-url", UPLOAD_URL)], b""),
-            answer(200, &[], b"{\"file\":{\"name\":\"f-1\"}}"),
-        ],
-    );
-    harness
-        .run(Mode::Sync, &create_call(), &params())
-        .await
-        .unwrap();
-    let seen = harness.seen();
-    assert_eq!(seen.len(), 2);
-    assert_eq!(seen[0].method, Method::POST);
-    assert_eq!(seen[0].url, API_BASE);
-    assert_eq!(
-        seen[0].body,
-        vec![b"{\"file\":{\"display_name\":\"report.csv\"}}".to_vec()]
-    );
-    assert_eq!(seen[1].method, Method::POST);
-    assert_eq!(seen[1].url, UPLOAD_URL);
-    assert_eq!(seen[1].body, vec![b"a,b\n1,2\n".to_vec()]);
 }
 
 #[tokio::test]
@@ -704,45 +690,47 @@ async fn two_step_upload_headers_location() {
     );
 }
 
+#[rstest]
+#[case::empty_object("{}")]
+#[case::null_value("{\"upload_url\":null}")]
+#[case::empty_value("{\"upload_url\":\"\"}")]
+#[case::number_value("{\"upload_url\":7}")]
+#[case::not_json("not json")]
+#[case::array("[1,2]")]
+#[case::nothing("")]
 #[tokio::test]
-async fn two_step_upload_failure_skips_the_second_request() {
-    for body in [
-        b"{}".as_slice(),
-        b"{\"upload_url\":null}",
-        b"{\"upload_url\":\"\"}",
-        b"{\"upload_url\":7}",
-        b"not json",
-        b"[1,2]",
-        b"",
-    ] {
-        let mut harness = Harness::new(
-            manus_plan(),
-            API_BASE,
-            vec![answer(200, &[("content-type", "application/json")], body)],
-        );
-        let error = harness
-            .run(Mode::Sync, &create_call(), &params())
-            .await
-            .unwrap_err();
-        match error {
-            UploadError::Provider(provider) => {
-                assert_eq!(provider.status_code, 500);
-                assert!(provider.status_code_is_synthesized);
-                assert_eq!(
-                    provider.message,
-                    "Failed to get upload URL from initial request"
-                );
-            }
-            other => panic!("expected a provider error, found {other}"),
+async fn two_step_upload_failure_skips_the_second_request(#[case] body: &str) {
+    let mut harness = Harness::new(
+        manus_plan(),
+        API_BASE,
+        vec![answer(
+            200,
+            &[("content-type", "application/json")],
+            body.as_bytes(),
+        )],
+    );
+    let error = harness
+        .run(Mode::Sync, &create_call(), &params())
+        .await
+        .unwrap_err();
+    match error {
+        UploadError::Provider(provider) => {
+            assert_eq!(provider.status_code, 500);
+            assert!(provider.status_code_is_synthesized);
+            assert_eq!(
+                provider.message,
+                "Failed to get upload URL from initial request"
+            );
         }
-        assert_eq!(harness.seen().len(), 1);
-        assert!(
-            !harness
-                .config
-                .calls()
-                .contains(&"transform_create_file_response")
-        );
+        other => panic!("expected a provider error, found {other}"),
     }
+    assert_eq!(harness.seen().len(), 1);
+    assert!(
+        !harness
+            .config
+            .calls()
+            .contains(&"transform_create_file_response")
+    );
 }
 
 #[tokio::test]
@@ -807,19 +795,23 @@ async fn upload_body_modes() {
             .expect("the presigned type"),
         "application/pdf"
     );
+}
 
-    // a text plan uses PUT only when the provider config asks for it
-    for (method, expected) in [(Method::POST, Method::POST), (Method::PUT, Method::PUT)] {
-        let mut harness = Harness::build(
-            Config::with_method(text_plan(), API_BASE, method),
-            vec![answer(200, &[], b"{}")],
-        );
-        harness
-            .run(Mode::Sync, &create_call(), &params())
-            .await
-            .unwrap();
-        assert_eq!(harness.seen()[0].method, expected);
-    }
+// a text plan uses PUT only when the provider config asks for it
+#[rstest]
+#[case::post(Method::POST, Method::POST)]
+#[case::put(Method::PUT, Method::PUT)]
+#[tokio::test]
+async fn upload_text_method(#[case] method: Method, #[case] expected: Method) {
+    let mut harness = Harness::build(
+        Config::with_method(text_plan(), API_BASE, method),
+        vec![answer(200, &[], b"{}")],
+    );
+    harness
+        .run(Mode::Sync, &create_call(), &params())
+        .await
+        .unwrap();
+    assert_eq!(harness.seen()[0].method, expected);
 }
 
 #[tokio::test]
@@ -859,108 +851,6 @@ async fn upload_body_modes_result_context() {
         lookup(field(&result, "params"), "upload_url"),
         Some(&Json::Null)
     );
-}
-
-fn media_plan(pieces: Vec<Vec<u8>>, content_type: Option<String>) -> UploadPlan {
-    UploadPlan::Media(Box::new(MediaPlan {
-        body_stream: Box::new(pieces.into_iter()),
-        content_type,
-    }))
-}
-
-#[tokio::test]
-async fn media_upload_blocks() {
-    let mut full = vec![b'a'; MEDIA_UPLOAD_BLOCK_SIZE];
-    full.extend_from_slice(b"tail");
-    let mut harness = Harness::new(
-        media_plan(
-            vec![b"head".to_vec(), full, b"".to_vec()],
-            Some(String::from("application/jsonl")),
-        ),
-        API_BASE,
-        vec![answer(201, &[], b"{}")],
-    );
-    let mut call = create_call();
-    call.timeout = Some(Duration::from_secs(30));
-    harness
-        .run(Mode::Asynchronous, &call, &params())
-        .await
-        .unwrap();
-    let seen = harness.seen();
-    assert_eq!(seen.len(), 1);
-    assert_eq!(seen[0].method, Method::POST);
-    assert_eq!(
-        seen[0].headers.get(CONTENT_TYPE).expect("the media type"),
-        "application/jsonl"
-    );
-    assert_eq!(seen[0].timeout, Some(Duration::from_secs(30)));
-    assert_eq!(seen[0].body.len(), 2);
-    assert_eq!(seen[0].body[0].len(), MEDIA_UPLOAD_BLOCK_SIZE);
-    assert_eq!(seen[0].body[1], b"headtail".to_vec());
-
-    // the configured type is optional, an empty one takes the octet-stream default, and an empty
-    // stream sends no chunks
-    for content_type in [None, Some(String::new())] {
-        let mut harness = Harness::new(
-            media_plan(Vec::new(), content_type),
-            API_BASE,
-            vec![answer(200, &[], b"{}")],
-        );
-        harness
-            .run(Mode::Sync, &create_call(), &params())
-            .await
-            .unwrap();
-        let seen = harness.seen();
-        assert!(seen[0].body.is_empty());
-        assert_eq!(
-            seen[0].headers.get(CONTENT_TYPE).expect("the media type"),
-            "application/octet-stream"
-        );
-        assert_eq!(seen[0].timeout, None);
-    }
-}
-
-#[tokio::test]
-async fn media_upload_statuses() {
-    for (code, expected) in [
-        (202_u16, "media upload: unexpected status 202"),
-        (204, "media upload: unexpected status 204"),
-    ] {
-        let mut harness = Harness::new(
-            media_plan(vec![b"body".to_vec()], None),
-            API_BASE,
-            vec![answer(code, &[], b"")],
-        );
-        let error = harness
-            .run(Mode::Sync, &create_call(), &params())
-            .await
-            .unwrap_err();
-        match error {
-            UploadError::Provider(provider) => {
-                assert_eq!(provider.status_code, 500);
-                assert!(provider.status_code_is_synthesized);
-                assert_eq!(provider.message, expected);
-            }
-            other => panic!("expected a provider error, found {other}"),
-        }
-    }
-    let mut harness = Harness::new(
-        media_plan(vec![b"body".to_vec()], None),
-        API_BASE,
-        vec![answer(400, &[("content-type", "text/plain")], b"bad media")],
-    );
-    let error = harness
-        .run(Mode::Asynchronous, &create_call(), &params())
-        .await
-        .unwrap_err();
-    match error {
-        UploadError::Provider(provider) => {
-            assert_eq!(provider.status_code, 400);
-            assert!(!provider.status_code_is_synthesized);
-            assert_eq!(provider.message, "bad media");
-        }
-        other => panic!("expected a provider error, found {other}"),
-    }
 }
 
 #[tokio::test]
@@ -1041,104 +931,4 @@ async fn upload_diagnostics_media_placeholder_and_error_log() {
     let messages = harness.sink.messages(LogLevel::Error);
     assert_eq!(messages.len(), 1);
     assert!(messages[0].contains("Failed to get upload URL from initial request"));
-}
-
-#[test]
-fn decode_file_upload_location_reads_only_the_body_location() {
-    let limits = ApiLimits::default();
-    let headers = {
-        let mut headers = HeaderMap::new();
-        headers.insert("X-Goog-Upload-URL", HeaderValue::from_static(UPLOAD_URL));
-        headers
-    };
-    assert_eq!(
-        upload_url_from_headers(&headers),
-        Some(String::from(UPLOAD_URL))
-    );
-    // the header lookup is case-insensitive and an empty value counts as absent
-    let mut empty = HeaderMap::new();
-    empty.insert("x-goog-upload-url", HeaderValue::from_static(""));
-    assert_eq!(upload_url_from_headers(&empty), None);
-    // the headers location never parses the body, even a broken one
-    let located = decode_file_upload_location(
-        b"not json",
-        UploadUrlLocation::Headers,
-        "upload_url",
-        limits,
-    )
-    .expect("a headers location never fails");
-    assert_eq!(located.url, None);
-    assert_eq!(located.data, None);
-}
-
-#[test]
-fn decode_file_upload_location_rejects_every_shape_that_names_no_url() {
-    let limits = ApiLimits::default();
-    for body in [
-        b"{".as_slice(),
-        b"",
-        b"null",
-        b"7",
-        b"\"http://a\"",
-        b"[{\"upload_url\":\"http://a\"}]",
-        b"{}",
-        b"{\"upload_url\":null}",
-        b"{\"upload_url\":\"\"}",
-        b"{\"upload_url\":7}",
-        b"{\"upload_url\":{}}",
-        b"{\"other\":\"http://a\"}",
-    ] {
-        let located =
-            decode_file_upload_location(body, UploadUrlLocation::Body, "upload_url", limits)
-                .expect("a body that names no URL is not an error");
-        let shown = std::str::from_utf8(body).unwrap_or("<not utf-8>");
-        assert_eq!(located.url, None, "for {shown}");
-        assert_eq!(located.data, None);
-    }
-}
-
-#[test]
-fn decode_file_upload_location_reads_the_named_key() {
-    let limits = ApiLimits::default();
-    let body = br#"{"upload_url":"http://wrong","target":"http://right","kept":"yes"}"#;
-    let located = decode_file_upload_location(body, UploadUrlLocation::Body, "target", limits)
-        .expect("a located URL");
-    assert_eq!(located.url, Some(String::from("http://right")));
-    let data = located.data.expect("the parsed body");
-    assert_eq!(data.get("kept"), Some(&text("yes")));
-}
-
-#[test]
-fn decode_file_upload_location_is_bounded() {
-    let limits = ApiLimits {
-        max_json_bytes: 4,
-        ..ApiLimits::default()
-    };
-    let error = decode_file_upload_location(
-        b"{\"upload_url\":\"http://a\"}",
-        UploadUrlLocation::Body,
-        "upload_url",
-        limits,
-    )
-    .expect_err("a body over the limit");
-    assert!(error.to_string().contains("the maximum is 4"));
-}
-
-#[test]
-fn replays_upload_location_corpus() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/file_upload_location");
-    let replayed = std::fs::read_dir(corpus)
-        .expect("the corpus directory")
-        .map(|entry| std::fs::read(entry.expect("a corpus entry").path()).expect("a corpus file"))
-        .map(|bytes| {
-            drop(decode_file_upload_location(
-                &bytes,
-                UploadUrlLocation::Body,
-                "upload_url",
-                ApiLimits::default(),
-            ));
-            drop(upload_url_from_headers(&HeaderMap::new()));
-        })
-        .count();
-    assert!(replayed >= 8);
 }
