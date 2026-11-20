@@ -7,7 +7,7 @@ use serde::Serialize;
 
 use super::support::{dec, decoded_row, membership_row, org_row, project_row};
 use crate::auth_cache::{AuthCache, WriteOptions, gateway_cache};
-use crate::reservation_counters::cache::ReservationCounterCache;
+use crate::reservation_counters::cache::ReservationCounterCache as _;
 
 type TestCache = AuthCache<DualCache<LocalMemoryOps>>;
 

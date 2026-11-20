@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::io;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
@@ -159,7 +159,7 @@ impl FakeCache {
     {
         self.reads
             .lock()
-            .expect("the cache reads lock")
+            .unwrap_or_else(PoisonError::into_inner)
             .push(key.to_owned());
         if self.broken {
             return Err(payload_error());
@@ -167,7 +167,7 @@ impl FakeCache {
         let stored = self
             .values
             .lock()
-            .expect("the cache values lock")
+            .unwrap_or_else(PoisonError::into_inner)
             .get(key)
             .cloned();
         stored.map_or(Ok(None), |value| payload::decode(&value))
@@ -404,7 +404,7 @@ impl io::Write for Logs {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
-            .expect("the captured logs lock")
+            .unwrap_or_else(PoisonError::into_inner)
             .extend_from_slice(buf);
         Ok(buf.len())
     }

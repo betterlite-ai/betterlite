@@ -16,9 +16,7 @@ pub(crate) async fn member_counter(
 ) -> Option<BudgetCounter> {
     let team = input.team?;
     // LiteLLM skips the member counter when the request has no user row
-    if input.user.is_none() {
-        return None;
-    }
+    input.user?;
     let user_id = input.token.view.token.user_id.as_deref()?;
     let team_id = team.fields.base.team_id.as_str();
     let cache_key = CacheKey::TeamMembershipReservation { user_id, team_id }.render();

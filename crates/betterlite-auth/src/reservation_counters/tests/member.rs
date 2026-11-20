@@ -7,7 +7,7 @@ use super::support::{
 
 #[tokio::test]
 async fn member_cache_reads_the_reservation_key() {
-    let mut fixture = member_fixture();
+    let fixture = member_fixture();
     fixture.cache.put(
         "team_membership:user-a:team-a",
         &membership_row(r#"{"max_budget":10}"#, "1"),
@@ -59,7 +59,7 @@ async fn member_effective_adds_only_an_active_temp_increase(
     #[case] budget: &str,
     #[case] expected: &str,
 ) {
-    let mut fixture = member_fixture();
+    let fixture = member_fixture();
     fixture.cache.put(
         "team_membership:user-a:team-a",
         &membership_row(budget, "0"),
@@ -157,7 +157,7 @@ async fn member_skip_without_a_user_row() {
 
 #[tokio::test]
 async fn member_full_budget_table_supplies_the_cap() {
-    let mut fixture = member_fixture();
+    let fixture = member_fixture();
     fixture.cache.put(
         "team_membership:user-a:team-a",
         &membership_row(
@@ -192,7 +192,7 @@ async fn member_skip_non_string_default_budget_id() {
 
 #[tokio::test]
 async fn member_effective_overflow_skips_the_counter() {
-    let mut fixture = member_fixture();
+    let fixture = member_fixture();
     fixture.cache.put_encoded(
         "team_membership:user-a:team-a",
         json(concat!(

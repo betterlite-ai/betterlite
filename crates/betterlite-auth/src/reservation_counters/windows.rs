@@ -46,11 +46,7 @@ pub(crate) fn window_counters(
             continue;
         };
         let Some(clock_start) = system_time(window_start) else {
-            tracing::warn!(
-                entity_type = entity.entity_type.wire_value(),
-                budget_duration = %duration,
-                "Skipping budget window outside the supported clock range"
-            );
+            warn_outside_clock(entity, &duration);
             continue;
         };
         counters.push(BudgetCounter {
@@ -66,6 +62,14 @@ pub(crate) fn window_counters(
         });
     }
     counters
+}
+
+fn warn_outside_clock(entity: &WindowEntity, duration: &str) {
+    tracing::warn!(
+        entity_type = entity.entity_type.wire_value(),
+        budget_duration = %duration,
+        "Skipping budget window outside the supported clock range"
+    );
 }
 
 fn window_duration(window: &BudgetWindow) -> Option<String> {

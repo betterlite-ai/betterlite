@@ -10,7 +10,7 @@ pub(crate) fn end_user_counter(
     end_user_id: Option<&str>,
     end_user: Option<&LiteLLMEndUserTable>,
 ) -> Option<BudgetCounter> {
-    let resolved_id = end_user_id.or_else(|| token.view.end_user_id.as_deref())?;
+    let resolved_id = end_user_id.or(token.view.end_user_id.as_deref())?;
     let mut budget_cap = token.view.end_user_max_budget;
     let mut fallback_spend = Decimal::ZERO;
     if let Some(object) = end_user {
