@@ -1,0 +1,24 @@
+kind: sdk_http
+name: responses-create-transport-stream-and-fake-selection
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  responses_create_transport:
+    mode: async
+    model: gpt-4o
+    input: hello
+    optional_params: {stream: true}
+    extra_body: {stream: false}
+    litellm_metadata: {session: s-1}
+upstream:
+  - status: 200
+    headers: {content-type: text/event-stream}
+    events:
+      - '{"type":"response.created","response":{"id":"resp_a","object":"response","created_at":100,"model":"gpt-4o","status":"in_progress","output":[]}}'
+      - '{"type":"response.completed","response":{"id":"resp_a","object":"response","created_at":100,"model":"gpt-4o","status":"completed","output":[]}}'
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - pointer: /responses_create_transport/value/stream/setup/request_data/litellm_params
+      why: GenericLiteLLMParams dumps its declared defaults into dict(litellm_params) while betterlite attaches the supplied generic parameters, and each side also answers from its own mock port

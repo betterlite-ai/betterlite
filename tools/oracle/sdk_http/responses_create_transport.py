@@ -1,9 +1,286 @@
-from typing import ClassVar
+import asyncio
+from collections.abc import Coroutine
+from datetime import UTC, datetime
+from typing import Final, Literal
 
-from not_built import Unbuilt
+import litellm
+from litellm.integrations.custom_logger import CustomLogger
+from litellm.litellm_core_utils.litellm_logging import Logging
+from litellm.llms.base_llm.anthropic_messages.transformation import BaseAnthropicMessagesConfig
+from litellm.llms.base_llm.chat.transformation import BaseLLMException
+from litellm.llms.base_llm.responses.transformation import BaseResponsesAPIConfig
+from litellm.llms.custom_httpx.llm_http_handler import BaseLLMHTTPHandler
+from litellm.responses.streaming_iterator import (
+    BaseResponsesAPIStreamingIterator as StreamingBase,
+    MockResponsesAPIStreamingIterator as MockSynthetic,
+)
+from litellm.types.llms.openai import ResponseCompletedEvent, ResponsesAPIResponse
+from litellm.types.router import GenericLiteLLMParams
+from litellm.types.utils import CallTypes
+from litellm.utils import ProviderConfigManager
+from openai.types.responses.response_input_param import ResponseInputParam
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
+from typing_extensions import override
+
+Mode = Literal["sync", "async"]
+StreamKind = Literal["live", "synthetic"]
+
+INPUT: TypeAdapter[str | ResponseInputParam] = TypeAdapter(str | ResponseInputParam)
+JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
+OBJECTS: Final = TypeAdapter(dict[str, object])
+NULLABLE_OBJECTS: Final = TypeAdapter(dict[str, object] | None)
+JSON_MAP: Final = TypeAdapter(dict[str, JsonValue])
+NULLABLE_JSON: Final = TypeAdapter(dict[str, JsonValue] | None)
+RESPONSES_API: Final[TypeAdapter[ResponsesAPIResponse]] = TypeAdapter(ResponsesAPIResponse)
+COMPLETED: Final[TypeAdapter[ResponseCompletedEvent]] = TypeAdapter(ResponseCompletedEvent)
+PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
+HANDLER: Final = BaseLLMHTTPHandler()
+
+CreateWork = (
+    ResponsesAPIResponse
+    | StreamingBase
+    | Coroutine[object, object, ResponsesAPIResponse | StreamingBase]
+)
 
 
-class CreateTransportRequest(Unbuilt):
-    task: ClassVar[str] = "B2414"
+class TransportCall(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
-    responses_create_transport: None
+    mode: Mode
+    model: str
+    input: JsonValue
+    optional_params: dict[str, JsonValue] = Field(default_factory=dict)
+    extra_headers: dict[str, JsonValue] | None = None
+    extra_body: dict[str, JsonValue] | None = None
+    timeout_seconds: float | None = None
+    fake_stream: JsonValue = None
+    litellm_metadata: dict[str, JsonValue] | None = None
+    litellm_params: dict[str, JsonValue] = Field(default_factory=dict)
+    pre_hook: dict[str, JsonValue] | None = None
+    agentic: bool = False
+    agentic_result: JsonValue = None
+
+
+class Failure(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    status_code: int = Field(serialization_alias="status")
+    status_code_is_synthesized: bool = Field(serialization_alias="synthesized")
+    message: str
+    headers: dict[str, str]
+
+
+class SetupView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    model: str
+    custom_llm_provider: str | None = None
+    litellm_metadata: dict[str, JsonValue] | None = None
+    request_data: dict[str, JsonValue] | None = None
+    call_type: str | None = None
+
+
+class StreamView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: StreamKind
+    setup: SetupView
+    response: JsonValue = None
+
+
+class Outcome(BaseModel):
+    result: JsonValue = None
+    failure: Failure | None = None
+    stream: StreamView | None = None
+
+
+class TransportValue(BaseModel):
+    value: Outcome
+
+
+class TransportEnvelope(BaseModel):
+    responses_create_transport: TransportValue
+
+
+# The sync handler's _run_sync_responses_pre_call_deployment_hook, over the case's patch
+class PatchHook(CustomLogger):
+    def __init__(self, patch: dict[str, JsonValue]) -> None:
+        self.patch = patch
+
+    @override
+    async def async_pre_call_deployment_hook(
+        self,
+        # ast-grep-ignore: no-loose-types
+        kwargs: dict[str, object],
+        call_type: CallTypes | None,
+    ) -> dict[str, JsonValue] | None:
+        return JSON_MAP.validate_python({**kwargs, **self.patch})
+
+
+# The scripted async_should_run_agentic_loop and async_run_agentic_loop pair
+class ScriptedAgentic(CustomLogger):
+    def __init__(self, result: JsonValue) -> None:
+        self.result = result
+
+    @override
+    async def async_should_run_agentic_loop(
+        self,
+        # ast-grep-ignore: no-loose-types
+        response: object,
+        model: str,
+        messages: list[dict[str, Json]],
+        tools: list[dict[str, Json]] | None,
+        stream: bool,
+        custom_llm_provider: str,
+        kwargs: dict[str, Json],
+    ) -> tuple[bool, dict[str, Json]]:
+        return True, {}
+
+    @override
+    async def async_run_agentic_loop(
+        self,
+        tools: dict[str, Json],
+        model: str,
+        messages: list[dict[str, Json]],
+        # ast-grep-ignore: no-loose-types
+        response: object,
+        # ast-grep-ignore: no-long-names
+        anthropic_messages_provider_config: BaseAnthropicMessagesConfig | None,
+        # ast-grep-ignore: no-long-names
+        anthropic_messages_optional_request_params: dict[str, Json],
+        logging_obj: Logging,
+        stream: bool,
+        kwargs: dict[str, Json],
+    ) -> ResponsesAPIResponse | None:
+        if self.result is None:
+            return None
+        return RESPONSES_API.validate_python(self.result)
+
+
+def install(call: TransportCall) -> None:
+    callbacks: list[CustomLogger | str] = []
+    if call.pre_hook is not None:
+        callbacks.append(PatchHook(call.pre_hook))
+    if call.agentic:
+        callbacks.append(ScriptedAgentic(call.agentic_result))
+    litellm.callbacks = callbacks
+
+
+def logging_fixture(model: str) -> Logging:
+    return Logging(
+        model=model,
+        messages="",
+        stream=False,
+        call_type="responses",
+        start_time=datetime(2026, 1, 1, tzinfo=UTC),
+        litellm_call_id="create-transport",
+        function_id="create-transport",
+    )
+
+
+def invoke(
+    call: TransportCall,
+    config: BaseResponsesAPIConfig,
+    litellm_params: GenericLiteLLMParams,
+    logging_obj: Logging,
+) -> CreateWork:
+    optional_params = OBJECTS.validate_python(call.optional_params)
+    extra_headers = NULLABLE_OBJECTS.validate_python(call.extra_headers)
+    extra_body = NULLABLE_OBJECTS.validate_python(call.extra_body)
+    metadata = NULLABLE_OBJECTS.validate_python(call.litellm_metadata)
+    timeout = None if call.timeout_seconds is None else float(call.timeout_seconds)
+    fake_stream = call.fake_stream is True
+    response_input = INPUT.validate_python(call.input)
+    if call.mode == "sync":
+        return HANDLER.response_api_handler(
+            call.model,
+            response_input,
+            config,
+            optional_params,
+            "openai",
+            litellm_params,
+            logging_obj,
+            extra_headers,
+            extra_body,
+            timeout,
+            None,
+            False,
+            fake_stream,
+            metadata,
+        )
+    return asyncio.run(
+        HANDLER.async_response_api_handler(
+            call.model,
+            response_input,
+            config,
+            optional_params,
+            "openai",
+            litellm_params,
+            logging_obj,
+            extra_headers,
+            extra_body,
+            timeout,
+            None,
+            fake_stream,
+            metadata,
+        )
+    )
+
+
+def synthetic_response(iterator: StreamingBase) -> JsonValue:
+    event = COMPLETED.validate_python(iterator.completed_response)
+    return JSON.validate_json(event.response.model_dump_json())
+
+
+def stream_view(kind: StreamKind, iterator: StreamingBase) -> StreamView:
+    request_data: dict[str, JsonValue] | None = JSON_MAP.validate_python(iterator.request_data)
+    if not request_data:
+        request_data = None
+    return StreamView(
+        kind=kind,
+        setup=SetupView(
+            model=iterator.model,
+            custom_llm_provider=iterator.custom_llm_provider,
+            litellm_metadata=NULLABLE_JSON.validate_python(iterator.litellm_metadata),
+            request_data=request_data,
+            call_type=iterator.call_type,
+        ),
+        response=None if kind == "live" else synthetic_response(iterator),
+    )
+
+
+def observed(work: CreateWork) -> Outcome:
+    match work:
+        case ResponsesAPIResponse():
+            return Outcome(result=JSON.validate_json(work.model_dump_json()))
+        case MockSynthetic():
+            return Outcome(stream=stream_view("synthetic", work))
+        case StreamingBase():
+            return Outcome(stream=stream_view("live", work))
+    raise TypeError("the create handler answered a type this adapter does not project")
+
+
+def run_transport(call: TransportCall, api_base: str) -> Outcome:
+    config = ProviderConfigManager.get_provider_responses_api_config(
+        provider="openai", model=call.model
+    )
+    if config is None:
+        raise ValueError("the openai responses config is registered")
+    install(call)
+    litellm_params = GenericLiteLLMParams(**{**call.litellm_params, "api_base": api_base})
+    try:
+        work = invoke(call, config, litellm_params, logging_fixture(call.model))
+    except PROVIDER_ERROR as error:
+        return Outcome(failure=Failure.model_validate(error))
+    return observed(work)
+
+
+class CreateTransportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    responses_create_transport: TransportCall
+
+    def serialize(self, api_base: str) -> str:
+        outcome = run_transport(self.responses_create_transport, api_base)
+        value = TransportValue(value=outcome)
+        return TransportEnvelope(responses_create_transport=value).model_dump_json(by_alias=True)
