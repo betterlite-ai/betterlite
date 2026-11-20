@@ -118,13 +118,11 @@ fn chat_choice(choice: &StreamChoice) -> Result<Value, serde_json::Error> {
                 continue;
             };
             // LiteLLM's ChatCompletionDeltaToolCall keeps index, id, type and function only.
-            let mut kept = Map::new();
-            for name in ["index", "id", "type", "function"] {
-                let Some(present) = fields.get(name) else {
-                    continue;
-                };
-                kept.insert(name.to_owned(), serde_json::to_value(present)?);
-            }
+            let kept = ["index", "id", "type", "function"]
+                .into_iter()
+                .filter_map(|name| fields.get(name).map(|present| (name, present)))
+                .map(|(name, present)| Ok((String::from(name), serde_json::to_value(present)?)))
+                .collect::<Result<Map<String, Value>, serde_json::Error>>()?;
             projected.push(Value::Object(kept));
         }
         delta.insert(String::from("tool_calls"), Value::Array(projected));
