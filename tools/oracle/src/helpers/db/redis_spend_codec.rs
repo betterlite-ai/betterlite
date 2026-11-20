@@ -185,7 +185,7 @@ async fn scenario(input: &Input) -> Result<BTreeMap<String, Value>, Box<HelperEr
     let owned: Arc<ScriptedLists> = Arc::clone(&lists);
     let port: Arc<dyn SpendBufferLists> = owned;
     let buffer = RedisUpdateBuffer {
-        lists: if input.attached { Some(port) } else { None },
+        lists: input.attached.then_some(port),
         enabled: input.enabled,
         dequeue_count: DEQUEUE_COUNT,
         events: Arc::new(NoRedisBufferEventSink),
@@ -241,18 +241,18 @@ fn spend_log_row(row: &RowInput) -> Result<SpendLogRow, Box<HelperError>> {
 
 // get_spend_logs_from_redis_buffer: a parse failure is the invalid marker the source raises from.
 async fn drained(buffer: &RedisUpdateBuffer) -> Result<Value, Box<HelperError>> {
-    match buffer.drain_spend_logs(SPEND_LOG_LIMIT).await {
-        Ok(rows) => serde_json::to_value(rows).map_err(failure),
-        Err(_) => Ok(serde_json::json!({ "invalid": true })),
-    }
+    buffer.drain_spend_logs(SPEND_LOG_LIMIT).await.map_or_else(
+        |_| Ok(serde_json::json!({ "invalid": true })),
+        |rows| serde_json::to_value(rows).map_err(failure),
+    )
 }
 
 // get_all_transactions_from_redis_buffer_pipeline, named by slot so the seven queues stay distinguishable.
 async fn pipelined(buffer: &RedisUpdateBuffer) -> Value {
-    match buffer.drain_pipeline().await {
-        Ok(pipeline) => slots(&pipeline),
-        Err(_) => serde_json::json!({ "invalid": true }),
-    }
+    buffer.drain_pipeline().await.map_or_else(
+        |_| serde_json::json!({ "invalid": true }),
+        |pipeline| slots(&pipeline),
+    )
 }
 
 fn slots(pipeline: &SpendBufferPipeline) -> Value {
@@ -269,10 +269,10 @@ fn slots(pipeline: &SpendBufferPipeline) -> Value {
 
 // get_all_daily_tag_spend_update_transactions_from_redis_buffer, which the seven-slot pipeline leaves alone.
 async fn tagged(buffer: &RedisUpdateBuffer) -> Result<Value, Box<HelperError>> {
-    match buffer.drain_daily_tags().await {
-        Ok(tags) => serde_json::to_value(tags).map_err(failure),
-        Err(_) => Ok(serde_json::json!({ "invalid": true })),
-    }
+    buffer.drain_daily_tags().await.map_or_else(
+        |_| Ok(serde_json::json!({ "invalid": true })),
+        |tags| serde_json::to_value(tags).map_err(failure),
+    )
 }
 
 fn failure<Error>(error: Error) -> Box<HelperError>
