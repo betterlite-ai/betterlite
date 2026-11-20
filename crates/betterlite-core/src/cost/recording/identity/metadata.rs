@@ -18,39 +18,37 @@ use super::{PreparationError, object_value, text_value};
 use crate::cost::context::pricing::{PricingQuery, deployment_info};
 use crate::cost::prepare::ResponseView;
 
-impl<Inference> CostRecorder<'_, Inference> {
-    // Ports _custom_pricing_for: a spilled-over PTU request never reads custom prices.
-    pub(crate) fn custom_pricing(
-        &self,
-        log: &LoggingState,
-        view: &ResponseView<'_>,
-    ) -> Result<bool, PreparationError> {
-        if self.ptu_cost_attribution {
-            let record = deployment_info(
-                &PricingQuery {
-                    custom_pricing: Some(true),
-                    router_model_id: None,
-                    logging_params: Some(&log.litellm_params),
-                },
-                self.lookup,
-            )?;
-            let empty = PriceRecord::new();
-            let model_info = PtuModelInfo::from(record.as_ref().unwrap_or(&empty));
-            let response_headers = string_map(log.model_call_details.get("response_headers"));
-            let hidden = view::typed(view).and_then(|typed| typed.hidden_params);
-            let additional_headers =
-                hidden.and_then(|params| string_map(params.get("additional_headers")));
-            if is_spilled_over_ptu_request(
-                &model_info,
-                response_headers.as_ref(),
-                additional_headers.as_ref(),
-                true,
-            ) {
-                return Ok(false);
-            }
+// Ports _custom_pricing_for: a spilled-over PTU request never reads custom prices.
+pub(crate) fn custom_pricing<Inference>(
+    recorder: &CostRecorder<'_, Inference>,
+    log: &LoggingState,
+    view: &ResponseView<'_>,
+) -> Result<bool, PreparationError> {
+    if recorder.ptu_cost_attribution {
+        let record = deployment_info(
+            &PricingQuery {
+                custom_pricing: Some(true),
+                router_model_id: None,
+                logging_params: Some(&log.litellm_params),
+            },
+            recorder.lookup,
+        )?;
+        let empty = PriceRecord::new();
+        let model_info = PtuModelInfo::from(record.as_ref().unwrap_or(&empty));
+        let response_headers = string_map(log.model_call_details.get("response_headers"));
+        let hidden = view::typed(view).and_then(|typed| typed.hidden_params);
+        let additional_headers =
+            hidden.and_then(|params| string_map(params.get("additional_headers")));
+        if is_spilled_over_ptu_request(
+            &model_info,
+            response_headers.as_ref(),
+            additional_headers.as_ref(),
+            true,
+        ) {
+            return Ok(false);
         }
-        uses_custom_pricing(&log.litellm_params)
     }
+    uses_custom_pricing(&log.litellm_params)
 }
 
 // use_custom_pricing_for_model: the top-level pricing fields first, then each deployment model_info.
@@ -147,7 +145,7 @@ fn optional_object<'value>(
         Some(Json::Text(text)) if text.is_empty() => Ok(None),
         Some(Json::List(items)) if items.is_empty() => Ok(None),
         Some(Json::Number(number))
-            if Decimal::from_str(&number.to_string()).is_ok_and(|value| value.is_zero()) =>
+            if Decimal::from_str(&number.to_string()).is_ok_and(|parsed| parsed.is_zero()) =>
         {
             Ok(None)
         }
@@ -164,7 +162,7 @@ pub(crate) fn string_map(value: Option<&Json>) -> Option<BTreeMap<String, String
     Some(
         fields
             .iter()
-            .filter_map(|(name, value)| Some((name.clone(), text_value(value)?.to_owned())))
+            .filter_map(|(name, entry)| Some((name.clone(), text_value(entry)?.to_owned())))
             .collect(),
     )
 }

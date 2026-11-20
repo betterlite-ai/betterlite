@@ -81,16 +81,16 @@ pub struct CostRecorder<'services, Inference> {
     pub calculator: &'services dyn CostCalculation,
     pub lookup: &'services (dyn PriceLookup + Sync),
     pub inference: &'services Inference,
-    pub conversion: &'services dyn GenerateContentConversion,
-    pub regions: &'services dyn VertexRegionNormalizer,
-    pub mantle: &'services dyn MantleRegionResolver,
+    pub conversion: &'services (dyn GenerateContentConversion + Sync),
+    pub regions: &'services (dyn VertexRegionNormalizer + Sync),
+    pub mantle: &'services (dyn MantleRegionResolver + Sync),
     pub vertex: &'services VertexSettings,
     pub ptu_cost_attribution: bool,
 }
 
 impl<Inference> CostRecorder<'_, Inference>
 where
-    Inference: ProviderInference,
+    Inference: ProviderInference + Sync,
 {
     // Ports _response_cost_calculator for both the sync header and the async success path.
     pub async fn record(&self, log: &mut LoggingState, input: RecordInput<'_>) -> Option<Decimal> {

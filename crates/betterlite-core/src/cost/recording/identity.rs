@@ -58,34 +58,33 @@ pub(super) fn failure_information(
         ("error_str".to_owned(), Json::Text(message.to_owned())),
         ("traceback_str".to_owned(), Json::Text(String::new())),
     ]);
-    if let Some(billing) = billing {
-        fields.insert("model".to_owned(), Json::Text(billing.model.clone()));
+    if let Some(known) = billing {
+        fields.insert("model".to_owned(), Json::Text(known.model.clone()));
         fields.insert(
             "cache_hit".to_owned(),
-            billing.cache_hit.map_or(Json::Null, Json::Bool),
+            known.cache_hit.map_or(Json::Null, Json::Bool),
         );
         fields.insert(
             "custom_llm_provider".to_owned(),
-            text_or_null(billing.custom_llm_provider.as_deref()),
+            known
+                .custom_llm_provider
+                .as_deref()
+                .map_or_else(|| Json::Null, |found| Json::Text(found.to_owned())),
         );
         fields.insert(
             "base_model".to_owned(),
-            text_or_null(billing.base_model.as_deref()),
+            known
+                .base_model
+                .as_deref()
+                .map_or_else(|| Json::Null, |found| Json::Text(found.to_owned())),
         );
         fields.insert("call_type".to_owned(), Json::Text(call_type.to_owned()));
         fields.insert(
             "custom_pricing".to_owned(),
-            Json::Bool(billing.custom_pricing),
+            Json::Bool(known.custom_pricing),
         );
     }
     Json::Object(fields)
-}
-
-fn text_or_null(text: Option<&str>) -> Json {
-    match text {
-        Some(found) => Json::Text(found.to_owned()),
-        None => Json::Null,
-    }
 }
 
 // A logging field declared as a string; a value of another type names the field.
@@ -133,7 +132,7 @@ pub(super) fn vertex_location(
     log: &LoggingState,
     model: &str,
     settings: &VertexSettings,
-    regions: &dyn VertexRegionNormalizer,
+    regions: &(dyn VertexRegionNormalizer + Sync),
 ) -> Result<Option<String>, PreparationError> {
     let Some(provider) = text_field(&log.model_call_details, "custom_llm_provider")? else {
         return Ok(None);
@@ -161,7 +160,7 @@ fn explicit_location(params: &IndexMap<String, Json>) -> Option<&str> {
 // _resolve_mantle_region_for_cost: only bedrock_mantle resolves a region, from the logged params.
 pub(super) fn mantle_region(
     log: &LoggingState,
-    mantle: &dyn MantleRegionResolver,
+    mantle: &(dyn MantleRegionResolver + Sync),
 ) -> Result<Option<String>, PreparationError> {
     if text_field(&log.model_call_details, "custom_llm_provider")?.as_deref()
         != Some(MANTLE_PROVIDER)
@@ -227,10 +226,8 @@ pub(super) fn unbilled(log: &LoggingState, background: bool) -> bool {
 // The origin is looked up in metadata first, then litellm_metadata, as LiteLLM's merge does.
 fn cost_poll_origin(litellm_params: &IndexMap<String, Json>) -> Option<Origin> {
     let found = ["metadata", "litellm_metadata"].iter().find_map(|name| {
-        litellm_params
-            .get(*name)
-            .and_then(object_value)
-            .and_then(|fields| fields.get("internal_call_origin"))
+        let fields = object_value(litellm_params.get(*name)?)?;
+        fields.get("internal_call_origin")
     });
     match found {
         Some(Json::Text(origin)) if origin == BACKGROUND_COST_POLL_ORIGIN => {

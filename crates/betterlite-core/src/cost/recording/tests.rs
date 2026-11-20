@@ -8,7 +8,7 @@ use rust_decimal::Decimal;
 use serde_json::Number;
 
 use super::RecordResponse;
-use super::diagnostics::DiagnosticInput;
+use super::diagnostics::{DiagnosticInput, record_diagnostic};
 use crate::cost::prepare::ResponseView;
 use crate::helpers::{RESPONSE_COST_HEADER, set_response_cost_in_hidden_params};
 
@@ -302,9 +302,10 @@ fn a_null_cost_without_failure_leaves_the_earlier_finding_alone() {
     let usage = chat_usage();
     let hidden = IndexMap::new();
     let billing_view = ResponseView::Typed(typed_response(&usage, &hidden));
-    fakes.recorder().record_diagnostic(
+    record_diagnostic(
+        &fakes.recorder(),
         &mut log,
-        DiagnosticInput {
+        &DiagnosticInput {
             view: &billing_view,
             background: false,
             cost: None,
@@ -631,7 +632,7 @@ fn the_warning_fires_once_per_call_log() {
     let usage = chat_usage();
     let hidden = IndexMap::new();
     let recorder = fakes.recorder();
-    let (_, warnings) = capture(|| {
+    let ((), warnings) = capture(|| {
         record(&recorder, &mut log, typed(typed_response(&usage, &hidden)));
         record(&recorder, &mut log, typed(typed_response(&usage, &hidden)));
     });

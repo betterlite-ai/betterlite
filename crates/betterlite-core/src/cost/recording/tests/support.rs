@@ -104,8 +104,8 @@ impl CostCalculation for FakeCalculator {
                 vertex_location: request.vertex_location.map(str::to_owned),
                 region_name: request.region_name.map(str::to_owned),
                 usage,
-            });
-        }
+            })
+        };
         match self.result {
             Ok(cost) => Ok(cost),
             Err(error) => Err(Box::new(error)),
@@ -266,10 +266,9 @@ pub(super) struct FakeConversion {
 
 impl GenerateContentConversion for FakeConversion {
     fn convert(&self, _body: &Json, _model: &str) -> Result<Json, PortFailure> {
-        match self.converted.clone() {
-            Some(converted) => Ok(converted),
-            None => Err(Box::new(TestFailure)),
-        }
+        self.converted
+            .clone()
+            .map_or_else(|| Err(Box::new(TestFailure)), |converted| Ok(converted))
     }
 }
 

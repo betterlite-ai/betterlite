@@ -119,11 +119,11 @@ fn an_audio_usage_reports_the_missing_audio_keys() {
     let mut usage = chat_usage();
     usage.prompt_tokens_details = Some(IndexMap::from([(
         "audio_tokens".to_owned(),
-        Json::Number(Number::from(3)),
+        Json::Number(Number::from(3_i32)),
     )]));
     usage.completion_tokens_details = Some(IndexMap::from([(
         "audio_tokens".to_owned(),
-        Json::Number(Number::from(2)),
+        Json::Number(Number::from(2_i32)),
     )]));
     let hidden = IndexMap::new();
     let cost = record(

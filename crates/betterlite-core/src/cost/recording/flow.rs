@@ -41,14 +41,14 @@ enum HiddenOutcome {
 
 impl<Inference> CostCall<'_, '_, Inference>
 where
-    Inference: ProviderInference,
+    Inference: ProviderInference + Sync,
 {
     // Ports _response_cost_calculator's order: cache hit, unbilled call, hidden cost, then the calculator.
     pub(super) async fn run(mut self) -> Option<Decimal> {
         let cache_hit = self
             .request
             .cache_hit
-            .or(identity::stored_cache_hit(self.log));
+            .or_else(|| identity::stored_cache_hit(self.log));
         if cache_hit == Some(true) || identity::unbilled(self.log, self.request.background) {
             return Some(Decimal::ZERO);
         }
@@ -63,18 +63,18 @@ where
     // Ports the hidden-response-cost branch: it wins over the calculator and skips additional_response_cost.
     fn hidden_cost(&mut self) -> HiddenOutcome {
         let view = self.view;
-        let value = view::typed(view)
+        let stored = view::typed(view)
             .and_then(|typed| typed.hidden_params)
             .and_then(|params| params.get("response_cost"));
-        let cost = match value {
-            None | Some(Json::Null) => return HiddenOutcome::Absent,
-            Some(value) => match identity::amount(value) {
-                Some(cost) => cost,
-                None => {
-                    preparation_failure(self.log, "the hidden response_cost must be a number");
-                    return HiddenOutcome::Invalid;
-                }
-            },
+        let Some(found) = stored else {
+            return HiddenOutcome::Absent;
+        };
+        if matches!(found, Json::Null) {
+            return HiddenOutcome::Absent;
+        }
+        let Some(cost) = identity::amount(found) else {
+            preparation_failure(self.log, "the hidden response_cost must be a number");
+            return HiddenOutcome::Invalid;
         };
         let router = self
             .request
@@ -136,11 +136,11 @@ where
             litellm_model_name: self.request.litellm_model_name.map(str::to_owned),
             router_model_id,
         };
-        self.recorder.record_diagnostic(self.log, input);
+        diagnostics::record_diagnostic(self.recorder, self.log, &input);
     }
 
     // Every value response_cost_calculator reads, resolved before the calculator runs.
-    fn prepare(&mut self, cache_hit: Option<bool>) -> Result<BillingIdentity, PreparationError> {
+    fn prepare(&self, cache_hit: Option<bool>) -> Result<BillingIdentity, PreparationError> {
         let router = match self.request.router_model_id.filter(|id| !id.is_empty()) {
             Some(router) => Some(router.to_owned()),
             None => match view::hidden_text(self.view, "model_id") {
@@ -169,7 +169,7 @@ where
                 self.recorder.regions,
             )?,
             region_name: identity::mantle_region(self.log, self.recorder.mantle)?,
-            custom_pricing: self.recorder.custom_pricing(self.log, self.view)?,
+            custom_pricing: identity::metadata::custom_pricing(self.recorder, self.log, self.view)?,
             cache_hit,
             router_model_id: router,
             model,
@@ -185,7 +185,7 @@ pub(super) async fn record_prepared<Inference>(
     request: &ViewRequest<'_>,
 ) -> Option<Decimal>
 where
-    Inference: ProviderInference,
+    Inference: ProviderInference + Sync,
 {
     let parsed = match prepared {
         Ok(parsed) => parsed,
@@ -210,7 +210,7 @@ pub(super) async fn record_generate_content<Inference>(
     call: GenerateContent<'_, '_, Inference>,
 ) -> Option<Decimal>
 where
-    Inference: ProviderInference,
+    Inference: ProviderInference + Sync,
 {
     let GenerateContent {
         recorder,

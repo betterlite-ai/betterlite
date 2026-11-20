@@ -12,7 +12,7 @@ pub fn set_response_cost_in_hidden_params(
     hidden_params: &mut IndexMap<String, Json>,
     cost: Option<Decimal>,
 ) {
-    let Some(cost) = cost else {
+    let Some(amount) = cost else {
         return;
     };
     let mut merged = match hidden_params.get("additional_headers") {
@@ -20,6 +20,6 @@ pub fn set_response_cost_in_hidden_params(
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
         | None => IndexMap::new(),
     };
-    merged.insert(RESPONSE_COST_HEADER.to_owned(), decimal_json(cost));
+    merged.insert(RESPONSE_COST_HEADER.to_owned(), decimal_json(amount));
     hidden_params.insert("additional_headers".to_owned(), Json::Object(merged));
 }
