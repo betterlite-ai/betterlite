@@ -32,16 +32,15 @@ fn lookup_sends_a_get_with_the_transforms_params() {
             "transform-get-response",
         ]
     );
-    {
-        let requests = fixture.wire.requests();
-        let request = &requests[0];
-        assert_eq!(request.method, Method::GET);
-        assert_eq!(
-            request.url.as_str(),
-            "https://api.example/v1/characters/char-1?expand=1"
-        );
-        assert!(matches!(&request.body, CharacterBody::Empty));
-    }
+    assert_eq!(fixture.wire.requests()[0].method, Method::GET);
+    assert_eq!(
+        fixture.wire.requests()[0].url.as_str(),
+        "https://api.example/v1/characters/char-1?expand=1"
+    );
+    assert!(matches!(
+        &fixture.wire.requests()[0].body,
+        CharacterBody::Empty
+    ));
     assert_eq!(
         fixture.config.seen()[2],
         Seen::GetRequest {

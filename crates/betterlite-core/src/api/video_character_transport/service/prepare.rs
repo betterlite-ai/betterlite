@@ -38,7 +38,7 @@ struct Exchange {
 }
 
 // what a call reads before any transform sees it
-const fn parts<'call>(call: CharacterCall<'call>) -> CallParts<'call> {
+const fn parts(call: CharacterCall<'_>) -> CallParts<'_> {
     CallParts {
         extra_headers: call.extra_headers(),
         litellm_params: call.litellm_params(),
