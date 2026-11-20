@@ -6,6 +6,7 @@ use crate::complexity_placement::TierChoice;
 use crate::complexity_placement::params_on_request::{
     TierTarget, pin_tier_params_onto_request, restore_client_ceiling_no_tier_pins,
 };
+use crate::complexity_placement::pin::restamp_adaptive_choice;
 use crate::complexity_scoring::tier::{ComplexityTier, Tier};
 use crate::tier_definitions::model::TierPool;
 
@@ -185,6 +186,43 @@ fn a_session_keeps_its_first_model_and_restamps_the_marker() {
             ("session_id", text("s1")),
             ("adaptive_router_chosen_model", text("a")),
         ])))
+    );
+}
+
+#[test]
+fn a_restamp_moves_the_nested_decision_model_too() {
+    let mut caller = request(&[(
+        "metadata",
+        Json::Object(request(&[
+            (
+                "adaptive_router_decision",
+                Json::Object(request(&[("chosen_model", text("b"))])),
+            ),
+            ("adaptive_router_chosen_model", text("elsewhere")),
+        ])),
+    )]);
+    restamp_adaptive_choice(&mut caller, "b", "a");
+    assert_eq!(
+        caller.get("metadata"),
+        Some(&Json::Object(request(&[
+            (
+                "adaptive_router_decision",
+                Json::Object(request(&[("chosen_model", text("a"))])),
+            ),
+            ("adaptive_router_chosen_model", text("elsewhere")),
+        ])))
+    );
+    let mut untouched = request(&[(
+        "metadata",
+        Json::Object(request(&[("adaptive_router_decision", text("nope"))])),
+    )]);
+    restamp_adaptive_choice(&mut untouched, "b", "a");
+    assert_eq!(
+        untouched.get("metadata"),
+        Some(&Json::Object(request(&[(
+            "adaptive_router_decision",
+            text("nope"),
+        )])))
     );
 }
 
