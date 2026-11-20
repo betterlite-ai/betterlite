@@ -124,6 +124,9 @@ async fn summary_report_guards_the_endpoint() {
         body.detail.error,
         CommonProxyErrors::DbNotConnectedError.as_str()
     );
+    let broken = "/tag/summary?start_date=not-a-date&end_date=2026-01-01";
+    let without_database = get(app(None), Some(&caller()), broken).await;
+    assert_eq!(without_database.status, StatusCode::INTERNAL_SERVER_ERROR);
     let store = Arc::new(FakeStore::failing());
     let reply = ask(Some(&store), &uri).await;
     assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);

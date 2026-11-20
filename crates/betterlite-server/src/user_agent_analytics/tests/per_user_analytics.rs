@@ -324,6 +324,44 @@ async fn per_user_report_filters_records_by_tag() {
 }
 
 #[tokio::test]
+async fn per_user_report_folds_several_keys_into_one_user() {
+    let store = Arc::new(
+        FakeStore::empty()
+            .with_records(vec![
+                record("sk-a", "User-Agent:alpha", 1),
+                record("sk-b", "User-Agent:beta", 2),
+            ])
+            .with_owners(vec![
+                TokenOwnerRow {
+                    token: "sk-a".to_owned(),
+                    user_id: "u1".to_owned(),
+                },
+                TokenOwnerRow {
+                    token: "sk-b".to_owned(),
+                    user_id: "u1".to_owned(),
+                },
+            ]),
+    );
+    let reply = ask(Some(&store), PER_USER).await;
+    assert_eq!(reply.status, StatusCode::OK);
+    let body: PerUserBody = reply.json();
+    assert_eq!(
+        metrics_of(&body),
+        vec![("u1", 3, 0, 3, 30, Decimal::new(2, 1))]
+    );
+    assert_eq!(
+        identities_of(&body),
+        vec![("u1", None, Some("User-Agent:alpha"))]
+    );
+    assert_eq!((body.total_count, body.total_pages), (1, 1));
+    assert_eq!(
+        store.token_calls(),
+        vec![vec!["sk-a".to_owned(), "sk-b".to_owned()]]
+    );
+    assert_eq!(store.user_calls(), vec![vec!["u1".to_owned()]]);
+}
+
+#[tokio::test]
 async fn per_user_report_reports_an_aggregate_overflow() {
     let mut first = record("sk-a", "User-Agent:alpha", 1);
     first.spend = Some(Decimal::MAX);
