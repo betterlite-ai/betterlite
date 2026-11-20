@@ -416,7 +416,6 @@ pub(crate) struct Invocation<'call> {
     pub(crate) timeout: Option<Duration>,
     pub(crate) operation: Operation,
     pub(crate) mode: ClientKind,
-    pub(crate) is_async: bool,
     pub(crate) supplied: Option<SuppliedClient<'call, Wire>>,
 }
 
@@ -435,7 +434,6 @@ pub(crate) const fn invocation<'call>(
         timeout: None,
         operation,
         mode,
-        is_async: false,
         supplied: None,
     }
 }
@@ -475,22 +473,7 @@ where
         state: &mut fixture.state,
         env: &env,
     };
-    match (invocation.operation, invocation.mode) {
-        (Operation::Retrieve, ClientKind::Sync) => {
-            transport
-                .retrieve(config, call, log, invocation.is_async)
-                .await
-        }
-        (Operation::Retrieve, ClientKind::Asynchronous) => {
-            transport.async_retrieve(config, call, log).await
-        }
-        (Operation::Content, ClientKind::Sync) => {
-            transport
-                .content(config, call, log, invocation.is_async)
-                .await
-        }
-        (Operation::Content, ClientKind::Asynchronous) => {
-            transport.async_content(config, call, log).await
-        }
-    }
+    transport
+        .read(config, call, log, invocation.mode, invocation.operation)
+        .await
 }

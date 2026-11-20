@@ -3,7 +3,7 @@ use betterlite_http::proxy::transport_error::TransportError;
 use http::{Response, StatusCode};
 
 use crate::api::vector_store_http_write::error::{
-    BaseLlmException, HeaderMap, display_facts, handle_error, status_facts,
+    BaseLlmException, HeaderMap, display_facts, handle_error,
 };
 
 use super::super::config::ReadConfig;
@@ -22,10 +22,4 @@ pub(super) fn transport_error(config: &dyn ReadConfig, error: &TransportError) -
     let mut failure = config.error_class(&mapped.message, mapped.status_code, HeaderMap::new());
     failure.status_code_is_synthesized = mapped.status_code_is_synthesized;
     failure
-}
-
-// The provider's own error class over the status, the headers and the body text an HTTP status error carries
-pub(super) fn status_error(config: &dyn ReadConfig, reply: &UpstreamResponse) -> BaseLlmException {
-    let mapped = handle_error(&status_facts(reply), None);
-    config.error_class(&mapped.message, mapped.status_code, mapped.headers)
 }

@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use rstest::rstest;
+
 use super::support::{
     Events, Fixture, RecordingConfig, Reply, Source, Wire, invocation, invoke, openai_config,
     openai_settings, params,
@@ -10,64 +12,69 @@ use crate::api::vector_file_http_read::config::QueryParams;
 use crate::api::vector_file_http_read::service::Operation;
 use crate::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 
+#[rstest]
+#[case::sync_no_timeout(ClientKind::Sync, None)]
+#[case::sync_with_timeout(ClientKind::Sync, Some(Duration::from_secs(7)))]
+#[case::async_no_timeout(ClientKind::Asynchronous, None)]
+#[case::async_with_timeout(ClientKind::Asynchronous, Some(Duration::from_secs(7)))]
 #[tokio::test]
-async fn read_clients_and_timeouts() {
+async fn read_clients_and_timeouts(#[case] mode: ClientKind, #[case] timeout: Option<Duration>) {
     let settings = openai_settings();
     let config = openai_config(&settings, "sk-provider");
-    for mode in [ClientKind::Sync, ClientKind::Asynchronous] {
-        for timeout in [None, Some(Duration::from_secs(7))] {
-            let events = Events::new();
-            let supplied = Wire::replying(Reply::json(200, RETRIEVE_BODY), &events);
-            let pooled = Wire::replying(Reply::json(200, RETRIEVE_BODY), &events);
-            let transport = VectorFileReadTransport {
-                source: Source::new(pooled.clone()),
-            };
-            let read_params = params("http://mock.test/v1");
-            let mut call = invocation("vs_a", "file_b", &read_params, Operation::Retrieve, mode);
-            call.timeout = timeout;
-            call.supplied = Some(SuppliedClient {
-                kind: mode,
-                transport: &supplied,
-            });
-            let mut fixture = Fixture::new("vector_store_file_retrieve", &events);
-            invoke(&transport, &config, &mut fixture, call)
-                .await
-                .expect("the read succeeds");
-            assert!(transport.source.calls().is_empty());
-            assert!(pooled.requests().is_empty());
-            let requests = supplied.requests();
-            assert_eq!(requests.len(), 1);
-            assert!(requests[0].timeout.is_none());
-        }
-    }
+    let events = Events::new();
+    let supplied = Wire::replying(Reply::json(200, RETRIEVE_BODY), &events);
+    let pooled = Wire::replying(Reply::json(200, RETRIEVE_BODY), &events);
+    let transport = VectorFileReadTransport {
+        source: Source::new(pooled.clone()),
+    };
+    let read_params = params("http://mock.test/v1");
+    let mut call = invocation("vs_a", "file_b", &read_params, Operation::Retrieve, mode);
+    call.timeout = timeout;
+    call.supplied = Some(SuppliedClient {
+        kind: mode,
+        transport: &supplied,
+    });
+    let mut fixture = Fixture::new("vector_store_file_retrieve", &events);
+    invoke(&transport, &config, &mut fixture, call)
+        .await
+        .expect("the read succeeds");
+    assert!(transport.source.calls().is_empty());
+    assert!(pooled.requests().is_empty());
+    let requests = supplied.requests();
+    assert_eq!(requests.len(), 1);
+    assert!(requests[0].timeout.is_none());
 }
 
+#[rstest]
+#[case::sync_default_tls(ClientKind::Sync, None)]
+#[case::sync_no_verify(ClientKind::Sync, Some(false))]
+#[case::async_default_tls(ClientKind::Asynchronous, None)]
+#[case::async_no_verify(ClientKind::Asynchronous, Some(false))]
 #[tokio::test]
-async fn a_pool_client_follows_ssl_verify() {
+async fn a_pool_client_follows_ssl_verify(
+    #[case] mode: ClientKind,
+    #[case] ssl_verify: Option<bool>,
+) {
     let settings = openai_settings();
     let config = openai_config(&settings, "sk-provider");
-    for mode in [ClientKind::Sync, ClientKind::Asynchronous] {
-        for ssl_verify in [None, Some(false)] {
-            let events = Events::new();
-            let wire = Wire::replying(Reply::json(200, RETRIEVE_BODY), &events);
-            let transport = VectorFileReadTransport {
-                source: Source::new(wire.clone()),
-            };
-            let mut read_params = params("http://mock.test/v1");
-            read_params.ssl_verify = ssl_verify;
-            let mut fixture = Fixture::new("vector_store_file_retrieve", &events);
-            invoke(
-                &transport,
-                &config,
-                &mut fixture,
-                invocation("vs_a", "file_b", &read_params, Operation::Retrieve, mode),
-            )
-            .await
-            .expect("the read succeeds");
-            assert_eq!(transport.source.calls(), vec![ssl_verify]);
-            assert_eq!(wire.requests().len(), 1);
-        }
-    }
+    let events = Events::new();
+    let wire = Wire::replying(Reply::json(200, RETRIEVE_BODY), &events);
+    let transport = VectorFileReadTransport {
+        source: Source::new(wire.clone()),
+    };
+    let mut read_params = params("http://mock.test/v1");
+    read_params.ssl_verify = ssl_verify;
+    let mut fixture = Fixture::new("vector_store_file_retrieve", &events);
+    invoke(
+        &transport,
+        &config,
+        &mut fixture,
+        invocation("vs_a", "file_b", &read_params, Operation::Retrieve, mode),
+    )
+    .await
+    .expect("the read succeeds");
+    assert_eq!(transport.source.calls(), vec![ssl_verify]);
+    assert_eq!(wire.requests().len(), 1);
 }
 
 #[tokio::test]
@@ -105,7 +112,7 @@ async fn a_wrong_mode_client_is_not_reused() {
 }
 
 #[tokio::test]
-async fn the_forwarding_branch_keeps_an_async_client() {
+async fn an_async_read_keeps_an_async_client() {
     let settings = openai_settings();
     let config = openai_config(&settings, "sk-provider");
     let events = Events::new();
@@ -120,9 +127,8 @@ async fn the_forwarding_branch_keeps_an_async_client() {
         "file_b",
         &read_params,
         Operation::Retrieve,
-        ClientKind::Sync,
+        ClientKind::Asynchronous,
     );
-    call.is_async = true;
     call.supplied = Some(SuppliedClient {
         kind: ClientKind::Asynchronous,
         transport: &supplied,
@@ -137,7 +143,7 @@ async fn the_forwarding_branch_keeps_an_async_client() {
 }
 
 #[tokio::test]
-async fn the_forwarding_branch_drops_a_sync_client() {
+async fn an_async_read_drops_a_sync_client() {
     let settings = openai_settings();
     let config = openai_config(&settings, "sk-provider");
     let events = Events::new();
@@ -152,9 +158,8 @@ async fn the_forwarding_branch_drops_a_sync_client() {
         "file_b",
         &read_params,
         Operation::Retrieve,
-        ClientKind::Sync,
+        ClientKind::Asynchronous,
     );
-    call.is_async = true;
     call.supplied = Some(SuppliedClient {
         kind: ClientKind::Sync,
         transport: &supplied,

@@ -16,7 +16,7 @@ use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
 use url::Url;
 
-use crate::api::vector_store_http_write::error::ClientError;
+use crate::api::vector_store_http_write::error::{ClientError, handle_error, status_facts};
 use crate::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 
 use super::config::{QueryParams, ReadConfig, ReadParams};
@@ -232,7 +232,12 @@ where
         .await
         .map_err(|error| ReadError::Provider(facts::transport_error(config, &error)))?;
     if reply.status >= 400 {
-        return Err(ReadError::Provider(facts::status_error(config, &reply)));
+        let mapped = handle_error(&status_facts(&reply), None);
+        return Err(ReadError::Provider(config.error_class(
+            &mapped.message,
+            mapped.status_code,
+            mapped.headers,
+        )));
     }
     let response = facts::http_response(&reply);
     let answer = match operation {

@@ -36,45 +36,60 @@ async fn read<C: ReadConfig>(
     (answer, wire)
 }
 
+#[rstest]
+#[case::sync_retrieve(
+    ClientKind::Sync,
+    Operation::Retrieve,
+    "/v1/vector_stores/vs%2Fa/files/file%2Fb",
+    RETRIEVE_BODY
+)]
+#[case::async_retrieve(
+    ClientKind::Asynchronous,
+    Operation::Retrieve,
+    "/v1/vector_stores/vs%2Fa/files/file%2Fb",
+    RETRIEVE_BODY
+)]
+#[case::sync_content(
+    ClientKind::Sync,
+    Operation::Content,
+    "/v1/vector_stores/vs%2Fa/files/file%2Fb/content",
+    CONTENT_BODY
+)]
+#[case::async_content(
+    ClientKind::Asynchronous,
+    Operation::Content,
+    "/v1/vector_stores/vs%2Fa/files/file%2Fb/content",
+    CONTENT_BODY
+)]
 #[tokio::test]
-async fn retrieve_and_content_paths() {
+async fn retrieve_and_content_paths(
+    #[case] mode: ClientKind,
+    #[case] operation: Operation,
+    #[case] path: &str,
+    #[case] body: &str,
+) {
     let settings = openai_settings();
     let config = openai_config(&settings, "sk-provider");
-    let cases = [
-        (
-            Operation::Retrieve,
-            "/v1/vector_stores/vs%2Fa/files/file%2Fb",
-            RETRIEVE_BODY,
-        ),
-        (
-            Operation::Content,
-            "/v1/vector_stores/vs%2Fa/files/file%2Fb/content",
-            CONTENT_BODY,
-        ),
-    ];
-    for mode in [ClientKind::Sync, ClientKind::Asynchronous] {
-        for (operation, path, body) in cases {
-            let (answer, wire) = read(operation, mode, &config, body).await;
-            assert_eq!(answer, json(body));
-            let requests = wire.requests();
-            assert_eq!(requests.len(), 1);
-            assert_eq!(requests[0].method, Method::GET);
-            assert_eq!(requests[0].url.host_str(), Some("mock.test"));
-            assert_eq!(requests[0].url.path(), path);
-            assert!(requests[0].query.is_empty());
-            assert!(requests[0].timeout.is_none());
-        }
-    }
+    let (answer, wire) = read(operation, mode, &config, body).await;
+    assert_eq!(answer, json(body));
+    let requests = wire.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].method, Method::GET);
+    assert_eq!(requests[0].url.host_str(), Some("mock.test"));
+    assert_eq!(requests[0].url.path(), path);
+    assert!(requests[0].query.is_empty());
+    assert!(requests[0].timeout.is_none());
 }
 
+#[rstest]
+#[case::retrieve(Operation::Retrieve)]
+#[case::content(Operation::Content)]
 #[tokio::test]
-async fn an_array_reply_stays_parsed_json() {
+async fn an_array_reply_stays_parsed_json(#[case] operation: Operation) {
     let settings = openai_settings();
     let config = openai_config(&settings, "sk-provider");
-    for operation in [Operation::Retrieve, Operation::Content] {
-        let (answer, _wire) = read(operation, ClientKind::Sync, &config, "[1,2]").await;
-        assert_eq!(answer, json("[1,2]"));
-    }
+    let (answer, _wire) = read(operation, ClientKind::Sync, &config, "[1,2]").await;
+    assert_eq!(answer, json("[1,2]"));
 }
 
 #[rstest]

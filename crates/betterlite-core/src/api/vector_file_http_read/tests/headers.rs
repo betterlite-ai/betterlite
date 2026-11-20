@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
+use rstest::rstest;
 
 use super::support::{
     Events, Fixture, Reply, Source, Wire, caller_headers, invocation, invoke, openai_config,
@@ -84,8 +85,13 @@ async fn check(
     assert_pre_call(&fixture, &events, logged);
 }
 
+#[rstest]
+#[case::sync_retrieve(ClientKind::Sync, Operation::Retrieve)]
+#[case::sync_content(ClientKind::Sync, Operation::Content)]
+#[case::async_retrieve(ClientKind::Asynchronous, Operation::Retrieve)]
+#[case::async_content(ClientKind::Asynchronous, Operation::Content)]
 #[tokio::test]
-async fn read_header_mutation() {
+async fn read_header_mutation(#[case] mode: ClientKind, #[case] operation: Operation) {
     let mutating = caller_headers(&[
         ("Authorization", "Bearer caller"),
         ("Content-Type", "text/plain"),
@@ -101,15 +107,16 @@ async fn read_header_mutation() {
     let logged = json(
         r#"{"Authorization":"Be****er","Content-Type":"application/json","OpenAI-Beta":"assistants=v1","X-Trace":"t"}"#,
     );
-    for mode in [ClientKind::Sync, ClientKind::Asynchronous] {
-        for operation in [Operation::Retrieve, Operation::Content] {
-            check(mode, operation, Some(&mutating), &expected, &logged).await;
-        }
-    }
+    check(mode, operation, Some(&mutating), &expected, &logged).await;
 }
 
+#[rstest]
+#[case::sync_retrieve(ClientKind::Sync, Operation::Retrieve)]
+#[case::sync_content(ClientKind::Sync, Operation::Content)]
+#[case::async_retrieve(ClientKind::Asynchronous, Operation::Retrieve)]
+#[case::async_content(ClientKind::Asynchronous, Operation::Content)]
 #[tokio::test]
-async fn read_header_defaults() {
+async fn read_header_defaults(#[case] mode: ClientKind, #[case] operation: Operation) {
     let empty = BTreeMap::new();
     let expected = [
         ("authorization", "Bearer sk-provider"),
@@ -119,10 +126,6 @@ async fn read_header_defaults() {
     let logged = json(
         r#"{"Authorization":"Be****er","Content-Type":"application/json","OpenAI-Beta":"assistants=v2"}"#,
     );
-    for mode in [ClientKind::Sync, ClientKind::Asynchronous] {
-        for operation in [Operation::Retrieve, Operation::Content] {
-            check(mode, operation, None, &expected, &logged).await;
-            check(mode, operation, Some(&empty), &expected, &logged).await;
-        }
-    }
+    check(mode, operation, None, &expected, &logged).await;
+    check(mode, operation, Some(&empty), &expected, &logged).await;
 }
