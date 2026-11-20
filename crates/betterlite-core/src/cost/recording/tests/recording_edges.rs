@@ -57,14 +57,12 @@ fn an_explicit_model_name_wins_and_an_empty_one_falls_back(
     ));
     let mut log = state(INIT);
     openai(&mut log);
-    let usage = chat_usage();
-    let hidden = IndexMap::new();
     let recorder = fakes.recorder();
     let (cost, warnings) = capture(|| {
         run(recorder.record(
             &mut log,
             RecordInput {
-                response: typed(typed_response(&usage, &hidden)),
+                response: typed(typed_response(&chat_usage(), &IndexMap::new())),
                 cache_hit: None,
                 litellm_model_name: Some(named),
                 router_model_id: None,
@@ -72,8 +70,7 @@ fn an_explicit_model_name_wins_and_an_empty_one_falls_back(
         ))
     });
     assert_eq!(cost, Some(Decimal::ZERO));
-    let observed = fakes.observe();
-    assert_eq!(observed[0].model.as_str(), expected);
+    assert_eq!(fakes.observe()[0].model.as_str(), expected);
     assert_eq!(warnings.len(), 1);
     assert!(warnings[0].contains(format!("model={expected}").as_str()));
 }
