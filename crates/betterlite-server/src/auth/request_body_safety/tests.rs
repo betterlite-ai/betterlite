@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::io;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -200,7 +201,7 @@ async fn run_request_with(
 // A body whose stream fails on the first frame, so the middleware's body read cannot finish.
 fn broken_body() -> Body {
     Body::from_stream(once(async {
-        Err::<Bytes, std::io::Error>(std::io::Error::other("the body stream fails"))
+        Err::<Bytes, io::Error>(io::Error::other("the body stream fails"))
     }))
 }
 
@@ -230,18 +231,18 @@ async fn unreadable_bodies_are_buffered_after_authentication() {
         .header(header::CONTENT_TYPE, "application/json")
         .body(broken_body())
         .expect("the request builds");
-    let reached = Arc::new(AtomicBool::new(false));
-    let response = application(&config(""), &reached)
+    let buffered_reached = Arc::new(AtomicBool::new(false));
+    let buffered_response = application(&config(""), &buffered_reached)
         .oneshot(broken)
         .await
         .expect("the request reaches the router");
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    let body = to_bytes(response.into_body(), usize::MAX)
+    assert_eq!(buffered_response.status(), StatusCode::BAD_REQUEST);
+    let body = to_bytes(buffered_response.into_body(), usize::MAX)
         .await
         .expect("the response body is readable");
     let text = String::from_utf8(body.to_vec()).expect("the response body is UTF-8");
     assert!(text.contains("Failed to buffer the request body"), "{text}");
-    assert!(!reached.load(Ordering::Acquire));
+    assert!(!buffered_reached.load(Ordering::Acquire));
 }
 
 #[tokio::test]
@@ -261,7 +262,7 @@ async fn oversized_bodies_are_refused_before_the_handler() {
     assert!(!reached);
 
     // the configured max_request_size_mb lowers the bound, and a body exactly at it is still forwarded
-    let at_limit = "x".repeat(1_048_576);
+    let at_limit = "x".repeat(0x0010_0000);
     let (at_status, _at_body, at_reached) = run_request_with(
         &config("  max_request_size_mb: 1\n"),
         "application/json",
@@ -271,7 +272,7 @@ async fn oversized_bodies_are_refused_before_the_handler() {
     assert_eq!(at_status, StatusCode::OK);
     assert!(at_reached);
 
-    let over = "x".repeat(1_048_577);
+    let over = "x".repeat(0x0010_0001);
     let (over_status, over_body, over_reached) = run_request_with(
         &config("  max_request_size_mb: 1\n"),
         "application/json",

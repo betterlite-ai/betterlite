@@ -86,7 +86,7 @@ use regex::Regex;
 use secrecy::SecretString;
 pub(crate) async fn authenticate(
     State(master_key_state): State<Option<SecretString>>,
-    mut request: Request<Body>,
+    request: Request<Body>,
     next: Next,
 ) -> Response {
     if matches!(
@@ -98,10 +98,18 @@ pub(crate) async fn authenticate(
     let Some(master_key) = master_key_state.as_ref() else {
         return next.run(request).await;
     };
-    let resolver = request
-        .extensions()
-        .get::<Arc<RequestModelResolver>>()
-        .map_or_else(default_resolver, Arc::clone);
+    match run_stages(request, master_key).await {
+        Ok((staged, authenticated, body)) => forward(staged, authenticated, body, next).await,
+        Err(response) => response,
+    }
+}
+
+// The stages borrow the request only while building their input, so the loop owns it across every await.
+async fn run_stages(
+    mut request: Request<Body>,
+    master_key: &SecretString,
+) -> Result<(Request<Body>, Option<AuthContext>, Option<Bytes>), Response> {
+    let resolver = resolver_for(&request);
     let mut authenticated: Option<AuthContext> = None;
     let mut body: Option<Bytes> = None;
     for backend in INSTALLED_STAGES {
@@ -109,21 +117,10 @@ pub(crate) async fn authenticate(
         if *backend == AuthBackend::RequestBodySafety && body.is_none() {
             let limit = max_body_bytes(&request);
             let stream = mem::replace(request.body_mut(), Body::empty());
-            match read_body(stream, limit).await {
-                Ok(bytes) => body = Some(bytes),
-                Err(BufferError::TooLarge { observed }) => {
-                    tracing::debug!(
-                        observed,
-                        limit,
-                        "the request body exceeds the auth-time buffering bound"
-                    );
-                    return body_too_large_response(observed, limit);
-                }
-                Err(BufferError::Unreadable(error)) => {
-                    tracing::debug!(error = %error, "the request body could not be buffered");
-                    return unreadable_body_response();
-                }
-            }
+            body = Some(match read_body(stream, limit).await {
+                Ok(bytes) => bytes,
+                Err(error) => return Err(buffer_failure_response(error, limit)),
+            });
         }
         let input = match stage_input(
             *backend,
@@ -133,17 +130,39 @@ pub(crate) async fn authenticate(
             body.as_ref(),
         ) {
             Ok(input) => input,
-            Err(failure) => return stage_failure_response(&failure),
+            Err(failure) => return Err(stage_failure_response(&failure)),
         };
-        let prefetched = match prefetch_tag_budgets(input).await {
-            Ok(prefetched) => prefetched,
-            Err(failure) => return stage_failure_response(&failure),
-        };
-        match dispatch(*backend, &prefetched, master_key) {
+        match run_stage(*backend, input, master_key).await {
             Ok(context) => authenticated = Some(context),
-            Err(failure) => return stage_failure_response(&failure),
+            Err(response) => return Err(response),
         }
     }
+    Ok((request, authenticated, body))
+}
+
+fn buffer_failure_response(error: BufferError, limit: usize) -> Response {
+    match error {
+        BufferError::TooLarge { observed } => {
+            tracing::debug!(
+                observed,
+                limit,
+                "the request body exceeds the auth-time buffering bound"
+            );
+            body_too_large_response(observed, limit)
+        }
+        BufferError::Unreadable(error) => {
+            tracing::debug!(error = %error, "the request body could not be buffered");
+            unreadable_body_response()
+        }
+    }
+}
+
+async fn forward(
+    mut request: Request<Body>,
+    authenticated: Option<AuthContext>,
+    body: Option<Bytes>,
+    next: Next,
+) -> Response {
     if let Some(context) = authenticated {
         request.extensions_mut().insert(context);
     }
@@ -151,6 +170,17 @@ pub(crate) async fn authenticate(
         *request.body_mut() = Body::from(bytes);
     }
     next.run(request).await
+}
+
+async fn run_stage(
+    backend: AuthBackend,
+    input: StageInput,
+    master_key: &SecretString,
+) -> Result<AuthContext, Response> {
+    let prefetched = prefetch_tag_budgets(input)
+        .await
+        .map_err(|failure| stage_failure_response(&failure))?;
+    dispatch(backend, &prefetched, master_key).map_err(|failure| stage_failure_response(&failure))
 }
 
 fn stage_input(
@@ -162,57 +192,79 @@ fn stage_input(
 ) -> Result<StageInput, StageFailure> {
     match backend {
         AuthBackend::MasterKey => Ok(StageInput::MasterKey(extract_key(request.headers()))),
-        AuthBackend::RequestBodySafety => {
-            let context = authenticated
-                .cloned()
-                .ok_or(AuthenticationFailure::Missing)?;
-            Ok(StageInput::RequestBodySafety(Box::new(
-                RequestBodySafetyStageInput {
-                    context,
-                    content_type: request
-                        .headers()
-                        .get(header::CONTENT_TYPE)
-                        .and_then(|value| value.to_str().ok())
-                        .map(str::to_owned),
-                    body: body.cloned().unwrap_or_default(),
-                    slot: request
-                        .extensions()
-                        .get::<Arc<ServerState>>()
-                        .map(|state| state.request_body_safety.clone()),
-                },
-            )))
-        }
+        AuthBackend::RequestBodySafety => Ok(StageInput::RequestBodySafety(Box::new(
+            safety_stage_input(request, authenticated, body)?,
+        ))),
         AuthBackend::AuthRequestModels | AuthBackend::AuthModelPatterns => {
-            let context = authenticated
-                .cloned()
-                .ok_or(AuthenticationFailure::Missing)?;
-            let stage = model_stage_input(request, context.clone(), resolver);
-            if backend == AuthBackend::AuthRequestModels {
-                return Ok(StageInput::AuthRequestModels(Box::new(stage)));
-            }
-            let requested = match resolve(&stage) {
-                Ok(requested) => requested,
-                Err(error) => {
-                    tracing::debug!(error = %error, "the request model stage failed");
-                    return Err(StageFailure::from(AuthenticationFailure::Missing));
-                }
-            };
-            let rule = rule_for_request(request);
-            let depth = max_recurse_depth_for_request(request);
-            Ok(StageInput::AuthModelPatterns(Box::new(
-                ModelPatternStageInput {
-                    context,
-                    requested,
-                    rule,
-                    max_recurse_depth: depth,
-                },
-            )))
+            model_pattern_input(backend, request, authenticated, resolver)
         }
         AuthBackend::AuthResourceGrants => Ok(resource_grant_stage_input(request, authenticated)?),
         AuthBackend::AuthTagBudgets => Ok(StageInput::AuthTagBudgets(Box::new(
             auth_tag_budgets::stage_input(request, authenticated)?,
         ))),
     }
+}
+
+fn safety_stage_input(
+    request: &Request<Body>,
+    authenticated: Option<&AuthContext>,
+    body: Option<&Bytes>,
+) -> Result<RequestBodySafetyStageInput, StageFailure> {
+    let context = authenticated
+        .cloned()
+        .ok_or(AuthenticationFailure::Missing)?;
+    Ok(RequestBodySafetyStageInput {
+        context,
+        content_type: request
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned),
+        body: body.cloned().unwrap_or_default(),
+        slot: request
+            .extensions()
+            .get::<Arc<ServerState>>()
+            .map(|state| state.request_body_safety.clone()),
+    })
+}
+
+fn model_pattern_input(
+    backend: AuthBackend,
+    request: &Request<Body>,
+    authenticated: Option<&AuthContext>,
+    resolver: &Arc<RequestModelResolver>,
+) -> Result<StageInput, StageFailure> {
+    let context = authenticated
+        .cloned()
+        .ok_or(AuthenticationFailure::Missing)?;
+    let stage = model_stage_input(request, context.clone(), resolver);
+    if backend == AuthBackend::AuthRequestModels {
+        return Ok(StageInput::AuthRequestModels(Box::new(stage)));
+    }
+    let requested = match resolve(&stage) {
+        Ok(requested) => requested,
+        Err(error) => {
+            tracing::debug!(error = %error, "the request model stage failed");
+            return Err(StageFailure::from(AuthenticationFailure::Missing));
+        }
+    };
+    let rule = rule_for_request(request);
+    let depth = max_recurse_depth_for_request(request);
+    Ok(StageInput::AuthModelPatterns(Box::new(
+        ModelPatternStageInput {
+            context,
+            requested,
+            rule,
+            max_recurse_depth: depth,
+        },
+    )))
+}
+
+fn resolver_for(request: &Request<Body>) -> Arc<RequestModelResolver> {
+    request
+        .extensions()
+        .get::<Arc<RequestModelResolver>>()
+        .map_or_else(default_resolver, Arc::clone)
 }
 
 // stage_input cannot await while holding the request borrow (Request<Body> is Send but not Sync), so the caller awaits the prefetch on the owned stage

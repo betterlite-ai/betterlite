@@ -14,10 +14,10 @@ pub(crate) fn max_body_bytes(request: &Request<Body>) -> usize {
         .extensions()
         .get::<Arc<ServerState>>()
         .and_then(|state| SizeLimitLayer::from_settings(&state.config.sections.request_size_limit));
-    match configured {
-        Some(limit) => usize::try_from(limit.max_bytes).unwrap_or(usize::MAX),
-        None => ApiLimits::default().max_json_bytes,
-    }
+    configured.map_or_else(
+        || ApiLimits::default().max_json_bytes,
+        |limit| usize::try_from(limit.max_bytes).unwrap_or(usize::MAX),
+    )
 }
 
 pub(crate) enum BufferError {
