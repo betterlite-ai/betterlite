@@ -194,3 +194,10 @@ path = "fuzz_targets/rollup_inputs.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "spend_buffer"
+path = "fuzz_targets/spend_buffer.rs"
+test = false
+doc = false
+bench = false
