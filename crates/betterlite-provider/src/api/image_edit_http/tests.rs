@@ -17,12 +17,12 @@ use http::header::{HeaderMap as HttpHeaders, HeaderValue};
 use serde_json::Number;
 
 use self::support::{
-    API_BASE, EDITS_URL, Event, Fixture, FixtureError, MODEL, RESPONSE_BODY, RecordingConfig,
-    Reply, Source, Transport, assert_async_matches_sync, assert_async_transform_once,
-    assert_sync_logging, assert_sync_request, assert_sync_result, assert_validation_never_selects,
-    body_json, call_deps, edit_call, edit_transport, fact_headers, headers, image, image_response,
-    json, litellm_params, params, params_json, part_facts, recorded_events,
-    validated_transform_event,
+    API_BASE, EDITS_URL, Event, Fixture, FixtureError, MODEL, PartFacts, RESPONSE_BODY,
+    RecordingConfig, Reply, Source, Transport, assert_async_matches_sync,
+    assert_async_transform_once, assert_sync_logging, assert_sync_request, assert_sync_result,
+    assert_validation_never_selects, body_json, call_deps, edit_call, edit_transport, fact_headers,
+    headers, image, image_response, json, litellm_params, params, params_json, part_facts,
+    recorded_events, validated_transform_event,
 };
 use super::error::{ImageEditHttpError, RequestError};
 use super::facts::{self, Failure, SendError, Sent};
@@ -57,19 +57,17 @@ async fn edit_finalization_and_multipart() {
         .await
         .expect("the sync edit succeeds");
     assert_sync_result(&outcome);
+    let transform = Event::Transform {
+        mode: ClientKind::Sync,
+        model: String::from(MODEL),
+        prompt: Some(String::from("change")),
+        image: Some(image.clone()),
+        options: options.clone(),
+        headers: headers(&[("x", "caller")]),
+    };
     assert_eq!(
         config.events(),
-        recorded_events(
-            headers(&[("x", "option")]),
-            Event::Transform {
-                mode: ClientKind::Sync,
-                model: String::from(MODEL),
-                prompt: Some(String::from("change")),
-                image: Some(image.clone()),
-                options: options.clone(),
-                headers: headers(&[("x", "caller")]),
-            }
-        )
+        recorded_events(headers(&[("x", "option")]), transform)
     );
     assert_sync_request(&transport);
     assert_sync_logging(&fixture);
@@ -110,6 +108,7 @@ async fn edit_json_and_unused_arguments() {
     let requests = transport.requests();
     assert_eq!(requests.len(), 1);
     assert_eq!(body_json(&requests[0]), params_json());
+    drop(requests);
 
     let async_config = RecordingConfig::new(API_BASE).without_multipart();
     let async_transport = Transport::replying(Reply::json(200, RESPONSE_BODY));
@@ -324,11 +323,11 @@ async fn a_url_failure_propagates_before_the_transform() {
     let Err(error) = fixture.run(ClientKind::Sync, &deps, &call).await else {
         panic!("a refused URL fails the call");
     };
-    let ImageEditHttpError::Config(source) = error else {
+    let ImageEditHttpError::Config(failure) = error else {
         panic!("the refused URL is a config failure");
     };
     assert!(matches!(
-        source,
+        failure,
         FixtureError::Contract(ImageContractError::ApiBaseRequired)
     ));
     assert!(
@@ -398,11 +397,11 @@ async fn a_response_transform_failure_propagates() {
     let Err(error) = fixture.run(ClientKind::Sync, &deps, &call).await else {
         panic!("a refusing response transform fails the call");
     };
-    let ImageEditHttpError::Config(source) = error else {
+    let ImageEditHttpError::Config(failure) = error else {
         panic!("a refusing response transform is a config failure");
     };
     assert!(matches!(
-        source,
+        failure,
         FixtureError::Contract(ImageContractError::NotImplemented {
             message: "the fixture response transform failed"
         })
@@ -517,10 +516,13 @@ async fn request_headers_reject_names_and_values() {
     let ImageEditHttpError::Request(value_request) = value_error else {
         panic!("a header value HTTP cannot carry fails outside the request build: {value_error}");
     };
-    let RequestError::HeaderValue { name, .. } = value_request else {
+    let RequestError::HeaderValue {
+        name: value_name, ..
+    } = value_request
+    else {
         panic!("a header value HTTP cannot carry fails the value");
     };
-    assert_eq!(name, "x");
+    assert_eq!(value_name, "x");
     assert!(transport.requests().is_empty());
 }
 
@@ -622,7 +624,7 @@ fn multipart_fields_spell_each_scalar_and_repeat_lists() {
         params(r#"{"none":null,"flag":true,"count":3,"ratio":1.5,"text":"v","many":["a",2,null]}"#);
     let parts =
         multipart_parts(&data, &ImageFiles::new()).expect("every scalar has a form spelling");
-    let expected: Vec<(&str, Option<&str>, Option<&str>, &[u8])> = vec![
+    let expected: PartFacts<'_> = vec![
         ("none", None, None, b"".as_slice()),
         ("flag", None, None, b"true".as_slice()),
         ("count", None, None, b"3".as_slice()),
@@ -672,7 +674,7 @@ fn file_parts_guess_the_content_type_and_drop_empty_names() {
         ),
     ];
     let parts = multipart_parts(&ImageParams::new(), &files).expect("files are always form parts");
-    let expected: Vec<(&str, Option<&str>, Option<&str>, &[u8])> = vec![
+    let expected: PartFacts<'_> = vec![
         ("image", Some("b.png"), Some("image/png"), b"x".as_slice()),
         ("other", None, None, b"y".as_slice()),
         ("empty", None, Some("text/plain"), b"z".as_slice()),

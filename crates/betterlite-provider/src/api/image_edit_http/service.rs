@@ -17,7 +17,7 @@ use uuid::Uuid;
 
 use super::error::{ImageEditHttpError, RequestError};
 use super::facts::{self, Failure, SendError, Sent};
-use super::request::{self, Fields, Logged};
+use super::request::{self, Logged};
 use crate::api::image_contracts::edit::{
     BaseImageEditConfig, ImageEditEnvironment, ImageEditReply, ImageEditRequest,
 };
@@ -187,11 +187,13 @@ where
     let answer = match reply {
         Ok(answer) => answer,
         Err(error) => {
-            let failure = match &error {
-                TransportError::ConnectTimeout(_) | TransportError::Deadline(_) => {
-                    facts::send_failure(SendError::TimedOut, sent)
-                }
-                other => facts::send_failure(SendError::Failed(other), sent),
+            let failure = if matches!(
+                &error,
+                TransportError::ConnectTimeout(_) | TransportError::Deadline(_)
+            ) {
+                facts::send_failure(SendError::TimedOut, sent)
+            } else {
+                facts::send_failure(SendError::Failed(&error), sent)
             };
             return Err(provider(config, &failure));
         }

@@ -73,13 +73,13 @@ pub(super) fn send_failure(error: SendError<'_>, sent: Sent) -> Failure {
             response: None,
             display: String::new(),
         },
-        SendError::Failed(error) => FailureFacts {
+        SendError::Failed(transport) => FailureFacts {
             response_status: None,
             status: None,
             text: None,
             headers: None,
             response: None,
-            display: error.to_string(),
+            display: transport.to_string(),
         },
     };
     Failure {

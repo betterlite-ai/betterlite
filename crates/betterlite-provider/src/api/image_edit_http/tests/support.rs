@@ -170,7 +170,7 @@ impl RecordingConfig {
     fn transformed(
         &self,
         mode: ClientKind,
-        request: ImageEditRequest<'_>,
+        request: &ImageEditRequest<'_>,
     ) -> Result<(ImageParams, ImageFiles), FixtureError> {
         self.record(Event::Transform {
             mode,
@@ -218,14 +218,14 @@ impl BaseImageEditConfig for RecordingConfig {
         &self,
         request: ImageEditRequest<'_>,
     ) -> Result<(ImageParams, ImageFiles), Self::Error> {
-        self.transformed(ClientKind::Sync, request)
+        self.transformed(ClientKind::Sync, &request)
     }
 
     async fn async_transform_image_edit_request(
         &self,
         request: ImageEditRequest<'_>,
     ) -> Result<(ImageParams, ImageFiles), Self::Error> {
-        self.transformed(ClientKind::Asynchronous, request)
+        self.transformed(ClientKind::Asynchronous, &request)
     }
 
     fn transform_image_edit_response(
@@ -408,10 +408,10 @@ impl WriteTransport for Transport {
             .unwrap_or_else(PoisonError::into_inner)
             .take();
         match reply {
-            Some(reply) => ready(Ok(UpstreamResponse {
-                status: reply.status,
-                headers: reply.headers,
-                body: reply.body,
+            Some(answer) => ready(Ok(UpstreamResponse {
+                status: answer.status,
+                headers: answer.headers,
+                body: answer.body,
             })),
             None => ready(Err(TransportError::Closed)),
         }
@@ -568,9 +568,14 @@ pub(super) fn body_json(request: &WriteRequest) -> Json {
 }
 
 // The encoder's part type carries no equality, so a body compares through the fields a part is made of
-pub(super) fn part_facts(
-    parts: &[MultipartPart],
-) -> Vec<(&str, Option<&str>, Option<&str>, &[u8])> {
+pub(super) type PartFacts<'parts> = Vec<(
+    &'parts str,
+    Option<&'parts str>,
+    Option<&'parts str>,
+    &'parts [u8],
+)>;
+
+pub(super) fn part_facts(parts: &[MultipartPart]) -> PartFacts<'_> {
     let mut facts = Vec::new();
     for part in parts {
         facts.push((
@@ -665,28 +670,38 @@ pub(super) fn assert_sync_result(outcome: &ImageEditOutcome) {
 }
 
 pub(super) fn assert_sync_request(transport: &Transport) {
+    with_requests(transport, |requests| {
+        assert_eq!(requests.len(), 1);
+        let request = &requests[0];
+        assert_eq!(request.url.as_str(), EDITS_URL);
+        assert_eq!(request.timeout, Some(CALL_TIMEOUT));
+        assert_eq!(
+            request
+                .headers
+                .get("x")
+                .and_then(|value| value.to_str().ok()),
+            Some("caller")
+        );
+        let RequestBody::Multipart { parts, .. } = &request.body else {
+            panic!("the fixture config asks for a multipart body");
+        };
+        let expected: PartFacts<'_> = vec![
+            ("prompt", None, None, b"change".as_slice()),
+            ("revision", None, None, b"final".as_slice()),
+            ("image", Some("a.png"), Some("image/png"), b"abc".as_slice()),
+        ];
+        assert_eq!(part_facts(parts), expected);
+        assert!(parts.iter().all(|part| part.name != "none"));
+    });
+}
+
+// The sent requests under their guard, so no assertion holds the lock past its last use
+pub(super) fn with_requests<T, Check>(transport: &Transport, check: Check) -> T
+where
+    Check: FnOnce(&[WriteRequest]) -> T,
+{
     let requests = transport.requests();
-    assert_eq!(requests.len(), 1);
-    let request = &requests[0];
-    assert_eq!(request.url.as_str(), EDITS_URL);
-    assert_eq!(request.timeout, Some(CALL_TIMEOUT));
-    assert_eq!(
-        request
-            .headers
-            .get("x")
-            .and_then(|value| value.to_str().ok()),
-        Some("caller")
-    );
-    let RequestBody::Multipart { parts, .. } = &request.body else {
-        panic!("the fixture config asks for a multipart body");
-    };
-    let expected: Vec<(&str, Option<&str>, Option<&str>, &[u8])> = vec![
-        ("prompt", None, None, b"change".as_slice()),
-        ("revision", None, None, b"final".as_slice()),
-        ("image", Some("a.png"), Some("image/png"), b"abc".as_slice()),
-    ];
-    assert_eq!(part_facts(parts), expected);
-    assert!(parts.iter().all(|part| part.name != "none"));
+    check(&requests)
 }
 
 pub(super) fn assert_sync_logging(fixture: &Fixture) {
@@ -729,12 +744,13 @@ pub(super) async fn assert_async_matches_sync(
     assert!(deps.config.events().contains(&transformed));
     assert_eq!(fixture.logged("complete_input_dict"), Some(&params_json()));
     assert!(fixture.state.model_call_details.get("api_key").is_none());
-    let requests = transport.requests();
-    assert_eq!(requests.len(), 1);
-    let RequestBody::Multipart { parts, .. } = &requests[0].body else {
-        panic!("the async path sends the same multipart body");
-    };
-    assert_eq!(parts.len(), 3);
+    with_requests(transport, |requests| {
+        assert_eq!(requests.len(), 1);
+        let RequestBody::Multipart { parts, .. } = &requests[0].body else {
+            panic!("the async path sends the same multipart body");
+        };
+        assert_eq!(parts.len(), 3);
+    });
 }
 
 pub(super) fn params_json() -> Json {

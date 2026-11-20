@@ -1,5 +1,3 @@
-use std::error::Error;
-
 use betterlite_core::api::vector_store_http_write::error::ClientError;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_openai::error::ProviderError;
@@ -37,7 +35,7 @@ pub enum RequestError {
 
 // The handler's failures: the provider's answer through the config's error hook, the config's own refusals, and the request build
 #[derive(Debug, Error)]
-pub enum ImageEditHttpError<ConfigError: Error + 'static> {
+pub enum ImageEditHttpError<ConfigError> {
     #[error("{}", .0.message)]
     Provider(Box<ProviderError>),
     #[error("the image edit provider config failed: {0}")]
