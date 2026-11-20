@@ -55,9 +55,14 @@ pub(super) fn upload_method(method: &str) -> Result<Method, UploadError> {
     })
 }
 
-// The async aiohttp transport labels a bytes body with no content type application/octet-stream
-pub(super) fn default_content_type(mut headers: HeaderMap, mode: Mode) -> HeaderMap {
-    if mode == Mode::Asynchronous {
+// The async aiohttp transport labels a type-less POST, PUT or PATCH body application/octet-stream
+pub(super) fn default_content_type(
+    mut headers: HeaderMap,
+    mode: Mode,
+    method: &Method,
+) -> HeaderMap {
+    let labelled = [Method::POST, Method::PUT, Method::PATCH].contains(method);
+    if mode == Mode::Asynchronous && labelled {
         headers
             .entry(CONTENT_TYPE)
             .or_insert(HeaderValue::from_static("application/octet-stream"));

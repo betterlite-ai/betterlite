@@ -535,6 +535,23 @@ async fn raw_upload_defaults_to_octet_stream() {
     );
 }
 
+// aiohttp labels only POST, PUT and PATCH, so another method's type-less raw body gets no default
+#[tokio::test]
+async fn raw_upload_delete_gets_no_async_default() {
+    let plan = UploadPlan::Presigned(Box::new(PresignedPlan {
+        method: String::from("delete"),
+        url: String::from(UPLOAD_URL),
+        headers: BTreeMap::new(),
+        data: UploadData::Bytes(b"pdf".to_vec()),
+    }));
+    let mut harness = Harness::new(plan, API_BASE, vec![answer(200, &[], b"{}")]);
+    harness
+        .run(Mode::Asynchronous, &create_call(), &params())
+        .await
+        .unwrap();
+    assert!(!harness.seen()[0].headers.contains_key(CONTENT_TYPE));
+}
+
 // a plan that names its own content type keeps it, so only a type-less raw body takes the async default
 #[tokio::test]
 async fn raw_upload_keeps_an_explicit_content_type() {
