@@ -27,7 +27,7 @@ use crate::api::responses_provider_selection::provider_config::{
 use crate::api::responses_provider_selection::resolution::{ModelResolver, resolve_model_provider};
 
 use super::call::{CompactResponsesCall, resolution_params};
-use super::convert::{json_value, object_from_params, prompt_decision};
+use super::convert::{decision_prompt, json_value, object_from_params, prompt_decision};
 use super::deps::{CompactConfigFactory, CompactResponsesDeps, ConfigRequest};
 use super::encode::encode_response;
 use super::error::{CompactParamError, CompactResponsesError};
@@ -253,7 +253,12 @@ fn restored(input: &ResponsesInput) -> ResponsesInput {
     let Json::List(entries) = record.into_json() else {
         return input.clone();
     };
-    ResponsesInput::Items(entries.into_iter().map(ResponsesItem).collect())
+    ResponsesInput::Items(
+        entries
+            .into_iter()
+            .map(|item| ResponsesItem(decision_prompt(&item)))
+            .collect(),
+    )
 }
 
 async fn execute<S, P>(

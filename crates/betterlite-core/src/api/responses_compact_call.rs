@@ -17,11 +17,15 @@ use self::deps::{CompactConfigFactory, CompactResponsesDeps};
 use self::error::CompactResponsesError;
 
 // LiteLLM's sync wrapper: the caller's marker, read with `is True`, picks the async handler
-pub async fn compact_responses<S: ClientSource, F: CompactConfigFactory>(
+pub async fn compact_responses<S, F>(
     deps: &CompactResponsesDeps<'_, S, F>,
     call: &CompactResponsesCall,
     log: &mut LogContext<'_, '_>,
-) -> Result<ResponsesReply, CompactResponsesError> {
+) -> Result<ResponsesReply, CompactResponsesError>
+where
+    S: ClientSource,
+    F: CompactConfigFactory,
+{
     execute::run(
         deps,
         call,
@@ -33,11 +37,15 @@ pub async fn compact_responses<S: ClientSource, F: CompactConfigFactory>(
 }
 
 // LiteLLM's async wrapper: it detects the provider without a base, forces the marker and rewrites the id again
-pub async fn acompact_responses<S: ClientSource, F: CompactConfigFactory>(
+pub async fn acompact_responses<S, F>(
     deps: &CompactResponsesDeps<'_, S, F>,
     call: &CompactResponsesCall,
     log: &mut LogContext<'_, '_>,
-) -> Result<ResponsesReply, CompactResponsesError> {
+) -> Result<ResponsesReply, CompactResponsesError>
+where
+    S: ClientSource,
+    F: CompactConfigFactory,
+{
     let provider = match &call.custom_llm_provider {
         Some(provider) => provider.clone(),
         None => execute::preliminary_provider(deps.resolver, call)?,

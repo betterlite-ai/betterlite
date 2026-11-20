@@ -9,10 +9,10 @@ use crate::api::responses_provider_selection::resolution::ModelResolver;
 use super::error::CompactParamError;
 
 // What the factory needs to build a provider: the resolved model, its provider and the caller's base
-pub struct ConfigRequest<'a> {
-    pub model: &'a str,
-    pub provider: &'a str,
-    pub api_base: Option<&'a str>,
+pub struct ConfigRequest<'request> {
+    pub model: &'request str,
+    pub provider: &'request str,
+    pub api_base: Option<&'request str>,
 }
 
 // B157 decides whether a provider has a responses config; the factory builds the object both read
