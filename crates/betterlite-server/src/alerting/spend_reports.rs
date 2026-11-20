@@ -74,7 +74,6 @@ pub struct SpendReports<C, S, K> {
 }
 
 // LiteLLM keeps int(time_range[:-1]) and rejects a last character other than d or D
-#[must_use]
 pub(crate) fn parse_days(text: &str) -> Result<u32, TimeRangeError> {
     let mut characters = text.chars();
     let Some(unit) = characters.next_back() else {
@@ -112,8 +111,8 @@ where
         if self.alerting.is_none() || !self.alert_types.contains(&AlertType::SpendReports) {
             return;
         }
-        let time_range = time_range.unwrap_or(DEFAULT_TIME_RANGE);
-        let days = match parse_days(time_range) {
+        let range = time_range.unwrap_or(DEFAULT_TIME_RANGE);
+        let days = match parse_days(range) {
             Ok(days) => days,
             Err(error) => {
                 tracing::error!("Invalid time range format: {error}");

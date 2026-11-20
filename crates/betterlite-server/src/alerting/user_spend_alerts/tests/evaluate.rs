@@ -59,10 +59,10 @@ fn evaluate_daily_threshold_fires_at_equal_spend() {
 }
 
 #[rstest]
-#[case::daily_below(false, Some("10"), 9.999)]
-#[case::daily_unset(false, None, 1_000.0)]
-#[case::monthly_below(true, Some("25"), 24.999)]
-#[case::monthly_unset(true, None, 1_000.0)]
+#[case::daily_below(false, Some("10"), 9.999_f64)]
+#[case::daily_unset(false, None, 1_000.0_f64)]
+#[case::monthly_below(true, Some("25"), 24.999_f64)]
+#[case::monthly_unset(true, None, 1_000.0_f64)]
 fn evaluate_thresholds_skip_below_and_unset(
     #[case] monthly: bool,
     #[case] threshold: Option<&str>,
@@ -126,8 +126,8 @@ fn evaluate_anomaly_fires_above_the_average() {
 }
 
 #[rstest]
-#[case::at_the_boundary(300.0, 0)]
-#[case::above_the_boundary(300.0001, 1)]
+#[case::at_the_boundary(300.0_f64, 0)]
+#[case::above_the_boundary(300.000_1_f64, 1)]
 fn evaluate_anomaly_checks_the_multiplier_boundary(#[case] daily: f64, #[case] found: usize) {
     let settings = args();
     let events = evaluate(
@@ -159,8 +159,8 @@ fn evaluate_anomaly_fires_at_zero_spend_without_a_baseline() {
 }
 
 #[rstest]
-#[case::below_the_minimum(9.999, 100.0, 0)]
-#[case::at_the_minimum(10.0, 0.0, 1)]
+#[case::below_the_minimum(9.999_f64, 100.0_f64, 0)]
+#[case::at_the_minimum(10.0_f64, 0.0_f64, 1)]
 fn evaluate_anomaly_needs_the_minimum_spend(
     #[case] daily: f64,
     #[case] baseline: f64,
@@ -205,10 +205,10 @@ fn evaluate_returns_thresholds_before_anomalies() {
 }
 
 #[rstest]
-#[case::binary_below_the_tie(2.675, "2.67")]
-#[case::binary_above_the_tie(0.005, "0.01")]
-#[case::rounds_up(12.345, "12.35")]
-#[case::whole(10.0, "10.00")]
+#[case::binary_below_the_tie(2.675_f64, "2.67")]
+#[case::binary_above_the_tie(0.005_f64, "0.01")]
+#[case::rounds_up(12.345_f64, "12.35")]
+#[case::whole(10.0_f64, "10.00")]
 fn evaluate_rounds_money_like_python(#[case] daily: f64, #[case] shown: &str) {
     let mut settings = args();
     settings.daily_user_spend_threshold = Some(decimal("0"));

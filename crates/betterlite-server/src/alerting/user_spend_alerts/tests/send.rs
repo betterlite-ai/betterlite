@@ -29,9 +29,13 @@ impl Captured {
 }
 
 impl io::Write for Captured {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buffer);
-        Ok(buffer.len())
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let mut captured = self
+            .0
+            .lock()
+            .map_err(|_poisoned| io::Error::other("the captured logs were poisoned"))?;
+        captured.extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -41,7 +45,7 @@ impl io::Write for Captured {
 
 fn capture_logs() -> (Captured, DefaultGuard) {
     let captured = Captured(Arc::default());
-    let writer = captured.0.clone();
+    let writer = Arc::clone(&captured.0);
     let subscriber = tracing_subscriber::fmt()
         .with_writer(move || Captured(Arc::clone(&writer)))
         .with_max_level(tracing::Level::ERROR)

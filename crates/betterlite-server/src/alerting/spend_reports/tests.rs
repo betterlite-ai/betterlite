@@ -146,7 +146,7 @@ impl FakeSource {
     }
 
     fn queries(&self) -> Asked {
-        self.asked.clone()
+        Arc::clone(&self.asked)
     }
 }
 
@@ -203,9 +203,13 @@ impl Captured {
 }
 
 impl io::Write for Captured {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buffer);
-        Ok(buffer.len())
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let mut captured = self
+            .0
+            .lock()
+            .map_err(|_poisoned| io::Error::other("the captured logs were poisoned"))?;
+        captured.extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -215,7 +219,7 @@ impl io::Write for Captured {
 
 fn capture_logs() -> (Captured, DefaultGuard) {
     let captured = Captured(Arc::default());
-    let writer = captured.0.clone();
+    let writer = Arc::clone(&captured.0);
     let subscriber = tracing_subscriber::fmt()
         .with_writer(move || Captured(Arc::clone(&writer)))
         .with_max_level(tracing::Level::ERROR)
@@ -291,9 +295,9 @@ fn asked_dates(asked: &Asked) -> Vec<(String, String)> {
         .collect()
 }
 
-const WEEKLY_MESSAGE: &str = "*💸 Spend Report for `01-08-2026 - 01-15-2026` (7 days)*\n\n*Team Spend Report:*\nTeam: `team-a` | Spend: `$12.3457`\nTeam: `None` | Spend: `$1.0`\nTeam: `team-c` | Spend: `$0.0001`\nTeam: `team-d` | Spend: `$0.0`\n\n*Tag Spend Report:*\nTag: `tag-a` | Spend: `$3.5`\n";
+const WEEKLY_MESSAGE: &str = "*\u{1f4b8} Spend Report for `01-08-2026 - 01-15-2026` (7 days)*\n\n*Team Spend Report:*\nTeam: `team-a` | Spend: `$12.3457`\nTeam: `None` | Spend: `$1.0`\nTeam: `team-c` | Spend: `$0.0001`\nTeam: `team-d` | Spend: `$0.0`\n\n*Tag Spend Report:*\nTag: `tag-a` | Spend: `$3.5`\n";
 
-const MONTHLY_MESSAGE: &str = "*💸 Monthly Spend Report for `01-01-2026 - 01-31-2026` *\n\n*Team Spend Report:*\nTeam: `team-a` | Spend: `$12.3457`\nTeam: `None` | Spend: `$1.0`\nTeam: `team-c` | Spend: `$0.0001`\nTeam: `team-d` | Spend: `$0.0`\n\n*Tag Spend Report:*\nTag: `tag-a` | Spend: `$3.5`\n";
+const MONTHLY_MESSAGE: &str = "*\u{1f4b8} Monthly Spend Report for `01-01-2026 - 01-31-2026` *\n\n*Team Spend Report:*\nTeam: `team-a` | Spend: `$12.3457`\nTeam: `None` | Spend: `$1.0`\nTeam: `team-c` | Spend: `$0.0001`\nTeam: `team-d` | Spend: `$0.0`\n\n*Tag Spend Report:*\nTag: `tag-a` | Spend: `$3.5`\n";
 
 fn answering(teams: Vec<SpendRow>, tags: Vec<SpendRow>) -> FakeSource {
     FakeSource::answering(teams, tags)

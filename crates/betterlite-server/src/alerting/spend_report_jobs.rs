@@ -107,7 +107,6 @@ where
     }
 }
 
-#[must_use]
 pub fn plan_spend_jobs(
     spend_report_frequency: Option<&str>,
     args: &SlackAlertingArgs,
@@ -149,10 +148,10 @@ pub fn plan_spend_jobs(
 
 // general_settings.get("spend_report_frequency", "7d") or "7d", with the days > 0 check of the source
 fn frequency_days(frequency: Option<&str>) -> Result<u32, InvalidSpendReportFrequency> {
-    let frequency = frequency
+    let text = frequency
         .filter(|text| !text.is_empty())
         .unwrap_or(DEFAULT_TIME_RANGE);
-    let days = parse_days(frequency).map_err(|_error| InvalidSpendReportFrequency)?;
+    let days = parse_days(text).map_err(|_error| InvalidSpendReportFrequency)?;
     if days == 0 {
         return Err(InvalidSpendReportFrequency);
     }

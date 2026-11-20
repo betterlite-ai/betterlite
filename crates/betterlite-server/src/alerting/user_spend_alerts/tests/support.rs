@@ -147,7 +147,7 @@ impl FakeSource {
     }
 
     pub(super) fn queried(&self) -> Arc<Mutex<Vec<(NaiveDate, u32)>>> {
-        self.asked.clone()
+        Arc::clone(&self.asked)
     }
 }
 

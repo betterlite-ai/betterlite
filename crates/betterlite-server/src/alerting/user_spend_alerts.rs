@@ -25,7 +25,7 @@ const SECONDS_IN_AN_HOUR: u64 = 3_600;
 const MONTHLY_TTL_DAYS: u64 = 32;
 
 // LiteLLM reads these as a Postgres ::float, so as_f64 restores the binary value before each comparison and .2f text
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UserSpendRow {
     pub user_id: String,
     pub daily_spend: Decimal,
@@ -41,7 +41,7 @@ pub enum UserSpendAlertKind {
     Anomaly,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UserSpendAlertEvent {
     pub kind: UserSpendAlertKind,
     pub alert_type: AlertType,
@@ -212,7 +212,7 @@ fn anomaly_event(
     let days = f64::from(args.spend_anomaly_baseline_days);
     let average = Div::div(baseline, days);
     let multiplier = args.spend_anomaly_multiplier.as_f64();
-    if baseline > 0.0 && daily <= Mul::mul(multiplier, average) {
+    if baseline > 0.0_f64 && daily <= Mul::mul(multiplier, average) {
         return None;
     }
     let today_text = today.format("%Y-%m-%d").to_string();

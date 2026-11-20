@@ -62,12 +62,12 @@ impl ReportWindow {
     pub(super) fn message(self, teams: &[SpendRow], tags: &[SpendRow]) -> String {
         let mut message = match self.kind {
             ReportKind::Weekly { days } => format!(
-                "*💸 Spend Report for `{} - {}` ({days} days)*\n",
+                "*\u{1f4b8} Spend Report for `{} - {}` ({days} days)*\n",
                 self.first.format("%m-%d-%Y"),
                 self.last.format("%m-%d-%Y"),
             ),
             ReportKind::Monthly => format!(
-                "*💸 Monthly Spend Report for `{} - {}` *\n",
+                "*\u{1f4b8} Monthly Spend Report for `{} - {}` *\n",
                 self.first.format("%m-%d-%Y"),
                 self.last.format("%m-%d-%Y"),
             ),
@@ -92,10 +92,10 @@ fn push_sections(message: &mut String, teams: &[SpendRow], tags: &[SpendRow]) {
 }
 
 fn push_rows(message: &mut String, label: &str, rows: &[SpendRow]) {
-    let _ignored = writeln!(message, "\n*{label} Spend Report:*");
+    let _heading = writeln!(message, "\n*{label} Spend Report:*");
     for row in rows {
         let spend = float_text(float_rounded(row.total_spend, SPEND_REPORT_PLACES).as_f64());
         let name = row.name.as_deref().unwrap_or("None");
-        let _ignored = writeln!(message, "{label}: `{name}` | Spend: `${spend}`");
+        let _line = writeln!(message, "{label}: `{name}` | Spend: `${spend}`");
     }
 }
