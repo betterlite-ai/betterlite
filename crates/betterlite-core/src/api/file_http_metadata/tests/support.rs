@@ -1,7 +1,8 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::future::{Future, ready};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::str::from_utf8;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_config::proxy::ProxyPolicy;
@@ -28,7 +29,7 @@ use chrono::{DateTime, FixedOffset};
 use http::header::HeaderMap as HttpHeaders;
 use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
-use serde_json::{Number, Value};
+use serde_json::Number;
 
 use crate::api::file_http_metadata::config::{
     EnvironmentRequest, FileParams, FileRequest, FileResponse, Headers, ListRequest,
@@ -209,7 +210,7 @@ pub(crate) enum Answer {
 #[derive(Clone)]
 pub(crate) struct Wire {
     answers: Arc<Mutex<VecDeque<Answer>>>,
-    requests: Arc<Mutex<Vec<WriteRequest>>>,
+    requests: Arc<Mutex<Vec<Arc<WriteRequest>>>>,
     events: Events,
 }
 
@@ -222,8 +223,11 @@ impl Wire {
         }
     }
 
-    pub(crate) fn requests(&self) -> MutexGuard<'_, Vec<WriteRequest>> {
-        self.requests.lock().unwrap_or_else(PoisonError::into_inner)
+    pub(crate) fn requests(&self) -> Vec<Arc<WriteRequest>> {
+        self.requests
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 }
 
@@ -240,7 +244,7 @@ impl WriteTransport for Wire {
         self.requests
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(request);
+            .push(Arc::new(request));
         let next = self
             .answers
             .lock()
@@ -319,15 +323,24 @@ pub(crate) const fn target<'call>(
 
 pub(crate) fn litellm_params(base: &str, api_key: &str) -> FileParams {
     let mut params = FileParams::new();
-    params.insert("api_base".to_owned(), Value::String(base.to_owned()));
-    params.insert("api_key".to_owned(), Value::String(api_key.to_owned()));
+    params.insert(
+        "api_base".to_owned(),
+        serde_json::to_value(base).expect("the base is text"),
+    );
+    params.insert(
+        "api_key".to_owned(),
+        serde_json::to_value(api_key).expect("the key is text"),
+    );
     params
 }
 
 pub(crate) fn litellm_params_with(base: &str, api_key: &str, extra: &[(&str, &str)]) -> FileParams {
     let mut params = litellm_params(base, api_key);
     for (name, value) in extra {
-        params.insert((*name).to_owned(), Value::String((*value).to_owned()));
+        params.insert(
+            (*name).to_owned(),
+            serde_json::to_value(*value).expect("the extra value is text"),
+        );
     }
     params
 }
@@ -426,7 +439,7 @@ pub(crate) struct RecordingConfig {
     observed: Mutex<Vec<Observed>>,
     errors: Mutex<Vec<(String, u16, HeaderMap)>>,
     urls: Mutex<Vec<Option<String>>>,
-    next_calls: Mutex<usize>,
+    next_calls: AtomicUsize,
     events: Events,
     number_query: AtomicBool,
 }
@@ -443,7 +456,7 @@ impl RecordingConfig {
             observed: Mutex::default(),
             errors: Mutex::default(),
             urls: Mutex::default(),
-            next_calls: Mutex::default(),
+            next_calls: AtomicUsize::new(0),
             events: events.clone(),
             number_query: AtomicBool::new(false),
         }
@@ -503,10 +516,7 @@ impl RecordingConfig {
     }
 
     pub(crate) fn next_calls(&self) -> usize {
-        *self
-            .next_calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
+        self.next_calls.load(Ordering::Relaxed)
     }
 
     pub(crate) fn nexts_remaining(&self) -> usize {
@@ -570,7 +580,7 @@ impl RecordingConfig {
         if response.status_code < 400 {
             return Ok(());
         }
-        let message = std::str::from_utf8(&response.body).map_or_else(
+        let message = from_utf8(&response.body).map_or_else(
             |_| format!("{} bytes that are not UTF-8", response.body.len()),
             ToOwned::to_owned,
         );
@@ -589,16 +599,16 @@ impl RecordingConfig {
     fn query(&self, name: &str, value: &str) -> FileParams {
         let mut query = FileParams::new();
         let chosen = if self.number_query.load(Ordering::Relaxed) {
-            Value::Number(Number::from(1_u32))
+            serde_json::to_value(1_u32).expect("the number query value")
         } else {
-            Value::String(value.to_owned())
+            serde_json::to_value(value).expect("the text query value")
         };
         query.insert(name.to_owned(), chosen);
         query
     }
 
-    fn recorded(&self, request: RequestItem<'_>) -> Result<PreparedRequest, BaseLlmException> {
-        match request {
+    fn recorded(&self, item: RequestItem<'_>) -> Result<PreparedRequest, BaseLlmException> {
+        match item {
             RequestItem::File(request) => {
                 let file_id = request.file_id.to_owned();
                 let prepared = (
@@ -632,7 +642,7 @@ impl RecordingConfig {
     fn respond<T, F>(
         &self,
         raw_response: &FileResponse,
-        context: ReplyContext<'_>,
+        model_call_details: &mut IndexMap<String, Json>,
         answer: F,
     ) -> Result<T, BaseLlmException>
     where
@@ -643,7 +653,7 @@ impl RecordingConfig {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(raw_response.url.clone());
-        self.observe(context.model_call_details);
+        self.observe(model_call_details);
         self.check_response(raw_response)?;
         Ok(answer())
     }
@@ -695,15 +705,16 @@ impl MetadataConfig for RecordingConfig {
                 request.api_key.map_or("", |key| key.expose_secret())
             ),
         );
-        headers.insert("x-validation".to_owned(), format!("{}", index + 1));
+        let number = index.checked_add(1).expect("the validation number");
+        headers.insert("x-validation".to_owned(), format!("{number}"));
         Ok(headers)
     }
 
     fn transform_retrieve_file_request(
         &self,
-        call: FileRequest<'_>,
+        request: FileRequest<'_>,
     ) -> Result<PreparedRequest, BaseLlmException> {
-        self.recorded(RequestItem::File(call))
+        self.recorded(RequestItem::File(request))
     }
 
     fn transform_retrieve_file_response(
@@ -711,14 +722,16 @@ impl MetadataConfig for RecordingConfig {
         raw_response: &FileResponse,
         context: ReplyContext<'_>,
     ) -> Result<FileObject, BaseLlmException> {
-        self.respond(raw_response, context, || file_object(FILE_ID))
+        self.respond(raw_response, context.model_call_details, || {
+            file_object(FILE_ID)
+        })
     }
 
     fn transform_delete_file_request(
         &self,
-        call: FileRequest<'_>,
+        request: FileRequest<'_>,
     ) -> Result<PreparedRequest, BaseLlmException> {
-        self.recorded(RequestItem::File(call))
+        self.recorded(RequestItem::File(request))
     }
 
     fn transform_delete_file_response(
@@ -726,14 +739,14 @@ impl MetadataConfig for RecordingConfig {
         raw_response: &FileResponse,
         context: ReplyContext<'_>,
     ) -> Result<FileDeleted, BaseLlmException> {
-        self.respond(raw_response, context, deleted)
+        self.respond(raw_response, context.model_call_details, deleted)
     }
 
     fn transform_list_files_request(
         &self,
-        call: ListRequest<'_>,
+        request: ListRequest<'_>,
     ) -> Result<PreparedRequest, BaseLlmException> {
-        self.recorded(RequestItem::List(call))
+        self.recorded(RequestItem::List(request))
     }
 
     fn transform_list_files_next_request(
@@ -742,10 +755,7 @@ impl MetadataConfig for RecordingConfig {
         _optional_params: &FileParams,
         _litellm_params: &FileParams,
     ) -> Option<NextPageRequest> {
-        *self
-            .next_calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) += 1;
+        self.next_calls.fetch_add(1, Ordering::Relaxed);
         self.nexts
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -759,7 +769,7 @@ impl MetadataConfig for RecordingConfig {
         raw_response: &FileResponse,
         context: ReplyContext<'_>,
     ) -> Result<Vec<FileObject>, BaseLlmException> {
-        self.respond(raw_response, context, || self.pop_page())
+        self.respond(raw_response, context.model_call_details, || self.pop_page())
     }
 
     fn error_class(&self, message: &str, status_code: u16, headers: HeaderMap) -> BaseLlmException {

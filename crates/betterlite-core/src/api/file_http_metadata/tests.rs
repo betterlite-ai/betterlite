@@ -3,6 +3,7 @@
 mod support;
 
 use std::collections::BTreeMap;
+use std::iter::repeat_with;
 use std::time::Duration;
 
 use betterlite_http::proxy::outbound::RequestBody;
@@ -46,11 +47,7 @@ impl Attempt {
         }
     }
 
-    fn call<'call>(
-        self,
-        params: &'call FileParams,
-        timeout: Option<Duration>,
-    ) -> MetadataCall<'call> {
+    fn call(self, params: &FileParams, timeout: Option<Duration>) -> MetadataCall<'_> {
         match self {
             Self::RetrieveSync | Self::RetrieveAsync => MetadataCall::Retrieve(RetrieveCall {
                 file_id: FILE_ID,
@@ -69,8 +66,8 @@ impl Attempt {
 }
 
 fn success_answers(count: usize) -> Vec<Answer> {
-    (0..count)
-        .map(|_| Answer::Reply(Reply::json(200, "{}")))
+    repeat_with(|| Answer::Reply(Reply::json(200, "{}")))
+        .take(count)
         .collect()
 }
 
@@ -137,10 +134,8 @@ async fn retrieve_wire_arguments() {
     assert_eq!(requests[0].timeout, None);
     assert!(matches!(requests[0].body, RequestBody::Empty));
     let sent = |name: &str| {
-        requests[0]
-            .headers
-            .get(name)
-            .and_then(|value| value.to_str().ok())
+        let value = requests[0].headers.get(name)?;
+        value.to_str().ok()
     };
     assert_eq!(sent("authorization"), Some("Bearer sk-provider"));
     assert_eq!(sent("x-validation"), Some("1"));
@@ -176,15 +171,6 @@ async fn retrieve_call_arguments() {
     assert!(first.optional_empty);
     assert_eq!(first.headers, vec!["x-trace".to_owned()]);
     assert_eq!(first.incoming_validation, None);
-    assert_eq!(fixture.input(), Some(&Json::Text(String::new())));
-    assert_eq!(
-        fixture.logged("file_id"),
-        Some(&Json::Text(FILE_ID.to_owned()))
-    );
-    assert_eq!(
-        fixture.logged("api_base"),
-        Some(&Json::Text(format!("{BASE}/files/{FILE_ID}")))
-    );
     let requested = config.requested();
     let transform = requested.first().expect("the transform runs once");
     assert_eq!(transform.file_id.as_deref(), Some(FILE_ID));
@@ -192,12 +178,11 @@ async fn retrieve_call_arguments() {
         transform.litellm_keys,
         vec!["api_base".to_owned(), "api_key".to_owned()]
     );
-    let observed = config.observed();
     assert!(
-        observed
+        config
+            .observed()
             .first()
-            .expect("the response transform runs")
-            .additional_args
+            .is_some_and(|entry| entry.additional_args)
     );
 }
 
@@ -231,6 +216,15 @@ async fn retrieve_logs_masked_headers() {
     assert_eq!(
         logged.get("x-trace"),
         Some(&Json::Text("trace-1".to_owned()))
+    );
+    assert_eq!(fixture.input(), Some(&Json::Text(String::new())));
+    assert_eq!(
+        fixture.logged("file_id"),
+        Some(&Json::Text(FILE_ID.to_owned()))
+    );
+    assert_eq!(
+        fixture.logged("api_base"),
+        Some(&Json::Text(format!("{BASE}/files/{FILE_ID}")))
     );
 }
 
@@ -620,6 +614,15 @@ async fn a_transport_failure_mid_listing_returns_no_partial_list(
     assert_eq!(wire.requests().len(), requests);
 }
 
+type CeilingExpectation = (
+    Vec<Vec<FileObject>>,
+    Vec<Option<BTreeMap<String, String>>>,
+    usize,
+    &'static str,
+    usize,
+    usize,
+);
+
 #[derive(Debug, Clone, Copy)]
 enum CeilingCase {
     ExactlyTheLimit,
@@ -635,14 +638,7 @@ enum CeilingCase {
 async fn file_listing_ceiling(#[case] case: CeilingCase) {
     let events = Events::new();
     let config = RecordingConfig::new(BASE, &events);
-    let (pages, nexts, expected_len, expected_last, expected_nexts, expected_requests): (
-        Vec<Vec<FileObject>>,
-        Vec<Option<BTreeMap<String, String>>>,
-        usize,
-        &str,
-        usize,
-        usize,
-    ) = match case {
+    let expected: CeilingExpectation = match case {
         CeilingCase::ExactlyTheLimit => {
             (vec![files("a", 10_000)], Vec::new(), 10_000, "a-9999", 0, 1)
         }
@@ -658,6 +654,7 @@ async fn file_listing_ceiling(#[case] case: CeilingCase) {
             2,
         ),
     };
+    let (pages, nexts, expected_len, expected_last, expected_nexts, expected_requests) = expected;
     config.set_pages(pages);
     config.set_nexts(nexts);
     let wire = Wire::new(success_answers(expected_requests), &events);
@@ -701,8 +698,14 @@ async fn stage_failures_stop_the_call(#[case] stage: Stage) {
     };
     assert_eq!(error.status_code, 403);
     assert_eq!(error.message, "refused");
-    let sent = if stage == Stage::Response { 1 } else { 0 };
-    let validated = if stage == Stage::Request { 0 } else { 1 };
+    let sent = match stage {
+        Stage::Response => 1_usize,
+        Stage::Validate | Stage::Request => 0_usize,
+    };
+    let validated = match stage {
+        Stage::Request => 0_usize,
+        Stage::Validate | Stage::Response => 1_usize,
+    };
     assert_eq!(wire.requests().len(), sent);
     assert_eq!(config.validates().len(), validated);
     assert_eq!(source.calls(), vec![None]);
@@ -928,35 +931,31 @@ async fn a_supplied_client_serves_only_its_mode() {
     let params = litellm_params(BASE, SECRET);
     let mut fixture = Fixture::new("file_retrieve");
     let call = Attempt::RetrieveSync.call(&params, None);
-    {
-        let supplied = SuppliedClient {
-            kind: ClientKind::Asynchronous,
-            transport: &supplied_wire,
-        };
-        let deps = metadata_deps(&config, &source, Some(supplied));
-        run(&mut fixture, &deps, ClientKind::Sync, &call, &events)
-            .await
-            .expect("the sync retrieve succeeds");
-    }
+    let first_client = SuppliedClient {
+        kind: ClientKind::Asynchronous,
+        transport: &supplied_wire,
+    };
+    let first_deps = metadata_deps(&config, &source, Some(first_client));
+    run(&mut fixture, &first_deps, ClientKind::Sync, &call, &events)
+        .await
+        .expect("the sync retrieve succeeds");
     assert_eq!(source.calls(), vec![None]);
     assert_eq!(source_wire.requests().len(), 1);
     assert_eq!(supplied_wire.requests().len(), 0);
-    {
-        let supplied = SuppliedClient {
-            kind: ClientKind::Asynchronous,
-            transport: &supplied_wire,
-        };
-        let deps = metadata_deps(&config, &source, Some(supplied));
-        run(
-            &mut fixture,
-            &deps,
-            ClientKind::Asynchronous,
-            &call,
-            &events,
-        )
-        .await
-        .expect("the async retrieve succeeds");
-    }
+    let second_client = SuppliedClient {
+        kind: ClientKind::Asynchronous,
+        transport: &supplied_wire,
+    };
+    let second_deps = metadata_deps(&config, &source, Some(second_client));
+    run(
+        &mut fixture,
+        &second_deps,
+        ClientKind::Asynchronous,
+        &call,
+        &events,
+    )
+    .await
+    .expect("the async retrieve succeeds");
     assert_eq!(source.calls(), vec![None]);
     assert_eq!(supplied_wire.requests().len(), 1);
 }
