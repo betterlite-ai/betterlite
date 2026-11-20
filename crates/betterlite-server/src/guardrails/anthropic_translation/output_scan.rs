@@ -20,7 +20,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
 use betterlite_guardrails::guardrail_base::inputs::{GuardrailApiInputs, GuardrailLogTarget};
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::guardrails::anthropic_translation::input_scan::serde_convert;
 use crate::guardrails::anthropic_translation::input_scan::tool_calls::output_tool_use_to_openai;
@@ -111,7 +111,7 @@ pub async fn process_output_response<G>(
 where
     G: GuardrailContract,
 {
-    let body: Value = serde_convert(response, "response")?;
+    let body: Map<String, Value> = serde_convert(response, "response")?;
     let content = response_content(&body);
     if content.is_empty() {
         return Ok(());
@@ -138,7 +138,7 @@ where
     Ok(())
 }
 
-fn response_content(body: &Value) -> Vec<Value> {
+fn response_content(body: &Map<String, Value>) -> Vec<Value> {
     body.get(CONTENT)
         .and_then(Value::as_array)
         .cloned()
@@ -146,7 +146,7 @@ fn response_content(body: &Value) -> Vec<Value> {
 }
 
 fn output_inputs(
-    body: &Value,
+    body: &Map<String, Value>,
     extracted: &ExtractedOutput,
 ) -> Result<GuardrailApiInputs, ProcessOutputError> {
     let mut inputs = GuardrailApiInputs {

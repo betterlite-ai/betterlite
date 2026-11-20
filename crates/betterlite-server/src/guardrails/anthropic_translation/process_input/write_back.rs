@@ -17,7 +17,7 @@ use crate::guardrails::tool_call_identity::ToolCallShape;
 
 use super::error::ProcessInputError;
 use super::tools::write_returned_tools;
-use super::{AnswerContext, MESSAGES, Scanned};
+use super::{AnswerContext, MESSAGES};
 
 struct TextAnswer<'answer> {
     texts: &'answer [String],
@@ -81,7 +81,8 @@ async fn write_answer(
         context.structured.hoisted.as_ref(),
         context.structured.has_midturn_system_message,
     )
-    .await
+    .await?;
+    Ok(())
 }
 
 fn text_answer<'answer>(
