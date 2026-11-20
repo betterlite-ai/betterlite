@@ -1,0 +1,161 @@
+use std::collections::{BTreeMap, VecDeque};
+use std::sync::{Mutex, PoisonError};
+use std::time::Duration;
+
+use async_trait::async_trait;
+use betterlite_core::rag::gemini_ingestion::{GeminiReply, GeminiTransport, TransportError};
+use betterlite_models::decisions::Json;
+use http::HeaderMap;
+use http::header::{HeaderName, HeaderValue};
+use serde::Deserialize;
+use serde_json::{Map, Value, json};
+
+const HEADERS: [&str; 7] = [
+    "content-type",
+    "x-goog-api-key",
+    "x-goog-upload-protocol",
+    "x-goog-upload-command",
+    "x-goog-upload-header-content-length",
+    "x-goog-upload-header-content-type",
+    "x-goog-upload-offset",
+];
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub(super) enum Step {
+    Reply {
+        status: u16,
+        #[serde(default)]
+        headers: BTreeMap<String, String>,
+        #[serde(default)]
+        body: String,
+    },
+    Failure {
+        failure: String,
+    },
+}
+
+pub(super) struct Scripted {
+    steps: Mutex<VecDeque<Step>>,
+    pub(super) sent: Mutex<Vec<Value>>,
+}
+
+impl Scripted {
+    pub(super) fn new(steps: Vec<Step>) -> Self {
+        Self {
+            steps: Mutex::new(VecDeque::from(steps)),
+            sent: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn record(
+        &self,
+        method: &'static str,
+        url: &str,
+        headers: HeaderMap,
+        body: Vec<u8>,
+        timeout: Duration,
+    ) {
+        self.sent
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(project(method, url, &headers, &body, timeout));
+    }
+
+    fn answer(&self) -> Result<GeminiReply, TransportError> {
+        match self
+            .steps
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop_front()
+        {
+            Some(Step::Reply {
+                status,
+                headers,
+                body,
+            }) => Ok(GeminiReply {
+                status,
+                headers: header_map(&headers)?,
+                body: body.into_bytes(),
+            }),
+            Some(Step::Failure { failure }) => Err(failure_error(&failure)),
+            None => Err(failure_error("the helper script has no reply left")),
+        }
+    }
+}
+
+#[async_trait]
+impl GeminiTransport for Scripted {
+    async fn post_json(
+        &self,
+        url: &str,
+        headers: HeaderMap,
+        body: Json,
+        timeout: Duration,
+    ) -> Result<GeminiReply, TransportError> {
+        let encoded =
+            serde_json::to_vec(&body).map_err(|error| failure_error(&error.to_string()))?;
+        self.record("POST", url, headers, encoded, timeout);
+        self.answer()
+    }
+
+    async fn put_bytes(
+        &self,
+        url: &str,
+        headers: HeaderMap,
+        body: Vec<u8>,
+        timeout: Duration,
+    ) -> Result<GeminiReply, TransportError> {
+        self.record("PUT", url, headers, body, timeout);
+        self.answer()
+    }
+}
+
+fn failure_error(message: &str) -> TransportError {
+    TransportError {
+        source: Box::new(std::io::Error::other(message.to_owned())),
+    }
+}
+
+fn header_map(pairs: &BTreeMap<String, String>) -> Result<HeaderMap, TransportError> {
+    let mut headers = HeaderMap::new();
+    for (name, value) in pairs {
+        let header_name = HeaderName::from_bytes(name.as_bytes())
+            .map_err(|error| failure_error(&error.to_string()))?;
+        let header_value =
+            HeaderValue::from_str(value).map_err(|error| failure_error(&error.to_string()))?;
+        headers.insert(header_name, header_value);
+    }
+    Ok(headers)
+}
+
+fn project(
+    method: &'static str,
+    url: &str,
+    headers: &HeaderMap,
+    body: &[u8],
+    timeout: Duration,
+) -> Value {
+    let mut shown = Map::new();
+    for name in HEADERS {
+        let Some(value) = headers.get(name) else {
+            continue;
+        };
+        let masked = if name == "x-goog-api-key" {
+            "<present>".to_owned()
+        } else {
+            value.to_str().unwrap_or_default().to_owned()
+        };
+        shown.insert(name.to_owned(), Value::String(masked));
+    }
+    let decoded = serde_json::from_slice::<Value>(body).ok();
+    let raw_bytes = decoded.is_none().then(|| Value::from(body.len()));
+    json!({
+        "method": method,
+        "url": url,
+        "headers": Value::Object(shown),
+        "body": decoded.unwrap_or(Value::Null),
+        "raw_body_bytes": raw_bytes.unwrap_or(Value::Null),
+        "timeout_seconds": timeout.as_secs(),
+    })
+}
