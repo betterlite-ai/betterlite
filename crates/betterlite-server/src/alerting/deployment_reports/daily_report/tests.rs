@@ -378,6 +378,25 @@ async fn a_missing_base_is_empty_when_failed_and_none_when_slow() {
 }
 
 #[tokio::test]
+async fn a_deployment_without_a_model_name_reports_an_empty_name() {
+    let cache = FakeCache::seeded(&[("d1:failed_requests_daily_metrics", int_metric(1))]);
+    let sender = FakeSender::default();
+    let mut service = reports();
+    service.cache = cache;
+    service.sender = sender.clone();
+    let mut spec = deployment("d1", "model-a", None);
+    spec.litellm_params.shift_remove("model");
+    let router = router_with(vec![spec]);
+
+    let sent = service.send_daily_reports(&router).await;
+
+    assert!(sent.unwrap());
+    let alerts = sender.alerts.entries();
+    let message = &alerts.first().expect("one report").message;
+    assert!(message.contains("\t1. Deployment: ``, Failed Requests: `1`,  API Base: ``\n"));
+}
+
+#[tokio::test]
 async fn the_next_run_is_the_send_time_plus_the_daily_frequency() {
     let cache = FakeCache::seeded(&[("d1:failed_requests_daily_metrics", int_metric(1))]);
     let sender = FakeSender::default();

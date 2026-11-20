@@ -185,6 +185,25 @@ async fn a_non_numeric_stamp_sends_nothing() {
 }
 
 #[tokio::test]
+async fn an_integer_stamp_counts_as_a_send_time() {
+    let cache = FakeCache::seeded(&[
+        (SENT_KEY, int_metric(1_767_182_400)),
+        ("d1:failed_requests_daily_metrics", int_metric(3)),
+    ]);
+    let sender = FakeSender::default();
+    let mut service = reports();
+    service.cache = cache;
+    service.sender = sender.clone();
+
+    let sent = service
+        .run_scheduler_helper(&one_router(), None::<&FakePodLock>)
+        .await;
+
+    assert!(sent.unwrap());
+    assert_eq!(sender.alerts.entries().len(), 1);
+}
+
+#[tokio::test]
 async fn a_report_with_no_metrics_still_stamps_the_window() {
     let cache = FakeCache::seeded(&[(SENT_KEY, float_metric(DUE_STAMP))]);
     let sender = FakeSender::default();
