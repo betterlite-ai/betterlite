@@ -66,7 +66,10 @@ pub enum TranscriptionHttpError {
 // An httpx.HTTPStatusError carries the masked response: its text and its headers less content-encoding, with content-length recomputed
 #[must_use]
 pub(super) fn status_facts(reply: &UpstreamResponse) -> FailureFacts {
-    let text = body_text(&reply.body);
+    let text = from_utf8(&reply.body).map_or_else(
+        |_| format!("{} bytes that are not UTF-8", reply.body.len()),
+        ToOwned::to_owned,
+    );
     let mut headers = header_map(&reply.headers);
     headers.remove("content-encoding");
     headers.remove("content-length");
@@ -99,7 +102,12 @@ pub(super) fn send_failure_facts(
     timeout: Option<Duration>,
     elapsed: Duration,
 ) -> FailureFacts {
-    if caught_timeout(error) {
+    if matches!(
+        error,
+        TransportError::ConnectTimeout(_)
+            | TransportError::Deadline(_)
+            | TransportError::Rejected(HttpError::Timeout)
+    ) {
         return FailureFacts {
             response_status: None,
             status: Some(Json::Number(Number::from(408_u16))),
@@ -117,16 +125,6 @@ pub(super) fn send_failure_facts(
         response: None,
         display: error.to_string(),
     }
-}
-
-// Both posts catch httpx.TimeoutException, and a hand-built request reports its timeout as HttpError::Timeout
-fn caught_timeout(error: &TransportError) -> bool {
-    matches!(
-        error,
-        TransportError::ConnectTimeout(_)
-            | TransportError::Deadline(_)
-            | TransportError::Rejected(HttpError::Timeout)
-    )
 }
 
 // The sync post passes the timeout it was handed; the async post renders the time the failed request took
@@ -151,11 +149,4 @@ fn format_timeout(timeout: Option<Duration>) -> String {
         Some(value) if value.subsec_nanos() == 0 => value.as_secs().to_string(),
         Some(value) => value.as_secs_f64().to_string(),
     }
-}
-
-fn body_text(body: &[u8]) -> String {
-    from_utf8(body).map_or_else(
-        |_| format!("{} bytes that are not UTF-8", body.len()),
-        ToOwned::to_owned,
-    )
 }

@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::time::Duration;
 
-use betterlite_core::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
+use betterlite_core::api::vector_store_http_write::service::ClientKind;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::multipart::{MultipartPart, encode};
 use betterlite_http::proxy::outbound::RequestBody;
@@ -72,24 +72,21 @@ where
         return Ok(Selected::Supplied(supplied.transport));
     }
     // _get_httpx_client takes no params, while get_async_httpx_client reads ssl_verify and the shared session
+    let ssl_verify = match litellm_params.get("ssl_verify") {
+        Some(serde_json::Value::Bool(value)) => Some(*value),
+        Some(_) | None => None,
+    };
     let request = match mode {
         ClientKind::Sync => ClientRequest {
             ssl_verify: None,
             shared_session: None,
         },
         ClientKind::Asynchronous => ClientRequest {
-            ssl_verify: ssl_verify(litellm_params),
+            ssl_verify,
             shared_session,
         },
     };
     Ok(Selected::Created(deps.source.client(request)?))
-}
-
-fn ssl_verify(litellm_params: &Object) -> Option<bool> {
-    match litellm_params.get("ssl_verify") {
-        Some(serde_json::Value::Bool(value)) => Some(*value),
-        Some(_) | None => None,
-    }
 }
 
 pub(super) fn wire_request(
@@ -134,10 +131,9 @@ fn wire_body(
             Err(TranscriptionHttpError::BytesWithFiles)
         }
         (AudioTranscriptionData::Bytes(bytes), _) => Ok(TranscriptionBody::Raw(bytes.clone())),
-        (AudioTranscriptionData::Object(fields), None) => {
-            let body = serde_json::to_vec(fields).map_err(TranscriptionHttpError::Encode)?;
-            Ok(TranscriptionBody::Encoded(RequestBody::Json(body)))
-        }
+        (AudioTranscriptionData::Object(fields), None) => Ok(TranscriptionBody::Encoded(
+            RequestBody::Json(serde_json::to_vec(fields).map_err(TranscriptionHttpError::Encode)?),
+        )),
         (AudioTranscriptionData::Object(fields), Some(files)) if !files.is_empty() => {
             multipart(headers, fields, files)
         }
@@ -155,24 +151,50 @@ fn multipart(
 ) -> Result<TranscriptionBody, TranscriptionHttpError> {
     let parts = multipart_parts(fields, files)?;
     // httpx keeps an explicit Content-Type and takes its boundary from it, generating a random one otherwise
-    let Some(declared) = content_type(headers) else {
+    let declared = headers
+        .iter()
+        .rev()
+        .find(|(name, _value)| name.eq_ignore_ascii_case("content-type"))
+        .map(|(_name, value)| value.as_str());
+    let Some(content_type) = declared else {
         return Ok(TranscriptionBody::Encoded(RequestBody::Multipart {
             boundary: Uuid::new_v4().simple().to_string(),
             parts,
         }));
     };
-    let boundary =
-        boundary_from_content_type(declared).unwrap_or_else(|| Uuid::new_v4().simple().to_string());
+    let boundary = boundary_from_content_type(content_type)
+        .unwrap_or_else(|| Uuid::new_v4().simple().to_string());
     let body = encode(&boundary, &parts).map_err(TranscriptionHttpError::Multipart)?;
     Ok(TranscriptionBody::Raw(body))
 }
 
-fn content_type(headers: &Headers) -> Option<&str> {
-    headers
-        .iter()
-        .rev()
-        .find(|(name, _value)| name.eq_ignore_ascii_case("content-type"))
-        .map(|(_name, value)| value.as_str())
+fn multipart_parts(
+    fields: &Object,
+    files: &AudioTranscriptionFiles,
+) -> Result<Vec<MultipartPart>, TranscriptionHttpError> {
+    let mut parts: Vec<MultipartPart> = form_pairs(fields)?
+        .into_iter()
+        .map(|(name, text)| MultipartPart {
+            name,
+            file_name: None,
+            content_type: None,
+            data: text.into_bytes(),
+        })
+        .collect();
+    for (name, value) in files {
+        let data = match value {
+            AudioTranscriptionFileValue::Text(text) => text.as_bytes().to_vec(),
+            AudioTranscriptionFileValue::Bytes(bytes) => bytes.clone(),
+        };
+        // httpx names a plain value's file upload and guesses its type from that name
+        parts.push(MultipartPart {
+            name: name.clone(),
+            file_name: Some(String::from("upload")),
+            content_type: Some(String::from("application/octet-stream")),
+            data,
+        });
+    }
+    Ok(parts)
 }
 
 fn boundary_from_content_type(declared: &str) -> Option<String> {
@@ -191,39 +213,6 @@ fn boundary_from_content_type(declared: &str) -> Option<String> {
         return Some(value.trim_matches('"').to_owned());
     }
     None
-}
-
-fn multipart_parts(
-    fields: &Object,
-    files: &AudioTranscriptionFiles,
-) -> Result<Vec<MultipartPart>, TranscriptionHttpError> {
-    let mut parts: Vec<MultipartPart> = form_pairs(fields)?
-        .into_iter()
-        .map(|(name, text)| MultipartPart {
-            name,
-            file_name: None,
-            content_type: None,
-            data: text.into_bytes(),
-        })
-        .collect();
-    for (name, value) in files {
-        parts.push(file_part(name, value));
-    }
-    Ok(parts)
-}
-
-// httpx names a plain value's file upload and guesses its type from that name
-fn file_part(name: &str, value: &AudioTranscriptionFileValue) -> MultipartPart {
-    let data = match value {
-        AudioTranscriptionFileValue::Text(text) => text.as_bytes().to_vec(),
-        AudioTranscriptionFileValue::Bytes(bytes) => bytes.clone(),
-    };
-    MultipartPart {
-        name: name.to_owned(),
-        file_name: Some(String::from("upload")),
-        content_type: Some(String::from("application/octet-stream")),
-        data,
-    }
 }
 
 fn form(fields: &Object) -> Result<TranscriptionBody, TranscriptionHttpError> {
@@ -246,19 +235,19 @@ fn form_pairs(fields: &Object) -> Result<Vec<(String, String)>, TranscriptionHtt
             serde_json::from_value(value.clone()).map_err(TranscriptionHttpError::Encode)?;
         match converted {
             Json::List(items) => {
-                for item in &items {
+                for item in items {
                     pairs.push((name.clone(), field_text(name, item)?));
                 }
             }
-            item => pairs.push((name.clone(), field_text(name, &item)?)),
+            item => pairs.push((name.clone(), field_text(name, item)?)),
         }
     }
     Ok(pairs)
 }
 
-fn field_text(name: &str, value: &Json) -> Result<String, TranscriptionHttpError> {
+fn field_text(name: &str, value: Json) -> Result<String, TranscriptionHttpError> {
     match value {
-        Json::Text(text) => Ok(text.clone()),
+        Json::Text(text) => Ok(text),
         Json::Number(number) => Ok(number.to_string()),
         Json::Bool(flag) => Ok(flag.to_string()),
         Json::Null => Ok(String::new()),
