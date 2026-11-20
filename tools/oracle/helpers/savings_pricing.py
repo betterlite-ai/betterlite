@@ -1,5 +1,5 @@
 from decimal import Decimal
-from typing import Literal, NotRequired, TypedDict
+from typing import Literal, NotRequired, TypedDict, cast
 
 from litellm.proxy.spend_tracking.savings import (
     BaselineCostSnapshot,
@@ -8,15 +8,15 @@ from litellm.proxy.spend_tracking.savings import (
     price_baseline_comparison,
 )
 from litellm.types.utils import ModelInfo, Usage
-from pydantic import TypeAdapter
+from pydantic import JsonValue, TypeAdapter
 
 
-class CacheCreationDetailsPayload(TypedDict, total=False):
+class CacheCreationDetails(TypedDict, total=False):
     ephemeral_5m_input_tokens: int
     ephemeral_1h_input_tokens: int
 
 
-class PromptDetailsPayload(TypedDict, total=False):
+class PromptDetails(TypedDict, total=False):
     cached_tokens: int
     cache_creation_tokens: int
     cache_write_tokens: int
@@ -24,7 +24,7 @@ class PromptDetailsPayload(TypedDict, total=False):
     audio_tokens: int
     image_tokens: int
     video_tokens: int
-    cache_creation_token_details: CacheCreationDetailsPayload
+    cache_creation_token_details: CacheCreationDetails
 
 
 class UsagePayload(TypedDict, total=False):
@@ -33,31 +33,7 @@ class UsagePayload(TypedDict, total=False):
     total_tokens: int
     cache_read_input_tokens: int
     cache_creation_input_tokens: int
-    prompt_tokens_details: PromptDetailsPayload
-
-
-class PricePayload(TypedDict):
-    key: str
-    max_tokens: int | None
-    max_input_tokens: int | None
-    max_output_tokens: int | None
-    input_cost_per_token: float | None
-    output_cost_per_token: float | None
-    litellm_provider: str
-    mode: Literal["chat"]
-    supported_openai_params: list[str] | None
-    cache_read_input_token_cost: NotRequired[float | None]
-    cache_creation_input_token_cost: NotRequired[float | None]
-    cache_creation_input_token_cost_above_1hr: NotRequired[float | None]
-
-
-class SnapshotPayload(TypedDict):
-    model: str
-    provider: str
-    prices: PricePayload | None
-    actual_spend: float
-    actual_token_cost: NotRequired[float | None]
-    classifier_cost: NotRequired[float]
+    prompt_tokens_details: PromptDetails
 
 
 class CostBreakdownPayload(TypedDict, total=False):
@@ -79,10 +55,6 @@ class EstimatePayload(TypedDict):
     status: str
 
 
-class CaseTag(TypedDict):
-    operation: str
-
-
 class AutorouterCase(TypedDict):
     operation: Literal["compute_autorouter_savings"]
     usage: UsagePayload
@@ -90,8 +62,8 @@ class AutorouterCase(TypedDict):
     selected_model: NotRequired[str]
     selected_provider: NotRequired[str]
     baseline_usage: NotRequired[UsagePayload]
-    selected_info: NotRequired[PricePayload]
-    baseline_info: NotRequired[PricePayload]
+    selected_info: NotRequired[dict[str, JsonValue]]
+    baseline_info: NotRequired[dict[str, JsonValue]]
     cost_breakdown: NotRequired[CostBreakdownPayload]
     baseline_deployment_id: NotRequired[str]
     selected_deployment_id: NotRequired[str]
@@ -100,39 +72,38 @@ class AutorouterCase(TypedDict):
 
 class ComparisonCase(TypedDict):
     operation: Literal["price_baseline_comparison"]
-    snapshot: SnapshotPayload
+    snapshot: dict[str, JsonValue]
     baseline_usage: NotRequired[UsagePayload]
     provenance: NotRequired[Literal["observed_identical", "modeled"]]
 
 
-class SpendCase(TypedDict, total=False):
+class SpendCase(TypedDict):
     operation: Literal["compute_savings_spend"]
-    model: str
-    custom_llm_provider: str
     compression_saved_tokens: int
     gateway_injected_cache: bool
-    routing_decision: RoutingPayload
-    usage: UsagePayload
-    model_id: str
-    cost_breakdown: CostBreakdownPayload
-    recorded_autorouter_savings: float
-    recorded_autorouter_savings_estimate: EstimatePayload
+    model: NotRequired[str]
+    custom_llm_provider: NotRequired[str]
+    routing_decision: NotRequired[RoutingPayload]
+    usage: NotRequired[UsagePayload]
+    model_id: NotRequired[str]
+    cost_breakdown: NotRequired[CostBreakdownPayload]
+    recorded_autorouter_savings: NotRequired[float]
+    recorded_estimate: NotRequired[EstimatePayload]
+
+
+class CaseTag(TypedDict):
+    operation: str
 
 
 _TAG: TypeAdapter[CaseTag] = TypeAdapter(CaseTag)
 _AUTOROUTER: TypeAdapter[AutorouterCase] = TypeAdapter(AutorouterCase)
 _COMPARISON: TypeAdapter[ComparisonCase] = TypeAdapter(ComparisonCase)
 _SPEND: TypeAdapter[SpendCase] = TypeAdapter(SpendCase)
-_MODEL_INFO: TypeAdapter[ModelInfo] = TypeAdapter(ModelInfo)
 
 
-def _decimal_str(value: float) -> str:
-    return format(Decimal(repr(value)).normalize(), "f")
-
-
-def _usage(payload: UsagePayload) -> Usage:
+def usage_value(payload: UsagePayload) -> Usage:
     details_payload = payload.get("prompt_tokens_details")
-    details: dict[str, object] | None = None
+    details: dict[str, JsonValue] | None = None
     if details_payload is not None:
         details = {
             "cached_tokens": details_payload.get("cached_tokens"),
@@ -143,11 +114,11 @@ def _usage(payload: UsagePayload) -> Usage:
             "image_tokens": details_payload.get("image_tokens"),
             "video_tokens": details_payload.get("video_tokens"),
         }
-        ttl = details_payload.get("cache_creation_token_details")
-        if ttl is not None:
+        ttl_payload = details_payload.get("cache_creation_token_details")
+        if ttl_payload is not None:
             details["cache_creation_token_details"] = {
-                "ephemeral_5m_input_tokens": ttl.get("ephemeral_5m_input_tokens"),
-                "ephemeral_1h_input_tokens": ttl.get("ephemeral_1h_input_tokens"),
+                "ephemeral_5m_input_tokens": ttl_payload.get("ephemeral_5m_input_tokens"),
+                "ephemeral_1h_input_tokens": ttl_payload.get("ephemeral_1h_input_tokens"),
             }
     return Usage(
         prompt_tokens=payload.get("prompt_tokens"),
@@ -159,68 +130,74 @@ def _usage(payload: UsagePayload) -> Usage:
     )
 
 
-def _model_info(payload: PricePayload | None) -> ModelInfo | None:
-    if payload is None:
-        return None
-    return _MODEL_INFO.validate_python(payload)
-
-
-def _compute_autorouter(case: AutorouterCase) -> dict[str, object]:
-    baseline = case.get("baseline_usage")
-    baseline_usage = None if baseline is None else _usage(baseline)
+def autorouter_value(case: AutorouterCase) -> dict[str, JsonValue]:
+    baseline_payload = case.get("baseline_usage")
+    baseline_usage = None if baseline_payload is None else usage_value(baseline_payload)
     savings = compute_autorouter_savings(
         baseline_model=case.get("baseline_model"),
         selected_model=case.get("selected_model"),
         selected_provider=case.get("selected_provider"),
-        usage=_usage(case["usage"]),
-        baseline_info=_model_info(case.get("baseline_info")),
-        selected_info=_model_info(case.get("selected_info")),
+        usage=usage_value(case["usage"]),
+        baseline_info=cast("ModelInfo | None", case.get("baseline_info")),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L402
+        selected_info=cast("ModelInfo | None", case.get("selected_info")),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L402
         cost_breakdown=case.get("cost_breakdown"),
         baseline_deployment_id=case.get("baseline_deployment_id"),
         selected_deployment_id=case.get("selected_deployment_id"),
         baseline_usage=baseline_usage,
         baseline_provenance=case.get("baseline_provenance"),
     )
-    return {"savings": None if savings is None else _decimal_str(savings)}
+    return {
+        "savings": None
+        if savings is None
+        else format(Decimal(repr(savings)).normalize(), "f")
+    }
 
 
-def _price_comparison(case: ComparisonCase) -> dict[str, object]:
-    snapshot = BaselineCostSnapshot.model_validate(case["snapshot"])
-    baseline = case.get("baseline_usage")
-    baseline_usage = None if baseline is None else _usage(baseline)
-    costs = price_baseline_comparison(snapshot, baseline_usage, case.get("provenance"))
+def comparison_value(case: ComparisonCase) -> dict[str, JsonValue]:
+    baseline_payload = case.get("baseline_usage")
+    baseline_usage = None if baseline_payload is None else usage_value(baseline_payload)
+    costs = price_baseline_comparison(
+        BaselineCostSnapshot.model_validate(case["snapshot"]),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/savings.py#L125
+        baseline_usage,
+        case.get("provenance"),
+    )
     if costs is None:
         return {"actual": None, "baseline": None}
-    return {"actual": _decimal_str(costs.actual), "baseline": _decimal_str(costs.baseline)}
+    return {
+        "actual": format(Decimal(repr(costs.actual)).normalize(), "f"),
+        "baseline": format(Decimal(repr(costs.baseline)).normalize(), "f"),
+    }
 
 
-def _savings_spend(case: SpendCase) -> dict[str, object]:
+def spend_value(case: SpendCase) -> dict[str, JsonValue]:
     spend = compute_savings_spend(
         model=case.get("model"),
         custom_llm_provider=case.get("custom_llm_provider"),
-        compression_saved_tokens=case.get("compression_saved_tokens", 0),
-        gateway_injected_cache=case.get("gateway_injected_cache", False),
+        compression_saved_tokens=case["compression_saved_tokens"],
+        gateway_injected_cache=case["gateway_injected_cache"],
         routing_decision=case.get("routing_decision"),
         usage_object=case.get("usage"),
         model_id=case.get("model_id"),
         cost_breakdown=case.get("cost_breakdown"),
         recorded_autorouter_savings=case.get("recorded_autorouter_savings"),
-        recorded_autorouter_savings_estimate=case.get("recorded_autorouter_savings_estimate"),
+        recorded_autorouter_savings_estimate=case.get("recorded_estimate"),
     )
     return {
-        "compression": _decimal_str(spend.compression),
-        "prompt_caching": _decimal_str(spend.prompt_caching),
-        "autorouter": _decimal_str(spend.autorouter),
-        "gateway_injected_caching": _decimal_str(spend.gateway_injected_caching),
+        "compression": format(Decimal(repr(spend.compression)).normalize(), "f"),
+        "prompt_caching": format(Decimal(repr(spend.prompt_caching)).normalize(), "f"),
+        "autorouter": format(Decimal(repr(spend.autorouter)).normalize(), "f"),
+        "gateway_injected_caching": format(
+            Decimal(repr(spend.gateway_injected_caching)).normalize(), "f"
+        ),
     }
 
 
-def run(input_value: dict[str, object]) -> dict[str, object]:
+def run(input_value: dict[str, JsonValue]) -> dict[str, JsonValue]:
     operation = _TAG.validate_python(input_value)["operation"]
     if operation == "compute_autorouter_savings":
-        return _compute_autorouter(_AUTOROUTER.validate_python(input_value))
+        return autorouter_value(_AUTOROUTER.validate_python(input_value))
     if operation == "price_baseline_comparison":
-        return _price_comparison(_COMPARISON.validate_python(input_value))
+        return comparison_value(_COMPARISON.validate_python(input_value))
     if operation == "compute_savings_spend":
-        return _savings_spend(_SPEND.validate_python(input_value))
+        return spend_value(_SPEND.validate_python(input_value))
     raise ValueError(f"unknown savings_pricing operation: {operation}")

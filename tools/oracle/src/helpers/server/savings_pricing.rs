@@ -57,7 +57,7 @@ pub(crate) struct Input {
     routing_decision: Option<AutoRouterDecision>,
     model_id: Option<String>,
     recorded_autorouter_savings: Option<Scalar>,
-    recorded_autorouter_savings_estimate: Option<MappingOrScalar<AutorouterEstimate>>,
+    recorded_estimate: Option<MappingOrScalar<AutorouterEstimate>>,
 }
 
 #[derive(Clone, Copy, serde::Deserialize)]
@@ -125,105 +125,95 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
+        let context = case_context()?;
+        let database = TimeZoneDatabase::none();
         match input.operation {
-            Operation::ComputeAutorouterSavings => autorouter_value(input),
-            Operation::PriceBaselineComparison => comparison_value(input),
-            Operation::ComputeSavingsSpend => spend_value(input),
+            Operation::ComputeAutorouterSavings => {
+                let Some(usage) = input.usage.as_ref().and_then(usage_input) else {
+                    return Err(helper_error("InvalidInput", "usage could not be read"));
+                };
+                let baseline_usage = input.baseline_usage.as_ref().and_then(usage_input);
+                let selected_info = priced(input.selected_info.as_ref());
+                let baseline_info = priced(input.baseline_info.as_ref());
+                let result = compute_autorouter_savings(
+                    &context,
+                    &AutoRouterSavingsInput {
+                        baseline_model: input.baseline_model.as_deref(),
+                        selected_model: input.selected_model.as_deref(),
+                        selected_provider: input.selected_provider.as_deref(),
+                        usage: &usage,
+                        selected_info: selected_info.as_ref(),
+                        baseline_info: baseline_info.as_ref(),
+                        cost_breakdown: input.cost_breakdown.as_ref(),
+                        baseline_deployment_id: input.baseline_deployment_id.as_deref(),
+                        selected_deployment_id: input.selected_deployment_id.as_deref(),
+                        baseline_usage: baseline_usage.as_ref(),
+                        baseline_provenance: input.baseline_provenance,
+                        moment: DateTime::UNIX_EPOCH,
+                        database: &database,
+                    },
+                );
+                Ok(serde_json::json!({
+                    "savings": result.map(|value| value.normalize().to_string()),
+                }))
+            }
+            Operation::PriceBaselineComparison => {
+                let Some(snapshot) = input.snapshot.as_ref() else {
+                    return Err(helper_error("InvalidInput", "snapshot is required"));
+                };
+                let baseline_usage = input.baseline_usage.as_ref().and_then(usage_input);
+                let result = price_baseline_comparison(
+                    &context,
+                    &ComparisonInput {
+                        snapshot,
+                        baseline_usage: baseline_usage.as_ref(),
+                        provenance: input.provenance,
+                        moment: DateTime::UNIX_EPOCH,
+                        database: &database,
+                    },
+                );
+                Ok(result.map_or_else(
+                    || serde_json::json!({ "actual": null, "baseline": null }),
+                    |costs| {
+                        serde_json::json!({
+                            "actual": costs.actual.normalize().to_string(),
+                            "baseline": costs.baseline.normalize().to_string(),
+                        })
+                    },
+                ))
+            }
+            Operation::ComputeSavingsSpend => {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .map_err(|error| helper_error("RuntimeError", &error.to_string()))?;
+                let usage = input.usage.as_ref().and_then(usage_input);
+                let billed_at = BilledAt::Missing;
+                let request = SavingsSpendInput {
+                    model: input.model.as_deref(),
+                    custom_llm_provider: input.custom_llm_provider.as_deref(),
+                    compression_saved_tokens: input.compression_saved_tokens,
+                    gateway_injected_cache: input.gateway_injected_cache,
+                    routing_decision: input.routing_decision.as_ref(),
+                    usage: usage.as_ref(),
+                    model_id: input.model_id.as_deref(),
+                    cost_breakdown: input.cost_breakdown.as_ref(),
+                    recorded_autorouter_savings: input.recorded_autorouter_savings.as_ref(),
+                    recorded_estimate: input.recorded_estimate.as_ref(),
+                    billed_at: &billed_at,
+                    fallback_moment: DateTime::UNIX_EPOCH,
+                    database: &database,
+                };
+                let spend = runtime.block_on(compute_savings_spend(&context, &request));
+                Ok(serde_json::json!({
+                    "compression": spend.compression.normalize().to_string(),
+                    "prompt_caching": spend.prompt_caching.normalize().to_string(),
+                    "autorouter": spend.autorouter.normalize().to_string(),
+                    "gateway_injected_caching": spend.gateway_injected_caching.normalize().to_string(),
+                }))
+            }
         }
     }
-}
-
-fn autorouter_value(input: &Input) -> HelperResult {
-    let Some(usage) = input.usage.as_ref().and_then(usage_input) else {
-        return Err(helper_error("InvalidInput", "usage could not be read"));
-    };
-    let baseline_usage = input.baseline_usage.as_ref().and_then(usage_input);
-    let selected_info = priced(input.selected_info.as_ref());
-    let baseline_info = priced(input.baseline_info.as_ref());
-    let context = case_context()?;
-    let database = TimeZoneDatabase::none();
-    let result = compute_autorouter_savings(
-        &context,
-        &AutoRouterSavingsInput {
-            baseline_model: input.baseline_model.as_deref(),
-            selected_model: input.selected_model.as_deref(),
-            selected_provider: input.selected_provider.as_deref(),
-            usage: &usage,
-            selected_info: selected_info.as_ref(),
-            baseline_info: baseline_info.as_ref(),
-            cost_breakdown: input.cost_breakdown.as_ref(),
-            baseline_deployment_id: input.baseline_deployment_id.as_deref(),
-            selected_deployment_id: input.selected_deployment_id.as_deref(),
-            baseline_usage: baseline_usage.as_ref(),
-            baseline_provenance: input.baseline_provenance,
-            moment: DateTime::UNIX_EPOCH,
-            database: &database,
-        },
-    );
-    Ok(serde_json::json!({
-        "savings": result.map(|value| value.normalize().to_string()),
-    }))
-}
-
-fn comparison_value(input: &Input) -> HelperResult {
-    let Some(snapshot) = input.snapshot.as_ref() else {
-        return Err(helper_error("InvalidInput", "snapshot is required"));
-    };
-    let baseline_usage = input.baseline_usage.as_ref().and_then(usage_input);
-    let context = case_context()?;
-    let database = TimeZoneDatabase::none();
-    let result = price_baseline_comparison(
-        &context,
-        &ComparisonInput {
-            snapshot,
-            baseline_usage: baseline_usage.as_ref(),
-            provenance: input.provenance,
-            moment: DateTime::UNIX_EPOCH,
-            database: &database,
-        },
-    );
-    Ok(result.map_or_else(
-        || serde_json::json!({ "actual": null, "baseline": null }),
-        |costs| {
-            serde_json::json!({
-                "actual": costs.actual.normalize().to_string(),
-                "baseline": costs.baseline.normalize().to_string(),
-            })
-        },
-    ))
-}
-
-fn spend_value(input: &Input) -> HelperResult {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|error| helper_error("RuntimeError", &error.to_string()))?;
-    let usage = input.usage.as_ref().and_then(usage_input);
-    let context = case_context()?;
-    let database = TimeZoneDatabase::none();
-    let billed_at = BilledAt::Missing;
-    let request = SavingsSpendInput {
-        model: input.model.as_deref(),
-        custom_llm_provider: input.custom_llm_provider.as_deref(),
-        compression_saved_tokens: input.compression_saved_tokens,
-        gateway_injected_cache: input.gateway_injected_cache,
-        routing_decision: input.routing_decision.as_ref(),
-        usage: usage.as_ref(),
-        model_id: input.model_id.as_deref(),
-        cost_breakdown: input.cost_breakdown.as_ref(),
-        recorded_autorouter_savings: input.recorded_autorouter_savings.as_ref(),
-        recorded_autorouter_savings_estimate: input.recorded_autorouter_savings_estimate.as_ref(),
-        billed_at: &billed_at,
-        fallback_moment: DateTime::UNIX_EPOCH,
-        database: &database,
-    };
-    let spend = runtime.block_on(compute_savings_spend(&context, &request));
-    Ok(serde_json::json!({
-        "compression": spend.compression.normalize().to_string(),
-        "prompt_caching": spend.prompt_caching.normalize().to_string(),
-        "autorouter": spend.autorouter.normalize().to_string(),
-        "gateway_injected_caching": spend.gateway_injected_caching.normalize().to_string(),
-    }))
 }
 
 // The public lookup every case prices from is the same bundled catalog the proxy ships.

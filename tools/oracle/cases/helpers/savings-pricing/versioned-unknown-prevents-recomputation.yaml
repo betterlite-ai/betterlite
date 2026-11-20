@@ -6,7 +6,7 @@ call:
     compression_saved_tokens: 0
     gateway_injected_cache: false
     recorded_autorouter_savings: 5.0
-    recorded_autorouter_savings_estimate:
+    recorded_estimate:
       version: 4
       status: estimated
 compare: {ignore: []}
