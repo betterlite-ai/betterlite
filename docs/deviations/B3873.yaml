@@ -43,4 +43,17 @@ deviations:
       time, so there is no import cost and no cycle to break, and the resolved and cached
       answers are unchanged.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_helpers/__init__.py#L17-L31
+  - what: >-
+      Tag wildcard patterns are compiled in tag_wildcard_matching.rs with regex::escape,
+      a star-to-(.*) replacement and a start anchor, instead of calling matcher_source
+      in crates/betterlite-router/src/wildcard_catalog.rs, where B367 ported the same
+      PatternMatchRouter._pattern_to_regex transform.
+    why: >-
+      B367 owns wildcard pattern compilation in this task's out_of_scope, but
+      betterlite-router depends on betterlite-logging, so logging cannot call it without
+      closing a crate cycle, and matcher_source is private to that crate. The local
+      compile keeps the same escaping, star replacement and start anchor until
+      matcher_source moves to a crate both depend on, such as betterlite-models; until
+      then the two copies must change together.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pattern_match_deployments.py#L89-L111
 kept_bugs: []
