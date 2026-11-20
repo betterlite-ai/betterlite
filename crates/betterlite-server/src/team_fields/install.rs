@@ -8,9 +8,9 @@ use crate::python_hooks::PythonHooks;
 use crate::python_hooks::slots::HookSlot;
 use crate::team_request_contracts::metadata::TeamMetadataFieldSchema;
 
+use super::python_validator::PythonValidator;
 use super::validation::{
-    PythonValidator, TeamMetadataSchemaRegistry, TeamMetadataValidator,
-    TeamMetadataValidatorRegistry,
+    TeamMetadataSchemaRegistry, TeamMetadataValidator, TeamMetadataValidatorRegistry,
 };
 
 #[derive(Debug, thiserror::Error)]

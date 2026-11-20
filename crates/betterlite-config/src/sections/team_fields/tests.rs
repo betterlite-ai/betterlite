@@ -6,8 +6,9 @@ use std::time::Duration;
 use rstest::rstest;
 
 use crate::loader::{ConfigError, ConfigLoader};
+use crate::sections::team_fields::schema::MetadataSchemaField;
 use crate::sections::team_fields::{
-    DEFAULT_TIMEOUT, DEFAULT_UNAVAILABLE_MESSAGE, MetadataSchemaField, Settings, ValidationTimeout,
+    DEFAULT_TIMEOUT, DEFAULT_UNAVAILABLE_MESSAGE, Settings, ValidationTimeout,
 };
 
 fn loaded_with(source: &str, lookup: BTreeMap<String, String>) -> Settings {

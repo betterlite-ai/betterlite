@@ -9,8 +9,9 @@ use std::time::Duration;
 use async_trait::async_trait;
 use betterlite_auth::auth_invalidation::error::InvalidationError;
 use betterlite_config::sections::settings::JsonValue;
+use betterlite_config::sections::team_fields::schema::MetadataSchemaField;
 use betterlite_config::sections::team_fields::{
-    DEFAULT_UNAVAILABLE_MESSAGE, MetadataSchemaField, Settings, ValidationTimeout,
+    DEFAULT_UNAVAILABLE_MESSAGE, Settings, ValidationTimeout,
 };
 use betterlite_db::auxiliary_repository::repository::PrismaClient;
 use betterlite_db::budget_permission_rows::JsonData;
@@ -39,6 +40,7 @@ use super::metadata::{
     DEFAULT_REJECTED_MESSAGE, MetadataRequest, TeamMetadataOperation, TeamMetadataRequester,
     TeamMetadataValidationPayload, build_payload,
 };
+use super::python_validator::ValidatorFailure;
 use super::rows::{
     CallerRole, GeneralSettingsMap, LogValue, RefreshError, SettingsMapError, TeamEditAccess,
     TeamObjectCache, caller_edit_access, refresh_cached_team, sanitize_for_log,
@@ -46,7 +48,7 @@ use super::rows::{
 use super::tables::{team_table, team_transaction};
 use super::validation::{
     NOT_ASYNC_MESSAGE, TeamMetadataError, TeamMetadataSchemaRegistry, TeamMetadataValidator,
-    TeamMetadataValidatorRegistry, ValidatorFailure, validate_team_metadata_if_configured,
+    TeamMetadataValidatorRegistry, validate_team_metadata_if_configured,
 };
 
 fn data(text: &str) -> JsonData {

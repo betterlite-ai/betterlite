@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use betterlite_config::sections::team_fields::MetadataSchemaField;
+use betterlite_config::sections::team_fields::schema::MetadataSchemaField;
 use betterlite_db::budget_permission_rows::JsonData;
 use serde::{Deserialize, Serialize};
 
