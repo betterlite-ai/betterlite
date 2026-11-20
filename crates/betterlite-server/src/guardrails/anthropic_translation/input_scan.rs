@@ -78,7 +78,7 @@ pub fn extract_input_text_and_images(
             if matches!(flags.scan, ScanScope::ToolResultsOnly) {
                 return ExtractedInput::empty();
             }
-            string_content(text, msg_idx)
+            message_text(text, MessageTextTarget::MessageContent { msg_idx })
         }
         Some(Value::Array(items)) => extract_blocks(items, msg_idx, flags),
         Some(Value::Null | Value::Bool(_) | Value::Number(_) | Value::Object(_)) | None => {
@@ -87,11 +87,11 @@ pub fn extract_input_text_and_images(
     }
 }
 
-fn string_content(text: &str, msg_idx: usize) -> ExtractedInput {
+fn message_text(text: &str, target: MessageTextTarget) -> ExtractedInput {
     ExtractedInput {
         scanned: vec![ScannedText {
             text: text.to_owned(),
-            target: InputWriteBackTarget::Message(MessageTextTarget::MessageContent { msg_idx }),
+            target: InputWriteBackTarget::Message(target),
         }],
         images: Vec::new(),
         tool_calls: Vec::new(),
@@ -169,17 +169,13 @@ fn extract_tool_result(
     content_idx: usize,
 ) -> ExtractedInput {
     match block.get(CONTENT) {
-        Some(Value::String(text)) => ExtractedInput {
-            scanned: vec![ScannedText {
-                text: text.clone(),
-                target: InputWriteBackTarget::Message(MessageTextTarget::ToolResultString {
-                    msg_idx,
-                    content_idx,
-                }),
-            }],
-            images: Vec::new(),
-            tool_calls: Vec::new(),
-        },
+        Some(Value::String(text)) => message_text(
+            text,
+            MessageTextTarget::ToolResultString {
+                msg_idx,
+                content_idx,
+            },
+        ),
         Some(Value::Array(items)) => {
             let mut extracted = ExtractedInput::empty();
             for (block_idx, item) in items.iter().enumerate() {
@@ -210,38 +206,44 @@ fn extract_tool_result(
     }
 }
 
+fn midturn_text_block(item: &Value, msg_idx: usize, content_idx: usize) -> Option<ScannedText> {
+    let fields = item.as_object()?;
+    if fields.get(TYPE).and_then(Value::as_str) != Some(TEXT) {
+        return None;
+    }
+    let text = fields
+        .get(TEXT)?
+        .as_str()
+        .filter(|block_text| !block_text.is_empty())?;
+    Some(ScannedText {
+        text: text.to_owned(),
+        target: InputWriteBackTarget::Message(MessageTextTarget::ContentBlockText {
+            msg_idx,
+            content_idx,
+        }),
+    })
+}
+
 fn extract_midturn_system_text(message: &Value, msg_idx: usize) -> ExtractedInput {
-    match message.get(CONTENT) {
-        Some(Value::String(text)) if !text.is_empty() => string_content(text, msg_idx),
-        Some(Value::Array(items)) => {
-            let mut extracted = ExtractedInput::empty();
-            for (content_idx, item) in items.iter().enumerate() {
-                let Some(fields) = item.as_object() else {
-                    continue;
-                };
-                if fields.get(TYPE).and_then(Value::as_str) != Some(TEXT) {
-                    continue;
-                }
-                let Some(Value::String(block_text)) = fields.get(TEXT) else {
-                    continue;
-                };
-                if block_text.is_empty() {
-                    continue;
-                }
-                extracted.scanned.push(ScannedText {
-                    text: block_text.clone(),
-                    target: InputWriteBackTarget::Message(MessageTextTarget::ContentBlockText {
-                        msg_idx,
-                        content_idx,
-                    }),
-                });
-            }
-            extracted
+    let Some(content) = message.get(CONTENT) else {
+        return ExtractedInput::empty();
+    };
+    match content {
+        Value::String(text) if !text.is_empty() => {
+            message_text(text, MessageTextTarget::MessageContent { msg_idx })
         }
-        Some(
-            Value::Null | Value::Bool(_) | Value::Number(_) | Value::Object(_) | Value::String(_),
-        )
-        | None => ExtractedInput::empty(),
+        Value::Array(items) => ExtractedInput {
+            scanned: items
+                .iter()
+                .enumerate()
+                .filter_map(|(content_idx, item)| midturn_text_block(item, msg_idx, content_idx))
+                .collect(),
+            images: Vec::new(),
+            tool_calls: Vec::new(),
+        },
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::Object(_) | Value::String(_) => {
+            ExtractedInput::empty()
+        }
     }
 }
 

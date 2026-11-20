@@ -56,19 +56,19 @@ async fn write_back(
         write_returned_tools(data, returned, context.scan_only)?;
     }
     let mut written_body: Map<String, Value> = serde_convert(data, "request data")?;
-    match returned_structured(answer, &context.structured.sent) {
-        Some(returned) => write_structured_answer(&mut written_body, returned, context).await?,
-        None => write_text_answer(&mut written_body, answer, context)?,
-    }
+    write_answer(&mut written_body, answer, context).await?;
     *data = serde_convert(&written_body, "request body")?;
     Ok(())
 }
 
-async fn write_structured_answer(
+async fn write_answer(
     body: &mut Map<String, Value>,
-    returned: &[GuardrailMessage],
+    answer: &GuardrailApiInputs,
     context: &AnswerContext<'_>,
 ) -> Result<(), ProcessInputError> {
+    let Some(returned) = returned_structured(answer, &context.structured.sent) else {
+        return apply_text_answer(body, &text_answer(answer, context));
+    };
     let rows = structured_rows(
         returned,
         &context.structured.full,
@@ -84,20 +84,18 @@ async fn write_structured_answer(
     .await
 }
 
-fn write_text_answer(
-    body: &mut Map<String, Value>,
-    answer: &GuardrailApiInputs,
-    context: &AnswerContext<'_>,
-) -> Result<(), ProcessInputError> {
-    let text_answer = TextAnswer {
+fn text_answer<'answer>(
+    answer: &'answer GuardrailApiInputs,
+    context: &'answer AnswerContext<'_>,
+) -> TextAnswer<'answer> {
+    TextAnswer {
         texts: answer.texts.as_deref().unwrap_or_default(),
         tool_calls: answer.tool_calls.as_deref(),
         scanned: &context.scanned.scanned,
         scanned_tool_calls: &context.scanned.scanned_tool_calls,
         pre_guardrail_tool_calls: &context.scanned.pre_guardrail_tool_calls,
         guardrail_name: context.guardrail_name,
-    };
-    apply_text_answer(body, &text_answer)
+    }
 }
 
 fn apply_text_answer(
