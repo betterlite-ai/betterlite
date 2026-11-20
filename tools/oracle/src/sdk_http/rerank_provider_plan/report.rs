@@ -90,13 +90,7 @@ fn class_name(class: &ErrorClass) -> Result<&'static str, SdkHttpError> {
 }
 
 #[derive(Clone, Default)]
-pub(super) struct Diagnostics(Arc<Mutex<Vec<SyncDiagnostic>>>);
-
-impl Diagnostics {
-    pub(super) fn take(&self) -> Vec<SyncDiagnostic> {
-        std::mem::take(&mut *self.0.lock().unwrap_or_else(PoisonError::into_inner))
-    }
-}
+pub(super) struct Diagnostics(pub(super) Arc<Mutex<Vec<SyncDiagnostic>>>);
 
 #[derive(Default)]
 struct MessageVisitor(Option<String>);

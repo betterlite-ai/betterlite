@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::PoisonError;
 
 use betterlite_config::api::rerank_provider_plan::loads_rerank_settings;
 use betterlite_config::loader::ConfigLoader;
@@ -96,7 +97,8 @@ pub(super) async fn execute(
     let subscription = set_default(registry().with(diagnostics.clone()));
     let outcome = rerank(&plan, core_call(call, api_base)?, &mut state).await;
     drop(subscription);
-    let diagnostics = diagnostics.take();
+    let diagnostics =
+        std::mem::take(&mut *diagnostics.0.lock().unwrap_or_else(PoisonError::into_inner));
     let value = match outcome {
         Ok(response) => Outcome {
             result: Some(serde_json::to_value(&response).map_err(SdkHttpError::Serialize)?),

@@ -3,6 +3,8 @@ from collections.abc import Coroutine
 from typing import Final, Literal, TypeAlias
 
 import litellm
+from litellm.exceptions import APIConnectionError
+from litellm.types.rerank import RerankResponse
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 from typing_extensions import override
 
@@ -22,6 +24,7 @@ Provider: TypeAlias = Literal[
     "watsonx",
 ]
 Document: TypeAlias = str | dict[str, JsonValue]
+Work: TypeAlias = RerankResponse | Coroutine[object, object, RerankResponse]
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 KWARGS: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
@@ -107,10 +110,6 @@ class Recorder(logging.Handler):
             self.diagnostics.append(Diagnostic(level=record.levelname.lower(), prefix=PREFIX))
 
 
-def substituted_settings(settings: Settings, api_base: str) -> Settings:
-    return SETTINGS.validate_json(settings.model_dump_json().replace(MOCK, api_base))
-
-
 def substituted_kwargs(kwargs: dict[str, JsonValue], api_base: str) -> dict[str, JsonValue]:
     document = KWARGS.dump_json(kwargs).decode().replace(MOCK, api_base)
     return KWARGS.validate_json(document)
@@ -125,7 +124,7 @@ def apply_settings(settings: Settings) -> None:
         litellm.drop_params = settings.drop_params
 
 
-def connection_failure(error: litellm.APIConnectionError) -> Failure:
+def connection_failure(error: APIConnectionError) -> Failure:
     return Failure(
         class_name=type(error).__name__,
         status=error.status_code,
@@ -139,7 +138,7 @@ def connection_failure(error: litellm.APIConnectionError) -> Failure:
 def call_outcome(call: RerankCall, api_base: str, recorder: Recorder) -> Outcome:
     kwargs = substituted_kwargs(call.kwargs, api_base)
     try:
-        work = litellm.rerank(
+        work: Work = litellm.rerank(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L91-L92
             model=call.model,
             query=call.query,
             documents=call.documents,
@@ -151,7 +150,7 @@ def call_outcome(call: RerankCall, api_base: str, recorder: Recorder) -> Outcome
             max_tokens_per_doc=call.max_tokens_per_doc,
             **kwargs,
         )
-    except litellm.APIConnectionError as error:
+    except APIConnectionError as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L853-L861
         return Outcome(
             failure=connection_failure(error),
             diagnostics=list(recorder.diagnostics),
@@ -173,7 +172,10 @@ class RerankProviderPlanRequest(BaseModel):
 
     def serialize(self, api_base: str) -> str:
         call = self.rerank_provider_plan
-        apply_settings(substituted_settings(call.litellm_settings, api_base))
+        settings = SETTINGS.validate_json(
+            call.litellm_settings.model_dump_json().replace(MOCK, api_base)
+        )
+        apply_settings(settings)
         recorder = Recorder()
         logger = logging.getLogger("LiteLLM")
         logger.addHandler(recorder)
