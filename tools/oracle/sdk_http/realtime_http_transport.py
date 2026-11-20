@@ -213,11 +213,10 @@ async def post(call: TransportCall, api_base: str, log: Logging) -> httpx.Respon
             extra_headers=OBJECTS.validate_python(call.extra_headers),
             api_version=call.api_version,
         )
-    if call.handler == "client_secrets":
-        method = HANDLER.async_realtime_client_secret_handler
-    else:
-        method = HANDLER.async_realtime_transcription_session_handler
-    return await method(
+    handler = HANDLER.async_realtime_client_secret_handler
+    if call.handler == "transcription_sessions":
+        handler = HANDLER.async_realtime_transcription_session_handler
+    return await handler(
         api_base=api_base,
         api_key=call.api_key,
         request_data=REQUEST.validate_python(call.request_data),
