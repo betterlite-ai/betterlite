@@ -678,9 +678,8 @@ async fn two_step_upload() {
     assert_eq!(seen[1].method, Method::PUT);
     assert_eq!(seen[1].url, "http://uploads.example.test/manus/1");
     assert_eq!(seen[1].body, vec![b"{\"row\":1}\n".to_vec()]);
-    let content_type = seen[1].headers.get(CONTENT_TYPE).expect("the default");
-    assert_eq!(content_type, "application/octet-stream");
-    assert_eq!(seen[1].headers.len(), 1);
+    // the sync client sends no content type of its own, so the second request carries none
+    assert!(seen[1].headers.is_empty());
     assert_eq!(seen[1].timeout, Some(Duration::from_secs(30)));
     let saved = field(field(&result, "params"), "initial_file_response");
     assert_eq!(field(saved, "extra"), &Json::Bool(true));
@@ -976,19 +975,20 @@ async fn upload_diagnostics_media_placeholder_and_error_log() {
     assert!(error_messages[0].contains("Failed to get upload URL from initial request"));
 }
 
-fn replay_file_upload_location_corpus(corpus: &Path) {
-    for entry in fs::read_dir(corpus).expect("the corpus directory") {
-        drop(decode_file_upload_location(
-            &fs::read(entry.expect("a corpus entry").path()).expect("a corpus file"),
-            UploadUrlLocation::Body,
-            "upload_url",
-            ApiLimits::default(),
-        ));
-    }
-}
-
 #[test]
 fn replays_upload_location_corpus() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/file_upload_location");
-    replay_file_upload_location_corpus(&corpus);
+    let replayed = fs::read_dir(corpus)
+        .expect("the corpus directory")
+        .map(|entry| fs::read(entry.expect("a corpus entry").path()).expect("a corpus file"))
+        .map(|bytes| {
+            drop(decode_file_upload_location(
+                &bytes,
+                UploadUrlLocation::Body,
+                "upload_url",
+                ApiLimits::default(),
+            ));
+        })
+        .count();
+    assert!(replayed >= 8);
 }

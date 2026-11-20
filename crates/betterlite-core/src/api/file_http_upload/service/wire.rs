@@ -55,11 +55,13 @@ pub(super) fn upload_method(method: &str) -> Result<Method, UploadError> {
     })
 }
 
-// httpx sends a str or bytes data= body under application/octet-stream when no content type is given
-pub(super) fn default_content_type(mut headers: HeaderMap) -> HeaderMap {
-    headers
-        .entry(CONTENT_TYPE)
-        .or_insert(HeaderValue::from_static("application/octet-stream"));
+// The async aiohttp transport labels a bytes body with no content type application/octet-stream
+pub(super) fn default_content_type(mut headers: HeaderMap, mode: Mode) -> HeaderMap {
+    if mode == Mode::Asynchronous {
+        headers
+            .entry(CONTENT_TYPE)
+            .or_insert(HeaderValue::from_static("application/octet-stream"));
+    }
     headers
 }
 

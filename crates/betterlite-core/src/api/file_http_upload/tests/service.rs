@@ -501,9 +501,9 @@ async fn upload_text_method(#[case] method: Method, #[case] expected: Method) {
     assert_eq!(harness.seen()[0].method, expected);
 }
 
-// httpx sends a str or bytes data= body under application/octet-stream when the plan names no type
+// the sync httpx client sends only content-length, so a type-less raw body carries no content type
 #[tokio::test]
-async fn raw_upload_defaults_to_octet_stream() {
+async fn raw_upload_sends_no_content_type_in_sync_mode() {
     let mut harness = Harness::build(
         Config::with_method(text_plan(), API_BASE, Method::PUT),
         vec![answer(200, &[], b"{}")],
@@ -512,16 +512,30 @@ async fn raw_upload_defaults_to_octet_stream() {
         .run(Mode::Sync, &create_call(), &params())
         .await
         .unwrap();
+    assert!(!harness.seen()[0].headers.contains_key(CONTENT_TYPE));
+}
+
+// the async aiohttp transport labels a bytes body with no content type application/octet-stream
+#[tokio::test]
+async fn raw_upload_defaults_to_octet_stream() {
+    let mut harness = Harness::build(
+        Config::with_method(text_plan(), API_BASE, Method::PUT),
+        vec![answer(200, &[], b"{}")],
+    );
+    harness
+        .run(Mode::Asynchronous, &create_call(), &params())
+        .await
+        .unwrap();
     assert_eq!(
         harness.seen()[0]
             .headers
             .get(CONTENT_TYPE)
-            .expect("the octet-stream default"),
+            .expect("the async default"),
         "application/octet-stream"
     );
 }
 
-// a plan that names its own content type keeps it, so only a type-less raw body takes the default
+// a plan that names its own content type keeps it, so only a type-less raw body takes the async default
 #[tokio::test]
 async fn raw_upload_keeps_an_explicit_content_type() {
     let plan = UploadPlan::Presigned(Box::new(PresignedPlan {
@@ -532,7 +546,7 @@ async fn raw_upload_keeps_an_explicit_content_type() {
     }));
     let mut harness = Harness::new(plan, API_BASE, vec![answer(200, &[], b"{}")]);
     harness
-        .run(Mode::Sync, &create_call(), &params())
+        .run(Mode::Asynchronous, &create_call(), &params())
         .await
         .unwrap();
     assert_eq!(
