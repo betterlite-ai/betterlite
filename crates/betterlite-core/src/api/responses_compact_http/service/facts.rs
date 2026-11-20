@@ -1,14 +1,10 @@
-use std::str::from_utf8;
 use std::time::Duration;
 
-use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json;
 use serde_json::Number;
 
-use crate::api::vector_store_http_write::error::{
-    FailureFacts, HeaderMap, ResponseFacts, header_map,
-};
+use crate::api::vector_store_http_write::error::{FailureFacts, HeaderMap, display_facts};
 
 use super::ClientKind;
 
@@ -19,35 +15,6 @@ pub(crate) struct Sent {
     pub(crate) requested: Option<Duration>,
     pub(crate) effective: Duration,
     pub(crate) elapsed: Duration,
-}
-
-// MaskedHTTPStatusError keeps the text, drops content-encoding and recomputes content-length for the decoded body
-pub(crate) fn status_facts(reply: &UpstreamResponse) -> FailureFacts {
-    // vector_store_http_write::service::facts::status_facts is pub(super) there and out of this task's scope, so this conversion is mirrored
-    let text = from_utf8(&reply.body).map_or_else(
-        |_| format!("{} bytes that are not UTF-8", reply.body.len()),
-        ToOwned::to_owned,
-    );
-    let mut headers = header_map(&reply.headers);
-    headers.remove("content-encoding");
-    headers.remove("content-length");
-    // httpx re-encodes the decoded body into the masked response, so a non-empty one carries a new content-length
-    if !reply.body.is_empty() {
-        let length = reply.body.len().to_string();
-        headers.insert("content-length".to_owned(), Json::Text(length));
-    }
-    FailureFacts {
-        response_status: Some(i64::from(reply.status)),
-        status: Some(Json::Number(Number::from(reply.status))),
-        text: Some(text.clone()),
-        headers: None,
-        response: Some(ResponseFacts {
-            status_code: i64::from(reply.status),
-            text: Some(text),
-            headers: Some(headers),
-        }),
-        display: String::new(),
-    }
 }
 
 // A connect or read timeout becomes litellm.Timeout with status 408 and no headers; other failures synthesize a 500
@@ -65,14 +32,7 @@ pub(crate) fn transport_facts(error: &TransportError, sent: &Sent) -> FailureFac
             display: String::new(),
         };
     }
-    FailureFacts {
-        response_status: None,
-        status: None,
-        text: None,
-        headers: None,
-        response: None,
-        display: error.to_string(),
-    }
+    display_facts(error.to_string())
 }
 
 // The sync handler prints the caller's timeout and the async one the timeout it used, as Python's str would

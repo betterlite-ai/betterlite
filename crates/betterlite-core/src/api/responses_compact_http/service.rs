@@ -25,7 +25,7 @@ use self::request::{
 use super::body::signed_body_kwargs;
 use super::config::{CompactConfig, CompactParams, Headers, SignRequest};
 use super::error::{CompactError, ConfigFailure, Stage, provider_error};
-use crate::api::vector_store_http_write::error::{ClientError, header_text};
+use crate::api::vector_store_http_write::error::{ClientError, header_text, status_facts};
 
 pub(crate) mod facts;
 mod proxied;
@@ -275,7 +275,7 @@ where
     })?;
     if !(200..=299).contains(&answer.status) {
         return Err(CompactError::Provider(provider_error(
-            &facts::status_facts(&answer),
+            &status_facts(&answer),
             config,
         )));
     }
