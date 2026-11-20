@@ -623,6 +623,15 @@ async fn a_cache_hit_event_gets_a_unique_request_id() {
 }
 
 #[tokio::test]
+async fn a_null_cache_hit_projects_python_none() {
+    let fixture = open(&v1_environment(), Overrides::default(), 1);
+    let unknown = PAYLOAD.replace("\"cache_hit\": false", "\"cache_hit\": null");
+    let body = projected(&fixture, event_from(&unknown)).await;
+    assert_eq!(member(&body, "cache_hit"), &text("None"));
+    assert_eq!(member(&body, "request_id"), &text("chatcmpl-1"));
+}
+
+#[tokio::test]
 async fn a_missing_request_id_falls_back_to_the_missing_marker() {
     let fixture = open(&v1_environment(), Overrides::default(), 1);
     let anonymous = PAYLOAD
