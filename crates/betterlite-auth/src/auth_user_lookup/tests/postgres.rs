@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::error::Error as _;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
@@ -261,10 +262,18 @@ async fn row_cap_boundary() {
         .get_user_object(request_with(Some("cap-user"), None, None))
         .await;
     match result {
-        Err(UserLookupError::UserMissing(failure)) => assert!(
-            failure.to_string().contains("over the"),
-            "the failure names the row cap: {failure}"
-        ),
+        Err(UserLookupError::UserMissing(failure)) => {
+            let mut names_cap = false;
+            let mut link = failure.cause.source();
+            while let Some(current) = link {
+                if current.to_string().contains("over the") {
+                    names_cap = true;
+                    break;
+                }
+                link = current.source();
+            }
+            assert!(names_cap, "the failure names the row cap: {failure}");
+        }
         other => panic!("a row over the cap fails the lookup: {other:?}"),
     }
     close(fixture, store).await;
