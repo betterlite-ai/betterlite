@@ -17,7 +17,7 @@ use betterlite_db::postgres_store::errors::DbError;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
-use clap::Parser as _;
+use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
@@ -289,7 +289,8 @@ impl CacheActivityStore for FakeStore {
 }
 
 fn fake_store(handle: &Arc<FakeStore>) -> Option<Arc<dyn CacheActivityStore>> {
-    let shared: Arc<dyn CacheActivityStore> = Arc::clone(handle);
+    let concrete: Arc<FakeStore> = Arc::clone(handle);
+    let shared: Arc<dyn CacheActivityStore> = concrete;
     Some(shared)
 }
 
@@ -899,11 +900,61 @@ async fn route_a_missing_credential_answers_401_before_the_missing_dates() {
     let response = application_for(&config).oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    // LiteLLM's user_api_key_auth dependency answers a missing key with this body
+    // the route answers the dependency's 401 with betterlite's own message, as the oracle case ignores it
     assert_eq!(
         &*body,
-        br#"{"error":{"message":"Authentication Error, No api key passed in.","type":"auth_error","param":"None","code":"401"}}"#
+        br#"{"error":{"message":"the API key is not valid","type":"auth_error","param":"None","code":"401"}}"#
     );
+}
+
+#[tokio::test]
+async fn route_a_missing_date_answers_422_through_the_production_router() {
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load("general_settings:\n  master_key: oracle-master\n")
+    .unwrap();
+    let request = Request::get("/global/activity/cache_hits")
+        .header(AUTHORIZATION, "Bearer oracle-master")
+        .body(Body::empty())
+        .unwrap();
+    let response = application_for(&config).oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    // the query check runs before the missing-database check, so an empty query string is a 422 here
+    assert_eq!(
+        &*body,
+        br#"{"detail":[{"type":"missing","loc":["query","start_date"],"msg":"Field required"},{"type":"missing","loc":["query","end_date"],"msg":"Field required"}]}"#
+    );
+}
+
+#[tokio::test]
+async fn route_the_report_answers_through_the_production_router() {
+    let (fixture, pool) = database().await;
+    execute(&pool, GROUPS_SEED).await;
+    let config_source = format!(
+        "general_settings:\n  master_key: oracle-master\n  database_url: \"{}\"\n",
+        fixture.options.url.expose_secret()
+    );
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(&config_source)
+    .unwrap();
+    let request = Request::get(REPORT_URI)
+        .header(AUTHORIZATION, "Bearer oracle-master")
+        .body(Body::empty())
+        .unwrap();
+    let response = application_for(&config).oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    // the app-level query sees the seeded rows, so the route is reachable past the route-match gate and auth
+    assert_eq!(
+        &*body,
+        br#"{"groups":[{"call_type":"completion","api_requests":1,"cache_hits":3,"failed_requests":2,"cached_completion_tokens":125,"generated_completion_tokens":80}],"totals":{"api_requests":1,"cache_hits":3,"failed_requests":2,"cached_completion_tokens":125,"cache_hit_ratio":50.0},"filter_options":{"key_aliases":["alias-a"],"models":["m1"]},"error_breakdown":[{"call_type":"completion","error_code":"Unknown","error_class":"Unknown","count":2}]}"#
+    );
+    pool.close();
+    fixture.close_async().await.expect("fixture close");
 }
 
 #[tokio::test]
