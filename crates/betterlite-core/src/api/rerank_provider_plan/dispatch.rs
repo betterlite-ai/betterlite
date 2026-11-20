@@ -49,12 +49,12 @@ pub struct SendRequest<'request> {
 }
 // The provider operations the dispatcher drives: B1013's mapping and B2454's transport, supplied by the caller
 pub trait RerankOperations {
-    fn map_options(&self, request: OptionsRequest<'_>) -> Result<Params, RawException>;
+    fn map_options(&self, request: OptionsRequest<'_>) -> Result<Params, Box<RawException>>;
     fn send(
         &self,
         request: SendRequest<'_>,
         logging: &mut LoggingState,
-    ) -> impl Future<Output = Result<RerankResponse, RawException>>;
+    ) -> impl Future<Output = Result<RerankResponse, Box<RawException>>> + Send;
 }
 // A failure the dispatcher raises itself: str(e) carries the text and nothing overrides it, as a ValueError does
 #[must_use]

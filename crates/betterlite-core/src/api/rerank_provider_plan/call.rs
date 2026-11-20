@@ -3,6 +3,7 @@ use betterlite_openai::api::rerank_contracts::records::RerankDocument;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use std::collections::BTreeMap;
+use std::num::ParseFloatError;
 use thiserror::Error;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReturnDocuments {
@@ -44,7 +45,11 @@ pub enum CallError {
     #[error("{field} must be a number or a string")]
     FieldTimeout { field: &'static str },
     #[error("could not convert string to float: '{value}'")]
-    Timeout { value: String },
+    Timeout {
+        value: String,
+        #[source]
+        source: ParseFloatError,
+    },
 }
 #[derive(Debug, Clone, PartialEq)]
 pub enum TimeoutArg {
@@ -55,8 +60,9 @@ impl TimeoutArg {
     pub fn seconds(&self) -> Result<f64, CallError> {
         match self {
             Self::Number(value) => Ok(*value),
-            Self::Text(text) => text.parse::<f64>().map_err(|_| CallError::Timeout {
+            Self::Text(text) => text.parse::<f64>().map_err(|source| CallError::Timeout {
                 value: text.clone(),
+                source,
             }),
         }
     }
@@ -79,31 +85,8 @@ impl GenericParams {
             match name.as_str() {
                 "api_key" => params.api_key = string(value, "api_key")?.map(SecretString::from),
                 "api_base" => params.api_base = string(value, "api_base")?,
-                "timeout" => {
-                    params.timeout = match value {
-                        Json::Null => None,
-                        Json::Number(number) => Some(TimeoutArg::Number(
-                            number
-                                .as_f64()
-                                .ok_or(CallError::FieldTimeout { field: "timeout" })?,
-                        )),
-                        Json::Text(text) => Some(TimeoutArg::Text(text.clone())),
-                        Json::Bool(_) | Json::List(_) | Json::Object(_) => {
-                            return Err(CallError::FieldTimeout { field: "timeout" });
-                        }
-                    };
-                }
-                "drop_params" => {
-                    params.drop_params = match value {
-                        Json::Null => None,
-                        Json::Bool(flag) => Some(*flag),
-                        Json::Text(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-                            return Err(CallError::FieldFlag {
-                                field: "drop_params",
-                            });
-                        }
-                    };
-                }
+                "timeout" => params.timeout = timeout_arg(value)?,
+                "drop_params" => params.drop_params = drop_flag(value)?,
                 "user" => params.user = string(value, "user")?,
                 "headers" => params.headers = header_map(value, "headers")?.unwrap_or_default(),
                 "extra_headers" => params.extra_headers = header_map(value, "extra_headers")?,
@@ -112,6 +95,31 @@ impl GenericParams {
             }
         }
         Ok(params)
+    }
+}
+fn timeout_arg(value: &Json) -> Result<Option<TimeoutArg>, CallError> {
+    match value {
+        Json::Null => Ok(None),
+        Json::Number(number) => Ok(Some(TimeoutArg::Number(
+            number
+                .as_f64()
+                .ok_or(CallError::FieldTimeout { field: "timeout" })?,
+        ))),
+        Json::Text(text) => Ok(Some(TimeoutArg::Text(text.clone()))),
+        Json::Bool(_) | Json::List(_) | Json::Object(_) => {
+            Err(CallError::FieldTimeout { field: "timeout" })
+        }
+    }
+}
+fn drop_flag(value: &Json) -> Result<Option<bool>, CallError> {
+    match value {
+        Json::Null => Ok(None),
+        Json::Bool(flag) => Ok(Some(*flag)),
+        Json::Text(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+            Err(CallError::FieldFlag {
+                field: "drop_params",
+            })
+        }
     }
 }
 fn string(value: &Json, field: &'static str) -> Result<Option<String>, CallError> {
@@ -134,8 +142,8 @@ fn header_map(
         return Err(CallError::FieldHeaders { field });
     };
     let mut mapped = BTreeMap::new();
-    for (name, value) in fields {
-        let Json::Text(text) = value else {
+    for (name, entry) in fields {
+        let Json::Text(text) = entry else {
             return Err(CallError::FieldHeaders { field });
         };
         mapped.insert(name.clone(), text.clone());

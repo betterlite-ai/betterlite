@@ -1,5 +1,5 @@
 use super::call::{GenericParams, RerankCall};
-use super::dispatch::{Headers, Params, RerankOperations, SendRequest, value_failure};
+use super::dispatch::{Headers, Params, RerankOperations, SendRequest};
 use betterlite_config::api::rerank_provider_plan::RerankSettings;
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
@@ -45,8 +45,8 @@ pub async fn rerank<Identity, Operations>(
     logging: &mut LoggingState,
 ) -> Result<RerankResponse, RerankException>
 where
-    Identity: RerankIdentity,
-    Operations: RerankOperations,
+    Identity: RerankIdentity + Sync,
+    Operations: RerankOperations + Sync,
 {
     let prepared = prepare(plan.identity, plan.redactor, &mut call)?;
     let mut mapped = map_options(
@@ -58,7 +58,7 @@ where
     )?;
     log(plan.redactor, logging, &prepared, &mapped)?;
     let auth = credentials(plan.settings, plan.environment, &prepared, &mut mapped)
-        .map_err(|failure| raise(plan.redactor, failure))?;
+        .map_err(|failure| raise(plan.redactor, *failure))?;
     let request = SendRequest {
         config: mapped.config,
         provider: &prepared.provider,
@@ -83,7 +83,7 @@ where
     plan.operations
         .send(request, logging)
         .await
-        .map_err(|failure| raise(plan.redactor, failure))
+        .map_err(|failure| raise(plan.redactor, *failure))
 }
 // The error diagnostic runs before B011 maps the failure, as the except block does
 fn raise(redactor: &Redactor, failure: RawException) -> RerankException {
@@ -131,8 +131,8 @@ fn rerank_litellm_params(kwargs: &IndexMap<String, Json>) -> Params {
             .cloned()
             .unwrap_or_else(|| Json::Object(IndexMap::new())),
     );
-    for (name, value) in kwargs {
-        params.insert(name.clone(), value.clone());
+    for (key, value) in kwargs {
+        params.insert(key.clone(), value.clone());
     }
     params
 }

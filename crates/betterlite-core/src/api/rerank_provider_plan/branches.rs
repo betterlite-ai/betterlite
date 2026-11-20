@@ -30,7 +30,7 @@ pub(super) struct BranchInput<'request> {
 pub(super) fn select_credentials(
     mut input: BranchInput<'_>,
     mapped: &mut Params,
-) -> Result<Credentials, RawException> {
+) -> Result<Credentials, Box<RawException>> {
     let environment = input.settings.environment.resolve(input.environment);
     merge_extra_headers(input.provider, input.generic, &mut input.headers);
     if input.provider == "watsonx" {

@@ -15,6 +15,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::resolution::{ResolutionRequest, ResolvedModel};
 use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
+use std::mem;
 pub(super) struct PreparedCall {
     pub(super) kwargs: IndexMap<String, Json>,
     pub(super) is_async: bool,
@@ -38,7 +39,7 @@ pub(super) fn prepare<Identity>(
 where
     Identity: RerankIdentity,
 {
-    let mut kwargs = std::mem::take(&mut call.kwargs);
+    let mut kwargs = mem::take(&mut call.kwargs);
     // `kwargs.pop("arerank", False) is True`: only the boolean true selects the async transport
     let is_async = matches!(kwargs.shift_remove("arerank"), Some(Json::Bool(true)));
     let provider_hint = call.custom_llm_provider.clone().unwrap_or_default();
@@ -106,7 +107,7 @@ where
             instruction: prepared.generic.instruction.as_deref(),
             non_default_params: &mut non_default_params,
         })
-        .map_err(|failure| raise(redactor, failure))?;
+        .map_err(|failure| raise(redactor, *failure))?;
     Ok(MappedOptions {
         config,
         params,
@@ -171,7 +172,7 @@ pub(super) fn credentials(
     environment: &dyn EnvironmentLookup,
     prepared: &PreparedCall,
     mapped: &mut MappedOptions,
-) -> Result<Credentials, RawException> {
+) -> Result<Credentials, Box<RawException>> {
     select_credentials(
         BranchInput {
             provider: &prepared.provider,

@@ -21,11 +21,10 @@ pub(super) struct WatsonxRequest<'request> {
 pub(super) fn watsonx_credentials(
     request: WatsonxRequest<'_>,
     mapped: &mut Params,
-) -> Result<Credentials, RawException> {
+) -> Result<Credentials, Box<RawException>> {
     let mut params = WatsonxParams::new();
     for (name, value) in request.generic_params {
-        let converted = serde_json::to_value(value).ok();
-        if let Some(converted) = converted {
+        if let Some(converted) = serde_json::to_value(value).ok() {
             params.insert(name.clone(), converted);
         }
     }
@@ -48,7 +47,11 @@ pub(super) fn watsonx_credentials(
                 headers: request.headers,
             })
         }
-        Err(error) => Err(watsonx_failure(&error, request.model, request.provider)),
+        Err(error) => Err(Box::new(watsonx_failure(
+            &error,
+            request.model,
+            request.provider,
+        ))),
     }
 }
 fn watsonx_failure(error: &WatsonxError, model: &str, provider: &str) -> RawException {

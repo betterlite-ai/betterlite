@@ -29,16 +29,16 @@ pub fn selected_config(
     api_base: Option<&str>,
     present_version_params: &[String],
 ) -> SelectedConfig {
-    if let ProviderIdentity::Known(provider) = identity {
-        if let Some(config) = rerank_config(*provider, api_base, present_version_params) {
-            return match config {
-                RerankConfig::Cohere => SelectedConfig::Cohere,
-                RerankConfig::CohereV2 => SelectedConfig::CohereV2,
-                RerankConfig::Infinity => SelectedConfig::Infinity,
-                RerankConfig::JinaAi => SelectedConfig::JinaAi,
-                RerankConfig::Voyage => SelectedConfig::Voyage,
-            };
-        }
+    if let ProviderIdentity::Known(provider) = identity
+        && let Some(config) = rerank_config(*provider, api_base, present_version_params)
+    {
+        return match config {
+            RerankConfig::Cohere => SelectedConfig::Cohere,
+            RerankConfig::CohereV2 => SelectedConfig::CohereV2,
+            RerankConfig::Infinity => SelectedConfig::Infinity,
+            RerankConfig::JinaAi => SelectedConfig::JinaAi,
+            RerankConfig::Voyage => SelectedConfig::Voyage,
+        };
     }
     provider_config(identity.slug(), model)
 }
