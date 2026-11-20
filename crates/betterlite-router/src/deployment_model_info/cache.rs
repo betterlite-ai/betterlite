@@ -43,7 +43,7 @@ impl DiscoveryCache {
         let clock: Arc<dyn Fn() -> f64 + Send + Sync> = Arc::new(|| {
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .map_or(0.0, |elapsed| elapsed.as_secs_f64())
+                .map_or(0.0_f64, |elapsed| elapsed.as_secs_f64())
         });
         Self::new(capacity, DISCOVERY_TTL_SECONDS, clock)
     }

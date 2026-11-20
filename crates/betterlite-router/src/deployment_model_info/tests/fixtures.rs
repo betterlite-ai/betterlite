@@ -48,13 +48,13 @@ use crate::model_catalog_lookup::cache::CacheClear;
 use crate::model_catalog_lookup::lookup::CatalogLookup;
 use crate::routing_groups::index::RoutingGroupIndex;
 
-pub const EXCHANGE_TIMEOUT: Duration = Duration::from_secs(5);
+pub(super) const EXCHANGE_TIMEOUT: Duration = Duration::from_secs(5);
 
-pub fn object(text: &str) -> JsonObject {
+pub(super) fn object(text: &str) -> JsonObject {
     serde_json::from_str(text).unwrap()
 }
 
-pub fn spec(name: &str, params: &str, info: &str) -> DeploymentSpec {
+pub(super) fn spec(name: &str, params: &str, info: &str) -> DeploymentSpec {
     DeploymentSpec::new(
         name.to_owned(),
         object(params),
@@ -65,7 +65,7 @@ pub fn spec(name: &str, params: &str, info: &str) -> DeploymentSpec {
     .unwrap()
 }
 
-pub fn catalog(specs: Vec<DeploymentSpec>) -> Arc<DeploymentCatalog> {
+pub(super) fn catalog(specs: Vec<DeploymentSpec>) -> Arc<DeploymentCatalog> {
     let mut catalog = DeploymentCatalog::default();
     for spec in specs {
         catalog.index_patterns(&spec).unwrap();
@@ -74,11 +74,15 @@ pub fn catalog(specs: Vec<DeploymentSpec>) -> Arc<DeploymentCatalog> {
     Arc::new(catalog)
 }
 
-pub fn snapshot(catalog: &Arc<DeploymentCatalog>) -> CatalogSnapshot<'_> {
+pub(super) fn snapshot(catalog: &Arc<DeploymentCatalog>) -> CatalogSnapshot<'_> {
     CatalogSnapshot { catalog }
 }
 
-pub fn limits(max_tokens: Option<u64>, input: Option<u64>, output: Option<u64>) -> TokenLimits {
+pub(super) fn limits(
+    max_tokens: Option<u64>,
+    input: Option<u64>,
+    output: Option<u64>,
+) -> TokenLimits {
     TokenLimits {
         max_tokens,
         max_input_tokens: input,
@@ -86,7 +90,7 @@ pub fn limits(max_tokens: Option<u64>, input: Option<u64>, output: Option<u64>) 
     }
 }
 
-pub fn record(
+pub(super) fn record(
     catalog: &Arc<DeploymentCatalog>,
     index: usize,
     limits: TokenLimits,
@@ -98,16 +102,16 @@ pub fn record(
     }
 }
 
-pub fn dispatcher(seconds: f64) -> Arc<Mutex<f64>> {
+pub(super) fn dispatcher(seconds: f64) -> Arc<Mutex<f64>> {
     Arc::new(Mutex::new(seconds))
 }
 
-pub fn clock(ticks: &Arc<Mutex<f64>>) -> Arc<dyn Fn() -> f64 + Send + Sync> {
+pub(super) fn clock(ticks: &Arc<Mutex<f64>>) -> Arc<dyn Fn() -> f64 + Send + Sync> {
     let handle = Arc::clone(ticks);
     Arc::new(move || *handle.lock().unwrap())
 }
 
-pub fn registry(cost_map: &str) -> ModelRegistry {
+pub(super) fn registry(cost_map: &str) -> ModelRegistry {
     ModelRegistry {
         model_cost: object(cost_map),
         runtime_registered: ModelCostEntries::new(),
@@ -117,30 +121,18 @@ pub fn registry(cost_map: &str) -> ModelRegistry {
     }
 }
 
-pub fn handle(catalog: &Arc<DeploymentCatalog>) -> CatalogHandle {
-    CatalogHandle::new(Arc::clone(catalog))
-}
-
-pub const fn no_inferred(_model: &str) -> Option<String> {
+pub(super) const fn no_inferred(_model: &str) -> Option<String> {
     None
 }
 
-pub struct Lookups {
-    pub alias: AliasMap,
-    pub groups: RoutingGroupIndex,
-}
-
-impl Default for Lookups {
-    fn default() -> Self {
-        Self {
-            alias: AliasMap::default(),
-            groups: RoutingGroupIndex::default(),
-        }
-    }
+#[derive(Default)]
+pub(super) struct Lookups {
+    pub(super) alias: AliasMap,
+    pub(super) groups: RoutingGroupIndex,
 }
 
 impl Lookups {
-    pub fn lookup<'catalog>(
+    pub(super) fn lookup<'catalog>(
         &'catalog self,
         catalog: &'catalog DeploymentCatalog,
     ) -> CatalogLookup<'catalog> {
@@ -153,7 +145,7 @@ impl Lookups {
     }
 }
 
-pub fn credentials(entries: &[(&str, &str)]) -> CredentialSnapshot {
+pub(super) fn credentials(entries: &[(&str, &str)]) -> CredentialSnapshot {
     let mut built = Vec::new();
     for (name, values) in entries {
         built.push(CredentialEntry {
@@ -164,18 +156,18 @@ pub fn credentials(entries: &[(&str, &str)]) -> CredentialSnapshot {
     CredentialSnapshot::new(built)
 }
 
-pub struct Environment {
-    pub map: ModelCostMap,
-    pub catalog: ModelCatalog,
-    pub known: BTreeSet<String>,
-    pub custom: BTreeSet<String>,
-    pub environment: BTreeMap<String, String>,
-    pub registry: JSONProviderRegistry,
-    pub generalizations: CatalogGeneralizations,
+pub(super) struct Environment {
+    pub(super) map: ModelCostMap,
+    pub(super) catalog: ModelCatalog,
+    pub(super) known: BTreeSet<String>,
+    pub(super) custom: BTreeSet<String>,
+    pub(super) variables: BTreeMap<String, String>,
+    pub(super) registry: JSONProviderRegistry,
+    pub(super) generalizations: CatalogGeneralizations,
 }
 
 impl Environment {
-    pub fn new(cost_map: &str, environment: &[(&str, &str)]) -> Self {
+    pub(super) fn new(cost_map: &str, environment: &[(&str, &str)]) -> Self {
         let mut env = BTreeMap::new();
         for (key, value) in environment {
             env.insert((*key).to_owned(), (*value).to_owned());
@@ -187,20 +179,20 @@ impl Environment {
             catalog: ModelCatalog::parse(cost_map.as_bytes(), UnknownFields::Warn).unwrap(),
             known: BTreeSet::new(),
             custom: BTreeSet::new(),
-            environment: env,
+            variables: env,
             registry: JSONProviderRegistry::load(),
             generalizations,
         }
     }
 
-    pub fn harness(&self) -> Harness<'_> {
+    pub(super) fn harness(&self) -> Harness<'_> {
         Harness {
             map: &self.map,
             resolution: resolution(
                 &self.catalog,
                 &self.known,
                 &self.custom,
-                &self.environment,
+                &self.variables,
                 &self.registry,
             ),
             generalizations: &self.generalizations,
@@ -226,14 +218,14 @@ fn resolution<'inputs>(
     }
 }
 
-pub struct Harness<'environment> {
-    pub map: &'environment ModelCostMap,
-    pub resolution: ResolutionContext<'environment>,
-    pub generalizations: &'environment CatalogGeneralizations,
+pub(super) struct Harness<'environment> {
+    pub(super) map: &'environment ModelCostMap,
+    pub(super) resolution: ResolutionContext<'environment>,
+    pub(super) generalizations: &'environment CatalogGeneralizations,
 }
 
 impl Harness<'_> {
-    pub fn metadata(&self) -> MetadataEnvironment<'_> {
+    pub(super) fn metadata(&self) -> MetadataEnvironment<'_> {
         MetadataEnvironment {
             model_cost: &self.map.entries,
             vertex: &self.map.vertex,
@@ -244,15 +236,15 @@ impl Harness<'_> {
     }
 }
 
-pub fn plain_model(model: &str) -> String {
+pub(super) fn plain_model(model: &str) -> String {
     model.to_owned()
 }
 
-pub fn plain_split(model: &str) -> (Option<&str>, &str) {
+pub(super) fn plain_split(model: &str) -> (Option<&str>, &str) {
     (None, model)
 }
 
-pub const NORMALIZERS: NameNormalizers = NameNormalizers {
+pub(super) const NORMALIZERS: NameNormalizers = NameNormalizers {
     bedrock_base_model: plain_model,
     bedrock_routing_prefix: plain_model,
     mantle_region_split: plain_split,
@@ -260,17 +252,17 @@ pub const NORMALIZERS: NameNormalizers = NameNormalizers {
 
 #[derive(Debug, thiserror::Error)]
 #[error("the model is unmapped")]
-pub struct Unmapped;
+pub(super) struct Unmapped;
 
 // The scripted model info lookup: answers by name, records the names, and can fail instead.
-pub struct FakeSource {
-    pub answers: BTreeMap<String, JsonObject>,
-    pub failing: bool,
-    pub seen: Mutex<Vec<String>>,
+pub(super) struct FakeSource {
+    pub(super) answers: BTreeMap<String, JsonObject>,
+    pub(super) failing: bool,
+    pub(super) seen: Mutex<Vec<String>>,
 }
 
 impl FakeSource {
-    pub fn answering(answers: &[(&str, &str)]) -> Self {
+    pub(super) fn answering(answers: &[(&str, &str)]) -> Self {
         let mut map = BTreeMap::new();
         for (model, info) in answers {
             map.insert((*model).to_owned(), object(info));
@@ -282,7 +274,7 @@ impl FakeSource {
         }
     }
 
-    pub fn failing() -> Self {
+    pub(super) fn failing() -> Self {
         Self {
             answers: BTreeMap::new(),
             failing: true,
@@ -290,7 +282,7 @@ impl FakeSource {
         }
     }
 
-    pub fn seen(&self) -> Vec<String> {
+    pub(super) fn seen(&self) -> Vec<String> {
         self.seen.lock().unwrap().clone()
     }
 }
@@ -298,22 +290,24 @@ impl FakeSource {
 impl ModelMetadataSource for FakeSource {
     type Error = Unmapped;
 
-    async fn get_model_info(
+    fn get_model_info(
         &self,
         model: &str,
         _keys: &mut ModelCostKeys,
-    ) -> Result<Option<JsonObject>, Unmapped> {
+    ) -> impl Future<Output = Result<Option<JsonObject>, Unmapped>> + Send {
         self.seen.lock().unwrap().push(model.to_owned());
-        if self.failing {
-            return Err(Unmapped);
-        }
-        Ok(self.answers.get(model).cloned())
+        let answer = if self.failing {
+            Err(Unmapped)
+        } else {
+            Ok(self.answers.get(model).cloned())
+        };
+        ready(answer)
     }
 }
 
 // A dependency that only records the message of every event, with its level, for the log assertions.
 #[derive(Clone, Default)]
-pub struct Events(Arc<Mutex<Vec<(String, String)>>>);
+pub(super) struct Events(Arc<Mutex<Vec<(String, String)>>>);
 
 impl<S: Subscriber> Layer<S> for Events {
     fn on_event(&self, event: &tracing::Event<'_>, _: Context<'_, S>) {
@@ -344,11 +338,11 @@ impl Visit for MessageField {
 }
 
 impl Events {
-    pub fn messages(&self) -> Vec<(String, String)> {
+    pub(super) fn messages(&self) -> Vec<(String, String)> {
         self.0.lock().unwrap().clone()
     }
 
-    pub fn at(&self, level: &str) -> Vec<String> {
+    pub(super) fn at(&self, level: &str) -> Vec<String> {
         self.messages()
             .into_iter()
             .filter(|(seen, _)| seen == level)
@@ -358,7 +352,7 @@ impl Events {
 }
 
 #[derive(Default)]
-pub struct Recorder {
+pub(super) struct Recorder {
     held: Mutex<BTreeMap<String, ModelList>>,
     stored: Mutex<Vec<(String, Duration)>>,
 }
@@ -375,13 +369,13 @@ impl ModelListCache for Recorder {
 }
 
 impl Recorder {
-    pub fn stored(&self) -> Vec<(String, Duration)> {
+    pub(super) fn stored(&self) -> Vec<(String, Duration)> {
         self.stored.lock().unwrap().clone()
     }
 }
 
 #[derive(Default)]
-pub struct Counting(AtomicUsize);
+pub(super) struct Counting(AtomicUsize);
 
 impl CacheClear for Counting {
     fn clear(&self) {
@@ -390,43 +384,49 @@ impl CacheClear for Counting {
 }
 
 impl Counting {
-    pub fn count(&self) -> usize {
+    pub(super) fn count(&self) -> usize {
         self.0.load(Ordering::SeqCst)
     }
 }
 
-pub struct FakeHf {
-    pub body: Option<&'static str>,
+pub(super) struct FakeHf {
+    pub(super) body: Option<&'static str>,
 }
 
 impl ModelInfoClient for FakeHf {
     type Error = io::Error;
 
-    async fn get(&self, _request: &ModelInfoRequest) -> Result<FetchResponse, io::Error> {
-        match self.body {
-            Some(body) => Ok(FetchResponse::new(
-                200,
-                Vec::new(),
-                body.as_bytes().to_vec(),
-            )),
-            None => Err(io::Error::other("no config")),
-        }
+    fn get(
+        &self,
+        _request: &ModelInfoRequest,
+    ) -> impl Future<Output = Result<FetchResponse, io::Error>> + Send {
+        let answer = self.body.map_or_else(
+            || Err(io::Error::other("no config")),
+            |body| {
+                Ok(FetchResponse::new(
+                    200,
+                    Vec::new(),
+                    body.as_bytes().to_vec(),
+                ))
+            },
+        );
+        ready(answer)
     }
 }
 
-pub fn client() -> ProxiedClient {
+pub(super) fn client() -> ProxiedClient {
     let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap();
     ProxiedClient::outbound(&Arc::new(policy)).unwrap()
 }
 
-pub fn authorization(requests: &[String], path: &str) -> Option<String> {
+pub(super) fn authorization(requests: &[String], path: &str) -> Option<String> {
     let sent = requests.iter().find(|sent| sent.contains(path))?;
     let lower = sent.to_lowercase();
     let (_prefix, rest) = lower.split_once("authorization: ")?;
     Some(rest.lines().next().unwrap_or_default().trim().to_owned())
 }
 
-pub async fn read_request(stream: &mut TcpStream) -> String {
+pub(super) async fn read_request(stream: &mut TcpStream) -> String {
     let mut request = Vec::new();
     loop {
         let mut chunk = [0_u8; 4096];
@@ -448,21 +448,8 @@ async fn respond(stream: &mut TcpStream, status: u16, body: &[u8]) {
     stream.write_all(body).await.unwrap();
 }
 
-pub async fn serve_once(listener: &TcpListener, status: u16, body: &[u8]) -> String {
-    let (mut stream, _) = listener.accept().await.unwrap();
-    let request = read_request(&mut stream).await;
-    respond(&mut stream, status, body).await;
-    request
-}
-
-pub async fn answer_connection(mut stream: TcpStream, body: &[u8]) -> String {
-    let request = read_request(&mut stream).await;
-    respond(&mut stream, 200, body).await;
-    request
-}
-
 // Publish the replacement before the response, so the worker's snapshot is already stale when it writes.
-pub async fn answer_replacing(
+pub(super) async fn answer_replacing(
     mut stream: TcpStream,
     handle: &CatalogHandle,
     replacement: Arc<DeploymentCatalog>,
@@ -474,7 +461,7 @@ pub async fn answer_replacing(
     request
 }
 
-pub async fn accept_connections(listener: &TcpListener, count: usize) -> Vec<TcpStream> {
+pub(super) async fn accept_connections(listener: &TcpListener, count: usize) -> Vec<TcpStream> {
     let mut streams = Vec::new();
     for _ in 0..count {
         let (stream, _) = listener.accept().await.unwrap();
@@ -483,7 +470,7 @@ pub async fn accept_connections(listener: &TcpListener, count: usize) -> Vec<Tcp
     streams
 }
 
-pub async fn answer_connections(streams: Vec<TcpStream>, body: &[u8]) -> Vec<String> {
+pub(super) async fn answer_connections(streams: Vec<TcpStream>, body: &[u8]) -> Vec<String> {
     let mut requests = Vec::new();
     for mut stream in streams {
         let request = read_request(&mut stream).await;
@@ -494,7 +481,7 @@ pub async fn answer_connections(streams: Vec<TcpStream>, body: &[u8]) -> Vec<Str
 }
 
 // The resolution inputs the deployment calls read, with the name sets the tests leave empty.
-pub struct Resolver {
+pub(super) struct Resolver {
     catalog: ModelCatalog,
     known: BTreeSet<String>,
     custom: BTreeSet<String>,
@@ -503,11 +490,11 @@ pub struct Resolver {
 }
 
 impl Resolver {
-    pub fn new(environment: &[(&str, &str)]) -> Self {
+    pub(super) fn new(environment: &[(&str, &str)]) -> Self {
         Self::with_known(environment, &[])
     }
 
-    pub fn with_known(environment: &[(&str, &str)], known: &[&str]) -> Self {
+    pub(super) fn with_known(environment: &[(&str, &str)], known: &[&str]) -> Self {
         let mut built = BTreeMap::new();
         for (key, value) in environment {
             built.insert((*key).to_owned(), (*value).to_owned());
@@ -521,7 +508,7 @@ impl Resolver {
         }
     }
 
-    pub fn context(&self) -> ResolutionContext<'_> {
+    pub(super) fn context(&self) -> ResolutionContext<'_> {
         resolution(
             &self.catalog,
             &self.known,
@@ -533,7 +520,7 @@ impl Resolver {
 }
 
 // A dynamic metadata source with nothing to say, so the resolution reaches the cost map and the Hugging Face fetch.
-pub struct NoDynamic;
+pub(super) struct NoDynamic;
 
 impl DynamicMetadataSource for NoDynamic {
     type Error = Infallible;
@@ -550,11 +537,11 @@ impl DynamicMetadataSource for NoDynamic {
     }
 }
 
-pub fn capture(events: Events) -> impl Subscriber + Send + Sync {
+pub(super) fn capture(events: Events) -> impl Subscriber + Send + Sync {
     tracing_subscriber::registry().with(events)
 }
 
-pub fn discovery_with(
+pub(super) fn discovery_with(
     catalog: &Arc<DeploymentCatalog>,
     index: usize,
     limits: TokenLimits,
@@ -567,7 +554,8 @@ pub fn discovery_with(
 }
 
 impl<'row> SuppliedDeployment<'row> {
-    pub const fn from_spec(spec: &'row DeploymentSpec) -> Self {
+    #[must_use]
+    pub(super) const fn from_spec(spec: &'row DeploymentSpec) -> Self {
         Self {
             model_info: &spec.model_info,
             litellm_params: Some(&spec.litellm_params),

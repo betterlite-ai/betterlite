@@ -3,7 +3,7 @@ use std::sync::Arc;
 use super::fixtures::{catalog, clock, dispatcher, limits, record, spec};
 use crate::catalog_updates::catalog::DeploymentCatalog;
 use crate::deployment_model_info::cache::{DISCOVERY_TTL_SECONDS, DiscoveryCache};
-use crate::model_catalog_lookup::cache::CacheClear;
+use crate::model_catalog_lookup::cache::CacheClear as _;
 
 fn two_deployments() -> Arc<DeploymentCatalog> {
     catalog(vec![
@@ -27,7 +27,7 @@ fn stale_entry_purged_when_storing_at_its_expiry() {
     let handle = dispatcher(1000.0);
     let cache = DiscoveryCache::new(2, DISCOVERY_TTL_SECONDS, clock(&handle));
     cache.store("id0", record(&engine, 0, limits(None, None, Some(4096))));
-    *handle.lock().unwrap() = 1600.0;
+    *handle.lock().unwrap() = 1600.0_f64;
     cache.store("id1", record(&engine, 1, limits(None, None, Some(4096))));
     assert_eq!(cache.report().entries, vec!["id1".to_owned()]);
 }
@@ -38,10 +38,10 @@ fn storing_again_keeps_the_expiry() {
     let handle = dispatcher(1000.0);
     let cache = DiscoveryCache::new(2, DISCOVERY_TTL_SECONDS, clock(&handle));
     cache.store("id0", record(&engine, 0, limits(None, None, Some(4096))));
-    *handle.lock().unwrap() = 1200.0;
+    *handle.lock().unwrap() = 1200.0_f64;
     cache.store("id0", record(&engine, 0, limits(None, None, Some(8192))));
     let report = cache.report();
-    assert_eq!(report.expirations, vec![("id0".to_owned(), 1600.0)]);
+    assert_eq!(report.expirations, vec![("id0".to_owned(), 1600.0_f64)]);
     let stored = cache.get("id0").unwrap();
     assert_eq!(stored.limits.max_output_tokens, Some(8192));
 }
@@ -52,7 +52,7 @@ fn capacity_pressure_evicts_the_earliest_expiry() {
     let handle = dispatcher(1000.0);
     let cache = DiscoveryCache::new(1, DISCOVERY_TTL_SECONDS, clock(&handle));
     cache.store("id0", record(&engine, 0, limits(None, None, Some(4096))));
-    *handle.lock().unwrap() = 1100.0;
+    *handle.lock().unwrap() = 1100.0_f64;
     cache.store("id1", record(&engine, 1, limits(None, None, Some(4096))));
     assert_eq!(cache.report().entries, vec!["id1".to_owned()]);
     assert!(cache.get("id0").is_none());

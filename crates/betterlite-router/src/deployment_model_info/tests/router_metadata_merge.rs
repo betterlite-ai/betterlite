@@ -1,3 +1,4 @@
+use std::ptr;
 use std::sync::Arc;
 
 use betterlite_models::decisions::Json;
@@ -5,6 +6,7 @@ use betterlite_models::model_catalog_keys::ModelCostKeys;
 use betterlite_models::model_registration::{JsonObject, ModelRegistry};
 use rstest::rstest;
 use serde_json::Number;
+use tracing::subscriber::set_default;
 
 use super::fixtures::{
     Events, FakeSource, Lookups, Resolver, Unmapped, capture, catalog, limits, object, record,
@@ -297,7 +299,7 @@ async fn azure_positive_input_or_context_fallback_debug(#[case] entry: &str) {
     );
     let case = azure_case(entry);
     let events = Events::default();
-    let _guard = tracing::subscriber::set_default(capture(events.clone()));
+    let _guard = set_default(capture(events.clone()));
     let outcome = case
         .merged(Some(azure_supplied(&info, &params)), "g", None)
         .await;
@@ -326,7 +328,7 @@ async fn azure_zero_stub_or_output_only_error_continues(#[case] entry: &str) {
     );
     let case = azure_case(entry);
     let events = Events::default();
-    let _guard = tracing::subscriber::set_default(capture(events.clone()));
+    let _guard = set_default(capture(events.clone()));
     let outcome = case
         .merged(Some(azure_supplied(&info, &params)), "g", None)
         .await;
@@ -472,7 +474,7 @@ async fn source_metadata_unmodified() {
         .unwrap()
         .unwrap();
     assert_eq!(merged.get("mode"), Some(&Json::Text("override".to_owned())));
-    let stored = case.source.answers.get("openai/gpt-4o").unwrap();
+    let stored = &case.source.answers["openai/gpt-4o"];
     assert_eq!(stored.get("mode"), Some(&Json::Text("chat".to_owned())));
     let plain = object(r#"{"id":"one"}"#);
     let plain_supplied = azure_supplied(&plain, &params);
@@ -495,11 +497,11 @@ fn raw_lookup_identity() {
         r#"{"id":"one"}"#,
     )]);
     let found = get_model_info(&snapshot(&built), "one").unwrap().unwrap();
-    assert!(std::ptr::eq(found, &built.models[0]));
+    assert!(ptr::eq(found, &raw const built.models[0]));
     assert!(get_model_info(&snapshot(&built), "two").unwrap().is_none());
     let mut stale = DeploymentCatalog::default();
     stale.push(spec("g", r#"{"model":"openai/first"}"#, r#"{"id":"one"}"#));
-    drop(stale.id_index.insert("ghost".to_owned(), 9));
+    assert!(stale.id_index.insert("ghost".to_owned(), 9).is_none());
     let stale_catalog = Arc::new(stale);
     match get_model_info(&snapshot(&stale_catalog), "ghost") {
         Err(LookupError::InvalidRow { index }) => assert_eq!(index, 9),

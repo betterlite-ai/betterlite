@@ -65,13 +65,12 @@ where
     SourceError: Error + 'static,
 {
     let chosen = match id {
-        Some(model_id) => match get_model_info(metadata.snapshot, model_id)? {
-            Some(spec) => Some(SuppliedDeployment {
+        Some(model_id) => get_model_info(metadata.snapshot, model_id)?.map_or(deployment, |spec| {
+            Some(SuppliedDeployment {
                 model_info: &spec.model_info,
                 litellm_params: Some(&spec.litellm_params),
-            }),
-            None => deployment,
-        },
+            })
+        }),
         None => deployment,
     };
     let Some(resolved_deployment) = chosen else {
@@ -90,9 +89,9 @@ where
         base_model,
     })
 }
-fn checked_params<'row, SourceError>(
-    deployment: SuppliedDeployment<'row>,
-) -> Result<&'row JsonObject, RouterMetadataError<SourceError>>
+fn checked_params<SourceError>(
+    deployment: SuppliedDeployment<'_>,
+) -> Result<&JsonObject, RouterMetadataError<SourceError>>
 where
     SourceError: Error + 'static,
 {
@@ -195,10 +194,9 @@ fn wildcard_model(
 }
 fn positive(value: Option<&Json>) -> bool {
     match value {
-        None | Some(Json::Null) => false,
+        None | Some(Json::Null | Json::Text(_) | Json::List(_) | Json::Object(_)) => false,
         Some(Json::Bool(flag)) => *flag,
-        Some(Json::Number(number)) => number.as_f64().is_some_and(|amount| amount > 0.0),
-        Some(Json::Text(_) | Json::List(_) | Json::Object(_)) => false,
+        Some(Json::Number(number)) => number.as_f64().is_some_and(|amount| amount > 0.0_f64),
     }
 }
 fn log_azure_fallback(resolved: &ResolvedModel, registry: &ModelRegistry) {

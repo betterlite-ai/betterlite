@@ -15,10 +15,9 @@ pub fn get_model_info<'catalog>(
     let Some(index) = snapshot.catalog.id_index.get(model_id) else {
         return Ok(None);
     };
-    match snapshot.catalog.models.get(*index) {
-        Some(spec) => Ok(Some(spec)),
-        None => Err(LookupError::InvalidRow { index: *index }),
-    }
+    let spec = snapshot.catalog.models.get(*index);
+    spec.ok_or(LookupError::InvalidRow { index: *index })
+        .map(Some)
 }
 pub fn get_model_group(
     lookup: &CatalogLookup<'_>,

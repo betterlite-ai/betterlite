@@ -17,19 +17,17 @@ async fn merged(body: Option<&'static str>) -> Option<JsonObject> {
     let environment = Environment::new("{}", &[]);
     let harness = environment.harness();
     let metadata_environment = harness.metadata();
-    let hf = HfConfigClient {
-        client: FakeHf { body },
-        base_url: HF_CONFIG_BASE_URL.to_owned(),
-    };
     let sources = HelperSources {
         environment: &metadata_environment,
         dynamic: &NoDynamic,
-        hf: &hf,
+        hf: &HfConfigClient {
+            client: FakeHf { body },
+            base_url: HF_CONFIG_BASE_URL.to_owned(),
+        },
     };
-    let cache = ModelInfoCache::new(128);
     let source = HelperModelMetadata {
         sources: &sources,
-        cache: &cache,
+        cache: &ModelInfoCache::new(128),
     };
     let engine = catalog(Vec::new());
     let snapshot = snapshot(&engine);
@@ -63,7 +61,7 @@ async fn native_huggingface_metadata_fetches_the_config() {
         .unwrap();
     assert_eq!(
         info.get("max_tokens"),
-        Some(&Json::Number(Number::from(4096)))
+        Some(&Json::Number(Number::from(4_096_i32)))
     );
     assert_eq!(
         info.get("litellm_provider"),

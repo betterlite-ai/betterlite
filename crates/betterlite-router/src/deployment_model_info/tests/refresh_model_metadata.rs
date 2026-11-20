@@ -5,13 +5,14 @@ use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::model_registration::JsonObject;
 use tokio::net::TcpListener;
 use tokio::time::timeout;
+use tracing::subscriber::set_default;
 
 use betterlite_openai::compatible_models::TokenLimits;
 
 use super::fixtures::{
     Counting, EXCHANGE_TIMEOUT, Events, Recorder, Resolver, accept_connections, answer_connections,
     answer_replacing, authorization, capture, catalog, client, clock, credentials, dispatcher,
-    handle, limits, object, record,
+    limits, object, record,
 };
 use crate::catalog_updates::catalog::{CatalogHandle, DeploymentCatalog};
 use crate::deployment_identity::spec::DeploymentSpec;
@@ -46,7 +47,7 @@ impl Rig {
         resolver: Resolver,
     ) -> Self {
         Self {
-            handle: handle(&engine),
+            handle: CatalogHandle::new(engine),
             discovery,
             credentials: credential_list,
             invalidation: Counting::default(),
@@ -116,14 +117,14 @@ async fn serve_n(listener: &TcpListener, count: usize, body: &[u8]) -> Vec<Strin
     answer_connections(streams, body).await
 }
 
-fn full_limits(context: u64) -> Option<TokenLimits> {
-    Some(limits(Some(context), Some(context), Some(context)))
+fn full_limits(context: u64) -> TokenLimits {
+    limits(Some(context), Some(context), Some(context))
 }
 
 #[tokio::test]
 async fn snapshot_eight_workers() {
     let (listener, base) = endpoint().await;
-    let specs = (0..8)
+    let specs = (0..8_usize)
         .map(|index| {
             row(
                 "group",
@@ -136,10 +137,10 @@ async fn snapshot_eight_workers() {
     let rig = Rig::new(Arc::clone(&engine), DiscoveryCache::for_deployments(8));
     let ((), requests) = tokio::join!(rig.run(), serve_n(&listener, 8, EIGHT));
     assert_eq!(requests.len(), 8);
-    let cached = (0..8)
+    let cached = (0..8_usize)
         .map(|index| rig.cached(&format!("id{index}")))
         .collect::<Vec<_>>();
-    assert!(cached.iter().all(|entry| *entry == full_limits(4096)));
+    assert!(cached.iter().all(|entry| *entry == Some(full_limits(4096))));
     assert_eq!(rig.entries().len(), 8);
     assert_eq!(rig.invalidation.count(), 9);
 }
@@ -162,11 +163,11 @@ async fn invalid_one_does_not_stop_others() {
         DiscoveryCache::for_deployments(2),
     );
     let events = Events::default();
-    let _guard = tracing::subscriber::set_default(capture(events.clone()));
+    let _guard = set_default(capture(events.clone()));
     let ((), requests) = tokio::join!(rig.run(), serve_n(&listener, 1, ONE));
     assert_eq!(requests.len(), 1);
     assert!(requests[0].contains("/good/v1/models"));
-    assert_eq!(rig.cached("good-id"), full_limits(4096));
+    assert_eq!(rig.cached("good-id"), Some(full_limits(4096)));
     assert!(rig.cached("bad-id").is_none());
     assert_eq!(events.at("DEBUG"), vec![ALL_MODELS.to_owned()]);
     assert!(events.at("WARN").is_empty());
@@ -190,7 +191,7 @@ async fn debug_not_warning_on_failure() {
         DiscoveryCache::for_deployments(2),
     );
     let events = Events::default();
-    let _guard = tracing::subscriber::set_default(capture(events.clone()));
+    let _guard = set_default(capture(events.clone()));
     rig.run().await;
     assert_eq!(
         events.at("DEBUG"),
@@ -235,7 +236,7 @@ async fn credential_overlay_before_resolution() {
         request.contains("authorization: bearer sk-cred"),
         "{request}"
     );
-    assert_eq!(rig.cached("id0"), full_limits(4096));
+    assert_eq!(rig.cached("id0"), Some(full_limits(4096)));
 }
 
 #[tokio::test]
@@ -272,10 +273,10 @@ async fn four_provider_allowlist() {
     let rig = Rig::new(catalog(specs), DiscoveryCache::for_deployments(5));
     let ((), requests) = tokio::join!(rig.run(), serve_n(&listener, 4, body));
     assert_eq!(requests.len(), 4);
-    assert_eq!(rig.cached("hosted"), full_limits(10));
-    assert_eq!(rig.cached("openai"), full_limits(20));
-    assert_eq!(rig.cached("text"), full_limits(30));
-    assert_eq!(rig.cached("like"), full_limits(40));
+    assert_eq!(rig.cached("hosted"), Some(full_limits(10)));
+    assert_eq!(rig.cached("openai"), Some(full_limits(20)));
+    assert_eq!(rig.cached("text"), Some(full_limits(30)));
+    assert_eq!(rig.cached("like"), Some(full_limits(40)));
     assert!(rig.cached("anthropic").is_none());
 }
 
@@ -319,60 +320,10 @@ async fn absent_base_wildcard_and_clientside_skips() {
 #[tokio::test]
 async fn dynamic_key_fallback() {
     let (listener, base) = endpoint().await;
-    let from_environment = row(
-        "group",
-        "env-key",
-        params("m0", "hosted_vllm", &format!("{base}/a")),
-    );
-    let from_params = row(
-        "group",
-        "param-key",
-        params_with(
-            "m1",
-            "hosted_vllm",
-            &format!("{base}/b"),
-            r#"{"api_key":"sk-param"}"#,
-        ),
-    );
-    let empty_key = row(
-        "group",
-        "empty-key",
-        params_with(
-            "m2",
-            "hosted_vllm",
-            &format!("{base}/c"),
-            r#"{"api_key":""}"#,
-        ),
-    );
-    // The "openai" model group name turns off provider defaults, so the resolution keeps no key at all.
-    let prefixed = row(
-        "group",
-        "prefix-key",
-        params_with(
-            "openai/m3",
-            "openai",
-            &format!("{base}/d"),
-            r#"{"api_key":"sk-prefix"}"#,
-        ),
-    );
-    let prefixed_empty = row(
-        "group",
-        "prefix-empty",
-        params_with(
-            "openai/m4",
-            "openai",
-            &format!("{base}/e"),
-            r#"{"api_key":""}"#,
-        ),
-    );
+    let mut specs = keyed_rows(&base);
+    specs.extend(prefixed_rows(&base));
     let rig = Rig::with_credentials(
-        catalog(vec![
-            from_environment,
-            from_params,
-            empty_key,
-            prefixed,
-            prefixed_empty,
-        ]),
+        catalog(specs),
         DiscoveryCache::for_deployments(5),
         credentials(&[]),
         Resolver::with_known(&[("HOSTED_VLLM_API_KEY", "sk-env")], &["openai"]),
@@ -380,28 +331,92 @@ async fn dynamic_key_fallback() {
     let body = br#"{"data":[{"id":"m0","context_length":4096},{"id":"m1","context_length":4096},{"id":"m2","context_length":4096},{"id":"m3","context_length":4096},{"id":"m4","context_length":4096}]}"#;
     let ((), requests) = tokio::join!(rig.run(), serve_n(&listener, 5, body));
     assert_eq!(requests.len(), 5);
+    assert_dynamic_authorization(&requests);
+    assert_dynamic_cached(&rig);
+}
+
+fn keyed_rows(base: &str) -> Vec<DeploymentSpec> {
+    vec![
+        row(
+            "group",
+            "env-key",
+            params("m0", "hosted_vllm", &format!("{base}/a")),
+        ),
+        row(
+            "group",
+            "param-key",
+            params_with(
+                "m1",
+                "hosted_vllm",
+                &format!("{base}/b"),
+                r#"{"api_key":"sk-param"}"#,
+            ),
+        ),
+        row(
+            "group",
+            "empty-key",
+            params_with(
+                "m2",
+                "hosted_vllm",
+                &format!("{base}/c"),
+                r#"{"api_key":""}"#,
+            ),
+        ),
+    ]
+}
+
+fn prefixed_rows(base: &str) -> Vec<DeploymentSpec> {
+    // The "openai" model group name turns off provider defaults, so the resolution keeps no key at all.
+    vec![
+        row(
+            "group",
+            "prefix-key",
+            params_with(
+                "openai/m3",
+                "openai",
+                &format!("{base}/d"),
+                r#"{"api_key":"sk-prefix"}"#,
+            ),
+        ),
+        row(
+            "group",
+            "prefix-empty",
+            params_with(
+                "openai/m4",
+                "openai",
+                &format!("{base}/e"),
+                r#"{"api_key":""}"#,
+            ),
+        ),
+    ]
+}
+
+fn assert_dynamic_authorization(requests: &[String]) {
     assert_eq!(
-        authorization(&requests, "/a/v1/models"),
+        authorization(requests, "/a/v1/models"),
         Some("bearer sk-env".to_owned())
     );
     assert_eq!(
-        authorization(&requests, "/b/v1/models"),
+        authorization(requests, "/b/v1/models"),
         Some("bearer sk-param".to_owned())
     );
     assert_eq!(
-        authorization(&requests, "/c/v1/models"),
+        authorization(requests, "/c/v1/models"),
         Some("bearer".to_owned())
     );
     assert_eq!(
-        authorization(&requests, "/d/v1/models"),
+        authorization(requests, "/d/v1/models"),
         Some("bearer sk-prefix".to_owned())
     );
-    assert_eq!(authorization(&requests, "/e/v1/models"), None);
-    assert_eq!(rig.cached("env-key"), full_limits(4096));
-    assert_eq!(rig.cached("param-key"), full_limits(4096));
-    assert_eq!(rig.cached("empty-key"), full_limits(4096));
-    assert_eq!(rig.cached("prefix-key"), full_limits(4096));
-    assert_eq!(rig.cached("prefix-empty"), full_limits(4096));
+    assert_eq!(authorization(requests, "/e/v1/models"), None);
+}
+
+fn assert_dynamic_cached(rig: &Rig) {
+    assert_eq!(rig.cached("env-key"), Some(full_limits(4096)));
+    assert_eq!(rig.cached("param-key"), Some(full_limits(4096)));
+    assert_eq!(rig.cached("empty-key"), Some(full_limits(4096)));
+    assert_eq!(rig.cached("prefix-key"), Some(full_limits(4096)));
+    assert_eq!(rig.cached("prefix-empty"), Some(full_limits(4096)));
 }
 
 #[tokio::test]
@@ -544,7 +559,7 @@ async fn invalid_header_values() {
         DiscoveryCache::for_deployments(2),
     );
     let events = Events::default();
-    let _guard = tracing::subscriber::set_default(capture(events.clone()));
+    let _guard = set_default(capture(events.clone()));
     rig.run().await;
     assert!(rig.recorder.stored().is_empty());
     assert!(rig.entries().is_empty());
@@ -616,7 +631,7 @@ async fn resize_delete_set_invalidate_order() {
         row("group", "id1", params("m1", "openai", &format!("{base}/b"))),
     ]);
     discovery.store("id0", record(&engine, 0, limits(Some(9), Some(9), Some(9))));
-    *clock_handle.lock().unwrap() = 1000.0;
+    *clock_handle.lock().unwrap() = 1000.0_f64;
     let rig = Rig::new(Arc::clone(&engine), discovery);
     let ((), requests) = tokio::join!(rig.run(), serve_n(&listener, 2, TWO));
     assert_eq!(requests.len(), 2);
@@ -625,9 +640,12 @@ async fn resize_delete_set_invalidate_order() {
     assert_eq!(report.entries, vec!["id0".to_owned(), "id1".to_owned()]);
     assert_eq!(
         report.expirations,
-        vec![("id0".to_owned(), 1600.0), ("id1".to_owned(), 1600.0)]
+        vec![
+            ("id0".to_owned(), 1600.0_f64),
+            ("id1".to_owned(), 1600.0_f64)
+        ]
     );
-    assert_eq!(rig.cached("id0"), full_limits(4096));
+    assert_eq!(rig.cached("id0"), Some(full_limits(4096)));
     assert_eq!(rig.invalidation.count(), 3);
 }
 
@@ -646,10 +664,10 @@ async fn discovery_ttl_six_hundred() {
     assert_eq!(requests.len(), 1);
     assert_eq!(
         rig.discovery.report().expirations,
-        vec![("id0".to_owned(), 1600.0)]
+        vec![("id0".to_owned(), 1600.0_f64)]
     );
-    *clock_handle.lock().unwrap() = 1600.0;
+    *clock_handle.lock().unwrap() = 1600.0_f64;
     assert!(rig.discovery.get("id0").is_some());
-    *clock_handle.lock().unwrap() = 1600.5;
+    *clock_handle.lock().unwrap() = 1600.5_f64;
     assert!(rig.discovery.get("id0").is_none());
 }
