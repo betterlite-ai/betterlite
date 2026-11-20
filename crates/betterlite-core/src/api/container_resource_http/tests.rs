@@ -41,6 +41,7 @@ use http::header::HeaderMap;
 use indexmap::IndexMap;
 use tokio::io::AsyncReadExt as _;
 use tokio::net::TcpListener;
+use tokio::runtime::{Builder, Runtime};
 use tokio::time::sleep;
 use url::Url;
 
@@ -116,8 +117,8 @@ pub(super) fn logging() -> Mutex<LoggingState> {
     Mutex::new(state)
 }
 
-pub(super) fn runtime() -> tokio::runtime::Runtime {
-    tokio::runtime::Builder::new_current_thread()
+pub(super) fn runtime() -> Runtime {
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .expect("the runtime")
@@ -146,38 +147,45 @@ pub(super) fn refused<Value>(
     }
 }
 
-fn split_error(
-    error: ContainerResourceHttpError,
-) -> Result<(BaseLlmException, bool), ContainerFileHttpError> {
+enum Split {
+    Provider(BaseLlmException, bool),
+    Call(ContainerFileHttpError),
+    Query(String),
+}
+
+fn split_error(error: ContainerResourceHttpError) -> Split {
     match error {
         ContainerResourceHttpError::Provider {
             exception,
             status_code_is_synthesized,
-        } => Ok((exception, status_code_is_synthesized)),
-        ContainerResourceHttpError::Call(call) => Err(call),
-        ContainerResourceHttpError::QueryValue { name } => panic!("the {name} query value"),
+        } => Split::Provider(exception, status_code_is_synthesized),
+        ContainerResourceHttpError::Call(call) => Split::Call(call),
+        ContainerResourceHttpError::QueryValue { name } => Split::Query(name),
     }
 }
 
 pub(super) fn provider_error(error: ContainerResourceHttpError) -> (BaseLlmException, bool) {
     match split_error(error) {
-        Ok(provider) => provider,
-        Err(call) => panic!("the call failed: {call}"),
+        Split::Provider(provider) => provider,
+        Split::Call(call) => panic!("the call failed: {call}"),
+        Split::Query(name) => panic!("the {name} query value"),
     }
 }
 
 pub(super) fn call_error(error: ContainerResourceHttpError) -> ContainerFileHttpError {
     match split_error(error) {
-        Ok((exception, _)) => panic!("the provider failed: {exception}"),
-        Err(call) => call,
+        Split::Provider((exception, _)) => panic!("the provider failed: {exception}"),
+        Split::Call(call) => call,
+        Split::Query(name) => panic!("the {name} query value"),
     }
 }
 
 pub(super) fn param_field(error: ContainerResourceHttpError) -> &'static str {
-    match call_error(error) {
-        ContainerFileHttpError::ParamType { field, .. } => field,
-        error => panic!("the call failed: {error}"),
-    }
+    let failed = call_error(error);
+    let ContainerFileHttpError::ParamType { field, .. } = &failed else {
+        panic!("the call failed: {failed}");
+    };
+    *field
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -303,16 +311,16 @@ impl BaseContainerConfig for StubConfig {
         self.transform(container_id, api_base, context)
     }
 
-    fn transform_container_retrieve_response(&self, raw: &[u8]) -> Result<ContainerObject, ContainerError> {
-        serde_json::from_slice(raw).map_err(|error| ContainerError::Decode(error.to_string()))
+    fn transform_container_retrieve_response(&self, raw_response: &[u8]) -> Result<ContainerObject, ContainerError> {
+        serde_json::from_slice(raw_response).map_err(|error| ContainerError::Decode(error.to_string()))
     }
 
     fn transform_container_delete_request(&self, container_id: &str, api_base: &str, context: ContainerRequestContext<'_>) -> Result<(String, Object), ContainerError> {
         self.transform(container_id, api_base, context)
     }
 
-    fn transform_container_delete_response(&self, raw: &[u8]) -> Result<DeleteContainerResult, ContainerError> {
-        serde_json::from_slice(raw).map_err(|error| ContainerError::Decode(error.to_string()))
+    fn transform_container_delete_response(&self, raw_response: &[u8]) -> Result<DeleteContainerResult, ContainerError> {
+        serde_json::from_slice(raw_response).map_err(|error| ContainerError::Decode(error.to_string()))
     }
 
     fn transform_container_file_list_request(&self, _id: &str, _api_base: &str, _context: ContainerRequestContext<'_>, _query: &ContainerListQuery<'_>) -> Result<(String, Object), ContainerError> { Ok((String::new(), Object::new())) }
@@ -388,10 +396,6 @@ impl FakeClient {
         self.state.answer(reply);
     }
 
-    pub(super) fn fail(&self, error: TransferError) {
-        self.state.fail(error);
-    }
-
     pub(super) fn seen(&self) -> Vec<ContainerHttpRequest> {
         self.state.seen()
     }
@@ -409,8 +413,8 @@ impl AsyncClient for FakeClient {
         request: &ContainerHttpRequest,
     ) -> impl Future<Output = Result<ContainerHttpReply, TransferError>> + Send {
         let state = Arc::clone(&self.state);
-        let request = request.clone();
-        async move { state.next(&request) }
+        let sent = request.clone();
+        async move { state.next(&sent) }
     }
 }
 
@@ -528,24 +532,17 @@ impl RecordingHook {
 impl PreCallHook for RecordingHook {
     fn pre_call(&self, _state: &mut LoggingState, call: &PreCall) -> Result<(), PrePostError> {
         let args = &call.additional_args;
-        let mut headers = BTreeMap::new();
-        for (name, value) in args.headers.iter().flatten() {
-            if let Json::Text(text) = value {
-                headers.insert(name.clone(), text.clone());
-            }
-        }
-        let mut params = BTreeMap::new();
+        let headers = args
+            .headers
+            .as_ref()
+            .map_or_else(BTreeMap::new, text_fields);
         let empty = IndexMap::new();
         let logged = match args.passthrough.get("params") {
             Some(Json::Object(entries)) => entries,
             Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Text(_))
             | None => &empty,
         };
-        for (name, value) in logged {
-            if let Json::Text(text) = value {
-                params.insert(name.clone(), text.clone());
-            }
-        }
+        let params = text_fields(logged);
         let container_id = match args.passthrough.get("container_id") {
             Some(Json::Text(text)) => text.clone(),
             Some(
@@ -570,6 +567,16 @@ impl PreCallHook for RecordingHook {
         }
         Ok(())
     }
+}
+
+fn text_fields(fields: &IndexMap<String, Json>) -> BTreeMap<String, String> {
+    fields
+        .iter()
+        .filter_map(|(name, value)| match value {
+            Json::Text(text) => Some((name.clone(), text.clone())),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
+        })
+        .collect()
 }
 
 pub(super) fn closed_error() -> TransferError {
@@ -655,7 +662,7 @@ impl Fixture {
             logging_obj: &self.logging,
             extra_headers: None,
             extra_query: None,
-            timeout: Some(Duration::from_secs(6000)),
+            timeout: Some(Duration::from_mins(100)),
             blocking_client: None,
             async_client: None,
         }

@@ -124,8 +124,8 @@ impl RecordingHook {
 }
 
 impl PreCallHook for RecordingHook {
-    fn pre_call(&self, _state: &mut LoggingState, record: &PreCall) -> Result<(), PrePostError> {
-        *self.logged.lock().unwrap_or_else(PoisonError::into_inner) = Some(logged_json(record));
+    fn pre_call(&self, _state: &mut LoggingState, call: &PreCall) -> Result<(), PrePostError> {
+        *self.logged.lock().unwrap_or_else(PoisonError::into_inner) = Some(logged_json(call));
         Ok(())
     }
 }

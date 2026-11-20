@@ -32,7 +32,7 @@ use betterlite_openai::{
     openai_base_config::Object,
 };
 use indexmap::IndexMap;
-use serde_json::{Number, Value};
+use serde_json::Number;
 use thiserror::Error;
 use url::Url;
 
@@ -112,8 +112,8 @@ pub struct ContainerResourceHandler<Source: ClientSource, Hook: PreCallHook> {
 // LiteLLM spells the blocking and async entry points of each endpoint out twice; one request shape serves both
 #[rustfmt::skip]
 macro_rules! endpoints {
-    ($($sync:ident, $asynchronous:ident, $kind:ident, $result:ident;)+) => { $(
-        pub fn $sync(&self, call: &ContainerResourceCall<'_, Source>, is_async: bool) -> Result<Handled<<$kind as Resource>::Reply, impl Future<Output = $result>>, ContainerResourceHttpError> {
+    ($($sync:ident, $asynchronous:ident, $kind:ident, $reply:ident, $result:ident;)+) => { $(
+        pub fn $sync(&self, call: &ContainerResourceCall<'_, Source>, is_async: bool) -> Result<Handled<$reply, impl Future<Output = $result>>, ContainerResourceHttpError> {
             if is_async { return Ok(Handled::Pending(self.$asynchronous(call))); }
             self.sync_call::<$kind>(call).map(Handled::Done)
         }
@@ -126,8 +126,8 @@ macro_rules! endpoints {
 }
 impl<Source: ClientSource, Hook: PreCallHook> ContainerResourceHandler<Source, Hook> {
     endpoints! {
-        container_retrieve_handler, acontainer_retrieve_handler, Retrieve, RetrieveResult;
-        container_delete_handler, acontainer_delete_handler, Delete, DeleteResult;
+        container_retrieve_handler, acontainer_retrieve_handler, Retrieve, ContainerObject, RetrieveResult;
+        container_delete_handler, acontainer_delete_handler, Delete, DeleteContainerResult, DeleteResult;
     }
 
     fn sync_call<Kind>(
@@ -213,13 +213,11 @@ fn rendered_query(
 ) -> Result<IndexMap<String, String>, ContainerResourceHttpError> {
     let mut query = IndexMap::new();
     for (name, value) in transformed {
-        let rendered = match value {
-            Value::Null => String::new(),
-            Value::String(text) => text.clone(),
-            Value::Number(_) | Value::Bool(_) => value.to_string(),
-            Value::Array(_) | Value::Object(_) => {
-                return Err(ContainerResourceHttpError::QueryValue { name: name.clone() });
-            }
+        let rendered = match value.as_str() {
+            Some(text) => text.to_owned(),
+            None if value.is_null() => String::new(),
+            None if value.is_number() || value.is_boolean() => value.to_string(),
+            None => return Err(ContainerResourceHttpError::QueryValue { name: name.clone() }),
         };
         query.insert(name.clone(), rendered);
     }

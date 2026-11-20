@@ -78,7 +78,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        run_case(input)
+        dispatch_case(input)
     }
 }
 
@@ -114,7 +114,7 @@ impl Fixture {
     }
 }
 
-fn run_case(input: &Input) -> HelperResult {
+fn dispatch_case(input: &Input) -> HelperResult {
     let fixture = Fixture::new(input)?;
     let source = ScriptedSource::new(&input.reply, input.failure);
     let hook = RecordingHook::default();

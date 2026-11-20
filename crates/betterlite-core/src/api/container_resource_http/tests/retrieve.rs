@@ -423,12 +423,11 @@ fn retrieve_stops_before_sending_when_the_hook_fails() {
     fixture.hook.refuse();
     fixture.source.answer(reply(200, CONTAINER_JSON));
     let call = fixture.call();
-    match call_error(retrieve_error(&fixture, &call)) {
-        ContainerFileHttpError::Logging(PrePostError::CallbackFailed { message }) => {
-            assert_eq!(message, "the hook refused the call");
-        }
-        error => panic!("the call failed: {error}"),
-    }
+    let error = call_error(retrieve_error(&fixture, &call));
+    let ContainerFileHttpError::Logging(PrePostError::CallbackFailed { message }) = &error else {
+        panic!("the call failed: {error}");
+    };
+    assert_eq!(message, "the hook refused the call");
     assert_eq!(fixture.hook.seen().len(), 1);
     assert!(fixture.source.seen().is_empty());
 }
