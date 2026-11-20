@@ -1,21 +1,17 @@
-use std::collections::{BTreeMap, VecDeque};
-use std::pin::Pin;
+use std::collections::BTreeMap;
 use std::str;
 
 use betterlite_models::call_helpers::headers::{
     AdditionalHeaders, HeaderSource, process_response_headers,
 };
 use betterlite_models::decisions::{Extra, Json};
-use betterlite_openai::stream::SseParser;
 use betterlite_openai::text_completion_transport::logging::StreamDefaults;
-use betterlite_openai::text_completion_transport::sdk::{ByteStream, SdkError};
-use betterlite_streaming::provider_chunk_decode::chunk::ProviderChunk;
-use betterlite_streaming::provider_chunk_decode::error::ProviderChunkError;
-use betterlite_streaming::provider_chunk_decode::wrapper::{StreamSetup, StreamWrapper};
-use betterlite_streaming::stream_chunk_shaping::records::{
-    JsonObject, JsonValue, StreamChunk, StreamOptions,
+use betterlite_openai::text_completion_transport::sdk::ByteStream;
+use betterlite_openai::text_completion_transport::stream::{
+    ProviderStream, PumpError, provider_stream,
 };
-use futures_util::{Stream, StreamExt as _, stream};
+use betterlite_streaming::provider_chunk_decode::wrapper::StreamSetup;
+use betterlite_streaming::stream_chunk_shaping::records::{JsonObject, JsonValue, StreamOptions};
 use http::HeaderMap;
 use indexmap::IndexMap;
 
@@ -26,7 +22,7 @@ pub const AZURE_PROVIDER: &str = "azure";
 // LiteLLM's REPEATED_STREAMING_CHUNK_LIMIT default
 pub const REPEATED_STREAMING_CHUNK_LIMIT: usize = 100;
 
-pub type ChatStream = Pin<Box<dyn Stream<Item = Result<StreamChunk, StreamingError>> + Send>>;
+pub type ChatStream = ProviderStream<StreamingError>;
 
 // What CustomStreamWrapper was given as _response_headers: processed on the sync path, raw on the async one
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -157,122 +153,17 @@ pub fn wrap_stream(
         stream_options,
         response_headers: headers,
         additional_headers,
-        chunks: chat_stream(bytes, setup),
+        chunks: provider_stream(AZURE_PROVIDER, bytes, setup, streaming_error),
     }
 }
 
-struct StreamState {
-    bytes: ByteStream,
-    parser: SseParser,
-    pending: VecDeque<Vec<u8>>,
-    wrapper: StreamWrapper,
-    phase: Phase,
-}
-
-// Exhausted means the bytes ended but parsed events may remain; Done means the [DONE] event was read.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Phase {
-    Reading,
-    Exhausted,
-    Done,
-    Failed,
-}
-
-type Item = Result<StreamChunk, StreamingError>;
-
-fn provider_chunk(payload: &[u8]) -> Result<ProviderChunk, ProviderChunkError> {
-    let value: JsonValue = serde_json::from_slice(payload)
-        .map_err(|source| ProviderChunkError::InvalidChunk { source })?;
-    Ok(ProviderChunk::Json(Box::new(value)))
-}
-
-// None means the payload shaped no chunk and the next one is read; Some carries the item to yield.
-fn process_payload(state: &mut StreamState, payload: &[u8]) -> Option<Item> {
-    let chunk = match provider_chunk(payload) {
-        Ok(chunk) => chunk,
-        Err(error) => return Some(Err(StreamingError::Chunk(error))),
-    };
-    state
-        .wrapper
-        .push(&chunk)
-        .map_err(StreamingError::from)
-        .transpose()
-}
-
-// A byte read that is dropped here still advances the byte stream, so the loop in step ends.
-fn absorb(state: &mut StreamState, read: Result<Vec<u8>, SdkError>) -> Result<(), StreamingError> {
-    let bytes = read.map_err(|error| {
-        StreamingError::Azure(Box::new(AzureStreamFailure::raised(Raised::sdk(&error))))
-    })?;
-    let events = state.parser.push(&bytes).map_err(|error| {
-        StreamingError::Azure(Box::new(AzureStreamFailure::raised(Raised::sdk(
-            &SdkError::Sse(error),
-        ))))
-    })?;
-    state.pending.extend(events);
-    Ok(())
-}
-
-enum Advance {
-    Next,
-    Item(Box<Item>),
-    Closing,
-}
-
-async fn advance(state: &mut StreamState) -> Advance {
-    if state.phase == Phase::Done {
-        return Advance::Closing;
-    }
-    if let Some(payload) = state.pending.pop_front() {
-        if payload.trim_ascii() == b"[DONE]" {
-            state.phase = Phase::Done;
-            return Advance::Next;
+// The classes the Azure stream has always reported: a chunk error, a usage write error, or an SDK read error.
+fn streaming_error(error: PumpError) -> StreamingError {
+    match error {
+        PumpError::Chunk(chunk) => StreamingError::Chunk(chunk),
+        PumpError::Usage(usage) => StreamingError::Usage(usage),
+        PumpError::Sdk(error) => {
+            StreamingError::Azure(Box::new(AzureStreamFailure::raised(Raised::sdk(&error))))
         }
-        return process_payload(state, &payload)
-            .map_or(Advance::Next, |item| Advance::Item(Box::new(item)));
     }
-    if state.phase == Phase::Exhausted {
-        return Advance::Closing;
-    }
-    let Some(read) = state.bytes.next().await else {
-        state.pending.extend(state.parser.finish());
-        state.phase = Phase::Exhausted;
-        return Advance::Next;
-    };
-    match absorb(state, read) {
-        Ok(()) => Advance::Next,
-        Err(error) => Advance::Item(Box::new(Err(error))),
-    }
-}
-
-async fn step(mut state: StreamState) -> Option<(Item, StreamState)> {
-    loop {
-        if state.phase == Phase::Failed {
-            return None;
-        }
-        let item = match advance(&mut state).await {
-            Advance::Next => continue,
-            Advance::Item(item) => *item,
-            Advance::Closing => state
-                .wrapper
-                .finish()
-                .map(|chunk| chunk.map_err(StreamingError::from))?,
-        };
-        if item.is_err() {
-            state.phase = Phase::Failed;
-        }
-        return Some((item, state));
-    }
-}
-
-#[must_use]
-pub fn chat_stream(bytes: ByteStream, setup: StreamSetup) -> ChatStream {
-    let state = StreamState {
-        bytes,
-        parser: SseParser::default(),
-        pending: VecDeque::new(),
-        wrapper: StreamWrapper::new(AZURE_PROVIDER, setup),
-        phase: Phase::Reading,
-    };
-    Box::pin(stream::unfold(state, step))
 }

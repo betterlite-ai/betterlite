@@ -16,16 +16,29 @@ use crate::stream::SseParser;
 // clippy::pub_use is denied and no expect may be added, so an alias keeps the moved type nameable here
 pub type StreamSetup = WrapperStreamSetup;
 
-// The OpenAI SDK stops after the [DONE] event, so later payloads are never shaped
-pub type CompletionStream =
-    Pin<Box<dyn Stream<Item = Result<StreamChunk, TextCompletionError>> + Send>>;
+// The provider name completion_stream shapes its chunks under.
+pub const TEXT_COMPLETION_PROVIDER: &str = "text-completion-openai";
 
-struct StreamState {
+pub type ProviderStream<E> = Pin<Box<dyn Stream<Item = Result<StreamChunk, E>> + Send>>;
+
+// The OpenAI SDK stops after the [DONE] event, so later payloads are never shaped
+pub type CompletionStream = ProviderStream<TextCompletionError>;
+
+// What the pump can meet while it reads: a chunk it cannot shape, usage it cannot write, or a byte read that failed.
+#[derive(Debug)]
+pub enum PumpError {
+    Chunk(ProviderChunkError),
+    Usage(serde_json::Error),
+    Sdk(Box<SdkError>),
+}
+
+struct StreamState<E> {
     bytes: ByteStream,
     parser: SseParser,
     pending: VecDeque<Vec<u8>>,
     wrapper: StreamWrapper,
     phase: Phase,
+    wrap: fn(PumpError) -> E,
 }
 
 // Exhausted means the bytes ended but parsed events may remain; Done means the [DONE] event was read.
@@ -37,7 +50,7 @@ enum Phase {
     Failed,
 }
 
-type Item = Result<StreamChunk, TextCompletionError>;
+type Item<E> = Result<StreamChunk, E>;
 
 fn provider_chunk(payload: &[u8]) -> Result<ProviderChunk, ProviderChunkError> {
     let value: JsonValue = serde_json::from_slice(payload)
@@ -45,49 +58,46 @@ fn provider_chunk(payload: &[u8]) -> Result<ProviderChunk, ProviderChunkError> {
     Ok(ProviderChunk::Json(Box::new(value)))
 }
 
-// The wrapper's errors are the two sources this path has always reported.
-fn wrapper_error(error: WrapperError) -> TextCompletionError {
-    let source = match error {
-        WrapperError::Chunk(chunk) => ErrorSource::Chunk(chunk),
-        WrapperError::Usage(usage) => ErrorSource::Serialize(usage),
-    };
-    TextCompletionError::wrapped(source)
+fn wrapper_error<E>(wrap: fn(PumpError) -> E, error: WrapperError) -> E {
+    match error {
+        WrapperError::Chunk(chunk) => wrap(PumpError::Chunk(chunk)),
+        WrapperError::Usage(usage) => wrap(PumpError::Usage(usage)),
+    }
 }
 
 // None means the payload shaped no chunk and the next one is read; Some carries the item to yield.
-fn process_payload(state: &mut StreamState, payload: &[u8]) -> Option<Item> {
+fn process_payload<E>(state: &mut StreamState<E>, payload: &[u8]) -> Option<Item<E>> {
+    let wrap = state.wrap;
     let chunk = match provider_chunk(payload) {
         Ok(chunk) => chunk,
-        Err(error) => return Some(Err(TextCompletionError::wrapped(ErrorSource::Chunk(error)))),
+        Err(error) => return Some(Err(wrap(PumpError::Chunk(error)))),
     };
     state
         .wrapper
         .push(&chunk)
-        .map_err(wrapper_error)
+        .map_err(|error| wrapper_error(wrap, error))
         .transpose()
 }
 
 // A byte read that is dropped here still advances the byte stream, so the loop in step ends.
-fn absorb(
-    state: &mut StreamState,
-    read: Result<Vec<u8>, SdkError>,
-) -> Result<(), TextCompletionError> {
-    let bytes =
-        read.map_err(|error| TextCompletionError::wrapped(ErrorSource::Sdk(Box::new(error))))?;
-    let events = state.parser.push(&bytes).map_err(|error| {
-        TextCompletionError::wrapped(ErrorSource::Sdk(Box::new(SdkError::Sse(error))))
-    })?;
+fn absorb<E>(state: &mut StreamState<E>, read: Result<Vec<u8>, SdkError>) -> Result<(), E> {
+    let wrap = state.wrap;
+    let bytes = read.map_err(|error| wrap(PumpError::Sdk(Box::new(error))))?;
+    let events = state
+        .parser
+        .push(&bytes)
+        .map_err(|error| wrap(PumpError::Sdk(Box::new(SdkError::Sse(error)))))?;
     state.pending.extend(events);
     Ok(())
 }
 
-enum Advance {
+enum Advance<E> {
     Next,
-    Item(Box<Item>),
+    Item(Box<Item<E>>),
     Closing,
 }
 
-async fn advance(state: &mut StreamState) -> Advance {
+async fn advance<E>(state: &mut StreamState<E>) -> Advance<E> {
     if state.phase == Phase::Done {
         return Advance::Closing;
     }
@@ -113,7 +123,8 @@ async fn advance(state: &mut StreamState) -> Advance {
     }
 }
 
-async fn step(mut state: StreamState) -> Option<(Item, StreamState)> {
+async fn step<E>(mut state: StreamState<E>) -> Option<(Item<E>, StreamState<E>)> {
+    let wrap = state.wrap;
     loop {
         if state.phase == Phase::Failed {
             return None;
@@ -124,7 +135,7 @@ async fn step(mut state: StreamState) -> Option<(Item, StreamState)> {
             Advance::Closing => state
                 .wrapper
                 .finish()
-                .map(|chunk| chunk.map_err(wrapper_error))?,
+                .map(|chunk| chunk.map_err(|error| wrapper_error(wrap, error)))?,
         };
         if item.is_err() {
             state.phase = Phase::Failed;
@@ -133,14 +144,42 @@ async fn step(mut state: StreamState) -> Option<(Item, StreamState)> {
     }
 }
 
+// The one SSE loop both the text completion and the Azure chat streams run; wrap builds each path's error.
 #[must_use]
-pub fn completion_stream(bytes: ByteStream, setup: StreamSetup) -> CompletionStream {
+pub fn provider_stream<E: Send + 'static>(
+    provider: &str,
+    bytes: ByteStream,
+    setup: StreamSetup,
+    wrap: fn(PumpError) -> E,
+) -> ProviderStream<E> {
     let state = StreamState {
         bytes,
         parser: SseParser::default(),
         pending: VecDeque::new(),
-        wrapper: StreamWrapper::new("text-completion-openai", setup),
+        wrapper: StreamWrapper::new(provider, setup),
         phase: Phase::Reading,
+        wrap,
     };
-    Box::pin(stream::unfold(state, step))
+    Box::pin(stream::unfold(state, step::<E>))
+}
+
+#[must_use]
+pub fn completion_stream(bytes: ByteStream, setup: StreamSetup) -> CompletionStream {
+    provider_stream(
+        TEXT_COMPLETION_PROVIDER,
+        bytes,
+        setup,
+        text_completion_error,
+    )
+}
+
+// handler.py wraps every iteration failure in OpenAIError, so the text path maps each pump error to ErrorSource.
+#[must_use]
+pub fn text_completion_error(error: PumpError) -> TextCompletionError {
+    let source = match error {
+        PumpError::Chunk(source) => ErrorSource::Chunk(source),
+        PumpError::Usage(source) => ErrorSource::Serialize(source),
+        PumpError::Sdk(source) => ErrorSource::Sdk(source),
+    };
+    TextCompletionError::wrapped(source)
 }

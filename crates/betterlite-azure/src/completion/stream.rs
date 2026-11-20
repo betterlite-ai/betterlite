@@ -2,7 +2,7 @@ use betterlite_models::decisions::{Extra, Json};
 use betterlite_openai::text_completion_transport::logging::StreamDefaults;
 use betterlite_openai::text_completion_transport::sdk::ByteStream;
 use betterlite_openai::text_completion_transport::stream::{
-    CompletionStream, StreamSetup, completion_stream,
+    CompletionStream, StreamSetup, TEXT_COMPLETION_PROVIDER, provider_stream, text_completion_error,
 };
 use betterlite_streaming::stream_chunk_shaping::creation::StreamInstant;
 use betterlite_streaming::stream_chunk_shaping::records::{JsonValue, StreamOptions};
@@ -58,5 +58,10 @@ pub fn wrap(bytes: ByteStream, input: StreamInput<'_>) -> CompletionStream {
         now: input.now,
         next_id: input.next_id,
     };
-    completion_stream(bytes, setup)
+    provider_stream(
+        TEXT_COMPLETION_PROVIDER,
+        bytes,
+        setup,
+        text_completion_error,
+    )
 }
