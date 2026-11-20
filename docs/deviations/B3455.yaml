@@ -6,9 +6,9 @@ deviations:
   - what: The operation JSON in the "Operation failed" and "No corpus name in operation response" messages is compact JSON text, not Python's dict repr.
     why: docs/compatibility.md leaves Python repr text out of scope. The prefix text is identical.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L298-L307
-  - what: The multipart metadata part is compact JSON text, not json.dumps with spaces after its separators.
-    why: Only the parsed JSON is observable to Google, and the oracle compares the parsed value.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L375
+  - what: The multipart metadata part is compact JSON text, not json.dumps with spaces after its separators, and the "Request body", "Create corpus response" and "Metadata" debug lines print compact or as-received JSON instead of json.dumps text with indentation.
+    why: Only the parsed JSON is observable to Google, the oracle compares the parsed value, and docs/compatibility.md leaves json.dumps formatting out of scope. The message prefixes are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L370-L375
   - what: A response whose ragFile name is null or not a string counts as missing, so the file id falls through to the top-level name, then to an empty string.
     why: Python would return None or a non-string through its untyped dict. The declared type is str, so betterlite keeps types real.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L406-L407
