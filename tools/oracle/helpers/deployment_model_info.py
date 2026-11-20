@@ -105,8 +105,8 @@ def listing_answer(router: Router, arguments: Arguments) -> JsonValue:
     if info is None:
         return None
     return JSON.validate_python(
-        {
-            "cost_map_keys": list(info.cost_map_keys),
+        {  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10424-L10480
+            "cost_map_keys": list(info.cost_map_keys),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10424-L10480
             "max_input_tokens": info.max_input_tokens,
             "max_output_tokens": info.max_output_tokens,
         }
@@ -117,8 +117,8 @@ def configured_answer(router: Router, arguments: Arguments) -> JsonValue:
     name = model_name_of(arguments)
     limits = router.get_configured_token_limits(name)
     return JSON.validate_python(
-        {
-            "limits": [limits[0], limits[1]],
+        {  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10492-L10517
+            "limits": [limits[0], limits[1]],  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10492-L10517
             "mode": router.get_configured_mode(name),
             "display_name": router.get_configured_display_name(name),
         }
@@ -152,7 +152,7 @@ def raw_answer(router: Router, arguments: Arguments) -> JsonValue:
     deployment = ROW.validate_python(router.get_model_info(model_id))  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10802-L10816
     rows = ROWS.validate_python(router.get_model_group(model_id))  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10818-L10829
     found = None if rows is None else [summary(row) for row in rows]
-    return JSON.validate_python({"deployment": summary(deployment), "group": found})
+    return JSON.validate_python({"deployment": summary(deployment), "group": found})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10802-L10829
 
 
 def azure_answer(router: Router, arguments: Arguments) -> JsonValue:
@@ -178,7 +178,7 @@ def azure_answer(router: Router, arguments: Arguments) -> JsonValue:
         for message in capture.messages
         if any(marker in message for marker in AZURE_MARKERS)
     ]
-    return JSON.validate_python({"logs": logs, "info": info})
+    return JSON.validate_python({"logs": logs, "info": info})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10676-L10800
 
 
 def run(input_value: Input) -> JsonValue:
