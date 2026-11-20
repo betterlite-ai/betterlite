@@ -50,6 +50,7 @@ serde_json = { version = "1.0.154", features = ["arbitrary_precision", "raw_valu
 serde_path_to_error = "0.1.20"
 serde_repr = "0.1.21"
 serde_with = { version = "3.24.0", default-features = false, features = ["alloc", "macros"] }
+sha2.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }
 tracing.workspace = true
