@@ -193,6 +193,8 @@ fn dump_fallback() {
         Some(&JsonData::String(String::from("org-1")))
     );
     assert!(!fields.contains_key("organization_id"));
+    // the list loop inserts no derived status; the stored fields are what the caller sees
+    assert!(!fields.contains_key("status"));
     assert!(matches!(
         fields.get("litellm_budget_table"),
         Some(JsonData::Object(_))

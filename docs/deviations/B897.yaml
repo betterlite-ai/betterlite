@@ -8,7 +8,7 @@ deviations:
       Python's unbounded integers accept any offset; Rust would panic on the division and the
       checked multiply would wrap. B782 validates size ge=1 and bounds the page, so no working
       setup reaches either input, and a typed error keeps the failure in the caller's error path.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L7199-L7203
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L7163
 kept_bugs:
   - what: >-
       The PRISMA contains operator reaches SQL as an unescaped ILIKE pattern, so a percent or
