@@ -198,9 +198,13 @@ async fn execute(
 ) -> Response {
     let asked_model = request.model.clone();
     let endpoint = state.execution.endpoint(deployment).await;
-    let calls = state.calls();
-    let operation = text_operation(request, calls, state, deployment, call_id);
-    let context = dispatch_context();
+    let operation = text_operation(request, state.calls(), state, deployment, call_id);
+    let context = DispatchContext::start(CallInputs {
+        now: SystemTime::now,
+        id: Uuid::new_v4,
+        deadline: None,
+        privacy: false,
+    });
     let answered = state.dispatch.execute(operation, &context).await;
     let mut result = match answered {
         Ok(CallResult::TextCompletion(completion)) => completion,
@@ -254,16 +258,6 @@ fn text_operation(
     } else {
         Operation::TextCompletion(call)
     }
-}
-
-// a fresh call context for the route's dispatch
-fn dispatch_context() -> DispatchContext {
-    DispatchContext::start(CallInputs {
-        now: SystemTime::now,
-        id: Uuid::new_v4,
-        deadline: None,
-        privacy: false,
-    })
 }
 
 // A chat answer keeps its provider headers, which the route repeats with llm_provider-
