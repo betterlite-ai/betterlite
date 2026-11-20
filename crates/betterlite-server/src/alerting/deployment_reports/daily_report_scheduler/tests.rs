@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::iter::repeat_with;
 use std::sync::Mutex;
 
 use betterlite_config::sections::alert_settings::types::AlertType;
@@ -7,7 +8,7 @@ use betterlite_models::decisions::Json;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 
-use super::{RandomJitter, ReportJitter};
+use super::{RandomJitter, ReportJitter as _};
 use crate::alerting::deployment_reports::DailyReportError;
 use crate::alerting::deployment_reports::tests::support::{
     CacheWrite, FakeCache, FakeJitter, FakePodLock, FakeRouter, FakeSendError, FakeSender,
@@ -370,7 +371,7 @@ fn the_random_jitter_stays_inside_its_bounds() {
     let jitter = RandomJitter {
         random: Mutex::new(StdRng::seed_from_u64(7)),
     };
-    let sample: Vec<i64> = (0_u8..64).map(|_| jitter.between(297, 303)).collect();
+    let sample: Vec<i64> = repeat_with(|| jitter.between(297, 303)).take(64).collect();
 
     assert!(sample.iter().all(|value| (297..=303).contains(value)));
     assert!(sample.iter().any(|value| *value != 297));

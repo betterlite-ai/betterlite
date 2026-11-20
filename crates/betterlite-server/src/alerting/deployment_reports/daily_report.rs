@@ -25,19 +25,19 @@ pub fn daily_report_message(
     next_run: f64,
 ) -> String {
     let mut message = String::new();
-    let _ignored = write!(
+    let _time = write!(
         message,
         "\n\nTime: `{}`s\nHere are today's key metrics \u{1f4c8}: \n\n",
         float_text(now_seconds)
     );
-    let _ignored = write!(
+    let _failed_header = write!(
         message,
         "\n\n*\u{2757}\u{fe0f} Top Deployments with Most Failed Requests:*\n\n"
     );
     append_rows(&mut message, failed_rows);
-    let _ignored = write!(message, "\n\n*\u{1f605} Top Slowest Deployments:*\n\n");
+    let _slow_header = write!(message, "\n\n*\u{1f605} Top Slowest Deployments:*\n\n");
     append_rows(&mut message, latency_rows);
-    let _ignored = write!(message, "\n\nNext Run is at: `{}`s", float_text(next_run));
+    let _next_run = write!(message, "\n\nNext Run is at: `{}`s", float_text(next_run));
     message
 }
 
@@ -71,13 +71,16 @@ impl ReportSection {
     }
 }
 
+// The failed rows and the slowest rows together, in that order.
+type SectionRows = (Vec<String>, Vec<String>);
+
 // The failed-request rows and the slowest rows, or none when the failed section hits a deployment the router does not know.
 pub fn report_sections<Router>(
     api_base: &dyn ApiBaseResolver,
     router: &Router,
     keys: &MetricKeys,
     values: &[Option<f64>],
-) -> Result<Option<(Vec<String>, Vec<String>)>, ApiBaseError>
+) -> Result<Option<SectionRows>, ApiBaseError>
 where
     Router: DailyReportRouter,
 {
@@ -136,7 +139,7 @@ where
             "\t{}. Deployment: `{name}`, {},  API Base: `{}`{}",
             rank.saturating_add(1),
             section.metric(value),
-            base.as_deref().unwrap_or(section.base_fallback()),
+            base.as_deref().unwrap_or_else(|| section.base_fallback()),
             section.terminator()
         ));
     }

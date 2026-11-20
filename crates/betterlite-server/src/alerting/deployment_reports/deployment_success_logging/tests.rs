@@ -18,10 +18,10 @@ fn event(id: &str, start: f64, end: f64, tokens: Option<i64>) -> SuccessEvent<'_
 }
 
 #[rstest]
-#[case::three_tokens(Some(3), 0.5)]
-#[case::zero_tokens(Some(0), 1.5)]
-#[case::negative_tokens(Some(-2), 1.5)]
-#[case::no_tokens(None, 1.5)]
+#[case::three_tokens(Some(3), 0.5_f64)]
+#[case::zero_tokens(Some(0), 1.5_f64)]
+#[case::negative_tokens(Some(-2), 1.5_f64)]
+#[case::no_tokens(None, 1.5_f64)]
 fn the_latency_is_the_elapsed_time_per_output_token(
     #[case] tokens: Option<i64>,
     #[case] expected: f64,

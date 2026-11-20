@@ -5,6 +5,7 @@ use betterlite_logging::alert_dispatch::AlertLevel;
 use betterlite_models::decisions::Json;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use rstest::rstest;
+use std::f64::consts::PI;
 
 use super::{count_text, latency_text};
 use crate::alerting::deployment_reports::DailyReportError;
@@ -60,7 +61,7 @@ fn six_metrics() -> FakeCache {
         ("d3:latency_daily_metrics", float_metric(0.0)),
         ("d4:latency_daily_metrics", float_metric(-0.5)),
         ("d5:latency_daily_metrics", float_metric(2.5)),
-        ("d6:latency_daily_metrics", float_metric(3.14159)),
+        ("d6:latency_daily_metrics", float_metric(PI)),
     ])
 }
 
@@ -446,18 +447,18 @@ async fn the_api_base_lookup_receives_the_deployment_params() {
 }
 
 #[rstest]
-#[case::whole(6.0, "6")]
-#[case::half(2.5, "2.5")]
-#[case::fraction(0.125, "0.125")]
+#[case::whole(6.0_f64, "6")]
+#[case::half(2.5_f64, "2.5")]
+#[case::fraction(0.125_f64, "0.125")]
 fn a_failed_count_renders_like_python(#[case] value: f64, #[case] expected: &str) {
     assert_eq!(count_text(value), expected);
 }
 
 #[rstest]
-#[case::rounds_down(0.1234, "0.123")]
-#[case::rounds_up(3.14159, "3.142")]
-#[case::whole_stays_a_float(2.0, "2.0")]
-#[case::keeps_two_decimals(0.5, "0.5")]
+#[case::rounds_down(0.1234_f64, "0.123")]
+#[case::rounds_up(PI, "3.142")]
+#[case::whole_stays_a_float(2.0_f64, "2.0")]
+#[case::keeps_two_decimals(0.5_f64, "0.5")]
 fn a_latency_renders_rounded_to_three_places(#[case] value: f64, #[case] expected: &str) {
     assert_eq!(latency_text(value), expected);
 }
