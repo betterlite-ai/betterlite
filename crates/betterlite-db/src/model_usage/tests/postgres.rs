@@ -45,6 +45,27 @@ struct RollupRow {
     failed_requests: i64,
 }
 
+fn usage_row(
+    model: &str,
+    spend: Decimal,
+    tokens: (i64, i64),
+    counts: (i64, i64, i64),
+) -> RollupRow {
+    RollupRow {
+        date: String::from("2026-01-02"),
+        model_group: String::from("group"),
+        model: String::from(model),
+        custom_llm_provider: String::from("openai"),
+        task_type: String::from("uncategorized"),
+        spend,
+        prompt_tokens: tokens.0,
+        completion_tokens: tokens.1,
+        request_count: counts.0,
+        successful_requests: counts.1,
+        failed_requests: counts.2,
+    }
+}
+
 struct ModelUsageCase {
     fixture: PostgresFixture,
     store: PostgresStore,
@@ -192,32 +213,8 @@ async fn the_writer_adds_each_flush_to_the_existing_rows() {
     assert_eq!(
         case.rollups().await,
         [
-            RollupRow {
-                date: String::from("2026-01-02"),
-                model_group: String::from("group"),
-                model: String::from("alpha"),
-                custom_llm_provider: String::from("openai"),
-                task_type: String::from("uncategorized"),
-                spend: Decimal::new(100, 2),
-                prompt_tokens: 40,
-                completion_tokens: 20,
-                request_count: 4,
-                successful_requests: 4,
-                failed_requests: 0,
-            },
-            RollupRow {
-                date: String::from("2026-01-02"),
-                model_group: String::from("group"),
-                model: String::from("beta"),
-                custom_llm_provider: String::from("openai"),
-                task_type: String::from("uncategorized"),
-                spend: Decimal::new(100, 2),
-                prompt_tokens: 6,
-                completion_tokens: 2,
-                request_count: 2,
-                successful_requests: 0,
-                failed_requests: 2,
-            },
+            usage_row("alpha", Decimal::new(100, 2), (40, 20), (4, 4, 0)),
+            usage_row("beta", Decimal::new(100, 2), (6, 2), (2, 0, 2)),
         ]
     );
     case.close().await;
@@ -252,19 +249,7 @@ async fn a_failed_statement_rolls_back_every_increment_of_the_flush() {
     assert!(pause.delays().is_empty());
     assert_eq!(
         case.rollups().await,
-        [RollupRow {
-            date: String::from("2026-01-02"),
-            model_group: String::from("group"),
-            model: String::from("alpha"),
-            custom_llm_provider: String::from("openai"),
-            task_type: String::from("uncategorized"),
-            spend: Decimal::new(100, 2),
-            prompt_tokens: 10,
-            completion_tokens: 2,
-            request_count: 1,
-            successful_requests: 1,
-            failed_requests: 0,
-        }]
+        [usage_row("alpha", Decimal::new(100, 2), (10, 2), (1, 1, 0))]
     );
     case.close().await;
 }

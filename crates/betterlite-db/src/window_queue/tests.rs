@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use rust_decimal::Decimal;
-use tokio::task::JoinSet;
+use tokio::task::{JoinSet, yield_now};
 use tokio::time::timeout;
 
 use super::queue::WindowSpendUpdateQueue;
@@ -154,7 +154,8 @@ async fn compaction_at_the_threshold_leaves_one_batch_and_room() {
         queue.add_update(same_window("0.5", None)),
     )
     .await
-    .expect("compaction freed a slot");
+    .expect("compaction freed a slot")
+    .expect("the third increment queued");
     assert_eq!(
         queue.flush().expect("the windows aggregate"),
         [same_window("1.0", None)]
@@ -228,7 +229,7 @@ async fn a_flush_wakes_a_waiter_for_room() {
     let waiting = Arc::clone(&queue);
     let mut producers = JoinSet::new();
     producers.spawn(async move { waiting.add_update(same_window("2.0", None)).await });
-    tokio::task::yield_now().await;
+    yield_now().await;
     assert_eq!(
         queue.flush().expect("the first increment flushes"),
         [same_window("1.0", None)]

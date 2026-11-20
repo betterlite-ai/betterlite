@@ -5,7 +5,7 @@ use rust_decimal::Decimal;
 use super::support::{key, rollup, transaction};
 use crate::model_usage::rollup::{build_model_usage_transaction, model_usage_rollups};
 use crate::model_usage::{
-    ModelUsageError, ModelUsagePayload, ModelUsageTransaction, UsageStartTime,
+    ModelUsageError, ModelUsagePayload, ModelUsageRollup, ModelUsageTransaction, UsageStartTime,
 };
 use crate::spend_queues::entity::SpendAmount;
 
@@ -22,6 +22,21 @@ fn payload() -> ModelUsagePayload {
         completion_tokens: 5,
         status: String::from("success"),
     }
+}
+
+fn day_row(
+    date: &str,
+    task: &str,
+    spend: Decimal,
+    tokens: (i64, i64),
+    successful: bool,
+) -> ModelUsageTransaction {
+    transaction(
+        key(date, "group", "gpt-4o", "openai", task),
+        spend,
+        tokens,
+        successful,
+    )
 }
 
 #[test]
@@ -133,39 +148,42 @@ fn a_known_task_tag_supplies_the_task_type() {
     assert_eq!(built.key.task_type, "translation");
 }
 
-#[test]
-fn rollups_group_by_the_whole_key_in_key_order() {
-    let transactions = [
-        transaction(
-            key("2026-01-03", "group", "gpt-4o", "openai", "uncategorized"),
+fn same_day_rows() -> Vec<ModelUsageTransaction> {
+    vec![
+        day_row(
+            "2026-01-03",
+            "uncategorized",
             Decimal::new(75, 2),
             (8, 4),
             true,
         ),
-        transaction(
-            key("2026-01-02", "group", "gpt-4o", "openai", "uncategorized"),
+        day_row(
+            "2026-01-02",
+            "uncategorized",
             Decimal::new(25, 2),
             (10, 5),
             true,
         ),
-        transaction(
-            key("2026-01-02", "group", "gpt-4o", "openai", "uncategorized"),
+        day_row(
+            "2026-01-02",
+            "uncategorized",
             Decimal::new(5, 1),
             (20, 10),
             false,
         ),
-        transaction(
-            key("2026-01-02", "group", "gpt-4o", "openai", "translation"),
+        day_row(
+            "2026-01-02",
+            "translation",
             Decimal::new(1, 1),
             (2, 2),
             true,
         ),
-        transaction(
-            key("2026-01-02", "group", "gpt-4o", "openai", "debugging"),
-            Decimal::new(2, 1),
-            (4, 4),
-            false,
-        ),
+    ]
+}
+
+fn spread_rows() -> Vec<ModelUsageTransaction> {
+    vec![
+        day_row("2026-01-02", "debugging", Decimal::new(2, 1), (4, 4), false),
         transaction(
             key("2026-01-02", "group", "gpt-4o", "azure", "uncategorized"),
             Decimal::new(5, 2),
@@ -178,82 +196,102 @@ fn rollups_group_by_the_whole_key_in_key_order() {
             (1, 0),
             true,
         ),
-        transaction(
-            key("2026-01-01", "group", "gpt-4o", "openai", "uncategorized"),
+        day_row(
+            "2026-01-01",
+            "uncategorized",
             Decimal::new(2, 2),
             (0, 1),
             true,
         ),
-    ];
+    ]
+}
+
+fn first_day_rollups() -> Vec<ModelUsageRollup> {
+    vec![
+        rollup(
+            day_row(
+                "2026-01-01",
+                "uncategorized",
+                Decimal::new(2, 2),
+                (0, 1),
+                true,
+            ),
+            (1, 1, 0),
+        ),
+        rollup(
+            transaction(
+                key("2026-01-02", "group", "gpt-4o", "azure", "uncategorized"),
+                Decimal::new(5, 2),
+                (1, 1),
+                true,
+            ),
+            (1, 1, 0),
+        ),
+        rollup(
+            day_row("2026-01-02", "debugging", Decimal::new(2, 1), (4, 4), false),
+            (1, 0, 1),
+        ),
+    ]
+}
+
+fn second_day_rollups() -> Vec<ModelUsageRollup> {
+    vec![
+        rollup(
+            day_row(
+                "2026-01-02",
+                "translation",
+                Decimal::new(1, 1),
+                (2, 2),
+                true,
+            ),
+            (1, 1, 0),
+        ),
+        rollup(
+            day_row(
+                "2026-01-02",
+                "uncategorized",
+                Decimal::new(75, 2),
+                (30, 15),
+                true,
+            ),
+            (2, 1, 1),
+        ),
+    ]
+}
+
+fn later_rollups() -> Vec<ModelUsageRollup> {
+    vec![
+        rollup(
+            transaction(
+                key("2026-01-02", "other", "gpt-4o", "openai", "uncategorized"),
+                Decimal::new(1, 2),
+                (1, 0),
+                true,
+            ),
+            (1, 1, 0),
+        ),
+        rollup(
+            day_row(
+                "2026-01-03",
+                "uncategorized",
+                Decimal::new(75, 2),
+                (8, 4),
+                true,
+            ),
+            (1, 1, 0),
+        ),
+    ]
+}
+
+#[test]
+fn rollups_group_by_the_whole_key_in_key_order() {
+    let mut transactions = same_day_rows();
+    transactions.extend(spread_rows());
     let rollups = model_usage_rollups(&transactions).expect("the rollups build");
-    assert_eq!(
-        rollups,
-        [
-            rollup(
-                transaction(
-                    key("2026-01-01", "group", "gpt-4o", "openai", "uncategorized"),
-                    Decimal::new(2, 2),
-                    (0, 1),
-                    true,
-                ),
-                (1, 1, 0)
-            ),
-            rollup(
-                transaction(
-                    key("2026-01-02", "group", "gpt-4o", "azure", "uncategorized"),
-                    Decimal::new(5, 2),
-                    (1, 1),
-                    true,
-                ),
-                (1, 1, 0)
-            ),
-            rollup(
-                transaction(
-                    key("2026-01-02", "group", "gpt-4o", "openai", "debugging"),
-                    Decimal::new(2, 1),
-                    (4, 4),
-                    false,
-                ),
-                (1, 0, 1)
-            ),
-            rollup(
-                transaction(
-                    key("2026-01-02", "group", "gpt-4o", "openai", "translation"),
-                    Decimal::new(1, 1),
-                    (2, 2),
-                    true,
-                ),
-                (1, 1, 0)
-            ),
-            rollup(
-                transaction(
-                    key("2026-01-02", "group", "gpt-4o", "openai", "uncategorized"),
-                    Decimal::new(75, 2),
-                    (30, 15),
-                    true,
-                ),
-                (2, 1, 1)
-            ),
-            rollup(
-                transaction(
-                    key("2026-01-02", "other", "gpt-4o", "openai", "uncategorized"),
-                    Decimal::new(1, 2),
-                    (1, 0),
-                    true,
-                ),
-                (1, 1, 0)
-            ),
-            rollup(
-                transaction(
-                    key("2026-01-03", "group", "gpt-4o", "openai", "uncategorized"),
-                    Decimal::new(75, 2),
-                    (8, 4),
-                    true,
-                ),
-                (1, 1, 0)
-            ),
-        ]
-    );
+    let mut expected = first_day_rollups();
+    expected.extend(second_day_rollups());
+    expected.extend(later_rollups());
+    assert_eq!(rollups, expected);
 }
 
 #[test]

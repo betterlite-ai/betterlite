@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::task::JoinSet;
+use tokio::task::{JoinSet, yield_now};
 use tokio::time::timeout;
 
 use super::{ToolDiscoveryError, ToolDiscoveryItem, ToolDiscoveryQueue};
@@ -122,7 +122,7 @@ async fn a_flush_wakes_a_waiter_for_room() {
     let waiting = Arc::clone(&queue);
     let mut producers = JoinSet::new();
     producers.spawn(async move { waiting.add_update(named("fetch")).await });
-    tokio::task::yield_now().await;
+    yield_now().await;
     assert_eq!(queue.flush(), [named("search")]);
     timeout(Duration::from_secs(1), producers.join_next())
         .await

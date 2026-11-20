@@ -19,7 +19,7 @@ use crate::model_usage::decode::{decode_model_usage_fields, usage_date};
 #[case::empty_text(r#"{"internal_call_origin": ""}"#, false)]
 #[case::empty_list(r#"{"internal_call_origin": []}"#, false)]
 #[case::empty_object(r#"{"internal_call_origin": {}}"#, false)]
-#[case::absent(r#"{}"#, false)]
+#[case::absent("{}", false)]
 fn internal_call_origin_uses_python_truthiness(#[case] metadata: &str, #[case] internal: bool) {
     let fields = decode_model_usage_fields(metadata.as_bytes(), b"[]");
     assert_eq!(fields.internal_call, internal);
@@ -85,10 +85,10 @@ fn a_text_start_time_gives_its_first_ten_characters_as_the_date() {
 fn a_text_prefix_is_counted_in_characters() {
     assert_eq!(
         usage_date(&UsageStartTime::Text(String::from(
-            "２０２６-01-02T00:00:00"
+            "\u{ff12}\u{ff10}\u{ff12}\u{ff16}-01-02T00:00:00"
         )))
         .as_deref(),
-        Some("２０２６-01-02")
+        Some("\u{ff12}\u{ff10}\u{ff12}\u{ff16}-01-02")
     );
 }
 

@@ -107,10 +107,7 @@ impl ModelUsageWriter for ScriptedWriter {
         Box::pin(async move {
             lock(&self.batches).push(rollups.to_vec());
             let next = lock(&self.script).pop_front();
-            match next {
-                Some(failure) => Err(failure),
-                None => Ok(()),
-            }
+            next.map_or(Ok(()), Err)
         })
     }
 }
