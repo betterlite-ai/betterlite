@@ -26,6 +26,15 @@ deviations:
       other exception exists to catch; the observable behavior (log the failure, keep nothing) is
       the source's.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/redis_update_buffer.py#L181-L199
+  - what: >-
+      Betterlite restores a drained window cohort one transaction at a time, so a queue that is
+      full keeps the remaining transactions in the publisher's staging. The source puts the whole
+      tuple into the queue as one item.
+    why: >-
+      The window queue holds batches of transactions, and one restored batch competes for the same
+      slots as the batches a flush left behind; restoring per transaction keeps every increment
+      available, and the next flush aggregates the rows back into the same per-window tuples.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/redis_update_buffer.py#L483-L484
 kept_bugs:
   - what: >-
       The daily-tag publisher drains its queue before it asks whether a Redis client exists, and a
