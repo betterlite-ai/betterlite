@@ -2,11 +2,7 @@ use std::time::Duration;
 
 use betterlite_config::sections::settings::JsonValue;
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum PingSetting {
-    Seconds(f64),
-    Text(String),
-}
+pub use betterlite_config::sections::assistant_keepalive::PingSetting;
 
 #[must_use]
 pub fn coerce_keepalive_interval(setting: Option<&PingSetting>) -> Option<Duration> {
