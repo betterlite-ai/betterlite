@@ -29,7 +29,9 @@ use self::request::pkce_exchange;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum CallbackGuardError {
-    #[error("Invalid OAuth state parameter — does not match the browser-bound state cookie.")]
+    #[error(
+        "Invalid OAuth state parameter \u{2014} does not match the browser-bound state cookie."
+    )]
     State,
     #[error("Missing authorization code in callback")]
     Code,

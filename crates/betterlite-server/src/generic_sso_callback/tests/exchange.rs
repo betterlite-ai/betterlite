@@ -138,7 +138,7 @@ async fn an_access_token_fills_in_the_missing_teams() {
     replies.token = TokenReply {
         access_token: token(r#"{"teams":["team-a"]}"#),
         id_token: None,
-        refresh_token: None,
+        refresh: None,
     };
     let mut fixture = Fixture::start(replies).await;
     fixture.sso_jwt_handler = Some(team_handler("teams"));
@@ -160,7 +160,7 @@ async fn an_access_token_augmentation_failure_keeps_the_verifier() {
     replies.token = TokenReply {
         access_token: token(r#"{"teams":[1]}"#),
         id_token: None,
-        refresh_token: None,
+        refresh: None,
     };
     let mut fixture = Fixture::start(replies).await;
     fixture.pkce = pkce(true);
@@ -298,7 +298,7 @@ async fn an_undecodable_id_token_is_not_retained() {
     replies.token = TokenReply {
         access_token: "access-opaque".to_owned(),
         id_token: Some("not-a-jwt".to_owned()),
-        refresh_token: Some("refresh-1".to_owned()),
+        refresh: Some("refresh-1".to_owned()),
     };
     let fixture = Fixture::start(replies).await;
     let result = call(
@@ -319,7 +319,7 @@ async fn a_decodable_id_token_is_retained_with_its_issuer() {
     replies.token = TokenReply {
         access_token: "access-opaque".to_owned(),
         id_token: Some(token(r#"{"iss":"https://issuer.test","exp":2000000000}"#)),
-        refresh_token: Some("refresh-1".to_owned()),
+        refresh: Some("refresh-1".to_owned()),
     };
     let fixture = Fixture::start(replies).await;
     let result = call(

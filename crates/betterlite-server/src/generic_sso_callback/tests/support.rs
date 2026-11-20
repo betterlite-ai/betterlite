@@ -35,6 +35,7 @@ use tokio::task::JoinSet;
 use tracing::subscriber::DefaultGuard;
 use tracing::subscriber::set_default;
 use tracing_subscriber::fmt::{MakeWriter, fmt};
+use url::form_urlencoded;
 
 use crate::generic_sso_callback::failure::GenericSsoError;
 use crate::generic_sso_callback::{
@@ -219,7 +220,7 @@ fn caches(cache: &FakeCache) -> PkceCaches<'_, FakeCache, FakeCache> {
 pub(super) struct TokenReply {
     pub(super) access_token: String,
     pub(super) id_token: Option<String>,
-    pub(super) refresh_token: Option<String>,
+    pub(super) refresh: Option<String>,
 }
 
 impl TokenReply {
@@ -227,7 +228,7 @@ impl TokenReply {
         Self {
             access_token: access_token.to_owned(),
             id_token: None,
-            refresh_token: None,
+            refresh: None,
         }
     }
 }
@@ -268,7 +269,7 @@ pub(super) struct Seen {
 
 impl Seen {
     pub(super) fn form(&self, name: &str) -> String {
-        url::form_urlencoded::parse(self.body.as_bytes())
+        form_urlencoded::parse(self.body.as_bytes())
             .find(|(key, _)| key == name)
             .map(|(_, value)| value.into_owned())
             .unwrap_or_default()
@@ -355,7 +356,7 @@ async fn token_answer(
     Json(TokenAnswer {
         access_token: &replies.token.access_token,
         id_token: replies.token.id_token.as_deref(),
-        refresh_token: replies.token.refresh_token.as_deref(),
+        refresh_token: replies.token.refresh.as_deref(),
         token_type: "Bearer",
     })
     .into_response()

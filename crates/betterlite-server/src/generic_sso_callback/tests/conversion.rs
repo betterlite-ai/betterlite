@@ -12,7 +12,7 @@ fn claim_replies() -> Replies {
     replies.token = TokenReply {
         access_token: token(r#"{"region":"eu","department":"sales"}"#),
         id_token: Some(token(r#"{"department":"eng"}"#)),
-        refresh_token: Some("refresh-1".to_owned()),
+        refresh: Some("refresh-1".to_owned()),
     };
     replies
 }
@@ -62,8 +62,8 @@ async fn token_claims_stay_out_when_the_flag_is_off() {
     .await
     .unwrap();
     let extra = result.identity.extra_fields.unwrap();
-    assert!(extra.get("department").unwrap().json.is_null());
-    assert!(extra.get("region").unwrap().json.is_null());
+    assert!(extra["department"].json.is_null());
+    assert!(extra["region"].json.is_null());
 }
 
 #[tokio::test]
@@ -79,9 +79,9 @@ async fn the_received_response_never_carries_a_bearer_token() {
     )
     .await
     .unwrap();
-    assert!(result.received_response.get("access_token").is_none());
-    assert!(result.received_response.get("id_token").is_none());
-    assert!(result.received_response.get("refresh_token").is_none());
+    assert!(!result.received_response.contains_key("access_token"));
+    assert!(!result.received_response.contains_key("id_token"));
+    assert!(!result.received_response.contains_key("refresh_token"));
     assert_eq!(
         result
             .received_response
@@ -108,7 +108,7 @@ async fn the_response_id_token_wins_over_the_client_one() {
     replies.token = TokenReply {
         access_token: "access-opaque".to_owned(),
         id_token: Some(token(r#"{"department":"sales"}"#)),
-        refresh_token: None,
+        refresh: None,
     };
     let mut fixture = Fixture::start(replies).await;
     fixture.callback_settings = callback_settings(&[(INCLUDE_TOKEN_CLAIMS_ENV, "true")]);
@@ -139,7 +139,7 @@ async fn the_client_id_token_fills_in_when_the_response_has_none() {
         id_token: Some(token(
             r#"{"department":"sales","iss":"https://issuer.test","exp":2000000000}"#,
         )),
-        refresh_token: None,
+        refresh: None,
     };
     let mut fixture = Fixture::start(replies).await;
     fixture.callback_settings = callback_settings(&[(INCLUDE_TOKEN_CLAIMS_ENV, "true")]);

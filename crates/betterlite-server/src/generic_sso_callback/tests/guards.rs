@@ -169,9 +169,8 @@ async fn a_non_ascii_state_pair_matches_bytewise() {
     let cache = FakeCache::holding_verifier();
     let result = call(
         &fixture,
-        &fixture
-            .callback_url("code=abc&state=%D1%81%D0%BE%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5"),
-        Some("состояние"),
+        &fixture.callback_url("code=abc&state=%C3%A9"),
+        Some("\u{e9}"),
         &FakeRows::absent(),
         &cache,
     )
