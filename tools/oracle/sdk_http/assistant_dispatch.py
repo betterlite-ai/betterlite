@@ -161,9 +161,7 @@ def dispatch(call: Call, api_base: str) -> Outcome:
 
 
 def dispatch_run(run: OperationCall, api_base: str) -> Step:
-    router = cast(
-        AssistantCalls, Router(model_list=[])
-    )  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1899-L1908
+    router = cast(AssistantCalls, Router(model_list=[]))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1899-L1908
     object.__setattr__(router, "assistants_config", assistants_config(run))
     data = request_data(run, api_base)
     try:
