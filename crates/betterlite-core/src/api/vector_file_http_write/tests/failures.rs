@@ -3,6 +3,7 @@ use std::time::Duration;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::serve;
+use betterlite_logging::logging_pre_post::error::PrePostError;
 use rstest::rstest;
 
 use super::json;
@@ -19,7 +20,7 @@ use crate::api::vector_store_http_write::service::{ClientKind, Operation};
 
 const FILE: &str = r#"{"id":"file_a","object":"vector_store.file"}"#;
 
-// A status of 400 or more becomes _handle_error's provider error: the reply's text, its masked headers and its status, with no retry
+// A status outside 200..300 becomes _handle_error's provider error: the reply's text, its masked headers and its status, with no retry
 #[rstest]
 #[case::update(Operation::Update)]
 #[case::delete(Operation::Delete)]
@@ -64,12 +65,15 @@ async fn file_write_failure_scope(#[case] operation: Operation) {
     assert_eq!(wire.requests().len(), 1, "the handler never retries");
 }
 
-// raise_for_status rejects a 400 inside the send, so the first failing status never reaches the response transform
+// raise_for_status rejects every non-2xx reply inside the send, so a 300 carrying a file body is never transformed, and neither is a 400
+#[rstest]
+#[case::redirect(300)]
+#[case::bad_request(400)]
 #[tokio::test]
-async fn status_400_is_a_provider_error() {
+async fn status_outside_2xx_is_a_provider_error(#[case] status: u16) {
     let config = RecordingConfig::new("http://mock.test/v1");
     let events = Events::new();
-    let wire = Wire::replying(Reply::json(400, "{}"), &events);
+    let wire = Wire::replying(Reply::json(status, FILE), &events);
     let source = Source::new(wire.clone());
     let deps = WriteDeps {
         config: &config,
@@ -86,10 +90,15 @@ async fn status_400_is_a_provider_error() {
     let mut fixture = Fixture::new("vector_store_file_update");
     let result = run(&mut fixture, &deps, ClientKind::Sync, &call, &events).await;
     let Err(FileWriteError::Provider(error)) = result else {
-        panic!("a 400 is a provider error, not a transformed reply");
+        panic!("a {status} is a provider error, not a transformed reply");
     };
-    assert_eq!(error.status_code, 400);
+    assert_eq!(error.status_code, status);
     assert!(!error.status_code_is_synthesized);
+    assert_eq!(error.message, FILE, "the reply's text is the message");
+    let asked = config.errors();
+    assert_eq!(asked.len(), 1);
+    assert_eq!(asked[0].1, status);
+    assert_eq!(asked[0].0, FILE);
     assert_eq!(wire.requests().len(), 1);
 }
 
@@ -307,6 +316,43 @@ async fn header_value_failure_makes_no_request() {
         panic!("a header value HTTP cannot carry fails the header value");
     };
     assert_eq!(name, "X-Trace");
+    assert_eq!(events.recorded(), ["log"]);
+    assert!(wire.requests().is_empty());
+}
+
+// The pre-call itself can fail: a captured raw request stops both operations before anything is sent
+#[rstest]
+#[case::update(Operation::Update)]
+#[case::delete(Operation::Delete)]
+#[tokio::test]
+async fn logging_failure_makes_no_request(#[case] operation: Operation) {
+    let events = Events::new();
+    let wire = Wire::replying(Reply::json(200, FILE), &events);
+    let source = Source::new(wire.clone());
+    let config = RecordingConfig::new("http://mock.test/v1");
+    let deps = WriteDeps {
+        config: &config,
+        source: &source,
+        supplied: None,
+    };
+    let params = params("http://unused.test");
+    let request = update_request(r#"{"attributes":{}}"#);
+    let update = update_call(
+        target("vs_a", "file_a", &params, None, None),
+        &request,
+        None,
+    );
+    let delete = delete_call(target("vs_a", "file_a", &params, None, None));
+    let call = match operation {
+        Operation::Update => &update,
+        Operation::Delete => &delete,
+    };
+    let mut fixture = Fixture::new("vector_store_file_write");
+    fixture.state.request_logging.raw_request_only = true;
+    let result = run(&mut fixture, &deps, ClientKind::Sync, call, &events).await;
+    let Err(FileWriteError::Logging(PrePostError::RawRequestCaptured)) = result else {
+        panic!("a captured raw request is a logging error");
+    };
     assert_eq!(events.recorded(), ["log"]);
     assert!(wire.requests().is_empty());
 }

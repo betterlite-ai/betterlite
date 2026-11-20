@@ -157,7 +157,7 @@ const fn http_method(operation: Operation) -> Method {
     }
 }
 
-// One send, no retry: a transport failure becomes a provider error, a status of 400 or more becomes one too, and only then does the response transform run
+// One send, no retry: a transport failure becomes a provider error, a status outside 200..300 becomes one too, and only then does the response transform run
 pub async fn send<C, S>(prepared: PreparedWrite<'_, C, S>) -> Result<Json, FileWriteError>
 where
     C: FileWriteConfig,
@@ -190,7 +190,7 @@ where
     answer_outcome(config, operation, &answer)
 }
 
-// The response transform runs after the send catch: only a status below 400 reaches it, and anything else is _handle_error's
+// The response transform runs after the send catch: raise_for_status lets only a 2xx through, and every other status is _handle_error's
 fn answer_outcome<C>(
     config: &C,
     operation: Operation,
@@ -199,7 +199,7 @@ fn answer_outcome<C>(
 where
     C: FileWriteConfig,
 {
-    if answer.status < 400 {
+    if (200..300).contains(&answer.status) {
         let response = facts::http_response(answer);
         return match operation {
             Operation::Update => config
