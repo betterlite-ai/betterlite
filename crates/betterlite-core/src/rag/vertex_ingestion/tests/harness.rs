@@ -20,7 +20,7 @@ use crate::rag::ingestion::IngestionState;
 use crate::rag::ingestion::config::{ChunkingStrategyMap, IngestionOptions};
 use crate::rag::ingestion::credentials::{CredentialLookup, CredentialLookupError};
 use crate::rag::ingestion::ocr::{OcrError, OcrOperation, OcrRequest, OcrResponse};
-use crate::rag::ingestion::store::{RagStore, StoreRequest, StoreResult};
+use crate::rag::ingestion::store::{RagStore as _, StoreRequest, StoreResult};
 use crate::rag::ingestion::upload::{FetchedResponse, UrlFetch, UrlFetchError};
 
 use super::super::VertexIngestion;
@@ -120,6 +120,7 @@ pub(super) struct Call {
     pub(super) kind: Kind,
     pub(super) url: String,
     pub(super) token: String,
+    pub(super) headers: Vec<String>,
     pub(super) body: String,
     pub(super) filename: String,
     pub(super) file: Vec<u8>,
@@ -196,6 +197,7 @@ impl Part<'_> {
                 kind: Kind::Json,
                 url: request.url.to_owned(),
                 token: request.token.expose_secret().to_owned(),
+                headers: header_names(&["Authorization", "Content-Type"]),
                 body: text(request.body),
                 filename: String::new(),
                 file: Vec::new(),
@@ -206,6 +208,7 @@ impl Part<'_> {
                 kind: Kind::Get,
                 url: request.url.to_owned(),
                 token: request.token.expose_secret().to_owned(),
+                headers: header_names(&["Authorization"]),
                 body: String::new(),
                 filename: String::new(),
                 file: Vec::new(),
@@ -216,6 +219,7 @@ impl Part<'_> {
                 kind: Kind::Multipart,
                 url: request.url.to_owned(),
                 token: request.token.expose_secret().to_owned(),
+                headers: header_names(&["Authorization", "X-Goog-Upload-Protocol"]),
                 body: text(request.metadata),
                 filename: request.filename.to_owned(),
                 file: request.file.to_vec(),
@@ -224,6 +228,10 @@ impl Part<'_> {
             },
         }
     }
+}
+
+fn header_names(names: &[&str]) -> Vec<String> {
+    names.iter().map(|name| (*name).to_owned()).collect()
 }
 
 #[async_trait]

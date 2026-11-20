@@ -30,6 +30,21 @@ async fn upload_null_rag_file_parts_fall_back() {
 }
 
 #[tokio::test]
+async fn upload_file_id_ignores_an_empty_rag_file_name() {
+    let harness = build(
+        EXISTING_OPTIONS,
+        &VertexSettings::default(),
+        None,
+        None,
+        &[(200, r#"{"ragFile":{"name":""},"name":"top"}"#)],
+    );
+    let (_, file_id) = store(&harness, File::new(b"data", "notes.txt"))
+        .await
+        .expect("an uploaded file");
+    assert_eq!(file_id.as_deref(), Some("top"));
+}
+
+#[tokio::test]
 async fn error_http_port_failure_carries_the_lower_message() {
     let harness = build(
         EXISTING_OPTIONS,

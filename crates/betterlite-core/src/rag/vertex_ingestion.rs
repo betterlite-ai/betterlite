@@ -7,14 +7,11 @@ mod upload;
 
 mod tests;
 
-use std::future::ready;
-
 use async_trait::async_trait;
 use betterlite_config::rag::document::ingest::VertexAIVectorStoreOptions;
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
 use secrecy::{ExposeSecret as _, SecretString};
-use tracing::debug;
 
 use crate::api::vertex_location::validate_vertex_location;
 use crate::rag::ingestion::IngestionState;
@@ -67,10 +64,9 @@ impl VertexIngestion {
         }
     }
 
-    pub async fn embed(&self, chunks: &[String]) -> Option<Vec<Vec<f64>>> {
+    pub async fn embed(&self, _chunks: &[String]) -> Option<Vec<Vec<f64>>> {
         // Vertex AI embeds when the file joins the corpus, so the pipeline's embedding step has no work
-        debug!("Skipping the embedding step for {} chunks", chunks.len());
-        ready(None).await
+        None
     }
 
     fn display_name(&self) -> &str {
@@ -199,8 +195,8 @@ fn credential_choice(
     {
         return CredentialChoice::Record(text.clone());
     }
-    match &settings.credentials {
-        Some(credentials) => CredentialChoice::Settings(credentials.clone()),
-        None => CredentialChoice::None,
-    }
+    settings.credentials.as_ref().map_or_else(
+        || CredentialChoice::None,
+        |credentials| CredentialChoice::Settings(credentials.clone()),
+    )
 }

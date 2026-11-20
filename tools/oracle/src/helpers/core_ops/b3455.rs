@@ -11,7 +11,7 @@ use betterlite_config::sections::vertex_credential_sources::VertexSettings;
 use betterlite_core::rag::ingestion::IngestionPorts;
 use betterlite_core::rag::ingestion::IngestionState;
 use betterlite_core::rag::ingestion::config::IngestionOptions;
-use betterlite_core::rag::ingestion::store::{RagStore, StoreRequest, StoreResult};
+use betterlite_core::rag::ingestion::store::{RagStore as _, StoreRequest, StoreResult};
 use betterlite_core::rag::vertex_ingestion::VertexIngestion;
 use betterlite_core::rag::vertex_ingestion::error::VertexIngestionError;
 use betterlite_core::rag::vertex_ingestion::ports::VertexIngestionPorts;

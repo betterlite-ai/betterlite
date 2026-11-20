@@ -9,7 +9,7 @@ deviations:
   - what: The multipart metadata part is compact JSON text, not json.dumps with spaces after its separators, and the "Request body", "Create corpus response" and "Metadata" debug lines print compact or as-received JSON instead of json.dumps text with indentation.
     why: Only the parsed JSON is observable to Google, the oracle compares the parsed value, and docs/compatibility.md leaves json.dumps formatting out of scope. The message prefixes are unchanged.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L370-L375
-  - what: A response whose ragFile name is null or not a string counts as missing, so the file id falls through to the top-level name, then to an empty string.
+  - what: A response whose ragFile name is null or not a string counts as missing, and so does a top-level name that is not a string, so the file id falls through to the next source and then to an empty string.
     why: Python would return None or a non-string through its untyped dict. The declared type is str, so betterlite keeps types real.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L406-L407
   - what: betterlite-core resolves the project, location and credential aliases and builds the Vertex host itself instead of calling betterlite-vertex's VertexBase getters and get_vertex_base_url.

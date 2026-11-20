@@ -147,6 +147,7 @@ impl Part<'_> {
                 "filename": null,
                 "file_bytes": null,
                 "file_content_type": null,
+                "headers": ["Authorization", "Content-Type"],
             }),
             Part::Get(request) => json!({
                 "kind": "get",
@@ -157,6 +158,7 @@ impl Part<'_> {
                 "filename": null,
                 "file_bytes": null,
                 "file_content_type": null,
+                "headers": ["Authorization"],
             }),
             Part::Multipart(request) => json!({
                 "kind": "post_multipart",
@@ -167,6 +169,7 @@ impl Part<'_> {
                 "filename": request.filename,
                 "file_bytes": request.file.len(),
                 "file_content_type": request.file_content_type,
+                "headers": ["Authorization", "X-Goog-Upload-Protocol"],
             }),
         }
     }

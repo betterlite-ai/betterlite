@@ -62,7 +62,7 @@ class Script:
         reply = self.replies.pop(0)
         return httpx.Response(reply["status"], content=reply["body"].encode())
 
-    def __call__(self, delay: float) -> None:
+    async def __call__(self, delay: float) -> None:
         self.slept.append(delay)
 
 
@@ -77,39 +77,44 @@ class FakeClient:
         url: str,
         json: JsonValue = None,
         files: MULTIPART_FILES | None = None,
-        headers: dict[str, str] | None = None,  # noqa: ARG002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L212-L219
+        headers: dict[str, str] | None = None,  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L212-L219
     ) -> httpx.Response:
         kind = "post_json" if files is None else "post_multipart"
-        self.script.requests.append(request_record(kind, url, self.timeout, json, files))
+        self.record(kind, url, json, files, headers)
         return self.script.answer()
 
     async def get(
         self,
         url: str,
-        headers: dict[str, str] | None = None,  # noqa: ARG002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L281-L286
+        headers: dict[str, str] | None = None,  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L281-L286
     ) -> httpx.Response:
-        self.script.requests.append(request_record("get", url, self.timeout, None, None))
+        self.record("get", url, None, None, headers)
         return self.script.answer()
 
-
-def request_record(
-    kind: str,
-    url: str,
-    timeout: float,
-    body: JsonValue,
-    files: MULTIPART_FILES | None,
-) -> dict[str, JsonValue]:
-    parts = None if files is None else multipart_parts(files)
-    return {
-        "kind": kind,
-        "url": url,
-        "timeout": timeout,
-        "json": body,
-        "metadata": None if parts is None else parts["metadata"],
-        "filename": None if parts is None else parts["filename"],
-        "file_bytes": None if parts is None else parts["file_bytes"],
-        "file_content_type": None if parts is None else parts["content_type"],
-    }
+    def record(
+        self,
+        kind: str,
+        url: str,
+        body: JsonValue,
+        files: MULTIPART_FILES | None,
+        headers: dict[str, str] | None,
+    ) -> None:
+        parts = None if files is None else multipart_parts(files)
+        header_names: list[JsonValue] = []
+        if headers is not None:
+            header_names.extend(sorted(headers))
+        entry: dict[str, JsonValue] = {
+            "kind": kind,
+            "url": url,
+            "timeout": self.timeout,
+            "json": body,
+            "metadata": None if parts is None else parts["metadata"],
+            "filename": None if parts is None else parts["filename"],
+            "file_bytes": None if parts is None else parts["file_bytes"],
+            "file_content_type": None if parts is None else parts["content_type"],
+            "headers": header_names,
+        }
+        self.script.requests.append(entry)
 
 
 def multipart_parts(files: MULTIPART_FILES) -> Multipart:

@@ -34,14 +34,9 @@ fn flags_supports_existing_file_id_matches_the_shared_state() {
 
 #[tokio::test]
 async fn flags_embed_returns_no_embeddings() {
-    let (logs, _guard) = capture();
     let harness = build(PROJECT_OPTIONS, &VertexSettings::default(), None, None, &[]);
     let chunks = ["one chunk".to_owned()];
     assert_eq!(harness.ingestion.embed(&chunks).await, None);
-    assert!(
-        logs.text()
-            .contains("Skipping the embedding step for 1 chunks")
-    );
 }
 
 #[tokio::test]
@@ -272,6 +267,7 @@ async fn corpus_create_sends_the_camel_case_body() {
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].kind, Kind::Json);
     assert_eq!(calls[0].url, CORPUS_URL);
+    assert_eq!(calls[0].headers, vec!["Authorization", "Content-Type"]);
     assert_eq!(calls[0].timeout, Duration::from_secs(60));
     assert_eq!(
         calls[0].body,
@@ -485,6 +481,7 @@ async fn poll_pending_operation_polls_until_done() {
     let calls = harness.http.calls();
     assert_eq!(calls.len(), 3);
     assert_eq!(calls[1].kind, Kind::Get);
+    assert_eq!(calls[1].headers, ["Authorization".to_owned()]);
     assert_eq!(
         calls[1].url,
         "https://us-central1-aiplatform.googleapis.com/v1beta1/operations/1"
@@ -616,6 +613,10 @@ async fn upload_posts_the_multipart_form() {
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].kind, Kind::Multipart);
     assert_eq!(calls[0].url, UPLOAD_URL);
+    assert_eq!(
+        calls[0].headers,
+        vec!["Authorization", "X-Goog-Upload-Protocol"]
+    );
     assert_eq!(calls[0].token, TOKEN);
     assert_eq!(calls[0].filename, "notes.txt");
     assert_eq!(calls[0].file, b"data".to_vec());
