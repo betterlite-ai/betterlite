@@ -49,7 +49,7 @@ fn messages_cases(cases: &[MessageCase]) -> Value {
         let url = build_native_messages_url(case.api_base.as_deref(), &params, &globals);
         urls.push(url.map_or_else(
             |_error| json!({"error": true}),
-            |signed| json!({"url": signed}),
+            |native_url| json!({"url": native_url}),
         ));
     }
     json!({
