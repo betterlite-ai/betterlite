@@ -374,7 +374,7 @@ impl AudioTranscriptionConfig for RecordingConfig {
     ) -> Result<AudioTranscriptionRequestData, TranscriptionContractError> {
         {
             let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
-            calls.transforms = calls.transforms.saturating_add(1)
+            calls.transforms = calls.transforms.saturating_add(1);
         };
         self.events.push("transform-request");
         if self.failure == StageFailure::Transform {
@@ -403,7 +403,7 @@ impl AudioTranscriptionConfig for RecordingConfig {
     ) -> Result<TranscriptionResponse, TranscriptionContractError> {
         {
             let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
-            calls.responses = calls.responses.saturating_add(1)
+            calls.responses = calls.responses.saturating_add(1);
         };
         self.events.push("transform-response");
         if self.failure == StageFailure::Response {
