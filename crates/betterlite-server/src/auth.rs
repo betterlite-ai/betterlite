@@ -68,10 +68,12 @@ use crate::auth::auth_resource_grants::{
     ResourceGrantStageInput, database_for_request, denial_response,
     rule_for_request as grant_rule_for_request,
 };
+use crate::auth::request_body_safety::{self, RequestBodySafetyStageInput};
 use crate::error_body::{AuthenticationFailure, authentication_error};
-use axum::body::Body;
+use crate::state::ServerState;
+use axum::body::{Body, Bytes};
 use axum::extract::State;
-use axum::http::{HeaderMap, Request, header};
+use axum::http::{HeaderMap, Request, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::Response;
 use regex::Regex;
@@ -95,8 +97,25 @@ pub(crate) async fn authenticate(
         .get::<Arc<RequestModelResolver>>()
         .map_or_else(default_resolver, Arc::clone);
     let mut authenticated: Option<AuthContext> = None;
+    let mut body: Option<Bytes> = None;
     for backend in INSTALLED_STAGES {
-        let input = match stage_input(*backend, &request, authenticated.as_ref(), &resolver) {
+        // the safety stage is the one body reader; only an authenticated caller makes it buffer anything
+        if *backend == AuthBackend::RequestBodySafety && body.is_none() {
+            match request_body_safety::buffer_body(&mut request).await {
+                Ok(bytes) => body = Some(bytes),
+                Err(error) => {
+                    tracing::debug!(error = %error, "the request body could not be buffered");
+                    return unreadable_body_response();
+                }
+            }
+        }
+        let input = match stage_input(
+            *backend,
+            &request,
+            authenticated.as_ref(),
+            &resolver,
+            body.as_ref(),
+        ) {
             Ok(input) => input,
             Err(failure) => return stage_failure_response(&failure),
         };
@@ -112,6 +131,9 @@ pub(crate) async fn authenticate(
     if let Some(context) = authenticated {
         request.extensions_mut().insert(context);
     }
+    if let Some(bytes) = body {
+        *request.body_mut() = Body::from(bytes);
+    }
     next.run(request).await
 }
 
@@ -119,10 +141,17 @@ fn stage_failure_response(failure: &StageFailure) -> Response {
     match failure {
         StageFailure::Authentication(authentication) => authentication_error(authentication),
         StageFailure::ModelAccess(rejection) => rejection_response(rejection),
-        StageFailure::ResourceGrants(exception) | StageFailure::TagBudgets(exception) => {
-            denial_response(exception)
-        }
+        StageFailure::ResourceGrants(exception)
+        | StageFailure::TagBudgets(exception)
+        | StageFailure::RequestBodySafety(exception) => denial_response(exception),
     }
+}
+
+// the body stream itself failed, so there is nothing left to forward; the buffer rejection is a bare 400
+fn unreadable_body_response() -> Response {
+    let mut response = Response::new(Body::from("Failed to buffer the request body"));
+    *response.status_mut() = StatusCode::BAD_REQUEST;
+    response
 }
 
 fn stage_input(
@@ -130,9 +159,30 @@ fn stage_input(
     request: &Request<Body>,
     authenticated: Option<&AuthContext>,
     resolver: &Arc<RequestModelResolver>,
+    body: Option<&Bytes>,
 ) -> Result<StageInput, StageFailure> {
     match backend {
         AuthBackend::MasterKey => Ok(StageInput::MasterKey(extract_key(request.headers()))),
+        AuthBackend::RequestBodySafety => {
+            let context = authenticated
+                .cloned()
+                .ok_or(AuthenticationFailure::Missing)?;
+            Ok(StageInput::RequestBodySafety(Box::new(
+                RequestBodySafetyStageInput {
+                    context,
+                    content_type: request
+                        .headers()
+                        .get(header::CONTENT_TYPE)
+                        .and_then(|value| value.to_str().ok())
+                        .map(str::to_owned),
+                    body: body.cloned().unwrap_or_default(),
+                    slot: request
+                        .extensions()
+                        .get::<Arc<ServerState>>()
+                        .map(|state| state.request_body_safety.clone()),
+                },
+            )))
+        }
         AuthBackend::AuthRequestModels | AuthBackend::AuthModelPatterns => {
             let context = authenticated
                 .cloned()
@@ -176,6 +226,7 @@ async fn prefetch_tag_budgets(input: StageInput) -> Result<StageInput, StageFail
             Ok(StageInput::AuthTagBudgets(stage))
         }
         other @ (StageInput::MasterKey(_)
+        | StageInput::RequestBodySafety(_)
         | StageInput::AuthRequestModels(_)
         | StageInput::AuthModelPatterns(_)
         | StageInput::AuthResourceGrants(_)) => Ok(other),
