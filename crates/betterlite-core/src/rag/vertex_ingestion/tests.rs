@@ -11,7 +11,7 @@ use betterlite_config::rag::document::ingest::VertexAIVectorStoreOptions;
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
 use betterlite_models::decisions::Extra;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::value::RawValue;
 use tracing::subscriber::{DefaultGuard, set_default};
 
@@ -125,6 +125,7 @@ enum Kind {
 struct Call {
     kind: Kind,
     url: String,
+    token: String,
     body: String,
     filename: String,
     file: Vec<u8>,
@@ -133,25 +134,34 @@ struct Call {
 }
 
 struct ScriptedHttp {
-    replies: Mutex<VecDeque<(u16, &'static str)>>,
+    replies: Mutex<VecDeque<(u16, Vec<u8>)>>,
     calls: Mutex<Vec<Call>>,
 }
 
 impl ScriptedHttp {
     fn new(replies: &[(u16, &'static str)]) -> Self {
         Self {
-            replies: Mutex::new(replies.iter().copied().collect()),
+            replies: Mutex::new(
+                replies
+                    .iter()
+                    .map(|(status, body)| (*status, body.as_bytes().to_vec()))
+                    .collect(),
+            ),
             calls: Mutex::new(Vec::new()),
         }
+    }
+
+    fn push_reply(&self, status: u16, body: &[u8]) {
+        self.replies
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push_back((status, body.to_vec()));
     }
 
     fn reply(&self) -> HttpReply {
         let mut replies = self.replies.lock().unwrap_or_else(PoisonError::into_inner);
         let (status, body) = replies.pop_front().expect("a scripted reply");
-        HttpReply {
-            status,
-            body: body.as_bytes().to_vec(),
-        }
+        HttpReply { status, body }
     }
 
     fn record(&self, call: Call) {
@@ -181,6 +191,7 @@ impl VertexRagHttp for ScriptedHttp {
         self.record(Call {
             kind: Kind::Json,
             url: request.url.to_owned(),
+            token: request.token.expose_secret().clone(),
             body: text(request.body),
             filename: String::new(),
             file: Vec::new(),
@@ -194,6 +205,7 @@ impl VertexRagHttp for ScriptedHttp {
         self.record(Call {
             kind: Kind::Get,
             url: request.url.to_owned(),
+            token: request.token.expose_secret().clone(),
             body: String::new(),
             filename: String::new(),
             file: Vec::new(),
@@ -207,6 +219,7 @@ impl VertexRagHttp for ScriptedHttp {
         self.record(Call {
             kind: Kind::Multipart,
             url: request.url.to_owned(),
+            token: request.token.expose_secret().clone(),
             body: text(request.metadata),
             filename: request.filename.to_owned(),
             file: request.file.to_vec(),
@@ -663,7 +676,7 @@ async fn corpus_create_sends_vector_db_config_alone() {
 
 #[tokio::test]
 async fn corpus_create_drops_an_empty_vector_db_config() {
-    let options = r#"{"vertex_project":"proj","vector_db_config":{}}"#;
+    let options = r#"{"vertex_project":"proj","vector_db_config":{},"embedding_model":""}"#;
     let harness = build(
         options,
         &VertexSettings::default(),
@@ -746,6 +759,25 @@ async fn corpus_create_existing_corpus_skips_the_create() {
     assert!(harness.token.credentials_seen().is_empty());
 }
 
+#[tokio::test]
+async fn corpus_create_treats_an_empty_vector_store_id_as_missing() {
+    let options = r#"{"vertex_project":"proj","vector_store_id":""}"#;
+    let harness = build(
+        options,
+        &VertexSettings::default(),
+        None,
+        None,
+        &[(200, DONE)],
+    );
+    let (corpus, file_id) = store(&harness, File::default())
+        .await
+        .expect("a created corpus");
+    assert_eq!(corpus.as_deref(), Some("corpora/1"));
+    assert_eq!(file_id, None);
+    assert_eq!(harness.http.calls().len(), 1);
+    assert_eq!(harness.http.calls()[0].kind, Kind::Json);
+}
+
 #[tokio::test(start_paused = true)]
 async fn poll_pending_operation_polls_until_done() {
     let harness = build(
@@ -772,6 +804,7 @@ async fn poll_pending_operation_polls_until_done() {
         "https://us-central1-aiplatform.googleapis.com/v1beta1/operations/1"
     );
     assert_eq!(calls[1].timeout, Duration::from_secs(60));
+    assert_eq!(calls[1].token, TOKEN);
     assert_eq!(calls[2].kind, Kind::Get);
     assert_eq!(harness.token.credentials_seen().len(), 1);
     assert_eq!(harness.token.projects_seen(), [Some("proj".to_owned())]);
@@ -878,8 +911,10 @@ async fn poll_gives_up_after_thirty_attempts() {
 
 #[tokio::test]
 async fn upload_posts_the_multipart_form() {
+    let options =
+        r#"{"vertex_project":"proj","vector_store_id":"corpora/7","file_description":""}"#;
     let harness = build(
-        EXISTING_OPTIONS,
+        options,
         &VertexSettings::default(),
         None,
         None,
@@ -898,6 +933,7 @@ async fn upload_posts_the_multipart_form() {
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].kind, Kind::Multipart);
     assert_eq!(calls[0].url, UPLOAD_URL);
+    assert_eq!(calls[0].token, TOKEN);
     assert_eq!(calls[0].filename, "notes.txt");
     assert_eq!(calls[0].file, b"data".to_vec());
     assert_eq!(calls[0].content_type, "text/plain");
@@ -923,12 +959,17 @@ async fn upload_description_comes_from_file_description() {
     let file = File {
         content: Some(b"data".as_slice()),
         filename: Some("notes.txt"),
+        content_type: Some(""),
         ..File::default()
     };
     store(&harness, file).await.expect("an uploaded file");
     assert_eq!(
         json_body(&harness.http.calls()[0]),
         expected(r#"{"rag_file":{"display_name":"notes.txt","description":"described"}}"#)
+    );
+    assert_eq!(
+        harness.http.calls()[0].content_type,
+        "application/octet-stream"
     );
 }
 
@@ -1148,6 +1189,19 @@ async fn error_create_status_failure_carries_the_body() {
         "Failed to create RAG corpus: bad request"
     );
     assert_eq!(harness.http.calls().len(), 1);
+}
+
+#[tokio::test]
+async fn error_undecodable_body_bytes_are_replaced() {
+    let harness = build(PROJECT_OPTIONS, &VertexSettings::default(), None, None, &[]);
+    harness.http.push_reply(400, b"bad \xFF request");
+    let error = store(&harness, File::default())
+        .await
+        .expect_err("a create failure");
+    assert_eq!(
+        error.to_string(),
+        "Failed to create RAG corpus: bad \u{fffd} request"
+    );
 }
 
 #[tokio::test(start_paused = true)]
