@@ -53,7 +53,7 @@ struct Times {
 struct Parts {
     stamps: Times,
     request_id: String,
-    session_id: Option<String>,
+    session_id: String,
     cache_key: String,
     request_tags: String,
     messages: String,
@@ -110,7 +110,7 @@ fn payload_row(
         messages: parts.messages,
         response: storage_response(payload.response.as_ref(), None, NO_BODY_STORAGE),
         proxy_server_request: storage_request_body(&Json::Null, None, NO_BODY_STORAGE),
-        session_id: parts.session_id,
+        session_id: Some(parts.session_id),
         request_duration_ms: parts.duration,
         status: status_for_spend_log(merged),
         litellm_call_id: payload.litellm_call_id.clone(),
@@ -214,9 +214,9 @@ fn request_id(payload: &StandardLoggingPayload) -> String {
 }
 
 // _get_session_id_for_spend_log without the omit policy: a batch's id groups its rows, else the trace id
-fn session_id(payload: &StandardLoggingPayload, request_id: &str) -> Option<String> {
+fn session_id(payload: &StandardLoggingPayload, request_id: &str) -> String {
     batch_trace_session_id(Some(payload.call_type.as_str()), Some(request_id))
-        .or_else(|| Some(payload.trace_id.clone()))
+        .unwrap_or_else(|| payload.trace_id.clone())
 }
 
 // The merged metadata key is hashed unless the trusted hash proves it already is a safe value.

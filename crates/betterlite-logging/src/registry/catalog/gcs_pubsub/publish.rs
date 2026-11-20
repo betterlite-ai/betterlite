@@ -1,9 +1,9 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use betterlite_models::decisions::Json;
-use betterlite_models::model_registration::JsonObject;
 use http::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
 use secrecy::ExposeSecret as _;
+use serde::Serialize;
 use url::Url;
 
 use crate::gcs_mock::auth::{EnsureAccessToken, GetTokenAndUrl, VertexAuth, VertexAuthProvider};
@@ -115,10 +115,20 @@ fn message_text(message: &Json) -> Result<String, serde_json::Error> {
 }
 
 // the Pub/Sub publish body: one message entry holding the base64 text of the encoded message
+#[derive(Serialize)]
+struct PublishRequest {
+    messages: Vec<PublishMessage>,
+}
+
+#[derive(Serialize)]
+struct PublishMessage {
+    data: String,
+}
+
 fn request_body(data: &str) -> Result<Vec<u8>, serde_json::Error> {
-    let mut entry = JsonObject::new();
-    entry.insert("data".to_owned(), Json::Text(STANDARD.encode(data)));
-    let mut body = JsonObject::new();
-    body.insert("messages".to_owned(), Json::List(vec![Json::Object(entry)]));
-    serde_json::to_vec(&Json::Object(body))
+    serde_json::to_vec(&PublishRequest {
+        messages: vec![PublishMessage {
+            data: STANDARD.encode(data),
+        }],
+    })
 }
