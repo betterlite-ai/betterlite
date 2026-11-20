@@ -1,0 +1,14 @@
+id: B10020
+milestone: M9 agents and mcp
+title: MCP server registry maps and their registry-order reads
+status: todo
+depends_on: [B6590]
+file: tasks/B10020-mcp-registry-servers.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/mcp_server_manager.py"
+parent: B139
+split_from: B4731
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

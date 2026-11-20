@@ -1,0 +1,24 @@
+kind: sdk_http
+name: sdk-http-responses-stream-driver-fake-response-iteration
+env: {}
+call:
+  responses_stream_driver:
+    model: gpt-4o
+    input: hi
+    api_key: sk-test
+    timeout_seconds: 30
+    runs:
+      - mode: fake
+        asynchronous: false
+        steps: [next, drain]
+        response: {"id":"resp_fake","created_at":1,"object":"response","status":"completed","model":"gpt-4o","output":[]}
+      - mode: fake
+        asynchronous: true
+        steps: [next, drain]
+        response: {"id":"resp_fake","created_at":1,"object":"response","status":"completed","model":"gpt-4o","output":[]}
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization]
+  ignore: []

@@ -2,7 +2,7 @@ id: B9752
 milestone: M10 admin ui
 title: Policy form, version, attachment and pipeline HTTP workflows
 status: todo
-depends_on: [B9740, B9750, B9260, B8669, B8790, B9321, B813, B782, B9735]
+depends_on: [B9740, B9750, B9260, B8669, B8790, B9321, B813, B782, B9735, B148]
 file: tasks/B9752-dashboard-policy-workflows.yaml
 covers:
   - "ui/litellm-dashboard/src/app/(dashboard)/policies/page.tsx"

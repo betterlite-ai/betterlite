@@ -32,6 +32,8 @@ description: >-
   initialization behind a premium flag; betterlite follows the README's removal of that
   flag through B8500. The 228 handler lines budget 250 code, 220 tests and 170 fixtures/seeds,
   capped at 725; new resource samples extend B1646's existing decoder corpus.
+
+  Mounting. B066's settings_api composition does not mount this task's routes, so add this router to settings_api's keyed or public router yourself, keeping its public or authenticated side, and extend B066's construction test so a duplicate or missing registration fails.
 scope:
   paths:
     - crates/betterlite-server/Cargo.toml
@@ -44,6 +46,8 @@ scope:
     - tools/oracle/helpers/b1647/**
     - tools/oracle/src/helpers/server/b1647.rs
     - tools/oracle/src/helpers/server/b1647/**
+    - crates/betterlite-server/src/settings_api.rs
+    - crates/betterlite-server/src/settings_api/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/config_override_endpoints.py#L328-L645

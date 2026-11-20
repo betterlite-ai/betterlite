@@ -6,9 +6,9 @@ description: >-
   `pre_call_hook_ports(state: &Arc<ServerState>) -> PreCallHookPorts` returns one `Arc<dyn ...>` per port below; B8802 calls it once inside pre_call_step.
   `PreCallHooks` over `shared.proxy_logging` (B8399): B8393's PreCallHook run with mode `SkipGuardrails` when skip_guardrails is true and `Full` otherwise, the route type text as call type, and no endpoint type. A ProxyException maps to `Proxy`, B3030's ProxyRateLimitError to `RateLimited`, and an HTTPException to `Http`, each as raised.
   `GuardrailMerge` over B8391's merge_model_level_guardrails with trust_client_model_info false and `shared.router` (B8611).
-  `CompressionArming` over B3546's arm_pre_call with `shared.router`.
+  `CompressionArming` as a no-op until B3546 (later work) adds the real adapter over arm_pre_call: it clears the two request flags and arms nothing, which is what arm_pre_call does when policy_for_model finds no auto router compression policy.
   `TagBudgets` over B750's request_skips_budget_checks with the router, and B752's tag_max_budget_check_for_tags with `shared.db`, the auth key cache and `shared.proxy_logging`. A BudgetExceeded answer maps to `Proxy` with type budget_exceeded, no param and its status.
-  `RetrievalPipelines` over B3269's attach_post_call_pipelines_to_retrieval with the router and the policy registries from `shared.policies` (B9320), read on each request and never kept as a startup snapshot.
+  `RetrievalPipelines` over B3269's attach_post_call_pipelines_to_retrieval with the router and B3241's live policy and attachment registry handles (`Mutex<PolicyRegistry>` and `Mutex<AttachmentRegistry>`) that Shared holds, read on each request and never kept as a startup snapshot.
 
   Tests in app/inference/pre_call_hooks/tests.rs (`app::inference::pre_call_hooks::tests::`) build a ServerState from a config.yaml with a `generic_guardrail_api` pre_call guardrail against a local mock, a model-level guardrail on one deployment, and a tag with max_budget 0. The pre_call guardrail blocks and the skip flag bypasses it. A local rate limit comes back as RateLimited. The model-level guardrail joins the data with and without an alias. A tag added by a guardrail over its budget fails with budget_exceeded. aget_responses data gets the retrieval pipelines.
 scope:
@@ -40,7 +40,7 @@ oracle_cases: []
 deviations: []
 out_of_scope:
   - "The request and router ports and the assembly of the step: B8802. The step: B8801."
-  - "The functions behind each adapter: B8393, B8399, B8391, B3546, B750, B752, B3269 and B3030."
+  - "The functions behind each adapter: B8393, B8399, B8391, B750, B752, B3269 and B3030; the real CompressionArming adapter: B3546."
   - "The vector_store_pre_call_hook and compression_interception callbacks: these adapters call arm_pre_call and attach_post_call_pipelines_to_retrieval and build neither callback."
 pitfalls:
   - "PreCallHook takes a mode enum instead of LiteLLM's two flags; the pre-call step only ever sets skip_guardrails, never guardrails_only."

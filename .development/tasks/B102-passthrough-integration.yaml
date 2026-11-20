@@ -5,7 +5,8 @@ description: >-
   uncovered executable remainder is accepting the open-source managed-ID flag and proving the
   composed logging and optional stream-cost paths over the real server. B8930 builds cost
   injection and B8931 constructs the logging graph. B8640 supplies that graph to its existing
-  PassThroughState, and B8606-B8609 already mount the provider families. This task registers no
+  PassThroughState, and B8606, B8607 and B8608 already mount the provider families it
+  exercises; B8609's Fal, AssemblyAI and TinyFish mounts and B10026's VLLM, GigaChat and Watsonx mounts are later work. This task registers no
   route, builds no second handler graph, and changes no app or Shared module. Its server module
   passthrough_integration contains integration fixtures and tests under tests.rs or tests/;
   the skeleton declares the module. If B8640 has not acquired the runtime handoff recorded in
@@ -34,8 +35,8 @@ description: >-
   must produce the real usage and charge in exactly one callback. An upstream 4xx produces one
   failure and no success; byte relay and successful SSE complete once; dropping a stream after
   usage logs partial usage once, and shutting down accounts for delayed billing tasks. Exercise
-  TinyFish's early stream poller and end-of-stream fallback together to prove at-most-one
-  billing, and the Transcribe admission/logger pair to prove one shared live rate source. Reuse
+  the Transcribe admission/logger pair to prove one shared live rate source. TinyFish's early
+  stream poller and end-of-stream fallback check belongs to B8609, which mounts TinyFish. Reuse
   B8931's graph and the application's injected external resources rather than testing another
   hand-assembled graph. A transport fixture may preserve the real provider URL while serving
   loopback bytes: endpoint classification checks the URL's host, so replacing api.openai.com
@@ -168,7 +169,7 @@ out_of_scope:
   - "B3611 owns non_streaming_http_request_handler, is_multipart, _build_request_files_from_upload_file, make_multipart_http_request, _parse_request_data_by_content_type, WebSocket frame/close helpers and _extract_model_from_vertex_ai_setup. B6510 owns HTTP preparation and send; B3613 owns pass_through_request lifecycle and B3612 owns websocket_passthrough_request."
   - "B3615 owns chat_completion_pass_through_endpoint and create_pass_through_route. B3607 owns _relay_passthrough_response_bytes; B3610 owns _relay_reporting_failures and its error-preview helpers and stream wrapper. B8930 and B8931 own the newly separated cost functions and production logger assembly."
   - "B3614 owns _placed_ahead, SafeRouteAdder, remove_endpoint_routes and get_all_registered_pass_through_routes. B2302 owns _route_for_registry_lookup, is_registered_pass_through_route and get_registered_pass_through_route. B3616 owns set_env_variables_in_header, exact/subpath registration, route config combination and startup registration."
-  - "B3617 owns all config retrieval, database listing, team filtering and endpoint lookup functions. B8520 owns create/update/delete and initialize_pass_through_endpoints_in_db; B8374 and B8384 own boot installation. B8640-B8643 and B8606-B8609 own state adapters, socket bridging, fallback and every family mount."
+  - "B3617 owns all config retrieval, database listing, team filtering and endpoint lookup functions. B8520 owns create/update/delete and initialize_pass_through_endpoints_in_db; B8374 and B8384 own boot installation. B8640-B8643, B8606-B8609 and B10026 own state adapters, socket bridging, fallback and every family mount."
   - "B8610 owns Shared and the server composition root. HTTP route auth, headers, credential routing, transforms, payloads, provider polling and spend sinks remain with B052, B3601-B3609, B3618-B3629 and B3630-B3653. This task only proves those existing pieces together."
 pitfalls:
   - Enabling passthrough_managed_object_ids without managed_files must not turn GET /v1/files into an empty database result.

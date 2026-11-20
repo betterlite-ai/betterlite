@@ -17,7 +17,7 @@ description: >-
   raise HTTPException with error detail naming the constraint violation.
 
   Authorization: each discovered ID is passed to assert_user_can_access_vector_store_id
-  from B1061, which returns a LiteLLM_ManagedVectorStore or None. The result is
+  from B10014, which returns a LiteLLM_ManagedVectorStore or None. The result is
   a mapping from vector_store_id (sorted by key) to the resolved managed store.
   Only authorized IDs appear in the returned mapping.
 
@@ -166,7 +166,7 @@ deviations:
 out_of_scope:
   - The route handlers (rag_ingest, rag_query) that call these helpers; B3465
     owns those functions.
-  - The database lookup and schema for managed vector stores; B1061 owns the
+  - The database lookup and schema for managed vector stores; B10014 owns the
     authorization check and B1067 owns the config extraction.
   - Provider-specific validation beyond get_ingestion_class; individual
     provider tasks own their configuration validation.

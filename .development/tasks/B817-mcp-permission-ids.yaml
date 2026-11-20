@@ -3,7 +3,7 @@ title: Canonical MCP server identifiers in grants
 description: >-
   Build the MCP grant cleanup and team server reads on top of B10000's resolve_identifiers_to_ids. It turns
   each identifier into its set of server IDs from the database and the registry, and this task passes it
-  B4731's get_registry records. Never rewrite stored aliases into local IDs. Stable dedupe retains first occurrence.
+  get_registry's records from B10020's ServerRegistry, which these functions take as an argument. Never rewrite stored aliases into local IDs. Stable dedupe retains first occurrence.
 
   Dropping stale mcp_servers mutates only a list-valued field, preserving original identifiers that
   resolve anywhere and the literal no-mcp-servers sentinel, then deduplicating in input order. It must
@@ -15,7 +15,7 @@ description: >-
   stale_tool_keys_and_non_list_tools, untouched_wrong_shapes and flatten_union exercise these transforms.
 
   Team allowed-server resolution defaults prisma_client=null. If direct mcp_servers includes the
-  all-proxy-mcpservers literal, immediately return B136 registry KEYS, not the objects' server_id attributes,
+  all-proxy-mcpservers literal, immediately return every registry id (B10020's get_all_mcp_server_ids: LiteLLM returns the registry keys, and both maps are keyed by server_id),
   and do not consult groups/tool grants. Otherwise union direct IDs, B4669
   MCPRequestHandler._get_mcp_servers_from_access_groups results and tool-permission keys; parse a stored
   JSON tool map before extracting keys. B4669 uses requires_fresh_policy=false here, so a group lookup
@@ -27,8 +27,8 @@ description: >-
   including the strings "null", "[]", "false" and "0"; only falsey raw values normalize to {} before
   decoding. Its fuzz target exercises the same production path.
 
-  _get_allow_all_keys_server_ids returns a set of B136's allow_all_keys IDs; _get_all_mcp_server_ids
-  returns a set of registry keys. _existing_object_permission_mcp_servers returns [] for falsey ID,
+  _get_allow_all_keys_server_ids returns B10020's get_allow_all_keys_server_ids as a set; _get_all_mcp_server_ids
+  returns B10020's get_all_mcp_server_ids, the registry keys. _existing_object_permission_mcp_servers returns [] for falsey ID,
   missing DB/row or null servers, otherwise returns the stored list unchanged with duplicates. Use
   B725 ObjectPermissionRepository, with no cache or write. Cases allow_all_keys_snapshot and
   existing_grants_falsey_missing_and_duplicates cover those projections. B816 owns collision rejection;
@@ -156,11 +156,11 @@ out_of_scope:
     (L641-L651), validate_key_mcp_servers_against_team (L654-L794), _validate_requested_toolsets (L797-L839),
     _extract_requested_vector_stores (L842-L851), validate_key_vector_stores_against_team (L854-L879),
     _extract_requested_search_tools (L882-L891), validate_key_search_tools_against_team (L894-L941).'
-  - B6764 (config file) and B6765 (database) own registry population and B4731 owns get_allow_all_keys_server_ids; B4669 owns MCP access-group lookup and its warning fallback.
+  - B6764 (config file) and B6765 (database) own registry population and B10020 owns ServerRegistry, get_registry, get_allow_all_keys_server_ids and get_all_mcp_server_ids; B4669 owns MCP access-group lookup and its warning fallback.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as mcp_permission_ids in the server group. Replace the stub Op in tools/oracle/src/helpers/server/mcp_permission_ids.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/mcp_permission_ids.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Stale-field cleanup drops unresolved aliases, but team allowed-server reads deliberately retain them.
-  - all-proxy-mcpservers short-circuits to registry keys even when a registry object's server_id differs.
+  - all-proxy-mcpservers short-circuits to every registry id before the access-group lookup runs, so a failing group lookup never touches that answer.
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

@@ -1,6 +1,6 @@
 id: B864
 milestone: M4 keys, spend and management
-title: Feature and organization key generation switches
+title: Feature access switches for agents and vector stores
 status: todo
 depends_on: [B002, B003, B171, B732, B856, B863]
 file: tasks/B864-management-rbac.yaml

@@ -11,7 +11,7 @@ description: >-
 
   The two initialize_guardrail functions become argument functions that register nothing, the way B8217 writes the third-party initializers. `initialize_mcp_end_user_permission(params, guardrail_name) -> McpEndUserPermissionArgs` in mcp_end_user_permission/init.rs keeps the name, mode as the event hook, and default_on true unless the params set default_on to false; LitellmParams keeps default_on as Option<bool>, so None is the "not set" that LiteLLM reads from the raw guardrail dict. `initialize_mcp_security(params, guardrail_name)` in mcp_security/init.rs returns McpSecurityArgs or the error "MCP Security: guardrail_name is required" for an empty name, maps every on_violation except literal "block" to alert, and falls back to default_on false. Both use the cached auth lookup from B739; preserve its existing failure boundary and behavior.
 
-  B8521's hook registry answers mcp_end_user_permission and mcp_security with HookRegistryError::NotBuilt until this task lands. Put both arms in place of those answers in hook_registry/kinds.rs, keep the args as `HookSpec::McpEndUserPermission` and `HookSpec::McpSecurity` in spec.rs with their settings arms, let the security initializer's error come back as HookRegistryError::Init, and give each name in hooks.rs the event hooks its class sets. B8521's `unbuilt_mcp_end_user_permission` and `unbuilt_mcp_security` tests become `mcp_end_user_permission_arm` and `mcp_security_arm`, and both names leave the not-built row in docs/deviations/B8521.yaml. Should these two be the last NotBuilt answers, the same change deletes the NotBuilt variant and its skips_startup arm in hook_registry/error.rs, the NotBuilt half of `hook_errors_at_startup` and that row.
+  B8521's hook registry answers mcp_end_user_permission and mcp_security with HookRegistryError::NotBuilt until this task lands. B8666's LiveGuardrail::build has no arm for either, so also add both `LiveGuardrail` variants and arms in crates/betterlite-server/src/guardrail_dispatch/live.rs. Put both arms in place of those answers in hook_registry/kinds.rs, keep the args as `HookSpec::McpEndUserPermission` and `HookSpec::McpSecurity` in spec.rs with their settings arms, let the security initializer's error come back as HookRegistryError::Init, and give each name in hooks.rs the event hooks its class sets. B8521's `unbuilt_mcp_end_user_permission` and `unbuilt_mcp_security` tests become `mcp_end_user_permission_arm` and `mcp_security_arm`, and both names leave the not-built row in docs/deviations/B8521.yaml. Should these two be the last NotBuilt answers, the same change deletes the NotBuilt variant and its skips_startup arm in hook_registry/error.rs, the NotBuilt half of `hook_errors_at_startup` and that row.
 scope:
   paths:
     - crates/betterlite-guardrails/src/mcp_end_user_permission.rs
@@ -30,6 +30,7 @@ scope:
     - tools/oracle/helpers/b3815/**
     - tools/oracle/src/helpers/guardrails/b3815.rs
     - tools/oracle/src/helpers/guardrails/b3815/**
+    - crates/betterlite-server/src/guardrail_dispatch/live.rs
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_end_user_permission/__init__.py

@@ -3,7 +3,7 @@ title: Prove usage chat streams and tenant scoping through the booted proxy
 description: >-
   Finish the HTTP proof left after B074's parts were planned. B3103 owns every usage-chat engine
   function and currently compares pure helpers; B8271 tests its route with local fake ports;
-  B8673 supplies the production factory and mount but lists only auth-required, invalid-role and
+  B10025 supplies the production factory and mount but lists only auth-required, invalid-role and
   missing-messages HTTP cases. Add the missing successful, tool, scope and late-error cases in
   tools/oracle/cases/http/usage-chat/. No production function remains unassigned, and this task
   registers no route, builds no adapter and edits no shared mount. Allow roughly 700-800 lines of
@@ -15,7 +15,7 @@ description: >-
   Use the existing ordinary HTTP-case format, including steps where useful: the current decoder
   selects it by an absent kind field, whereas a nonempty kind selects another driver. These are
   booted HTTP cases, never helper calls to a FastAPI handler. Run betterlite against LiteLLM,
-  without --self-check. The model transport is the direct SDK completion call from B8673, not a
+  without --self-check. The model transport is the direct SDK completion call from B10025, not a
   model_list deployment: set case env OPENAI_API_KEY to an inert fixture credential,
   OPENAI_API_BASE to {{upstream}}/v1 and TZ to UTC, and leave OPENAI_BASE_URL unset. Use
   general_settings.master_key=oracle-master except the deliberately unbound-caller case.
@@ -155,12 +155,12 @@ deviations: []
 out_of_scope:
   - "B3103 owns all ai_usage_chat.py functions: get_tools_for_role, _build_system_prompt, _parse_csv_ids, _query_activity, the three _fetch_* functions, _accumulate_breakdown, _ranked_lines, both _summarise_* functions, _sse, _resolve_fetch_kwargs, _execute_tool_call, _process_tool_call, _stream_final_response and stream_usage_ai_chat, plus constants, event types and TOOL_HANDLERS."
   - "TOP_N_KEYS has no caller at the pin; _UsageDump overloads are typing-only, as B3103 already records."
-  - "B8271 owns ChatMessage, UsageAIChatRequest, usage_ai_chat and usage_endpoints/__init__.py's router re-export; B8673 owns UsageChatFactory's production implementation and the sole route mount."
+  - "B8271 owns ChatMessage, UsageAIChatRequest, usage_ai_chat and usage_endpoints/__init__.py's router re-export; B10025 owns UsageChatFactory's production implementation and the sole route mount."
   - "B3096, B3097 and B3098 own every daily_activity_routes.py helper and handler; B8482 owns register_daily_activity_routes and the six-resolver loop, its mount and deferred key/search/aggregate HTTP cases."
   - "B3098 and B3099 already own export and cache-activity HTTP cases; B8661 owns the analytics and gateway-activity mounts and their deferred HTTP cases."
   - "B9270 owns daily usage fixture schema/seeding; B860 owns fixture lifecycle and B9942 owns Prisma generation."
-  - "B005/B8271 own idle-ping timing and stream wrapping; B089 owns loading litellm_settings.sse_keepalive_ping_interval_seconds and B8673 passes it to the route."
-  - "B8675 backs ProxyUrls with CustomUrls; B7323's description naming B074 for that agent-card wiring is stale."
+  - "B005/B8271 own idle-ping timing and stream wrapping; B10023 owns loading litellm_settings.sse_keepalive_ping_interval_seconds and B10025 passes it to the route."
+  - "B4785 backs ProxyUrls with CustomUrls; B7323's description naming B074 for that agent-card wiring is stale."
 pitfalls:
   - A model_list api_base does not redirect this route's direct SDK call, so the mock address belongs in OPENAI_API_BASE.
   - The client tool event echoes a forged user_id even when the database query correctly substitutes the caller's id, so inspect the follow-up model request's summary to detect a leak.

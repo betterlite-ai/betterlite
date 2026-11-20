@@ -1,0 +1,71 @@
+id: B10026
+title: Mount the VLLM, GigaChat and Watsonx pass-through routes
+description: >-
+  B8640 builds the shared pass-through state and calls `saas_vgw::mount` with a stub body. B3627 built the /vllm, /gigachat and /watsonx routes as one Router in passthrough_vgw_routes, and none of them answers until it is merged into the app. This task mounts that Router so the three routes answer through the booted proxy, and takes over B3627's HTTP oracle cases, which could not pass at its own gate. B8609 mounts B3626's Fal, AssemblyAI and TinyFish routes in the same file.
+
+
+  Where. Module `app::pass_through::routes::saas_vgw::vgw`: crates/betterlite-server/src/app/pass_through/routes/saas_vgw/vgw.rs, with tests in saas_vgw/vgw/tests.rs. The skeleton declares the module in saas_vgw.rs as an empty file. Write `pub fn mount(router: Router, ps: &PassThroughState) -> Router` there, and make B8640's `saas_vgw::mount` call it with one line; touch nothing else in saas_vgw.rs, since B8609 adds its own line there.
+
+
+  Everything comes from B8640's `PassThroughState`. B3627 needs the handler Arc for B3615's create_pass_through_route, the router hop and the passthrough processor for router models, `config.sections.gigachat_route`, and the pooled GigaChat client with a 600 second timeout and a 5 second connect timeout built from Shared's `http` settings (B3627 line 25). Read B3627's merged deps struct; when a field has no source in PassThroughState, stop and report. Build the deps once per mount, never per request.
+
+
+  `vgw::mount(router, ps)` merges B3627's router (`/vllm/{*endpoint}`, `/gigachat/{*endpoint}` and `/watsonx/{*endpoint}`, GET, POST, PUT, DELETE and PATCH) inside the auth layers, since all three need a key in LiteLLM.
+
+
+  Tests in saas_vgw/vgw/tests.rs (module `app::pass_through::routes::saas_vgw::vgw::tests`, names start with `registration_`) assert each of the three paths takes the five methods and no other on the merged app, and that the merge does not panic next to the other families.
+
+
+  Oracle cases. Take over B3627's 16 cases at their paths from B8609; do not move or rename the files.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/pass_through/routes/saas_vgw.rs
+    - crates/betterlite-server/src/app/pass_through/routes/saas_vgw/vgw.rs
+    - crates/betterlite-server/src/app/pass_through/routes/saas_vgw/vgw/**
+    - tools/oracle/cases/server/passthrough-vgw-routes/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L481-L549
+    why: The /vllm registration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L3801-L3893
+    why: The /gigachat registration and its route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L4025-L4034
+    why: The /watsonx registration.
+dod:
+  - text: Every VLLM, GigaChat and Watsonx path reaches its handler through the merged app with GET, POST, PUT, DELETE and PATCH, and the merge does not panic.
+    proof: [registration-tests, oracle]
+  - text: The VLLM, GigaChat and Watsonx routes answer through the booted proxy as LiteLLM does.
+    proof: [oracle]
+checks:
+  optional: []
+  commands:
+    - id: registration-tests
+      why: a VLLM, GigaChat or Watsonx path is missing, takes the wrong methods, or collides with another family
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::routes::saas_vgw::vgw::tests::registration_/)'
+oracle_cases:
+  - tools/oracle/cases/server/passthrough-vgw-routes/vllm-direct-forward.yaml
+  - tools/oracle/cases/server/passthrough-vgw-routes/vllm-router-model-json.yaml
+  - tools/oracle/cases/server/passthrough-vgw-routes/vllm-router-model-stream.yaml
+  - tools/oracle/cases/server/passthrough-vgw-routes/vllm-get-models-forward.yaml
+  - tools/oracle/cases/server/passthrough-vgw-routes/gigachat-chat-no-model-400.yaml
+  - tools/oracle/cases/server/passthrough-vgw-routes/gigachat-embeddings-no-model-400.yaml
+  - tools/oracle/cases/server/passthrough-vgw-routes/gigachat-empty-model-400.yaml
+  - tools/oracle/cases/server/passthrough-vgw-routes/gigachat-models-get-forward.yaml
+  - tools/oracle/cases/server/passthrough-vgw-routes/gigachat-direct-bearer.yaml
+  - tools/oracle/cases/server/passthrough-vgw-routes/gigachat-router-model.yaml
+  - tools/oracle/cases/server/passthrough-vgw-routes/gigachat-router-metadata.yaml
+  - tools/oracle/cases/server/passthrough-vgw-routes/gigachat-router-strips-api-base.yaml
+  - tools/oracle/cases/server/passthrough-vgw-routes/watsonx-default-version.yaml
+  - tools/oracle/cases/server/passthrough-vgw-routes/watsonx-version-kept.yaml
+  - tools/oracle/cases/server/passthrough-vgw-routes/watsonx-stream-flag.yaml
+  - tools/oracle/cases/server/passthrough-vgw-routes/watsonx-get-no-body-read.yaml
+deviations: []
+out_of_scope:
+  - "The route logic: B3627. The shared state, the router hop and the processor: B8640. The Fal, AssemblyAI and TinyFish mounts: B8609."
+pitfalls:
+  - "The GigaChat client keeps its own pool and timeouts; building it per request drops the connect timeout LiteLLM sets."
+  - "B3627 builds one Router for all three paths; merge it once, not once per route."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
