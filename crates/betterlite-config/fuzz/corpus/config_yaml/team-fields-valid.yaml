@@ -1,0 +1,14 @@
+general_settings:
+  custom_team_metadata_validate: team_metadata_validator.validate
+  team_metadata_schema:
+    - key: cost_center
+      label: Cost center
+    - key: owner
+  team_metadata_validation_timeout: 2.5
+  team_metadata_validation_error_message: Cost center validation is unavailable right now.
+
+model_list:
+  - model_name: team-fields-model
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: sk-team-fields
