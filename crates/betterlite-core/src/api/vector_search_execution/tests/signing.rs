@@ -110,9 +110,9 @@ async fn ordinary_signing() {
         .search(&deps, &ThreadedSeam, ClientKind::Sync, &call)
         .await
         .expect("the search succeeds");
-    let recorded = recorder.lock().unwrap_or_else(PoisonError::into_inner);
-    assert_ordinary_records(&recorded, &case);
-    drop(recorded);
+    let guard = recorder.lock().unwrap_or_else(PoisonError::into_inner);
+    assert_ordinary_records(&guard, &case);
+    drop(guard);
     assert_eq!(events.recorded(), ["sign", "log", "send"]);
     assert_ordinary_wire(&wire, &fixture);
     assert_transform_logging(&fixture);
@@ -235,10 +235,10 @@ async fn signed_body_is_sent(body: &'static [u8]) {
         .search(&deps, &ThreadedSeam, ClientKind::Asynchronous, &call)
         .await
         .expect("the search succeeds");
-    let recorded = recorder.lock().unwrap_or_else(PoisonError::into_inner);
-    assert_eq!(recorded.transforms.len(), 1);
-    assert!(recorded.transforms[0].async_entry);
-    drop(recorded);
+    let guard = recorder.lock().unwrap_or_else(PoisonError::into_inner);
+    assert_eq!(guard.transforms.len(), 1);
+    assert!(guard.transforms[0].async_entry);
+    drop(guard);
     let sent = wire.requests();
     assert_eq!(sent.len(), 1);
     assert_eq!(body_bytes(&sent[0]), Some(body));
@@ -273,8 +273,8 @@ async fn query_embedding_transform(mode: ClientKind) {
         .search(&deps, &ThreadedSeam, mode, &call)
         .await
         .expect("the search succeeds");
-    let recorded = recorder.lock().unwrap_or_else(PoisonError::into_inner);
-    assert_query_embedding(&recorded, &case, mode);
+    let guard = recorder.lock().unwrap_or_else(PoisonError::into_inner);
+    assert_query_embedding(&guard, &case, mode);
     assert_eq!(wire.requests().len(), 1);
 }
 
@@ -324,11 +324,11 @@ async fn query_transform_no_executor() {
         .search(&deps, &ThreadedSeam, ClientKind::Asynchronous, &call)
         .await
         .expect("the search succeeds");
-    let recorded = recorder.lock().unwrap_or_else(PoisonError::into_inner);
-    assert!(!recorded.query_transforms[0].executor);
-    assert!(recorded.query_transforms[0].async_entry);
+    let guard = recorder.lock().unwrap_or_else(PoisonError::into_inner);
+    assert!(!guard.query_transforms[0].executor);
+    assert!(guard.query_transforms[0].async_entry);
     assert_eq!(
-        recorded.query_transforms[0].litellm_params.get("timeout"),
+        guard.query_transforms[0].litellm_params.get("timeout"),
         Some(&Json::Null)
     );
 }
@@ -362,8 +362,8 @@ async fn signed_on_thread(mode: ClientKind, aws: bool, thread: SigningThread) {
         .search(&deps, &ThreadedSeam, mode, &call)
         .await
         .expect("the search succeeds");
-    let recorded = recorder.lock().unwrap_or_else(PoisonError::into_inner);
-    assert_signed_thread(&recorded, thread, caller_thread, mode);
+    let guard = recorder.lock().unwrap_or_else(PoisonError::into_inner);
+    assert_signed_thread(&guard, thread, caller_thread, mode);
     assert_eq!(wire.requests().len(), 1);
 }
 
@@ -425,20 +425,20 @@ async fn default_case(kind: DefaultCase) {
         .search(&deps, &ThreadedSeam, ClientKind::Asynchronous, &call)
         .await
         .expect("the default async transform searches");
-    let recorded = recorder.lock().unwrap_or_else(PoisonError::into_inner);
+    let guard = recorder.lock().unwrap_or_else(PoisonError::into_inner);
     match kind {
         DefaultCase::Search => {
-            assert_eq!(recorded.transforms.len(), 1);
-            assert!(!recorded.transforms[0].async_entry);
-            assert!(recorded.query_transforms.is_empty());
+            assert_eq!(guard.transforms.len(), 1);
+            assert!(!guard.transforms[0].async_entry);
+            assert!(guard.query_transforms.is_empty());
         }
         DefaultCase::Query => {
-            assert!(recorded.transforms.is_empty());
-            assert_eq!(recorded.query_transforms.len(), 1);
-            assert!(!recorded.query_transforms[0].async_entry);
-            assert!(recorded.query_transforms[0].executor);
+            assert!(guard.transforms.is_empty());
+            assert_eq!(guard.query_transforms.len(), 1);
+            assert!(!guard.query_transforms[0].async_entry);
+            assert!(guard.query_transforms[0].executor);
             assert_eq!(
-                recorded.query_transforms[0].litellm_params.get("timeout"),
+                guard.query_transforms[0].litellm_params.get("timeout"),
                 Some(&json("7"))
             );
         }

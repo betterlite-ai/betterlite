@@ -95,7 +95,7 @@ where
         request_data: body.clone(),
         api_base: url.clone(),
     };
-    let (signed_headers, signed) = sign(deps.config.clone(), seam, mode, input).await?;
+    let (signed_headers, signed) = sign(Arc::clone(&deps.config), seam, mode, input).await?;
     log_http(&api_base, &signed_headers, &body, log)?;
     let request = WriteRequest {
         method: Method::POST,
@@ -105,7 +105,7 @@ where
         timeout: call.timeout,
     };
     Ok(PreparedSearch {
-        config: deps.config.clone(),
+        config: Arc::clone(&deps.config),
         client,
         request,
         logging: VectorStoreLogging {
@@ -146,12 +146,7 @@ where
     let reply = client.get().send(request).await;
     let answer = match reply {
         Ok(answer) => answer,
-        Err(error)
-            if matches!(
-                error,
-                TransportError::ConnectTimeout(_) | TransportError::Deadline(_)
-            ) =>
-        {
+        Err(TransportError::ConnectTimeout(_) | TransportError::Deadline(_)) => {
             return Err(SearchError::Provider(config.error_class(
                 TIMEOUT_MESSAGE,
                 408,
@@ -202,12 +197,14 @@ fn wire_headers(headers: &OpenAiHeaders) -> Result<HttpHeaders, SearchError> {
 
 // A signed body, empty or not, is sent as it is; only a null signed body is serialized, exactly once
 fn wire_body(body: &Params, signed: Option<&[u8]>) -> Result<RequestBody, SearchError> {
-    match signed {
-        Some(bytes) => Ok(RequestBody::Json(bytes.to_vec())),
-        None => serde_json::to_vec(body)
-            .map(RequestBody::Json)
-            .map_err(SearchError::Encode),
-    }
+    signed.map_or_else(
+        || {
+            serde_json::to_vec(body)
+                .map(RequestBody::Json)
+                .map_err(SearchError::Encode)
+        },
+        |bytes| Ok(RequestBody::Json(bytes.to_vec())),
+    )
 }
 
 fn response_of(reply: &UpstreamResponse) -> VectorStoreResponse {

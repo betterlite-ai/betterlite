@@ -66,7 +66,7 @@ pub(super) async fn transform(
     }
 }
 
-fn search_request<'call>(
+const fn search_request<'call>(
     call: &'call SearchCall<'_>,
     api_base: &'call str,
     litellm_params: &'call Params,

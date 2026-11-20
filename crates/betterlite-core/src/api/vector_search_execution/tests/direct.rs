@@ -4,7 +4,7 @@ use super::support::{
     DelegatingStore, DirectStore, Embeddings, Events, Fixture, SEARCH_RESPONSE, params,
 };
 use super::{json, to_json};
-use crate::api::vector_search_execution::config::{Params, SearchQuery};
+use crate::api::vector_search_execution::config::{Params, QueryEmbeddingExecutor, SearchQuery};
 use crate::api::vector_search_execution::error::SearchError;
 use crate::api::vector_search_execution::service::direct::DirectCall;
 use crate::api::vector_store_http_write::service::ClientKind;
@@ -33,7 +33,7 @@ const fn direct_call<'request>(
     optional_params: &'request Params,
     litellm_params: &'request Params,
     timeout: Option<Duration>,
-    executor: Option<&'request Embeddings>,
+    executor: Option<&'request dyn QueryEmbeddingExecutor>,
 ) -> DirectCall<'request> {
     DirectCall {
         provider: "valkey",

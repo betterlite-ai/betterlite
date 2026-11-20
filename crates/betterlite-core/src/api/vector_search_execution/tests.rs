@@ -19,7 +19,10 @@ fn json(text: &str) -> Json {
     serde_json::from_str(text).expect("the expected JSON parses")
 }
 
-fn to_json<T: serde::Serialize>(value: &T) -> Json {
+fn to_json<T>(value: &T) -> Json
+where
+    T: serde::Serialize,
+{
     serde_json::from_slice(&serde_json::to_vec(value).expect("the value encodes"))
         .expect("the value is JSON")
 }

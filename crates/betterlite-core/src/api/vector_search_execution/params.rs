@@ -66,7 +66,10 @@ pub(super) fn boolean(json: &Json, name: &'static str) -> Result<Option<bool>, S
     }
 }
 
-fn wrong_type<T>(name: &'static str, expected: &'static str) -> Result<Option<T>, SearchError> {
+const fn wrong_type<T>(
+    name: &'static str,
+    expected: &'static str,
+) -> Result<Option<T>, SearchError> {
     Err(SearchError::Field {
         field: name,
         expected,

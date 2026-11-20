@@ -43,11 +43,10 @@ impl OpenAiSearchConfig {
         }
     }
 
-    fn transform_error<D: Display + ?Sized>(
-        &self,
-        source: &D,
-        response: &VectorStoreResponse,
-    ) -> SearchError {
+    fn transform_error<D>(&self, source: &D, response: &VectorStoreResponse) -> SearchError
+    where
+        D: Display + ?Sized,
+    {
         SearchError::Provider(self.error_class(
             &source.to_string(),
             response.status_code,

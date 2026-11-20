@@ -407,9 +407,9 @@ async fn added_content_type() {
         .search(&deps, &ThreadedSeam, ClientKind::Sync, &call)
         .await
         .expect("the search succeeds");
-    let recorded = recorder.lock().unwrap_or_else(PoisonError::into_inner);
-    assert!(!recorded.returned[0].contains_key("Content-Type"));
-    drop(recorded);
+    let guard = recorder.lock().unwrap_or_else(PoisonError::into_inner);
+    assert!(!guard.returned[0].contains_key("Content-Type"));
+    drop(guard);
     let request = serving.finish().expect("the fixture saw the search");
     assert!(
         request
