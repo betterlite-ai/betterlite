@@ -1,13 +1,13 @@
 id: B9986
 milestone: M3 providers
 title: Anthropic chat adapter in betterlite-provider
-status: todo
+status: done
 depends_on: [B027, B9984, B9989]
 file: tasks/B9986-anthropic-gateway-adapter.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2618
