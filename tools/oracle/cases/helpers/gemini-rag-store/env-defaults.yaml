@@ -1,0 +1,16 @@
+kind: helper
+name: gemini-rag-store-env-defaults
+call:
+  b3454:
+    script:
+      - status: 200
+        body: '{"name":"fileSearchStores/env-store"}'
+    options:
+      name: notes
+      vector_store:
+        custom_llm_provider: gemini
+    environment:
+      GEMINI_API_KEY: gemini-key
+      GEMINI_API_BASE: https://gemini.test
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,82 @@
+task: B3999
+deviations:
+  - what: >-
+      GcsPubSubLogger.__init__ (lines 47-49) and async_log_success_event (line 112) call _premium_user_check,
+      which raises when premium_user is not True. Betterlite has no paid tier and removes both checks, so the
+      logger always constructs and always enqueues.
+    why: >-
+      The paid-tier gate lives in LiteLLM's enterprise package, which betterlite does not ship. Every feature is
+      available to every user, so nothing in betterlite consults premium_user.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_pubsub/pub_sub.py#L47-L49
+  - what: >-
+      The bearer token comes from the Vertex AI auth path that B1303 (_ensure_access_token_async) and B1304
+      (_get_token_and_url) own, reached through the VertexAuth seam, instead of a second copy of the credential
+      handling.
+    why: >-
+      Those tasks own the token lifecycle and the credential parsing, so the Pub/Sub logger reuses that path
+      rather than duplicating it; the request it makes is the same one LiteLLM makes with custom_llm_provider
+      set to vertex_ai and model set to pub-sub.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_pubsub/pub_sub.py#L65-L94
+  - what: >-
+      The v1 spend projection is built in registry/catalog/gcs_pubsub/payload.rs from the logger event's
+      standard logging payload and merged metadata, not by calling B1716's get_logging_payload. betterlite-server
+      holds get_logging_payload, and betterlite-server depends on betterlite-logging, so this crate cannot call
+      it; the projection reuses the shared ports of _get_spend_logs_metadata, storage_messages, storage_response,
+      storage_request_body, _get_batch_trace_session_id and _redact_logged_api_key, and takes
+      _get_spend_logs_id's id order and aretrieve_batch suffix from the shared
+      spend_metadata::spend_logs_id_from_ids that spend_logs_id also calls.
+    why: >-
+      A crate cycle blocks the call, and a logger event carries the standard logging payload and the merged
+      metadata but no call kwargs or litellm_params. The record keeps the same fields and the same derivations
+      wherever the event holds the input.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L498
+  - what: >-
+      The inputs only the call kwargs hold are absent from the projection: the request and response bodies are
+      {} because store_prompts_in_spend_logs is not on the event, additional_usage_values is {}, the cache key is
+      the standard payload's key or Cache OFF because no cache derives one, the end user is the merged or
+      standard metadata's user_api_key_end_user_id without get_end_user_id_for_cost_tracking, and the OCR usage
+      override, the unknown-model placeholder scrubbing and the azure response-header spillover do not run.
+    why: >-
+      Each of those reads litellm_params, kwargs or litellm.cache, which a logger event does not carry. The
+      default deployment (prompt storage off, no custom end-user parametrization) produces the same text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L520-L560
+  - what: >-
+      gcs_pub_sub_use_v1 is read from the GCS_PUB_SUB_USE_V1 environment variable, and a value passed to the
+      constructor wins over it. LiteLLM reads the litellm.gcs_pub_sub_use_v1 global that litellm_settings sets,
+      and a callback catalog entry has no per-callback settings object to carry a constructor value.
+    why: >-
+      The catalog builds the logger from the environment alone, so the flag needs an environment spelling; an
+      empty value reads as unset and invalid text is an error that names the variable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_pubsub/pub_sub.py#L119
+  - what: >-
+      The cache-hit request id suffix appends the request's end time instead of time.time(). LiteLLM writes
+      f"{id}_cache_hit{time.time()}" so a cache hit gets a unique spend log id; the epoch seconds a logger event
+      carries are the request's end instant, which is the same moment within a second.
+    why: >-
+      A logger event has no wall clock, and the end instant keeps the id unique across rows, which is what the
+      suffix is for.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L772
+  - what: >-
+      used_client_oauth_token is read from the stamped boolean in the event's merged metadata, then narrowed to
+      the anthropic provider. LiteLLM reads the stamp from litellm_params.metadata through
+      proxy_stamped_used_client_oauth_token.
+    why: >-
+      The merged metadata is where the event keeps that stamp, and the stamp is written to litellm_params
+      metadata before the event is built, so both paths see the same boolean.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L724-L725
+  - what: >-
+      An event enqueued while a flush is publishing stays queued for the next cycle. LiteLLM's async_send_batch
+      clears the whole log_queue in its finally block, so an event appended during the loop is discarded.
+    why: >-
+      That event was accepted from the caller and never uploaded, so dropping it loses data; the flush drains the
+      queue up front and only the drained batch is cleared.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_pubsub/pub_sub.py#L153
+kept_bugs:
+  - what: >-
+      A message whose publish fails is not retried. publish_message logs the failure and returns None, and
+      async_send_batch clears the queue in its finally block, so the failed message leaves no trace in the queue.
+    why: >-
+      The task's DoD 15 and pitfalls require the queue to be cleared after attempted publication of every
+      message, so failed publishes do not accumulate. Betterlite settles each message it attempted and requeues
+      nothing, which is at-most-once delivery for a failed publish, exactly as LiteLLM behaves.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_pubsub/pub_sub.py#L148-L153
