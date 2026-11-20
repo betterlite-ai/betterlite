@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_postgres_fixture::connection::PostgresFixture;
@@ -65,28 +65,22 @@ impl Db {
 }
 
 // Both timestamps are moved into a fixed past so a statement that never touches one leaves it there.
+const PIN_TIMESTAMPS: &str = r#"UPDATE "LiteLLM_SSOIdentityAssertion"
+    SET created_at = '2001-01-01', updated_at = '2000-01-01'
+    WHERE user_id = $1"#;
+const READ_TIMESTAMPS: &str = r#"SELECT created_at = '2001-01-01'::timestamp AS created_pinned,
+    updated_at > '2020-01-01'::timestamp AS updated_moved
+    FROM "LiteLLM_SSOIdentityAssertion" WHERE user_id = $1"#;
+
 async fn pin_timestamps(db: &Db, user_id: &str) {
     let client = db.client().await;
-    client
-        .execute(
-            r#"UPDATE "LiteLLM_SSOIdentityAssertion"
-            SET created_at = '2001-01-01', updated_at = '2000-01-01'
-            WHERE user_id = $1"#,
-            &[&user_id],
-        )
-        .await
-        .unwrap();
+    client.execute(PIN_TIMESTAMPS, &[&user_id]).await.unwrap();
 }
 
 async fn timestamps(db: &Db, user_id: &str) -> (bool, bool) {
     let client = db.client().await;
     let found = client
-        .query_one(
-            r#"SELECT created_at = '2001-01-01'::timestamp AS created_pinned,
-            updated_at > '2020-01-01'::timestamp AS updated_moved
-            FROM "LiteLLM_SSOIdentityAssertion" WHERE user_id = $1"#,
-            &[&user_id],
-        )
+        .query_one(READ_TIMESTAMPS, &[&user_id])
         .await
         .unwrap();
     (found.get("created_pinned"), found.get("updated_moved"))
@@ -102,7 +96,10 @@ fn row(user_id: &str, assertion_b64: &str) -> AssertionRow {
 fn memory_rows(stored: Vec<AssertionRow>) -> MemoryAssertionRows {
     MemoryAssertionRows {
         rows: Mutex::new(stored),
-        ..MemoryAssertionRows::default()
+        id_jag: false,
+        failures: MemoryFailures::default(),
+        reads: AtomicUsize::new(0),
+        writes: AtomicUsize::new(0),
     }
 }
 
@@ -274,8 +271,11 @@ async fn memory_rows_keep_insertion_order() {
 #[tokio::test]
 async fn memory_rows_count_accepted_calls() {
     let rows = MemoryAssertionRows {
+        rows: Mutex::new(Vec::new()),
         id_jag: true,
-        ..MemoryAssertionRows::default()
+        failures: MemoryFailures::default(),
+        reads: AtomicUsize::new(0),
+        writes: AtomicUsize::new(0),
     };
     assert!(rows.find("missing").await.unwrap().is_none());
     assert!(rows.find_all().await.unwrap().is_empty());
@@ -303,8 +303,11 @@ async fn memory_rows_fail_per_method(#[case] method: AssertionRowsMethod) {
         AssertionRowsMethod::IdJagServerExists => failures.id_jag_server_exists = Some(0),
     }
     let rows = MemoryAssertionRows {
+        rows: Mutex::new(Vec::new()),
+        id_jag: false,
         failures,
-        ..MemoryAssertionRows::default()
+        reads: AtomicUsize::new(0),
+        writes: AtomicUsize::new(0),
     };
     let result = match method {
         AssertionRowsMethod::Find => rows.find("user-1").await.err(),

@@ -1,10 +1,11 @@
 use std::error::Error as StdError;
-use std::future::{Future, ready};
+use std::future::Future;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use betterlite_secrets::secret_codec::{DecryptPolicy, FailureLog, FailureValue};
 use thiserror::Error;
+use tokio::task::yield_now;
 use tokio_postgres::Row;
 
 use crate::postgres_store::errors::{DbError, backend};
@@ -78,6 +79,20 @@ fn decode_assertion(row: &Row) -> Result<AssertionRow, DbError> {
     })
 }
 
+async fn write(
+    store: &PostgresStore,
+    statement: &str,
+    user_id: &str,
+    assertion_b64: &str,
+) -> Result<(), DbError> {
+    let client = store.session().await?;
+    client
+        .execute(statement, &[&user_id, &assertion_b64])
+        .await
+        .map_err(backend)?;
+    Ok(())
+}
+
 impl AssertionRows for PostgresAssertionRows {
     type Error = DbError;
 
@@ -97,22 +112,12 @@ impl AssertionRows for PostgresAssertionRows {
     }
 
     async fn upsert(&self, user_id: &str, assertion_b64: &str) -> Result<(), DbError> {
-        let client = self.store.session().await?;
-        client
-            .execute(UPSERT_SQL, &[&user_id, &assertion_b64])
-            .await
-            .map_err(backend)?;
-        Ok(())
+        write(&self.store, UPSERT_SQL, user_id, assertion_b64).await
     }
 
     async fn update(&self, user_id: &str, assertion_b64: &str) -> Result<(), DbError> {
-        let client = self.store.session().await?;
         // no row matched is not an error: the row was already gone when the rotation reached it
-        client
-            .execute(UPDATE_SQL, &[&user_id, &assertion_b64])
-            .await
-            .map_err(backend)?;
-        Ok(())
+        write(&self.store, UPDATE_SQL, user_id, assertion_b64).await
     }
 
     async fn id_jag_server_exists(&self) -> Result<bool, DbError> {
@@ -160,92 +165,73 @@ pub struct MemoryAssertionRows {
     pub writes: AtomicUsize,
 }
 
+impl MemoryAssertionRows {
+    // the real rows await a database, so the fake suspends once before it answers
+    async fn accept_call(&self, method: AssertionRowsMethod) -> Result<(), MemoryRowsError> {
+        yield_now().await;
+        let (counter, failure) = match method {
+            AssertionRowsMethod::Find => (&self.reads, self.failures.find),
+            AssertionRowsMethod::FindAll => (&self.reads, self.failures.find_all),
+            AssertionRowsMethod::Upsert => (&self.writes, self.failures.upsert),
+            AssertionRowsMethod::Update => (&self.writes, self.failures.update),
+            AssertionRowsMethod::IdJagServerExists => {
+                (&self.reads, self.failures.id_jag_server_exists)
+            }
+        };
+        if failure == Some(counter.load(Ordering::SeqCst)) {
+            return Err(MemoryRowsError { method });
+        }
+        counter.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+
+    async fn rows_guard(
+        &self,
+        method: AssertionRowsMethod,
+    ) -> Result<MutexGuard<'_, Vec<AssertionRow>>, MemoryRowsError> {
+        self.accept_call(method).await?;
+        Ok(self.rows.lock().unwrap_or_else(PoisonError::into_inner))
+    }
+}
+
 impl AssertionRows for MemoryAssertionRows {
     type Error = MemoryRowsError;
 
-    fn find(
-        &self,
-        user_id: &str,
-    ) -> impl Future<Output = Result<Option<AssertionRow>, MemoryRowsError>> + Send {
-        if self.failures.find == Some(self.reads.load(Ordering::SeqCst)) {
-            return ready(Err(MemoryRowsError {
-                method: AssertionRowsMethod::Find,
-            }));
-        }
-        self.reads.fetch_add(1, Ordering::SeqCst);
-        let rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
-        let found = rows.iter().find(|row| row.user_id == user_id).cloned();
-        ready(Ok(found))
+    async fn find(&self, user_id: &str) -> Result<Option<AssertionRow>, MemoryRowsError> {
+        let rows = self.rows_guard(AssertionRowsMethod::Find).await?;
+        Ok(rows.iter().find(|row| row.user_id == user_id).cloned())
     }
 
-    fn find_all(&self) -> impl Future<Output = Result<Vec<AssertionRow>, MemoryRowsError>> + Send {
-        if self.failures.find_all == Some(self.reads.load(Ordering::SeqCst)) {
-            return ready(Err(MemoryRowsError {
-                method: AssertionRowsMethod::FindAll,
-            }));
-        }
-        self.reads.fetch_add(1, Ordering::SeqCst);
-        let rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
-        ready(Ok(rows.clone()))
+    async fn find_all(&self) -> Result<Vec<AssertionRow>, MemoryRowsError> {
+        let rows = self.rows_guard(AssertionRowsMethod::FindAll).await?;
+        Ok(rows.clone())
     }
 
-    fn upsert(
-        &self,
-        user_id: &str,
-        assertion_b64: &str,
-    ) -> impl Future<Output = Result<(), MemoryRowsError>> + Send {
-        if self.failures.upsert == Some(self.writes.load(Ordering::SeqCst)) {
-            return ready(Err(MemoryRowsError {
-                method: AssertionRowsMethod::Upsert,
-            }));
+    async fn upsert(&self, user_id: &str, assertion_b64: &str) -> Result<(), MemoryRowsError> {
+        let mut rows = self.rows_guard(AssertionRowsMethod::Upsert).await?;
+        if let Some(row) = rows.iter_mut().find(|row| row.user_id == user_id) {
+            row.assertion_b64 = assertion_b64.to_owned();
+            return Ok(());
         }
-        self.writes.fetch_add(1, Ordering::SeqCst);
-        let mut rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
-        let mut replaced = false;
-        for row in rows.iter_mut() {
-            if row.user_id == user_id {
-                row.assertion_b64 = assertion_b64.to_owned();
-                replaced = true;
-                break;
-            }
-        }
-        if !replaced {
-            rows.push(AssertionRow {
-                user_id: user_id.to_owned(),
-                assertion_b64: assertion_b64.to_owned(),
-            });
-        }
-        ready(Ok(()))
+        rows.push(AssertionRow {
+            user_id: user_id.to_owned(),
+            assertion_b64: assertion_b64.to_owned(),
+        });
+        Ok(())
     }
 
-    fn update(
-        &self,
-        user_id: &str,
-        assertion_b64: &str,
-    ) -> impl Future<Output = Result<(), MemoryRowsError>> + Send {
-        if self.failures.update == Some(self.writes.load(Ordering::SeqCst)) {
-            return ready(Err(MemoryRowsError {
-                method: AssertionRowsMethod::Update,
-            }));
+    async fn update(&self, user_id: &str, assertion_b64: &str) -> Result<(), MemoryRowsError> {
+        let mut rows = self.rows_guard(AssertionRowsMethod::Update).await?;
+        for row in rows.iter_mut().filter(|row| row.user_id == user_id) {
+            row.assertion_b64 = assertion_b64.to_owned();
         }
-        self.writes.fetch_add(1, Ordering::SeqCst);
-        let mut rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
-        for row in rows.iter_mut() {
-            if row.user_id == user_id {
-                row.assertion_b64 = assertion_b64.to_owned();
-            }
-        }
-        ready(Ok(()))
+        Ok(())
     }
 
-    fn id_jag_server_exists(&self) -> impl Future<Output = Result<bool, MemoryRowsError>> + Send {
-        if self.failures.id_jag_server_exists == Some(self.reads.load(Ordering::SeqCst)) {
-            return ready(Err(MemoryRowsError {
-                method: AssertionRowsMethod::IdJagServerExists,
-            }));
-        }
-        self.reads.fetch_add(1, Ordering::SeqCst);
-        ready(Ok(self.id_jag))
+    async fn id_jag_server_exists(&self) -> Result<bool, MemoryRowsError> {
+        self.accept_call(AssertionRowsMethod::IdJagServerExists)
+            .await?;
+        Ok(self.id_jag)
     }
 }
 
