@@ -21,7 +21,7 @@ pub(crate) enum Input {
     ImageEdit(image_edit::Input),
     Rerank(rerank::Input),
     ResponsesDecisions(responses_decisions::Input),
-    VectorSearch {},
+    VectorSearch,
     Passthrough(passthrough::Input),
     MessagesCount(messages_count::Input),
 }
@@ -35,7 +35,7 @@ impl Helper for Op {
             Input::ImageEdit(values) => image_edit::run(values),
             Input::Rerank(values) => rerank::run(values),
             Input::ResponsesDecisions(values) => responses_decisions::answer(values),
-            Input::VectorSearch {} => vector_search::run(),
+            Input::VectorSearch => vector_search::run(),
             Input::Passthrough(values) => passthrough::nonstream_answer(values),
             Input::MessagesCount(values) => messages_count::run(values),
         }

@@ -17,7 +17,7 @@ use tokio::runtime::Runtime;
 use super::support::{OTHER, Recorder, failure, runtime};
 
 #[derive(Debug, Deserialize)]
-pub(super) struct Input {
+pub(crate) struct Input {
     model: String,
     prompt: Option<String>,
     images: Option<Vec<Option<ImageField>>>,

@@ -10,13 +10,13 @@ use betterlite_provider::foundry_resource_dispatch::{
     FoundryResourceOperation, FoundryResourceResult, dispatch,
 };
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::json;
 use tokio::runtime::Runtime;
 
 use super::support::runtime;
 
 #[derive(Debug, Deserialize)]
-pub(super) struct Input {
+pub(crate) struct Input {
     operation: Operation,
     api_base: Option<String>,
     global_api_base: Option<String>,

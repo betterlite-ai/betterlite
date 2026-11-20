@@ -23,7 +23,7 @@ const LIMITS: WireDecodeLimits = WireDecodeLimits {
 };
 
 #[derive(Debug, Deserialize)]
-pub(super) struct Input {
+pub(crate) struct Input {
     #[serde(default = "default_status")]
     status: u16,
     #[serde(default)]

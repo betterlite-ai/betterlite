@@ -14,7 +14,7 @@ use tokio::runtime::Runtime;
 use super::support::{NoTransport, OTHER, failure, runtime};
 
 #[derive(Debug, Deserialize)]
-pub(super) struct Input {
+pub(crate) struct Input {
     api_base: Option<String>,
 }
 
@@ -43,8 +43,8 @@ pub(super) fn run(input: &Input) -> HelperResult {
         &runtime,
     )?;
     match (messages, count) {
-        (Outcome::MessagesUrl(messages), Outcome::CountUrl(count)) => {
-            Ok(json!({"messages": messages, "count": count}))
+        (Outcome::MessagesUrl(messages_url), Outcome::CountUrl(count_url)) => {
+            Ok(json!({"messages": messages_url, "count": count_url}))
         }
         _ => Err(failure("Variant", OTHER)),
     }

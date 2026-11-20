@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use super::support::{OTHER, Recorder, failure, runtime};
 
 #[derive(Debug, Deserialize)]
-pub(super) struct Input {
+pub(crate) struct Input {
     model: String,
 }
 

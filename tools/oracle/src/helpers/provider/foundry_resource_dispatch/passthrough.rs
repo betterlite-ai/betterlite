@@ -18,7 +18,7 @@ use serde_json::{Value, json};
 use super::support::{OTHER, RelayLog, failure, runtime};
 
 #[derive(Debug, Deserialize)]
-pub(super) struct Input {
+pub(crate) struct Input {
     model: String,
     endpoint: String,
     #[serde(default = "default_status")]
