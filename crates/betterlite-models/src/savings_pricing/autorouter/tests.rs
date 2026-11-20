@@ -3,7 +3,6 @@
 use chrono::{DateTime, Utc};
 use jiff::tz::TimeZoneDatabase;
 
-use crate::decisions::Json;
 use crate::price_lookup::PricedModel;
 use crate::savings_evidence::snapshot::CostBreakdown;
 use crate::savings_evidence::usage::{LoggedUsage, PromptTokensDetails};
@@ -11,10 +10,10 @@ use crate::savings_pricing::tests::{TestContext, decimal, priced, record};
 use crate::savings_pricing::usage::RequestUsage;
 use crate::tiered_pricing::Scalar;
 
+use super::logging::{LoggingMetadata, LoggingPayloadInput, savings_for_logging_payload};
 use super::{
     AutoRouterDecision, AutoRouterProvenance, AutoRouterRequestInput, AutoRouterSavingsInput,
-    LoggingMetadata, LoggingPayloadInput, autorouter_savings_for_logging_payload,
-    autorouter_savings_for_request, compute_autorouter_savings, json_truthy,
+    autorouter_savings_for_request, compute_autorouter_savings,
 };
 
 fn moment() -> DateTime<Utc> {
@@ -31,7 +30,10 @@ fn request_usage(prompt_tokens: i64) -> RequestUsage {
             prompt_tokens,
             completion_tokens: 0,
             total_tokens: prompt_tokens,
-            ..LoggedUsage::default()
+            cache_read_input_tokens: 0,
+            cache_creation_input_tokens: 0,
+            prompt_tokens_details: None,
+            completion_tokens_details: None,
         },
         cache_creation_token_details: None,
     }
@@ -50,7 +52,10 @@ fn cache_usage(cached: i64, written: i64) -> RequestUsage {
                 cache_creation_tokens: written,
                 cache_write_tokens: written,
                 text_tokens: 10 - cached - written,
-                ..PromptTokensDetails::default()
+                audio_tokens: 0,
+                image_tokens: 0,
+                video_tokens: 0,
+                cache_creation_token_details: None,
             }),
             completion_tokens_details: None,
         },
@@ -62,6 +67,7 @@ fn base_input<'a>(
     usage: &'a RequestUsage,
     database: &'a TimeZoneDatabase,
 ) -> AutoRouterSavingsInput<'a> {
+    let issued_at = moment();
     AutoRouterSavingsInput {
         baseline_model: Some("claude"),
         selected_model: Some("other"),
@@ -74,7 +80,7 @@ fn base_input<'a>(
         selected_deployment_id: None,
         baseline_usage: None,
         baseline_provenance: None,
-        moment: moment(),
+        moment: issued_at,
         database,
     }
 }
@@ -354,16 +360,19 @@ fn request_input<'a>(
     decision: &'a AutoRouterDecision,
     database: &'a TimeZoneDatabase,
 ) -> AutoRouterRequestInput<'a> {
+    let model = Some("selected");
+    let model_id = Some("d-sel");
+    let issued_at = moment();
     AutoRouterRequestInput {
-        model: Some("selected"),
+        model,
         custom_llm_provider: None,
         routing_decision: Some(decision),
         usage: Some(usage),
-        model_id: Some("d-sel"),
+        model_id,
         cost_breakdown: None,
         baseline_usage: None,
         baseline_provenance: None,
-        moment: moment(),
+        moment: issued_at,
         database,
     }
 }
@@ -419,15 +428,24 @@ async fn request_savings_requires_usage_model_and_baseline_model() {
     let mut input = request_input(&usage, &decision, &database);
     input.routing_decision = None;
     assert_eq!(autorouter_savings_for_request(&context, &input).await, None);
-    for raw in [
-        r#"{"savings_baseline_model": ""}"#,
-        r#"{"savings_baseline_model": 5}"#,
-        "{}",
-    ] {
-        let decision = parse_decision(json);
-        let input = request_input(&usage, &decision, &database);
-        assert_eq!(autorouter_savings_for_request(&context, &input).await, None);
-    }
+    let empty_decision = parse_decision(r#"{"savings_baseline_model": ""}"#);
+    let empty_input = request_input(&usage, &empty_decision, &database);
+    assert_eq!(
+        autorouter_savings_for_request(&context, &empty_input).await,
+        None
+    );
+    let number_decision = parse_decision(r#"{"savings_baseline_model": 5}"#);
+    let number_input = request_input(&usage, &number_decision, &database);
+    assert_eq!(
+        autorouter_savings_for_request(&context, &number_input).await,
+        None
+    );
+    let missing_decision = parse_decision("{}");
+    let missing_input = request_input(&usage, &missing_decision, &database);
+    assert_eq!(
+        autorouter_savings_for_request(&context, &missing_input).await,
+        None
+    );
 }
 
 fn parse_metadata(json: &str) -> LoggingMetadata {
@@ -439,6 +457,7 @@ fn logging_input<'a>(
     usage: &'a RequestUsage,
     database: &'a TimeZoneDatabase,
 ) -> LoggingPayloadInput<'a> {
+    let issued_at = moment();
     LoggingPayloadInput {
         metadata,
         model: Some("selected"),
@@ -448,7 +467,7 @@ fn logging_input<'a>(
         cost_breakdown: None,
         baseline_usage: None,
         baseline_provenance: None,
-        moment: moment(),
+        moment: issued_at,
         database,
     }
 }
@@ -457,15 +476,16 @@ const LOGGING_DECISION: &str = r#"{"savings_baseline_model": "baseline",
     "savings_baseline_deployment_id": "d-base", "classifier_cost": 0.5}"#;
 
 #[tokio::test]
-async fn logging_payload_returns_none_for_a_truthy_internal_origin() {
+async fn logging_payload_returns_none_for_an_internal_origin() {
     let usage = request_usage(10);
     let database = zone_db();
-    let raw =
-        format!(r#"{{"internal_call_origin": true, "routing_decision": {LOGGING_DECISION}}}"#);
+    let raw = format!(
+        r#"{{"internal_call_origin": "autorouter_classifier", "routing_decision": {LOGGING_DECISION}}}"#
+    );
     let metadata = parse_metadata(&raw);
     let input = logging_input(&metadata, &usage, &database);
     assert_eq!(
-        autorouter_savings_for_logging_payload(&request_context(), &input).await,
+        savings_for_logging_payload(&request_context(), &input).await,
         None
     );
 }
@@ -474,14 +494,33 @@ async fn logging_payload_returns_none_for_a_truthy_internal_origin() {
 async fn logging_payload_returns_savings_for_a_mapping_decision() {
     let usage = request_usage(10);
     let database = zone_db();
-    let raw =
-        format!(r#"{{"internal_call_origin": false, "routing_decision": {LOGGING_DECISION}}}"#);
+    let raw = format!(r#"{{"routing_decision": {LOGGING_DECISION}}}"#);
     let metadata = parse_metadata(&raw);
     let input = logging_input(&metadata, &usage, &database);
     assert_eq!(
-        autorouter_savings_for_logging_payload(&request_context(), &input).await,
+        savings_for_logging_payload(&request_context(), &input).await,
         Some(decimal("9.5"))
     );
+}
+
+#[tokio::test]
+async fn logging_payload_returns_savings_for_an_empty_internal_origin() {
+    let usage = request_usage(10);
+    let database = zone_db();
+    let raw = format!(r#"{{"internal_call_origin": "", "routing_decision": {LOGGING_DECISION}}}"#);
+    let metadata = parse_metadata(&raw);
+    let input = logging_input(&metadata, &usage, &database);
+    assert_eq!(
+        savings_for_logging_payload(&request_context(), &input).await,
+        Some(decimal("9.5"))
+    );
+}
+
+#[test]
+fn logging_metadata_rejects_a_non_text_internal_origin() {
+    let metadata: Result<LoggingMetadata, serde_json::Error> =
+        serde_json::from_str(r#"{"internal_call_origin": true}"#);
+    metadata.unwrap_err();
 }
 
 #[tokio::test]
@@ -491,33 +530,9 @@ async fn logging_payload_ignores_a_scalar_decision() {
     let metadata = parse_metadata(r#"{"routing_decision": "selected"}"#);
     let input = logging_input(&metadata, &usage, &database);
     assert_eq!(
-        autorouter_savings_for_logging_payload(&request_context(), &input).await,
+        savings_for_logging_payload(&request_context(), &input).await,
         None
     );
-}
-
-fn parse_json(text: &str) -> Json {
-    serde_json::from_str(text).expect("the fixture is JSON")
-}
-
-#[test]
-fn json_truthiness_matches_python() {
-    for (text, expected) in [
-        ("null", false),
-        ("false", false),
-        ("true", true),
-        ("0", false),
-        ("0.0", false),
-        ("1", true),
-        ("\"\"", false),
-        ("\"x\"", true),
-        ("[]", false),
-        ("[1]", true),
-        ("{}", false),
-        ("{\"a\":1}", true),
-    ] {
-        assert_eq!(json_truthy(&parse_json(text)), expected, "{text}");
-    }
 }
 
 #[test]

@@ -10,8 +10,8 @@ use crate::savings_pricing::tests::{TestContext, decimal, number, priced, record
 use crate::savings_pricing::usage::RequestUsage;
 
 use super::{
-    PromptCachingForRequest, PromptCachingInput, RequestPricingInput, prompt_caching_savings,
-    prompt_caching_savings_for_request, request_savings_pricing,
+    PromptCachingForRequest, PromptCachingInput, RequestPricingInput, caching_savings_for_request,
+    prompt_caching_savings, request_savings_pricing,
 };
 
 fn moment() -> DateTime<Utc> {
@@ -35,7 +35,10 @@ fn cache_usage(cached: i64, written: i64, ttl: CacheCreationTokenDetails) -> Req
                 cache_creation_tokens: written,
                 cache_write_tokens: written,
                 text_tokens: 10 - cached - written,
-                ..PromptTokensDetails::default()
+                audio_tokens: 0,
+                image_tokens: 0,
+                video_tokens: 0,
+                cache_creation_token_details: None,
             }),
             completion_tokens_details: None,
         },
@@ -49,7 +52,10 @@ fn plain_usage() -> RequestUsage {
             prompt_tokens: 10,
             completion_tokens: 0,
             total_tokens: 10,
-            ..LoggedUsage::default()
+            cache_read_input_tokens: 0,
+            cache_creation_input_tokens: 0,
+            prompt_tokens_details: None,
+            completion_tokens_details: None,
         },
         cache_creation_token_details: None,
     }
@@ -240,7 +246,7 @@ fn prompt_caching_savings_uses_the_one_hour_write_rate() {
 }
 
 #[test]
-fn prompt_caching_savings_prices_an_unparseable_billed_at_at_the_fallback() {
+fn prompt_caching_savings_prices_an_unparsable_billed_at_at_the_fallback() {
     let usage = cache_usage(4, 0, CacheCreationTokenDetails::default());
     let pricing = priced(&record(
         r#"{"input_cost_per_token": 2.0, "cache_read_input_token_cost": 0.5}"#,
@@ -259,7 +265,7 @@ fn prompt_caching_savings_prices_an_unparseable_billed_at_at_the_fallback() {
 }
 
 #[tokio::test]
-async fn prompt_caching_savings_for_request_prices_the_public_record() {
+async fn caching_savings_for_request_prices_the_public_record() {
     let context = TestContext::new()
         .with_identity("gpt-4o", None, ("gpt-4o", "openai"))
         .with_public(
@@ -268,7 +274,7 @@ async fn prompt_caching_savings_for_request_prices_the_public_record() {
             record(r#"{"input_cost_per_token": 2.0, "cache_read_input_token_cost": 0.5}"#),
         );
     let usage = cache_usage(4, 0, CacheCreationTokenDetails::default());
-    let savings = prompt_caching_savings_for_request(
+    let savings = caching_savings_for_request(
         &context,
         &PromptCachingForRequest {
             model: Some("gpt-4o"),

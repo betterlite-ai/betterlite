@@ -39,7 +39,10 @@ fn request_usage(prompt_tokens: i64, completion_tokens: i64) -> RequestUsage {
             prompt_tokens,
             completion_tokens,
             total_tokens: prompt_tokens + completion_tokens,
-            ..LoggedUsage::default()
+            cache_read_input_tokens: 0,
+            cache_creation_input_tokens: 0,
+            prompt_tokens_details: None,
+            completion_tokens_details: None,
         },
         cache_creation_token_details: None,
     }
@@ -58,7 +61,10 @@ fn detailed_usage() -> RequestUsage {
                 cache_creation_tokens: 3,
                 cache_write_tokens: 3,
                 text_tokens: 5,
-                ..PromptTokensDetails::default()
+                audio_tokens: 0,
+                image_tokens: 0,
+                video_tokens: 0,
+                cache_creation_token_details: None,
             }),
             completion_tokens_details: None,
         },
@@ -331,21 +337,21 @@ fn modeled_requires_prices_and_a_recorded_token_cost() {
             "prices": {"input_cost_per_token": 0.5}, "actual_spend": 10}"#,
     );
     let usage = request_usage(10, 4);
-    for snapshot in [&unpriced, &unrecorded] {
-        assert_eq!(
-            price_baseline_comparison(
-                &TestContext::new(),
-                &ComparisonInput {
-                    snapshot,
-                    baseline_usage: Some(&usage),
-                    provenance: Some(ComparisonProvenance::Modeled),
-                    moment: moment(),
-                    database: &database(),
-                },
-            ),
-            None
-        );
-    }
+    assert_eq!(modeled_costs(&unpriced, &usage), None);
+    assert_eq!(modeled_costs(&unrecorded, &usage), None);
+}
+
+fn modeled_costs(snapshot: &BaselineCostSnapshot, usage: &RequestUsage) -> Option<BaselineCosts> {
+    price_baseline_comparison(
+        &TestContext::new(),
+        &ComparisonInput {
+            snapshot,
+            baseline_usage: Some(usage),
+            provenance: Some(ComparisonProvenance::Modeled),
+            moment: moment(),
+            database: &database(),
+        },
+    )
 }
 
 #[test]

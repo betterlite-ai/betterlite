@@ -42,13 +42,11 @@ where
                 .as_ref()
                 .and_then(|value| public_price(context, value))
         });
-    RequestSavingsPricing {
-        provider: match &identity {
-            Some(value) => Some(value.provider.clone()),
-            None => input.custom_llm_provider.map(str::to_owned),
-        },
-        pricing,
-    }
+    let provider = identity
+        .as_ref()
+        .map(|value| value.provider.clone())
+        .or_else(|| input.custom_llm_provider.map(str::to_owned));
+    RequestSavingsPricing { provider, pricing }
 }
 
 pub struct PromptCachingInput<'a> {
@@ -93,8 +91,8 @@ pub struct PromptCachingForRequest<'a> {
     pub database: &'a TimeZoneDatabase,
 }
 
-// prompt_caching_savings_for_request: the recorded request's own pricing, then the pure calculation.
-pub async fn prompt_caching_savings_for_request<C>(
+// caching_savings_for_request: the recorded request's own pricing, then the pure calculation.
+pub async fn caching_savings_for_request<C>(
     context: &C,
     input: &PromptCachingForRequest<'_>,
 ) -> Option<Decimal>

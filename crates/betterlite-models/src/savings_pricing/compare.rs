@@ -189,27 +189,29 @@ where
 // effective_baseline_info == selected_model_info, with nested values conservatively unequal.
 #[must_use]
 pub fn same_prices(left: Option<&ModelInfo>, right: Option<&ModelInfo>) -> bool {
-    match (left, right) {
-        (None, None) => true,
-        (Some(left), Some(right)) => {
-            left.len() == right.len()
-                && left.iter().all(|(key, value)| {
-                    right
-                        .get(key)
-                        .is_some_and(|other| same_scalar(value, other))
-                })
-        }
-        (Some(_), None) | (None, Some(_)) => false,
+    if left.is_none() && right.is_none() {
+        return true;
     }
+    let (Some(first), Some(second)) = (left, right) else {
+        return false;
+    };
+    first.len() == second.len()
+        && first.iter().all(|(key, value)| {
+            second
+                .get(key)
+                .is_some_and(|other| same_scalar(value, other))
+        })
 }
 
 fn same_scalar(left: &Scalar, right: &Scalar) -> bool {
-    match (left, right) {
-        (Scalar::Null, Scalar::Null) => true,
-        (Scalar::Bool(left), Scalar::Bool(right)) => left == right,
-        (Scalar::Number(left), Scalar::Number(right)) => same_number(left, right),
-        (Scalar::Text(left), Scalar::Text(right)) => left == right,
-        _ => false,
+    match left {
+        Scalar::Null => matches!(right, Scalar::Null),
+        Scalar::Bool(_) => right == left,
+        Scalar::Text(_) => right == left,
+        Scalar::Number(value) => {
+            matches!(right, Scalar::Number(other) if same_number(value, other))
+        }
+        Scalar::Array(_) | Scalar::Object(_) => false,
     }
 }
 
@@ -233,11 +235,12 @@ pub fn same_usage(left: &RequestUsage, right: &RequestUsage) -> bool {
 }
 
 fn same_logged_usage(left: &LoggedUsage, right: &LoggedUsage) -> bool {
-    left.prompt_tokens == right.prompt_tokens
+    let counts_match = left.prompt_tokens == right.prompt_tokens
         && left.completion_tokens == right.completion_tokens
         && left.total_tokens == right.total_tokens
         && left.cache_read_input_tokens == right.cache_read_input_tokens
-        && left.cache_creation_input_tokens == right.cache_creation_input_tokens
+        && left.cache_creation_input_tokens == right.cache_creation_input_tokens;
+    counts_match
         && left.completion_tokens_details == right.completion_tokens_details
         && same_prompt_details(
             left.prompt_tokens_details.as_ref(),
@@ -251,18 +254,20 @@ fn same_prompt_details(
     right: Option<&PromptTokensDetails>,
 ) -> bool {
     match (left, right) {
+        (Some(baseline), Some(selected)) => same_prompt_counters(baseline, selected),
         (None, None) => true,
-        (Some(baseline), Some(selected)) => {
-            baseline.cached_tokens == selected.cached_tokens
-                && baseline.cache_creation_tokens == selected.cache_creation_tokens
-                && baseline.cache_write_tokens == selected.cache_write_tokens
-                && baseline.text_tokens == selected.text_tokens
-                && baseline.audio_tokens == selected.audio_tokens
-                && baseline.image_tokens == selected.image_tokens
-                && baseline.video_tokens == selected.video_tokens
-        }
         (Some(_), None) | (None, Some(_)) => false,
     }
+}
+
+fn same_prompt_counters(baseline: &PromptTokensDetails, selected: &PromptTokensDetails) -> bool {
+    baseline.cached_tokens == selected.cached_tokens
+        && baseline.cache_creation_tokens == selected.cache_creation_tokens
+        && baseline.cache_write_tokens == selected.cache_write_tokens
+        && baseline.text_tokens == selected.text_tokens
+        && baseline.audio_tokens == selected.audio_tokens
+        && baseline.image_tokens == selected.image_tokens
+        && baseline.video_tokens == selected.video_tokens
 }
 
 // math.isclose with the source's rel_tol=1e-9 and abs_tol=1e-12, in Decimal.

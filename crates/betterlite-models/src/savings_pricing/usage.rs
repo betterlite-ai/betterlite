@@ -56,30 +56,40 @@ pub fn prompt_extras(source: &RequestUsage) -> PromptExtras {
         cache_write_tokens: details.map(|value| value.cache_write_tokens),
         cache_creation_tokens: details.map(|value| value.cache_creation_tokens),
         cache_creation_token_details: source.cache_creation_token_details,
-        ..PromptExtras::default()
+        cached_tokens_details: None,
+        character_count: None,
+        image_count: None,
+        video_length_seconds: None,
+        audio_length_seconds: None,
+        query_count: None,
     }
 }
 
 // The cache counters B1673's savings reader takes.
 #[must_use]
 pub fn billed_usage(source: &RequestUsage) -> BilledTokenUsage {
-    let usage = &source.usage;
-    let details = usage.prompt_tokens_details.as_ref();
-    let completion = usage.completion_tokens_details.as_ref();
+    let cost = cost_usage(source);
+    let extras = prompt_extras(source);
+    let reasoning = source
+        .usage
+        .completion_tokens_details
+        .as_ref()
+        .and_then(|value| value.reasoning_tokens);
+    let cache_read = cost.cache_read_tokens;
+    let cache_write = extras.cache_write_tokens;
+    let ttl = extras.cache_creation_token_details;
+    let created_5m = ttl.and_then(|value| value.ephemeral_5m_input_tokens);
+    let created_1h = ttl.and_then(|value| value.ephemeral_1h_input_tokens);
     BilledTokenUsage {
-        detail_reasoning: completion.and_then(|value| value.reasoning_tokens),
+        detail_reasoning: reasoning,
         top_level_reasoning: None,
-        detail_cache_read: details.map(|value| value.cached_tokens),
+        detail_cache_read: cache_read,
         top_level_cache_read: None,
-        detail_cache_creation: details.map(|value| value.cache_write_tokens),
+        detail_cache_creation: cache_write,
         top_level_cache_creation: None,
         detail_cached_audio: None,
-        detail_cache_creation_5m: source
-            .cache_creation_token_details
-            .and_then(|value| value.ephemeral_5m_input_tokens),
-        detail_cache_creation_1h: source
-            .cache_creation_token_details
-            .and_then(|value| value.ephemeral_1h_input_tokens),
+        detail_cache_creation_5m: created_5m,
+        detail_cache_creation_1h: created_1h,
     }
 }
 

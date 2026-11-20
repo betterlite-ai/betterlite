@@ -31,7 +31,7 @@ pub struct SavingsSpendInput<'a> {
     pub model_id: Option<&'a str>,
     pub cost_breakdown: Option<&'a CostBreakdown>,
     pub recorded_autorouter_savings: Option<&'a Scalar>,
-    pub recorded_autorouter_savings_estimate: Option<&'a MappingOrScalar<AutorouterEstimate>>,
+    pub recorded_estimate: Option<&'a MappingOrScalar<AutorouterEstimate>>,
     pub billed_at: &'a BilledAt,
     pub fallback_moment: DateTime<Utc>,
     pub database: &'a TimeZoneDatabase,
@@ -69,7 +69,7 @@ where
     };
     let autorouter = match recorded_savings(input) {
         Some(recorded) => recorded,
-        None if input.recorded_autorouter_savings_estimate.is_some() => Decimal::ZERO,
+        None if input.recorded_estimate.is_some() => Decimal::ZERO,
         None => request_savings(context, input)
             .await
             .unwrap_or(Decimal::ZERO),
@@ -84,14 +84,16 @@ where
 
 // A nonnull estimate is authoritative even when it holds no usable amount.
 fn recorded_savings(input: &SavingsSpendInput<'_>) -> Option<Decimal> {
-    let estimate = input.recorded_autorouter_savings_estimate;
+    let estimate = input.recorded_estimate;
     let Some(estimate) = estimate else {
         return numeric_savings(input.recorded_autorouter_savings);
     };
     let metadata = Metadata {
+        litellm_gateway_injected_cache: None,
+        compression_savings: None,
+        guardrail_information: None,
         autorouter_savings_estimate: Some(estimate.clone()),
         autorouter_savings: input.recorded_autorouter_savings.cloned(),
-        ..Metadata::default()
     };
     recorded_autorouter_savings(&metadata)
 }

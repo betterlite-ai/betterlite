@@ -3,9 +3,7 @@ use jiff::tz::TimeZoneDatabase;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
-use crate::decisions::Json;
 use crate::price_lookup::PricedModel;
-use crate::savings_evidence::dynamic::MappingOrScalar;
 use crate::savings_evidence::numeric::numeric_savings;
 use crate::savings_evidence::snapshot::{
     CostBreakdown, pricing_basis_from_breakdown, recorded_token_cost,
@@ -17,6 +15,8 @@ use crate::tiered_pricing::Scalar;
 use super::compare::{CostOfUsageInput, amounts_close, cost_of_usage, same_prices, same_usage};
 use super::context::{ModelIdentity, SavingsPricingContext, public_price, resolve_model};
 use super::usage::{RequestUsage, baseline_request_usage};
+
+pub mod logging;
 
 // compute_autorouter_savings' provenance literal: the baseline was observed on this request or modeled.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize)]
@@ -81,15 +81,33 @@ where
         source,
         baseline_prices.as_ref().map(|priced| &priced.record),
     );
-    let baseline_cost = price_baseline(
+    let basis = pricing_basis_from_breakdown(input.cost_breakdown);
+    let baseline_cost = cost_of_usage(
         context,
-        input,
-        &baseline,
-        &baseline_usage,
-        baseline_prices.as_ref(),
+        &CostOfUsageInput {
+            identity: &baseline,
+            usage: &baseline_usage,
+            model_info: baseline_prices.as_ref(),
+            basis: &basis,
+            moment: input.moment,
+            database: input.database,
+        },
     )?;
     let recorded = recorded_token_cost(input.cost_breakdown);
-    let selected_cost = price_selected(context, input, &selected, recorded)?;
+    let selected_cost = match recorded {
+        Some(cost) => cost,
+        None => cost_of_usage(
+            context,
+            &CostOfUsageInput {
+                identity: &selected,
+                usage: input.usage,
+                model_info: input.selected_info,
+                basis: &basis,
+                moment: input.moment,
+                database: input.database,
+            },
+        )?,
+    };
     if input.baseline_provenance == Some(AutoRouterProvenance::ObservedInitial) {
         let values = ComparisonValues {
             baseline: &baseline,
@@ -106,56 +124,6 @@ where
 fn has_cache_buckets(usage: &LoggedUsage) -> bool {
     let (cache_read, cache_creation) = cache_token_split(usage);
     cache_read != 0 || cache_creation != 0
-}
-
-fn price_baseline<C>(
-    context: &C,
-    input: &AutoRouterSavingsInput<'_>,
-    baseline: &ModelIdentity,
-    usage: &RequestUsage,
-    pricing: Option<&PricedModel>,
-) -> Option<Decimal>
-where
-    C: SavingsPricingContext,
-{
-    let basis = pricing_basis_from_breakdown(input.cost_breakdown);
-    cost_of_usage(
-        context,
-        &CostOfUsageInput {
-            identity: baseline,
-            usage,
-            model_info: pricing,
-            basis: &basis,
-            moment: input.moment,
-            database: input.database,
-        },
-    )
-}
-
-fn price_selected<C>(
-    context: &C,
-    input: &AutoRouterSavingsInput<'_>,
-    selected: &ModelIdentity,
-    recorded: Option<Decimal>,
-) -> Option<Decimal>
-where
-    C: SavingsPricingContext,
-{
-    if let Some(cost) = recorded {
-        return Some(cost);
-    }
-    let basis = pricing_basis_from_breakdown(input.cost_breakdown);
-    cost_of_usage(
-        context,
-        &CostOfUsageInput {
-            identity: selected,
-            usage: input.usage,
-            model_info: input.selected_info,
-            basis: &basis,
-            moment: input.moment,
-            database: input.database,
-        },
-    )
 }
 
 fn observed_equivalent<C>(
@@ -256,77 +224,6 @@ fn text_value(value: Option<&Scalar>) -> Option<&str> {
             | Scalar::Object(_),
         )
         | None => None,
-    }
-}
-
-#[derive(Clone, Debug, Default, Deserialize)]
-#[serde(default)]
-pub struct LoggingMetadata {
-    pub internal_call_origin: Option<Json>,
-    pub routing_decision: Option<MappingOrScalar<AutoRouterDecision>>,
-}
-
-pub struct LoggingPayloadInput<'a> {
-    pub metadata: &'a LoggingMetadata,
-    pub model: Option<&'a str>,
-    pub custom_llm_provider: Option<&'a str>,
-    pub model_id: Option<&'a str>,
-    pub usage: Option<&'a RequestUsage>,
-    pub cost_breakdown: Option<&'a CostBreakdown>,
-    pub baseline_usage: Option<&'a RequestUsage>,
-    pub baseline_provenance: Option<AutoRouterProvenance>,
-    pub moment: DateTime<Utc>,
-    pub database: &'a TimeZoneDatabase,
-}
-
-// autorouter_savings_for_logging_payload: internal sub-calls carry no savings figure of their own.
-pub async fn autorouter_savings_for_logging_payload<C>(
-    context: &C,
-    input: &LoggingPayloadInput<'_>,
-) -> Option<Decimal>
-where
-    C: SavingsPricingContext,
-{
-    if input
-        .metadata
-        .internal_call_origin
-        .as_ref()
-        .is_some_and(json_truthy)
-    {
-        return None;
-    }
-    let decision = input
-        .metadata
-        .routing_decision
-        .as_ref()
-        .and_then(MappingOrScalar::as_mapping);
-    autorouter_savings_for_request(
-        context,
-        &AutoRouterRequestInput {
-            model: input.model,
-            custom_llm_provider: input.custom_llm_provider,
-            routing_decision: decision,
-            usage: input.usage,
-            model_id: input.model_id,
-            cost_breakdown: input.cost_breakdown,
-            baseline_usage: input.baseline_usage,
-            baseline_provenance: input.baseline_provenance,
-            moment: input.moment,
-            database: input.database,
-        },
-    )
-    .await
-}
-
-// Python's truth testing on a logged metadata value.
-fn json_truthy(value: &Json) -> bool {
-    match value {
-        Json::Null => false,
-        Json::Bool(flag) => *flag,
-        Json::Number(number) => number.as_f64().is_none_or(|value| value != 0.0),
-        Json::Text(text) => !text.is_empty(),
-        Json::List(items) => !items.is_empty(),
-        Json::Object(fields) => !fields.is_empty(),
     }
 }
 

@@ -28,28 +28,29 @@ fn request_usage(prompt_tokens: i64) -> RequestUsage {
             prompt_tokens,
             completion_tokens: 0,
             total_tokens: prompt_tokens,
-            ..LoggedUsage::default()
+            cache_read_input_tokens: 0,
+            cache_creation_input_tokens: 0,
+            prompt_tokens_details: None,
+            completion_tokens_details: None,
         },
         cache_creation_token_details: None,
     }
 }
 
 fn cache_usage(cached: i64) -> RequestUsage {
-    RequestUsage {
-        usage: LoggedUsage {
-            prompt_tokens: 10,
-            completion_tokens: 0,
-            total_tokens: 10,
-            cache_read_input_tokens: cached,
-            prompt_tokens_details: Some(PromptTokensDetails {
-                cached_tokens: cached,
-                text_tokens: 10 - cached,
-                ..PromptTokensDetails::default()
-            }),
-            completion_tokens_details: None,
-        },
+    let mut usage = request_usage(10);
+    usage.usage.cache_read_input_tokens = cached;
+    usage.usage.prompt_tokens_details = Some(PromptTokensDetails {
+        cached_tokens: cached,
+        cache_creation_tokens: 0,
+        cache_write_tokens: 0,
+        text_tokens: 10 - cached,
+        audio_tokens: 0,
+        image_tokens: 0,
+        video_tokens: 0,
         cache_creation_token_details: None,
-    }
+    });
+    usage
 }
 
 fn context() -> TestContext {
@@ -83,7 +84,7 @@ fn spend_input<'a>(
         model_id: None,
         cost_breakdown: None,
         recorded_autorouter_savings: None,
-        recorded_autorouter_savings_estimate: None,
+        recorded_estimate: None,
         billed_at,
         fallback_moment: moment(),
         database,
@@ -179,7 +180,7 @@ async fn an_unknown_estimate_suppresses_recomputation() {
     input.model_id = Some("d-sel");
     input.routing_decision = Some(&routing);
     input.recorded_autorouter_savings = Some(&recorded);
-    input.recorded_autorouter_savings_estimate = Some(&estimate);
+    input.recorded_estimate = Some(&estimate);
     let spend = compute_savings_spend(&context(), &input).await;
     assert_eq!(spend.autorouter, decimal("0"));
 }
@@ -193,7 +194,7 @@ async fn a_versioned_estimate_wins_over_recomputation() {
     let estimate = parse_estimate(r#"{"version": 2, "status": "estimated"}"#);
     let mut input = spend_input(&usage, &billed_at, &database);
     input.recorded_autorouter_savings = Some(&recorded);
-    input.recorded_autorouter_savings_estimate = Some(&estimate);
+    input.recorded_estimate = Some(&estimate);
     let spend = compute_savings_spend(&context(), &input).await;
     assert_eq!(spend.autorouter, decimal("5"));
 }
@@ -210,7 +211,7 @@ async fn a_versioned_estimate_without_an_amount_is_zero() {
     let mut input = spend_input(&usage, &billed_at, &database);
     input.model_id = Some("d-sel");
     input.routing_decision = Some(&routing);
-    input.recorded_autorouter_savings_estimate = Some(&estimate);
+    input.recorded_estimate = Some(&estimate);
     let spend = compute_savings_spend(&context(), &input).await;
     assert_eq!(spend.autorouter, decimal("0"));
 }
