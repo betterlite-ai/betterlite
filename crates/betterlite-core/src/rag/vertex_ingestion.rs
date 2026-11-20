@@ -64,7 +64,8 @@ impl VertexIngestion {
         }
     }
 
-    pub fn embed(&self, _chunks: &[String]) -> Option<Vec<Vec<f64>>> {
+    #[must_use]
+    pub const fn embed(&self, _chunks: &[String]) -> Option<Vec<Vec<f64>>> {
         // Vertex AI embeds when the file joins the corpus, so this step has no work
         None
     }
