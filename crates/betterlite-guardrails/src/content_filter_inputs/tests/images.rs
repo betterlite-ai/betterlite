@@ -62,6 +62,12 @@ struct Concurrent {
     requests: Mutex<Vec<ImageDescriptionRequest>>,
 }
 
+impl Concurrent {
+    fn recorded(&self) -> Vec<ImageDescriptionRequest> {
+        self.requests.lock().expect("the request list lock").clone()
+    }
+}
+
 #[async_trait]
 impl ImageDescriptionCompletion for Concurrent {
     type Error = ScriptedError;
@@ -139,21 +145,19 @@ async fn image_description_fetching() {
     .await
     .expect("both descriptions must be requested before either returns")
     .expect("the descriptions filter");
-    {
-        let requests = completion.requests.lock().expect("the request list lock");
-        assert_eq!(requests.len(), 2);
-        let urls: Vec<&str> = requests
+    let requests = completion.recorded();
+    assert_eq!(requests.len(), 2);
+    let urls: Vec<&str> = requests
+        .iter()
+        .map(|request| request.image_url.as_str())
+        .collect();
+    assert_eq!(urls, ["img-1", "img-2"]);
+    assert!(
+        requests
             .iter()
-            .map(|request| request.image_url.as_str())
-            .collect();
-        assert_eq!(urls, ["img-1", "img-2"]);
-        assert!(
-            requests
-                .iter()
-                .all(|request| request.model == "vision-model"
-                    && request.system_prompt == IMAGE_DESCRIPTION_PROMPT)
-        );
-    }
+            .all(|request| request.model == "vision-model"
+                && request.system_prompt == IMAGE_DESCRIPTION_PROMPT)
+    );
     assert_eq!(pattern_names(&detections), ["alpha", "alpha"]);
 }
 
