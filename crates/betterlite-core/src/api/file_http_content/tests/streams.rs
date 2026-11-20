@@ -310,8 +310,8 @@ async fn stream_exit_closes_the_body_once(#[case] case: ExitCase) {
     let prepared = fixture
         .prepare(&deps, &call, &events)
         .expect("the request prepares");
-    let chunk = NonZeroUsize::new(2).expect("2 is not zero");
-    let result = retrieve_content_streaming(prepared, chunk, &mut fixture.state)
+    let size = NonZeroUsize::new(2).expect("2 is not zero");
+    let result = retrieve_content_streaming(prepared, size, &mut fixture.state)
         .await
         .expect("the stream opens");
     let exit = Arc::clone(&result.exit);
