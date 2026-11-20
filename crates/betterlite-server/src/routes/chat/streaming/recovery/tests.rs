@@ -265,6 +265,13 @@ fn stream_frames(answer: &Answer) {
             .map(|value| value.to_str().unwrap()),
         Some("text/event-stream; charset=utf-8")
     );
+    assert_eq!(
+        answer
+            .headers
+            .get("llm_provider-x-request-id")
+            .map(|value| value.to_str().unwrap()),
+        Some("up-1")
+    );
     let text = std::str::from_utf8(&answer.body).unwrap();
     let frames: Vec<&str> = text
         .split("\n\n")
