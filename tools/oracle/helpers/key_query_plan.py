@@ -1,5 +1,5 @@
 from datetime import UTC, datetime, tzinfo
-from typing import Final, Literal, Self, TypedDict
+from typing import Final, Literal, NotRequired, Self, TypedDict
 
 from litellm.proxy.management_endpoints import key_management_endpoints
 from litellm.proxy.management_endpoints.key_management_endpoints import (
@@ -10,7 +10,7 @@ from litellm.proxy.management_endpoints.key_management_endpoints import (
 )
 from pydantic import JsonValue, TypeAdapter
 from pydantic_core import to_json
-from typing_extensions import NotRequired, override
+from typing_extensions import override
 
 _JSON: Final = TypeAdapter(JsonValue)
 
@@ -59,7 +59,7 @@ class FilterArgs(TypedDict):
     access_group_id: NotRequired[str | None]
     agent_id: NotRequired[str | None]
     use_substring_matching: NotRequired[bool]
-    use_key_alias_substring_matching: NotRequired[bool]
+    use_key_alias_substring_matching: NotRequired[bool]  # ast-grep-ignore: no-long-names
     expires_filter: NotRequired[str | None]
     search: NotRequired[str | None]
     status_filter: NotRequired[str | None]
@@ -76,19 +76,19 @@ Call = StatusCall | StatusClauseCall | SortCall | FiltersCall
 
 def _status_answer(call: StatusCall) -> JsonValue:
     row: dict[str, JsonValue] = {"blocked": call["blocked"], "expires": call["expires"]}
-    status: JsonValue = _derive_key_status(row, datetime.fromisoformat(call["now"]))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6476-L6483
+    status: JsonValue = _derive_key_status(row, datetime.fromisoformat(call["now"]))  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6476-L6483
     return status
 
 
 def _status_clause_answer(call: StatusClauseCall) -> JsonValue:
-    where = _build_status_where_clause(call["status_filter"], datetime.fromisoformat(call["now"]))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6885-L6890
+    where = _build_status_where_clause(call["status_filter"], datetime.fromisoformat(call["now"]))  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6885-L6890
     if where is None:
         return None
     return _JSON.validate_json(to_json(where))
 
 
 def _sort_answer(call: SortCall) -> JsonValue:
-    order_by = _validate_sort_params(call["sort_by"], call["sort_order"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6843-L6872
+    order_by = _validate_sort_params(call["sort_by"], call["sort_order"])  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6843-L6872
     if order_by is None:
         return None
     return _JSON.validate_json(to_json(order_by))
@@ -97,7 +97,7 @@ def _sort_answer(call: SortCall) -> JsonValue:
 def _filters_answer(call: FiltersCall) -> JsonValue:
     FrozenClock.fixed = datetime.fromisoformat(call["now"])
     key_management_endpoints.datetime = FrozenClock  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6903-L7037
-    where = _build_key_filter_conditions(**call["filters"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6903-L7037
+    where = _build_key_filter_conditions(**call["filters"])  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6903-L7037
     return _JSON.validate_json(to_json(where))
 
 

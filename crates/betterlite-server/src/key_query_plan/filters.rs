@@ -63,7 +63,7 @@ pub enum Where {
     Or(Vec<WhereClause>),
 }
 
-// a Prisma where object: its entries are ANDed, and an empty one matches every row
+// a Prisma where object: its entries must all hold, and an empty one matches every row
 pub type WhereClause = Vec<Where>;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
