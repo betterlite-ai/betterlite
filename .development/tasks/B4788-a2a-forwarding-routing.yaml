@@ -33,6 +33,8 @@ description: >-
 
   The "no url configured" branch in LiteLLM (L63-L67) cannot happen here, because AgentCard.url is required in the typed record. Do not write it.
 
+  Messages routing. B8804 builds the MessagesRouting adapter for /v1/messages in crates/betterlite-server/src/app/inference/route_pre_call/ and lands first; it answers a model name that starts with "a2a/" with an error naming A2A agent routing as not built. Replace that answer with a call to route_a2a_model over the same agent registry lookup the A2A routes use, so an "a2a/" model reaches the agent as LiteLLM's route_request does (a2a_routing.py L17-L81). betterlite-server does not depend on betterlite-proxy yet; add the path dependency (betterlite-proxy depends on no server crate, so there is no cycle).
+
   Oracle. Only the four pure functions get helper cases: jsonrpc_error, caller_identity_headers, forwarding_headers and validate_push_url's scheme check (a case file may only use urls that fail on the scheme or that are plain public https hosts; leave DNS to the Rust unit tests). A route-level case comes with B8589.
 scope:
   paths:
@@ -47,6 +49,10 @@ scope:
     - tools/oracle/helpers/b4788/**
     - tools/oracle/src/helpers/proxy/b4788.rs
     - tools/oracle/src/helpers/proxy/b4788/**
+    - crates/betterlite-server/src/app/inference/route_pre_call.rs
+    - crates/betterlite-server/src/app/inference/route_pre_call/**
+    - crates/betterlite-server/Cargo.toml
+    - Cargo.lock
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L135-L267

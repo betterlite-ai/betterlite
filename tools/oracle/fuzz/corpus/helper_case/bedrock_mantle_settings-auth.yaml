@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-mantle-settings-auth
+call:
+  bedrock_mantle_settings:
+    standalone_mantle_auth:
+      cases:
+        - api_base: 'https://bedrock-mantle.us-east-1.api.aws/v1'
+          api_key: explicit-fixture-key
+          credentials: {access_key_id: fixture-access-key, secret_access_key: fixture-secret-key}
+          now: 1700000000
+env: {}
+compare: {ignore: []}

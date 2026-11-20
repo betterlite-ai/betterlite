@@ -13,14 +13,13 @@ description: >-
   data-only SSE frames. Compose B004 create_response, B7324 open_sse_before_first_byte and B005 keepalive interval
   resolution; do not implement another HTTP response relay or SSE decoder.
 
-  Load litellm_settings.sse_keepalive_ping_interval_seconds through B002, default null, and keep the raw number or string in the section (none when absent or null) so B8603's resolver applies LiteLLM's global rules; coerce it only where the assistant relay reads it. B005's existing
+  B10023's assistant_keepalive section already loads litellm_settings.sse_keepalive_ping_interval_seconds (config.sections.assistant_keepalive: the raw number or string, None when absent or null); coerce it only where the assistant relay reads it. B005's existing
   per-deployment litellm_params.keepalive_seconds takes precedence only when candidates agree, including
-  zero as a hard disable; a client keepalive_seconds never enables it. Config tests own the newly supported
-  global key, while B005 retains interval coercion and B004 the generic relay. There is no environment alias.
+  zero as a hard disable; a client keepalive_seconds never enables it. B005 retains interval coercion and B004 the generic relay.
 
   Implement api::assistant_runs in the server crate. The two complete source ranges contain 143 nonblank/
-  non-comment lines; budget 170 route/framing, 190 tests, 210 HTTP/SSE fixtures, 65 config/tests, 35 callback
-  fixtures and 40 wiring/corpus seeds, 710 lines. HTTP oracle fixtures use a fixed master key, mock provider,
+  non-comment lines; budget 170 route/framing, 190 tests, 210 HTTP/SSE fixtures, 35 callback
+  fixtures and 40 wiring/corpus seeds, 645 lines. HTTP oracle fixtures use a fixed master key, mock provider,
   assistant_settings, no enterprise package and no SDK retries. Provider frames and hook effects are real;
   no helper case stands in for the stream pump.
   B1100 registers routes/assistant_runs.rs as a stub, so fill only crates/betterlite-server/src/routes/assistant_runs.rs and leave routes.rs as it is.
@@ -33,11 +32,8 @@ scope:
   - crates/betterlite-server/src/api/assistant_runs.rs
   - crates/betterlite-server/src/api/assistant_runs/**
   - crates/betterlite-server/fuzz/corpus/assistant_body/run-*
-  - crates/betterlite-config/fuzz/corpus/config_yaml/assistant-keepalive-*
   - tools/oracle/cases/api/assistant-runs/**
   - tools/oracle/fixtures/assistant-runs/**
-  - crates/betterlite-config/src/sections/assistant_keepalive.rs
-  - crates/betterlite-config/src/sections/assistant_keepalive/**
   - tools/oracle/helpers/b089.py
   - tools/oracle/helpers/b089/**
   - tools/oracle/src/helpers/server/b089.rs
@@ -106,13 +102,12 @@ dod:
     replaced) makes that frame message=replaced,type=permission_error,param=null,code="403"; original
     provider details disappear. Without an interval, or with agreed deployment keepalive_seconds=0, no ping
     precedes the first event. A client body keepalive_seconds=1 cannot override the operator's null setting.
-  proof: [run-tests, settings-tests, oracle]
+  proof: [run-tests, oracle]
 - text: >-
-    config::api::assistant_keepalive::tests::loads_keepalive_interval loads the production Config with the
-    global key absent/null,0,-1,"bad","nan","inf",1,"1.5" and expects the raw number or string back (none for absent and null);
-    the relay's B005 coercion still turns them into disabled or seconds when it reads them. The key is not reported as unsupported. These
-    settings and stream-body edge cases enter the existing config_yaml and assistant_body corpora.
-  proof: [settings-tests, config-corpus, body-corpus]
+    The relay reads the global interval from B10023's section and B005's coercion turns absent, null, 0, -1,
+    "bad", "nan" and "inf" into no pings and 1 or "1.5" into seconds. The stream-body edge cases enter the
+    existing assistant_body corpus.
+  proof: [run-tests, body-corpus]
 - text: >-
     assistant_run_input_errors uses malformed {,empty body,null/[] and a duplicate body thread_id to
     exercise decode/setup/keyword failures before HTTP. Their route envelope is 500,type="None",param=
@@ -132,12 +127,6 @@ checks:
   - id: run-tests
     why: run routing or the complete assistant generator loses an event, error, lifecycle effect or alias
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::assistant_runs::tests::/) - test(/::replays_corpus$/)'
-  - id: settings-tests
-    why: the operator keepalive key is never accepted by the real Config loader
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::assistant_keepalive::tests::loads_keepalive_interval($|::)/)'
-  - id: config-corpus
-    why: nullable or malformed keepalive settings have no new configuration replay seeds
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/assistant-keepalive-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: body-corpus
     why: run-body malformed JSON and stream scalar cases do not reach the production decoder replay
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/assistant_body/run-*)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::assistant_dispatch::tests::replays_corpus$/)'

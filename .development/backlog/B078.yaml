@@ -2,7 +2,7 @@ id: B078
 milestone: M4 keys, spend and management
 title: Discovery endpoints for the UI and agent skills
 status: todo
-depends_on: [B001, B860, B900, B9942, B8648, B8670, B8680]
+depends_on: [B001, B860, B900, B9942, B10027, B8670, B8680]
 file: tasks/B078-discovery-http-parity.yaml
 covers: []
 parent: null

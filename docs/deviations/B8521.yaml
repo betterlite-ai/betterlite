@@ -1,0 +1,38 @@
+task: B8521
+deviations:
+  - what: Third-party guardrails come from a fixed table instead of a scan of the guardrail_hooks folders.
+    why: Rust has no import-time discovery; the table lists every folder at the pin.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py
+  - what: >-
+      A config guardrail of type decision_model, prompt_security, mcp_end_user_permission or mcp_security stops startup with
+      "support for the {kind} guardrail is not built yet", and the admin create and update routes answer 500 with the same text
+      (betterlite-server's is_configuration_error lists only LiteLLM's ValueError kinds). LiteLLM builds these guardrails.
+    why: >-
+      Their class tasks are deferred until the core is done (Max, 11-19). Skipping them would start the proxy without a
+      guardrail the operator configured. B8210, B3792 and B3815 remove the error for their names.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py
+  - what: >-
+      A folder initializer that LiteLLM runs inside the class's own task (block_code_execution, compresr, hiddenlayer, javelin,
+      llm_as_a_judge, noma, noma_v2, onyx, ovalix, pangea, repelloai, custom_code) is not called at build time. The hook spec
+      holds the guardrail's params, and the class is built from them when B8666's dispatch matches the spec.
+    why: >-
+      Those initializers take a Guardrail record, the strict_modes setting and a per-class callback registry, and some take
+      constructors' handles (a clock, a judge completion, a module host). build_hook_spec receives only the params, the name
+      and the hook ports, so this task stores the arguments and leaves the class to the one module that has the rest.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/block_code_execution/__init__.py#L34-L40
+  - what: >-
+      A litellm_content_filter guardrail is built without the database guardrail_id and policy_template. LiteLLM's initializer
+      reads both from the Guardrail record.
+    why: >-
+      build_hook_spec receives the params and the configured name, not the stored row; the record-dependent fields belong to
+      the dispatch that builds the content filter class.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/__init__.py#L36-L37
+  - what: >-
+      Each folder's initializer in LiteLLM builds the callback instance and adds it to litellm.logging_callback_manager; here
+      the initializer returns an argument struct that the registry keeps as CallbackSpec::Hook, and B3682's registry adds the
+      one GuardrailCallback to the handler.
+    why: >-
+      The callbacks are data in betterlite (B3682), and the class tasks own the request-time hooks (B8666). The same
+      guardrails end up registered once, in the handler's callback list.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/aim/__init__.py#L12-L25
+kept_bugs: []

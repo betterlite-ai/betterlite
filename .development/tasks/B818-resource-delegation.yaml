@@ -2,7 +2,7 @@ id: B818
 title: Prevent resource grant escalation by keys
 description: >-
   Implement resource-grant validation with B816 permission records, B10000 MCP identifier resolution (pass it
-  B4731's get_registry records), B817 grant cleanup and team reads, and B747 unified access-group MCP lookup. Helpers raise HTTPException with detail.error, status 403 and no local
+  get_registry's records from B10020's ServerRegistry, which the MCP helpers take as an argument), B817 grant cleanup and team reads, and B747 unified access-group MCP lookup. Helpers raise HTTPException with detail.error, status 403 and no local
   type/param/code override; each calling route owns its wire mapping. None writes the database. Defaults
   are prisma_client=null, is_proxy_admin=false and existing_key_object_permission=null. The all-proxy
   team grant guard returns immediately for proxy admins or requests without "all-proxy-mcpservers";
@@ -67,7 +67,7 @@ description: >-
 
   The B856 helper operation exposes only the pure extractors, toolset check and vector/search validators
   (the latter are async without I/O). Compare 403 details and input preservation with B171 seeds. Native
-  MCP tests inject the registry and use real Postgres via POSTGRES_TEST_URL, falling back to B860
+  MCP tests build the registry with B10020's ServerRegistry::new and use real Postgres via POSTGRES_TEST_URL, falling back to B860
   testcontainers only when absent; connection errors fail. Do not call global-dependent resolvers from
   the Python helper. This task registers no endpoint; callers own HTTP integration.
 

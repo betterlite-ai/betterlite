@@ -2,26 +2,107 @@ use std::error::Error as StdError;
 pub mod base;
 pub mod config;
 
+use betterlite_http::error::HttpError;
+use betterlite_http::proxy::ProxiedClient;
+use betterlite_openai::openai_base_config::CatalogCapabilities;
+use futures_util::stream::BoxStream;
+
+use crate::operation::{
+    ChatOperation, OperationError, OperationRequest, OperationResult, RequestKind,
+};
+use crate::prepared::deployment::Deployment;
+use crate::prepared::{PreparedRequest, Upstream};
 use crate::provider::Adapter;
+use base::Surface;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Anthropic;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Anthropic {
+    pub surface: Surface,
+}
 
-// B010's stubs stay in the shape their variants were registered with until the composition fills them.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AnthropicRequest;
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct AnthropicResult;
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct AnthropicPrepared;
+
+// The client's reply or the framed stream; the B010 stub it replaces had no payload.
+pub enum AnthropicResult {
+    Reply(Box<gateway::reply::AnthropicReply>),
+    Stream(BoxStream<'static, Result<Vec<u8>, HttpError>>),
+}
+
+// The chat call B027 runs, plus the stream flag its surface needs at execute time.
+#[derive(Debug, Clone)]
+pub struct AnthropicPrepared {
+    pub chat: Box<ChatOperation>,
+    pub stream: bool,
+}
 
 impl Adapter for Anthropic {
     const NAME: &'static str = "anthropic";
+
+    fn prepare(
+        &self,
+        request: &OperationRequest,
+        deployment: &Deployment,
+        _catalog: &CatalogCapabilities,
+    ) -> Result<PreparedRequest, OperationError> {
+        if self.surface == Surface::Legacy || deployment.anthropic.is_none() {
+            return Err(OperationError::UnavailableAdapter {
+                provider: String::from(Self::NAME),
+            });
+        }
+        match request.kind() {
+            RequestKind::Chat(chat) => Ok(PreparedRequest::Anthropic(AnthropicPrepared {
+                chat: Box::new(chat.clone()),
+                stream: false,
+            })),
+            RequestKind::Stream(chat) => Ok(PreparedRequest::Anthropic(AnthropicPrepared {
+                chat: Box::new(chat.clone()),
+                stream: true,
+            })),
+            RequestKind::Embedding(_) | RequestKind::Other => {
+                Err(OperationError::UnsupportedOperation {
+                    provider: String::from(Self::NAME),
+                    operation: String::from("provider endpoint"),
+                })
+            }
+        }
+    }
+
+    fn execute(
+        &self,
+        client: &ProxiedClient,
+        prepared: &PreparedRequest,
+        deployment: &Deployment,
+    ) -> impl Future<Output = Result<Upstream, OperationError>> + Send {
+        let unavailable = self.surface == Surface::Legacy || deployment.anthropic.is_none();
+        async move {
+            if unavailable {
+                return Err(OperationError::UnavailableAdapter {
+                    provider: String::from(Self::NAME),
+                });
+            }
+            gateway::call::execute(client, prepared, deployment).await
+        }
+    }
+
+    fn decode(
+        &self,
+        prepared: &PreparedRequest,
+        upstream: Upstream,
+    ) -> Result<OperationResult, OperationError> {
+        if self.surface == Surface::Legacy {
+            return Err(OperationError::UnavailableAdapter {
+                provider: String::from(Self::NAME),
+            });
+        }
+        gateway::reply::decode(prepared, upstream)
+    }
 }
 
 pub mod completion;
 #[cfg(any(test, feature = "testing"))]
 pub mod fixtures;
+pub mod gateway;
 pub mod native;
 pub mod operations;
 mod tests;

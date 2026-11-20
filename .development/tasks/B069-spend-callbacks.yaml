@@ -4,7 +4,7 @@ description: >-
   Finish server::spend::callbacks and ::capture_route. Own _ProxyDBLogger construction,
   success/offload/run_spend_event, _PROXY_track_cost_callback, its run_spend_event facade
   and the two typed interaction predicates. Register the callback and async-success entry
-  only when a database exists, sharing B1708's producer, and register B118's ShadowEvalLogger beside it, built from B4083's job loader and funnel counters, B4084's router provider, B4085's pipeline, a clock and the server TaskTracker drained at shutdown; pass the request's captured GuardrailRequestSnapshot into SuccessRequest.guardrail_snapshot for proxied calls; drain
+  only when a database exists, sharing B1708's producer. Register no ShadowEvalLogger: B118 adds it beside the spend logger later (proxy_server.py L2759), built from B4083's job loader and funnel counters, B4084's router provider, B4085's pipeline, a clock and the server TaskTracker, and depends on this task; until then a stored shadow evaluation job is not sampled (deviation below). Pass the request's captured GuardrailRequestSnapshot into SuccessRequest.guardrail_snapshot for proxied calls; drain
   the producer on shutdown with its configured timeout. B1707 handles eligible event
   building/decoding. A build failure warns and executes in process; a decode failure logs
   and discards. Store-body selection comes from B1714. B1720 owns failure callbacks and
@@ -148,6 +148,9 @@ deviations:
   - what: No managed-batch polling hook or synthetic managed-file charge is installed; startup skips that absent hook and public provider batch-retrieve events retain their normal accounting path.
     why: The pinned open-source checkout has no enterprise implementation; betterlite builds no managed files (decision 2026-10-31).
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10912-L10942
+  - what: Until B118 lands, startup registers no ShadowEvalLogger, so a stored shadow evaluation job samples no request and spends nothing.
+    why: Shadow evals and LLM judges wait for a later release (value split, 2026-11-19); B118 adds the registration and depends on this task.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2751-L2759
 out_of_scope:
   - B1720 owns failure/enrichment/tag/eligibility/metadata helpers in proxy_track_cost_callback.py; B1719 owns its reservation and database-counter settlement helpers.
   - Every other spend_management_endpoints.py handler belongs to B1721-B1727 or B1729-B1732; B1704 owns visibility and B1728 owns list-query construction.
