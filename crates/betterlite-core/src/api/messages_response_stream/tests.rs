@@ -63,6 +63,9 @@ const ARGS_BLOCK_DELTA: &str = r#"{"type":"content_block_delta","index":1,"delta
 const TOOL_BLOCK_STOP: &str = r#"{"type":"content_block_stop","index":1}"#;
 const MESSAGE_DELTA: &str = r#"{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":0,"output_tokens":0}}"#;
 const MESSAGE_STOP: &str = r#"{"type":"message_stop"}"#;
+const THINKING_BLOCK_START: &str = r#"{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}"#;
+const THINKING_BLOCK_DELTA: &str = r#"{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"why"}}"#;
+const SUMMARY_SEPARATOR_DELTA: &str = r#"{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"\n\n"}}"#;
 const INCOMPLETE_ERROR: &str = r#"{"type":"error","error":{"type":"api_error","message":"Provider stream ended before emitting a message_stop event; the response is incomplete and any partial content (e.g. tool_use input JSON) may be truncated."}}"#;
 const EOF_LOG: &str = "AnthropicResponsesStreamWrapper: upstream Responses stream for model_a ended without a terminal event";
 const PULL_FAILED_LOG: &str =
@@ -97,7 +100,10 @@ impl ResponsesEventSource for Scripted {
         if let Some(event) = self.events.pop_front() {
             return Ok(Some(event));
         }
-        self.failure.take().map_or_else(|| Ok(None), Err)
+        match self.failure.take() {
+            Some(failure) => Err(failure),
+            None => Ok(None),
+        }
     }
 }
 
@@ -509,76 +515,94 @@ async fn attribute_response_decides_the_terminal_pair() {
     assert!(stream.state.snapshot().sent_message_stop.0);
 }
 
-// A provider event's item, id, delta and summary index attributes drive the blocks a mapping event would have driven.
+// One provider event carrying only the attributes its type declares; most event types carry an item or an id, not both.
+fn attribute_event(
+    event_type: &str,
+    item: Option<&str>,
+    item_id: Option<&str>,
+    delta: Option<&str>,
+    summary_index: Option<u8>,
+) -> ResponsesEvent {
+    ResponsesEvent {
+        attributes: ProviderEvent {
+            event_type: Some(Json::Text(event_type.to_owned())),
+            item: item.map(json),
+            item_id: item_id.map(|value| Json::Text(value.to_owned())),
+            delta: delta.map(|value| Json::Text(value.to_owned())),
+            summary_index: summary_index.map(|index| Json::Number(Number::from(index))),
+            response: None,
+        },
+        mapping: None,
+    }
+}
+
+// A reasoning summary's item_id, delta and summary index attributes drive the thinking block a mapping event would have driven.
 #[tokio::test]
-async fn attribute_events_carry_the_item_fields() {
-    let thinking = ResponsesEvent {
-        attributes: ProviderEvent {
-            event_type: Some(Json::Text(
-                "response.reasoning_summary_text.delta".to_owned(),
-            )),
-            item: None,
-            item_id: Some(Json::Text("item_r".to_owned())),
-            delta: Some(Json::Text("why".to_owned())),
-            summary_index: None,
-            response: None,
-        },
-        mapping: None,
-    };
-    let part = ResponsesEvent {
-        attributes: ProviderEvent {
-            event_type: Some(Json::Text(
-                "response.reasoning_summary_part.added".to_owned(),
-            )),
-            item: None,
-            item_id: Some(Json::Text("item_r".to_owned())),
-            delta: None,
-            summary_index: Some(Json::Number(Number::from(1_u8))),
-            response: None,
-        },
-        mapping: None,
-    };
-    let tool = ResponsesEvent {
-        attributes: ProviderEvent {
-            event_type: Some(Json::Text("response.output_item.added".to_owned())),
-            item: Some(json(
-                r#"{"type":"function_call","id":"item_tool","call_id":"call_a","name":"lookup"}"#,
-            )),
-            item_id: None,
-            delta: None,
-            summary_index: None,
-            response: None,
-        },
-        mapping: None,
-    };
-    let arguments = ResponsesEvent {
-        attributes: ProviderEvent {
-            event_type: Some(Json::Text(
-                "response.function_call_arguments.delta".to_owned(),
-            )),
-            item: None,
-            item_id: Some(Json::Text("item_tool".to_owned())),
-            delta: Some(Json::Text("1}".to_owned())),
-            summary_index: None,
-            response: None,
-        },
-        mapping: None,
-    };
-    let events = vec![thinking, part, tool, arguments, event(COMPLETED)];
+async fn attribute_events_carry_the_thinking_fields() {
+    let events = vec![
+        attribute_event(
+            "response.reasoning_summary_text.delta",
+            None,
+            Some("item_r"),
+            Some("why"),
+            None,
+        ),
+        attribute_event(
+            "response.reasoning_summary_part.added",
+            None,
+            Some("item_r"),
+            None,
+            Some(1),
+        ),
+        event(COMPLETED),
+    ];
     let mut stream = stream(scripted_events(events));
     assert_eq!(next(&mut stream).await, message_start());
     assert_eq!(
         drain(&mut stream).await,
         vec![
-            json(
-                r#"{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}"#
-            ),
-            json(
-                r#"{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"why"}}"#
-            ),
-            json(
-                r#"{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"\n\n"}}"#
-            ),
+            json(THINKING_BLOCK_START),
+            json(THINKING_BLOCK_DELTA),
+            json(SUMMARY_SEPARATOR_DELTA),
+            json(MESSAGE_DELTA),
+            json(MESSAGE_STOP),
+        ]
+    );
+}
+
+// A tool call's item and item_id attributes drive its block and argument delta behind the text block opened before it.
+#[tokio::test]
+async fn attribute_events_carry_the_tool_fields() {
+    let events = vec![
+        attribute_event(
+            "response.output_item.added",
+            Some(r#"{"type":"message","id":"item_a"}"#),
+            None,
+            None,
+            None,
+        ),
+        attribute_event(
+            "response.output_item.added",
+            Some(r#"{"type":"function_call","id":"item_tool","call_id":"call_a","name":"lookup"}"#),
+            None,
+            None,
+            None,
+        ),
+        attribute_event(
+            "response.function_call_arguments.delta",
+            None,
+            Some("item_tool"),
+            Some("1}"),
+            None,
+        ),
+        event(COMPLETED),
+    ];
+    let mut stream = stream(scripted_events(events));
+    assert_eq!(next(&mut stream).await, message_start());
+    assert_eq!(
+        drain(&mut stream).await,
+        vec![
+            json(TEXT_BLOCK_START),
             json(TOOL_BLOCK_START),
             json(ARGS_BLOCK_DELTA),
             json(MESSAGE_DELTA),
