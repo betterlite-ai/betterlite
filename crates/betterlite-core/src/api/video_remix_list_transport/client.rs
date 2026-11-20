@@ -1,5 +1,6 @@
 use std::error::Error as StdError;
 use std::future::Future;
+use std::str::FromStr as _;
 use std::time::Duration;
 
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
@@ -8,6 +9,10 @@ use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use betterlite_models::identity::provider_id::ProviderId;
 use http::{HeaderMap, Method};
 use url::Url;
+
+use super::error::VideoRemixListTransportError;
+use super::fields;
+use super::records::Params;
 
 // One provider call's wire request, before a sync or async client puts it on the network
 pub struct VideoRequest {
@@ -67,6 +72,30 @@ impl<Client> Chosen<'_, Client> {
             Self::Pooled(client) => client,
         }
     }
+}
+
+// The async path's client: a supplied one of the async kind, or the pool's client for the provider name, which fails before the try block
+pub(super) fn choose_async<'call, Source: VideoClientSource>(
+    source: &Source,
+    supplied: Option<&'call Source::AsyncClient>,
+    provider: &str,
+    params: &Params,
+) -> Result<Chosen<'call, Source::AsyncClient>, VideoRemixListTransportError> {
+    let Some(client) = supplied else {
+        let parsed = ProviderId::from_str(provider).map_err(|_unknown| {
+            VideoRemixListTransportError::UnknownProvider {
+                provider: provider.to_owned(),
+            }
+        })?;
+        let ssl_verify = fields::ssl_verify(params)?;
+        let pooled = source.async_client(parsed, ssl_verify).map_err(|source| {
+            VideoRemixListTransportError::Client {
+                source: Box::new(source),
+            }
+        })?;
+        return Ok(Chosen::Pooled(pooled));
+    };
+    Ok(Chosen::Supplied(client))
 }
 
 // The pooled async client is the B173 transport: the request's timeout or the client's read timeout sets the deadline

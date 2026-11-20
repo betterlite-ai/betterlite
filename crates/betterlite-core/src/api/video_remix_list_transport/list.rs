@@ -1,12 +1,10 @@
 use std::future::Future;
-use std::str::FromStr as _;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use betterlite_http::proxy::UpstreamResponse;
-use betterlite_models::identity::provider_id::ProviderId;
 use tokio::runtime::{Builder, Handle};
 
-use super::client::{Chosen, VideoClient, VideoClientSource};
+use super::client::{VideoClient, VideoClientSource, choose_async};
 use super::config::VideoRemixListConfig;
 use super::convert;
 use super::error::{Operation, VideoRemixListTransportError};
@@ -63,54 +61,28 @@ impl<Source: VideoClientSource> VideoRemixListTransport<Source> {
         call: ListCall<'_, Source>,
         mut log: LogContext<'_, '_>,
     ) -> Result<Params, VideoRemixListTransportError> {
-        let chosen = match &call.client {
-            Some(VideoClient::Asynchronous(client)) => Chosen::Supplied(*client),
-            Some(VideoClient::Sync(_)) | None => {
-                let provider =
-                    ProviderId::from_str(call.custom_llm_provider).map_err(|_unknown| {
-                        VideoRemixListTransportError::UnknownProvider {
-                            provider: call.custom_llm_provider.to_owned(),
-                        }
-                    })?;
-                let ssl_verify = fields::ssl_verify(call.litellm_params)?;
-                let client = self
-                    .source
-                    .async_client(provider, ssl_verify)
-                    .map_err(|source| VideoRemixListTransportError::Client {
-                        source: Box::new(source),
-                    })?;
-                Chosen::Pooled(client)
-            }
+        let supplied = match &call.client {
+            Some(VideoClient::Asynchronous(client)) => Some(*client),
+            Some(VideoClient::Sync(_)) | None => None,
         };
+        let chosen = choose_async(
+            &self.source,
+            supplied,
+            call.custom_llm_provider,
+            call.litellm_params,
+        )?;
         let prepared = prepare_list(config, &call, &mut log)?;
-        let request = wire::query_get(&prepared.url, &prepared.headers, &prepared.params)
-            .map_err(|error| convert::wire_error(config, &error))?;
-        let started = Instant::now();
-        let sent = chosen.get().send(request).await;
-        let elapsed = started.elapsed();
-        let answer = sent.map_err(|error| {
-            convert::transport_error(
-                config,
-                &convert::SendFacts {
-                    operation: Operation::List,
-                    mode: convert::SendMode::Asynchronous,
-                    timeout: call.timeout,
-                    elapsed,
-                },
-                &error,
-            )
-        })?;
+        let answer = send_list(config, chosen.get(), &prepared, call.timeout).await?;
         let checked = convert::check_status(config, answer)?;
         finish_list(config, &call, &checked, &mut log)
     }
 }
 
-// Everything before the try block: the environment (api_key only), the base URL, the query transform and the pre-call
-fn prepare_list<Source: VideoClientSource>(
+// validate_environment gets the extra headers and only the api_key argument; the caller's headers are re-applied over its answer
+fn list_headers<Source: VideoClientSource>(
     config: &dyn VideoRemixListConfig,
     call: &ListCall<'_, Source>,
-    log: &mut LogContext<'_, '_>,
-) -> Result<PreparedList, VideoRemixListTransportError> {
+) -> Headers {
     let empty = Headers::new();
     let extra = call.extra_headers.unwrap_or(&empty);
     let mut headers = config.validate_environment(VideoEnvironment {
@@ -124,14 +96,17 @@ fn prepare_list<Source: VideoClientSource>(
             headers.insert(name.clone(), value.clone());
         }
     }
-    let api_base = fields::api_base(call.litellm_params)?;
-    let base_url = config
-        .get_complete_url("", api_base, call.litellm_params)
-        .map_err(|source| VideoRemixListTransportError::Prepare {
-            operation: Operation::List,
-            source,
-        })?;
-    let (url, params) = config
+    headers
+}
+
+// The provider's query transform turns the base URL and the validated headers into the wire URL and query
+fn list_request<Source: VideoClientSource>(
+    config: &dyn VideoRemixListConfig,
+    call: &ListCall<'_, Source>,
+    base_url: &str,
+    headers: &Headers,
+) -> Result<(String, Params), VideoRemixListTransportError> {
+    config
         .transform_video_list_request(
             VideoListQuery {
                 after: call.after,
@@ -140,15 +115,58 @@ fn prepare_list<Source: VideoClientSource>(
                 extra_query: call.extra_query,
             },
             VideoRequestContext {
-                api_base: &base_url,
+                api_base: base_url,
                 litellm_params: call.litellm_params,
-                headers: &headers,
+                headers,
             },
         )
         .map_err(|source| VideoRemixListTransportError::Prepare {
             operation: Operation::List,
             source,
+        })
+}
+
+// The try block's send: one GET with the query and no timeout, whatever the caller passed
+async fn send_list<Source: VideoClientSource>(
+    config: &dyn VideoRemixListConfig,
+    client: &Source::AsyncClient,
+    prepared: &PreparedList,
+    timeout: Option<Duration>,
+) -> Result<UpstreamResponse, VideoRemixListTransportError> {
+    let request = wire::query_get(&prepared.url, &prepared.headers, &prepared.params)
+        .map_err(|error| convert::wire_error(config, &error))?;
+    let started = Instant::now();
+    let sent = client.send(request).await;
+    let elapsed = started.elapsed();
+    sent.map_err(|error| {
+        convert::transport_error(
+            config,
+            &convert::SendFacts {
+                operation: Operation::List,
+                mode: convert::SendMode::Asynchronous,
+                timeout,
+                elapsed,
+            },
+            &error,
+        )
+    })
+}
+
+// Everything before the try block: the environment (api_key only), the base URL, the query transform and the pre-call
+fn prepare_list<Source: VideoClientSource>(
+    config: &dyn VideoRemixListConfig,
+    call: &ListCall<'_, Source>,
+    log: &mut LogContext<'_, '_>,
+) -> Result<PreparedList, VideoRemixListTransportError> {
+    let headers = list_headers(config, call);
+    let api_base = fields::api_base(call.litellm_params)?;
+    let base_url = config
+        .get_complete_url("", api_base, call.litellm_params)
+        .map_err(|source| VideoRemixListTransportError::Prepare {
+            operation: Operation::List,
+            source,
         })?;
+    let (url, params) = list_request(config, call, &base_url, &headers)?;
     record_pre_call(
         log,
         PreCallSource::List(&ListPreCall {
