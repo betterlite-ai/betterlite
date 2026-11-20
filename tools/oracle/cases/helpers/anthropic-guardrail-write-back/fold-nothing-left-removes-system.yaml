@@ -1,0 +1,6 @@
+kind: helper
+name: anthropic-guardrail-write-back-fold-nothing-left-removes-system
+call:
+  b3674: {"function": "fold", "scenarios": [{"data": {"system": "gone", "messages": []}, "leading": [], "include_existing": false}, {"data": {"system": "", "messages": []}, "leading": [{"role": "system", "content": ""}], "include_existing": true}, {"data": {"system": null, "messages": []}, "leading": [], "include_existing": true}, {"data": {"system": "keep", "messages": []}, "leading": [{"role": "system", "content": "x"}], "include_existing": false}]}
+env: {}
+compare: {ignore: []}
