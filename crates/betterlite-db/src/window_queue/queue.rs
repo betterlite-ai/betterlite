@@ -62,8 +62,10 @@ impl WindowSpendUpdateQueue {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         if state.batches.len() < self.capacity {
             state.batches.push_back(vec![record]);
+            drop(state);
             return None;
         }
+        drop(state);
         Some(record)
     }
 

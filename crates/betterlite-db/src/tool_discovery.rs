@@ -87,13 +87,16 @@ impl ToolDiscoveryQueue {
     ) -> Option<(ToolDiscoveryItem, String)> {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         if state.seen.contains(&queued_name) {
+            drop(state);
             return None;
         }
         if state.pending.len() < self.capacity {
             state.seen.insert(queued_name);
             state.pending.push(item);
+            drop(state);
             return None;
         }
+        drop(state);
         Some((item, queued_name))
     }
 
