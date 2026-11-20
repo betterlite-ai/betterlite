@@ -10,9 +10,12 @@ use super::customer_row::{CustomerBudgetGaugeRow, set_customer_row_gauges};
 use super::key_list::{KeyListEntry, set_key_list_budget_metrics};
 use super::org_list::{OrgBudgetGaugeRow, set_org_list_budget_metrics};
 use super::team_list::set_team_list_budget_metrics;
+use super::user_list::set_user_list_budget_metrics;
 use crate::end_user::EndUserCostTrackingSettings;
 use crate::prometheus::budget_gauges::customer::{BudgetGaugeClock, CustomerGaugeContext};
-use crate::prometheus::budget_gauges::inputs::{KeyBudgetGaugeInput, TeamBudgetGaugeInput};
+use crate::prometheus::budget_gauges::inputs::{
+    KeyBudgetGaugeInput, TeamBudgetGaugeInput, UserBudgetGaugeInput,
+};
 use crate::prometheus::budget_gauges::test_support::{
     decimal, events, finite, hours_value, prometheus_only, rig, set, source,
 };
@@ -33,6 +36,9 @@ const ORG_HOURS: &str = "litellm_org_budget_remaining_hours_metric";
 const CUSTOMER_REMAINING: &str = "litellm_remaining_customer_budget_metric";
 const CUSTOMER_MAX: &str = "litellm_customer_max_budget_metric";
 const CUSTOMER_HOURS: &str = "litellm_customer_budget_remaining_hours_metric";
+const USER_REMAINING: &str = "litellm_remaining_user_budget_metric";
+const USER_MAX: &str = "litellm_user_max_budget_metric";
+const USER_HOURS: &str = "litellm_user_budget_remaining_hours_metric";
 
 fn reset() -> Option<DateTime<Utc>> {
     Some(DateTime::from_timestamp(7200, 0).unwrap())
@@ -112,6 +118,43 @@ fn the_team_list_setter_sets_each_team_in_order() {
             ),
             set(TEAM_REMAINING, &[("team", "t2")], finite("2")),
             set(TEAM_MAX, &[("team", "t2")], finite("3")),
+        ]
+    );
+}
+
+fn user(user_id: &str, spend: Option<&str>, max: Option<&str>) -> UserBudgetGaugeInput {
+    UserBudgetGaugeInput {
+        user_id: user_id.to_owned(),
+        user_email: None,
+        user_alias: None,
+        spend: spend.map(decimal),
+        max_budget: max.map(decimal),
+        budget_reset_at: None,
+    }
+}
+
+#[test]
+fn the_user_list_setter_sets_each_user_in_order() {
+    let settings = PrometheusLabelSettings::with_defaults();
+    let (gauges, log) = rig(USER_REMAINING, USER_MAX, USER_HOURS, &["user"]);
+    let users = [user("u1", None, None), user("u2", Some("1"), Some("3"))];
+    set_user_list_budget_metrics(
+        &gauges,
+        &users,
+        source(&settings, EndUserCostTrackingSettings::default()),
+        DateTime::from_timestamp(0, 0).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        events(&log),
+        vec![
+            set(
+                USER_REMAINING,
+                &[("user", "u1")],
+                MetricValue::PositiveInfinity,
+            ),
+            set(USER_REMAINING, &[("user", "u2")], finite("2")),
+            set(USER_MAX, &[("user", "u2")], finite("3")),
         ]
     );
 }
