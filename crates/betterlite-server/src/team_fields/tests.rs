@@ -534,7 +534,7 @@ fn validation_result_coercions(
 #[case::fraction(r#"{"valid": 0.5}"#)]
 #[case::null(r#"{"valid": null}"#)]
 #[case::message_number(r#"{"valid": true, "error_message": 5}"#)]
-#[case::missing_valid(r#"{}"#)]
+#[case::missing_valid("{}")]
 #[case::not_an_object(r#""ok""#)]
 fn validation_result_rejections(#[case] text: &str) {
     assert!(TeamMetadataValidationResult::parse(&data(text)).is_none());

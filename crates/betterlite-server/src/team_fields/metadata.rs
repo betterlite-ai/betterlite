@@ -83,10 +83,9 @@ impl TeamMetadataValidationResult {
         let error_message = match entries.get("error_message") {
             None | Some(JsonData::Null) => None,
             Some(JsonData::String(message)) => Some(message.clone()),
-            Some(JsonData::Bool(_))
-            | Some(JsonData::Number(_))
-            | Some(JsonData::Array(_))
-            | Some(JsonData::Object(_)) => return None,
+            Some(
+                JsonData::Bool(_) | JsonData::Number(_) | JsonData::Array(_) | JsonData::Object(_),
+            ) => return None,
         };
         Some(Self {
             valid,
