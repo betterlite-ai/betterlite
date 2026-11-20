@@ -1,5 +1,3 @@
-use std::slice::from_ref;
-
 use betterlite_http::proxy::multipart::MultipartPart;
 use betterlite_models::decisions::Json;
 use sha2::{Digest as _, Sha256};
@@ -15,7 +13,7 @@ pub(crate) fn with_files(
     data: &Params,
     files: &[RequestFile],
 ) -> Result<Vec<MultipartPart>, SendFailure> {
-    let mut parts = data_parts(data)?;
+    let mut parts = text_parts(data_parts(data)?);
     parts.extend(files.iter().map(file_part));
     Ok(parts)
 }
@@ -48,10 +46,7 @@ pub(crate) fn flattened(data: &Params) -> Result<Vec<MultipartPart>, SendFailure
     for (key, value) in data {
         flatten(key, value, 0, &mut fields)?;
     }
-    Ok(fields
-        .into_iter()
-        .map(|(name, text)| text_part(name, text))
-        .collect())
+    Ok(text_parts(fields))
 }
 
 // A boundary derived from the parts, so a body carrying it would have to hold a hash of itself
@@ -78,22 +73,25 @@ fn absorb(hasher: &mut Sha256, bytes: &[u8]) {
 }
 
 // httpx's DataField takes a primitive or a list of them, and rejects a nested object with Invalid type for value
-fn data_parts(data: &Params) -> Result<Vec<MultipartPart>, SendFailure> {
-    let mut parts = Vec::new();
+fn data_parts(data: &Params) -> Result<Vec<(String, String)>, SendFailure> {
+    let mut fields = Vec::new();
     for (name, value) in data {
-        let items = if let Json::List(items) = value {
-            items.as_slice()
-        } else {
-            from_ref(value)
-        };
-        for item in items {
-            let Some(text) = primitive(item) else {
-                return Err(primitive_error(name));
-            };
-            parts.push(text_part(name.clone(), text));
+        if let Json::List(items) = value {
+            for item in items {
+                fields.push(data_field(name, item)?);
+            }
+            continue;
         }
+        fields.push(data_field(name, value)?);
     }
-    Ok(parts)
+    Ok(fields)
+}
+
+fn data_field(name: &str, value: &Json) -> Result<(String, String), SendFailure> {
+    let Some(text) = primitive(value) else {
+        return Err(primitive_error(name));
+    };
+    Ok((name.to_owned(), text))
 }
 
 // _flatten_form_field: objects and lists become key[subkey] and key[], and null or an empty string drops the field
@@ -147,6 +145,13 @@ fn push_field(key: &str, text: String, fields: &mut Vec<(String, String)>) {
     if !text.is_empty() {
         fields.push((key.to_owned(), text));
     }
+}
+
+fn text_parts(fields: Vec<(String, String)>) -> Vec<MultipartPart> {
+    fields
+        .into_iter()
+        .map(|(name, text)| text_part(name, text))
+        .collect()
 }
 
 fn text_part(name: String, text: String) -> MultipartPart {
