@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use betterlite_models::decisions::Json;
 use betterlite_models::off_peak::schema::OffPeakBlockEntry;
 use betterlite_models::price_lookup::{PriceLookup, PriceRecord, PricedModel};
-use betterlite_models::tiered_pricing::Scalar;
-use serde::de::{DeserializeOwned, IgnoredAny};
+use betterlite_models::tiered_pricing::{Scalar, Tier};
+use serde::de::IgnoredAny;
 
 pub(super) struct Catalog {
     entries: BTreeMap<String, PricedModel>,
@@ -27,21 +27,21 @@ fn priced_model(model: &str, fields: &BTreeMap<String, Json>) -> PricedModel {
         .map(|(name, value)| (name.clone(), scalar(value)))
         .collect();
     record.insert("key".to_owned(), Scalar::Text(model.to_owned()));
+    let tiered: Option<Vec<Tier>> = fields
+        .get("tiered_pricing")
+        .and_then(|value| serde_json::from_slice(&serde_json::to_vec(value).ok()?).ok());
+    let off_peak: Option<OffPeakBlockEntry> = fields
+        .get("off_peak_pricing")
+        .and_then(|value| serde_json::from_slice(&serde_json::to_vec(value).ok()?).ok());
     PricedModel {
         record,
-        tiered_pricing: decoded(fields.get("tiered_pricing")).unwrap_or_default(),
-        off_peak_pricing: decoded(fields.get("off_peak_pricing"))
-            .and_then(|entry: OffPeakBlockEntry| entry.as_block().cloned()),
+        tiered_pricing: tiered.unwrap_or_default(),
+        off_peak_pricing: off_peak.and_then(|entry| entry.as_block().cloned()),
         off_peak_cache_read_present: matches!(
             fields.get("off_peak_pricing"),
             Some(Json::Object(block)) if block.contains_key("cache_read_input_token_cost")
         ),
     }
-}
-
-fn decoded<T: DeserializeOwned>(value: Option<&Json>) -> Option<T> {
-    let bytes = serde_json::to_vec(value?).ok()?;
-    serde_json::from_slice(&bytes).ok()
 }
 
 impl PriceLookup for Catalog {

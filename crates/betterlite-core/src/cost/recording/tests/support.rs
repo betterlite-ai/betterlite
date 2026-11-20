@@ -15,7 +15,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::off_peak::schema::OffPeakBlock;
 use betterlite_models::price_lookup::{PriceLookup, PriceRecord, PricedModel};
 use betterlite_models::resolution::ProviderIdentity;
-use betterlite_models::tiered_pricing::{Scalar, Tier};
+use betterlite_models::tiered_pricing::{Scalar, Tier, TierRange};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
@@ -156,7 +156,9 @@ impl FakeCatalog {
             model.to_owned(),
             PricedModel {
                 record,
-                ..PricedModel::default()
+                tiered_pricing: Vec::new(),
+                off_peak_pricing: None,
+                off_peak_cache_read_present: false,
             },
         );
         Self { entries }
@@ -435,6 +437,20 @@ pub(super) fn decimal(text: &str) -> Decimal {
 
 pub(super) fn a_price(amount: i64) -> Scalar {
     Scalar::Number(Number::from(amount))
+}
+
+pub(super) fn a_tier(input: Scalar, output: Option<Scalar>) -> Tier {
+    Tier {
+        input_token: Some(input),
+        output_token: output,
+        output_reasoning_token: None,
+        cache_read_input_token_cost: None,
+        cache_creation_token_cost: None,
+        cache_creation_above_1hr_cost: None,
+        input_cost_per_query: None,
+        range: TierRange::Missing,
+        max_results_range: None,
+    }
 }
 
 pub(super) fn chat_usage() -> Usage {

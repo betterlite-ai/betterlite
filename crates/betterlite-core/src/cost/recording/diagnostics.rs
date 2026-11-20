@@ -186,7 +186,9 @@ where
         .is_some();
         let mut priced = PricedModel {
             record,
-            ..PricedModel::default()
+            tiered_pricing: Vec::new(),
+            off_peak_pricing: None,
+            off_peak_cache_read_present: false,
         };
         if (!from_deployment || raw_router_entry)
             && let Some(tables) = self.effective_tables(key, request.custom_llm_provider)

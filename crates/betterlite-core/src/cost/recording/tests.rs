@@ -2,7 +2,6 @@
 
 use betterlite_models::decisions::Json;
 use betterlite_models::off_peak::schema::{OffPeakBlock, RateField};
-use betterlite_models::tiered_pricing::Tier;
 use indexmap::IndexMap;
 use rstest::rstest;
 use rust_decimal::Decimal;
@@ -16,9 +15,9 @@ use crate::helpers::{RESPONSE_COST_HEADER, set_response_cost_in_hidden_params};
 mod support;
 
 use support::{
-    FakeCatalog, Fakes, INIT, MANAGEMENT, a_price, capture, chat_usage, decimal, earlier_finding,
-    json_text, object_fields, openai, priced_gpt4o, provider, record, respond, state,
-    stored_diagnostic, stored_failure, typed, typed_response,
+    FakeCatalog, Fakes, INIT, MANAGEMENT, a_price, a_tier, capture, chat_usage, decimal,
+    earlier_finding, json_text, object_fields, openai, priced_gpt4o, provider, record, respond,
+    state, stored_diagnostic, stored_failure, typed, typed_response,
 };
 
 #[test]
@@ -382,11 +381,7 @@ fn a_priced_zero_cost_reports_the_missing_keys_and_warns_once() {
 
 #[test]
 fn a_tiered_only_entry_reports_the_missing_keys() {
-    let tier = Tier {
-        input_token: Some(a_price(1)),
-        output_token: Some(a_price(1)),
-        ..Tier::default()
-    };
+    let tier = a_tier(a_price(1), Some(a_price(1)));
     let fakes = Fakes::default().with_catalog(FakeCatalog::with_tiered("gpt-4o", vec![tier]));
     let mut log = state(INIT);
     openai(&mut log);
@@ -408,10 +403,7 @@ fn a_tiered_only_entry_reports_the_missing_keys() {
 
 #[test]
 fn a_tiered_only_entry_reports_a_calculation_error() {
-    let tier = Tier {
-        input_token: Some(a_price(1)),
-        ..Tier::default()
-    };
+    let tier = a_tier(a_price(1), None);
     let fakes = Fakes::default()
         .with_catalog(FakeCatalog::with_tiered("gpt-4o", vec![tier]))
         .with_failure();
@@ -436,11 +428,7 @@ fn a_tiered_only_entry_reports_a_calculation_error() {
 
 #[test]
 fn a_deployment_model_info_keeps_its_own_rates_instead_of_the_cost_map_tables() {
-    let tier = Tier {
-        input_token: Some(a_price(1)),
-        output_token: Some(a_price(1)),
-        ..Tier::default()
-    };
+    let tier = a_tier(a_price(1), Some(a_price(1)));
     let fakes = Fakes::default().with_catalog(FakeCatalog::with_tiered("gpt-4o", vec![tier]));
     let mut log = state(
         r#"{"model":"gpt-4o","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_params":{"metadata":{"model_info":{"input_cost_per_token":0}}}}"#,
@@ -459,11 +447,7 @@ fn a_deployment_model_info_keeps_its_own_rates_instead_of_the_cost_map_tables() 
 
 #[test]
 fn a_router_cost_map_entry_keeps_its_decoded_tables() {
-    let tier = Tier {
-        input_token: Some(a_price(1)),
-        output_token: Some(a_price(1)),
-        ..Tier::default()
-    };
+    let tier = a_tier(a_price(1), Some(a_price(1)));
     let fakes = Fakes::default().with_catalog(FakeCatalog::with_tiered("deploy-1", vec![tier]));
     let mut log = state(
         r#"{"model":"gpt-4o","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_params":{"input_cost_per_token":0,"litellm_metadata":{"model_info":{"id":"deploy-1"}}}}"#,
@@ -488,8 +472,14 @@ fn a_router_cost_map_entry_keeps_its_decoded_tables() {
 #[test]
 fn an_off_peak_only_entry_reports_the_missing_keys() {
     let block = OffPeakBlock {
+        hours_utc: None,
+        windows: None,
+        weekday_timezone: None,
         input_cost_per_token: Some(RateField::Number(Number::from(1_i64))),
-        ..OffPeakBlock::default()
+        output_cost_per_token: None,
+        reasoning_token_cost: None,
+        cache_read_input_token_cost: None,
+        cache_creation_cost: None,
     };
     let fakes = Fakes::default().with_catalog(FakeCatalog::with_off_peak("gpt-4o", block));
     let mut log = state(INIT);
