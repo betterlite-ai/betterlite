@@ -2,7 +2,7 @@ import asyncio
 from typing import TypedDict, cast
 
 from litellm.proxy.common_request_processing import (
-    _extract_error_from_sse_chunk,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L772
+    _extract_error_from_sse_chunk,  # pyright: ignore[reportPrivateUsage, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L772
     _parse_event_data_for_error,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L737
 )
 from pydantic import JsonValue
