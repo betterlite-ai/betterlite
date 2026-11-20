@@ -238,6 +238,7 @@ struct SeenArgs {
 struct Recorded {
     errors: Vec<(String, u16, HeaderMap)>,
     headers_in: Option<Headers>,
+    validate_params: Option<Params>,
     params_in: Option<Params>,
     raw: Option<RerankProviderResponse>,
     transform: Option<SeenArgs>,
@@ -281,7 +282,10 @@ impl BaseRerankConfig for RecordingConfig {
         request: EnvironmentRequest<'_>,
     ) -> Result<Headers, ConfigError> {
         self.events.push("validate");
-        self.recorded().headers_in = Some(request.headers.clone());
+        let mut recorded = self.recorded();
+        recorded.headers_in = Some(request.headers.clone());
+        recorded.validate_params = request.litellm_params.cloned();
+        drop(recorded);
         if self.refusal == Refusal::Validate {
             return Err(ConfigError::Validate);
         }
@@ -347,11 +351,10 @@ impl BaseRerankConfig for RecordingConfig {
             optional_params: request.optional_params.clone(),
             litellm_params: request.litellm_params.clone(),
         };
-        {
-            let mut recorded = self.recorded();
-            recorded.raw = Some(request.raw_response.clone());
-            recorded.transform = Some(seen)
-        };
+        let mut recorded = self.recorded();
+        recorded.raw = Some(request.raw_response.clone());
+        recorded.transform = Some(seen);
+        drop(recorded);
         if self.refusal == Refusal::Response {
             return Err(ConfigError::Response);
         }
@@ -750,6 +753,7 @@ fn only_api_key() -> BTreeMap<String, String> {
 fn assert_payload_transform(config: &RecordingConfig, events: &Events) {
     let recorded = config.recorded();
     assert_eq!(recorded.headers_in.as_ref(), Some(&Headers::new()));
+    assert_eq!(recorded.validate_params, None);
     assert_eq!(recorded.params_in, None);
     let raw = recorded.raw.as_ref().expect("the transformer saw a reply");
     assert_eq!(raw.status_code, 200);
@@ -814,11 +818,11 @@ async fn rerank_http_forwards_caller_headers_and_params() {
         .run(Json::Bool(false), None, &mut logging)
         .await
         .expect("the rerank succeeds");
-    {
-        let recorded = bench.config.recorded();
-        assert_eq!(recorded.headers_in.as_ref(), Some(&headers));
-        assert_eq!(recorded.params_in.as_ref(), Some(&litellm_params))
-    };
+    let recorded = bench.config.recorded();
+    assert_eq!(recorded.headers_in.as_ref(), Some(&headers));
+    assert_eq!(recorded.validate_params.as_ref(), Some(&litellm_params));
+    assert_eq!(recorded.params_in.as_ref(), Some(&litellm_params));
+    drop(recorded);
     let authorization = supplied_sent(&bench)[0]
         .request
         .headers
