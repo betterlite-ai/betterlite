@@ -48,8 +48,25 @@ pub async fn pin_model_for_tier(
         restamp_adaptive_choice(request_kwargs, selected, retained);
         return Ok(retained.to_owned());
     }
-    let Some(session_id) = session_id_from_request_kwargs(request_kwargs)? else {
+    let claimed =
+        claim_tier_model(placement, tier, selection, request_kwargs, retained_model).await?;
+    let Some(pinned) = claimed else {
         return Ok(selected.to_owned());
+    };
+    restamp_adaptive_choice(request_kwargs, selected, &pinned);
+    Ok(pinned)
+}
+
+// the session's tier claim: the selected model is the requested pin, and only a candidate can win
+async fn claim_tier_model(
+    placement: &TierPlacement<'_>,
+    tier: &Tier,
+    selection: &Selection<'_>,
+    request_kwargs: &mut JsonMap,
+    retained_model: Option<&str>,
+) -> Result<Option<String>, TierPlacementError> {
+    let Some(session_id) = session_id_from_request_kwargs(request_kwargs)? else {
+        return Ok(None);
     };
     let caller = user_key_from_request_kwargs(request_kwargs)?;
     let cache_key = tier_pin_cache_key(
@@ -59,7 +76,7 @@ pub async fn pin_model_for_tier(
         caller.as_deref(),
         retained_model,
     )?;
-    let requested = AffinityPin(model_pin(selected));
+    let requested = AffinityPin(model_pin(selection.model));
     let eligible: Vec<AffinityPin> = selection
         .candidates
         .iter()
@@ -75,17 +92,16 @@ pub async fn pin_model_for_tier(
         )
         .await?;
     let Some(pinned) = claimed_model(&claimed.pin) else {
-        return Ok(selected.to_owned());
+        return Ok(None);
     };
     if !selection
         .candidates
         .iter()
         .any(|candidate| candidate == pinned)
     {
-        return Ok(selected.to_owned());
+        return Ok(None);
     }
-    restamp_adaptive_choice(request_kwargs, selected, pinned);
-    Ok(pinned.to_owned())
+    Ok(Some(pinned.to_owned()))
 }
 
 // _restamp_adaptive_choice: the adaptive marker follows the model, so its rewards never land on the displaced one.

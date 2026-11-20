@@ -92,6 +92,36 @@ fn a_placed_tier_carries_its_entry_params_and_the_group_ceiling() {
 }
 
 #[test]
+fn a_drawn_pool_entry_brings_its_own_params() {
+    let mut world = World::new();
+    world.set_pool(
+        "MEDIUM",
+        TierPool::Pool(vec![
+            entry("a", &[("temperature", number(1))]),
+            entry("b", &[("temperature", number(2))]),
+        ]),
+    );
+    let context = world.context();
+    let service = world.service(&context);
+    let choice = TierChoice {
+        tier: &MEDIUM,
+        allowed_models: None,
+        retained_pin: None,
+    };
+    let mut caller = request(&[]);
+    let mut random = ScriptedRng::new(&[LAST_SAMPLE]);
+    let placed = runtime()
+        .block_on(service.place_tier(&choice, &mut caller, &mut random))
+        .unwrap();
+    assert_eq!(placed.model, "b");
+    assert_eq!(placed.params.get("temperature"), Some(&number(2)));
+    assert_eq!(
+        params_for_model(&service, Some(&MEDIUM), "a").get("temperature"),
+        Some(&number(1))
+    );
+}
+
+#[test]
 fn an_explicit_tier_ceiling_keeps_its_own_max_tokens() {
     let mut world = World::new();
     world.set_pool(

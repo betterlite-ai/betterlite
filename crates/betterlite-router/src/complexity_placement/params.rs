@@ -32,10 +32,10 @@ pub fn params_for_model(
 }
 
 fn entry_params(set: &TierSet, tier: Option<&Tier>, model: &str) -> JsonMap {
-    let Some(tier) = tier else {
+    let Some(selected) = tier else {
         return JsonMap::new();
     };
-    let Some(pool) = set.pools.get(tier.name()) else {
+    let Some(pool) = set.pools.get(selected.name()) else {
         return JsonMap::new();
     };
     let Some(entry) = pool.models().iter().find(|entry| entry.model_name == model) else {

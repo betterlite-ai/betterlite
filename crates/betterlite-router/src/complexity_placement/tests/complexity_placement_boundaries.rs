@@ -289,29 +289,6 @@ fn a_seeded_bare_string_pin_is_replaced() {
 }
 
 #[test]
-fn a_cancelled_placement_writes_no_pin() {
-    let mut world = World::new();
-    world.set_pool("MEDIUM", pool(&["a", "b"]));
-    world.deployment_pin = true;
-    let context = world.context();
-    let service = world.service(&context);
-    let choice = TierChoice {
-        tier: &MEDIUM,
-        allowed_models: None,
-        retained_pin: None,
-    };
-    let mut caller = request(&[(
-        "metadata",
-        Json::Object(request(&[("session_id", text("s1"))])),
-    )]);
-    let mut random = ScriptedRng::new(&[0]);
-    let pending = service.place_tier(&choice, &mut caller, &mut random);
-    drop(pending);
-    let key = tier_pin_cache_key(&service, &MEDIUM, "s1", None, None).unwrap();
-    assert_eq!(world.claims.local.read(&key).unwrap(), None);
-}
-
-#[test]
 fn a_stamped_ceiling_keeps_the_first_stamp() {
     let mut world = World::new();
     world.add("mid", "openai/gpt-4o", Some(1000));

@@ -62,7 +62,7 @@ impl Default for Config {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Settings {
     // index-aligned with model_list; None when the deployment configures no placement settings
     pub deployments: Vec<Option<Config>>,

@@ -71,12 +71,12 @@ pub fn restore_ceiling_without_pin(request_kwargs: &mut JsonMap) {
                 )
                 | None => None,
             });
-    let Some(Json::Object(stamped)) = stamped else {
+    let Some(Json::Object(caller_ceiling)) = stamped else {
         return;
     };
     let mut callers = JsonMap::new();
     for carrier in CEILING {
-        if let Some(value) = stamped.get(carrier)
+        if let Some(value) = caller_ceiling.get(carrier)
             && let Some(cap) = as_output_cap(value)
         {
             callers.insert(carrier.to_owned(), Json::Number(Number::from(cap)));
@@ -124,7 +124,7 @@ fn ceiling_under_surface_name(tier_params: JsonMap, responses_call: bool) -> Jso
     } else {
         [MAX_TOKENS, MAX_COMPLETION_TOKENS, MAX_OUTPUT_TOKENS]
     };
-    let Some(carried) = order.iter().find(|key| tier_params.contains_key(*key)) else {
+    let Some(carried) = order.iter().find(|key| tier_params.contains_key(**key)) else {
         return tier_params;
     };
     let mut collapsed: JsonMap = tier_params

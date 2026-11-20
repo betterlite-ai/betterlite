@@ -281,13 +281,13 @@ pub(super) fn pool(models: &[&str]) -> TierPool {
 }
 
 pub(super) fn entry(model: &str, params: &[(&str, Json)]) -> TierModelEntry {
-    let params: IndexMap<String, TierParam> = params
+    let converted: IndexMap<String, TierParam> = params
         .iter()
         .map(|(key, value)| ((*key).to_owned(), TierParam::Value(value.clone())))
         .collect();
     TierModelEntry {
         model_name: model.to_owned(),
-        params,
+        params: converted,
     }
 }
 

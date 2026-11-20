@@ -106,7 +106,7 @@ class ProbeRouter:
         if deployment.custom_llm_provider is not None:
             params["custom_llm_provider"] = deployment.custom_llm_provider
         if deployment.allowed_openai_params:
-            allowed: list[JsonValue] = [param for param in deployment.allowed_openai_params]
+            allowed: list[JsonValue] = list(deployment.allowed_openai_params)
             params["allowed_openai_params"] = allowed
         info: dict[str, JsonValue] = {}
         if deployment.max_output_tokens is not None:
