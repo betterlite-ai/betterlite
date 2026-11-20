@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::time::Duration;
 
 use betterlite_anthropic::count_tokens::wire::CountTokensBody;
@@ -9,12 +10,24 @@ use betterlite_models::decisions::Json;
 use betterlite_prompts::arguments::json::Object;
 use indexmap::IndexMap;
 use secrecy::SecretString;
+use tokio::runtime::Builder;
 
 use super::fixture::{CountTransport, NoSources, credentials, parse};
 use crate::foundry_resource_dispatch::messages_count::{self, Call, Dispatch, Outcome};
 use crate::foundry_resource_dispatch::{
     FoundryResourceError, FoundryResourceOperation, FoundryResourceResult, dispatch,
 };
+
+fn block_on<F>(future: F) -> F::Output
+where
+    F: Future,
+{
+    Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("the runtime builds")
+        .block_on(future)
+}
 
 fn handler(status: u16, body: Vec<u8>) -> FoundryCountHandler<CountTransport> {
     FoundryCountHandler {
@@ -25,14 +38,13 @@ fn handler(status: u16, body: Vec<u8>) -> FoundryCountHandler<CountTransport> {
     }
 }
 
-async fn run_with<'call>(
+fn run_with<'call>(
     handler: &'call FoundryCountHandler<CountTransport>,
     call: Call<'call>,
 ) -> Result<FoundryResourceResult, FoundryResourceError> {
-    dispatch(FoundryResourceOperation::MessagesCount(
+    block_on(dispatch(FoundryResourceOperation::MessagesCount(
         Dispatch { handler, call }.run(),
-    ))
-    .await
+    )))
 }
 
 fn outcome(result: Result<FoundryResourceResult, FoundryResourceError>) -> Outcome {
@@ -51,12 +63,12 @@ fn leaf_error(
     }
 }
 
-async fn policy_row() {
+fn policy_row() {
     let handler = handler(200, Vec::new());
     let Outcome::Policy {
         provider,
         strips_billing_metadata,
-    } = outcome(run_with(&handler, Call::Policy).await)
+    } = outcome(run_with(&handler, Call::Policy))
     else {
         panic!("the policy call returns the native messages policy");
     };
@@ -64,31 +76,25 @@ async fn policy_row() {
     assert!(strips_billing_metadata);
 }
 
-async fn messages_url_rows() {
+fn messages_url_rows() {
     let handler = handler(200, Vec::new());
-    let Outcome::MessagesUrl(messages) = outcome(
-        run_with(
-            &handler,
-            Call::MessagesUrl {
-                api_base: Some("https://res.test/anthropic"),
-                environment_api_base: None,
-            },
-        )
-        .await,
-    ) else {
+    let Outcome::MessagesUrl(messages) = outcome(run_with(
+        &handler,
+        Call::MessagesUrl {
+            api_base: Some("https://res.test/anthropic"),
+            environment_api_base: None,
+        },
+    )) else {
         panic!("the messages url call returns its endpoint");
     };
     assert_eq!(messages, "https://res.test/anthropic/v1/messages");
-    let Outcome::MessagesUrl(from_environment) = outcome(
-        run_with(
-            &handler,
-            Call::MessagesUrl {
-                api_base: Some(""),
-                environment_api_base: Some("https://env.test"),
-            },
-        )
-        .await,
-    ) else {
+    let Outcome::MessagesUrl(from_environment) = outcome(run_with(
+        &handler,
+        Call::MessagesUrl {
+            api_base: Some(""),
+            environment_api_base: Some("https://env.test"),
+        },
+    )) else {
         panic!("the messages url call returns its endpoint");
     };
     assert_eq!(from_environment, "https://env.test/anthropic/v1/messages");
@@ -96,55 +102,46 @@ async fn messages_url_rows() {
         api_base: None,
         environment_api_base: None,
     };
-    let error = leaf_error(run_with(&handler, call).await);
+    let error = leaf_error(run_with(&handler, call));
     assert!(matches!(
         error,
         messages_count::DispatchError::Url(UrlError::MissingApiBase)
     ));
 }
 
-async fn count_url_rows() {
+fn count_url_rows() {
     let handler = handler(200, Vec::new());
-    let Outcome::CountUrl(count) = outcome(
-        run_with(
-            &handler,
-            Call::CountUrl {
-                api_base: "https://res.test/anthropic/",
-            },
-        )
-        .await,
-    ) else {
+    let Outcome::CountUrl(count) = outcome(run_with(
+        &handler,
+        Call::CountUrl {
+            api_base: "https://res.test/anthropic/",
+        },
+    )) else {
         panic!("the count url call returns its endpoint");
     };
     assert_eq!(count, "https://res.test/anthropic/v1/messages/count_tokens");
-    let Outcome::CountUrl(plain) = outcome(
-        run_with(
-            &handler,
-            Call::CountUrl {
-                api_base: "https://res.test",
-            },
-        )
-        .await,
-    ) else {
+    let Outcome::CountUrl(plain) = outcome(run_with(
+        &handler,
+        Call::CountUrl {
+            api_base: "https://res.test",
+        },
+    )) else {
         panic!("the count url call returns its endpoint");
     };
     assert_eq!(plain, "https://res.test/anthropic/v1/messages/count_tokens");
 }
 
-async fn transform_rows() {
+fn transform_rows() {
     let handler = handler(200, Vec::new());
     let mut request: Object = parse(
         r#"{"model":"claude-sonnet-4-5","system":[{"type":"text","text":"hi","cache_control":{"type":"ephemeral","scope":"global"}}],"messages":[{"role":"user","content":[{"type":"text","text":"yo","cache_control":{"type":"ephemeral","scope":"org"}}]}]}"#,
     );
-    let Outcome::Transformed(transformed) = outcome(
-        run_with(
-            &handler,
-            Call::Transform {
-                request: &mut request,
-            },
-        )
-        .await,
-    ) else {
+    let Outcome::Transformed(transformed) = outcome(run_with(
+        &handler,
+        Call::Transform {
+            request: &mut request,
+        },
+    )) else {
         panic!("the transform call returns the transformed request");
     };
     let expected: Object = parse(
@@ -154,7 +151,7 @@ async fn transform_rows() {
     assert_eq!(request, expected);
 }
 
-async fn count_outcome(
+fn count_outcome(
     handler: &FoundryCountHandler<CountTransport>,
 ) -> Result<FoundryResourceResult, FoundryResourceError> {
     let messages: Json = parse(r#"[{"role":"user","content":"hi"}]"#);
@@ -182,20 +179,20 @@ async fn count_outcome(
         token: &token,
         timeout: None,
     };
-    run_with(handler, Call::Count(request)).await
+    run_with(handler, Call::Count(request))
 }
 
-async fn count_rows() {
+fn count_rows() {
     let handler = handler(200, br#"{"input_tokens":7}"#.to_vec());
-    let Outcome::Count(reply) = outcome(count_outcome(&handler).await) else {
+    let Outcome::Count(reply) = outcome(count_outcome(&handler)) else {
         panic!("the count call returns the decoded reply");
     };
     assert_eq!(reply.document, parse::<Json>(r#"{"input_tokens":7}"#));
 }
 
-async fn count_failure_row() {
+fn count_failure_row() {
     let failing = handler(500, b"boom".to_vec());
-    let error = leaf_error(count_outcome(&failing).await);
+    let error = leaf_error(count_outcome(&failing));
     assert!(matches!(
         error,
         messages_count::DispatchError::Count(ApiError::Upstream {
@@ -205,11 +202,11 @@ async fn count_failure_row() {
     ));
 }
 
-pub(super) async fn check() {
-    policy_row().await;
-    messages_url_rows().await;
-    count_url_rows().await;
-    transform_rows().await;
-    count_rows().await;
-    count_failure_row().await;
+pub(super) fn check() {
+    policy_row();
+    messages_url_rows();
+    count_url_rows();
+    transform_rows();
+    count_rows();
+    count_failure_row();
 }

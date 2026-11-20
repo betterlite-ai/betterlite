@@ -86,7 +86,7 @@ async fn decisions_url_rows() {
     let cases = [
         (
             "https://res.test/api/projects/p1/openai/v1",
-            "https://res.test/api/projects/p1/providers/microsoft/v1/systemone",
+            "https://res.test/providers/microsoft/v1/systemone",
         ),
         (
             "https://res.test",

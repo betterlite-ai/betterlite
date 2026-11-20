@@ -127,7 +127,7 @@ async fn search_rows() {
     let optional: Params = parse(r#"{"top_k":3}"#);
     let mut logging = SearchLogging::default();
     let embedder = FixtureEmbedder {
-        vector: vec![0.5, 1.0],
+        vector: vec![0.5_f64, 1.0_f64],
     };
     let query = SearchQuery::Text(String::from("hello world"));
     let request = search_request(&query, &optional, &litellm, &mut logging, &embedder);
@@ -142,7 +142,7 @@ async fn search_rows() {
     assert_eq!(call.body.select, "id,content");
     assert_eq!(call.body.vector_queries.len(), 1);
     assert_eq!(call.body.vector_queries[0].fields, "vec");
-    assert_eq!(call.body.vector_queries[0].vector, [0.5_f64, 1.0]);
+    assert_eq!(call.body.vector_queries[0].vector, [0.5_f64, 1.0_f64]);
     assert_eq!(
         logging.model_call_details.get("input").map(|value| {
             match value {
@@ -161,7 +161,7 @@ async fn search_missing_model_row() {
     let optional: Params = parse(r#"{"top_k":3}"#);
     let mut logging = SearchLogging::default();
     let embedder = FixtureEmbedder {
-        vector: vec![0.5, 1.0],
+        vector: vec![0.5_f64, 1.0_f64],
     };
     let query = SearchQuery::Text(String::from("hello world"));
     let request = search_request(&query, &optional, &no_model, &mut logging, &embedder);

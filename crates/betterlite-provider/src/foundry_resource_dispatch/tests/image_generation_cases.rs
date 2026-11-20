@@ -159,6 +159,10 @@ async fn flux2_params_rows() {
     .await;
     let expected: ImageParams = parse(r#"{"width":1024,"height":1024,"num_images":2,"seed":7}"#);
     assert_eq!(mapped, expected);
+}
+
+async fn flux2_params_reject_rows() {
+    let mut logging = RecordingImageLogging::default();
     let unsupported: ImageParams = parse(r#"{"style":"vivid"}"#);
     let error = leaf_error(
         Call::Flux2Params {
@@ -190,7 +194,7 @@ async fn flux2_params_rows() {
 async fn mai_params_rows() {
     let mut logging = RecordingImageLogging::default();
     let cases = [
-        (r#"{"size":"1792x1024"}"#, r#"{"width":1792,"height":1024}"#),
+        (r#"{"size":"1024x768"}"#, r#"{"width":1024,"height":768}"#),
         ("{}", r#"{"width":1024,"height":1024}"#),
     ];
     for (request, expected) in cases {
@@ -211,6 +215,25 @@ async fn mai_params_rows() {
         let wanted: Object = parse(expected);
         assert_eq!(mapped, wanted);
     }
+}
+
+async fn mai_params_reject_rows() {
+    let mut logging = RecordingImageLogging::default();
+    let above: Object = parse(r#"{"size":"1792x1024"}"#);
+    let above_error = leaf_error(
+        Call::MaiParams {
+            non_default: &above,
+            optional: &Object::new(),
+            model: "mai-image",
+            drop_params: false,
+        },
+        &mut logging,
+    )
+    .await;
+    assert!(matches!(
+        above_error,
+        image_generation::DispatchError::Mai(MaiImageError::SizeAboveMaximum { .. })
+    ));
     let counts: Object = parse(r#"{"n":2}"#);
     let error = leaf_error(
         Call::MaiParams {
@@ -281,7 +304,9 @@ pub(super) async fn check() {
     flux2_rows().await;
     mai_rows().await;
     flux2_params_rows().await;
+    flux2_params_reject_rows().await;
     mai_params_rows().await;
+    mai_params_reject_rows().await;
     mai_reply_rows().await;
     mai_reply_error_row().await;
 }

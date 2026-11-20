@@ -28,7 +28,7 @@ async fn answer(
         Ok(FoundryResourceResult::Passthrough(outcome)) => Ok(outcome),
         Ok(_) => panic!("the passthrough call returns its own outcome"),
         Err(FoundryResourceError::Passthrough(error)) => Err(error),
-        Err(_) => panic!("the passthrough call fails in its leaf"),
+        Err(error) => panic!("the passthrough call fails in its leaf: {error}"),
     }
 }
 
