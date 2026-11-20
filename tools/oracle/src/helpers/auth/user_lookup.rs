@@ -155,8 +155,8 @@ fn classification_report(errors: &[ErrorCase]) -> Value {
     json!({"errors": reports})
 }
 
-fn classification(case: &ErrorCase) -> Value {
-    let store_error = match case {
+fn classification(probe: &ErrorCase) -> Value {
+    let store_error = match probe {
         ErrorCase::Message { message } => {
             UserStoreError::Other(Box::new(NamedFailure(message.clone())))
         }
