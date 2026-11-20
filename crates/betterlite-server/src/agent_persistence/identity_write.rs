@@ -11,8 +11,8 @@ use uuid::Uuid;
 use super::error::APPLICATION_CONFLICT;
 use super::error::AgentPersistenceError;
 use super::error::open_failure;
+use super::error::write_error;
 use super::row::ColumnList;
-use super::row::execute;
 use super::row::push_present;
 
 const IDENTITY_TABLE: &str = "LiteLLM_AgentIdentity";
@@ -102,7 +102,9 @@ pub(super) async fn write_history(
     list.push("tenant_id", &entry.key.tenant_id, "");
     list.push("client_id", &entry.key.client_id, "");
     let sql = list.insert_sql(HISTORY_TABLE);
-    execute(tx, &sql, &list.parameters).await?;
+    tx.execute(&sql, &list.parameters)
+        .await
+        .map_err(write_error)?;
     Ok(())
 }
 
@@ -138,7 +140,9 @@ async fn write_identity_row(
     } else {
         list.update_sql(IDENTITY_TABLE, "agent_id")
     };
-    execute(tx, &sql, &list.parameters).await?;
+    tx.execute(&sql, &list.parameters)
+        .await
+        .map_err(write_error)?;
     Ok(())
 }
 
@@ -164,7 +168,9 @@ async fn upsert_identity(
         "{insert} ON CONFLICT (\"agent_id\") DO UPDATE SET {}",
         assignments.join(", "),
     );
-    execute(tx, &sql, &list.parameters).await?;
+    tx.execute(&sql, &list.parameters)
+        .await
+        .map_err(write_error)?;
     Ok(())
 }
 

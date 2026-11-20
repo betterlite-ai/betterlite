@@ -109,14 +109,6 @@ fn push_agent_columns<'values>(list: &mut ColumnList<'values>, columns: &'values
     );
 }
 
-pub(super) async fn execute(
-    tx: &DbSession<'_>,
-    sql: &str,
-    parameters: &[&(dyn ToSql + Sync)],
-) -> Result<u64, AgentPersistenceError> {
-    tx.execute(sql, parameters).await.map_err(write_error)
-}
-
 fn decode_first(rows: &[Row]) -> Result<Option<StoredAgent>, AgentPersistenceError> {
     let Some(row) = rows.first() else {
         return Ok(None);
@@ -164,7 +156,10 @@ pub(super) async fn write_rows(
     } else {
         list.update_sql(AGENTS_TABLE, "agent_id")
     };
-    let affected = execute(tx, &sql, &list.parameters).await?;
+    let affected = tx
+        .execute(&sql, &list.parameters)
+        .await
+        .map_err(write_error)?;
     super::identity_write::write_history(
         tx,
         request.plan.history.as_ref(),

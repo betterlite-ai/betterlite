@@ -12,8 +12,8 @@ use crate::object_permissions::prepare::PreparedUpsert;
 use crate::object_permissions::prepare::prepare_object_permission_upsert;
 
 use super::error::AgentPersistenceError;
+use super::error::write_error;
 use super::row::ColumnList;
-use super::row::execute;
 
 const PERMISSION_TABLE: &str = "LiteLLM_ObjectPermissionTable";
 
@@ -149,7 +149,9 @@ pub(super) async fn write_permission(
         list.insert_sql(PERMISSION_TABLE),
         assignments.join(", "),
     );
-    execute(tx, &sql, &list.parameters).await?;
+    tx.execute(&sql, &list.parameters)
+        .await
+        .map_err(write_error)?;
     Ok(())
 }
 
