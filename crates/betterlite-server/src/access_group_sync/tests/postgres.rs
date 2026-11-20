@@ -184,14 +184,11 @@ const fn key_membership<'db>(
 }
 
 pub(super) async fn key_pinned_rows(pool: &Pool) {
-    let writer = PostgresStore {
-        pool: Some(pool.clone()),
-    };
-    let reader = PostgresStore {
+    let store = PostgresStore {
         pool: Some(pool.clone()),
     };
     let availability = Availability::default();
-    let membership = key_membership(&writer, &reader, &availability);
+    let membership = key_membership(&store, &store, &availability);
     let groups = vec![
         "g1".to_owned(),
         "g2".to_owned(),
@@ -267,14 +264,11 @@ pub(super) async fn team_pinned_rows(pool: &Pool) {
 }
 
 pub(super) async fn key_partial_write(pool: &Pool) {
-    let writer = PostgresStore {
-        pool: Some(pool.clone()),
-    };
-    let reader = PostgresStore {
+    let store = PostgresStore {
         pool: Some(pool.clone()),
     };
     let availability = Availability::default();
-    let membership = key_membership(&writer, &reader, &availability);
+    let membership = key_membership(&store, &store, &availability);
     let mut cache = ScriptedCache::new();
     cache.failures = Mutex::new(BTreeMap::from([("g4".to_owned(), 7)]));
     let previous = vec!["g2".to_owned()];
@@ -335,17 +329,14 @@ pub(super) async fn commit_then_cache_failure(pool: &Pool) {
 }
 
 pub(super) async fn key_degraded_writer_writes(pool: &Pool) {
-    let writer = PostgresStore {
-        pool: Some(pool.clone()),
-    };
-    let reader = PostgresStore {
+    let store = PostgresStore {
         pool: Some(pool.clone()),
     };
     let availability = Availability::default();
     availability
         .writer_unavailable
         .store(true, Ordering::SeqCst);
-    let membership = key_membership(&writer, &reader, &availability);
+    let membership = key_membership(&store, &store, &availability);
     let groups = vec!["g1".to_owned()];
     let moved = membership
         .move_key_membership(KeyMembershipStatement::Attach, "tok", &groups)
