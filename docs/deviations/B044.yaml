@@ -14,11 +14,17 @@ deviations:
       key to the wrong host; the global chains are B10006's seam. This row and the refusal go away when B10006
       builds them.
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L3009-L3019"
-  - what: A stream request to an aleph_alpha or custom deployment is answered with the unsupported-operation error instead of LiteLLM's streamed wrapper.
+  - what: A stream request to an aleph_alpha deployment is answered with the unsupported-operation error instead of LiteLLM's streamed wrapper.
     why: >-
-      The legacy adapters build and decode one buffered exchange, as B044's scope covers the chat dispatch only;
+      The aleph adapter builds and decodes one buffered exchange, as B044's scope covers the chat dispatch only;
       LiteLLM wraps the same response in CustomStreamWrapper once stream is true.
-    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L3038-L3044"
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L3036-L3044"
+  - what: A stream request to a custom deployment is answered with the unsupported-operation error instead of LiteLLM's buffered ModelResponse.
+    why: >-
+      LiteLLM's custom branch posts once and returns the same buffered ModelResponse whatever stream says, so a
+      stream caller receives a non-stream body; betterlite refuses the call instead of answering a stream request
+      with a buffered body.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6058-L6059"
   - what: An aleph_alpha request that sends max_completion_tokens puts it on the wire as max_tokens.
     why: >-
       Aleph Alpha has one token ceiling, and betterlite's parsed request carries the field; LiteLLM lists
