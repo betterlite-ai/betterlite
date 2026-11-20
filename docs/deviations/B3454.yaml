@@ -1,9 +1,9 @@
 task: B3454
 deviations:
   - what: >-
-      The two HTTP calls run through an injected GeminiTransport port, not through
-      get_async_httpx_client, and a failure to get any reply is a typed TransportError
-      that keeps the lower error as its source.
+      Every HTTP call (create, initiate, finalize) runs through an injected GeminiTransport
+      port, not through get_async_httpx_client, and a failure to get any reply is a typed
+      TransportError that keeps the lower error as its source.
     why: >-
       The module stays testable without HTTP and keeps the crate graph acyclic. B3460
       builds the port on the shared pool, so timeouts, size caps and TLS policy are the
