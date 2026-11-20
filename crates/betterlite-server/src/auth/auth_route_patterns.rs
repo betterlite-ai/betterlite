@@ -8,7 +8,12 @@ use betterlite_auth::auth_route_patterns::public_routes::check_configured_public
 use betterlite_config::sections::auth_route_patterns::Settings;
 use secrecy::SecretString;
 
+use super::auth_identity::StageFailure;
+use super::failures::stage_failure_response;
 use super::route_match::{RouteMatchError, decoded_route_path};
+use crate::cache_activity_routes::CACHE_ACTIVITY_PATH;
+use crate::error_body::AuthenticationFailure;
+use crate::tracing_routes::router::unauthenticated;
 
 mod tests;
 
@@ -38,6 +43,29 @@ pub(crate) async fn stage(
     if check_configured_public_routes(&route, Ok(&settings.routes.public_routes)) {
         next.run(request).await
     } else {
-        super::authenticate(State(settings.master_key), request, next).await
+        let failure_response: fn(&StageFailure) -> Response = if path == CACHE_ACTIVITY_PATH {
+            dependency_failure_response
+        } else {
+            stage_failure_response
+        };
+        Box::pin(super::authenticate(
+            State(settings.master_key),
+            request,
+            next,
+            failure_response,
+        ))
+        .await
     }
+}
+
+// The route declares LiteLLM's user_api_key_auth dependency itself, so a missing key gets that dependency's 401 envelope there
+fn dependency_failure_response(failure: &StageFailure) -> Response {
+    if matches!(
+        failure,
+        StageFailure::Authentication(authentication)
+            if matches!(**authentication, AuthenticationFailure::Missing)
+    ) {
+        return unauthenticated();
+    }
+    stage_failure_response(failure)
 }

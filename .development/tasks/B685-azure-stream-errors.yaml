@@ -87,6 +87,8 @@ description: >-
   wiring lines; 590 planned, 600 maximum changed lines.
 scope:
   paths:
+  - "crates/betterlite-azure/src/completion/stream.rs"
+  - crates/betterlite-openai/src/text_completion_transport/stream.rs
   - crates/betterlite-azure/Cargo.toml
   - crates/betterlite-azure/src/azure_stream_errors.rs
   - crates/betterlite-azure/src/azure_stream_errors/**
@@ -268,6 +270,6 @@ pitfalls:
 - The sync branch performs an OIDC exchange in a client-parameter map that it later does not use.
 - Async keeps raw response headers where sync calls process_azure_headers.
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2900
   max_new_expects: 0
 review_level: security

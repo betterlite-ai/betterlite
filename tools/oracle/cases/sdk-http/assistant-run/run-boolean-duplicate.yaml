@@ -1,0 +1,17 @@
+kind: sdk_http
+name: run-boolean-duplicate
+env: {}
+call:
+  assistant_run:
+    mode: run_stream
+    provider: openai
+    thread_id: thread_a
+    assistant_id: asst_a
+    stream: true
+    params: {api_key: 'sk-test'}
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []

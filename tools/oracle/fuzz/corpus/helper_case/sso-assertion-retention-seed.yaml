@@ -1,0 +1,15 @@
+kind: helper
+name: sso-assertion-retention-seed
+call:
+  b10011:
+    database: true
+    config_servers: ['oauth2_id_jag']
+    db_servers: []
+    failure: null
+    steps:
+      - {step: cache_set, user_id: alice, assertion: {id_token: cached-token}, seen_epoch: 0}
+      - {step: cache_get, user_id: alice}
+      - {step: persist, user_id: alice, assertion: {id_token: fresh-token}}
+      - {step: retention}
+env: {}
+compare: {ignore: []}
