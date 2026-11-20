@@ -64,10 +64,7 @@ pub fn session_affinity_cache_key(
     session_id: &str,
     user_key: Option<&str>,
 ) -> Result<AffinityKey, AffinityError> {
-    let hashed_user_key = match user_key {
-        Some(user_key) => hash_user_key(user_key),
-        None => UNSCOPED_CALLER.to_owned(),
-    };
+    let hashed_user_key = user_key.map_or_else(|| UNSCOPED_CALLER.to_owned(), hash_user_key);
     let raw = format!("{CACHE_KEY_PREFIX}:session:{model_group}:{hashed_user_key}:{session_id}");
     AffinityKey::try_from(raw.as_str())
 }
@@ -151,7 +148,7 @@ pub fn session_id_from_request_kwargs(
 
 fn positive_integer(value: &Json) -> Option<u64> {
     match value {
-        Json::Number(number) => number.as_u64().filter(|value| *value > 0),
+        Json::Number(number) => number.as_u64().filter(|seconds| *seconds > 0),
         Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => None,
     }
 }

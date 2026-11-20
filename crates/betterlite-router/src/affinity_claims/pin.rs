@@ -1,3 +1,5 @@
+use std::str::from_utf8;
+
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -16,10 +18,7 @@ impl AffinityPin {
     // the text LiteLLM's json.dumps(dict(pin)) gives its Redis claim script
     #[must_use]
     pub fn wire_text(&self) -> String {
-        match serde_json::to_string(&self.0) {
-            Ok(text) => text,
-            Err(_error) => String::new(),
-        }
+        serde_json::to_string(&self.0).unwrap_or_default()
     }
 
     #[must_use]
@@ -41,8 +40,8 @@ impl TryFrom<&Json> for AffinityPin {
             return Err(PinError::NotFields);
         };
         let mut pin = IndexMap::with_capacity(fields.len());
-        for (field, value) in fields {
-            let Json::Text(text) = value else {
+        for (field, field_value) in fields {
+            let Json::Text(text) = field_value else {
                 return Err(PinError::NotFields);
             };
             pin.insert(field.clone(), text.clone());
@@ -66,7 +65,11 @@ impl StoredPin {
             Ok(pin) => Self::Pin(pin),
             Err(_error) => match value {
                 Json::Text(text) => Self::Text(text),
-                other => Self::Other(other),
+                other @ Json::Null
+                | other @ Json::Bool(_)
+                | other @ Json::Number(_)
+                | other @ Json::List(_)
+                | other @ Json::Object(_) => Self::Other(other),
             },
         }
     }
@@ -82,7 +85,7 @@ impl StoredPin {
         if let Ok(value) = serde_json::from_slice::<Json>(bytes) {
             return Ok(Self::from_json(value));
         }
-        match std::str::from_utf8(bytes) {
+        match from_utf8(bytes) {
             Ok(text) => Ok(Self::Text(text.to_owned())),
             Err(_error) => Err(PinError::NotText),
         }
@@ -93,10 +96,7 @@ impl StoredPin {
         match self {
             Self::Pin(pin) => pin.wire_text(),
             Self::Text(text) => text.clone(),
-            Self::Other(value) => match serde_json::to_string(value) {
-                Ok(text) => text,
-                Err(_error) => String::new(),
-            },
+            Self::Other(value) => serde_json::to_string(value).unwrap_or_default(),
         }
     }
 
@@ -139,7 +139,7 @@ impl StoredPin {
         self.matches_exactly(pin)
     }
 
-    fn fields(&self) -> Option<Fields<'_>> {
+    const fn fields(&self) -> Option<Fields<'_>> {
         match self {
             Self::Pin(pin) => Some(Fields::TextMap(&pin.0)),
             Self::Other(Json::Object(fields)) => Some(Fields::JsonMap(fields)),

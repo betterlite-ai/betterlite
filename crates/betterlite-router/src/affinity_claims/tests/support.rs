@@ -19,25 +19,25 @@ use crate::routing_state_store::{RedisSettings, RoutingStateStore};
 use crate::routing_value_store::{Clock, StoreSettings};
 
 #[derive(Clone, Default)]
-pub struct TestClock(Arc<Mutex<f64>>);
+pub(super) struct TestClock(Arc<Mutex<f64>>);
 
 impl TestClock {
-    pub fn at(&self, seconds: f64) {
+    pub(super) fn at(&self, seconds: f64) {
         let mut now = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         *now = seconds;
     }
 
-    pub fn clock(&self) -> Clock {
+    pub(super) fn clock(&self) -> Clock {
         let source = Arc::clone(&self.0);
         Arc::new(move || *source.lock().unwrap_or_else(PoisonError::into_inner))
     }
 }
 
-pub fn runtime() -> Runtime {
+pub(super) fn runtime() -> Runtime {
     Builder::new_current_thread().enable_all().build().unwrap()
 }
 
-pub const fn local_settings() -> StoreSettings {
+pub(super) const fn local_settings() -> StoreSettings {
     StoreSettings {
         max_size_in_memory: None,
         default_ttl_seconds: None,
@@ -46,17 +46,17 @@ pub const fn local_settings() -> StoreSettings {
     }
 }
 
-pub fn local_pins(clock: &TestClock) -> LocalPins {
+pub(super) fn local_pins(clock: &TestClock) -> LocalPins {
     LocalPins::new(local_settings(), clock.clock()).unwrap()
 }
 
-pub fn pin(field: &str, value: &str) -> AffinityPin {
+pub(super) fn pin(field: &str, value: &str) -> AffinityPin {
     let mut fields = IndexMap::new();
     fields.insert(field.to_owned(), value.to_owned());
     AffinityPin(fields)
 }
 
-pub fn pin_fields(fields: &[(&str, &str)]) -> AffinityPin {
+pub(super) fn pin_fields(fields: &[(&str, &str)]) -> AffinityPin {
     let mut map = IndexMap::with_capacity(fields.len());
     for (field, value) in fields {
         map.insert((*field).to_owned(), (*value).to_owned());
@@ -64,11 +64,11 @@ pub fn pin_fields(fields: &[(&str, &str)]) -> AffinityPin {
     AffinityPin(map)
 }
 
-pub fn key(raw: &str) -> AffinityKey {
+pub(super) fn key(raw: &str) -> AffinityKey {
     AffinityKey::try_from(raw).unwrap()
 }
 
-pub fn metadata(fields: &[(&str, Json)]) -> JsonObject {
+pub(super) fn metadata(fields: &[(&str, Json)]) -> JsonObject {
     let mut metadata = JsonObject::new();
     for (field, value) in fields {
         metadata.insert((*field).to_owned(), value.clone());
@@ -76,7 +76,7 @@ pub fn metadata(fields: &[(&str, Json)]) -> JsonObject {
     metadata
 }
 
-pub fn deployment(model_name: &str, params: &[(&str, &str)], id: &str) -> DeploymentSpec {
+pub(super) fn deployment(model_name: &str, params: &[(&str, &str)], id: &str) -> DeploymentSpec {
     let mut litellm_params = JsonObject::new();
     for (field, value) in params {
         litellm_params.insert((*field).to_owned(), Json::Text((*value).to_owned()));
@@ -93,14 +93,14 @@ pub fn deployment(model_name: &str, params: &[(&str, &str)], id: &str) -> Deploy
     .unwrap()
 }
 
-pub fn flags(names: &[&str]) -> BTreeSet<AffinityFlag> {
+pub(super) fn flags(names: &[&str]) -> BTreeSet<AffinityFlag> {
     names
         .iter()
         .filter_map(|name| AffinityFlag::from_name(name))
         .collect()
 }
 
-pub fn shared_store(server: &FakeRedis) -> RoutingStateStore {
+pub(super) fn shared_store(server: &FakeRedis) -> RoutingStateStore {
     let settings = SharedSettings {
         redis: RedisSettings {
             url: None,

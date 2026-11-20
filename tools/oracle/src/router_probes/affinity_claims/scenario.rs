@@ -32,11 +32,10 @@ struct Scenario {
 
 pub(super) async fn execute(input: &Input) -> Result<Output, OperationError> {
     let server = if input.shared {
-        Some(
-            FakeRedis::try_start()
-                .await
-                .map_err(|error| invalid(&error.to_string()))?,
-        )
+        let started = FakeRedis::try_start()
+            .await
+            .map_err(|error| invalid(&error.to_string()))?;
+        Some(started)
     } else {
         None
     };

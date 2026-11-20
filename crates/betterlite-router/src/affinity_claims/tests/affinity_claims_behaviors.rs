@@ -226,7 +226,10 @@ fn a_pin_model_id_comes_from_a_pin_or_a_legacy_string() {
 fn log_values_keep_eight_characters_then_an_ellipsis() {
     assert_eq!(shorten_for_logs("abcdefgh"), "abcdefgh");
     assert_eq!(shorten_for_logs("abcdefghi"), "abcdefgh...");
-    assert_eq!(shorten_for_logs("ééééééééé"), "éééééééé...");
+    assert_eq!(
+        shorten_for_logs("\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}"),
+        "\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}..."
+    );
 }
 
 #[test]

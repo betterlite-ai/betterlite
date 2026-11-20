@@ -5,6 +5,7 @@ use betterlite_models::model_registration::JsonObject;
 use indexmap::IndexMap;
 use rstest::rstest;
 use serde_json::Number;
+use tokio::time::timeout;
 
 use super::support::{
     TestClock, deployment, key, local_pins, metadata, pin, pin_fields, runtime, shared_store,
@@ -254,7 +255,7 @@ fn a_local_pin_lives_until_its_expiry_instant_and_not_past_it() {
     let cache_key = key("deployment_affinity:v1:group:caller");
     pins.claim_in_memory(&cache_key, &pin("model_id", "dep-a"), 10, None)
         .unwrap();
-    assert_eq!(pins.expiry_seconds(&cache_key).unwrap(), Some(1_010.0));
+    assert_eq!(pins.expiry_seconds(&cache_key).unwrap(), Some(1_010.0_f64));
     clock.at(1_010.0);
     assert_eq!(
         pins.read(&cache_key).unwrap(),
@@ -356,7 +357,7 @@ fn a_cancelled_claim_leaves_the_pin_to_the_next_claim() {
             shared: Some(shared_store(&server)),
         };
         let cache_key = key("deployment_affinity:v1:group:caller");
-        let cancelled = tokio::time::timeout(
+        let cancelled = timeout(
             Duration::ZERO,
             service.claim(&cache_key, &pin("model_id", "dep-a"), 60, None),
         )

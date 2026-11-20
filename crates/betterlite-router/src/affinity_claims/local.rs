@@ -87,23 +87,23 @@ impl LocalPins {
         eligible: Option<&[AffinityPin]>,
     ) -> Result<StoredPin, AffinityError> {
         let existing = self.read(key)?;
-        if let Some(existing) = &existing
+        if let Some(stored) = &existing
             && eligible.is_none()
         {
-            if existing.matches_legacy(pin) {
+            if stored.matches_legacy(pin) {
                 self.set(key, &StoredPin::Pin(pin.clone()), ttl_seconds)?;
             }
-            return Ok(existing.clone());
+            return Ok(stored.clone());
         }
         let winner = match &existing {
-            Some(existing)
+            Some(stored)
                 if eligible.is_some_and(|candidates| {
                     candidates
                         .iter()
-                        .any(|candidate| existing.equals_pin(candidate))
+                        .any(|candidate| stored.equals_pin(candidate))
                 }) =>
             {
-                existing.clone()
+                stored.clone()
             }
             Some(_) | None => StoredPin::Pin(pin.clone()),
         };
