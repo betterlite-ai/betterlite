@@ -237,28 +237,22 @@ fn wire_body(
     }
 }
 
+// ast-grep-ignore: no-padded-one-line-functions - the public sync entry point prepares the request and sends it, with no state of its own
 pub async fn text_to_speech_handler<S: ClientSource>(
     deps: &SpeechDeps<'_, S>,
     call: &SpeechCall<'_>,
     log: &mut LogContext<'_, '_>,
 ) -> Result<SpeechBinaryResponse, SpeechError> {
-    execute(deps, Mode::Sync, call, log).await
+    let prepared = prepare(deps, Mode::Sync, call, log)?;
+    send(prepared, call.model).await
 }
 
+// ast-grep-ignore: no-padded-one-line-functions - the public async entry point prepares the request and sends it, with no state of its own
 pub async fn async_text_to_speech_handler<S: ClientSource>(
     deps: &SpeechDeps<'_, S>,
     call: &SpeechCall<'_>,
     log: &mut LogContext<'_, '_>,
 ) -> Result<SpeechBinaryResponse, SpeechError> {
-    execute(deps, Mode::Asynchronous, call, log).await
-}
-
-async fn execute<S: ClientSource>(
-    deps: &SpeechDeps<'_, S>,
-    mode: Mode,
-    call: &SpeechCall<'_>,
-    log: &mut LogContext<'_, '_>,
-) -> Result<SpeechBinaryResponse, SpeechError> {
-    let prepared = prepare(deps, mode, call, log)?;
+    let prepared = prepare(deps, Mode::Asynchronous, call, log)?;
     send(prepared, call.model).await
 }
