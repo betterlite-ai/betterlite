@@ -310,6 +310,19 @@ async fn bills_a_responses_cached_tokens_at_the_cache_read_rate() {
 }
 
 #[tokio::test]
+async fn prices_a_response_without_usage_as_zero() {
+    let response = r#"{"id":"chatcmpl-1","object":"chat.completion","created":1,
+        "model":"gpt-4o-mini","choices":[]}"#;
+    let cost = priced(
+        &state(None),
+        &format!(r#"{{"completion_response":{response}}}"#),
+    )
+    .await
+    .unwrap();
+    assert_eq!(cost, Decimal::ZERO);
+}
+
+#[tokio::test]
 async fn bills_a_top_level_cache_read_counter_at_the_cache_read_rate() {
     let response = r#"{"id":"chatcmpl-1","object":"chat.completion","created":1,
         "model":"gpt-4o-mini","choices":[],
