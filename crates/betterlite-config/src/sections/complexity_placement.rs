@@ -1,1 +1,128 @@
-crate::sections::stub_section!();
+use serde::Deserialize;
+
+use crate::loader::{ConfigError, EnvironmentLookup};
+use crate::resolve::resolve_string;
+use crate::sections::Section;
+
+mod tests;
+
+const PATH_ROOT: &str = "litellm_params.complexity_router_config";
+const RETURN_RAW_MODEL_NAME_KEY: &str = "return_raw_model_name";
+const MAX_TOKENS_FROM_TIER_MODEL_KEY: &str = "max_tokens_from_tier_model";
+const ENV_MARKER: &str = "os.environ/";
+
+pub const DEFAULT_RETURN_RAW_MODEL_NAME: bool = false;
+pub const DEFAULT_MAX_TOKENS_FROM_TIER_MODEL: bool = true;
+
+#[derive(Debug, Default, Deserialize)]
+pub struct Raw {
+    #[serde(default)]
+    model_list: Vec<RawDeployment>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct RawDeployment {
+    #[serde(default)]
+    litellm_params: RawParams,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct RawParams {
+    #[serde(default)]
+    complexity_router_config: Option<RawRouterConfig>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct RawRouterConfig {
+    #[serde(default, rename = "return_raw_model_name")]
+    raw_model_name: Option<RawFlag>,
+    #[serde(default, rename = "max_tokens_from_tier_model")]
+    tier_model_ceiling: Option<RawFlag>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum RawFlag {
+    Literal(bool),
+    Text(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Config {
+    pub return_raw_model_name: bool,
+    pub max_tokens_from_tier_model: bool,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            return_raw_model_name: DEFAULT_RETURN_RAW_MODEL_NAME,
+            max_tokens_from_tier_model: DEFAULT_MAX_TOKENS_FROM_TIER_MODEL,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Settings {
+    // index-aligned with model_list; None when the deployment configures no placement settings
+    pub deployments: Vec<Option<Config>>,
+}
+
+impl Section for Raw {
+    type Settings = Settings;
+
+    fn convert<L>(self, lookup: &L) -> Result<Self::Settings, ConfigError>
+    where
+        L: EnvironmentLookup,
+    {
+        let mut deployments = Vec::with_capacity(self.model_list.len());
+        for (index, deployment) in self.model_list.into_iter().enumerate() {
+            let configured = deployment.litellm_params.complexity_router_config;
+            deployments.push(
+                configured
+                    .map(|raw| raw.resolve(index, lookup))
+                    .transpose()?,
+            );
+        }
+        Ok(Settings { deployments })
+    }
+}
+
+impl RawRouterConfig {
+    fn resolve<L>(self, index: usize, lookup: &L) -> Result<Config, ConfigError>
+    where
+        L: EnvironmentLookup,
+    {
+        let prefix = format!("model_list.{index}.{PATH_ROOT}");
+        Ok(Config {
+            return_raw_model_name: flag(
+                self.raw_model_name,
+                &format!("{prefix}.{RETURN_RAW_MODEL_NAME_KEY}"),
+                lookup,
+            )?
+            .unwrap_or(DEFAULT_RETURN_RAW_MODEL_NAME),
+            max_tokens_from_tier_model: flag(
+                self.tier_model_ceiling,
+                &format!("{prefix}.{MAX_TOKENS_FROM_TIER_MODEL_KEY}"),
+                lookup,
+            )?
+            .unwrap_or(DEFAULT_MAX_TOKENS_FROM_TIER_MODEL),
+        })
+    }
+}
+
+// LiteLLM resolves os.environ/ strings before pydantic reads the field as a bool
+fn flag<L>(raw: Option<RawFlag>, path: &str, lookup: &L) -> Result<Option<bool>, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    match raw {
+        None => Ok(None),
+        Some(RawFlag::Literal(flag)) => Ok(Some(flag)),
+        Some(RawFlag::Text(text)) => {
+            let name = text.strip_prefix(ENV_MARKER).unwrap_or(path).to_owned();
+            let resolved = resolve_string(text, path, lookup)?;
+            Ok(betterlite_env::flag(&name, &resolved)?)
+        }
+    }
+}
