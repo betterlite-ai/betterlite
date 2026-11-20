@@ -7,9 +7,11 @@ use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::multipart::MultipartPart;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_http::user_url::error::UserUrlError;
+use betterlite_http::user_url::validate::Resolve;
 use http::header::AUTHORIZATION;
 use http::header::InvalidHeaderValue;
-use http::{HeaderMap, HeaderValue, Method, header::CONTENT_TYPE};
+use http::{HeaderMap, HeaderValue, Method};
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
@@ -20,43 +22,41 @@ use url::Url;
 use crate::gigachat_chat::config::{GigachatBearer, GigachatImageUploader};
 use crate::gigachat_chat::error::GigaChatError;
 use crate::gigachat_files::data_url::{decode_payload, extension_of, parse_data_url};
+use crate::gigachat_files::download::ImageDownloader;
 use crate::gigachat_utils::{IdSource, get_api_base};
 
 mod data_url;
+pub mod download;
 mod tests;
 
 pub const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(600);
 pub const UPLOAD_TIMEOUT: Duration = Duration::from_secs(60);
 
-const DEFAULT_CONTENT_TYPE: &str = "image/jpeg";
 const FILE_FIELD: &str = "file";
 const FILES_SUFFIX: &str = "/files";
 const PURPOSE_FIELD: &str = "purpose";
 const PURPOSE_VALUE: &str = "general";
 
-// download must skip certificate checks and follow redirects like LiteLLM's client; upload must verify certificates
+// upload must verify certificates, since it carries the bearer token to the operator's base
 pub trait GigachatFileTransport: Send + Sync {
-    fn download(
-        &self,
-        request: OutboundRequest,
-    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send;
-
     fn upload(
         &self,
         request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send;
 }
 
-pub struct GigachatFilesConfig {
+pub struct GigachatFilesConfig<R> {
     pub bearer: Arc<dyn GigachatBearer>,
     pub ids: Arc<dyn IdSource>,
     pub credentials: Option<SecretString>,
     pub api_base: Option<String>,
     pub api_base_env: Option<String>,
+    pub downloader: ImageDownloader<R>,
 }
 
-pub struct GigachatFileUploader<T> {
+pub struct GigachatFileUploader<T, R> {
     transport: T,
+    downloader: ImageDownloader<R>,
     bearer: Arc<dyn GigachatBearer>,
     ids: Arc<dyn IdSource>,
     credentials: Option<SecretString>,
@@ -66,11 +66,12 @@ pub struct GigachatFileUploader<T> {
     cache: Mutex<IndexMap<String, String>>,
 }
 
-impl<T: GigachatFileTransport> GigachatFileUploader<T> {
+impl<T: GigachatFileTransport, R: Resolve> GigachatFileUploader<T, R> {
     #[must_use]
-    pub fn new(transport: T, config: GigachatFilesConfig, capacity: usize) -> Self {
+    pub fn new(transport: T, config: GigachatFilesConfig<R>, capacity: usize) -> Self {
         Self {
             transport,
+            downloader: config.downloader,
             bearer: config.bearer,
             ids: config.ids,
             credentials: config.credentials,
@@ -142,43 +143,7 @@ impl<T: GigachatFileTransport> GigachatFileUploader<T> {
                 data,
             });
         }
-        self.download_image(image_url).await
-    }
-
-    async fn download_image(&self, image_url: &str) -> Result<Image, UploadError> {
-        let url = Url::parse(image_url).map_err(|source| UploadError::Url {
-            what: "image",
-            source,
-        })?;
-        let request = OutboundRequest {
-            method: Method::GET,
-            url,
-            query: Vec::new(),
-            headers: HeaderMap::new(),
-            body: RequestBody::Empty,
-            deadline: DOWNLOAD_TIMEOUT,
-        };
-        let reply =
-            self.transport
-                .download(request)
-                .await
-                .map_err(|source| UploadError::Transport {
-                    step: "download",
-                    source,
-                })?;
-        if reply.status >= 400 {
-            return Err(UploadError::DownloadStatus(reply.status));
-        }
-        let content_type = reply
-            .headers
-            .get(CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok())
-            .map_or_else(|| String::from(DEFAULT_CONTENT_TYPE), str::to_owned);
-        Ok(Image {
-            extension: extension_of(&content_type),
-            content_type,
-            data: reply.body,
-        })
+        self.downloader.download(image_url).await
     }
 
     async fn send_upload(
@@ -237,7 +202,7 @@ fn upload_parts(filename: String, image: Image) -> Vec<MultipartPart> {
 }
 
 #[async_trait]
-impl<T: GigachatFileTransport> GigachatImageUploader for GigachatFileUploader<T> {
+impl<T: GigachatFileTransport, R: Resolve> GigachatImageUploader for GigachatFileUploader<T, R> {
     async fn upload(&self, image_url: &str) -> Option<String> {
         match self.try_upload(image_url).await {
             Ok(id) => Some(id),
@@ -253,8 +218,12 @@ impl<T: GigachatFileTransport> GigachatImageUploader for GigachatFileUploader<T>
 enum UploadError {
     #[error("the data url payload is not base64")]
     Base64,
+    #[error("the image download failed: {0}")]
+    Download(#[source] UserUrlError),
     #[error("the image download answered with status {0}")]
     DownloadStatus(u16),
+    #[error("the image download timed out")]
+    DownloadTimeout,
     #[error("the upload reply carries no file id")]
     MissingId,
     #[error("the access token could not be fetched: {0}")]

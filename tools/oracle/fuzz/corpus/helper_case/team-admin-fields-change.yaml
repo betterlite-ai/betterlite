@@ -1,0 +1,9 @@
+kind: helper
+name: team_admin_fields_change_seed
+call:
+  team_admin_fields:
+    function: changed_team
+    request: {"team_id": "t", "metadata": {"guardrails": ["g2"], "custom": 1}}
+    existing: {"team_id": "t", "metadata": {"guardrails": ["g1"]}}
+env: {}
+compare: {ignore: []}

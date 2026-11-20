@@ -385,6 +385,34 @@ doc = false
 bench = false
 
 [[bin]]
+name = "passthrough_frames"
+path = "fuzz_targets/passthrough_frames.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "passthrough_request_data"
+path = "fuzz_targets/passthrough_request_data.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "team_admin_object"
+path = "fuzz_targets/team_admin_object.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "key_policy_json_column"
+path = "fuzz_targets/key_policy_json_column.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "plugin_session_claim"
 path = "fuzz_targets/plugin_session_claim.rs"
 test = false

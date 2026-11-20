@@ -1,0 +1,10 @@
+kind: helper
+name: upload-missing-source
+call:
+  b3451:
+    mode: upload
+    options:
+      vector_store:
+        custom_llm_provider: openai
+env: {}
+compare: {ignore: []}

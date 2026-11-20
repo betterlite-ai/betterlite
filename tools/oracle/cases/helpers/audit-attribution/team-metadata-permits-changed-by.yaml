@@ -1,0 +1,13 @@
+kind: helper
+name: audit-attribution-team-metadata-permits-changed-by
+call:
+  audit_attribution:
+    function: identity
+    litellm_changed_by: header-actor
+    user_id: user-1
+    metadata: null
+    team_metadata:
+      allow_litellm_changed_by_header: true
+    admin_name: admin
+env: {}
+compare: {ignore: []}

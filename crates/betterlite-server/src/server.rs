@@ -179,6 +179,7 @@ pub(crate) fn application(
         bundled_catalog: Arc::clone(&executor.bundled_catalog),
     });
     let state = Arc::new(ServerState::new(config, Arc::clone(&executor), shared));
+    let read_through = state.model_read_through.read_through.clone();
     let routed = router(
         state,
         shutting_down,
@@ -189,7 +190,7 @@ pub(crate) fn application(
                 .error_body_call_id
                 .include_call_id_in_error_body,
         )?,
-        embedding_routes(executor, vertex),
+        embedding_routes(executor, vertex, read_through),
     );
     // a route layer, so a blocked route's 404 still passes the security headers, size limit and admission below
     let stacked = request_stack::wrap(
@@ -237,29 +238,6 @@ pub(crate) struct RouterErrorFields {
     pub(crate) error: String,
 }
 
-pub(crate) fn plain_failure(
-    call: &CallContext<'_>,
-    deployment: Option<&ChatDeployment>,
-    status: StatusCode,
-    kind: (&str, Option<String>),
-    message: String,
-) -> AxumResponse {
-    let (error_type, param) = kind;
-    let body = ErrorBody {
-        error: ErrorObject {
-            message,
-            error_type: Some(error_type.to_owned()),
-            param,
-            code: status.as_u16().to_string(),
-            provider_specific_fields: None,
-            litellm_call_id: error_body_call_id(call.include_in_body, Some(call.id))
-                .map(str::to_owned),
-        },
-    };
-    let headers = failure_headers(None, None, call.id, deployment);
-    (status, headers, Json(body)).into_response()
-}
-
 pub(crate) fn failure(
     error: &ChatError,
     call: &CallContext<'_>,
@@ -297,6 +275,7 @@ pub(crate) mod connections;
 pub mod filter;
 pub mod inputs;
 pub mod listener;
+pub(crate) mod render;
 #[cfg(any(test, feature = "testing"))]
 pub mod test_support;
 mod tests;
