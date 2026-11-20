@@ -162,7 +162,7 @@ async fn edit_transport_failure() {
     let Err(error) = fixture.run(ClientKind::Sync, &deps, &call).await else {
         panic!("a 400 fails the edit");
     };
-    assert_reply_failure(&config, provider_error(error));
+    assert_reply_failure(&config, &provider_error(error));
     assert_eq!(fixture.input(), Some(&Json::Text(String::from("change"))));
     assert_eq!(
         fixture.logged("api_base"),
@@ -171,7 +171,7 @@ async fn edit_transport_failure() {
     assert!(fixture.state.model_call_details.get("api_key").is_none());
 }
 
-fn assert_reply_failure(config: &RecordingConfig, error: ProviderError) {
+fn assert_reply_failure(config: &RecordingConfig, error: &ProviderError) {
     assert_eq!(error.status_code, 400);
     assert!(!error.status_code_is_synthesized);
     assert_eq!(error.message, "bad image");
