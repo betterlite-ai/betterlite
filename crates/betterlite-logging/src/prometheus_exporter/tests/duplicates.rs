@@ -1,4 +1,6 @@
 use betterlite_prometheus::caller_identity_logic::CallerIdentityError;
+use betterlite_prometheus::collector_factory::config::PrometheusMetricsConfig;
+use betterlite_prometheus::collector_factory::error::CollectorFactoryError;
 use betterlite_prometheus::collector_registry::metric::BucketError;
 use betterlite_prometheus::collector_registry::{CollectorRegistry, CollectorRegistryError};
 
@@ -62,6 +64,27 @@ fn a_second_register_names_the_sample_names_that_clash() {
                 "litellm_proxy_failed_requests_metric_created".to_owned(),
             ]
         ),
+        other => panic!("unexpected error: {other}"),
+    }
+}
+
+#[test]
+fn an_unsupported_include_label_reports_the_caller_identity_mode() {
+    let mut settings = PrometheusExporterSettings::default();
+    settings.prometheus_metrics_config = vec![PrometheusMetricsConfig {
+        group: "experiments".to_owned(),
+        metrics: vec!["litellm_spend_metric".to_owned()],
+        include_labels: vec!["not_a_label".to_owned()],
+    }];
+    let registry = CollectorRegistry::default();
+    let error = registration_error(&settings, &default_label_settings(), &registry);
+    match error {
+        PrometheusExporterError::Factory(CollectorFactoryError::Configuration { results }) => {
+            assert_eq!(
+                results.label_errors[0].caller_identity_mode,
+                "api_key_alias"
+            );
+        }
         other => panic!("unexpected error: {other}"),
     }
 }
