@@ -167,7 +167,7 @@ async fn replacement_survives_old_completion() {
 }
 
 #[tokio::test]
-async fn reset_pops_reservation_before_load_finishes() {
+async fn reset_waits_for_load_before_writes() {
     let cache = FakeCache::new(60.0_f64);
     let rows = FakeRows::blocked(RowsAnswer::Found);
     let (registry, shared) = index();
@@ -182,49 +182,18 @@ async fn reset_pops_reservation_before_load_finishes() {
         spend,
     } = reset_rig();
     let counter = spend_key();
-    assert!(spend.get_cache(&counter, true).is_none());
     let reset = spawn_reset(invalidation, &registry, &tasks);
     let reservation = key("user-1", "team-1");
     wait_until_popped(&registry, &reservation).await;
-    assert!(
-        registry.get(&reservation).is_none(),
-        "the reset popped the load"
-    );
-    assert!(
-        spend.get_cache(&counter, true).is_none(),
-        "the reset writes nothing before the load finishes"
-    );
+    let popped = registry.get(&reservation).is_none();
+    assert!(popped, "the reset popped the load");
+    let early_write = spend.get_cache(&counter, true);
+    assert!(early_write.is_none(), "the reset waits before writing");
     rows.release();
     assert_eq!(
         expect_present(caller.await.expect("the caller")),
         membership()
     );
-    reset
-        .await
-        .expect("the reset task")
-        .expect("the reset succeeds");
-    drain(&tasks).await;
-}
-
-#[tokio::test]
-async fn reset_writes_spend_after_load() {
-    let cache = FakeCache::new(60.0_f64);
-    let rows = FakeRows::blocked(RowsAnswer::Found);
-    let (registry, shared) = index();
-    let tasks = TaskTracker::new();
-    let caller = spawn_call(
-        lookup(cache, Some(Arc::clone(&rows)), shared, &tasks),
-        &tasks,
-    );
-    rows.wait_started().await;
-    let ResetRig {
-        invalidation,
-        spend,
-    } = reset_rig();
-    let counter = spend_key();
-    let reset = spawn_reset(invalidation, &registry, &tasks);
-    rows.release();
-    expect_present(caller.await.expect("the caller"));
     reset
         .await
         .expect("the reset task")
