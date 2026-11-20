@@ -19,7 +19,11 @@ description: 'Integrate B3545 native compaction with B385 typed summary inputs a
   (L360-L371), _check_client_managed_admission (L374-L387), _compact_to_fit (L416-L515). Implement these
   behaviors through the typed Rust services above; synchronous facades and structural accessors reuse
   the same primitive instead of separate ports.
-  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B366 composes this service.'
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B366 composes this service.
+  B8630''s RouterCompletion compaction adapter hands the request back unchanged until this task lands; replace it
+  in crates/betterlite-server/src/app/inference/router_completion with one over compact_to_fit that passes None for
+  the executor, since no gateway chat, messages or responses request reaches RouterCompletion''s attempt (the chat
+  route dispatches through B014''s ChatExecutor) and B9810 passes the loopback executor on the route path instead.'
 scope:
   paths:
   - crates/betterlite-router/src/router_compaction.rs
@@ -39,6 +43,8 @@ scope:
   - tools/oracle/helpers/b336/**
   - tools/oracle/src/helpers/router/b336.rs
   - tools/oracle/src/helpers/router/b336/**
+  - crates/betterlite-server/src/app/inference/router_completion.rs
+  - crates/betterlite-server/src/app/inference/router_completion/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/context_compaction.py#L68-L170

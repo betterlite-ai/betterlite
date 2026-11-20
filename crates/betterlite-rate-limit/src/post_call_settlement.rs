@@ -1,1 +1,38 @@
+pub mod batch_enqueued;
+pub mod failure_event;
+pub mod failure_hook;
+pub mod header_merge;
+pub mod logging_hook;
+pub mod settlement;
+pub mod success_event;
+pub mod success_hook;
 
+mod apply;
+mod batch_id;
+mod batch_refund;
+mod batch_save;
+mod disconnect_slot;
+mod failure_event_application;
+mod failure_event_error;
+mod failure_event_flag;
+mod failure_event_idempotency;
+mod failure_event_partial;
+mod failure_event_scope;
+mod failure_event_slot;
+mod failure_hook_application;
+mod failure_hook_batch;
+mod failure_hook_error;
+mod failure_hook_flag;
+mod failure_hook_io;
+mod failure_hook_tpm;
+mod refund_operations;
+mod snapshot;
+mod success_event_error;
+mod success_event_io;
+mod success_event_slot;
+mod success_event_tpm;
+mod success_hook_exception;
+mod success_hook_headers;
+mod success_hook_slot;
+
+mod tests;

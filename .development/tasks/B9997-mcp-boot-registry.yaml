@@ -90,6 +90,10 @@ description: >-
   70 non-blank LiteLLM lines (the two config blocks and the three database loaders); the ports are betterlite glue.
   No oracle case: B8620's MCP area parts mount the routes that read this registry, and B124's local-tool cases boot a
   config with mcp_tools and mcp_servers through it.
+
+  Loader proof from B124. Also assert in crates/betterlite/src/lifespan/proxy_remainder.rs tests that BootRegistries::mcp_tools uses B8871's loader and that two area mounts do not load the configured tools twice.
+
+  Access group names. B821 lands first and passes an empty config server map to B1645's mcp_server_display_names in crates/betterlite-server/src/routes/access_group_read.rs, since B8614 stops startup on a config mcp_servers key. Once this task loads config servers, hand that call the registry's config servers (a BTreeMap<String, MCPServer>) in place of the empty map.
 scope:
   paths:
     - crates/betterlite-server/Cargo.toml
@@ -112,6 +116,7 @@ scope:
     - crates/betterlite/src/lifespan/**
     - docs/deviations/B8614.yaml
     - docs/deviations/B8384.yaml
+    - crates/betterlite-server/src/routes/access_group_read.rs
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7046-L7078

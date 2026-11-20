@@ -406,6 +406,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "key_policy_json_column"
+path = "fuzz_targets/key_policy_json_column.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "compliance_request"
 path = "fuzz_targets/compliance_request.rs"
 test = false

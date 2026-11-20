@@ -72,8 +72,11 @@ description: >-
   competitor list and supported previews are the missing HTTP coverage, about 550 authored
   lines. Compare status, headers, stable fields and error metadata using per-gateway captures
   for generated values only. Bearer auth uses discovery's header name, default Authorization.
+
+  Browser. B148 ships the retained governance browser check (tools/dashboard-browser/tests/dashboard_governance.rs, test dashboard_governance_pages, over B144's support lifecycle) without this page, so add its steps as a spec file in tools/dashboard/browser/governance, which that test runs. Do not modify B148's test file or the shared package, config, runner or support files. Sign in against the real proxy as admin; in governance/policy-templates.spec.ts, preview one template on the policy page and consume enrichment SSE from a local provider fixture. Assert the displayed persisted values and the captured outgoing request shapes, with no unexpected 404 or 500 and no hydration error. Provider responses alone may be deterministic mocks.
 scope:
   paths:
+    - tools/dashboard/browser/governance/**
     - tools/oracle/cases/ui/policy-templates/**
   lint_tables: false
 references:
@@ -98,6 +101,8 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_endpoints.py#L153-L214
     why: B3248's final policy save; this task never installs a template atomically.
 dod:
+  - text: The policy page previews a template and consumes enrichment SSE in the retained governance browser check.
+    proof: [governance-browser]
   - text: Catalog and model picks feed the actual suggestion and enrichment bodies, including explicit empty competitors and stream refinement.
     proof: [template-transcripts, oracle]
   - text: Supported template previews expose action and transformed text and selected definitions can be saved through the real guardrail and policy routes.
@@ -105,6 +110,9 @@ dod:
 checks:
   optional: []
   commands:
+    - id: governance-browser
+      why: HTTP contracts may pass while the retained page cannot render, authenticate or submit.
+      run: bash tools/dashboard/browser-check.sh --test dashboard_governance
     - id: template-transcripts
       why: Reused catalogs and error cases alone cannot prove selected templates reach preview and persistence.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/policy-templates)"
@@ -134,5 +142,5 @@ pitfalls:
   - The browser reads competitor and status SSE events; replacing them with completion-style chunks would pass an unrelated streaming test.
 review_level: security
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 1800
   max_new_expects: 0
