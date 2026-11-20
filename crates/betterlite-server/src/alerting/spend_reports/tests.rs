@@ -291,15 +291,6 @@ fn asked_dates(asked: &Asked) -> Vec<(String, String)> {
         .collect()
 }
 
-fn asked_totals(asked: &Asked) -> Vec<SpendTotals> {
-    asked
-        .lock()
-        .unwrap()
-        .iter()
-        .map(|(kind, ..)| *kind)
-        .collect()
-}
-
 const WEEKLY_MESSAGE: &str = "*💸 Spend Report for `01-08-2026 - 01-15-2026` (7 days)*\n\n*Team Spend Report:*\nTeam: `team-a` | Spend: `$12.3457`\nTeam: `None` | Spend: `$1.0`\nTeam: `team-c` | Spend: `$0.0001`\nTeam: `team-d` | Spend: `$0.0`\n\n*Tag Spend Report:*\nTag: `tag-a` | Spend: `$3.5`\n";
 
 const MONTHLY_MESSAGE: &str = "*💸 Monthly Spend Report for `01-01-2026 - 01-31-2026` *\n\n*Team Spend Report:*\nTeam: `team-a` | Spend: `$12.3457`\nTeam: `None` | Spend: `$1.0`\nTeam: `team-c` | Spend: `$0.0001`\nTeam: `team-d` | Spend: `$0.0`\n\n*Tag Spend Report:*\nTag: `tag-a` | Spend: `$3.5`\n";
@@ -416,10 +407,13 @@ async fn weekly_report_queries_teams_then_tags_for_the_window() {
     let asked = source.queries();
     let reports = reporting(FakeCache::default(), FakeSender::default(), source);
     reports.send_weekly_spend_report(None).await;
-    assert_eq!(
-        asked_totals(&asked),
-        vec![SpendTotals::Teams, SpendTotals::Tags]
-    );
+    let asked_kinds: Vec<SpendTotals> = asked
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(kind, ..)| *kind)
+        .collect();
+    assert_eq!(asked_kinds, vec![SpendTotals::Teams, SpendTotals::Tags]);
     assert_eq!(
         asked_dates(&asked),
         vec![
