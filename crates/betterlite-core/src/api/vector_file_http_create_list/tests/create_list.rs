@@ -93,17 +93,13 @@ enum AttributeOverlay {
     Empty,
 }
 
-// eighteen entries, newest first, so the capped case keeps k18..k03 and drops the two oldest
-const CAPPED_ENTRIES: &str = concat!(
-    r#""k18":"v18","k17":"v17","k16":"v16","k15":"v15","k14":"v14","k13":"v13","k12":"v12","#,
-    r#""k11":"v11","k10":"v10","k09":"v09","k08":"v08","k07":"v07","k06":"v06","k05":"v05","#,
-    r#""k04":"v04","k03":"v03","k02":"v02","k01":"v01","#,
-);
-
 fn overlay_map(overlay: AttributeOverlay) -> IndexMap<String, Json> {
     match overlay {
-        AttributeOverlay::Capped => extra(&format!(
-            r#"{{"attributes":{{{CAPPED_ENTRIES}"kept_number":2,"hidden_params":"secret"}}}}"#
+        // newest first, so the 16-entry cap keeps k18..k03 and drops the two oldest
+        AttributeOverlay::Capped => extra(concat!(
+            r#"{"attributes":{"k18":"v18","k17":"v17","k16":"v16","k15":"v15","k14":"v14","k13":"v13","k12":"v12","#,
+            r#""k11":"v11","k10":"v10","k09":"v09","k08":"v08","k07":"v07","k06":"v06","k05":"v05","#,
+            r#""k04":"v04","k03":"v03","k02":"v02","k01":"v01","kept_number":2,"hidden_params":"secret"}}"#,
         )),
         AttributeOverlay::Listed => extra(r#"{"attributes":["a","b"]}"#),
         AttributeOverlay::Empty => extra(r#"{"attributes":{}}"#),
