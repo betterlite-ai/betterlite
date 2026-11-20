@@ -5,6 +5,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use betterlite_auth::auth_invalidation::error::InvalidationError;
+use betterlite_db::postgres_store::errors::DbError;
+use betterlite_db::postgres_store::session::PostgresStore;
 use rust_decimal::Decimal;
 use tokio::sync::Barrier;
 use tokio::time::timeout;
@@ -13,11 +15,14 @@ use super::cache::invalidate_access_group_caches;
 use super::fixtures::{
     KeyCall, ScriptedCache, ScriptedKeyDatabase, ScriptedTeamTransaction, TeamStep,
 };
+use super::key::postgres::PostgresKeyMembership;
 use super::key::{
-    KeyAccessGroupUpdate, KeyMembershipStatement, KeyRegeneration, KeySyncError,
-    sync_key_access_groups, sync_key_regeneration, sync_key_update_access_groups,
+    KeyAccessGroupUpdate, KeyMembershipDatabase, KeyMembershipStatement, KeyRegeneration,
+    KeySyncError, sync_key_access_groups, sync_key_regeneration, sync_key_update_access_groups,
 };
-use super::team::{TEAM_ADVISORY_LOCK_SQL, reconcile_team_access_groups};
+use super::team::{
+    TEAM_ADVISORY_LOCK_SQL, TeamSyncError, reconcile_team_access_groups, sync_team_access_groups,
+};
 
 mod postgres;
 
@@ -411,6 +416,34 @@ async fn all_cache_attempts_before_first_error() {
         matches!(error, InvalidationError::SpendOutOfRange(value) if value == Decimal::new(1, 0))
     );
     assert_eq!(*cache.calls.lock().expect("calls"), ids);
+}
+
+#[tokio::test]
+async fn key_sync_without_client_is_an_error() {
+    let membership = PostgresKeyMembership { client: None };
+    let groups = vec!["a".to_owned()];
+    let error = membership
+        .move_key_membership(KeyMembershipStatement::Attach, "tok", &groups)
+        .await
+        .expect_err("no prisma client");
+    assert!(matches!(
+        error,
+        KeySyncError::Database(DbError::NoDbConnected)
+    ));
+}
+
+#[tokio::test]
+async fn team_sync_without_pool_is_an_error() {
+    let store = PostgresStore { pool: None };
+    let cache = ScriptedCache::new();
+    let error = sync_team_access_groups(&store, &cache, "t1")
+        .await
+        .expect_err("no connection pool");
+    assert!(matches!(
+        error,
+        TeamSyncError::Database(DbError::NoDbConnected)
+    ));
+    assert!(cache.calls.lock().expect("calls").is_empty());
 }
 
 #[tokio::test]
