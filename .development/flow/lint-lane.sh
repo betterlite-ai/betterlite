@@ -21,9 +21,9 @@ while [[ "${lane}" -eq 0 ]]; do
     fi
   done
   if [[ "${lane}" -eq 0 ]]; then
-    if [[ $((EPOCHSECONDS - started)) -ge 600 ]]; then
-      printf '%(%FT%T)T,%s,0,600,0,busy,%s,0\n' -1 "${id}" "${packages}" >> "${root}/runs.csv"
-      echo "every lint lane stayed busy for 10 minutes, so CI lints this change"
+    if [[ $((EPOCHSECONDS - started)) -ge 1200 ]]; then
+      printf '%(%FT%T)T,%s,0,1200,0,busy,%s,0\n' -1 "${id}" "${packages}" >> "${root}/runs.csv"
+      echo "every lint lane stayed busy for 20 minutes, so CI lints this change"
       exit 0
     fi
     sleep 5
@@ -37,11 +37,40 @@ if [[ "${size%%G*}" -gt 20 ]]; then
   rm -rf -- "${target}"
 fi
 export CARGO_TARGET_DIR=${target} RUSTC_WRAPPER='' CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=7
+# cargo hashes a workspace crate by its path inside the workspace, so all worktrees share one build of it and file mtimes alone decide whether it is fresh
+trees=${target}/trees.tsv
+lane_rows=$(awk -F, -v lane="${lane}" '$3 == lane' "${root}/runs.csv")
+recorded=""
+[[ -e "${target}/last-row" ]] && recorded=$(< "${target}/last-row")
+# a run by an older lint-lane.sh changed builds without updating the record
+if [[ "${lane_rows##*$'\n'}" != "${recorded}" ]]; then
+  rm -f -- "${trees}"
+fi
+if ! metadata=$(cargo metadata --no-deps --format-version 1 --locked) || ! members=$(jq -r '.packages[] | "\(.name)\t\(.manifest_path)"' <<< "${metadata}"); then
+  echo "the lint lane could not list the workspace crates, so CI lints this change"
+  exit 0
+fi
+built=""
+while IFS=$'\t' read -r name manifest; do
+  dir=${manifest%/Cargo.toml}
+  dir=${dir#"${PWD}"}
+  if ! tree=$(git rev-parse "HEAD:${dir#/}"); then
+    echo "the lint lane could not read the tree of ${name}, so CI lints this change"
+    exit 0
+  fi
+  if ! grep -q -x -F "${name}"$'\t'"${tree}" "${trees}" 2> /dev/null; then
+    find "${target}/debug/.fingerprint" -maxdepth 1 -regextype posix-extended -regex ".*/${name}-[0-9a-f]{16}" -exec rm -rf -- {} + 2> /dev/null
+  fi
+  built+="${name}"$'\t'"${tree}"$'\n'
+done <<< "${members}"
+printf '%s' "${built}" > "${trees}"
 began=${EPOCHSECONDS}
 timeout 1800 cargo clippy --keep-going --all-targets --locked --message-format=short "$@" -- -D warnings > target/lint-lane/clippy.txt 2>&1
 code=$?
 size=$(du -s -BG "${target}" 2> /dev/null) || size=0
-printf '%(%FT%T)T,%s,%s,%s,%s,%s,%s,%s\n' -1 "${id}" "${lane}" "${waited}" "$((EPOCHSECONDS - began))" "${code}" "${packages}" "${size%%G*}" >> "${root}/runs.csv"
+row=$(printf '%(%FT%T)T,%s,%s,%s,%s,%s,%s,%s' -1 "${id}" "${lane}" "${waited}" "$((EPOCHSECONDS - began))" "${code}" "${packages}" "${size%%G*}")
+echo "${row}" >> "${root}/runs.csv"
+echo "${row}" > "${target}/last-row"
 case "${code}" in
   0)
     echo "lint lane ${lane}: clippy passed"

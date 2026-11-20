@@ -1,0 +1,19 @@
+kind: helper
+name: foundry-passthrough-foundry-root-path
+call:
+  foundry_passthrough:
+    roots:
+      - {api_base: https://res.services.ai.azure.com/models}
+      - {api_base: https://res.services.ai.azure.com/accounts/x/models/dep}
+      - {api_base: https://res.services.ai.azure.com/Models/dep}
+      - {api_base: "https://res.services.ai.azure.com//a//b/"}
+      - {api_base: "https://res.services.ai.azure.com/a/b?x=1#frag"}
+      - {api_base: https://res.services.ai.azure.com/a%3Fb/models}
+      - {api_base: https://res.services.ai.azure.com/a%23b/models/x}
+      - {api_base: https://res.services.ai.azure.com/a%2Fb}
+      - {api_base: https://res.services.ai.azure.com/a%20b}
+      - {api_base: https://res.services.ai.azure.com/a%41b}
+      - {api_base: https://res.services.ai.azure.com}
+      - {api_base: "https://res.services.ai.azure.com/a\u0001b"}
+env: {}
+compare: {ignore: []}

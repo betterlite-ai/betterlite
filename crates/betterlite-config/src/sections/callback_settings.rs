@@ -17,11 +17,12 @@ const CAPACITY_VARIABLE: &str = "LITELLM_MAX_CALLBACKS";
 const DEFAULT_CAPACITY: i64 = 100;
 const OTEL_ENTRY: &str = "otel";
 // the nested callback_settings.otel keys RawOtel declares, including its aliases; otel_settings parses them
-const OTEL_NESTED_KEYS: [&str; 11] = [
+const OTEL_NESTED_KEYS: [&str; 12] = [
     "LITELLM_OTEL_BAGGAGE_METADATA_KEYS",
     "LITELLM_OTEL_BAGGAGE_PROMOTED_KEYS",
     "LITELLM_OTEL_BAGGAGE_TEAM_METADATA_KEYS",
     "LITELLM_OTEL_EXCLUDED_SERVICES",
+    "attributes",
     "baggage_metadata_keys",
     "baggage_promoted_keys",
     "baggage_team_metadata_keys",

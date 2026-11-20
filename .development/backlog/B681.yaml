@@ -1,7 +1,7 @@
 id: B681
 milestone: M3 providers
 title: Bedrock Responses search vector and realtime composition
-status: todo
+status: done
 depends_on: [B678, B657, B658, B659, B660, B171, B666]
 file: tasks/B681-bedrock-interactive-dispatch.yaml
 covers:
@@ -12,7 +12,7 @@ covers:
   - "litellm/llms/bedrock/realtime/handler.py"
 parent: B030
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2668

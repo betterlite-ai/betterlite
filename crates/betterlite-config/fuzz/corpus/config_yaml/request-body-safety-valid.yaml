@@ -1,0 +1,14 @@
+general_settings:
+  allow_client_side_credentials: true
+litellm_settings:
+  provider_url_destination_allowed_hosts: [https://allowed.example]
+model_list:
+  - model_name: grant-model
+    litellm_params:
+      model: openai/gpt-4o
+      configurable_clientside_auth_params:
+        - aws_role_name
+        - api_base: ^https://allowed.example
+  - model_name: plain-model
+    litellm_params:
+      model: openai/gpt-4o-mini

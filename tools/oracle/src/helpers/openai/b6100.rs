@@ -1,11 +1,29 @@
+mod fixture;
+mod input;
+mod ops;
+mod replies;
+
+use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use serde_json::{Value, json};
 
 pub(crate) struct Op;
 
 impl Helper for Op {
-    type Input = serde_json::Value;
+    type Input = input::Input;
 
-    fn run(_input: &Self::Input) -> HelperResult {
-        Self::not_built("b6100")
+    fn run(input: &Self::Input) -> HelperResult {
+        ops::run(input)
     }
+}
+
+type Step<Case> = fn(&Case) -> Result<Value, Box<HelperError>>;
+
+// every family answers its cases as steps in the input's order, and supplies the one step it takes
+fn steps<Case>(items: &[Case], step: Step<Case>) -> Result<Value, Box<HelperError>> {
+    let mut values = Vec::with_capacity(items.len());
+    for item in items {
+        values.push(step(item)?);
+    }
+    Ok(json!({"steps": values}))
 }
