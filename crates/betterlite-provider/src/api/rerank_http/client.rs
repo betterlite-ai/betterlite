@@ -1,4 +1,3 @@
-use std::error::Error;
 use std::future::Future;
 use std::time::Duration;
 
@@ -47,9 +46,6 @@ pub enum RerankSendError {
     Timeout,
     #[error(transparent)]
     Failed(#[from] HttpError),
-    // reqwest's builder error is not nameable outside betterlite-http, so the cause stays boxed
-    #[error(transparent)]
-    Build(Box<dyn Error + Send + Sync>),
 }
 
 pub trait RerankTransport: Send + Sync {
@@ -112,7 +108,7 @@ impl RerankTransport for ProxiedClient {
             .headers(request.headers)
             .body(request.body)
             .build()
-            .map_err(|error| RerankSendError::Build(Box::new(error)))?;
+            .map_err(HttpError::Request)?;
         self.execute_buffered(built, self.limits.body_bytes)
             .await
             .map_err(send_failure)
