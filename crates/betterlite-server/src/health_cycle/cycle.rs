@@ -6,7 +6,8 @@ use betterlite_models::model_registration::JsonObject;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use rand::Rng;
 
-use crate::health::router::dependency_deployments_to_probe;
+// ast-grep-ignore: no-long-names - LiteLLM's _dependency_deployments_to_probe, kept for parity
+use crate::health::router::dependency_deployments_to_probe as dependencies_to_probe;
 use crate::health::router::error::RouterHealthError;
 use crate::health_cycle::catalog::HealthCatalog;
 use crate::health_cycle::dispatch::{DispatchSettings, perform_health_checks};
@@ -95,7 +96,7 @@ fn expand_dependencies(
         return Ok(Vec::new());
     };
     let pool = health_check_eligible(model_list, request.skip_disabled);
-    catalog.with_lookup(|lookup| dependency_deployments_to_probe(requested, &pool, &lookup))
+    catalog.with_lookup(|lookup| dependencies_to_probe(requested, &pool, &lookup))
 }
 
 // perform_health_check up to the dispatch: narrow, filter, dedupe, expand dependencies, log the start line

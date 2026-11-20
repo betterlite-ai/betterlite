@@ -1,7 +1,8 @@
+use std::path::Path;
 use std::time::Duration;
 
 use crate::health_cycle::concurrency::DispatchMode;
-use crate::health_cycle::rss::{rss_mb_for_log, thread_count};
+use crate::health_cycle::rss::{RSS_STATUS_PATH, format_rss_mb, rss_mb_from, thread_count};
 
 const DEFAULT_SOURCE: &str = "unknown";
 const DEFAULT_CYCLE_ID: &str = "unknown";
@@ -32,18 +33,6 @@ pub struct CycleCounts {
     pub deduped: usize,
 }
 
-// time.monotonic() milliseconds with %.2f, which mul_add keeps clear of float arithmetic lints
-#[must_use]
-pub fn elapsed_ms(elapsed: Duration) -> f64 {
-    elapsed.as_secs_f64().mul_add(1000.0_f64, 0.0_f64)
-}
-
-// percent-s of None is "None", and of an integer its digits, as the LiteLLM line logs it
-#[must_use]
-pub fn option_label(value: Option<i64>) -> String {
-    value.map_or_else(|| "None".to_owned(), |number| number.to_string())
-}
-
 pub fn cycle_skipped(context: &InstrumentationContext, reason: &str) {
     if !context.enabled {
         return;
@@ -64,15 +53,17 @@ pub fn cycle_start(
     if !context.enabled {
         return;
     }
+    let limit = max_concurrency.map_or_else(|| "None".to_owned(), |number| number.to_string());
+    let rss = format_rss_mb(rss_mb_from(Path::new(RSS_STATUS_PATH)));
     tracing::debug!(
         source = %context.source,
         cycle_id = %context.cycle_id,
         requested_model_count = counts.requested,
         post_model_filter_count = counts.post_filter,
         deduped_model_count = counts.deduped,
-        max_concurrency = %option_label(max_concurrency),
+        max_concurrency = %limit,
         thread_count = thread_count(),
-        rss_mb = %rss_mb_for_log(),
+        rss_mb = %rss,
         "health_check_cycle_start",
     );
 }
@@ -87,15 +78,17 @@ pub fn dispatch_summary(
     if !context.enabled {
         return;
     }
+    let limit = max_concurrency.map_or_else(|| "None".to_owned(), |number| number.to_string());
+    let rss = format_rss_mb(rss_mb_from(Path::new(RSS_STATUS_PATH)));
     tracing::debug!(
         source = %context.source,
         cycle_id = %context.cycle_id,
         mode = mode.name(),
         model_count = model_count,
-        max_concurrency = %option_label(max_concurrency),
+        max_concurrency = %limit,
         peak_in_flight = peak_in_flight,
         thread_count = thread_count(),
-        rss_mb = %rss_mb_for_log(),
+        rss_mb = %rss,
         "health_check_dispatch_summary",
     );
 }
@@ -110,15 +103,18 @@ pub fn cycle_complete(
     if !context.enabled {
         return;
     }
+    let milliseconds = elapsed.as_secs_f64().mul_add(1000.0_f64, 0.0_f64);
+    let duration = format!("{milliseconds:.2}");
+    let rss = format_rss_mb(rss_mb_from(Path::new(RSS_STATUS_PATH)));
     tracing::debug!(
         source = %context.source,
         cycle_id = %context.cycle_id,
         model_count = model_count,
         healthy_count = healthy_count,
         unhealthy_count = unhealthy_count,
-        duration_ms = %format!("{:.2}", elapsed_ms(elapsed)),
+        duration_ms = %duration,
         thread_count = thread_count(),
-        rss_mb = %rss_mb_for_log(),
+        rss_mb = %rss,
         "health_check_cycle_complete",
     );
 }
@@ -132,13 +128,16 @@ pub fn cycle_failed(
     if !context.enabled {
         return;
     }
+    let milliseconds = elapsed.as_secs_f64().mul_add(1000.0_f64, 0.0_f64);
+    let duration = format!("{milliseconds:.2}");
+    let rss = format_rss_mb(rss_mb_from(Path::new(RSS_STATUS_PATH)));
     tracing::error!(
         source = %context.source,
         cycle_id = %context.cycle_id,
         model_count = model_count,
-        duration_ms = %format!("{:.2}", elapsed_ms(elapsed)),
+        duration_ms = %duration,
         thread_count = thread_count(),
-        rss_mb = %rss_mb_for_log(),
+        rss_mb = %rss,
         error = %error,
         "health_check_cycle_failed",
     );

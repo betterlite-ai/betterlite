@@ -4,7 +4,7 @@ use std::path::Path;
 use num_traits::ToPrimitive as _;
 
 // _get_process_rss_mb reads resource.getrusage(RUSAGE_SELF).ru_maxrss, the peak RSS, which /proc reports as VmHWM
-const STATUS_PATH: &str = "/proc/self/status";
+pub(crate) const RSS_STATUS_PATH: &str = "/proc/self/status";
 const RSS_FIELD: &str = "VmHWM:";
 const THREADS_FIELD: &str = "Threads:";
 // one kB is 1/1024 of a MiB and one byte is 1/1048576, the two divisors _get_process_rss_mb applies
@@ -37,7 +37,8 @@ pub fn rss_mb(raw: u64, unit: RssUnit) -> f64 {
 }
 
 // A status field holds its number first, in kB for VmHWM and as a count for Threads, then a unit word
-fn status_number(status: &str, field: &str) -> Option<u64> {
+#[must_use]
+pub(crate) fn status_number(status: &str, field: &str) -> Option<u64> {
     let value = status
         .lines()
         .find_map(|line| line.strip_prefix(field))?
@@ -47,28 +48,19 @@ fn status_number(status: &str, field: &str) -> Option<u64> {
     value.parse().ok()
 }
 
-#[must_use]
-pub fn parse_rss_mb(status: &str, unit: RssUnit) -> Option<f64> {
-    let peak = status_number(status, RSS_FIELD)?;
-    Some(rss_mb(peak, unit))
-}
-
 // resource.getrusage has no safe wrapper in this dependency set, so the Linux status file stands in and a missing one is None
 #[must_use]
 pub fn rss_mb_from(status_path: &Path) -> Option<f64> {
-    let status = fs::read_to_string(status_path).ok()?;
-    parse_rss_mb(&status, host_rss_unit())
-}
-
-#[must_use]
-pub fn process_rss_mb() -> Option<f64> {
-    rss_mb_from(Path::new(STATUS_PATH))
+    fs::read_to_string(status_path)
+        .ok()
+        .and_then(|status| status_number(&status, RSS_FIELD))
+        .map(|peak| rss_mb(peak, host_rss_unit()))
 }
 
 // threading.active_count() has no async twin: the OS thread count is the measure, and a platform without /proc reports zero
 #[must_use]
 pub fn thread_count() -> usize {
-    fs::read_to_string(STATUS_PATH)
+    fs::read_to_string(RSS_STATUS_PATH)
         .ok()
         .and_then(|status| status_number(&status, THREADS_FIELD))
         .and_then(|count| usize::try_from(count).ok())
@@ -82,9 +74,4 @@ pub fn format_rss_mb(rss: Option<f64>) -> String {
         || "unknown".to_owned(),
         |megabytes| format!("{megabytes:.2}"),
     )
-}
-
-#[must_use]
-pub fn rss_mb_for_log() -> String {
-    format_rss_mb(process_rss_mb())
 }

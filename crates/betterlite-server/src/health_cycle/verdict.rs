@@ -4,7 +4,8 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 
-use crate::health::router::{Endpoint, finalize_strategy_router_endpoints};
+// ast-grep-ignore: no-long-names - LiteLLM's _finalize_strategy_router_endpoints, kept for parity
+use crate::health::router::{Endpoint, finalize_strategy_router_endpoints as finalize_endpoints};
 use crate::health_cycle::catalog::HealthCatalog;
 use crate::health_cycle::endpoints::{HealthCheckResult, endpoint_id};
 use crate::health_cycle::error::HealthCycleError;
@@ -67,7 +68,7 @@ pub(crate) fn rebuild_after_verdicts(
         .collect();
     let (graded_healthy, graded_unhealthy) = match lookup {
         Some(catalog) => catalog.with_lookup(|view| {
-            finalize_strategy_router_endpoints(
+            finalize_endpoints(
                 &healthy_input,
                 &unhealthy_input,
                 checked,
@@ -75,7 +76,7 @@ pub(crate) fn rebuild_after_verdicts(
                 dependency_probes,
             )
         })?,
-        None => finalize_strategy_router_endpoints(
+        None => finalize_endpoints(
             &healthy_input,
             &unhealthy_input,
             checked,

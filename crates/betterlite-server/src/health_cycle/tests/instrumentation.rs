@@ -1,7 +1,6 @@
 use std::time::{Duration, Instant};
 
 use betterlite_router::model_catalog_lookup::error::LookupError;
-use rstest::rstest;
 
 use super::cycle::finish_cycle;
 use super::endpoints::HealthCheckResult;
@@ -10,9 +9,7 @@ use super::support::{
     FakeModels, FakeProvider, Reply, capture_logs, context, cycle, deployment, object,
     plain_request, policy, text,
 };
-use super::telemetry::{
-    InstrumentationContext, cycle_failed, cycle_skipped, elapsed_ms, option_label,
-};
+use super::telemetry::{InstrumentationContext, cycle_complete, cycle_failed, cycle_skipped};
 use crate::health::router::error::RouterHealthError;
 
 #[tokio::test]
@@ -112,6 +109,16 @@ fn a_cycle_result_logs_its_completion() {
     assert!(logs.contains("model_count=3"), "{logs}");
     assert!(logs.contains("healthy_count=1"), "{logs}");
     assert!(logs.contains("unhealthy_count=2"), "{logs}");
+    let duration = logs
+        .split("duration_ms=")
+        .nth(1)
+        .and_then(|rest| rest.split_whitespace().next())
+        .expect("the completion line carries a duration");
+    let fraction = duration
+        .split('.')
+        .nth(1)
+        .expect("the duration is rendered with decimals");
+    assert_eq!(fraction.len(), 2, "{logs}");
 }
 
 #[test]
@@ -142,6 +149,24 @@ fn a_failed_cycle_logs_its_error() {
 }
 
 #[test]
+fn the_completion_line_renders_the_elapsed_milliseconds() {
+    let (buffer, _guard) = capture_logs();
+    let context = context("cycle-14", "background");
+    cycle_complete(&context, 1, 1, 0, Duration::from_millis(1500));
+    let logs = buffer.text();
+    assert!(logs.contains("duration_ms=1500.00"), "{logs}");
+}
+
+#[test]
+fn the_failed_line_renders_the_elapsed_milliseconds() {
+    let (buffer, _guard) = capture_logs();
+    let context = context("cycle-15", "background");
+    cycle_failed(&context, 1, Duration::from_millis(250), "boom");
+    let logs = buffer.text();
+    assert!(logs.contains("duration_ms=250.00"), "{logs}");
+}
+
+#[test]
 fn a_skipped_cycle_logs_its_reason() {
     let (buffer, _guard) = capture_logs();
     let context = context("cycle-10", "background");
@@ -158,21 +183,4 @@ fn a_disabled_context_silences_the_cycle_lines() {
     cycle_skipped(&context, "no_models");
     cycle_failed(&context, 1, Duration::ZERO, "boom");
     assert_eq!(buffer.text(), "");
-}
-
-#[test]
-fn elapsed_milliseconds_are_a_float() {
-    assert_eq!(
-        elapsed_ms(Duration::from_millis(1500)).to_bits(),
-        1500.0_f64.to_bits()
-    );
-    assert_eq!(elapsed_ms(Duration::ZERO).to_bits(), 0.0_f64.to_bits());
-}
-
-#[rstest]
-#[case::absent(None, "None")]
-#[case::positive(Some(4), "4")]
-#[case::negative(Some(-2), "-2")]
-fn the_concurrency_label_reads_like_percent_s(#[case] value: Option<i64>, #[case] expected: &str) {
-    assert_eq!(option_label(value), expected);
 }

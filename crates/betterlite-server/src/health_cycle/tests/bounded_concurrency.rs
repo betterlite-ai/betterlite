@@ -1,8 +1,6 @@
 use std::time::Duration;
 
-use rstest::rstest;
-
-use super::concurrency::{DispatchMode, bounded_limit, run_probes};
+use super::concurrency::{DispatchMode, run_probes};
 use super::probe::ProbeOutcome;
 use super::support::{FakeProvider, Reply, deployment, prepare_all, with_timeout};
 
@@ -15,19 +13,6 @@ fn answered_model(outcome: &ProbeOutcome) -> String {
         ProbeOutcome::Failed(failure) => failure.message.clone(),
         ProbeOutcome::Raised(failure) => failure.message.clone(),
     }
-}
-
-#[rstest]
-#[case::absent(None, None)]
-#[case::zero(Some(0), None)]
-#[case::negative(Some(-3), None)]
-#[case::one(Some(1), Some(1_usize))]
-#[case::many(Some(4), Some(4_usize))]
-fn the_limit_is_bounded_only_for_a_positive_count(
-    #[case] requested: Option<i64>,
-    #[case] expected: Option<usize>,
-) {
-    assert_eq!(bounded_limit(requested), expected);
 }
 
 #[tokio::test(start_paused = true)]
