@@ -1,0 +1,17 @@
+kind: helper
+name: redis-spend-codec-seed
+call:
+  redis_spend_codec:
+    enabled: true
+    attached: true
+    park:
+      rows:
+        - {values: {spend: 1.5}, datetimes: {startTime: "2024-01-02T03:04:05+00:00"}}
+    drain: {reply: {kind: items, values: ['{"spend": 1.5}']}}
+    pipeline:
+      replies:
+        - {kind: items, values: ['{"user_list_transactions":{"user-1":1.5}}']}
+        - {kind: missing}
+    tags: {reply: {kind: missing}}
+env: {}
+compare: {ignore: []}

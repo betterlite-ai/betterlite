@@ -1,0 +1,247 @@
+#![cfg(test)]
+
+use std::time::{Duration, Instant};
+
+use betterlite_router::model_catalog_lookup::error::LookupError;
+
+use super::cycle::finish_cycle;
+use super::endpoints::HealthCheckResult;
+use super::error::HealthCycleError;
+use super::rss::ProcessMetrics;
+use super::support::{
+    FakeModels, FakeProvider, Reply, capture_logs, context, cycle, deployment, object,
+    plain_request, policy, text,
+};
+use super::telemetry::{
+    CycleTrace, InstrumentationContext, cycle_complete, cycle_failed, cycle_skipped,
+};
+use crate::health::router::error::RouterHealthError;
+
+#[tokio::test]
+async fn a_bounded_run_logs_its_limit_and_peak() {
+    let (buffer, _guard) = capture_logs();
+    let rows = [
+        deployment("a", "a-id", r#"{"model":"openai/a"}"#),
+        deployment("b", "b-id", r#"{"model":"openai/b"}"#),
+    ];
+    let context = context("cycle-2", "background");
+    let mut request = plain_request(&rows);
+    request.instrumentation = Some(&context);
+    request.max_concurrency = Some(1);
+    let provider = FakeProvider::new();
+    cycle(request, &provider, &FakeModels::default(), &policy())
+        .await
+        .expect("the cycle runs");
+    let logs = buffer.text();
+    assert!(logs.contains("mode=bounded"), "{logs}");
+    assert!(logs.contains("max_concurrency=1"), "{logs}");
+    assert!(logs.contains("peak_in_flight=1"), "{logs}");
+    assert!(logs.contains("health_check_cycle_start"), "{logs}");
+    assert!(logs.contains("health_check_cycle_complete"), "{logs}");
+}
+
+#[tokio::test]
+async fn a_disabled_run_logs_nothing() {
+    let (buffer, _guard) = capture_logs();
+    let rows = [deployment("a", "a-id", r#"{"model":"openai/a"}"#)];
+    let provider = FakeProvider::new();
+    cycle(
+        plain_request(&rows),
+        &provider,
+        &FakeModels::default(),
+        &policy(),
+    )
+    .await
+    .expect("the cycle runs");
+    assert_eq!(buffer.text(), "");
+}
+
+#[tokio::test]
+async fn the_lines_hold_no_secret_provider_address_or_deployment_id() {
+    let (buffer, _guard) = capture_logs();
+    let rows = [deployment(
+        "leaf",
+        "secret-leaf-id",
+        r#"{"model":"openai/leaf","api_key":"sk-secret-key","api_base":"https://internal.invalid"}"#,
+    )];
+    let context = context("cycle-4", "background");
+    let mut request = plain_request(&rows);
+    request.instrumentation = Some(&context);
+    let provider = FakeProvider::new().with_reply(
+        "openai/leaf",
+        Reply::Failure {
+            status: 500,
+            message: "boom",
+        },
+    );
+    cycle(request, &provider, &FakeModels::default(), &policy())
+        .await
+        .expect("the cycle runs");
+    let logs = buffer.text();
+    assert!(!logs.contains("sk-secret-key"), "{logs}");
+    assert!(!logs.contains("internal.invalid"), "{logs}");
+    assert!(!logs.contains("secret-leaf-id"), "{logs}");
+    assert!(logs.contains("health_check_cycle_complete"), "{logs}");
+}
+
+#[test]
+fn the_default_context_is_disabled_with_unknown_identity() {
+    let context = InstrumentationContext::default();
+    assert!(!context.enabled);
+    assert_eq!(context.cycle_id, "unknown");
+    assert_eq!(context.source, "unknown");
+}
+
+#[test]
+fn a_cycle_result_logs_its_completion() {
+    let (buffer, _guard) = capture_logs();
+    let context = context("cycle-12", "background");
+    let mut result = HealthCheckResult::default();
+    result
+        .healthy_endpoints
+        .push(object(vec![("model_id", text("a"))]));
+    result
+        .unhealthy_endpoints
+        .push(object(vec![("model_id", text("b"))]));
+    result
+        .unhealthy_endpoints
+        .push(object(vec![("model_id", text("c"))]));
+    let trace = CycleTrace {
+        context: &context,
+        metrics: ProcessMetrics::default(),
+    };
+    let returned = finish_cycle(Ok(result), trace, 3, Instant::now())
+        .expect("a completed cycle passes its result through");
+    assert_eq!(returned.healthy_endpoints.len(), 1);
+    let logs = buffer.text();
+    assert!(logs.contains("health_check_cycle_complete"), "{logs}");
+    assert!(logs.contains("model_count=3"), "{logs}");
+    assert!(logs.contains("healthy_count=1"), "{logs}");
+    assert!(logs.contains("unhealthy_count=2"), "{logs}");
+    let duration = logs
+        .split("duration_ms=")
+        .nth(1)
+        .and_then(|rest| rest.split_whitespace().next())
+        .expect("the completion line carries a duration");
+    let fraction = duration
+        .split('.')
+        .nth(1)
+        .expect("the duration is rendered with decimals");
+    assert_eq!(fraction.len(), 2, "{logs}");
+}
+
+#[test]
+fn a_failed_cycle_keeps_its_error_after_logging() {
+    let (buffer, _guard) = capture_logs();
+    let context = context("cycle-13", "background");
+    let failure = HealthCycleError::Router(RouterHealthError::Lookup(LookupError::InvalidRow {
+        index: 4,
+    }));
+    let trace = CycleTrace {
+        context: &context,
+        metrics: ProcessMetrics::default(),
+    };
+    let error = finish_cycle(Err(failure), trace, 2, Instant::now())
+        .expect_err("a failed cycle returns its error");
+    assert!(matches!(error, HealthCycleError::Router(_)));
+    let logs = buffer.text();
+    assert!(logs.contains("health_check_cycle_failed"), "{logs}");
+    assert!(logs.contains("model_count=2"), "{logs}");
+}
+
+#[test]
+fn a_failed_cycle_logs_its_error() {
+    let (buffer, _guard) = capture_logs();
+    let context = context("cycle-9", "background");
+    let trace = CycleTrace {
+        context: &context,
+        metrics: ProcessMetrics::default(),
+    };
+    cycle_failed(trace, 2, Duration::from_millis(5), "lookup failed");
+    let logs = buffer.text();
+    assert!(logs.contains("health_check_cycle_failed"), "{logs}");
+    assert!(logs.contains("model_count=2"), "{logs}");
+    assert!(logs.contains("lookup failed"), "{logs}");
+    assert!(logs.contains("source=background"), "{logs}");
+}
+
+#[test]
+fn the_completion_line_renders_the_elapsed_milliseconds() {
+    let (buffer, _guard) = capture_logs();
+    let context = context("cycle-14", "background");
+    let trace = CycleTrace {
+        context: &context,
+        metrics: ProcessMetrics::default(),
+    };
+    cycle_complete(trace, 1, 1, 0, Duration::from_millis(1500));
+    let logs = buffer.text();
+    assert!(logs.contains("duration_ms=1500.00"), "{logs}");
+}
+
+#[test]
+fn the_failed_line_renders_the_elapsed_milliseconds() {
+    let (buffer, _guard) = capture_logs();
+    let context = context("cycle-15", "background");
+    let trace = CycleTrace {
+        context: &context,
+        metrics: ProcessMetrics::default(),
+    };
+    cycle_failed(trace, 1, Duration::from_millis(250), "boom");
+    let logs = buffer.text();
+    assert!(logs.contains("duration_ms=250.00"), "{logs}");
+}
+
+#[test]
+fn a_skipped_cycle_logs_its_reason() {
+    let (buffer, _guard) = capture_logs();
+    let context = context("cycle-10", "background");
+    cycle_skipped(&context, "no_models_after_filter");
+    let logs = buffer.text();
+    assert!(logs.contains("health_check_cycle_skipped"), "{logs}");
+    assert!(logs.contains("reason=no_models_after_filter"), "{logs}");
+}
+
+#[test]
+fn a_disabled_context_silences_the_cycle_lines() {
+    let (buffer, _guard) = capture_logs();
+    let context = InstrumentationContext::default();
+    let trace = CycleTrace {
+        context: &context,
+        metrics: ProcessMetrics::default(),
+    };
+    cycle_skipped(&context, "no_models");
+    cycle_failed(trace, 1, Duration::ZERO, "boom");
+    assert_eq!(buffer.text(), "");
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn the_cycle_lines_carry_the_live_process_metrics() {
+    let (buffer, _guard) = capture_logs();
+    let rows = [deployment("a", "a-id", r#"{"model":"openai/a"}"#)];
+    let mut request = plain_request(&rows);
+    let context = context("cycle-live", "background");
+    request.instrumentation = Some(&context);
+    let provider = FakeProvider::new();
+    cycle(request, &provider, &FakeModels::default(), &policy())
+        .await
+        .expect("the cycle runs");
+    let logs = buffer.text();
+    let start = logs
+        .lines()
+        .find(|line| line.contains("health_check_cycle_start"))
+        .expect("the start line is logged");
+    let rss = start
+        .split("rss_mb=")
+        .nth(1)
+        .and_then(|rest| rest.split_whitespace().next())
+        .expect("the start line carries an rss value");
+    assert_ne!(rss, "unknown", "{start}");
+    let threads = start
+        .split("thread_count=")
+        .nth(1)
+        .and_then(|rest| rest.split_whitespace().next())
+        .expect("the start line carries a thread count");
+    let thread_count: usize = threads.parse().expect("the thread count is a number");
+    assert!(thread_count >= 1, "{start}");
+}
