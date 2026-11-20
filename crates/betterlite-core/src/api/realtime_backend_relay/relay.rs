@@ -39,12 +39,6 @@ where
     Config: BaseRealtimeConfig,
     CallbackError: Error + Send + 'static,
 {
-    async fn relay_backend_messages(
-        &mut self,
-        source: &mut (dyn RealtimeBackendSource + '_),
-        cancellation: &CancellationToken,
-    ) -> RelayExit<Config::Error, CallbackError>;
-
     // ast-grep-ignore: no-long-names
     async fn backend_to_client_send_messages(
         &mut self,
@@ -64,30 +58,22 @@ where
     Config: BaseRealtimeConfig,
     CallbackError: Error + Send + 'static,
 {
-    async fn relay_backend_messages(
-        &mut self,
-        source: &mut (dyn RealtimeBackendSource + '_),
-        cancellation: &CancellationToken,
-    ) -> RelayExit<Config::Error, CallbackError> {
-        loop {
-            match relay_once(self, source, cancellation).await {
-                Ok(()) => {}
-                Err(RealtimeRelayError::Cancelled) => return RelayExit::Cancelled,
-                Err(RealtimeRelayError::Receive(RelayReceiveError::Closed(closed))) => {
-                    return RelayExit::Closed(closed);
-                }
-                Err(error) => return RelayExit::Failed(error),
-            }
-        }
-    }
-
     // ast-grep-ignore: no-long-names
     async fn backend_to_client_send_messages(
         &mut self,
         source: &mut (dyn RealtimeBackendSource + '_),
         cancellation: &CancellationToken,
     ) -> Result<BackendClose, RealtimeRelayError<Config::Error, CallbackError>> {
-        let exit = self.relay_backend_messages(source, cancellation).await;
+        let exit = loop {
+            match relay_once(self, source, cancellation).await {
+                Ok(()) => {}
+                Err(RealtimeRelayError::Cancelled) => break RelayExit::Cancelled,
+                Err(RealtimeRelayError::Receive(RelayReceiveError::Closed(closed))) => {
+                    break RelayExit::Closed(closed);
+                }
+                Err(error) => break RelayExit::Failed(error),
+            }
+        };
         finish(self, exit)
     }
 

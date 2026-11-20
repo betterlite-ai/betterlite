@@ -110,16 +110,10 @@ class ScriptedProvider(ProviderMethods):
         _logging_obj: Logging,
         realtime_response_transform_input: TransformInput,  # ast-grep-ignore: no-long-names
     ) -> ResponseDocument:
-        state = realtime_response_transform_input  # ast-grep-ignore: no-long-names
+        # LiteLLM replaces all seven assembly fields with the input it passed in, and relays the response it gets back
         return {
+            **realtime_response_transform_input,  # ast-grep-ignore: no-long-names
             "response": JSON.validate_json(message),
-            "current_output_item_id": state["current_output_item_id"],
-            "current_response_id": state["current_response_id"],
-            "current_delta_chunks": state["current_delta_chunks"],
-            "current_conversation_id": state["current_conversation_id"],
-            "current_item_chunks": state["current_item_chunks"],
-            "current_delta_type": state["current_delta_type"],
-            "session_configuration_request": state["session_configuration_request"],
         }
 
     @override

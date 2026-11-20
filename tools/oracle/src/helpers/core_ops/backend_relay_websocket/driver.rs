@@ -87,8 +87,27 @@ impl Probe {
         let provider = input.provider.map(|document| ScriptedProvider {
             requires_session_configuration: document.requires_session_configuration,
         });
-        let mut state =
-            RealtimeStreaming::new(connection(input, provider, &client, &backend, &recorder));
+        let mut state = RealtimeStreaming::new(ConnectionSetup {
+            client: Some(Box::new(ClientSink {
+                scope: WebSocketScope::default(),
+                log: Arc::clone(&client),
+            })),
+            backend: Some(Box::new(RecordingBackend {
+                log: Arc::clone(&backend),
+            })),
+            logging: Some(Box::new(recorder.clone())),
+            logging_worker: Some(Box::new(recorder.clone())),
+            provider_config: provider
+                .map(|config| -> Box<dyn RealtimeProviderConfig> { Box::new(config) }),
+            event_normalizer: None,
+            logged_real_time_event_types: LoggedEventTypes::All,
+            model: String::from("scripted"),
+            user_api_key_dict: None,
+            request_data: None,
+            force_transcription_model: input.force_transcription_model.clone(),
+            client_wants_beta: false,
+            backend_uses_beta_protocol: None,
+        });
         state.setup.pending_messages_until_setup = input.pending.clone();
         state.setup.pending_messages_byte_total = input
             .pending
@@ -123,36 +142,6 @@ impl Probe {
                 "failure": detail(&details, FAILURE_LOGGED_KEY),
             },
         })
-    }
-}
-
-fn connection(
-    input: &Input,
-    provider: Option<ScriptedProvider>,
-    client: &Frames,
-    backend: &Frames,
-    recorder: &Recorder,
-) -> ConnectionSetup {
-    ConnectionSetup {
-        client: Some(Box::new(ClientSink {
-            scope: WebSocketScope::default(),
-            log: Arc::clone(client),
-        })),
-        backend: Some(Box::new(RecordingBackend {
-            log: Arc::clone(backend),
-        })),
-        logging: Some(Box::new(recorder.clone())),
-        logging_worker: Some(Box::new(recorder.clone())),
-        provider_config: provider
-            .map(|config| -> Box<dyn RealtimeProviderConfig> { Box::new(config) }),
-        event_normalizer: None,
-        logged_real_time_event_types: LoggedEventTypes::All,
-        model: String::from("scripted"),
-        user_api_key_dict: None,
-        request_data: None,
-        force_transcription_model: input.force_transcription_model.clone(),
-        client_wants_beta: false,
-        backend_uses_beta_protocol: None,
     }
 }
 

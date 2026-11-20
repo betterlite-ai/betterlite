@@ -15,17 +15,12 @@ use crate::api::realtime_session_state::error::SessionStateError;
 use crate::api::realtime_session_state::records::LOGGING_FRAME_LIMITS;
 use crate::api::realtime_session_state::store::SessionMessage;
 
-mod store;
-
-use self::store::store_and_forward_raw;
+use super::Outbound;
 use super::RESPONSE_CREATE;
 use super::RealtimeBackendRelay;
 use super::error::RealtimeRelayError;
 use super::event_type;
 use super::transcript_and_item_id;
-use super::transformed::guardrails::run_guardrails;
-use super::transformed::send::Outbound;
-use super::transformed::send::send;
 
 // LiteLLM parses once and keeps only an object: non-JSON text, an array and a scalar all fall back to the raw frame
 #[must_use]
@@ -62,18 +57,28 @@ where
         store_and_forward_raw(relay, fields).await?;
         let message = disable_auto_response_message(relay.state.backend_uses_beta_protocol.0)
             .map_err(|source| RealtimeRelayError::Send(RealtimeSenderError::Disable(source)))?;
-        send(relay, Outbound::Backend(&message)).await?;
+        relay.send(Outbound::Backend(&message)).await?;
         return Ok(true);
     }
     if kind == Some(TRANSCRIPTION_COMPLETED) {
-        raw_transcription_turn(relay, fields).await?;
+        // A transcription-only session bills the usage and never runs guardrails or asks for an assistant turn
+        let (transcript, item_id) = transcript_and_item_id(fields);
+        relay.state.collect_backend_input(fields);
+        store_and_forward_raw(relay, fields).await?;
+        if relay.state.is_transcription_session.0 {
+            relay.state.capture_transcription_usage(fields);
+            return Ok(true);
+        }
+        if !relay.run_guardrails(&transcript, item_id).await? {
+            relay.send(Outbound::Backend(RESPONSE_CREATE)).await?;
+        }
         return Ok(true);
     }
     Ok(false)
 }
 
-// A transcription-only session bills the usage and never runs guardrails or asks for an assistant turn
-async fn raw_transcription_turn<Config, CallbackError>(
+// The event is logged and reaches the client as the normalizer writes it, staying in the frame's own field order
+async fn store_and_forward_raw<Config, CallbackError>(
     relay: &mut RealtimeBackendRelay<'_, Config, CallbackError>,
     fields: &IndexMap<String, Json>,
 ) -> Result<(), RealtimeRelayError<Config::Error, CallbackError>>
@@ -81,18 +86,15 @@ where
     Config: BaseRealtimeConfig,
     CallbackError: Error + Send + 'static,
 {
-    let (transcript, item_id) = transcript_and_item_id(fields);
-    relay.state.collect_backend_input(fields);
-    store_and_forward_raw(relay, fields).await?;
-    if relay.state.is_transcription_session.0 {
-        relay.state.capture_transcription_usage(fields);
-        return Ok(());
-    }
-    let blocked = run_guardrails(relay, &transcript, item_id).await?;
-    if blocked {
-        return Ok(());
-    }
-    send(relay, Outbound::Backend(RESPONSE_CREATE)).await
+    relay
+        .state
+        .store_message(SessionMessage::Record(fields))
+        .map_err(RealtimeRelayError::State)?;
+    let encoded = relay
+        .sender()
+        .event_to_client_json(Json::Object(fields.clone()))
+        .map_err(RealtimeRelayError::Send)?;
+    relay.send_client_text(&encoded).await
 }
 
 // Without a provider LiteLLM forwards the frame as-is, dropping only normalizer-rejected events, and beta clients get the translated form

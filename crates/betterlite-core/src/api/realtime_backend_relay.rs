@@ -15,6 +15,9 @@ use indexmap::IndexMap;
 use crate::api::realtime_contracts::config::BaseRealtimeConfig;
 use crate::api::realtime_guardrail_policy::RealtimeGuardrailCallback;
 use crate::api::realtime_guardrails::callback::RealtimeGuardrail;
+use crate::api::realtime_guardrails::runner::RealtimeGuardrails;
+use crate::api::realtime_guardrails::runner::RunRealtimeGuardrails as _;
+use crate::api::realtime_sender::RealtimeSend as _;
 use crate::api::realtime_sender::RealtimeSender;
 use crate::api::realtime_session_state::RealtimeStreaming;
 use crate::api::realtime_session_state::records;
@@ -37,6 +40,13 @@ where
 
 // LiteLLM's raw transcript branch sends response.create unless a guardrail block already produced the turn's frames
 pub(crate) const RESPONSE_CREATE: &str = "{\"type\":\"response.create\"}";
+
+// The three frames the relay sends itself, so a call site names the frame instead of rebuilding the sender around it
+pub(crate) enum Outbound<'frame> {
+    Event(&'frame Json, &'frame str),
+    Backend(&'frame str),
+    DisableAutoResponse,
+}
 
 // The sender reads the callback half of each guardrail while B1007's runner reads the whole trait, so the upcast happens once
 pub fn relay_callbacks<'relay, CallbackError>(
@@ -84,6 +94,39 @@ where
                 .map_err(RealtimeRelayError::Client),
             None => Err(RealtimeRelayError::ClientMissing),
         }
+    }
+
+    pub(crate) async fn send(
+        &mut self,
+        outbound: Outbound<'_>,
+    ) -> Result<(), RealtimeRelayError<Config::Error, CallbackError>> {
+        let mut sender = self.sender();
+        let result = match outbound {
+            Outbound::Event(event, event_str) => sender
+                .send_event_to_client(event, event_str)
+                .await
+                .map(|_sent| ()),
+            Outbound::Backend(message) => sender.send_to_backend(message).await.map(|_sent| ()),
+            Outbound::DisableAutoResponse => sender.maybe_disable_auto_response().await,
+        };
+        result.map_err(RealtimeRelayError::Send)
+    }
+
+    // B1007's runner on the provider path: the transcription hook set, no pre-block frame and no explicit hooks
+    pub(crate) async fn run_guardrails(
+        &mut self,
+        transcript: &str,
+        item_id: Option<&str>,
+    ) -> Result<bool, RealtimeRelayError<Config::Error, CallbackError>> {
+        let mut runner = RealtimeGuardrails {
+            state: &mut *self.state,
+            provider: self.provider,
+            guardrails: self.guardrails,
+        };
+        runner
+            .run_realtime_guardrails(transcript, item_id, None, None)
+            .await
+            .map_err(RealtimeRelayError::Guardrails)
     }
 }
 
