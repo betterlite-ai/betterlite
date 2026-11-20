@@ -14,19 +14,22 @@ Mode = Literal["sync", "async"]
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
+AsyncUpdateWork = Coroutine[object, object, VectorStoreCreateResponse]
+AsyncDeleteWork = Coroutine[object, object, Mapping[str, object]]
+
 
 class WriteFacade(Protocol):
     def update(
         self,
         vector_store_id: str,
         **options: JsonValue,
-    ) -> VectorStoreCreateResponse | Coroutine[object, object, VectorStoreCreateResponse]: ...
+    ) -> VectorStoreCreateResponse | AsyncUpdateWork: ...
 
     def aupdate(
         self,
         vector_store_id: str,
         **options: JsonValue,
-    ) -> Coroutine[object, object, VectorStoreCreateResponse]: ...
+    ) -> AsyncUpdateWork: ...
 
     def delete(self, vector_store_id: str, **options: JsonValue) -> JsonValue: ...
 
@@ -34,7 +37,7 @@ class WriteFacade(Protocol):
         self,
         vector_store_id: str,
         **options: JsonValue,
-    ) -> Coroutine[object, object, Mapping[str, object]]: ...
+    ) -> AsyncDeleteWork: ...
 
 
 # LiteLLM annotates metadata and the extra fields more narrowly than the JSON it forwards
