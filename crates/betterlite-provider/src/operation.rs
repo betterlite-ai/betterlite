@@ -1,10 +1,14 @@
+use betterlite_anthropic::anthropic_http_stream::error::StreamFailure;
+use betterlite_anthropic::chat_call::error::ChatCallError;
 use betterlite_http::proxy::StreamResponse;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::controls::control_options::ControlOptions;
+use betterlite_models::params::ParameterError;
 use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::chat::response::ChatResponse;
 use betterlite_openai::embedding::{EmbeddingRequest, EmbeddingResponse};
+use betterlite_tokenizer::engine::error::EngineError;
 use http::header::InvalidHeaderValue;
 use serde::Serialize;
 use serde_json::Error as JsonError;
@@ -188,6 +192,9 @@ pub enum OperationResult {
     VertexEmbedding(VertexEmbeddingResult),
 }
 
+// The failure B584's chat call raises, boxed by the adapter so OperationError stays small.
+pub type AnthropicCallError = ChatCallError<StreamFailure, EngineError>;
+
 #[derive(Debug, Error)]
 pub enum OperationError {
     #[error("betterlite has no executable adapter for the {provider} provider")]
@@ -226,6 +233,13 @@ pub enum OperationError {
     },
     #[error(transparent)]
     TransformRetry(#[from] TransformRetryError),
+    #[error("the request parameters were rejected: {source}")]
+    Parameters {
+        #[source]
+        source: ParameterError,
+    },
+    #[error(transparent)]
+    Anthropic { source: Box<AnthropicCallError> },
 }
 
 // LiteLLM routes a status of 400 and up back as the provider's own error body, so the caller can render it
