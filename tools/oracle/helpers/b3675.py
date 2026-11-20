@@ -91,7 +91,11 @@ def target_view(target: InputWriteBackTarget) -> dict[str, JsonValue]:
                 "content_idx": content_idx,
                 "block_idx": 0,
             }
-        case ToolResultBlockTextTarget(msg_idx=msg_idx, content_idx=content_idx, block_idx=block_idx):
+        case ToolResultBlockTextTarget(
+            msg_idx=msg_idx,
+            content_idx=content_idx,
+            block_idx=block_idx,
+        ):
             return {
                 "kind": "tool_result_block_text",
                 "msg_idx": msg_idx,
@@ -135,7 +139,7 @@ def top_level_system_answer(scenario: Scenario) -> dict[str, JsonValue]:
 
 def structured_messages_answer(scenario: Scenario) -> dict[str, JsonValue]:
     handler = AnthropicMessagesHandler()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L302-L304
-    messages = cast(JsonValue, asyncio.run(handler.get_structured_messages(scenario.data)))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L507-L521
+    messages = cast(JsonValue, handler.get_structured_messages(scenario.data))  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L507-L521
     return {"messages": messages}
 
 
