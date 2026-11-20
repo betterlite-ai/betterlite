@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
 
+use betterlite_models::controls::call_params::CallParams;
+use betterlite_models::controls::optional_params::OptionalParams;
 use betterlite_models::decisions::Json;
+use betterlite_models::headers::affinity::AffinityParams;
 use betterlite_openai::response_input::ResponsesInput;
 use betterlite_prompts::arguments::json::Object;
 use indexmap::IndexMap;
@@ -8,9 +11,8 @@ use secrecy::SecretString;
 
 use crate::api::responses_compact_http::service::SharedSession;
 
-// The arguments of compact_responses: the named parameters plus the caller's remaining kwargs;
-// extra_query is accepted and never reaches the handler
-#[derive(Debug)]
+// The arguments of compact_responses: the named parameters, then kwargs; extra_query is unused
+#[derive(Clone, Debug)]
 pub struct CompactResponsesCall {
     pub model: String,
     pub input: ResponsesInput,
@@ -27,4 +29,24 @@ pub struct CompactResponsesCall {
     pub shared_session: Option<SharedSession>,
     pub kwargs: IndexMap<String, Json>,
     pub acompact_responses: Option<Json>,
+}
+
+// The resolution seeds the caller's key and base; every other field keeps its default
+pub(super) fn resolution_params(call: &CompactResponsesCall) -> CallParams {
+    CallParams {
+        model: None,
+        api_key: call.api_key.clone(),
+        api_base: call.api_base.clone(),
+        custom_llm_provider: None,
+        metadata: None,
+        litellm_metadata: None,
+        litellm_session_id: None,
+        litellm_trace_id: None,
+        no_log: None,
+        drop_params: None,
+        control: None,
+        credentials: None,
+        optional: OptionalParams::default(),
+        affinity: AffinityParams::default(),
+    }
 }

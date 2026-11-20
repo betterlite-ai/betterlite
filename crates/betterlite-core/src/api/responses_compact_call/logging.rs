@@ -31,7 +31,7 @@ pub(super) fn log_call(
     litellm_params.insert(
         String::from("data_residency"),
         residency_json(infer_openai_data_residency(
-            Some(&resolved.provider),
+            Some(resolved.provider.as_str()),
             resolved.api_base.as_deref(),
         )),
     );

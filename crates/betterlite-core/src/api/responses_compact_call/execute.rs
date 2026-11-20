@@ -13,7 +13,7 @@ use secrecy::SecretString;
 
 use crate::api::response_id_traversal::record::Record;
 use crate::api::response_id_traversal::restore::restore_encrypted_item_ids;
-use crate::api::responses_compact_http::config::CompactParams;
+use crate::api::responses_compact_http::config::{CompactConfig, CompactParams};
 use crate::api::responses_compact_http::service::{
     ClientKind, ClientSource, CompactCall, CompactDeps, LogContext, prepare, send,
 };
@@ -26,17 +26,12 @@ use crate::api::responses_provider_selection::provider_config::{
 };
 use crate::api::responses_provider_selection::resolution::{ModelResolver, resolve_model_provider};
 
-use super::call::CompactResponsesCall;
+use super::call::{CompactResponsesCall, resolution_params};
 use super::convert::{json_value, object_from_params, prompt_decision};
-use super::deps::{CompactConfigFactory, CompactResponsesDeps};
+use super::deps::{CompactConfigFactory, CompactResponsesDeps, ConfigRequest};
 use super::encode::encode_response;
 use super::error::{CompactParamError, CompactResponsesError};
 use super::logging;
-
-pub(super) struct Completed {
-    pub(super) reply: ResponsesReply,
-    pub(super) provider: String,
-}
 
 pub(super) struct Resolved {
     pub(super) model: String,
@@ -63,7 +58,7 @@ pub(super) async fn run<S, F>(
     custom_llm_provider: Option<&str>,
     mode: ClientKind,
     log: &mut LogContext<'_, '_>,
-) -> Result<Completed, CompactResponsesError>
+) -> Result<ResponsesReply, CompactResponsesError>
 where
     S: ClientSource,
     F: CompactConfigFactory,
@@ -86,10 +81,15 @@ where
     };
     let mut reply = execute(deps.source, &pending, log).await?;
     encode_response(&mut reply, call, &resolved.provider)?;
-    Ok(Completed {
-        reply,
-        provider: resolved.provider,
-    })
+    Ok(reply)
+}
+
+pub(super) const fn handler_mode(marker: Option<&Json>) -> ClientKind {
+    if matches!(marker, Some(Json::Bool(true))) {
+        ClientKind::Asynchronous
+    } else {
+        ClientKind::Sync
+    }
 }
 
 // The preliminary lookup the async wrapper runs for exception mapping gets no base and no credentials
@@ -110,11 +110,7 @@ fn resolve(
     call: &CompactResponsesCall,
     custom_llm_provider: Option<&str>,
 ) -> Result<Resolved, CompactResponsesError> {
-    let mut params = CallParams {
-        api_key: call.api_key.clone(),
-        api_base: call.api_base.clone(),
-        ..CallParams::default()
-    };
+    let mut params = resolution_params(call);
     let mut local_vars = ParameterMap::new();
     let (model, provider) = resolve_model_provider(
         resolver,
@@ -155,12 +151,13 @@ fn config_for<F>(configs: &F, resolved: &Resolved) -> Result<F::Provider, Compac
 where
     F: CompactConfigFactory,
 {
+    let request = ConfigRequest {
+        model: &resolved.model,
+        provider: &resolved.provider,
+        api_base: resolved.api_base.as_deref(),
+    };
     configs
-        .compact_config(
-            &resolved.model,
-            &resolved.provider,
-            resolved.api_base.as_deref(),
-        )
+        .compact_config(&request)
         .ok_or_else(|| CompactResponsesError::Unsupported {
             provider: resolved.provider.clone(),
         })
@@ -261,14 +258,14 @@ fn restored(input: &ResponsesInput) -> ResponsesInput {
     ResponsesInput::Items(entries.into_iter().map(ResponsesItem).collect())
 }
 
-async fn execute<S, F>(
+async fn execute<S, P>(
     source: &S,
-    pending: &Pending<'_, F::Provider>,
+    pending: &Pending<'_, P>,
     log: &mut LogContext<'_, '_>,
 ) -> Result<ResponsesReply, CompactResponsesError>
 where
     S: ClientSource,
-    F: CompactConfigFactory,
+    P: CompactConfig,
 {
     let http = CompactDeps {
         config: pending.config,

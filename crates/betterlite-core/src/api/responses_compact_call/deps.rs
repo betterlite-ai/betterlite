@@ -8,17 +8,18 @@ use crate::api::responses_provider_selection::resolution::ModelResolver;
 
 use super::error::CompactParamError;
 
-// B157 decides whether a provider has a responses config; the factory builds the one object the
-// compact handler and the parameter filter both read
+// What the factory needs to build a provider: the resolved model, its provider and the caller's base
+pub struct ConfigRequest<'a> {
+    pub model: &'a str,
+    pub provider: &'a str,
+    pub api_base: Option<&'a str>,
+}
+
+// B157 decides whether a provider has a responses config; the factory builds the object both read
 pub trait CompactConfigFactory {
     type Provider: CompactConfig + ResponsesParamProvider<Error = CompactParamError>;
 
-    fn compact_config(
-        &self,
-        model: &str,
-        provider: &str,
-        api_base: Option<&str>,
-    ) -> Option<Self::Provider>;
+    fn compact_config(&self, request: &ConfigRequest<'_>) -> Option<Self::Provider>;
 }
 
 pub struct CompactResponsesDeps<'deps, S: ClientSource, F: CompactConfigFactory> {
