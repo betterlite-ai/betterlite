@@ -133,10 +133,6 @@ impl<'labels> LatencyLabels<'labels> {
         })
     }
 
-    fn values(&self) -> &UserApiKeyLabelValues {
-        self.values.as_ref()
-    }
-
     const fn source(&self) -> LabelSource<'_> {
         match &self.context {
             Some(context) => LabelSource::Context(context),
@@ -170,13 +166,13 @@ where
         safe_duration_seconds(observation.timestamps.api_call_start, Some(end_time))
     {
         histograms.api_latency.observe(
-            latency_labels.values(),
+            &latency_labels.values,
             latency_labels.source(),
             seconds,
             observation.now_monotonic,
         )?;
     }
-    observe_total_and_queue_latency(histograms, observation, end_time, labels, &latency_labels)
+    observe_total_and_queue(histograms, observation, end_time, labels, &latency_labels)
 }
 
 fn observe_time_to_first_token<Metric>(
@@ -199,14 +195,14 @@ where
         return Ok(());
     };
     histograms.time_to_first_token.observe(
-        labels.values(),
+        &labels.values,
         labels.source(),
         seconds,
         observation.now_monotonic,
     )
 }
 
-fn observe_total_and_queue_latency<Metric>(
+fn observe_total_and_queue<Metric>(
     histograms: &LatencyHistograms<'_, Metric>,
     observation: &LatencyObservation<'_>,
     end_time: Decimal,
@@ -229,7 +225,7 @@ where
             None => total_seconds,
         };
         histograms.total_latency.observe(
-            latency_labels.values(),
+            &latency_labels.values,
             latency_labels.source(),
             observed_total,
             observation.now_monotonic,
