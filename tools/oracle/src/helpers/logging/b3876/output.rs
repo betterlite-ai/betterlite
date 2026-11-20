@@ -6,8 +6,8 @@ use super::probe::{ProbeEvent, ProbeLog};
 
 pub(super) fn events_value(log: &Arc<Mutex<ProbeLog>>) -> Value {
     let events: Vec<Value> = {
-        let log = log.lock().unwrap_or_else(PoisonError::into_inner);
-        log.events.iter().map(event_value).collect()
+        let probe_log = log.lock().unwrap_or_else(PoisonError::into_inner);
+        probe_log.events.iter().map(event_value).collect()
     };
     json!({ "events": events })
 }

@@ -23,7 +23,7 @@ pub(super) fn seconds_duration(seconds: f64) -> Result<Duration, Box<HelperError
 }
 
 pub(super) fn cleanup_duration(seconds: f64) -> Result<Duration, Box<HelperError>> {
-    if seconds <= 0.0 {
+    if seconds <= 0.0_f64 {
         return Ok(Duration::ZERO);
     }
     seconds_duration(seconds)

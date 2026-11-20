@@ -32,7 +32,7 @@ pub(crate) enum Input {
 }
 
 #[derive(serde::Deserialize)]
-struct TrackScenario {
+pub(crate) struct TrackScenario {
     metric_name: String,
     supported_labels: Vec<String>,
     metrics: BTreeMap<String, Outcome>,
@@ -50,7 +50,7 @@ struct TrackStep {
 }
 
 #[derive(serde::Deserialize)]
-struct EmissionScenario {
+pub(crate) struct EmissionScenario {
     metric_name: String,
     supported_labels: Vec<String>,
     enable_end_user_tracking: bool,

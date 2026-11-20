@@ -88,7 +88,7 @@ fn limits(
 }
 
 fn at(start: Instant, seconds: u64) -> Instant {
-    start + Duration::from_secs(seconds)
+    start.checked_add(Duration::from_secs(seconds)).unwrap()
 }
 
 #[test]

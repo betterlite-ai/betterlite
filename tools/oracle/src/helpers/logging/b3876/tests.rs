@@ -13,8 +13,8 @@ fn track_end_user_logs_the_removal_of_the_oldest_series() {
         "supported_labels": ["model", "end_user"],
         "metrics": {"probe": "removed"},
         "steps": [
-            {"metric": "probe", "labels": {"model": "m", "end_user": "e1"}, "at_seconds": 0, "max_series": 1},
-            {"metric": "probe", "labels": {"model": "m", "end_user": "e2"}, "at_seconds": 1, "max_series": 1}
+            {"metric": "probe", "labels": {"model": "m", "end_user": "e1"}, "at_seconds": 0_i32, "max_series": 1_i32},
+            {"metric": "probe", "labels": {"model": "m", "end_user": "e2"}, "at_seconds": 1_i32, "max_series": 1_i32}
         ]
     });
     let parsed = serde_json::from_value::<Input>(input).unwrap();
@@ -32,11 +32,11 @@ fn inc_labeled_counter_logs_the_increment_before_the_removal() {
         "metric_name": "litellm_requests_metric",
         "supported_labels": ["model", "end_user"],
         "enable_end_user_tracking": true,
-        "max_series": 1,
-        "amount": 2,
+        "max_series": 1_i32,
+        "amount": 2_i32,
         "emissions": [
-            {"values": {"model": "m", "end_user": "e1"}, "at_seconds": 0},
-            {"values": {"model": "m", "end_user": "e2"}, "at_seconds": 1}
+            {"values": {"model": "m", "end_user": "e1"}, "at_seconds": 0_i32},
+            {"values": {"model": "m", "end_user": "e2"}, "at_seconds": 1_i32}
         ]
     });
     let parsed = serde_json::from_value::<Input>(input).unwrap();
