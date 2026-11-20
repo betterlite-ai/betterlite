@@ -6,6 +6,7 @@ use betterlite_http_fixture::server::serve;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_models::decisions::Json;
 use betterlite_openai::vector_stores::store::CreateParams;
+use http::HeaderValue;
 use rstest::rstest;
 
 use super::run;
@@ -121,6 +122,33 @@ async fn create_read_failures(#[case] operation: Operation) {
         Operation::List => check_list_failure(&result, &config),
     }
     assert_eq!(wire.requests().len(), 1);
+}
+
+// The status error's text is the body, and bytes that cannot be UTF-8 text are counted instead, for the body and a header value
+#[tokio::test]
+async fn create_status_failure_counts_bytes_that_are_not_utf8() {
+    let events = Events::new();
+    let mut reply = Reply::json(429, "").with_header("retry-after", "3");
+    reply.body = vec![0xff, 0xfe];
+    reply.headers.insert(
+        "x-binary",
+        HeaderValue::from_bytes(&[0xff, 0xfe]).expect("the bytes form a header value"),
+    );
+    let wire = Wire::replying(reply, &events);
+    let source = Source::new(wire.clone());
+    let config = RecordingConfig::new("http://mock.test/v1/vector_stores", &events);
+    let deps = deps(&config, &source, None);
+    let params = params("http://unused.test");
+    let optional = CreateParams::default();
+    let call = call_for(Operation::Create, &params, &optional);
+    let mut fixture = Fixture::new("vector_store_failure");
+    let result = run(&mut fixture, &deps, ClientKind::Sync, &call, &events).await;
+    let error = check_status_failure(&result, &config);
+    assert_eq!(error.message, "2 bytes that are not UTF-8");
+    assert_eq!(
+        error.headers.get("x-binary"),
+        Some(&Json::Text("2 bytes that are not UTF-8".to_owned()))
+    );
 }
 
 #[rstest]
