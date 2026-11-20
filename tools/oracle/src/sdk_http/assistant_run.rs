@@ -148,7 +148,7 @@ async fn execute(
     let recorder = input.event_handler.then(RecordingHandler::default);
     let handler: Option<Arc<dyn RunEventHandler>> = recorder
         .as_ref()
-        .map(|recording| Arc::new(recording.clone()) as Arc<dyn RunEventHandler>);
+        .map(|recording| -> Arc<dyn RunEventHandler> { Arc::new(recording.clone()) });
     let call = thread_call(input, api_base, handler)?;
     let value = run_mode(input.mode, &sdk, call, recorder.as_ref()).await;
     Ok(SdkResult::AssistantRun {
@@ -172,12 +172,12 @@ async fn run_mode(
             Err(error) => failure_outcome(&error),
         },
         RunMode::Run => match sdk.run_thread(call).await {
-            Ok(RunOutcome::Polled(reply)) => run_outcome(reply.as_ref()),
+            Ok(RunOutcome::Polled(reply)) => run_outcome((*reply).as_ref()),
             Ok(RunOutcome::Streaming(stream)) => stream_outcome(stream, recorder).await,
             Err(error) => failure_outcome(&error),
         },
         RunMode::Arun => match sdk.arun_thread(call).await {
-            Ok(RunOutcome::Polled(reply)) => run_outcome(reply.as_ref()),
+            Ok(RunOutcome::Polled(reply)) => run_outcome((*reply).as_ref()),
             Ok(RunOutcome::Streaming(stream)) => stream_outcome(stream, recorder).await,
             Err(error) => failure_outcome(&error),
         },

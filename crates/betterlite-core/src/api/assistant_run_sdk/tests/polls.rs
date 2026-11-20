@@ -15,10 +15,11 @@ async fn openai_poll_posts_the_thread_path_and_optionals() {
     let mut input = call("openai");
     input.additional_instructions = Some(String::from("extra"));
     input.instructions = Some(String::from("base"));
-    input.metadata = Some(serde_json::json!({"tag": "x"}));
+    input.metadata = Some(json(r#"{"tag": "x"}"#));
     input.model = Some(String::from("gpt-4o-mini"));
-    input.tools = Some(serde_json::json!([{"type": "code_interpreter"}]));
-    input.stream = flag(false);
+    input.tools = Some(json(r#"[{"type": "code_interpreter"}]"#));
+    input.stream = Some(Some(RunFlag::Bool(false)));
+    input.params.api_base = Some(String::from(BASE));
     let reply = polled(sdk.run_thread(input).await.unwrap()).unwrap();
     assert_eq!(reply.status, "completed");
     let seen = recorder.requests();
@@ -47,10 +48,12 @@ async fn azure_poll_posts_its_thread_path_and_api_version() {
     let sdk = fixture.sdk(ProviderRuns {
         transport: Arc::clone(&recorder),
     });
-    let mut params = RunParams::default();
-    params.api_base = Some(String::from(BASE));
-    params.api_version = Some(String::from("2024-02-15-preview"));
-    params.api_key = secret("az-key");
+    let params = RunParams {
+        api_base: Some(String::from(BASE)),
+        api_version: Some(String::from("2024-02-15-preview")),
+        api_key: Some(secret("az-key")),
+        ..RunParams::default()
+    };
     let reply = polled(sdk.run_thread(azure_call(params)).await.unwrap()).unwrap();
     assert_eq!(reply.status, "completed");
     let seen = recorder.requests();
@@ -85,19 +88,19 @@ async fn queued_then_completed_polls_again_with_the_same_deadline() {
 }
 
 #[rstest]
-#[case::null(Some(None))]
-#[case::false_value(flag(false))]
-#[case::number(Some(Some(RunFlag::Number(1.0_f64))))]
-#[case::text(Some(Some(RunFlag::Text(String::from("true")))))]
+#[case::null(StreamArg::Null)]
+#[case::false_value(StreamArg::Bool(false))]
+#[case::number(StreamArg::Number(1.0_f64))]
+#[case::text(StreamArg::Text("true"))]
 #[tokio::test]
-async fn only_the_literal_true_streams(#[case] stream: Option<Option<RunFlag>>) {
+async fn only_the_literal_true_streams(#[case] stream: StreamArg) {
     let (recorder, fixture) = openai_recorder();
     recorder.queue_twice(COMPLETED);
     let sdk = fixture.sdk(ProviderRuns {
         transport: Arc::clone(&recorder),
     });
     let mut input = call("openai");
-    input.stream = stream;
+    stream.apply(&mut input);
     let reply = polled(sdk.run_thread(input).await.unwrap()).unwrap();
     assert_eq!(reply.status, "completed");
     assert_eq!(
@@ -131,22 +134,22 @@ async fn a_null_poll_result_passes_through() {
     let operations = CaptureRuns::default();
     let sdk = fixture.sdk(operations);
     assert!(polled_outcome(sdk.run_thread(call("openai")).await.unwrap()).is_none());
-    let operations = CaptureRuns::default();
-    let sdk = fixture.sdk(operations);
-    assert!(polled_outcome(sdk.arun_thread(call("openai")).await.unwrap()).is_none());
+    let async_operations = CaptureRuns::default();
+    let async_sdk = fixture.sdk(async_operations);
+    assert!(polled_outcome(async_sdk.arun_thread(call("openai")).await.unwrap()).is_none());
 }
 
 #[tokio::test]
 async fn openai_settings_chain_and_organization_reach_the_request() {
     let (recorder, mut fixture) = openai_recorder();
-    fixture.settings.api_key = secret("sk-settings");
-    fixture.settings.openai_organization = secret_text("org_settings");
+    fixture.settings.api_key = Some(secret("sk-settings"));
+    fixture.settings.openai_organization = Some(String::from("org_settings"));
     recorder.queue_twice(COMPLETED);
     let sdk = fixture.sdk(ProviderRuns {
         transport: Arc::clone(&recorder),
     });
     let mut input = call("openai");
-    input.params.api_key = secret("sk-request");
+    input.params.api_key = Some(secret("sk-request"));
     input.params.api_base = Some(String::from(BASE));
     let reply = polled(sdk.run_thread(input).await.unwrap()).unwrap();
     assert_eq!(reply.status, "completed");
@@ -159,13 +162,13 @@ async fn openai_settings_chain_and_organization_reach_the_request() {
 #[tokio::test]
 async fn an_empty_request_key_falls_back_to_the_settings_key() {
     let (recorder, mut fixture) = openai_recorder();
-    fixture.settings.api_key = secret("sk-settings");
+    fixture.settings.api_key = Some(secret("sk-settings"));
     recorder.queue_twice(COMPLETED);
     let sdk = fixture.sdk(ProviderRuns {
         transport: Arc::clone(&recorder),
     });
     let mut input = call("openai");
-    input.params.api_key = secret("");
+    input.params.api_key = Some(secret(""));
     let reply = polled(sdk.run_thread(input).await.unwrap()).unwrap();
     assert_eq!(reply.status, "completed");
     assert_eq!(
@@ -196,9 +199,11 @@ async fn azure_ad_token_is_sent_as_a_bearer() {
     let sdk = fixture.sdk(ProviderRuns {
         transport: Arc::clone(&recorder),
     });
-    let mut params = RunParams::default();
-    params.api_base = Some(String::from(BASE));
-    params.azure_ad_token = secret("tok");
+    let params = RunParams {
+        api_base: Some(String::from(BASE)),
+        azure_ad_token: Some(secret("tok")),
+        ..RunParams::default()
+    };
     let reply = polled(sdk.run_thread(azure_call(params)).await.unwrap()).unwrap();
     assert_eq!(reply.status, "completed");
     let seen = recorder.requests();
@@ -213,10 +218,12 @@ async fn an_extra_body_token_never_authenticates() {
     let sdk = fixture.sdk(ProviderRuns {
         transport: Arc::clone(&recorder),
     });
-    let mut params = RunParams::default();
-    params.api_base = Some(String::from(BASE));
-    params.api_key = secret("az-key");
-    params.extra_body = Some(serde_json::json!({"azure_ad_token": "body-token"}));
+    let params = RunParams {
+        api_base: Some(String::from(BASE)),
+        api_key: Some(secret("az-key")),
+        extra_body: Some(json(r#"{"azure_ad_token": "body-token"}"#)),
+        ..RunParams::default()
+    };
     let reply = polled(sdk.run_thread(azure_call(params)).await.unwrap()).unwrap();
     assert_eq!(reply.status, "completed");
     let seen = recorder.requests();
@@ -231,10 +238,12 @@ async fn azure_timeout_becomes_the_client_deadline() {
     let sdk = fixture.sdk(ProviderRuns {
         transport: Arc::clone(&recorder),
     });
-    let mut params = RunParams::default();
-    params.api_base = Some(String::from(BASE));
-    params.api_key = secret("az-key");
-    params.timeout = Some(RunTimeout::Plain(TimeoutValue::Number(2.0_f64)));
+    let params = RunParams {
+        api_base: Some(String::from(BASE)),
+        api_key: Some(secret("az-key")),
+        timeout: Some(RunTimeout::Plain(TimeoutValue::Number(2.0_f64))),
+        ..RunParams::default()
+    };
     let reply = polled(sdk.run_thread(azure_call(params)).await.unwrap()).unwrap();
     assert_eq!(reply.status, "completed");
     assert_eq!(recorder.requests()[0].deadline, Duration::from_secs(2));
@@ -247,9 +256,11 @@ async fn azure_default_timeout_is_ten_minutes() {
     let sdk = fixture.sdk(ProviderRuns {
         transport: Arc::clone(&recorder),
     });
-    let mut params = RunParams::default();
-    params.api_base = Some(String::from(BASE));
-    params.api_key = secret("az-key");
+    let params = RunParams {
+        api_base: Some(String::from(BASE)),
+        api_key: Some(secret("az-key")),
+        ..RunParams::default()
+    };
     let reply = polled(sdk.run_thread(azure_call(params)).await.unwrap()).unwrap();
     assert_eq!(reply.status, "completed");
     assert_eq!(recorder.requests()[0].deadline, Duration::from_secs(600));
@@ -267,12 +278,17 @@ async fn max_retries_reach_both_providers() {
         CapturedTarget::OpenAi { options, .. } => assert_eq!(options.max_retries, Some(2)),
         CapturedTarget::Azure { .. } => panic!("the openai provider built an azure target"),
     }
-    let operations = CaptureRuns::default();
-    let sdk = fixture.sdk(operations);
-    let mut params = RunParams::default();
-    params.max_retries = Some(3);
-    sdk.run_thread(azure_call(params)).await.unwrap();
-    match sdk.operations.targets().remove(0) {
+    let azure_operations = CaptureRuns::default();
+    let azure_sdk = fixture.sdk(azure_operations);
+    let azure_params = RunParams {
+        max_retries: Some(3),
+        ..RunParams::default()
+    };
+    azure_sdk
+        .run_thread(azure_call(azure_params))
+        .await
+        .unwrap();
+    match azure_sdk.operations.targets().remove(0) {
         CapturedTarget::Azure {
             params,
             max_retries,
@@ -290,10 +306,12 @@ async fn azure_base_key_and_version_stay_optional_strings() {
     let fixture = Fixture::new();
     let operations = CaptureRuns::default();
     let sdk = fixture.sdk(operations);
-    let mut params = RunParams::default();
-    params.api_base = Some(String::from(BASE));
-    params.api_key = secret("az-key");
-    params.api_version = Some(String::from("2024-02-15-preview"));
+    let params = RunParams {
+        api_base: Some(String::from(BASE)),
+        api_key: Some(secret("az-key")),
+        api_version: Some(String::from("2024-02-15-preview")),
+        ..RunParams::default()
+    };
     sdk.run_thread(azure_call(params)).await.unwrap();
     match sdk.operations.targets().remove(0) {
         CapturedTarget::Azure {
@@ -323,7 +341,7 @@ async fn a_supplied_client_timeout_becomes_the_poll_deadline() {
     let mut input = call("openai");
     input.client = Some(RunClient {
         class: RunClientClass::OpenAi,
-        api_key: secret("client-key"),
+        api_key: Some(secret("client-key")),
         base_url: Some(String::from(BASE)),
         api_version: None,
         azure_ad_token: None,
@@ -347,10 +365,10 @@ async fn a_supplied_azure_client_reaches_the_request() {
     let mut input = call("openai");
     input.client = Some(RunClient {
         class: RunClientClass::Azure,
-        api_key: secret("client-key"),
+        api_key: Some(secret("client-key")),
         base_url: Some(String::from(BASE)),
         api_version: Some(String::from("2024-02-15-preview")),
-        azure_ad_token: secret("client-token"),
+        azure_ad_token: Some(secret("client-token")),
         timeout: Some(5.0_f64),
         max_retries: None,
         organization: None,
@@ -375,13 +393,19 @@ async fn azure_string_timeout_reaches_litellm_params() {
     let fixture = Fixture::new();
     let operations = CaptureRuns::default();
     let sdk = fixture.sdk(operations);
-    let mut params = RunParams::default();
-    params.timeout = Some(RunTimeout::Plain(TimeoutValue::String(String::from(
-        " 2.5 ",
-    ))));
+    let params = RunParams {
+        timeout: Some(RunTimeout::Plain(TimeoutValue::String(String::from(
+            " 2.5 ",
+        )))),
+        ..RunParams::default()
+    };
     sdk.run_thread(azure_call(params)).await.unwrap();
     match sdk.operations.targets().remove(0) {
-        CapturedTarget::Azure { params, .. } => assert_eq!(params.timeout, Some(2.5_f64)),
+        CapturedTarget::Azure {
+            params: litellm, ..
+        } => {
+            assert_eq!(litellm.timeout, Some(2.5_f64));
+        }
         CapturedTarget::OpenAi { .. } => panic!("the azure provider built an openai target"),
     }
 }
@@ -391,17 +415,21 @@ async fn litellm_params_reach_only_the_azure_branch() {
     let fixture = Fixture::new();
     let operations = CaptureRuns::default();
     let sdk = fixture.sdk(operations);
-    let mut params = RunParams::default();
-    params.timeout = Some(RunTimeout::Plain(TimeoutValue::Number(2.0_f64)));
-    params.max_retries = Some(1);
-    params.azure_ad_token = secret("raw-token");
+    let params = RunParams {
+        timeout: Some(RunTimeout::Plain(TimeoutValue::Number(2.0_f64))),
+        max_retries: Some(1),
+        azure_ad_token: Some(secret("raw-token")),
+        ..RunParams::default()
+    };
     sdk.run_thread(azure_call(params)).await.unwrap();
     match sdk.operations.targets().remove(0) {
-        CapturedTarget::Azure { params, .. } => {
-            assert_eq!(params.timeout, Some(2.0_f64));
-            assert_eq!(params.max_retries, Some(1));
+        CapturedTarget::Azure {
+            params: litellm, ..
+        } => {
+            assert_eq!(litellm.timeout, Some(2.0_f64));
+            assert_eq!(litellm.max_retries, Some(1));
             assert_eq!(
-                params
+                litellm
                     .azure_ad_token
                     .as_ref()
                     .map(ExposeSecret::expose_secret),

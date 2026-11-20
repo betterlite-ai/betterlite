@@ -1,4 +1,3 @@
-use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -13,7 +12,6 @@ use betterlite_openai::thread_runs::operations::RunsApi;
 use betterlite_openai::thread_runs::records::RunReply;
 use betterlite_openai::thread_runs::stream::{RunStream, RunStreamTransport};
 
-use super::call::RunClient;
 use super::service::{AzureRun, OpenAiRun, RunOperations, RunTarget};
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
@@ -28,30 +26,25 @@ where
 {
     type Stream = RunStream<T>;
 
-    fn poll(
-        &self,
-        target: RunTarget<'_>,
-    ) -> impl Future<Output = Result<Option<RunReply>, AssistantsRunError>> + Send {
-        async move {
-            match target {
-                RunTarget::OpenAi(run) => {
-                    let client = self.openai_client(&run)?;
-                    let reply = RunsApi {
-                        transport: Arc::clone(&self.transport),
-                    }
-                    .create_and_poll(&client, &run.request)
-                    .await?;
-                    Ok(Some(reply))
+    async fn poll(&self, target: RunTarget<'_>) -> Result<Option<RunReply>, AssistantsRunError> {
+        match target {
+            RunTarget::OpenAi(run) => {
+                let client = self.openai_client(&run);
+                let reply = RunsApi {
+                    transport: Arc::clone(&self.transport),
                 }
-                RunTarget::Azure(run) => {
-                    let client = self.azure_client(&run)?;
-                    let reply = AssistantsRunsApi {
-                        transport: Arc::clone(&self.transport),
-                    }
-                    .poll(&client, &run.request)
-                    .await?;
-                    Ok(Some(reply))
+                .create_and_poll(&client, &run.request)
+                .await?;
+                Ok(Some(reply))
+            }
+            RunTarget::Azure(run) => {
+                let client = self.azure_client(&run)?;
+                let reply = AssistantsRunsApi {
+                    transport: Arc::clone(&self.transport),
                 }
+                .poll(&client, &run.request)
+                .await?;
+                Ok(Some(reply))
             }
         }
     }
@@ -60,7 +53,7 @@ where
     fn stream(&self, target: RunTarget<'_>) -> Result<RunStream<T>, AssistantsRunError> {
         match target {
             RunTarget::OpenAi(run) => {
-                let client = self.openai_client(&run)?;
+                let client = self.openai_client(&run);
                 Ok(RunsApi {
                     transport: Arc::clone(&self.transport),
                 }
@@ -82,14 +75,22 @@ where
     T: AssistantsTransport + RunStreamTransport,
 {
     // get_openai_client(kind, options, client): a supplied client is returned untouched, whatever its class
-    fn openai_client(&self, run: &OpenAiRun) -> Result<SdkClient<T>, AssistantsRunError> {
-        let supplied = run.supplied.as_ref().map(|client| {
-            openai_supplied(client, Arc::clone(&self.transport), run.supplied_timeout)
+    fn openai_client(&self, run: &OpenAiRun) -> SdkClient<T> {
+        let supplied = run.supplied.as_ref().map(|client| SdkClient {
+            kind: client.kind(),
+            api_key: client.api_key.clone(),
+            base_url: client.base_url.clone(),
+            timeout: run.supplied_timeout,
+            max_retries: client
+                .max_retries
+                .and_then(|value| u32::try_from(value).ok()),
+            organization: client.organization.clone(),
+            transport: Arc::clone(&self.transport),
         });
-        Ok(OpenAiAssistantsApi {
+        OpenAiAssistantsApi {
             transport: Arc::clone(&self.transport),
         }
-        .get_openai_client(run.kind, run.options.clone(), supplied))
+        .get_openai_client(run.kind, run.options.clone(), supplied)
     }
 
     fn azure_client<'data>(
@@ -99,49 +100,18 @@ where
         let api = AzureAssistantsApi {
             transport: Arc::clone(&self.transport),
         };
-        let supplied = run.supplied.as_ref().map(|client| {
-            azure_supplied(client, Arc::clone(&self.transport), run.supplied_timeout)
+        // an AzureOpenAI instance keeps its own endpoint, api-version, key and token even under an openai provider
+        let supplied = run.supplied.as_ref().map(|client| AzureAssistantsClient {
+            kind: client.kind(),
+            inputs: None,
+            transport: Arc::clone(&self.transport),
+            base_url: client.base_url.clone().unwrap_or_default(),
+            api_version: client.api_version.clone().unwrap_or_default(),
+            key: client.api_key.clone(),
+            token: client.azure_ad_token.clone(),
+            deadline: run.supplied_timeout.unwrap_or(DEFAULT_TIMEOUT),
         });
         api.azure_client(&run.client, supplied, run.kind)
             .map_err(AssistantsRunError::Client)
-    }
-}
-
-fn openai_supplied<T>(
-    client: &RunClient,
-    transport: Arc<T>,
-    timeout: Option<Duration>,
-) -> SdkClient<T> {
-    SdkClient {
-        kind: client.kind(),
-        api_key: client.api_key.clone(),
-        base_url: client.base_url.clone(),
-        timeout,
-        max_retries: client
-            .max_retries
-            .and_then(|value| u32::try_from(value).ok()),
-        organization: client.organization.clone(),
-        transport,
-    }
-}
-
-// an AzureOpenAI instance keeps its own endpoint, api-version, key and token even under an openai provider
-fn azure_supplied<T>(
-    client: &RunClient,
-    transport: Arc<T>,
-    timeout: Option<Duration>,
-) -> AzureAssistantsClient<'static, T> {
-    let endpoint = client.base_url.clone().unwrap_or_default();
-    let version = client.api_version.clone().unwrap_or_default();
-    let deadline = timeout.unwrap_or(DEFAULT_TIMEOUT);
-    AzureAssistantsClient {
-        kind: client.kind(),
-        inputs: None,
-        transport,
-        base_url: endpoint,
-        api_version: version,
-        key: client.api_key.clone(),
-        token: client.azure_ad_token.clone(),
-        deadline,
     }
 }

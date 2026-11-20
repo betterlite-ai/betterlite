@@ -143,11 +143,13 @@ pub(super) fn facade_token(
 }
 
 // str(azure_ad_token): a present null pops to None and any other value becomes its Python text
-fn token_text(value: &JsonValue) -> Option<SecretString> {
-    match value {
+fn token_text(token: &JsonValue) -> Option<SecretString> {
+    match token {
         JsonValue::Null => None,
         JsonValue::String(text) => Some(SecretString::from(text.clone())),
-        other => Some(SecretString::from(other.to_string())),
+        JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Array(_) | JsonValue::Object(_) => {
+            Some(SecretString::from(token.to_string()))
+        }
     }
 }
 

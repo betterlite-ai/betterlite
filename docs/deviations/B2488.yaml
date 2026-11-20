@@ -3,6 +3,9 @@ deviations:
   - what: "A structured httpx.Timeout keeps only its read component, or 600 seconds when it has none, for the OpenAI and Azure run calls."
     why: "The native run transports carry one deadline per read, while LiteLLM hands the whole object to the OpenAI and Azure SDK clients because supports_httpx_timeout is true for both."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L1259-L1272
+  - what: "A string run timeout such as \"2.5\" is parsed into seconds before it reaches the Azure client, so the call runs with a 2.5 second deadline."
+    why: "LiteLLM puts the raw kwarg in litellm_params (main.py L1352) and common_utils.py hands it to AzureOpenAI unchanged (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L628-L687), so a string timeout fails on the first request with APIConnectionError; no working setup relies on that failure."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L1352
 kept_bugs:
   - what: "An event handler passed to the Azure run wrappers is dropped, so a streamed Azure run invokes no handler callbacks."
     why: "LiteLLM's Azure branch never forwards it, and code written against this version already sees no callbacks there."

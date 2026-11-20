@@ -26,7 +26,7 @@ use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::assistants::client::{ClientKind, ClientOptions};
 use betterlite_openai::assistants::transport::AssistantsTransport;
 use betterlite_openai::thread_runs::error::ThreadRunsError;
-use betterlite_openai::thread_runs::records::{RunEvent, RunReply, RunRequest};
+use betterlite_openai::thread_runs::records::{RunEvent, RunReply};
 use betterlite_openai::thread_runs::stream::{
     RunChunks, RunEventHandler, RunStream, RunStreamTransport,
 };
@@ -41,7 +41,7 @@ use tokio::sync::mpsc;
 use crate::api::assistant_run_sdk::call::{
     RunClient, RunClientClass, RunFlag, RunParams, RunThreadCall, RunTimeout,
 };
-use crate::api::assistant_run_sdk::error::{AssistantRunError, RunDispatchError, RunFailure};
+use crate::api::assistant_run_sdk::error::{AssistantRunError, RunDispatchError as _, RunFailure};
 use crate::api::assistant_run_sdk::provider::ProviderRuns;
 use crate::api::assistant_run_sdk::service::{
     AssistantRunSdk, RunOperations, RunOutcome, RunTarget,
@@ -275,22 +275,16 @@ enum CapturedTarget {
     OpenAi {
         kind: ClientKind,
         handler: bool,
-        request: RunRequest,
         options: ClientOptions,
         supplied: Option<RunClient>,
     },
     Azure {
-        kind: ClientKind,
-        handler: bool,
-        request: RunRequest,
         params: LiteLlmParams,
         api_key: Option<SecretString>,
         api_base: Option<String>,
         api_version: Option<String>,
         azure_ad_token: Option<SecretString>,
-        timeout: f64,
         max_retries: Option<i64>,
-        supplied: Option<RunClient>,
     },
 }
 
@@ -304,29 +298,23 @@ impl CaptureRuns {
     fn capture(&self, target: RunTarget<'_>) {
         let captured = match target {
             RunTarget::OpenAi(run) => {
-                let run = *run;
+                let inner = *run;
                 CapturedTarget::OpenAi {
-                    kind: run.kind,
-                    handler: run.handler.is_some(),
-                    request: run.request,
-                    options: run.options,
-                    supplied: run.supplied,
+                    kind: inner.kind,
+                    handler: inner.handler.is_some(),
+                    options: inner.options,
+                    supplied: inner.supplied,
                 }
             }
             RunTarget::Azure(run) => {
-                let run = *run;
+                let inner = *run;
                 CapturedTarget::Azure {
-                    kind: run.kind,
-                    handler: run.handler.is_some(),
-                    request: run.request,
-                    params: run.client.params,
-                    api_key: run.client.api_key,
-                    api_base: run.client.api_base,
-                    api_version: run.client.api_version,
-                    azure_ad_token: run.client.azure_ad_token,
-                    timeout: run.client.timeout,
-                    max_retries: run.client.max_retries,
-                    supplied: run.supplied,
+                    params: inner.client.params,
+                    api_key: inner.client.api_key,
+                    api_base: inner.client.api_base,
+                    api_version: inner.client.api_version,
+                    azure_ad_token: inner.client.azure_ad_token,
+                    max_retries: inner.client.max_retries,
                 }
             }
         };
@@ -367,7 +355,7 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let mut settings = empty_settings();
-        settings.api_key = secret("sk-test");
+        settings.api_key = Some(secret("sk-test"));
         Self {
             settings,
             azure: AzureSettings::default(),
@@ -414,8 +402,12 @@ fn empty_settings() -> ResourceSdkSettings {
     }
 }
 
-fn secret(value: &str) -> Option<SecretString> {
-    Some(SecretString::from(value.to_owned()))
+fn secret(value: &str) -> SecretString {
+    SecretString::from(value.to_owned())
+}
+
+fn json(text: &str) -> JsonValue {
+    serde_json::from_str(text).unwrap()
 }
 
 fn call(provider: &str) -> RunThreadCall {
@@ -442,8 +434,24 @@ fn azure_call(params: RunParams) -> RunThreadCall {
     input
 }
 
-fn flag(value: bool) -> Option<Option<RunFlag>> {
-    Some(Some(RunFlag::Bool(value)))
+// the three stream states a case can set without naming Option<Option<RunFlag>>
+#[derive(Debug)]
+enum StreamArg {
+    Bool(bool),
+    Null,
+    Number(f64),
+    Text(&'static str),
+}
+
+impl StreamArg {
+    fn apply(self, input: &mut RunThreadCall) {
+        input.stream = match self {
+            Self::Bool(value) => Some(Some(RunFlag::Bool(value))),
+            Self::Null => Some(None),
+            Self::Number(value) => Some(Some(RunFlag::Number(value))),
+            Self::Text(value) => Some(Some(RunFlag::Text(String::from(value)))),
+        };
+    }
 }
 
 fn recording_handler() -> Arc<RecordingHandler> {
@@ -456,7 +464,7 @@ fn run_reply(body: &str) -> RunReply {
 
 fn polled(outcome: RunOutcome<RunStream<Recorder>>) -> Option<RunReply> {
     match outcome {
-        RunOutcome::Polled(reply) => reply,
+        RunOutcome::Polled(reply) => *reply,
         RunOutcome::Streaming(_) => panic!("the call streamed instead of polling"),
     }
 }
@@ -471,7 +479,13 @@ fn manager(outcome: RunOutcome<RunStream<Recorder>>) -> RunStream<Recorder> {
 fn failure(error: &AssistantRunError) -> &RunFailure {
     match error {
         AssistantRunError::Mapped(failure) => failure,
-        other => panic!("the call did not map its failure: {other}"),
+        AssistantRunError::Unsupported { .. }
+        | AssistantRunError::DuplicateStream
+        | AssistantRunError::Timeout(_)
+        | AssistantRunError::InvalidTimeout { .. }
+        | AssistantRunError::InvalidTimeoutText { .. }
+        | AssistantRunError::InvalidExtraBody
+        | AssistantRunError::Dispatch(_) => panic!("the call did not map its failure: {error}"),
     }
 }
 
@@ -489,12 +503,13 @@ async fn event_names(stream: RunStream<Recorder>) -> Vec<String> {
 }
 
 fn completed_event_frames() -> Vec<Vec<u8>> {
+    let created = format!("data: {{\"event\":\"thread.run.created\",\"data\":{QUEUED}}}\n\n");
+    let completed =
+        format!("data: {{\"event\":\"thread.run.completed\",\"data\":{COMPLETED}}}\n\n");
     vec![
-        b"data: {\"event\":\"thread.run.created\",\"data\":{\"id\":\"run_1\",\"status\":\"queued\"}}\n\n"
-            .to_vec(),
+        created.into_bytes(),
         b"data: {\"event\":\"thread.message.delta\",\"data\":{\"id\":\"msg_1\"}}\n\n".to_vec(),
-        b"data: {\"event\":\"thread.run.completed\",\"data\":{\"id\":\"run_1\",\"status\":\"completed\"}}\n\n"
-            .to_vec(),
+        completed.into_bytes(),
         b"data: [DONE]\n\n".to_vec(),
     ]
 }
@@ -505,13 +520,9 @@ fn joined(frames: Vec<Vec<u8>>) -> Vec<u8> {
 
 fn polled_outcome(outcome: RunOutcome<()>) -> Option<RunReply> {
     match outcome {
-        RunOutcome::Polled(reply) => reply,
+        RunOutcome::Polled(reply) => *reply,
         RunOutcome::Streaming(()) => panic!("the call streamed instead of polling"),
     }
-}
-
-fn secret_text(value: &str) -> Option<String> {
-    Some(value.to_owned())
 }
 
 #[rstest]
@@ -543,12 +554,12 @@ async fn requires_action_and_failed_keep_their_details() {
         required["submit_tool_outputs"]["tool_calls"][0]["id"],
         "call_1"
     );
-    let (recorder, fixture) = openai_recorder();
-    recorder.queue_twice(FAILED);
-    let sdk = fixture.sdk(ProviderRuns {
-        transport: Arc::clone(&recorder),
+    let (failed_recorder, failed_fixture) = openai_recorder();
+    failed_recorder.queue_twice(FAILED);
+    let failed_sdk = failed_fixture.sdk(ProviderRuns {
+        transport: Arc::clone(&failed_recorder),
     });
-    let failed = polled(sdk.run_thread(call("openai")).await.unwrap()).unwrap();
+    let failed = polled(failed_sdk.run_thread(call("openai")).await.unwrap()).unwrap();
     assert_eq!(failed.last_error.unwrap()["code"], "server_error");
 }
 
@@ -613,7 +624,7 @@ async fn an_openai_client_under_azure_keeps_the_openai_protocol() {
     input.event_handler = Some(sink);
     input.client = Some(RunClient {
         class: RunClientClass::OpenAi,
-        api_key: secret("client-key"),
+        api_key: Some(secret("client-key")),
         base_url: Some(String::from(BASE)),
         api_version: None,
         azure_ad_token: None,
@@ -635,24 +646,23 @@ async fn an_openai_client_under_azure_keeps_the_openai_protocol() {
 
 #[rstest]
 #[case::absent(None, None)]
-#[case::empty_object(Some(serde_json::json!({})), None)]
+#[case::empty_object(Some(json("{}")), None)]
 #[case::null_uses_the_env(Some(JsonValue::Null), Some("env-token"))]
-#[case::body_token(
-    Some(serde_json::json!({"azure_ad_token": "body-token"})),
-    Some("body-token")
-)]
-#[case::body_null(Some(serde_json::json!({"azure_ad_token": null})), None)]
+#[case::body_token(Some(json(r#"{"azure_ad_token": "body-token"}"#)), Some("body-token"))]
+#[case::body_null(Some(json(r#"{"azure_ad_token": null}"#)), None)]
 #[tokio::test]
 async fn azure_extra_body_token_choices(
     #[case] extra_body: Option<JsonValue>,
     #[case] expected: Option<&str>,
 ) {
     let mut fixture = Fixture::new();
-    fixture.settings.azure_ad_token = secret("env-token");
+    fixture.settings.azure_ad_token = Some(secret("env-token"));
     let operations = CaptureRuns::default();
     let sdk = fixture.sdk(operations);
-    let mut params = RunParams::default();
-    params.extra_body = extra_body;
+    let params = RunParams {
+        extra_body,
+        ..RunParams::default()
+    };
     sdk.run_thread(azure_call(params)).await.unwrap();
     match sdk.operations.targets().remove(0) {
         CapturedTarget::Azure { azure_ad_token, .. } => {
@@ -660,6 +670,48 @@ async fn azure_extra_body_token_choices(
                 azure_ad_token.as_ref().map(ExposeSecret::expose_secret),
                 expected
             );
+        }
+        CapturedTarget::OpenAi { .. } => panic!("the azure provider built an openai target"),
+    }
+}
+
+#[tokio::test]
+async fn azure_credentials_reach_the_litellm_params() {
+    let fixture = Fixture::new();
+    let operations = CaptureRuns::default();
+    let sdk = fixture.sdk(operations);
+    let credentials = RunParams {
+        tenant_id: Some(String::from("tenant")),
+        client_id: Some(String::from("client")),
+        client_secret: Some(secret("client-secret")),
+        azure_username: Some(String::from("user")),
+        azure_password: Some(secret("password")),
+        azure_scope: Some(String::from("scope")),
+        ..RunParams::default()
+    };
+    sdk.run_thread(azure_call(credentials)).await.unwrap();
+    match sdk.operations.targets().remove(0) {
+        CapturedTarget::Azure { params, .. } => {
+            assert_eq!(params.auth.tenant_id.as_deref(), Some("tenant"));
+            assert_eq!(params.auth.client_id.as_deref(), Some("client"));
+            assert_eq!(
+                params
+                    .auth
+                    .client_secret
+                    .as_ref()
+                    .map(ExposeSecret::expose_secret),
+                Some("client-secret")
+            );
+            assert_eq!(params.auth.azure_username.as_deref(), Some("user"));
+            assert_eq!(
+                params
+                    .auth
+                    .azure_password
+                    .as_ref()
+                    .map(ExposeSecret::expose_secret),
+                Some("password")
+            );
+            assert_eq!(params.auth.azure_scope.as_deref(), Some("scope"));
         }
         CapturedTarget::OpenAi { .. } => panic!("the azure provider built an openai target"),
     }
@@ -733,6 +785,24 @@ async fn arun_thread_maps_a_wrapper_failure_as_api_connection() {
     let mapped = failure(&error);
     assert_eq!(mapped.class_name, "APIConnectionError");
     assert!(matches!(mapped.class, ErrorClass::ApiConnection(_)));
+}
+
+#[tokio::test]
+async fn arun_thread_maps_a_negative_timeout_to_the_timeout_class() {
+    let fixture = Fixture::new();
+    let operations = CaptureRuns::default();
+    let sdk = fixture.sdk(operations);
+    let mut input = call("openai");
+    input.params.timeout = Some(RunTimeout::Plain(TimeoutValue::Number(-1.0_f64)));
+    let error = sdk.arun_thread(input).await.err().unwrap();
+    let mapped = failure(&error);
+    assert_eq!(mapped.class_name, "Timeout");
+    assert!(matches!(mapped.class, ErrorClass::Timeout(_)));
+    assert_eq!(mapped.class.metadata().status_code, 408);
+    assert_eq!(
+        mapped.message,
+        "litellm.Timeout: APITimeoutError - Request timed out. Error_str: Request timed out."
+    );
 }
 
 #[tokio::test]

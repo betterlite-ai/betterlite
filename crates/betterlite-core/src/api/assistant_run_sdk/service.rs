@@ -58,7 +58,7 @@ pub enum RunTarget<'data> {
 }
 
 pub enum RunOutcome<S> {
-    Polled(Option<RunReply>),
+    Polled(Box<Option<RunReply>>),
     Streaming(S),
 }
 
@@ -91,7 +91,7 @@ where
         self.operations
             .poll(target)
             .await
-            .map(RunOutcome::Polled)
+            .map(|reply| RunOutcome::Polled(Box::new(reply)))
             .map_err(AssistantRunError::Dispatch)
     }
 
@@ -134,7 +134,13 @@ where
 
     // arun_thread's except block: provider and wrapper failures are mapped, a litellm error passes through
     fn map_arun_error(&self, provider: &str, error: AssistantRunError) -> AssistantRunError {
-        let text = error.to_string();
+        // LiteLLM's client raises APITimeoutError at once for the negative deadline it was handed
+        let negative = matches!(error, AssistantRunError::InvalidTimeout { .. });
+        let (text, status) = if negative {
+            (String::from("Request timed out."), Some(408))
+        } else {
+            (error.to_string(), None)
+        };
         match error {
             AssistantRunError::Dispatch(dispatch) => {
                 AssistantRunError::Mapped(map_failure(provider, &dispatch, self.redactor))
@@ -143,7 +149,7 @@ where
             | AssistantRunError::InvalidTimeout { .. }
             | AssistantRunError::InvalidTimeoutText { .. }
             | AssistantRunError::InvalidExtraBody => {
-                AssistantRunError::Mapped(failed(provider, text, None, None, self.redactor))
+                AssistantRunError::Mapped(failed(provider, text, status, None, self.redactor))
             }
             mapped @ (AssistantRunError::Unsupported { .. }
             | AssistantRunError::Mapped(_)
@@ -164,19 +170,21 @@ where
         let handler = match call.provider.as_str() {
             "openai" => call.event_handler.clone(),
             "azure" => None,
-            provider => {
+            other => {
                 return Err(AssistantRunError::Unsupported {
-                    provider: provider.to_owned(),
+                    provider: other.to_owned(),
                 });
             }
         };
-        let azure = match call.client.as_ref() {
-            Some(client) => matches!(
-                client.class,
-                RunClientClass::Azure | RunClientClass::AsyncAzure
-            ),
-            None => call.provider.as_str() == "azure",
-        };
+        let azure = call.client.as_ref().map_or_else(
+            || call.provider.as_str() == "azure",
+            |client| {
+                matches!(
+                    client.class,
+                    RunClientClass::Azure | RunClientClass::AsyncAzure
+                )
+            },
+        );
         if azure {
             let run = self.azure_run(call, kind, handler, timeout)?;
             return Ok(RunTarget::Azure(Box::new(run)));
@@ -208,7 +216,14 @@ where
             client: ClientRequest {
                 params: LiteLlmParams {
                     azure_ad_token: call.params.azure_ad_token.clone(),
-                    auth: AuthParams::default(),
+                    auth: AuthParams {
+                        tenant_id: call.params.tenant_id.clone(),
+                        client_id: call.params.client_id.clone(),
+                        client_secret: call.params.client_secret.clone(),
+                        azure_username: call.params.azure_username.clone(),
+                        azure_password: call.params.azure_password.clone(),
+                        azure_scope: call.params.azure_scope.clone(),
+                    },
                     max_retries: call.params.max_retries,
                     timeout: azure_timeout(&call.params)?,
                 },

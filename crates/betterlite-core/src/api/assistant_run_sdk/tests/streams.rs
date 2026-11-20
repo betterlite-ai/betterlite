@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use rstest::rstest;
+use tokio::time::timeout;
 
 use super::*;
 
@@ -43,7 +44,7 @@ async fn openai_stream_posts_stream_true_with_the_assistants_header() {
 async fn stream_events_keep_their_order_across_split_reads() {
     let (recorder, fixture) = openai_recorder();
     let all = joined(completed_event_frames());
-    let split = all.len() / 2;
+    let split = all.len().div_ceil(2);
     recorder.prepare(vec![all[..split].to_vec(), all[split..].to_vec()]);
     let sdk = fixture.sdk(ProviderRuns {
         transport: Arc::clone(&recorder),
@@ -68,7 +69,7 @@ async fn openai_stream_invokes_the_supplied_handler() {
     });
     let sink = recording_handler();
     let mut input = call("openai");
-    input.event_handler = Some(sink.clone());
+    input.event_handler = Some(Arc::clone(&sink));
     let names = event_names(sdk.run_thread_stream(input).unwrap()).await;
     assert_eq!(sink.events(), names);
     assert!(sink.ended());
@@ -82,11 +83,13 @@ async fn azure_stream_drops_the_supplied_handler() {
         transport: Arc::clone(&recorder),
     });
     let sink = recording_handler();
-    let mut params = RunParams::default();
-    params.api_base = Some(String::from(BASE));
-    params.api_key = secret("az-key");
+    let params = RunParams {
+        api_base: Some(String::from(BASE)),
+        api_key: Some(secret("az-key")),
+        ..RunParams::default()
+    };
     let mut input = azure_call(params);
-    input.event_handler = Some(sink.clone());
+    input.event_handler = Some(Arc::clone(&sink));
     let stream = sdk.run_thread_stream(input).unwrap();
     assert!(stream.handler.is_none());
     let names = event_names(stream).await;
@@ -113,7 +116,7 @@ async fn arun_thread_with_stream_true_returns_a_manager() {
         transport: Arc::clone(&recorder),
     });
     let mut input = call("openai");
-    input.stream = flag(true);
+    input.stream = Some(Some(RunFlag::Bool(true)));
     let stream = manager(sdk.arun_thread(input).await.unwrap());
     assert_eq!(stream.kind, ClientKind::Async);
     assert!(recorder.requests().is_empty());
@@ -128,7 +131,7 @@ async fn a_supplied_client_class_decides_the_manager_kind() {
     let mut input = call("openai");
     input.client = Some(RunClient {
         class: RunClientClass::OpenAi,
-        api_key: secret("client-key"),
+        api_key: Some(secret("client-key")),
         base_url: None,
         api_version: None,
         azure_ad_token: None,
@@ -179,8 +182,8 @@ async fn cancelling_the_entry_releases_the_transport() {
     drop(recorder);
     let stream = sdk.run_thread_stream(call("openai")).unwrap();
     let mut events = stream.events().await.unwrap();
-    let cancelled = tokio::time::timeout(Duration::from_millis(10), events.next()).await;
-    assert!(cancelled.is_err());
+    let cancelled = timeout(Duration::from_millis(10), events.next()).await;
+    cancelled.unwrap_err();
     drop(events);
     drop(sdk);
     assert!(weak.upgrade().is_none());
@@ -188,16 +191,16 @@ async fn cancelling_the_entry_releases_the_transport() {
 }
 
 #[rstest]
-#[case::true_value(flag(true))]
-#[case::null(Some(None))]
+#[case::true_value(StreamArg::Bool(true))]
+#[case::null(StreamArg::Null)]
 #[tokio::test]
-async fn run_thread_stream_rejects_a_present_stream(#[case] value: Option<Option<RunFlag>>) {
+async fn run_thread_stream_rejects_a_present_stream(#[case] value: StreamArg) {
     let (recorder, fixture) = openai_recorder();
     let sdk = fixture.sdk(ProviderRuns {
         transport: Arc::clone(&recorder),
     });
     let mut input = call("openai");
-    input.stream = value;
+    value.apply(&mut input);
     let error = sdk.run_thread_stream(input).err().unwrap();
     assert!(matches!(error, AssistantRunError::DuplicateStream));
     assert_eq!(
