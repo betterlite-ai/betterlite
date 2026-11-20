@@ -132,9 +132,12 @@ pub fn access_group_table(
 
 #[must_use]
 // ast-grep-ignore: no-one-line-functions - LiteLLM's _verification_token_db reads litellm_verificationtoken
-pub fn tokens_table<C: DatabaseClient>(
+pub fn tokens_table<C>(
     database: Option<WriterPinnedClient<'_, C>>,
-) -> VerificationTokenRepository<'_, C> {
+) -> VerificationTokenRepository<'_, C>
+where
+    C: DatabaseClient,
+{
     VerificationTokenRepository { database }
 }
 
