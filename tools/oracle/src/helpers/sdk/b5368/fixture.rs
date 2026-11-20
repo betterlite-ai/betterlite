@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::str::FromStr as _;
 use std::sync::Arc;
 
 use betterlite_core::schema::SchemaLimits;
@@ -20,6 +20,7 @@ use betterlite_sdk::call_wrapper::{CallWrapper, SetupState, WrapperFlags};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use serde_json::{Number, Value, json};
+use tokio::runtime::{Builder, Runtime};
 
 use super::input::{BudgetSpec, Input, Mode};
 use super::ports::{
@@ -40,8 +41,8 @@ pub(super) fn run(input: &Input) -> HelperResult {
     Ok(answer(result, &target))
 }
 
-fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
-    tokio::runtime::Builder::new_current_thread()
+fn runtime() -> Result<Runtime, Box<HelperError>> {
+    Builder::new_current_thread()
         .build()
         .map_err(|error| helper_error("Runtime", error.to_string()))
 }
