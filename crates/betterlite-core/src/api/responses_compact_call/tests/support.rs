@@ -400,16 +400,18 @@ pub(crate) struct Configs {
     pub(crate) supported: Option<Vec<String>>,
 }
 
+// The registry decides which providers have a native config; the factory builds one for anything
+// that got past it, so an unsupported provider must fail in the B157 lookup and never reach HTTP
 impl CompactConfigFactory for Configs {
     type Provider = TestConfig;
 
     fn compact_config(
         &self,
         _model: &str,
-        provider: &str,
+        _provider: &str,
         _api_base: Option<&str>,
     ) -> Option<TestConfig> {
-        (provider == "openai").then(|| TestConfig::new(&self.events, self.supported.clone()))
+        Some(TestConfig::new(&self.events, self.supported.clone()))
     }
 }
 
