@@ -72,22 +72,26 @@ fn body_fields(body: &str) -> (Nullable, Nullable, Nullable) {
     let parsed: serde_json::Value = serde_json::from_str(body).unwrap_or(serde_json::Value::Null);
     let candidate = match &parsed {
         serde_json::Value::Object(fields) => fields.get("error").unwrap_or(&parsed),
-        _ => &parsed,
+        serde_json::Value::Null
+        | serde_json::Value::Bool(_)
+        | serde_json::Value::Number(_)
+        | serde_json::Value::String(_)
+        | serde_json::Value::Array(_) => &parsed,
     };
     let serde_json::Value::Object(fields) = candidate else {
         return (Some(None), Some(None), Some(None));
     };
     (
-        nullable(fields.get("type")),
-        nullable(fields.get("param")),
-        nullable(fields.get("code")),
+        Some(nullable(fields.get("type"))),
+        Some(nullable(fields.get("param"))),
+        Some(nullable(fields.get("code"))),
     )
 }
 
-fn nullable(value: Option<&serde_json::Value>) -> Nullable {
+fn nullable(value: Option<&serde_json::Value>) -> Option<String> {
     match value {
-        None | Some(serde_json::Value::Null) => Some(None),
-        Some(serde_json::Value::String(text)) => Some(Some(text.clone())),
-        Some(other) => Some(Some(other.to_string())),
+        None | Some(serde_json::Value::Null) => None,
+        Some(serde_json::Value::String(text)) => Some(text.clone()),
+        Some(other) => Some(other.to_string()),
     }
 }

@@ -23,10 +23,6 @@ use projection::failure;
 mod dispatch;
 mod projection;
 
-fn default_custom_llm_provider() -> Option<String> {
-    Some("openai".to_owned())
-}
-
 // one cancel call; runs execute in order against the same settings the case env loads
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -38,7 +34,7 @@ pub struct Call {
 #[serde(deny_unknown_fields)]
 pub struct Run {
     pub(crate) fine_tuning_job_id: String,
-    #[serde(default = "default_custom_llm_provider")]
+    #[serde(default = "betterlite_core::api::fine_tuning_cancel_call::default_provider")]
     pub(crate) custom_llm_provider: Option<String>,
     // who supplies the api base: the call's params or the provider's environment variable
     #[serde(default)]
@@ -245,7 +241,7 @@ fn decision_json(value: serde_json::Value) -> Json {
         serde_json::Value::Object(fields) => Json::Object(
             fields
                 .into_iter()
-                .map(|(key, value)| (key, decision_json(value)))
+                .map(|(key, item)| (key, decision_json(item)))
                 .collect(),
         ),
     }

@@ -27,7 +27,7 @@ const OPENAI_PROVIDER: &str = "openai";
     clippy::unnecessary_wraps,
     reason = "serde's default hook must return the field's Option type"
 )]
-fn default_provider() -> Option<String> {
+pub fn default_provider() -> Option<String> {
     Some(OPENAI_PROVIDER.to_owned())
 }
 
