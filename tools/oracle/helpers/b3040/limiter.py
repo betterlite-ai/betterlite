@@ -25,6 +25,7 @@ from .types import (
 AUTH: TypeAdapter[UserAPIKeyAuth] = TypeAdapter(UserAPIKeyAuth)
 AGENT: TypeAdapter[AgentResponse] = TypeAdapter(AgentResponse)
 DESCRIPTOR: TypeAdapter[DescriptorView] = TypeAdapter(DescriptorView)
+RATE_LIMIT_MEMBERS: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 
 
 class GroupMap:
@@ -169,18 +170,25 @@ def make_auth(fields: AuthFields, server: ServerFields) -> UserAPIKeyAuth:
 def descriptor_json(descriptor: RateLimitDescriptor) -> DescriptorView:
     rate_limit = descriptor["rate_limit"]
     if rate_limit is None:
-        return DESCRIPTOR.validate_python(
-            {"key": descriptor["key"], "value": descriptor["value"], "rate_limit": None}
-        )
-    filled = {
-        "requests_per_unit": rate_limit.get("requests_per_unit"),
-        "tokens_per_unit": rate_limit.get("tokens_per_unit"),
-        "max_parallel_requests": rate_limit.get("max_parallel_requests"),
-        "window_size": rate_limit.get("window_size"),
+        absent: dict[str, JsonValue] = {
+            "key": descriptor["key"],
+            "value": descriptor["value"],
+            "rate_limit": None,
+        }
+        return DESCRIPTOR.validate_python(absent)
+    members = RATE_LIMIT_MEMBERS.validate_python(rate_limit)
+    filled: dict[str, JsonValue] = {
+        "requests_per_unit": members.get("requests_per_unit"),
+        "tokens_per_unit": members.get("tokens_per_unit"),
+        "max_parallel_requests": members.get("max_parallel_requests"),
+        "window_size": members.get("window_size"),
     }
-    return DESCRIPTOR.validate_python(
-        {"key": descriptor["key"], "value": descriptor["value"], "rate_limit": filled}
-    )
+    present: dict[str, JsonValue] = {
+        "key": descriptor["key"],
+        "value": descriptor["value"],
+        "rate_limit": filled,
+    }
+    return DESCRIPTOR.validate_python(present)
 
 
 def tag_limits_of(rows: list[TagLimitRow]) -> dict[str, TagRateLimit]:
