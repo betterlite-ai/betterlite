@@ -21,6 +21,7 @@ Role: TypeAlias = Literal[
 
 
 class Settings(TypedDict, total=False):
+    # ast-grep-ignore: no-long-names
     disable_key_generate_for_org_admin: bool
 
 
@@ -52,8 +53,7 @@ def answer(call: Call) -> JsonValue:
     except HTTPException as error:
         status = error.status_code
         detail = JSON.validate_python(error.detail)
-    outcome: dict[str, JsonValue] = {"status": status, "detail": detail}
-    return outcome
+    return {"status": status, "detail": detail}
 
 
 def run(input_value: Input) -> JsonValue:
