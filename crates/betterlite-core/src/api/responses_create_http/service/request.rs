@@ -3,9 +3,8 @@ use std::time::Duration;
 use betterlite_http::proxy::outbound::RequestBody;
 use betterlite_models::decisions::Json;
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
-use http::HeaderMap as HttpHeaders;
-use http::Method;
 use http::header::{HeaderName, HeaderValue};
+use http::{HeaderMap as HttpHeaders, Method};
 use url::Url;
 
 use crate::api::responses_compact_http::body::{SignedBody, signed_body_kwargs};
@@ -254,14 +253,10 @@ pub(super) fn timeout(
             None => 0.0_f64,
         },
     };
-    Ok(deadline(computed))
-}
-
-fn deadline(seconds: f64) -> Duration {
-    if seconds.is_infinite() && seconds > 0.0_f64 {
-        return Duration::MAX;
+    if computed.is_infinite() && computed > 0.0_f64 {
+        return Ok(Duration::MAX);
     }
-    Duration::try_from_secs_f64(seconds).unwrap_or(Duration::ZERO)
+    Ok(Duration::try_from_secs_f64(computed).unwrap_or(Duration::ZERO))
 }
 
 pub(super) fn endpoint_url(text: &str) -> Result<Url, CreateError> {
