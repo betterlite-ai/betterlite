@@ -9,16 +9,16 @@ use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use url::Url;
 
-use super::super::config::{FilesConfig, FilesParams};
+use super::super::config::FilesConfig;
 use super::super::error::FileTransportError;
 use super::super::payload::query_pairs;
 use super::{FileRequest, FileTarget, Operation};
 
 // B527's validate_environment rewrites Authorization and Content-Type in the map it is handed, so the caller's entries go in first
-pub(super) fn validated_headers<C: FilesConfig>(
-    config: &C,
-    target: &FileTarget<'_>,
-) -> OpenAiHeaders {
+pub(super) fn validated_headers<C>(config: &C, target: &FileTarget<'_>) -> OpenAiHeaders
+where
+    C: FilesConfig,
+{
     let caller_headers = target
         .extra_headers
         .into_iter()
@@ -28,10 +28,13 @@ pub(super) fn validated_headers<C: FilesConfig>(
     config.validate_environment(caller_headers, target.params)
 }
 
-pub(super) fn endpoint<C: FilesConfig>(
+pub(super) fn endpoint<C>(
     config: &C,
     target: &FileTarget<'_>,
-) -> Result<(String, Url), FileTransportError> {
+) -> Result<(String, Url), FileTransportError>
+where
+    C: FilesConfig,
+{
     let text = config
         .complete_url(target.params, target.vector_store_id)
         .map_err(FileTransportError::Url)?;

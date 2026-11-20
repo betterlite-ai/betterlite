@@ -12,9 +12,10 @@ use super::support::{
 use super::{FILE, json, run};
 use crate::api::vector_file_http_create_list::error::FileTransportError;
 use crate::api::vector_file_http_create_list::service::{
-    ClientKind, CreateCall, FileCall, FileDeps, ListCall, Operation, SuppliedClient,
+    CreateCall, FileCall, FileDeps, ListCall, Operation, SuppliedClient,
 };
 use crate::api::vector_store_http_write::error::HeaderMap;
+use crate::api::vector_store_http_write::service::ClientKind;
 
 fn create_call<'call>(
     request: &CallRequest<'call>,

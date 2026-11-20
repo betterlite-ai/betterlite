@@ -9,9 +9,8 @@ use super::support::{
 };
 use super::{FILE, LIST, json, run};
 use crate::api::vector_file_http_create_list::error::FileTransportError;
-use crate::api::vector_file_http_create_list::service::{
-    ClientKind, CreateCall, FileCall, FileDeps, ListCall,
-};
+use crate::api::vector_file_http_create_list::service::{CreateCall, FileCall, FileDeps, ListCall};
+use crate::api::vector_store_http_write::service::ClientKind;
 
 #[tokio::test]
 async fn create_overlay_before_cleaning() {

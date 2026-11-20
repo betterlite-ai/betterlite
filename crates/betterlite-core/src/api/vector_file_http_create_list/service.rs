@@ -121,7 +121,11 @@ impl<Client> Selected<'_, Client> {
     }
 }
 
-impl<'deps, C: FilesConfig, S: ClientSource> FileDeps<'deps, C, S> {
+impl<C, S> FileDeps<'_, C, S>
+where
+    C: FilesConfig,
+    S: ClientSource,
+{
     fn select(
         &self,
         mode: ClientKind,
