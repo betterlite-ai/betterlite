@@ -15,10 +15,12 @@ pub(crate) async fn organization_project_counters(
     services: &CounterServices<'_>,
 ) -> Vec<BudgetCounter> {
     let mut counters = Vec::new();
-    let resolved_org = match token.view.token.org_id.as_deref() {
-        Some(org_id) => Some(org_id),
-        None => team.and_then(|row| row.fields.base.organization_id.as_deref()),
-    };
+    let resolved_org = token
+        .view
+        .token
+        .org_id
+        .as_deref()
+        .or_else(|| team.and_then(|row| row.fields.base.organization_id.as_deref()));
     if let Some(org_id) = resolved_org {
         let cache_key = format!("org_id:{org_id}:with_budget");
         let table = fail_open(

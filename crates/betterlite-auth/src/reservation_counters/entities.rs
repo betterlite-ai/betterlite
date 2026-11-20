@@ -1,5 +1,4 @@
 use betterlite_db::budget_permission_rows::JsonData;
-use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_db::team_rows::team::LiteLLMTeamTable;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
