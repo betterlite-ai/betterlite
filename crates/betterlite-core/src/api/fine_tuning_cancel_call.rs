@@ -23,10 +23,8 @@ mod tests;
 
 const OPENAI_PROVIDER: &str = "openai";
 
-#[expect(
-    clippy::unnecessary_wraps,
-    reason = "serde's default hook must return the field's Option type"
-)]
+// serde's default hook for custom_llm_provider, and the oracle adapter's Run reuses it
+#[must_use]
 pub fn default_provider() -> Option<String> {
     Some(OPENAI_PROVIDER.to_owned())
 }
