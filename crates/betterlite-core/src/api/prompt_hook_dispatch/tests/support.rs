@@ -120,6 +120,16 @@ impl FakeManager {
             .unwrap_or_else(PoisonError::into_inner)
             .push(call);
     }
+
+    fn respond_with<'request>(
+        &'request self,
+        request: ChatCompletionPromptRequest<'request>,
+        asynchronous: bool,
+    ) -> CompletionFuture<'request, TestError> {
+        self.record_call(&request, asynchronous);
+        let behavior = self.behavior;
+        Box::pin(async move { respond(behavior, request) })
+    }
 }
 
 impl PromptManager<TestError> for FakeManager {
@@ -141,18 +151,14 @@ impl PromptManager<TestError> for FakeManager {
         &'request self,
         request: ChatCompletionPromptRequest<'request>,
     ) -> CompletionFuture<'request, TestError> {
-        self.record_call(&request, false);
-        let behavior = self.behavior;
-        Box::pin(async move { respond(behavior, request) })
+        self.respond_with(request, false)
     }
 
     fn async_completion_prompt<'request>(
         &'request self,
         request: ChatCompletionPromptRequest<'request>,
     ) -> CompletionFuture<'request, TestError> {
-        self.record_call(&request, true);
-        let behavior = self.behavior;
-        Box::pin(async move { respond(behavior, request) })
+        self.respond_with(request, true)
     }
 }
 

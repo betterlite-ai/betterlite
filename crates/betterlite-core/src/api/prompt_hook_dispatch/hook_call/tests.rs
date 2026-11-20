@@ -56,23 +56,6 @@ async fn call(
     get_chat_completion_prompt(&mut dispatch, request).await
 }
 
-async fn async_call(
-    state: &mut LoggingState,
-    lists: &mut Lists,
-    factory: &FakeFactory,
-    vector_stores: Option<&VectorStoreRegistry>,
-    request: AsyncPromptCallRequest<'_, TestError>,
-) -> Result<ChatCompletionPrompt, PromptOrchestrationError<TestError>> {
-    let mut dispatch = PromptHookDispatch::new(
-        state,
-        &mut lists.managers,
-        &mut lists.callbacks,
-        factory,
-        vector_stores,
-    );
-    async_completion_prompt(&mut dispatch, request).await
-}
-
 fn kwargs(deployment: &str) -> JsonObject {
     object(vec![
         ("litellm_metadata", Json::Object(JsonObject::new())),
@@ -99,7 +82,7 @@ async fn the_sync_hook_receives_the_call_values() {
         .insert("user_id".to_owned(), text("u-1"));
     let dynamic = Json::Object(state.callback_dynamic_params.clone());
     let mut request = request("gpt-4", messages.as_slice(), &params);
-    request.manager = Some(&manager);
+    request.manager = Some(Arc::clone(&manager));
     request.prompt_variables = Some(&variables);
     request.prompt_id = Some("prompt-1");
     request.prompt_label = Some("prod");
@@ -139,13 +122,20 @@ async fn the_async_hook_receives_the_call_values() {
     let messages = vec![json(r#"{"role":"user","content":"hi"}"#)];
     let params = JsonObject::new();
     let mut request = request("gpt-4", messages.as_slice(), &params);
-    request.manager = Some(&manager);
+    request.manager = Some(Arc::clone(&manager));
     request.prompt_id = Some("prompt-1");
     let async_request = AsyncPromptCallRequest {
         call: request,
         tools: None,
     };
-    let result = async_call(&mut state, &mut lists, &factory, None, async_request)
+    let mut dispatch = PromptHookDispatch::new(
+        &mut state,
+        &mut lists.managers,
+        &mut lists.callbacks,
+        &factory,
+        None,
+    );
+    let result = async_completion_prompt(&mut dispatch, async_request)
         .await
         .unwrap();
     let calls = fake.calls();
@@ -176,7 +166,7 @@ async fn the_explicit_manager_wins_over_selection() {
     let messages = vec![json(r#"{"role":"user","content":"hi"}"#)];
     let params = JsonObject::new();
     let mut request = request("gpt-4", messages.as_slice(), &params);
-    request.manager = Some(&explicit_backend);
+    request.manager = Some(Arc::clone(&explicit_backend));
     let result = call(&mut state, &mut lists, &factory, None, request)
         .await
         .unwrap();
@@ -201,7 +191,7 @@ async fn empty_params_reach_the_manager_as_an_empty_map() {
     let messages = vec![json(r#"{"role":"user","content":"hi"}"#)];
     let params = JsonObject::new();
     let mut request = request("gpt-4", messages.as_slice(), &params);
-    request.manager = Some(&manager);
+    request.manager = Some(Arc::clone(&manager));
     let result = call(&mut state, &mut lists, &factory, None, request)
         .await
         .unwrap();
@@ -224,7 +214,7 @@ async fn a_hook_breakpoint_is_recorded_in_the_request_kwargs() {
     let params = JsonObject::new();
     let mut marked = kwargs("dep-1");
     let mut request = request("gpt-4", messages.as_slice(), &params);
-    request.manager = Some(&manager);
+    request.manager = Some(Arc::clone(&manager));
     request.request_kwargs = Some(&mut marked);
     let result = call(&mut state, &mut lists, &factory, None, request)
         .await
@@ -254,7 +244,7 @@ async fn a_hook_without_new_breakpoints_leaves_the_request_kwargs_untouched() {
     let mut marked = kwargs("dep-1");
     let before = marked.clone();
     let mut request = request("gpt-4", messages.as_slice(), &params);
-    request.manager = Some(&manager);
+    request.manager = Some(Arc::clone(&manager));
     request.request_kwargs = Some(&mut marked);
     call(&mut state, &mut lists, &factory, None, request)
         .await
@@ -277,7 +267,7 @@ async fn the_every_deployment_flag_marks_the_empty_sentinel() {
     let params = JsonObject::new();
     let mut marked = kwargs("dep-1");
     let mut request = request("gpt-4", messages.as_slice(), &params);
-    request.manager = Some(&manager);
+    request.manager = Some(Arc::clone(&manager));
     request.request_kwargs = Some(&mut marked);
     request.injected_for_every_deployment = true;
     call(&mut state, &mut lists, &factory, None, request)
@@ -342,7 +332,7 @@ async fn a_manager_error_propagates_unchanged() {
     let messages = vec![json(r#"{"role":"user","content":"hi"}"#)];
     let params = JsonObject::new();
     let mut request = request("gpt-4", messages.as_slice(), &params);
-    request.manager = Some(&manager);
+    request.manager = Some(Arc::clone(&manager));
     request.prompt_id = Some("prompt-1");
     let error = call(&mut state, &mut lists, &factory, None, request)
         .await
@@ -382,15 +372,16 @@ async fn the_async_call_selects_through_the_vector_store_hook() {
         call: request,
         tools: Some(tools.as_slice()),
     };
-    let result = async_call(
+    let mut dispatch = PromptHookDispatch::new(
         &mut state,
-        &mut lists,
+        &mut lists.managers,
+        &mut lists.callbacks,
         &factory,
         Some(&stores),
-        async_request,
-    )
-    .await
-    .unwrap();
+    );
+    let result = async_completion_prompt(&mut dispatch, async_request)
+        .await
+        .unwrap();
     assert_eq!(hook.calls().len(), 1);
     assert_eq!(factory.inits(), ["vector_store_pre_call_hook".to_owned()]);
     assert_eq!(lists.callbacks.len(), 1);
