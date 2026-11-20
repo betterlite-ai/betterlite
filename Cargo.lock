@@ -3951,6 +3951,7 @@ dependencies = [
 name = "betterlite-prometheus"
 version = "0.1.0"
 dependencies = [
+ "num-traits",
  "rstest",
  "rust_decimal",
  "thiserror",
