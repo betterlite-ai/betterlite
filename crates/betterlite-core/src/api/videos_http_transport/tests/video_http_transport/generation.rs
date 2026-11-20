@@ -56,12 +56,11 @@ async fn a_request_with_files_sends_the_data_fields_before_the_file_parts() {
         video,
         VideoObject::new("video-1".to_owned(), "queued".to_owned())
     );
-    let requests = bench.wire.requests();
-    let request = &requests[0];
+    let request = bench.wire.requests().remove(0);
     assert_eq!(request.method, Method::POST);
     assert_eq!(request.url.as_str(), "http://mock.test/v1/submit");
     assert_eq!(request.timeout, Some(Duration::from_secs(30)));
-    let (boundary, parts) = body_parts(request);
+    let (boundary, parts) = body_parts(&request);
     assert_eq!(boundary.len(), 64);
     assert_eq!(parts.len(), 3);
     assert_eq!(parts[0].name, "prompt");
@@ -107,8 +106,8 @@ async fn files_go_out_even_when_the_multipart_flag_is_set() {
     run(&mut bench, &Params::new(), &Params::new(), false)
         .await
         .expect("the video");
-    let requests = bench.wire.requests();
-    let (_, parts) = body_parts(&requests[0]);
+    let request = bench.wire.requests().remove(0);
+    let (_, parts) = body_parts(&request);
     assert_eq!(parts.len(), 2);
     assert_eq!(parts[1].name, "input_reference");
     assert_eq!(parts[1].file_name, None);
@@ -151,7 +150,7 @@ async fn the_request_goes_to_the_url_the_transform_returned() {
 }
 
 #[tokio::test]
-async fn the_headers_take_the_optional_params_then_the_environment_then_the_call() {
+async fn the_environment_sees_the_optional_headers_and_the_call_overrides_its_answer() {
     let mut bench = Bench::new();
     let optional =
         params(r#"{"extra_headers":{"X-Optional":"opt","Content-Type":"application/optional"}}"#);
@@ -173,13 +172,16 @@ async fn the_headers_take_the_optional_params_then_the_environment_then_the_call
             ("Content-Type", "application/optional")
         ])
     );
-    let requests = bench.wire.requests();
-    let seen = &requests[0].headers;
+    let request = bench.wire.requests().remove(0);
+    let seen = &request.headers;
     assert_eq!(
         seen.get("authorization").unwrap().to_str().unwrap(),
         "Bearer sk-provider"
     );
-    assert_eq!(seen.get("x-optional").unwrap(), "opt");
+    assert!(
+        !seen.contains_key("x-optional"),
+        "the optional headers only feed validate_environment; the wire carries its answer"
+    );
     assert_eq!(seen.get("x-call").unwrap(), "call");
     assert_eq!(seen.get("content-type").unwrap(), "application/call");
 }

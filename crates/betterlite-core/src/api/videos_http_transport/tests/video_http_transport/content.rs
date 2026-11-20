@@ -43,13 +43,12 @@ async fn params_from_the_transform_go_out_as_a_post_without_a_timeout() {
         .await
         .expect("the content");
     assert_eq!(bytes.as_slice(), b"video-bytes");
-    let requests = bench.wire.requests();
-    let request = &requests[0];
+    let request = bench.wire.requests().remove(0);
     assert_eq!(request.method, Method::POST);
     assert_eq!(request.url.as_str(), "http://mock.test/v1/contents/video-1");
     assert_eq!(request.timeout, None);
     assert_eq!(
-        body_json(request),
+        body_json(&request),
         Json::Object(params(r#"{"operation":"fetchPredictOperation"}"#))
     );
 }
@@ -61,8 +60,7 @@ async fn an_empty_params_map_sends_a_get_with_no_body() {
         .await
         .expect("the content");
     assert_eq!(bytes.as_slice(), b"video-bytes");
-    let requests = bench.wire.requests();
-    let request = &requests[0];
+    let request = bench.wire.requests().remove(0);
     assert_eq!(request.method, Method::GET);
     assert_eq!(request.url.as_str(), "http://mock.test/v1/contents/video-1");
     assert_eq!(request.url.query(), None);
@@ -124,8 +122,8 @@ async fn the_call_headers_start_the_environment_and_go_over_its_answer() {
         .await
         .expect("the content");
     assert_eq!(bench.config.environments()[0].headers, extra);
-    let requests = bench.wire.requests();
-    let seen = &requests[0].headers;
+    let request = bench.wire.requests().remove(0);
+    let seen = &request.headers;
     assert_eq!(seen.get("authorization").unwrap(), "Bearer sk-provider");
     assert_eq!(seen.get("x-call").unwrap(), "call");
     assert_eq!(seen.get("content-type").unwrap(), "application/call");
