@@ -122,12 +122,12 @@ pub fn served_by_a_config_deployment(
     model_name: &str,
     model_id: &str,
 ) -> Result<bool, LookupError> {
-    let Some(catalog) = catalog else {
+    let Some(router_catalog) = catalog else {
         return Ok(false);
     };
     let empties = EmptyCollaborators::default();
     let provider = |_model: &str| None;
-    let lookup = empties.lookup(catalog, &provider);
+    let lookup = empties.lookup(router_catalog, &provider);
     for id in lookup.get_model_ids(Some(model_name), false) {
         let Json::Text(deployment_id) = id else {
             continue;
@@ -153,7 +153,7 @@ where
         return Ok(true);
     }
     let counts = database.backing_deployments(model_name).await?;
-    Ok(counts.iter().any(|row| row.deployment_count > 0))
+    Ok(counts.iter().any(|row| row.deployment_count > 0_i32))
 }
 
 async fn rewrite_groups<Database, Cache>(

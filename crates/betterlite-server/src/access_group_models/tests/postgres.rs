@@ -123,30 +123,35 @@ const fn grants<'db>(
 }
 
 async fn seed(pool: &Pool) {
-    insert_model(pool, "dep-1", "solo").await;
-    insert_model(pool, "dep-2", "shared").await;
-    insert_model(pool, "dep-3", "shared").await;
-    insert_model(pool, "dep-9", "kept").await;
-    insert_group(pool, Some("g1"), Some(&expected(&["old", "old"]))).await;
-    insert_group(pool, Some("g2"), Some(&expected(&["new", "old", "new"]))).await;
-    insert_group(pool, Some("g3"), None).await;
-    insert_group(pool, Some("g4"), Some(&[])).await;
-    insert_group(pool, Some("g5"), Some(&expected(&["other"]))).await;
-    insert_group(pool, Some("g6"), Some(&expected(&["it's $1"]))).await;
-    insert_group(pool, Some("g7"), Some(&expected(&["old", "new"]))).await;
-    insert_group(pool, Some("g9"), Some(&expected(&["old2", "x", "old2"]))).await;
-    insert_group(
-        pool,
-        Some("g10"),
-        Some(&expected(&["new2", "old2", "new2"])),
-    )
-    .await;
-    insert_group(pool, Some("g11"), Some(&expected(&["old2", "old2"]))).await;
-    insert_group(pool, Some("g12"), Some(&expected(&["old3", "x", "old3"]))).await;
-    insert_group(pool, Some("g13"), Some(&expected(&["old3"]))).await;
-    insert_group(pool, Some("g14"), Some(&expected(&["old4"]))).await;
-    insert_group(pool, Some("g15"), Some(&expected(&["kept"]))).await;
-    insert_group(pool, Some("g16"), Some(&expected(&["gone"]))).await;
+    let models = [
+        ("dep-1", "solo"),
+        ("dep-2", "shared"),
+        ("dep-3", "shared"),
+        ("dep-9", "kept"),
+    ];
+    for (model_id, model_name) in models {
+        insert_model(pool, model_id, model_name).await;
+    }
+    let groups = [
+        ("g1", Some(expected(&["old", "old"]))),
+        ("g2", Some(expected(&["new", "old", "new"]))),
+        ("g3", None),
+        ("g4", Some(Vec::new())),
+        ("g5", Some(expected(&["other"]))),
+        ("g6", Some(expected(&["it's $1"]))),
+        ("g7", Some(expected(&["old", "new"]))),
+        ("g9", Some(expected(&["old2", "x", "old2"]))),
+        ("g10", Some(expected(&["new2", "old2", "new2"]))),
+        ("g11", Some(expected(&["old2", "old2"]))),
+        ("g12", Some(expected(&["old3", "x", "old3"]))),
+        ("g13", Some(expected(&["old3"]))),
+        ("g14", Some(expected(&["old4"]))),
+        ("g15", Some(expected(&["kept"]))),
+        ("g16", Some(expected(&["gone"]))),
+    ];
+    for (access_group_id, names) in groups {
+        insert_group(pool, Some(access_group_id), names.as_deref()).await;
+    }
 }
 
 pub(super) async fn pinned_rows(pool: &Pool) {
@@ -222,32 +227,29 @@ async fn apply_rewrites(pool: &Pool, grants: &PostgresModelGrants<'_>) {
 }
 
 async fn assert_stored_rows(pool: &Pool) {
+    let ids = [
+        "g1", "g2", "g3", "g4", "g7", "g12", "g13", "g9", "g10", "g11", "g6",
+    ];
+    let mut actual = Vec::new();
+    for id in ids {
+        actual.push(model_names(pool, id).await);
+    }
     assert_eq!(
-        model_names(pool, "g1").await,
-        Some(expected(&["old", "old", "new"]))
+        actual,
+        [
+            Some(expected(&["old", "old", "new"])),
+            Some(expected(&["new", "old", "new"])),
+            None,
+            Some(Vec::new()),
+            Some(expected(&["old", "new"])),
+            Some(expected(&["x", "x"])),
+            Some(Vec::new()),
+            Some(expected(&["new2", "x", "new2"])),
+            Some(expected(&["new2"])),
+            Some(expected(&["new2", "new2"])),
+            Some(Vec::new()),
+        ]
     );
-    assert_eq!(
-        model_names(pool, "g2").await,
-        Some(expected(&["new", "old", "new"]))
-    );
-    assert_eq!(model_names(pool, "g3").await, None);
-    assert_eq!(model_names(pool, "g4").await, Some(Vec::new()));
-    assert_eq!(
-        model_names(pool, "g7").await,
-        Some(expected(&["old", "new"]))
-    );
-    assert_eq!(model_names(pool, "g12").await, Some(expected(&["x", "x"])));
-    assert_eq!(model_names(pool, "g13").await, Some(Vec::new()));
-    assert_eq!(
-        model_names(pool, "g9").await,
-        Some(expected(&["new2", "x", "new2"]))
-    );
-    assert_eq!(model_names(pool, "g10").await, Some(expected(&["new2"])));
-    assert_eq!(
-        model_names(pool, "g11").await,
-        Some(expected(&["new2", "new2"]))
-    );
-    assert_eq!(model_names(pool, "g6").await, Some(Vec::new()));
 }
 
 async fn degraded_rows(pool: &Pool, grants: &PostgresModelGrants<'_>) {

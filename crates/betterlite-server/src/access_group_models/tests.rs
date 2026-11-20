@@ -139,15 +139,15 @@ async fn config_sibling_short_circuit() {
 
 #[tokio::test]
 async fn database_count_includes_current_id() {
-    let single = counting_database(&[], &[1]);
+    let single = counting_database(&[], &[1_i32]);
     assert!(still_backed(&single, None, "solo", "dep-1").await.unwrap());
-    let any_positive = counting_database(&[], &[0, 1]);
+    let any_positive = counting_database(&[], &[0_i32, 1_i32]);
     assert!(
         still_backed(&any_positive, None, "solo", "dep-1")
             .await
             .unwrap()
     );
-    let none_positive = counting_database(&[], &[0, 0]);
+    let none_positive = counting_database(&[], &[0_i32, 0_i32]);
     assert!(
         !still_backed(&none_positive, None, "solo", "dep-1")
             .await
@@ -322,11 +322,11 @@ async fn database_failure_stops_before_cache() {
 
     let mut failing_rewrite = ScriptedModelGrants::new(groups(&[("g1", &["old"])]));
     failing_rewrite.failure = Some(ScriptedFailure::Rewrite);
-    let error = sync_groups_for_renamed_model(&failing_rewrite, &cache, None, &rename)
+    let rewrite_error = sync_groups_for_renamed_model(&failing_rewrite, &cache, None, &rename)
         .await
         .expect_err("the rewrite fails");
     assert!(matches!(
-        error,
+        rewrite_error,
         ModelSyncError::Database(DbError::NoDbConnected)
     ));
     assert!(cache.calls.lock().expect("calls").is_empty());
