@@ -5,14 +5,15 @@ from typing import Final, Literal
 
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
+from litellm.llms.base_llm.files.transformation import BaseFilesConfig
 from litellm.llms.custom_httpx.llm_http_handler import BaseLLMHTTPHandler
-from litellm.llms.manus.files.transformation import ManusFilesConfig
 from litellm.types.llms.openai import FileContentRequest, HttpxBinaryResponseContent
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
+from litellm.types.utils import LlmProviders
+from litellm.utils import ProviderConfigManager
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 Mode = Literal["sync", "async", "streaming"]
 
-JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 DEFAULT_CHUNK_SIZE: Final = 1024 * 1024
 PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
 HANDLER: Final = BaseLLMHTTPHandler()
@@ -38,8 +39,19 @@ class Failure(BaseModel):
     headers: dict[str, str]
 
 
+class BufferedContent(BaseModel):
+    status: int
+    headers: dict[str, str]
+    body: list[int]
+
+
+class StreamedContent(BaseModel):
+    chunks: list[list[int]]
+    headers: dict[str, str]
+
+
 class Outcome(BaseModel):
-    result: JsonValue = None
+    result: BufferedContent | StreamedContent | None = None
     failure: Failure | None = None
 
 
@@ -49,6 +61,13 @@ class ContentValue(BaseModel):
 
 class ContentEnvelope(BaseModel):
     file_http_content: ContentValue
+
+
+def provider_config() -> BaseFilesConfig:
+    config = ProviderConfigManager.get_provider_files_config("", LlmProviders.MANUS)
+    if config is None:
+        raise TypeError("LiteLLM has no files config for manus")
+    return config
 
 
 def logging_fixture(call_type: str) -> Logging:
@@ -86,14 +105,12 @@ def content_timeout(call: FileHttpContentCall) -> float | None:
 
 def buffered_outcome(content: HttpxBinaryResponseContent) -> Outcome:
     response = content.response
-    value = JSON.validate_python(
-        {
-            "status": response.status_code,
-            "headers": dict(response.headers),
-            "body": list(response.content),
-        }
+    result = BufferedContent(
+        status=response.status_code,
+        headers=dict(response.headers),
+        body=list(response.content),
     )
-    return Outcome(result=value)
+    return Outcome(result=result)
 
 
 async def drain_chunks(stream: Iterator[bytes] | AsyncIterator[bytes]) -> list[list[int]]:
@@ -105,10 +122,11 @@ async def drain_chunks(stream: Iterator[bytes] | AsyncIterator[bytes]) -> list[l
 
 
 def sync_content(call: FileHttpContentCall, api_base: str) -> HttpxBinaryResponseContent:
+    litellm_params: dict[str, JsonValue] = {"api_base": api_base}
     result = HANDLER.retrieve_file_content(
         file_content_request=request_body(call),
-        provider_config=ManusFilesConfig(),
-        litellm_params={"api_base": api_base},
+        provider_config=provider_config(),
+        litellm_params=litellm_params,
         headers=caller_headers(call),
         logging_obj=logging_fixture("file_content"),
         timeout=content_timeout(call),
@@ -122,10 +140,11 @@ def sync_content(call: FileHttpContentCall, api_base: str) -> HttpxBinaryRespons
 
 
 async def async_content(call: FileHttpContentCall, api_base: str) -> HttpxBinaryResponseContent:
+    litellm_params: dict[str, JsonValue] = {"api_base": api_base}
     return await HANDLER.async_retrieve_file_content(
         file_content_request=request_body(call),
-        provider_config=ManusFilesConfig(),
-        litellm_params={"api_base": api_base},
+        provider_config=provider_config(),
+        litellm_params=litellm_params,
         headers=caller_headers(call),
         logging_obj=logging_fixture("afile_content"),
         timeout=content_timeout(call),
@@ -133,18 +152,18 @@ async def async_content(call: FileHttpContentCall, api_base: str) -> HttpxBinary
 
 
 async def streaming_view(call: FileHttpContentCall, api_base: str) -> Outcome:
+    litellm_params: dict[str, JsonValue] = {"api_base": api_base}
     result = await HANDLER.async_retrieve_file_content_streaming(
         file_content_request=request_body(call),
-        provider_config=ManusFilesConfig(),
-        litellm_params={"api_base": api_base},
+        provider_config=provider_config(),
+        litellm_params=litellm_params,
         headers=caller_headers(call),
         logging_obj=logging_fixture("afile_content"),
         chunk_size=DEFAULT_CHUNK_SIZE if call.chunk_size is None else call.chunk_size,
         timeout=content_timeout(call),
     )
     chunks = await drain_chunks(result.stream_iterator)
-    value = JSON.validate_python({"chunks": chunks, "headers": dict(result.headers)})
-    return Outcome(result=value)
+    return Outcome(result=StreamedContent(chunks=chunks, headers=dict(result.headers)))
 
 
 def run_content(call: FileHttpContentCall, api_base: str) -> Outcome:
@@ -169,4 +188,5 @@ class FileHttpContentRequest(BaseModel):
 
     def serialize(self, api_base: str) -> str:
         outcome = run_content(self.file_http_content, api_base)
-        return ContentEnvelope(file_http_content=ContentValue(value=outcome)).model_dump_json(by_alias=True)
+        value = ContentValue(value=outcome)
+        return ContentEnvelope(file_http_content=value).model_dump_json(by_alias=True)
