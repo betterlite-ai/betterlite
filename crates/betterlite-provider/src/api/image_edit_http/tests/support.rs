@@ -479,18 +479,12 @@ pub(super) async fn stall_once(listener: &TcpListener, hold: Duration) {
 
 // A pooled client built the way production builds it, recording the ssl_verify each call asked for
 pub(super) struct PoolSource {
-    client: ProxiedClient,
     seen: Mutex<Vec<Option<bool>>>,
 }
 
 impl PoolSource {
     pub(super) fn new() -> Self {
-        let policy = Arc::new(
-            ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new())
-                .expect("the proxy policy"),
-        );
         Self {
-            client: ProxiedClient::outbound(&policy).expect("the outbound client"),
             seen: Mutex::default(),
         }
     }
@@ -511,7 +505,11 @@ impl ClientSource for PoolSource {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(ssl_verify);
-        Ok(self.client.clone())
+        let policy = Arc::new(
+            ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new())
+                .expect("the proxy policy"),
+        );
+        Ok(ProxiedClient::outbound(&policy).expect("the outbound client"))
     }
 }
 
