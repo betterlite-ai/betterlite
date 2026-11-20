@@ -71,6 +71,8 @@ use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
+use self::otel::phoenix_auto;
+use self::otel::shared::SharedOtel;
 use super::error::RegistryError;
 use crate::callback_config::error::ValidationError;
 use crate::callback_config::family::{conflicting_span_scope_error, cross_entry_family_error};
@@ -78,6 +80,7 @@ use crate::callback_config::options::callback_config_error;
 use crate::callback_config::{CallbackVars, FeatureFlags};
 use crate::callback_logger::CallbackLogger;
 use crate::callback_logger::resolver::LoggerResolver;
+use crate::otel::logger_runtime::LoggerRuntime;
 
 pub fn validate_callback_vars(
     callback_name: Option<&str>,
@@ -117,16 +120,26 @@ impl CallbackLogger for BaseLogger {
     }
 }
 
-type Builder = Arc<
-    dyn Fn(CallbackName, &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogError>
+type ArmBuild = Arc<
+    dyn Fn(
+            CallbackName,
+            &CatalogInputs,
+            Option<&LoggerRuntime>,
+            &SharedOtel,
+            &mut Vec<Arc<dyn CallbackLogger>>,
+        ) -> Result<Arc<dyn CallbackLogger>, CatalogError>
         + Send
         + Sync,
 >;
 
 pub struct LoggerCatalog {
     inputs: CatalogInputs,
-    build: Builder,
+    runtime: Option<Arc<LoggerRuntime>>,
+    build: ArmBuild,
     built: Mutex<BTreeMap<CallbackName, Arc<dyn CallbackLogger>>>,
+    // LiteLLM's _in_memory_loggers: every logger this catalog built, in build order
+    in_memory: Mutex<Vec<Arc<dyn CallbackLogger>>>,
+    shared: Mutex<Option<Arc<SharedOtel>>>,
 }
 
 impl LoggerCatalog {
@@ -134,9 +147,19 @@ impl LoggerCatalog {
     pub fn new(inputs: CatalogInputs) -> Self {
         Self {
             inputs,
+            runtime: None,
             build: Arc::new(build_logger),
             built: Mutex::new(BTreeMap::new()),
+            in_memory: Mutex::new(Vec::new()),
+            shared: Mutex::new(None),
         }
+    }
+
+    // the OTel arms need B10007's runtime; every other name builds without one
+    #[must_use]
+    pub fn with_runtime(mut self, runtime: Arc<LoggerRuntime>) -> Self {
+        self.runtime = Some(runtime);
+        self
     }
 
     // clippy's same_name_method refuses this name while the type also implements the resolver trait
@@ -152,7 +175,60 @@ impl LoggerCatalog {
         if let Some(logger) = self.existing(name) {
             return Ok(Some(logger));
         }
-        self.resolve_built(callback, (self.build)(callback, &self.inputs))
+        let shared = self.shared();
+        let built = {
+            let mut in_memory = self
+                .in_memory
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            (self.build)(
+                callback,
+                &self.inputs,
+                self.runtime.as_deref(),
+                &shared,
+                &mut in_memory,
+            )
+        };
+        let resolved = self.resolve_built(callback, built)?;
+        if callback == CallbackName::Otel && resolved.is_some() {
+            self.auto_start_phoenix();
+        }
+        Ok(resolved)
+    }
+
+    #[must_use]
+    pub fn in_memory_loggers(&self) -> Vec<Arc<dyn CallbackLogger>> {
+        self.in_memory
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    // built on the first OTel arm: the snapshot never changes and the clients are shared by every arm
+    fn shared(&self) -> Arc<SharedOtel> {
+        let mut slot = self.shared.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(shared) = slot.as_ref() {
+            return Arc::clone(shared);
+        }
+        let shared = Arc::new(SharedOtel::new(&self.inputs));
+        *slot = Some(Arc::clone(&shared));
+        shared
+    }
+
+    fn auto_start_phoenix(&self) {
+        if !phoenix_auto::configured(self.inputs.env.as_ref()) {
+            return;
+        }
+        match self.resolve_logger(phoenix_auto::CALLBACK_NAME) {
+            Ok(Some(logger)) => tracing::info!(
+                logger = logger.callback_name(),
+                "Auto-initialized Arize Phoenix logger alongside otel"
+            ),
+            Ok(None) => {}
+            Err(error) => {
+                tracing::warn!(%error, "Failed to auto-initialize Arize Phoenix logger");
+            }
+        }
     }
 
     #[must_use]
@@ -202,17 +278,41 @@ impl LoggerResolver for LoggerCatalog {
     }
 }
 
+// LiteLLM appends every logger it builds; a V2 logger already appended by maybe_construct_otel_v2 stays once
+fn push_once(list: &mut Vec<Arc<dyn CallbackLogger>>, logger: &Arc<dyn CallbackLogger>) {
+    if !list.iter().any(|held| Arc::ptr_eq(held, logger)) {
+        list.push(Arc::clone(logger));
+    }
+}
+
 macro_rules! builder_dispatch {
     (
+        arms { $($arm:ident => $arm_module:ident),+ $(,)? }
         builders { $($variant:ident => $module:ident),+ $(,)? }
         refused { $($refused:ident),+ $(,)? }
     ) => {
         fn build_logger(
             callback: CallbackName,
             inputs: &CatalogInputs,
+            runtime: Option<&LoggerRuntime>,
+            shared: &SharedOtel,
+            in_memory: &mut Vec<Arc<dyn CallbackLogger>>,
         ) -> Result<Arc<dyn CallbackLogger>, CatalogError> {
             match callback {
-                $(CallbackName::$variant => $module::build(inputs),)+
+                $(
+                    CallbackName::$arm => {
+                        let logger = $arm_module::build(inputs, runtime, shared, in_memory)?;
+                        push_once(in_memory, &logger);
+                        Ok(logger)
+                    }
+                )+
+                $(
+                    CallbackName::$variant => {
+                        let logger = $module::build(inputs)?;
+                        push_once(in_memory, &logger);
+                        Ok(logger)
+                    }
+                )+
                 $(CallbackName::$refused)|+ => Err(CatalogError::Unavailable {
                     name: callback.as_str().to_owned(),
                 }),
@@ -222,11 +322,22 @@ macro_rules! builder_dispatch {
 }
 
 builder_dispatch! {
+    arms {
+        Arize => arize,
+        ArizePhoenix => arize_phoenix,
+        LangfuseOtel => langfuse_otel,
+        Langtrace => langtrace,
+        Levo => levo,
+        Logfire => logfire,
+        Newrelic => newrelic,
+        Otel => otel,
+        Signoz => signoz,
+        Traceloop => traceloop,
+        WeaveOtel => weave_otel,
+    }
     builders {
         Agentops => agentops,
         Argilla => argilla,
-        Arize => arize,
-        ArizePhoenix => arize_phoenix,
         Athina => athina,
         AwsSqs => aws_sqs,
         AzureSentinel => azure_sentinel,
@@ -251,19 +362,13 @@ builder_dispatch! {
         Humanloop => humanloop,
         Lago => lago,
         Langfuse => langfuse,
-        LangfuseOtel => langfuse_otel,
         Langsmith => langsmith,
-        Langtrace => langtrace,
-        Levo => levo,
         Literalai => literalai,
-        Logfire => logfire,
         Lunary => lunary,
         Mavvrik => mavvrik,
         Mlflow => mlflow,
-        Newrelic => newrelic,
         Openmeter => openmeter,
         Opik => opik,
-        Otel => otel,
         Pagerduty => pagerduty,
         Pointfive => pointfive,
         Posthog => posthog,
@@ -273,14 +378,11 @@ builder_dispatch! {
         S3V2 => s3_v2,
         SendgridEmail => sendgrid_email,
         Sentry => sentry,
-        Signoz => signoz,
         Slack => slack,
         SmtpEmail => smtp_email,
         Supabase => supabase,
-        Traceloop => traceloop,
         Vantage => vantage,
         Wandb => wandb,
-        WeaveOtel => weave_otel,
         Zerobus => zerobus,
     }
     refused {

@@ -52,4 +52,4 @@ fn locked<T>(lock: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 #[path = "logger_runtime/tests.rs"]
-mod tests;
+pub(crate) mod tests;

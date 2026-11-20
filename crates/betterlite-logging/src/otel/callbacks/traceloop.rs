@@ -63,6 +63,12 @@ pub struct TraceloopLogger {
 }
 
 impl TraceloopLogger {
+    // Traceloop.init() builds its own tracer; the catalog hands the SDK tracer the legacy path built
+    #[must_use]
+    pub fn new(tracer: SdkTracer) -> Self {
+        Self { tracer }
+    }
+
     fn log_event(&self, event: &LoggerEvent, level: EventLevel, status_message: Option<&str>) {
         let payload = &event.payload;
         // LiteLLM hands int(seconds) to start_span, whose argument is nanoseconds

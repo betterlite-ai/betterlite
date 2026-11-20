@@ -17,10 +17,12 @@ use tracing::Level;
 use tracing::subscriber::with_default;
 use tracing_subscriber::fmt::MakeWriter;
 
+use super::otel::shared::SharedOtel;
 use super::{BaseLogger, CatalogError, CatalogInputs, LoggerCatalog};
 use crate::callback_config::{CallbackVars, FeatureFlags};
 use crate::callback_logger::CallbackLogger;
 use crate::callback_logger::resolver::LoggerResolver;
+use crate::otel::logger_runtime::LoggerRuntime;
 use crate::registry::error::RegistryError;
 use crate::registry::phases::{CallbackList, CallbackPhase};
 use crate::registry::{CallbackRegistry, Registration};
@@ -99,14 +101,23 @@ fn counting_catalog(builds: &Arc<AtomicUsize>) -> LoggerCatalog {
     let counter = Arc::clone(builds);
     LoggerCatalog {
         inputs: inputs(),
-        build: Arc::new(move |callback: CallbackName, _inputs: &CatalogInputs| {
-            counter.fetch_add(1, Ordering::SeqCst);
-            let logger: Arc<dyn CallbackLogger> = Arc::new(BaseLogger {
-                name: callback.as_str().to_owned(),
-            });
-            Ok(logger)
-        }),
+        runtime: None,
+        build: Arc::new(
+            move |callback: CallbackName,
+                  _inputs: &CatalogInputs,
+                  _runtime: Option<&LoggerRuntime>,
+                  _shared: &SharedOtel,
+                  _in_memory: &mut Vec<Arc<dyn CallbackLogger>>| {
+                counter.fetch_add(1, Ordering::SeqCst);
+                let logger: Arc<dyn CallbackLogger> = Arc::new(BaseLogger {
+                    name: callback.as_str().to_owned(),
+                });
+                Ok(logger)
+            },
+        ),
         built: Mutex::new(BTreeMap::new()),
+        in_memory: Mutex::new(Vec::new()),
+        shared: Mutex::new(None),
     }
 }
 
@@ -230,6 +241,22 @@ fn an_init_error_gives_none_and_logs_once() {
             .count(),
         1
     );
+}
+
+#[test]
+fn every_built_logger_is_listed_in_memory_in_build_order() {
+    let catalog = catalog();
+    assert!(catalog.in_memory_loggers().is_empty());
+    catalog.resolve_logger("pagerduty").expect("available");
+    catalog.resolve_logger("smtp_email").expect("available");
+    let names: Vec<&str> = catalog
+        .in_memory_loggers()
+        .iter()
+        .map(|logger| logger.callback_name())
+        .collect();
+    assert_eq!(names, ["pagerduty", "smtp_email"]);
+    catalog.resolve_logger("pagerduty").expect("reused");
+    assert_eq!(catalog.in_memory_loggers().len(), 2);
 }
 
 #[test]

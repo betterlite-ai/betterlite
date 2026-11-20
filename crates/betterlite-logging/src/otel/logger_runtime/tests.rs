@@ -11,4 +11,4 @@ mod legacy;
 #[path = "tests/publication.rs"]
 mod publication;
 #[path = "tests/support.rs"]
-mod support;
+pub(crate) mod support;
