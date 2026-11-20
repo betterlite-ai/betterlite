@@ -214,7 +214,6 @@ fn widen(current: &mut Option<Decimal>, found: Option<Decimal>) {
     let Some(value) = found else {
         return;
     };
-    if current.is_none_or(|held| value > held) {
-        *current = Some(value);
-    }
+    let previous = current.take();
+    *current = Some(previous.map_or(value, |prior| prior.max(value)));
 }

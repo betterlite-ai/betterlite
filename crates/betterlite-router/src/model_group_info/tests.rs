@@ -774,6 +774,8 @@ fn fallback_chat_and_cost() {
     assert_eq!(nulled.mode.as_deref(), Some("chat"));
 }
 
+mod wire;
+
 #[test]
 fn string_alias_name() {
     let mut scenario = Scenario::new(&[
