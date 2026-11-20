@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::iter;
 use std::time::Duration;
 
 use betterlite_core::rag::ingestion::store::{RagStore, StoreRequest};
@@ -8,6 +9,7 @@ use tokio::sync::Mutex;
 use tokio::time::Instant;
 
 use crate::bedrock_provisioning::ingest::BedrockIngest;
+use crate::bedrock_provisioning::ingest::Ingestion;
 use crate::bedrock_provisioning::provision::tests::support::{
     ScriptedTransport, answer, initialized, new_provisioner, status,
 };
@@ -169,7 +171,7 @@ async fn store_stops_on_an_unknown_status() {
 #[tokio::test(start_paused = true)]
 async fn store_runs_out_of_time_silently() {
     let mut answers = vec![answer(""), answer(STARTED)];
-    answers.extend(std::iter::repeat_n(answer(STARTING), 5));
+    answers.extend(iter::repeat_n(answer(STARTING), 5));
     let transport = ScriptedTransport::new(answers);
     let mut provisioner = initialized(new_provisioner(
         r#"{"aws_region_name":"us-west-2","knowledge_base_id":"kb1","s3_bucket":"bucket","wait_for_ingestion":true,"ingestion_timeout":5}"#,
@@ -211,12 +213,10 @@ async fn store_stops_when_the_timeout_is_reached_exactly() {
 async fn store_reports_a_failed_ingestion_poll() {
     let transport = ScriptedTransport::new(vec![answer(""), answer(STARTED), status(500, "boom")]);
     let mut provisioner = initialized(new_provisioner(WAIT, transport.clone()));
-    assert!(
-        provisioner
-            .store(request(Some(b"hello"), Some("file.txt"), None))
-            .await
-            .is_err()
-    );
+    provisioner
+        .store(request(Some(b"hello"), Some("file.txt"), None))
+        .await
+        .unwrap_err();
     assert_eq!(transport.requests().len(), 3);
 }
 
@@ -225,12 +225,10 @@ async fn store_reports_a_missing_bucket() {
     let transport = ScriptedTransport::new(Vec::new());
     let mut provisioner = initialized(new_provisioner(NO_WAIT, transport));
     provisioner.state.s3_bucket = None;
-    assert!(
-        provisioner
-            .store(request(Some(b"hello"), Some("file.txt"), None))
-            .await
-            .is_err()
-    );
+    provisioner
+        .store(request(Some(b"hello"), Some("file.txt"), None))
+        .await
+        .unwrap_err();
 }
 
 #[tokio::test(start_paused = true)]
@@ -238,12 +236,10 @@ async fn store_reports_a_missing_data_source() {
     let transport = ScriptedTransport::new(Vec::new());
     let mut provisioner = initialized(new_provisioner(NO_WAIT, transport));
     provisioner.state.data_source_id = None;
-    assert!(
-        provisioner
-            .store(request(Some(b"hello"), Some("file.txt"), None))
-            .await
-            .is_err()
-    );
+    provisioner
+        .store(request(Some(b"hello"), Some("file.txt"), None))
+        .await
+        .unwrap_err();
 }
 
 #[test]

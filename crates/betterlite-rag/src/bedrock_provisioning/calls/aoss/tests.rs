@@ -87,7 +87,7 @@ fn call_create_security_policy_sends_the_document_and_a_uuid_token() {
     let body: PolicyBody = serde_json::from_slice(&call.body).unwrap();
     assert_eq!(body.name, "kb-enc");
     assert_eq!(body.policy_type, "encryption");
-    assert!(uuid::Uuid::parse_str(&body.client_token).is_ok());
+    uuid::Uuid::parse_str(&body.client_token).unwrap();
     assert_eq!(
         body.policy,
         serde_json::to_string(&plan::encryption_policy("kb")).unwrap()
@@ -126,7 +126,7 @@ fn call_create_collection_sends_vectorsearch() {
     let body: CollectionBody = serde_json::from_slice(&call.body).unwrap();
     assert_eq!(body.name, "litellm-kb-0123abcd");
     assert_eq!(body.kind, "VECTORSEARCH");
-    assert!(uuid::Uuid::parse_str(&body.client_token).is_ok());
+    uuid::Uuid::parse_str(&body.client_token).unwrap();
 }
 
 #[test]
@@ -195,10 +195,10 @@ fn call_first_collection_reads_the_status_arn_and_endpoint() {
 
 #[test]
 fn call_first_collection_reports_an_empty_list() {
-    assert!(first_collection(br#"{"collectionDetails":[]}"#, BATCH_GET_COLLECTION).is_err());
+    first_collection(br#"{"collectionDetails":[]}"#, BATCH_GET_COLLECTION).unwrap_err();
 }
 
 #[test]
 fn call_first_collection_reports_a_body_that_is_not_json() {
-    assert!(first_collection(b"not json", BATCH_GET_COLLECTION).is_err());
+    first_collection(b"not json", BATCH_GET_COLLECTION).unwrap_err();
 }

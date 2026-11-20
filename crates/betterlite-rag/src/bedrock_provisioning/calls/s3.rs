@@ -24,7 +24,7 @@ pub fn put_object(
     content_type: Option<&str>,
     body: &[u8],
 ) -> CallRequest {
-    let content_type = content_type
+    let chosen = content_type
         .filter(|value| !value.is_empty())
         .unwrap_or(DEFAULT_CONTENT_TYPE);
     CallRequest {
@@ -34,7 +34,7 @@ pub fn put_object(
         method: "PUT",
         url: format!("{}/{}", s3_bucket_host(bucket, region), object_key(key)),
         headers: vec![
-            ("Content-Type".to_owned(), content_type.to_owned()),
+            ("Content-Type".to_owned(), chosen.to_owned()),
             (
                 "x-amz-content-sha256".to_owned(),
                 hex::encode(Sha256::digest(body)),

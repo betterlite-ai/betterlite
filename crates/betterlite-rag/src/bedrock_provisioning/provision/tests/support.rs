@@ -1,4 +1,6 @@
 use std::collections::{BTreeMap, VecDeque};
+use std::iter;
+use std::str;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -31,7 +33,7 @@ pub(crate) struct FixedClock;
 impl Clock for FixedClock {
     fn now(&self) -> SystemTime {
         UNIX_EPOCH
-            .checked_add(Duration::from_secs(1_767_225_600))
+            .checked_add(Duration::from_days(20_454))
             .expect("the fixture instant is representable")
     }
 }
@@ -112,21 +114,32 @@ impl AwsRagTransport for ScriptedTransport {
 
 // the AWS operation a recorded request belongs to, so a test can assert the call order
 pub(crate) fn operation(request: &Recorded) -> String {
-    if let Some((_, target)) = request
-        .headers
+    if let Some(target) = header_target(&request.headers) {
+        return target;
+    }
+    if let Some(action) = form_action(&request.body) {
+        return action;
+    }
+    path_operation(&request.url, &request.method)
+}
+
+fn header_target(headers: &[(String, String)]) -> Option<String> {
+    let (_, target) = headers
         .iter()
-        .find(|(name, _)| name.eq_ignore_ascii_case("X-Amz-Target"))
-    {
-        return target.rsplit('.').next().unwrap_or_default().to_owned();
-    }
-    if let Ok(body) = std::str::from_utf8(&request.body)
-        && let Some(pair) = body.split('&').next()
-        && let Some(action) = pair.strip_prefix("Action=")
-    {
-        return action.to_owned();
-    }
-    let read = request.method == "GET";
-    if request.url.contains("/ingestionjobs/") {
+        .find(|(name, _)| name.eq_ignore_ascii_case("X-Amz-Target"))?;
+    Some(target.rsplit('.').next().unwrap_or_default().to_owned())
+}
+
+fn form_action(body: &[u8]) -> Option<String> {
+    let text = str::from_utf8(body).ok()?;
+    let pair = text.split('&').next()?;
+    let action = pair.strip_prefix("Action=")?;
+    Some(action.to_owned())
+}
+
+fn path_operation(url: &str, method: &str) -> String {
+    let read = method == "GET";
+    if url.contains("/ingestionjobs/") {
         let name = if read {
             "GetIngestionJob"
         } else {
@@ -134,28 +147,28 @@ pub(crate) fn operation(request: &Recorded) -> String {
         };
         return name.to_owned();
     }
-    if request.url.contains("/bedrock-kb-index") {
+    if url.contains("/bedrock-kb-index") {
         return "CreateIndex".to_owned();
     }
-    if request.url.contains("/datasources/") {
-        let name = match request.method.as_str() {
+    if url.contains("/datasources/") {
+        let name = match method {
             "GET" => "GetDataSource",
             "POST" => "ListDataSources",
             _ => "CreateDataSource",
         };
         return name.to_owned();
     }
-    if request.url.contains("/knowledgebases/") {
-        let name = match request.method.as_str() {
+    if url.contains("/knowledgebases/") {
+        let name = match method {
             "GET" => "GetKnowledgeBase",
             _ => "CreateKnowledgeBase",
         };
         return name.to_owned();
     }
     if read {
-        return format!("GET {}", request.url);
+        return format!("GET {url}");
     }
-    if request.url.ends_with('/') {
+    if url.ends_with('/') {
         return "CreateBucket".to_owned();
     }
     "PutObject".to_owned()
@@ -176,7 +189,7 @@ pub(crate) fn status(code: u16, body: &str) -> AwsRagResponse {
 }
 
 pub(crate) fn repeated(response: AwsRagResponse, count: usize) -> Vec<AwsRagResponse> {
-    std::iter::repeat_n(response, count).collect()
+    iter::repeat_n(response, count).collect()
 }
 
 pub(crate) fn vector_config(text: &str) -> VectorStoreConfig {
@@ -207,9 +220,8 @@ pub(crate) fn new_provisioner(
 
 // the store tests run after the lazy initialization, with the ids it would have found
 pub(crate) fn initialized(
-    provisioner: BedrockProvisioner<'static, ScriptedTransport>,
+    mut provisioner: BedrockProvisioner<'static, ScriptedTransport>,
 ) -> BedrockProvisioner<'static, ScriptedTransport> {
-    let mut provisioner = provisioner;
     provisioner.initialized = true;
     provisioner.state.s3_bucket = Some("bucket".to_owned());
     provisioner.state.data_source_id = Some("ds1".to_owned());

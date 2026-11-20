@@ -54,16 +54,24 @@ where
     }
 }
 
-impl<Transport> BedrockProvisioner<'_, Transport>
+#[async_trait]
+pub(crate) trait Ingestion {
+    type Failure: StdError + Send + Sync + 'static;
+
+    async fn store(
+        &mut self,
+        request: StoreRequest<'_>,
+    ) -> Result<StoreResult, IngestError<Self::Failure>>;
+}
+
+#[async_trait]
+impl<Transport> Ingestion for BedrockProvisioner<'_, Transport>
 where
     Transport: AwsRagTransport,
 {
-    // ast-grep-ignore: no-one-line-functions - BedrockRAGIngestion.embed returns None, and the ingestion job embeds the file
-    pub fn embed(&self, _chunks: &[String]) -> Option<Vec<Vec<f64>>> {
-        None
-    }
+    type Failure = Transport::Error;
 
-    pub async fn store(
+    async fn store(
         &mut self,
         request: StoreRequest<'_>,
     ) -> Result<StoreResult, IngestError<Transport::Error>> {
@@ -91,8 +99,8 @@ where
         let prefix = self.state.s3_prefix.trim_end_matches('/');
         let key = format!("{prefix}/{filename}");
         let region = self.clients.settings.aws_region_name.clone();
-        let call = s3::put_object(&region, &bucket, &key, request.content_type, content);
-        self.send(&call).await?.require_success(call.operation)?;
+        let put = s3::put_object(&region, &bucket, &key, request.content_type, content);
+        self.send(&put).await?.require_success(put.operation)?;
         let call = agent::ingestion_job_call(
             &region,
             &knowledge_base,
@@ -102,60 +110,74 @@ where
         let response = self.send(&call).await?.require_success(call.operation)?;
         let job_id = agent::ingestion_job_id(&response.body, agent::START_INGESTION_JOB)?;
         if self.clients.settings.wait_for_ingestion {
-            self.wait_for_ingestion(&region, &knowledge_base, &data_source, &job_id)
-                .await?;
+            wait_for_ingestion(self, &region, &knowledge_base, &data_source, &job_id).await?;
         }
         Ok((Some(knowledge_base), Some(key)))
     }
+}
 
-    async fn wait_for_ingestion(
-        &self,
-        region: &str,
-        knowledge_base: &str,
-        data_source: &str,
-        job_id: &str,
-    ) -> Result<(), IngestError<Transport::Error>> {
-        let start = Instant::now();
-        let seconds = u64::try_from(self.clients.settings.ingestion_timeout).unwrap_or_default();
-        let limit = Duration::from_secs(seconds);
-        while start.elapsed() < limit {
-            let call = agent::ingestion_job_call(
-                region,
-                knowledge_base,
-                data_source,
-                agent::IngestionJobCall::Get(job_id),
-            )?;
-            let response = self.send(&call).await?.require_success(call.operation)?;
-            let job = agent::ingestion_job(&response.body, agent::GET_INGESTION_JOB)?;
-            match job.status.as_deref() {
-                Some(COMPLETE) => {
-                    let documents = job
-                        .statistics
-                        .and_then(|statistics| statistics.new_documents_indexed)
-                        .unwrap_or_default();
-                    tracing::info!(
-                        job = job_id,
-                        documents,
-                        "the Bedrock ingestion job completed"
-                    );
-                    return Ok(());
-                }
-                Some(FAILED) => {
-                    tracing::error!(
-                        job = job_id,
-                        reasons = ?job.failure_reasons,
-                        "the Bedrock ingestion job failed"
-                    );
-                    return Ok(());
-                }
-                Some("STARTING" | "IN_PROGRESS") => sleep(INGESTION_POLL_INTERVAL).await,
-                other => {
-                    tracing::warn!(job = job_id, status = ?other, "an unknown ingestion status");
-                    return Ok(());
-                }
-            }
+async fn wait_for_ingestion<Transport>(
+    provisioner: &BedrockProvisioner<'_, Transport>,
+    region: &str,
+    knowledge_base: &str,
+    data_source: &str,
+    job_id: &str,
+) -> Result<(), IngestError<Transport::Error>>
+where
+    Transport: AwsRagTransport,
+{
+    let start = Instant::now();
+    let seconds = u64::try_from(provisioner.clients.settings.ingestion_timeout).unwrap_or_default();
+    let limit = Duration::from_secs(seconds);
+    while start.elapsed() < limit {
+        let call = agent::ingestion_job_call(
+            region,
+            knowledge_base,
+            data_source,
+            agent::IngestionJobCall::Get(job_id),
+        )?;
+        let response = provisioner
+            .send(&call)
+            .await?
+            .require_success(call.operation)?;
+        let job = agent::ingestion_job(&response.body, agent::GET_INGESTION_JOB)?;
+        if !poll_again(&job, job_id) {
+            return Ok(());
         }
-        Ok(())
+        sleep(INGESTION_POLL_INTERVAL).await;
+    }
+    Ok(())
+}
+
+// whether the job is still running; a completed, failed or unknown status stops the wait
+fn poll_again(job: &agent::IngestionJob, job_id: &str) -> bool {
+    match job.status.as_deref() {
+        Some(COMPLETE) => {
+            let documents = job
+                .statistics
+                .as_ref()
+                .and_then(|statistics| statistics.new_documents_indexed)
+                .unwrap_or_default();
+            tracing::info!(
+                job = job_id,
+                documents,
+                "the Bedrock ingestion job completed"
+            );
+            false
+        }
+        Some(FAILED) => {
+            tracing::error!(
+                job = job_id,
+                reasons = ?job.failure_reasons,
+                "the Bedrock ingestion job failed"
+            );
+            false
+        }
+        Some("STARTING" | "IN_PROGRESS") => true,
+        other => {
+            tracing::warn!(job = job_id, status = ?other, "an unknown ingestion status");
+            false
+        }
     }
 }
 

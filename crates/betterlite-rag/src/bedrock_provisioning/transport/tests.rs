@@ -8,10 +8,10 @@ use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::{ProxiedClient, base_builder};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 
-use crate::bedrock_ingestion::client::AwsRagTransport;
+use crate::bedrock_ingestion::client::AwsRagTransport as _;
 use crate::bedrock_provisioning::transport::{HttpRagTransport, HttpRagTransportError};
 
 const CREATED: &str =

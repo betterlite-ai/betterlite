@@ -1,8 +1,10 @@
+use std::str;
+
 use betterlite_context::aws_partition::get_aws_partition;
 use percent_encoding::utf8_percent_encode;
 use quick_xml::Reader;
 use quick_xml::escape::unescape;
-use quick_xml::events::Event;
+use quick_xml::events::{BytesCData, BytesText, Event};
 
 use super::CallRequest;
 use super::error::CallError;
@@ -86,6 +88,7 @@ pub fn caller_identity_from(body: &[u8]) -> Result<CallerIdentity, CallError> {
 }
 
 // the IAM query protocol carries every field of the operation in the form body
+#[must_use]
 pub fn iam_request(region: &str, operation: &'static str, pairs: &[(&str, &str)]) -> CallRequest {
     let endpoint = iam_endpoint(region);
     let mut fields: Vec<(&str, &str)> = vec![("Action", operation), ("Version", IAM_VERSION)];
@@ -133,7 +136,19 @@ pub fn child_text(
     child: &'static str,
     operation: &'static str,
 ) -> Result<String, CallError> {
-    let text = std::str::from_utf8(body).map_err(|_source| CallError::NotUtf8 { operation })?;
+    let text = str::from_utf8(body).map_err(|_source| CallError::NotUtf8 { operation })?;
+    find_child_text(text, parent, child, operation)?.ok_or(CallError::MissingField {
+        operation,
+        field: child,
+    })
+}
+
+fn find_child_text(
+    text: &str,
+    parent: &str,
+    child: &str,
+    operation: &'static str,
+) -> Result<Option<String>, CallError> {
     let mut reader = Reader::from_str(text);
     let mut stack: Vec<Vec<u8>> = Vec::new();
     let mut found: Option<String> = None;
@@ -148,20 +163,12 @@ pub fn child_text(
             }
             Event::Text(value) => {
                 if is_child_of(&stack, parent, child) {
-                    let decoded = value
-                        .xml10_content()
-                        .map_err(|source| CallError::Decode { operation, source })?;
-                    let unescaped = unescape(decoded.as_ref())
-                        .map_err(|source| CallError::Escape { operation, source })?;
-                    found = Some(unescaped.into_owned());
+                    found = Some(text_value(&value, operation)?);
                 }
             }
             Event::CData(value) => {
                 if is_child_of(&stack, parent, child) {
-                    let decoded = value
-                        .xml10_content()
-                        .map_err(|source| CallError::Decode { operation, source })?;
-                    found = Some(decoded.into_owned());
+                    found = Some(cdata_value(&value, operation)?);
                 }
             }
             Event::Eof => break,
@@ -173,10 +180,23 @@ pub fn child_text(
             | Event::Comment(_) => {}
         }
     }
-    found.ok_or(CallError::MissingField {
-        operation,
-        field: child,
-    })
+    Ok(found)
+}
+
+fn text_value(value: &BytesText<'_>, operation: &'static str) -> Result<String, CallError> {
+    let decoded = value
+        .xml10_content()
+        .map_err(|source| CallError::Decode { operation, source })?;
+    let unescaped =
+        unescape(decoded.as_ref()).map_err(|source| CallError::Escape { operation, source })?;
+    Ok(unescaped.into_owned())
+}
+
+fn cdata_value(value: &BytesCData<'_>, operation: &'static str) -> Result<String, CallError> {
+    let decoded = value
+        .xml10_content()
+        .map_err(|source| CallError::Decode { operation, source })?;
+    Ok(decoded.into_owned())
 }
 
 fn is_child_of(stack: &[Vec<u8>], parent: &str, child: &str) -> bool {

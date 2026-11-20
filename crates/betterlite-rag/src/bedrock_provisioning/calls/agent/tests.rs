@@ -31,7 +31,7 @@ fn call_start_ingestion_job_puts_to_the_data_source_jobs_path() {
         .map(|(_, value)| value.clone());
     assert_eq!(content_type.as_deref(), Some("application/json"));
     let body: StartBody = serde_json::from_slice(&call.body).unwrap();
-    assert!(uuid::Uuid::parse_str(&body.client_token).is_ok());
+    uuid::Uuid::parse_str(&body.client_token).unwrap();
 }
 
 #[test]
@@ -79,10 +79,10 @@ fn call_ingestion_job_reads_the_job_id() {
 #[test]
 fn call_ingestion_job_reports_a_missing_job_id() {
     let body = br#"{"ingestionJob":{"status":"STARTING"}}"#;
-    assert!(ingestion_job_id(body, START_INGESTION_JOB).is_err());
+    ingestion_job_id(body, START_INGESTION_JOB).unwrap_err();
 }
 
 #[test]
 fn call_ingestion_job_reports_a_body_that_is_not_json() {
-    assert!(ingestion_job(b"nope", GET_INGESTION_JOB).is_err());
+    ingestion_job(b"nope", GET_INGESTION_JOB).unwrap_err();
 }

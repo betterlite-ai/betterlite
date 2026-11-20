@@ -55,8 +55,8 @@ pub fn ingestion_job_url(
         utf8_percent_encode(data_source_id, super::UNRESERVED).to_string(),
         "ingestionjobs".to_owned(),
     ];
-    if let Some(job_id) = job_id {
-        segments.push(utf8_percent_encode(job_id, super::UNRESERVED).to_string());
+    if let Some(id) = job_id {
+        segments.push(utf8_percent_encode(id, super::UNRESERVED).to_string());
     }
     format!("{}/{}", bedrock_agent_endpoint(region), segments.join("/"))
 }

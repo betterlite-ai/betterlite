@@ -36,10 +36,8 @@ pub struct HttpRagTransport {
 }
 
 impl Debug for HttpRagTransport {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
-        formatter
-            .debug_struct("HttpRagTransport")
-            .finish_non_exhaustive()
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("HttpRagTransport").finish_non_exhaustive()
     }
 }
 

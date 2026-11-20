@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::str;
 use std::time::Duration;
 
 use tokio::time::Instant;
@@ -9,7 +10,9 @@ use self::support::{
     repeated, status,
 };
 use crate::bedrock_provisioning::calls::error::CallError;
+use crate::bedrock_provisioning::provision::BedrockProvisioner;
 use crate::bedrock_provisioning::provision::error::ProvisionError;
+use crate::bedrock_provisioning::provision::resources::ProvisioningSteps;
 
 pub(crate) mod support;
 
@@ -25,6 +28,22 @@ const CREATED_KNOWLEDGE_BASE: &str =
 const ACTIVE_KNOWLEDGE_BASE: &str =
     r#"{"knowledgeBase":{"knowledgeBaseId":"kb1","status":"ACTIVE"}}"#;
 const CREATED_DATA_SOURCE: &str = r#"{"dataSource":{"dataSourceId":"ds1"}}"#;
+const CREATION_OPERATIONS: [&str; 14] = [
+    "GetCallerIdentity",
+    "CreateBucket",
+    "CreateSecurityPolicy",
+    "CreateSecurityPolicy",
+    "CreateAccessPolicy",
+    "CreateCollection",
+    "BatchGetCollection",
+    "BatchGetCollection",
+    "CreateIndex",
+    "CreateRole",
+    "PutRolePolicy",
+    "CreateKnowledgeBase",
+    "GetKnowledgeBase",
+    "CreateDataSource",
+];
 
 #[tokio::test(start_paused = true)]
 async fn collection_sends_the_three_policies_then_creates_and_records() {
@@ -193,7 +212,7 @@ async fn collection_uses_the_partition_arn_prefix_in_the_access_policy() {
         .await
         .unwrap();
     let access = transport.requests().remove(2);
-    let body = std::str::from_utf8(&access.body).unwrap();
+    let body = str::from_utf8(&access.body).unwrap();
     assert!(body.contains("arn:aws-cn:iam::123456789012:root"));
     assert!(body.contains("arn:aws-cn:iam::123456789012:role/caller"));
 }
@@ -216,7 +235,7 @@ async fn index_looks_the_collection_up_by_name_and_creates_it() {
         "https://abc.us-west-2.aoss.amazonaws.com/bedrock-kb-index"
     );
     assert_eq!(create.method, "PUT");
-    let body = std::str::from_utf8(&create.body).unwrap();
+    let body = str::from_utf8(&create.body).unwrap();
     assert!(body.contains("\"knn.algo_param.ef_search\":512"));
 }
 
@@ -384,7 +403,7 @@ async fn role_creates_the_role_records_the_name_and_attaches_the_policy() {
     assert_eq!(transport.operations(), vec!["CreateRole", "PutRolePolicy"]);
     assert_eq!(started.elapsed(), Duration::from_secs(10));
     let put = transport.requests().remove(1);
-    let body = std::str::from_utf8(&put.body).unwrap();
+    let body = str::from_utf8(&put.body).unwrap();
     assert!(body.contains("PolicyName=litellm-bedrock-kb-0123abcd-policy"));
     assert!(body.contains("litellm-kb-0123abcd"));
 }
@@ -429,7 +448,7 @@ async fn role_uses_the_partition_arn_prefix() {
         .await
         .unwrap();
     let create = transport.requests().remove(0);
-    let body = std::str::from_utf8(&create.body).unwrap();
+    let body = str::from_utf8(&create.body).unwrap();
     assert!(
         body.contains("arn%3Aaws-cn%3Abedrock%3Acn-north-1%3A123456789012%3Aknowledge-base%2F%2A")
     );
@@ -479,25 +498,11 @@ async fn flow_creates_every_resource_in_order() {
     ]);
     let mut provisioner = new_provisioner(r#"{"aws_region_name":"us-west-2"}"#, transport.clone());
     provisioner.ensure_config_initialized().await.unwrap();
-    assert_eq!(
-        transport.operations(),
-        vec![
-            "GetCallerIdentity",
-            "CreateBucket",
-            "CreateSecurityPolicy",
-            "CreateSecurityPolicy",
-            "CreateAccessPolicy",
-            "CreateCollection",
-            "BatchGetCollection",
-            "BatchGetCollection",
-            "CreateIndex",
-            "CreateRole",
-            "PutRolePolicy",
-            "CreateKnowledgeBase",
-            "GetKnowledgeBase",
-            "CreateDataSource",
-        ]
-    );
+    assert_eq!(transport.operations(), CREATION_OPERATIONS);
+    assert_created_resources(&provisioner);
+}
+
+fn assert_created_resources(provisioner: &BedrockProvisioner<'_, ScriptedTransport>) {
     assert_eq!(
         provisioner.clients.settings.knowledge_base_id.as_deref(),
         Some("kb1")
@@ -579,6 +584,6 @@ async fn flow_uses_the_ingest_name_and_the_configured_bucket() {
         .into_iter()
         .find(|request| request.url.contains("/knowledgebases/"))
         .expect("the knowledge base create request is recorded");
-    let body = std::str::from_utf8(&create.body).unwrap();
+    let body = str::from_utf8(&create.body).unwrap();
     assert!(body.contains("\"name\":\"custom\""));
 }

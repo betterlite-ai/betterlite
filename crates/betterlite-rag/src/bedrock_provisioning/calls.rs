@@ -53,10 +53,9 @@ pub struct CallRequest {
 
 // the body can be a caller's file, so Debug names the headers and sizes the body
 impl Debug for CallRequest {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         let names: Vec<&str> = self.headers.iter().map(|(name, _)| name.as_str()).collect();
-        formatter
-            .debug_struct("CallRequest")
+        f.debug_struct("CallRequest")
             .field("operation", &self.operation)
             .field("service", &self.service)
             .field("signing_region", &self.signing_region)
