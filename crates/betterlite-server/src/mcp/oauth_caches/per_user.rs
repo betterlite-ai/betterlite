@@ -4,6 +4,14 @@ use crate::mcp::outbound_credentials::{OAuthToken, TokenCacheBackend, TokenKey};
 
 use super::MCPPerUserTokenCache;
 
+// One per-user token write: the bearer, its TTL and the identity binding proof.
+#[derive(Clone, Copy)]
+pub struct PerUserToken<'token> {
+    pub access_token: &'token str,
+    pub ttl_seconds: i64,
+    pub identity_binding_proof: Option<&'token str>,
+}
+
 impl<B: TokenCacheBackend> MCPPerUserTokenCache<B> {
     pub async fn get(&self, user_id: &str, server_id: &str) -> Option<String> {
         self.get_token(user_id, server_id)
@@ -19,24 +27,17 @@ impl<B: TokenCacheBackend> MCPPerUserTokenCache<B> {
     }
 
     // The backend encrypts the token with its codec and reads every cache failure as a no-op.
-    pub async fn set(
-        &self,
-        user_id: &str,
-        server_id: &str,
-        access_token: &str,
-        ttl: i64,
-        identity_binding_proof: Option<&str>,
-    ) {
-        let token = OAuthToken {
-            access_token: access_token.to_owned(),
+    pub async fn set(&self, user_id: &str, server_id: &str, token: PerUserToken<'_>) {
+        let stored = OAuthToken {
+            access_token: token.access_token.to_owned(),
             expires_at: None,
             refresh_token: None,
             scopes: Vec::new(),
-            identity_binding_proof: identity_binding_proof.map(str::to_owned),
+            identity_binding_proof: token.identity_binding_proof.map(str::to_owned),
         };
-        let lifetime = Duration::from_secs(u64::try_from(ttl).unwrap_or_default());
+        let lifetime = Duration::from_secs(u64::try_from(token.ttl_seconds).unwrap_or_default());
         self.backend
-            .set(&per_user_token_key(user_id, server_id), &token, lifetime)
+            .set(&per_user_token_key(user_id, server_id), &stored, lifetime)
             .await;
     }
 

@@ -752,11 +752,11 @@ async fn resolve_mcp_auth_falls_back_to_the_static_token() {
         Some(McpAuthValue::Text(value)) => assert_eq!(value.expose_secret(), "static"),
         Some(McpAuthValue::Headers(_)) | None => panic!("the static token is a text value"),
     }
-    assert_eq!(
+    assert!(
         resolve_mcp_auth(&base_server(), None, &cache)
             .await
-            .expect("no auth resolves"),
-        None
+            .expect("no auth resolves")
+            .is_none()
     );
 }
 

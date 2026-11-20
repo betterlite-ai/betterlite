@@ -74,16 +74,16 @@ fn classify_rows<'row>(
         });
         let count = counts.entry(classification.rule).or_insert(0);
         *count = count.saturating_add(1);
-        log.event(match classification.flow {
-            Some(flow) => BackfillEvent::FlowStamped {
+        log.event(classification.flow.map_or(
+            BackfillEvent::FlowAmbiguous {
+                server_id: row.server_id.as_str(),
+            },
+            |flow| BackfillEvent::FlowStamped {
                 server_id: row.server_id.as_str(),
                 flow,
                 rule: classification.rule,
             },
-            None => BackfillEvent::FlowAmbiguous {
-                server_id: row.server_id.as_str(),
-            },
-        });
+        ));
         classified.push((row, classification));
     }
     (classified, counts)

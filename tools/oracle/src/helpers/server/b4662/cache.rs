@@ -7,6 +7,7 @@ use serde_json::{Value, json};
 
 use betterlite_mcp::server_record::MCPServer;
 use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_server::mcp::oauth_caches::per_user::PerUserToken;
 use betterlite_server::mcp::oauth_caches::{MCPOAuth2TokenCache, MCPPerUserTokenCache};
 use betterlite_server::mcp::outbound_credentials::PER_USER_TOKEN_KEY_PREFIX;
 use betterlite_server::mcp::outbound_credentials::client_credentials::token_post::M2mTokenEndpointPost;
@@ -123,7 +124,15 @@ impl PerUserCall {
 
     async fn seed(&self, token: &str, ttl: i64) {
         self.cache
-            .set(&self.user_id, &self.server_id, token, ttl, None)
+            .set(
+                &self.user_id,
+                &self.server_id,
+                PerUserToken {
+                    access_token: token,
+                    ttl_seconds: ttl,
+                    identity_binding_proof: None,
+                },
+            )
             .await;
     }
 

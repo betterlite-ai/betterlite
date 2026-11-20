@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use betterlite_context::local_ttl_cache::CacheValue;
 
 use super::base_server;
+use crate::mcp::oauth_caches::per_user::PerUserToken;
 use crate::mcp::oauth_caches::{MCPPerUserTokenCache, compute_per_user_token_ttl};
 use crate::mcp::outbound_credentials::PER_USER_TOKEN_KEY_PREFIX;
 use crate::mcp::outbound_credentials::cache_codec::OAuthTokenCacheCodec;
@@ -30,7 +31,7 @@ struct FakeBackend {
 }
 
 impl FakeBackend {
-    fn new() -> Self {
+    const fn new() -> Self {
         Self {
             entries: Mutex::new(BTreeMap::new()),
             failures: BTreeSet::new(),
@@ -146,6 +147,18 @@ fn per_user_cache(
     }
 }
 
+const fn per_user_token<'token>(
+    access_token: &'token str,
+    ttl_seconds: i64,
+    identity_binding_proof: Option<&'token str>,
+) -> PerUserToken<'token> {
+    PerUserToken {
+        access_token,
+        ttl_seconds,
+        identity_binding_proof,
+    }
+}
+
 #[test]
 fn per_user_cache_key_matches_litellm() {
     let key = format!("{PER_USER_TOKEN_KEY_PREFIX}user-1:srv-1");
@@ -156,7 +169,7 @@ fn per_user_cache_key_matches_litellm() {
 async fn per_user_set_stores_an_encrypted_value_with_the_ttl_and_proof() {
     let cache = per_user_cache(FakeBackend::new());
     cache
-        .set("user-1", "srv-1", "tok", 120, Some("proof"))
+        .set("user-1", "srv-1", per_user_token("tok", 120, Some("proof")))
         .await;
     let stored = cache
         .backend
@@ -188,7 +201,9 @@ async fn per_user_set_stores_an_encrypted_value_with_the_ttl_and_proof() {
 #[tokio::test]
 async fn per_user_set_stores_a_bearer_only_value_without_a_proof() {
     let cache = per_user_cache(FakeBackend::new());
-    cache.set("user-1", "srv-1", "tok", 60, None).await;
+    cache
+        .set("user-1", "srv-1", per_user_token("tok", 60, None))
+        .await;
     let stored = cache
         .backend
         .cache
@@ -201,8 +216,12 @@ async fn per_user_set_stores_a_bearer_only_value_without_a_proof() {
 #[tokio::test]
 async fn per_user_set_skips_a_ttl_that_is_not_positive() {
     let cache = per_user_cache(FakeBackend::new());
-    cache.set("user-1", "srv-1", "tok", 0, None).await;
-    cache.set("user-1", "srv-1", "tok", -5, None).await;
+    cache
+        .set("user-1", "srv-1", per_user_token("tok", 0, None))
+        .await;
+    cache
+        .set("user-1", "srv-1", per_user_token("tok", -5, None))
+        .await;
     assert!(
         cache
             .backend
@@ -218,7 +237,9 @@ async fn per_user_set_skips_a_ttl_that_is_not_positive() {
 #[tokio::test]
 async fn per_user_set_swallows_a_backend_failure() {
     let cache = per_user_cache(FakeBackend::failing(Failure::Set));
-    cache.set("user-1", "srv-1", "tok", 60, None).await;
+    cache
+        .set("user-1", "srv-1", per_user_token("tok", 60, None))
+        .await;
     assert_eq!(cache.get("user-1", "srv-1").await, None);
 }
 
@@ -241,7 +262,9 @@ async fn per_user_get_token_swallows_a_backend_failure() {
 #[tokio::test]
 async fn per_user_delete_evicts_the_key_and_swallows_failures() {
     let cache = per_user_cache(FakeBackend::new());
-    cache.set("user-1", "srv-1", "tok", 60, None).await;
+    cache
+        .set("user-1", "srv-1", per_user_token("tok", 60, None))
+        .await;
     cache.delete("user-1", "srv-1").await;
     assert_eq!(cache.get("user-1", "srv-1").await, None);
     assert_eq!(
