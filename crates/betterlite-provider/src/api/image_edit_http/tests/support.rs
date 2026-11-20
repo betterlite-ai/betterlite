@@ -9,6 +9,7 @@ use betterlite_core::api::vector_store_http_write::error::{
 };
 use betterlite_core::api::vector_store_http_write::service::{WriteRequest, WriteTransport};
 use betterlite_http::proxy::UpstreamResponse;
+use betterlite_http::proxy::multipart::MultipartPart;
 use betterlite_http::proxy::outbound::RequestBody;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_pre_post::env::{
@@ -612,4 +613,273 @@ pub(super) fn pre_post_error<ConfigError: Error + 'static>(
         ImageEditHttpError::Logging(logging) => logging,
         other => panic!("the call failed outside the pre-call logging: {other}"),
     }
+}
+
+pub(super) const RESPONSE_BODY: &str = r#"{"created":1,"data":[{"b64_json":"YQ=="}]}"#;
+pub(super) const API_BASE: &str = "http://mock.test/v1";
+pub(super) const EDITS_URL: &str = "http://mock.test/v1/images/edits";
+const MODEL: &str = "gpt-image-1";
+
+pub(super) fn image() -> ImageFile {
+    ImageFile {
+        filename: Some(String::from("a.png")),
+        content: b"abc".to_vec(),
+        content_type: Some(String::from("image/png")),
+    }
+}
+
+pub(super) fn image_response() -> ImageResponse {
+    serde_json::from_str(RESPONSE_BODY).expect("the response fixture parses")
+}
+
+pub(super) fn litellm_params() -> ImageParams {
+    params(r#"{"api_key":"key","api_base":"http://mock.test/v1"}"#)
+}
+
+pub(super) fn part(name: &str, data: &[u8]) -> MultipartPart {
+    MultipartPart {
+        name: name.to_owned(),
+        file_name: None,
+        content_type: None,
+        data: data.to_vec(),
+    }
+}
+
+pub(super) fn file_part(
+    name: &str,
+    file_name: Option<&str>,
+    content_type: Option<&str>,
+    data: &[u8],
+) -> MultipartPart {
+    MultipartPart {
+        name: name.to_owned(),
+        file_name: file_name.map(str::to_owned),
+        content_type: content_type.map(str::to_owned),
+        data: data.to_vec(),
+    }
+}
+
+pub(super) fn edit_transport() -> Transport {
+    Transport::replying(Reply::json(200, RESPONSE_BODY).with_header("x-request-id", "edit_1"))
+}
+
+fn caller_transform_event(mode: ClientKind, image: &ImageFile, options: &ImageParams) -> Event {
+    Event::Transform {
+        mode,
+        model: String::from(MODEL),
+        prompt: Some(String::from("change")),
+        image: Some(image.clone()),
+        options: options.clone(),
+        headers: headers(&[("x", "caller")]),
+    }
+}
+
+pub(super) fn sync_events(image: &ImageFile, options: &ImageParams) -> Vec<Event> {
+    vec![
+        Event::Environment {
+            api_key: Some(String::from("key")),
+            api_base: Some(String::from(API_BASE)),
+            model: String::from(MODEL),
+            headers: headers(&[("x", "option")]),
+        },
+        Event::Url {
+            api_base: Some(String::from(API_BASE)),
+            api_key: Some(String::from("key")),
+        },
+        caller_transform_event(ClientKind::Sync, image, options),
+        Event::Finalize {
+            url: String::from(EDITS_URL),
+            data: params_json(),
+        },
+        Event::Respond { status: 200 },
+    ]
+}
+
+pub(super) fn assert_sync_result(outcome: &ImageEditOutcome) {
+    assert_eq!(outcome.response, image_response());
+    assert_eq!(
+        outcome.provider_headers.headers,
+        IndexMap::from([(String::from("x-request-id"), String::from("edit_1"))])
+    );
+    assert_eq!(
+        outcome.provider_headers.additional_headers,
+        IndexMap::from([(
+            String::from("llm_provider-x-request-id"),
+            Json::Text(String::from("edit_1")),
+        )])
+    );
+}
+
+pub(super) fn assert_sync_request(transport: &Transport) {
+    let requests = transport.requests();
+    assert_eq!(requests.len(), 1);
+    let request = &requests[0];
+    assert_eq!(request.url.as_str(), EDITS_URL);
+    assert_eq!(request.timeout, Some(CALL_TIMEOUT));
+    assert_eq!(
+        request
+            .headers
+            .get("x")
+            .and_then(|value| value.to_str().ok()),
+        Some("caller")
+    );
+    let RequestBody::Multipart { parts, .. } = &request.body else {
+        panic!("the fixture config asks for a multipart body");
+    };
+    assert_eq!(
+        parts,
+        &vec![
+            part("prompt", b"change"),
+            part("revision", b"final"),
+            file_part("image", Some("a.png"), Some("image/png"), b"abc"),
+        ]
+    );
+    assert!(parts.iter().all(|part| part.name != "none"));
+}
+
+pub(super) fn assert_sync_logging(fixture: &Fixture) {
+    assert_eq!(fixture.input(), Some(&Json::Text(String::from("change"))));
+    assert_eq!(
+        fixture.logged("api_base"),
+        Some(&Json::Text(String::from(EDITS_URL)))
+    );
+    assert_eq!(fixture.logged("headers"), Some(&json(r#"{"x":"caller"}"#)));
+    assert_eq!(
+        fixture.logged("complete_input_dict"),
+        Some(&json(
+            r#"{"image":{"filename":"a.png","content":"abc","content_type":"image/png"}}"#
+        ))
+    );
+    assert!(fixture.state.model_call_details.get("api_key").is_none());
+}
+
+pub(super) async fn assert_async_matches_sync(
+    deps: &ImageEditDeps<'_, RecordingConfig, Source>,
+    call: &ImageEditCall<'_>,
+    transport: &Transport,
+    image: &ImageFile,
+    options: &ImageParams,
+) {
+    let mut fixture = Fixture::new();
+    let outcome = fixture
+        .run(ClientKind::Asynchronous, deps, call)
+        .await
+        .expect("the async edit succeeds");
+    assert_eq!(outcome.response, image_response());
+    let transformed = caller_transform_event(ClientKind::Asynchronous, image, options);
+    assert!(deps.config.events().contains(&transformed));
+    assert_eq!(fixture.logged("complete_input_dict"), Some(&params_json()));
+    assert!(fixture.state.model_call_details.get("api_key").is_none());
+    let requests = transport.requests();
+    assert_eq!(requests.len(), 1);
+    let RequestBody::Multipart { parts, .. } = &requests[0].body else {
+        panic!("the async path sends the same multipart body");
+    };
+    assert_eq!(parts.len(), 3);
+}
+
+pub(super) fn params_json() -> Json {
+    json(r#"{"prompt":"change","revision":"final"}"#)
+}
+
+pub(super) fn validated_transform_event(mode: ClientKind) -> Event {
+    Event::Transform {
+        mode,
+        model: String::from(MODEL),
+        prompt: Some(String::from("change")),
+        image: None,
+        options: ImageParams::new(),
+        headers: headers(&[("x", "validated")]),
+    }
+}
+
+pub(super) fn validated_events() -> Vec<Event> {
+    vec![
+        Event::Environment {
+            api_key: Some(String::from("key")),
+            api_base: Some(String::from(API_BASE)),
+            model: String::from(MODEL),
+            headers: ImageHeaders::new(),
+        },
+        Event::Url {
+            api_base: Some(String::from(API_BASE)),
+            api_key: Some(String::from("key")),
+        },
+        validated_transform_event(ClientKind::Sync),
+        Event::Finalize {
+            url: String::from(EDITS_URL),
+            data: params_json(),
+        },
+        Event::Respond { status: 200 },
+    ]
+}
+
+pub(super) fn assert_async_transform_once(config: &RecordingConfig) {
+    let events = config.events();
+    let transforms: Vec<&Event> = events
+        .iter()
+        .filter(|event| matches!(event, Event::Transform { .. }))
+        .collect();
+    assert_eq!(transforms.len(), 1);
+    assert!(matches!(
+        transforms[0],
+        Event::Transform {
+            mode: ClientKind::Asynchronous,
+            ..
+        }
+    ));
+}
+
+fn assert_field_error(
+    fixture: &mut Fixture,
+    deps: &ImageEditDeps<'_, RecordingConfig, Source>,
+    optional: &ImageParams,
+    litellm: &ImageParams,
+    expected: &str,
+) {
+    let call = edit_call(Some("change"), None, optional, litellm, None);
+    let Err(error) = fixture.run(ClientKind::Sync, deps, &call).await else {
+        panic!("the wrong-typed {expected} fails the call");
+    };
+    let RequestError::FieldType { field } = request_error(error) else {
+        panic!("the wrong-typed {expected} is a field type");
+    };
+    assert_eq!(field, expected);
+}
+
+pub(super) async fn assert_validation_never_selects(
+    fixture: &mut Fixture,
+    deps: &ImageEditDeps<'_, RecordingConfig, Source>,
+    good: &ImageParams,
+) {
+    let options = ImageParams::new();
+    let bad_key = params(r#"{"api_key":7,"api_base":"http://mock.test/v1"}"#);
+    assert_field_error(fixture, deps, &options, &bad_key, "litellm_params.api_key").await;
+    let bad_verify = params(r#"{"ssl_verify":"yes","api_base":"http://mock.test/v1"}"#);
+    assert_field_error(
+        fixture,
+        deps,
+        &options,
+        &bad_verify,
+        "litellm_params.ssl_verify",
+    )
+    .await;
+    let bad_base = params(r#"{"api_base":["x"]}"#);
+    assert_field_error(
+        fixture,
+        deps,
+        &options,
+        &bad_base,
+        "litellm_params.api_base",
+    )
+    .await;
+    let bad_options = params(r#"{"extra_headers":{"x":1}}"#);
+    assert_field_error(
+        fixture,
+        deps,
+        &bad_options,
+        good,
+        "optional_params.extra_headers",
+    )
+    .await;
 }

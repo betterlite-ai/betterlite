@@ -6,81 +6,38 @@ use betterlite_core::api::vector_store_http_write::error::{
     HeaderMap as FactsHeaders, ResponseFacts,
 };
 use betterlite_http::proxy::UpstreamResponse;
-use betterlite_http::proxy::multipart::MultipartPart;
-use betterlite_http::proxy::outbound::RequestBody;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::{
-    ImageFile, ImageFiles, ImageHeaders, ImageParams, ImageResponse,
+    ImageFile, ImageFiles, ImageHeaders, ImageParams,
 };
+use betterlite_openai::error::ProviderError;
 use http::header::{HeaderMap as HttpHeaders, HeaderValue};
-use indexmap::IndexMap;
 use serde_json::Number;
 
 use self::support::{
-    CALL_TIMEOUT, Event, Fixture, FixtureError, RecordingConfig, Reply, Source, Transport,
-    body_json, deps, edit_call, fact_headers, headers, json, params, pre_post_error,
-    provider_error, request_error,
+    API_BASE, EDITS_URL, Event, Fixture, FixtureError, RESPONSE_BODY, RecordingConfig, Reply,
+    Source, Transport, assert_async_matches_sync, assert_async_transform_once,
+    assert_reply_failure, assert_sync_logging, assert_sync_request, assert_sync_result,
+    assert_transform_failure, assert_validation_never_selects, body_json, deps, edit_call,
+    edit_transport, fact_headers, file_part, headers, image, image_response, json, litellm_params,
+    params, params_json, part, pre_post_error, provider_error, request_error, sync_events,
+    validated_events, validated_transform_event,
 };
 use super::error::{ImageEditHttpError, RequestError};
-use super::facts::{self, SendError, Sent};
+use super::facts::{self, Failure, SendError, Sent};
 use super::request::{caller_headers, endpoint, merge, multipart_parts};
 use super::service::{ClientKind, SuppliedClient};
 use crate::api::image_contracts::error::ImageContractError;
 
 mod support;
 
-const RESPONSE_BODY: &str = r#"{"created":1,"data":[{"b64_json":"YQ=="}]}"#;
-const API_BASE: &str = "http://mock.test/v1";
-const EDITS_URL: &str = "http://mock.test/v1/images/edits";
-const MODEL: &str = "gpt-image-1";
-
-fn image() -> ImageFile {
-    ImageFile {
-        filename: Some(String::from("a.png")),
-        content: b"abc".to_vec(),
-        content_type: Some(String::from("image/png")),
-    }
-}
-
-fn image_response() -> ImageResponse {
-    serde_json::from_str(RESPONSE_BODY).expect("the response fixture parses")
-}
-
-fn litellm_params() -> ImageParams {
-    params(r#"{"api_key":"key","api_base":"http://mock.test/v1"}"#)
-}
-
-fn part(name: &str, data: &[u8]) -> MultipartPart {
-    MultipartPart {
-        name: name.to_owned(),
-        file_name: None,
-        content_type: None,
-        data: data.to_vec(),
-    }
-}
-
-fn file_part(
-    name: &str,
-    file_name: Option<&str>,
-    content_type: Option<&str>,
-    data: &[u8],
-) -> MultipartPart {
-    MultipartPart {
-        name: name.to_owned(),
-        file_name: file_name.map(str::to_owned),
-        content_type: content_type.map(str::to_owned),
-        data: data.to_vec(),
-    }
-}
-
 // DoD: the finalizer sees the resolved URL, the multipart body carries the finalized fields and the caller's header, and the hidden headers and the pre-call are recorded per mode
 #[tokio::test]
 async fn edit_finalization_and_multipart() {
     let config = RecordingConfig::new(API_BASE);
-    let transport =
-        Transport::replying(Reply::json(200, RESPONSE_BODY).with_header("x-request-id", "edit_1"));
+    let transport = edit_transport();
     let source = Source::new(transport.clone());
     let deps = deps(&config, &source, None);
     let image = image();
@@ -100,124 +57,16 @@ async fn edit_finalization_and_multipart() {
         .run(ClientKind::Sync, &deps, &call)
         .await
         .expect("the sync edit succeeds");
-    assert_eq!(outcome.response, image_response());
-    assert_eq!(
-        outcome.provider_headers.headers,
-        IndexMap::from([(String::from("x-request-id"), String::from("edit_1"))])
-    );
-    assert_eq!(
-        outcome.provider_headers.additional_headers,
-        IndexMap::from([(
-            String::from("llm_provider-x-request-id"),
-            Json::Text(String::from("edit_1")),
-        )])
-    );
-    assert_eq!(
-        config.events(),
-        vec![
-            Event::Environment {
-                api_key: Some(String::from("key")),
-                api_base: Some(String::from(API_BASE)),
-                model: String::from(MODEL),
-                headers: headers(&[("x", "option")]),
-            },
-            Event::Url {
-                api_base: Some(String::from(API_BASE)),
-                api_key: Some(String::from("key")),
-            },
-            Event::Transform {
-                mode: ClientKind::Sync,
-                model: String::from(MODEL),
-                prompt: Some(String::from("change")),
-                image: Some(image.clone()),
-                options: options.clone(),
-                headers: headers(&[("x", "caller")]),
-            },
-            Event::Finalize {
-                url: String::from(EDITS_URL),
-                data: params_json(),
-            },
-            Event::Respond { status: 200 },
-        ]
-    );
-    let requests = transport.requests();
-    assert_eq!(requests.len(), 1);
-    let request = &requests[0];
-    assert_eq!(request.url.as_str(), EDITS_URL);
-    assert_eq!(request.timeout, Some(CALL_TIMEOUT));
-    assert_eq!(
-        request
-            .headers
-            .get("x")
-            .and_then(|value| value.to_str().ok()),
-        Some("caller")
-    );
-    let RequestBody::Multipart { parts, .. } = &request.body else {
-        panic!("the fixture config asks for a multipart body");
-    };
-    assert_eq!(
-        parts,
-        &vec![
-            part("prompt", b"change"),
-            part("revision", b"final"),
-            file_part("image", Some("a.png"), Some("image/png"), b"abc"),
-        ]
-    );
-    assert!(parts.iter().all(|part| part.name != "none"));
-    assert_eq!(fixture.input(), Some(&Json::Text(String::from("change"))));
-    assert_eq!(
-        fixture.logged("api_base"),
-        Some(&Json::Text(String::from(EDITS_URL)))
-    );
-    assert_eq!(fixture.logged("headers"), Some(&json(r#"{"x":"caller"}"#)));
-    assert_eq!(
-        fixture.logged("complete_input_dict"),
-        Some(&json(
-            r#"{"image":{"filename":"a.png","content":"abc","content_type":"image/png"}}"#
-        ))
-    );
-    assert!(fixture.state.model_call_details.get("api_key").is_none());
+    assert_sync_result(&outcome);
+    assert_eq!(config.events(), sync_events(&image, &options));
+    assert_sync_request(&transport);
+    assert_sync_logging(&fixture);
 
     let async_config = RecordingConfig::new(API_BASE);
-    let async_transport =
-        Transport::replying(Reply::json(200, RESPONSE_BODY).with_header("x-request-id", "edit_1"));
+    let async_transport = edit_transport();
     let async_source = Source::new(async_transport.clone());
     let async_deps = deps(&async_config, &async_source, None);
-    let mut async_fixture = Fixture::new();
-    let outcome = async_fixture
-        .run(ClientKind::Asynchronous, &async_deps, &call)
-        .await
-        .expect("the async edit succeeds");
-    assert_eq!(outcome.response, image_response());
-    assert!(async_config.events().contains(&Event::Transform {
-        mode: ClientKind::Asynchronous,
-        model: String::from(MODEL),
-        prompt: Some(String::from("change")),
-        image: Some(image),
-        options: options.clone(),
-        headers: headers(&[("x", "caller")]),
-    }));
-    assert_eq!(
-        async_fixture.logged("complete_input_dict"),
-        Some(&params_json())
-    );
-    assert!(
-        async_fixture
-            .state
-            .model_call_details
-            .get("api_key")
-            .is_none()
-    );
-    let async_requests = async_transport.requests();
-    assert_eq!(async_requests.len(), 1);
-    let RequestBody::Multipart { parts, .. } = &async_requests[0].body else {
-        panic!("the async path sends the same multipart body");
-    };
-    assert_eq!(parts.len(), 3);
-}
-
-fn params_json() -> Json {
-    json(r#"{"prompt":"change","revision":"final"}"#)
+    assert_async_matches_sync(&async_deps, &call, &async_transport, &image, &options).await;
 }
 
 // DoD: the JSON path sends only the finalized transform output, ssl_verify reaches the pool as given, and a missing explicit map keeps the validated headers
@@ -239,34 +88,7 @@ async fn edit_json_and_unused_arguments() {
         .expect("the JSON edit succeeds");
     assert_eq!(outcome.response, image_response());
     assert_eq!(source.calls(), vec![Some(false)]);
-    assert_eq!(
-        config.events(),
-        vec![
-            Event::Environment {
-                api_key: Some(String::from("key")),
-                api_base: Some(String::from(API_BASE)),
-                model: String::from(MODEL),
-                headers: ImageHeaders::new(),
-            },
-            Event::Url {
-                api_base: Some(String::from(API_BASE)),
-                api_key: Some(String::from("key")),
-            },
-            Event::Transform {
-                mode: ClientKind::Sync,
-                model: String::from(MODEL),
-                prompt: Some(String::from("change")),
-                image: None,
-                options: ImageParams::new(),
-                headers: headers(&[("x", "validated")]),
-            },
-            Event::Finalize {
-                url: String::from(EDITS_URL),
-                data: params_json(),
-            },
-            Event::Respond { status: 200 },
-        ]
-    );
+    assert_eq!(config.events(), validated_events());
     let requests = transport.requests();
     assert_eq!(requests.len(), 1);
     assert_eq!(body_json(&requests[0]), params_json());
@@ -283,21 +105,8 @@ async fn edit_json_and_unused_arguments() {
         .await
         .expect("the async JSON edit succeeds");
     assert_eq!(async_source.calls(), vec![None]);
-    let events = async_config.events();
-    let transforms: Vec<&Event> = events
-        .iter()
-        .filter(|event| matches!(event, Event::Transform { .. }))
-        .collect();
-    assert_eq!(transforms.len(), 1);
-    assert!(matches!(
-        transforms[0],
-        Event::Transform {
-            mode: ClientKind::Asynchronous,
-            ..
-        }
-    ));
-    let async_requests = async_transport.requests();
-    assert_eq!(body_json(&async_requests[0]), params_json());
+    assert_async_transform_once(&async_config);
+    assert_eq!(body_json(&async_transport.requests()[0]), params_json());
 }
 
 #[tokio::test]
@@ -353,7 +162,16 @@ async fn edit_transport_failure() {
     let Err(error) = fixture.run(ClientKind::Sync, &deps, &call).await else {
         panic!("a 400 fails the edit");
     };
-    let error = provider_error(error);
+    assert_reply_failure(&config, provider_error(error));
+    assert_eq!(fixture.input(), Some(&Json::Text(String::from("change"))));
+    assert_eq!(
+        fixture.logged("api_base"),
+        Some(&Json::Text(String::from(EDITS_URL)))
+    );
+    assert!(fixture.state.model_call_details.get("api_key").is_none());
+}
+
+fn assert_reply_failure(config: &RecordingConfig, error: ProviderError) {
     assert_eq!(error.status_code, 400);
     assert!(!error.status_code_is_synthesized);
     assert_eq!(error.message, "bad image");
@@ -375,12 +193,6 @@ async fn edit_transport_failure() {
         status_code: 400,
         headers: headers(&[("content-length", "9"), ("x-error", "bad")]),
     }));
-    assert_eq!(fixture.input(), Some(&Json::Text(String::from("change"))));
-    assert_eq!(
-        fixture.logged("api_base"),
-        Some(&Json::Text(String::from(EDITS_URL)))
-    );
-    assert!(fixture.state.model_call_details.get("api_key").is_none());
 }
 
 #[tokio::test]
@@ -467,52 +279,9 @@ async fn validation_errors_never_select_a_client() {
     let transport = Transport::replying(Reply::json(200, RESPONSE_BODY));
     let source = Source::new(transport.clone());
     let deps = deps(&config, &source, None);
-    let options = ImageParams::new();
     let good = litellm_params();
     let mut fixture = Fixture::new();
-
-    let bad_key = params(r#"{"api_key":7,"api_base":"http://mock.test/v1"}"#);
-    let bad_key_call = edit_call(Some("change"), None, &options, &bad_key, None);
-    let Err(key_error) = fixture.run(ClientKind::Sync, &deps, &bad_key_call).await else {
-        panic!("a non-text api_key fails the call");
-    };
-    let RequestError::FieldType { field } = request_error(key_error) else {
-        panic!("a non-text api_key fails the field type");
-    };
-    assert_eq!(field, "litellm_params.api_key");
-
-    let bad_verify = params(r#"{"ssl_verify":"yes","api_base":"http://mock.test/v1"}"#);
-    let bad_verify_call = edit_call(Some("change"), None, &options, &bad_verify, None);
-    let Err(verify_error) = fixture.run(ClientKind::Sync, &deps, &bad_verify_call).await else {
-        panic!("a non-boolean ssl_verify fails the call");
-    };
-    let RequestError::FieldType { field } = request_error(verify_error) else {
-        panic!("a non-boolean ssl_verify fails the field type");
-    };
-    assert_eq!(field, "litellm_params.ssl_verify");
-
-    let bad_base = params(r#"{"api_base":["x"]}"#);
-    let bad_base_call = edit_call(Some("change"), None, &options, &bad_base, None);
-    let Err(base_error) = fixture.run(ClientKind::Sync, &deps, &bad_base_call).await else {
-        panic!("a non-text api_base fails the call");
-    };
-    let RequestError::FieldType { field } = request_error(base_error) else {
-        panic!("a non-text api_base fails the field type");
-    };
-    assert_eq!(field, "litellm_params.api_base");
-
-    let bad_options = params(r#"{"extra_headers":{"x":1}}"#);
-    let bad_options_call = edit_call(Some("change"), None, &bad_options, &good, None);
-    let Err(options_error) = fixture
-        .run(ClientKind::Sync, &deps, &bad_options_call)
-        .await
-    else {
-        panic!("a non-text extra header fails the call");
-    };
-    let RequestError::FieldType { field } = request_error(options_error) else {
-        panic!("a non-text extra header fails the field type");
-    };
-    assert_eq!(field, "optional_params.extra_headers");
+    assert_validation_never_selects(&mut fixture, &deps, &good).await;
 
     assert!(source.calls().is_empty());
     assert!(transport.requests().is_empty());
@@ -561,15 +330,7 @@ async fn a_transform_failure_propagates() {
     let Err(sync_error) = sync_fixture.run(ClientKind::Sync, &sync_deps, &call).await else {
         panic!("a refusing sync transform fails the call");
     };
-    let ImageEditHttpError::Config { source } = sync_error else {
-        panic!("a refusing transform is a config failure");
-    };
-    assert!(matches!(
-        source,
-        FixtureError::Contract(ImageContractError::NotImplemented {
-            message: "the fixture transform failed"
-        })
-    ));
+    assert_transform_failure(sync_error);
     assert!(sync_transport.requests().is_empty());
 
     let async_config = RecordingConfig::new(API_BASE).failing_transform();
@@ -583,8 +344,15 @@ async fn a_transform_failure_propagates() {
     else {
         panic!("a refusing async transform fails the call");
     };
-    let ImageEditHttpError::Config { source } = async_error else {
-        panic!("a refusing async transform is a config failure");
+    assert_transform_failure(async_error);
+    let transformed = validated_transform_event(ClientKind::Asynchronous);
+    assert!(async_config.events().contains(&transformed));
+    assert!(async_transport.requests().is_empty());
+}
+
+fn assert_transform_failure(error: ImageEditHttpError<FixtureError>) {
+    let ImageEditHttpError::Config { source } = error else {
+        panic!("a refusing transform is a config failure");
     };
     assert!(matches!(
         source,
@@ -592,15 +360,6 @@ async fn a_transform_failure_propagates() {
             message: "the fixture transform failed"
         })
     ));
-    assert!(async_config.events().contains(&Event::Transform {
-        mode: ClientKind::Asynchronous,
-        model: String::from(MODEL),
-        prompt: Some(String::from("change")),
-        image: None,
-        options: ImageParams::new(),
-        headers: headers(&[("x", "validated")]),
-    }));
-    assert!(async_transport.requests().is_empty());
 }
 
 #[tokio::test]
@@ -914,6 +673,19 @@ fn provider_headers_join_repeats_and_render_non_utf8() {
 
 #[test]
 fn reply_failures_recompute_the_body_length() {
+    assert_recomputed_lengths(&gzip_failure());
+
+    let empty = UpstreamResponse {
+        status: 500,
+        headers: HttpHeaders::new(),
+        body: Vec::new(),
+    };
+    let empty_failure = facts::reply_failure(&empty);
+    assert_eq!(empty_failure.facts.headers, Some(FactsHeaders::new()));
+    assert_eq!(empty_failure.facts.text.as_deref(), Some(""));
+}
+
+fn gzip_failure() -> Failure {
     let mut reply_headers = HttpHeaders::new();
     reply_headers.insert("content-encoding", HeaderValue::from_static("gzip"));
     reply_headers.insert("content-length", HeaderValue::from_static("99"));
@@ -923,7 +695,10 @@ fn reply_failures_recompute_the_body_length() {
         headers: reply_headers,
         body: b"bad image".to_vec(),
     };
-    let failure = facts::reply_failure(&reply);
+    facts::reply_failure(&reply)
+}
+
+fn assert_recomputed_lengths(failure: &Failure) {
     assert_eq!(failure.facts.response_status, Some(400));
     assert_eq!(
         failure.facts.status,
@@ -947,15 +722,6 @@ fn reply_failures_recompute_the_body_length() {
         })
     );
     assert_eq!(failure.facts.display, "");
-
-    let empty = UpstreamResponse {
-        status: 500,
-        headers: HttpHeaders::new(),
-        body: Vec::new(),
-    };
-    let empty_failure = facts::reply_failure(&empty);
-    assert_eq!(empty_failure.facts.headers, Some(FactsHeaders::new()));
-    assert_eq!(empty_failure.facts.text.as_deref(), Some(""));
 }
 
 #[test]
