@@ -1,0 +1,71 @@
+task: B3101
+deviations:
+  - what: >-
+      The monthly, summary and per-user queries bind every value as a native PostgreSQL parameter
+      ($1 start date, $2 end date, then one $n per exact tag or one $3 for the substring pattern),
+      where LiteLLM interpolates the end date and the dates into the SQL text and binds only the tag
+      filter values.
+    why: >-
+      A bound value cannot change the statement, so an injected tag or date can only be compared as
+      text, and the parameter indices follow the count and order of the values handed to the driver.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L477-L522
+  - what: >-
+      The "Month N (Mon)" label, period_start and period_end are computed in Rust with chrono from
+      the month offset the monthly query returns in its date column, where LiteLLM formats them with
+      TO_CHAR and interval arithmetic inside the SQL and returns them as text columns.
+    why: >-
+      The query returns the integer offset PostgreSQL computes, cast to text so the monthly rows share
+      one row model with the daily and weekly reports, and chrono renders the same text: "Month 7
+      (Dec)" for the period 2025-12-13 to 2026-01-11. Integer division equals FLOOR here because every
+      row lies between start_date and end_date, so the difference is never negative.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L512-L519
+  - what: >-
+      The per-user tag records are read with ORDER BY date, id and the aggregates, the sort and the
+      page slice are computed in Rust over that list, where LiteLLM fetches the same records through
+      Prisma without an order_by and aggregates, sorts and slices them in Python.
+    why: >-
+      Without an ORDER BY the row order decides which tag a user shows and how ties in
+      successful_requests fall, so betterlite makes that order explicit; the aggregation, the stable
+      sort by successful_requests and the ceil-divided total_pages are the same algorithm LiteLLM runs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L715-L787
+  - what: >-
+      The unique api_key and user_id lists keep first-seen order, where LiteLLM reads them from a
+      Python set in whatever order the set iterates and passes that order in the IN lists.
+    why: >-
+      The order of an IN list changes nothing a caller sees; keeping it deterministic makes the
+      recorded key and user lookups testable and reproducible.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L718-L740
+  - what: >-
+      A user's spend is accumulated as rust_decimal decimal values read from the Postgres numeric
+      column and serialized once as a float, where LiteLLM adds Python floats as it walks the records.
+    why: >-
+      LiteLLM's float sum carries binary rounding into the response (0.1 + 0.2 reports
+      0.30000000000000004); adding the decimal values PostgreSQL stores and converting once at the
+      edge reports the sum the rows hold.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L772-L772
+  - what: >-
+      Request and token counts and the summary sums are i64, the width of the bigint columns; a sum
+      past i64::MAX fails the bigint cast (HTTP 500), and a per-user counter saturates at i64::MAX,
+      where LiteLLM's Python ints would keep counting.
+    why: >-
+      betterlite reads the counters through the driver's bigint decoding, so the range the database
+      can store is the range the report returns; reaching it needs more requests or tokens in one
+      tag or user window than bigint can hold.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L766-L772
+kept_bugs:
+  - what: >-
+      The monthly report orders rows by month_offset descending, which returns the oldest of the seven
+      30-day periods first (labels "Month 1" through "Month 7"), while the endpoint's own docstring
+      and the task text say the most recent month comes first.
+    why: >-
+      The label numbers and the returned order are what a working dashboard renders, so betterlite
+      keeps LiteLLM's order and its labels instead of reversing the list to match the docstring.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L520-L522
+  - what: >-
+      The monthly and per-user windows end at UTC today plus one day and the queries compare
+      dts.date <= end_date, so the "last 7 months" report reaches 210 calendar dates and the "last 30
+      days" report reaches 31.
+    why: >-
+      A working dashboard reads that date range and expects the extra end date rather than a window
+      one date shorter, the same boundary the daily and weekly reports keep.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L473-L479
