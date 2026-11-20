@@ -1,0 +1,1 @@
+{"file_url":"https://example.test/doc.pdf","file_id":null,"ingest_options":{"vector_store":{"vector_store_id":"vs-1"}},"file":{"content":"aGVsbG8=","filename":"doc.txt"}}
