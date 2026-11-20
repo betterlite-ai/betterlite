@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use serde::Deserialize;
 
 pub mod globals;
 pub mod visibility;
@@ -44,7 +45,6 @@ impl KeyColumn {
 pub enum KeyScalar {
     Bool(bool),
     Text(String),
-    Timestamp(DateTime<Utc>),
 }
 
 // one Prisma where entry; the enum fixes the value shape each operator accepts
@@ -79,7 +79,9 @@ pub enum TextMatching {
     Substring,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+// every field but the two matching modes is one argument of LiteLLM's filter builder
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(default)]
 pub struct KeyFilters {
     pub user_id: Option<String>,
     pub team_id: Option<String>,
@@ -93,7 +95,9 @@ pub struct KeyFilters {
     pub project_id: Option<String>,
     pub access_group_id: Option<String>,
     pub agent_id: Option<String>,
+    #[serde(skip)]
     pub user_matching: TextMatching,
+    #[serde(skip)]
     pub key_alias_matching: TextMatching,
     pub expires_filter: Option<String>,
     pub search: Option<String>,

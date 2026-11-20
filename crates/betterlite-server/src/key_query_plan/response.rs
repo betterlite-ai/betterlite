@@ -59,7 +59,7 @@ pub fn entry_for_row(
 fn deleted_row(row: &KeyRow) -> Result<DeletedVerificationToken, KeyQueryPlanError> {
     let document =
         serde_json::to_string(&JsonData::Object(row.clone())).map_err(KeyQueryPlanError::Row)?;
-    serde_json::from_str(&document).map_err(|source| KeyQueryPlanError::Deleted { source })
+    serde_json::from_str(&document).map_err(KeyQueryPlanError::Row)
 }
 
 // model_dump for the owner and the three creator fields LiteLLM copies out of the user row

@@ -23,14 +23,6 @@ impl KeyTable {
             Self::Deleted => DELETED_KEY_TABLE,
         }
     }
-
-    #[must_use]
-    pub const fn includes_relations(self) -> bool {
-        match self {
-            Self::Live => true,
-            Self::Deleted => false,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -37,27 +37,13 @@ pub(crate) enum Input {
     },
 }
 
-// the names and defaults mirror the arguments LiteLLM's builder takes
+// the builder's own arguments, plus the two flags that pick the matching mode
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct FilterArgs {
-    user_id: Option<String>,
-    team_id: Option<String>,
-    organization_id: Option<String>,
-    key_alias: Option<String>,
-    key_hash: Option<String>,
-    exclude_team_id: Option<String>,
-    admin_team_ids: Option<Vec<String>>,
-    member_team_ids: Option<Vec<String>>,
-    include_created_by_keys: Option<bool>,
-    project_id: Option<String>,
-    access_group_id: Option<String>,
-    agent_id: Option<String>,
+    #[serde(flatten)]
+    filters: KeyFilters,
     use_substring_matching: Option<bool>,
     use_key_alias_substring_matching: Option<bool>,
-    expires_filter: Option<String>,
-    search: Option<String>,
-    status_filter: Option<String>,
 }
 
 pub(crate) struct Op;
@@ -126,33 +112,19 @@ fn sort_answer(sort_by: Option<&str>, sort_order: &str) -> Result<Value, Box<Hel
     let mut entry = Map::new();
     entry.insert(
         sort.column.wire().to_owned(),
-        Value::String(sort.order.wire().to_owned()),
+        Value::String(sort.order.sql().to_lowercase()),
     );
     Ok(Value::Object(entry))
 }
 
-fn filters_answer(filters: &FilterArgs, now: &str) -> Result<Value, Box<HelperError>> {
+fn filters_answer(args: &FilterArgs, now: &str) -> Result<Value, Box<HelperError>> {
     let instant = parse_now(now)?;
-    let built = KeyFilters {
-        user_id: filters.user_id.clone(),
-        team_id: filters.team_id.clone(),
-        organization_id: filters.organization_id.clone(),
-        key_alias: filters.key_alias.clone(),
-        key_hash: filters.key_hash.clone(),
-        exclude_team_id: filters.exclude_team_id.clone(),
-        admin_team_ids: filters.admin_team_ids.clone(),
-        member_team_ids: filters.member_team_ids.clone(),
-        include_created_by_keys: filters.include_created_by_keys.unwrap_or(false),
-        project_id: filters.project_id.clone(),
-        access_group_id: filters.access_group_id.clone(),
-        agent_id: filters.agent_id.clone(),
-        user_matching: matching(filters.use_substring_matching.unwrap_or(false)),
-        key_alias_matching: matching(filters.use_key_alias_substring_matching.unwrap_or(false)),
-        expires_filter: filters.expires_filter.clone(),
-        search: filters.search.clone(),
-        status_filter: filters.status_filter.clone(),
-    };
-    Ok(clause_value(&build_key_filter_conditions(&built, instant)))
+    let mut filters = args.filters.clone();
+    filters.user_matching = matching(args.use_substring_matching.unwrap_or(false));
+    filters.key_alias_matching = matching(args.use_key_alias_substring_matching.unwrap_or(false));
+    Ok(clause_value(&build_key_filter_conditions(
+        &filters, instant,
+    )))
 }
 
 fn matching(substring: bool) -> TextMatching {
@@ -225,9 +197,6 @@ fn scalar_value(scalar: &KeyScalar) -> Value {
     match scalar {
         KeyScalar::Bool(flag) => Value::Bool(*flag),
         KeyScalar::Text(text) => Value::String(text.clone()),
-        KeyScalar::Timestamp(instant) => {
-            Value::String(instant.to_rfc3339_opts(SecondsFormat::AutoSi, true))
-        }
     }
 }
 

@@ -63,14 +63,6 @@ impl SortOrder {
     }
 
     #[must_use]
-    pub const fn wire(self) -> &'static str {
-        match self {
-            Self::Asc => "asc",
-            Self::Desc => "desc",
-        }
-    }
-
-    #[must_use]
     pub const fn sql(self) -> &'static str {
         match self {
             Self::Asc => "ASC",

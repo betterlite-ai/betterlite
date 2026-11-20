@@ -16,11 +16,6 @@ pub enum KeyQueryPlanError {
     Row(#[source] serde_json::Error),
     #[error("the stored key row is not a JSON object")]
     RowObject,
-    #[error("the stored deleted key row is invalid")]
-    Deleted {
-        #[source]
-        source: serde_json::Error,
-    },
     #[error(transparent)]
     Permission(#[from] ObjectPermissionError),
     #[error(transparent)]

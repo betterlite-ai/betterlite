@@ -6,11 +6,11 @@ use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_db::postgres_store::errors::DbError;
 
 use crate::key_query_plan::error::KeyQueryPlanError;
-use crate::key_query_plan::plan::{KeyListQuery, KeyQueryPlan, build_plan};
+use crate::key_query_plan::plan::{KeyListQuery, KeyQueryPlan, KeyTable, build_plan};
 use crate::key_query_plan::response::{
     KeyListEntry, KeyListResponseObject, KeyRow, attach_user_expansion, entry_for_row,
 };
-use crate::key_query_plan::source::{KeyListSource, PostgresKeyListSource};
+use crate::key_query_plan::source::KeyListSource;
 
 pub async fn list_keys(
     client: Option<PrismaClient<'_>>,
@@ -19,7 +19,7 @@ pub async fn list_keys(
     let Some(prisma) = client else {
         return Err(KeyQueryPlanError::Database(DbError::NoDbConnected));
     };
-    list_keys_with(&PostgresKeyListSource { client: prisma }, query).await
+    list_keys_with(&prisma, query).await
 }
 
 // page first, then count, with no surrounding transaction, so a concurrent write can show up in total_count
@@ -82,7 +82,7 @@ async fn render_rows<S: KeyListSource>(
     let expand_user = query.expand.iter().any(|name| name == "user");
     let mut keys = Vec::with_capacity(rows.len());
     for mut row in rows {
-        if plan.table.includes_relations() {
+        if matches!(plan.table, KeyTable::Live) {
             source.attach_object_permission(&mut row).await?;
         }
         if expand_user {

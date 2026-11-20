@@ -44,38 +44,33 @@ pub trait KeyListSource {
     ) -> impl Future<Output = Result<(), KeyQueryPlanError>> + Send;
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct PostgresKeyListSource<'db> {
-    pub(crate) client: PrismaClient<'db>,
-}
-
-impl KeyListSource for PostgresKeyListSource<'_> {
+impl KeyListSource for PrismaClient<'_> {
     fn fetch_page(
         &self,
         plan: &KeyQueryPlan,
     ) -> impl Future<Output = Result<Vec<KeyRow>, KeyQueryPlanError>> + Send {
-        async move { fetch_page(self.client, plan).await }
+        async move { fetch_page(*self, plan).await }
     }
 
     fn count(
         &self,
         plan: &KeyQueryPlan,
     ) -> impl Future<Output = Result<i64, KeyQueryPlanError>> + Send {
-        async move { count(self.client, plan).await }
+        async move { count(*self, plan).await }
     }
 
     fn find_users(
         &self,
         ids: Vec<String>,
     ) -> impl Future<Output = Result<Vec<LiteLLMUserTable>, KeyQueryPlanError>> + Send {
-        async move { find_users(self.client, ids).await }
+        async move { find_users(*self, ids).await }
     }
 
     fn attach_object_permission(
         &self,
         row: &mut KeyRow,
     ) -> impl Future<Output = Result<(), KeyQueryPlanError>> + Send {
-        async move { attach_permission(self.client, row).await }
+        async move { attach_permission(*self, row).await }
     }
 }
 
@@ -92,7 +87,13 @@ async fn fetch_page(
         .map_err(backend::<Infallible>)?;
     match plan.table {
         KeyTable::Live => rows.iter().map(decode_live_row).collect(),
-        KeyTable::Deleted => rows.iter().map(decode_archived_row).collect(),
+        KeyTable::Deleted => rows
+            .iter()
+            .map(|row| {
+                let document: String = row.try_get(0).map_err(backend::<Infallible>)?;
+                decode_mapping(&document)
+            })
+            .collect(),
     }
 }
 
@@ -149,11 +150,6 @@ fn decode_live_row(row: &Row) -> Result<KeyRow, KeyQueryPlanError> {
         fields.insert(String::from("litellm_budget_table"), value);
     }
     Ok(fields)
-}
-
-fn decode_archived_row(row: &Row) -> Result<KeyRow, KeyQueryPlanError> {
-    let document: String = row.try_get(0).map_err(backend::<Infallible>)?;
-    decode_mapping(&document)
 }
 
 fn decode_mapping(document: &str) -> Result<BTreeMap<String, JsonData>, KeyQueryPlanError> {

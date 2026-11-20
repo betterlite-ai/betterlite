@@ -23,18 +23,6 @@ pub const VALID_STATUS_FILTER_VALUES: [KeyStatus; 4] = [
     KeyStatus::Deleted,
 ];
 
-impl KeyStatus {
-    #[must_use]
-    pub const fn wire(self) -> &'static str {
-        match self {
-            Self::Active => "active",
-            Self::Expired => "expired",
-            Self::Revoked => "revoked",
-            Self::Deleted => "deleted",
-        }
-    }
-}
-
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct KeyStatusSource {

@@ -120,62 +120,50 @@ fn group_sql(children: &[WhereClause], builder: &mut SqlBuilder, joiner: &str) -
 }
 
 fn predicate_sql(predicate: &KeyPredicate, builder: &mut SqlBuilder) -> String {
-    match predicate {
-        KeyPredicate::IsNull(column) => format!("r.\"{}\" IS NULL", column.wire()),
-        KeyPredicate::IsNotNull(column) => format!("r.\"{}\" IS NOT NULL", column.wire()),
-        KeyPredicate::Equals(column, scalar) => {
-            format!("r.\"{}\" = {}", column.wire(), scalar_bind(scalar, builder))
-        }
-        KeyPredicate::NotEquals(column, scalar) => {
-            format!(
-                "r.\"{}\" <> {}",
-                column.wire(),
-                scalar_bind(scalar, builder)
-            )
-        }
-        KeyPredicate::Before(column, instant) => {
-            format!(
-                "r.\"{}\" < {}",
-                column.wire(),
-                timestamp_bind(instant, builder)
-            )
-        }
+    let (column, operator, parameter) = match predicate {
+        KeyPredicate::IsNull(column) => (column, "IS", String::from("NULL")),
+        KeyPredicate::IsNotNull(column) => (column, "IS", String::from("NOT NULL")),
+        KeyPredicate::Equals(column, scalar) => (column, "=", scalar_bind(scalar, builder)),
+        KeyPredicate::NotEquals(column, scalar) => (column, "<>", scalar_bind(scalar, builder)),
+        KeyPredicate::Before(column, instant) => (column, "<", timestamp_bind(instant, builder)),
         KeyPredicate::AtOrAfter(column, instant) => {
-            format!(
-                "r.\"{}\" >= {}",
-                column.wire(),
-                timestamp_bind(instant, builder)
-            )
+            (column, ">=", timestamp_bind(instant, builder))
         }
-        KeyPredicate::ContainsInsensitive(column, text) => {
+        KeyPredicate::ContainsInsensitive(column, text) => (
+            column,
+            "ILIKE",
+            builder.bind(SqlValue::Text(format!("%{text}%"))),
+        ),
+        KeyPredicate::In(column, values) => (
+            column,
+            "= ANY",
             format!(
-                "r.\"{}\" ILIKE {}",
-                column.wire(),
-                builder.bind(SqlValue::Text(format!("%{text}%")))
-            )
-        }
-        KeyPredicate::In(column, values) => format!(
-            "r.\"{}\" = ANY({}::text[])",
-            column.wire(),
-            builder.bind(SqlValue::TextList(values.clone()))
+                "{}::text[]",
+                builder.bind(SqlValue::TextList(values.clone()))
+            ),
         ),
-        KeyPredicate::HasSome(column, values) => format!(
-            "r.\"{}\" && {}::text[]",
-            column.wire(),
-            builder.bind(SqlValue::TextList(values.clone()))
+        KeyPredicate::HasSome(column, values) => (
+            column,
+            "&&",
+            format!(
+                "{}::text[]",
+                builder.bind(SqlValue::TextList(values.clone()))
+            ),
         ),
-    }
+    };
+    format!("r.\"{}\" {operator} {parameter}", column.wire())
 }
 
 fn scalar_bind(scalar: &KeyScalar, builder: &mut SqlBuilder) -> String {
     match scalar {
         KeyScalar::Bool(flag) => builder.bind(SqlValue::Bool(*flag)),
         KeyScalar::Text(text) => builder.bind(SqlValue::Text(text.clone())),
-        KeyScalar::Timestamp(instant) => timestamp_bind(instant, builder),
     }
 }
 
 fn timestamp_bind(instant: &DateTime<Utc>, builder: &mut SqlBuilder) -> String {
-    let parameter = builder.bind(SqlValue::Timestamp(instant.naive_utc()));
-    format!("{parameter}::timestamp")
+    format!(
+        "{}::timestamp",
+        builder.bind(SqlValue::Timestamp(instant.naive_utc()))
+    )
 }
