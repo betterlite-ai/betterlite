@@ -1,0 +1,14 @@
+kind: helper
+name: team_metadata_edit_access
+call:
+  team_fields: {function: edit_access, role: proxy_admin, general_settings: {}}
+calls:
+  - team_fields: {function: edit_access, role: org_admin, general_settings: {}}
+  - team_fields: {function: edit_access, role: null, general_settings: {}}
+  - team_fields: {function: edit_access, role: team_admin, general_settings: {}}
+  - team_fields: {function: edit_access, role: team_admin, general_settings: {team_admin_editable_team_fields: []}}
+  - team_fields: {function: edit_access, role: team_admin, general_settings: {team_admin_editable_team_fields: [tpm_limit, max_budget]}}
+  - team_fields: {function: edit_access, role: team_admin, general_settings: {team_admin_editable_team_fields: [tpm_limit, projects]}}
+  - team_fields: {function: edit_access, role: team_admin, general_settings: {team_admin_editable_team_fields: tpm_limit}}
+env: {}
+compare: {ignore: []}

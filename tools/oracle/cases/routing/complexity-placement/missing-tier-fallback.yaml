@@ -1,0 +1,67 @@
+kind: probe
+name: missing-tier-fallback
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: [0]
+    operation:
+      complexity_placement:
+        return_raw_model_name: false
+        max_tokens_from_tier_model: true
+        tiers:
+          MEDIUM: [medium-a, medium-b]
+        default_model: null
+        deployment_pin: false
+        deployments:
+          - {group: medium-a, model: openai/gpt-4o-mini, custom_llm_provider: null, max_output_tokens: 512, allowed_openai_params: []}
+          - {group: medium-b, model: openai/gpt-4o-mini, custom_llm_provider: null, max_output_tokens: 1024, allowed_openai_params: []}
+        supported_params:
+          gpt-4o-mini: [temperature]
+        steps:
+          - {tier: COMPLEX, allowed_models: null, responses_call: false, request_kwargs: {}}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_placement:
+        return_raw_model_name: false
+        max_tokens_from_tier_model: true
+        tiers:
+          MEDIUM: medium-a
+        default_model: fallback-model
+        deployment_pin: false
+        deployments:
+          - {group: medium-a, model: openai/gpt-4o-mini, custom_llm_provider: null, max_output_tokens: 512, allowed_openai_params: []}
+          - {group: fallback-model, model: openai/gpt-4o, custom_llm_provider: null, max_output_tokens: 700, allowed_openai_params: []}
+        supported_params:
+          gpt-4o-mini: [temperature]
+          gpt-4o: [temperature]
+        steps:
+          - {tier: COMPLEX, allowed_models: null, responses_call: false, request_kwargs: {}}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_placement:
+        return_raw_model_name: false
+        max_tokens_from_tier_model: true
+        tiers: {}
+        default_model: null
+        deployment_pin: false
+        deployments: []
+        supported_params: {}
+        steps:
+          - {tier: COMPLEX, allowed_models: null, responses_call: false, request_kwargs: {}}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_placement:
+        return_raw_model_name: false
+        max_tokens_from_tier_model: true
+        tiers:
+          SIMPLE: []
+        default_model: null
+        deployment_pin: false
+        deployments: []
+        supported_params: {}
+        steps:
+          - {tier: SIMPLE, allowed_models: null, responses_call: false, request_kwargs: {}}
+compare:
+  ignore: []
