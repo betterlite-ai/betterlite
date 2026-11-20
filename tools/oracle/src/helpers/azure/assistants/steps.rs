@@ -80,7 +80,7 @@ fn one(runtime: &Runtime, step: &Step) -> HelperResult {
             handler: attached,
         },
     )) {
-        Ok(RunInvocation::Polled(kind, reply)) => Ok(polled(&harness, kind, reply)),
+        Ok(RunInvocation::Polled(kind, reply)) => Ok(polled(&harness, kind, &reply)),
         Ok(RunInvocation::Streaming(manager)) => {
             consumed(runtime, &harness, *manager, recording.as_ref())
         }
@@ -88,7 +88,7 @@ fn one(runtime: &Runtime, step: &Step) -> HelperResult {
     }
 }
 
-fn polled(harness: &Harness, kind: ClientKind, reply: Box<RunReply>) -> Value {
+fn polled(harness: &Harness, kind: ClientKind, reply: &RunReply) -> Value {
     json!({
         "requests": mem::take(&mut *harness.recorder.seen.lock().unwrap_or_else(PoisonError::into_inner)),
         "calls": Vec::<String>::new(),
