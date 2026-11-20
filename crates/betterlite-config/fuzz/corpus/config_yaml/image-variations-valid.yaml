@@ -1,0 +1,4 @@
+litellm_settings:
+  api_base: https://seed.example
+  api_key: seed-key
+  openai_key: seed-openai-key

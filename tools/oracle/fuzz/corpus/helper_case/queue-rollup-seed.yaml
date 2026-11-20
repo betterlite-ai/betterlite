@@ -1,0 +1,12 @@
+kind: helper
+name: queue-rollup-seed
+call:
+  queue_rollup:
+    window_transactions:
+      updates:
+        - - {entity_type: key, entity_id: key-1, window_duration: 30d, window_start: "2026-08-01T00:00:00.000000", spend: 1.5, started_at: null}
+          - {entity_type: key, entity_id: key-1, window_duration: 30d, window_start: "2026-08-01T00:00:00.000000", spend: 2.5, started_at: "2026-08-01T00:00:01.000000"}
+    wire_payload:
+      transaction: {entity_type: key, entity_id: key-1, window_duration: 30d, window_start: "2026-08-01T00:00:00.000000", spend: 4.0, started_at: "2026-08-01T00:00:01.000000"}
+env: {}
+compare: {ignore: []}

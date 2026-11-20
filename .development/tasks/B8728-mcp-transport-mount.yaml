@@ -54,6 +54,10 @@ description: >-
   passthrough-challenge: a test_pass server with auth_type none and extra_headers [Authorization], initialize on /mcp/test_pass with the key in x-litellm-api-key answers 401 with the resource_metadata header.
   sse-missing-session: POST /mcp/sse/messages without session_id answers 400.
   sse-unknown-session: POST /mcp/sse/messages?session_id= a valid hex id nobody opened answers 404.
+
+  Booted proof from B124. B124's route directory and proxy remainder leave the MCP checks to this task: add the boot test mcp_mount_has_mounted_app in app::edge::route_directory::tests::boot (the /mcp sub-app appears in GET /routes only when mounted) and the HTTP case local-tool-orphan under tools/oracle/cases/http/proxy-remainder (POST /mcp/ tools/call for a configured local tool with no server answers the 200 MCP result with isError true and the source's server-unavailable text).
+
+  ui/chat-app/responses-chat-with-mcp-app comes from B9695: one POST /responses turn with stream true and one tool of type mcp whose server_url is the proxy base plus /mcp/<encoded server_name> and whose server_label is the server name, against a mock MCP server and a mock model upstream (the request shape is in B9695's Chat paragraph). Compare the status, content type and stream frames.
 scope:
   paths:
     - crates/betterlite-server/src/app/mcp.rs
@@ -62,6 +66,10 @@ scope:
     - crates/betterlite-server/src/app/mcp/transport/**
     - tools/oracle/cases/http/mcp-transport/**
     - "tools/oracle/fuzz/corpus/http_case/mcp-transport-*"
+    - tools/oracle/cases/http/proxy-remainder/local-tool-orphan.yaml
+    - tools/oracle/cases/ui/chat-app/responses-chat-with-mcp-app.yaml
+    - crates/betterlite-server/src/app/edge/route_directory.rs
+    - crates/betterlite-server/src/app/edge/route_directory/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L20119-L20166
@@ -81,6 +89,10 @@ dod:
     proof: [mount-tests]
   - text: The /mcp transport, the path routes, the challenges and the SSE message refusals match LiteLLM through the booted proxy.
     proof: [mount-tests, transport-cases, oracle]
+  - text: "A configured local tool with no server answers POST /mcp/ tools/call with the 200 MCP result with isError true, as LiteLLM does."
+    proof: [oracle]
+  - text: "A streamed Responses turn with one MCP app reaches the mock MCP server through /mcp/<server_name> and streams the same frames as LiteLLM."
+    proof: [oracle]
 checks:
   optional: []
   commands:
@@ -109,6 +121,8 @@ oracle_cases:
   - tools/oracle/cases/http/mcp-transport/passthrough-challenge.yaml
   - tools/oracle/cases/http/mcp-transport/sse-missing-session.yaml
   - tools/oracle/cases/http/mcp-transport/sse-unknown-session.yaml
+  - tools/oracle/cases/http/proxy-remainder/local-tool-orphan.yaml
+  - tools/oracle/cases/ui/chat-app/responses-chat-with-mcp-app.yaml
 deviations: []
 out_of_scope:
   - "The route handlers: B8592. The transport behavior: B8720 to B8727. The /v1/mcp/sessions routes over the SessionRegistry this task stores: B9950."

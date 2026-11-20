@@ -20,7 +20,7 @@ description: >-
   B4776's legacy agent grant id migration, three attempts five seconds apart). Then the Redis selection: B8377's init_from_db with B1652's persisted
   coordination_redis block, the litellm_settings snapshot and the router, where a returned client becomes the usage Redis;
   the transaction buffer Redis is the usage Redis, else B8377's buffer_redis (REDIS_* env) when B8373's wants_buffer_redis
-  holds. Then B8373's check_transaction_buffer, B8373's mock testing warning, B138's `initialize_semantic_tool_filter(block, router, &shared.semantic_filter)` (_initialize_semantic_tool_filter, proxy_server.py L1459-L1477; the block is B1663's mcp_semantic_tool_filter converted to B8201's SemanticToolFilterConfig), JWT setup, prompt injection attach, the proxy
+  holds. Then B8373's check_transaction_buffer, B8373's mock testing warning, the semantic tool filter step through the `semantic_filter` port (_initialize_semantic_tool_filter, proxy_server.py L1459-L1477; see the ports paragraph below), JWT setup, prompt injection attach, the proxy
   budget seeding and spend warm-up when a database and max_budget > 0, the two warnings, B8372's register_background_jobs
   when a database is connected, then default team budgets and the UI settings sync, B8372's model info refresh, and B8911's
   tracing receiver start when general_settings.tracing.store is "clickhouse"; the receiver session it returns is kept
@@ -29,9 +29,16 @@ description: >-
   settings: memory TTL 60 seconds unless general_settings.user_api_key_cache_ttl is set, which then sets both memory and Redis
   TTLs.
 
-  LITELLM_WORKER_STARTUP_HOOKS is a comma list of "module.path:function_name" specs; blanks are skipped. B8587 declares the
-  `StartupHooks` port and its `StartupHookError` in crates/betterlite/src/startup_hooks_py.rs; LifespanInputs carries it as
-  `startup_hooks: Option<Arc<dyn StartupHooks>>`, and this task calls it with the list. B165's PythonHooks::run_startup_hooks runs the specs through betterlite-pyhost and B8587's
+  Ports for steps whose owners are not built yet. LifespanInputs carries two optional ports this task declares in
+  lifespan.rs, and each owner fills its port later and depends on this task: `semantic_filter: Option<Arc<dyn
+  SemanticFilterStartup>>` (B138's initialize_semantic_tool_filter over litellm_settings.mcp_semantic_tool_filter and the router)
+  and `startup_hooks: Option<Arc<dyn StartupHooks>>` with its `StartupHookError` (B8587's PyStartupHooks). Both are traits in lifespan.rs that return crate::job_scheduler::BoxFuture (already on main): `SemanticFilterStartup: Send + Sync` has one method that takes the raw litellm_settings.mcp_semantic_tool_filter block and the router handle the lifespan holds and returns `BoxFuture<'a, ()>`, and `StartupHooks: Send + Sync` has `fn run<'a>(&'a self, specs: &'a [String]) -> BoxFuture<'a, Result<(), StartupHookError>>`, where StartupHookError (thiserror) has one variant `Python { #[source] source: HooksError }` over B165's HooksError, displayed as "worker startup hook failed". An empty port never skips silently: an
+  mcp_semantic_tool_filter block whose enabled is true fails startup with `LifespanError::NotBuilt { feature:
+  "mcp_semantic_tool_filter" }`, and a hook
+  list with no startup_hooks port fails as described next; with nothing configured an empty port does nothing.
+
+  LITELLM_WORKER_STARTUP_HOOKS is a comma list of "module.path:function_name" specs; blanks are skipped, and this task calls the
+  startup_hooks port with the list. B165's PythonHooks::run_startup_hooks runs the specs through betterlite-pyhost and B8587's
   PyStartupHooks adapter implements the port over it: it imports each spec and runs it in order
   (awaiting a coroutine), logging "Worker startup hook '{spec}' executed successfully"; a spec without ":" is "Invalid hook spec '{spec}':
   expected format is 'module.path:function_name'", and any failure logs "Worker startup hook '{spec}' failed: {error}"
@@ -72,11 +79,11 @@ description: >-
 
   Tests drive run_proxy with recording fakes for every step behind small traits and assert the order of calls, the
   config source choice and that a failing flush or drain is logged and shutdown continues. The startup order and boot
-  failures are not visible to a client, so the only oracle cases are B138's two, under
-  tools/oracle/cases/server/semantic-filter-startup/. Both send POST /v1/chat/completions with plain function tools (no MCP
-  tools) to a mock upstream and expect 200, the tools forwarded unchanged and no x-litellm-semantic-filter header.
-  plain-tools-enabled-no-servers: litellm_settings.mcp_semantic_tool_filter {enabled: true} and no MCP servers.
-  plain-tools-disabled: the same block with enabled false. Cases that show x-litellm-semantic-filter-tools wait for an MCP
+  failures are not visible to a client, so the only oracle case is plain-tools-disabled under
+  tools/oracle/cases/server/semantic-filter-startup/. It sends POST /v1/chat/completions with plain function tools (no MCP
+  tools) to a mock upstream with litellm_settings.mcp_semantic_tool_filter {enabled: false} and expects 200, the tools
+  forwarded unchanged and no x-litellm-semantic-filter header. The enabled case without MCP servers is B138's to add with
+  its port, since here that block fails startup. Cases that show x-litellm-semantic-filter-tools wait for an MCP
   fixture server and semantic-router in the oracle environment.
 scope:
   paths:
@@ -113,7 +120,7 @@ dod:
     proof: [lifespan-tests]
   - text: The auth cache uses a 60 second memory TTL unless user_api_key_cache_ttl is set.
     proof: [lifespan-tests]
-  - text: Startup calls B138's initialize_semantic_tool_filter after the mock testing warning and before JWT setup, and plain function tools pass through a booted proxy unchanged with no x-litellm-semantic-filter header whether the block is enabled without MCP servers or disabled.
+  - text: Startup runs the semantic_filter port after the mock testing warning and before JWT setup; with that port empty an enabled mcp_semantic_tool_filter block fails startup with NotBuilt, and with the block disabled plain function tools pass through a booted proxy unchanged with no x-litellm-semantic-filter header.
     proof: [lifespan-tests, oracle]
 checks:
   optional: []
@@ -123,11 +130,12 @@ checks:
       run: >-
         cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^lifespan::/)'
 oracle_cases:
-  - tools/oracle/cases/server/semantic-filter-startup/plain-tools-enabled-no-servers.yaml
   - tools/oracle/cases/server/semantic-filter-startup/plain-tools-disabled.yaml
 deviations:
   - what: No shared aiohttp session is created or closed.
     why: _initialize_shared_aiohttp_session builds a Python aiohttp pool; betterlite's outbound pool is betterlite-http's client, drained by server::run.
+  - what: Until B138 fills its port, an enabled litellm_settings.mcp_semantic_tool_filter fails startup with LifespanError::NotBuilt, where LiteLLM boots with the filter.
+    why: The MCP semantic filter waits on the MCP gateway (value split, 2026-11-19); failing at boot keeps a configured feature from being dropped without a word.
 out_of_scope:
   - "cleanup_router_config_variables and showwarning: they reset or patch Python module globals; betterlite has no globals to reset, so not built."
   - "_init_dd_tracer and _init_pyroscope: Python profilers; not built."
