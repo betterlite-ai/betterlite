@@ -153,46 +153,34 @@ fn the_primary_key_is_the_entity_and_its_window_duration() {
 
 #[test]
 fn ordered_transactions_sort_by_primary_key_then_window_start() {
-    let transactions = vec![
-        key_transaction("k2", "2026-01-01T00:00:00.000000", "1"),
-        key_transaction("k1", "2026-01-01T01:00:00.000000", "1"),
-        transaction(&Increment {
-            entity_type: "team",
-            entity_id: "t1",
-            window_duration: "1h",
-            window_start: "2026-01-01T00:00:00.000000",
-            spend: "1",
-            started_at: None,
-        }),
-        key_transaction("k1", "2026-01-01T00:00:00.000000", "1"),
-        transaction(&Increment {
-            entity_type: "key",
-            entity_id: "k1",
-            window_duration: "1d",
-            window_start: "2026-01-01T00:00:00.000000",
-            spend: "1",
-            started_at: None,
-        }),
-    ];
-    let ordered: Vec<_> = ordered_transactions(&transactions)
-        .iter()
-        .map(|queued| {
-            (
-                queued.entity_type.as_str(),
-                queued.entity_id.as_str(),
-                queued.window_duration.as_str(),
-                queued.window_start.as_str(),
-            )
-        })
-        .collect();
+    let midnight = key_transaction("k1", "2026-01-01T00:00:00.000000", "1");
+    let next_hour = key_transaction("k1", "2026-01-01T01:00:00.000000", "1");
+    let other_key = key_transaction("k2", "2026-01-01T00:00:00.000000", "1");
+    let daily = transaction(&Increment {
+        entity_type: "key",
+        entity_id: "k1",
+        window_duration: "1d",
+        window_start: "2026-01-01T00:00:00.000000",
+        spend: "1",
+        started_at: None,
+    });
+    let team = transaction(&Increment {
+        entity_type: "team",
+        entity_id: "t1",
+        window_duration: "1h",
+        window_start: "2026-01-01T00:00:00.000000",
+        spend: "1",
+        started_at: None,
+    });
+    let transactions = vec![other_key, next_hour, team, midnight, daily];
+    let ordered = ordered_transactions(&transactions);
+    let daily_row = &transactions[4];
+    let first_window = &transactions[3];
+    let second_window = &transactions[1];
+    let first_key = &transactions[0];
+    let team_row = &transactions[2];
     assert_eq!(
         ordered,
-        vec![
-            ("key", "k1", "1d", "2026-01-01T00:00:00.000000"),
-            ("key", "k1", "1h", "2026-01-01T00:00:00.000000"),
-            ("key", "k1", "1h", "2026-01-01T01:00:00.000000"),
-            ("key", "k2", "1h", "2026-01-01T00:00:00.000000"),
-            ("team", "t1", "1h", "2026-01-01T00:00:00.000000"),
-        ]
+        vec![daily_row, first_window, second_window, first_key, team_row]
     );
 }

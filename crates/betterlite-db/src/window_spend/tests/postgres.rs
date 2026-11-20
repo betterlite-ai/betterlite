@@ -284,14 +284,11 @@ async fn a_batch_lands_a_row_for_each_primary_key(
     #[case] expected: &str,
 ) {
     let (fixture, pool) = database().await;
+    let inserted_at = naive("2026-01-01T00:00:00.000");
     execute(
         &pool,
         INSERT_WINDOW_SQL,
-        &[
-            &"existing",
-            &naive("2026-01-01T00:00:00.000"),
-            &decimal("1"),
-        ],
+        &[&"existing", &inserted_at, &decimal("1")],
     )
     .await;
     let logs = StaticLogs {
@@ -315,12 +312,8 @@ async fn a_batch_lands_a_row_for_each_primary_key(
         )
         .await
         .expect("the committed windows");
-    assert_eq!(
-        stored_window(&pool, "key", entity_id, window_duration)
-            .await
-            .spend,
-        decimal(expected)
-    );
+    let stored = stored_window(&pool, "key", entity_id, window_duration).await;
+    assert_eq!(stored.spend, decimal(expected));
     close(fixture, pool).await;
 }
 
