@@ -19,10 +19,10 @@ pub(super) struct Sent {
     pub(super) elapsed: Duration,
 }
 
-// The vector-store write path keeps this converter private in betterlite-core, so the rerank module repeats it
 // An httpx.HTTPStatusError carries the masked response: its text and its headers less content-encoding, with content-length recomputed
 #[must_use]
 pub(super) fn status_facts(reply: &UpstreamResponse) -> FailureFacts {
+    // betterlite-core keeps the same converter private to the vector-store write path, so this module repeats it
     let text = from_utf8(&reply.body).map_or_else(
         |_| format!("{} bytes that are not UTF-8", reply.body.len()),
         ToOwned::to_owned,
