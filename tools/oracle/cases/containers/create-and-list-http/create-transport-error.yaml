@@ -1,0 +1,19 @@
+kind: helper
+name: create-transport-error
+call:
+  b3364:
+    operation: create
+    name: box
+    create_params: {}
+    api_key: sk-test
+    api_base: https://api.example.com/v1
+    timeout: null
+    status: 200
+    reply_headers: {}
+    body: '{}'
+    failure: timeout
+env: {}
+compare:
+  ignore:
+    - pointer: /error/message
+      why: betterlite reports its own transport text where LiteLLM reports the httpx read-timeout message; both reach _handle_error and keep the 408 a POST timeout maps to

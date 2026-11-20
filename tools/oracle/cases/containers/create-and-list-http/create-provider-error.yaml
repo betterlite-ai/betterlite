@@ -1,0 +1,16 @@
+kind: helper
+name: create-provider-error
+call:
+  b3364:
+    operation: create
+    name: box
+    create_params: {}
+    api_key: sk-test
+    api_base: https://api.example.com/v1
+    timeout: null
+    status: 400
+    reply_headers: {x-request-id: req_1}
+    body: '{"error":{"message":"bad name","type":"invalid_request_error","param":"name","code":"x"}}'
+    failure: null
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,19 @@
+kind: helper
+name: list-transport-error
+call:
+  b3364:
+    operation: list
+    after: null
+    limit: null
+    order: null
+    api_key: sk-test
+    api_base: https://api.example.com/v1
+    status: 200
+    reply_headers: {}
+    body: '{}'
+    failure: timeout
+env: {}
+compare:
+  ignore:
+    - pointer: /error/message
+      why: betterlite reports its own transport text where LiteLLM reports the httpx read-timeout message; a GET has no timeout translation, so both synthesize the 500
