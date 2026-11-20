@@ -149,6 +149,28 @@ fn a_null_hidden_response_cost_is_ignored_and_its_model_id_is_used() {
     assert_eq!(observed[0].router_model_id.as_deref(), Some("deployment-2"));
 }
 
+#[test]
+fn a_hidden_response_cost_that_is_not_a_number_records_the_short_failure() {
+    let fakes = Fakes::default();
+    let mut log = state(INIT);
+    openai(&mut log);
+    let usage = chat_usage();
+    let hidden = object_fields(r#"{"response_cost":"cheap"}"#);
+    let cost = record(
+        &fakes.recorder(),
+        &mut log,
+        typed(typed_response(&usage, &hidden)),
+    );
+    assert_eq!(cost, None);
+    assert_eq!(
+        stored_failure(&log),
+        Some(json_text(
+            r#"{"error_str":"the hidden response_cost must be a number","traceback_str":""}"#
+        ))
+    );
+    assert!(fakes.observe().is_empty());
+}
+
 #[rstest]
 #[case::positive("0.5", "1.75")]
 #[case::negative("-1", "1.25")]
