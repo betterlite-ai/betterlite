@@ -778,6 +778,7 @@ fn brave_search_dates_read_json_values(#[case] literal: &str, #[case] expected: 
 #[case::iso_leading_zeros("0099-03-05", Some("0099-03-05"))]
 #[case::time_with_seconds("10:00:30", Some("2024-03-05"))]
 #[case::fraction_and_offset("2024-03-05T10:00:00.5-05:00", Some("2024-03-05"))]
+#[case::offset_then_year("Mar 1 10:00 +05:00:00", Some("2000-03-01"))]
 #[case::leap_day("2024-02-29T23:59:59.999Z", Some("2024-02-29"))]
 #[case::weekday_dash_zero("Monday-0", None)]
 #[case::time_then_offset("10:00 +0200", Some("2024-03-05"))]
