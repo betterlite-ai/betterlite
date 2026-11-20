@@ -37,10 +37,14 @@ impl MembershipLookup {
         user_id: Option<&str>,
         team_id: Option<&str>,
     ) -> Result<Option<LiteLLMTeamMembership>, MembershipLoadError> {
-        let (Some(user_id), Some(team_id)) = (user_id, team_id) else {
+        let (Some(member), Some(team)) = (user_id, team_id) else {
             return Ok(None);
         };
-        let key = CacheKey::TeamMembershipReservation { user_id, team_id }.render();
+        let key = CacheKey::TeamMembershipReservation {
+            user_id: member,
+            team_id: team,
+        }
+        .render();
         let cached = self
             .cache
             .read(&key, true)
@@ -50,7 +54,7 @@ impl MembershipLookup {
         match classify_cached(CachedPayload::from(cached))? {
             CachedMembership::Membership(membership) => Ok(Some(*membership)),
             CachedMembership::Absent => Ok(None),
-            CachedMembership::Miss => self.load_or_share(user_id, team_id, key).await,
+            CachedMembership::Miss => self.load_or_share(member, team, key).await,
         }
     }
 
