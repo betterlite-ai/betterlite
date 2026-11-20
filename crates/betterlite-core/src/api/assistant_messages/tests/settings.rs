@@ -93,57 +93,41 @@ fn message_settings_and_failures_defaults_the_deadline() {
     );
 }
 
-#[test]
-fn message_settings_and_failures_reads_timeouts() {
+fn timeout_deadline(timeout: &str, request_timeout: Option<f64>) -> Duration {
     let fixture = Fixture::new();
     fixture.transport.queue(200, MESSAGE_REPLY);
-    fixture.transport.queue(200, MESSAGE_REPLY);
-    fixture.transport.queue(200, MESSAGE_REPLY);
-    fixture.transport.queue(200, MESSAGE_REPLY);
     let message = data(r#"{"role":"user","content":"hello"}"#);
-    let mut zero = params("openai");
-    zero.timeout = Some(serde_json::from_str("0").unwrap());
-    zero.request_timeout = Some(30.0_f64);
+    let mut message_params = params("openai");
+    message_params.timeout = Some(serde_json::from_str(timeout).unwrap());
+    message_params.request_timeout = request_timeout;
     call(
         &fixture,
-        &request("openai", Some(&message), &zero),
+        &request("openai", Some(&message), &message_params),
         Operation::Append,
         false,
     )
     .unwrap();
-    let mut text = params("openai");
-    text.timeout = Some(serde_json::from_str(r#""12.5""#).unwrap());
-    call(
-        &fixture,
-        &request("openai", Some(&message), &text),
-        Operation::Append,
-        false,
-    )
-    .unwrap();
-    let mut structured = params("openai");
-    structured.timeout = Some(serde_json::from_str(r#"{"read":5,"connect":1}"#).unwrap());
-    call(
-        &fixture,
-        &request("openai", Some(&message), &structured),
-        Operation::Append,
-        false,
-    )
-    .unwrap();
-    let mut empty = params("openai");
-    empty.timeout = Some(serde_json::from_str(r#""""#).unwrap());
-    empty.request_timeout = Some(45.0_f64);
-    call(
-        &fixture,
-        &request("openai", Some(&message), &empty),
-        Operation::Append,
-        false,
-    )
-    .unwrap();
-    let seen = fixture.transport.requests();
-    assert_eq!(seen[0].deadline, Duration::from_secs(30));
-    assert_eq!(seen[1].deadline, Duration::from_millis(12_500));
-    assert_eq!(seen[2].deadline, Duration::from_secs(5));
-    assert_eq!(seen[3].deadline, Duration::from_secs(45));
+    fixture.transport.requests()[0].deadline
+}
+
+#[test]
+fn message_settings_and_failures_reads_timeouts() {
+    assert_eq!(
+        timeout_deadline("0", Some(30.0_f64)),
+        Duration::from_secs(30)
+    );
+    assert_eq!(
+        timeout_deadline(r#""12.5""#, None),
+        Duration::from_millis(12_500)
+    );
+    assert_eq!(
+        timeout_deadline(r#"{"read":5,"connect":1}"#, None),
+        Duration::from_secs(5)
+    );
+    assert_eq!(
+        timeout_deadline(r#""""#, Some(45.0_f64)),
+        Duration::from_secs(45)
+    );
 }
 
 #[test]
