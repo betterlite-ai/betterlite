@@ -41,13 +41,13 @@ pub(crate) async fn relay(
     message: &str,
     reason: &str,
 ) {
-    let Some(socket) = socket.as_mut() else {
+    let Some(connection) = socket.as_deref_mut() else {
         tracing::debug!(
             "Could not relay the upstream close to the client: the realtime client websocket is not connected"
         );
         return;
     };
-    if let Err(error) = deliver(socket, code, message, reason).await {
+    if let Err(error) = deliver(connection, code, message, reason).await {
         tracing::debug!("Could not relay the upstream close to the client: {error}");
     }
 }

@@ -30,46 +30,38 @@ fn policy_close() -> BackendClose {
 }
 
 async fn lifespan<ClientDirection, BackendDirection>(
-    fixture: Fixture,
+    mut fixture: Fixture,
     client_direction: ClientDirection,
     backend_direction: BackendDirection,
     cancellation: &CancellationToken,
 ) -> Lifetime
 where
-    ClientDirection: Future<Output = ClientLoopExit>,
-    BackendDirection: Future<Output = Result<BackendClose, ScriptedFailure>>,
+    ClientDirection: Future<Output = ClientLoopExit> + Send,
+    BackendDirection: Future<Output = Result<BackendClose, ScriptedFailure>> + Send,
 {
-    let Fixture {
-        mut state,
-        provider,
-        guardrails,
-        normalizer,
-        redactor,
-        client,
-        backend,
-        logging,
-    } = fixture;
-    let refs = guardrail_refs(&guardrails);
+    let refs = guardrail_refs(&fixture.guardrails);
     let callbacks = relay_callbacks(&refs);
-    let mut relay = RealtimeClientRelay {
-        state: &mut state,
-        provider: provider.as_ref(),
-        guardrails: &refs,
-        callbacks,
-        redactor: redactor.as_ref(),
+    let result = {
+        let mut relay = RealtimeClientRelay {
+            state: &mut fixture.state,
+            provider: fixture.provider.as_ref(),
+            guardrails: &refs,
+            callbacks,
+            redactor: fixture.redactor.as_ref(),
+        };
+        relay
+            .bidirectional_forward(client_direction, backend_direction, cancellation)
+            .await
     };
-    let result = relay
-        .bidirectional_forward(client_direction, backend_direction, cancellation)
-        .await;
     Lifetime {
         result,
         outcome: Outcome {
             exit: ClientLoopExit::ClientDisconnected,
-            state,
-            client,
-            backend,
-            logging,
-            normalizer,
+            state: fixture.state,
+            client: fixture.client,
+            backend: fixture.backend,
+            logging: fixture.logging,
+            normalizer: fixture.normalizer,
         },
     }
 }

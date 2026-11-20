@@ -9,6 +9,7 @@ mod tests;
 use std::convert::Infallible;
 use std::error::Error;
 use std::future::Future;
+use std::pin::Pin;
 
 use betterlite_redact::secret::Redactor;
 use futures_util::future::{Either, select};
@@ -16,7 +17,6 @@ use tokio_util::sync::CancellationToken;
 
 use crate::api::realtime_contracts::close::{BackendClose, ClientLoopExit};
 use crate::api::realtime_contracts::config::BaseRealtimeConfig;
-use crate::api::realtime_contracts::transport::ClientWebSocket;
 use crate::api::realtime_guardrail_policy::RealtimeGuardrailCallback;
 use crate::api::realtime_guardrails::callback::RealtimeGuardrail;
 use crate::api::realtime_sender::RealtimeSender;
@@ -89,45 +89,58 @@ where
         cancellation: &CancellationToken,
     ) -> Result<(), BackendError>
     where
-        ClientDirection: Future<Output = ClientLoopExit>,
-        BackendDirection: Future<Output = Result<BackendClose, BackendError>>,
+        ClientDirection: Future<Output = ClientLoopExit> + Send,
+        BackendDirection: Future<Output = Result<BackendClose, BackendError>> + Send,
+        BackendError: Send,
     {
         let mut client_future = Box::pin(client_direction);
         let mut backend_future = Box::pin(backend_direction);
-        let mut client_exit = None;
-        let mut backend_result = None;
-        match select(client_future.as_mut(), backend_future.as_mut()).await {
-            Either::Left((exit, _backend)) => client_exit = Some(exit),
-            Either::Right((result, _client)) => backend_result = Some(result),
-        }
-        let client_settled = client_exit.is_some();
-        let mut backend_settled = backend_result.is_some();
-        let mut failure = None;
-        // A disconnected client is gone: LiteLLM returns before it looks at the backend's own close
-        if client_exit != Some(ClientLoopExit::ClientDisconnected) {
-            let outcome = match backend_result {
-                Some(result) => result,
-                None => {
-                    backend_settled = true;
-                    backend_future.as_mut().await
-                }
+        let (client_exit, backend_result) =
+            match select(client_future.as_mut(), backend_future.as_mut()).await {
+                Either::Left((exit, _backend)) => (Some(exit), None),
+                Either::Right((result, _client)) => (None, Some(result)),
             };
-            match outcome {
-                Ok(close) => self.close_client(&close).await,
-                Err(error) => failure = Some(error),
-            }
-        }
+        let failure = self
+            .settle(client_exit, backend_result, &mut backend_future)
+            .await?;
         cancellation.cancel();
         // A direction that ignored cancellation would hold the session open, so both are joined here rather than detached
-        if !client_settled {
+        if client_exit.is_none() {
             let _joined_client = client_future.as_mut().await;
         }
-        if !backend_settled {
+        if client_exit == Some(ClientLoopExit::ClientDisconnected) {
             let _joined_backend = backend_future.as_mut().await;
         }
         match failure {
             Some(error) => Err(error),
             None => Ok(()),
+        }
+    }
+
+    // The first direction to finish decides the close, unless the client has already disconnected
+    async fn settle<BackendDirection, BackendError>(
+        &mut self,
+        client_exit: Option<ClientLoopExit>,
+        backend_result: Option<Result<BackendClose, BackendError>>,
+        backend_future: &mut Pin<Box<BackendDirection>>,
+    ) -> Result<Option<BackendError>, BackendError>
+    where
+        BackendDirection: Future<Output = Result<BackendClose, BackendError>> + Send,
+        BackendError: Send,
+    {
+        if client_exit == Some(ClientLoopExit::ClientDisconnected) {
+            return Ok(None);
+        }
+        let outcome = match backend_result {
+            Some(result) => result,
+            None => backend_future.as_mut().await,
+        };
+        match outcome {
+            Ok(close) => {
+                self.close_client(&close).await;
+                Ok(None)
+            }
+            Err(error) => Ok(Some(error)),
         }
     }
 

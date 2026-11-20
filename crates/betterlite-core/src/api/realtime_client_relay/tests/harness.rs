@@ -9,9 +9,7 @@ use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_models::decisions::Json;
 use betterlite_openai::realtime::normalizer::RealtimeEventNormalizer;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use futures_util::future::BoxFuture;
 use indexmap::IndexMap;
-use tokio_util::sync::CancellationToken;
 use tracing::field::{Field, Visit};
 use tracing::subscriber::{DefaultGuard, Subscriber, set_default};
 use tracing::{Event, Level};
@@ -78,7 +76,10 @@ pub(super) struct SendData {
 impl SendLog {
     fn begin(&self) -> Result<(), WebSocketError> {
         let mut data = lock(&self.0);
-        begin_attempt(&data.failures, &mut data.attempts, "the scripted send")
+        let SendData {
+            failures, attempts, ..
+        } = &mut *data;
+        begin_attempt(failures, attempts, "the scripted send")
     }
 
     fn push(&self, frame: String) {
@@ -124,12 +125,14 @@ impl ScopedWebSocket for ScriptedClient {
 impl ClientWebSocket for ScriptedClient {
     async fn send_text(&mut self, data: &str) -> Result<(), WebSocketError> {
         let mut state = lock(&self.data);
-        begin_attempt(
-            &state.failures,
-            &mut state.attempts,
-            "the scripted client send",
-        )?;
-        state.sent.push(data.to_owned());
+        let ClientData {
+            sent,
+            attempts,
+            failures,
+            ..
+        } = &mut *state;
+        begin_attempt(failures, attempts, "the scripted client send")?;
+        sent.push(data.to_owned());
         Ok(())
     }
 
@@ -263,11 +266,13 @@ impl RealtimeEventNormalizer for ScriptedNormalizer {
 
     fn patch_outgoing_session(&self, session: Json) -> Json {
         lock(&self.sessions).push(session.clone());
-        let Json::Object(mut fields) = session else {
-            return session;
-        };
-        fields.insert("xai_patch".to_owned(), Json::Bool(true));
-        Json::Object(fields)
+        match session {
+            Json::Object(mut fields) => {
+                fields.insert("xai_patch".to_owned(), Json::Bool(true));
+                Json::Object(fields)
+            }
+            other => other,
+        }
     }
 }
 
@@ -510,31 +515,31 @@ impl Fixture {
         self
     }
 
-    pub(super) fn with_client_message(mut self, message: &str) -> Self {
+    pub(super) fn with_client_message(self, message: &str) -> Self {
         lock(&self.client)
             .incoming
             .push_back(Ok(message.to_owned()));
         self
     }
 
-    pub(super) fn with_client_failure(mut self, message: &str) -> Self {
+    pub(super) fn with_client_failure(self, message: &str) -> Self {
         lock(&self.client).incoming.push_back(Err(WebSocketError {
             message: message.to_owned(),
         }));
         self
     }
 
-    pub(super) fn with_backend_failures(mut self, indices: Vec<usize>) -> Self {
+    pub(super) fn with_backend_failures(self, indices: Vec<usize>) -> Self {
         lock(&self.backend.0).failures = indices;
         self
     }
 
-    pub(super) fn with_client_send_failures(mut self, indices: Vec<usize>) -> Self {
+    pub(super) fn with_client_send_failures(self, indices: Vec<usize>) -> Self {
         lock(&self.client).failures = indices;
         self
     }
 
-    pub(super) fn with_client_close_failures(mut self, indices: Vec<usize>) -> Self {
+    pub(super) fn with_client_close_failures(self, indices: Vec<usize>) -> Self {
         lock(&self.client).close_failures = indices;
         self
     }
@@ -585,10 +590,12 @@ impl Outcome {
 pub(super) fn guardrail_refs(
     guardrails: &[ScriptedGuardrail],
 ) -> Vec<&dyn RealtimeGuardrail<Error = Infallible>> {
-    guardrails
-        .iter()
-        .map(|guardrail| guardrail as &dyn RealtimeGuardrail<Error = Infallible>)
-        .collect()
+    let mut references = Vec::with_capacity(guardrails.len());
+    for guardrail in guardrails {
+        let reference: &dyn RealtimeGuardrail<Error = Infallible> = guardrail;
+        references.push(reference);
+    }
+    references
 }
 
 enum Step {

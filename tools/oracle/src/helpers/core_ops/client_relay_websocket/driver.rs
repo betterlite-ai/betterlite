@@ -21,7 +21,9 @@ use super::Failure;
 use super::direction::{ScriptedFailure, run_backend_direction, run_client_direction};
 use super::failure;
 use super::guardrail::ScriptedGuardrail;
-use super::input::{Input, Mode};
+use super::input::{
+    CloseDocument, GuardrailDocument, Input, LifetimeDocument, Mode, SetupDocument,
+};
 use super::provider::NoProvider;
 use super::transport::{
     ClientData, Closes, Frames, Locked as _, ScriptedBackend, ScriptedClient, recorded_closes,
@@ -43,75 +45,13 @@ struct Probe {
 
 impl Probe {
     fn new(input: &Input) -> Result<Self, Failure> {
-        let client_data = Arc::new(Mutex::new(ClientData::default()));
-        let (client, closes) = {
-            let data = client_data.locked();
-            (Arc::clone(&data.log), Arc::clone(&data.closes))
-        };
-        {
-            let mut data = client_data.locked();
-            data.incoming = input.messages.iter().cloned().collect();
-            data.failures.clone_from(&input.client_send_failures);
-            data.close_failures.clone_from(&input.client_close_failures);
-        }
+        let (client, closes, client_data) = scripted_client(input);
         let backend: Frames = Arc::new(Mutex::new(Vec::new()));
-        let mut state = RealtimeStreaming::new(ConnectionSetup {
-            client: Some(Box::new(ScriptedClient {
-                data: client_data,
-                scope: WebSocketScope::default(),
-            })),
-            backend: Some(Box::new(ScriptedBackend {
-                log: Arc::clone(&backend),
-                failures: Vec::new(),
-                attempts: 0,
-            })),
-            logging: None,
-            logging_worker: None,
-            provider_config: None,
-            event_normalizer: None,
-            logged_real_time_event_types: LoggedEventTypes::All,
-            model: String::from("scripted"),
-            user_api_key_dict: None,
-            request_data: None,
-            force_transcription_model: None,
-            client_wants_beta: false,
-            backend_uses_beta_protocol: Some(input.beta_backend),
-        });
-        state.setup.backend_setup_complete.0 = input.setup.backend_setup_complete.unwrap_or(true);
-        state.setup.flushing_pending_messages.0 = input.setup.flushing;
-        state.setup.turn_detection_update_sent.0 = input.setup.turn_detection_sent;
-        state
-            .setup
-            .pending_guardrail_message
-            .clone_from(&input.setup.pending_guardrail_message);
-        state
-            .response
-            .session_configuration_request
-            .clone_from(&input.setup.session_configuration_request);
-        state
-            .setup
-            .pending_messages_until_setup
-            .clone_from(&input.setup.pending);
-        state.setup.pending_messages_byte_total = input
-            .setup
-            .pending
-            .iter()
-            .map(String::len)
-            .fold(0_usize, usize::saturating_add);
+        let state = streaming_state(input, client_data, Arc::clone(&backend));
         let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
             .map_err(|error| failure("RedactionError", error.to_string()))?;
         let applied: Arc<Mutex<Vec<Vec<String>>>> = Arc::new(Mutex::new(Vec::new()));
-        let guardrails = input
-            .guardrails
-            .iter()
-            .map(|document| {
-                ScriptedGuardrail::new(
-                    document.hooks.clone(),
-                    document.block_on.clone(),
-                    Arc::clone(&applied),
-                )
-            })
-            .collect();
+        let guardrails = scripted_guardrails(&input.guardrails, &applied);
         Ok(Self {
             state,
             guardrails,
@@ -125,11 +65,98 @@ impl Probe {
     }
 }
 
-fn references(guardrails: &[ScriptedGuardrail]) -> Vec<&dyn RealtimeGuardrail<Error = Infallible>> {
-    guardrails
+fn scripted_client(input: &Input) -> (Frames, Closes, Arc<Mutex<ClientData>>) {
+    let client_data = Arc::new(Mutex::new(ClientData::default()));
+    let (client, closes) = {
+        let data = client_data.locked();
+        (Arc::clone(&data.log), Arc::clone(&data.closes))
+    };
+    {
+        let mut data = client_data.locked();
+        data.incoming = input.messages.iter().cloned().collect();
+        data.failures.clone_from(&input.client_send_failures);
+        data.close_failures.clone_from(&input.client_close_failures);
+    }
+    (client, closes, client_data)
+}
+
+fn streaming_state(
+    input: &Input,
+    client_data: Arc<Mutex<ClientData>>,
+    backend: Frames,
+) -> RealtimeStreaming {
+    let mut state = RealtimeStreaming::new(ConnectionSetup {
+        client: Some(Box::new(ScriptedClient {
+            data: client_data,
+            scope: WebSocketScope::default(),
+        })),
+        backend: Some(Box::new(ScriptedBackend {
+            log: backend,
+            failures: Vec::new(),
+            attempts: 0,
+        })),
+        logging: None,
+        logging_worker: None,
+        provider_config: None,
+        event_normalizer: None,
+        logged_real_time_event_types: LoggedEventTypes::All,
+        model: String::from("scripted"),
+        user_api_key_dict: None,
+        request_data: None,
+        force_transcription_model: None,
+        client_wants_beta: false,
+        backend_uses_beta_protocol: Some(input.beta_backend),
+    });
+    configure_setup(&mut state, &input.setup);
+    state
+}
+
+fn configure_setup(state: &mut RealtimeStreaming, setup: &SetupDocument) {
+    state.setup.backend_setup_complete.0 = setup.backend_setup_complete.unwrap_or(true);
+    state.setup.flushing_pending_messages.0 = setup.flushing;
+    state.setup.turn_detection_update_sent.0 = setup.turn_detection_sent;
+    state
+        .setup
+        .pending_guardrail_message
+        .clone_from(&setup.pending_guardrail_message);
+    state
+        .response
+        .session_configuration_request
+        .clone_from(&setup.session_configuration_request);
+    state
+        .setup
+        .pending_messages_until_setup
+        .clone_from(&setup.pending);
+    state.setup.pending_messages_byte_total = setup
+        .pending
         .iter()
-        .map(|guardrail| guardrail as &dyn RealtimeGuardrail<Error = Infallible>)
+        .map(String::len)
+        .fold(0_usize, usize::saturating_add);
+}
+
+fn scripted_guardrails(
+    documents: &[GuardrailDocument],
+    applied: &Arc<Mutex<Vec<Vec<String>>>>,
+) -> Vec<ScriptedGuardrail> {
+    documents
+        .iter()
+        .map(|document| {
+            ScriptedGuardrail::new(
+                document.hooks.clone(),
+                document.block_on.clone(),
+                Arc::clone(applied),
+            )
+        })
         .collect()
+}
+
+fn references(guardrails: &[ScriptedGuardrail]) -> Vec<&dyn RealtimeGuardrail<Error = Infallible>> {
+    let mut refs = Vec::with_capacity(guardrails.len());
+    for guardrail in guardrails {
+        let reference: &dyn RealtimeGuardrail<Error = Infallible> = guardrail;
+        refs.push(reference);
+    }
+    refs
 }
 
 async fn ack(probe: &mut Probe) -> ClientLoopExit {
@@ -144,7 +171,7 @@ async fn ack(probe: &mut Probe) -> ClientLoopExit {
     relay.client_ack_messages().await
 }
 
-async fn lifetime_run(probe: &mut Probe, input: &Input) -> HelperResult {
+fn lifetime_documents(input: &Input) -> Result<(&LifetimeDocument, &CloseDocument), Failure> {
     let Some(lifetime) = input.lifetime.as_ref() else {
         return Err(failure(
             "ValueError",
@@ -157,6 +184,11 @@ async fn lifetime_run(probe: &mut Probe, input: &Input) -> HelperResult {
             String::from("a lifetime run needs a close document"),
         ));
     };
+    Ok((lifetime, close))
+}
+
+async fn lifetime_run(probe: &mut Probe, input: &Input) -> HelperResult {
+    let (lifetime, close) = lifetime_documents(input)?;
     let cancellation = CancellationToken::new();
     let notification = Arc::new(Notify::new());
     let client_direction = run_client_direction(
@@ -243,7 +275,7 @@ pub(crate) fn drive(input: &Input) -> HelperResult {
         .build()
         .map_err(|error| failure("OSError", error.to_string()))?;
     runtime
-        .block_on(async { timeout(DEADLINE, observe(input)).await })
+        .block_on(timeout(DEADLINE, observe(input)))
         .map_err(|_elapsed| {
             failure(
                 "TimeoutError",

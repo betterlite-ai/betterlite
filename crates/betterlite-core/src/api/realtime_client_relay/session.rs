@@ -1,6 +1,5 @@
 use std::error::Error;
 
-use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_models::decisions::Json;
 use betterlite_openai::realtime::normalizer::RealtimeEventNormalizer;
 use indexmap::IndexMap;
@@ -40,17 +39,12 @@ where
 {
     let first_gate = relay.state.response.session_configuration_request.is_none()
         && !relay.state.setup.turn_detection_update_sent.0;
-    let injected = if first_gate && hook_runs(relay)? {
-        let applied = mutate(event, inject_first_update);
-        if applied {
-            tracing::debug!(
-                "Injected turn_detection into first session.update for audio transcription guardrails"
-            );
-        }
-        applied
-    } else {
-        false
-    };
+    let injected = first_gate && hook_runs(relay)? && mutate(event, inject_first_update);
+    if injected {
+        tracing::debug!(
+            "Injected turn_detection into first session.update for audio transcription guardrails"
+        );
+    }
     let mut changed = injected;
     if !injected && hook_runs(relay)? {
         changed |= mutate(event, force_false_vad);
@@ -102,47 +96,66 @@ fn force_false_vad(root: &mut IndexMap<String, Json>) -> bool {
     let Some(Json::Object(session)) = root.get_mut("session") else {
         return false;
     };
-    let mut overridden = false;
-    let flat_present = session
+    let flat = force_flat_detection(session);
+    let nested = force_nested_detection(session);
+    match (flat, nested) {
+        (None, None) => {
+            let mut turn_detection = IndexMap::new();
+            turn_detection.insert("create_response".to_owned(), Json::Bool(false));
+            session.insert("turn_detection".to_owned(), Json::Object(turn_detection));
+            true
+        }
+        (Some(flat_overridden), nested) => flat_overridden || nested.unwrap_or(false),
+        (None, Some(nested_overridden)) => nested_overridden,
+    }
+}
+
+// A flat turn_detection is forced false; None means the key is absent or null, so this makes no default
+fn force_flat_detection(session: &mut IndexMap<String, Json>) -> Option<bool> {
+    let present = session
         .get("turn_detection")
         .is_some_and(|value| !matches!(value, Json::Null));
-    if flat_present {
-        if !matches!(session.get("turn_detection"), Some(Json::Object(_))) {
-            session.insert("turn_detection".to_owned(), Json::Object(IndexMap::new()));
-        }
-        if let Some(Json::Object(flat)) = session.get_mut("turn_detection")
-            && flat.get("create_response") != Some(&Json::Bool(false))
-        {
-            flat.insert("create_response".to_owned(), Json::Bool(false));
-            overridden = true;
-        }
+    if !present {
+        return None;
     }
-    let mut nested_present = false;
-    if let Some(Json::Object(audio)) = session.get_mut("audio")
-        && let Some(Json::Object(input)) = audio.get_mut("input")
-    {
-        nested_present = input
-            .get("turn_detection")
-            .is_some_and(|value| !matches!(value, Json::Null));
-        if nested_present {
-            if !matches!(input.get("turn_detection"), Some(Json::Object(_))) {
-                input.insert("turn_detection".to_owned(), Json::Object(IndexMap::new()));
-            }
-            if let Some(Json::Object(nested)) = input.get_mut("turn_detection")
-                && nested.get("create_response") != Some(&Json::Bool(false))
-            {
-                nested.insert("create_response".to_owned(), Json::Bool(false));
-                overridden = true;
-            }
-        }
+    if !matches!(session.get("turn_detection"), Some(Json::Object(_))) {
+        session.insert("turn_detection".to_owned(), Json::Object(IndexMap::new()));
     }
-    if !flat_present && !nested_present {
-        let mut turn_detection = IndexMap::new();
-        turn_detection.insert("create_response".to_owned(), Json::Bool(false));
-        session.insert("turn_detection".to_owned(), Json::Object(turn_detection));
-        overridden = true;
+    let Some(Json::Object(flat)) = session.get_mut("turn_detection") else {
+        return Some(false);
+    };
+    Some(force_false(flat))
+}
+
+// The nested audio.input turn_detection follows the flat one; None means this session has no nested turn detection
+fn force_nested_detection(session: &mut IndexMap<String, Json>) -> Option<bool> {
+    let Some(Json::Object(audio)) = session.get_mut("audio") else {
+        return None;
+    };
+    let Some(Json::Object(input)) = audio.get_mut("input") else {
+        return None;
+    };
+    let present = input
+        .get("turn_detection")
+        .is_some_and(|value| !matches!(value, Json::Null));
+    if !present {
+        return None;
     }
-    overridden
+    if !matches!(input.get("turn_detection"), Some(Json::Object(_))) {
+        input.insert("turn_detection".to_owned(), Json::Object(IndexMap::new()));
+    }
+    let Some(Json::Object(nested)) = input.get_mut("turn_detection") else {
+        return Some(false);
+    };
+    Some(force_false(nested))
+}
+
+fn force_false(detection: &mut IndexMap<String, Json>) -> bool {
+    if detection.get("create_response") == Some(&Json::Bool(false)) {
+        return false;
+    }
+    detection.insert("create_response".to_owned(), Json::Bool(false));
+    true
 }
 
 fn remap_session(root: &mut IndexMap<String, Json>) -> Result<bool, BetaProtocolError> {

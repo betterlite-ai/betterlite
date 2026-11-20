@@ -77,11 +77,7 @@ where
         return Ok(false);
     };
     if matches!(item.get("type"), Some(Json::Text(kind)) if kind == FUNCTION_CALL_OUTPUT) {
-        let Some(output_text) = output_text(item)? else {
-            return Ok(false);
-        };
-        let sanitized = sanitized_tool_message(root, item)?;
-        return run_guardrails(relay, &output_text, Some(&sanitized)).await;
+        return tool_guardrails(relay, root, item).await;
     }
     if !matches!(item.get("role"), Some(Json::Text(role)) if role == USER_ROLE) {
         return Ok(false);
@@ -99,6 +95,23 @@ where
         relay.state.setup.pending_guardrail_message = Some(combined);
     }
     Ok(blocked)
+}
+
+// A function_call_output is checked on its own, and its sanitized message goes with the guardrail's pre-call frames
+async fn tool_guardrails<Config, CallbackError>(
+    relay: &mut RealtimeClientRelay<'_, Config, CallbackError>,
+    root: &IndexMap<String, Json>,
+    item: &IndexMap<String, Json>,
+) -> Result<bool, RealtimeClientRelayError<Config::Error, CallbackError>>
+where
+    Config: BaseRealtimeConfig,
+    CallbackError: Error + Send + 'static,
+{
+    let Some(text) = output_text(item)? else {
+        return Ok(false);
+    };
+    let sanitized = sanitized_tool_message(root, item)?;
+    run_guardrails(relay, &text, Some(&sanitized)).await
 }
 
 // LiteLLM stringifies a non-string tool output with json.dumps; an empty one is never checked
