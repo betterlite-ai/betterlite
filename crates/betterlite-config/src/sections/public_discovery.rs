@@ -29,7 +29,7 @@ struct RawSettings {
     public_model_groups_links: Option<IndexMap<String, UsefulLink>>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
     pub blog_posts_url: String,
     pub local_blog_posts: bool,
@@ -53,7 +53,7 @@ impl Default for Settings {
 }
 
 // LiteLLM types the whole entry as Dict[str, Any], so url and index are kept as written rather than coerced
-#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 pub struct UsefulLinkEntry {
     pub url: Option<JsonValue>,
     pub index: Option<JsonValue>,
@@ -61,7 +61,7 @@ pub struct UsefulLinkEntry {
     pub other: IndexMap<String, JsonValue>,
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 #[serde(untagged)]
 pub enum UsefulLink {
     Url(String),

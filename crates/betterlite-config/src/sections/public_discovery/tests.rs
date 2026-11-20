@@ -47,7 +47,7 @@ fn loads_public_lists() {
         settings.public_model_groups_links.get("Status"),
         Some(&UsefulLink::Entry(UsefulLinkEntry {
             url: Some(json!("https://status.test")),
-            index: Some(json!(2)),
+            index: Some(json!(2_i32)),
             other: IndexMap::new(),
         }))
     );
@@ -139,7 +139,7 @@ fn a_missing_environment_reference_names_the_variable() {
     "litellm_settings:\n  public_model_groups_links:\n    Docs:\n      url: https://docs.test\n      index: 2\n",
     UsefulLink::Entry(UsefulLinkEntry {
         url: Some(json!("https://docs.test")),
-        index: Some(json!(2)),
+        index: Some(json!(2_i32)),
         other: IndexMap::new(),
     })
 )]
@@ -154,7 +154,7 @@ fn a_missing_environment_reference_names_the_variable() {
 #[case::entry_with_non_text_url(
     "litellm_settings:\n  public_model_groups_links:\n    Docs:\n      url: 7\n",
     UsefulLink::Entry(UsefulLinkEntry {
-        url: Some(json!(7)),
+        url: Some(json!(7_i32)),
         index: None,
         other: IndexMap::new(),
     })
