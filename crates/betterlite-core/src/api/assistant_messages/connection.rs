@@ -7,6 +7,7 @@ use betterlite_openai::threads::records::ThreadMessageData;
 use betterlite_prompts::arguments::json::{Json, Object};
 use secrecy::SecretString;
 use serde::Deserialize;
+use serde_json::Number;
 use serde_with::rust::double_option;
 
 use crate::api::resource_sdk_settings::timeout::{
@@ -40,11 +41,13 @@ pub struct MessageParams {
     pub extra_body: Option<Option<BTreeMap<String, Json>>>,
 }
 
-// GenericLiteLLMParams.timeout declares float | str | httpx.Timeout
+// GenericLiteLLMParams.timeout declares float | str | httpx.Timeout; arbitrary_precision reads a JSON
+// float as the private number map that only serde_json's Number takes back
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum MessageTimeout {
-    Plain(TimeoutValue),
+    Number(Number),
+    Text(String),
     Structured(StructuredTimeout),
 }
 
@@ -151,21 +154,18 @@ pub(crate) fn resolve_timeout(
         Some(MessageTimeout::Structured(timeout)) => {
             resolve_fine_tuning_timeout(None, provider, Some(*timeout))
         }
-        Some(MessageTimeout::Plain(value)) if !falls_through(value) => {
-            resolve_fine_tuning_timeout(Some(value), provider, None)
+        Some(MessageTimeout::Number(number)) if number.as_f64() != Some(0.0_f64) => {
+            let seconds = number.as_f64().ok_or(TimeoutError::NonFinite)?;
+            resolve_fine_tuning_timeout(Some(&TimeoutValue::Number(seconds)), provider, None)
+        }
+        Some(MessageTimeout::Text(text)) if !text.is_empty() => {
+            let value = TimeoutValue::String(text.clone());
+            resolve_fine_tuning_timeout(Some(&value), provider, None)
         }
         // optional_params.timeout or request_timeout or 600, where a zero or an empty value falls through
-        None | Some(MessageTimeout::Plain(_)) => Ok(FineTuningTimeout::Seconds(request_timeout(
-            None,
-            params.request_timeout,
-        )?)),
-    }
-}
-
-fn falls_through(timeout: &TimeoutValue) -> bool {
-    match timeout {
-        TimeoutValue::Number(seconds) => *seconds == 0.0_f64,
-        TimeoutValue::String(text) => text.is_empty(),
+        None | Some(MessageTimeout::Number(_) | MessageTimeout::Text(_)) => Ok(
+            FineTuningTimeout::Seconds(request_timeout(None, params.request_timeout)?),
+        ),
     }
 }
 
@@ -236,8 +236,8 @@ fn azure_params(params: &MessageParams) -> LiteLlmParams {
 // get_litellm_params keeps the raw timeout keyword, which the Azure client reads instead of the resolved one.
 fn raw_timeout(timeout: Option<&MessageTimeout>) -> Option<f64> {
     match timeout {
-        Some(MessageTimeout::Plain(TimeoutValue::Number(seconds))) => Some(*seconds),
-        Some(MessageTimeout::Plain(TimeoutValue::String(text))) => text.trim().parse::<f64>().ok(),
+        Some(MessageTimeout::Number(number)) => number.as_f64(),
+        Some(MessageTimeout::Text(text)) => text.trim().parse::<f64>().ok(),
         Some(MessageTimeout::Structured(structured)) => Some(
             structured
                 .read

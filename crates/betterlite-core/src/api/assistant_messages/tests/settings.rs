@@ -99,6 +99,7 @@ fn message_settings_and_failures_reads_timeouts() {
     fixture.transport.queue(200, MESSAGE_REPLY);
     fixture.transport.queue(200, MESSAGE_REPLY);
     fixture.transport.queue(200, MESSAGE_REPLY);
+    fixture.transport.queue(200, MESSAGE_REPLY);
     let message = data(r#"{"role":"user","content":"hello"}"#);
     let mut zero = params("openai");
     zero.timeout = Some(serde_json::from_str("0").unwrap());
@@ -128,10 +129,21 @@ fn message_settings_and_failures_reads_timeouts() {
         false,
     )
     .unwrap();
+    let mut empty = params("openai");
+    empty.timeout = Some(serde_json::from_str(r#""""#).unwrap());
+    empty.request_timeout = Some(45.0_f64);
+    call(
+        &fixture,
+        &request("openai", Some(&message), &empty),
+        Operation::Append,
+        false,
+    )
+    .unwrap();
     let seen = fixture.transport.requests();
     assert_eq!(seen[0].deadline, Duration::from_secs(30));
     assert_eq!(seen[1].deadline, Duration::from_millis(12_500));
     assert_eq!(seen[2].deadline, Duration::from_secs(5));
+    assert_eq!(seen[3].deadline, Duration::from_secs(45));
 }
 
 #[test]
