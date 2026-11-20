@@ -3,7 +3,19 @@ use betterlite_models::metadata::levels::ReasoningEffort;
 use serde_json::Number;
 
 use super::{ALPHA, BETA, Scenario, decimal, group_of, parse};
+use crate::model_group_info::error::GroupInfoError;
 use crate::model_group_info::group::{Capability, ClientsideAuth};
+
+#[test]
+fn rejects_a_fractional_limit() {
+    let mut scenario = Scenario::new(&[ALPHA]);
+    scenario.metadata("a", r#"{"mode":"chat","tpm":1.5}"#);
+    scenario.answer("openai/b846-alpha", "b846-alpha", "openai");
+    assert!(matches!(
+        scenario.group("g"),
+        Err(GroupInfoError::Field { field: "tpm" })
+    ));
+}
 
 #[test]
 fn wire_fields() {
