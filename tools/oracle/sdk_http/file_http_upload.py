@@ -17,12 +17,15 @@ from typing_extensions import override
 Mode = Literal["sync", "async"]
 Content = str | list[int]
 Location = Literal["headers", "body"]
-MultipartValue = dict[str, tuple[str | None, str | bytes] | tuple[str | None, str | bytes, str]]
+MultipartValue = dict[
+    str, tuple[str | None, str | bytes] | tuple[str | None, str | bytes, str | None]
+]
 
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 HANDLER: Final = BaseLLMHTTPHandler()
 PLACEHOLDER: Final = "{{upstream}}"
 DEFAULT_FILENAME: Final = "oracle.txt"
+PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
 
 
 class FileSpec(BaseModel):
@@ -182,18 +185,17 @@ class FixtureLogging(Logging):
     observed: dict[str, JsonValue] | None
 
     def __init__(self) -> None:
-        super().__init__(model="", messages="", stream=False, call_type="create_file", start_time=datetime(2026, 1, 1, tzinfo=UTC), litellm_call_id="file-http-upload", function_id="file-http-upload")  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L556  # noqa: E501
+        super().__init__(model="", messages="", stream=False, call_type="create_file", start_time=datetime(2026, 1, 1, tzinfo=UTC), litellm_call_id="file-http-upload", function_id="file-http-upload")  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L556  # noqa: E501
         self.observed = None
 
     @override
     def pre_call(self, *args: JsonValue, **kwargs: JsonValue) -> None:
         self.observed = {name: JSON.validate_json(json.dumps(value, default=list)) for name, value in kwargs.items()}  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L3643-L3658
-        super().pre_call(*args, **kwargs)  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1350  # noqa: E501
+        super().pre_call(*args, **kwargs)  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1350
 
 
 class FixtureConfig(MistralFilesConfig):
     def __init__(self, case: UploadCall, api_base: str) -> None:
-        super().__init__()
         self.case = case
         self.api_base = api_base
 
@@ -203,30 +205,30 @@ class FixtureConfig(MistralFilesConfig):
         return self.case.upload_method.upper()
 
     @override
-    def validate_environment(  # type: ignore[override]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/files/transformation.py#L143  # noqa: E501
+    def validate_environment(  # type: ignore[override]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/files/transformation.py#L143
         self, headers: Mapping[str, str], *_args: JsonValue, **_kwargs: JsonValue) -> dict[str, str]:  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/files/transformation.py#L143
         del headers
         return dict(self.case.headers)
 
     @override
-    def get_complete_file_url(  # type: ignore[override]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/files/transformation.py#L74  # noqa: E501
+    def get_complete_file_url(  # type: ignore[override]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/files/transformation.py#L74
         self, api_base: str | None, *_args: JsonValue, **_kwargs: JsonValue) -> str | None:
         del api_base
         return self.api_base
 
     @override
-    def transform_create_file_request(  # type: ignore[override]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/files/transformation.py#L169  # noqa: E501
+    def transform_create_file_request(  # type: ignore[override]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/files/transformation.py#L169
         self, model: str, create_file_data: CreateFileRequest,
-        optional_params: dict[str, JsonValue],  # type: ignore[override]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/files/transformation.py#L169  # noqa: E501
-        litellm_params: dict[str, JsonValue],  # type: ignore[override]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/files/transformation.py#L169  # noqa: E501
+        optional_params: dict[str, JsonValue],  # type: ignore[override]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/files/transformation.py#L169
+        litellm_params: dict[str, JsonValue],  # type: ignore[override]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/files/transformation.py#L169
     ) -> TwoStepValue | RequestValue | MediaValue | MultipartValue | str | bytes:
-        del model, create_file_data, optional_params, litellm_params  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1283  # noqa: E501
+        del model, create_file_data, optional_params, litellm_params  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1283
         return transformed_value(self.case.plan, self.api_base.removesuffix("/v1"))
 
     @override
     def transform_create_file_response(
         self, model: str | None, raw_response: httpx.Response, logging_obj: Logging,
-        litellm_params: dict[str, JsonValue],  # type: ignore[override]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/files/transformation.py#L187  # noqa: E501
+        litellm_params: dict[str, JsonValue],  # type: ignore[override]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/files/transformation.py#L187
     ) -> OpenAIFileObject:
         del model, logging_obj, litellm_params
         return OpenAIFileObject(
@@ -238,7 +240,7 @@ class FixtureConfig(MistralFilesConfig):
     def get_error_class(
         self, error_message: str, status_code: int, headers: Mapping[str, str] | httpx.Headers
     ) -> BaseLLMException:
-        return BaseLLMException(status_code, error_message, dict(headers))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L161  # noqa: E501
+        return BaseLLMException(status_code, error_message, dict(headers))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L161
 
 
 def diagnostics_view(case: UploadCall, logging_obj: FixtureLogging) -> JsonValue:
@@ -252,19 +254,35 @@ def diagnostics_view(case: UploadCall, logging_obj: FixtureLogging) -> JsonValue
     }
 
 
-def run_upload(case: UploadCall, api_base: str) -> JsonValue:
+class Outcome(BaseModel):
+    result: JsonValue = None
+    failure: Failure | None = None
+    diagnostics: JsonValue = None
+
+
+class UploadValue(BaseModel):
+    value: Outcome
+
+
+class UploadEnvelope(BaseModel):
+    file_http_upload: UploadValue
+
+
+def run_upload(case: UploadCall, api_base: str) -> Outcome:
     logging_obj = FixtureLogging()
     filename = DEFAULT_FILENAME if case.file.filename is None else case.file.filename
     create_file_data: CreateFileRequest = {
-        "file": (filename, content_value(case.file.content), case.file.content_type),
+        "file": (filename, content_value(case.file.content), case.file.content_type),  # type: ignore[typeddict-item]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L96
         "purpose": "batch",
     }
+    upload_params: dict[str, JsonValue] = dict(case.litellm_params)
+    request_headers: dict[str, str] = {}
     try:
         work = HANDLER.create_file(
-            create_file_data=create_file_data,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1283  # noqa: E501
-            litellm_params=dict(case.litellm_params),
+            create_file_data=create_file_data,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1283
+            litellm_params=upload_params,
             provider_config=FixtureConfig(case, api_base),
-            headers={},
+            headers=request_headers,
             api_base=api_base,
             api_key=None,
             logging_obj=logging_obj,
@@ -277,16 +295,15 @@ def run_upload(case: UploadCall, api_base: str) -> JsonValue:
                 result = work
             case Coroutine():
                 result = asyncio.run(work)
-    except BaseLLMException as error:
-        failed = Failure.model_validate(error)
-        return {
-            "result": None, "failure": JSON.validate_json(failed.model_dump_json(by_alias=True)),
-            "diagnostics": diagnostics_view(case, logging_obj),
-        }
-    return {
-        "result": JSON.validate_json(result.model_dump_json(exclude_unset=True)), "failure": None,
-        "diagnostics": diagnostics_view(case, logging_obj),
-    }
+    except PROVIDER_ERROR as error:
+        return Outcome(
+            failure=Failure.model_validate(error),
+            diagnostics=diagnostics_view(case, logging_obj),
+        )
+    return Outcome(
+        result=JSON.validate_json(result.model_dump_json(exclude_unset=True)),
+        diagnostics=diagnostics_view(case, logging_obj),
+    )
 
 
 class FileHttpUploadRequest(BaseModel):
@@ -296,5 +313,6 @@ class FileHttpUploadRequest(BaseModel):
 
     def serialize(self, api_base: str) -> str:
         outcome = run_upload(self.file_http_upload, api_base)
-        text = json.dumps({"file_http_upload": {"value": outcome}})
+        envelope = UploadEnvelope(file_http_upload=UploadValue(value=outcome))
+        text = envelope.model_dump_json(by_alias=True)
         return text.replace(api_base.removesuffix("/v1"), PLACEHOLDER)
