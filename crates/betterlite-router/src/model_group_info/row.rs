@@ -107,10 +107,10 @@ pub fn fallback_metadata(
     Ok(metadata)
 }
 
+// set_model_list stores the row with its None fields dropped, so a null mode reaches the fallback as "chat".
 fn fallback_mode(model_info: &JsonObject) -> Result<Json, GroupInfoError> {
     match model_info.get("mode") {
-        None => Ok(Json::Text("chat".to_owned())),
-        Some(Json::Null) => Ok(Json::Null),
+        None | Some(Json::Null) => Ok(Json::Text("chat".to_owned())),
         Some(Json::Text(mode)) => Ok(Json::Text(mode.clone())),
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
             Err(GroupInfoError::Field { field: "mode" })

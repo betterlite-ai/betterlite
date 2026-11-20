@@ -3,6 +3,8 @@
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::future::{Future, ready};
+use std::io;
+use std::sync::{Arc, Mutex};
 
 use betterlite_context::anthropic_catalog_lookup::RawCatalog;
 use betterlite_models::decisions::Json;
@@ -28,6 +30,38 @@ use crate::model_group_info::sources::{
     ProviderResolver,
 };
 use crate::routing_groups::index::RoutingGroupIndex;
+use tracing::subscriber::{DefaultGuard, set_default};
+
+#[derive(Clone, Default)]
+struct Logs(Arc<Mutex<Vec<u8>>>);
+
+impl io::Write for Logs {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Logs {
+    fn text(&self) -> String {
+        String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
+    }
+}
+
+fn capture_logs() -> (Logs, DefaultGuard) {
+    let logs = Logs::default();
+    let writer = logs.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_writer(move || writer.clone())
+        .finish();
+    (logs, set_default(subscriber))
+}
 
 #[derive(Debug, thiserror::Error)]
 #[error("the deployment metadata lookup failed")]
@@ -688,10 +722,15 @@ fn provider_error_logged() {
     let scenario = Scenario::new(&[
         r#"{"model_name":"g","litellm_params":{"model":"b846-no-provider"},"model_info":{}}"#,
     ]);
+    let (logs, _guard) = capture_logs();
     let group = group_of(&scenario, "g");
     assert_eq!(group.providers, vec![String::new()]);
     assert_eq!(group.mode.as_deref(), Some("chat"));
     assert_eq!(group.supported_openai_params, Some(Vec::new()));
+    assert!(
+        logs.text()
+            .contains("litellm.router.py::get_model_group_info() - LLM Provider NOT provided")
+    );
 }
 
 #[test]
@@ -732,7 +771,7 @@ fn fallback_chat_and_cost() {
         .model_info
         .insert("mode".to_owned(), Json::Null);
     let nulled = group_of(&scenario, "g");
-    assert_eq!(nulled.mode, None);
+    assert_eq!(nulled.mode.as_deref(), Some("chat"));
 }
 
 #[test]
