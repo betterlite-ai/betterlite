@@ -624,7 +624,8 @@ async fn upload_keeps_a_given_content_type() {
         .expect("the store");
     assert!(matches!(
         harness.calls.snapshot().as_slice(),
-        [RecordedCall::Upload { content_type, .. }] if content_type == "text/plain"
+        [RecordedCall::Upload { content_type, .. }, RecordedCall::Attach { .. }]
+            if content_type == "text/plain"
     ));
 }
 
@@ -638,7 +639,8 @@ async fn upload_empty_content_type_falls_back() {
         .expect("the store");
     assert!(matches!(
         harness.calls.snapshot().as_slice(),
-        [RecordedCall::Upload { content_type, .. }] if content_type == "application/octet-stream"
+        [RecordedCall::Upload { content_type, .. }, RecordedCall::Attach { .. }]
+            if content_type == "application/octet-stream"
     ));
 }
 
