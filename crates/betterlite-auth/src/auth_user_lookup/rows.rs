@@ -149,12 +149,10 @@ impl Table for UserRows {
         &'query self,
         options: FindMany<'query, Self::Filter, Self::Order>,
     ) -> Query<'query> {
-        self.including(
-            IncludingQuery::Listed {
-                filter: options.filter.and_then(|filters| filters.first()),
-                limit: &NO_LIMIT,
-            },
-            None,
+        filter_query(
+            options.filter.and_then(|filters| filters.first()),
+            &NO_LIMIT,
+            false,
         )
     }
 
@@ -163,16 +161,16 @@ impl Table for UserRows {
     }
 
     fn count<'query>(&self, filter: Option<&'query [Self::Filter]>) -> Query<'query> {
-        match filter.and_then(|filters| filters.first()) {
-            Some(UserFilter::SsoId(sso_user_id)) => Query {
+        match filter {
+            Some([UserFilter::SsoId(sso_user_id), ..]) => Query {
                 sql: USER_COUNT_SSO_SQL,
                 parameters: vec![sso_user_id],
             },
-            Some(UserFilter::Email(email)) => Query {
+            Some([UserFilter::Email(email), ..]) => Query {
                 sql: USER_COUNT_EMAIL_CASE_SQL,
                 parameters: vec![email.address.as_deref().unwrap_or("")],
             },
-            None => Query {
+            Some([]) | None => Query {
                 sql: USER_COUNT_SQL,
                 parameters: Vec::new(),
             },

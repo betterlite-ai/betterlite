@@ -13,11 +13,6 @@ pub struct RolePermissions {
 }
 
 impl RolePermissions {
-    #[must_use]
-    pub fn configured(configured: Option<Vec<RoleBasedPermissions>>) -> Self {
-        Self { configured }
-    }
-
     pub fn from_json(configured: &JsonData) -> Result<Self, RolePermissionError> {
         if matches!(configured, JsonData::Null) {
             return Ok(Self::default());

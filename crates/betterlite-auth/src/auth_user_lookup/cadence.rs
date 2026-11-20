@@ -31,7 +31,7 @@ pub struct CadenceEntry {
 
 // auth_checks.py L395: last_db_access_time, keyed by user_id:{requested_id}
 pub struct Cadence {
-    entries: Mutex<LimitedSizeOrderedDict<CadenceEntry>>,
+    pub(super) entries: Mutex<LimitedSizeOrderedDict<CadenceEntry>>,
     clock: Arc<dyn CadenceClock>,
 }
 
@@ -65,26 +65,18 @@ impl Cadence {
         let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
         entries.insert(key.to_owned(), CadenceEntry { record, checked_at });
     }
-
-    #[must_use]
-    pub fn entry(&self, key: &str) -> Option<CadenceEntry> {
-        let entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
-        entries.entries.get(key).cloned()
-    }
 }
 
 // current_time - last_db_access_time[key][1] >= db_cache_expiry, without losing a backward clock's sign
 fn expired(now: Duration, checked_at: Duration, expiry: i64) -> bool {
     match now.checked_duration_since(checked_at) {
-        Some(elapsed) => elapsed.as_secs_f64() >= expiry_seconds(expiry),
+        Some(elapsed) => {
+            elapsed.as_secs_f64() >= Decimal::from(expiry).to_f64().unwrap_or(f64::INFINITY)
+        }
         None => {
             expiry < 0 && checked_at.duration_since(now).as_secs_f64() <= magnitude_seconds(expiry)
         }
     }
-}
-
-fn expiry_seconds(expiry: i64) -> f64 {
-    Decimal::from(expiry).to_f64().unwrap_or(f64::INFINITY)
 }
 
 fn magnitude_seconds(expiry: i64) -> f64 {

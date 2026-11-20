@@ -3,7 +3,6 @@ use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_db::user_repository::projection::user_record_to_model;
 
 use super::cache::UserCache as _;
-use super::create::record_object;
 use super::lookup::{BlockFailure, UserLookup};
 use super::store::UserStore as _;
 
@@ -23,7 +22,8 @@ pub(super) async fn finish(
         .write(requested_id, &user, ttl)
         .await
         .map_err(BlockFailure::Cache)?;
-    let dump = record_object(&user)?;
+    let wire = serde_json::to_value(&user).map_err(BlockFailure::Serialize)?;
+    let dump = serde_json::from_value(wire).map_err(BlockFailure::Serialize)?;
     lookup.cadence.update(
         &format!("user_id:{requested_id}"),
         Some(JsonData::Object(dump)),

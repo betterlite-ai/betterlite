@@ -90,13 +90,38 @@ impl DatabaseUserStore {
         Ok(AuthReadAdapter::User.open(Arc::new(table), String::new(), context))
     }
 
-    async fn open(&self, use_writer: bool) -> UserStoreResult<UserReadTable> {
-        self.open_on(self.read_store(use_writer)).await
+    async fn find_one(
+        &self,
+        wanted: Wanted<'_>,
+        use_writer: bool,
+    ) -> UserStoreResult<Option<JsonData>> {
+        let table = self.open_on(self.read_store(use_writer)).await?;
+        let found = match wanted {
+            Wanted::Id(user_id) => {
+                table
+                    .find_unique(FindOne {
+                        filter: id_key(user_id),
+                        include: members(),
+                    })
+                    .await
+            }
+            Wanted::Filter(filter) => {
+                table
+                    .find_first(FindOne {
+                        filter,
+                        include: members(),
+                    })
+                    .await
+            }
+        };
+        found.map_err(UserStoreError::Read)
     }
+}
 
-    async fn open_writer(&self) -> UserStoreResult<UserReadTable> {
-        self.open_on(&self.writer).await
-    }
+// Prisma's find_unique over the user_id column and find_first over a where filter both answer one row
+enum Wanted<'user_id> {
+    Id(&'user_id str),
+    Filter(UserFilter),
 }
 
 fn members() -> Presence<UserInclude> {
@@ -119,43 +144,24 @@ impl UserStore for DatabaseUserStore {
         user_id: &str,
         use_writer: bool,
     ) -> UserStoreResult<Option<JsonData>> {
-        self.open(use_writer)
-            .await?
-            .find_unique(FindOne {
-                filter: id_key(user_id),
-                include: members(),
-            })
-            .await
-            .map_err(UserStoreError::Read)
+        self.find_one(Wanted::Id(user_id), use_writer).await
     }
 
     async fn find_by_sso_id(&self, sso_user_id: &str) -> UserStoreResult<Option<JsonData>> {
-        self.open(false)
-            .await?
-            .find_first(FindOne {
-                filter: UserFilter::SsoId(sso_user_id.to_owned()),
-                include: members(),
-            })
-            .await
-            .map_err(UserStoreError::Read)
+        let filter = UserFilter::SsoId(sso_user_id.to_owned());
+        self.find_one(Wanted::Filter(filter), false).await
     }
 
     async fn find_by_email(&self, email: &str) -> UserStoreResult<Option<JsonData>> {
-        self.open(false)
-            .await?
-            .find_first(FindOne {
-                filter: UserFilter::Email(UserEmailFilter {
-                    address: Some(email.to_owned()),
-                    insensitive: true,
-                }),
-                include: members(),
-            })
-            .await
-            .map_err(UserStoreError::Read)
+        let filter = UserFilter::Email(UserEmailFilter {
+            address: Some(email.to_owned()),
+            insensitive: true,
+        });
+        self.find_one(Wanted::Filter(filter), false).await
     }
 
     async fn create(&self, data: UserCreateData) -> UserStoreResult<JsonData> {
-        self.open_writer()
+        self.open_on(&self.writer)
             .await?
             .create(Create {
                 data,

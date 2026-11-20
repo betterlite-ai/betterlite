@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
 use betterlite_db::budget_permission_rows::JsonData;
-use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_db::user_repository::projection::user_record_to_model;
 
 use crate::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
@@ -103,7 +102,9 @@ fn apply_budget_reset(
 fn create_data(params: &BTreeMap<String, JsonData>) -> Result<UserCreateData, BlockFailure> {
     let record = JsonData::Object(params.clone());
     let user = user_record_to_model(Some(&record))?.ok_or(BlockFailure::NoRecord)?;
-    let dump = record_object(&user)?;
+    let wire = serde_json::to_value(&user).map_err(BlockFailure::Serialize)?;
+    let dump: BTreeMap<String, JsonData> =
+        serde_json::from_value(wire).map_err(BlockFailure::Serialize)?;
     let mut fields = BTreeMap::new();
     for key in params.keys() {
         if !USER_COLUMNS.contains(&key.as_str()) {
@@ -114,13 +115,6 @@ fn create_data(params: &BTreeMap<String, JsonData>) -> Result<UserCreateData, Bl
         }
     }
     UserCreateData::new(fields).map_err(BlockFailure::Serialize)
-}
-
-pub(super) fn record_object(
-    user: &LiteLLMUserTable,
-) -> Result<BTreeMap<String, JsonData>, BlockFailure> {
-    let wire = serde_json::to_value(user).map_err(BlockFailure::Serialize)?;
-    serde_json::from_value(wire).map_err(BlockFailure::Serialize)
 }
 
 // UserAPIKeyAuth(user_role=LitellmUserRoles.PROXY_ADMIN): the admin identity enrollment runs as
