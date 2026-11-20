@@ -46,25 +46,55 @@ pub enum ColumnFailure {
 #[derive(Debug, Error)]
 pub enum RowDecodeError {
     #[error("an agent text column is unreadable")]
-    Text(#[source] ColumnFailure),
+    Text {
+        #[source]
+        source: ColumnFailure,
+    },
     #[error("an agent text array column is unreadable")]
-    TextArray(#[source] ColumnFailure),
+    TextArray {
+        #[source]
+        source: ColumnFailure,
+    },
     #[error("an agent integer column is unreadable")]
-    Integer(#[source] ColumnFailure),
+    Integer {
+        #[source]
+        source: ColumnFailure,
+    },
     #[error("an agent boolean column is unreadable")]
-    Boolean(#[source] ColumnFailure),
+    Boolean {
+        #[source]
+        source: ColumnFailure,
+    },
     #[error("an agent timestamp column is unreadable")]
-    Timestamp(#[source] ColumnFailure),
+    Timestamp {
+        #[source]
+        source: ColumnFailure,
+    },
     #[error("the agent spend column is unreadable")]
-    Spend(#[source] ColumnFailure),
+    Spend {
+        #[source]
+        source: ColumnFailure,
+    },
     #[error("an agent JSON column is unreadable")]
-    Json(#[source] ColumnFailure),
+    Json {
+        #[source]
+        source: ColumnFailure,
+    },
     #[error("the agent_card_params column is not an agent card")]
-    AgentCard(#[source] ColumnFailure),
+    AgentCard {
+        #[source]
+        source: ColumnFailure,
+    },
     #[error("the execution_mode column is not a known mode")]
-    ExecutionMode(#[source] ColumnFailure),
+    ExecutionMode {
+        #[source]
+        source: ColumnFailure,
+    },
     #[error("the agent identity row is unreadable")]
-    Identity(#[source] ColumnFailure),
+    Identity {
+        #[source]
+        source: ColumnFailure,
+    },
 }
 
 impl RowCodec for AgentRowCodec {
