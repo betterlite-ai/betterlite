@@ -8,18 +8,21 @@ deviations:
       provider lookup waits as long as its client allows; the creation POST alone receives the caller's deadline.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7810
   - what: >-
-      A creation with no timeout carries no per-request deadline, so the shared HTTP client's 600 second deadline
-      applies; LiteLLM passes timeout=None to httpx, which waits without a deadline.
+      A creation with no timeout keeps its client's 600 second deadline on both the sync and async sends. LiteLLM's
+      sync post falls back to the httpx client's 600 second default as well, while its async post passes timeout=None
+      to httpx, which waits without a deadline.
     why: >-
       Every betterlite HTTP client bounds a request (B173); the transport never sends an unbounded call.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7806-L7811
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L799-L830
   - what: >-
-      A transport failure, an unreadable reply body or a reply over the response cap reaches the caller as
-      CharacterError::Transport with its typed reason; LiteLLM's _handle_error turns every caught exception without
-      a status code into the provider's error class with a synthesized 500.
+      Every send failure other than a timed-out create POST reaches the caller as CharacterError::Request with its
+      typed reason: a create POST's non-timeout fault, a lookup GET timeout or other fault, an unreadable reply body
+      and a reply over the response cap. LiteLLM's _handle_error turns each of those caught exceptions into the
+      provider's error class, with a synthesized 500 when the exception carries no status code.
     why: >-
       The shared handle_error (B2402) passes a failure without a status through typed, so a network fault is not
-      reported as a provider 500 with the fault's text as its message.
+      reported as a provider 500 with the fault's text as its message; a timed-out create POST is the one failure
+      mapped to the provider's error, with the 408 litellm.Timeout carries.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6077-L6085
   - what: >-
       The provider error built from a synthesized 500 does not carry LiteLLM's status_code_is_synthesized marker.
@@ -59,4 +62,11 @@ deviations:
       Each header is decoded once as it is read, so a provider that mixes a UTF-8 value with a latin-1 one keeps
       both readable.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6090-L6091
-kept_bugs: []
+kept_bugs:
+  - what: >-
+      A caller's extra_headers cannot override a header the provider's validate_environment writes: the provider's
+      value wins, so the OpenAI bearer replaces a caller's Authorization header.
+    why: >-
+      LiteLLM hands extra_headers to validate_environment as the dict the provider writes into, then re-applies that
+      same mutated dict; betterlite's validate_environment takes the caller's map and returns the map to send.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L86-L91
