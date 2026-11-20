@@ -1,14 +1,53 @@
 import asyncio
-from typing import cast
+from typing import Final, Literal, TypeAlias, TypedDict, cast
 
 from litellm.proxy.management_helpers.team_metadata_validation import (
     TeamMetadataValidationPayload,
     TeamMetadataValidationResult,
     TeamMetadataValidator,
 )
-from pydantic import JsonValue
+from pydantic import JsonValue, TypeAdapter
 
-from .inputs import PAYLOAD, PayloadDict, ValidatorKind
+ValidatorKind: TypeAlias = Literal[
+    "absent",
+    "function",
+    "accept",
+    "sync",
+    "reject",
+    "reject_empty",
+    "raises",
+    "malformed_type",
+    "malformed_object",
+    "sleep",
+]
+RoleName: TypeAlias = Literal["proxy_admin", "org_admin", "team_admin"]
+UserRoleName: TypeAlias = Literal[
+    "proxy_admin",
+    "proxy_admin_viewer",
+    "org_admin",
+    "internal_user",
+    "internal_user_viewer",
+    "team",
+    "customer",
+]
+
+
+class RequesterDict(TypedDict):
+    user_id: str | None
+    user_email: str | None
+    user_role: UserRoleName | None
+
+
+class PayloadDict(TypedDict):
+    operation: Literal["create", "update"]
+    metadata: dict[str, JsonValue]
+    existing_metadata: dict[str, JsonValue] | None
+    team_id: str | None
+    team_alias: str | None
+    requester: RequesterDict
+
+
+PAYLOAD: Final[TypeAdapter[PayloadDict]] = TypeAdapter(PayloadDict)
 
 
 class Recording:

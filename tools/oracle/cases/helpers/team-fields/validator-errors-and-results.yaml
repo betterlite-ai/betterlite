@@ -10,7 +10,7 @@ call:
     existing_metadata: null
     team_id: team-1
     team_alias: null
-    requester: {user_id: u1, user_email: null, user_role: team_admin}
+    requester: {user_id: u1, user_email: null, user_role: org_admin}
 calls:
   - team_fields:
       function: validate
