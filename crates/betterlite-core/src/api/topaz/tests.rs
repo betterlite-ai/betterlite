@@ -61,8 +61,8 @@ fn topaz_api_key_takes_a_truthy_explicit_value_first(
     #[case] expected: Option<&str>,
 ) {
     let loaded = settings(configured, DEFAULT_API_BASE);
-    let explicit = explicit.map(SecretString::from);
-    let found = get_api_key(explicit.as_ref(), &loaded).map(|key| key.expose_secret().to_owned());
+    let key = explicit.map(SecretString::from);
+    let found = get_api_key(key.as_ref(), &loaded).map(|secret| secret.expose_secret().to_owned());
 
     assert_eq!(found.as_deref(), expected);
 }
@@ -351,7 +351,11 @@ fn topaz_reply_keeps_the_two_timing_sources_apart() {
 fn topaz_exception_keeps_the_upstream_reply() {
     let headers = ImageHeaders::from([("x-request-id".to_owned(), "abc".to_owned())]);
 
-    let exception = TopazException::new(429, "rate limited".to_owned(), headers.clone());
+    let exception = TopazException {
+        status_code: 429,
+        message: "rate limited".to_owned(),
+        headers: headers.clone(),
+    };
 
     assert_eq!(exception.status_code, 429);
     assert_eq!(exception.message, "rate limited");

@@ -21,7 +21,7 @@ pub const MODELS: [&str; 5] = [
     "topaz/Text Refine",
 ];
 
-// TopazModelInfo's credential settings, read from the environment by B002's RoutingStrategy::topaz_image_settings
+// TopazModelInfo's credential settings, read from the environment by B002's topaz_image_settings
 #[derive(Debug, Clone)]
 pub struct TopazSettings {
     pub api_key: Option<SecretString>,

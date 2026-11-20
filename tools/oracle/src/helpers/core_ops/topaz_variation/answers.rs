@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
-use betterlite_config::types::RoutingStrategy;
+use betterlite_config::provider_budget_view::ProviderBudgetConfig;
 use betterlite_core::api::topaz::params::map_openai_params;
 use betterlite_core::api::topaz::reply::TopazReply;
 use betterlite_core::api::topaz::upload::{
@@ -21,7 +21,7 @@ pub(super) fn credential_answer(
     value: Option<&str>,
     environment: &BTreeMap<String, String>,
 ) -> Value {
-    let (api_key, api_base) = RoutingStrategy::topaz_image_settings(environment);
+    let (api_key, api_base) = ProviderBudgetConfig::topaz_image_settings(environment);
     let settings = TopazSettings { api_key, api_base };
     match field {
         CredentialField::ApiKey => {

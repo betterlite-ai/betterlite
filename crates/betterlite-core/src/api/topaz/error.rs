@@ -20,15 +20,3 @@ pub struct TopazException {
     pub message: String,
     pub headers: ImageHeaders,
 }
-
-impl TopazException {
-    // BaseLLMException stores the three values as it received them
-    #[must_use]
-    pub fn new(status_code: u16, message: String, headers: ImageHeaders) -> Self {
-        Self {
-            status_code,
-            message,
-            headers,
-        }
-    }
-}
