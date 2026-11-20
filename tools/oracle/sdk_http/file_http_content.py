@@ -123,7 +123,7 @@ async def drain_chunks(stream: Iterator[bytes] | AsyncIterator[bytes]) -> list[l
 
 def sync_content(call: FileHttpContentCall, api_base: str) -> HttpxBinaryResponseContent:
     litellm_params: dict[str, JsonValue] = {"api_base": api_base}
-    result = HANDLER.retrieve_file_content(
+    result = HANDLER.retrieve_file_content(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5007-L5017
         file_content_request=request_body(call),
         provider_config=provider_config(),
         litellm_params=litellm_params,
@@ -141,7 +141,7 @@ def sync_content(call: FileHttpContentCall, api_base: str) -> HttpxBinaryRespons
 
 async def async_content(call: FileHttpContentCall, api_base: str) -> HttpxBinaryResponseContent:
     litellm_params: dict[str, JsonValue] = {"api_base": api_base}
-    return await HANDLER.async_retrieve_file_content(
+    return await HANDLER.async_retrieve_file_content(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5063-L5072
         file_content_request=request_body(call),
         provider_config=provider_config(),
         litellm_params=litellm_params,
@@ -153,7 +153,7 @@ async def async_content(call: FileHttpContentCall, api_base: str) -> HttpxBinary
 
 async def streaming_view(call: FileHttpContentCall, api_base: str) -> Outcome:
     litellm_params: dict[str, JsonValue] = {"api_base": api_base}
-    result = await HANDLER.async_retrieve_file_content_streaming(
+    result = await HANDLER.async_retrieve_file_content_streaming(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5109-L5119
         file_content_request=request_body(call),
         provider_config=provider_config(),
         litellm_params=litellm_params,
