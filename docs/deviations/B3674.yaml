@@ -1,0 +1,27 @@
+task: B3674
+deviations:
+  - what: A target whose container has the right type but whose index or inner object is missing returns a typed TargetMissing error and the request fails. LiteLLM raises IndexError, KeyError or TypeError there.
+    why: The guardrail's rewrite would otherwise be lost and the unredacted text sent on; failing the request is what LiteLLM does in practice, now with a named error. The caller maps it to the same 500 LiteLLM returns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L205-L223
+  - what: The hoisted prompt is recognised by value equality only. LiteLLM also matches by object identity.
+    why: Rust has no shared object identity for JSON rows, and an identical object is always equal, so the result is the same for every row that LiteLLM matches by identity.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L774-L783
+  - what: "`translate_to_openai` returns the request half of the B967 result and drops the tool name map."
+    why: LiteLLM's handler never reads the map from this call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L496-L505
+  - what: The structured write-back always converts rows with modify_params on. LiteLLM reads the process-global litellm.modify_params, which defaults to false, so it raises BadRequestError for a rewrite that ends up with only system rows and skips its tool-call sanitisation, while betterlite adds the placeholder turn and sanitises.
+    why: betterlite has no process-global settings object; the placeholder is the only answer Anthropic accepts for a message list with no user or assistant row, and the write-back must not turn a guardrail rewrite into a 400. The oracle helper sets litellm.modify_params = True so both sides are compared with the behaviour betterlite implements.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L2379-L2389
+  - what: write_back_tool_use skips a tool_use block whose message content is not an array, whose content index is missing, or whose block is not an object. LiteLLM raises IndexError or TypeError there.
+    why: A silent skip and a 500 both drop the guardrail's rewrite; the skip keeps the request the client sent, and the scan that produced the target only emits targets for blocks it found.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L236-L245
+  - what: A missing message row in apply_guardrail_tool_calls_to_input is ApplyError::MessageMissing, not Python's IndexError, and nothing is written before it is returned.
+    why: Rust has no exceptions; the caller classifies the failure the same way it classifies TargetMissing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1117-L1118
+kept_bugs:
+  - what: A returned tool call list whose length differs from the pre-guardrail list is ignored, not rejected, so the guardrail's rewrites are dropped and the scanned calls are written back unchanged.
+    why: A working guardrail returns one call per call it was given, so this only fires on a broken guardrail, and the task's pitfalls require the ignore. betterlite keeps it rather than turning it into an error LiteLLM never raises.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1102-L1106
+  - what: write_back_system_block numbers only the blocks whose type is "text", while the scan that produced the block index (B3675's _extract_top_level_system_text, LiteLLM's own numbering) also counts a block that merely carries a string text, so the two can address different blocks.
+    why: The client's own system blocks always carry type "text", so the two numberings agree on every request a working setup sends, and the task's pitfalls say to keep both rules as they are rather than unify them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L197-L202
