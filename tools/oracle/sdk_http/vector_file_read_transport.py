@@ -1,7 +1,7 @@
 import asyncio
 from collections.abc import Coroutine
 from datetime import UTC, datetime
-from typing import Final, Literal, Protocol, TypeAlias, TypedDict, TypeVar
+from typing import Final, Literal, Protocol, TypeAlias, TypedDict, TypeVar, Unpack
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -40,19 +40,7 @@ class ReadArguments(TypedDict):
 
 
 class ReadHandler(Protocol[Result_co]):
-    def __call__(
-        self,
-        *,
-        vector_store_id: str,
-        file_id: str,
-        # ast-grep-ignore: no-long-names
-        vector_store_files_provider_config: BaseVectorStoreFilesConfig,
-        custom_llm_provider: str,
-        litellm_params: GenericLiteLLMParams,
-        logging_obj: Logging,
-        extra_headers: dict[str, str],
-        timeout: float | httpx.Timeout | None,
-    ) -> Result_co: ...
+    def __call__(self, **kwargs: Unpack[ReadArguments]) -> Result_co: ...
 
 
 class ReadHandlers(Protocol):
