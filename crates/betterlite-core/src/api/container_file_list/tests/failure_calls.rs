@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use betterlite_error::error::ErrorClass;
 use betterlite_http::proxy::pool::PoolError;
 use betterlite_logging::logging_pre_post::error::PrePostError;
+use betterlite_logging::logging_state::LoggingStateError;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::container_contracts::error::{BaseLlmException, ContainerError};
 use betterlite_openai::containers::container_file_http::ContainerFileHttpError;
@@ -190,6 +191,48 @@ fn an_encoding_failure_is_a_value_error() {
     let source = serde_json::from_str::<Json>("{ ").expect_err("the fixture is not JSON");
 
     let error = handler_failure(FileListHandlerError::Encoding(source));
+
+    assert!(matches!(&error.class, ErrorClass::ApiConnection(_)));
+}
+
+#[test]
+fn another_handler_failure_that_is_not_a_param_type_is_a_value_error() {
+    let error = handler_failure(FileListHandlerError::Params(
+        ContainerFileHttpError::Suspended,
+    ));
+
+    assert!(matches!(&error.class, ErrorClass::ApiConnection(_)));
+}
+
+#[test]
+fn a_config_failure_without_an_upstream_answer_is_a_value_error() {
+    let error = handler_failure(FileListHandlerError::Config(
+        ContainerError::ApiBaseRequired,
+    ));
+
+    assert!(matches!(&error.class, ErrorClass::ApiConnection(_)));
+}
+
+#[test]
+fn a_local_param_encoding_failure_is_a_value_error() {
+    let source = serde_json::from_str::<Json>("{ ").expect_err("the fixture is not JSON");
+
+    let error = failure(
+        ContainerFileListError::Params(source),
+        "openai",
+        &redactor(),
+    );
+
+    assert!(matches!(&error.class, ErrorClass::ApiConnection(_)));
+}
+
+#[test]
+fn a_logging_state_failure_is_a_value_error() {
+    let error = failure(
+        ContainerFileListError::Logging(LoggingStateError::FieldType { field: "user" }),
+        "openai",
+        &redactor(),
+    );
 
     assert!(matches!(&error.class, ErrorClass::ApiConnection(_)));
 }

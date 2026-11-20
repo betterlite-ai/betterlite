@@ -151,6 +151,18 @@ fn a_mock_object_decodes_like_a_mock_string() {
 }
 
 #[test]
+fn a_null_mock_response_is_no_mock() {
+    let mut fixture = Fixture::new();
+    fixture
+        .kwargs
+        .insert("mock_response".to_owned(), Json::Null);
+
+    fixture.call().expect("the file list decodes");
+
+    assert_eq!(fixture.requests().len(), 1);
+}
+
+#[test]
 fn an_unparseable_mock_response_is_a_value_error() {
     let mut fixture = Fixture::new();
     fixture.kwargs.insert(
@@ -412,6 +424,25 @@ fn extra_headers_are_laid_over_the_provider_headers() {
 #[test]
 fn an_api_key_reaches_validate_environment_and_authorizes_the_request() {
     let mut fixture = Fixture::new();
+    fixture.api_key = Some(SecretString::from(API_KEY));
+
+    fixture.call().expect("the file list decodes");
+
+    let environment = fixture.config().environment();
+    assert_eq!(environment[0].api_key.as_deref(), Some(API_KEY));
+    let requests = fixture.requests();
+    assert_eq!(
+        requests[0].headers.get("Authorization").map(String::as_str),
+        Some("Bearer sk-test")
+    );
+}
+
+#[test]
+fn a_named_api_key_wins_over_the_same_kwarg() {
+    let mut fixture = Fixture::new();
+    fixture
+        .kwargs
+        .insert("api_key".to_owned(), Json::Text("sk-kwarg".to_owned()));
     fixture.api_key = Some(SecretString::from(API_KEY));
 
     fixture.call().expect("the file list decodes");
