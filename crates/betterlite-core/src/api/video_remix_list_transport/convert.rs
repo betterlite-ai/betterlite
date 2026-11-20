@@ -4,7 +4,6 @@ use std::time::Duration;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json;
-use betterlite_openai::error::ProviderError;
 use serde_json::Number;
 
 use crate::api::vector_store_http_write::error::{
@@ -13,7 +12,6 @@ use crate::api::vector_store_http_write::error::{
 
 use super::config::VideoRemixListConfig;
 use super::error::{ErrorHeaders, Operation, VideoRemixListTransportError};
-use super::wire::WireError;
 
 // The handler mode the send ran in, the timeout it was given and how long the send took
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,13 +28,16 @@ pub(super) struct SendFacts {
     pub(super) elapsed: Duration,
 }
 
-// The shared conversion: B2402's handle_error picks the status, text and headers, the provider config names the error class
-fn provider_error(config: &dyn VideoRemixListConfig, facts: &FailureFacts) -> ProviderError {
+// The shared conversion: B2402's handle_error picks the status, text and headers, and the provider config names the error class
+pub(super) fn failure(
+    config: &dyn VideoRemixListConfig,
+    facts: &FailureFacts,
+) -> VideoRemixListTransportError {
     let converted = handle_error(facts, None);
     let mut error =
         config.get_error_class(&converted.message, converted.status_code, converted.headers);
     error.status_code_is_synthesized = converted.status_code_is_synthesized;
-    error
+    VideoRemixListTransportError::Provider(Box::new(error))
 }
 
 // The body text httpx would read off the masked response, with a binary body named by its byte count
@@ -48,7 +49,7 @@ fn body_text(body: &[u8]) -> String {
 }
 
 // An httpx.HTTPStatusError carries the masked response: its text and its headers less content-encoding, with content-length recomputed
-fn status_facts(reply: &UpstreamResponse) -> FailureFacts {
+pub(super) fn status_facts(reply: &UpstreamResponse) -> FailureFacts {
     let text = body_text(&reply.body);
     let mut headers = header_map(&reply.headers);
     headers.remove("content-encoding");
@@ -73,7 +74,7 @@ fn status_facts(reply: &UpstreamResponse) -> FailureFacts {
 }
 
 // A failure with no response behind it: the text is the failure's own, and a missing status becomes a synthesized 500
-fn display_facts(display: String) -> FailureFacts {
+pub(super) fn display_facts(display: String) -> FailureFacts {
     FailureFacts {
         response_status: None,
         status: None,
@@ -85,7 +86,7 @@ fn display_facts(display: String) -> FailureFacts {
 }
 
 // Only the remix handlers catch httpx.TimeoutException and raise litellm.Timeout; a list GET lets it escape as a raw exception
-fn transport_facts(facts: &SendFacts, error: &TransportError) -> FailureFacts {
+pub(super) fn transport_facts(facts: &SendFacts, error: &TransportError) -> FailureFacts {
     let timed_out = matches!(
         error,
         TransportError::ConnectTimeout(_) | TransportError::Deadline(_)
@@ -129,31 +130,6 @@ fn timeout_text(timeout: Option<Duration>) -> String {
     given.as_secs_f64().to_string()
 }
 
-pub(super) fn status_error(
-    config: &dyn VideoRemixListConfig,
-    reply: &UpstreamResponse,
-) -> VideoRemixListTransportError {
-    let provider = provider_error(config, &status_facts(reply));
-    VideoRemixListTransportError::Provider(Box::new(provider))
-}
-
-pub(super) fn wire_error(
-    config: &dyn VideoRemixListConfig,
-    error: &WireError,
-) -> VideoRemixListTransportError {
-    let provider = provider_error(config, &display_facts(error.to_string()));
-    VideoRemixListTransportError::Provider(Box::new(provider))
-}
-
-pub(super) fn transport_error(
-    config: &dyn VideoRemixListConfig,
-    facts: &SendFacts,
-    error: &TransportError,
-) -> VideoRemixListTransportError {
-    let provider = provider_error(config, &transport_facts(facts, error));
-    VideoRemixListTransportError::Provider(Box::new(provider))
-}
-
 // Both handlers call raise_for_status on their send, so a 4xx or 5xx answer reaches error conversion before the response transform
 pub(super) fn check_status(
     config: &dyn VideoRemixListConfig,
@@ -162,5 +138,5 @@ pub(super) fn check_status(
     if reply.status < 400 {
         return Ok(reply);
     }
-    Err(status_error(config, &reply))
+    Err(failure(config, &status_facts(&reply)))
 }

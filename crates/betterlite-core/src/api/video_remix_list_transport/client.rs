@@ -87,7 +87,7 @@ pub(super) fn choose_async<'call, Source: VideoClientSource>(
                 provider: provider.to_owned(),
             }
         })?;
-        let ssl_verify = fields::ssl_verify(params)?;
+        let ssl_verify = fields::read::<bool>(params, "ssl_verify")?;
         let pooled = source.async_client(parsed, ssl_verify).map_err(|source| {
             VideoRemixListTransportError::Client {
                 source: Box::new(source),

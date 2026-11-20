@@ -7,6 +7,7 @@ mod list;
 mod logging;
 pub mod records;
 mod remix;
+mod response;
 mod tests;
 mod wire;
 

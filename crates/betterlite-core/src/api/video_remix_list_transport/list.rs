@@ -4,16 +4,14 @@ use std::time::{Duration, Instant};
 use betterlite_http::proxy::UpstreamResponse;
 use tokio::runtime::{Builder, Handle};
 
-use super::client::{VideoClient, VideoClientSource, choose_async};
+use super::client::{VideoClient, VideoClientSource, VideoRequest, choose_async};
 use super::config::VideoRemixListConfig;
 use super::convert;
 use super::error::{Operation, VideoRemixListTransportError};
 use super::fields;
 use super::logging::{ListPreCall, PreCallSource, record_pre_call};
-use super::records::{
-    Headers, Params, VideoEnvironment, VideoListQuery, VideoLogging, VideoReply,
-    VideoRequestContext,
-};
+use super::records::{Headers, Params, VideoEnvironment, VideoListQuery, VideoRequestContext};
+use super::response::transform_response;
 use super::wire;
 use super::{Handled, ListCall, LogContext, VideoRemixListTransport};
 
@@ -74,7 +72,13 @@ impl<Source: VideoClientSource> VideoRemixListTransport<Source> {
         let prepared = prepare_list(config, &call, &mut log)?;
         let answer = send_list(config, chosen.get(), &prepared, call.timeout).await?;
         let checked = convert::check_status(config, answer)?;
-        finish_list(config, &call, &checked, &mut log)
+        transform_response(
+            config,
+            &checked,
+            call.custom_llm_provider,
+            &mut log,
+            VideoRemixListConfig::transform_video_list_response,
+        )
     }
 }
 
@@ -126,30 +130,32 @@ fn list_request<Source: VideoClientSource>(
         })
 }
 
-// The try block's send: one GET with the query and no timeout, whatever the caller passed
+// The try block's GET: the transform's params as the query and no timeout, whatever the caller passed
+fn list_wire_request(
+    config: &dyn VideoRemixListConfig,
+    prepared: &PreparedList,
+) -> Result<VideoRequest, VideoRemixListTransportError> {
+    wire::query_get(&prepared.url, &prepared.headers, &prepared.params)
+        .map_err(|error| convert::failure(config, &convert::display_facts(error.to_string())))
+}
+
+// The try block's send on the async path: one GET with no timeout, and the caller's timeout only in a timeout message
 async fn send_list<Source: VideoClientSource>(
     config: &dyn VideoRemixListConfig,
     client: &Source::AsyncClient,
     prepared: &PreparedList,
     timeout: Option<Duration>,
 ) -> Result<UpstreamResponse, VideoRemixListTransportError> {
-    let request = wire::query_get(&prepared.url, &prepared.headers, &prepared.params)
-        .map_err(|error| convert::wire_error(config, &error))?;
+    let request = list_wire_request(config, prepared)?;
     let started = Instant::now();
     let sent = client.send(request).await;
-    let elapsed = started.elapsed();
-    sent.map_err(|error| {
-        convert::transport_error(
-            config,
-            &convert::SendFacts {
-                operation: Operation::List,
-                mode: convert::SendMode::Asynchronous,
-                timeout,
-                elapsed,
-            },
-            &error,
-        )
-    })
+    let facts = convert::SendFacts {
+        operation: Operation::List,
+        mode: convert::SendMode::Asynchronous,
+        timeout,
+        elapsed: started.elapsed(),
+    };
+    sent.map_err(|error| convert::failure(config, &convert::transport_facts(&facts, &error)))
 }
 
 // Everything before the try block: the environment (api_key only), the base URL, the query transform and the pre-call
@@ -159,9 +165,9 @@ fn prepare_list<Source: VideoClientSource>(
     log: &mut LogContext<'_, '_>,
 ) -> Result<PreparedList, VideoRemixListTransportError> {
     let headers = list_headers(config, call);
-    let api_base = fields::api_base(call.litellm_params)?;
+    let api_base = fields::read::<String>(call.litellm_params, "api_base")?;
     let base_url = config
-        .get_complete_url("", api_base, call.litellm_params)
+        .get_complete_url("", api_base.as_deref(), call.litellm_params)
         .map_err(|source| VideoRemixListTransportError::Prepare {
             operation: Operation::List,
             source,
@@ -180,23 +186,4 @@ fn prepare_list<Source: VideoClientSource>(
         headers,
         params,
     })
-}
-
-// The response transform runs against the real logging details, and whatever it stores there is kept
-fn finish_list<Source: VideoClientSource>(
-    config: &dyn VideoRemixListConfig,
-    call: &ListCall<'_, Source>,
-    answer: &UpstreamResponse,
-    log: &mut LogContext<'_, '_>,
-) -> Result<Params, VideoRemixListTransportError> {
-    let mut logging = VideoLogging {
-        model_call_details: log.state.model_call_details.clone(),
-    };
-    let outcome = config.transform_video_list_response(VideoReply {
-        raw_response: answer,
-        logging_obj: &mut logging,
-        custom_llm_provider: Some(call.custom_llm_provider),
-    });
-    log.state.model_call_details = logging.model_call_details;
-    outcome.map_err(|_failure| convert::status_error(config, answer))
 }

@@ -173,6 +173,19 @@ async fn sync_pooled_client() {
     assert_validated(&bench, Some("sk-params"), None, &headers(&[]));
 }
 
+// The async remix path answers with the transform's object and posts once to the remix URL, whichever client sent
+async fn async_remix_post(bench: &mut Bench<Source>, setup: Setup<'_, Source>, sent: &Wire) {
+    let answer = run(bench, setup, CallKind::Remix, CallMode::Asynchronous)
+        .await
+        .expect("the async remix handler answers");
+    assert_eq!(answer.object(), video_object("video_out", "queued"));
+    assert!(bench.transport.source.sync_calls().is_empty());
+    let requests = sent.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].method, Method::POST);
+    assert_eq!(requests[0].url.as_str(), bench.config.remix_url());
+}
+
 // The async path takes a supplied async client as it is: the unknown provider name is never parsed and the pool is never touched
 async fn async_supplied_client() {
     let (mut bench, pooled) = fake_bench(REMIX, Reply::json(200, "{}"), RecordingConfig::new);
@@ -180,16 +193,9 @@ async fn async_supplied_client() {
     let params = json_params("{}");
     let mut setup = Setup::new("nope", &params).video("video_a", PROMPT);
     setup.client = Some(VideoClient::Asynchronous(&supplied));
-    let answer = run(&mut bench, setup, CallKind::Remix, CallMode::Asynchronous)
-        .await
-        .expect("the async remix handler answers");
-    assert_eq!(answer.object(), video_object("video_out", "queued"));
+    async_remix_post(&mut bench, setup, &supplied).await;
     assert!(pooled.requests().is_empty());
     assert!(bench.transport.source.async_calls().is_empty());
-    let sent = supplied.requests();
-    assert_eq!(sent.len(), 1);
-    assert_eq!(sent[0].method, Method::POST);
-    assert_eq!(sent[0].url.as_str(), bench.config.remix_url());
 }
 
 // The async path keys its pool by the provider name and passes ssl_verify to it
@@ -198,20 +204,12 @@ async fn async_pooled_client() {
     let params = json_params(r#"{"ssl_verify":false}"#);
     let mut setup = Setup::new("openai", &params).video("video_a", PROMPT);
     setup.timeout = Some(Duration::from_secs(3));
-    let answer = run(&mut bench, setup, CallKind::Remix, CallMode::Asynchronous)
-        .await
-        .expect("the async remix handler answers");
-    assert_eq!(answer.object(), video_object("video_out", "queued"));
+    async_remix_post(&mut bench, setup, &wire).await;
     assert_eq!(
         bench.transport.source.async_calls(),
         vec![(ProviderId::Openai, Some(false))]
     );
-    assert!(bench.transport.source.sync_calls().is_empty());
-    let sent = wire.requests();
-    assert_eq!(sent.len(), 1);
-    assert_eq!(sent[0].method, Method::POST);
-    assert_eq!(sent[0].url.as_str(), bench.config.remix_url());
-    assert_eq!(sent[0].timeout, Some(Duration::from_secs(3)));
+    assert_eq!(wire.requests()[0].timeout, Some(Duration::from_secs(3)));
 }
 
 // The pooled client is the real B173 transport, and its POST carries the JSON body and the config's headers
