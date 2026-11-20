@@ -146,12 +146,15 @@ async fn step<E>(mut state: StreamState<E>) -> Option<(Item<E>, StreamState<E>)>
 
 // The one SSE loop both the text completion and the Azure chat streams run; wrap builds each path's error.
 #[must_use]
-pub fn provider_stream<E: Send + 'static>(
+pub fn provider_stream<E>(
     provider: &str,
     bytes: ByteStream,
     setup: StreamSetup,
     wrap: fn(PumpError) -> E,
-) -> ProviderStream<E> {
+) -> ProviderStream<E>
+where
+    E: Send + 'static,
+{
     let state = StreamState {
         bytes,
         parser: SseParser::default(),
