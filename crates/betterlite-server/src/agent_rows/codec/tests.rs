@@ -265,7 +265,59 @@ async fn null_role_and_scope_arrays_decode_as_empty_lists() {
         .expect("the row has an identity");
     assert!(identity.required_roles.is_empty());
     assert!(identity.required_scopes.is_empty());
+    assert!(identity.service_principal_id.is_none());
+    assert!(identity.last_authenticated_at.is_none());
     assert!(identity.active.0);
+}
+
+#[tokio::test]
+async fn decodes_null_header_columns_as_none() {
+    let database = Database::start().await;
+    database
+        .run(
+            r#"INSERT INTO "LiteLLM_AgentsTable"
+                (agent_id, agent_name, agent_card_params, static_headers, extra_headers,
+                 access_group_ids, created_by, updated_by)
+            VALUES ('agent-1', 'support', '{}'::jsonb, NULL, NULL, NULL, 'creator', 'creator')"#,
+        )
+        .await;
+
+    let agent = database.decode_agent("agent-1").await.agent;
+    assert!(agent.static_headers.is_none());
+    assert!(agent.extra_headers.is_none());
+    assert!(agent.access_group_ids.is_none());
+}
+
+#[tokio::test]
+async fn decodes_null_permission_columns_as_some_none() {
+    let database = Database::start().await;
+    database
+        .run(
+            r#"
+            INSERT INTO "LiteLLM_ObjectPermissionTable"
+                (object_permission_id, mcp_servers, mcp_access_groups, mcp_toolsets,
+                 mcp_tool_permissions, models, agents)
+            VALUES ('perm-1', NULL, NULL, NULL, NULL, NULL, NULL);
+            INSERT INTO "LiteLLM_AgentsTable"
+                (agent_id, agent_name, agent_card_params, object_permission_id,
+                 created_by, updated_by)
+            VALUES ('agent-1', 'support', '{}'::jsonb, 'perm-1', 'creator', 'creator');
+            "#,
+        )
+        .await;
+
+    let stored = database.decode_agent("agent-1").await;
+    let permission = stored
+        .agent
+        .object_permission
+        .as_ref()
+        .expect("the row has an object permission");
+    assert_eq!(permission.mcp_servers, Some(None));
+    assert_eq!(permission.mcp_access_groups, Some(None));
+    assert_eq!(permission.mcp_toolsets, Some(None));
+    assert_eq!(permission.mcp_tool_permissions, Some(None));
+    assert_eq!(permission.models, Some(None));
+    assert_eq!(permission.agents, Some(None));
 }
 
 #[tokio::test]
