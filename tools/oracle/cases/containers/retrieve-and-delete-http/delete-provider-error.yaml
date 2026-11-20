@@ -1,0 +1,18 @@
+kind: helper
+name: delete-provider-error
+call:
+  b3365:
+    operation: delete
+    asynchronous: false
+    container_id: cntr_1
+    api_key: sk-test
+    api_base: https://api.example/v1
+    extra_headers: {}
+    extra_query: {}
+    reply:
+      status: 404
+      headers: {x-request-id: req_1}
+      body: no such container
+    failure: answer
+env: {}
+compare: {ignore: []}

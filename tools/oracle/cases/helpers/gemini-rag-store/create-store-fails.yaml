@@ -1,0 +1,15 @@
+kind: helper
+name: gemini-rag-store-create-store-fails
+call:
+  b3454:
+    script:
+      - status: 201
+        body: '{"error":{"message":"boom"}}'
+    options:
+      name: notes
+      vector_store:
+        custom_llm_provider: gemini
+    environment:
+      GEMINI_API_KEY: gemini-key
+env: {}
+compare: {ignore: []}

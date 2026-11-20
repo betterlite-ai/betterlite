@@ -1,0 +1,19 @@
+kind: sdk_http
+name: run-arun-status-failure
+env: {}
+call:
+  assistant_run:
+    mode: arun
+    provider: openai
+    thread_id: thread_a
+    assistant_id: asst_a
+    params: {api_key: 'sk-test'}
+upstream:
+  - status: 404
+    headers: {content-type: application/json}
+    body: {"error": {"message": "no such run", "type": "not_found_error", "param": "thread_id", "code": "run_missing"}}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, openai-beta]
+  ignore: []

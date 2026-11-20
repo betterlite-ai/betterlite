@@ -1,0 +1,6 @@
+kind: helper
+name: anthropic-guardrail-write-back-defer-system-inside-tool-exchange
+call:
+  b3674: {"function": "defer", "scenarios": [{"messages": [{"role": "assistant", "content": "calling", "tool_calls": [{"id": "toolu_1", "type": "function", "function": {"name": "lookup", "arguments": "{}"}}]}, {"role": "system", "content": "mid"}, {"role": "tool", "tool_call_id": "toolu_1", "content": "result"}, {"role": "user", "content": "next"}]}, {"messages": [{"role": "assistant", "content": "calling", "tool_calls": [{"id": "toolu_1", "type": "function", "function": {"name": "lookup", "arguments": "{}"}}]}, {"role": "tool", "tool_call_id": "toolu_1", "content": "result"}, {"role": "system", "content": "after"}, {"role": "user", "content": "next"}]}, {"messages": [{"role": "assistant", "content": "calling", "tool_calls": [{"id": "toolu_1", "type": "function", "function": {"name": "lookup", "arguments": "{}"}}]}, {"role": "system", "content": "one"}, {"role": "system", "content": "two"}, {"role": "tool", "tool_call_id": "toolu_1", "content": "result"}, {"role": "user", "content": "next"}]}, {"messages": [{"role": "system", "content": "lead"}, {"role": "user", "content": "hello"}]}]}
+env: {}
+compare: {ignore: []}
