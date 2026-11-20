@@ -10,6 +10,7 @@ use betterlite_openai::openai_base_config::{
     CatalogCapabilities, ConfigFamily, Headers as OpenAiHeaders, Object, OpenAiConfig,
     OpenAiSettings,
 };
+use betterlite_openai::proxy::error::ProxyError;
 use betterlite_openai::proxy::{map_params, transform_request};
 use http::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderName, HeaderValue};
 use http::{HeaderMap, Method};
@@ -88,7 +89,15 @@ fn chat_call(
         &mut optional,
         catalog,
     )
-    .map_err(error::proxy)?;
+    .map_err(|error| match error {
+        other @ ProxyError::ExtraBodyNotObject => error::encode(other.to_string()),
+        other @ (ProxyError::MissingApiBase | ProxyError::ModelList { .. }) => {
+            OperationError::UnsupportedOperation {
+                provider: String::from("litellm_proxy"),
+                operation: other.to_string(),
+            }
+        }
+    })?;
     if stream {
         optional.insert(String::from("stream"), serde_json::Value::Bool(true));
         // get_stream_options asks for usage only from an OpenAI-backed base, and the caller's own map wins

@@ -2,7 +2,6 @@ use std::io::Error as IoError;
 
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_openai::aleph_alpha::error::AlephAlphaError;
-use betterlite_openai::proxy::error::ProxyError;
 use http::HeaderMap;
 use serde_json::Error as JsonError;
 use thiserror::Error;
@@ -36,6 +35,20 @@ pub enum LegacyError {
     },
 }
 
+// A failure betterlite models nowhere else reaches the caller as an unreadable provider reply
+pub(super) fn undecodable(message: String) -> OperationError {
+    OperationError::Decode {
+        operation: "chat",
+        source: JsonError::io(IoError::other(message)),
+    }
+}
+
+pub(super) fn encode(message: String) -> OperationError {
+    OperationError::Encode {
+        source: JsonError::io(IoError::other(message)),
+    }
+}
+
 pub(super) fn operation(error: LegacyError) -> OperationError {
     match error {
         LegacyError::Encode { source } => OperationError::Encode { source },
@@ -44,10 +57,7 @@ pub(super) fn operation(error: LegacyError) -> OperationError {
         | LegacyError::ExtraBodyNotObject
         | LegacyError::Endpoint { .. }
         | LegacyError::Reply { .. }
-        | LegacyError::Settings { .. }) => OperationError::Decode {
-            operation: "chat",
-            source: JsonError::io(IoError::other(other.to_string())),
-        },
+        | LegacyError::Settings { .. }) => undecodable(other.to_string()),
     }
 }
 
@@ -76,25 +86,6 @@ pub(super) fn aleph(error: AlephAlphaError) -> OperationError {
         | AlephAlphaError::NoChoices
         | AlephAlphaError::Usage
         | AlephAlphaError::Tokenize { .. }
-        | AlephAlphaError::LineTooLong { .. }) => OperationError::Decode {
-            operation: "chat",
-            source: JsonError::io(IoError::other(other.to_string())),
-        },
-    }
-}
-
-pub(super) fn proxy(error: ProxyError) -> OperationError {
-    match error {
-        ProxyError::ExtraBodyNotObject => OperationError::Encode {
-            source: JsonError::io(IoError::other(
-                "extra_body must be an object so thinking can be nested under it",
-            )),
-        },
-        other @ (ProxyError::MissingApiBase | ProxyError::ModelList { .. }) => {
-            OperationError::UnsupportedOperation {
-                provider: String::from("litellm_proxy"),
-                operation: other.to_string(),
-            }
-        }
+        | AlephAlphaError::LineTooLong { .. }) => undecodable(other.to_string()),
     }
 }

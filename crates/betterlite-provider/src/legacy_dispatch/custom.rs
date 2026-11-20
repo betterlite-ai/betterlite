@@ -94,6 +94,13 @@ pub(super) struct Call {
     pub(super) client_model: Option<String>,
 }
 
+fn unsupported(operation: &str) -> OperationError {
+    OperationError::UnsupportedOperation {
+        provider: String::from(Legacy::Custom.slug()),
+        operation: String::from(operation),
+    }
+}
+
 pub(super) fn prepare(
     request: &OperationRequest,
     deployment: &Deployment,
@@ -101,16 +108,8 @@ pub(super) fn prepare(
     match request.kind() {
         RequestKind::Chat(chat) => chat_call(chat, deployment),
         // _complete_custom answers a stream request with a buffered ModelResponse, which betterlite has no seam for
-        RequestKind::Stream(_) => Err(OperationError::UnsupportedOperation {
-            provider: String::from(Legacy::Custom.slug()),
-            operation: String::from("stream"),
-        }),
-        RequestKind::Embedding(_) | RequestKind::Other => {
-            Err(OperationError::UnsupportedOperation {
-                provider: String::from(Legacy::Custom.slug()),
-                operation: String::from("provider endpoint"),
-            })
-        }
+        RequestKind::Stream(_) => Err(unsupported("stream")),
+        RequestKind::Embedding(_) | RequestKind::Other => Err(unsupported("provider endpoint")),
     }
 }
 
@@ -230,39 +229,38 @@ pub(super) async fn execute(
 }
 
 pub(super) fn decode(call: &Call, upstream: Upstream) -> Result<OperationResult, OperationError> {
-    let Upstream::Buffered(response) = upstream else {
-        return Err(OperationError::UnsupportedOperation {
-            provider: String::from(Legacy::Custom.slug()),
-            operation: String::from("stream"),
-        });
-    };
-    let checked = success(response)?;
-    let content = decode_custom_output(&checked.body).map_err(error::operation)?;
-    let response = AiohttpChatResponse {
-        id: None,
-        object: Some(String::from("chat.completion")),
-        created: u64::try_from(call.created).ok(),
-        model: call.client_model.clone().filter(|model| !model.is_empty()),
-        choices: vec![AiohttpChoice {
-            index: 0,
-            message: AiohttpMessage {
-                role: Some(String::from("assistant")),
-                content: Some(content),
-                function_call: None,
-                tool_calls: None,
-                extra: IndexMap::new(),
-            },
-            // Choices.__init__ fills a missing finish_reason with "stop", and the reply's choice is the default one
-            finish_reason: Some(String::from("stop")),
-            logprobs: None,
-            provider_specific_fields: None,
-            extra: IndexMap::new(),
-        }],
-        system_fingerprint: None,
-        // LiteLLM leaves the zero usage it starts with; nothing is counted for this path
-        usage: ChatUsage::default(),
-    };
-    Ok(OperationResult::Chat(ChatCompletion::AiohttpOpenAi(
-        Box::new(response),
-    )))
+    match upstream {
+        Upstream::Buffered(buffered) => {
+            let checked = success(buffered)?;
+            let content = decode_custom_output(&checked.body).map_err(error::operation)?;
+            let response = AiohttpChatResponse {
+                id: None,
+                object: Some(String::from("chat.completion")),
+                created: u64::try_from(call.created).ok(),
+                model: call.client_model.clone().filter(|model| !model.is_empty()),
+                choices: vec![AiohttpChoice {
+                    index: 0,
+                    message: AiohttpMessage {
+                        role: Some(String::from("assistant")),
+                        content: Some(content),
+                        function_call: None,
+                        tool_calls: None,
+                        extra: IndexMap::new(),
+                    },
+                    // Choices.__init__ fills a missing finish_reason with "stop", and the reply's choice is the default one
+                    finish_reason: Some(String::from("stop")),
+                    logprobs: None,
+                    provider_specific_fields: None,
+                    extra: IndexMap::new(),
+                }],
+                system_fingerprint: None,
+                // LiteLLM leaves the zero usage it starts with; nothing is counted for this path
+                usage: ChatUsage::default(),
+            };
+            Ok(OperationResult::Chat(ChatCompletion::AiohttpOpenAi(
+                Box::new(response),
+            )))
+        }
+        Upstream::Streaming(_) => Err(unsupported("stream")),
+    }
 }
