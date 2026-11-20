@@ -1,0 +1,14 @@
+kind: sdk_http
+name: file-http-metadata-missing-api-key
+env: {}
+call:
+  file_http_metadata:
+    operation: retrieve
+    mode: sync
+    file_id: file_batch
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []

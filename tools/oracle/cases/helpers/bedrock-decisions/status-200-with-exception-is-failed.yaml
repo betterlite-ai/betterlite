@@ -1,0 +1,10 @@
+kind: helper
+name: status-200-with-exception-is-failed
+call:
+  b3722:
+    bedrock_decisions:
+      status:
+        status_code: 200
+        body: '{"Output": {"__type": "ValidationException"}}'
+env: {}
+compare: {ignore: []}

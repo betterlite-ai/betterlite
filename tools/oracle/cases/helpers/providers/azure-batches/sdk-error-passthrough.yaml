@@ -1,0 +1,28 @@
+kind: helper
+name: sdk-error-passthrough
+call:
+  azure_batches:
+    steps:
+    - action: create
+      args: {api_key: ep-1, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      data: {completion_window: 24h, endpoint: /v1/chat/completions, input_file_id: file_in, timeout: 7.5}
+      reply: {status: 400, body: {error: {message: bad input file, type: invalid_request_error, param: input_file_id, code: invalid_value}}}
+    - action: retrieve
+      args: {api_key: ep-2, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      query: {batch_id: batch_a}
+      reply: {status: 404, body: {error: {message: no such batch, type: invalid_request_error, param: batch_id, code: not_found}}}
+    - action: cancel
+      is_async: true
+      args: {api_key: ep-3, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      query: {batch_id: batch_a}
+      reply: {status: 500, body: {error: {message: internal}}}
+    - action: list
+      args: {api_key: ep-4, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      reply: {status: 429, body: {error: {message: slow down, type: rate_limit_error, code: rate_limited}}}
+    - action: list
+      is_async: true
+      after: batch_x
+      args: {api_key: ep-5, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      reply: {status: 400, body: {error: {message: bad cursor}}}
+env: {}
+compare: {ignore: []}

@@ -46,7 +46,7 @@ description: >-
   for the router path: it builds `ContainerCallArgs` into a `GenericRequest` (the upload becomes a JSON object `{"filename", "content_type", "data_base64"}` under "file", as in
   B6460; the executor turns it back), calls `plan_container_call`, then `Generic` runs B6021's `dispatch_generic_call_type` for the route type name with `model` set and
   `passthrough_on_no_deployment` in the request, and `Direct` calls the executor straight. It removes `client` from the arguments (the wrapper swallows it) and re-adds `custom_llm_provider` as step (1)
-  describes. `container_executors(...)` returns `Vec<(String, Arc<dyn GenericCallExecutor>)>` for the code that builds `RouterGeneric`. `DirectContainer` implements `ContainerCalls`
+  describes. `container_executors(...)` returns `Vec<(String, Arc<dyn GenericCallExecutor>)>` for the code that builds `RouterGeneric`. Put them first in B8631's RouterGeneric executor list (crates/betterlite-server/src/app/inference/router_calls), in front of the passthrough executors; B8631 lands first and answers a container call type with UnknownCallType until then. `DirectContainer` implements `ContainerCalls`
   for the no-router path: it calls the functions the `litellm` module exposes under each route type name. Those are `alist_container_files` and `aupload_container_file` from containers/main.py
   (B3366, B3367) and the four container calls (B3369, B3370). aretrieve_container_file, adelete_container_file and aretrieve_container_file_content do not exist on the `litellm` module,
   so `DirectContainer` answers `ContainerCallError::Unavailable` with the route type name for them.
@@ -66,6 +66,8 @@ scope:
     - crates/betterlite-sdk/src/router_container.rs
     - crates/betterlite-sdk/src/router_container/**
     - crates/betterlite-sdk/Cargo.toml
+    - crates/betterlite-server/src/app/inference/router_calls.rs
+    - crates/betterlite-server/src/app/inference/router_calls/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L2143-L2170
@@ -147,7 +149,7 @@ out_of_scope:
   - "The generic engine (_ageneric_api_call_with_fallbacks, its helper, _dispatch_generic_call_type) is B6021; selection, retries, slots and the refusal check are B016, B017, B303 and B310. This task only plugs executors into it."
   - "The generic parts of _route_request_single_attempt (user_config, router_settings_override, batch completion, the blocked-model check, mock-testing checks): B9800 builds the shared steps and the user_config, override and blocked-model branches in betterlite-server's messages_call for /v1/messages only. Nothing runs them for the container routes, and nothing builds the acompletion batch branch yet. B004 and B014 built neither."
   - "The SDK calls the executors reach: B3368 (the five file calls), B3369 (create, list), B3370 (retrieve, delete), B3366 and B3367 (the explicit list and upload functions the direct path uses)."
-  - "The ContainerIdDecoder implementation over B903's _decode_container_id, the server implementation of the generic wiring, and the construction of RouterGeneric with container_executors: B8631 (RouterGeneric with container_executors) and B8635 (ContainerIdDecoder and the server wiring), see notes."
+  - "The ContainerIdDecoder implementation over B903's _decode_container_id, and the server implementation of the generic wiring: B8635 (ContainerIdDecoder and the server wiring), see notes. The rest of RouterGeneric: B8631."
   - "The container HTTP routes themselves and the request data maps: B3372 (file routes) and the routes of proxy/container_endpoints/endpoints.py."
 pitfalls:
   - "async_wrapper takes custom_llm_provider and client as named parameters and passes neither through, so _init_containers_api_endpoints puts custom_llm_provider back only when kwargs has no such key, and client is dropped for good."

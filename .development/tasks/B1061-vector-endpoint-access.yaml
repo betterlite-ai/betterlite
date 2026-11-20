@@ -1,11 +1,7 @@
 id: B1061
-title: Resolve managed stores and enforce endpoint grants
+title: Enforce vector store endpoint grants
 description: >-
-  Implement the seven complete functions at vector_store_endpoints/utils.py:260-559 in
-  core::api::vector_endpoint_access. Resolve nonempty ids from B1062's registry first, then B749's shared
-  cache/database lookup. Normalize string litellm_params with B1060. Resolution exceptions fail closed
-  with HTTPException 500; unknown provider-native ids remain allowed by the managed-id assertion.
-  Ownership assertion delegates to B1060 and accepts a caller-supplied denial detail.
+  Implement the four complete functions at vector_store_endpoints/utils.py:354-559 in core::api::vector_endpoint_access: _does_endpoint_match, check_vector_store_permission, is_allowed_to_call_vector_store_endpoint and is_allowed_to_call_vector_store_files_endpoint. The managed-id resolution and the ownership assertions at L260-L353 are B10014's, and nothing here calls them.
 
   Endpoint authorization uses B741's canonical request route, B010 provider selection and B1058/B1071
   provider endpoint contracts. Admin bypass runs before config lookup. Unsupported providers return null.
@@ -14,11 +10,9 @@ description: >-
   allowed_vector_store_indexes. Store unknown endpoints deny, while attached-file unknown endpoints
   return null. Do not conflate these outcomes or strengthen the matcher's prefix semantics.
 
-  Add B171 VectorEndpointAccess for typed path/method/auth inputs, actual B527/B558 endpoint maps and
-  scripted registry/cache effects. This is policy, not a FastAPI route adapter; consuming routes retain
-  HTTP cases. Tests belong in api::vector_endpoint_access. No new parser is introduced. Count 244
-  nonblank/non-comment lines; budget 240 implementation, 180 tests, 100 adapters, 110 fixtures and
-  35 wiring/corpus lines, 665 total within 710.
+  Add B171 VectorEndpointAccess for typed path/method/auth inputs and actual B527/B558 endpoint maps.
+  This is policy, not a FastAPI route adapter; consuming routes retain
+  HTTP cases. Tests belong in api::vector_endpoint_access. No new parser is introduced.
 scope:
   paths:
   - crates/betterlite-core/src/api/vector_endpoint_access.rs
@@ -31,24 +25,9 @@ scope:
   - tools/oracle/fuzz/corpus/helper_case/vector_endpoint_access-*
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/utils.py#L260-L559
-  why: Whole managed-id resolution and store/file permission checks differ on unknown endpoints and fail closed on lookup exceptions.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/utils.py#L354-L559
+  why: The store and file permission checks differ on unknown endpoints.
 dod:
-- text: >-
-    managed_id_resolution returns null for id="" without a lookup. Registry hit vs_a is normalized and
-    returned without shared-cache access. Registry miss with no database returns null; otherwise request
-    get_managed_vector_store_rows_by_uuids(uuids=[vs_a]) and select the first row, or null for []. A registry
-    exception emits "Failed to resolve vector store id=%s from registry: %s" and HTTPException status=500,
-    detail="Unable to validate vector store access" without trying cache. Cache/conversion failure emits
-    "Failed to resolve vector store id=%s from shared cache: %s" with the same error. Helper type/param/code
-    remain absent; final HTTP envelopes belong to route owners.
-  proof: [endpoint-tests, oracle, helper-python]
-- text: >-
-    managed_owner_assertion allows an unknown provider id and returns null, but a managed vs_a owned by
-    team=a denies an ungranted team=b with HTTPException 403,detail="Access denied: You do not have permission to access this vector store".
-    A supplied detail="blocked here" replaces that text. Granted calls return the normalized managed
-    record. The assertion does not fetch credentials or turn a missing unmanaged id into 404.
-  proof: [endpoint-tests, oracle, helper-python]
 - text: >-
     endpoint_pattern_matching accepts literal /search anywhere in a route, not just at a segment boundary.
     Pattern /vector_stores/{id}/files matches any route containing /vector_stores/, regardless of its suffix;
@@ -89,19 +68,16 @@ checks:
     why: the endpoint policy enum tag has no new parser seed
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/vector_endpoint_access-*)" && grep -qE '^[[:space:]]+vector_endpoint_access:' tools/oracle/fuzz/corpus/helper_case/vector_endpoint_access-* && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-core-ops --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
-- tools/oracle/cases/helpers/vector-endpoint-access/managed-id-resolution.yaml
-- tools/oracle/cases/helpers/vector-endpoint-access/managed-owner-assertion.yaml
 - tools/oracle/cases/helpers/vector-endpoint-access/endpoint-pattern-matching.yaml
 - tools/oracle/cases/helpers/vector-endpoint-access/index-grant-metadata.yaml
 - tools/oracle/cases/helpers/vector-endpoint-access/write-before-read-and-lifecycle.yaml
 - tools/oracle/cases/helpers/vector-endpoint-access/attachment-endpoint-policy.yaml
 deviations: []
 out_of_scope:
-- B1060 owns utils.py:25-257 normalization, owner grants and lifecycle recognition; B1062 registry lookup and B749 shared-cache row loading.
+- B1060 owns utils.py:25-257 normalization, owner grants and lifecycle recognition. B10014 owns utils.py:260-353, the managed-id resolution and the ownership assertions.
 - B741 owns canonical request routing; B527/B558 own provider endpoint tables. Gateway response conversion and actual provider HTTP remain in route/SDK tasks.
 pitfalls:
 - 'The oracle helper for this task is pre-registered as vector_endpoint_access in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/vector_endpoint_access.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vector_endpoint_access.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
-- Registry failure is a 500 access-validation failure, not an unmanaged-id fallback.
 - The placeholder matcher uses only the prefix before the first brace and does not validate the remaining path.
 - Unknown attached-file endpoints return null while unknown store endpoints raise 403.
 review_level: security

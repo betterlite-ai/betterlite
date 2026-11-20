@@ -1,0 +1,43 @@
+kind: sdk_http
+name: messages-native-original-stream-survives-websearch-conversion
+env: {}
+call:
+  messages_native_execute:
+    request:
+      max_tokens: 1024
+      messages:
+        - {role: user, content: "search rust"}
+      model: claude-sonnet-4-20250514
+      metadata: {user_id: u_1}
+      stop_sequences:
+      stream: true
+      system:
+      temperature:
+      thinking:
+      tool_choice:
+      tools:
+        - {name: web_search, type: web_search_20250305, max_uses: 1}
+      top_k:
+      top_p:
+      api_key: sk-test
+      custom_llm_provider: anthropic
+      kwargs: {}
+    provider:
+    hooks:
+      - effect: mutate
+        values:
+          stream: false
+    searches:
+      - answer:
+          id: msg_04
+          type: message
+          role: assistant
+          model: claude-sonnet-4-20250514
+          content:
+            - {type: text, text: search answer}
+          stop_reason: end_turn
+          stop_sequence:
+          usage: {input_tokens: 3, output_tokens: 4}
+    interceptors: []
+upstream: []
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}

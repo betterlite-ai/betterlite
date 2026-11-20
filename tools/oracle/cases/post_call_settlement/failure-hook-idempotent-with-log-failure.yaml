@@ -1,0 +1,17 @@
+kind: helper
+name: post-call-settlement-failure-hook-idempotent-with-log-failure
+call:
+  b3046:
+    function: failure_hook
+    call_id: call-1
+    stash:
+      owner_call_id: call-1
+      reservation_released: true
+      reserved_tokens: 1000
+      reserved_scopes:
+        - [user, alice]
+      batch_tokens: 900
+      batch_tpd_ops:
+        - {key: "{api_key:key-1}:tokens", increment_value: -50, ttl: 60}
+env: {}
+compare: {ignore: []}

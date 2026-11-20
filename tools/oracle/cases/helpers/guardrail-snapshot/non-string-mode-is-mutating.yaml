@@ -1,0 +1,16 @@
+kind: helper
+name: guardrail-snapshot-non-string-mode-is-mutating
+call:
+  b9999:
+    function: mutating_ran
+    metadata:
+      standard_logging_guardrail_information:
+        - guardrail_mode: [during_call, 7]
+calls:
+  - b9999:
+      function: mutating_ran
+      metadata:
+        standard_logging_guardrail_information:
+          - guardrail_mode: null
+env: {}
+compare: {ignore: []}

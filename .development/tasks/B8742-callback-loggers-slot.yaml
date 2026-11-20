@@ -23,7 +23,7 @@ description: >-
   `ResolvedLogger` answer becomes `Arc<dyn CallbackLogger>`: Prometheus, Datadog, NewRelicMetrics and GenericApi carry
   types that implement the trait (B8561, B3933, B3944, B8252). LitellmAgent becomes a `HookLogger` defined here, which
   holds the name litellm_agent and keeps every trait default, since LiteLLM's LiteLLMAgentModelResolver overrides no
-  logging event; its prompt role stays with B8655's PromptLoggerFactory. When the server gives None for a name it has
+  logging event; its prompt role stays with the PromptLoggerFactory that B8747 builds. When the server gives None for a name it has
   an arm for (newrelic without a team key, or a generic_api entry with missing endpoint or headers), fall through to
   `self.catalog.resolve(name)` only for newrelic, whose global trace logger the catalog builds (B8746); for the other
   server names return Ok(None), as LiteLLM's arm returns None. Every remaining name goes to the catalog. Errors keep

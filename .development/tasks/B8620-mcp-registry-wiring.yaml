@@ -64,8 +64,8 @@ description: >-
   Decryptor of B6763 implemented over B1600's StoredCipher (decrypt_value_helper with return_original_value false, so
   a failure is None).
 
-  6. SSO assertions: one B4663 SsoAssertionCache, and config_declares_id_jag computed once from the config file's
-  mcp_servers as B4663's text says. B8622 builds the assertion store over both.
+  6. SSO assertions: one B10011 SsoAssertionCache, and config_declares_id_jag computed once from the config file's
+  mcp_servers as B10011's text says. B8622 builds the assertion store over both.
 
   7. Separator check: McpState::build calls B8970's startup_diagnostics::check_separator once with the
   MCP_TOOL_PREFIX_SEPARATOR value from item 2, so an invalid separator logs one warning per process.

@@ -29,7 +29,7 @@ description: >-
 
   3. SSO assertions (sso.rs). B4664's SsoClientSource returns sso_client_config over the GENERIC_* map B8620's
   mcp_gateway_env section loaded. CoordinatorFactory is B4657's refresh_coordinator_factory over the RedisChain parts
-  (None without Redis). The store is LiteLLM's default_sso_assertion_store: B4663's DbSsoAssertionStore with rows over
+  (None without Redis). The store is LiteLLM's default_sso_assertion_store: B10011's DbSsoAssertionStore with B10010's PostgresAssertionRows over
   the database (None without one), the DbCipher over B1600, McpCore's SsoAssertionCache and config_declares_id_jag,
   wrapped in B4664's RefreshingAssertionStore with its refresher over `shared.http`, the access port, the factory,
   B4656's in-process coordinator, skew 60 seconds and a system clock. Hand that store to B4667's credential resolver as

@@ -6,8 +6,9 @@ description: >-
   `async_post_call_success_hook` and `run_pillar_guardrail` (pillar.py L196-L496). Without them a configured
   `guardrail: pillar` has nothing to run. Build them as `PillarGuard` in betterlite-guardrails, module pillar_runtime
   (crates/betterlite-guardrails/src/pillar_runtime.rs and pillar_runtime/, with error.rs and tests.rs). B8218 builds the
-  initializer arguments (`PillarArgs` in third_party_init_b), B8521 holds the spec variant, and B8666 constructs this
-  value and dispatches the hooks to it, so this task registers nothing and reads no process globals.
+  initializer arguments (`PillarArgs` in third_party_init_b), B8521 holds the spec variant, and B8666 dispatches the hooks. B8666 leaves
+  the Pillar arm of LiveGuardrail::build answering NotBuilt, so this task puts that arm in place (building this value with
+  the pooled client), registers nothing else and reads no process globals.
 
 
   Config section pillar_runtime (crates/betterlite-config/src/sections/pillar_runtime.rs and its folder; the skeleton
@@ -67,6 +68,7 @@ scope:
     - crates/betterlite-guardrails/src/pillar_runtime/**
     - crates/betterlite-config/src/sections/pillar_runtime.rs
     - crates/betterlite-config/src/sections/pillar_runtime/**
+    - crates/betterlite-server/src/guardrail_dispatch/live.rs
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/pillar/pillar.py#L180-L306
@@ -106,7 +108,7 @@ deviations: []
 out_of_scope:
   - "Payload, headers, the protect call, response processing, evidence headers, the boolean resolver and the API error fallback (pillar.py L48-L168 and L502-L838): B3790."
   - "get_config_model returns the form model: B6562's form tables. get_supported_event_hooks: B8521's supported hook list."
-  - "The initializer and its _get_config_value helper: B8218. The spec variant: B8521. Building this value, the pooled client and the hook dispatch: B8666."
+  - "The initializer and its _get_config_value helper: B8218. The spec variant: B8521. The hook dispatch: B8666. Building this value in its LiveGuardrail arm: this task."
   - "add_guardrail_to_applied_guardrails_header: B3680 (MetadataGuardrailRecorder). should_run_guardrail: B3665."
   - "The PillarGuardrailMissingSecrets and PillarGuardrailAPIError classes are only Python exception names; the first becomes this module's error variant and the second has no raiser at the pin."
   - "The booted-proxy cases: B9464."
