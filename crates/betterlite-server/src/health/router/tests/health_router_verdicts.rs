@@ -117,6 +117,7 @@ fn strategy_router_verdicts_boundaries() {
     assert_unusable_ids_are_no_fault();
     assert_keyed_order();
     assert_evaluation_dependency_ignored();
+    assert_plain_deployment_gets_no_verdict();
     assert_unknown_endpoints_ignored();
 }
 
@@ -215,6 +216,18 @@ fn assert_evaluation_dependency_ignored() {
     let lookup = fixture.lookup();
     assert!(
         strategy_router_verdicts(&[healthy("router-id")], &[], &rows, &lookup)
+            .unwrap()
+            .is_empty()
+    );
+}
+
+// A plain deployment carries no dependencies, so a healthy probe of it gains no verdict whatever it is called.
+fn assert_plain_deployment_gets_no_verdict() {
+    let rows = vec![deployment("leaf", "leaf-id", r#"{"model":"openai/leaf"}"#)];
+    let fixture = Fixture::new(&rows);
+    let lookup = fixture.lookup();
+    assert!(
+        strategy_router_verdicts(&[healthy("leaf-id")], &[], &rows, &lookup)
             .unwrap()
             .is_empty()
     );
