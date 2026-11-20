@@ -1,0 +1,105 @@
+kind: helper
+name: messages-response-events-reasoning-item-closure
+call:
+  messages_response_events:
+    message_id: msg_closure
+    model: model_a
+    redaction: enabled
+    steps:
+      - function: process_event
+        event:
+          shape: mapping
+          fields:
+            type: response.output_item.added
+            item: {type: reasoning, id: reason_a}
+      - {function: process_event, event: {shape: mapping, fields: {type: response.output_text.delta, item_id: reason_a, delta: text}}}
+      - function: process_event
+        event:
+          shape: mapping
+          fields:
+            type: response.output_item.done
+            item: {type: reasoning, id: reason_a, encrypted_content: cipher}
+      - function: process_event
+        event:
+          shape: mapping
+          fields:
+            type: response.output_item.done
+            item: {type: reasoning, id: other, encrypted_content: cipher}
+      - function: process_event
+        event:
+          shape: mapping
+          fields:
+            type: response.output_item.done
+            item: {type: reasoning, id: third}
+      - function: process_event
+        event:
+          shape: mapping
+          fields:
+            type: response.output_item.done
+            item: {type: reasoning, id: reason_a}
+      - function: process_event
+        event:
+          shape: mapping
+          fields:
+            type: response.output_item.done
+            item: {type: reasoning, encrypted_content: cipher}
+      - function: process_event
+        event:
+          shape: mapping
+          fields:
+            type: response.output_item.done
+            item: {type: reasoning, id: fourth, encrypted_content: ""}
+      - function: process_event
+        event:
+          shape: mapping
+          fields:
+            type: response.output_item.done
+            item: {type: reasoning, id: fifth, encrypted_content: null}
+calls:
+  - messages_response_events:
+      message_id: msg_text_block
+      model: model_a
+      redaction: enabled
+      steps:
+        - function: process_event
+          event:
+            shape: mapping
+            fields:
+              type: response.output_item.added
+              item: {type: message, id: text_a}
+        - {function: process_event, event: {shape: mapping, fields: {type: response.output_text.delta, item_id: text_a, delta: t}}}
+        - function: process_event
+          event:
+            shape: mapping
+            fields:
+              type: response.output_item.done
+              item: {type: reasoning, id: unmapped, encrypted_content: cipher}
+        - function: process_event
+          event:
+            shape: mapping
+            fields:
+              type: response.output_item.done
+              item: {type: reasoning}
+  - messages_response_events:
+      message_id: msg_attributes
+      model: model_a
+      redaction: enabled
+      steps:
+        - function: process_event
+          event:
+            shape: attributes
+            attributes: {type: response.reasoning_summary_text.delta, item_id: reason_attr, delta: think}
+        - function: process_event
+          event:
+            shape: attributes
+            attributes:
+              type: response.output_item.done
+              item: {type: reasoning, id: reason_attr, encrypted_content: attr_cipher}
+        - function: process_event
+          event:
+            shape: attributes
+            attributes:
+              type: response.output_item.done
+              item: {type: reasoning, id: ghost, encrypted_content: ghost_cipher}
+env: {}
+compare: {ignore: []}

@@ -60,6 +60,10 @@ description: >-
   both. Helper b5838 calls these functions with typed inputs and compares the pinned LiteLLM classes. Source size is 374
   nonblank, noncomment lines. Plan about 400 production lines, 300 test lines, 190 adapter lines and 80 fuzz and wiring
   lines.
+
+  Dispatch arms. B8311 builds the OpenRouter and Vercel AI Gateway call sites in betterlite-provider's gateway_provider_dispatch and answers provider edenai with "no gateway provider dispatch is installed for 'edenai'". Add the Eden AI arms there: EDENAI_API_KEY, EDENAI_API_BASE and B6100's EdenAiEnv in the gateway_provider_keys section (api_key from EDENAI_API_KEY, api_base from EDENAI_API_BASE, global_api_key from the global api_key); _complete_edenai (main.py L3626-L3649: api_base from B6100's chat get_api_base, api_key from its get_api_key with the global api_key, headers or the global headers, the handler with custom_llm_provider edenai and provider_config, then post_call with the resolved key and the response); the completion arm (L5926-L5927); the embedding arm (L6597-L6611, which passes api_base, api_key and headers exactly as they came); the speech arm (L8319-L8333, voice only when it is a string, the selected speech config or else this task's Eden AI speech config, B1084's handler); this task's media configs where B5360 returns their tags; and the edenai models GET with no Authorization header. Add the cases edenai-chat, edenai-embedding and edenai-speech-args under B8311's case folders, and the Eden AI media cases edenai-image, edenai-transcription and edenai-speech under tools/oracle/cases/http/aggregator-media that B041 no longer carries (edenai-video goes to B3343).
+
+  Case details. gateway-providers/edenai-chat and edenai-embedding send POST /v1/chat/completions and POST /v1/embeddings for edenai models with api_base at the mock upstream, and helpers/gateway-provider-dispatch/edenai-speech-args checks the speech arm's argument building through B8311's b8311 helper adapter, which this task extends. The aggregator-media cases set EDENAI_API_KEY and EDENAI_API_BASE to the mock /v3 base, so the public default https://api.edenai.run/v3 is never contacted. edenai-image uses edenai/openai/gpt-image-1-mini with n, size and output_format and expects /v3/images/generations with seller model openai/gpt-image-1-mini, returning deterministic image data, usage and top-level cost. edenai-transcription uses edenai/openai/whisper-1 with a WAV upload, language en and response_format json, then a text-format step: /v3/audio/transcriptions gets a file and flat form fields, and the returned text and JSON usage are kept. edenai-speech uses edenai/openai/tts-1 with input, voice alloy, response_format mp3 and speed, captures the JSON body at /v3/audio/speech and returns a small UTF-8-safe byte fixture with x-edenai-cost; compare every byte and the content type. Eden speech reads x-edenai-cost from the headers, while image and transcription read the JSON cost field.
 scope:
   paths:
     - crates/betterlite-openai/src/edenai_transcription.rs
@@ -79,6 +83,20 @@ scope:
     - tools/oracle/helpers/b5838/**
     - tools/oracle/src/helpers/openai/b5838.rs
     - tools/oracle/src/helpers/openai/b5838/**
+    - tools/oracle/cases/gateway-providers/edenai-chat.yaml
+    - tools/oracle/cases/gateway-providers/edenai-embedding.yaml
+    - tools/oracle/cases/helpers/gateway-provider-dispatch/edenai-speech-args.yaml
+    - tools/oracle/helpers/b8311.py
+    - tools/oracle/helpers/b8311/**
+    - tools/oracle/src/helpers/provider/b8311.rs
+    - tools/oracle/src/helpers/provider/b8311/**
+    - tools/oracle/cases/http/aggregator-media/edenai-image.yaml
+    - tools/oracle/cases/http/aggregator-media/edenai-transcription.yaml
+    - tools/oracle/cases/http/aggregator-media/edenai-speech.yaml
+    - crates/betterlite-provider/src/gateway_provider_dispatch.rs
+    - crates/betterlite-provider/src/gateway_provider_dispatch/**
+    - crates/betterlite-config/src/sections/gateway_provider_keys.rs
+    - crates/betterlite-config/src/sections/gateway_provider_keys/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/edenai/audio_transcription/transformation.py#L25-L91
@@ -118,6 +136,10 @@ dod:
     proof: [edenai-image-tests, helper-python, helper-case-corpus]
   - text: The new helper cases replay through the shared helper-case parser.
     proof: [helper-case-corpus]
+  - text: "The edenai chat, embedding and speech arms build the same arguments and upstream requests as LiteLLM."
+    proof: [oracle]
+  - text: "Eden image, transcription and speech routes pass seller models and credentials and keep the provider payload, content type and reported cost."
+    proof: [oracle]
 checks:
   optional: [mutants]
   commands:
@@ -161,6 +183,12 @@ oracle_cases:
   - tools/oracle/cases/helpers/edenai-media/speech-params-and-body.yaml
   - tools/oracle/cases/helpers/edenai-media/speech-cost-header.yaml
   - tools/oracle/cases/helpers/edenai-media/image-params-and-request.yaml
+  - tools/oracle/cases/gateway-providers/edenai-chat.yaml
+  - tools/oracle/cases/gateway-providers/edenai-embedding.yaml
+  - tools/oracle/cases/helpers/gateway-provider-dispatch/edenai-speech-args.yaml
+  - tools/oracle/cases/http/aggregator-media/edenai-image.yaml
+  - tools/oracle/cases/http/aggregator-media/edenai-transcription.yaml
+  - tools/oracle/cases/http/aggregator-media/edenai-speech.yaml
 deviations:
   - what: On a video status, content or list reply with an error status, betterlite returns EdenAiError with that status, the body text and the headers.
     why: LiteLLM calls raise_for_status and lets httpx.HTTPStatusError escape. The status code reaches the client the same way, and a typed error carries the provider body without Python's exception text.

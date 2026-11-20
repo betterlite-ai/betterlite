@@ -1,0 +1,101 @@
+kind: helper
+name: messages-response-events-failure-projection
+call:
+  messages_response_events:
+    message_id: msg_projection
+    model: model_a
+    redaction: enabled
+    steps:
+      - {function: project_failure, failure: {kind: plain, text: m, message: m, type: null, code: null, status_code: 429, body: null, original_exception: null}}
+      - {function: project_failure, failure: {kind: plain, text: m, message: m, type: null, code: null, status_code: "٤٢٩", body: null, original_exception: null}}
+      - {function: project_failure, failure: {kind: plain, text: m, message: m, type: null, code: null, status_code: true, body: null, original_exception: null}}
+      - {function: project_failure, failure: {kind: plain, text: m, message: m, type: null, code: null, status_code: 429.0, body: null, original_exception: null}}
+      - {function: project_failure, failure: {kind: plain, text: m, message: m, type: null, code: null, status_code: "+429", body: null, original_exception: null}}
+      - {function: project_failure, failure: {kind: plain, text: m, message: m, type: null, code: null, status_code: " 429 ", body: null, original_exception: null}}
+      - {function: project_failure, failure: {kind: plain, text: m, message: m, type: null, code: null, status_code: 399, body: null, original_exception: null}}
+      - {function: project_failure, failure: {kind: plain, text: m, message: m, type: null, code: null, status_code: 600, body: null, original_exception: null}}
+      - {function: project_failure, failure: {kind: plain, text: m, message: m, type: null, code: null, status_code: "abc", body: null, original_exception: null}}
+      - {function: project_failure, failure: {kind: plain, text: m, message: m, type: null, code: null, status_code: null, body: null, original_exception: null}}
+      - {function: project_failure, failure: {kind: plain, text: m, message: m, type: null, code: null, status_code: 400, body: null, original_exception: null}}
+      - {function: project_failure, failure: {kind: plain, text: m, message: m, type: null, code: null, status_code: 599, body: null, original_exception: null}}
+      - {function: project_failure, failure: {kind: plain, text: boom, message: busy, type: null, code: null, status_code: 400, body: null, original_exception: null}}
+      - {function: project_failure, failure: {kind: plain, text: boom, message: 429, type: null, code: null, status_code: 400, body: null, original_exception: null}}
+      - {function: project_failure, failure: {kind: plain, text: boom, message: 3.5, type: null, code: null, status_code: 400, body: null, original_exception: null}}
+      - {function: project_failure, failure: {kind: plain, text: boom, message: null, type: null, code: null, status_code: 400, body: null, original_exception: null}}
+      - {function: project_failure, failure: {kind: plain, text: boom, message: "", type: null, code: null, status_code: 400, body: null, original_exception: null}}
+      - {function: project_failure, failure: {kind: plain, text: boom, message: x, type: null, code: null, status_code: 400, body: null, original_exception: null}}
+      - {function: project_failure, failure: {kind: plain, text: "", message: null, type: null, code: null, status_code: null, body: null, original_exception: null}}
+calls:
+  - messages_response_events:
+      message_id: msg_chain
+      model: model_a
+      redaction: enabled
+      steps:
+        - function: project_failure
+          failure:
+            kind: mid_stream_fallback
+            text: outer
+            message: wrapped
+            type: null
+            code: null
+            status_code: 502
+            body: null
+            original_exception:
+              kind: mid_stream_fallback
+              text: inner
+              message: null
+              type: null
+              code: null
+              status_code: 503
+              body: null
+              original_exception:
+                kind: plain
+                text: boom
+                message: busy
+                type: null
+                code: null
+                status_code: "٤٢٩"
+                body: null
+                original_exception: null
+        - function: project_failure
+          failure:
+            kind: mid_stream_fallback
+            text: outer
+            message: "litellm.MidStreamFallbackError: outer"
+            type: null
+            code: null
+            status_code: 503
+            body: null
+            original_exception: null
+  - messages_response_events:
+      message_id: msg_chunks
+      model: model_a
+      redaction: enabled
+      steps:
+        - {function: error_chunk, status_code: 400, message: plain}
+        - {function: error_chunk, status_code: 401, message: plain}
+        - {function: error_chunk, status_code: 403, message: plain}
+        - {function: error_chunk, status_code: 404, message: plain}
+        - {function: error_chunk, status_code: 413, message: plain}
+        - {function: error_chunk, status_code: 429, message: plain}
+        - {function: error_chunk, status_code: 500, message: plain}
+        - {function: error_chunk, status_code: 529, message: plain}
+        - {function: error_chunk, status_code: 418, message: plain}
+        - {function: error_chunk, status_code: 500, message: '{"type":"error","error":{"type":"custom_type","message":"from upstream"}}'}
+        - {function: error_chunk, status_code: 500, message: '{"detail":"d"}'}
+  - messages_response_events:
+      message_id: msg_secrets
+      model: model_a
+      redaction: enabled
+      steps:
+        - {function: error_chunk, status_code: 500, message: "sk-1234567890abcdef boom"}
+        - {function: error_chunk, status_code: 500, message: "sk-SECRET boom"}
+        - function: process_event
+          event:
+            shape: mapping
+            fields:
+              type: response.failed
+              response:
+                error: {type: rate_limit_error, message: "sk-1234567890abcdef busy"}
+env: {}
+compare: {ignore: []}

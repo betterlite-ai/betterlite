@@ -36,7 +36,7 @@ betterlite-semantic = { path = "../betterlite-semantic" }
 betterlite-streaming = { path = "../betterlite-streaming" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
 caseless = "0.2.2"
-chrono = { version = "0.4.45", default-features = false, features = ["serde"] }
+chrono = { version = "0.4.45", default-features = false, features = ["now", "serde"] }
 deadpool-postgres.workspace = true
 futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
 hex.workspace = true

@@ -1,0 +1,18 @@
+kind: helper
+name: auth_tag_budgets_seed
+call:
+  auth_tag_budgets:
+    function: tags
+    database: true
+    names: [tag-seed, tag-seed]
+    cached:
+      - tag_name: tag-seed
+        models: []
+        spend: 0.0
+    rows:
+      - tag_name: tag-seed
+        models: [model-seed]
+        spend: 1.0
+    fail_query: false
+env: {}
+compare: {ignore: []}

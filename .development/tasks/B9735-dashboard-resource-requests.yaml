@@ -79,15 +79,21 @@ description: >-
   these startup calls but its bootstrap oracle list does not cover their management-form
   consumption. No new runtime settings or renamed LITELLM_* variables are introduced here.
 
+  Later work. The MCP server, access group, toolset and tool reads (B4720, B4725 and B4727,
+  mounted by B8625, B8701 and B8626), the agents list (B4784, mounted by B8647), the vector
+  store list (B1070), the search tool and plugin lists (B3275 mounted by B8673, B992 and B993),
+  the policy list and policy info reads (B3248 mounted by B8669, B3250 mounted by B9321) and the
+  prompt list mount (B8672) belong to later tasks, and those tasks add their own page cases.
+  This task sends none of those requests; the tag half of the prompt and tag case stays here
+  as tag-options.
+
   Audit evidence: none of these exact page requests exists in tools/oracle/cases; the only
   on-disk /models case is the bare path described above. B8625/B8626/B8701/B8647/B8667/B8669/
   B8672/B8673/B8640 have future mounting cases, B829/B993/B1070/B1604/B348/B1660/B8681 future
   route cases, and B3250 planned empty/not-initialized cases. They are not on disk and do not
   prove a populated set of options under the page's user/team scope. Preserve their ownership.
   The requests here use fixed model/config resources and B860's minimal user/team/key seed;
-  Toolsets use B4725 POST /v1/mcp/toolset for setup. Populate the database-only plugin catalog
-  through B992 POST /claude-code/plugins and tags through B1603 POST /tag/new, capturing their
-  IDs; these are setup routes, not additional page calls. Other catalogs use accepted owner
+  Populate tags through B1603 POST /tag/new, capturing their IDs; these are setup routes, not additional page calls. Other catalogs use accepted owner
   config keys and the existing local upstream fixture. Keep their normal default settings
   unless a case explicitly tests a supported override; do not invent extra seed fields.
   An empty successful catalog is acceptable only alongside a populated case, never as the
@@ -158,9 +164,9 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2669-L2698
     why: Authenticated SSO settings for invitation/default-team controls.
 dod:
-  - text: Every reachable shared selector receives the expected populated IDs, labels, policy metadata and response envelope through the booted gateway.
+  - text: Every reachable shared selector receives the expected populated IDs, labels, guardrail metadata and response envelope through the booted gateway.
     proof: [selector-cases, oracle, selector-components]
-  - text: Model flags, MCP/team scope, raw agent arrays, guardrail fallback and public versus authenticated settings retain their actual client contracts.
+  - text: Model flags, team scope, guardrail fallback and public versus authenticated settings retain their actual client contracts.
     proof: [oracle, selector-components]
 checks:
   optional: []
@@ -176,14 +182,8 @@ oracle_cases:
   - tools/oracle/cases/ui/management-selectors/model-groups-for-router-fallbacks.yaml
   - tools/oracle/cases/ui/management-selectors/openapi-form-schema-read.yaml
   - tools/oracle/cases/ui/management-selectors/budget-options-array.yaml
-  - tools/oracle/cases/ui/management-selectors/mcp-servers-and-group-labels.yaml
-  - tools/oracle/cases/ui/management-selectors/mcp-toolsets-and-tools.yaml
-  - tools/oracle/cases/ui/management-selectors/agents-raw-list.yaml
-  - tools/oracle/cases/ui/management-selectors/vector-store-options-no-page-query.yaml
-  - tools/oracle/cases/ui/management-selectors/search-and-skill-options.yaml
   - tools/oracle/cases/ui/management-selectors/guardrail-v2-and-v1.yaml
-  - tools/oracle/cases/ui/management-selectors/policy-names-and-resolved-guardrails.yaml
-  - tools/oracle/cases/ui/management-selectors/prompt-and-tag-options.yaml
+  - tools/oracle/cases/ui/management-selectors/tag-options.yaml
   - tools/oracle/cases/ui/management-selectors/router-and-passthrough-options.yaml
   - tools/oracle/cases/ui/management-selectors/public-ui-and-authenticated-sso-settings.yaml
 deviations: []

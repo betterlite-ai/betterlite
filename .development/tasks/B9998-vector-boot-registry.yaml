@@ -1,0 +1,144 @@
+id: B9998
+title: Vector store registries for Shared, their config and database loading and the startup wiring
+description: >-
+  LiteLLM keeps two vector store registries as module globals, litellm.vector_store_registry and
+  litellm.vector_store_index_registry, both None at import (litellm/__init__.py L1517-L1518). The vector_store_registry
+  block of config.yaml creates the store registry and loads it before the server starts (_init_non_llm_configs,
+  L7080-L7089), and the database loaders create either one on the first rows they read (L8872-L8913). B8614 ran config
+  boot without vector stores: its BootRegistries answers the vector_store_registry key with an error that stops
+  startup, B8384's sync runs nothing at the vector_stores and vector_store_indexes positions, and neither B8613 nor
+  B8610 makes or holds the registries. This task builds the one value the server holds, fills it from config and the
+  database the way LiteLLM does, hands it to Shared, and replaces each of those stubs.
+
+
+  Server side, module `server_registries::vectors`: crates/betterlite-server/src/server_registries/vectors.rs and
+  server_registries/vectors/. Add `pub mod vectors;` to server_registries.rs, which B8614 wrote. `VectorStores` holds
+  B1062's store registry and index registry (read core::api::vector_store_registry for the merged type names), each an
+  Option behind a std RwLock, None until a loader creates it, so a reader can still tell "no registry" from "an empty
+  registry" as LiteLLM's `is None` checks do (B8641's has_store_registry and has_index_registry answer from this).
+  `VectorStores::new()` (pub, the binary calls it) starts with both None. Give it read and write access that keeps the
+  None case visible, for the loaders here and for B1063's tool selection, B8641's adapters and the vector store routes.
+  It cannot fail, so it has no error enum.
+
+
+  Config boot, in B8614's crates/betterlite/src/boot_registries.rs. BootRegistries gains `vectors: Arc<VectorStores>`,
+  which BootRegistries::new takes as its last argument. The `vector_stores` stub becomes real, as L7080-L7089 do: when
+  the store registry is None, create an empty one, then load the vector_store_registry list into it with B1062's config
+  load. B1062's error maps into B8590's `ConfigBootError::Step` with step "vector_store_registry" and that error as
+  source; entries loaded before a bad one stay, since B1062 appends one at a time. Delete B8614's
+  `boot_unbuilt_vector_store_registry` test. When B9997 already replaced the MCP stubs, delete the NotBuilt variant
+  too (and BootRegistryError with it when no variant is left); otherwise it stays for them. In
+  docs/deviations/B8614.yaml drop vector_store_registry from the not-built row, and the row itself once no key is left.
+
+
+  Database loading, in B8384's crates/betterlite/src/db_object_sync.rs. DbObjectSync gains the same
+  Arc<VectorStores>, and sync_non_llm_objects runs two loaders at their LiteLLM positions, after policies and before
+  mcp, each when B8380's should_load_db_object allows its kind. `init_vector_stores(db)` (vector_stores,
+  L8872-L8889) reads the stores with B1062's database load over B726's repository; no rows returns and leaves the
+  registry as it is, a None registry is created holding the rows, and an existing one gets each store through B1062's
+  add, which keeps the first record of an id it already has. `init_vector_store_indexes(db)` (vector_store_indexes,
+  L8891-L8913) does the same with B1062's index load, creating the index registry from the rows or upserting each
+  index by name. Each catches its own error and logs
+  "litellm.proxy.proxy_server.py::ProxyConfig:_init_vector_stores_in_db - {error}"; the index loader logs that same
+  text, as LiteLLM does. Delete B8384's vector store row in docs/deviations/B8384.yaml.
+
+
+  Startup, in B8613's crates/betterlite/src/lifespan.rs and lifespan/. At the registries step, make one
+  `VectorStores::new()` next to the AgentRegistry and before load_non_llm_configs, and hand clones of that Arc to
+  BootRegistries, to the one DbObjectSync the lifespan builds (read B8374's and B8613's merged code for where), and to
+  Started as `vector_stores: Arc<VectorStores>`. In betterlite-server, B8610's StartupOutputs (server/inputs.rs) gains
+  `vector_stores`, run_proxy copies it from Started, and Shared (state/shared.rs) gains `vector_stores:
+  Arc<VectorStores>`, set from it in application(). Add the field to every Shared and StartupOutputs literal the tests
+  in scope build. B8641's VectorRegistryAdapter and B097's RAG routes read `shared.vector_stores`.
+
+
+  Tests. server_registries::vectors tests (names start with `vectors_`) assert both registries start None and a
+  registry created through one clone is seen through another. boot_registries tests (in B8614's boot_registries/tests.rs, names start with `vectors_`)
+  load a config with one vector store and assert the store registry now exists and holds it, and that an entry
+  without vector_store_id returns B1062's error under the vector_store_registry step with the earlier entry kept.
+  db_object_sync tests (names start with `vector_db_`) use in-memory repositories: empty tables leave both registries
+  None, rows create them, an existing registry keeps its first record for a known id and upserts an index by name, a
+  failing read is logged with LiteLLM's text and the next loader still runs, and a closed gate loads nothing. A shared
+  test (`shared_vector_stores`) asserts Shared.vector_stores is Arc::ptr_eq with the StartupOutputs value, and a
+  lifespan test (`handoff_vector_stores`) asserts BootRegistries, DbObjectSync and Started hold the same VectorStores.
+  Counts: about 40 non-blank LiteLLM lines (the config block and the two database loaders). No oracle case: the
+  routes that read the registries are mounted by the vector store and RAG route tasks, which add the cases.
+
+  Pass-through vector adapters. B8641 writes no-vector-store adapters in crates/betterlite-server/src/app/pass_through/ports/vector.rs. Replace them with the real ones over this task's vector_stores field: VectorRegistryAdapter over B1062 (is_index, index by name) and B1063 (store by name), with has_index_registry and has_store_registry true only when that registry exists; VectorAccessAdapter with B1061's assert_user_can_access_vector_store and is_allowed_to_call_vector_store_endpoint (keep only its error) and B1060's assert_proxy_admin_for_vector_store_index_management with operation create, also backing B3623's VertexStoreAccess with B1061's get_litellm_managed_vector_store; and the Milvus arm of VectorProviderAdapter over B7892's MilvusProviderPorts (auth_headers is get_auth_credentials, complete_url is get_complete_url).
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/server_registries/vectors.rs
+    - crates/betterlite-server/src/server_registries/vectors/**
+    - crates/betterlite-server/src/state/shared.rs
+    - crates/betterlite-server/src/state/shared/**
+    - crates/betterlite-server/src/server.rs
+    - crates/betterlite-server/src/server/inputs.rs
+    - crates/betterlite-server/src/server/inputs/**
+    - crates/betterlite-server/src/server/tests.rs
+    - crates/betterlite-server/src/routes/tests.rs
+    - crates/betterlite-server/src/cost_service/tests.rs
+    - crates/betterlite/Cargo.toml
+    - crates/betterlite/src/boot_registries.rs
+    - crates/betterlite/src/boot_registries/**
+    - crates/betterlite/src/db_object_sync.rs
+    - crates/betterlite/src/db_object_sync/**
+    - crates/betterlite/src/lifespan.rs
+    - crates/betterlite/src/lifespan/**
+    - docs/deviations/B8614.yaml
+    - docs/deviations/B8384.yaml
+    - crates/betterlite-server/src/app/pass_through/ports/vector.rs
+    - crates/betterlite-server/src/app/pass_through/ports/vector/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L1517-L1518
+    why: Both registries are None until something creates them.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7080-L7089
+    why: The vector_store_registry config block creates the store registry when it is None, then loads the list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L8243-L8262
+    why: The vector_stores and vector_store_indexes positions in _init_non_llm_objects_in_db, each behind its own gate.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L8872-L8913
+    why: _init_vector_stores_in_db and _init_vector_store_indexes_in_db, with the empty-table return and the shared log text.
+dod:
+  - text: VectorStores holds both registries as None until a loader creates them, and every clone sees the same registries.
+    proof: [vectors-registry-tests]
+  - text: BootRegistries creates the store registry and loads vector_store_registry into it, returns B1062's error under the vector_store_registry step, and B8614's stub test is gone.
+    proof: [vectors-boot-tests]
+  - text: The database loaders leave the registries alone on empty tables, create them from the first rows, add stores and upsert indexes into existing ones, honour both gates and log each failure.
+    proof: [vectors-db-tests]
+  - text: Startup makes one VectorStores and the same Arc reaches BootRegistries, DbObjectSync, Started and shared.vector_stores.
+    proof: [wiring-tests]
+  - text: The existing boot, sync, lifespan, Shared and server tests still pass with the new fields.
+    proof: [regressions]
+checks:
+  optional: []
+  commands:
+    - id: vectors-registry-tests
+      why: a registry exists before any loader created it, or a clone holds a different registry
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^server_registries::vectors::/)'
+    - id: vectors-boot-tests
+      why: a configured vector_store_registry still hits the stub, loads into a copy, or swallows B1062's error
+      run: test -z "$(grep -rl boot_unbuilt_vector_store_registry crates/betterlite/src/boot_registries.rs crates/betterlite/src/boot_registries)" && cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^boot_registries::tests::vectors_/)'
+    - id: vectors-db-tests
+      why: a database vector store loader is missing, creates an empty registry, replaces a known store, ignores its gate or stops the sync on an error
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^db_object_sync::.*::vector_db_/)'
+    - id: wiring-tests
+      why: startup builds a second VectorStores or Shared holds a different one than config boot and the database loaders fill
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^state::shared::tests::shared_vector_stores/)' && cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^lifespan::.*::handoff_vector_stores/)'
+    - id: regressions
+      why: the new BootRegistries, DbObjectSync, Started, StartupOutputs or Shared field broke an existing boot, sync, lifespan, Shared, server or route test
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^boot_registries::tests::vectors_/)' && cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^boot_registries::/) | test(/^db_object_sync::/) | test(/^lifespan::/)' && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^server_registries::/) | test(/^state::shared::/) | test(/^server::/) | test(/^routes::tests::/) | test(/^cost_service::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The registries, their config and database load functions, add, upsert and lookups: B1062. Tool selection over them: B1063. The vector store and RAG routes: their own tasks."
+  - "The MCP registry and its loading: B9997. The other database loaders and their order: B8384."
+pitfalls:
+  - The vector store loaders do nothing on an empty table; they never clear entries and never create an empty registry.
+  - VectorStores::new must not create empty registries, since has_store_registry and has_index_registry answer false only while a registry is None.
+  - The index loader logs the _init_vector_stores_in_db text too, as LiteLLM does; do not rename it to the index function.
+  - Leaving boot_unbuilt_vector_store_registry behind keeps asserting the stub error this task removes.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

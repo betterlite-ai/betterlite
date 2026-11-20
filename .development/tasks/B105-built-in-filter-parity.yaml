@@ -7,7 +7,7 @@ description: >-
   filtering uses the separate all-word loop in _filter_single_text. Build its typed
   lookup and add HTTP parity cases for the built-in combinations that the earlier
   helper-only tasks could not reach. B8613 installs B8666's real classes, B8399 runs
-  proxy hooks, B8668 mounts apply_guardrail, and B8626 mounts MCP REST. Call those
+  proxy hooks, and B8668 mounts apply_guardrail. Call those
   existing paths; no route, callback registry, constructor, matcher or stream wrapper
   is registered or implemented again here. B8850 supplies the missing prompt-injection
   callback and its own HTTP cases; the final mixed case here uses it with a content filter.
@@ -41,7 +41,7 @@ description: >-
   OpenAI deployments with api_base {{upstream}}, and router_settings.num_retries 0.
   Set guardrails[].litellm_params.guardrail to litellm_content_filter and select each
   guardrail through the request's guardrails list unless a case tests default_on.
-  Modes are pre_call, post_call or pre_mcp_call as named below. Content filter action
+  Modes are pre_call or post_call as named below. Content filter action
   names are BLOCK and MASK, and its default severity_threshold is medium. Capture
   provider requests as well as responses so a 200 cannot hide a skipped input scan.
   Compare status, error type/param/code, content-type and x-litellm-applied-guardrails
@@ -96,22 +96,6 @@ description: >-
   the outer wrapper; failures here must be reported to those owners, not repaired
   by adding a second streaming implementation.
 
-  mcp-argument-mask calls the existing POST /mcp-rest/tools/call with server_id,
-  name and arguments, one mcp_servers entry with transport http, url {{upstream}}
-  and a pinned server_id, and a default-on
-  pre_mcp_call content filter. Compare the tools/call arguments observed by the MCP
-  mock, including nested string redaction and unchanged bool/numeric fields. The
-  mock captures six requests: LiteLLM's startup listing of the server
-  (initialize, notifications/initialized, tools/list), then the call's own session
-  (initialize, notifications/initialized, tools/call). Script the replies in that
-  order with the existing upstream answer queue: initialization returns no
-  Mcp-Session-Id, notifications return 202, and each JSON-RPC reply echoes its
-  request's id, which counts from 1 in each session. Do not assume an OpenAI
-  completion response is an MCP reply. Each initialize body carries its own side's
-  clientInfo, so name B9850's `/upstream/0/body` and `/upstream/3/body` in
-  compare.ignore with that reason. Keep protocol methods, ids and arguments in the
-  other four bodies compared. Do not build a transport or mount /mcp,
-  /mcp/proxy, /toolset/{toolset_name}/mcp or /{mcp_server_name}/mcp, which B8728 owns.
   apply-aliases masks text through POST /guardrails/apply_guardrail and /apply_guardrail
   in a two-step scenario and compares response_text. no-auth uses the canonical
   apply path without authorization and checks refusal before class execution.
@@ -176,7 +160,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1640-L1700
     why: B3699's refuse and reframe effects must survive the HTTP error and passthrough adapters.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1756-L1955
-    why: B3699's argument scans and B8773's orchestration reached by chat and MCP cases, not new implementations here.
+    why: B3699's argument scans and B8773's orchestration reached by chat cases, not new implementations here.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L2032-L2153
     why: B3700's buffered stream output as observed after the real SSE wrapper.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/block_code_execution/block_code_execution.py#L496-L588
@@ -185,12 +169,6 @@ references:
     why: All four authenticated chat aliases used by the scenario; their handler is already owned.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L2337-L2453
     why: B3687's apply handler and both decorators, mounted by B8668.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L1159-L1260
-    why: The MCP tools/call decorator and accepted body fields; B8626 owns its mount.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6671-L6714
-    why: Config load lists the server's tools at startup, the first MCP session the mock captures in mcp-argument-mask.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L543-L570
-    why: Each MCP session opens with initialize, whose clientInfo differs per side, then notifications/initialized.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/cache_control_check.py#L16-L58
     why: B3705's nonempty allowlist enforcement, now tested with a real authenticated key through chat.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L1940-L2150
@@ -204,7 +182,7 @@ dod:
     proof: [lookup-tests, oracle, helper-python]
   - text: Fresh b105 helper-case seeds replay through the existing typed helper decoder.
     proof: [helper-corpus]
-  - text: Booted-proxy cases cover category and competitor policy effects, aliases and activation, ordered masking and credential redaction, images, chat/MCP tool arguments, stream masking and late blocks, and both code-execution outcomes.
+  - text: Booted-proxy cases cover category and competitor policy effects, aliases and activation, ordered masking and credential redaction, images, chat tool arguments, stream masking and late blocks, and both code-execution outcomes.
     proof: [oracle]
   - text: The apply aliases preserve redacted text and auth, and a process with both prompt-injection and content-filter configuration runs each check on its triggering request.
     proof: [oracle]
@@ -243,7 +221,6 @@ oracle_cases:
   - tools/oracle/cases/guardrails/builtin-content-http/image-description-block.yaml
   - tools/oracle/cases/guardrails/builtin-content-http/streamed-split-mask.yaml
   - tools/oracle/cases/guardrails/builtin-content-http/streamed-block-after-prefix.yaml
-  - tools/oracle/cases/guardrails/builtin-content-http/mcp-argument-mask.yaml
   - tools/oracle/cases/guardrails/builtin-content-http/apply-aliases.yaml
   - tools/oracle/cases/guardrails/builtin-content-http/no-auth.yaml
   - tools/oracle/cases/guardrails/builtin-content-http/code-request-response-block.yaml
@@ -262,7 +239,7 @@ out_of_scope:
   - "examples/README.md documents B3697/B8773 behavior and needs no executable port; llamaguard_prompt.txt has no caller at the pin in the open-source checkout, so no loader is built."
   - "SensitiveDataRoutingHandler and its cache policy are B3704, its registration is B8399, and handling a SensitiveDataRoute exception is B8392. No open-source built-in emits that exception at the pin. The cache-control hook is B3705 and is likewise installed by B8399."
   - "Code execution class/detection are B3701/B3702. Prompt-injection logic is B3703 and binding is B8850. hide_secrets is the missing-enterprise-package outcome owned by B3681, not a native secret detector."
-  - "Route ownership remains B8610 for the root, B8667/B8668/B8669/B8790 for the guardrail area, B8626 for MCP REST, B8701 for toolsets, B9950 for sessions and B8728 for MCP transport. No route or mount is added by this umbrella."
+  - "Route ownership remains B8610 for the root, B8667/B8668/B8669/B8790 for the guardrail area, B8626 for MCP REST, B8701 for toolsets, B9950 for sessions and B8728 for MCP transport. The mcp-argument-mask case and its two MCP capture pitfalls go to B8626, since B8614 stops startup on a config mcp_servers entry until the MCP registry lands. No route or mount is added by this umbrella."
 pitfalls:
   - "_check_blocked_words uses literal substring search, whereas _filter_single_text turns an asterisk into .? and evaluates every configured word."
   - "The four chat aliases include engines and deployments paths; /openai/v1/chat/completions is not a decorator on this handler."
@@ -271,8 +248,6 @@ pitfalls:
   - "block_code_execution uses lowercase block/mask, unlike the content filter's uppercase BLOCK/MASK."
   - "A stream block after the first emitted data cannot be tested as an ordinary HTTP 400 response."
   - "Benchmark expected labels and recorded timings are not the oracle; compare the pinned running implementation, including its false positives and false negatives."
-  - "compare.ignore reaches a captured MCP request only through B9850's whole-body selector, so a pointer to a JSON-RPC id inside a body is refused; the dispatcher of mcp 2.3.0 (the version tools/oracle/litellm/uv.lock installs) numbers ids from 1 in each session (jsonrpc_dispatcher.py _allocate_id), so they need no ignore."
-  - "LiteLLM lists every mcp_servers entry's tools at startup (mcp_server_manager.py L6683-L6714), so mcp-argument-mask's first three captures come before its own request; run it with --self-check first and take the selector indices from that capture."
 review_level: security
 budget:
   max_changed_lines: 1500

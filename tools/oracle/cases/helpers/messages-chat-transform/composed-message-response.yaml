@@ -1,0 +1,64 @@
+kind: helper
+name: messages-chat-transform-composed-message-response
+call:
+  messages_chat_transform:
+    operation: response
+    response:
+      id: chat_a
+      model: gpt-4o
+      choices:
+      - finish_reason: stop
+        message:
+          content: hello
+          tool_calls: []
+          reasoning_content: null
+          thinking_blocks: null
+          refusal: null
+          provider_specific_fields: null
+      usage:
+        prompt_tokens: 10
+        completion_tokens: 2
+        prompt_tokens_details: null
+        server_tool_use: null
+        cache_read_input_tokens: null
+        cache_creation_input_tokens: null
+        _cache_read_input_tokens: null
+        _cache_creation_input_tokens: null
+    tool_name_mapping: null
+    polyfill_result: null
+calls:
+- messages_chat_transform:
+    operation: response
+    response:
+      id: chat_b
+      model: gpt-4o
+      choices:
+      - finish_reason: stop
+        message:
+          content: hello
+          tool_calls: []
+          reasoning_content: null
+          thinking_blocks: null
+          refusal: null
+          provider_specific_fields: null
+      usage:
+        prompt_tokens: 10
+        completion_tokens: 2
+        prompt_tokens_details: null
+        server_tool_use: null
+        cache_read_input_tokens: null
+        cache_creation_input_tokens: null
+        _cache_read_input_tokens: null
+        _cache_creation_input_tokens: null
+    tool_name_mapping: null
+    polyfill_result:
+      applied_edits:
+      - {type: clear_tool_uses_20250919, cleared_tool_uses: 1}
+      compaction_block:
+        type: compaction
+        content: older turns were compacted
+        signature: c2ln
+      iterations_usage:
+      - {type: compaction, input_tokens: 4, output_tokens: 1}
+env: {}
+compare: {ignore: []}
