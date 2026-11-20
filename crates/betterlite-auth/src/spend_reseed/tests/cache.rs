@@ -11,8 +11,8 @@ use rstest::rstest;
 use secrecy::SecretString;
 
 use super::support::decimal;
-use crate::spend_reseed::cache::ReseedCache as _;
-use crate::spend_reseed::cache::dual::{StoredValue, stored_value};
+use crate::spend_reseed::cache::dual::{ReseedCacheError, StoredValue, stored_value};
+use crate::spend_reseed::cache::{ReseedCache as _, WindowReseedCache as _};
 use crate::spend_reseed::values::ReseedCacheValue;
 
 fn settings() -> DualCacheSettings {
@@ -42,6 +42,8 @@ async fn dual_cache_memory_tier_round_trips_values() {
         cache.redis_set_nx("spend:key:t", decimal("2.5")).await,
         Ok(None)
     ));
+    let unavailable = cache.redis_increment("spend:key:t", decimal("1")).await;
+    assert!(matches!(unavailable, Err(ReseedCacheError::Unavailable)));
     let missing = cache.memory_get("spend:key:t").await.expect("the read");
     assert_eq!(missing, None);
 
@@ -76,6 +78,10 @@ async fn configured_redis_tier_reports_itself_and_refuses_reads() {
     cache.redis_get("spend:key:t").await.unwrap_err();
     cache
         .redis_set_nx("spend:key:t", decimal("2.5"))
+        .await
+        .unwrap_err();
+    cache
+        .redis_increment("spend:key:t", decimal("1"))
         .await
         .unwrap_err();
     // local_only skips the dead Redis tier entirely, so the increment still answers from memory
