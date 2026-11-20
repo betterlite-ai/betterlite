@@ -40,7 +40,10 @@ impl VideoParams {
     }
 }
 
-fn text(params: &Params, field: &'static str) -> Result<Option<&str>, FieldTypeError> {
+fn text<'params>(
+    params: &'params Params,
+    field: &'static str,
+) -> Result<Option<&'params str>, FieldTypeError> {
     match params.get(field) {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Text(value)) => Ok(Some(value.as_str())),

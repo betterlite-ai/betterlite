@@ -34,11 +34,11 @@ struct ExtensionReady {
 }
 
 // One extension call bound to its seams and config, so the steps take only the call's own values
-struct Extension<'call, Source: ?Sized, Log: ?Sized, Convert: ?Sized>
+struct Extension<'call, Source, Log, Convert>
 where
-    Source: VideoClientSource,
-    Log: VideoLoggingHandle,
-    Convert: VideoErrorConvert,
+    Source: VideoClientSource + ?Sized,
+    Log: VideoLoggingHandle + ?Sized,
+    Convert: VideoErrorConvert + ?Sized,
 {
     transport: &'call VideoTransport<'call, Source, Log, Convert>,
     config: &'call dyn BaseVideoConfig,

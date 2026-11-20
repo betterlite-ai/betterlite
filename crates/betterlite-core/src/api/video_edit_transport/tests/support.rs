@@ -54,6 +54,23 @@ fn refuse(message: &str) -> BoxError {
     })
 }
 
+fn plan<'plan, P>(planned: Option<&'plan P>, missing: &str) -> Result<&'plan P, BoxError>
+where
+    P: Planned,
+{
+    let Some(found) = planned else {
+        return Err(refuse(missing));
+    };
+    if let Some(message) = found.refusal_message() {
+        return Err(refuse(message));
+    }
+    Ok(found)
+}
+
+fn record<T>(slot: &Mutex<Option<T>>, value: T) {
+    *slot.lock().unwrap_or_else(PoisonError::into_inner) = Some(value);
+}
+
 #[derive(Clone, Default)]
 pub(crate) struct Events(Arc<Mutex<Vec<String>>>);
 
@@ -94,6 +111,7 @@ impl Reply {
         }
     }
 
+    #[must_use]
     pub(crate) fn with_header(mut self, name: &'static str, value: &str) -> Self {
         self.headers.insert(
             name,
@@ -255,6 +273,7 @@ impl FakeLog {
         Self::default().with_events(events)
     }
 
+    #[must_use]
     fn with_events(mut self, events: &Events) -> Self {
         self.events = events.clone();
         self
@@ -430,27 +449,10 @@ impl FakeConfig {
         Self::default().with_events(events)
     }
 
+    #[must_use]
     fn with_events(mut self, events: &Events) -> Self {
         self.events = events.clone();
         self
-    }
-
-    fn record<T>(&self, slot: &Mutex<Option<T>>, value: T) {
-        *slot.lock().unwrap_or_else(PoisonError::into_inner) = Some(value);
-    }
-
-    fn plan<'plan, P: Planned>(
-        &self,
-        plan: Option<&'plan P>,
-        missing: &str,
-    ) -> Result<&'plan P, BoxError> {
-        let Some(found) = plan else {
-            return Err(refuse(missing));
-        };
-        if let Some(message) = found.refusal_message() {
-            return Err(refuse(message));
-        }
-        Ok(found)
     }
 
     pub(crate) fn validated(&self) -> Option<Validated> {
@@ -524,16 +526,16 @@ impl FakeConfig {
         input: &VideoExtensionInput<'_>,
         context: &VideoRequestContext<'_>,
     ) -> Result<(String, Params), BoxError> {
-        let plan = self.plan(self.extension.as_ref(), "the fixture has no extension plan")?;
+        let extension_plan = plan(self.extension.as_ref(), "the fixture has no extension plan")?;
         self.events.push("extension-transform");
         let seen = extension_seen(input, context);
-        self.record(&self.extension_seen, seen);
-        Ok((plan.url.clone(), plan.data.clone()))
+        record(&self.extension_seen, seen);
+        Ok((extension_plan.url.clone(), extension_plan.data.clone()))
     }
 
     fn record_extension_reply(&self, reply: &VideoReply<'_>) {
         self.events.push("extension-response");
-        self.record(&self.extension_reply_seen, reply_seen(reply, None));
+        record(&self.extension_reply_seen, reply_seen(reply, None));
     }
 }
 
@@ -561,11 +563,9 @@ impl BaseVideoConfig for FakeConfig {
             model: model.to_owned(),
             api_base: api_base.map(ToOwned::to_owned),
         });
-        self.base.clone().ok_or_else(|| {
-            Box::new(Refusal {
-                message: "the fixture has no api base".to_owned(),
-            })
-        })
+        self.base
+            .clone()
+            .ok_or_else(|| refuse("the fixture has no api base"))
     }
 
     fn get_video_edit_prefetch_params(
@@ -590,7 +590,7 @@ impl BaseVideoConfig for FakeConfig {
         context: VideoRequestContext<'_>,
     ) -> Result<(String, Params, Option<RequestFiles>), BoxError> {
         self.events.push("edit-transform");
-        self.record(
+        record(
             &self.edit_seen,
             EditSeen {
                 prompt: input.prompt.to_owned(),
@@ -602,8 +602,12 @@ impl BaseVideoConfig for FakeConfig {
                 headers: context.headers.clone(),
             },
         );
-        let plan = self.plan(self.edit.as_ref(), "the fixture has no edit plan")?;
-        Ok((plan.url.clone(), plan.data.clone(), plan.files.clone()))
+        let edit_plan = plan(self.edit.as_ref(), "the fixture has no edit plan")?;
+        Ok((
+            edit_plan.url.clone(),
+            edit_plan.data.clone(),
+            edit_plan.files.clone(),
+        ))
     }
 
     fn transform_video_edit_response(
@@ -612,7 +616,7 @@ impl BaseVideoConfig for FakeConfig {
         request_data: Option<&Params>,
     ) -> Result<VideoObject, BoxError> {
         self.events.push("edit-response");
-        self.record(&self.edit_reply_seen, reply_seen(&reply, request_data));
+        record(&self.edit_reply_seen, reply_seen(&reply, request_data));
         self.answer()
     }
 
