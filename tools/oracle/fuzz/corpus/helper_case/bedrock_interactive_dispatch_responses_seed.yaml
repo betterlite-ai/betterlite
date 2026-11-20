@@ -1,0 +1,13 @@
+kind: helper
+name: bedrock-interactive-dispatch-responses-seed
+call:
+  bedrock_interactive_dispatch:
+    case: responses
+    runs:
+      - model: openai.gpt-oss-120b
+        input: keep
+        params: {}
+        status: 200
+        reply: '{}'
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,14 @@
+kind: helper
+name: tool_map_json_or_object
+call:
+  object_permissions:
+    raw: {"srv-a": ["t2", "t1"], "srv-b": null}
+calls:
+  - object_permissions:
+      raw: '{"srv-a": ["t2", "t1"], "srv-b": null}'
+  - object_permissions:
+      raw: {"srv-a": ["t1", "t1", "t2"]}
+  - object_permissions:
+      raw: {"srv-a": ["t1"], "srv-b": ["b2", "b1"], "srv-c": []}
+env: {}
+compare: {ignore: []}

@@ -13,6 +13,8 @@ async-trait = "0.1.92"
 aws-lc-rs = "1.19.0"
 base64 = "0.23.1"
 betterlite-anthropic = { path = "../betterlite-anthropic" }
+betterlite-bedrock = { path = "../betterlite-bedrock" }
+betterlite-bedrock-guardrails = { path = "../betterlite-bedrock-guardrails" }
 betterlite-compression = { path = "../betterlite-compression" }
 betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }
