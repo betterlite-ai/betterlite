@@ -31,7 +31,7 @@ fn alloy_session() -> IndexMap<String, Json> {
 fn assert_sdp_multipart_wire(answer: &UpstreamResponse, request: &Request) {
     assert_eq!(answer.status, 200);
     let head = &request.head;
-    assert!(head.starts_with("POST /v1/v1/realtime/calls HTTP/1.1"));
+    assert!(head.starts_with("POST /v1/realtime/calls HTTP/1.1"));
     assert!(
         head.to_ascii_lowercase()
             .contains("authorization: bearer ep-test")
