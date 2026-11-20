@@ -1,1 +1,133 @@
+mod body;
+mod client;
+mod error;
+mod handlers;
+mod operation;
+mod outcome;
+mod request;
 
+#[cfg(test)]
+mod tests;
+
+use std::collections::BTreeMap;
+use std::sync::Arc;
+
+use betterlite_azure::credentials::source::CredentialSources;
+use betterlite_config::sections::assistant_settings::Settings;
+use betterlite_config::sections::azure_endpoints;
+use betterlite_config::sections::resource_sdk_settings;
+use betterlite_core::api::api_boundaries::ApiLimits;
+use betterlite_models::decisions::Json;
+use betterlite_models::resolution::ResolutionContext;
+use betterlite_openai::assistants::transport::AssistantsTransport;
+use betterlite_openai::thread_runs::stream::{RunStream, RunStreamTransport};
+use betterlite_redact::secret::Redactor;
+
+pub use body::{AssistantBodyError, decode_assistant_body};
+pub use client::{AssistantClient, SuppliedClass};
+pub use error::{AssistantDispatchError, AssistantFailure};
+pub use operation::AssistantOperation;
+pub use outcome::AssistantOutcome;
+pub use request::AssistantRequest;
+
+// router.py#L7183-L7190: the exact text the factory raises when no provider is configured or passed
+const REQUIRED_PROVIDER: &str = "'custom_llm_provider' must be set. Either via:\n `Router(assistants_config={'custom_llm_provider': ..})` \nor\n `router.arun_thread(custom_llm_provider=..)`";
+
+// The callee Router.initialize_assistants_endpoint installs for the eight assistant wrappers.
+pub struct AssistantDispatcher<'deps, 'resolution, T, S> {
+    // assistant_settings: Router(assistants_config=..)
+    pub settings: &'deps Settings,
+    pub resources: &'deps resource_sdk_settings::Settings,
+    pub azure: &'deps azure_endpoints::Settings,
+    pub environment: &'deps BTreeMap<String, String>,
+    pub sources: S,
+    pub resolution: &'resolution ResolutionContext<'deps>,
+    pub redactor: &'deps Redactor,
+    pub transport: Arc<T>,
+    pub limits: ApiLimits,
+}
+
+// The factory's result: the provider it selected and the kwargs handed to the installed function.
+struct Merged {
+    provider: String,
+    kwargs: BTreeMap<String, Json>,
+}
+
+impl<'deps, 'resolution, T, S> AssistantDispatcher<'deps, 'resolution, T, S>
+where
+    T: AssistantsTransport + RunStreamTransport,
+    S: CredentialSources + Clone + Send + Sync,
+{
+    pub async fn dispatch(
+        &self,
+        request: &AssistantRequest<'_>,
+    ) -> Result<AssistantOutcome<RunStream<T>>, AssistantDispatchError> {
+        let merged = self.merge(request)?;
+        handlers::run(self, request, merged).await
+    }
+
+    // _pass_through_assistants_endpoint_factory: bind the caller's provider and client, overlay the
+    // configured litellm_params only when the provider is null, then call the installed function.
+    fn merge(&self, request: &AssistantRequest<'_>) -> Result<Merged, AssistantDispatchError> {
+        if let Some(name) = request.operation.path_argument() {
+            // the route passes this id as a keyword next to **data, so a body key of that name collides
+            if request.data.contains_key(name) {
+                return Err(AssistantDispatchError::multiple_values(name));
+            }
+        }
+        let caller = match request.data.get("custom_llm_provider") {
+            None | Some(Json::Null) => None,
+            Some(Json::Text(provider)) => Some(provider.clone()),
+            Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+                return Err(AssistantDispatchError::invalid("custom_llm_provider"));
+            }
+        };
+        let mut kwargs = request.data.clone();
+        kwargs.remove("custom_llm_provider");
+        kwargs.remove("client");
+        let provider = match caller {
+            Some(provider) => provider,
+            None => self.overlay(&mut kwargs)?,
+        };
+        // the installed function takes these two as its own named arguments, so a config copy collides
+        if kwargs.contains_key("custom_llm_provider") {
+            return Err(AssistantDispatchError::duplicate_argument(
+                request.operation.function(),
+                "custom_llm_provider",
+            ));
+        }
+        if kwargs.contains_key("client") {
+            return Err(AssistantDispatchError::duplicate_argument(
+                request.operation.function(),
+                "client",
+            ));
+        }
+        if let (Some(name), Some(value)) = (request.operation.path_argument(), request.path_value())
+        {
+            kwargs.insert(name.to_owned(), Json::Text(value.to_owned()));
+        }
+        Ok(Merged { provider, kwargs })
+    }
+
+    fn overlay(
+        &self,
+        kwargs: &mut BTreeMap<String, Json>,
+    ) -> Result<String, AssistantDispatchError> {
+        let Some(config) = self.settings.config.as_ref() else {
+            return Err(AssistantDispatchError::Exception {
+                message: String::from(REQUIRED_PROVIDER),
+            });
+        };
+        // AssistantsTypedDict is a runtime dict: the two keys are plain dictionary reads
+        let provider = config
+            .custom_llm_provider
+            .clone()
+            .ok_or_else(|| AssistantDispatchError::key_error("custom_llm_provider"))?;
+        let params = config
+            .litellm_params
+            .as_ref()
+            .ok_or_else(|| AssistantDispatchError::key_error("litellm_params"))?;
+        kwargs.extend(params.clone());
+        Ok(provider)
+    }
+}
