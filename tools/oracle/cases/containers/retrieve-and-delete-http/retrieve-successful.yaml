@@ -1,0 +1,18 @@
+kind: helper
+name: retrieve-successful
+call:
+  b3365:
+    operation: retrieve
+    asynchronous: false
+    container_id: cntr_1
+    api_key: sk-test
+    api_base: https://api.example/v1
+    extra_headers: {x-extra: "yes"}
+    extra_query: {limit: "5"}
+    reply:
+      status: 200
+      headers: {x-request-id: req_1}
+      body: '{"id":"cntr_1","object":"container","created_at":1740000000,"status":"running","name":"tools"}'
+    failure: answer
+env: {}
+compare: {ignore: []}

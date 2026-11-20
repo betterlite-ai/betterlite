@@ -1,11 +1,18 @@
+mod fakes;
+mod inputs;
+mod operations;
+
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+
+use inputs::StoreInput;
+use operations::store;
 
 pub(crate) struct Op;
 
 impl Helper for Op {
-    type Input = serde_json::Value;
+    type Input = StoreInput;
 
-    fn run(_input: &Self::Input) -> HelperResult {
-        Self::not_built("b3453")
+    fn run(input: &Self::Input) -> HelperResult {
+        store(input)
     }
 }
