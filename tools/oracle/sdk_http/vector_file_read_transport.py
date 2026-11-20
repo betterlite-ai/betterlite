@@ -25,8 +25,7 @@ Mode = Literal["sync", "async"]
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
-# VectorStoreFileObject's last_error is dict[str, Any] | None, and mypy rejects every expression
-# of a TypedDict carrying Any, so the retrieve result names its other fields instead
+# VectorStoreFileObject's last_error is dict[str, Any] | None, so mypy rejects expressions of it
 class ReadFileObject(TypedDict, total=False):
     id: str
     created_at: int
