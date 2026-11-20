@@ -338,6 +338,20 @@ fn a_team_member_without_a_team_reads_none_as_its_prefix() {
 }
 
 #[test]
+fn a_non_text_model_adds_no_model_descriptor() {
+    let fixture = Fixture::new();
+    let builder = fixture.builder(&[("gpt4", "gpt-4")]);
+    let auth = support::auth(
+        r#"{"api_key": "key-1", "rpm_limit": 10, "team_id": "team-1",
+            "metadata": {"model_rpm_limit": {"gpt-4": 7}},
+            "team_metadata": {"model_tpm_limit": {"gpt-4": 6}}}"#,
+    );
+    let data = support::data(r#"{"model": 5}"#);
+    let descriptors = create(&builder, &auth, &data, false);
+    assert_eq!(keys(&descriptors), ["api_key"]);
+}
+
+#[test]
 fn the_key_owned_descriptors_follow_the_handlers_order() {
     let fixture = Fixture::new();
     let builder = fixture.builder(&[]);
