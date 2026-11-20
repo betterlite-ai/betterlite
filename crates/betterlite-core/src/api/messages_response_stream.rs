@@ -41,13 +41,12 @@ pub enum MessagesResponseStreamResult {
     End,
 }
 
-// AnthropicResponsesStreamWrapper's iteration: B1119's queue and flags, the upstream it pulls, and a cursor past the chunks already emitted.
+// AnthropicResponsesStreamWrapper's iteration: B1119's state, the upstream it pulls, and the chunks it holds for the next call.
 pub struct MessagesResponseStream<S> {
     state: MessageStreamState,
     source: S,
     model: String,
     pending: VecDeque<Json>,
-    emitted: usize,
 }
 
 impl<S> MessagesResponseStream<S> {
@@ -69,7 +68,6 @@ impl<S> MessagesResponseStream<S> {
             source,
             model,
             pending: VecDeque::new(),
-            emitted: 0,
         }
     }
 
@@ -80,21 +78,19 @@ impl<S> MessagesResponseStream<S> {
     where
         S: ResponsesEventSource,
     {
-        self.collect();
         if let Some(chunk) = self.pending.pop_front() {
             return Ok(MessagesResponseStreamResult::Chunk(chunk));
         }
-        let snapshot = self.state.snapshot();
-        if snapshot.stream_failed.0 {
+        let flags = self.state.stream_flags();
+        if flags.stream_failed.0 {
             return Ok(MessagesResponseStreamResult::End);
         }
-        if !snapshot.sent_message_start.0 {
+        if !flags.sent_message_start.0 {
             self.start_message()?;
-            self.collect();
+            self.pending.extend(self.state.take_chunks());
             return Ok(self.take());
         }
         self.fill().await?;
-        self.collect();
         Ok(self.take())
     }
 
@@ -122,7 +118,7 @@ impl<S> MessagesResponseStream<S> {
                 Err(failure) => return self.failed_pull(&failure),
             };
             self.process(&event)?;
-            self.collect();
+            self.pending.extend(self.state.take_chunks());
         }
         Ok(())
     }
@@ -150,15 +146,15 @@ impl<S> MessagesResponseStream<S> {
                 self.model
             );
             fail_with(&mut self.state, &cause_from(&error))?;
-            self.collect();
+            self.pending.extend(self.state.take_chunks());
         }
         Ok(())
     }
 
     // The end-of-stream guard: a stream with no message_stop and no failure gets the 500 incomplete-stream error.
     fn exhausted(&mut self) -> Result<(), MessagesResponseStreamError> {
-        let snapshot = self.state.snapshot();
-        if !self.pending.is_empty() || snapshot.sent_message_stop.0 || snapshot.stream_failed.0 {
+        let flags = self.state.stream_flags();
+        if !self.pending.is_empty() || flags.sent_message_stop.0 || flags.stream_failed.0 {
             return Ok(());
         }
         tracing::error!(
@@ -176,7 +172,7 @@ impl<S> MessagesResponseStream<S> {
             original_exception: None,
         };
         fail_with(&mut self.state, &failure)?;
-        self.collect();
+        self.pending.extend(self.state.take_chunks());
         Ok(())
     }
 
@@ -187,7 +183,7 @@ impl<S> MessagesResponseStream<S> {
             self.model
         );
         fail_with(&mut self.state, failure)?;
-        self.collect();
+        self.pending.extend(self.state.take_chunks());
         Ok(())
     }
 
@@ -200,17 +196,6 @@ impl<S> MessagesResponseStream<S> {
             mapping: Some(&fields),
         })?;
         Ok(())
-    }
-
-    // B1119's queue only grows, so the wrapper keeps a cursor and moves each new chunk into its own queue once.
-    fn collect(&mut self) {
-        let mut chunks = self.state.snapshot().chunks;
-        if chunks.len() <= self.emitted {
-            return;
-        }
-        let unseen = chunks.split_off(self.emitted);
-        self.emitted = self.emitted.saturating_add(unseen.len());
-        self.pending.extend(unseen);
     }
 
     // The chunk at the head of the wrapper's queue, or the end when none is queued.

@@ -315,6 +315,28 @@ async fn queued_chunks_are_returned_before_the_next_pull() {
     ended(&mut stream).await;
 }
 
+// The state keeps no stream history: every queued chunk moves into the wrapper once and leaves B1119's queue.
+#[tokio::test]
+async fn the_state_queue_does_not_grow_with_the_stream() {
+    let mut stream = stream(scripted(&[COMPLETED]));
+    assert_eq!(next(&mut stream).await, message_start());
+    assert!(
+        stream.state.snapshot().chunks.is_empty(),
+        "the message_start moved out of the state"
+    );
+    assert_eq!(next(&mut stream).await, json(MESSAGE_DELTA));
+    assert!(
+        stream.state.snapshot().chunks.is_empty(),
+        "the terminal pair moved out of the state"
+    );
+    assert_eq!(next(&mut stream).await, json(MESSAGE_STOP));
+    assert!(
+        stream.state.snapshot().chunks.is_empty(),
+        "the message stop moved out of the state"
+    );
+    ended(&mut stream).await;
+}
+
 // A failed event queues its error chunk, and the next call ends the iteration without a pull.
 #[tokio::test]
 async fn a_failed_event_ends_the_iteration() {
