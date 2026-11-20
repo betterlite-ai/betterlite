@@ -15,7 +15,6 @@ request:
   body:
     model: proxy-embedding-model
     input: ["hello"]
-    encoding_format: none
 upstream:
   - status: 200
     headers: {content-type: application/json}
