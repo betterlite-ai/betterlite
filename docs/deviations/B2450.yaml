@@ -21,6 +21,12 @@ deviations:
   - what: "A transport failure that is not a timeout carries betterlite's typed TransportError text as the message, where LiteLLM uses str() of the httpx exception, such as \"[Errno 111] Connection refused\"."
     why: "The synthesized 500 status and the empty header list match LiteLLM; betterlite keeps the failure typed, so its Display names the failure instead of echoing the HTTP library's error text."
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6077-L6111"
+  - what: "litellm_params.ssl_verify is read as a boolean or absent on every call, so the CA bundle path and the boolean strings such as \"true\" that LiteLLM's get_ssl_verify accepts fail with the typed FieldType error for litellm_params.ssl_verify, even when a supplied client of the matching kind answers and LiteLLM never reads the value."
+    why: "betterlite's litellm_params map is typed and its shared client takes a boolean TLS policy, so a string has no field to reach; naming the field keeps the error honest instead of accepting a value the send would ignore. LiteLLM reads ssl_verify only when it builds a client, so a caller that relies on the string forms has to pass a client here rather than a string."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L331-L367"
+  - what: "A multipart request whose transformed value is a JSON object, or a list holding one, fails before the send with the typed FormValue error naming the field, where LiteLLM hands the dict to httpx, whose form encoder raises inside the handler's try and _handle_error turns into a synthesized 500 BaseLLMException with an empty header list."
+    why: "HTTP cannot carry an object as a form field on either side, so both send nothing; betterlite names the field instead of reporting a 500 as if the provider had answered, and no working setup puts an object in a multipart generation body."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7005-L7029"
 kept_bugs:
   - what: The handler accepts extra_body and never merges it into the request it sends, so a caller passing extra_body gets a request without those fields.
     why: The image generation signature carries extra_body for callers shared with other endpoints; a working setup already gets requests without those fields, and merging them would change what is sent on the wire.
