@@ -54,21 +54,17 @@ pub async fn handle_update_object_permission_common(
 // A valid non-object value, whether it arrived as JSON or as a JSON string, becomes an empty record.
 fn permission_fields(value: JsonData) -> Result<BTreeMap<String, JsonData>, ObjectPermissionError> {
     match value {
-        JsonData::String(text) => permission_fields_from_text(&text),
         JsonData::Object(fields) => Ok(fields),
+        JsonData::String(text) => {
+            let JsonData::Object(fields) = decode_object_permission(text.as_bytes())?.json else {
+                return Ok(BTreeMap::new());
+            };
+            Ok(fields)
+        }
         JsonData::Null | JsonData::Bool(_) | JsonData::Number(_) | JsonData::Array(_) => {
             Ok(BTreeMap::new())
         }
     }
-}
-
-fn permission_fields_from_text(
-    text: &str,
-) -> Result<BTreeMap<String, JsonData>, ObjectPermissionError> {
-    let JsonData::Object(fields) = decode_object_permission(text.as_bytes())?.json else {
-        return Ok(BTreeMap::new());
-    };
-    Ok(fields)
 }
 
 pub(crate) fn object_permission_id_of(row: &JsonData) -> Result<String, ObjectPermissionError> {

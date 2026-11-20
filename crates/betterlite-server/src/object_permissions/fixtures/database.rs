@@ -100,27 +100,13 @@ impl TestDatabase {
     }
 
     // A stored grant is a JSON string, so the seed wraps the grant text into a jsonb string.
-    pub(crate) async fn seed_permission(
-        &self,
-        object_permission_id: &str,
-        servers: &str,
-        tools: Option<&str>,
-    ) {
-        self.execute(
-            SEED_PERMISSION_SQL,
-            &[&object_permission_id, &servers, &tools],
-        )
-        .await;
+    pub(crate) async fn seed_permission(&self, id: &str, servers: &str, tools: Option<&str>) {
+        self.execute(SEED_PERMISSION_SQL, &[&id, &servers, &tools])
+            .await;
     }
 
-    pub(crate) async fn seed_server(
-        &self,
-        server_id: &str,
-        server_name: Option<&str>,
-        alias: Option<&str>,
-    ) {
-        self.execute(SEED_SERVER_SQL, &[&server_id, &server_name, &alias])
-            .await;
+    pub(crate) async fn seed_server(&self, id: &str, name: Option<&str>, alias: Option<&str>) {
+        self.execute(SEED_SERVER_SQL, &[&id, &name, &alias]).await;
     }
 
     pub(crate) async fn permission_row(
