@@ -6,6 +6,7 @@ use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use betterlite_router::model_catalog_lookup::lookup::CatalogLookup;
 
 use self::error::RouterHealthError;
+use crate::health_probe_settings::targeting::filter_deployments_by_id;
 use crate::router_dependencies::dependencies::strategy_router_dependencies;
 use crate::router_dependencies::{StrategyRouterDependency, StrategyRouterDependencyRole};
 
@@ -45,19 +46,40 @@ pub fn resolved_deployment_ids(
     Ok(Some(ids))
 }
 
-// _deployments_by_id and filter_deployments_by_id: the universe rows for ids, one per id, in universe order.
+// _deployments_by_id: the universe rows for ids, through the same keep-first dedupe the request path uses.
 fn deployments_by_id(universe: &[DeploymentSpec], ids: &BTreeSet<String>) -> Vec<DeploymentSpec> {
-    let mut seen: BTreeSet<&str> = BTreeSet::new();
-    let mut kept = Vec::new();
-    for deployment in universe {
-        let Some(id) = deployment_id(deployment) else {
+    let matched: Vec<DeploymentSpec> = universe
+        .iter()
+        .filter(|deployment| deployment_id(deployment).is_some_and(|id| ids.contains(id)))
+        .cloned()
+        .collect();
+    filter_deployments_by_id(&matched)
+}
+
+// The dependency model names a round expands to, with the evaluation classifier left out.
+fn dependency_names(frontier: &[DeploymentSpec]) -> BTreeSet<String> {
+    frontier
+        .iter()
+        .flat_map(|deployment| strategy_router_dependencies(&deployment.litellm_params))
+        .filter(|dependency| dependency.role != StrategyRouterDependencyRole::Evaluation)
+        .map(|dependency| dependency.model_name)
+        .collect()
+}
+
+// The ids those names resolve to that the sweep has not reached yet.
+fn fresh_ids(
+    lookup: &CatalogLookup<'_>,
+    names: &BTreeSet<String>,
+    reached: &BTreeSet<String>,
+) -> Result<BTreeSet<String>, RouterHealthError> {
+    let mut fresh = BTreeSet::new();
+    for name in names {
+        let Some(resolved) = resolved_deployment_ids(lookup, name)? else {
             continue;
         };
-        if ids.contains(id) && seen.insert(id) {
-            kept.push(deployment.clone());
-        }
+        fresh.extend(resolved.into_iter().filter(|id| !reached.contains(id)));
     }
-    kept
+    Ok(fresh)
 }
 
 // ast-grep-ignore: no-long-names - LiteLLM's _dependency_deployments_to_probe, kept for parity
@@ -74,21 +96,7 @@ pub fn dependency_deployments_to_probe(
     let mut reached = checked_ids.clone();
     let mut frontier = checked.to_vec();
     for _ in 0..universe.len() {
-        let mut names: BTreeSet<&str> = BTreeSet::new();
-        for deployment in &frontier {
-            for dependency in strategy_router_dependencies(&deployment.litellm_params) {
-                if dependency.role != StrategyRouterDependencyRole::Evaluation {
-                    names.insert(dependency.model_name.as_str());
-                }
-            }
-        }
-        let mut fresh: BTreeSet<String> = BTreeSet::new();
-        for name in names {
-            let Some(resolved) = resolved_deployment_ids(lookup, name)? else {
-                continue;
-            };
-            fresh.extend(resolved.into_iter().filter(|id| !reached.contains(id)));
-        }
+        let fresh = fresh_ids(lookup, &dependency_names(&frontier), &reached)?;
         if fresh.is_empty() {
             break;
         }
@@ -142,10 +150,12 @@ fn marked_routers<'checked>(
     healthy_endpoints: &[Endpoint],
     checked: &'checked [DeploymentSpec],
 ) -> BTreeMap<String, &'checked DeploymentSpec> {
-    let by_id: BTreeMap<&str, &DeploymentSpec> = checked
-        .iter()
-        .filter_map(|deployment| Some((deployment_id(deployment)?, deployment)))
-        .collect();
+    let mut by_id: BTreeMap<&str, &DeploymentSpec> = BTreeMap::new();
+    for deployment in checked {
+        if let Some(id) = deployment_id(deployment) {
+            by_id.insert(id, deployment);
+        }
+    }
     let mut marked = BTreeMap::new();
     for endpoint in healthy_endpoints {
         let Some(id) = endpoint.model_id.as_deref() else {
