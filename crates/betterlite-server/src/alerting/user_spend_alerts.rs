@@ -220,7 +220,7 @@ fn anomaly_event(
         kind: UserSpendAlertKind::Anomaly,
         alert_type: AlertType::UserSpendAnomalies,
         message: format!(
-            "User Spend Anomaly Detected:\nUser: `{}`\nSpend Today: `${daily:.2}`\nDaily Average (last {} days): `{average:.2}`\nTrigger: spend above `{}x` the daily average (minimum `{minimum:.2}`)",
+            "User Spend Anomaly Detected:\nUser: `{}`\nSpend Today: `${daily:.2}`\nDaily Average (last {} days): `${average:.2}`\nTrigger: spend above `{}x` the daily average (minimum `${minimum:.2}`)",
             row.user_id,
             args.spend_anomaly_baseline_days,
             float_text(multiplier),
