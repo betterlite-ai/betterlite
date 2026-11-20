@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 mod support;
+mod units;
 
 use std::net::TcpListener;
 use std::time::Duration;
