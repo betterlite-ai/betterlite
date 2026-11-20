@@ -6,8 +6,8 @@ use serde_json::Number;
 
 use super::super::service::Operation;
 use super::support::{
-    API_BASE, Fixture, REQUEST_TIMEOUT, Recorded, Resolution, Spy, VECTOR_STORE_ID, call_aupdate,
-    call_delete, call_update, deleted, success,
+    API_BASE, Fixture, REQUEST_TIMEOUT, Recorded, Resolution, Spy, VECTOR_STORE_ID, call_adelete,
+    call_aupdate, call_delete, call_update, deleted, success,
 };
 use crate::api::vector_store_http_write::service::ClientKind;
 
@@ -42,6 +42,18 @@ async fn seen_delete(
     request_timeout_seconds: f64,
 ) -> Recorded {
     call_delete(spy, fixture, resolution, request_timeout_seconds)
+        .await
+        .expect("the write succeeds");
+    spy.seen().expect("the service saw the write")
+}
+
+async fn seen_adelete(
+    spy: &Spy,
+    fixture: &Fixture,
+    resolution: &Resolution,
+    request_timeout_seconds: f64,
+) -> Recorded {
+    call_adelete(spy, fixture, resolution, request_timeout_seconds)
         .await
         .expect("the write succeeds");
     spy.seen().expect("the service saw the write")
@@ -146,6 +158,17 @@ async fn delete_logs_the_id_alone() {
             Json::Text(String::from(VECTOR_STORE_ID)),
         )])
     );
+}
+
+#[tokio::test]
+async fn adelete_sets_the_flag_itself() {
+    let spy = Spy::replying(deleted());
+    let resolution = Resolution::new();
+    let fixture = Fixture::new();
+    let seen = seen_adelete(&spy, &fixture, &resolution, REQUEST_TIMEOUT).await;
+    assert_eq!(seen.operation, Operation::Delete);
+    assert_eq!(seen.mode, ClientKind::Asynchronous);
+    assert_eq!(seen.litellm_params.get("adelete"), None);
 }
 
 #[tokio::test]

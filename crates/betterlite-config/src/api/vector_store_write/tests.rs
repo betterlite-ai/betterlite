@@ -1,9 +1,12 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::time::Duration;
 
-use super::loads_request_timeout;
+use crate::loader::EnvironmentLookup;
+
+use super::{Borrowed, loads_request_timeout};
 
 fn environment(variables: &[(&str, &str)]) -> BTreeMap<String, String> {
     variables
@@ -14,6 +17,28 @@ fn environment(variables: &[(&str, &str)]) -> BTreeMap<String, String> {
 
 fn seconds(value: f64) -> Duration {
     Duration::try_from_secs_f64(value).expect("the timeout is a whole number of seconds")
+}
+
+// an environment whose only extra is the home lookup the loader forwards
+struct Home(PathBuf);
+
+impl EnvironmentLookup for Home {
+    fn lookup(&self, _name: &str) -> Option<String> {
+        None
+    }
+
+    fn system_home(&self) -> Option<PathBuf> {
+        Some(self.0.clone())
+    }
+}
+
+#[test]
+fn forwards_the_system_home() {
+    let home = Home(PathBuf::from("/opt/litellm"));
+    assert_eq!(
+        Borrowed(&home).system_home(),
+        Some(PathBuf::from("/opt/litellm"))
+    );
 }
 
 #[test]
