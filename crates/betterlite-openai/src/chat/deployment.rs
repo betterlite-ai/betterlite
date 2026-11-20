@@ -64,6 +64,8 @@ pub struct OpenAiDefaults {
     pub api_bases: Vec<String>,
     pub api_keys: Vec<SecretString>,
     pub organization: Option<String>,
+    // litellm_settings.drop_params, which openai.py reads before the call's own drop_params
+    pub global_drop_params: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -83,6 +85,7 @@ pub struct ChatDeployment {
     pub weight: u32,
     pub rpm: u32,
     pub tpm: u32,
+    pub global_drop_params: bool,
 }
 
 impl ChatDeployment {
@@ -142,6 +145,7 @@ impl ChatDeployment {
             weight: params.weight.unwrap_or_default(),
             rpm: params.rpm.unwrap_or_default(),
             tpm: params.tpm.unwrap_or_default(),
+            global_drop_params: defaults.global_drop_params,
             litellm_model,
             provider,
         })

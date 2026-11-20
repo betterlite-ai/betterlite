@@ -107,6 +107,7 @@ pub(crate) fn openai_defaults(config: &LoadedConfig) -> OpenAiDefaults {
             .organization
             .clone()
             .or_else(|| settings.openai_organization.clone()),
+        global_drop_params: config.sections.drop_params.policy.global_drop_params,
     }
 }
 

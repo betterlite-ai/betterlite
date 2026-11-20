@@ -29,7 +29,19 @@ fn defaults() -> OpenAiDefaults {
         api_bases: vec![String::new(), "http://settings/v2/".to_owned()],
         api_keys: vec![SecretString::from("settings-key")],
         organization: Some("org-1".to_owned()),
+        global_drop_params: false,
     }
+}
+
+#[test]
+fn carries_the_proxy_wide_drop_params() {
+    let entry = "{model_name: g, litellm_params: {model: openai/m}}";
+    let mut defaults = defaults();
+    defaults.global_drop_params = true;
+    let resolved = ChatDeployment::resolve(&deployment(entry), &defaults).unwrap();
+    assert!(resolved.global_drop_params);
+    let plain = ChatDeployment::resolve(&deployment(entry), &OpenAiDefaults::default()).unwrap();
+    assert!(!plain.global_drop_params);
 }
 
 #[test]
