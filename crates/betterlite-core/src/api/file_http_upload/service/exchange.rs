@@ -162,24 +162,27 @@ where
         }
     }
 
+    // A traditional or multipart upload goes to api_base with the base headers and its own body
+    async fn base_send(&self, method: Method, body: UploadBody) -> Result<Reply, UploadError> {
+        let headers = self.base_headers()?;
+        self.reply(method, self.api_base, headers, body).await
+    }
+
     // Traditional uploads pick PUT only when the provider config asks for it, and fail as they are
     pub async fn traditional(&self, body: Vec<u8>) -> Result<Reply, UploadError> {
-        let headers = self.base_headers()?;
         let method = match self.config.file_upload_http_method() {
             Method::PUT => Method::PUT,
             _ => Method::POST,
         };
-        self.reply(method, self.api_base, headers, UploadBody::Bytes(body))
-            .await
+        self.base_send(method, UploadBody::Bytes(body)).await
     }
 
     pub async fn multipart(&self, parts: Vec<MultipartPart>) -> Result<Reply, UploadError> {
-        let headers = self.base_headers()?;
         let body = UploadBody::Multipart {
             boundary: (self.boundaries)(),
             parts,
         };
-        self.reply(Method::POST, self.api_base, headers, body).await
+        self.base_send(Method::POST, body).await
     }
 
     pub fn emit_error(&self, error: &UploadError) {
