@@ -1,0 +1,15 @@
+kind: helper
+name: window-seed-seed-base
+call:
+  window_seed:
+    steps:
+      - {kind: seed_base, name: discounted, total: 12.5, before_batch: 3.25, batch_spend: 2.5}
+      - {kind: exclusion_upper_bound, name: floored, started_at: "2026-08-01T12:00:00.999999"}
+      - kind: upsert_params
+        name: params
+        transaction: {entity_type: team, entity_id: team-1, window_duration: 1d, window_start: "2026-08-01T00:00:00.000000", spend: 0.5, started_at: "2026-08-01T00:00:01.000000"}
+        seed_base: 4.0
+        now: "2026-08-01T00:05:00"
+env: {}
+compare:
+  ignore: []
