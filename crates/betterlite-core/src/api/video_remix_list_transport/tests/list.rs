@@ -36,6 +36,7 @@ pub(super) enum ListCase {
     AsyncSuppliedClient,
     RealGet,
     SyncRunsToCompletion,
+    SyncForwardsAsyncClient,
     HandOffForwardsApiKey,
     RunningRuntime,
 }
@@ -48,6 +49,7 @@ pub(super) fn list_case(case: ListCase) {
         ListCase::AsyncSuppliedClient => test_runtime().block_on(async_supplied_client()),
         ListCase::RealGet => test_runtime().block_on(real_get()),
         ListCase::SyncRunsToCompletion => sync_runs_to_completion(),
+        ListCase::SyncForwardsAsyncClient => sync_forwards_async_client(),
         ListCase::HandOffForwardsApiKey => test_runtime().block_on(hand_off_forwards_api_key()),
         ListCase::RunningRuntime => running_runtime(),
     }
@@ -69,7 +71,7 @@ async fn api_key_ignored_from_params() {
         .await
         .expect("the list handler answers");
     assert_eq!(answer.page(), bench.config.list_page().clone());
-    assert_validated(&bench, None, None, &headers(&[]));
+    assert_validated(&bench, None, None, &headers(&[]), &params);
 }
 
 // The api_key argument is what validate_environment gets, even with a params api_key set
@@ -81,7 +83,7 @@ async fn api_key_argument() {
     setup.api_key = Some(&argument);
     let answer = run(&mut bench, setup, CallKind::List, CallMode::Asynchronous).await;
     assert!(matches!(answer, Ok(Answer::Page(_))));
-    assert_validated(&bench, Some("sk-argument"), None, &headers(&[]));
+    assert_validated(&bench, Some("sk-argument"), None, &headers(&[]), &params);
 }
 
 // The GET carries the transformed params as its query and no timeout, and the pre-call logs the empty input and the params
@@ -106,11 +108,11 @@ async fn get_query_and_no_timeout() {
         .await
         .expect("the list handler answers");
     assert_eq!(answer.page(), bench.config.list_page().clone());
-    assert_list_get(&bench, &wire, &extra_query);
+    assert_list_get(&bench, &wire, &extra_query, &params);
     assert_list_pre_call(&bench);
 }
 
-fn assert_list_get(bench: &Bench<Source>, wire: &Wire, extra_query: &Params) {
+fn assert_list_get(bench: &Bench<Source>, wire: &Wire, extra_query: &Params, params: &Params) {
     let sent = wire.requests();
     assert_eq!(sent.len(), 1);
     assert_eq!(sent[0].method, Method::GET);
@@ -134,10 +136,10 @@ fn assert_list_get(bench: &Bench<Source>, wire: &Wire, extra_query: &Params) {
             .and_then(|value| value.to_str().ok()),
         Some("trace-a")
     );
-    assert_list_inputs(bench, extra_query);
+    assert_list_inputs(bench, extra_query, params);
 }
 
-fn assert_list_inputs(bench: &Bench<Source>, extra_query: &Params) {
+fn assert_list_inputs(bench: &Bench<Source>, extra_query: &Params, params: &Params) {
     let inputs = bench.config.list_inputs();
     assert_eq!(inputs.len(), 1);
     assert_eq!(inputs[0].after.as_deref(), Some("video_a"));
@@ -145,6 +147,7 @@ fn assert_list_inputs(bench: &Bench<Source>, extra_query: &Params) {
     assert_eq!(inputs[0].order.as_deref(), Some("desc"));
     assert_eq!(inputs[0].extra_query.as_ref(), Some(extra_query));
     assert_eq!(inputs[0].api_base, bench.config.base());
+    assert_eq!(&inputs[0].litellm_params, params);
     assert_eq!(
         inputs[0].headers.get("X-Trace").map(String::as_str),
         Some("trace-a")
@@ -163,6 +166,22 @@ fn assert_list_pre_call(bench: &Bench<Source>) {
     );
     assert!(bench.fixture.logged("complete_input_dict").is_none());
     assert!(bench.fixture.logged("video_id").is_none());
+    let Some(Json::Object(logged)) = bench.fixture.logged("headers") else {
+        panic!("the pre-call logs the headers as an object");
+    };
+    assert_eq!(
+        logged.get("X-Trace"),
+        Some(&Json::Text(String::from("trace-a")))
+    );
+    assert_eq!(
+        logged.get("Content-Type"),
+        Some(&Json::Text(String::from("application/json")))
+    );
+    assert_eq!(
+        logged.get("Authorization"),
+        Some(&Json::Text(String::from("Be****er")))
+    );
+    assert_eq!(logged.len(), 3);
     assert_eq!(bench.events.recorded(), EVENTS);
 }
 
@@ -243,6 +262,23 @@ fn sync_runs_to_completion() {
     assert!(bench.transport.source.sync_calls().is_empty());
     assert!(supplied.requests().is_empty());
     let sent = pooled.requests();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].method, Method::GET);
+}
+
+// The sync handler keeps a supplied async client across its own runtime, and the pool is never asked
+fn sync_forwards_async_client() {
+    let (mut bench, pooled) = fake_bench(LIST, Reply::json(200, "{}"), RecordingConfig::new);
+    let supplied = Wire::replying(Reply::json(200, "{}"), &bench.events);
+    let params = json_params("{}");
+    let mut setup = Setup::new("nope", &params);
+    setup.client = Some(VideoClient::Asynchronous(&supplied));
+    let answer = run_sync_list(&mut bench, setup).expect("the sync list handler answers");
+    assert_eq!(answer, bench.config.list_page().clone());
+    assert!(pooled.requests().is_empty());
+    assert!(bench.transport.source.async_calls().is_empty());
+    assert!(bench.transport.source.sync_calls().is_empty());
+    let sent = supplied.requests();
     assert_eq!(sent.len(), 1);
     assert_eq!(sent[0].method, Method::GET);
 }

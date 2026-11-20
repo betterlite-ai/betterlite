@@ -75,12 +75,15 @@ impl<Client> Chosen<'_, Client> {
 }
 
 // The async path's client: a supplied one of the async kind, or the pool's client for the provider name, which fails before the try block
-pub(super) fn choose_async<'call, Source: VideoClientSource>(
+pub(super) fn choose_async<'call, Source>(
     source: &Source,
     supplied: Option<&'call Source::AsyncClient>,
     provider: &str,
     params: &Params,
-) -> Result<Chosen<'call, Source::AsyncClient>, VideoRemixListTransportError> {
+) -> Result<Chosen<'call, Source::AsyncClient>, VideoRemixListTransportError>
+where
+    Source: VideoClientSource,
+{
     let Some(client) = supplied else {
         let parsed = ProviderId::from_str(provider).map_err(|_unknown| {
             VideoRemixListTransportError::UnknownProvider {
@@ -88,9 +91,9 @@ pub(super) fn choose_async<'call, Source: VideoClientSource>(
             }
         })?;
         let ssl_verify = fields::read::<bool>(params, "ssl_verify")?;
-        let pooled = source.async_client(parsed, ssl_verify).map_err(|source| {
+        let pooled = source.async_client(parsed, ssl_verify).map_err(|error| {
             VideoRemixListTransportError::Client {
-                source: Box::new(source),
+                source: Box::new(error),
             }
         })?;
         return Ok(Chosen::Pooled(pooled));

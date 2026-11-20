@@ -5,7 +5,7 @@ use betterlite_http_fixture::server::serve;
 use betterlite_models::decisions::Json;
 use betterlite_openai::error::ProviderError;
 
-use super::recording::RecordingConfig;
+use super::recording::{RecordingConfig, Step};
 use super::support::{
     Bench, CallKind, CallMode, Events, IMPATIENT, ProxiedSource, Setup, json_params, proxied_bench,
     run,
@@ -63,13 +63,15 @@ pub(super) fn expected_headers(pairs: &[(&str, &str)]) -> ErrorHeaders {
 }
 
 // A failure that went through the conversion keeps the status, the message and the config's error class
-pub(super) fn assert_error<Source: VideoClientSource>(
+pub(super) fn assert_error<Source>(
     bench: &Bench<Source>,
     error: &VideoRemixListTransportError,
     status: u16,
     message: &str,
     synthesized: bool,
-) {
+) where
+    Source: VideoClientSource,
+{
     let provider = provider(error);
     assert_eq!(provider.status_code, status);
     assert_eq!(provider.status_code_is_synthesized, synthesized);
@@ -83,7 +85,11 @@ pub(super) fn assert_error<Source: VideoClientSource>(
     }
 }
 
-pub(super) fn assert_prepare(error: &VideoRemixListTransportError, expected: Operation) {
+pub(super) fn assert_prepare(
+    error: &VideoRemixListTransportError,
+    expected: Operation,
+    step: Step,
+) {
     let VideoRemixListTransportError::Prepare { operation, source } = error else {
         panic!("the failure is a prepare failure, not {error}");
     };
@@ -94,7 +100,7 @@ pub(super) fn assert_prepare(error: &VideoRemixListTransportError, expected: Ope
     );
     assert_eq!(
         source.source.to_string(),
-        format!("the fake config fails at {expected:?}")
+        format!("the fake config fails at {step:?}")
     );
 }
 
@@ -103,10 +109,10 @@ pub(super) fn assert_field(error: &VideoRemixListTransportError, message: &str) 
     assert_eq!(error.to_string(), message);
 }
 
-pub(super) fn assert_outside_transform<Source: VideoClientSource>(
-    bench: &Bench<Source>,
-    transform: &str,
-) {
+pub(super) fn assert_outside_transform<Source>(bench: &Bench<Source>, transform: &str)
+where
+    Source: VideoClientSource,
+{
     let events = bench.config.events();
     let wanted = transform.to_owned();
     assert_eq!(events.last().map(String::as_str), Some("error_class"));

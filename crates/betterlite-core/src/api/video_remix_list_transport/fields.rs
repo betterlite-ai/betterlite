@@ -45,10 +45,10 @@ impl FieldValue for SecretString {
 }
 
 // A param read where the handler reads it: the field is only touched when that call asks for it
-pub(super) fn read<T: FieldValue>(
-    params: &Params,
-    name: &'static str,
-) -> Result<Option<T>, FieldError> {
+pub(super) fn read<T>(params: &Params, name: &'static str) -> Result<Option<T>, FieldError>
+where
+    T: FieldValue,
+{
     let Some(value) = params.get(name).filter(|given| **given != Json::Null) else {
         return Ok(None);
     };

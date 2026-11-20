@@ -40,6 +40,7 @@ pub(crate) struct ListQuery {
     pub(crate) extra_query: Option<Params>,
     pub(crate) api_base: String,
     pub(crate) headers: Headers,
+    pub(crate) litellm_params: Params,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,6 +70,7 @@ fn list_query(query: VideoListQuery<'_>, context: &VideoRequestContext<'_>) -> L
         extra_query: query.extra_query.cloned(),
         api_base: context.api_base.to_owned(),
         headers: context.headers.clone(),
+        litellm_params: context.litellm_params.clone(),
     }
 }
 
@@ -86,7 +88,9 @@ pub(crate) struct RecordingConfig {
     api_keys: Mutex<Vec<Option<String>>>,
     models: Mutex<Vec<String>>,
     validated: Mutex<Vec<Headers>>,
+    validated_params: Mutex<Vec<Option<Params>>>,
     urls: Mutex<Vec<(String, Option<String>)>>,
+    url_params: Mutex<Vec<Params>>,
     remix_inputs: Mutex<Vec<RemixInput>>,
     list_inputs: Mutex<Vec<ListQuery>>,
     replies: Mutex<Vec<ReplyRecord>>,
@@ -109,7 +113,9 @@ impl RecordingConfig {
             api_keys: Mutex::default(),
             models: Mutex::default(),
             validated: Mutex::default(),
+            validated_params: Mutex::default(),
             urls: Mutex::default(),
+            url_params: Mutex::default(),
             remix_inputs: Mutex::default(),
             list_inputs: Mutex::default(),
             replies: Mutex::default(),
@@ -201,8 +207,22 @@ impl RecordingConfig {
             .clone()
     }
 
+    pub(crate) fn validated_params(&self) -> Vec<Option<Params>> {
+        self.validated_params
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
     pub(crate) fn urls(&self) -> Vec<(String, Option<String>)> {
         self.urls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    pub(crate) fn url_params(&self) -> Vec<Params> {
+        self.url_params
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
@@ -299,6 +319,10 @@ impl VideoRemixListConfig for RecordingConfig {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(request.headers.clone());
+        self.validated_params
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(request.litellm_params.cloned());
         let mut headers = request.headers.clone();
         headers.insert("Authorization".to_owned(), "Bearer sk-provider".to_owned());
         headers.insert("Content-Type".to_owned(), "application/json".to_owned());
@@ -310,13 +334,17 @@ impl VideoRemixListConfig for RecordingConfig {
         &self,
         model: &str,
         api_base: Option<&str>,
-        _litellm_params: &Params,
+        litellm_params: &Params,
     ) -> Result<String, ConfigFailure> {
         self.events.push("url");
         self.urls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push((model.to_owned(), api_base.map(str::to_owned)));
+        self.url_params
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(litellm_params.clone());
         if self.fails(Step::Url) {
             return Err(Self::failure(Step::Url));
         }

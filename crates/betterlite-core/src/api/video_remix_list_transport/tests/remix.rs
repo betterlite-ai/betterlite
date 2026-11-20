@@ -116,6 +116,7 @@ fn assert_sync_supplied_records(bench: &Bench<Source>, params: &Params, extra_bo
         Some("sk-argument"),
         Some("https://caller.test/v1"),
         &headers(&[("X-Trace", "trace-a")]),
+        params,
     );
     assert_remix_inputs(bench, params, Some(extra_body));
     assert_eq!(bench.events.recorded(), EVENTS);
@@ -170,7 +171,7 @@ async fn sync_pooled_client() {
     assert_eq!(sent[0].timeout, None);
     // with no caller headers the config's own X-Trace is the one that travels
     assert_eq!(request_header(&sent[0], "x-trace"), "config-trace");
-    assert_validated(&bench, Some("sk-params"), None, &headers(&[]));
+    assert_validated(&bench, Some("sk-params"), None, &headers(&[]), &params);
 }
 
 // The async remix path answers with the transform's object and posts once to the remix URL, whichever client sent

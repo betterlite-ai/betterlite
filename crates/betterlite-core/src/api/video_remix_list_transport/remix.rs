@@ -6,14 +6,17 @@ use secrecy::SecretString;
 
 use crate::api::video_records::VideoObject;
 
-use super::client::{Chosen, VideoClient, VideoClientSource, VideoRequest, choose_async};
+use super::client::{
+    Chosen, VideoAsyncClient as _, VideoClient, VideoClientSource, VideoRequest,
+    VideoSyncClient as _, choose_async,
+};
 use super::config::VideoRemixListConfig;
 use super::convert;
 use super::error::{Operation, VideoRemixListTransportError};
 use super::fields;
 use super::logging::{PreCallSource, RemixPreCall, record_pre_call};
 use super::records::{Headers, Params, VideoEnvironment, VideoRequestContext};
-use super::response::transform_response;
+use super::response::{RemixResponse, transform_response};
 use super::wire;
 use super::{Handled, LogContext, RemixCall, VideoRemixListTransport};
 
@@ -26,10 +29,10 @@ struct PreparedRemix {
 
 impl<Source: VideoClientSource> VideoRemixListTransport<Source> {
     // video_remix_handler: the _is_async hand-off comes before any client is picked
-    pub fn remix<'call>(
+    pub fn remix(
         &self,
         config: &dyn VideoRemixListConfig,
-        call: RemixCall<'call, Source>,
+        call: RemixCall<'_, Source>,
         mut log: LogContext<'_, '_>,
         is_async: bool,
     ) -> Result<
@@ -56,12 +59,11 @@ impl<Source: VideoClientSource> VideoRemixListTransport<Source> {
         };
         let prepared = prepare_remix(config, &call, &mut log)?;
         let answer = send_remix(config, chosen.get(), &prepared)?;
-        let object = transform_response(
+        let object = transform_response::<RemixResponse>(
             config,
             &answer,
             call.custom_llm_provider,
             &mut log,
-            VideoRemixListConfig::transform_video_remix_response,
         )?;
         Ok(Handled::Done(object))
     }
@@ -97,21 +99,18 @@ impl<Source: VideoClientSource> VideoRemixListTransport<Source> {
         let answer = sent
             .map_err(|error| convert::failure(config, &convert::transport_facts(&facts, &error)))?;
         let checked = convert::check_status(config, answer)?;
-        transform_response(
-            config,
-            &checked,
-            call.custom_llm_provider,
-            &mut log,
-            VideoRemixListConfig::transform_video_remix_response,
-        )
+        transform_response::<RemixResponse>(config, &checked, call.custom_llm_provider, &mut log)
     }
 }
 
 // validate_environment gets the extra headers and the argument-or-params key; the caller's headers are re-applied over its answer
-fn remix_headers<Source: VideoClientSource>(
+fn remix_headers<Source>(
     config: &dyn VideoRemixListConfig,
     call: &RemixCall<'_, Source>,
-) -> Result<Headers, VideoRemixListTransportError> {
+) -> Result<Headers, VideoRemixListTransportError>
+where
+    Source: VideoClientSource,
+{
     let key = match call.api_key {
         Some(key) => Some(key.clone()),
         None => fields::read::<SecretString>(call.litellm_params, "api_key")?,
@@ -133,12 +132,15 @@ fn remix_headers<Source: VideoClientSource>(
 }
 
 // The provider's request transform turns the base URL and the validated headers into the wire URL and body
-fn remix_request<Source: VideoClientSource>(
+fn remix_request<Source>(
     config: &dyn VideoRemixListConfig,
     call: &RemixCall<'_, Source>,
     base_url: &str,
     headers: &Headers,
-) -> Result<(String, Params), VideoRemixListTransportError> {
+) -> Result<(String, Params), VideoRemixListTransportError>
+where
+    Source: VideoClientSource,
+{
     config
         .transform_video_remix_request(
             call.video_id,
@@ -171,11 +173,14 @@ fn remix_wire_request(
 }
 
 // Everything before the try block: the environment, the base URL, the request transform and the pre-call
-fn prepare_remix<Source: VideoClientSource>(
+fn prepare_remix<Source>(
     config: &dyn VideoRemixListConfig,
     call: &RemixCall<'_, Source>,
     log: &mut LogContext<'_, '_>,
-) -> Result<PreparedRemix, VideoRemixListTransportError> {
+) -> Result<PreparedRemix, VideoRemixListTransportError>
+where
+    Source: VideoClientSource,
+{
     let headers = remix_headers(config, call)?;
     let api_base = fields::read::<String>(call.litellm_params, "api_base")?;
     let base_url = config
@@ -204,11 +209,14 @@ fn prepare_remix<Source: VideoClientSource>(
 }
 
 // The try block's send: the wire form, one POST with the timeout, and the status check before the response transform
-fn send_remix<Source: VideoClientSource>(
+fn send_remix<Source>(
     config: &dyn VideoRemixListConfig,
     client: &Source::SyncClient,
     prepared: &PreparedRemix,
-) -> Result<UpstreamResponse, VideoRemixListTransportError> {
+) -> Result<UpstreamResponse, VideoRemixListTransportError>
+where
+    Source: VideoClientSource,
+{
     let request = remix_wire_request(config, prepared)?;
     let started = Instant::now();
     let sent = client.send(request);

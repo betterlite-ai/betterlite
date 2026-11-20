@@ -1,27 +1,63 @@
 use betterlite_http::proxy::UpstreamResponse;
 
+use crate::api::video_records::VideoObject;
+
 use super::LogContext;
 use super::config::VideoRemixListConfig;
 use super::convert;
 use super::error::{ConfigFailure, VideoRemixListTransportError};
-use super::records::{VideoLogging, VideoReply};
+use super::records::{Params, VideoLogging, VideoReply};
 
 // A response transform, which is one of B3331's config trait members: remix and list each name their own
-pub(super) type ResponseTransform<T> =
-    fn(&dyn VideoRemixListConfig, VideoReply<'_>) -> Result<T, ConfigFailure>;
+pub(super) trait ResponseTransform {
+    type Output;
+
+    fn run(
+        config: &dyn VideoRemixListConfig,
+        reply: VideoReply<'_>,
+    ) -> Result<Self::Output, ConfigFailure>;
+}
+
+pub(super) struct RemixResponse;
+
+impl ResponseTransform for RemixResponse {
+    type Output = VideoObject;
+
+    fn run(
+        config: &dyn VideoRemixListConfig,
+        reply: VideoReply<'_>,
+    ) -> Result<Self::Output, ConfigFailure> {
+        config.transform_video_remix_response(reply)
+    }
+}
+
+pub(super) struct ListResponse;
+
+impl ResponseTransform for ListResponse {
+    type Output = Params;
+
+    fn run(
+        config: &dyn VideoRemixListConfig,
+        reply: VideoReply<'_>,
+    ) -> Result<Self::Output, ConfigFailure> {
+        config.transform_video_list_response(reply)
+    }
+}
 
 // The response transform runs against the real logging details, and whatever it stores there is kept
-pub(super) fn transform_response<T>(
+pub(super) fn transform_response<Kind>(
     config: &dyn VideoRemixListConfig,
     answer: &UpstreamResponse,
     provider: &str,
     log: &mut LogContext<'_, '_>,
-    transform: ResponseTransform<T>,
-) -> Result<T, VideoRemixListTransportError> {
+) -> Result<Kind::Output, VideoRemixListTransportError>
+where
+    Kind: ResponseTransform,
+{
     let mut logging = VideoLogging {
         model_call_details: log.state.model_call_details.clone(),
     };
-    let outcome = transform(
+    let outcome = Kind::run(
         config,
         VideoReply {
             raw_response: answer,

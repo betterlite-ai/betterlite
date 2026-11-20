@@ -449,6 +449,7 @@ pub(crate) fn assert_validated(
     api_key: Option<&str>,
     api_base: Option<&str>,
     given: &Headers,
+    params: &Params,
 ) {
     assert_eq!(bench.config.api_keys(), vec![api_key.map(str::to_owned)]);
     assert_eq!(bench.config.models(), vec![String::new()]);
@@ -456,6 +457,8 @@ pub(crate) fn assert_validated(
         bench.config.urls(),
         vec![(String::new(), api_base.map(str::to_owned))]
     );
+    assert_eq!(bench.config.validated_params(), vec![Some(params.clone())]);
+    assert_eq!(bench.config.url_params(), vec![params.clone()]);
     assert_eq!(bench.config.validated(), vec![given.clone()]);
 }
 
@@ -612,12 +615,15 @@ pub(crate) enum CallMode {
 }
 
 // The handler behind the fixture's own logging object, in the mode the case asks for
-pub(crate) async fn run<Source: VideoClientSource>(
+pub(crate) async fn run<Source>(
     bench: &mut Bench<Source>,
     setup: Setup<'_, Source>,
     kind: CallKind,
     mode: CallMode,
-) -> Result<Answer, VideoRemixListTransportError> {
+) -> Result<Answer, VideoRemixListTransportError>
+where
+    Source: VideoClientSource,
+{
     let env = bench.fixture.env.pre_post();
     let log = LogContext {
         state: &mut bench.fixture.state,
@@ -666,16 +672,21 @@ fn done<Done, Pending>(handled: Handled<Done, Pending>) -> Done {
 }
 
 // The sync list handler builds its own runtime, so its happy case calls it before any runtime exists
-pub(crate) fn run_sync_list<Source: VideoClientSource>(
+pub(crate) fn run_sync_list<Source>(
     bench: &mut Bench<Source>,
     setup: Setup<'_, Source>,
-) -> Result<Params, VideoRemixListTransportError> {
+) -> Result<Params, VideoRemixListTransportError>
+where
+    Source: VideoClientSource,
+{
     let env = bench.fixture.env.pre_post();
     let log = LogContext {
         state: &mut bench.fixture.state,
         env: &env,
     };
-    let call = setup.into_call(CallKind::List);
+    let FixtureCall::List(call) = setup.into_call(CallKind::List) else {
+        panic!("the sync list helper is given a list call");
+    };
     Ok(done(bench.transport.list(
         &bench.config,
         call,

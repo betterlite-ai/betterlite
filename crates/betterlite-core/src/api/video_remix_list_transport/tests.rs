@@ -49,6 +49,7 @@ async fn remix_transport_behavior(#[case] case: remix::RemixCase) {
 #[case::async_supplied_client(list::ListCase::AsyncSuppliedClient)]
 #[case::real_get(list::ListCase::RealGet)]
 #[case::sync_runs_to_completion(list::ListCase::SyncRunsToCompletion)]
+#[case::sync_forwards_async_client(list::ListCase::SyncForwardsAsyncClient)]
 #[case::hand_off_forwards_api_key(list::ListCase::HandOffForwardsApiKey)]
 #[case::running_runtime(list::ListCase::RunningRuntime)]
 #[test]
@@ -209,7 +210,7 @@ async fn transport_error_behavior(#[case] case: ErrorCase) {
             let error = run(&mut bench, setup, CallKind::Remix, CallMode::Asynchronous)
                 .await
                 .expect_err("a request transform failure is a prepare failure");
-            assert_prepare(&error, Operation::Remix);
+            assert_prepare(&error, Operation::Remix, Step::RemixRequest);
             assert!(wire.requests().is_empty());
             assert_eq!(bench.config.events(), ["validate", "url", "remix_request"]);
         }
@@ -221,7 +222,7 @@ async fn transport_error_behavior(#[case] case: ErrorCase) {
             let error = run(&mut bench, setup, CallKind::Remix, CallMode::Asynchronous)
                 .await
                 .expect_err("a URL failure is a prepare failure");
-            assert_prepare(&error, Operation::Remix);
+            assert_prepare(&error, Operation::Remix, Step::Url);
             assert!(wire.requests().is_empty());
             assert_eq!(bench.config.events(), ["validate", "url"]);
         }
