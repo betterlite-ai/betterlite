@@ -29,6 +29,7 @@ pub mod central_auth_checks;
 pub mod current_spend;
 pub mod end_user_identity;
 pub mod entity_model_access;
+pub mod failures;
 pub mod identity_store;
 pub mod jwt_db_teams;
 pub mod jwt_key_resolution;
@@ -62,19 +63,19 @@ use crate::auth::auth_identity::{
     AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
 };
 use crate::auth::auth_model_patterns::{
-    ModelPatternStageInput, max_recurse_depth_for_request, rejection_response, rule_for_request,
+    ModelPatternStageInput, max_recurse_depth_for_request, rule_for_request,
 };
 use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, resolve};
 use crate::auth::auth_resource_grants::{
-    ResourceGrantStageInput, database_for_request, denial_response,
-    rule_for_request as grant_rule_for_request,
+    ResourceGrantStageInput, database_for_request, rule_for_request as grant_rule_for_request,
 };
+use crate::auth::failures::{stage_failure_response, unreadable_body_response};
 use crate::auth::request_body_safety::RequestBodySafetyStageInput;
-use crate::error_body::{AuthenticationFailure, authentication_error};
+use crate::error_body::AuthenticationFailure;
 use crate::state::ServerState;
 use axum::body::{Body, Bytes, to_bytes};
 use axum::extract::State;
-use axum::http::{HeaderMap, Request, StatusCode, header};
+use axum::http::{HeaderMap, Request, header};
 use axum::middleware::Next;
 use axum::response::Response;
 use regex::Regex;
@@ -137,23 +138,6 @@ pub(crate) async fn authenticate(
         *request.body_mut() = Body::from(bytes);
     }
     next.run(request).await
-}
-
-fn stage_failure_response(failure: &StageFailure) -> Response {
-    match failure {
-        StageFailure::Authentication(authentication) => authentication_error(authentication),
-        StageFailure::ModelAccess(rejection) => rejection_response(rejection),
-        StageFailure::ResourceGrants(exception)
-        | StageFailure::TagBudgets(exception)
-        | StageFailure::RequestBodySafety(exception) => denial_response(exception),
-    }
-}
-
-// the body stream itself failed, so there is nothing left to forward; the buffer rejection is a bare 400
-fn unreadable_body_response() -> Response {
-    let mut response = Response::new(Body::from("Failed to buffer the request body"));
-    *response.status_mut() = StatusCode::BAD_REQUEST;
-    response
 }
 
 fn stage_input(
