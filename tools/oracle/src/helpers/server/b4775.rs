@@ -49,7 +49,7 @@ impl Helper for Op {
                     return Ok(AgentJson::Null);
                 };
                 Ok(serde_json::from_str::<AgentJson>(&produced)
-                    .unwrap_or_else(|_| AgentJson::String(produced)))
+                    .unwrap_or(AgentJson::String(produced)))
             }
             Input::Parse { value } => Ok(AgentJson::Object(
                 parse_agent_litellm_params(value.as_ref())
