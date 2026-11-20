@@ -88,7 +88,9 @@ def base_outcome(call: BaseCall) -> JsonValue:
 
 def validation_outcome(call: ValidationCall) -> JsonValue:
     environment = call.get("environment")
-    with azure_env({} if environment is None else environment), litellm_globals(None, refresh_enabled=False):
+    if environment is None:
+        environment = {}
+    with azure_env(environment), litellm_globals(None, refresh_enabled=False):
         try:
             answer = validate_headers(call)
         except (TypeError, ValueError):
