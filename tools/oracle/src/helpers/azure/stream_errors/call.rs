@@ -39,7 +39,7 @@ where
     Ok(runtime.block_on(future))
 }
 
-fn one(function: &Function, case: &StreamCase) -> Result<Json, Box<HelperError>> {
+fn one(function: Function, case: &StreamCase) -> Result<Json, Box<HelperError>> {
     let source = ScriptedSource::new(case)?;
     let sources = ScriptedSources::new(&case.exchange)?;
     let mut recorder = Recorder::default();
@@ -117,7 +117,7 @@ pub(super) fn run(input: &Input) -> HelperResult {
     let values = input
         .cases
         .iter()
-        .map(|case| one(&input.function, case))
+        .map(|case| one(input.function, case))
         .collect::<Result<Vec<_>, _>>()?;
     serde_json::to_value(view::calls(values)).or_value_error()
 }

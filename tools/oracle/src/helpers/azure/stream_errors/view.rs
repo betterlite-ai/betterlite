@@ -75,10 +75,8 @@ fn form_value(form: &FormView) -> Json {
 
 pub(super) fn exchanges(sources: &ScriptedSources) -> Vec<Json> {
     let forms = sources.forms.lock().unwrap_or_else(PoisonError::into_inner);
-    let mut values = Vec::with_capacity(forms.len());
-    for form in &*forms {
-        values.push(form_value(form));
-    }
+    let values: Vec<Json> = forms.iter().map(form_value).collect();
+    drop(forms);
     values
 }
 
@@ -138,12 +136,9 @@ fn wrapper_headers(headers: &WrapperHeaders) -> Json {
 }
 
 fn stream_options_value(options: Option<&StreamOptions>) -> Json {
-    options.map_or(Json::Null, |options| {
+    options.map_or(Json::Null, |asked| {
         let mut fields = Extra::new();
-        fields.insert(
-            "include_usage".to_owned(),
-            Json::Bool(options.include_usage),
-        );
+        fields.insert("include_usage".to_owned(), Json::Bool(asked.include_usage));
         Json::Object(fields)
     })
 }
@@ -176,26 +171,24 @@ pub(super) fn chunk_value(chunk: &StreamChunk) -> Json {
     fields.insert(
         "content".to_owned(),
         choice
-            .and_then(|choice| choice.delta.content.clone())
+            .and_then(|entry| entry.delta.content.clone())
             .map_or(Json::Null, Json::Text),
     );
     fields.insert(
         "role".to_owned(),
         choice
-            .and_then(|choice| choice.delta.role.clone())
+            .and_then(|entry| entry.delta.role.clone())
             .map_or(Json::Null, Json::Text),
     );
     fields.insert(
         "finish_reason".to_owned(),
         choice
-            .and_then(|choice| choice.finish_reason.clone())
+            .and_then(|entry| entry.finish_reason.clone())
             .map_or(Json::Null, Json::Text),
     );
     fields.insert(
         "index".to_owned(),
-        choice.map_or(Json::Null, |choice| {
-            Json::Number(Number::from(choice.index))
-        }),
+        choice.map_or(Json::Null, |entry| Json::Number(Number::from(entry.index))),
     );
     fields.insert("model".to_owned(), Json::Text(chunk.model.clone()));
     fields.insert(

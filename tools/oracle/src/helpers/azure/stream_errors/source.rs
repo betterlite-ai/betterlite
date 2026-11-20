@@ -36,7 +36,7 @@ pub(super) struct FormView {
     pub(super) form: BTreeMap<String, String>,
 }
 
-const fn kind_of(spec: &ClientKindSpec) -> ClientKind {
+const fn kind_of(spec: ClientKindSpec) -> ClientKind {
     match spec {
         ClientKindSpec::AzureSync => ClientKind::AzureOpenAi,
         ClientKindSpec::AzureAsync => ClientKind::AsyncAzureOpenAi,
@@ -67,11 +67,10 @@ pub(super) fn raised_of(spec: &ErrorSpec) -> Raised {
         .value
         .as_ref()
         .map(|fields| SecretHeaders(fields.clone()));
-    raised.body = if spec.body.present {
-        Some(spec.body.value.clone().unwrap_or(Json::Null))
-    } else {
-        None
-    };
+    raised.body = spec
+        .body
+        .present
+        .then(|| spec.body.value.clone().unwrap_or(Json::Null));
     raised.response_headers = spec
         .response
         .value
@@ -148,7 +147,7 @@ impl ScriptedSource {
             })
             .or_value_error()?;
         let key = spec.api_key.clone().map(SecretString::from);
-        let kind = kind_of(&spec.kind);
+        let kind = kind_of(spec.kind);
         let events = case.send.events.concat().into_bytes();
         let payload = if case.send.events.is_empty() {
             case.send
@@ -195,10 +194,10 @@ fn litellm_params_view(params: &LiteLlmParams) -> Json {
     );
     fields.insert(
         "timeout".to_owned(),
-        match params.timeout {
-            Some(value) => Number::from_f64(value).map_or(Json::Null, Json::Number),
-            None => Json::Null,
-        },
+        params.timeout.map_or_else(
+            || Json::Null,
+            |value| Number::from_f64(value).map_or(Json::Null, Json::Number),
+        ),
     );
     Json::Object(fields)
 }

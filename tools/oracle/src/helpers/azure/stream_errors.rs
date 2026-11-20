@@ -109,7 +109,7 @@ pub(crate) struct ErrorSpec {
     pub(crate) response: Presence<BTreeMap<String, String>>,
 }
 
-#[derive(Deserialize)]
+#[derive(Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct SendSpec {
     #[serde(default)]
@@ -118,16 +118,6 @@ pub(crate) struct SendSpec {
     pub(crate) events: Vec<String>,
     #[serde(default)]
     pub(crate) body: Option<String>,
-}
-
-impl Default for SendSpec {
-    fn default() -> Self {
-        Self {
-            headers: BTreeMap::new(),
-            events: Vec::new(),
-            body: None,
-        }
-    }
 }
 
 const fn default_status() -> u16 {
