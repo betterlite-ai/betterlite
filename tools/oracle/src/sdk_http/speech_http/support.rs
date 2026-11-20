@@ -19,7 +19,6 @@ use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_provider::api::speech_http::error::{ClientError, SpeechError};
 use betterlite_provider::api::speech_http::{
     ClientSource, LogContext, Mode, SpeechBinaryResponse, SpeechCall, SpeechDeps,
-    async_text_to_speech_handler, text_to_speech_handler,
 };
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
@@ -102,12 +101,15 @@ impl Fixture {
     }
 
     // The handler call the step asks for, over the production pre-call state
-    pub(super) async fn call<'deps, S: ClientSource>(
+    pub(super) async fn call<'deps, S>(
         &mut self,
         deps: &'deps SpeechDeps<'deps, S>,
         mode: Mode,
         call: &SpeechCall<'_>,
-    ) -> Result<SpeechBinaryResponse, SpeechError> {
+    ) -> Result<SpeechBinaryResponse, SpeechError>
+    where
+        S: ClientSource,
+    {
         let env = PrePostEnv {
             debug: DebugSettings::default(),
             globals: GlobalFlags::default(),
@@ -127,8 +129,8 @@ impl Fixture {
             env: &env,
         };
         match mode {
-            Mode::Sync => text_to_speech_handler(deps, call, &mut log).await,
-            Mode::Asynchronous => async_text_to_speech_handler(deps, call, &mut log).await,
+            Mode::Sync => deps.text_to_speech_handler(call, &mut log).await,
+            Mode::Asynchronous => deps.async_text_to_speech_handler(call, &mut log).await,
         }
     }
 }

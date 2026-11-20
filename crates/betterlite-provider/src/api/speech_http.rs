@@ -255,26 +255,25 @@ where
     send(prepared, call.model).await
 }
 
-// ast-grep-ignore: no-one-line-functions - the public sync entry point forwards to the shared pipeline with its client class
-pub async fn text_to_speech_handler<S>(
-    deps: &SpeechDeps<'_, S>,
-    call: &SpeechCall<'_>,
-    log: &mut LogContext<'_, '_>,
-) -> Result<SpeechBinaryResponse, SpeechError>
+impl<S> SpeechDeps<'_, S>
 where
     S: ClientSource,
 {
-    execute(deps, Mode::Sync, call, log).await
-}
+    // ast-grep-ignore: no-one-line-functions - the public sync entry point forwards to the shared pipeline with its client class
+    pub async fn text_to_speech_handler(
+        &self,
+        call: &SpeechCall<'_>,
+        log: &mut LogContext<'_, '_>,
+    ) -> Result<SpeechBinaryResponse, SpeechError> {
+        execute(self, Mode::Sync, call, log).await
+    }
 
-// ast-grep-ignore: no-one-line-functions - the public async entry point forwards to the shared pipeline with its client class
-pub async fn async_text_to_speech_handler<S>(
-    deps: &SpeechDeps<'_, S>,
-    call: &SpeechCall<'_>,
-    log: &mut LogContext<'_, '_>,
-) -> Result<SpeechBinaryResponse, SpeechError>
-where
-    S: ClientSource,
-{
-    execute(deps, Mode::Asynchronous, call, log).await
+    // ast-grep-ignore: no-one-line-functions - the public async entry point forwards to the shared pipeline with its client class
+    pub async fn async_text_to_speech_handler(
+        &self,
+        call: &SpeechCall<'_>,
+        log: &mut LogContext<'_, '_>,
+    ) -> Result<SpeechBinaryResponse, SpeechError> {
+        execute(self, Mode::Asynchronous, call, log).await
+    }
 }

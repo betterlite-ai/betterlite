@@ -31,7 +31,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use crate::api::speech_http::error::{ClientError, SpeechError};
 use crate::api::speech_http::{
     ClientSource, LogContext, Mode, SpeechBinaryResponse, SpeechCall, SpeechDeps, SpeechParams,
-    SpeechTransport, SpeechWireRequest, async_text_to_speech_handler, text_to_speech_handler,
+    SpeechTransport, SpeechWireRequest,
 };
 use crate::api::speech_provider_contract::error::{BaseLlmException, SpeechContractError};
 use crate::api::speech_provider_contract::{
@@ -120,8 +120,8 @@ where
         env: &env,
     };
     match mode {
-        Mode::Sync => text_to_speech_handler(deps, call, &mut log).await,
-        Mode::Asynchronous => async_text_to_speech_handler(deps, call, &mut log).await,
+        Mode::Sync => deps.text_to_speech_handler(call, &mut log).await,
+        Mode::Asynchronous => deps.async_text_to_speech_handler(call, &mut log).await,
     }
 }
 
