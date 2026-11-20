@@ -2,9 +2,11 @@
 
 use std::time::Duration;
 
+use betterlite_azure::credentials::source::SourceFailure;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_context::bedrock_model::runtime_arn::encode_runtime_modelid_arn;
 use betterlite_context::resource_config_selection::passthrough::PassthroughConfigTag;
+use betterlite_foundry::credentials::error::CredentialsError;
 use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::serve;
 use betterlite_models::decisions::Json;
@@ -256,6 +258,31 @@ async fn auth_refuses_non_string_provider_credentials(
         ConfigError::ValueError { message } => {
             assert_eq!(message, format!("litellm_params.{name} must be a string"));
         }
+        other => panic!("unexpected error: {other}"),
+    }
+}
+
+#[test]
+fn auth_credentials_failure_keeps_its_upstream_status() {
+    let refused = SourceFailure {
+        class: String::from("AuthenticationError"),
+        status: Some(401),
+        message: String::from("token refused"),
+    };
+    match ConfigError::from(CredentialsError::Source(refused)) {
+        ConfigError::Message { status, message } => {
+            assert_eq!(status, 401);
+            assert_eq!(message, "token refused");
+        }
+        other => panic!("unexpected error: {other}"),
+    }
+    let preflight = SourceFailure {
+        class: String::from("ValueError"),
+        status: None,
+        message: String::from("no token source"),
+    };
+    match ConfigError::from(CredentialsError::Source(preflight)) {
+        ConfigError::ValueError { message } => assert_eq!(message, "no token source"),
         other => panic!("unexpected error: {other}"),
     }
 }

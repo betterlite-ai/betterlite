@@ -98,17 +98,21 @@ impl From<AzurePassthroughError> for ConfigError {
 
 impl From<CredentialsError> for ConfigError {
     fn from(error: CredentialsError) -> Self {
-        let status = match &error {
-            CredentialsError::Token(token) => token.status(),
-            CredentialsError::Source(failure) => failure.status,
-            CredentialsError::MissingCredentials { .. }
-            | CredentialsError::AgentTokenUnresolved { .. }
-            | CredentialsError::InvalidParam { .. }
-            | CredentialsError::TokenNotString { .. }
-            | CredentialsError::ProviderFailed { .. }
-            | CredentialsError::Secret(_) => None,
-        };
-        status_error(status, error.to_string())
+        status_error(credential_status(&error), error.to_string())
+    }
+}
+
+// the deployment's token and source failures carry the upstream status; the pre-flight errors do not
+const fn credential_status(error: &CredentialsError) -> Option<u16> {
+    match error {
+        CredentialsError::Token(token) => token.status(),
+        CredentialsError::Source(failure) => failure.status,
+        CredentialsError::MissingCredentials { .. }
+        | CredentialsError::AgentTokenUnresolved { .. }
+        | CredentialsError::InvalidParam { .. }
+        | CredentialsError::TokenNotString { .. }
+        | CredentialsError::ProviderFailed { .. }
+        | CredentialsError::Secret(_) => None,
     }
 }
 
