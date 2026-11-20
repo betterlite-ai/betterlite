@@ -1,0 +1,6 @@
+litellm_settings:
+  public_model_groups_links:
+    List: [a, b]
+    Number: 5
+    Null:
+    Text: https://text.example.invalid

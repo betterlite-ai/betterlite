@@ -1,0 +1,9 @@
+task: B10009
+deviations:
+  - what: >-
+      DOCS_TITLE sets the public model hub and API docs title without a premium license. The default stays "LiteLLM API".
+    why: >-
+      LiteLLM reads DOCS_TITLE only when premium_user is true, which checks an enterprise license key.
+      betterlite has no paid tier, so the MIT branding branch applies unconditionally, as the task text records.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1043-L1044
+kept_bugs: []

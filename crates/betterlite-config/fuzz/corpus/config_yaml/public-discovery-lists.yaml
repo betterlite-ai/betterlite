@@ -1,0 +1,11 @@
+litellm_settings:
+  public_mcp_servers:
+    - alpha
+    - beta
+  public_mcp_hub_strict_whitelist: false
+  public_model_groups_links:
+    Docs: https://docs.example.invalid
+    Status:
+      url: https://status.example.invalid
+      index: 0
+      label: Service status
