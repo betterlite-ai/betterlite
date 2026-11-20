@@ -25,6 +25,15 @@ pub trait DynamicOtel: Send + Sync {
     ) -> Option<OpenTelemetryConfig>;
 }
 
+// a callback that sends every span of a request to a provider chosen per request, such as Phoenix's projects
+pub trait TracerRouter: Send + Sync {
+    fn route(
+        &self,
+        lifecycle: &LegacyLifecycle,
+        kwargs: &MetadataMap,
+    ) -> Result<Option<SdkTracer>, LegacyLifecycleError>;
+}
+
 #[derive(Debug, Default)]
 pub struct BaseDynamicOtel;
 
@@ -105,10 +114,15 @@ pub fn tracer_choice(
     Ok(TracerChoice::Global)
 }
 
-pub(super) fn tracer_for_request(
+pub(crate) fn tracer_for_request(
     lifecycle: &LegacyLifecycle,
     kwargs: &MetadataMap,
 ) -> Result<SdkTracer, LegacyLifecycleError> {
+    if let Some(router) = &lifecycle.tracer_router
+        && let Some(tracer) = router.route(lifecycle, kwargs)?
+    {
+        return Ok(tracer);
+    }
     match lifecycle.tracer_choice(kwargs)? {
         TracerChoice::DynamicConfig(config) => {
             Ok(lifecycle.tracer_cache.tracer_for_config(&config)?)
