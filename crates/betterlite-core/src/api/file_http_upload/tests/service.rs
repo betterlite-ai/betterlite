@@ -407,6 +407,26 @@ async fn traditional_put_status_failure_raises_only_in_async_mode() {
     assert_eq!(field(&result, "status"), &status(500));
 }
 
+// the sync put is unjudged for every status, so an unfollowed 302 reaches the transform as a reply
+#[tokio::test]
+async fn sync_put_hands_an_unfollowed_redirect_to_the_transform() {
+    let mut harness = Harness::build(
+        Config::with_method(text_plan(), API_BASE, Method::PUT),
+        vec![answer(302, &[], b"")],
+    );
+    let result = harness
+        .run(Mode::Sync, &create_call(), &params())
+        .await
+        .unwrap();
+    assert_eq!(field(&result, "status"), &status(302));
+    assert!(
+        harness
+            .config
+            .calls()
+            .contains(&"transform_create_file_response")
+    );
+}
+
 // a multipart upload posts whatever the config asks, so its 4xx raises in sync mode too
 #[rstest]
 #[case::sync(Mode::Sync)]
@@ -498,5 +518,28 @@ async fn raw_upload_defaults_to_octet_stream() {
             .get(CONTENT_TYPE)
             .expect("the octet-stream default"),
         "application/octet-stream"
+    );
+}
+
+// a plan that names its own content type keeps it, so only a type-less raw body takes the default
+#[tokio::test]
+async fn raw_upload_keeps_an_explicit_content_type() {
+    let plan = UploadPlan::Presigned(Box::new(PresignedPlan {
+        method: String::from("PUT"),
+        url: String::from(UPLOAD_URL),
+        headers: BTreeMap::from([(String::from("content-type"), String::from("text/plain"))]),
+        data: UploadData::Bytes(b"pdf".to_vec()),
+    }));
+    let mut harness = Harness::new(plan, API_BASE, vec![answer(200, &[], b"{}")]);
+    harness
+        .run(Mode::Sync, &create_call(), &params())
+        .await
+        .unwrap();
+    assert_eq!(
+        harness.seen()[0]
+            .headers
+            .get(CONTENT_TYPE)
+            .expect("the plan type"),
+        "text/plain"
     );
 }

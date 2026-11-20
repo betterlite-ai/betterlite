@@ -1,6 +1,8 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, VecDeque};
+use std::fs;
+use std::path::Path;
 use std::str::from_utf8;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -989,18 +991,15 @@ async fn upload_diagnostics_media_placeholder_and_error_log() {
 // every fuzz corpus seed decodes without panicking, the invariant the fuzz target checks
 #[test]
 fn replays_upload_location_corpus() {
-    let corpus =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/file_upload_location");
-    let mut replayed = 0_usize;
-    for entry in std::fs::read_dir(corpus).expect("the corpus directory") {
-        let bytes = std::fs::read(entry.expect("a corpus entry").path()).expect("a corpus file");
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/file_upload_location");
+    assert!(fs::read_dir(&corpus).expect("the corpus directory").count() >= 8);
+    for entry in fs::read_dir(&corpus).expect("the corpus directory") {
+        let bytes = fs::read(entry.expect("a corpus entry").path()).expect("a corpus file");
         drop(decode_file_upload_location(
             &bytes,
             UploadUrlLocation::Body,
             "upload_url",
             ApiLimits::default(),
         ));
-        replayed += 1;
     }
-    assert!(replayed >= 8);
 }
