@@ -11,7 +11,7 @@ fn list_at(depth: usize, levels: usize, leaf: &str) -> String {
     }
     format!(
         r#"[{{"model": "m", "fallbacks": {}}}]"#,
-        list_at(depth + 1, levels, leaf)
+        list_at(depth.saturating_add(1), levels, leaf)
     )
 }
 
@@ -106,8 +106,10 @@ fn fallback_list_mapping_shapes() {
 
 #[test]
 fn fallback_target_original_model_policy() {
-    let mut fixture = Fixture::default();
-    fixture.grants = Grants::exact(&[("granted-model", &["aws_role_name"])]);
+    let fixture = Fixture {
+        grants: Grants::exact(&[("granted-model", &["aws_role_name"])]),
+        ..Default::default()
+    };
     fixture
         .check_json(
             r#"{"fallbacks": [{"model": "other-model", "aws_role_name": "role"}]}"#,
@@ -142,8 +144,10 @@ fn fallback_depth_boundary_before_type() {
     ));
     passes(&fixture, &chained(9, r#"{"other": "scalar"}"#));
 
-    let mut zero = Fixture::default();
-    zero.max_fallbacks = 0;
+    let zero = Fixture {
+        max_fallbacks: 0,
+        ..Default::default()
+    };
     passes(&zero, r#"{"fallbacks": ["ok"]}"#);
     assert!(matches!(
         denied(&zero, &chained(1, r#""ok""#)),
@@ -151,8 +155,10 @@ fn fallback_depth_boundary_before_type() {
     ));
 
     // a negative limit fails even the absent root fields, which are validated at depth zero
-    let mut negative = Fixture::default();
-    negative.max_fallbacks = -1;
+    let negative = Fixture {
+        max_fallbacks: -1,
+        ..Default::default()
+    };
     assert!(matches!(
         denied(&negative, "{}"),
         SafetyError::FallbackDepth

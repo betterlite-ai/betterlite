@@ -31,10 +31,9 @@ impl Grants {
         Self(map)
     }
 
-    pub(super) fn unset(model: &str) -> Self {
-        let mut map = BTreeMap::new();
-        map.insert(model.to_owned(), None);
-        Self(map)
+    pub(super) fn unset(mut self, model: &str) -> Self {
+        self.0.insert(model.to_owned(), None);
+        self
     }
 }
 

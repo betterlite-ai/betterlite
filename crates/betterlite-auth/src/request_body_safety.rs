@@ -140,10 +140,10 @@ pub fn is_request_body_safe(scan: &RequestBodySafety<'_>) -> Result<(), SafetyEr
         }
     }
     fallback::check(scan, &catalog)?;
-    if let Some(params) = metadata::coerce(scan.body.get("litellm_params"))? {
-        if let Some(nested) = metadata::coerce(params.get("metadata"))? {
-            banned::check(scan, &nested, &catalog)?;
-        }
+    if let Some(params) = metadata::coerce(scan.body.get("litellm_params"))?
+        && let Some(nested) = metadata::coerce(params.get("metadata"))?
+    {
+        banned::check(scan, &nested, &catalog)?;
     }
     Ok(())
 }

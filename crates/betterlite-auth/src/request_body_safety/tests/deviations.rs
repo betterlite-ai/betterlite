@@ -15,19 +15,23 @@ fn allowlisted() -> Vec<AllowedDestination> {
 
 #[test]
 fn destination_opt_in_still_denied() {
-    let mut fixture = Fixture::default();
-    fixture.allow = true;
-    fixture.hosts = allowlisted();
     // even the api_base matcher an admin configured cannot admit the destination
     let mut matcher = JsonObject::new();
     matcher.insert(
         "api_base".to_owned(),
         Json::Text("^https://evil.example".to_owned()),
     );
-    fixture.grants.0.insert(
+    let mut grants = Grants::default();
+    grants.0.insert(
         "model".to_owned(),
         Some(vec![ClientsideParamGrant::Matcher(matcher)]),
     );
+    let fixture = Fixture {
+        allow: true,
+        hosts: allowlisted(),
+        grants,
+        ..Default::default()
+    };
     assert_eq!(
         denied_param(&fixture, r#"{"api_base": "https://evil.example/v1"}"#),
         "api_base"

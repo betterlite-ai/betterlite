@@ -18,12 +18,12 @@ pub fn coerce(value: Option<&Json>) -> Result<Option<JsonObject>, SafetyError> {
         }) => Ok(Some(fields)),
         Ok(TypedValue {
             json: Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_),
-        }) => Ok(None),
+        })
+        | Err(DecodeError::Malformed { .. }) => Ok(None),
         Err(error @ (DecodeError::TooLarge { .. } | DecodeError::TooDeep { .. })) => {
             Err(SafetyError::MetadataLimit {
                 error: Box::new(error),
             })
         }
-        Err(DecodeError::Malformed { .. }) => Ok(None),
     }
 }

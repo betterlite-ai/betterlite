@@ -30,8 +30,8 @@ fn metadata_byte_limit() {
         .check(&metadata_body(Json::Text(oversized)), "model")
         .expect_err("an oversized stringified metadata is refused");
     assert!(matches!(
-        error,
-        SafetyError::MetadataLimit { ref error } if matches!(**error, DecodeError::TooLarge { .. })
+        &error,
+        SafetyError::MetadataLimit { error: boxed } if matches!(**boxed, DecodeError::TooLarge { .. })
     ));
 }
 
@@ -53,6 +53,18 @@ fn metadata_depth_limit() {
     );
     decode_request_metadata(at_limit.as_bytes()).expect("the depth bound itself parses");
 
+    let fixture = Fixture::default();
+    let error = fixture
+        .check(&metadata_body(Json::Text(deep)), "model")
+        .expect_err("too-deep stringified metadata is refused");
+    assert!(matches!(
+        &error,
+        SafetyError::MetadataLimit { error: boxed } if matches!(**boxed, DecodeError::TooDeep { .. })
+    ));
+}
+
+#[test]
+fn metadata_depth_scan_ignores_strings_and_siblings() {
     // brackets inside a string are text, and an escaped quote does not end the string early
     let quoted = format!(
         r#"{{"value": "a\"b", "note": "{}"}}"#,
@@ -89,14 +101,5 @@ fn metadata_depth_limit() {
     assert!(matches!(
         decode_request_metadata(interleaved.as_bytes()),
         Err(DecodeError::TooDeep { .. })
-    ));
-
-    let fixture = Fixture::default();
-    let error = fixture
-        .check(&metadata_body(Json::Text(deep)), "model")
-        .expect_err("too-deep stringified metadata is refused");
-    assert!(matches!(
-        error,
-        SafetyError::MetadataLimit { ref error } if matches!(**error, DecodeError::TooDeep { .. })
     ));
 }

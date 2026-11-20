@@ -35,9 +35,11 @@ fn pricing_field_banned() {
 
 #[test]
 fn root_model_list_always_denied() {
-    let mut fixture = Fixture::default();
-    fixture.allow = true;
-    fixture.grants = Grants::exact(&[("model", &["model_list"])]);
+    let fixture = Fixture {
+        allow: true,
+        grants: Grants::exact(&[("model", &["model_list"])]),
+        ..Default::default()
+    };
     assert!(matches!(
         denied(&fixture, r#"{"model_list": []}"#),
         SafetyError::ModelList
@@ -57,15 +59,19 @@ fn null_banned_field_present() {
 fn opt_in_only_literal_true() {
     let body = r#"{"aws_role_name": "role"}"#;
     assert_eq!(denied_param(&Fixture::default(), body), "aws_role_name");
-    let mut opted_in = Fixture::default();
-    opted_in.allow = true;
+    let opted_in = Fixture {
+        allow: true,
+        ..Default::default()
+    };
     passes(&opted_in, body);
 }
 
 #[test]
 fn one_grant_does_not_skip_next() {
-    let mut fixture = Fixture::default();
-    fixture.grants = Grants::exact(&[("model", &["aws_role_name"])]);
+    let fixture = Fixture {
+        grants: Grants::exact(&[("model", &["aws_role_name"])]),
+        ..Default::default()
+    };
     assert_eq!(
         denied_param(
             &fixture,
@@ -246,18 +252,22 @@ fn nested_litellm_params_metadata() {
 )]
 fn url_bans_survive_credential_opt_in(#[case] field: &str, #[case] body: &str) {
     // the opt-in admits one field at a time, so the URL field paired with it is still refused
-    let mut fixture = Fixture::default();
-    fixture.allow = true;
+    let fixture = Fixture {
+        allow: true,
+        ..Default::default()
+    };
     assert_eq!(denied_param(&fixture, body), field);
 }
 
 #[test]
 fn model_exact_then_provider_prefix() {
-    let mut fixture = Fixture::default();
-    fixture.grants = Grants::exact(&[
-        ("openai/gpt-4", &["aws_role_name"]),
-        ("openai", &["aws_session_name"]),
-    ]);
+    let fixture = Fixture {
+        grants: Grants::exact(&[
+            ("openai/gpt-4", &["aws_role_name"]),
+            ("openai", &["aws_session_name"]),
+        ]),
+        ..Default::default()
+    };
 
     let granted = r#"{"aws_role_name": "role"}"#;
     fixture
@@ -281,9 +291,10 @@ fn model_exact_then_provider_prefix() {
     );
 
     // a known group without an opt-in does not fall back to its provider prefix
-    let mut unset = Fixture::default();
-    unset.grants = Grants::exact(&[("openai", &["aws_session_name"])]);
-    unset.grants.0.insert("openai/gpt-4".to_owned(), None);
+    let unset = Fixture {
+        grants: Grants::exact(&[("openai", &["aws_session_name"])]).unset("openai/gpt-4"),
+        ..Default::default()
+    };
     assert_eq!(
         denied_param_for(&unset, "openai/gpt-4", r#"{"aws_session_name": "s"}"#),
         "aws_session_name"
@@ -312,15 +323,17 @@ fn no_model_info_denies() {
 
 #[test]
 fn string_param_grant() {
-    let mut fixture = Fixture::default();
-    fixture.grants = Grants::exact(&[("model", &["aws_role_name"])]);
+    let fixture = Fixture {
+        grants: Grants::exact(&[("model", &["aws_role_name"])]),
+        ..Default::default()
+    };
     let granted = body(r#"{"aws_role_name": "role"}"#);
     fixture
         .check(&granted, "model")
         .expect("the exact parameter is granted");
     let paired = body(r#"{"aws_role_name": "role", "aws_session_name": "session"}"#);
     assert!(matches!(
-        fixture.check(&paired, "model"),
-        Err(SafetyError::Banned { ref param }) if param == "aws_session_name"
+        &fixture.check(&paired, "model"),
+        Err(SafetyError::Banned { param }) if param == "aws_session_name"
     ));
 }
