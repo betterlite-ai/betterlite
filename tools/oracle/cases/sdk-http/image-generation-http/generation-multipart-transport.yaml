@@ -20,6 +20,8 @@ upstream:
     headers: {content-type: application/json, x-request-id: img_2}
     body: {created: 2, data: [{b64_json: Yg==}]}
 compare:
+  headers: []
+  headers_present: []
   upstream_headers: [content-type, x]
   ignore:
     - pointer: /upstream/0/body

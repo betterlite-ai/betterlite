@@ -11,6 +11,8 @@ upstream:
     headers: {content-type: text/plain, retry-after: "2"}
     body: slow
 compare:
+  headers: []
+  headers_present: []
   upstream_headers: [content-type, x]
   ignore:
     - pointer: /image_generation_http/value/failure/headers/date

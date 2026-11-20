@@ -19,6 +19,8 @@ upstream:
     headers: {content-type: application/json, x-request-id: img_1}
     body: {created: 1, data: [{b64_json: YQ==}]}
 compare:
+  headers: []
+  headers_present: []
   upstream_headers: [content-type, x]
   ignore:
     - pointer: /image_generation_http/value/effects/validation/litellm_params/api_base
