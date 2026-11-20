@@ -175,7 +175,11 @@ impl StubHandler {
             .clone()
     }
 
-    fn answer_retrieve(&self) -> RetrieveResult {
+    fn answer<T>(
+        &self,
+        slot: &Mutex<Option<T>>,
+        missing: &str,
+    ) -> Result<T, ContainerResourceHttpError> {
         if let Some(error) = self
             .failure
             .lock()
@@ -184,31 +188,12 @@ impl StubHandler {
         {
             return Err(error);
         }
-        let object = self
-            .object
+        let reply = slot
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .take()
-            .expect("the fixture answers one retrieve");
-        Ok(object)
-    }
-
-    fn answer_delete(&self) -> DeleteResult {
-        if let Some(error) = self
-            .failure
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take()
-        {
-            return Err(error);
-        }
-        let deleted = self
-            .deleted
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take()
-            .expect("the fixture answers one delete");
-        Ok(deleted)
+            .expect(missing);
+        Ok(reply)
     }
 
     fn record(&self, call: &ContainerHandlerCall<'_>, form: Form) {
@@ -241,12 +226,12 @@ impl StubHandler {
 impl ContainerHandler for StubHandler {
     fn retrieve(&self, call: &ContainerHandlerCall<'_>) -> RetrieveResult {
         self.record(call, Form::Blocking);
-        self.answer_retrieve()
+        self.answer(&self.object, "the fixture answers one retrieve")
     }
 
     fn delete(&self, call: &ContainerHandlerCall<'_>) -> DeleteResult {
         self.record(call, Form::Blocking);
-        self.answer_delete()
+        self.answer(&self.deleted, "the fixture answers one delete")
     }
 
     fn aretrieve(
@@ -254,7 +239,7 @@ impl ContainerHandler for StubHandler {
         call: &ContainerHandlerCall<'_>,
     ) -> impl Future<Output = RetrieveResult> + Send {
         self.record(call, Form::Async);
-        ready(self.answer_retrieve())
+        ready(self.answer(&self.object, "the fixture answers one retrieve"))
     }
 
     fn adelete(
@@ -262,7 +247,7 @@ impl ContainerHandler for StubHandler {
         call: &ContainerHandlerCall<'_>,
     ) -> impl Future<Output = DeleteResult> + Send {
         self.record(call, Form::Async);
-        ready(self.answer_delete())
+        ready(self.answer(&self.deleted, "the fixture answers one delete"))
     }
 }
 
@@ -445,12 +430,13 @@ pub(crate) struct FakeClient {
 
 impl FakeClient {
     pub(crate) fn answering(body: &str) -> Self {
+        let reply = ContainerHttpReply {
+            status: 200,
+            headers: BTreeMap::new(),
+            body: body.as_bytes().to_vec(),
+        };
         Self {
-            reply: ContainerHttpReply {
-                status: 200,
-                headers: BTreeMap::new(),
-                body: body.as_bytes().to_vec(),
-            },
+            reply,
             seen: Arc::default(),
         }
     }
@@ -534,6 +520,9 @@ pub(crate) struct Fixture {
 
 impl Fixture {
     pub(crate) fn new() -> Self {
+        let handler = StubHandler::retrieving(container_object());
+        let decoder = StubDecoder::answering(decoding_to(CONTAINER_ID, "openai", None));
+        let lookup = StubLookup::carrying("openai-config");
         Self {
             container_id: CONTAINER_ID.to_owned(),
             timeout: None,
@@ -547,9 +536,9 @@ impl Fixture {
             litellm_call_id: Some(CALL_ID.to_owned()),
             litellm_metadata: None,
             mock_response: None,
-            handler: StubHandler::retrieving(container_object()),
-            decoder: StubDecoder::answering(decoding_to(CONTAINER_ID, "openai", None)),
-            lookup: StubLookup::carrying("openai-config"),
+            handler,
+            decoder,
+            lookup,
             logging: logging(),
             redactor: redactor(),
         }
