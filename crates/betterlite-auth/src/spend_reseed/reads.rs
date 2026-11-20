@@ -48,7 +48,7 @@ impl WindowDurationValidity for CounterDurations<'_> {
 }
 
 // the row a decoded counter names, and whether that counter is an end-user one
-fn lookup_of(key: SpendCounterKey<'_>) -> Option<(SpendRowLookup<'_>, bool)> {
+const fn lookup_of(key: SpendCounterKey<'_>) -> Option<(SpendRowLookup<'_>, bool)> {
     match key {
         SpendCounterKey::Key(token) => Some((SpendRowLookup::Key(token), false)),
         SpendCounterKey::TeamMember { user_id, team_id } => {

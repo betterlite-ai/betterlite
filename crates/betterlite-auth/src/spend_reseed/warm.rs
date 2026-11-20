@@ -14,7 +14,7 @@ pub(super) enum SeedAnswer {
 
 impl SeedAnswer {
     // the primary path trusts the seed whenever no other pod's value is readable
-    pub(super) fn seeded(self, amount: Decimal) -> Decimal {
+    pub(super) const fn seeded(self, amount: Decimal) -> Decimal {
         match self {
             Self::Stored(stored) => stored,
             Self::Seeded | Self::Vanished => amount,
@@ -22,7 +22,7 @@ impl SeedAnswer {
     }
 
     // the window path adds this pod's amount only when the winner vanished
-    pub(super) fn held(self, amount: Decimal) -> Option<Decimal> {
+    pub(super) const fn held(self, amount: Decimal) -> Option<Decimal> {
         match self {
             Self::Seeded => Some(amount),
             Self::Stored(stored) => Some(stored),
