@@ -86,7 +86,7 @@ impl TestDatabase {
         }
     }
 
-    pub(crate) fn prisma(&self) -> PrismaClient<'_> {
+    pub(crate) const fn prisma(&self) -> PrismaClient<'_> {
         PrismaClient {
             writer: &self.store,
             reader: &self.store,
