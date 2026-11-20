@@ -17,6 +17,7 @@ use betterlite_config::tls::VerifySetting;
 use betterlite_http::proxy::base_builder;
 use reqwest::Client;
 use reqwest::header::{HeaderMap, HeaderValue};
+use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use tracing::subscriber::set_default;
 use tracing_subscriber::fmt;
@@ -137,332 +138,435 @@ fn factories() -> GuardrailFactories {
 }
 
 // The supported event hooks of every wire name, written out as each class declares them
-const EXPECTED_HOOKS: &[(&str, &[GuardrailEventHooks])] = &[
-    (wire::AGENT_365, &[PreMcpCall]),
-    (wire::AIM, &[PreCall, DuringCall, PostCall]),
-    (wire::AKTO, &[PreCall, PostCall]),
-    (wire::ALICE, &[PreCall, DuringCall, PostCall]),
-    (wire::APORIA, &[DuringCall, PostCall]),
-    (wire::AZURE_PROMPT_SHIELD, &[PreCall, DuringCall]),
-    (wire::AZURE_TEXT_MODERATIONS, &[PreCall, DuringCall]),
-    (wire::BLOCK_CODE_EXECUTION, &[PreCall, PostCall, DuringCall]),
-    (wire::CATO_NETWORKS, &[PreCall, DuringCall, PostCall]),
-    (
-        wire::CISCO_AI_DEFENSE,
-        &[
-            PreCall,
-            DuringCall,
-            PostCall,
-            LoggingOnly,
-            PreMcpCall,
-            DuringMcpCall,
-        ],
-    ),
-    (wire::COMPRESR, &[]),
-    (wire::CONDUCT, &[]),
-    (wire::CROWDSTRIKE_AIDR, &[PreCall, PostCall]),
-    (
-        wire::CUSTOM_CODE,
-        &[
-            PreCall,
-            DuringCall,
-            PostCall,
-            PreMcpCall,
-            DuringMcpCall,
-            LoggingOnly,
-        ],
-    ),
-    (wire::DEEP_KEEP, &[PreCall, PostCall, DuringCall]),
-    (wire::DYNAMOAI, &[PreCall, PostCall, DuringCall]),
-    (wire::ENKRYPTAI, &[PreCall, PostCall, DuringCall]),
-    (
-        wire::GENERIC_GUARDRAIL_API,
-        &[PreCall, PostCall, DuringCall],
-    ),
-    (wire::GRAYSWAN, &[PreCall, DuringCall, PostCall]),
-    (wire::GUARDRAILS_AI, &[PostCall, PreCall, LoggingOnly]),
-    (wire::HEADROOM, &[PreCall, PostCall]),
-    (wire::HIDDENLAYER, &[PreCall, PostCall]),
-    (wire::IBM_GUARDRAILS, &[PreCall, PostCall, DuringCall]),
-    (wire::JAVELIN, &[PreCall]),
-    (wire::LASSO, &[PreCall, DuringCall, PostCall]),
-    (
-        wire::LITELLM_CONTENT_FILTER,
-        &[
-            PreCall,
-            PostCall,
-            DuringCall,
-            RealtimeInputTranscription,
-            PreMcpCall,
-            PostMcpCall,
-        ],
-    ),
-    (wire::LLM_AS_A_JUDGE, &[PreCall, DuringCall, PostCall]),
-    (wire::MCP_JWT_SIGNER, &[PreMcpCall]),
-    (wire::MICROSOFT_PURVIEW, &[PreCall, PostCall, LoggingOnly]),
-    (
-        wire::MODEL_ARMOR,
-        &[
-            PreCall,
-            DuringCall,
-            PostCall,
-            PreMcpCall,
-            DuringMcpCall,
-            LoggingOnly,
-        ],
-    ),
-    (wire::NOMA, &[PreCall, DuringCall, PostCall, PreMcpCall]),
-    (
-        wire::NOMA_V2,
-        &[PreCall, DuringCall, PostCall, PreMcpCall, DuringMcpCall],
-    ),
-    (wire::ONYX, &[PreCall, DuringCall, PostCall]),
-    (wire::OPENAI_MODERATION, &[PreCall, DuringCall, PostCall]),
-    (wire::OVALIX, &[PreCall, PostCall]),
-    (wire::PANGEA, &[PreCall, PostCall]),
-    (
-        wire::PANW_PRISMA_AIRS,
-        &[
-            PreCall,
-            DuringCall,
-            PostCall,
-            LoggingOnly,
-            PreMcpCall,
-            DuringMcpCall,
-            PostMcpCall,
-        ],
-    ),
-    (
-        wire::PILLAR,
-        &[PreCall, DuringCall, PostCall, PreMcpCall, DuringMcpCall],
-    ),
-    (wire::PROMPTGUARD, &[PreCall, PostCall]),
-    (wire::QOSTODIAN_NEXUS, &[]),
-    (wire::QUALIFIRE, &[PreCall, DuringCall, PostCall]),
-    (wire::REPELLOAI, &[PreCall, PostCall]),
-    (wire::RUBRIK, &[]),
-    (wire::SEMANTIC_GUARD, &[PreCall, PostCall]),
-    (
-        wire::SINGULR,
-        &[PreCall, PostCall, LoggingOnly, PreMcpCall, PostMcpCall],
-    ),
-    (wire::STRAIKER, &[PreCall, PostCall]),
-    (wire::TYPESAFE, &[]),
-    (wire::VIGIL_GUARD, &[PreCall, PostCall]),
-    (
-        wire::XECGUARD,
-        &[PreCall, DuringCall, PostCall, LoggingOnly],
-    ),
-    (wire::ZSCALER_AI_GUARD, &[PreCall, PostCall]),
-];
+#[rstest]
+#[case::hooks_agent_365(wire::AGENT_365, &[PreMcpCall])]
+#[case::hooks_aim(wire::AIM, &[PreCall, DuringCall, PostCall])]
+#[case::hooks_akto(wire::AKTO, &[PreCall, PostCall])]
+#[case::hooks_alice(wire::ALICE, &[PreCall, DuringCall, PostCall])]
+#[case::hooks_aporia(wire::APORIA, &[DuringCall, PostCall])]
+#[case::hooks_azure_prompt_shield(wire::AZURE_PROMPT_SHIELD, &[PreCall, DuringCall])]
+#[case::hooks_azure_text_moderations(wire::AZURE_TEXT_MODERATIONS, &[PreCall, DuringCall])]
+#[case::hooks_block_code_execution(wire::BLOCK_CODE_EXECUTION, &[PreCall, PostCall, DuringCall])]
+#[case::hooks_cato_networks(wire::CATO_NETWORKS, &[PreCall, DuringCall, PostCall])]
+#[case::hooks_cisco_ai_defense(
+    wire::CISCO_AI_DEFENSE,
+    &[PreCall, DuringCall, PostCall, LoggingOnly, PreMcpCall, DuringMcpCall]
+)]
+#[case::hooks_compresr(wire::COMPRESR, &[])]
+#[case::hooks_conduct(wire::CONDUCT, &[])]
+#[case::hooks_crowdstrike_aidr(wire::CROWDSTRIKE_AIDR, &[PreCall, PostCall])]
+#[case::hooks_custom_code(
+    wire::CUSTOM_CODE,
+    &[PreCall, DuringCall, PostCall, PreMcpCall, DuringMcpCall, LoggingOnly]
+)]
+#[case::hooks_deep_keep(wire::DEEP_KEEP, &[PreCall, PostCall, DuringCall])]
+#[case::hooks_dynamoai(wire::DYNAMOAI, &[PreCall, PostCall, DuringCall])]
+#[case::hooks_enkryptai(wire::ENKRYPTAI, &[PreCall, PostCall, DuringCall])]
+#[case::hooks_generic_guardrail_api(wire::GENERIC_GUARDRAIL_API, &[PreCall, PostCall, DuringCall])]
+#[case::hooks_grayswan(wire::GRAYSWAN, &[PreCall, DuringCall, PostCall])]
+#[case::hooks_guardrails_ai(wire::GUARDRAILS_AI, &[PostCall, PreCall, LoggingOnly])]
+#[case::hooks_headroom(wire::HEADROOM, &[PreCall, PostCall])]
+#[case::hooks_hiddenlayer(wire::HIDDENLAYER, &[PreCall, PostCall])]
+#[case::hooks_ibm_guardrails(wire::IBM_GUARDRAILS, &[PreCall, PostCall, DuringCall])]
+#[case::hooks_javelin(wire::JAVELIN, &[PreCall])]
+#[case::hooks_lasso(wire::LASSO, &[PreCall, DuringCall, PostCall])]
+#[case::hooks_litellm_content_filter(
+    wire::LITELLM_CONTENT_FILTER,
+    &[PreCall, PostCall, DuringCall, RealtimeInputTranscription, PreMcpCall, PostMcpCall]
+)]
+#[case::hooks_llm_as_a_judge(wire::LLM_AS_A_JUDGE, &[PreCall, DuringCall, PostCall])]
+#[case::hooks_mcp_jwt_signer(wire::MCP_JWT_SIGNER, &[PreMcpCall])]
+#[case::hooks_microsoft_purview(wire::MICROSOFT_PURVIEW, &[PreCall, PostCall, LoggingOnly])]
+#[case::hooks_model_armor(
+    wire::MODEL_ARMOR,
+    &[PreCall, DuringCall, PostCall, PreMcpCall, DuringMcpCall, LoggingOnly]
+)]
+#[case::hooks_noma(wire::NOMA, &[PreCall, DuringCall, PostCall, PreMcpCall])]
+#[case::hooks_noma_v2(wire::NOMA_V2, &[PreCall, DuringCall, PostCall, PreMcpCall, DuringMcpCall])]
+#[case::hooks_onyx(wire::ONYX, &[PreCall, DuringCall, PostCall])]
+#[case::hooks_openai_moderation(wire::OPENAI_MODERATION, &[PreCall, DuringCall, PostCall])]
+#[case::hooks_ovalix(wire::OVALIX, &[PreCall, PostCall])]
+#[case::hooks_pangea(wire::PANGEA, &[PreCall, PostCall])]
+#[case::hooks_panw_prisma_airs(
+    wire::PANW_PRISMA_AIRS,
+    &[PreCall, DuringCall, PostCall, LoggingOnly, PreMcpCall, DuringMcpCall, PostMcpCall]
+)]
+#[case::hooks_pillar(wire::PILLAR, &[PreCall, DuringCall, PostCall, PreMcpCall, DuringMcpCall])]
+#[case::hooks_promptguard(wire::PROMPTGUARD, &[PreCall, PostCall])]
+#[case::hooks_qostodian_nexus(wire::QOSTODIAN_NEXUS, &[])]
+#[case::hooks_qualifire(wire::QUALIFIRE, &[PreCall, DuringCall, PostCall])]
+#[case::hooks_repelloai(wire::REPELLOAI, &[PreCall, PostCall])]
+#[case::hooks_rubrik(wire::RUBRIK, &[])]
+#[case::hooks_semantic_guard(wire::SEMANTIC_GUARD, &[PreCall, PostCall])]
+#[case::hooks_singulr(wire::SINGULR, &[PreCall, PostCall, LoggingOnly, PreMcpCall, PostMcpCall])]
+#[case::hooks_straiker(wire::STRAIKER, &[PreCall, PostCall])]
+#[case::hooks_typesafe(wire::TYPESAFE, &[])]
+#[case::hooks_vigil_guard(wire::VIGIL_GUARD, &[PreCall, PostCall])]
+#[case::hooks_xecguard(wire::XECGUARD, &[PreCall, DuringCall, PostCall, LoggingOnly])]
+#[case::hooks_zscaler_ai_guard(wire::ZSCALER_AI_GUARD, &[PreCall, PostCall])]
+fn test_every_wire_name_builds_with_its_supported_hooks(
+    #[case] kind: &str,
+    #[case] hooks: &[GuardrailEventHooks],
+) {
+    let spec = build_ok(kind);
+    let settings = spec.settings();
+    assert_eq!(
+        settings.guardrail_name.as_deref(),
+        Some("test-guard"),
+        "{kind}"
+    );
+    assert_eq!(
+        settings.event_hook,
+        Some(LitellmParamsMode::One(mode_of(kind).to_owned())),
+        "{kind}"
+    );
+    assert!(settings.default_on, "{kind}");
+    assert_eq!(settings.timeout, Some(7.5_f64), "{kind}");
+    assert_eq!(supported_event_hooks(kind), hooks, "{kind}");
+}
 
-#[test]
-fn every_wire_name_builds_with_its_supported_hooks() {
-    assert_eq!(EXPECTED_HOOKS.len(), 50);
-    for &(kind, hooks) in EXPECTED_HOOKS {
-        let spec = build_ok(kind);
-        let settings = spec.settings();
-        assert_eq!(
-            settings.guardrail_name.as_deref(),
-            Some("test-guard"),
+#[rstest]
+#[case::a_aim(wire::AIM)]
+#[case::a_akto(wire::AKTO)]
+#[case::a_aporia(wire::APORIA)]
+#[case::a_cisco_ai_defense(wire::CISCO_AI_DEFENSE)]
+#[case::a_conduct(wire::CONDUCT)]
+#[case::a_crowdstrike_aidr(wire::CROWDSTRIKE_AIDR)]
+#[case::a_deep_keep(wire::DEEP_KEEP)]
+#[case::a_generic_guardrail_api(wire::GENERIC_GUARDRAIL_API)]
+#[case::a_grayswan(wire::GRAYSWAN)]
+#[case::a_guardrails_ai(wire::GUARDRAILS_AI)]
+#[case::a_headroom(wire::HEADROOM)]
+#[case::a_lasso(wire::LASSO)]
+fn test_third_party_a_arms_hold_their_own_args(#[case] kind: &str) {
+    match kind {
+        wire::AIM => assert!(matches!(&build_ok(kind).kind, HookKind::Aim(_)), "{kind}"),
+        wire::AKTO => assert!(matches!(&build_ok(kind).kind, HookKind::Akto(_)), "{kind}"),
+        wire::APORIA => assert!(
+            matches!(&build_ok(kind).kind, HookKind::Aporia(_)),
             "{kind}"
-        );
-        assert_eq!(
-            settings.event_hook,
-            Some(LitellmParamsMode::One(mode_of(kind).to_owned())),
+        ),
+        wire::CISCO_AI_DEFENSE => {
+            assert!(
+                matches!(&build_ok(kind).kind, HookKind::CiscoAiDefense(_)),
+                "{kind}"
+            )
+        }
+        wire::CONDUCT => assert!(
+            matches!(&build_ok(kind).kind, HookKind::Conduct(_)),
             "{kind}"
-        );
-        assert!(settings.default_on, "{kind}");
-        assert_eq!(settings.timeout, Some(7.5_f64), "{kind}");
-        assert_eq!(supported_event_hooks(kind), hooks, "{kind}");
+        ),
+        wire::CROWDSTRIKE_AIDR => {
+            assert!(
+                matches!(&build_ok(kind).kind, HookKind::CrowdstrikeAidr(_)),
+                "{kind}"
+            )
+        }
+        wire::DEEP_KEEP => {
+            assert!(
+                matches!(&build_ok(kind).kind, HookKind::Deepkeep(_)),
+                "{kind}"
+            )
+        }
+        wire::GENERIC_GUARDRAIL_API => {
+            assert!(
+                matches!(&build_ok(kind).kind, HookKind::GenericGuardrailApi(_)),
+                "{kind}"
+            )
+        }
+        wire::GRAYSWAN => assert!(
+            matches!(&build_ok(kind).kind, HookKind::Grayswan(_)),
+            "{kind}"
+        ),
+        wire::GUARDRAILS_AI => {
+            assert!(
+                matches!(&build_ok(kind).kind, HookKind::GuardrailsAi(_)),
+                "{kind}"
+            )
+        }
+        wire::HEADROOM => assert!(
+            matches!(&build_ok(kind).kind, HookKind::Headroom(_)),
+            "{kind}"
+        ),
+        wire::LASSO => assert!(matches!(&build_ok(kind).kind, HookKind::Lasso(_)), "{kind}"),
+        _other => panic!("{kind} is not a third_party_a name"),
     }
 }
 
-#[test]
-fn third_party_a_arms_hold_their_own_args() {
-    let cases: &[(&str, fn(&HookKind) -> bool)] = &[
-        (wire::AIM, |kind| matches!(kind, HookKind::Aim(_))),
-        (wire::AKTO, |kind| matches!(kind, HookKind::Akto(_))),
-        (wire::APORIA, |kind| matches!(kind, HookKind::Aporia(_))),
-        (wire::CISCO_AI_DEFENSE, |kind| {
-            matches!(kind, HookKind::CiscoAiDefense(_))
-        }),
-        (wire::CONDUCT, |kind| matches!(kind, HookKind::Conduct(_))),
-        (wire::CROWDSTRIKE_AIDR, |kind| {
-            matches!(kind, HookKind::CrowdstrikeAidr(_))
-        }),
-        (wire::DEEP_KEEP, |kind| {
-            matches!(kind, HookKind::Deepkeep(_))
-        }),
-        (wire::GENERIC_GUARDRAIL_API, |kind| {
-            matches!(kind, HookKind::GenericGuardrailApi(_))
-        }),
-        (wire::GRAYSWAN, |kind| matches!(kind, HookKind::Grayswan(_))),
-        (wire::GUARDRAILS_AI, |kind| {
-            matches!(kind, HookKind::GuardrailsAi(_))
-        }),
-        (wire::HEADROOM, |kind| matches!(kind, HookKind::Headroom(_))),
-        (wire::LASSO, |kind| matches!(kind, HookKind::Lasso(_))),
-    ];
-    for &(kind, holds) in cases {
-        let spec = build_ok(kind);
-        assert!(holds(&spec.kind), "{kind}");
+#[rstest]
+#[case::b_panw_prisma_airs(wire::PANW_PRISMA_AIRS)]
+#[case::b_pillar(wire::PILLAR)]
+#[case::b_rubrik(wire::RUBRIK)]
+#[case::b_straiker(wire::STRAIKER)]
+#[case::b_typesafe(wire::TYPESAFE)]
+#[case::b_vigil_guard(wire::VIGIL_GUARD)]
+#[case::b_xecguard(wire::XECGUARD)]
+fn test_third_party_b_arms_hold_their_own_args(#[case] kind: &str) {
+    match kind {
+        wire::PANW_PRISMA_AIRS => {
+            assert!(
+                matches!(&build_ok(kind).kind, HookKind::PanwPrismaAirs(_)),
+                "{kind}"
+            )
+        }
+        wire::PILLAR => assert!(
+            matches!(&build_ok(kind).kind, HookKind::Pillar(_)),
+            "{kind}"
+        ),
+        wire::RUBRIK => assert!(
+            matches!(&build_ok(kind).kind, HookKind::Rubrik(_)),
+            "{kind}"
+        ),
+        wire::STRAIKER => assert!(
+            matches!(&build_ok(kind).kind, HookKind::Straiker(_)),
+            "{kind}"
+        ),
+        wire::TYPESAFE => assert!(
+            matches!(&build_ok(kind).kind, HookKind::Typesafe(_)),
+            "{kind}"
+        ),
+        wire::VIGIL_GUARD => {
+            assert!(
+                matches!(&build_ok(kind).kind, HookKind::VigilGuard(_)),
+                "{kind}"
+            )
+        }
+        wire::XECGUARD => assert!(
+            matches!(&build_ok(kind).kind, HookKind::Xecguard(_)),
+            "{kind}"
+        ),
+        _other => panic!("{kind} is not a third_party_b name"),
     }
 }
 
-#[test]
-fn third_party_b_arms_hold_their_own_args() {
-    let cases: &[(&str, fn(&HookKind) -> bool)] = &[
-        (wire::PANW_PRISMA_AIRS, |kind| {
-            matches!(kind, HookKind::PanwPrismaAirs(_))
-        }),
-        (wire::PILLAR, |kind| matches!(kind, HookKind::Pillar(_))),
-        (wire::RUBRIK, |kind| matches!(kind, HookKind::Rubrik(_))),
-        (wire::STRAIKER, |kind| matches!(kind, HookKind::Straiker(_))),
-        (wire::TYPESAFE, |kind| matches!(kind, HookKind::Typesafe(_))),
-        (wire::VIGIL_GUARD, |kind| {
-            matches!(kind, HookKind::VigilGuard(_))
-        }),
-        (wire::XECGUARD, |kind| matches!(kind, HookKind::Xecguard(_))),
-    ];
-    for &(kind, holds) in cases {
-        let spec = build_ok(kind);
-        assert!(holds(&spec.kind), "{kind}");
+#[rstest]
+#[case::init_agent_365(wire::AGENT_365)]
+#[case::init_azure_prompt_shield(wire::AZURE_PROMPT_SHIELD)]
+#[case::init_azure_text_moderations(wire::AZURE_TEXT_MODERATIONS)]
+#[case::init_ibm_guardrails(wire::IBM_GUARDRAILS)]
+#[case::init_microsoft_purview(wire::MICROSOFT_PURVIEW)]
+#[case::init_model_armor(wire::MODEL_ARMOR)]
+#[case::init_openai_moderation(wire::OPENAI_MODERATION)]
+fn test_hook_initializer_arms_hold_their_own_args(#[case] kind: &str) {
+    match kind {
+        wire::AGENT_365 => assert!(
+            matches!(&build_ok(kind).kind, HookKind::Agent365(_)),
+            "{kind}"
+        ),
+        wire::AZURE_PROMPT_SHIELD => {
+            assert!(
+                matches!(&build_ok(kind).kind, HookKind::AzurePromptShield(_)),
+                "{kind}"
+            )
+        }
+        wire::AZURE_TEXT_MODERATIONS => {
+            assert!(
+                matches!(&build_ok(kind).kind, HookKind::AzureTextModerations(_)),
+                "{kind}"
+            )
+        }
+        wire::IBM_GUARDRAILS => {
+            assert!(
+                matches!(&build_ok(kind).kind, HookKind::IbmGuardrails(_)),
+                "{kind}"
+            )
+        }
+        wire::MICROSOFT_PURVIEW => {
+            assert!(
+                matches!(&build_ok(kind).kind, HookKind::MicrosoftPurview(_)),
+                "{kind}"
+            )
+        }
+        wire::MODEL_ARMOR => assert!(
+            matches!(&build_ok(kind).kind, HookKind::ModelArmor(_)),
+            "{kind}"
+        ),
+        wire::OPENAI_MODERATION => {
+            assert!(
+                matches!(&build_ok(kind).kind, HookKind::OpenaiModeration(_)),
+                "{kind}"
+            )
+        }
+        _other => panic!("{kind} is not a hook initializer name"),
     }
 }
 
-#[test]
-fn hook_initializer_arms_hold_their_own_args() {
-    let cases: &[(&str, fn(&HookKind) -> bool)] = &[
-        (wire::AGENT_365, |kind| {
-            matches!(kind, HookKind::Agent365(_))
-        }),
-        (wire::AZURE_PROMPT_SHIELD, |kind| {
-            matches!(kind, HookKind::AzurePromptShield(_))
-        }),
-        (wire::AZURE_TEXT_MODERATIONS, |kind| {
-            matches!(kind, HookKind::AzureTextModerations(_))
-        }),
-        (wire::IBM_GUARDRAILS, |kind| {
-            matches!(kind, HookKind::IbmGuardrails(_))
-        }),
-        (wire::MICROSOFT_PURVIEW, |kind| {
-            matches!(kind, HookKind::MicrosoftPurview(_))
-        }),
-        (wire::MODEL_ARMOR, |kind| {
-            matches!(kind, HookKind::ModelArmor(_))
-        }),
-        (wire::OPENAI_MODERATION, |kind| {
-            matches!(kind, HookKind::OpenaiModeration(_))
-        }),
-    ];
-    for &(kind, holds) in cases {
-        let spec = build_ok(kind);
-        assert!(holds(&spec.kind), "{kind}");
+#[rstest]
+#[case::special_litellm_content_filter(wire::LITELLM_CONTENT_FILTER)]
+#[case::special_mcp_jwt_signer(wire::MCP_JWT_SIGNER)]
+fn test_content_filter_and_signer_arms_hold_their_own_args(#[case] kind: &str) {
+    match kind {
+        wire::LITELLM_CONTENT_FILTER => {
+            assert!(
+                matches!(&build_ok(kind).kind, HookKind::LitellmContentFilter(_)),
+                "{kind}"
+            )
+        }
+        wire::MCP_JWT_SIGNER => {
+            assert!(
+                matches!(&build_ok(kind).kind, HookKind::McpJwtSigner(_)),
+                "{kind}"
+            )
+        }
+        _other => panic!("{kind} is not a content filter or signer name"),
     }
 }
 
-#[test]
-fn content_filter_and_signer_arms_hold_their_own_args() {
-    let cases: &[(&str, fn(&HookKind) -> bool)] = &[
-        (wire::LITELLM_CONTENT_FILTER, |kind| {
-            matches!(kind, HookKind::LitellmContentFilter(_))
-        }),
-        (wire::MCP_JWT_SIGNER, |kind| {
-            matches!(kind, HookKind::McpJwtSigner(_))
-        }),
-    ];
-    for &(kind, holds) in cases {
-        let spec = build_ok(kind);
-        assert!(holds(&spec.kind), "{kind}");
+#[rstest]
+#[case::vendor_promptguard(wire::PROMPTGUARD)]
+#[case::vendor_qostodian_nexus(wire::QOSTODIAN_NEXUS)]
+#[case::vendor_qualifire(wire::QUALIFIRE)]
+#[case::vendor_semantic_guard(wire::SEMANTIC_GUARD)]
+#[case::vendor_singulr(wire::SINGULR)]
+#[case::vendor_zscaler_ai_guard(wire::ZSCALER_AI_GUARD)]
+fn test_vendor_initializer_arms_hold_their_own_args(#[case] kind: &str) {
+    match kind {
+        wire::PROMPTGUARD => {
+            assert!(
+                matches!(&build_ok(kind).kind, HookKind::Promptguard(_)),
+                "{kind}"
+            )
+        }
+        wire::QOSTODIAN_NEXUS => {
+            assert!(
+                matches!(&build_ok(kind).kind, HookKind::QostodianNexus(_)),
+                "{kind}"
+            )
+        }
+        wire::QUALIFIRE => assert!(
+            matches!(&build_ok(kind).kind, HookKind::Qualifire(_)),
+            "{kind}"
+        ),
+        wire::SEMANTIC_GUARD => {
+            assert!(
+                matches!(&build_ok(kind).kind, HookKind::SemanticGuard(_)),
+                "{kind}"
+            )
+        }
+        wire::SINGULR => assert!(
+            matches!(&build_ok(kind).kind, HookKind::Singulr(_)),
+            "{kind}"
+        ),
+        wire::ZSCALER_AI_GUARD => {
+            assert!(
+                matches!(&build_ok(kind).kind, HookKind::ZscalerAiGuard(_)),
+                "{kind}"
+            )
+        }
+        _other => panic!("{kind} is not a vendor initializer name"),
     }
 }
 
-#[test]
-fn vendor_initializer_arms_hold_their_own_args() {
-    let cases: &[(&str, fn(&HookKind) -> bool)] = &[
-        (wire::PROMPTGUARD, |kind| {
-            matches!(kind, HookKind::Promptguard(_))
-        }),
-        (wire::QOSTODIAN_NEXUS, |kind| {
-            matches!(kind, HookKind::QostodianNexus(_))
-        }),
-        (wire::QUALIFIRE, |kind| {
-            matches!(kind, HookKind::Qualifire(_))
-        }),
-        (wire::SEMANTIC_GUARD, |kind| {
-            matches!(kind, HookKind::SemanticGuard(_))
-        }),
-        (wire::SINGULR, |kind| matches!(kind, HookKind::Singulr(_))),
-        (wire::ZSCALER_AI_GUARD, |kind| {
-            matches!(kind, HookKind::ZscalerAiGuard(_))
-        }),
-    ];
-    for &(kind, holds) in cases {
-        let spec = build_ok(kind);
-        assert!(holds(&spec.kind), "{kind}");
+#[rstest]
+#[case::class_block_code_execution(wire::BLOCK_CODE_EXECUTION)]
+#[case::class_compresr(wire::COMPRESR)]
+#[case::class_custom_code(wire::CUSTOM_CODE)]
+#[case::class_hiddenlayer(wire::HIDDENLAYER)]
+#[case::class_javelin(wire::JAVELIN)]
+#[case::class_llm_as_a_judge(wire::LLM_AS_A_JUDGE)]
+#[case::class_noma(wire::NOMA)]
+#[case::class_noma_v2(wire::NOMA_V2)]
+#[case::class_onyx(wire::ONYX)]
+#[case::class_ovalix(wire::OVALIX)]
+#[case::class_pangea(wire::PANGEA)]
+#[case::class_repelloai(wire::REPELLOAI)]
+fn test_class_arms_keep_their_params(#[case] kind: &str) {
+    match kind {
+        wire::BLOCK_CODE_EXECUTION => {
+            assert!(
+                matches!(&build_ok(kind).kind, HookKind::BlockCodeExecution(_)),
+                "{kind}"
+            )
+        }
+        wire::COMPRESR => assert!(
+            matches!(&build_ok(kind).kind, HookKind::Compresr(_)),
+            "{kind}"
+        ),
+        wire::CUSTOM_CODE => {
+            assert!(
+                matches!(&build_ok(kind).kind, HookKind::CustomCode(_)),
+                "{kind}"
+            )
+        }
+        wire::HIDDENLAYER => {
+            assert!(
+                matches!(&build_ok(kind).kind, HookKind::Hiddenlayer(_)),
+                "{kind}"
+            )
+        }
+        wire::JAVELIN => assert!(
+            matches!(&build_ok(kind).kind, HookKind::Javelin(_)),
+            "{kind}"
+        ),
+        wire::LLM_AS_A_JUDGE => {
+            assert!(
+                matches!(&build_ok(kind).kind, HookKind::LlmAsAJudge(_)),
+                "{kind}"
+            )
+        }
+        wire::NOMA => assert!(matches!(&build_ok(kind).kind, HookKind::Noma(_)), "{kind}"),
+        wire::NOMA_V2 => assert!(
+            matches!(&build_ok(kind).kind, HookKind::NomaV2(_)),
+            "{kind}"
+        ),
+        wire::ONYX => assert!(matches!(&build_ok(kind).kind, HookKind::Onyx(_)), "{kind}"),
+        wire::OVALIX => assert!(
+            matches!(&build_ok(kind).kind, HookKind::Ovalix(_)),
+            "{kind}"
+        ),
+        wire::PANGEA => assert!(
+            matches!(&build_ok(kind).kind, HookKind::Pangea(_)),
+            "{kind}"
+        ),
+        wire::REPELLOAI => {
+            assert!(
+                matches!(&build_ok(kind).kind, HookKind::Repelloai(_)),
+                "{kind}"
+            )
+        }
+        _other => panic!("{kind} is not a class name"),
     }
 }
 
-#[test]
-fn class_arms_keep_their_params() {
-    let cases: &[(&str, fn(&HookKind) -> bool)] = &[
-        (wire::BLOCK_CODE_EXECUTION, |kind| {
-            matches!(kind, HookKind::BlockCodeExecution(_))
-        }),
-        (wire::COMPRESR, |kind| matches!(kind, HookKind::Compresr(_))),
-        (wire::CUSTOM_CODE, |kind| {
-            matches!(kind, HookKind::CustomCode(_))
-        }),
-        (wire::HIDDENLAYER, |kind| {
-            matches!(kind, HookKind::Hiddenlayer(_))
-        }),
-        (wire::JAVELIN, |kind| matches!(kind, HookKind::Javelin(_))),
-        (wire::LLM_AS_A_JUDGE, |kind| {
-            matches!(kind, HookKind::LlmAsAJudge(_))
-        }),
-        (wire::NOMA, |kind| matches!(kind, HookKind::Noma(_))),
-        (wire::NOMA_V2, |kind| matches!(kind, HookKind::NomaV2(_))),
-        (wire::ONYX, |kind| matches!(kind, HookKind::Onyx(_))),
-        (wire::OVALIX, |kind| matches!(kind, HookKind::Ovalix(_))),
-        (wire::PANGEA, |kind| matches!(kind, HookKind::Pangea(_))),
-        (wire::REPELLOAI, |kind| {
-            matches!(kind, HookKind::Repelloai(_))
-        }),
-    ];
-    for &(kind, holds) in cases {
-        let spec = build_ok(kind);
-        assert!(holds(&spec.kind), "{kind}");
+#[rstest]
+#[case::ported_alice(wire::ALICE)]
+#[case::ported_cato_networks(wire::CATO_NETWORKS)]
+#[case::ported_dynamoai(wire::DYNAMOAI)]
+#[case::ported_enkryptai(wire::ENKRYPTAI)]
+fn test_ported_arms_hold_their_own_args(#[case] kind: &str) {
+    match kind {
+        wire::ALICE => assert!(matches!(&build_ok(kind).kind, HookKind::Alice(_)), "{kind}"),
+        wire::CATO_NETWORKS => {
+            assert!(
+                matches!(&build_ok(kind).kind, HookKind::CatoNetworks(_)),
+                "{kind}"
+            )
+        }
+        wire::DYNAMOAI => assert!(
+            matches!(&build_ok(kind).kind, HookKind::Dynamoai(_)),
+            "{kind}"
+        ),
+        wire::ENKRYPTAI => {
+            assert!(
+                matches!(&build_ok(kind).kind, HookKind::Enkryptai(_)),
+                "{kind}"
+            )
+        }
+        _other => panic!("{kind} is not a ported name"),
     }
 }
 
-#[test]
-fn ported_arms_hold_their_own_args() {
-    let cases: &[(&str, fn(&HookKind) -> bool)] = &[
-        (wire::ALICE, |kind| matches!(kind, HookKind::Alice(_))),
-        (wire::CATO_NETWORKS, |kind| {
-            matches!(kind, HookKind::CatoNetworks(_))
-        }),
-        (wire::DYNAMOAI, |kind| matches!(kind, HookKind::Dynamoai(_))),
-        (wire::ENKRYPTAI, |kind| {
-            matches!(kind, HookKind::Enkryptai(_))
-        }),
-    ];
-    for &(kind, holds) in cases {
-        let spec = build_ok(kind);
-        assert!(holds(&spec.kind), "{kind}");
-    }
-}
-
-#[test]
-fn unknown_wire_name_is_not_built() {
+#[rstest]
+#[case::unknown_custom_module("my_module.MyGuardrail")]
+#[case::unknown_bedrock("bedrock")]
+#[case::unknown_tool_policy("tool_policy")]
+#[case::unknown_empty("")]
+fn test_unknown_wire_name_is_not_built(#[case] kind: &str) {
     let params = test_params(wire::AIM);
-    for kind in ["my_module.MyGuardrail", "bedrock", "tool_policy", ""] {
-        assert!(
-            build_hook_spec(kind, &params, "test-guard", &test_ports()).is_none(),
-            "{kind}"
-        );
-    }
+    assert!(
+        build_hook_spec(kind, &params, "test-guard", &test_ports()).is_none(),
+        "{kind}"
+    );
 }
 
 #[test]
@@ -617,16 +721,19 @@ fn hook_errors_at_startup() {
 fn alice_args_copy_their_fields() {
     let params = test_params(wire::ALICE);
     let args = initialize_alice(&params, Some("alice-guard"));
-    assert_eq!(args.guardrail_name, "alice-guard");
-    assert_eq!(args.api_base.as_deref(), Some("https://guard.example/v1"));
-    assert_eq!(exposed(args.api_key.as_ref()), Some("test-key"));
+    assert_eq!(args.base.guardrail_name, "alice-guard");
+    assert_eq!(
+        args.base.api_base.as_deref(),
+        Some("https://guard.example/v1")
+    );
+    assert_eq!(exposed(args.base.api_key.as_ref()), Some("test-key"));
     assert_eq!(args.unreachable_fallback, UnreachableFallback::FailClosed);
     assert_eq!(
-        args.event_hook,
+        args.base.event_hook,
         LitellmParamsMode::One("pre_call".to_owned())
     );
-    assert!(args.default_on);
-    assert_eq!(args.timeout, Some(7.5_f64));
+    assert!(args.base.default_on);
+    assert_eq!(args.base.timeout, Some(7.5_f64));
 }
 
 #[test]
@@ -636,7 +743,7 @@ fn alice_keeps_an_explicit_fail_open() {
     );
     let args = initialize_alice(&params, Some("alice-guard"));
     assert_eq!(args.unreachable_fallback, UnreachableFallback::FailOpen);
-    assert!(args.api_key.is_none());
+    assert!(args.base.api_key.is_none());
 }
 
 #[test]
@@ -646,7 +753,7 @@ fn cato_networks_reads_ssl_verify() {
     let args = initialize_cato_networks(&params, Some("cato-guard")).expect("args");
     assert_eq!(args.ssl_verify, Some(VerifySetting::Bool(false)));
     assert_eq!(args.inspect_embeddings, None);
-    assert_eq!(args.guardrail_name, "cato-guard");
+    assert_eq!(args.base.guardrail_name, "cato-guard");
 }
 
 #[test]
@@ -676,15 +783,18 @@ fn cato_networks_rejects_a_ssl_verify_number() {
 fn dynamoai_args_copy_their_fields() {
     let params = test_params(wire::DYNAMOAI);
     let args = initialize_dynamoai(&params, Some("dynamo-guard"));
-    assert_eq!(args.guardrail_name, "dynamo-guard");
-    assert_eq!(args.api_base.as_deref(), Some("https://guard.example/v1"));
-    assert_eq!(exposed(args.api_key.as_ref()), Some("test-key"));
+    assert_eq!(args.base.guardrail_name, "dynamo-guard");
     assert_eq!(
-        args.event_hook,
+        args.base.api_base.as_deref(),
+        Some("https://guard.example/v1")
+    );
+    assert_eq!(exposed(args.base.api_key.as_ref()), Some("test-key"));
+    assert_eq!(
+        args.base.event_hook,
         LitellmParamsMode::One("pre_call".to_owned())
     );
-    assert!(args.default_on);
-    assert_eq!(args.timeout, Some(7.5_f64));
+    assert!(args.base.default_on);
+    assert_eq!(args.base.timeout, Some(7.5_f64));
 }
 
 #[test]
@@ -837,20 +947,20 @@ fn content_filter_requires_a_guardrail_name() {
     assert!(matches!(error, HookRegistryError::Init { .. }));
 }
 
-#[test]
-fn content_filter_passes_the_router_port() {
-    for router_present in [true, false] {
-        let mut ports = test_ports();
-        ports.router_present = router_present;
-        let params = test_params(wire::LITELLM_CONTENT_FILTER);
-        let spec = build_hook_spec(wire::LITELLM_CONTENT_FILTER, &params, "test-guard", &ports)
-            .expect("wire name is built")
-            .expect("content filter builds");
-        let HookKind::LitellmContentFilter(args) = &spec.kind else {
-            panic!("content filter spec expected");
-        };
-        assert_eq!(args.router_present, router_present);
-    }
+#[rstest]
+#[case::router_present(true)]
+#[case::router_absent(false)]
+fn test_content_filter_passes_the_router_port(#[case] present: bool) {
+    let mut ports = test_ports();
+    ports.router_present = present;
+    let params = test_params(wire::LITELLM_CONTENT_FILTER);
+    let spec = build_hook_spec(wire::LITELLM_CONTENT_FILTER, &params, "test-guard", &ports)
+        .expect("wire name is built")
+        .expect("content filter builds");
+    let HookKind::LitellmContentFilter(args) = &spec.kind else {
+        panic!("content filter spec expected");
+    };
+    assert_eq!(args.router_present, present);
 }
 
 #[test]
