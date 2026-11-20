@@ -19,8 +19,6 @@ use betterlite_rate_limit::request_scopes::deployment_health::{
 use betterlite_rate_limit::request_scopes::key_scopes::{
     ScopeInputs, create_rate_limit_descriptors,
 };
-// ast-grep-ignore: no-long-names
-use betterlite_rate_limit::request_scopes::limit_policy::is_dynamic_rate_limiting_enabled;
 use betterlite_rate_limit::request_scopes::limit_policy::{
     get_enforced_limit, should_enforce_rate_limit,
 };
@@ -198,45 +196,46 @@ fn descriptor_builder<'deps>(
     }
 }
 
-fn create_answer(case: &DescriptorCase) -> HelperResult {
-    let auth = auth_of(case)?;
-    let registry = registry_of(&case.registry);
-    let tags = tags_of(&case.tag_limits);
-    let health = NoRouter;
-    let builder = descriptor_builder(case, &registry, &health, &tags);
-    let descriptors = create_rate_limit_descriptors(
-        &builder,
-        ScopeInputs {
-            auth: &auth,
-            data: &case.data,
-            rpm_limit_type: case.rpm_limit_type.as_deref(),
-            tpm_limit_type: case.tpm_limit_type.as_deref(),
-            model_has_failures: case.model_has_failures,
-            call_type: case.call_type.as_deref(),
-        },
-    )
-    .or_value_error()?;
-    Ok(json!({"descriptors": descriptors}))
+#[derive(Clone, Copy)]
+enum DescriptorFunction {
+    Create,
+    Assemble,
 }
 
-fn assemble_answer(case: &DescriptorCase) -> HelperResult {
+fn descriptor_answer(case: &DescriptorCase, function: DescriptorFunction) -> HelperResult {
     let auth = auth_of(case)?;
     let registry = registry_of(&case.registry);
     let tags = tags_of(&case.tag_limits);
     let health = NoRouter;
     let builder = descriptor_builder(case, &registry, &health, &tags);
-    let runtime = Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .or_value_error()?;
-    // ast-grep-ignore: no-long-names
-    let assembly = build_request_rate_limit_descriptors(
-        &builder,
-        &auth,
-        &case.data,
-        case.call_type.as_deref(),
-    );
-    let descriptors = runtime.block_on(assembly).or_value_error()?;
+    let descriptors = match function {
+        DescriptorFunction::Create => create_rate_limit_descriptors(
+            &builder,
+            ScopeInputs {
+                auth: &auth,
+                data: &case.data,
+                rpm_limit_type: case.rpm_limit_type.as_deref(),
+                tpm_limit_type: case.tpm_limit_type.as_deref(),
+                model_has_failures: case.model_has_failures,
+                call_type: case.call_type.as_deref(),
+            },
+        )
+        .or_value_error()?,
+        DescriptorFunction::Assemble => {
+            let runtime = Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .or_value_error()?;
+            // ast-grep-ignore: no-long-names
+            let assembly = build_request_rate_limit_descriptors(
+                &builder,
+                &auth,
+                &case.data,
+                case.call_type.as_deref(),
+            );
+            runtime.block_on(assembly).or_value_error()?
+        }
+    };
     Ok(json!({"descriptors": descriptors}))
 }
 
@@ -248,11 +247,8 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::DynamicFlag(case) => {
-                // ast-grep-ignore: no-long-names
-                let dynamic = is_dynamic_rate_limiting_enabled(
-                    case.rpm_limit_type.as_deref(),
-                    case.tpm_limit_type.as_deref(),
-                );
+                let dynamic = case.rpm_limit_type.as_deref() == Some("dynamic")
+                    || case.tpm_limit_type.as_deref() == Some("dynamic");
                 Ok(json!({"dynamic": dynamic}))
             }
             Input::ShouldEnforce(case) => {
@@ -268,8 +264,8 @@ impl Helper for Op {
                 );
                 Ok(json!({"limit": limit}))
             }
-            Input::Create(case) => create_answer(case),
-            Input::Assemble(case) => assemble_answer(case),
+            Input::Create(case) => descriptor_answer(case, DescriptorFunction::Create),
+            Input::Assemble(case) => descriptor_answer(case, DescriptorFunction::Assemble),
         }
     }
 }

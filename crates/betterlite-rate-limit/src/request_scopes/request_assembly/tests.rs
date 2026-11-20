@@ -76,6 +76,34 @@ async fn a_dynamic_key_asks_the_health_policy_for_the_model() {
 }
 
 #[tokio::test]
+async fn a_tpm_dynamic_key_asks_the_health_policy_for_the_model() {
+    let fixture = Fixture::healthy();
+    let tags = MapResolver::new(&[]);
+    let builder = fixture.builder(&tags);
+    let auth = support::auth(
+        r#"{"api_key": "key-1", "tpm_limit": 20, "metadata": {"tpm_limit_type": "dynamic"}}"#,
+    );
+    let data = support::data(r#"{"model": "gpt4"}"#);
+    let descriptors = assemble(&builder, &auth, &data).await;
+    assert_eq!(limits(&descriptors[0]).tokens_per_unit, None);
+    assert_eq!(fixture.health.models(), vec!["gpt-4".to_owned()]);
+}
+
+#[tokio::test]
+async fn a_non_exact_dynamic_type_never_asks_the_health_policy() {
+    let fixture = Fixture::failing();
+    let tags = MapResolver::new(&[]);
+    let builder = fixture.builder(&tags);
+    let auth = support::auth(
+        r#"{"api_key": "key-1", "rpm_limit": 10, "metadata": {"rpm_limit_type": "DYNAMIC"}}"#,
+    );
+    let data = support::data(r#"{"model": "gpt4"}"#);
+    let descriptors = assemble(&builder, &auth, &data).await;
+    assert_eq!(limits(&descriptors[0]).requests_per_unit, Some(10));
+    assert!(fixture.health.models().is_empty());
+}
+
+#[tokio::test]
 async fn a_dynamic_key_enforces_when_the_health_policy_reports_failures() {
     let fixture = Fixture::failing();
     let tags = MapResolver::new(&[]);
@@ -142,6 +170,51 @@ async fn a_non_text_model_never_asks_the_health_policy() {
     assert!(fixture.health.models().is_empty());
 }
 
+fn assert_late_scope_order(descriptors: &[RateLimitDescriptor]) {
+    assert_eq!(
+        keys(descriptors),
+        [
+            "api_key",
+            "user",
+            "team",
+            "team_member",
+            "end_user",
+            "model_per_key",
+            "tag_per_key",
+            "model_per_team",
+            "agent",
+            "model_per_project",
+            "model_per_project_itpm",
+            "model_per_project_otpm",
+            "organization",
+            "model_per_organization",
+            "tag"
+        ]
+    );
+}
+
+fn assert_late_scope_values(descriptors: &[RateLimitDescriptor]) {
+    assert_eq!(descriptors[5].value, "key-1:gpt-4");
+    assert_eq!(limits(&descriptors[5]).requests_per_unit, Some(7));
+    assert_eq!(descriptors[6].value, "key-1:t1");
+    assert_eq!(descriptors[7].value, "team-1:gpt-4");
+    assert_eq!(limits(&descriptors[7]).requests_per_unit, None);
+    assert_eq!(limits(&descriptors[7]).tokens_per_unit, Some(6));
+    assert_eq!(descriptors[8].value, "agent-1");
+    assert_eq!(descriptors[9].value, "project-1:gpt-4");
+    assert_eq!(limits(&descriptors[9]).requests_per_unit, Some(9));
+    assert_eq!(descriptors[10].value, "project-1:gpt-4");
+    assert_eq!(limits(&descriptors[10]).tokens_per_unit, Some(11));
+    assert_eq!(descriptors[11].value, "project-1:gpt-4");
+    assert_eq!(limits(&descriptors[11]).tokens_per_unit, Some(12));
+    assert_eq!(descriptors[12].value, "org-1");
+    assert_eq!(limits(&descriptors[12]).requests_per_unit, Some(21));
+    assert_eq!(descriptors[13].value, "org-1:gpt-4");
+    assert_eq!(limits(&descriptors[13]).requests_per_unit, Some(13));
+    assert_eq!(descriptors[14].value, "t1");
+    assert_eq!(limits(&descriptors[14]).requests_per_unit, Some(8));
+}
+
 #[tokio::test]
 async fn the_assembly_appends_every_late_scope_in_order() {
     let registry = FixedRegistry(BTreeMap::new());
@@ -167,45 +240,8 @@ async fn the_assembly_appends_every_late_scope_in_order() {
     );
     let data = support::data(r#"{"model": "gpt4", "metadata": {"tags": ["t1"]}}"#);
     let descriptors = assemble(&builder, &auth, &data).await;
-    assert_eq!(
-        keys(&descriptors),
-        [
-            "api_key",
-            "user",
-            "team",
-            "team_member",
-            "end_user",
-            "model_per_key",
-            "tag_per_key",
-            "model_per_team",
-            "agent",
-            "model_per_project",
-            "model_per_project_itpm",
-            "model_per_project_otpm",
-            "organization",
-            "model_per_organization",
-            "tag"
-        ]
-    );
-    assert_eq!(descriptors[5].value, "key-1:gpt-4");
-    assert_eq!(limits(&descriptors[5]).requests_per_unit, Some(7));
-    assert_eq!(descriptors[6].value, "key-1:t1");
-    assert_eq!(descriptors[7].value, "team-1:gpt-4");
-    assert_eq!(limits(&descriptors[7]).requests_per_unit, None);
-    assert_eq!(limits(&descriptors[7]).tokens_per_unit, Some(6));
-    assert_eq!(descriptors[8].value, "agent-1");
-    assert_eq!(descriptors[9].value, "project-1:gpt-4");
-    assert_eq!(limits(&descriptors[9]).requests_per_unit, Some(9));
-    assert_eq!(descriptors[10].value, "project-1:gpt-4");
-    assert_eq!(limits(&descriptors[10]).tokens_per_unit, Some(11));
-    assert_eq!(descriptors[11].value, "project-1:gpt-4");
-    assert_eq!(limits(&descriptors[11]).tokens_per_unit, Some(12));
-    assert_eq!(descriptors[12].value, "org-1");
-    assert_eq!(limits(&descriptors[12]).requests_per_unit, Some(21));
-    assert_eq!(descriptors[13].value, "org-1:gpt-4");
-    assert_eq!(limits(&descriptors[13]).requests_per_unit, Some(13));
-    assert_eq!(descriptors[14].value, "t1");
-    assert_eq!(limits(&descriptors[14]).requests_per_unit, Some(8));
+    assert_late_scope_order(&descriptors);
+    assert_late_scope_values(&descriptors);
     assert_eq!(tags.calls(), [vec!["t1".to_owned()]]);
 }
 

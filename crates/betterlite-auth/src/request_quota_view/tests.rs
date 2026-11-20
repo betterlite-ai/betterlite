@@ -34,7 +34,7 @@ fn copies_the_key_limits_and_the_throttle_percentage() {
     assert_eq!(view.rpm_limit, Some(10));
     assert_eq!(view.tpm_limit, Some(20));
     assert_eq!(view.max_parallel_requests, Some(3));
-    assert_eq!(view.budget_throttle_pct, Some(0.5));
+    assert_eq!(view.throttle_pct, Some(0.5));
 }
 
 #[test]
@@ -70,7 +70,7 @@ fn copies_the_user_team_team_member_and_end_user_limits() {
 #[test]
 fn an_absent_throttle_percentage_stays_unset() {
     let view = auth("{}").request_quota_view();
-    assert_eq!(view.budget_throttle_pct, None);
+    assert_eq!(view.throttle_pct, None);
 }
 
 #[test]

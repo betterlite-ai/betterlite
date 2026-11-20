@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_core::api::request_destination::RequestData;
+use rstest::rstest;
 
 use super::{ScopeInputs, create_rate_limit_descriptors};
 use crate::limiter_records::{RateLimitDescriptor, RateLimitDescriptorRateLimit};
@@ -241,25 +242,22 @@ fn a_guaranteed_throughput_type_is_enforced_without_failures() {
     assert_eq!(limits(only(&descriptors)).requests_per_unit, Some(10));
 }
 
-#[test]
-fn the_identity_descriptors_need_a_non_empty_id_and_a_limit() {
+#[rstest]
+#[case::no_user_id(r#"{"user_rpm_limit": 4}"#)]
+#[case::empty_user_id(r#"{"user_id": "", "user_rpm_limit": 4}"#)]
+#[case::empty_team_member_user(r#"{"user_id": "", "team_member_rpm_limit": 5}"#)]
+#[case::user_without_limit(r#"{"user_id": "u1"}"#)]
+#[case::no_team_id(r#"{"team_rpm_limit": 4}"#)]
+#[case::empty_team_id(r#"{"team_id": "", "team_rpm_limit": 4}"#)]
+#[case::team_without_limit(r#"{"team_id": "team-1"}"#)]
+#[case::empty_end_user_id(r#"{"end_user_id": "", "end_user_rpm_limit": 4}"#)]
+#[case::no_end_user_id(r#"{"end_user_rpm_limit": 4}"#)]
+fn the_identity_descriptors_need_a_non_empty_id_and_a_limit(#[case] wire: &str) {
     let fixture = Fixture::new();
     let builder = fixture.builder(&[]);
     let data = support::data("{}");
-    for wire in [
-        r#"{"user_rpm_limit": 4}"#,
-        r#"{"user_id": "", "user_rpm_limit": 4}"#,
-        r#"{"user_id": "", "team_member_rpm_limit": 5}"#,
-        r#"{"user_id": "u1"}"#,
-        r#"{"team_rpm_limit": 4}"#,
-        r#"{"team_id": "", "team_rpm_limit": 4}"#,
-        r#"{"team_id": "team-1"}"#,
-        r#"{"end_user_id": "", "end_user_rpm_limit": 4}"#,
-        r#"{"end_user_rpm_limit": 4}"#,
-    ] {
-        let auth = support::auth(wire);
-        assert!(create(&builder, &auth, &data, false).is_empty(), "{wire}");
-    }
+    let auth = support::auth(wire);
+    assert!(create(&builder, &auth, &data, false).is_empty(), "{wire}");
 }
 
 #[test]
@@ -367,6 +365,50 @@ fn the_key_owned_descriptors_follow_the_handlers_order() {
     );
 }
 
+fn assert_every_builder_order(descriptors: &[RateLimitDescriptor]) {
+    assert_eq!(
+        keys(descriptors),
+        [
+            "api_key",
+            "user",
+            "team",
+            "team_member",
+            "end_user",
+            "model_per_key",
+            "tag_per_key",
+            "mcp_per_key",
+            "mcp_per_team",
+            "mcp_per_team",
+            "model_per_team",
+            "agent",
+            "agent_session",
+            "agent"
+        ]
+    );
+}
+
+fn assert_every_builder_values(descriptors: &[RateLimitDescriptor]) {
+    assert_eq!(descriptors[5].value, "key-1:gpt-4");
+    assert_eq!(limits(&descriptors[5]).requests_per_unit, Some(7));
+    assert_eq!(descriptors[6].value, "key-1:t1");
+    assert_eq!(limits(&descriptors[6]).requests_per_unit, Some(8));
+    assert_eq!(descriptors[7].value, "key-1:server");
+    assert_eq!(limits(&descriptors[7]).requests_per_unit, Some(9));
+    assert_eq!(descriptors[8].value, "team-1:server");
+    assert_eq!(limits(&descriptors[8]).requests_per_unit, Some(5));
+    assert_eq!(descriptors[9].value, "team-2:server");
+    assert_eq!(limits(&descriptors[9]).requests_per_unit, Some(7));
+    assert_eq!(descriptors[10].value, "team-1:gpt-4");
+    assert_eq!(limits(&descriptors[10]).tokens_per_unit, Some(6));
+    assert_eq!(descriptors[11].key, "agent");
+    assert_eq!(descriptors[11].value, "agent-1");
+    assert_eq!(limits(&descriptors[11]).requests_per_unit, Some(11));
+    assert_eq!(descriptors[12].value, "agent-1:s1");
+    assert_eq!(limits(&descriptors[12]).requests_per_unit, Some(4));
+    assert_eq!(descriptors[13].value, "agent-2");
+    assert_eq!(limits(&descriptors[13]).requests_per_unit, Some(12));
+}
+
 #[test]
 fn every_builder_runs_in_the_handlers_order() {
     let fixture = Fixture::new();
@@ -398,44 +440,8 @@ fn every_builder_runs_in_the_handlers_order() {
         inputs(&auth, &data, (None, None), false, MCP_TOOL),
     )
     .expect("the key scopes build");
-    assert_eq!(
-        keys(&descriptors),
-        [
-            "api_key",
-            "user",
-            "team",
-            "team_member",
-            "end_user",
-            "model_per_key",
-            "tag_per_key",
-            "mcp_per_key",
-            "mcp_per_team",
-            "mcp_per_team",
-            "model_per_team",
-            "agent",
-            "agent_session",
-            "agent"
-        ]
-    );
-    assert_eq!(descriptors[5].value, "key-1:gpt-4");
-    assert_eq!(limits(&descriptors[5]).requests_per_unit, Some(7));
-    assert_eq!(descriptors[6].value, "key-1:t1");
-    assert_eq!(limits(&descriptors[6]).requests_per_unit, Some(8));
-    assert_eq!(descriptors[7].value, "key-1:server");
-    assert_eq!(limits(&descriptors[7]).requests_per_unit, Some(9));
-    assert_eq!(descriptors[8].value, "team-1:server");
-    assert_eq!(limits(&descriptors[8]).requests_per_unit, Some(5));
-    assert_eq!(descriptors[9].value, "team-2:server");
-    assert_eq!(limits(&descriptors[9]).requests_per_unit, Some(7));
-    assert_eq!(descriptors[10].value, "team-1:gpt-4");
-    assert_eq!(limits(&descriptors[10]).tokens_per_unit, Some(6));
-    assert_eq!(descriptors[11].key, "agent");
-    assert_eq!(descriptors[11].value, "agent-1");
-    assert_eq!(limits(&descriptors[11]).requests_per_unit, Some(11));
-    assert_eq!(descriptors[12].value, "agent-1:s1");
-    assert_eq!(limits(&descriptors[12]).requests_per_unit, Some(4));
-    assert_eq!(descriptors[13].value, "agent-2");
-    assert_eq!(limits(&descriptors[13]).requests_per_unit, Some(12));
+    assert_every_builder_order(&descriptors);
+    assert_every_builder_values(&descriptors);
 }
 
 #[test]
@@ -452,20 +458,20 @@ fn the_mcp_builders_are_skipped_when_the_body_names_a_server_id() {
     assert!(descriptors.is_empty());
 }
 
-#[test]
-fn the_mcp_builders_are_skipped_for_other_call_types() {
+#[rstest]
+#[case::absent(None)]
+#[case::other_call_type(Some("acompletion"))]
+fn the_mcp_builders_are_skipped_for_other_call_types(#[case] call_type: Option<&str>) {
     let fixture = Fixture::new();
     let builder = fixture.builder(&[]);
     let auth = support::auth(r#"{"metadata": {"mcp_rpm_limit": {"server": 9}}}"#);
     let data = support::data(r#"{"mcp_server_name": "server"}"#);
-    for call_type in [None, Some("acompletion")] {
-        let descriptors = create_rate_limit_descriptors(
-            &builder,
-            inputs(&auth, &data, (None, None), false, call_type),
-        )
-        .expect("the key scopes build");
-        assert!(descriptors.is_empty());
-    }
+    let descriptors = create_rate_limit_descriptors(
+        &builder,
+        inputs(&auth, &data, (None, None), false, call_type),
+    )
+    .expect("the key scopes build");
+    assert!(descriptors.is_empty());
 }
 
 #[test]

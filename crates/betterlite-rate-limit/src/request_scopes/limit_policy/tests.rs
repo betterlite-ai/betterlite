@@ -2,26 +2,7 @@
 
 use rstest::rstest;
 
-use super::{get_enforced_limit, is_dynamic_rate_limiting_enabled, should_enforce_rate_limit};
-
-#[rstest]
-#[case::rpm(Some("dynamic"), None, true)]
-#[case::tpm(None, Some("dynamic"), true)]
-#[case::both(Some("dynamic"), Some("dynamic"), true)]
-#[case::neither(None, None, false)]
-#[case::other_types(Some("guaranteed_throughput"), Some("best_effort_throughput"), false)]
-#[case::upper_case_rpm(Some("DYNAMIC"), None, false)]
-#[case::upper_case_tpm(None, Some("Dynamic"), false)]
-fn the_flag_needs_an_exact_dynamic_type(
-    #[case] rpm_limit_type: Option<&str>,
-    #[case] tpm_limit_type: Option<&str>,
-    #[case] expected: bool,
-) {
-    assert_eq!(
-        is_dynamic_rate_limiting_enabled(rpm_limit_type, tpm_limit_type),
-        expected
-    );
-}
+use super::{get_enforced_limit, should_enforce_rate_limit};
 
 #[rstest]
 #[case::dynamic_failing(Some("dynamic"), true, true)]

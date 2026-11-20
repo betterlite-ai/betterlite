@@ -22,13 +22,3 @@ pub fn get_enforced_limit(
     }
     None
 }
-
-// LiteLLM's _is_dynamic_rate_limiting_enabled: either limit type being exactly "dynamic" is enough
-#[must_use]
-// ast-grep-ignore: no-long-names
-pub fn is_dynamic_rate_limiting_enabled(
-    rpm_limit_type: Option<&str>,
-    tpm_limit_type: Option<&str>,
-) -> bool {
-    rpm_limit_type == Some("dynamic") || tpm_limit_type == Some("dynamic")
-}

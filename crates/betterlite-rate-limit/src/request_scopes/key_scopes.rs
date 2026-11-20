@@ -38,6 +38,33 @@ pub struct ScopeInputs<'request> {
     pub call_type: Option<&'request str>,
 }
 
+// One identity-scoped descriptor: its id, its two limits and an optional prefix for the counter value
+struct IdentityScope<'request> {
+    key: &'static str,
+    id: Option<&'request str>,
+    rpm_limit: Option<i64>,
+    tpm_limit: Option<i64>,
+    prefix: Option<&'request str>,
+}
+
+impl<'request> IdentityScope<'request> {
+    const fn new(
+        key: &'static str,
+        id: Option<&'request str>,
+        rpm_limit: Option<i64>,
+        tpm_limit: Option<i64>,
+        prefix: Option<&'request str>,
+    ) -> Self {
+        Self {
+            key,
+            id,
+            rpm_limit,
+            tpm_limit,
+            prefix,
+        }
+    }
+}
+
 // LiteLLM's _create_rate_limit_descriptors: every key-owned descriptor, appended in the handler's order
 pub fn create_rate_limit_descriptors(
     builder: &RequestScopeBuilder<'_>,
@@ -46,10 +73,8 @@ pub fn create_rate_limit_descriptors(
     let view = inputs.auth.request_quota_view();
     let mut descriptors = Vec::new();
     push_key_limit(builder, &view, &inputs, &mut descriptors);
-    push_user_limit(builder, &view, &mut descriptors);
-    push_team_limit(builder, &view, &inputs, &mut descriptors);
-    push_team_member_limit(builder, &view, &inputs, &mut descriptors);
-    push_end_user_limit(builder, &view, &mut descriptors);
+    let identities = identity_scopes(&view, &inputs);
+    push_identity_limits(builder, &identities, &mut descriptors);
     let model = body_text(inputs.data, "model");
     builder
         .model
@@ -60,11 +85,7 @@ pub fn create_rate_limit_descriptors(
         builder.window_size,
         &mut descriptors,
     );
-    push_mcp_limits(builder, &view, &inputs, &mut descriptors);
-    builder
-        .model
-        .team_model_descriptor(inputs.auth, model, &mut descriptors);
-    push_agent_limits(builder, &view, &inputs, &mut descriptors);
+    push_tail_limits(builder, &view, &inputs, model, &mut descriptors);
     Ok(descriptors)
 }
 
@@ -89,12 +110,12 @@ fn push_key_limit(
         value: api_key.to_owned(),
         rate_limit: Some(RateLimitDescriptorRateLimit {
             requests_per_unit: get_enforced_limit(
-                throttled_limit(view.rpm_limit, view.budget_throttle_pct),
+                throttled_limit(view.rpm_limit, view.throttle_pct),
                 inputs.rpm_limit_type,
                 inputs.model_has_failures,
             ),
             tokens_per_unit: get_enforced_limit(
-                throttled_limit(view.tpm_limit, view.budget_throttle_pct),
+                throttled_limit(view.tpm_limit, view.throttle_pct),
                 inputs.tpm_limit_type,
                 inputs.model_has_failures,
             ),
@@ -104,118 +125,90 @@ fn push_key_limit(
     });
 }
 
-fn push_user_limit(
-    builder: &RequestScopeBuilder<'_>,
-    view: &RequestQuotaView<'_>,
-    out: &mut Vec<RateLimitDescriptor>,
-) {
-    let Some(user_id) = view.user_id.filter(|id| !id.is_empty()) else {
-        return;
-    };
-    if view.user_rpm_limit.is_none() && view.user_tpm_limit.is_none() {
-        return;
-    }
-    out.push(rate_limit_descriptor(
-        "user",
-        user_id.to_owned(),
-        view.user_rpm_limit,
-        view.user_tpm_limit,
-        builder.window_size,
-    ));
+// The four identity scopes LiteLLM builds, each with the id and limits its descriptor reads
+fn identity_scopes<'auth>(
+    view: &RequestQuotaView<'auth>,
+    inputs: &ScopeInputs<'auth>,
+) -> [IdentityScope<'auth>; 4] {
+    let team_id = account_limits(inputs.auth).team_id;
+    [
+        IdentityScope::new(
+            "user",
+            view.user_id,
+            view.user_rpm_limit,
+            view.user_tpm_limit,
+            None,
+        ),
+        IdentityScope::new(
+            "team",
+            team_id,
+            view.team_rpm_limit,
+            view.team_tpm_limit,
+            None,
+        ),
+        IdentityScope::new(
+            "team_member",
+            view.user_id,
+            view.team_member_rpm_limit,
+            view.team_member_tpm_limit,
+            Some(team_id.unwrap_or(NONE_TEXT)),
+        ),
+        IdentityScope::new(
+            "end_user",
+            view.end_user_id,
+            view.end_user_rpm_limit,
+            view.end_user_tpm_limit,
+            None,
+        ),
+    ]
 }
 
-fn push_team_limit(
+// The user, team, team_member and end_user descriptors, in LiteLLM's order
+fn push_identity_limits(
+    builder: &RequestScopeBuilder<'_>,
+    identities: &[IdentityScope<'_>],
+    out: &mut Vec<RateLimitDescriptor>,
+) {
+    for scope in identities {
+        let Some(id) = scope.id.filter(|id| !id.is_empty()) else {
+            continue;
+        };
+        if scope.rpm_limit.is_none() && scope.tpm_limit.is_none() {
+            continue;
+        }
+        let value = scope
+            .prefix
+            .map_or_else(|| id.to_owned(), |prefix| format!("{prefix}:{id}"));
+        out.push(rate_limit_descriptor(
+            scope.key,
+            value,
+            scope.rpm_limit,
+            scope.tpm_limit,
+            builder.window_size,
+        ));
+    }
+}
+
+// The MCP pair, then the team model descriptor and the agents, in LiteLLM's order
+fn push_tail_limits(
     builder: &RequestScopeBuilder<'_>,
     view: &RequestQuotaView<'_>,
     inputs: &ScopeInputs<'_>,
+    model: Option<&str>,
     out: &mut Vec<RateLimitDescriptor>,
 ) {
-    let Some(team_id) = account_limits(inputs.auth)
-        .team_id
-        .filter(|id| !id.is_empty())
-    else {
-        return;
-    };
-    if view.team_rpm_limit.is_none() && view.team_tpm_limit.is_none() {
-        return;
+    if inputs.call_type == Some(CALL_MCP_TOOL) && !inputs.data.contains_key("server_id") {
+        let server = body_text(inputs.data, "mcp_server_name");
+        add_mcp_per_key_descriptor(inputs.auth, server, builder.window_size, out);
+        add_mcp_per_team_descriptor(
+            inputs.auth,
+            server,
+            view.source_team_rpm_limits,
+            builder.window_size,
+            out,
+        );
     }
-    out.push(rate_limit_descriptor(
-        "team",
-        team_id.to_owned(),
-        view.team_rpm_limit,
-        view.team_tpm_limit,
-        builder.window_size,
-    ));
-}
-
-fn push_team_member_limit(
-    builder: &RequestScopeBuilder<'_>,
-    view: &RequestQuotaView<'_>,
-    inputs: &ScopeInputs<'_>,
-    out: &mut Vec<RateLimitDescriptor>,
-) {
-    let Some(user_id) = view.user_id.filter(|id| !id.is_empty()) else {
-        return;
-    };
-    if view.team_member_rpm_limit.is_none() && view.team_member_tpm_limit.is_none() {
-        return;
-    }
-    let team_id = account_limits(inputs.auth).team_id.unwrap_or(NONE_TEXT);
-    out.push(rate_limit_descriptor(
-        "team_member",
-        format!("{team_id}:{user_id}"),
-        view.team_member_rpm_limit,
-        view.team_member_tpm_limit,
-        builder.window_size,
-    ));
-}
-
-fn push_end_user_limit(
-    builder: &RequestScopeBuilder<'_>,
-    view: &RequestQuotaView<'_>,
-    out: &mut Vec<RateLimitDescriptor>,
-) {
-    let Some(end_user_id) = view.end_user_id.filter(|id| !id.is_empty()) else {
-        return;
-    };
-    if view.end_user_rpm_limit.is_none() && view.end_user_tpm_limit.is_none() {
-        return;
-    }
-    out.push(rate_limit_descriptor(
-        "end_user",
-        end_user_id.to_owned(),
-        view.end_user_rpm_limit,
-        view.end_user_tpm_limit,
-        builder.window_size,
-    ));
-}
-
-fn push_mcp_limits(
-    builder: &RequestScopeBuilder<'_>,
-    view: &RequestQuotaView<'_>,
-    inputs: &ScopeInputs<'_>,
-    out: &mut Vec<RateLimitDescriptor>,
-) {
-    if inputs.call_type != Some(CALL_MCP_TOOL) || inputs.data.contains_key("server_id") {
-        return;
-    }
-    let server = body_text(inputs.data, "mcp_server_name");
-    add_mcp_per_key_descriptor(inputs.auth, server, builder.window_size, out);
-    add_mcp_per_team_descriptor(
-        inputs.auth,
-        server,
-        view.source_team_rpm_limits,
-        builder.window_size,
-        out,
-    );
-}
-
-fn push_agent_limits(
-    builder: &RequestScopeBuilder<'_>,
-    view: &RequestQuotaView<'_>,
-    inputs: &ScopeInputs<'_>,
-    out: &mut Vec<RateLimitDescriptor>,
-) {
+    builder.model.team_model_descriptor(inputs.auth, model, out);
     let resolved = resolved_agent_id(view.agent_id, inputs.data);
     let mut handled: Vec<&str> = Vec::new();
     for agent_id in [resolved, view.invoked_agent_id].into_iter().flatten() {
