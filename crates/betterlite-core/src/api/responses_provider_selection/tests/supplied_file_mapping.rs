@@ -53,12 +53,12 @@ fn a_mapped_file_id_uses_the_deployment_provider_id() {
 fn without_a_deployment_id_the_file_id_is_unchanged(#[case] model_info: Option<&str>) {
     let input = response_input(FILE_INPUT);
     let resolved = mapping(r#"{"file-abc":{"dep-1":"file-provider"}}"#);
-    let model_info = model_info.map(json);
+    let info = model_info.map(json);
     let mut local_vars = ParameterMap::new();
     let outcome = apply_managed_file_id_mapping(
         &input,
         None,
-        model_info.as_ref(),
+        info.as_ref(),
         Some(&resolved),
         &mut local_vars,
     )
@@ -101,8 +101,8 @@ fn only_a_text_id_names_the_deployment(
     #[case] model_info: Option<&str>,
     #[case] expected: Option<&str>,
 ) {
-    let model_info = model_info.map(json);
-    assert_eq!(model_info_id(model_info.as_ref()).as_deref(), expected);
+    let info = model_info.map(json);
+    assert_eq!(model_info_id(info.as_ref()).as_deref(), expected);
 }
 
 #[test]
@@ -195,7 +195,7 @@ fn an_empty_tool_list_is_skipped() {
 
 #[test]
 fn a_too_large_input_is_a_file_ids_error() {
-    let parts = (0..257)
+    let parts = (0..257_u32)
         .map(|_| json(r#"{"type":"input_text","text":"x"}"#))
         .collect();
     let input = ResponsesInput::Items(vec![ResponsesItem {

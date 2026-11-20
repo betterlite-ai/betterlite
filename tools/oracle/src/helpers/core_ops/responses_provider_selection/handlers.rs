@@ -30,9 +30,9 @@ fn prompt_error(error: PromptError) -> Box<HelperError> {
             ("BadRequestError", Some(400), boundary.message)
         }
         PromptError::Swap(other) => ("ValueError", None, other.to_string()),
-        PromptError::Merge(error) => ("ValueError", None, error.to_string()),
-        PromptError::Manager(error) => ("ValueError", None, error.to_string()),
-        PromptError::AsyncOutcome(error) => ("ValueError", None, error.to_string()),
+        PromptError::Merge(cause) => ("ValueError", None, cause.to_string()),
+        PromptError::Manager(cause) => ("ValueError", None, cause.to_string()),
+        PromptError::AsyncOutcome(cause) => ("ValueError", None, cause.to_string()),
     };
     Box::new(HelperError {
         class: String::from(class),

@@ -120,7 +120,7 @@ fn take_async_outcome(
     };
     let deployment_model_info = match fields.shift_remove("deployment_model_info") {
         Some(JsonValue::Null) | None => None,
-        Some(value) => Some(value),
+        Some(info) => Some(info),
     };
     Ok(Some((merged, deployment_model_info)))
 }
@@ -152,23 +152,19 @@ pub fn apply_prompt_management(
         local_vars,
     } = request;
     if let Some((merged_optional_params, model_info)) = take_async_outcome(kwargs)? {
-        for (name, value) in merged_optional_params {
-            local_vars.insert(name, value);
-        }
+        local_vars.extend(merged_optional_params);
         return Ok(untouched(input, model, custom_llm_provider, model_info));
     }
     let client_input = input_to_chat_messages(Some(&input))?;
     let model_info = present(kwargs, "model_info").cloned();
-    let Some(prompt_manager) = manager else {
-        return Ok(untouched(input, model, custom_llm_provider, model_info));
-    };
     let hook = HookRequest {
         prompt_id: text_value(kwargs, "prompt_id"),
         non_default_params: kwargs,
     };
-    if !prompt_manager.runs_prompt_hooks(&hook) {
-        return Ok(untouched(input, model, custom_llm_provider, model_info));
-    }
+    let prompt_manager = match manager {
+        Some(prompt_manager) if prompt_manager.runs_prompt_hooks(&hook) => prompt_manager,
+        None | Some(_) => return Ok(untouched(input, model, custom_llm_provider, model_info)),
+    };
     let call = HookCall {
         model,
         custom_llm_provider,

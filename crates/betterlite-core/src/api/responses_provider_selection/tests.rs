@@ -35,7 +35,7 @@ fn parameters(pairs: &[(&str, JsonValue)]) -> ParameterMap {
         .collect()
 }
 
-fn capable_native() -> NativeConfig {
+const fn capable_native() -> NativeConfig {
     NativeConfig {
         encrypted_agent_messages: true,
     }
@@ -192,7 +192,7 @@ struct ScriptedManager {
     requests: Mutex<Vec<HookRequestRecord>>,
 }
 
-fn manager(behavior: HookBehavior) -> ScriptedManager {
+const fn manager(behavior: HookBehavior) -> ScriptedManager {
     ScriptedManager {
         behavior,
         calls: Mutex::new(Vec::new()),

@@ -214,6 +214,7 @@ fn the_compatible_config_is_not_a_bridge() {
 #[rstest]
 #[case::absent(&[], None)]
 #[case::text(&[("api_base", r#""https://x.test/v1""#)], Some("https://x.test/v1"))]
+#[case::empty_text(&[("api_base", r#""""#)], Some(""))]
 #[case::null(&[("api_base", "null")], None)]
 #[case::number(&[("api_base", "7")], None)]
 fn only_a_text_api_base_reaches_the_lookup(
@@ -315,6 +316,29 @@ fn a_dynamic_credential_replaces_the_callers() {
     assert_eq!(params.api_base.as_deref(), Some("https://dynamic.test/v1"));
     let calls = resolver.calls();
     assert_eq!(calls[0].api_key.as_deref(), Some("sk-caller"));
+}
+
+#[test]
+fn an_empty_dynamic_credential_still_replaces_the_callers() {
+    let resolver = resolver(&[(
+        "gpt-4o",
+        dynamic_resolution("gpt-4o", "openai", Some(""), Some("")),
+    )]);
+    let mut params = empty_params();
+    params.api_key = Some(SecretString::from("sk-caller"));
+    params.api_base = Some(String::from("https://caller.test/v1"));
+    let mut local_vars = ParameterMap::new();
+    let outcome = resolve_model_provider(&resolver, "gpt-4o", None, &mut params, &mut local_vars)
+        .expect("resolution succeeds");
+    assert_eq!(outcome, (String::from("gpt-4o"), String::from("openai")));
+    assert_eq!(
+        params
+            .api_key
+            .as_ref()
+            .map(|key| key.expose_secret().as_str()),
+        Some("")
+    );
+    assert_eq!(params.api_base.as_deref(), Some(""));
 }
 
 #[test]

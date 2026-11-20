@@ -1,8 +1,8 @@
 use betterlite_models::controls::json_value::JsonValue;
 
 use super::{
-    HookBehavior, capabilities_configs, configs, hook_answer, json, manager, parameters,
-    resolution, resolver,
+    HookBehavior, ScriptedManager, capabilities_configs, configs, hook_answer, json, manager,
+    parameters, resolution, resolver,
 };
 use crate::api::responses_provider_selection::ParameterMap;
 use crate::api::responses_provider_selection::prompting::{
@@ -64,6 +64,12 @@ fn the_hook_receives_the_request_and_its_answers_land_in_the_locals() {
         &resolver,
     )
     .expect("the hook answer applies");
+    assert_outcome(&outcome, &local_vars, &hook);
+    assert!(resolver.models().is_empty());
+    assert!(!kwargs.contains_key(CARRY_UNMATCHED_MESSAGE_POINTS));
+}
+
+fn assert_outcome(outcome: &PromptOutcome, local_vars: &ParameterMap, hook: &ScriptedManager) {
     assert_eq!(
         outcome.input,
         json(r#"[{"role":"user","content":"merged"}]"#)
@@ -74,16 +80,20 @@ fn the_hook_receives_the_request_and_its_answers_land_in_the_locals() {
         outcome.deployment_model_info,
         Some(json(r#"{"id":"dep-1"}"#))
     );
-    assert_eq!(local_vars.get("model"), Some(&json(r#""gpt-4o""#)));
-    assert_eq!(local_vars.get("temperature"), Some(&json("0.2")));
-    assert_eq!(
-        local_vars.get("custom_llm_provider"),
-        Some(&json(r#""openai""#))
-    );
     assert_eq!(
         local_vars.get("input"),
         Some(&json(r#"[{"role":"user","content":"merged"}]"#))
     );
+    assert_eq!(local_vars.get("model"), Some(&json(r#""gpt-4o""#)));
+    assert_eq!(
+        local_vars.get("custom_llm_provider"),
+        Some(&json(r#""openai""#))
+    );
+    assert_eq!(local_vars.get("temperature"), Some(&json("0.2")));
+    assert_hook_records(hook);
+}
+
+fn assert_hook_records(hook: &ScriptedManager) {
     let requests = hook.requests();
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].prompt_id.as_deref(), Some("p-1"));
@@ -100,8 +110,6 @@ fn the_hook_receives_the_request_and_its_answers_land_in_the_locals() {
     assert_eq!(calls[0].prompt_version, Some(json("2")));
     assert_eq!(calls[0].prompt_variables, Some(json(r#"{"name":"Ada"}"#)));
     assert_eq!(calls[0].signal, None);
-    assert!(resolver.models().is_empty());
-    assert!(!kwargs.contains_key(CARRY_UNMATCHED_MESSAGE_POINTS));
 }
 
 #[test]

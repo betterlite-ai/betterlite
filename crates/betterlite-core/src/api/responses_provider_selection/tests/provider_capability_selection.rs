@@ -85,6 +85,7 @@ fn a_bridged_request_never_supports_encrypted_tasks() {
     true
 )]
 #[case::wrong_endpoint(r#"{"supported_endpoints":["/v1/chat/completions"]}"#, false)]
+#[case::bare_responses(r#"{"supported_endpoints":["/responses"]}"#, false)]
 #[case::empty_list(r#"{"supported_endpoints":[]}"#, false)]
 #[case::trailing_slash(r#"{"supported_endpoints":["/v1/responses/"]}"#, false)]
 #[case::text_value(r#"{"supported_endpoints":"/v1/responses"}"#, false)]
@@ -124,49 +125,27 @@ fn only_the_endpoint_marker_selects_the_compatible_config() {
     );
 }
 
-#[test]
-fn the_lookup_receives_the_whole_request() {
+#[rstest]
+#[case::full_request(
+    "gpt-4o",
+    "openai",
+    "https://base.test/v1",
+    Some(ResponsesApiConfig::Native(capable_native()))
+)]
+#[case::other_model("gpt-4o-mini", "openai", "https://base.test/v1", None)]
+#[case::other_provider("gpt-4o", "azure", "https://base.test/v1", None)]
+#[case::other_base("gpt-4o", "openai", "https://other.test/v1", None)]
+fn the_lookup_receives_the_whole_request(
+    #[case] model: &str,
+    #[case] provider: &str,
+    #[case] api_base: &str,
+    #[case] expected: Option<ResponsesApiConfig>,
+) {
     let lookup = BaseReadingConfigs;
     let model_info = json("{}");
     assert_eq!(
-        resolve_provider_config(
-            &lookup,
-            "gpt-4o",
-            "openai",
-            &model_info,
-            Some("https://base.test/v1")
-        ),
-        Some(ResponsesApiConfig::Native(capable_native()))
-    );
-    assert_eq!(
-        resolve_provider_config(
-            &lookup,
-            "gpt-4o-mini",
-            "openai",
-            &model_info,
-            Some("https://base.test/v1")
-        ),
-        None
-    );
-    assert_eq!(
-        resolve_provider_config(
-            &lookup,
-            "gpt-4o",
-            "azure",
-            &model_info,
-            Some("https://base.test/v1")
-        ),
-        None
-    );
-    assert_eq!(
-        resolve_provider_config(
-            &lookup,
-            "gpt-4o",
-            "openai",
-            &model_info,
-            Some("https://other.test/v1")
-        ),
-        None
+        resolve_provider_config(&lookup, model, provider, &model_info, Some(api_base)),
+        expected
     );
 }
 
