@@ -90,10 +90,24 @@ impl UploadPlan {
             Self::Media(_) => Some(Json::Text(String::from("<streaming media upload>"))),
             Self::Text(text) => Some(Json::Text(text.clone())),
             Self::Multipart(plan) => Some(multipart_logged(plan)),
-            Self::Unsupported(plan) => Some((**plan).clone()),
+            Self::Unsupported(plan) => Some(masked_request((**plan).clone())),
             // a Python bytes body has no JSON form; the log carries none rather than a made-up one
             Self::Bytes(_) => None,
         }
+    }
+}
+
+// _mask_presigned_request_headers masks only a top-level headers dict and leaves any other request alone
+fn masked_request(value: Json) -> Json {
+    match value {
+        Json::Object(mut fields) => {
+            if let Some(Json::Object(headers)) = fields.get_mut("headers") {
+                let masked = masked_headers(headers, false);
+                *headers = masked;
+            }
+            Json::Object(fields)
+        }
+        other => other,
     }
 }
 
