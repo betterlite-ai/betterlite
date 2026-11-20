@@ -373,13 +373,15 @@ async fn existing_file_with_an_empty_id_creates_a_store() {
 }
 
 #[tokio::test]
-async fn store_create_defaults_the_name_and_sends_no_expiry() {
-    let harness = harness("{}");
+async fn store_create_defaults_the_name_and_treats_nulls_as_absent() {
+    let harness = harness(
+        r#"{"vector_store": {"vector_store_id": null, "api_key": null, "api_base": null}}"#,
+    );
     let (store_id, file_id) = harness
         .ingestion
         .store(request(None, None, None, None))
         .await
-        .expect("the store");
+        .expect("the null values count as absent");
     assert_eq!(store_id.as_deref(), Some("vs_created"));
     assert!(file_id.is_none());
     assert_eq!(

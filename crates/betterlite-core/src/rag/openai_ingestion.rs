@@ -233,7 +233,7 @@ where
     let Some(raw) = config.get(name) else {
         return Ok(None);
     };
-    serde_json::from_str(raw.get()).map_err(|source| OpenAiIngestionError::FieldType {
+    serde_json::from_str::<Option<T>>(raw.get()).map_err(|source| OpenAiIngestionError::FieldType {
         field: name,
         expected,
         source,
