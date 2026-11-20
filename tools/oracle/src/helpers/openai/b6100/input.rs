@@ -6,39 +6,24 @@ use betterlite_prompts::arguments::json::Object;
 use serde::Deserialize;
 use serde_json::Value;
 
-// one call carries one variant, so a case file names the operation it checks
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+// one call carries one variant, so a case file names the operation it checks; every family starts empty
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub(crate) struct Input {
-    #[serde(default)]
     pub(crate) costs: Vec<Value>,
-    #[serde(default)]
     pub(crate) cost_bodies: Vec<String>,
-    #[serde(default)]
     pub(crate) cost_headers: Vec<Headers>,
-    #[serde(default)]
     pub(crate) credentials: Vec<Call>,
-    #[serde(default)]
     pub(crate) chat_params: Vec<ChatParams>,
-    #[serde(default)]
     pub(crate) chat_requests: Vec<ChatRequest>,
-    #[serde(default)]
     pub(crate) chat_replies: Vec<String>,
-    #[serde(default)]
     pub(crate) chunks: Vec<Value>,
-    #[serde(default)]
     pub(crate) models: Vec<CatalogCase>,
-    #[serde(default)]
     pub(crate) embedding_plans: Vec<EmbeddingPlan>,
-    #[serde(default)]
     pub(crate) embedding_replies: Vec<String>,
-    #[serde(default)]
     pub(crate) responses_prepare: Vec<Call>,
-    #[serde(default)]
     pub(crate) responses_replies: Vec<String>,
-    #[serde(default)]
     pub(crate) messages_environments: Vec<Call>,
-    #[serde(default)]
     pub(crate) messages_replies: Vec<String>,
 }
 
@@ -68,6 +53,8 @@ pub(crate) struct ChatRequest {
     pub(crate) model: String,
     #[serde(default)]
     pub(crate) optional_params: Object,
+    #[serde(default)]
+    pub(crate) environment: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -24,6 +24,7 @@ use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 
 use super::fixture::Fixture;
 use super::input::Input;
+use super::steps;
 
 const ADDITIONAL_HEADERS: &str = "additional_headers";
 const RESPONSE_COST: &str = "response_cost";
@@ -36,6 +37,21 @@ fn hidden_cost(hidden: &HiddenParams) -> Option<f64> {
         return None;
     };
     number.as_f64()
+}
+
+// the reply header map and the call log share one number reader
+fn cost_number(held: Option<&HiddenJson>) -> Option<f64> {
+    match held {
+        Some(HiddenJson::Number(number)) => number.as_f64(),
+        Some(
+            HiddenJson::Bool(_)
+            | HiddenJson::Null
+            | HiddenJson::Text(_)
+            | HiddenJson::List(_)
+            | HiddenJson::Object(_),
+        )
+        | None => None,
+    }
 }
 
 // LiteLLM raises a meaningful error object with its status, so the runner compares it as the call's failure
@@ -54,143 +70,109 @@ fn embedding_failure(error: EdenAiEmbeddingError) -> Box<HelperError> {
 // the five replies carry their cost in their own place, so each branch reads it where that reply puts it
 pub(super) fn reply_value(input: &Input) -> Result<Option<Value>, Box<HelperError>> {
     if !input.chat_replies.is_empty() {
-        return Ok(Some(chat_reply_values(input)?));
+        return Ok(Some(fixture_steps(&input.chat_replies, ReplyFamily::Chat)?));
     }
     if !input.chunks.is_empty() {
-        return Ok(Some(chunk_values(&input.chunks)?));
+        return Ok(Some(steps(&input.chunks, chunk_cost)?));
     }
     if !input.embedding_replies.is_empty() {
-        return Ok(Some(embedding_reply_values(input)?));
+        return Ok(Some(steps(&input.embedding_replies, embedding_cost)?));
     }
     if !input.responses_replies.is_empty() {
-        return Ok(Some(responses_reply_values(input)?));
+        return Ok(Some(fixture_steps(
+            &input.responses_replies,
+            ReplyFamily::Responses,
+        )?));
     }
     if !input.messages_replies.is_empty() {
-        return Ok(Some(messages_reply_values(input)?));
+        return Ok(Some(steps(&input.messages_replies, messages_cost)?));
     }
     Ok(None)
 }
 
-fn chat_reply_values(input: &Input) -> Result<Value, Box<HelperError>> {
-    let mut steps = Vec::with_capacity(input.chat_replies.len());
-    for body in &input.chat_replies {
-        let fixture = Fixture::new()?;
-        let mut state = fixture.state()?;
-        let env = fixture.env();
-        let headers = IndexMap::new();
-        let reply = chat_transform_response(ReplyRequest {
-            body: body.as_bytes(),
-            headers: &headers,
-            state: &mut state,
-            env: &env,
-            input: LogInput {
-                messages: HiddenJson::Null,
-                data: RawBody::Object(IndexMap::new()),
-            },
-            options: ReplyOptions {
-                json_mode: false,
-                provider: Some("edenai"),
-                base_model: None,
-                identifier: || Uuid::from_u128(1_u128),
-                clock: || 1_700_000_000_i64,
-            },
-        })
-        .or_value_error()?;
-        steps.push(json!({"cost": hidden_cost(&reply.hidden_params)}));
-    }
-    Ok(json!({"steps": steps}))
+#[derive(Clone, Copy)]
+enum ReplyFamily {
+    Chat,
+    Responses,
 }
 
-fn chunk_values(chunks: &[Value]) -> Result<Value, Box<HelperError>> {
-    let mut steps = Vec::with_capacity(chunks.len());
-    for chunk in chunks {
-        let parsed = chunk_parser(chunk, || Uuid::from_u128(1_u128), || 1_700_000_000_i64)
-            .or_value_error()?;
-        let cost = match parsed.usage {
-            Some(Value::Object(usage)) => usage.get("cost").and_then(Value::as_f64),
-            Some(
-                Value::Null
-                | Value::Bool(_)
-                | Value::Number(_)
-                | Value::String(_)
-                | Value::Array(_),
-            )
-            | None => None,
-        };
-        steps.push(json!({"cost": cost}));
+fn fixture_steps(bodies: &[String], family: ReplyFamily) -> Result<Value, Box<HelperError>> {
+    let mut values = Vec::with_capacity(bodies.len());
+    for body in bodies {
+        values.push(fixture_cost(body, family)?);
     }
-    Ok(json!({"steps": steps}))
+    Ok(json!({"steps": values}))
 }
 
-fn embedding_reply_values(input: &Input) -> Result<Value, Box<HelperError>> {
-    let mut steps = Vec::with_capacity(input.embedding_replies.len());
-    for body in &input.embedding_replies {
-        let reply = embedding_transform_response(body.as_bytes()).map_err(embedding_failure)?;
-        steps.push(json!({"cost": hidden_cost(&reply.hidden_params)}));
-    }
-    Ok(json!({"steps": steps}))
-}
-
-fn responses_reply_values(input: &Input) -> Result<Value, Box<HelperError>> {
-    let mut steps = Vec::with_capacity(input.responses_replies.len());
-    for body in &input.responses_replies {
-        let fixture = Fixture::new()?;
-        let mut state = fixture.state()?;
-        let env = fixture.env();
-        let headers = IndexMap::new();
-        let reply = RawResponse {
-            status: 200,
-            headers: &headers,
-            text: body,
-        };
+// the chat and Responses replies both log through a fixture state, and each reports its cost on the reply
+fn fixture_cost(body: &String, family: ReplyFamily) -> Result<Value, Box<HelperError>> {
+    let fixture = Fixture::new()?;
+    let mut state = fixture.state()?;
+    let env = fixture.env();
+    if let ReplyFamily::Responses = family {
         let transformed = responses_transform_response(ResponsesRequest {
-            reply: &reply,
+            reply: &RawResponse {
+                status: 200,
+                headers: &IndexMap::new(),
+                text: body,
+            },
             now: 1_700_000_000_i64,
             state: &mut state,
             env: &env,
         })
         .or_value_error()?;
-        let cost = match transformed.additional_headers.get(RESPONSE_COST_HEADER) {
-            Some(HiddenJson::Number(number)) => number.as_f64(),
-            Some(
-                HiddenJson::Bool(_)
-                | HiddenJson::Null
-                | HiddenJson::Text(_)
-                | HiddenJson::List(_)
-                | HiddenJson::Object(_),
-            )
-            | None => None,
-        };
-        steps.push(json!({"cost": cost}));
+        let cost = cost_number(transformed.additional_headers.get(RESPONSE_COST_HEADER));
+        return Ok(json!({"cost": cost}));
     }
-    Ok(json!({"steps": steps}))
+    let reply = chat_transform_response(ReplyRequest {
+        body: body.as_bytes(),
+        headers: &IndexMap::new(),
+        state: &mut state,
+        env: &env,
+        input: LogInput {
+            messages: HiddenJson::Null,
+            data: RawBody::Object(IndexMap::new()),
+        },
+        options: ReplyOptions {
+            json_mode: false,
+            provider: Some("edenai"),
+            base_model: None,
+            identifier: || Uuid::from_u128(1_u128),
+            clock: || 1_700_000_000_i64,
+        },
+    })
+    .or_value_error()?;
+    Ok(json!({"cost": hidden_cost(&reply.hidden_params)}))
 }
 
-fn messages_reply_values(input: &Input) -> Result<Value, Box<HelperError>> {
-    let mut steps = Vec::with_capacity(input.messages_replies.len());
+fn chunk_cost(chunk: &Value) -> Result<Value, Box<HelperError>> {
+    let parsed =
+        chunk_parser(chunk, || Uuid::from_u128(1_u128), || 1_700_000_000_i64).or_value_error()?;
+    let cost = match parsed.usage {
+        Some(Value::Object(usage)) => usage.get("cost").and_then(Value::as_f64),
+        Some(
+            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_),
+        )
+        | None => None,
+    };
+    Ok(json!({"cost": cost}))
+}
+
+fn embedding_cost(body: &String) -> Result<Value, Box<HelperError>> {
+    let reply = embedding_transform_response(body.as_bytes()).map_err(embedding_failure)?;
+    Ok(json!({"cost": hidden_cost(&reply.hidden_params)}))
+}
+
+fn messages_cost(body: &String) -> Result<Value, Box<HelperError>> {
+    let fixture = Fixture::new()?;
+    let mut state = fixture.state()?;
     let limits = ApiLimits::default();
-    for body in &input.messages_replies {
-        let fixture = Fixture::new()?;
-        let mut state = fixture.state()?;
-        messages_transform_response(ReplyInput {
-            body: body.as_bytes(),
-            status: 200,
-            limits: &limits,
-            state: &mut state,
-        })
-        .or_value_error()?;
-        let cost = match state.model_call_details.get(RESPONSE_COST) {
-            Some(HiddenJson::Number(number)) => number.as_f64(),
-            Some(
-                HiddenJson::Bool(_)
-                | HiddenJson::Null
-                | HiddenJson::Text(_)
-                | HiddenJson::List(_)
-                | HiddenJson::Object(_),
-            )
-            | None => None,
-        };
-        steps.push(json!({"cost": cost}));
-    }
-    Ok(json!({"steps": steps}))
+    messages_transform_response(ReplyInput {
+        body: body.as_bytes(),
+        status: 200,
+        limits: &limits,
+        state: &mut state,
+    })
+    .or_value_error()?;
+    Ok(json!({"cost": cost_number(state.model_call_details.get(RESPONSE_COST))}))
 }
