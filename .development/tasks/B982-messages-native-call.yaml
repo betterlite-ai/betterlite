@@ -82,8 +82,7 @@ description: >-
   Direct inputs come from B014 (Call dispatch across providers and call types, shared settings and helpers), B171
   (Direct helper oracle and URL path encoding), B961 (Messages native prepare), B962 (Messages thinking), B963 (Messages
   options), B974 (Messages chat call), B979 (Messages native stream), B985 (Messages response call), B1087 (Api
-  boundaries), B1118 (Messages native execution), B570 (Anthropic request headers and model discovery), B948 (Responses
-  mcp selection), B002 (Load LiteLLM config.yaml into typed config). These are callable/type/config owners, not
+  boundaries), B1118 (Messages native execution), B570 (Anthropic request headers and model discovery), B002 (Load LiteLLM config.yaml into typed config). These are callable/type/config owners, not
   provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
 scope:
   paths:

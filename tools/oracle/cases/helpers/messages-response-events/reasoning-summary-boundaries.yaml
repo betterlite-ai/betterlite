@@ -1,0 +1,61 @@
+kind: helper
+name: messages-response-events-reasoning-summary-boundaries
+call:
+  messages_response_events:
+    message_id: msg_summary
+    model: model_a
+    redaction: enabled
+    steps:
+      - function: process_event
+        event:
+          shape: mapping
+          fields:
+            type: response.output_item.added
+            item: {type: reasoning, id: reason_a}
+      - {function: process_event, event: {shape: mapping, fields: {type: response.reasoning_summary_text.delta, item_id: reason_a, delta: think}}}
+      - {function: process_event, event: {shape: mapping, fields: {type: response.reasoning_summary_text.delta, item_id: reason_a, delta: ""}}}
+      - {function: process_event, event: {shape: mapping, fields: {type: response.reasoning_summary_part.added, item_id: reason_a, summary_index: 1}}}
+      - {function: process_event, event: {shape: mapping, fields: {type: response.reasoning_summary_part.added, item_id: reason_a, summary_index: 0}}}
+      - {function: process_event, event: {shape: mapping, fields: {type: response.reasoning_summary_part.added, item_id: reason_a, summary_index: -1}}}
+      - {function: process_event, event: {shape: mapping, fields: {type: response.reasoning_summary_part.added, item_id: reason_a, summary_index: true}}}
+      - {function: process_event, event: {shape: mapping, fields: {type: response.reasoning_summary_part.added, item_id: reason_a, summary_index: false}}}
+      - {function: process_event, event: {shape: mapping, fields: {type: response.reasoning_summary_part.added, item_id: reason_a, summary_index: 1.5}}}
+      - {function: process_event, event: {shape: mapping, fields: {type: response.reasoning_summary_part.added, item_id: reason_a, summary_index: "1"}}}
+      - {function: process_event, event: {shape: mapping, fields: {type: response.reasoning_summary_part.added, item_id: reason_a}}}
+      - {function: process_event, event: {shape: mapping, fields: {type: response.reasoning_summary_part.added, item_id: unknown, summary_index: 2}}}
+      - {function: process_event, event: {shape: mapping, fields: {type: response.reasoning_summary_part.added, item_id: 5, summary_index: 1}}}
+calls:
+  - messages_response_events:
+      message_id: msg_empty
+      model: model_a
+      redaction: enabled
+      steps:
+        - {function: process_event, event: {shape: mapping, fields: {type: response.reasoning_summary_text.delta, item_id: ghost, delta: ""}}}
+        - function: process_event
+          event:
+            shape: mapping
+            fields:
+              type: response.output_item.added
+              item: {type: message, id: text_a}
+        - {function: process_event, event: {shape: mapping, fields: {type: response.output_text.delta, item_id: text_a, delta: text}}}
+        - {function: process_event, event: {shape: mapping, fields: {type: response.reasoning_summary_text.delta, item_id: "", delta: ""}}}
+  - messages_response_events:
+      message_id: msg_attributes
+      model: model_a
+      redaction: enabled
+      steps:
+        - function: process_event
+          event:
+            shape: attributes
+            attributes: {type: response.reasoning_summary_text.delta, item_id: reason_attr, delta: opened}
+        - function: process_event
+          event:
+            shape: attributes
+            attributes: {type: response.reasoning_summary_part.added, item_id: reason_attr, summary_index: 2}
+        - function: process_event
+          event:
+            shape: attributed
+            attributes: {}
+            fields: {type: response.reasoning_summary_text.delta, item_id: reason_attr, delta: 0}
+env: {}
+compare: {ignore: []}

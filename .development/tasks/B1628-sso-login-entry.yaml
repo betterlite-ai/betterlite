@@ -6,8 +6,11 @@ description: >-
   should_use_sso_handler. Despite its Python name this entry supports Google, Microsoft,
   generic OIDC, SAML and the local password form. DISABLE_ADMIN_UI defaults absent and
   uses the existing boolean conversion; disabled UI returns B4263's page before other work.
-  Reuse its missing-environment page, B1618 callback URL helper and B1613 CLI flow validation.
-  CLI state includes user_code only when allow_cli_sso_verification_uri_complete is enabled;
+  Reuse its missing-environment page and B1618 callback URL helper.
+  The CLI login (B1613) is not built yet: source litellm-cli answers 501 with detail "the CLI
+  SSO login is not installed", the text GET /sso/callback gives for CLI state until B1614, and
+  builds no CLI state. B1613 later puts its CLI flow validation and the CLI state (user_code only
+  when allow_cli_sso_verification_uri_complete is enabled) in place of that answer.
   existing_key remains ignored. A configured general_settings.custom_ui_sso_sign_in_handler
   keeps the open-source unavailable-hook error rather than building its enterprise handler.
   With all OAuth client IDs absent, configured SAML delegates to B1625 with return_to as
@@ -76,12 +79,15 @@ deviations:
   - what: OAuth and SAML login entry remains available above five billable users without an Enterprise license.
     why: betterlite has no paid tier or user-count ceiling; native tests cover both sides of the former five-user boundary.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1032-L1039
+  - what: Until B1613 lands, GET /sso/key/generate with source=litellm-cli answers 501 "the CLI SSO login is not installed" where LiteLLM checks the CLI login session first.
+    why: CLI login is deferred (value split, 2026-11-19); a 501 keeps a CLI login from turning into a plain browser login without a word.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1051-L1059
 out_of_scope:
   - EnterpriseCustomSSOHandler.handle_custom_ui_sso_sign_in exists only in the excluded enterprise package and is not implemented.
   - B1615 owns OAuth callback dispatch, B1626 the SAML callback and B063 indexes the remaining ui_sso.py functions.
 pitfalls:
   - Microsoft login redirection can use the common tenant while its callback still rejects an absent MICROSOFT_TENANT.
-  - The source validates a litellm-cli flow before choosing the SAML-only branch, even though that branch passes return_to as RelayState instead of CLI state.
+  - The litellm-cli answer comes before the SAML-only branch, since the source validates a litellm-cli flow first, even though that branch passes return_to as RelayState instead of CLI state.
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

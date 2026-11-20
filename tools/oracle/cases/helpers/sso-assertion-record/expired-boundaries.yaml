@@ -1,0 +1,38 @@
+kind: helper
+name: expired-boundaries
+call:
+  b10003:
+    function: expiry
+    expires_at: null
+    now: "2023-11-14T22:13:20+00:00"
+env: {}
+compare: {ignore: []}
+calls:
+  - b10003:
+      function: expiry
+      expires_at: "2023-11-14T22:13:20+00:00"
+      now: "2023-11-14T22:13:20+00:00"
+  - b10003:
+      function: expiry
+      expires_at: "2023-11-14T22:13:19+00:00"
+      now: "2023-11-14T22:13:20+00:00"
+  - b10003:
+      function: expiry
+      expires_at: "2023-11-14T22:13:21+00:00"
+      now: "2023-11-14T22:13:20+00:00"
+  - b10003:
+      function: expiry
+      expires_at: "2023-11-15T03:13:20+05:00"
+      now: "2023-11-14T22:13:20+00:00"
+  - b10003:
+      function: expiry
+      expires_at: "2023-11-14T22:13:20"
+      now: "2023-11-14T22:13:20+00:00"
+  - b10003:
+      function: expiry
+      expires_at: "2023-11-14T22:13:21Z"
+      now: "2023-11-14T22:13:20+00:00"
+  - b10003:
+      function: expiry
+      expires_at: "2023-11-14T22:13:20+00:00"
+      now: "2023-11-14T22:20:00+00:00"

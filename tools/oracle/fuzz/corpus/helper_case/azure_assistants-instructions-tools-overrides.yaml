@@ -1,0 +1,5 @@
+kind: helper
+name: azure-assistants-seed-instructions-tools-overrides
+call: {azure_assistants: {instructions_tools_overrides: [{run: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: null}}]}}
+env: {}
+compare: {ignore: []}

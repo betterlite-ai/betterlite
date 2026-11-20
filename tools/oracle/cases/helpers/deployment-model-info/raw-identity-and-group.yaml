@@ -1,0 +1,34 @@
+kind: helper
+name: deployment-model-info-raw-identity-and-group
+call:
+  deployment_model_info:
+    function: raw
+    model_list:
+      - model_name: grp
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: first
+          max_input_tokens: 100
+      - model_name: grp
+        litellm_params:
+          model: openai/gpt-4o-mini
+        model_info:
+          id: second
+    model_cost: {}
+    arguments:
+      model_id: first
+calls:
+  - deployment_model_info:
+      function: raw
+      model_list:
+        - model_name: grp
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: first
+      model_cost: {}
+      arguments:
+        model_id: ghost
+env: {}
+compare: {ignore: []}

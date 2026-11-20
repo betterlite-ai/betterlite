@@ -1,0 +1,14 @@
+kind: helper
+name: post-call-settlement-logging-hook-non-streaming-idempotent
+call:
+  b3046:
+    function: logging_hook
+    call_id: call-1
+    headers:
+      x-ratelimit-api_key-remaining-tokens: 1
+    stash:
+      owner_call_id: call-1
+      statuses:
+        - {code: OK, current_limit: 5000, limit_remaining: 4000, rate_limit_type: tokens, descriptor_key: api_key, descriptor_value: key-1}
+env: {}
+compare: {ignore: []}

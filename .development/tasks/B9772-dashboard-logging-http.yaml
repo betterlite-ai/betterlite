@@ -48,8 +48,8 @@ description: >-
   Use fixed local model groups. The Test button POSTs /chat/completions with model,
   messages=[{role:"user",content:"Hi, this is a test message"}] and mock_testing_fallbacks=true,
   reading response.model. B004/B310/B8350 own its route, fallback execution and test switch;
-  compare the actual upstream transcript. Reuse B9735's model-group catalog and B077's public
-  cost-map read, whose model entries expose litellm_provider. The retained SDK's root/custom
+  compare the actual upstream transcript. Reuse B9735's model-group catalog. The public cost-map read, whose model entries
+  expose litellm_provider, is B077's, and B077's own cost-map-local case proves it. The retained SDK's root/custom
   header bug is recorded in the audit; HTTP parity does not claim to fix browser base routing.
 
   The email-events panel emits GET /email/event_settings, PATCH that path with
@@ -115,7 +115,6 @@ oracle_cases:
   - tools/oracle/cases/alerting/composed/teams-disabled.yaml
   - tools/oracle/cases/alerting/composed/settings-configured.yaml
   - tools/oracle/cases/ui/management-selectors/model-groups-for-router-fallbacks.yaml
-  - tools/oracle/cases/public/hub-composition/cost-map-local.yaml
 deviations: []
 out_of_scope:
   - B9090 retains every logging/alert/fallback component and its pure formatting helpers; this task adds no client patch or settings registry.

@@ -1,0 +1,18 @@
+kind: helper
+name: non_map_raw_is_empty
+call:
+  object_permissions:
+    raw: 7
+calls:
+  - object_permissions:
+      raw: true
+  - object_permissions:
+      raw: null
+  - object_permissions:
+      raw: [1, 2]
+  - object_permissions:
+      raw: {}
+  - object_permissions:
+      raw: '{}'
+env: {}
+compare: {ignore: []}

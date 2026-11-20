@@ -187,3 +187,17 @@ path = "fuzz_targets/turn_time.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "rollup_inputs"
+path = "fuzz_targets/rollup_inputs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "spend_counter_key"
+path = "fuzz_targets/spend_counter_key.rs"
+test = false
+doc = false
+bench = false

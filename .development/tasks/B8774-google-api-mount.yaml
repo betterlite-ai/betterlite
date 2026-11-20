@@ -33,6 +33,12 @@ description: >-
   test their handlers with tower's oneshot over their own routers only. Write each case from that task's text, with
   the mock Gemini upstream those tasks name. When a case shows a product bug, the fix goes to the owning task's module
   in a follow-up.
+
+  Dashboard interactions case. The Playground's interactions tab sends POST /v1beta/interactions {model, input,
+  stream:true, previous_interaction_id?}. Write tools/oracle/cases/ui/playground/interactions-two-turns.yaml, a
+  two-turn exchange through the booted proxy over this mount (B9694 leaves it here).
+
+  Playground interactions tab. It sends POST /v1beta/interactions {model, input, stream:true, previous_interaction_id?} (B3507). Add tools/oracle/cases/ui/playground/interactions-two-turns.yaml, two turns where the second carries the first turn's interaction id, against a mock upstream, using B860's Postgres fixture with B9942's bootstrap.
 scope:
   paths:
     - crates/betterlite-server/src/app/inference.rs
@@ -41,12 +47,15 @@ scope:
     - tools/oracle/cases/genai/**
     - tools/oracle/cases/interactions/**
     - tools/oracle/cases/agents/collection-routes/**
+    - tools/oracle/cases/ui/playground/interactions-two-turns.yaml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/endpoints.py#L221-L460
     why: The interaction routes with both prefixes and their auth dependency.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L120-L133
     why: The route types the three routers hand to the request pipeline.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/playground/llm_calls/interactions_api.tsx#L30-L48
+    why: Interactions URL and body.
 dod:
   - text: The GenAI, interaction and agent collection routes answer inside the auth layers, each registered once.
     proof: [google-mount-tests, oracle]
@@ -54,6 +63,8 @@ dod:
     proof: [google-mount-tests]
   - text: Over HTTP, the moved GenAI, interaction and agent collection cases answer as LiteLLM does.
     proof: [google-cases, oracle]
+  - text: "A two-turn playground interaction matches LiteLLM through the booted proxy."
+    proof: [oracle]
 checks:
   optional: []
   commands:
@@ -95,6 +106,7 @@ oracle_cases:
   - tools/oracle/cases/agents/collection-routes/get-by-name.yaml
   - tools/oracle/cases/agents/collection-routes/delete-by-name.yaml
   - tools/oracle/cases/agents/collection-routes/list-versions.yaml
+  - tools/oracle/cases/ui/playground/interactions-two-turns.yaml
 deviations: []
 out_of_scope:
   - "The handlers: B3506, B3507 and B3508. The create call and the port trait: B3499. The port implementation: B8660."

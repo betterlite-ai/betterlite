@@ -3,14 +3,17 @@ title: Prompt manager arms for the callback factory and their catalog names
 description: >-
   Five callback names turn on a prompt manager in LiteLLM: dotprompt, gitlab, bitbucket, humanloop and langfuse (its
   prompt role), and anthropic_cache_control_hook works the same way. B8560's per call dispatch asks a
-  `CompatibleLoggerFactory` for them with `init(name)`, but B8655's `PromptLoggerFactory` answers only
-  litellm_agent, so these names give nothing today. The managers are merged or planned: DotpromptManager (B4052),
+  `CompatibleLoggerFactory` for them with `init(name)`, and no task has built that factory yet: B8655 builds only the
+  litellm_agent resolver. Build `PromptLoggerFactory` here, implementing B8560's `CompatibleLoggerFactory` over B8655's
+  catalog: `init("litellm_agent")` returns B8655's one resolver as an `Arc<dyn PromptManagementBackend>`, a name with
+  no arm gives None, and the known names list is B8466's const slice of `_custom_logger_compatible_callbacks_literal`,
+  in its order. The managers are merged or planned: DotpromptManager (B4052),
   GitLabPromptManager (B4054), BitBucketPromptManager (B4056), the Humanloop prompt client (B3968, betterlite-logging
   humanloop.rs), LangfusePromptManagement (B3908) and the Anthropic cache hook adapter (B4126). This task adds their
   arms, so a configured name both starts and serves prompts.
 
 
-  Arms. Extend B8655's crates/betterlite-server/src/app/callbacks/catalog/prompt_factory.rs, putting new code in
+  Arms. Extend crates/betterlite-server/src/app/callbacks/catalog/prompt_factory.rs (B8655 writes the litellm_agent arm there), putting new code in
   prompt_factory/ (managers.rs, tests.rs). `init(name)` builds each manager once per process and returns the same
   `Arc<dyn PromptManagementBackend>` (B4058's trait) after that, as each LiteLLM arm returns the instance it holds.
   dotprompt, gitlab and bitbucket already implement the trait in betterlite-prompts. Humanloop and Langfuse are types
