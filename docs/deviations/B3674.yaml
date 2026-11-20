@@ -15,7 +15,7 @@ deviations:
   - what: write_back_tool_use skips a tool_use block whose message content is not an array, whose content index is missing, or whose block is not an object. LiteLLM raises IndexError or TypeError there.
     why: A silent skip and a 500 both drop the guardrail's rewrite; the skip keeps the request the client sent, and the scan that produced the target only emits targets for blocks it found.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L236-L245
-  - what: A missing message row in apply_guardrail_tool_calls_to_input is ApplyError::MessageMissing, not Python's IndexError, and nothing is written before it is returned.
+  - what: A missing message row in apply_tool_calls_to_input is ApplyError::MessageMissing, not Python's IndexError, and nothing is written before it is returned.
     why: Rust has no exceptions; the caller classifies the failure the same way it classifies TargetMissing.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1117-L1118
   - what: A structured row whose image URL has to be downloaded fails the write-back with the conversion error. The structured write-back converts with a fetcher that refuses every remote URL, so a bedrock invoke/ model that forces base64 images gets an error. LiteLLM downloads the image and sends its base64 data.
