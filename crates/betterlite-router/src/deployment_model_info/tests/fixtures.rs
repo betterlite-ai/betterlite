@@ -156,13 +156,42 @@ pub(super) fn credentials(entries: &[(&str, &str)]) -> CredentialSnapshot {
     CredentialSnapshot::new(built)
 }
 
-pub(super) struct Environment {
-    pub(super) map: ModelCostMap,
+// The resolution inputs both fixture structs hold, so one context builder serves them.
+pub(super) struct Inputs {
     pub(super) catalog: ModelCatalog,
     pub(super) known: BTreeSet<String>,
     pub(super) custom: BTreeSet<String>,
-    pub(super) variables: BTreeMap<String, String>,
+    pub(super) environment: BTreeMap<String, String>,
     pub(super) registry: JSONProviderRegistry,
+}
+
+impl Inputs {
+    fn new(catalog: ModelCatalog, environment: BTreeMap<String, String>) -> Self {
+        Self {
+            catalog,
+            known: BTreeSet::new(),
+            custom: BTreeSet::new(),
+            environment,
+            registry: JSONProviderRegistry::load(),
+        }
+    }
+
+    fn context(&self) -> ResolutionContext<'_> {
+        ResolutionContext {
+            catalog: &self.catalog,
+            known_model_names: &self.known,
+            custom_providers: &self.custom,
+            environment: &self.environment,
+            registry: self.registry.clone(),
+            policies: ProviderPolicies::default(),
+            globals: GlobalCredentials::default(),
+        }
+    }
+}
+
+pub(super) struct Environment {
+    pub(super) map: ModelCostMap,
+    pub(super) inputs: Inputs,
     pub(super) generalizations: CatalogGeneralizations,
 }
 
@@ -172,49 +201,18 @@ impl Environment {
         for (key, value) in environment {
             env.insert((*key).to_owned(), (*value).to_owned());
         }
+        let catalog = ModelCatalog::parse(cost_map.as_bytes(), UnknownFields::Warn).unwrap();
         let (generalizations, warnings) = CatalogGeneralizations::install(Vec::new());
         assert!(warnings.is_empty());
         Self {
             map: ModelCostMap::parse(cost_map.as_bytes()).unwrap(),
-            catalog: ModelCatalog::parse(cost_map.as_bytes(), UnknownFields::Warn).unwrap(),
-            known: BTreeSet::new(),
-            custom: BTreeSet::new(),
-            variables: env,
-            registry: JSONProviderRegistry::load(),
+            inputs: Inputs::new(catalog, env),
             generalizations,
         }
     }
 
     pub(super) fn harness(&self) -> Harness<'_> {
-        Harness {
-            map: &self.map,
-            resolution: resolution(
-                &self.catalog,
-                &self.known,
-                &self.custom,
-                &self.variables,
-                &self.registry,
-            ),
-            generalizations: &self.generalizations,
-        }
-    }
-}
-
-fn resolution<'inputs>(
-    catalog: &'inputs ModelCatalog,
-    known: &'inputs BTreeSet<String>,
-    custom: &'inputs BTreeSet<String>,
-    environment: &'inputs BTreeMap<String, String>,
-    registry: &JSONProviderRegistry,
-) -> ResolutionContext<'inputs> {
-    ResolutionContext {
-        catalog,
-        known_model_names: known,
-        custom_providers: custom,
-        environment,
-        registry: registry.clone(),
-        policies: ProviderPolicies::default(),
-        globals: GlobalCredentials::default(),
+        Harness::new(&self.map, self.inputs.context(), &self.generalizations)
     }
 }
 
@@ -224,7 +222,20 @@ pub(super) struct Harness<'environment> {
     pub(super) generalizations: &'environment CatalogGeneralizations,
 }
 
-impl Harness<'_> {
+impl<'environment> Harness<'environment> {
+    #[must_use]
+    const fn new(
+        map: &'environment ModelCostMap,
+        resolution: ResolutionContext<'environment>,
+        generalizations: &'environment CatalogGeneralizations,
+    ) -> Self {
+        Self {
+            map,
+            resolution,
+            generalizations,
+        }
+    }
+
     pub(super) fn metadata(&self) -> MetadataEnvironment<'_> {
         MetadataEnvironment {
             model_cost: &self.map.entries,
@@ -482,11 +493,7 @@ pub(super) async fn answer_connections(streams: Vec<TcpStream>, body: &[u8]) -> 
 
 // The resolution inputs the deployment calls read, with the name sets the tests leave empty.
 pub(super) struct Resolver {
-    catalog: ModelCatalog,
-    known: BTreeSet<String>,
-    custom: BTreeSet<String>,
-    environment: BTreeMap<String, String>,
-    registry: JSONProviderRegistry,
+    inputs: Inputs,
 }
 
 impl Resolver {
@@ -499,23 +506,14 @@ impl Resolver {
         for (key, value) in environment {
             built.insert((*key).to_owned(), (*value).to_owned());
         }
-        Self {
-            catalog: ModelCatalog::parse(b"{}", UnknownFields::Reject).unwrap(),
-            known: known.iter().map(|name| (*name).to_owned()).collect(),
-            custom: BTreeSet::new(),
-            environment: built,
-            registry: JSONProviderRegistry::load(),
-        }
+        let catalog = ModelCatalog::parse(b"{}", UnknownFields::Reject).unwrap();
+        let mut inputs = Inputs::new(catalog, built);
+        inputs.known = known.iter().map(|name| (*name).to_owned()).collect();
+        Self { inputs }
     }
 
     pub(super) fn context(&self) -> ResolutionContext<'_> {
-        resolution(
-            &self.catalog,
-            &self.known,
-            &self.custom,
-            &self.environment,
-            &self.registry,
-        )
+        self.inputs.context()
     }
 }
 

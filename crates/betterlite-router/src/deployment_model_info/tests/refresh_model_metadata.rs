@@ -320,10 +320,8 @@ async fn absent_base_wildcard_and_clientside_skips() {
 #[tokio::test]
 async fn dynamic_key_fallback() {
     let (listener, base) = endpoint().await;
-    let mut specs = keyed_rows(&base);
-    specs.extend(prefixed_rows(&base));
     let rig = Rig::with_credentials(
-        catalog(specs),
+        catalog(dynamic_rows(&base)),
         DiscoveryCache::for_deployments(5),
         credentials(&[]),
         Resolver::with_known(&[("HOSTED_VLLM_API_KEY", "sk-env")], &["openai"]),
@@ -335,60 +333,29 @@ async fn dynamic_key_fallback() {
     assert_dynamic_cached(&rig);
 }
 
-fn keyed_rows(base: &str) -> Vec<DeploymentSpec> {
-    vec![
-        row(
-            "group",
-            "env-key",
-            params("m0", "hosted_vllm", &format!("{base}/a")),
-        ),
-        row(
-            "group",
-            "param-key",
-            params_with(
-                "m1",
-                "hosted_vllm",
-                &format!("{base}/b"),
-                r#"{"api_key":"sk-param"}"#,
-            ),
-        ),
-        row(
-            "group",
-            "empty-key",
-            params_with(
-                "m2",
-                "hosted_vllm",
-                &format!("{base}/c"),
-                r#"{"api_key":""}"#,
-            ),
-        ),
-    ]
-}
-
-fn prefixed_rows(base: &str) -> Vec<DeploymentSpec> {
+fn dynamic_rows(base: &str) -> Vec<DeploymentSpec> {
     // The "openai" model group name turns off provider defaults, so the resolution keeps no key at all.
-    vec![
-        row(
-            "group",
-            "prefix-key",
-            params_with(
-                "openai/m3",
-                "openai",
-                &format!("{base}/d"),
-                r#"{"api_key":"sk-prefix"}"#,
-            ),
-        ),
-        row(
-            "group",
-            "prefix-empty",
-            params_with(
-                "openai/m4",
-                "openai",
-                &format!("{base}/e"),
-                r#"{"api_key":""}"#,
-            ),
-        ),
+    [
+        ("env-key", "m0", "hosted_vllm", "/a", None),
+        ("param-key", "m1", "hosted_vllm", "/b", Some("sk-param")),
+        ("empty-key", "m2", "hosted_vllm", "/c", Some("")),
+        ("prefix-key", "openai/m3", "openai", "/d", Some("sk-prefix")),
+        ("prefix-empty", "openai/m4", "openai", "/e", Some("")),
     ]
+    .into_iter()
+    .map(|(name, model, provider, path, key)| {
+        let api_base = format!("{base}{path}");
+        let extra = key.map_or_else(
+            || "{}".to_owned(),
+            |secret| format!(r#"{{"api_key":"{secret}"}}"#),
+        );
+        row(
+            "group",
+            name,
+            params_with(model, provider, &api_base, &extra),
+        )
+    })
+    .collect()
 }
 
 fn assert_dynamic_authorization(requests: &[String]) {
