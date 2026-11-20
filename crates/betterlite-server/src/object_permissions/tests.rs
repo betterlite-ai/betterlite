@@ -641,7 +641,17 @@ async fn exact_id_wins() {
     set_object_permission(&mut exact, Some(database.prisma()), &registry)
         .await
         .unwrap();
-    assert!(exact.contains_key("object_permission_id"));
+    let Some(JsonData::String(created_id)) = exact.get("object_permission_id") else {
+        panic!("create links the generated id");
+    };
+    assert_eq!(
+        database
+            .permission_row(created_id)
+            .await
+            .unwrap()
+            .get("mcp_tool_permissions"),
+        Some(&string(r#"{"srv-1":["t1"]}"#))
+    );
 
     let mut collision = permission_input(r#"{"mcp_tool_permissions": {"shared": ["t1"]}}"#);
     let error = set_object_permission(&mut collision, Some(database.prisma()), &registry)
