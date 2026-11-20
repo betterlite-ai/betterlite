@@ -6,12 +6,12 @@ use rstest::rstest;
 use secrecy::SecretString;
 
 use super::support::{
-    CallRequest, Events, Fixture, Reply, Source, Wire, caller_headers, create_call, file_deps,
-    file_params, list_call, openai_config, openai_settings, request_header,
+    CallRequest, Events, Fixture, Reply, Source, Wire, caller_headers, file_call, file_deps,
+    file_params, openai_config, openai_settings, request_header,
 };
 use super::{FILE, LIST, json, run};
 use crate::api::vector_file_http_create_list::config::FilesParams;
-use crate::api::vector_file_http_create_list::service::FileRequest;
+use crate::api::vector_file_http_create_list::service::{FileRequest, Operation};
 use crate::api::vector_store_http_write::service::ClientKind;
 
 #[derive(Clone, Copy, Debug)]
@@ -89,13 +89,13 @@ async fn create_list_credentials() {
     };
     let original = file_params(r#"{"file_id":"file_a"}"#);
     let mut fixture = Fixture::new("vector_store_file_create");
-    let call = create_call(&request, &original, None);
+    let call = file_call(&request, Operation::Create, &original, None);
     run(&mut fixture, &deps, ClientKind::Sync, &call, &events)
         .await
         .expect("the create succeeds");
     assert_create_logging(&fixture);
     let query = file_params(r#"{"limit":4}"#);
-    let list = list_call(&request, &query, None);
+    let list = file_call(&request, Operation::List, &query, None);
     run(&mut fixture, &deps, ClientKind::Sync, &list, &events)
         .await
         .expect("the list succeeds");
@@ -132,7 +132,7 @@ async fn list_without_caller_headers_adds_v2_beta(#[case] caller: CallerHeaders)
     let query: IndexMap<String, Json> = IndexMap::new();
     let original = file_params("{}");
     let mut fixture = Fixture::new("vector_store_file_list");
-    let call = list_call(request, &original, Some(&query));
+    let call = file_call(request, Operation::List, &original, Some(&query));
     run(
         &mut fixture,
         &deps,

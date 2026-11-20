@@ -7,10 +7,11 @@ use rstest::rstest;
 
 use super::support::{
     CallRequest, Events, Fixture, IMPATIENT, ProxiedSource, RecordingConfig, Reply, Source, Wire,
-    create_call, file_deps, file_params, list_call, openai_config, openai_settings, params,
+    file_call, file_deps, file_params, openai_config, openai_settings, params,
 };
 use super::{FILE, run};
 use crate::api::vector_file_http_create_list::error::FileTransportError;
+use crate::api::vector_file_http_create_list::service::Operation;
 use crate::api::vector_store_http_write::error::BaseLlmException;
 use crate::api::vector_store_http_write::service::ClientKind;
 
@@ -37,7 +38,7 @@ async fn create_passes_timeout_in_both_modes(
     };
     let original = file_params(r#"{"file_id":"file_a"}"#);
     let mut fixture = Fixture::new("vector_store_file_create");
-    let call = create_call(&request, &original, None);
+    let call = file_call(&request, Operation::Create, &original, None);
     run(&mut fixture, &deps, mode, &call, &events)
         .await
         .expect("the create succeeds");
@@ -65,7 +66,7 @@ async fn list_never_passes_timeout(#[case] mode: ClientKind, #[case] timeout: Op
     };
     let query = file_params(r#"{"limit":2}"#);
     let mut fixture = Fixture::new("vector_store_file_list");
-    let call = list_call(&request, &query, None);
+    let call = file_call(&request, Operation::List, &query, None);
     run(&mut fixture, &deps, mode, &call, &events)
         .await
         .expect("the list succeeds");
@@ -91,7 +92,7 @@ async fn timed_create_error<'call>(
     ));
     let deps = file_deps(&config, source);
     let mut fixture = Fixture::new("vector_store_file_create");
-    let call = create_call(request, original, None);
+    let call = file_call(request, Operation::Create, original, None);
     let result = run(&mut fixture, &deps, mode, &call, events).await;
     let Err(FileTransportError::Provider(error)) = result else {
         panic!("a timeout is a provider error");
@@ -187,7 +188,7 @@ async fn list_timeout_is_a_synthesized_500() {
         ..CallRequest::new("vs_a", &files)
     };
     let mut fixture = Fixture::new("vector_store_file_list");
-    let call = list_call(&request, &query, None);
+    let call = file_call(&request, Operation::List, &query, None);
     let result = run(&mut fixture, &deps, ClientKind::Sync, &call, &events).await;
     let Err(FileTransportError::Provider(error)) = result else {
         panic!("a list timeout is a provider error");

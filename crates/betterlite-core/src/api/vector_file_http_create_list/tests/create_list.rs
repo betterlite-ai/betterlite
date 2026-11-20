@@ -4,12 +4,12 @@ use indexmap::IndexMap;
 use rstest::rstest;
 
 use super::support::{
-    CallRequest, Events, Fixture, Reply, Source, Wire, body_bytes, body_json, create_call, extra,
-    file_deps, file_params, list_call, openai_config, openai_settings, params,
+    CallRequest, Events, Fixture, Reply, Source, Wire, body_bytes, body_json, extra, file_call,
+    file_deps, file_params, openai_config, openai_settings, params,
 };
 use super::{FILE, LIST, json, run};
 use crate::api::vector_file_http_create_list::error::FileTransportError;
-use crate::api::vector_file_http_create_list::service::FileRequest;
+use crate::api::vector_file_http_create_list::service::{FileRequest, Operation};
 use crate::api::vector_store_http_write::service::ClientKind;
 
 #[tokio::test]
@@ -29,7 +29,7 @@ async fn create_overlay_before_cleaning() {
         r#"{"file_id":"file_a","attributes":{"keep":"y","count":2,"hidden_params":"secret"},"ignored":null,"client_tag":"ticket-7"}"#,
     );
     let mut fixture = Fixture::new("vector_store_file_create");
-    let call = create_call(&request, &original, Some(&overlay));
+    let call = file_call(&request, Operation::Create, &original, Some(&overlay));
     let value = run(&mut fixture, &deps, ClientKind::Sync, &call, &events)
         .await
         .expect("the create succeeds");
@@ -65,7 +65,7 @@ async fn create_without_overlay_sends_the_cleaned_body(#[case] choice: OverlayCh
         OverlayChoice::Empty => Some(&empty),
     };
     let mut fixture = Fixture::new("vector_store_file_create");
-    let call = create_call(&request, &original, extra_body);
+    let call = file_call(&request, Operation::Create, &original, extra_body);
     run(&mut fixture, &deps, ClientKind::Sync, &call, &events)
         .await
         .expect("the plain create succeeds");
@@ -143,7 +143,7 @@ async fn create_cleans_attributes_after_the_overlay(#[case] overlay: AttributeOv
     let original = file_params(r#"{"file_id":"old"}"#);
     let chosen = overlay_map(overlay);
     let mut fixture = Fixture::new("vector_store_file_create");
-    let call = create_call(&request, &original, Some(&chosen));
+    let call = file_call(&request, Operation::Create, &original, Some(&chosen));
     run(&mut fixture, &deps, ClientKind::Sync, &call, &events)
         .await
         .expect("the create succeeds");
@@ -164,7 +164,7 @@ async fn list_query_overlay() {
     let original = file_params(r#"{"after":"file_a","limit":2,"order":"asc"}"#);
     let overlay = extra(r#"{"limit":4,"order":null,"trace":"x"}"#);
     let mut fixture = Fixture::new("vector_store_file_list");
-    let call = list_call(&request, &original, Some(&overlay));
+    let call = file_call(&request, Operation::List, &original, Some(&overlay));
     let value = run(
         &mut fixture,
         &deps,
@@ -175,12 +175,12 @@ async fn list_query_overlay() {
     .await
     .expect("the list succeeds");
     assert_eq!(value, json(LIST));
-    let plain = list_call(&request, &original, None);
+    let plain = file_call(&request, Operation::List, &original, None);
     run(&mut fixture, &deps, ClientKind::Sync, &plain, &events)
         .await
         .expect("the plain list succeeds");
     let empty = IndexMap::new();
-    let blank = list_call(&request, &original, Some(&empty));
+    let blank = file_call(&request, Operation::List, &original, Some(&empty));
     run(&mut fixture, &deps, ClientKind::Sync, &blank, &events)
         .await
         .expect("the empty overlay list succeeds");
@@ -226,7 +226,7 @@ async fn list_rejects_nested_query_values(#[case] nested: &str, #[case] key: &st
     let original = file_params("{}");
     let overlay = extra(nested);
     let mut fixture = Fixture::new("vector_store_file_list");
-    let call = list_call(&request, &original, Some(&overlay));
+    let call = file_call(&request, Operation::List, &original, Some(&overlay));
     let result = run(&mut fixture, &deps, ClientKind::Sync, &call, &events).await;
     let Err(FileTransportError::QueryValue { name }) = result else {
         panic!("a nested query value is a typed error");

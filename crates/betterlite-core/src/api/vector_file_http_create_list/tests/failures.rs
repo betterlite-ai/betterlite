@@ -1,12 +1,10 @@
-use std::time::Duration;
-
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json;
 use rstest::rstest;
 
 use super::support::{
-    CallRequest, Events, Fixture, RecordingConfig, Reply, Source, Wire, caller_headers,
-    create_call, file_deps, file_params, list_call, openai_config, openai_settings, params,
+    CallRequest, Events, Fixture, RecordingConfig, Reply, Source, Wire, call_type, caller_headers,
+    file_call, file_deps, file_params, openai_config, openai_settings, params,
     request_with_headers,
 };
 use super::{FILE, json, run};
@@ -36,7 +34,7 @@ async fn create_list_failure_boundaries(#[case] mode: ClientKind) {
     let request = CallRequest::new("vs_a", &files);
     let original = file_params(r#"{"file_id":"file_a"}"#);
     let mut fixture = Fixture::new("vector_store_file_create");
-    let call = create_call(&request, &original, None);
+    let call = file_call(&request, Operation::Create, &original, None);
     let result = run(&mut fixture, &deps, mode, &call, &events).await;
     let Err(FileTransportError::Provider(error)) = result else {
         panic!("a 429 is a provider error");
@@ -73,7 +71,7 @@ async fn send_failure_becomes_a_synthesized_500(#[case] mode: ClientKind) {
     let wire = Wire::failing(TransportError::Closed, &events);
     let source = Source::new(wire.clone());
     let deps = file_deps(&config, &source);
-    let call = create_call(&request, &original, None);
+    let call = file_call(&request, Operation::Create, &original, None);
     let result = run(&mut fixture, &deps, mode, &call, &events).await;
     let Err(FileTransportError::Provider(error)) = result else {
         panic!("a failed send is a provider error");
@@ -98,7 +96,7 @@ async fn list_status_error_body_is_a_result() {
     let request = CallRequest::new("vs_a", &files);
     let query = file_params(r#"{"limit":2}"#);
     let mut fixture = Fixture::new("vector_store_file_list");
-    let call = list_call(&request, &query, None);
+    let call = file_call(&request, Operation::List, &query, None);
     let value = run(&mut fixture, &deps, ClientKind::Sync, &call, &events)
         .await
         .expect("the list hands any status to the response transform");
@@ -126,8 +124,8 @@ async fn malformed_reply_fails_outside_handle_error(#[case] operation: Operation
     let query = file_params(r#"{"limit":2}"#);
     let mut fixture = Fixture::new("vector_store_file_create");
     let call = match operation {
-        Operation::Create => create_call(&request, &original, None),
-        Operation::List => list_call(&request, &query, None),
+        Operation::Create => file_call(&request, Operation::Create, &original, None),
+        Operation::List => file_call(&request, Operation::List, &query, None),
     };
     let result = run(
         &mut fixture,
@@ -168,7 +166,7 @@ async fn oversized_reply_fails_before_parsing() {
     let request = CallRequest::new("vs_a", &files);
     let original = file_params(r#"{"file_id":"file_a"}"#);
     let mut fixture = Fixture::new("vector_store_file_create");
-    let call = create_call(&request, &original, None);
+    let call = file_call(&request, Operation::Create, &original, None);
     let result = run(&mut fixture, &deps, ClientKind::Sync, &call, &events).await;
     let Err(FileTransportError::Provider(error)) = result else {
         panic!("an oversized reply is a provider error");
@@ -197,7 +195,7 @@ async fn url_failures_send_nothing() {
     let wire = Wire::replying(Reply::json(200, FILE), &events);
     let source = Source::new(wire.clone());
     let mut fixture = Fixture::new("vector_store_file_create");
-    let call = create_call(&request, &original, None);
+    let call = file_call(&request, Operation::Create, &original, None);
     let missing = RecordingConfig::without_base();
     let missing_deps = file_deps(&missing, &source);
     let missing_result = run(
@@ -240,7 +238,7 @@ async fn header_failures_send_nothing() {
     let bad_name = caller_headers(&[("bad name", "x")]);
     let named = request_with_headers("vs_a", &files, &bad_name);
     let mut fixture = Fixture::new("vector_store_file_create");
-    let call = create_call(&named, &original, None);
+    let call = file_call(&named, Operation::Create, &original, None);
     let named_result = run(&mut fixture, &deps, ClientKind::Sync, &call, &events).await;
     assert!(matches!(
         named_result,
@@ -250,7 +248,7 @@ async fn header_failures_send_nothing() {
     assert_eq!(events.recorded(), ["log"]);
     let bad_value = caller_headers(&[("X-Trace", "bad\nvalue")]);
     let valued = request_with_headers("vs_a", &files, &bad_value);
-    let valued_call = create_call(&valued, &original, None);
+    let valued_call = file_call(&valued, Operation::Create, &original, None);
     let valued_result = run(&mut fixture, &deps, ClientKind::Sync, &valued_call, &events).await;
     assert!(matches!(
         valued_result,
@@ -272,20 +270,28 @@ async fn logging_failure_sends_nothing() {
     let original = file_params(r#"{"file_id":"file_a"}"#);
     let mut fixture = Fixture::new("vector_store_file_create");
     fixture.raw_only();
-    let call = create_call(&request, &original, None);
+    let call = file_call(&request, Operation::Create, &original, None);
     let result = run(&mut fixture, &deps, ClientKind::Sync, &call, &events).await;
     assert!(matches!(result, Err(FileTransportError::Logging(_))));
     assert_eq!(events.recorded(), ["log"]);
     assert!(wire.requests().is_empty());
 }
 
+#[rstest]
+#[case::create(
+    Operation::Create,
+    ClientKind::Sync,
+    ClientKind::Asynchronous,
+    Some(false)
+)]
+#[case::list(Operation::List, ClientKind::Asynchronous, ClientKind::Sync, None)]
 #[tokio::test]
-async fn wrong_mode_clients_use_the_pool() {
-    wrong_mode_create_uses_the_pool().await;
-    wrong_mode_list_uses_the_pool().await;
-}
-
-async fn wrong_mode_create_uses_the_pool() {
+async fn wrong_mode_clients_use_the_pool(
+    #[case] operation: Operation,
+    #[case] supplied_kind: ClientKind,
+    #[case] called_mode: ClientKind,
+    #[case] ssl_verify: Option<bool>,
+) {
     let settings = openai_settings();
     let config = openai_config(&settings, "sk-provider");
     let events = Events::new();
@@ -293,71 +299,36 @@ async fn wrong_mode_create_uses_the_pool() {
     let pooled = Wire::replying(Reply::json(200, FILE), &events);
     let source = Source::new(pooled.clone());
     let mut files = params("http://mock.test/v1");
-    files.ssl_verify = Some(false);
-    let request = CallRequest {
-        timeout: Some(Duration::from_secs(7)),
-        ..CallRequest::new("vs_a", &files)
-    };
-    let original = file_params(r#"{"file_id":"file_a"}"#);
-    let deps = FileDeps {
-        config: &config,
-        source: &source,
-        supplied: Some(SuppliedClient {
-            kind: ClientKind::Sync,
-            transport: &supplied,
-        }),
-    };
-    let mut fixture = Fixture::new("vector_store_file_create");
-    let call = create_call(&request, &original, None);
-    run(
-        &mut fixture,
-        &deps,
-        ClientKind::Asynchronous,
-        &call,
-        &events,
-    )
-    .await
-    .expect("the create succeeds on the pool");
-    assert_eq!(source.calls(), [Some(false)]);
-    assert!(supplied.requests().is_empty());
-    assert_eq!(pooled.requests().len(), 1);
-}
-
-async fn wrong_mode_list_uses_the_pool() {
-    let settings = openai_settings();
-    let config = openai_config(&settings, "sk-provider");
-    let events = Events::new();
-    let supplied = Wire::replying(Reply::json(200, FILE), &events);
-    let pooled = Wire::replying(Reply::json(200, FILE), &events);
-    let source = Source::new(pooled.clone());
-    let files = params("http://mock.test/v1");
+    files.ssl_verify = ssl_verify;
     let request = CallRequest::new("vs_a", &files);
+    let original = file_params(r#"{"file_id":"file_a"}"#);
     let query = file_params(r#"{"limit":2}"#);
     let deps = FileDeps {
         config: &config,
         source: &source,
         supplied: Some(SuppliedClient {
-            kind: ClientKind::Asynchronous,
+            kind: supplied_kind,
             transport: &supplied,
         }),
     };
-    let mut fixture = Fixture::new("vector_store_file_list");
-    let call = list_call(&request, &query, None);
-    run(&mut fixture, &deps, ClientKind::Sync, &call, &events)
+    let mut fixture = Fixture::new(call_type(operation));
+    let call = match operation {
+        Operation::Create => file_call(&request, Operation::Create, &original, None),
+        Operation::List => file_call(&request, Operation::List, &query, None),
+    };
+    run(&mut fixture, &deps, called_mode, &call, &events)
         .await
-        .expect("the list succeeds on the pool");
-    assert_eq!(source.calls(), [None]);
+        .expect("the call succeeds on the pool");
+    assert_eq!(source.calls(), [ssl_verify]);
     assert!(supplied.requests().is_empty());
     assert_eq!(pooled.requests().len(), 1);
 }
 
+#[rstest]
+#[case::create(Operation::Create, ClientKind::Sync)]
+#[case::list(Operation::List, ClientKind::Asynchronous)]
 #[tokio::test]
-async fn matching_clients_are_reused() {
-    matching_create_reuses_the_supplied_client().await;
-    matching_list_reuses_the_supplied_client().await;
-}
-
-async fn matching_create_reuses_the_supplied_client() {
+async fn matching_clients_are_reused(#[case] operation: Operation, #[case] mode: ClientKind) {
     let settings = openai_settings();
     let config = openai_config(&settings, "sk-provider");
     let events = Events::new();
@@ -367,53 +338,23 @@ async fn matching_create_reuses_the_supplied_client() {
     let files = params("http://mock.test/v1");
     let request = CallRequest::new("vs_a", &files);
     let original = file_params(r#"{"file_id":"file_a"}"#);
-    let deps = FileDeps {
-        config: &config,
-        source: &source,
-        supplied: Some(SuppliedClient {
-            kind: ClientKind::Sync,
-            transport: &supplied,
-        }),
-    };
-    let mut fixture = Fixture::new("vector_store_file_create");
-    let call = create_call(&request, &original, None);
-    run(&mut fixture, &deps, ClientKind::Sync, &call, &events)
-        .await
-        .expect("the create reuses the supplied client");
-    assert!(source.calls().is_empty());
-    assert_eq!(supplied.requests().len(), 1);
-    assert!(pooled.requests().is_empty());
-}
-
-async fn matching_list_reuses_the_supplied_client() {
-    let settings = openai_settings();
-    let config = openai_config(&settings, "sk-provider");
-    let events = Events::new();
-    let supplied = Wire::replying(Reply::json(200, FILE), &events);
-    let pooled = Wire::replying(Reply::json(200, FILE), &events);
-    let source = Source::new(pooled.clone());
-    let files = params("http://mock.test/v1");
-    let request = CallRequest::new("vs_a", &files);
     let query = file_params(r#"{"limit":2}"#);
     let deps = FileDeps {
         config: &config,
         source: &source,
         supplied: Some(SuppliedClient {
-            kind: ClientKind::Asynchronous,
+            kind: mode,
             transport: &supplied,
         }),
     };
-    let mut fixture = Fixture::new("vector_store_file_list");
-    let call = list_call(&request, &query, None);
-    run(
-        &mut fixture,
-        &deps,
-        ClientKind::Asynchronous,
-        &call,
-        &events,
-    )
-    .await
-    .expect("the list reuses the supplied client");
+    let mut fixture = Fixture::new(call_type(operation));
+    let call = match operation {
+        Operation::Create => file_call(&request, Operation::Create, &original, None),
+        Operation::List => file_call(&request, Operation::List, &query, None),
+    };
+    run(&mut fixture, &deps, mode, &call, &events)
+        .await
+        .expect("the supplied client serves the call");
     assert!(source.calls().is_empty());
     assert_eq!(supplied.requests().len(), 1);
     assert!(pooled.requests().is_empty());

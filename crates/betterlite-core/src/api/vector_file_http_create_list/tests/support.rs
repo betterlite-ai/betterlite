@@ -37,7 +37,7 @@ use crate::api::vector_file_http_create_list::config::{
 use crate::api::vector_file_http_create_list::error::FileTransportError;
 use crate::api::vector_file_http_create_list::service::{
     ClientSource, CreateCall, FileCall, FileDeps, FileRequest, FileTarget, FileTransport, ListCall,
-    LogContext, PreparedFile, prepare,
+    LogContext, Operation, PreparedFile, prepare,
 };
 use crate::api::vector_store_http_write::error::{
     BaseLlmException, ClientError, HeaderMap, UrlFailure, header_map,
@@ -485,28 +485,32 @@ where
     }
 }
 
-pub(crate) fn create_call<'call>(
+pub(crate) const fn file_call<'call>(
     request: &CallRequest<'call>,
-    original: &'call FileParams,
-    extra_body: Option<&'call IndexMap<String, Json>>,
+    operation: Operation,
+    fields: &'call FileParams,
+    extra: Option<&'call IndexMap<String, Json>>,
 ) -> FileCall<'call> {
-    FileCall::Create(CreateCall {
-        target: request.target(),
-        create_request: original,
-        extra_body,
-    })
+    let target = request.target();
+    match operation {
+        Operation::Create => FileCall::Create(CreateCall {
+            target,
+            create_request: fields,
+            extra_body: extra,
+        }),
+        Operation::List => FileCall::List(ListCall {
+            target,
+            query_params: fields,
+            extra_query: extra,
+        }),
+    }
 }
 
-pub(crate) fn list_call<'call>(
-    request: &CallRequest<'call>,
-    query_params: &'call FileParams,
-    extra_query: Option<&'call IndexMap<String, Json>>,
-) -> FileCall<'call> {
-    FileCall::List(ListCall {
-        target: request.target(),
-        query_params,
-        extra_query,
-    })
+pub(crate) const fn call_type(operation: Operation) -> &'static str {
+    match operation {
+        Operation::Create => "vector_store_file_create",
+        Operation::List => "vector_store_file_list",
+    }
 }
 
 pub(crate) fn request_header<'request>(
