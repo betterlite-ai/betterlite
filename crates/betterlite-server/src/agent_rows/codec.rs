@@ -1,4 +1,4 @@
-use betterlite_auth::identity::{ActiveState, ExecutionMode};
+use betterlite_auth::identity::ActiveState;
 use betterlite_core::agents::AgentResponse;
 use betterlite_core::agents::json::AgentJson;
 use betterlite_db::postgres_store::diagnostics::DriverError;
