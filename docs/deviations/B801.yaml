@@ -9,11 +9,16 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/team_metadata_validation.py#L111-L117
   - what: >-
       The callback receives a Python namespace carrying the payload attributes instead of LiteLLM's
-      TeamMetadataValidationPayload model, and its return value is read as JSON rather than through pydantic
-      model_validate, so a callback that returns a model instance instead of a mapping is unavailable (503).
+      TeamMetadataValidationPayload model, and its return value crosses a JSON bridge instead of pydantic
+      model_validate. The bridge applies pydantic's coercion for the two result fields, so the spellings "yes",
+      "on", "true", "1", 1 and 1.0 are true and "no", "off", "false", "0", 0 and 0.0 are false, but a callback
+      that returns a model instance instead of a mapping, or a result whose fields have no JSON form, is
+      unavailable (503).
     why: >-
       betterlite's hook bridge carries JSON between Python and Rust, so the payload is rebuilt with the same
       attribute names and the result must have a JSON form; docs/compatibility.md says output is standard JSON.
+      The coercion table is pydantic 2.14.1's, the version the pinned LiteLLM resolves to, checked against
+      TeamMetadataValidationResult.model_validate.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/team_metadata_validation.py#L126-L133
   - what: >-
       A YAML team_metadata_validation_timeout of .inf or .nan fails the config load instead of mapping .inf to an

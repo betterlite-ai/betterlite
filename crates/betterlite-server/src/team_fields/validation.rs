@@ -81,9 +81,7 @@ pub fn finish_validation(
             });
         }
     };
-    let Ok(parsed) = serde_json::to_value(&value)
-        .and_then(serde_json::from_value::<TeamMetadataValidationResult>)
-    else {
+    let Some(parsed) = TeamMetadataValidationResult::parse(&value) else {
         tracing::warn!("the metadata validator returned a result that is not a validation result");
         return Err(TeamMetadataError::Unavailable {
             message: unavailable_message.to_owned(),

@@ -39,7 +39,7 @@ use crate::team_request_contracts::metadata::TeamMetadataFieldSchema;
 use super::install::{InstallError, install_team_metadata};
 use super::metadata::{
     DEFAULT_REJECTED_MESSAGE, MetadataRequest, TeamMetadataOperation, TeamMetadataRequester,
-    TeamMetadataValidationPayload, build_payload,
+    TeamMetadataValidationPayload, TeamMetadataValidationResult, build_payload,
 };
 use super::python_validator::ValidatorFailure;
 use super::rows::{
@@ -280,6 +280,8 @@ async fn check(
 
 const SIMPLE_ACCEPT: &str = "async def validate(payload):\n    return {\"valid\": True}\n";
 
+const COERCED_ACCEPT: &str = "async def validate(payload):\n    return {\"valid\": \"yes\"}\n";
+
 const CALLABLE_OBJECT: &str = "class Validator:\n    async def __call__(self, payload):\n        return {\"valid\": True}\n\nvalidator = Validator()\n";
 
 const SYNC_ACCEPT: &str = "def validate(payload):\n    return {\"valid\": True}\n";
@@ -298,7 +300,7 @@ const AWAITS: &str = "import asyncio\n\nasync def validate(payload):\n    await 
 const RAISES: &str =
     "async def validate(payload):\n    raise ValueError(\"database exploded secret-token-123\")\n";
 
-const MALFORMED: &str = "async def bad_type(payload):\n    return {\"valid\": \"yes\"}\n\nasync def not_an_object(payload):\n    return \"ok\"\n";
+const MALFORMED: &str = "async def bad_type(payload):\n    return {\"valid\": \"not-a-bool\"}\n\nasync def not_an_object(payload):\n    return \"ok\"\n";
 
 const CHECKS_METADATA: &str = "ALLOWED = (\"env\",)\n\nasync def validate(payload):\n    value = payload.metadata.get(\"owner\")\n    if value is None:\n        return {\"valid\": False, \"error_message\": \"owner is required\"}\n    if not isinstance(value, str):\n        return {\"valid\": False, \"error_message\": \"owner must be a string\"}\n    if value not in ALLOWED:\n        return {\"valid\": False, \"error_message\": \"owner must be one of env\"}\n    return {\"valid\": True}\n";
 
@@ -484,6 +486,61 @@ async fn malformed_result_503() {
         }
     );
     assert_eq!(second_error.status(), 503);
+}
+
+#[test]
+fn validation_result_coercions() {
+    let accepted = [
+        (r#"{"valid": "yes"}"#, true, None),
+        (r#"{"valid": "OFF"}"#, false, None),
+        (r#"{"valid": "1"}"#, true, None),
+        (r#"{"valid": 1}"#, true, None),
+        (r#"{"valid": 0.0}"#, false, None),
+        (
+            r#"{"valid": true, "error_message": null, "extra": 1}"#,
+            true,
+            None,
+        ),
+        (
+            r#"{"valid": "TRUE", "error_message": "ignored"}"#,
+            true,
+            Some("ignored"),
+        ),
+    ];
+    for (text, valid, message) in accepted {
+        let parsed = TeamMetadataValidationResult::parse(&data(text)).unwrap();
+        assert_eq!(
+            parsed,
+            TeamMetadataValidationResult {
+                valid,
+                error_message: message.map(str::to_owned),
+            }
+        );
+    }
+    let rejected = [
+        r#"{"valid": "not-a-bool"}"#,
+        r#"{"valid": " yes"}"#,
+        r#"{"valid": 2}"#,
+        r#"{"valid": 0.5}"#,
+        r#"{"valid": null}"#,
+        r#"{"valid": true, "error_message": 5}"#,
+        r#"{}"#,
+        r#""ok""#,
+    ];
+    for text in rejected {
+        assert!(TeamMetadataValidationResult::parse(&data(text)).is_none());
+    }
+}
+
+#[tokio::test]
+async fn coerced_result_accepted() {
+    let workspace = Workspace::new();
+    let module = workspace.module("b801_coerced", COERCED_ACCEPT);
+    let hooks = PythonHooks::new(Some(workspace.config_path.clone()));
+    let validators = install_hook(hook_settings(&module, "validate"), &hooks).await;
+    check(&validators, &data("{}"), &Settings::default())
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
