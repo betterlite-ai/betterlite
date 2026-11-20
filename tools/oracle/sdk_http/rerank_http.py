@@ -145,12 +145,13 @@ class RecordingConfig(BaseRerankConfig):
         litellm_params: dict[str, JsonValue] | None = None,
     ) -> dict[str, JsonValue]:
         self.events.append("transform")
-        body: dict[str, JsonValue] = {"documents": [], "query": ""}
+        documents: JsonValue = []
+        query: JsonValue = ""
         if "documents" in optional_rerank_params:
-            body["documents"] = optional_rerank_params["documents"]
+            documents = optional_rerank_params["documents"]
         if "query" in optional_rerank_params:
-            body["query"] = optional_rerank_params["query"]
-        return body
+            query = optional_rerank_params["query"]
+        return {"documents": documents, "query": query}
 
     @override
     def transform_rerank_response(
