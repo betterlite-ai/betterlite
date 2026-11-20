@@ -74,7 +74,7 @@ const fn flag_type(field: &'static str) -> FieldTypeError {
     }
 }
 
-// An exception that carries no response: _handle_error synthesizes a 500 and uses the exception's text; B2402's builders are pub(super) in vector_store_http_write::service, so this module mirrors them
+// An exception that carries no response: _handle_error synthesizes a 500 and uses the exception's text; B2402's builders are pub(super) in vector_store_http_write::service, outside this task's scope.paths, so this module mirrors them
 pub(crate) fn display_facts(text: &str) -> FailureFacts {
     FailureFacts {
         response_status: None,
@@ -94,7 +94,7 @@ pub(crate) struct SendAttempt {
     pub(crate) elapsed: Duration,
 }
 
-// A failed send carries the exception's text, unless it timed out: that is litellm.Timeout, which _handle_error keeps as a 408 with no response, mirroring B2402's transport_facts
+// A failed send carries the exception's text, unless it timed out: that is litellm.Timeout, which _handle_error keeps as a 408 with no response, mirroring B2402's transport_facts, whose pub(super) builder sits outside this task's scope.paths
 pub(crate) fn send_facts(error: &TransportError, attempt: SendAttempt) -> FailureFacts {
     let mut facts = display_facts(&error.to_string());
     if matches!(
@@ -125,7 +125,7 @@ fn timeout_message(attempt: SendAttempt) -> String {
     }
 }
 
-// An httpx.HTTPStatusError carries the response: its status, its text and its headers with content-length recomputed, the same facts as B2402's status_facts
+// An httpx.HTTPStatusError carries the response: its status, its text and its headers with content-length recomputed, the same facts as B2402's status_facts, whose pub(super) builder sits outside this task's scope.paths
 pub(crate) fn status_facts(reply: &UpstreamResponse) -> FailureFacts {
     let text = from_utf8(&reply.body).map_or_else(
         |_| format!("{} bytes that are not UTF-8", reply.body.len()),
