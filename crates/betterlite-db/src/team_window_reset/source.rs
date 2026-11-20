@@ -1,4 +1,3 @@
-// _WINDOW_SOURCES: the two tables whose rows carry per-window budget limits, swept in this order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WindowSource {
     Keys,
@@ -6,6 +5,7 @@ pub enum WindowSource {
 }
 
 impl WindowSource {
+    // _WINDOW_SOURCES: the two tables whose rows carry per-window budget limits, swept in this order.
     pub const ALL: [Self; 2] = [Self::Keys, Self::Teams];
 
     #[must_use]

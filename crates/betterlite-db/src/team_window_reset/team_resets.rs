@@ -134,13 +134,18 @@ where
             CALL_TYPE,
             &summary,
             timing,
-            teams_found(found),
+            EventMetadata::from([(FOUND_KEY, Json::Number(Number::from(found)))]),
         );
     }
 
     fn report_failure(&self, started: DateTime<Utc>, message: &str, found: usize) {
-        let timing = self.timing(started);
-        report_phase_failure(self.failure, CALL_TYPE, message, timing, teams_found(found));
+        report_phase_failure(
+            self.failure,
+            CALL_TYPE,
+            message,
+            self.timing(started),
+            EventMetadata::from([(FOUND_KEY, Json::Number(Number::from(found)))]),
+        );
     }
 
     fn timing(&self, started: DateTime<Utc>) -> PhaseTiming {
@@ -157,10 +162,6 @@ fn team_counts(found: usize, updated: usize, failed: usize) -> EventMetadata {
         (UPDATED_KEY, Json::Number(Number::from(updated))),
         (FAILED_KEY, Json::Number(Number::from(failed))),
     ])
-}
-
-fn teams_found(found: usize) -> EventMetadata {
-    EventMetadata::from([(FOUND_KEY, Json::Number(Number::from(found)))])
 }
 
 #[derive(Debug, Default)]

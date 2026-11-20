@@ -95,28 +95,45 @@ pub(crate) fn window_fields<'window>(
             row: row.to_owned(),
         });
     };
+    let (budget_duration, reset_at) = string_fields(row, fields)?;
     Ok(WindowFields {
-        budget_duration: duration_field(row, fields)?,
+        budget_duration,
         max_budget: max_budget_field(row, fields)?,
-        reset_at: reset_at_field(row, fields)?,
+        reset_at,
     })
 }
 
-fn duration_field<'window>(
+fn string_fields<'window>(
     row: &str,
     fields: &'window BTreeMap<String, JsonData>,
-) -> Result<&'window str, WindowJsonError> {
-    match fields.get("budget_duration") {
-        Some(JsonData::String(text)) => Ok(text.as_str()),
-        Some(JsonData::Null) | None => Err(WindowJsonError::MissingDuration {
-            row: row.to_owned(),
-        }),
+) -> Result<(&'window str, Option<&'window str>), WindowJsonError> {
+    let budget_duration = match fields.get("budget_duration") {
+        Some(JsonData::String(text)) => text.as_str(),
+        Some(JsonData::Null) | None => {
+            return Err(WindowJsonError::MissingDuration {
+                row: row.to_owned(),
+            });
+        }
         Some(
             JsonData::Bool(_) | JsonData::Number(_) | JsonData::Array(_) | JsonData::Object(_),
-        ) => Err(WindowJsonError::DurationNotString {
-            row: row.to_owned(),
-        }),
-    }
+        ) => {
+            return Err(WindowJsonError::DurationNotString {
+                row: row.to_owned(),
+            });
+        }
+    };
+    let reset_at = match fields.get("reset_at") {
+        None | Some(JsonData::Null) => None,
+        Some(JsonData::String(text)) => Some(text.as_str()),
+        Some(
+            JsonData::Bool(_) | JsonData::Number(_) | JsonData::Array(_) | JsonData::Object(_),
+        ) => {
+            return Err(WindowJsonError::ResetAtNotString {
+                row: row.to_owned(),
+            });
+        }
+    };
+    Ok((budget_duration, reset_at))
 }
 
 // A window with no cap carries nothing; a cap of another type is outside the number the window declares, so it names the field instead of reading as no cap the way isinstance would.
@@ -130,21 +147,6 @@ fn max_budget_field(
         Some(
             JsonData::Bool(_) | JsonData::String(_) | JsonData::Array(_) | JsonData::Object(_),
         ) => Err(WindowJsonError::MaxBudgetNotNumber {
-            row: row.to_owned(),
-        }),
-    }
-}
-
-fn reset_at_field<'window>(
-    row: &str,
-    fields: &'window BTreeMap<String, JsonData>,
-) -> Result<Option<&'window str>, WindowJsonError> {
-    match fields.get("reset_at") {
-        None | Some(JsonData::Null) => Ok(None),
-        Some(JsonData::String(text)) => Ok(Some(text.as_str())),
-        Some(
-            JsonData::Bool(_) | JsonData::Number(_) | JsonData::Array(_) | JsonData::Object(_),
-        ) => Err(WindowJsonError::ResetAtNotString {
             row: row.to_owned(),
         }),
     }

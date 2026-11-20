@@ -80,7 +80,7 @@ where
                 tracing::warn!(
                     duration = %duration,
                     error = %error,
-                    "Unparseable budget_duration; leaving the window spend row as it is"
+                    "Unparsable budget_duration; leaving the window spend row as it is"
                 );
                 return;
             }

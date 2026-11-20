@@ -5,9 +5,8 @@ use crate::team_window_reset::error::WindowResetError;
 use crate::team_window_reset::source::WindowSource;
 use crate::team_window_reset::tests::support::{
     CountingReconnect, FakeCounterCache, KEY_COLUMN, KEY_TABLE, TEAM_COLUMN, TEAM_TABLE,
-    TestDurations, TestSchedule, WindowHarness, close_store, decimal, finish, insert_window_row,
-    insert_windows, moment, next_text, past, schema, seed_window_spend, window_json,
-    window_spend_row, window_text,
+    TestDurations, TestSchedule, WindowHarness, close_store, decimal, finish, insert_windows,
+    moment, next_text, past, schema, seed_window_spend, window_json, window_spend_row, window_text,
 };
 
 const PAST_TEXT: &str = "2025-12-30T00:00:00+00:00";
@@ -17,7 +16,7 @@ const FRESH_TEXT: &str = "2026-01-01T00:10:00+00:00";
 async fn expired_window_settles_the_counter_and_rolls_the_spend_row() {
     let (fixture, store, client) = schema().await;
     let mut window = window_json("1h", Some("10"), Some(PAST_TEXT));
-    insert_window_row(&client, KEY_TABLE, KEY_COLUMN, "k1", window.clone()).await;
+    insert_windows(&client, KEY_TABLE, KEY_COLUMN, "k1", &[window.clone()]).await;
     seed_window_spend(&client, "key", "k1", "1h", past(), 99.0).await;
     let cache = FakeCounterCache::with_counter("spend:key:k1:window:1h", Some(decimal(12)));
     let mut harness = WindowHarness::new(
@@ -89,7 +88,7 @@ async fn team_windows_use_the_team_counter_prefix() {
 async fn window_with_a_future_reset_time_is_untouched() {
     let (fixture, store, client) = schema().await;
     let mut window = window_json("1h", Some("10"), Some(FRESH_TEXT));
-    insert_window_row(&client, KEY_TABLE, KEY_COLUMN, "k1", window.clone()).await;
+    insert_windows(&client, KEY_TABLE, KEY_COLUMN, "k1", &[window.clone()]).await;
     seed_window_spend(&client, "key", "k1", "1h", past(), 99.0).await;
     let mut harness = WindowHarness::new(
         store,
@@ -225,7 +224,7 @@ async fn redis_failure_keeps_the_reset_and_the_memory_counter() {
 }
 
 #[tokio::test]
-async fn unparseable_duration_skips_only_the_roll() {
+async fn unparsable_duration_skips_only_the_roll() {
     let (fixture, store, client) = schema().await;
     insert_windows(
         &client,

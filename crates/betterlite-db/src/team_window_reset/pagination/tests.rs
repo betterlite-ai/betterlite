@@ -9,8 +9,8 @@ use crate::budget_reset_policy::phase_draining::ResetLimits;
 use crate::team_window_reset::tests::support::{
     CountingReconnect, FakeCounterCache, KEY_COLUMN, KEY_TABLE, TABLES, TEAM_COLUMN, TEAM_TABLE,
     TestDurations, TestSchedule, WindowHarness, budget_limits_type, close_store, decimal, finish,
-    insert_expired_windows, insert_serialized_windows, insert_window_row, insert_windows, moment,
-    next_text, past, provision, schema, window_json, window_text, windows_text,
+    insert_expired_windows, insert_windows, moment, next_text, past, provision, schema,
+    window_json, window_text, windows_text,
 };
 
 const PAST_TEXT: &str = "2025-12-30T00:00:00+00:00";
@@ -96,12 +96,12 @@ async fn walks_every_page_until_the_table_ends() {
 #[tokio::test]
 async fn leaves_a_window_that_has_not_expired_alone() {
     let (fixture, store, client) = schema().await;
-    insert_window_row(
+    insert_windows(
         &client,
         KEY_TABLE,
         KEY_COLUMN,
         "1-fresh",
-        window_json("1h", None, Some(FRESH_TEXT)),
+        &[window_json("1h", None, Some(FRESH_TEXT))],
     )
     .await;
     insert_expired_windows(&client, KEY_TABLE, KEY_COLUMN, &["2-due"]).await;
@@ -131,14 +131,16 @@ async fn leaves_a_window_that_has_not_expired_alone() {
 #[tokio::test]
 async fn reads_and_keeps_the_json_string_form() {
     let (fixture, store, client) = schema().await;
-    insert_serialized_windows(
-        &client,
-        KEY_TABLE,
-        KEY_COLUMN,
-        "s",
-        &[window_json("1h", None, Some(PAST_TEXT))],
-    )
-    .await;
+    let payload = serde_json::to_string(&[window_json("1h", None, Some(PAST_TEXT))])
+        .expect("the windows json");
+    insert_windows(&client, KEY_TABLE, KEY_COLUMN, "s", &[]).await;
+    client
+        .execute(
+            "UPDATE \"LiteLLM_VerificationToken\" SET budget_limits = to_jsonb($2::text) WHERE token = $1",
+            &[&"s", &payload],
+        )
+        .await
+        .expect("the serialized window");
     assert_eq!(
         budget_limits_type(&client, KEY_TABLE, KEY_COLUMN, "s").await,
         "string"

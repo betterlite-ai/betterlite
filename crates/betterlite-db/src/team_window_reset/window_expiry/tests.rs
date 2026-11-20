@@ -37,11 +37,11 @@ fn expiry_drops_a_non_utc_offset_instead_of_converting_it() {
 }
 
 #[test]
-fn expiry_rejects_an_unparseable_reset_at() {
+fn expiry_rejects_an_unparsable_reset_at() {
     let error = window_is_expired(Some("yesterday"), naive(0)).unwrap_err();
     assert_eq!(
         error,
-        WindowExpiryError::Unparseable {
+        WindowExpiryError::Unparsable {
             text: "yesterday".to_owned()
         }
     );

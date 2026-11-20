@@ -190,16 +190,6 @@ pub(crate) async fn insert_windows(
 // A reset_at earlier than every test clock, so a window carrying it is expired.
 pub(crate) const EXPIRED_TEXT: &str = "2025-12-30T00:00:00+00:00";
 
-pub(crate) async fn insert_window_row(
-    client: &Client,
-    table: &str,
-    id_column: &str,
-    id: &str,
-    window: JsonData,
-) {
-    insert_windows(client, table, id_column, id, from_ref(&window)).await;
-}
-
 pub(crate) async fn insert_expired_windows(
     client: &Client,
     table: &str,
@@ -210,24 +200,6 @@ pub(crate) async fn insert_expired_windows(
     for identifier in identifiers {
         insert_windows(client, table, id_column, identifier, from_ref(&window)).await;
     }
-}
-
-// The column value a reset leaves behind: json.dumps(windows) through a Json field, a JSON string holding the list.
-pub(crate) async fn insert_serialized_windows(
-    client: &Client,
-    table: &str,
-    id_column: &str,
-    id: &str,
-    windows: &[JsonData],
-) {
-    let sql = format!(
-        "INSERT INTO \"{table}\" ({id_column}, budget_limits) VALUES ($1, to_jsonb($2::text))"
-    );
-    let payload = serde_json::to_string(windows).expect("the windows json");
-    client
-        .execute(sql.as_str(), &[&id, &payload])
-        .await
-        .expect("the windowed row");
 }
 
 pub(crate) async fn seed_window_spend(
@@ -294,9 +266,12 @@ pub(crate) async fn budget_limits_type(
     id_column: &str,
     id: &str,
 ) -> String {
-    let sql = format!("SELECT jsonb_typeof(budget_limits) FROM \"{table}\" WHERE {id_column} = $1");
-    let row = client.query_one(sql.as_str(), &[&id]).await.unwrap();
-    row.get(0)
+    let statement =
+        format!("SELECT jsonb_typeof(budget_limits) FROM \"{table}\" WHERE {id_column} = $1");
+    match client.query_one(statement.as_str(), &[&id]).await {
+        Ok(row) => row.get(0),
+        Err(error) => panic!("the windowed row: {error}"),
+    }
 }
 
 pub(crate) async fn window_spend_row(
@@ -366,17 +341,10 @@ pub(crate) fn window_field<'json>(window: &'json JsonData, name: &str) -> Option
 }
 
 pub(crate) fn window_text(window: &JsonData, name: &str) -> Option<String> {
-    match window_field(window, name) {
-        Some(JsonData::String(text)) => Some(text.clone()),
-        Some(
-            JsonData::Null
-            | JsonData::Bool(_)
-            | JsonData::Number(_)
-            | JsonData::Array(_)
-            | JsonData::Object(_),
-        )
-        | None => None,
-    }
+    let JsonData::String(text) = window_field(window, name)? else {
+        return None;
+    };
+    Some(text.clone())
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -713,16 +681,18 @@ impl WindowCounterCache for FakeCounterCache {
     }
 
     fn read<'cache>(&'cache self, key: &'cache str) -> CounterReadFuture<'cache, CounterFault> {
+        let counters = &self.counters;
+        let read_keys = &self.read_keys;
+        let failing = self.read_failures.load(Ordering::SeqCst);
         Box::pin(async move {
-            if self.read_failures.load(Ordering::SeqCst) {
+            if failing {
                 return Err(CounterFault);
             }
-            self.read_keys
+            read_keys
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .push(key.to_owned());
-            Ok(self
-                .counters
+            Ok(counters
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .get(key)
@@ -824,29 +794,29 @@ impl<Cache, Reconnect> TeamHarness<Cache, Reconnect> {
         reconnect: Reconnect,
     ) -> Self {
         Self {
-            store,
-            limits: ResetLimits::default(),
-            rollover: RolloverPolicy::default(),
-            schedule,
-            cache,
             failures: RecordingFailures::default(),
             successes: RecordingSuccesses::default(),
             clock: TestClock::fixed(moment(0)),
             reconnect: Some(reconnect),
+            cache,
+            schedule,
+            rollover: RolloverPolicy::default(),
+            limits: ResetLimits::default(),
+            store,
         }
     }
 
     pub(crate) fn service(&mut self) -> TeamServiceUnderTest<'_, Cache, Reconnect> {
         TeamBudgetReset {
-            store: self.store.clone(),
-            limits: self.limits,
-            rollover: self.rollover,
-            schedule: &self.schedule,
-            cache: &self.cache,
-            failure: &self.failures,
-            success: &self.successes,
-            reconnect: self.reconnect.as_mut(),
             clock: &self.clock,
+            reconnect: self.reconnect.as_mut(),
+            success: &self.successes,
+            failure: &self.failures,
+            cache: &self.cache,
+            schedule: &self.schedule,
+            rollover: self.rollover,
+            limits: self.limits,
+            store: self.store.clone(),
         }
     }
 
@@ -858,9 +828,6 @@ impl<Cache, Reconnect> TeamHarness<Cache, Reconnect> {
         self.service().reset_teams().await;
     }
 }
-
-pub(crate) type WindowServiceUnderTest<'service, Cache, Durations, Reconnect> =
-    BudgetWindowReset<'service, TestSchedule, Cache, Durations, Reconnect, TestClock>;
 
 pub(crate) struct WindowHarness<Cache, Durations, Reconnect> {
     pub(crate) store: PostgresStore,
@@ -883,6 +850,8 @@ impl<Cache, Durations, Reconnect> WindowHarness<Cache, Durations, Reconnect> {
         reconnect: Reconnect,
     ) -> Self {
         let window_spend = WindowSpendStore::from_store(store.clone());
+        let reconnect = Some(reconnect);
+        let clock = TestClock::fixed(moment(0));
         Self {
             store,
             window_spend,
@@ -891,33 +860,24 @@ impl<Cache, Durations, Reconnect> WindowHarness<Cache, Durations, Reconnect> {
             schedule,
             cache,
             durations,
-            clock: TestClock::fixed(moment(0)),
-            reconnect: Some(reconnect),
+            clock,
+            reconnect,
         }
     }
 
     pub(crate) fn resetter(&mut self) -> WindowResetter<'_, TestSchedule, Cache, Durations> {
+        let now = self.clock.now();
+        let store = &self.window_spend;
+        let schedule = &self.schedule;
+        let cache = &self.cache;
+        let durations = &self.durations;
         WindowResetter {
-            store: &self.window_spend,
+            now,
+            store,
+            schedule,
+            cache,
+            durations,
             rollover: self.rollover,
-            schedule: &self.schedule,
-            cache: &self.cache,
-            durations: &self.durations,
-            now: self.clock.now(),
-        }
-    }
-
-    pub(crate) fn service(&mut self) -> WindowServiceUnderTest<'_, Cache, Durations, Reconnect> {
-        BudgetWindowReset {
-            store: self.store.clone(),
-            window_spend: WindowSpendStore::from_store(self.store.clone()),
-            limits: self.limits,
-            rollover: self.rollover,
-            schedule: &self.schedule,
-            cache: &self.cache,
-            durations: &self.durations,
-            reconnect: self.reconnect.as_mut(),
-            clock: &self.clock,
         }
     }
 
@@ -927,6 +887,19 @@ impl<Cache, Durations, Reconnect> WindowHarness<Cache, Durations, Reconnect> {
         Durations: WindowDurationSeconds + Sync,
         Reconnect: DbReconnect + Send,
     {
-        self.service().reset_windows().await;
+        let window_spend = WindowSpendStore::from_store(self.store.clone());
+        BudgetWindowReset {
+            clock: &self.clock,
+            reconnect: self.reconnect.as_mut(),
+            durations: &self.durations,
+            cache: &self.cache,
+            schedule: &self.schedule,
+            rollover: self.rollover,
+            limits: self.limits,
+            window_spend,
+            store: self.store.clone(),
+        }
+        .reset_windows()
+        .await;
     }
 }

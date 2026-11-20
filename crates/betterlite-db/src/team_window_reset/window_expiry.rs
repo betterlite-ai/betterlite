@@ -3,7 +3,7 @@ use chrono::{DateTime, NaiveDate, NaiveDateTime};
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum WindowExpiryError {
     #[error("{text:?} is not an ISO 8601 reset_at timestamp")]
-    Unparseable { text: String },
+    Unparsable { text: String },
 }
 
 const NAIVE_FORMATS: [&str; 4] = [
@@ -36,12 +36,12 @@ pub(crate) fn parse_stored_reset_at(text: &str) -> Result<NaiveDateTime, WindowE
         }
     }
     let date = NaiveDate::parse_from_str(text, "%Y-%m-%d").map_err(|_source| {
-        WindowExpiryError::Unparseable {
+        WindowExpiryError::Unparsable {
             text: text.to_owned(),
         }
     })?;
     date.and_hms_opt(0, 0, 0)
-        .ok_or_else(|| WindowExpiryError::Unparseable {
+        .ok_or_else(|| WindowExpiryError::Unparsable {
             text: text.to_owned(),
         })
 }
