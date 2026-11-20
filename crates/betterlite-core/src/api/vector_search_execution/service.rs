@@ -95,12 +95,12 @@ where
         request_data: body.clone(),
         api_base: url.clone(),
     };
-    let (headers, signed) = sign(deps.config.clone(), seam, mode, input).await?;
-    log_http(&api_base, &headers, &body, log)?;
+    let (signed_headers, signed) = sign(deps.config.clone(), seam, mode, input).await?;
+    log_http(&api_base, &signed_headers, &body, log)?;
     let request = WriteRequest {
         method: Method::POST,
         url: Url::parse(&url).map_err(|source| SearchError::RequestUrl { url, source })?,
-        headers: wire_headers(&headers)?,
+        headers: wire_headers(&signed_headers)?,
         body: wire_body(&body, signed.as_deref())?,
         timeout: call.timeout,
     };
