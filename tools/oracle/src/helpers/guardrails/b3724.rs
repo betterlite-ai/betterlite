@@ -8,6 +8,7 @@ use betterlite_bedrock_guardrails::bedrock_credentials::CredentialSource;
 use betterlite_bedrock_guardrails::bedrock_transport::{BedrockGuardrail, BedrockGuardrailInit};
 use betterlite_bedrock_guardrails::guardrail_checks::ChecksInput;
 use betterlite_config::sections::bedrock_settings::AwsSettings;
+use betterlite_config::sections::content_filter_records::ConfidenceThreshold;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::opaque::OpaqueParams;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
@@ -37,6 +38,8 @@ const REGION: &str = "us-west-2";
 const ACCESS_KEY: &str = "AKIAIOSFODNN7EXAMPLE";
 const SECRET_KEY: &str = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
 const FIXED_NOW_SECONDS: u64 = 1_000_000;
+// LiteLLM's BedrockGuardrail takes 0.5 for every check threshold when the config names none
+const DEFAULT_THRESHOLD: Option<ConfidenceThreshold> = Some(ConfidenceThreshold(0.5));
 const PROJECTED: [&str; 7] = [
     "guardrail_name",
     "guardrail_provider",
@@ -110,9 +113,9 @@ fn guardrail(args: &Args) -> Result<BedrockGuardrail, Box<HelperError>> {
         guardrail_version: args.guardrail_version.clone(),
         disable_exception_on_block: Some(args.disable_exception_on_block),
         checks: args.checks.clone().map(ChecksInput::Mapping),
-        content_filter_threshold: None,
-        prompt_attack_threshold: None,
-        pii_confidence_threshold: None,
+        content_filter_threshold: DEFAULT_THRESHOLD,
+        prompt_attack_threshold: DEFAULT_THRESHOLD,
+        pii_confidence_threshold: DEFAULT_THRESHOLD,
         chunk_budget_chars: args.chunk_budget_chars,
         contextual_grounding: args.contextual_grounding,
         latest_role_message_only: false,
