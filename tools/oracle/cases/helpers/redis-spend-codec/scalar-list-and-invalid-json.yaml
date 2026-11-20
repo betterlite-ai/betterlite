@@ -1,0 +1,28 @@
+kind: helper
+name: scalar-list-and-invalid-json
+call:
+  redis_spend_codec:
+    enabled: true
+    attached: true
+    drain:
+      reply:
+        kind: scalar
+        value: '{"spend": 1.5, "messages": "scalar", "total_tokens": 4}'
+    pipeline:
+      replies:
+        - kind: missing
+        - kind: items
+          values: []
+        - kind: missing
+        - kind: missing
+        - kind: missing
+        - kind: missing
+        - kind: missing
+    tags:
+      reply:
+        kind: items
+        values:
+          - '{not json'
+env: {}
+compare:
+  ignore: []

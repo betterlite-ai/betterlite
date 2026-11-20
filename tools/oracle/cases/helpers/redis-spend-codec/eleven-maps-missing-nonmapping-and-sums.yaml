@@ -1,0 +1,33 @@
+kind: helper
+name: eleven-maps-missing-nonmapping-and-sums
+call:
+  redis_spend_codec:
+    enabled: true
+    attached: true
+    pipeline:
+      replies:
+        - kind: items
+          values:
+            - '{"user_list_transactions":{"user-1":1.5},"end_user_list_transactions":{"end-1":0.5},"key_list_transactions":{"key-1":2},"team_list_transactions":{"team-1":1},"team_member_list_transactions":{"member-1":1},"org_list_transactions":{"org-1":1},"org_member_list_transactions":{"org-member-1":1},"project_list_transactions":{"project-1":1},"tag_list_transactions":{"tag-1":1},"agent_list_transactions":{"agent-1":1},"model_access_group_list_transactions":{"group-1":1}}'
+            - '{"user_list_transactions":{"user-1":2,"user-2":1},"key_list_transactions":{"key-1":0.25},"team_list_transactions":[1],"tag_list_transactions":"bad","agent_list_transactions":{"agent-1":2}}'
+        - kind: items
+          values:
+            - '{"day-1":{"spend":1.5,"prompt_tokens":2,"completion_tokens":1,"api_requests":1,"successful_requests":1,"failed_requests":0,"note":"kept"}}'
+            - '{"day-1":{"spend":2.5,"prompt_tokens":3,"completion_tokens":2,"api_requests":1,"successful_requests":0,"failed_requests":1},"day-2":{"spend":4,"prompt_tokens":1,"completion_tokens":0,"api_requests":1,"successful_requests":1,"failed_requests":0}}'
+        - kind: missing
+        - kind: missing
+        - kind: missing
+        - kind: missing
+        - kind: items
+          values:
+            - '[{"entity_type":"key","entity_id":"key-1","window_duration":"1h","window_start":"2024-01-01T00:00:00+00:00","spend":2.5}]'
+            - '[{"entity_type":"key","entity_id":"key-1","window_duration":"1h","window_start":"2024-01-01T00:00:00+00:00","spend":0.5,"started_at":"2024-01-01T00:00:01+00:00"},{"entity_type":"key","entity_id":"key-2","window_duration":"1h","window_start":"2024-01-01T00:00:00+00:00","spend":1.25}]'
+    tags:
+      reply:
+        kind: items
+        values:
+          - '{"tag-1-tag-day":{"spend":1.5,"prompt_tokens":1,"completion_tokens":1,"api_requests":1,"successful_requests":1,"failed_requests":0,"tag":"tag-1"}}'
+          - '{"tag-1-tag-day":{"spend":0.5,"prompt_tokens":2,"completion_tokens":0,"api_requests":1,"successful_requests":1,"failed_requests":0,"tag":"tag-1"}}'
+env: {}
+compare:
+  ignore: []
