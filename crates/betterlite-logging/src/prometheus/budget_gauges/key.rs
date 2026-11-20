@@ -41,16 +41,17 @@ where
         .collector
         .labels(&label_pairs(&remaining))
         .set(remaining_budget(input.max_budget, input.spend).metric_value());
-    let mut prior_labels = remaining;
-    if let Some(max_budget) = input.max_budget {
+    let prior_labels = if let Some(max_budget) = input.max_budget {
         let max_labels = prometheus_label_factory(&gauges.max.supported_labels, &values, source)?;
         gauges
             .max
             .collector
             .labels(&label_pairs(&max_labels))
             .set(MetricValue::Finite(max_budget));
-        prior_labels = max_labels;
-    }
+        max_labels
+    } else {
+        remaining
+    };
     if let Some(reset_at) = input.budget_reset_at {
         set_key_hours_gauge(gauges, &prior_labels, reset_at, now)?;
     }

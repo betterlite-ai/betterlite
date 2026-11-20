@@ -22,9 +22,7 @@ impl RemainingBudget {
 pub fn remaining_budget(max_budget: Option<Decimal>, spend: Option<Decimal>) -> RemainingBudget {
     match (max_budget, spend) {
         (None, _) => RemainingBudget::Unlimited,
-        (Some(max_budget), None) => RemainingBudget::Amount(max_budget),
-        (Some(max_budget), Some(spend)) => {
-            RemainingBudget::Amount(max_budget.saturating_sub(spend))
-        }
+        (Some(limit), None) => RemainingBudget::Amount(limit),
+        (Some(limit), Some(used)) => RemainingBudget::Amount(limit.saturating_sub(used)),
     }
 }

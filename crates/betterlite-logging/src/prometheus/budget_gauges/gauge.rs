@@ -50,8 +50,8 @@ pub(crate) fn label_values(pairs: &[(&str, &str)]) -> UserApiKeyLabelValues {
 
 pub(crate) fn label_pairs(labels: &ProjectedLabels) -> Vec<(&str, &str)> {
     let mut pairs = Vec::with_capacity(labels.len());
-    for (name, value) in labels {
-        let value = value.as_deref().unwrap_or(MISSING_LABEL_VALUE);
+    for (name, maybe_value) in labels {
+        let value = maybe_value.as_deref().unwrap_or(MISSING_LABEL_VALUE);
         pairs.push((name.as_str(), value));
     }
     pairs

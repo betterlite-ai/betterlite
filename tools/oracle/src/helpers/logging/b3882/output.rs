@@ -9,11 +9,11 @@ pub(super) fn samples_value(samples: &[ProbeSample]) -> Value {
     let mut rows: Vec<(String, BTreeMap<String, String>, String)> =
         samples.iter().map(sample_row).collect();
     rows.sort();
-    let rows: Vec<Value> = rows
+    let value_rows: Vec<Value> = rows
         .into_iter()
         .map(|(metric, labels, value)| json!({"metric": metric, "labels": labels, "value": value}))
         .collect();
-    json!({ "samples": rows })
+    json!({ "samples": value_rows })
 }
 
 fn sample_row(sample: &ProbeSample) -> (String, BTreeMap<String, String>, String) {
