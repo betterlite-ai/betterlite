@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use betterlite_db::database_failures::gate::{DbLookupStallTracker, SystemClock};
 use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
+use betterlite_db::postgres_store::errors::DbError;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_db::team_rows::membership::{Counter, MembershipBudget};
 use betterlite_postgres_fixture::connection::PostgresFixture;
@@ -17,6 +18,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
 use tokio_util::task::TaskTracker;
 
+use crate::auth_read::table::AuthReadError;
 use crate::membership_load::MembershipLookup;
 use crate::membership_load::rows::{DatabaseTeamMembership, TeamMembershipRows};
 use crate::membership_load::tests::support::{
@@ -91,17 +93,17 @@ async fn snapshot(pool: &Pool) -> (i64, f64) {
     (row.get(0), row.get(1))
 }
 
-fn database_rows_with(
-    writer: &Pool,
-    reader: &Pool,
+fn rows_over(
+    writer: Option<&Pool>,
+    reader: Option<&Pool>,
     availability: Arc<Availability>,
 ) -> DatabaseTeamMembership {
     DatabaseTeamMembership {
         writer: Arc::new(PostgresStore {
-            pool: Some(writer.clone()),
+            pool: writer.cloned(),
         }),
         reader: Arc::new(PostgresStore {
-            pool: Some(reader.clone()),
+            pool: reader.cloned(),
         }),
         availability,
         default_deadline_seconds: 5.0_f64,
@@ -111,6 +113,14 @@ fn database_rows_with(
         }),
         tasks: TaskTracker::new(),
     }
+}
+
+fn database_rows_with(
+    writer: &Pool,
+    reader: &Pool,
+    availability: Arc<Availability>,
+) -> DatabaseTeamMembership {
+    rows_over(Some(writer), Some(reader), availability)
 }
 
 fn database_rows(pool: &Pool) -> DatabaseTeamMembership {
@@ -237,6 +247,22 @@ async fn normal_read_routing() {
     assert_eq!(from_writer.spend, Counter(Some(Decimal::new(25, 1))));
     close(reader_fixture, reader_pool).await;
     close(writer_fixture, writer_pool).await;
+}
+
+#[tokio::test]
+async fn missing_pool_is_a_repository_error() {
+    let rows = rows_over(None, None, Arc::new(Availability::default()));
+    let failure = rows
+        .find_membership("user-1", "team-1")
+        .await
+        .expect_err("the read has no database");
+    assert!(
+        matches!(
+            failure.source.as_ref(),
+            AuthReadError::Repository(DbError::NoDbConnected)
+        ),
+        "{failure}"
+    );
 }
 
 #[tokio::test]
