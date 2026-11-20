@@ -15,6 +15,27 @@ pub(crate) struct Sent {
     pub(crate) elapsed: Duration,
 }
 
+impl Sent {
+    // the sync handlers pass no timeout, so their message shows none; the async one shows the deadline it ran with
+    pub(crate) const fn for_write(
+        mode: ClientKind,
+        operation: Operation,
+        timeout: Duration,
+        elapsed: Duration,
+    ) -> Self {
+        let shown = match mode {
+            ClientKind::Sync => None,
+            ClientKind::Asynchronous => Some(timeout),
+        };
+        Self {
+            mode,
+            operation,
+            timeout: shown,
+            elapsed,
+        }
+    }
+}
+
 pub(super) fn http_response(reply: &UpstreamResponse) -> http::Response<Vec<u8>> {
     let mut response = http::Response::new(reply.body.clone());
     *response.status_mut() =

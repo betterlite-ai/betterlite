@@ -242,17 +242,7 @@ where
         .unwrap_or_else(|| client.get().default_timeout());
     let started = Instant::now();
     let reply = client.get().send(request).await;
-    // the sync handlers pass no timeout, so their message shows none; the async one shows the deadline it ran with
-    let shown_timeout = match mode {
-        ClientKind::Sync => None,
-        ClientKind::Asynchronous => Some(timeout),
-    };
-    let sent = Sent {
-        mode,
-        operation,
-        timeout: shown_timeout,
-        elapsed: started.elapsed(),
-    };
+    let sent = Sent::for_write(mode, operation, timeout, started.elapsed());
     let answer = reply.map_err(|error| {
         WriteError::Provider(handle_error(
             &facts::transport_facts(&error, &sent),
