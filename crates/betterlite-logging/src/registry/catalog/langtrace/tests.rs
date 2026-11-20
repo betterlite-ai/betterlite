@@ -1,6 +1,8 @@
 #![cfg(test)]
 
 use crate::callback_logger::CallbackLogger;
+use crate::otel::config::Signal;
+use crate::otel::legacy_exporters::endpoint::normalize_otel_endpoint;
 use crate::otel::legacy_policy::config::Exporter;
 use crate::otel::logger_runtime::tests::support::fixture;
 use crate::registry::catalog::CatalogError;
@@ -59,6 +61,35 @@ fn without_the_switch_langtrace_builds_the_legacy_logger() {
     let mut in_memory = Vec::new();
     let logger = build(&inputs, None, &shared, &mut in_memory).expect("the legacy logger builds");
     assert_eq!(logger.callback_name(), CALLBACK_NAME);
+}
+
+// the name the arm passes keeps /api/trace instead of the appended /v1/traces
+#[test]
+fn the_legacy_build_registers_the_callback_name_the_trace_path_needs() {
+    let inputs = catalog_inputs(
+        "",
+        &[KEY, ("LANGTRACE_API_HOST", "https://langtrace.example")],
+    );
+    let shared = SharedOtel::new(&inputs);
+    let mut in_memory = Vec::new();
+    build(&inputs, None, &shared, &mut in_memory).expect("the legacy logger builds");
+    let registration = shared
+        .proxy
+        .open_telemetry_logger
+        .lock()
+        .expect("the proxy slot is readable")
+        .clone()
+        .expect("the logger registers on the proxy");
+    let config = legacy_config(&inputs, &shared).expect("the key is set");
+    let endpoint = normalize_otel_endpoint(
+        config.endpoint.as_deref(),
+        Signal::Traces,
+        registration.callback_name.as_deref(),
+    );
+    assert_eq!(
+        endpoint.as_deref(),
+        Some("https://langtrace.example/api/trace")
+    );
 }
 
 #[test]

@@ -26,6 +26,13 @@ pub fn require_runtime<'runtime>(
     })
 }
 
+// maybe_construct_otel_v2 already appends its logger, so an arm joins the same list once
+pub(crate) fn push_once(list: &mut Vec<Arc<dyn CallbackLogger>>, logger: &Arc<dyn CallbackLogger>) {
+    if !list.iter().any(|held| Arc::ptr_eq(held, logger)) {
+        list.push(Arc::clone(logger));
+    }
+}
+
 // litellm_logging._maybe_construct_otel_v2; Ok(None) means the arm builds its legacy logger instead
 pub fn v2(
     inputs: &CatalogInputs,

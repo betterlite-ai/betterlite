@@ -164,6 +164,20 @@ fn otel_with_v2_builds_through_the_runtime_constructor() {
 }
 
 #[test]
+fn otel_with_v2_reads_the_message_flags_from_the_callback_settings() {
+    let fixture = fixture();
+    let yaml = "callback_settings:\n  otel:\n    message_logging: false\n    turn_off_message_logging: true\n";
+    let catalog =
+        catalog(yaml, &[("LITELLM_OTEL_V2", "true")]).with_runtime(Arc::new(fixture.runtime));
+    let logger = catalog
+        .resolve_logger("otel")
+        .expect("the name is available")
+        .expect("the V2 logger builds");
+    assert!(!logger.message_logging());
+    assert!(logger.turn_off_message_logging());
+}
+
+#[test]
 fn otel_with_v2_and_no_runtime_is_unavailable() {
     let catalog = catalog("", &[("LITELLM_OTEL_V2", "true")]);
     assert!(matches!(

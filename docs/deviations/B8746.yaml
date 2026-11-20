@@ -27,4 +27,13 @@ deviations:
       the switch says.
     why: The auto start runs the same arm an explicit arize_phoenix callback runs, so one switch decides both. Building the legacy class behind the operator's back would export a second logger class alongside the V2 one.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L5292-L5302
+  - what: >-
+      With LITELLM_OTEL_V2 off, callback_settings.otel.message_logging and turn_off_message_logging do not reach the legacy
+      OpenTelemetry logger, so it logs the messages and the response even when the operator turned them off; the V2 otel
+      logger reads both flags from the same entry.
+    why: >-
+      The legacy logger fixes CustomLogger's deprecated message_logging flag inside B3868's lifecycle, outside this task's
+      scope, and that lifecycle's options carry no message flags to thread through. A later task can pass the setting the
+      metric filter already reads.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L610-L625
 kept_bugs: []

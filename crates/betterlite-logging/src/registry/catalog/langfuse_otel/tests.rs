@@ -2,6 +2,7 @@
 
 use crate::callback_logger::CallbackLogger;
 use crate::otel::logger_runtime::tests::support::fixture;
+use crate::otel_provider_assembly::opentelemetry_legacy_provider::ProviderSlot as _;
 use crate::registry::catalog::CatalogError;
 use crate::registry::catalog::otel::shared::SharedOtel;
 use crate::registry::catalog::otel::tests::support::catalog_inputs;
@@ -20,6 +21,24 @@ fn without_the_switch_langfuse_otel_builds_the_legacy_logger() {
     let mut in_memory = Vec::new();
     let logger = build(&inputs, None, &shared, &mut in_memory).expect("the legacy logger builds");
     assert_eq!(logger.callback_name(), CALLBACK_NAME);
+}
+
+// LiteLLM's skip_set_global for this name leaves the shared tracer slot to the providers that own it
+#[test]
+fn the_legacy_build_keeps_the_global_tracer_free() {
+    let inputs = catalog_inputs("", &KEYS);
+    let shared = SharedOtel::new(&inputs);
+    let mut in_memory = Vec::new();
+    let logger = build(&inputs, None, &shared, &mut in_memory).expect("the legacy logger builds");
+    assert_eq!(logger.callback_name(), CALLBACK_NAME);
+    assert!(
+        shared
+            .globals
+            .tracer
+            .existing()
+            .expect("the tracer slot is readable")
+            .is_none()
+    );
 }
 
 #[test]

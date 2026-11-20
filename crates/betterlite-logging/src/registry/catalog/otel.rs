@@ -1,5 +1,4 @@
 pub mod attributes;
-pub(crate) mod dispatch;
 pub mod env;
 pub mod legacy;
 pub mod maybe;
@@ -62,7 +61,7 @@ fn build_v2(
         config,
         Some("otel"),
         InjectedProviders::default(),
-        ConstructorSettings::default(),
+        message_flags(inputs)?,
     )
     .map_err(|source| CatalogError::Init {
         message: source.to_string(),
@@ -70,6 +69,33 @@ fn build_v2(
     let callback = Arc::clone(&logger.callback);
     in_memory.push(Arc::clone(&callback));
     Ok(callback)
+}
+
+// LiteLLM hands callback_settings.otel to CustomLogger, which reads its two message flags from it
+fn message_flags(inputs: &CatalogInputs) -> Result<ConstructorSettings, CatalogError> {
+    let mut flags = ConstructorSettings::default();
+    let Some(entry) = inputs.callback_settings.get("otel") else {
+        return Ok(flags);
+    };
+    for (field, value) in entry.exposed_variables() {
+        match field.as_str() {
+            "message_logging" => {
+                flags.message_logging = read_flag(&field, &value)?.unwrap_or(flags.message_logging);
+            }
+            "turn_off_message_logging" => {
+                flags.turn_off_message_logging =
+                    read_flag(&field, &value)?.unwrap_or(flags.turn_off_message_logging);
+            }
+            other => tracing::debug!(field = %other, "the otel setting is not a message flag"),
+        }
+    }
+    Ok(flags)
+}
+
+fn read_flag(field: &str, value: &str) -> Result<Option<bool>, CatalogError> {
+    betterlite_env::flag(field, value).map_err(|source| CatalogError::Init {
+        message: source.to_string(),
+    })
 }
 
 // the legacy constructor reads the environment; the attribute filter comes from the settings dict

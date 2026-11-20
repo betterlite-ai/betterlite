@@ -71,6 +71,7 @@ use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
+use self::otel::maybe::push_once;
 use self::otel::phoenix_auto;
 use self::otel::shared::SharedOtel;
 use super::error::RegistryError;
@@ -148,7 +149,7 @@ impl LoggerCatalog {
         Self {
             inputs,
             runtime: None,
-            build: Arc::new(otel::dispatch::build_logger),
+            build: Arc::new(build_logger),
             built: Mutex::new(BTreeMap::new()),
             in_memory: Mutex::new(Vec::new()),
             shared: Mutex::new(None),
@@ -275,5 +276,83 @@ impl LoggerResolver for LoggerCatalog {
         _params: &BTreeMap<String, String>,
     ) -> Result<Option<Arc<dyn CallbackLogger>>, RegistryError> {
         self.resolve_logger(name)
+    }
+}
+
+macro_rules! dispatch_logger {
+    (
+        arms { $($arm:ident => $arm_builder:ident),+ $(,)? }
+        builders { $($builder:ident => $builder_fn:ident),+ $(,)? }
+        refused { $($refused:ident),+ $(,)? }
+    ) => {
+        fn build_logger(
+            callback: CallbackName,
+            inputs: &CatalogInputs,
+            runtime: Option<&LoggerRuntime>,
+            shared: &SharedOtel,
+            in_memory: &mut Vec<Arc<dyn CallbackLogger>>,
+        ) -> Result<Arc<dyn CallbackLogger>, CatalogError> {
+            match callback {
+                $(CallbackName::$arm => {
+                    let logger = $arm_builder::build(inputs, runtime, shared, in_memory)?;
+                    push_once(in_memory, &logger);
+                    Ok(logger)
+                })+
+                $(CallbackName::$builder => $builder_fn::build(inputs),)+
+                $(CallbackName::$refused)|+ => Err(CatalogError::Unavailable {
+                    name: callback.as_str().to_owned(),
+                }),
+            }
+        }
+    };
+}
+
+// the OTel arms take the runtime and the in-memory list; every other builder keeps its build(inputs)
+dispatch_logger! {
+    arms {
+        Arize => arize,
+        ArizePhoenix => arize_phoenix,
+        LangfuseOtel => langfuse_otel,
+        Langtrace => langtrace,
+        Levo => levo,
+        Logfire => logfire,
+        Newrelic => newrelic,
+        Otel => otel,
+        Signoz => signoz,
+        Traceloop => traceloop,
+        WeaveOtel => weave_otel,
+    }
+    builders {
+        Agentops => agentops, Argilla => argilla,
+        Athina => athina, AwsSqs => aws_sqs,
+        AzureSentinel => azure_sentinel, AzureStorage => azure_storage,
+        Bitbucket => bitbucket, Braintrust => braintrust,
+        Clickhouse => clickhouse, Cloudzero => cloudzero,
+        DatadogCostManagement => datadog_cost_management,
+        DatadogLlmObservability => datadog_llm_observability,
+        DatadogMetrics => datadog_metrics, Deepeval => deepeval,
+        Dotprompt => dotprompt, Dynamodb => dynamodb,
+        Focus => focus, Galileo => galileo,
+        GcsBucket => gcs_bucket, GcsPubsub => gcs_pubsub,
+        Gitlab => gitlab, Greenscale => greenscale,
+        Helicone => helicone, Humanloop => humanloop,
+        Lago => lago, Langfuse => langfuse,
+        Langsmith => langsmith, Literalai => literalai,
+        Lunary => lunary, Mavvrik => mavvrik,
+        Mlflow => mlflow, Openmeter => openmeter,
+        Opik => opik, Pagerduty => pagerduty,
+        Pointfive => pointfive, Posthog => posthog,
+        Promptlayer => promptlayer, ResendEmail => resend_email,
+        S3 => s3, S3V2 => s3_v2,
+        SendgridEmail => sendgrid_email, Sentry => sentry,
+        Slack => slack, SmtpEmail => smtp_email,
+        Supabase => supabase, Vantage => vantage,
+        Wandb => wandb, Zerobus => zerobus,
+    }
+    refused {
+        Prometheus, Datadog, LitellmAgent, GenericApi, SampleCallback,
+        Rubrik, Sumologic, QualifireEval, Ramp, DynamicRateLimiter,
+        DynamicRateLimiterV3, AnthropicCacheControlHook, VectorStorePreCallHook,
+        CompressionInterception,
     }
 }
