@@ -15,7 +15,7 @@ use betterlite_openai::containers::container_file_http::transport::{self, Select
 use betterlite_openai::containers::container_file_http::{self as file, response};
 use betterlite_openai::openai_base_config::Object;
 use indexmap::IndexMap;
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 use thiserror::Error;
 
 // LiteLLM's declared timeout default for both container handlers
@@ -108,8 +108,9 @@ pub fn container_create_handler<Source: CollectionClientSource>(
     hook: &dyn file::PreCallHook,
 ) -> Result<records::ContainerObject, ContainerCollectionError> {
     let params = request::read_params(call.litellm_params)?;
-    let ssl_verify = params.ssl_verify.as_ref();
-    let client = Selected::choose(supplied, || source.blocking_client(ssl_verify))?;
+    let client = Selected::choose(supplied, || {
+        source.blocking_client(params.ssl_verify.as_ref())
+    })?;
     poll_once(create_body(client.get(), &params, call, hook))?
 }
 
@@ -120,8 +121,7 @@ pub async fn acontainer_create_handler<Source: CollectionClientSource>(
     hook: &dyn file::PreCallHook,
 ) -> Result<records::ContainerObject, ContainerCollectionError> {
     let params = request::read_params(call.litellm_params)?;
-    let ssl_verify = params.ssl_verify.as_ref();
-    let client = Selected::choose(supplied, || source.async_client(ssl_verify))?;
+    let client = Selected::choose(supplied, || source.async_client(params.ssl_verify.as_ref()))?;
     create_body(client.get(), &params, call, hook).await
 }
 
@@ -132,8 +132,9 @@ pub fn container_list_handler<Source: CollectionClientSource>(
     hook: &dyn file::PreCallHook,
 ) -> Result<records::ContainerListResponse, ContainerCollectionError> {
     let params = request::read_params(call.litellm_params)?;
-    let ssl_verify = params.ssl_verify.as_ref();
-    let client = Selected::choose(supplied, || source.blocking_client(ssl_verify))?;
+    let client = Selected::choose(supplied, || {
+        source.blocking_client(params.ssl_verify.as_ref())
+    })?;
     poll_once(list_body(client.get(), &params, call, hook))?
 }
 
@@ -144,12 +145,10 @@ pub async fn acontainer_list_handler<Source: CollectionClientSource>(
     hook: &dyn file::PreCallHook,
 ) -> Result<records::ContainerListResponse, ContainerCollectionError> {
     let params = request::read_params(call.litellm_params)?;
-    let ssl_verify = params.ssl_verify.as_ref();
-    let client = Selected::choose(supplied, || source.async_client(ssl_verify))?;
+    let client = Selected::choose(supplied, || source.async_client(params.ssl_verify.as_ref()))?;
     list_body(client.get(), &params, call, hook).await
 }
 
-// container_create_handler's steps after the client: headers, base URL, transform, log, POST, then the object
 async fn create_body<Client: CollectionTransport>(
     client: &Client,
     params: &request::CallParams<'_>,
@@ -189,7 +188,6 @@ async fn create_body<Client: CollectionTransport>(
         .map_err(ContainerCollectionError::Config)
 }
 
-// container_list_handler's steps after the client: headers, base URL, transform, log, GET, then the page
 async fn list_body<Client: CollectionTransport>(
     client: &Client,
     params: &request::CallParams<'_>,
@@ -255,8 +253,9 @@ fn log_create(
     record.additional_args.passthrough.clear();
     record.additional_args.complete_input_dict = Some(RawBody::Object(complete));
     let mut state = call.logging.lock().unwrap_or_else(PoisonError::into_inner);
-    hook.pre_call(&mut state, &record)?;
-    Ok(())
+    let logged = hook.pre_call(&mut state, &record);
+    drop(state);
+    logged.map_err(ContainerCollectionError::from)
 }
 
 // _handle_error's conversion: a POST timeout arrives as litellm.Timeout with status 408, every other exception a synthesized 500
