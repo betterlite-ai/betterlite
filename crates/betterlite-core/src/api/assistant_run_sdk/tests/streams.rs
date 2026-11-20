@@ -69,7 +69,7 @@ async fn openai_stream_invokes_the_supplied_handler() {
     });
     let sink = recording_handler();
     let mut input = call("openai");
-    input.event_handler = Some(Arc::clone(&sink));
+    input.event_handler = Some(Arc::<RecordingHandler>::clone(&sink));
     let names = event_names(sdk.run_thread_stream(input).unwrap()).await;
     assert_eq!(sink.events(), names);
     assert!(sink.ended());
@@ -87,7 +87,7 @@ async fn azure_stream_drops_the_supplied_handler() {
     params.api_base = Some(String::from(BASE));
     params.api_key = Some(secret("az-key"));
     let mut input = azure_call(params);
-    input.event_handler = Some(Arc::clone(&sink));
+    input.event_handler = Some(Arc::<RecordingHandler>::clone(&sink));
     let stream = sdk.run_thread_stream(input).unwrap();
     assert!(stream.handler.is_none());
     let names = event_names(stream).await;

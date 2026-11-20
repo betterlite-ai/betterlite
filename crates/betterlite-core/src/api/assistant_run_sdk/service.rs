@@ -178,10 +178,10 @@ where
                 });
             }
         };
-        let azure = match call.client.as_ref() {
-            Some(client) => matches!(client.class, AsyncAzure | Azure),
-            None => call.provider.as_str() == "azure",
-        };
+        let azure = call.client.as_ref().map_or_else(
+            || call.provider.as_str() == "azure",
+            |client| matches!(client.class, AsyncAzure | Azure),
+        );
         if azure {
             let run = self.azure_run(call, kind, handler, timeout)?;
             return Ok(RunTarget::Azure(Box::new(run)));
