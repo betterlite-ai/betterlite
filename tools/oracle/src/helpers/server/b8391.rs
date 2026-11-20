@@ -32,10 +32,8 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::PolicyState { data } => Ok(match policy_state_metadata(data) {
-                Some(bucket) => Value::Object(bucket.clone()),
-                None => Value::Null,
-            }),
+            Input::PolicyState { data } => Ok(policy_state_metadata(data)
+                .map_or(Value::Null, |bucket| Value::Object(bucket.clone()))),
             Input::MergeMetadataWrites { data, modified } => {
                 let mut merged = data.clone();
                 merge_pipeline_metadata_writes(&mut merged, modified);
