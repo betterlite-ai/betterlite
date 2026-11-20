@@ -32,6 +32,8 @@ pub(super) fn build(
     settings: &HookSettings,
     _ports: &HookPorts,
 ) -> Option<Result<HookSpec, HookRegistryError>> {
-    let make = kind_maker(kind)?;
+    let Some(make) = kind_maker(kind) else {
+        return None;
+    };
     Some(Ok(HookSpec::new(settings, make(params.clone()))))
 }
