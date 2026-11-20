@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 
 use betterlite_config::sections::content_filter_records::ContentFilterDetection;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_core::passthrough_guardrail::wire::parse_request_data;
+use betterlite_logging::analytics::python::float_text;
 
 use crate::content_filter_actions::error::ContentFilterActionError;
 use crate::content_filter_actions::{ContentFilterSource, filter_single_text};
@@ -9,6 +11,9 @@ use crate::content_filter_actions::{ContentFilterSource, filter_single_text};
 use super::error::ArgumentFilterError;
 
 pub const TOOL_CALL_LABEL: &str = "tool call";
+
+// serde_json parses 128 containers, the parse wrapper takes one, so deeper arguments never reach the tree filter
+const PARSE_DEPTH_LIMIT: i64 = 127;
 
 #[derive(Debug)]
 pub struct ArgumentFilter<'source> {
@@ -39,7 +44,7 @@ pub fn filter_argument_value(
             Ok(value.clone())
         }
         GuardrailValue::Decimal(number) => {
-            assert_argument_label_clean(filter, &number.to_string(), detections, context_label)?;
+            assert_argument_label_clean(filter, &float_text(*number), detections, context_label)?;
             Ok(value.clone())
         }
         GuardrailValue::Object(entries) => {
@@ -47,11 +52,10 @@ pub fn filter_argument_value(
                 .map(GuardrailValue::Object)
         }
         GuardrailValue::Array(items) => {
+            let next = depth.saturating_add(1);
             let filtered = items
                 .iter()
-                .map(|item| {
-                    filter_argument_value(filter, item, detections, context_label, depth + 1)
-                })
+                .map(|item| filter_argument_value(filter, item, detections, context_label, next))
                 .collect::<Result<Vec<_>, ArgumentFilterError>>()?;
             Ok(GuardrailValue::Array(filtered))
         }
@@ -81,7 +85,12 @@ pub fn filter_tool_call_arguments(
     arguments: &str,
     detections: &mut Vec<ContentFilterDetection>,
 ) -> Result<String, ArgumentFilterError> {
-    let Ok(parsed) = serde_json::from_str::<GuardrailValue>(arguments) else {
+    let Some(parsed) = parse_argument_value(arguments) else {
+        if nesting_past_the_parse_limit(arguments, filter.max_depth) {
+            return Err(ArgumentFilterError::Depth {
+                context_label: TOOL_CALL_LABEL,
+            });
+        }
         return filter_text(filter.source, arguments, detections);
     };
     if !matches!(parsed, GuardrailValue::Object(_) | GuardrailValue::Array(_)) {
@@ -92,6 +101,40 @@ pub fn filter_tool_call_arguments(
         return Ok(arguments.to_owned());
     }
     serde_json::to_string(&filtered).map_err(|source| ArgumentFilterError::Serialize { source })
+}
+
+// json.loads restores every number; arbitrary_precision parks floats and integers past u64/i64 in a private map instead
+fn parse_argument_value(arguments: &str) -> Option<GuardrailValue> {
+    let wrapped = format!("{{\"arguments\":{arguments}}}");
+    parse_request_data(&wrapped).ok()?.remove("arguments")
+}
+
+// Past serde_json's parse limit the tree never forms, so the depth check reads the raw nesting instead
+fn nesting_past_the_parse_limit(source: &str, max_depth: i64) -> bool {
+    let (mut open, mut deepest, mut nesting) = (0_i64, 0_i64, 0_i64);
+    let (mut in_string, mut escaped) = (false, false);
+    for byte in source.bytes() {
+        match (escaped, in_string, byte) {
+            (true, _, _) => escaped = false,
+            (false, true, b'\\') => escaped = true,
+            (false, true, b'"') => in_string = false,
+            (false, false, b'"') => {
+                in_string = true;
+                deepest = deepest.max(open);
+            }
+            (false, false, b'{' | b'[') => {
+                deepest = deepest.max(open);
+                open = open.saturating_add(1);
+                nesting = nesting.max(open);
+            }
+            (false, false, b'}' | b']') => open = open.saturating_sub(1),
+            (false, false, _) if byte.is_ascii_alphanumeric() || byte == b'-' => {
+                deepest = deepest.max(open);
+            }
+            (false, _, _) => {}
+        }
+    }
+    nesting >= PARSE_DEPTH_LIMIT && deepest > max_depth
 }
 
 fn filter_object(
@@ -105,11 +148,10 @@ fn filter_object(
         assert_argument_label_clean(filter, key, detections, context_label)?;
     }
     let mut filtered = BTreeMap::new();
+    let next = depth.saturating_add(1);
     for (key, item) in entries {
-        filtered.insert(
-            key.clone(),
-            filter_argument_value(filter, item, detections, context_label, depth + 1)?,
-        );
+        let value = filter_argument_value(filter, item, detections, context_label, next)?;
+        filtered.insert(key.clone(), value);
     }
     Ok(filtered)
 }

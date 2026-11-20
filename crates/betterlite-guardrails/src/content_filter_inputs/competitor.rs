@@ -84,7 +84,7 @@ fn refuse_failure(
     tracing::warn!(
         intent = %summary.intent,
         confidence = summary.confidence,
-        action_hint = "refuse",
+        action_hint = %"refuse",
         "content filter competitor intent refuse"
     );
     let detail = IndexMap::from([
@@ -118,7 +118,7 @@ fn reframe_failure(
     tracing::info!(
         intent = %summary.intent,
         confidence = summary.confidence,
-        action_hint = "reframe",
+        action_hint = %"reframe",
         "content filter competitor intent reframe"
     );
     base.passthrough_failure(message, request_data, Some(result_info(result)), None)

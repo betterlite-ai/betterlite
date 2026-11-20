@@ -73,21 +73,14 @@ where
 {
     #[must_use]
     pub fn into_failure(self) -> GuardrailFailure {
-        let Self::Blocked {
-            detail,
-            description,
-        } = &self
-        else {
-            return GuardrailFailure::Other(self.failure_message());
-        };
-        image_block_failure(detail, description)
-    }
-
-    fn failure_message(&self) -> String {
-        match self {
-            Self::Completion { source } => source.to_string(),
-            Self::Filter(source) => source.to_string(),
-            Self::NoChoices | Self::Blocked { .. } => self.to_string(),
+        match &self {
+            Self::Blocked {
+                detail,
+                description,
+            } => image_block_failure(detail, description),
+            Self::Completion { source } => GuardrailFailure::Other(source.to_string()),
+            Self::Filter(source) => GuardrailFailure::Other(source.to_string()),
+            Self::NoChoices => GuardrailFailure::Other(self.to_string()),
         }
     }
 }

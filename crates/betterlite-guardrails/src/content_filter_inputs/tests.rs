@@ -172,7 +172,7 @@ fn check_depth(depth: i64) {
     .expect("a value at the depth filters");
     let error = filter_argument_value(
         &filter,
-        &nested_array(depth + 1),
+        &nested_array(depth.saturating_add(1)),
         &mut detections,
         "tool call",
         0,

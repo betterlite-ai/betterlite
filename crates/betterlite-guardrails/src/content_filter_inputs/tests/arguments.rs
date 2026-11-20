@@ -283,6 +283,118 @@ fn tool_call_booleans_and_nulls_pass_through() {
 }
 
 #[test]
+fn tool_call_floats_survive_a_mask() {
+    let fixture = Fixture::with_patterns(vec![regex_pattern(
+        "secret",
+        "secret",
+        ContentFilterAction::Mask,
+    )]);
+    let source = fixture.source();
+    let filter = ArgumentFilter {
+        source: &source,
+        max_depth: 100,
+    };
+    let mut calls = vec![tool_call(text(
+        r#"{"note": "a secret value", "temperature": 0.5}"#,
+    ))];
+    let mut detections = Vec::new();
+    scan_tool_call_arguments(&filter, &mut calls, &mut detections)
+        .expect("a float beside a masked string filters");
+    assert_eq!(
+        arguments_of(&calls[0]),
+        Some(r#"{"note":"a [SECRET_REDACTED] value","temperature":0.5}"#)
+    );
+    assert_eq!(pattern_names(&detections), ["secret"]);
+}
+
+#[test]
+fn tool_call_masked_float_is_not_rewritable() {
+    let fixture = Fixture::with_patterns(vec![regex_pattern(
+        "digits",
+        r"\d",
+        ContentFilterAction::Mask,
+    )]);
+    let source = fixture.source();
+    let filter = ArgumentFilter {
+        source: &source,
+        max_depth: 100,
+    };
+    let mut calls = vec![tool_call(text(r#"{"n": 1.5}"#))];
+    let mut detections = Vec::new();
+    let error = scan_tool_call_arguments(&filter, &mut calls, &mut detections).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Content blocked: tool call argument matched a masking rule on a non-rewritable field"
+    );
+    assert_eq!(arguments_of(&calls[0]), Some(r#"{"n": 1.5}"#));
+}
+
+#[test]
+fn tool_call_integers_beyond_64_bits_filter_as_text() {
+    let fixture = Fixture::with_patterns(vec![regex_pattern(
+        "secret",
+        "secret",
+        ContentFilterAction::Mask,
+    )]);
+    let source = fixture.source();
+    let filter = ArgumentFilter {
+        source: &source,
+        max_depth: 100,
+    };
+    let mut calls = vec![tool_call(text(
+        r#"{"n": 123456789012345678901234567890, "s": "secret"}"#,
+    ))];
+    let mut detections = Vec::new();
+    scan_tool_call_arguments(&filter, &mut calls, &mut detections)
+        .expect("a wide integer filters the whole string as text");
+    assert_eq!(
+        arguments_of(&calls[0]),
+        Some(r#"{"n": 123456789012345678901234567890, "s": "[SECRET_REDACTED]"}"#)
+    );
+    assert_eq!(pattern_names(&detections), ["secret"]);
+}
+
+fn nested_json(depth: usize) -> String {
+    let mut arguments = "[".repeat(depth);
+    arguments.push_str("\"leaf\"");
+    arguments.push_str(&"]".repeat(depth));
+    arguments
+}
+
+#[test]
+fn tool_call_depth_past_the_parser_limit() {
+    let fixture = Fixture::empty();
+    let source = fixture.source();
+    let filter = ArgumentFilter {
+        source: &source,
+        max_depth: 100,
+    };
+    let mut detections = Vec::new();
+    let at_the_cap = nested_json(100);
+    let mut calls = vec![tool_call(text(&at_the_cap))];
+    scan_tool_call_arguments(&filter, &mut calls, &mut detections)
+        .expect("arguments nested to the cap filter");
+    assert_eq!(arguments_of(&calls[0]), Some(at_the_cap.as_str()));
+    for depth in [101_usize, 130] {
+        let arguments = nested_json(depth);
+        let mut deep_calls = vec![tool_call(text(&arguments))];
+        let error =
+            scan_tool_call_arguments(&filter, &mut deep_calls, &mut detections).unwrap_err();
+        let failure = error.into_failure();
+        let GuardrailFailure::HttpObject { status, detail } = failure else {
+            panic!("depth {depth} must be a 400");
+        };
+        assert_eq!(status, 400);
+        assert_eq!(
+            detail.get("error"),
+            Some(&GuardrailValue::Text(
+                "Content blocked: tool call arguments exceed the maximum nesting depth".to_owned()
+            ))
+        );
+    }
+}
+
+#[test]
 fn tool_call_depth_limit_starts_at_zero() {
     let fixture = Fixture::empty();
     let source = fixture.source();

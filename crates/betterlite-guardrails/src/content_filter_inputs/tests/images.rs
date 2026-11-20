@@ -116,7 +116,9 @@ impl ImageDescriptionCompletion for NoChoices {
         &self,
         _request: &ImageDescriptionRequest,
     ) -> Result<ImageDescriptionResponse, Self::Error> {
-        Ok(reply(None))
+        Ok(ImageDescriptionResponse {
+            choices: Vec::new(),
+        })
     }
 }
 
