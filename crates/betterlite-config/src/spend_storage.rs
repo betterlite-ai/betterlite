@@ -11,10 +11,10 @@ use std::collections::BTreeMap;
 pub const ENV_STORE_PROMPTS: &str = "STORE_PROMPTS_IN_SPEND_LOGS";
 pub const ENV_MAX_PROMPT_LENGTH: &str = "MAX_STRING_LENGTH_PROMPT_IN_DB";
 pub const DEFAULT_MAX_PROMPT_LENGTH: i64 = 2048;
-pub const ENV_MAX_REDIS_BUFFER_DEQUEUE_COUNT: &str = "MAX_REDIS_BUFFER_DEQUEUE_COUNT";
-pub const DEFAULT_MAX_REDIS_BUFFER_DEQUEUE_COUNT: i64 = 100;
+pub const ENV_DEQUEUE_COUNT: &str = "MAX_REDIS_BUFFER_DEQUEUE_COUNT";
+pub const DEFAULT_DEQUEUE_COUNT: i64 = 100;
 const MISSING_SESSION_ID_PATH: &str = "general_settings.missing_session_id";
-const USE_REDIS_TRANSACTION_BUFFER_PATH: &str = "general_settings.use_redis_transaction_buffer";
+const USE_REDIS_BUFFER_PATH: &str = "general_settings.use_redis_transaction_buffer";
 const MAX_BUDGET_PATH: &str = "litellm_settings.max_budget";
 const DISABLE_END_USER_PATH: &str = "litellm_settings.disable_end_user_cost_tracking";
 const ENABLE_PROMETHEUS_PATH: &str =
@@ -103,8 +103,8 @@ impl Section for Raw {
             use_redis_transaction_buffer: redis_transaction_buffer(
                 &general.use_redis_transaction_buffer,
             )?,
-            max_redis_buffer_dequeue_count: initial_max_redis_buffer_dequeue_count(
-                lookup.lookup(ENV_MAX_REDIS_BUFFER_DEQUEUE_COUNT).as_deref(),
+            max_redis_buffer_dequeue_count: initial_dequeue_count(
+                lookup.lookup(ENV_DEQUEUE_COUNT).as_deref(),
             )?,
         })
     }
@@ -167,28 +167,29 @@ fn redis_transaction_buffer(configured: &JsonValue) -> Result<bool, ConfigError>
         JsonValue::String(text) => Ok(text_to_bool(text).unwrap_or(false)),
         JsonValue::Number(_) | JsonValue::Array(_) | JsonValue::Object(_) => {
             Err(ConfigError::InvalidScalar {
-                path: USE_REDIS_TRANSACTION_BUFFER_PATH.to_owned(),
+                path: USE_REDIS_BUFFER_PATH.to_owned(),
                 value: false,
             })
         }
     }
 }
-fn initial_max_redis_buffer_dequeue_count(value: Option<&str>) -> Result<i64, ConfigError> {
-    value.map_or(Ok(DEFAULT_MAX_REDIS_BUFFER_DEQUEUE_COUNT), |text| {
-        let count = betterlite_env::number::<i64>(ENV_MAX_REDIS_BUFFER_DEQUEUE_COUNT, text)
+fn initial_dequeue_count(value: Option<&str>) -> Result<i64, ConfigError> {
+    value.map_or(Ok(DEFAULT_DEQUEUE_COUNT), |text| {
+        let count = betterlite_env::number::<i64>(ENV_DEQUEUE_COUNT, text)
             .map_err(|source| ConfigError::Environment { source })?;
-        Ok(count.unwrap_or(DEFAULT_MAX_REDIS_BUFFER_DEQUEUE_COUNT))
+        Ok(count.unwrap_or(DEFAULT_DEQUEUE_COUNT))
     })
 }
 // Zero and negative counts reach Redis unchanged, so the server's own LPOP rules apply rather than a floor of ours.
 #[must_use]
-pub fn runtime_max_redis_buffer_dequeue_count(initial: i64, snapshot: Option<&str>) -> i64 {
-    snapshot.map_or(initial, |text| {
-        betterlite_env::number::<i64>(ENV_MAX_REDIS_BUFFER_DEQUEUE_COUNT, text)
-            .ok()
-            .flatten()
-            .unwrap_or(initial)
-    })
+pub fn runtime_dequeue_count(initial: i64, snapshot: Option<&str>) -> i64 {
+    let Some(text) = snapshot else {
+        return initial;
+    };
+    match betterlite_env::number::<i64>(ENV_DEQUEUE_COUNT, text) {
+        Ok(Some(count)) => count,
+        Ok(None) | Err(_) => initial,
+    }
 }
 fn missing_session_id(value: &JsonValue) -> Result<Option<MissingSessionId>, ConfigError> {
     if value.is_null() {

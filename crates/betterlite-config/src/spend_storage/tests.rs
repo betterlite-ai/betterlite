@@ -8,10 +8,9 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 
 use super::{
-    DEFAULT_MAX_PROMPT_LENGTH, DEFAULT_MAX_REDIS_BUFFER_DEQUEUE_COUNT,
-    ENV_MAX_REDIS_BUFFER_DEQUEUE_COUNT, MissingSessionId, Settings, SpendUpdates,
-    decode_spend_storage_policy, load_spend_storage_policy, runtime_max_prompt_length,
-    runtime_max_redis_buffer_dequeue_count,
+    DEFAULT_DEQUEUE_COUNT, DEFAULT_MAX_PROMPT_LENGTH, ENV_DEQUEUE_COUNT, MissingSessionId,
+    Settings, SpendUpdates, decode_spend_storage_policy, load_spend_storage_policy,
+    runtime_dequeue_count, runtime_max_prompt_length,
 };
 
 fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -65,25 +64,19 @@ fn loads_redis_spend_settings() {
     assert!(!defaults.use_redis_transaction_buffer);
     assert_eq!(
         defaults.max_redis_buffer_dequeue_count,
-        DEFAULT_MAX_REDIS_BUFFER_DEQUEUE_COUNT
+        DEFAULT_DEQUEUE_COUNT
     );
     let enabled = load(
         "general_settings:\n  use_redis_transaction_buffer: true\n",
-        &[(ENV_MAX_REDIS_BUFFER_DEQUEUE_COUNT, "250")],
+        &[(ENV_DEQUEUE_COUNT, "250")],
     );
     assert!(enabled.use_redis_transaction_buffer);
     assert_eq!(enabled.max_redis_buffer_dequeue_count, 250);
     let initial = enabled.max_redis_buffer_dequeue_count;
-    assert_eq!(
-        runtime_max_redis_buffer_dequeue_count(initial, Some("10")),
-        10
-    );
-    assert_eq!(runtime_max_redis_buffer_dequeue_count(initial, None), 250);
-    assert_eq!(runtime_max_redis_buffer_dequeue_count(initial, Some("")), 250);
-    assert_eq!(
-        runtime_max_redis_buffer_dequeue_count(initial, Some("not-a-number")),
-        250
-    );
+    assert_eq!(runtime_dequeue_count(initial, Some("10")), 10);
+    assert_eq!(runtime_dequeue_count(initial, None), 250);
+    assert_eq!(runtime_dequeue_count(initial, Some("")), 250);
+    assert_eq!(runtime_dequeue_count(initial, Some("not-a-number")), 250);
 }
 
 #[test]
@@ -150,14 +143,8 @@ fn rejects_a_redis_transaction_buffer_that_is_not_a_flag(#[case] value: &str) {
 #[case::negative("-5", -5)]
 #[case::surrounding_space(" 42 ", 42)]
 fn keeps_zero_and_negative_redis_dequeue_counts(#[case] value: &str, #[case] expected: i64) {
-    let source = "general_settings: {}\n";
-    let lookup = environment(&[(ENV_MAX_REDIS_BUFFER_DEQUEUE_COUNT, value)]);
-    assert_eq!(
-        load_spend_storage_policy(source, &lookup)
-            .unwrap()
-            .max_redis_buffer_dequeue_count,
-        expected
-    );
+    let settings = load("general_settings: {}\n", &[(ENV_DEQUEUE_COUNT, value)]);
+    assert_eq!(settings.max_redis_buffer_dequeue_count, expected);
 }
 
 #[rstest]
@@ -166,9 +153,9 @@ fn keeps_zero_and_negative_redis_dequeue_counts(#[case] value: &str, #[case] exp
 #[case::python_digit_group("1_0")]
 fn a_malformed_redis_dequeue_count_fails_loading(#[case] value: &str) {
     let source = "general_settings: {}\n";
-    let lookup = environment(&[(ENV_MAX_REDIS_BUFFER_DEQUEUE_COUNT, value)]);
+    let lookup = environment(&[(ENV_DEQUEUE_COUNT, value)]);
     let error = load_spend_storage_policy(source, &lookup).unwrap_err();
-    assert!(error.to_string().contains(ENV_MAX_REDIS_BUFFER_DEQUEUE_COUNT));
+    assert!(error.to_string().contains(ENV_DEQUEUE_COUNT));
 }
 
 #[rstest]
