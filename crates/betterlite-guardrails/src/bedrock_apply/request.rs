@@ -15,7 +15,7 @@ use super::ApiInvocation;
 use super::chunking::chunked;
 use super::error::{ApplyError, ApplyRequestError};
 use super::post::PostCall;
-use super::record::{LogSite, write_failure, write_success};
+use super::record::{LogSite, Logged, write};
 use crate::bedrock_checks::request::ChecksScan;
 use crate::bedrock_chunking::{ChunkResult, merge};
 use crate::bedrock_message_selection::content;
@@ -137,7 +137,7 @@ fn merged_response(
         status: 500,
         detail: error.to_string(),
     })?;
-    if let Err(error) = write_success(&mut call.logs, &merged) {
+    if let Err(error) = write(&mut call.logs, Logged::Success { merged: &merged }) {
         tracing::warn!("Bedrock ApplyGuardrail: the success record was not written: {error}");
     }
     Ok(merged)
@@ -150,7 +150,13 @@ fn end_to_end_failure(
     completed: &[Usage],
 ) -> GuardrailFailure {
     if let ApplyError::Unreported { detail, .. } = &error
-        && let Err(log_error) = write_failure(&mut call.logs, detail, completed)
+        && let Err(log_error) = write(
+            &mut call.logs,
+            Logged::Failure {
+                detail: detail.as_str(),
+                completed,
+            },
+        )
     {
         tracing::warn!("Bedrock ApplyGuardrail: the failure record was not written: {log_error}");
     }

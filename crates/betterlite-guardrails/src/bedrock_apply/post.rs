@@ -12,7 +12,7 @@ use betterlite_bedrock_guardrails::guardrail_error_response::parse_error_respons
 use secrecy::SecretString;
 
 use super::error::ApplyError;
-use super::record::{LogSite, write_attempt, write_failure};
+use super::record::{LogSite, Logged, write};
 use crate::bedrock_checks::request::ChecksEnvironment;
 use crate::bedrock_decisions::assessments::should_raise_blocked;
 use crate::bedrock_decisions::exceptions::{BlockedGuardrail, blocked_guardrail_failure};
@@ -84,7 +84,13 @@ where
 // LiteLLM's connection branch logs {"error": str(e)} with no usage, since no chunk was billed in this call
 fn transport_failure(call: &mut PostCall<'_>, error: &PostError) -> ApplyError {
     let detail = transport_detail(error);
-    if let Err(log_error) = write_failure(&mut call.logs, &detail, &[]) {
+    if let Err(log_error) = write(
+        &mut call.logs,
+        Logged::Failure {
+            detail: detail.as_str(),
+            completed: &[],
+        },
+    ) {
         tracing::warn!("Bedrock ApplyGuardrail: the failure record was not written: {log_error}");
     }
     ApplyError::Reported(GuardrailFailure::Http {
@@ -128,7 +134,13 @@ fn blocked(
     parsed: &Response,
     completed: &[Usage],
 ) -> ApplyError {
-    if let Err(error) = write_attempt(&mut call.logs, 200, body, parsed, completed) {
+    let logged = Logged::Attempt {
+        status_code: 200,
+        body,
+        response: parsed,
+        completed,
+    };
+    if let Err(error) = write(&mut call.logs, logged) {
         tracing::warn!("Bedrock ApplyGuardrail: the blocking record was not written: {error}");
     }
     let guardrail = BlockedGuardrail {

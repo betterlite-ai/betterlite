@@ -41,45 +41,50 @@ pub(super) struct LogSite<'call> {
     pub(super) region: &'call str,
 }
 
-// LiteLLM's _log_apply_guardrail_attempt: a blocking call's record sums what earlier chunks already billed
-pub(super) fn write_attempt(
+// what LiteLLM's attempt, success and failure log helpers write for one logical ApplyGuardrail call
+pub(super) enum Logged<'logged> {
+    Attempt {
+        status_code: u16,
+        body: &'logged [u8],
+        response: &'logged Response,
+        completed: &'logged [Usage],
+    },
+    Success {
+        merged: &'logged Response,
+    },
+    Failure {
+        detail: &'logged str,
+        completed: &'logged [Usage],
+    },
+}
+
+pub(super) fn write(
     site: &mut LogSite<'_>,
-    status_code: u16,
-    body: &[u8],
-    response: &Response,
-    completed: &[Usage],
+    logged: Logged<'_>,
 ) -> Result<(), BedrockDecisionError> {
     let call = call_log(site);
     let mut context = record_context(site);
-    log_attempt(
-        &mut context,
-        &call,
-        &AttemptLog {
+    match logged {
+        Logged::Attempt {
             status_code,
             body,
-            json_response: response,
-            completed_chunk_usages: completed,
-        },
-    )
-}
-
-pub(super) fn write_success(
-    site: &mut LogSite<'_>,
-    merged: &Response,
-) -> Result<(), BedrockDecisionError> {
-    let call = call_log(site);
-    let mut context = record_context(site);
-    log_success(&mut context, &call, merged)
-}
-
-pub(super) fn write_failure(
-    site: &mut LogSite<'_>,
-    detail: &str,
-    completed: &[Usage],
-) -> Result<(), BedrockDecisionError> {
-    let call = call_log(site);
-    let mut context = record_context(site);
-    log_failure(&mut context, &call, detail, completed)
+            response,
+            completed,
+        } => log_attempt(
+            &mut context,
+            &call,
+            &AttemptLog {
+                status_code,
+                body,
+                json_response: response,
+                completed_chunk_usages: completed,
+            },
+        ),
+        Logged::Success { merged } => log_success(&mut context, &call, merged),
+        Logged::Failure { detail, completed } => {
+            log_failure(&mut context, &call, detail, completed)
+        }
+    }
 }
 
 // the returned record borrows only the catalog and region behind the site, never the site itself
