@@ -38,7 +38,7 @@ const MALFORMED_DETAIL: &str = r#"{"error":{"message":"[1, 2]","type":"invalid_r
 #[derive(Clone, Copy)]
 enum Expectation {
     RecoveredRequest,
-    ProviderError,
+    ProviderError(usize),
     RejectedFieldKept,
     RejectedFieldsError,
     Resent,
@@ -51,7 +51,14 @@ const UNRELATED: &str = r#"{"error":{"message":"bad"}}"#;
 #[rstest]
 #[case::output_limit_chat(CHAT, false, false, &[(400, LIMIT_ERROR)], Expectation::RecoveredRequest)]
 #[case::output_limit_stream(STREAM_REQUEST, true, false, &[(400, LIMIT_ERROR)], Expectation::RecoveredRequest)]
-#[case::unrelated_400_stays_provider(CHAT, false, false, &[(400, UNRELATED)], Expectation::ProviderError)]
+#[case::unrelated_400_stays_provider(CHAT, false, false, &[(400, UNRELATED)], Expectation::ProviderError(1))]
+#[case::second_422_keeps_provider_error(
+    CHAT_WITH_TEMPERATURE,
+    false,
+    true,
+    &[(422, REJECTED_TEMPERATURE), (422, REJECTED_TEMPERATURE)],
+    Expectation::ProviderError(2)
+)]
 #[case::retry_drops_rejected_fields(
     CHAT_WITH_TEMPERATURE,
     false,
@@ -90,9 +97,9 @@ async fn openai_recovery_cases(
             let sent_on_the_wire: JsonValue = serde_json::from_slice(bodies[0].as_bytes()).unwrap();
             assert_eq!(*sent, sent_on_the_wire);
         }
-        Expectation::ProviderError => {
+        Expectation::ProviderError(attempts) => {
             assert!(matches!(result, Err(OperationError::Provider { .. })));
-            assert_eq!(bodies.len(), 1);
+            assert_eq!(bodies.len(), attempts);
         }
         Expectation::RejectedFieldKept => {
             assert!(matches!(result, Err(OperationError::Provider { .. })));
