@@ -9,7 +9,6 @@ use crate::api::realtime_contracts::decode::decode_realtime_frame;
 use crate::api::realtime_guardrail_policy::TRANSCRIPTION_EVENT_HOOKS;
 use crate::api::realtime_guardrail_policy::disable_auto_response_message;
 use crate::api::realtime_guardrail_policy::guardrails_run_for_hooks;
-use crate::api::realtime_sender::RealtimeSender;
 use crate::api::realtime_sender::error::RealtimeSenderError;
 use crate::api::realtime_session_state::TRANSCRIPTION_COMPLETED;
 use crate::api::realtime_session_state::error::SessionStateError;
@@ -23,7 +22,7 @@ use super::RESPONSE_CREATE;
 use super::RealtimeBackendRelay;
 use super::error::RealtimeRelayError;
 use super::event_type;
-use super::send_client_text;
+use super::transcript_and_item_id;
 use super::transformed::guardrails::run_guardrails;
 use super::transformed::send::Outbound;
 use super::transformed::send::send;
@@ -82,16 +81,7 @@ where
     Config: BaseRealtimeConfig,
     CallbackError: Error + Send + 'static,
 {
-    let transcript = match fields.get("transcript") {
-        Some(Json::Text(text)) => text.clone(),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
-        | None => String::new(),
-    };
-    let item_id = match fields.get("item_id") {
-        Some(Json::Text(text)) => Some(text.as_str()),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
-        | None => None,
-    };
+    let (transcript, item_id) = transcript_and_item_id(fields);
     relay.state.collect_backend_input(fields);
     store_and_forward_raw(relay, fields).await?;
     if relay.state.is_transcription_session.0 {
@@ -115,30 +105,15 @@ where
     CallbackError: Error + Send + 'static,
 {
     let Some(event) = parse_backend_event(text) else {
-        return send_client_text(relay, text).await;
+        return relay.send_client_text(text).await;
     };
-    let dropped = {
-        let sender = RealtimeSender {
-            state: &mut *relay.state,
-            provider: relay.provider,
-            guardrails: &relay.callbacks,
-        };
-        sender.should_drop_event_from_client(&event)
-    };
-    if dropped {
+    if relay.sender().should_drop_event_from_client(&event) {
         return Ok(());
     }
     if handle_raw_backend_message(relay, &event).await? {
         return Ok(());
     }
-    let normalized = {
-        let sender = RealtimeSender {
-            state: &mut *relay.state,
-            provider: relay.provider,
-            guardrails: &relay.callbacks,
-        };
-        sender.normalize_event_for_ga_client(event)
-    };
+    let normalized = relay.sender().normalize_event_for_ga_client(event);
     let Json::Object(fields) = &normalized else {
         return Err(RealtimeRelayError::State(SessionStateError::NotAnEvent));
     };
@@ -148,12 +123,12 @@ where
         .map_err(RealtimeRelayError::State)?;
     if !relay.state.client_wants_beta.0 {
         let encoded = serde_json::to_string(&normalized).map_err(RealtimeRelayError::Encode)?;
-        return send_client_text(relay, &encoded).await;
+        return relay.send_client_text(&encoded).await;
     }
     let Some(translated) = translate_event_to_beta(normalized).map_err(RealtimeRelayError::Beta)?
     else {
         return Ok(());
     };
     let encoded = serde_json::to_string(&translated).map_err(RealtimeRelayError::Encode)?;
-    send_client_text(relay, &encoded).await
+    relay.send_client_text(&encoded).await
 }

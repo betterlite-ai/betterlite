@@ -4,7 +4,6 @@ use betterlite_models::decisions::Json;
 
 use crate::api::realtime_contracts::config::BaseRealtimeConfig;
 use crate::api::realtime_sender::RealtimeSend as _;
-use crate::api::realtime_sender::RealtimeSender;
 
 use super::super::RealtimeBackendRelay;
 use super::super::error::RealtimeRelayError;
@@ -24,11 +23,7 @@ where
     Config: BaseRealtimeConfig,
     CallbackError: Error + Send + 'static,
 {
-    let mut sender = RealtimeSender {
-        state: &mut *relay.state,
-        provider: relay.provider,
-        guardrails: &relay.callbacks,
-    };
+    let mut sender = relay.sender();
     let result = match outbound {
         Outbound::Event(event, event_str) => sender
             .send_event_to_client(event, event_str)

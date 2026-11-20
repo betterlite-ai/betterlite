@@ -5,7 +5,6 @@ use betterlite_models::decisions::Json;
 use crate::api::realtime_contracts::config::BaseRealtimeConfig;
 use crate::api::realtime_guardrail_policy::TRANSCRIPTION_EVENT_HOOKS;
 use crate::api::realtime_guardrail_policy::guardrails_run_for_hooks;
-use crate::api::realtime_sender::RealtimeSender;
 use crate::api::realtime_session_state::TRANSCRIPTION_COMPLETED;
 use crate::api::realtime_session_state::store::SessionMessage;
 
@@ -13,6 +12,7 @@ use super::super::RESPONSE_CREATE;
 use super::super::RealtimeBackendRelay;
 use super::super::error::RealtimeRelayError;
 use super::super::event_type;
+use super::super::transcript_and_item_id;
 use super::guardrails::run_guardrails;
 use super::send::Outbound;
 use super::send::send;
@@ -27,15 +27,7 @@ where
     Config: BaseRealtimeConfig,
     CallbackError: Error + Send + 'static,
 {
-    let dropped = {
-        let sender = RealtimeSender {
-            state: &mut *relay.state,
-            provider: relay.provider,
-            guardrails: &relay.callbacks,
-        };
-        sender.should_drop_event_from_client(&event)
-    };
-    if dropped {
+    if relay.sender().should_drop_event_from_client(&event) {
         return Ok(());
     }
     let session_created = event_type(&event) == Some("session.created");
@@ -88,16 +80,7 @@ where
     let Json::Object(fields) = event else {
         return Ok(());
     };
-    let transcript = match fields.get("transcript") {
-        Some(Json::Text(text)) => text.clone(),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
-        | None => String::new(),
-    };
-    let item_id = match fields.get("item_id") {
-        Some(Json::Text(text)) => Some(text.as_str()),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
-        | None => None,
-    };
+    let (transcript, item_id) = transcript_and_item_id(fields);
     relay.state.collect_backend_input(fields);
     relay
         .state
@@ -113,14 +96,9 @@ where
 }
 
 // LiteLLM re-emits the provider's real session.created as session.updated once a synthetic one reached the client
-fn retype_as_session_updated(event: Json) -> Json {
-    match event {
-        Json::Object(mut fields) => {
-            fields.insert("type".to_owned(), Json::Text("session.updated".to_owned()));
-            Json::Object(fields)
-        }
-        other @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            other
-        }
+fn retype_as_session_updated(mut event: Json) -> Json {
+    if let Json::Object(fields) = &mut event {
+        fields.insert("type".to_owned(), Json::Text("session.updated".to_owned()));
     }
+    event
 }

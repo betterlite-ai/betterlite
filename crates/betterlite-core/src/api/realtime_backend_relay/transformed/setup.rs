@@ -1,7 +1,6 @@
 use std::error::Error;
 
 use crate::api::realtime_contracts::config::BaseRealtimeConfig;
-use crate::api::realtime_sender::RealtimeSender;
 use crate::api::realtime_setup_buffer::SetupBuffer as _;
 use crate::api::realtime_setup_buffer::SetupFlush as _;
 
@@ -23,17 +22,11 @@ where
     relay.state.setup.flushing_pending_messages.0 = true;
     let mut drained = Ok(());
     while drained.is_ok() && !relay.state.setup.pending_messages_until_setup.is_empty() {
-        let flushed = {
-            let mut sender = RealtimeSender {
-                state: &mut *relay.state,
-                provider: relay.provider,
-                guardrails: &relay.callbacks,
-            };
-            sender
-                .flush_pending_messages()
-                .await
-                .map_err(RealtimeRelayError::SetupBuffer)
-        };
+        let flushed = relay
+            .sender()
+            .flush_pending_messages()
+            .await
+            .map_err(RealtimeRelayError::SetupBuffer);
         match flushed {
             Ok(true) => {}
             Ok(false) => break,

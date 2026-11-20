@@ -76,20 +76,7 @@ where
                 Err(RealtimeRelayError::Receive(RelayReceiveError::Closed(closed))) => {
                     return RelayExit::Closed(closed);
                 }
-                Err(
-                    error @ (RealtimeRelayError::Receive(RelayReceiveError::UnsupportedDecode)
-                    | RealtimeRelayError::Receive(RelayReceiveError::Failed(_))
-                    | RealtimeRelayError::Transform(_)
-                    | RealtimeRelayError::State(_)
-                    | RealtimeRelayError::Predicate(_)
-                    | RealtimeRelayError::Send(_)
-                    | RealtimeRelayError::Guardrails(_)
-                    | RealtimeRelayError::SetupBuffer(_)
-                    | RealtimeRelayError::ClientMissing
-                    | RealtimeRelayError::Client(_)
-                    | RealtimeRelayError::Encode(_)
-                    | RealtimeRelayError::Beta(_)),
-                ) => return RelayExit::Failed(error),
+                Err(error) => return RelayExit::Failed(error),
             }
         }
     }
@@ -151,16 +138,7 @@ where
             .recv(None)
             .await
             .map_err(RealtimeRelayError::Receive)?,
-        Err(RelayReceiveError::Closed(error)) => {
-            return Err(RealtimeRelayError::Receive(RelayReceiveError::Closed(
-                error,
-            )));
-        }
-        Err(RelayReceiveError::Failed(error)) => {
-            return Err(RealtimeRelayError::Receive(RelayReceiveError::Failed(
-                error,
-            )));
-        }
+        Err(error) => return Err(RealtimeRelayError::Receive(error)),
     };
     relay.state.backend_sent_frames.0 = true;
     let text = match message {
