@@ -108,7 +108,7 @@ deviations:
 - what: When a caller has no logging state to hand the builder, injected stream cost is priced from the model catalog only, without the deployment's own prices that LiteLLM's logging object would apply first.
   why: The per-call logging state is a constructor argument here, not an attribute read off request_data; include_cost_in_streaming_usage is off by default, and every caller that holds the state passes it.
 out_of_scope:
-- "The generator, its SSE and A2A flavors, the tail seal, the pings and the standalone ports: B9720."
+- "The generator, its SSE flavor, the tail seal, the pings and the standalone ports: B9720. The A2A flavor (A2aStreamHooks and its framing): B8589."
 - "ProxyStreamHooks: B8632. DisconnectCleanup and its ports: B8605 and B8633. StreamCostInjector: B8930, built as B8931 builds it. The cancel settlement: B3003."
 - "The /v1/messages route, its processing call and the blocked-response branch: B081. The A2A handlers and per-request A2aStreamHooks: B8589. The A2A mount and its state: B8648. The A2A relay functions: B4789."
 - "create_response and the first-chunk checks: B9801. _arm_detached_stream_failure_hook and the rest of ProxyBaseLLMRequestProcessing: no task builds the shared class (B7324); see the notes of the B7980 plan."
