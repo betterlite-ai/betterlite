@@ -520,6 +520,26 @@ async fn multipod_nx_winner_not_multiplied() {
 }
 
 #[tokio::test]
+async fn a_winner_does_not_reread_the_key() {
+    let rows = Arc::new(FakeRows::with_row(spend_row("2.5")));
+    let counter = reseed_with(Some(Arc::clone(&rows)), services(25), 5.0);
+    // the miss answers the recheck, so only a winner reread would consume the failure
+    let cache = FakeCache::new(true)
+        .answer(RedisAnswer::Miss)
+        .answer(RedisAnswer::Fail);
+    let batch = FakeBatch::new(None);
+    let outcome = counter
+        .coalesced(&cache, &batch, "spend:key:t", false)
+        .await;
+    assert_eq!(answered(outcome), Some(decimal("2.5")));
+    assert_eq!(cache.redis_gets.load(Ordering::Relaxed), 1);
+    assert_eq!(
+        cache.memory_sets(),
+        vec![("spend:key:t".to_owned(), decimal("2.5"))]
+    );
+}
+
+#[tokio::test]
 async fn vanished_nx_winner_uses_db() {
     let rows = Arc::new(FakeRows::with_row(spend_row("2.5")));
     let counter = reseed_with(Some(Arc::clone(&rows)), services(25), 5.0);
