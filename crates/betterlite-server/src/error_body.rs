@@ -24,6 +24,7 @@ pub(crate) fn json_error(
     };
     (status, Json(body)).into_response()
 }
+
 pub(crate) fn authentication_error(failure: &AuthenticationFailure) -> Response {
     match failure {
         AuthenticationFailure::Missing => {

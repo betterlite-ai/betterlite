@@ -1,0 +1,18 @@
+kind: helper
+name: gemini-rag-store-failure-seed
+call:
+  b3454:
+    script:
+      - status: 200
+        body: '{"name":"fileSearchStores/s1"}'
+      - failure: the scripted transport failed
+    options:
+      name: notes
+      vector_store:
+        custom_llm_provider: gemini
+    environment:
+      GOOGLE_API_KEY: google-key
+    file_content_base64: aGk=
+    filename: a.txt
+env: {}
+compare: {ignore: []}

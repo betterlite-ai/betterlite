@@ -1,0 +1,16 @@
+kind: sdk_http
+name: run-sdk-failures
+env: {}
+call:
+  assistant_run:
+    mode: run
+    provider: anthropic
+    thread_id: thread_a
+    assistant_id: asst_a
+    params: {}
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []
