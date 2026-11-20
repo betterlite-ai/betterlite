@@ -59,8 +59,8 @@ fn logging_copy_strips_location_keys_held_as_extras() {
     assert!(entry.extra.contains_key("beginOffset"));
     assert!(entry.extra.contains_key("endOffset"));
     let sanitized = for_logging(&response);
-    let entry = pii_entry(&sanitized);
-    assert!(entry.extra.is_empty());
+    let sanitized_entry = pii_entry(&sanitized);
+    assert!(sanitized_entry.extra.is_empty());
     let json = as_json(&sanitized);
     assert!(LOCATION_KEYS.iter().all(|key| !json.contains(key)));
 }

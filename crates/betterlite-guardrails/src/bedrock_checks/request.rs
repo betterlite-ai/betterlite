@@ -8,6 +8,7 @@ use betterlite_bedrock_guardrails::bedrock_transport::BedrockGuardrail;
 use betterlite_bedrock_guardrails::guardrail_error_response::parse_error_response;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
+use betterlite_http::proxy::UpstreamResponse;
 use secrecy::SecretString;
 
 use self::decide::decide;
@@ -115,14 +116,24 @@ where
         started,
         finished: (invocation.now)(),
     };
-    let body = match posted {
-        Ok(response) if response.status == 200 => response.body,
+    let body = check_body(invocation, event_type, times, posted)?;
+    decide(invocation, event_type, times, &body)
+}
+
+fn check_body(
+    invocation: &mut ChecksInvocation<'_>,
+    event_type: GuardrailEventHooks,
+    times: RecordTimes,
+    posted: Result<UpstreamResponse, PostError>,
+) -> Result<Vec<u8>, GuardrailFailure> {
+    match posted {
+        Ok(response) if response.status == 200 => Ok(response.body),
         Ok(response) => {
             let (status, detail) = parse_error_response(response.status, &response.body);
-            return Err(fail(invocation, event_type, times, status, detail));
+            Err(fail(invocation, event_type, times, status, detail))
         }
         Err(PostError::Http { status, detail }) => {
-            return Err(fail(invocation, event_type, times, status, detail));
+            Err(fail(invocation, event_type, times, status, detail))
         }
         Err(
             error @ (PostError::Transport { .. }
@@ -131,10 +142,9 @@ where
             | PostError::HeaderValue { .. }),
         ) => {
             let detail = error.to_string();
-            return Err(fail(invocation, event_type, times, 500, detail));
+            Err(fail(invocation, event_type, times, 500, detail))
         }
-    };
-    decide(invocation, event_type, times, &body)
+    }
 }
 
 fn fail(

@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::future::ready;
+use std::future::{Future, ready};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use betterlite_bedrock::aws_settings::sources::Credentials;
@@ -185,8 +185,8 @@ fn outcome_value(outcome: Result<Response, GuardrailFailure>) -> Result<Value, B
         })),
         Err(GuardrailFailure::ModifyResponse(failure)) => Ok(json!({
             "kind": "modify",
-            "message": failure.message.clone(),
-            "model": failure.model.clone(),
+            "message": failure.message,
+            "model": failure.model,
         })),
         Err(
             GuardrailFailure::GuardrailRaised { .. }

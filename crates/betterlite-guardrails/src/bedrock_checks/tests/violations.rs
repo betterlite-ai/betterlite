@@ -165,12 +165,12 @@ fn entry_without_a_score_is_not_a_violation() {
     assert!(found.is_empty());
     let pii =
         checks_response(r#"{"results":{"sensitiveInformation":{"results":[{"type":"EMAIL"}]}}}"#);
-    let found = collect(
+    let pii_found = collect(
         Some(&pii),
         &checks_named(&["sensitiveInformation"]),
         thresholds(None, None, Some(0.5)),
     );
-    assert!(found.is_empty());
+    assert!(pii_found.is_empty());
 }
 
 #[test]
