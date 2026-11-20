@@ -1,0 +1,5 @@
+kind: helper
+name: team-model-cleanup-seed
+call: {team_model_cleanup: {calls: [{function: get_team_deployments, team_id: t1, deployments: []}]}}
+env: {}
+compare: {ignore: []}
