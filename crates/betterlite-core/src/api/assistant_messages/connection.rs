@@ -41,8 +41,7 @@ pub struct MessageParams {
     pub extra_body: Option<Option<BTreeMap<String, Json>>>,
 }
 
-// GenericLiteLLMParams.timeout declares float | str | httpx.Timeout; arbitrary_precision reads a JSON
-// float as the private number map that only serde_json's Number takes back
+// GenericLiteLLMParams.timeout is float | str | httpx.Timeout; arbitrary_precision floats arrive as a map only Number reads
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum MessageTimeout {
