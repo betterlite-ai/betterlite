@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::time::{Duration, Instant};
 
+use betterlite_core::api::vector_store_http_write::error::handle_error;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_state::LoggingState;
@@ -16,7 +17,7 @@ use url::Url;
 use self::client::{
     ClientKind, ClientSource, RerankHttpRequest, SuppliedClient, client_kind, select_client,
 };
-use self::convert::{Sent, provider_error, provider_response, send_facts, status_facts};
+use self::convert::{Sent, provider_response, send_facts, status_facts};
 use self::error::RerankHttpError;
 use self::logging::log_pre_call;
 use crate::api::rerank_contracts::{
@@ -175,12 +176,19 @@ where
         elapsed: started.elapsed(),
     };
     let reply = reply.map_err(|error| {
-        RerankHttpError::Provider(provider_error(deps.config, &send_facts(&error, &sent)))
+        let failure = handle_error(&send_facts(&error, &sent), None);
+        RerankHttpError::Provider(deps.config.get_error_class(
+            &failure.message,
+            failure.status_code,
+            failure.headers,
+        ))
     })?;
     if reply.status >= 400 {
-        return Err(RerankHttpError::Provider(provider_error(
-            deps.config,
-            &status_facts(&reply),
+        let failure = handle_error(&status_facts(&reply), None);
+        return Err(RerankHttpError::Provider(deps.config.get_error_class(
+            &failure.message,
+            failure.status_code,
+            failure.headers,
         )));
     }
     transform_response(deps.config, call, &prepared.data, &reply)

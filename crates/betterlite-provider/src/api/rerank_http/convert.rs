@@ -2,16 +2,14 @@ use std::str::from_utf8;
 use std::time::Duration;
 
 use betterlite_core::api::vector_store_http_write::error::{
-    FailureFacts, HeaderMap, ResponseFacts, handle_error, header_text,
+    FailureFacts, HeaderMap, ResponseFacts, header_text,
 };
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::decisions::Json;
 use serde_json::Number;
 
 use super::client::{ClientKind, RerankSendError};
-use crate::api::rerank_contracts::{
-    BaseLlmException, BaseRerankConfig, Headers, RerankProviderResponse,
-};
+use crate::api::rerank_contracts::{Headers, RerankProviderResponse};
 
 // What the timeout message needs from the send that just failed
 #[derive(Debug, Clone, Copy)]
@@ -115,16 +113,6 @@ pub(super) fn elapsed_text(elapsed: Duration) -> String {
     }
     let fraction = format!("{millis:03}");
     format!("{seconds}.{}", fraction.trim_end_matches('0'))
-}
-
-// _handle_error builds the status, text and header map, then hands all three to the provider's own error constructor
-#[must_use]
-pub(super) fn provider_error<C: BaseRerankConfig>(
-    config: &C,
-    facts: &FailureFacts,
-) -> BaseLlmException {
-    let error = handle_error(facts, None);
-    config.get_error_class(&error.message, error.status_code, error.headers)
 }
 
 // The raw_response the provider transformer reads: the whole answer, status and body as the provider sent them
