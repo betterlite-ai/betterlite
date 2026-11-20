@@ -166,7 +166,7 @@ fn split_error(error: ContainerResourceHttpError) -> Split {
 
 pub(super) fn provider_error(error: ContainerResourceHttpError) -> (BaseLlmException, bool) {
     match split_error(error) {
-        Split::Provider(provider) => provider,
+        Split::Provider(exception, synthesized) => (exception, synthesized),
         Split::Call(call) => panic!("the call failed: {call}"),
         Split::Query(name) => panic!("the {name} query value"),
     }
@@ -174,7 +174,7 @@ pub(super) fn provider_error(error: ContainerResourceHttpError) -> (BaseLlmExcep
 
 pub(super) fn call_error(error: ContainerResourceHttpError) -> ContainerFileHttpError {
     match split_error(error) {
-        Split::Provider((exception, _)) => panic!("the provider failed: {exception}"),
+        Split::Provider(exception, _) => panic!("the provider failed: {exception}"),
         Split::Call(call) => call,
         Split::Query(name) => panic!("the {name} query value"),
     }
