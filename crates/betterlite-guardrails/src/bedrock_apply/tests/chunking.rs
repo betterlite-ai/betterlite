@@ -1,24 +1,28 @@
 use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
-use serde_json::json;
 
 use super::{
     Reply, Scripted, expected, field_of, guardrail, guardrail_with_budget, input_scan, masked,
-    message, model_response, output_scan, passing, run, too_large,
+    message, model_response, output_scan, passing, quoted, run, structured_message, text,
+    too_large, wire_of,
 };
 use crate::guardrail_base::failure::GuardrailFailure;
 
-fn item(text: &str) -> Json {
-    expected(&json!({ "text": { "text": text } }))
+fn item(value: &str) -> Json {
+    expected(&format!(r#"{{"text":{{"text":{}}}}}"#, quoted(value)))
+}
+
+fn items(values: &[&str]) -> Json {
+    Json::List(values.iter().copied().map(item).collect())
 }
 
 #[tokio::test]
 async fn a_multi_item_payload_is_bin_packed_into_batches() {
     let messages = vec![
-        message("user", &json!("aaaa")),
-        message("user", &json!("bbbb")),
-        message("user", &json!("cccc")),
+        message("user", "aaaa"),
+        message("user", "bbbb"),
+        message("user", "cccc"),
     ];
     let transport = Scripted::new(vec![too_large(), passing(5), passing(7)]);
     let mut data = BTreeMap::new();
@@ -34,24 +38,15 @@ async fn a_multi_item_payload_is_bin_packed_into_batches() {
     let bodies = transport.bodies();
     assert_eq!(
         field_of(&bodies[0], "content"),
-        expected(&json!([item("aaaa"), item("bbbb"), item("cccc")]))
+        items(&["aaaa", "bbbb", "cccc"])
     );
-    assert_eq!(
-        field_of(&bodies[1], "content"),
-        expected(&json!([item("aaaa"), item("bbbb")]))
-    );
-    assert_eq!(
-        field_of(&bodies[2], "content"),
-        expected(&json!([item("cccc")]))
-    );
+    assert_eq!(field_of(&bodies[1], "content"), items(&["aaaa", "bbbb"]));
+    assert_eq!(field_of(&bodies[2], "content"), items(&["cccc"]));
 }
 
 #[tokio::test]
 async fn a_single_batch_of_items_falls_back_to_bisection() {
-    let messages = vec![
-        message("user", &json!("aaaa")),
-        message("user", &json!("bbbb")),
-    ];
+    let messages = vec![message("user", "aaaa"), message("user", "bbbb")];
     let transport = Scripted::new(vec![too_large(), passing(5), passing(7)]);
     let mut data = BTreeMap::new();
     let outcome = run(
@@ -64,19 +59,13 @@ async fn a_single_batch_of_items_falls_back_to_bisection() {
     drop(outcome.expect("both halves pass"));
     assert_eq!(transport.count(), 3);
     let bodies = transport.bodies();
-    assert_eq!(
-        field_of(&bodies[1], "content"),
-        expected(&json!([item("aaaa")]))
-    );
-    assert_eq!(
-        field_of(&bodies[2], "content"),
-        expected(&json!([item("bbbb")]))
-    );
+    assert_eq!(field_of(&bodies[1], "content"), items(&["aaaa"]));
+    assert_eq!(field_of(&bodies[2], "content"), items(&["bbbb"]));
 }
 
 #[tokio::test]
 async fn a_single_oversized_text_is_bisected_and_rejoined() {
-    let messages = vec![message("user", &json!("aaaa bbbb"))];
+    let messages = vec![message("user", "aaaa bbbb")];
     let transport = Scripted::new(vec![too_large(), masked("aaaa "), masked("bbbb")]);
     let mut data = BTreeMap::new();
     let outcome = run(
@@ -87,21 +76,21 @@ async fn a_single_oversized_text_is_bisected_and_rejoined() {
     )
     .await;
     let response = outcome.expect("both halves pass");
-    let wire = expected(&response);
+    let wire = wire_of(&response);
     assert_eq!(
         field_of(&wire, "outputs"),
-        expected(&json!([{ "text": "aaaa bbbb" }]))
+        expected(r#"[{ "text": "aaaa bbbb" }]"#)
     );
     assert_eq!(
         field_of(&wire, "output"),
-        expected(&json!([{ "text": "aaaa bbbb" }]))
+        expected(r#"[{ "text": "aaaa bbbb" }]"#)
     );
     assert_eq!(transport.count(), 3);
 }
 
 #[tokio::test]
 async fn a_repeated_bisection_stamps_the_whole_group() {
-    let messages = vec![message("user", &json!("aaaa bbbb cccc dddd"))];
+    let messages = vec![message("user", "aaaa bbbb cccc dddd")];
     let transport = Scripted::new(vec![
         too_large(),
         too_large(),
@@ -118,19 +107,19 @@ async fn a_repeated_bisection_stamps_the_whole_group() {
     )
     .await;
     let response = outcome.expect("every leaf passes");
-    let wire = expected(&response);
+    let wire = wire_of(&response);
     assert_eq!(
         field_of(&wire, "outputs"),
-        expected(&json!([{ "text": "aaaa bbbb cccc dddd" }]))
+        expected(r#"[{ "text": "aaaa bbbb cccc dddd" }]"#)
     );
     assert_eq!(transport.count(), 5);
 }
 
 #[tokio::test]
 async fn a_grounded_payload_is_never_chunked() {
-    let messages = vec![message(
+    let messages = vec![structured_message(
         "user",
-        &json!([{ "type": "query", "text": "what is the policy?" }]),
+        r#"[{ "type": "query", "text": "what is the policy?" }]"#,
     )];
     let response = model_response("the policy allows it");
     let transport = Scripted::new(vec![too_large()]);
@@ -149,20 +138,22 @@ async fn a_grounded_payload_is_never_chunked() {
     assert_eq!(status, 429);
     assert_eq!(transport.count(), 1);
     let bodies = transport.bodies();
-    assert_eq!(field_of(&bodies[0], "source"), expected(&json!("OUTPUT")));
+    assert_eq!(field_of(&bodies[0], "source"), text("OUTPUT"));
     assert_eq!(
         field_of(&bodies[0], "content"),
-        expected(&json!([
-            { "text": { "text": "what is the policy?", "qualifiers": ["query"] } },
-            { "text": { "text": "the policy allows it", "qualifiers": ["guard_content"] } },
-        ]))
+        expected(
+            r#"[
+                { "text": { "text": "what is the policy?", "qualifiers": ["query"] } },
+                { "text": { "text": "the policy allows it", "qualifiers": ["guard_content"] } }
+            ]"#
+        )
     );
 }
 
 #[tokio::test]
 async fn an_unsplittable_too_large_item_is_not_retried_or_split() {
-    let messages = vec![message("user", &json!("a"))];
-    let transport = Scripted::new(vec![too_large(), Reply::ok(&json!({ "action": "NONE" }))]);
+    let messages = vec![message("user", "a")];
+    let transport = Scripted::new(vec![too_large(), Reply::ok(r#"{ "action": "NONE" }"#)]);
     let mut data = BTreeMap::new();
     let outcome = run(
         &guardrail_with_budget(100),

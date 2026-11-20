@@ -1,19 +1,14 @@
 use std::collections::BTreeMap;
 
-use serde_json::json;
-
 use super::{
-    Reply, Scripted, blocking, expected, field_of, guardrail_with_budget, input_scan, message,
-    passing, records_of, run, too_large, usage_units,
+    Reply, Scripted, blocking, field_of, guardrail_with_budget, input_scan, message, number,
+    passing, records_of, run, text, too_large, usage_units,
 };
 use crate::bedrock_message_selection::wire::Message;
 use crate::guardrail_base::failure::GuardrailFailure;
 
 fn two_items() -> Vec<Message> {
-    vec![
-        message("user", &json!("aaaa")),
-        message("user", &json!("bbbb")),
-    ]
+    vec![message("user", "aaaa"), message("user", "bbbb")]
 }
 
 #[tokio::test]
@@ -32,11 +27,8 @@ async fn a_successful_call_writes_one_record_with_the_merged_usage() {
     assert_eq!(transport.count(), 3);
     let records = records_of(&data);
     assert_eq!(records.len(), 1);
-    assert_eq!(
-        field_of(&records[0], "guardrail_status"),
-        expected(&json!("success"))
-    );
-    assert_eq!(usage_units(&records[0], "textUnits"), expected(&json!(12)));
+    assert_eq!(field_of(&records[0], "guardrail_status"), text("success"));
+    assert_eq!(usage_units(&records[0], "textUnits"), number(12));
 }
 
 #[tokio::test]
@@ -45,7 +37,7 @@ async fn a_failure_after_a_chunk_logs_once_with_the_billed_usage() {
     let transport = Scripted::new(vec![
         too_large(),
         passing(5),
-        Reply::failed(400, &json!({ "message": "invalid content" })),
+        Reply::failed(400, r#"{ "message": "invalid content" }"#),
     ]);
     let mut data = BTreeMap::new();
     let outcome = run(
@@ -65,14 +57,11 @@ async fn a_failure_after_a_chunk_logs_once_with_the_billed_usage() {
     assert_eq!(records.len(), 1);
     assert_eq!(
         field_of(&records[0], "guardrail_status"),
-        expected(&json!("guardrail_failed_to_respond"))
+        text("guardrail_failed_to_respond")
     );
     let response = field_of(&records[0], "guardrail_response");
-    assert_eq!(
-        field_of(&response, "error"),
-        expected(&json!("invalid content"))
-    );
-    assert_eq!(usage_units(&records[0], "textUnits"), expected(&json!(5)));
+    assert_eq!(field_of(&response, "error"), text("invalid content"));
+    assert_eq!(usage_units(&records[0], "textUnits"), number(5));
 }
 
 #[tokio::test]
@@ -97,7 +86,7 @@ async fn a_block_after_a_chunk_logs_the_attempt_with_the_billed_usage() {
     assert_eq!(records.len(), 1);
     assert_eq!(
         field_of(&records[0], "guardrail_status"),
-        expected(&json!("guardrail_intervened"))
+        text("guardrail_intervened")
     );
-    assert_eq!(usage_units(&records[0], "textUnits"), expected(&json!(12)));
+    assert_eq!(usage_units(&records[0], "textUnits"), number(12));
 }

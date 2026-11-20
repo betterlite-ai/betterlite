@@ -29,7 +29,7 @@ use betterlite_models::decisions::Json;
 use reqwest::header::HeaderMap;
 use secrecy::SecretString;
 use serde::Serialize;
-use serde_json::json;
+use serde_json::Number;
 
 use super::*;
 use crate::bedrock_checks::request::ChecksEnvironment;
@@ -58,28 +58,12 @@ struct Reply {
 }
 
 impl Reply {
-    fn ok<T>(body: &T) -> Self
-    where
-        T: Serialize,
-    {
-        Self::encoded(200, body)
+    fn ok(body: &str) -> Self {
+        Self::text(200, body)
     }
 
-    fn failed<T>(status: u16, body: &T) -> Self
-    where
-        T: Serialize,
-    {
-        Self::encoded(status, body)
-    }
-
-    fn encoded<T>(status: u16, body: &T) -> Self
-    where
-        T: Serialize,
-    {
-        Self {
-            status,
-            body: serde_json::to_vec(body).expect("the reply body encodes"),
-        }
+    fn failed(status: u16, body: &str) -> Self {
+        Self::text(status, body)
     }
 
     fn text(status: u16, text: &str) -> Self {
@@ -93,27 +77,34 @@ impl Reply {
 fn too_large() -> Reply {
     Reply::failed(
         429,
-        &json!({ "message": "Input is too long for requested model." }),
+        r#"{ "message": "Input is too long for requested model." }"#,
     )
 }
 
 fn passing(text_units: i64) -> Reply {
-    Reply::ok(&json!({ "action": "NONE", "usage": { "textUnits": text_units } }))
+    let body = format!(r#"{{"action": "NONE", "usage": {{"textUnits": {text_units}}}}}"#);
+    Reply::ok(&body)
 }
 
 fn masked(text: &str) -> Reply {
-    Reply::ok(&json!({ "action": "NONE", "outputs": [{ "text": text }] }))
+    let body = format!(
+        r#"{{"action": "NONE", "outputs": [{{"text": {}}}]}}"#,
+        quoted(text)
+    );
+    Reply::ok(&body)
 }
 
 fn blocking() -> Reply {
-    Reply::ok(&json!({
-        "action": "GUARDRAIL_INTERVENED",
-        "assessments": [{
-            "topicPolicy": { "topics": [{ "name": "denied", "type": "DENY", "action": "BLOCKED" }] },
-        }],
-        "outputs": [{ "text": "blocked text" }],
-        "usage": { "textUnits": 7 },
-    }))
+    Reply::ok(
+        r#"{
+            "action": "GUARDRAIL_INTERVENED",
+            "assessments": [{
+                "topicPolicy": { "topics": [{ "name": "denied", "type": "DENY", "action": "BLOCKED" }] }
+            }],
+            "outputs": [{ "text": "blocked text" }],
+            "usage": { "textUnits": 7 }
+        }"#,
+    )
 }
 
 struct Scripted {
@@ -182,10 +173,10 @@ impl GuardrailTransport for Scripted {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(request);
-        let outcome = reply.map(|reply| UpstreamResponse {
-            status: reply.status,
+        let outcome = reply.map(|given| UpstreamResponse {
+            status: given.status,
             headers: HeaderMap::new(),
-            body: reply.body,
+            body: given.body,
         });
         ready(outcome.ok_or(TransportError::Closed))
     }
@@ -320,17 +311,22 @@ fn fixed_now() -> SystemTime {
         .unwrap_or(UNIX_EPOCH)
 }
 
-fn message<T>(role: &str, content: &T) -> Message
-where
-    T: Serialize,
-{
-    let wire = json!({ "role": role, "content": content }).to_string();
+fn message(role: &str, text: &str) -> Message {
+    structured_message(role, &quoted(text))
+}
+
+// the content arrives as JSON text, so a grounded turn can pass its own query and guard-content items
+fn structured_message(role: &str, content: &str) -> Message {
+    let wire = format!(r#"{{"role":{},"content":{content}}}"#, quoted(role));
     serde_json::from_str(&wire).expect("the message parses")
 }
 
 fn model_response(text: &str) -> ModelResponse {
-    let wire = json!({ "choices": [{ "message": { "role": "assistant", "content": text } }] });
-    serde_json::from_str(&wire.to_string()).expect("the response parses")
+    let wire = format!(
+        r#"{{"choices":[{{"message":{{"role":"assistant","content":{}}}}}]}}"#,
+        quoted(text)
+    );
+    serde_json::from_str(&wire).expect("the response parses")
 }
 
 fn input_scan(messages: &[Message]) -> ChecksScan<'_> {
@@ -389,12 +385,28 @@ fn records_of(data: &BTreeMap<String, GuardrailValue>) -> Vec<Json> {
     serde_json::from_str(&text).expect("the records are a list")
 }
 
-fn expected<T>(value: &T) -> Json
+fn expected(source: &str) -> Json {
+    serde_json::from_str(source).expect("the expected JSON parses")
+}
+
+fn wire_of<T>(value: &T) -> Json
 where
     T: Serialize,
 {
-    let text = serde_json::to_string(value).expect("the expected value encodes");
-    serde_json::from_str(&text).expect("the expected value parses")
+    let text = serde_json::to_string(value).expect("the wire value encodes");
+    serde_json::from_str(&text).expect("the wire value parses")
+}
+
+fn text(value: &str) -> Json {
+    Json::Text(value.to_owned())
+}
+
+fn number(value: u64) -> Json {
+    Json::Number(Number::from(value))
+}
+
+fn quoted(value: &str) -> String {
+    serde_json::to_string(value).expect("the text encodes as a JSON string")
 }
 
 fn field_of(value: &Json, key: &str) -> Json {
