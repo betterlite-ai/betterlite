@@ -82,7 +82,15 @@ where
         Some(supplied) => supplied.transport.clone(),
         None => deps.source.client(fields.ssl_verify)?,
     };
-    let headers = environment_headers(deps.config, call, &fields, &caller);
+    let validated = deps.config.validate_environment(ImageEditEnvironment {
+        headers: &caller,
+        model: call.model,
+        api_key: fields.api_key.as_ref(),
+        litellm_params: Some(call.litellm_params),
+        api_base: fields.api_base.as_deref(),
+    });
+    // The explicit map overwrites what the environment hook returned
+    let headers = request::merge(validated, call.extra_headers);
     let resolved = deps
         .config
         .get_complete_url(call.model, fields.api_base.as_deref(), call.litellm_params)
@@ -156,23 +164,6 @@ impl<C: BaseImageEditConfig, Client: WriteTransport> Prepared<'_, '_, C, Client>
     }
 }
 
-// The environment hook completes the caller's own headers, and the explicit map overwrites what it returns
-fn environment_headers<C: BaseImageEditConfig>(
-    config: &C,
-    call: &ImageEditCall<'_>,
-    fields: &Fields,
-    caller: &ImageHeaders,
-) -> ImageHeaders {
-    let validated = config.validate_environment(ImageEditEnvironment {
-        headers: caller,
-        model: call.model,
-        api_key: fields.api_key.as_ref(),
-        litellm_params: Some(call.litellm_params),
-        api_base: fields.api_base.as_deref(),
-    });
-    request::merge(validated, call.extra_headers)
-}
-
 // One send, no retry: a transport failure becomes a provider error, and a status of 400 or more becomes one too
 async fn send<C, Client>(
     config: &C,
@@ -226,7 +217,10 @@ where
 }
 
 // The config's hook decides the class; the shared converter decides the status, the message and whether the status was synthesized
-fn provider<C: BaseImageEditConfig>(config: &C, failure: &Failure) -> ImageEditHttpError<C::Error> {
+fn provider<C>(config: &C, failure: &Failure) -> ImageEditHttpError<C::Error>
+where
+    C: BaseImageEditConfig,
+{
     let base = handle_error(&failure.facts, None);
     let mut error = config.get_error_class(&base.message, base.status_code, &failure.headers);
     if base.status_code_is_synthesized {

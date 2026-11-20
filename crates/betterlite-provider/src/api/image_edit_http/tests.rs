@@ -19,10 +19,10 @@ use serde_json::Number;
 use self::support::{
     API_BASE, EDITS_URL, Event, Fixture, FixtureError, MODEL, RESPONSE_BODY, RecordingConfig,
     Reply, Source, Transport, assert_async_matches_sync, assert_async_transform_once,
-    assert_reply_failure, assert_sync_logging, assert_sync_request, assert_sync_result,
-    assert_transform_failure, assert_validation_never_selects, body_json, deps, edit_call,
-    edit_transport, fact_headers, file_part, headers, image, image_response, json, litellm_params,
-    params, params_json, recorded_events, validated_transform_event,
+    assert_sync_logging, assert_sync_request, assert_sync_result, assert_validation_never_selects,
+    body_json, call_deps, edit_call, edit_transport, fact_headers, headers, image, image_response,
+    json, litellm_params, params, params_json, part_facts, recorded_events,
+    validated_transform_event,
 };
 use super::error::{ImageEditHttpError, RequestError};
 use super::facts::{self, Failure, SendError, Sent};
@@ -38,7 +38,7 @@ async fn edit_finalization_and_multipart() {
     let config = RecordingConfig::new(API_BASE);
     let transport = edit_transport();
     let source = Source::new(transport.clone());
-    let deps = deps(&config, &source, None);
+    let deps = call_deps(&config, &source, None);
     let image = image();
     let options = params(r#"{"extra_headers":{"x":"option"}}"#);
     let litellm = litellm_params();
@@ -77,7 +77,7 @@ async fn edit_finalization_and_multipart() {
     let async_config = RecordingConfig::new(API_BASE);
     let async_transport = edit_transport();
     let async_source = Source::new(async_transport.clone());
-    let async_deps = deps(&async_config, &async_source, None);
+    let async_deps = call_deps(&async_config, &async_source, None);
     assert_async_matches_sync(&async_deps, &call, &async_transport, &image, &options).await;
 }
 
@@ -87,7 +87,7 @@ async fn edit_json_and_unused_arguments() {
     let config = RecordingConfig::new(API_BASE).without_multipart();
     let transport = Transport::replying(Reply::json(200, RESPONSE_BODY));
     let source = Source::new(transport.clone());
-    let deps = deps(&config, &source, None);
+    let deps = call_deps(&config, &source, None);
     let options = ImageParams::new();
     let litellm =
         params(r#"{"api_key":"key","api_base":"http://mock.test/v1","ssl_verify":false}"#);
@@ -114,7 +114,7 @@ async fn edit_json_and_unused_arguments() {
     let async_config = RecordingConfig::new(API_BASE).without_multipart();
     let async_transport = Transport::replying(Reply::json(200, RESPONSE_BODY));
     let async_source = Source::new(async_transport.clone());
-    let async_deps = deps(&async_config, &async_source, None);
+    let async_deps = call_deps(&async_config, &async_source, None);
     let absent_verify = params(r#"{"api_key":"key","api_base":"http://mock.test/v1"}"#);
     let async_call = edit_call(Some("change"), None, &options, &absent_verify, None);
     let mut async_fixture = Fixture::new();
@@ -136,7 +136,7 @@ async fn a_supplied_client_serves_only_its_own_mode() {
     let supplied = Transport::replying(Reply::json(200, RESPONSE_BODY));
     let pooled = Transport::replying(Reply::json(200, RESPONSE_BODY));
     let source = Source::new(pooled.clone());
-    let deps = deps(
+    let deps = call_deps(
         &config,
         &source,
         Some(SuppliedClient {
@@ -170,7 +170,7 @@ async fn edit_transport_failure() {
     let transport =
         Transport::replying(Reply::json(400, "bad image").with_header("x-error", "bad"));
     let source = Source::new(transport);
-    let deps = deps(&config, &source, None);
+    let deps = call_deps(&config, &source, None);
     let image = image();
     let options = ImageParams::new();
     let litellm = litellm_params();
@@ -221,7 +221,7 @@ async fn a_send_failure_is_a_synthesized_500() {
     let config = RecordingConfig::new(API_BASE);
     let transport = Transport::failing(TransportError::Closed);
     let source = Source::new(transport.clone());
-    let deps = deps(&config, &source, None);
+    let deps = call_deps(&config, &source, None);
     let options = ImageParams::new();
     let litellm = litellm_params();
     let call = edit_call(Some("change"), None, &options, &litellm, None);
@@ -301,7 +301,7 @@ async fn validation_errors_never_select_a_client() {
     let config = RecordingConfig::new(API_BASE);
     let transport = Transport::replying(Reply::json(200, RESPONSE_BODY));
     let source = Source::new(transport.clone());
-    let deps = deps(&config, &source, None);
+    let deps = call_deps(&config, &source, None);
     let good = litellm_params();
     let mut fixture = Fixture::new();
     assert_validation_never_selects(&mut fixture, &deps, &good).await;
@@ -316,7 +316,7 @@ async fn a_url_failure_propagates_before_the_transform() {
     let config = RecordingConfig::new(API_BASE).failing_url();
     let transport = Transport::replying(Reply::json(200, RESPONSE_BODY));
     let source = Source::new(transport.clone());
-    let deps = deps(&config, &source, None);
+    let deps = call_deps(&config, &source, None);
     let options = ImageParams::new();
     let litellm = litellm_params();
     let call = edit_call(Some("change"), None, &options, &litellm, None);
@@ -348,7 +348,7 @@ async fn a_transform_failure_propagates() {
     let sync_config = RecordingConfig::new(API_BASE).failing_transform();
     let sync_transport = Transport::replying(Reply::json(200, RESPONSE_BODY));
     let sync_source = Source::new(sync_transport.clone());
-    let sync_deps = deps(&sync_config, &sync_source, None);
+    let sync_deps = call_deps(&sync_config, &sync_source, None);
     let mut sync_fixture = Fixture::new();
     let Err(sync_error) = sync_fixture.run(ClientKind::Sync, &sync_deps, &call).await else {
         panic!("a refusing sync transform fails the call");
@@ -359,7 +359,7 @@ async fn a_transform_failure_propagates() {
     let async_config = RecordingConfig::new(API_BASE).failing_transform();
     let async_transport = Transport::replying(Reply::json(200, RESPONSE_BODY));
     let async_source = Source::new(async_transport.clone());
-    let async_deps = deps(&async_config, &async_source, None);
+    let async_deps = call_deps(&async_config, &async_source, None);
     let mut async_fixture = Fixture::new();
     let Err(async_error) = async_fixture
         .run(ClientKind::Asynchronous, &async_deps, &call)
@@ -390,7 +390,7 @@ async fn a_response_transform_failure_propagates() {
     let config = RecordingConfig::new(API_BASE).failing_response();
     let transport = Transport::replying(Reply::json(200, RESPONSE_BODY));
     let source = Source::new(transport.clone());
-    let deps = deps(&config, &source, None);
+    let deps = call_deps(&config, &source, None);
     let options = ImageParams::new();
     let litellm = litellm_params();
     let call = edit_call(Some("change"), None, &options, &litellm, None);
@@ -416,7 +416,7 @@ async fn finalizer_failures_send_nothing() {
     let config = RecordingConfig::new(API_BASE).finalizing_nested();
     let transport = Transport::replying(Reply::json(200, RESPONSE_BODY));
     let source = Source::new(transport.clone());
-    let deps = deps(&config, &source, None);
+    let deps = call_deps(&config, &source, None);
     let options = ImageParams::new();
     let litellm = litellm_params();
     let call = edit_call(Some("change"), None, &options, &litellm, None);
@@ -443,7 +443,7 @@ async fn logging_failure_sends_nothing() {
     let config = RecordingConfig::new(API_BASE);
     let transport = Transport::replying(Reply::json(200, RESPONSE_BODY));
     let source = Source::new(transport.clone());
-    let deps = deps(&config, &source, None);
+    let deps = call_deps(&config, &source, None);
     let options = ImageParams::new();
     let litellm = litellm_params();
     let call = edit_call(Some("change"), None, &options, &litellm, None);
@@ -464,7 +464,7 @@ async fn a_resolved_url_that_is_not_a_url_fails_the_request() {
     let config = RecordingConfig::new("not a url");
     let transport = Transport::replying(Reply::json(200, RESPONSE_BODY));
     let source = Source::new(transport.clone());
-    let deps = deps(&config, &source, None);
+    let deps = call_deps(&config, &source, None);
     let options = ImageParams::new();
     let litellm = ImageParams::new();
     let call = edit_call(Some("change"), None, &options, &litellm, None);
@@ -482,7 +482,7 @@ async fn a_resolved_url_that_is_not_a_url_fails_the_request() {
     assert!(transport.requests().is_empty());
     assert!(config.events().contains(&Event::Finalize {
         url: String::from("not a url/images/edits"),
-        data: params_json(),
+        data: params(r#"{"prompt":"change","revision":"final"}"#),
     }));
 }
 
@@ -491,7 +491,7 @@ async fn request_headers_reject_names_and_values() {
     let config = RecordingConfig::new(API_BASE);
     let transport = Transport::replying(Reply::json(200, RESPONSE_BODY));
     let source = Source::new(transport.clone());
-    let deps = deps(&config, &source, None);
+    let deps = call_deps(&config, &source, None);
     let options = ImageParams::new();
     let good = litellm_params();
     let mut fixture = Fixture::new();
@@ -529,7 +529,7 @@ async fn an_absent_prompt_logs_null_input() {
     let config = RecordingConfig::new(API_BASE).without_multipart();
     let transport = Transport::replying(Reply::json(200, RESPONSE_BODY));
     let source = Source::new(transport);
-    let deps = deps(&config, &source, None);
+    let deps = call_deps(&config, &source, None);
     let options = ImageParams::new();
     let litellm = litellm_params();
     let call = edit_call(None, None, &options, &litellm, None);
@@ -550,7 +550,7 @@ async fn sync_logging_renders_non_utf8_file_content_as_null() {
     let config = RecordingConfig::new(API_BASE);
     let transport = Transport::replying(Reply::json(200, RESPONSE_BODY));
     let source = Source::new(transport);
-    let deps = deps(&config, &source, None);
+    let deps = call_deps(&config, &source, None);
     let options = ImageParams::new();
     let litellm = litellm_params();
     let binary = ImageFile {
@@ -622,19 +622,17 @@ fn multipart_fields_spell_each_scalar_and_repeat_lists() {
         params(r#"{"none":null,"flag":true,"count":3,"ratio":1.5,"text":"v","many":["a",2,null]}"#);
     let parts =
         multipart_parts(&data, &ImageFiles::new()).expect("every scalar has a form spelling");
-    assert_eq!(
-        parts,
-        vec![
-            file_part("none", None, None, b""),
-            file_part("flag", None, None, b"true"),
-            file_part("count", None, None, b"3"),
-            file_part("ratio", None, None, b"1.5"),
-            file_part("text", None, None, b"v"),
-            file_part("many", None, None, b"a"),
-            file_part("many", None, None, b"2"),
-            file_part("many", None, None, b""),
-        ]
-    );
+    let expected: Vec<(&str, Option<&str>, Option<&str>, &[u8])> = vec![
+        ("none", None, None, b"".as_slice()),
+        ("flag", None, None, b"true".as_slice()),
+        ("count", None, None, b"3".as_slice()),
+        ("ratio", None, None, b"1.5".as_slice()),
+        ("text", None, None, b"v".as_slice()),
+        ("many", None, None, b"a".as_slice()),
+        ("many", None, None, b"2".as_slice()),
+        ("many", None, None, b"".as_slice()),
+    ];
+    assert_eq!(part_facts(&parts), expected);
     assert!(matches!(
         multipart_parts(&params(r#"{"nested":{"a":1}}"#), &ImageFiles::new()),
         Err(RequestError::FormValue { field }) if field == "nested"
@@ -674,14 +672,12 @@ fn file_parts_guess_the_content_type_and_drop_empty_names() {
         ),
     ];
     let parts = multipart_parts(&ImageParams::new(), &files).expect("files are always form parts");
-    assert_eq!(
-        parts,
-        vec![
-            file_part("image", Some("b.png"), Some("image/png"), b"x"),
-            file_part("other", None, None, b"y"),
-            file_part("empty", None, Some("text/plain"), b"z"),
-        ]
-    );
+    let expected: Vec<(&str, Option<&str>, Option<&str>, &[u8])> = vec![
+        ("image", Some("b.png"), Some("image/png"), b"x".as_slice()),
+        ("other", None, None, b"y".as_slice()),
+        ("empty", None, Some("text/plain"), b"z".as_slice()),
+    ];
+    assert_eq!(part_facts(&parts), expected);
 }
 
 #[test]

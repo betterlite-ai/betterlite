@@ -40,7 +40,7 @@ pub enum RequestError {
 pub enum ImageEditHttpError<ConfigError: Error + 'static> {
     #[error("{}", .0.message)]
     Provider(Box<ProviderError>),
-    #[error("the image edit provider config failed: {source}")]
+    #[error("the image edit provider config failed: {0}")]
     Config(#[source] ConfigError),
     #[error(transparent)]
     Request(#[from] RequestError),

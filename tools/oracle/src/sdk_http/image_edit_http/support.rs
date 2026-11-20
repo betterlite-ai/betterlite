@@ -1,10 +1,7 @@
 use std::collections::BTreeMap;
-use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use betterlite_config::proxy::ProxyPolicy;
-use betterlite_config::types::ProxyTrust;
 use betterlite_core::api::vector_store_http_write::error::ClientError;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_logging::logging_pre_post::env::{
@@ -35,6 +32,7 @@ use thiserror::Error;
 use url::Url;
 
 use super::super::error::SdkHttpError;
+use super::super::vector_query_embedding::outbound_client;
 use super::LoggedCall;
 
 // The client the handler selects; the case env only carries the proxy settings
@@ -49,12 +47,7 @@ impl ClientSource for Source {
 }
 
 pub(super) fn source(env: &BTreeMap<String, String>) -> Result<Source, SdkHttpError> {
-    let policy = Arc::new(
-        ProxyPolicy::resolve(&ProxyTrust::default(), env).map_err(SdkHttpError::ProxyPolicy)?,
-    );
-    let client =
-        ProxiedClient::outbound(&policy).map_err(|error| SdkHttpError::Client(Box::new(error)))?;
-    Ok(Source(client))
+    Ok(Source(outbound_client(env)?))
 }
 
 // The config's own refusals, kept apart from the provider's answer
@@ -165,11 +158,10 @@ pub(super) struct Fixture {
 
 impl Fixture {
     pub(super) fn new() -> Result<Self, SdkHttpError> {
-        let text = String::from(
+        let init: LoggingInit = serde_json::from_str(
             r#"{"model":"gpt-image-1","call_type":"image_edit","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#,
-        );
-        let init: LoggingInit = serde_json::from_str(&text)
-            .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
+        )
+        .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
         let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SdkHttpError::Redactor)?;
         let now = DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00")
             .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;

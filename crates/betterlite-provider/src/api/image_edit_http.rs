@@ -25,11 +25,15 @@ where
     prepared.finish(transformed, log).await
 }
 
-pub async fn async_image_edit_handler<C: BaseImageEditConfig, S: ClientSource>(
+pub async fn async_image_edit_handler<C, S>(
     deps: &ImageEditDeps<'_, C, S>,
     call: &ImageEditCall<'_>,
     log: &mut LogContext<'_, '_>,
-) -> Result<ImageEditOutcome, ImageEditHttpError<C::Error>> {
+) -> Result<ImageEditOutcome, ImageEditHttpError<C::Error>>
+where
+    C: BaseImageEditConfig,
+    S: ClientSource,
+{
     let prepared = prepare(ClientKind::Asynchronous, deps, call)?;
     let request = prepared.request();
     let pending = deps.config.async_transform_image_edit_request(request);

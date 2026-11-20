@@ -547,7 +547,7 @@ impl Fixture {
     }
 }
 
-pub(super) const fn deps<'deps>(
+pub(super) const fn call_deps<'deps>(
     config: &'deps RecordingConfig,
     source: &'deps Source,
     supplied: Option<SuppliedClient<'deps, Transport>>,
@@ -564,6 +564,22 @@ pub(super) fn body_json(request: &WriteRequest) -> Json {
         panic!("the request carries a JSON body");
     };
     serde_json::from_slice(body).expect("the request body is JSON")
+}
+
+// The encoder's part type carries no equality, so a body compares through the fields a part is made of
+pub(super) fn part_facts(
+    parts: &[MultipartPart],
+) -> Vec<(&str, Option<&str>, Option<&str>, &[u8])> {
+    let mut facts = Vec::new();
+    for part in parts {
+        facts.push((
+            part.name.as_str(),
+            part.file_name.as_deref(),
+            part.content_type.as_deref(),
+            part.data.as_slice(),
+        ));
+    }
+    facts
 }
 
 pub(super) const CALL_TIMEOUT: Duration = Duration::from_secs(5);
@@ -605,20 +621,6 @@ pub(super) fn image_response() -> ImageResponse {
 
 pub(super) fn litellm_params() -> ImageParams {
     params(r#"{"api_key":"key","api_base":"http://mock.test/v1"}"#)
-}
-
-pub(super) fn file_part(
-    name: &str,
-    file_name: Option<&str>,
-    content_type: Option<&str>,
-    data: &[u8],
-) -> MultipartPart {
-    MultipartPart {
-        name: name.to_owned(),
-        file_name: file_name.map(str::to_owned),
-        content_type: content_type.map(str::to_owned),
-        data: data.to_vec(),
-    }
 }
 
 pub(super) fn edit_transport() -> Transport {
@@ -677,14 +679,12 @@ pub(super) fn assert_sync_request(transport: &Transport) {
     let RequestBody::Multipart { parts, .. } = &request.body else {
         panic!("the fixture config asks for a multipart body");
     };
-    assert_eq!(
-        parts,
-        &vec![
-            file_part("prompt", None, None, b"change"),
-            file_part("revision", None, None, b"final"),
-            file_part("image", Some("a.png"), Some("image/png"), b"abc"),
-        ]
-    );
+    let expected: Vec<(&str, Option<&str>, Option<&str>, &[u8])> = vec![
+        ("prompt", None, None, b"change".as_slice()),
+        ("revision", None, None, b"final".as_slice()),
+        ("image", Some("a.png"), Some("image/png"), b"abc".as_slice()),
+    ];
+    assert_eq!(part_facts(parts), expected);
     assert!(parts.iter().all(|part| part.name != "none"));
 }
 

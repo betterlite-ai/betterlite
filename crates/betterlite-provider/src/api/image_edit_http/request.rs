@@ -1,3 +1,5 @@
+use std::str::from_utf8;
+
 use betterlite_http::proxy::multipart::MultipartPart;
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
 use betterlite_logging::logging_pre_post::error::PrePostError;
@@ -204,7 +206,7 @@ fn file_mapping(files: &ImageFiles) -> IndexMap<String, Json> {
         );
         record.insert(
             String::from("content"),
-            std::str::from_utf8(&file.content)
+            from_utf8(&file.content)
                 .ok()
                 .map_or(Json::Null, |content| Json::Text(content.to_owned())),
         );
