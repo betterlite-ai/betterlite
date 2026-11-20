@@ -9,21 +9,28 @@ use betterlite_openai::output_limits::build::{
     OutputLimitResponse, RecoveredBody, Recovery, build_limit_response,
 };
 use betterlite_openai::stream::chunk::{Chunk, Delta};
-use betterlite_provider::operation::ChatCompletion;
+use betterlite_provider::operation::{ChatCompletion, OperationResult};
 use betterlite_tokenizer::count::Counter;
 use futures_util::StreamExt as _;
 use futures_util::stream;
 
 use super::ChatCalls;
 
-// the buffered answer for an output-limit 400: the completion restamped with the model the client asked for
-pub(crate) async fn completion(
+// the buffered answer for a decoded result: the recovered completion, or the provider's own answer
+pub(crate) async fn completed(
     calls: &ChatCalls,
-    sent: &JsonValue,
+    result: OperationResult,
     headers: HeaderMap,
     client_model: Option<&str>,
 ) -> Result<(ChatCompletion, HeaderMap), ChatFailure> {
-    recovered_completion(&calls.executor, &calls.counter, sent, headers, client_model).await
+    if let OperationResult::OutputLimit { sent } = &result {
+        return recovered_completion(&calls.executor, &calls.counter, sent, headers, client_model)
+            .await;
+    }
+    let OperationResult::Chat(completion) = result else {
+        return Err(ChatFailure::Mismatched);
+    };
+    Ok((completion, headers))
 }
 
 // the same answer for a route that holds the executor and the token counter itself
@@ -35,13 +42,13 @@ pub(crate) async fn recovered_completion(
     client_model: Option<&str>,
 ) -> Result<(ChatCompletion, HeaderMap), ChatFailure> {
     let answer = recover(executor, tokens, sent, headers).await?;
-    let RecoveredBody::Completion(response) = answer.body else {
-        return Err(ChatFailure::Mismatched);
-    };
-    Ok((
-        ChatCompletion::OpenAi(Box::new(response.for_client(client_model))),
-        answer.headers,
-    ))
+    match answer.body {
+        RecoveredBody::Completion(response) => Ok((
+            ChatCompletion::OpenAi(Box::new(response.for_client(client_model))),
+            answer.headers,
+        )),
+        RecoveredBody::Chunk(_) => Err(ChatFailure::Mismatched),
+    }
 }
 
 // the two frames LiteLLM's stream wrapper sends for the one recovered chunk

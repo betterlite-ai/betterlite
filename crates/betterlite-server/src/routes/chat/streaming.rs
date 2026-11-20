@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use async_trait::async_trait;
 use axum::body::Body;
@@ -89,16 +89,13 @@ impl ChatCall for ChatCalls {
             answer_chat(&self.executor, call.request, &call.deployment, control)
                 .await
                 .map_err(chat_failure)?;
-        let (completion, upstream_headers) = if let OperationResult::OutputLimit { sent } = &result
-        {
-            recovery::completion(self, sent, upstream_headers, call.request.model.as_deref())
-                .await?
-        } else {
-            let OperationResult::Chat(completion) = result else {
-                return Err(ChatFailure::Mismatched);
-            };
-            (completion, upstream_headers)
-        };
+        let (completion, upstream_headers) = recovery::completed(
+            self,
+            result,
+            upstream_headers,
+            call.request.model.as_deref(),
+        )
+        .await?;
         let body = serde_json::to_vec(&completion)
             .map_err(|source| ChatFailure::Route(ChatError::Encode { source }))?;
         Ok(ChatCompletionAnswer {

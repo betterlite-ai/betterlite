@@ -25,7 +25,6 @@ use betterlite_openai::completion_chat_bridge::answer::text_answer_body;
 use betterlite_openai::completion_chat_bridge::{CompletionEndpoint, chat_request};
 use betterlite_openai::text_completion_execution::CompletionExecutor;
 use betterlite_openai::text_completion_request::{CompletionRequest, CompletionRequestError};
-use betterlite_provider::operation::OperationResult;
 use betterlite_tokenizer::count::Counter;
 use tokio::sync::OnceCell;
 use uuid::Uuid;
@@ -188,7 +187,24 @@ async fn execute(
 ) -> Response {
     let asked_model = request.model.clone();
     let endpoint = state.execution.endpoint(deployment).await;
-    let operation = operation(state, request, deployment, call_id);
+    let calls = Arc::new(CompletionCalls {
+        state: Arc::clone(&state.state),
+        execution: Arc::clone(&state.execution),
+        counter: state.counter.clone(),
+    });
+    let streaming = request.stream == Some(true);
+    let call = TextCompletionRequest {
+        call_id: call_id.to_owned(),
+        model_id: deployment.model_id.clone(),
+        request: Box::new(request),
+        dispatch: Arc::clone(&state.dispatch),
+        calls,
+    };
+    let operation = if streaming {
+        Operation::TextStream(call)
+    } else {
+        Operation::TextCompletion(call)
+    };
     let context = DispatchContext::start(CallInputs {
         now: SystemTime::now,
         id: Uuid::new_v4,
@@ -255,31 +271,5 @@ fn chat_response(
             };
             render(&answer, call_id, state.include_call_id)
         }
-    }
-}
-
-fn operation(
-    state: &CompletionState,
-    request: CompletionRequest,
-    deployment: &ChatDeployment,
-    call_id: &str,
-) -> Operation {
-    let calls = Arc::new(CompletionCalls {
-        state: Arc::clone(&state.state),
-        execution: Arc::clone(&state.execution),
-        counter: state.counter.clone(),
-    });
-    let streaming = request.stream == Some(true);
-    let call = TextCompletionRequest {
-        call_id: call_id.to_owned(),
-        model_id: deployment.model_id.clone(),
-        request: Box::new(request),
-        dispatch: Arc::clone(&state.dispatch),
-        calls,
-    };
-    if streaming {
-        Operation::TextStream(call)
-    } else {
-        Operation::TextCompletion(call)
     }
 }

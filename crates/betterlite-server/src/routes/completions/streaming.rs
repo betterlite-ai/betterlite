@@ -147,8 +147,7 @@ impl FrameSource<io::Error> for ChunkFrames {
     }
 }
 
-// The completion route's buffered answer for a chat deployment: the chat completion the provider sent, or
-// the length-truncated reply LiteLLM rebuilds for an output-limit 400, converted either way.
+// the completion route's buffered chat answer: the provider's completion, or the output-limit 400's reply, converted
 pub(super) async fn buffered(
     calls: &CompletionCalls,
     request: &CompletionRequest,
@@ -180,8 +179,7 @@ async fn recovered_completion(
         .map_err(|failure| TextCompletionFailure::internal(&failure.to_string()))
 }
 
-// The same answer streamed: the provider's chat stream, or the two recovered frames, read as the text
-// completion chunks the route sends.
+// the same answer streamed: the provider's chat stream, or the two recovered frames, read as the route's chunks
 pub(super) async fn streamed(
     calls: &CompletionCalls,
     call: &TextCompletionCallInput<'_>,
