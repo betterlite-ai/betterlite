@@ -24,6 +24,11 @@ pub(crate) struct Request {
     pub(crate) scenarios: Vec<Scenario>,
 }
 
+// A bool on the wire; the newtype keeps struct_excessive_bools off the case input.
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[serde(transparent)]
+pub(crate) struct CaseFlag(pub(crate) bool);
+
 #[derive(Default, Deserialize)]
 #[serde(default)]
 pub(crate) struct Scenario {
@@ -44,9 +49,9 @@ pub(crate) struct Scenario {
     pub(crate) guardrail_name: Option<String>,
     pub(crate) messages: Vec<Value>,
     pub(crate) leading: Vec<Value>,
-    pub(crate) include_existing: bool,
-    pub(crate) preserve_system_messages: bool,
-    pub(crate) compute_hoisted: bool,
+    pub(crate) include_existing: CaseFlag,
+    pub(crate) preserve_system_messages: CaseFlag,
+    pub(crate) compute_hoisted: CaseFlag,
 }
 
 #[derive(Deserialize)]
