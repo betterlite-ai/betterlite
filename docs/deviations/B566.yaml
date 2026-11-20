@@ -1,0 +1,21 @@
+task: B566
+deviations:
+  - what: >-
+      On the shared BasePassthroughConfig trait path a successful OCR projection returns the decoded OCRResponse
+      but leaves the call type unchanged, and an OCR decode failure names the endpoint instead of the reply's
+      request URL in its warning.
+    why: >-
+      B3570's PassthroughLogging has no OCR call type and its RelayedResponse carries neither the reply headers nor
+      the request URL, so TraitFoundryLogging cannot set aocr and passes the endpoint as the request URL. The
+      inherent logging_relayed_response keeps LiteLLM's call type and warning text for a route that holds both;
+      the_trait_path_logs_ocr_without_the_ocr_call_type proves the trait path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/passthrough/transformation.py#L182-L188
+  - what: >-
+      A non-UTF-8 reply body ends the standard projection with no logged response, where LiteLLM logs
+      httpx_response.text with replacement characters.
+    why: >-
+      betterlite's relayed text is a String, so bytes that are not UTF-8 have no lossless value to log. The Azure
+      relay shapes and the OCR projection decode their own bytes and keep LiteLLM's behavior;
+      undecodable_standard_bodies_log_nothing proves the fallback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/passthrough/transformation.py#L71-L76
+kept_bugs: []

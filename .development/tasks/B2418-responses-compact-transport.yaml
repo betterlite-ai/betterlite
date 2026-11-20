@@ -25,6 +25,11 @@ description: >-
   and 25 wiring lines, 495 total within 540.
 scope:
   paths:
+  - "crates/betterlite-core/src/api/vector_store_http_write/service.rs"
+  - "crates/betterlite-core/src/api/vector_store_http_write/service/facts.rs"
+  - "crates/betterlite-core/src/api/vector_store_http_write.rs"
+  - "crates/betterlite-core/src/api/vector_store_http_write/error.rs"
+  - "crates/betterlite-core/src/api/vector_store_http_write/**"
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/responses_compact_http.rs
   - crates/betterlite-core/src/api/responses_compact_http/**

@@ -1,0 +1,66 @@
+kind: helper
+name: deployment-model-info-mode-display-whitespace
+call:
+  deployment_model_info:
+    function: configured
+    model_list:
+      - model_name: texts
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: a
+          mode: "  Chat  "
+          display_name: " Friendly Name "
+      - model_name: texts
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: b
+          mode: completion
+          display_name: Other
+      - model_name: blank
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: c
+          mode: "   "
+          display_name: ""
+      - model_name: numeric
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: d
+          mode: 5
+          display_name: false
+    model_cost: {}
+    arguments:
+      model_name: texts
+calls:
+  - deployment_model_info:
+      function: configured
+      model_list:
+        - model_name: blank
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: c
+            mode: "   "
+            display_name: ""
+      model_cost: {}
+      arguments:
+        model_name: blank
+  - deployment_model_info:
+      function: configured
+      model_list:
+        - model_name: numeric
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: d
+            mode: 5
+            display_name: false
+      model_cost: {}
+      arguments:
+        model_name: numeric
+env: {}
+compare: {ignore: []}

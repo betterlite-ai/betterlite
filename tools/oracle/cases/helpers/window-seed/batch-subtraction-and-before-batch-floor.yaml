@@ -1,0 +1,11 @@
+kind: helper
+name: batch-subtraction-and-before-batch-floor
+call:
+  window_seed:
+    steps:
+      - {kind: seed_base, name: subtracts-this-batch, total: 12.5, before_batch: 3.25, batch_spend: 2.5}
+      - {kind: seed_base, name: floors-at-before-batch, total: 12.5, before_batch: 11.5, batch_spend: 2.5}
+      - {kind: seed_base, name: empty-totals, total: 0.0, before_batch: 0.0, batch_spend: 0.0}
+env: {}
+compare:
+  ignore: []

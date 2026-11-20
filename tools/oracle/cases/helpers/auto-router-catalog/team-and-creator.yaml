@@ -1,0 +1,28 @@
+kind: helper
+name: auto-router-catalog-team-and-creator
+call:
+  b10021:
+    rows:
+      - model_id: with-team
+        model_name: with-team
+        litellm_params: {model: auto_router/complexity_router}
+        model_info: {team_id: team-a}
+        created_by: creator-a
+      - model_id: without-info
+        model_name: without-info
+        litellm_params: {model: auto_router/complexity_router}
+        created_by: creator-b
+      - model_id: empty-info
+        model_name: empty-info
+        litellm_params: {model: auto_router/complexity_router}
+        model_info: {}
+      - model_id: null-team
+        model_name: null-team
+        litellm_params: {model: auto_router/complexity_router}
+        model_info: {team_id: null}
+      - model_id: null-info
+        model_name: null-info
+        litellm_params: {model: auto_router/complexity_router}
+        model_info: null
+env: {}
+compare: {ignore: []}
