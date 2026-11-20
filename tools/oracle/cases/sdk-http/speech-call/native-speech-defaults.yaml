@@ -1,0 +1,46 @@
+kind: sdk_http
+name: sdk-http-speech-call-native-defaults
+env: {}
+call:
+  speech_call:
+    steps:
+      - model: openai/tts-1
+        voice: alloy
+        api_key: sk-oracle
+        api_base: '$API_BASE'
+      - model: openai/tts-1
+        voice: alloy
+        api_key: sk-oracle
+        api_base: '$API_BASE'
+        response_format: wav
+        speed: 0
+        instructions: ''
+        headers: {x-ignored: 'yes'}
+        kwargs: {tags: [one], user: u-1}
+      - model: openai/tts-1
+        voice: alloy
+        api_key: sk-oracle
+        api_base: '$API_BASE'
+        timeout_seconds: 45
+        max_retries: 3
+      - model: openai/tts-1
+        voice: alloy
+        api_key: sk-oracle
+        base_url: '$API_BASE'
+        headers: {x-ignored: 'yes'}
+upstream:
+  - status: 200
+    headers: {}
+    body: {body_kind: bytes, fixture: binary-response.bin, content_type: audio/wav}
+  - status: 200
+    headers: {}
+    body: {body_kind: bytes, fixture: binary-response.bin, content_type: audio/wav}
+  - status: 200
+    headers: {}
+    body: {body_kind: bytes, fixture: binary-response.bin, content_type: audio/wav}
+  - status: 200
+    headers: {}
+    body: {body_kind: bytes, fixture: binary-response.bin, content_type: audio/wav}
+compare:
+  upstream_headers: [authorization, accept, content-type, x-ignored]
+  ignore: []

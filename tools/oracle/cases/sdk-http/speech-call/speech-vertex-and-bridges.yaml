@@ -1,0 +1,21 @@
+kind: sdk_http
+name: sdk-http-speech-call-vertex-and-bridges
+env: {}
+call:
+  speech_call:
+    steps:
+      - model: openai/tts-1
+        voice: alloy
+        api_key: sk-oracle
+        api_base: '$API_BASE'
+upstream:
+  - status: 429
+    headers: {content-type: application/json}
+    body:
+      error: {message: slow down, type: rate_limit_error, param: model, code: rate_limit}
+compare:
+  upstream_headers: [authorization, accept, content-type]
+  ignore:
+    - {pointer: /speech_call/value/steps/0/failure/type, why: betterlite's B011 envelope names a 429 throttling_error where the raw SDK keeps the provider body's type}
+    - {pointer: /speech_call/value/steps/0/failure/code, why: betterlite's B011 envelope reports the status string as the openai code where the raw SDK keeps the provider body's code}
+    - {pointer: /speech_call/value/steps/0/failure/message, why: LiteLLM renders the error body with Python's dict repr and betterlite renders it as JSON}

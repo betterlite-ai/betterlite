@@ -1,0 +1,39 @@
+kind: sdk_http
+name: sdk-http-speech-call-provider-controls-seed
+env:
+  AZURE_API_VERSION: '2024-02-01'
+  ELEVENLABS_API_KEY: el-seed
+call:
+  speech_call:
+    globals:
+      api_base: '$API_BASE'
+      api_key: sk-global
+      num_retries: 0
+    steps:
+      - model: elevenlabs/eleven_seed
+        voice: ' seed '
+        api_base: '$API_BASE'
+        api_key: el-seed
+        kwargs:
+          __elevenlabs_query_params__: {enable_logging: false, unknown: 1}
+      - model: azure/seed-deployment
+        voice: alloy
+        api_base: '$API_BASE'
+        api_key: az-seed
+        api_version: '2024-06-01'
+      - model: vertex_ai/text-to-speech
+        voice: {language_code: en-US}
+        api_base: '$API_BASE'
+        lyria: true
+        operation_body: [0, 1, 2]
+      - model: anthropic/claude-3
+        custom_llm_provider: anthropic
+        api_base: '$API_BASE'
+upstream:
+  - status: 200
+    headers: {}
+    body: {body_kind: bytes, fixture: binary-response.bin, content_type: audio/wav}
+compare:
+  upstream_headers: []
+  ignore:
+    - {pointer: /upstream, why: the injected operations answer the native provider branches without an HTTP request in this seed}

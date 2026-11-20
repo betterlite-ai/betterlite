@@ -1,0 +1,32 @@
+kind: sdk_http
+name: sdk-http-speech-call-defaults-seed
+env:
+  OPENAI_API_KEY: sk-seed
+  OPENAI_BASE_URL: '$API_BASE'
+call:
+  speech_call:
+    steps:
+      - model: openai/tts-1
+        voice: alloy
+        api_base: '$API_BASE'
+        api_key: sk-seed
+      - model: openai/tts-1
+        voice: {}
+        api_base: '$API_BASE'
+        response_format: wav
+        speed: 0
+        instructions: seed
+        timeout_seconds: 30
+        max_retries: 0
+        kwargs: {tags: [seed], user: u-seed}
+upstream:
+  - status: 200
+    headers: {}
+    body: {body_kind: bytes, fixture: binary-response.bin, content_type: audio/wav}
+  - status: 400
+    headers: {content-type: application/json}
+    body:
+      error: {message: bad voice, type: invalid_request_error, param: voice, code: bad_voice}
+compare:
+  upstream_headers: [authorization, content-type]
+  ignore: []
