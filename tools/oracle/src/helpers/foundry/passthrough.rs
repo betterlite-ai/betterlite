@@ -88,29 +88,29 @@ const fn target<'call>(model: &'call str, endpoint: &'call str) -> PassthroughTa
 }
 
 fn root_step(step: &RootStep) -> Value {
-    match foundry_root(&step.api_base) {
-        Ok(root) => json!({"root": root}),
-        Err(_) => json!({"error": {"status": null}}),
-    }
+    foundry_root(&step.api_base).map_or_else(
+        |_| json!({"error": {"status": null}}),
+        |root| json!({"root": root}),
+    )
 }
 
 fn prefix_step(step: &PrefixStep) -> Value {
-    match without_repeated_native_prefix(&step.root, &step.native_endpoint) {
-        Ok(root) => json!({"root": root}),
-        Err(_) => json!({"error": {"status": null}}),
-    }
+    without_repeated_native_prefix(&step.root, &step.native_endpoint).map_or_else(
+        |_| json!({"error": {"status": null}}),
+        |root| json!({"root": root}),
+    )
 }
 
 fn query_step(step: &QueryStep) -> Value {
-    let params = relay_query_params(
+    let relayed = relay_query_params(
         step.request_query_params.as_ref(),
         step.deployment_api_version.as_deref(),
         &step.api_base,
     );
-    match params {
-        Ok(params) => json!({"params": params}),
-        Err(_) => json!({"error": {"status": null}}),
-    }
+    relayed.map_or_else(
+        |_| json!({"error": {"status": null}}),
+        |params| json!({"params": params}),
+    )
 }
 
 fn base_step(step: &BaseStep) -> Value {
@@ -147,10 +147,10 @@ fn validation_step(step: &ValidationStep, sources: &NoSources) -> Value {
         refresh_enabled: false,
         sources,
     };
-    match validate_environment(request) {
-        Ok(headers) => json!({"headers": headers}),
-        Err(_) => json!({"error": {"status": null}}),
-    }
+    validate_environment(request).map_or_else(
+        |_| json!({"error": {"status": null}}),
+        |headers| json!({"headers": headers}),
+    )
 }
 
 fn outcome_fields(
@@ -158,10 +158,10 @@ fn outcome_fields(
 ) -> (&'static str, Option<(&'static str, Value)>) {
     match outcome {
         Some(FoundryRelayedLog::Azure(AzureRelayedLog::Chat(_))) => ("chat", None),
-        Some(FoundryRelayedLog::Azure(AzureRelayedLog::Relay(_))) => ("relay", None),
+        Some(FoundryRelayedLog::Azure(AzureRelayedLog::Relay(_)))
+        | Some(FoundryRelayedLog::Relay(_)) => ("relay", None),
         Some(FoundryRelayedLog::Azure(AzureRelayedLog::Terminal(_))) => ("terminal", None),
         Some(FoundryRelayedLog::Ocr(response)) => ("ocr", Some(("ocr", ocr_fields(response)))),
-        Some(FoundryRelayedLog::Relay(_)) => ("relay", None),
         Some(FoundryRelayedLog::Standard(response)) => (
             "standard",
             serde_json::to_value(&response.response)
