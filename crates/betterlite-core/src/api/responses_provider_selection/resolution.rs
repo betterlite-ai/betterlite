@@ -24,22 +24,22 @@ pub fn resolve_model_provider(
     {
         params.custom_llm_provider = custom_llm_provider.map(str::to_owned);
     }
-    let resolved = resolver.resolve_model(&ResolutionRequest {
+    let outcome = resolver.resolve_model(&ResolutionRequest {
         model,
         custom_llm_provider: params.custom_llm_provider.as_deref(),
         api_base: params.api_base.as_deref(),
         api_key: params.api_key.as_ref(),
     })?;
-    let provider = resolved.provider.slug().to_owned();
+    let provider = outcome.provider.slug().to_owned();
     local_vars.insert(
         String::from("custom_llm_provider"),
         JsonValue::Text(provider.clone()),
     );
-    if let Some(key) = resolved.api_key {
+    if let Some(key) = outcome.api_key {
         params.api_key = Some(key);
     }
-    if let Some(base) = resolved.api_base {
+    if let Some(base) = outcome.api_base {
         params.api_base = Some(base);
     }
-    Ok((strip_responses_routing_prefix(&resolved.model), provider))
+    Ok((strip_responses_routing_prefix(&outcome.model), provider))
 }

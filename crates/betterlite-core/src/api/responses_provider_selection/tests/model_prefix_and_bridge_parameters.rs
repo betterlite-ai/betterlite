@@ -306,13 +306,11 @@ fn a_dynamic_credential_replaces_the_callers() {
     let outcome = resolve_model_provider(&resolver, "gpt-4o", None, &mut params, &mut local_vars)
         .expect("resolution succeeds");
     assert_eq!(outcome, (String::from("gpt-4o"), String::from("openai")));
-    assert_eq!(
-        params
-            .api_key
-            .as_ref()
-            .map(|key| key.expose_secret().as_str()),
-        Some("sk-dynamic")
-    );
+    let key = params
+        .api_key
+        .as_ref()
+        .expect("the dynamic key replaces the caller's");
+    assert_eq!(key.expose_secret(), "sk-dynamic");
     assert_eq!(params.api_base.as_deref(), Some("https://dynamic.test/v1"));
     let calls = resolver.calls();
     assert_eq!(calls[0].api_key.as_deref(), Some("sk-caller"));
@@ -331,13 +329,11 @@ fn an_empty_dynamic_credential_still_replaces_the_callers() {
     let outcome = resolve_model_provider(&resolver, "gpt-4o", None, &mut params, &mut local_vars)
         .expect("resolution succeeds");
     assert_eq!(outcome, (String::from("gpt-4o"), String::from("openai")));
-    assert_eq!(
-        params
-            .api_key
-            .as_ref()
-            .map(|key| key.expose_secret().as_str()),
-        Some("")
-    );
+    let key = params
+        .api_key
+        .as_ref()
+        .expect("an empty key still replaces the caller's");
+    assert_eq!(key.expose_secret(), "");
     assert_eq!(params.api_base.as_deref(), Some(""));
 }
 
@@ -354,13 +350,11 @@ fn an_unresolved_credential_keeps_the_callers() {
         outcome,
         (String::from("responses/gpt-4o"), String::from("openai"))
     );
-    assert_eq!(
-        params
-            .api_key
-            .as_ref()
-            .map(|key| key.expose_secret().as_str()),
-        Some("sk-caller")
-    );
+    let key = params
+        .api_key
+        .as_ref()
+        .expect("an unresolved credential keeps the caller's key");
+    assert_eq!(key.expose_secret(), "sk-caller");
     assert_eq!(params.api_base.as_deref(), Some("https://caller.test/v1"));
 }
 

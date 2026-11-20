@@ -1,7 +1,9 @@
 use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::file_ids::limits::FileIdsError;
 use betterlite_prompts::file_ids::mapping::FileIdMapping;
-use betterlite_prompts::file_ids::responses::{ResponsesContent, ResponsesInput, ResponsesItem};
+use betterlite_prompts::file_ids::responses::{
+    ResponsesContent, ResponsesContentPart, ResponsesInput, ResponsesItem,
+};
 use betterlite_prompts::file_ids::tools::ResponsesTool;
 use rstest::rstest;
 
@@ -196,7 +198,10 @@ fn an_empty_tool_list_is_skipped() {
 #[test]
 fn a_too_large_input_is_a_file_ids_error() {
     let parts = (0..257_u32)
-        .map(|_| json(r#"{"type":"input_text","text":"x"}"#))
+        .map(|_| ResponsesContentPart {
+            kind: Some(String::from("input_text")),
+            fields: Object::new(),
+        })
         .collect();
     let input = ResponsesInput::Items(vec![ResponsesItem {
         content: Some(ResponsesContent::Parts(parts)),
@@ -204,7 +209,8 @@ fn a_too_large_input_is_a_file_ids_error() {
     }]);
     let mut local_vars = ParameterMap::new();
     let error = apply_managed_file_id_mapping(&input, None, None, None, &mut local_vars)
-        .expect_err("the input exceeds the part limit");
+        .err()
+        .expect("the input exceeds the part limit");
     assert!(matches!(
         error,
         FileMappingError::FileIds(FileIdsError::TooManyInputParts { .. })
