@@ -67,12 +67,17 @@ class Fixture:
         events = self.send.get("events")
         if events is not None:
             return httpx.Response(
-                200, headers=headers, content="".join(events).encode(), request=request
+                200,
+                headers=headers,
+                stream=httpx.ByteStream("".join(events).encode()),
+                request=request,
             )
         body = self.send.get("body")
         if body is None:
             body = ""
-        return httpx.Response(200, headers=headers, content=body.encode(), request=request)
+        return httpx.Response(
+            200, headers=headers, stream=httpx.ByteStream(body.encode()), request=request
+        )
 
 
 class TokenEndpoint:
