@@ -5,10 +5,10 @@ use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_openai::chat::response::ChatUsage;
 use betterlite_openai::chat::{ChatMessage, MessageContent};
-use betterlite_openai::openai_base_config::Object;
 use http::header::{CONTENT_TYPE, HeaderValue};
 use http::{HeaderMap, Method};
 use indexmap::IndexMap;
+use serde_json::Number;
 use url::Url;
 
 use crate::aiohttp_openai_dispatch::{AiohttpChatResponse, AiohttpChoice, AiohttpMessage};
@@ -130,7 +130,7 @@ fn chat_call(chat: &ChatOperation, deployment: &Deployment) -> Result<Call, Oper
     Ok(Call {
         url,
         headers,
-        body: serde_json::to_vec(&serde_json::Value::Object(request_body))
+        body: serde_json::to_vec(&JsonValue::Object(request_body))
             .map_err(|source| OperationError::Encode { source })?,
         timeout: deployment.timeout,
         created: i64::try_from(seconds).unwrap_or(0),
@@ -142,21 +142,16 @@ fn chat_call(chat: &ChatOperation, deployment: &Deployment) -> Result<Call, Oper
 fn custom_params(
     chat: &ChatOperation,
     params: &IndexMap<String, JsonValue>,
-) -> Result<Object, OperationError> {
+) -> Result<IndexMap<String, JsonValue>, OperationError> {
     let prompt = prompt_text(&chat.request.messages)?;
-    let mut inner = Object::new();
+    let mut inner = IndexMap::new();
     inner.insert(
         String::from("prompt"),
-        serde_json::Value::Array(vec![serde_json::Value::String(prompt)]),
+        JsonValue::Array(vec![JsonValue::Text(prompt)]),
     );
     inner.insert(
         String::from("max_tokens"),
-        number_or_null(
-            chat.request
-                .max_tokens
-                .map(serde_json::Number::from)
-                .as_ref(),
-        ),
+        number_or_null(chat.request.max_tokens.map(Number::from).as_ref()),
     );
     inner.insert(
         String::from("temperature"),
@@ -168,42 +163,30 @@ fn custom_params(
     );
     inner.insert(
         String::from("top_k"),
-        match params.get("top_k") {
-            Some(value) => {
-                serde_json::to_value(value).map_err(|source| OperationError::Encode { source })?
-            }
-            None => serde_json::Value::Null,
-        },
+        params.get("top_k").cloned().unwrap_or(JsonValue::Null),
     );
     Ok(inner)
 }
 
 // a number field goes out as the number when set and as an explicit null otherwise
-fn number_or_null(number: Option<&serde_json::Number>) -> serde_json::Value {
-    number
-        .cloned()
-        .map_or(serde_json::Value::Null, serde_json::Value::Number)
+fn number_or_null(number: Option<&Number>) -> JsonValue {
+    number.cloned().map_or(JsonValue::Null, JsonValue::Number)
 }
 
 // extra_body expands last, so it may replace the model or the whole params object
 fn custom_body(
     model: &str,
     params: &IndexMap<String, JsonValue>,
-    inner: Object,
-) -> Result<Object, OperationError> {
-    let mut request_body = Object::new();
-    request_body.insert(
-        String::from("model"),
-        serde_json::Value::String(String::from(model)),
-    );
-    request_body.insert(String::from("params"), serde_json::Value::Object(inner));
+    inner: IndexMap<String, JsonValue>,
+) -> Result<IndexMap<String, JsonValue>, OperationError> {
+    let mut request_body = IndexMap::new();
+    request_body.insert(String::from("model"), JsonValue::Text(String::from(model)));
+    request_body.insert(String::from("params"), JsonValue::Object(inner));
     match params.get("extra_body") {
         None | Some(JsonValue::Null) => {}
         Some(JsonValue::Object(extra)) => {
             for (name, value) in extra {
-                let converted = serde_json::to_value(value)
-                    .map_err(|source| OperationError::Encode { source })?;
-                request_body.insert(name.clone(), converted);
+                request_body.insert(name.clone(), value.clone());
             }
         }
         Some(
