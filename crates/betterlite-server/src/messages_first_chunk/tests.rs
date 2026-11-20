@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use axum::body::{Body, Bytes, to_bytes};
-use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
+use axum::http::header::CONTENT_TYPE;
 use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
 use axum::response::Response;
 use betterlite_anthropic::api::messages_errors::frame::anthropic_error_sse_frame;
@@ -169,7 +169,10 @@ async fn stream_body(streamed: StreamedResponse) -> Bytes {
         .expect("a streamed body")
 }
 
-fn json_bytes<T: serde::Serialize>(value: &T) -> Bytes {
+fn json_bytes<T>(value: &T) -> Bytes
+where
+    T: serde::Serialize,
+{
     Bytes::from(serde_json::to_vec(value).expect("serialized JSON"))
 }
 
@@ -712,6 +715,12 @@ async fn a_later_failure_ends_the_body_after_the_bytes_already_sent() {
 #[rstest]
 fn replays_the_first_chunk_error_corpus(#[files("fuzz/corpus/first_chunk_error/*")] path: PathBuf) {
     let bytes = fs::read(path).expect("a corpus seed");
-    drop(frame_error_code(&bytes));
-    drop(frame_error_object(&bytes));
+    let code = frame_error_code(&bytes);
+    assert!(code.is_none_or(|value| (100_u16..=599).contains(&value)));
+    let object = Json::Object(frame_error_object(&bytes));
+    let written = serde_json::to_string(&object).expect("the error object serializes");
+    assert_eq!(
+        serde_json::from_str::<Json>(&written).expect("the error object parses back"),
+        object
+    );
 }

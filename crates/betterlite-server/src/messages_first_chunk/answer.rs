@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use axum::Json;
+use axum::Json as AxumJson;
 use axum::body::Bytes;
 use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
@@ -44,11 +44,11 @@ pub async fn resolve_headers(
     headers: &HeaderMap,
     refresh: Option<&dyn HeaderRefresh>,
 ) -> HeaderMap {
-    let Some(refreshing) = refresh else {
+    let Some(rebuild) = refresh else {
         return headers.clone();
     };
-    match refreshing.refresh().await {
-        Ok(refreshed) => refreshed,
+    match rebuild.refresh().await {
+        Ok(updated) => updated,
         Err(error) => {
             tracing::error!("Error refreshing streaming response headers: {error}");
             headers.clone()
@@ -115,7 +115,7 @@ async fn anthropic_error_answer(
         Ok(answer) => {
             let status = StatusCode::from_u16(frame.status_code)
                 .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-            ProducedResponse::Plain((status, resolved, Json(answer)).into_response())
+            ProducedResponse::Plain((status, resolved, AxumJson(answer)).into_response())
         }
         Err(error) => {
             tracing::error!(message = BODY_FAILURE_LOG, error = %error);
@@ -145,7 +145,7 @@ fn frame_answer(
     let mut envelope = JsonObject::new();
     envelope.insert(String::from(ERROR_KEY), Json::Object(error));
     let status = StatusCode::from_u16(code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-    ProducedResponse::Plain((status, resolved, Json(Json::Object(envelope))).into_response())
+    ProducedResponse::Plain((status, resolved, AxumJson(Json::Object(envelope))).into_response())
 }
 
 async fn sse_failure_answer(
