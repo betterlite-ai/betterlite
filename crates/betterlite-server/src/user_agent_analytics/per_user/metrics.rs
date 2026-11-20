@@ -101,19 +101,16 @@ fn totals(
         let Some(owner) = owner_of.get(record.api_key.as_str()).copied() else {
             continue;
         };
-        let index = match positions.get(owner).copied() {
-            Some(index) => index,
-            None => {
-                let index = per_user.len();
-                positions.insert(owner, index);
-                per_user.push(PerUserMetric::new(
-                    owner,
-                    email_of.get(owner).copied().flatten(),
-                    record.tag.as_deref(),
-                ));
-                index
-            }
-        };
+        let index = positions.get(owner).copied().unwrap_or_else(|| {
+            let index = per_user.len();
+            positions.insert(owner, index);
+            per_user.push(PerUserMetric::new(
+                owner,
+                email_of.get(owner).copied().flatten(),
+                record.tag.as_deref(),
+            ));
+            index
+        });
         let Some(total) = per_user.get_mut(index) else {
             return Err(AnalyticsError::Overflow);
         };

@@ -90,7 +90,7 @@ pub(super) fn query_failed(prefix: &str, source: &AnalyticsError) -> Response {
         .into_response()
 }
 
-pub(super) fn invalid_date(source: &ParseError) -> Response {
+pub(super) fn invalid_date(source: ParseError) -> Response {
     (
         StatusCode::BAD_REQUEST,
         Json(TextDetailBody {

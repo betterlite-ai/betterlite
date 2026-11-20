@@ -27,10 +27,10 @@ pub(super) async fn tag_summary(
         return db_not_connected();
     };
     if let Err(source) = NaiveDate::parse_from_str(start_date, DATE_FORMAT) {
-        return invalid_date(&source);
+        return invalid_date(source);
     }
     if let Err(source) = NaiveDate::parse_from_str(end_date, DATE_FORMAT) {
-        return invalid_date(&source);
+        return invalid_date(source);
     }
     let filter = query.filter();
     let range = RangeQuery {

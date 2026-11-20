@@ -64,7 +64,7 @@ impl AnalyticsQuery {
             .map(|text| TagFilter::Substring(text.clone()))
     }
 
-    pub fn date_range(&self) -> Result<(&str, &str), QueryIssues> {
+    pub(super) fn date_range(&self) -> Result<(&str, &str), QueryIssues> {
         match (self.start_date.as_deref(), self.end_date.as_deref()) {
             (Some(start), Some(end)) => Ok((start, end)),
             (start, end) => {
@@ -80,7 +80,7 @@ impl AnalyticsQuery {
         }
     }
 
-    pub fn pagination(&self) -> Result<Pagination, QueryIssues> {
+    pub(super) fn pagination(&self) -> Result<Pagination, QueryIssues> {
         let mut issues = Vec::new();
         let mut page = DEFAULT_PAGE;
         if let Some(text) = self.page.as_deref() {

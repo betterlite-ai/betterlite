@@ -75,7 +75,7 @@ struct Bucket {
     noun: &'static str,
     limit: u64,
     last_offset: u64,
-    days_per_bucket: u64,
+    days: u64,
     period_length: u64,
     label_format: &'static str,
 }
@@ -85,7 +85,7 @@ const WEEK_BUCKET: Bucket = Bucket {
     noun: "Week",
     limit: MAX_WEEKS,
     last_offset: MAX_WEEKS,
-    days_per_bucket: WEEK_DAYS,
+    days: WEEK_DAYS,
     period_length: PERIOD_START_DAYS,
     label_format: LABEL_DATE_FORMAT,
 };
@@ -94,7 +94,7 @@ const MONTH_BUCKET: Bucket = Bucket {
     noun: "Month",
     limit: MAX_MONTHS,
     last_offset: MAX_MONTHS - 1,
-    days_per_bucket: MONTH_DAYS,
+    days: MONTH_DAYS,
     period_length: PERIOD_LAST_DAYS,
     label_format: MONTH_LABEL_FORMAT,
 };
@@ -111,12 +111,8 @@ fn bucketed_result(
     } = row;
     let bucket_offset = offset_of(&date)?;
     let number = bucket_number(bucket, bucket_offset)?;
-    let (period_start, period_end) = period_of(
-        window,
-        bucket_offset,
-        bucket.days_per_bucket,
-        bucket.period_length,
-    )?;
+    let (period_start, period_end) =
+        period_of(window, bucket_offset, bucket.days, bucket.period_length)?;
     Ok(TagActiveUsersResponse {
         tag,
         active_users,

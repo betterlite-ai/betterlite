@@ -117,16 +117,16 @@ impl ActiveUsersCall {
 pub(crate) struct FakeStore {
     pub(super) distinct: Vec<DistinctTagRow>,
     pub(super) active: Vec<ActiveUsersRow>,
-    summary: Vec<TagSummaryRow>,
-    records: Vec<TagSpendRecord>,
-    owners: Vec<TokenOwnerRow>,
-    users: Vec<UserEmailRow>,
+    pub(super) summary: Vec<TagSummaryRow>,
+    pub(super) records: Vec<TagSpendRecord>,
+    pub(super) owners: Vec<TokenOwnerRow>,
+    pub(super) users: Vec<UserEmailRow>,
     pub(super) failure: Mutex<Option<AnalyticsError>>,
     pub(super) calls: Mutex<Vec<ActiveUsersCall>>,
-    summary_calls: Mutex<Vec<RangeCall>>,
-    record_calls: Mutex<Vec<RangeCall>>,
-    token_calls: Mutex<Vec<Vec<String>>>,
-    user_calls: Mutex<Vec<Vec<String>>>,
+    pub(super) summary_calls: Mutex<Vec<RangeCall>>,
+    pub(super) record_calls: Mutex<Vec<RangeCall>>,
+    pub(super) token_calls: Mutex<Vec<Vec<String>>>,
+    pub(super) user_calls: Mutex<Vec<Vec<String>>>,
     pub(super) distinct_calls: AtomicUsize,
 }
 
@@ -201,7 +201,10 @@ impl FakeStore {
         self.failure.lock().expect("the recorded failure").take()
     }
 
-    fn answer<Row: Clone>(&self, rows: &[Row]) -> Result<Vec<Row>, AnalyticsError> {
+    fn answer<Row>(&self, rows: &[Row]) -> Result<Vec<Row>, AnalyticsError>
+    where
+        Row: Clone,
+    {
         if let Some(error) = self.take_failure() {
             return Err(error);
         }
@@ -213,7 +216,10 @@ fn record<Call>(calls: &Mutex<Vec<Call>>, call: Call) {
     calls.lock().expect("the recorded calls").push(call);
 }
 
-fn only<Record: Clone>(calls: &Mutex<Vec<Record>>) -> Record {
+fn only<Record>(calls: &Mutex<Vec<Record>>) -> Record
+where
+    Record: Clone,
+{
     let mut records = calls.lock().expect("the recorded calls").clone();
     assert_eq!(records.len(), 1, "the store records exactly one call");
     records.remove(0)
