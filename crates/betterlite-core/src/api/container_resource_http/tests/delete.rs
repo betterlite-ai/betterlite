@@ -296,6 +296,22 @@ fn delete_async_reports_a_rejected_timeout_as_a_synthesized_500() {
     assert_eq!(exception.message, "the request timed out");
 }
 
+#[test]
+fn delete_async_raises_the_response_error_before_decoding() {
+    let fixture = Fixture::new();
+    fixture
+        .source
+        .answer(reply(404, r#"{"error":{"message":"no such container"}}"#));
+    let handler = fixture.handler();
+    let call = fixture.call();
+    let (exception, synthesized) = provider_error(refused(
+        runtime().block_on(handler.acontainer_delete_handler(&call)),
+    ));
+    assert!(!synthesized);
+    assert_eq!(exception.status_code, 404);
+    assert_eq!(exception.message, "no such container");
+}
+
 #[tokio::test(start_paused = true)]
 async fn delete_async_reports_a_timeout_as_a_synthesized_500() {
     let fixture = Fixture::new();
