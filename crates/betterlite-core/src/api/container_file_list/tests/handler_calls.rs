@@ -7,9 +7,10 @@ use betterlite_openai::containers::container_file_http::transport::ContainerMeth
 use indexmap::IndexMap;
 
 use super::error::FileListHandlerError;
-use super::execution::{container_file_list_handler, extra_query_object, query_pairs};
 // ast-grep-ignore: no-long-names
 use super::execution::async_container_file_list_handler;
+use super::execution::blocking::container_file_list_handler;
+use super::execution::{extra_query_object, query_pairs};
 use super::test_support::{
     CONTAINER_ID, FILES_BASE, FakeClient, FakeSource, Fixture, RecordingHook, object,
 };

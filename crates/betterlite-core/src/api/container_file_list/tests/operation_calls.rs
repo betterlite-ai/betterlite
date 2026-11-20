@@ -13,7 +13,7 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde_json::Number;
 
-use super::caller_defaults;
+use super::asynchronous::alist_container_files;
 use super::prepare::{Prepared, prepare_call};
 use super::test_support::{
     API_KEY, CALL_ID, CONTAINER_ID, FILE_LIST_BODY, FILES_BASE, FakeClient, Fixture, Lookup,
@@ -27,13 +27,8 @@ fn file_url(container_id: &str) -> String {
 
 fn prepared_timeout(fixture: &Fixture) -> f64 {
     let request = fixture.request();
-    let prepared = prepare_call(
-        &fixture.lookup,
-        &fixture.deps(),
-        &request,
-        caller_defaults(&request),
-    )
-    .expect("the call prepares");
+    let prepared =
+        prepare_call(&fixture.lookup, &fixture.deps(), &request).expect("the call prepares");
     let Prepared::Call(ready) = prepared else {
         panic!("the fixture carries no mock response");
     };
@@ -586,8 +581,17 @@ fn a_transport_failure_is_an_internal_server() {
 #[tokio::test]
 async fn the_async_operation_sends_through_the_async_client() {
     let fixture = Fixture::new();
+    let request = fixture.request();
 
-    let response = fixture.async_call().await.expect("the file list decodes");
+    let response = alist_container_files(
+        &fixture.source,
+        &fixture.hook,
+        &fixture.lookup,
+        fixture.deps(),
+        &request,
+    )
+    .await
+    .expect("the file list decodes");
 
     assert_eq!(response.first_id.as_deref(), Some("cfile_1"));
     assert_eq!(fixture.requests().len(), 1);
@@ -602,8 +606,17 @@ async fn a_mock_response_short_circuits_the_async_send() {
         "mock_response".to_owned(),
         Json::Text(FILE_LIST_BODY.to_owned()),
     );
+    let request = fixture.request();
 
-    let response = fixture.async_call().await.expect("the mock answers");
+    let response = alist_container_files(
+        &fixture.source,
+        &fixture.hook,
+        &fixture.lookup,
+        fixture.deps(),
+        &request,
+    )
+    .await
+    .expect("the mock answers");
 
     assert_eq!(response.first_id.as_deref(), Some("cfile_1"));
     assert!(fixture.source.async_ssl().is_empty());
@@ -614,11 +627,17 @@ async fn a_mock_response_short_circuits_the_async_send() {
 async fn a_transport_failure_through_the_async_operation_is_an_internal_server() {
     let mut fixture = Fixture::new();
     fixture.source.client = FakeClient::failing();
+    let request = fixture.request();
 
-    let failure = fixture
-        .async_call()
-        .await
-        .expect_err("the client is closed");
+    let failure = alist_container_files(
+        &fixture.source,
+        &fixture.hook,
+        &fixture.lookup,
+        fixture.deps(),
+        &request,
+    )
+    .await
+    .expect_err("the client is closed");
 
     assert!(matches!(&failure.class, ErrorClass::InternalServer(_)));
 }

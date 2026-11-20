@@ -47,10 +47,9 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::json;
 
 use super::error::{ContainerFileListFailure, FileListHandlerError};
-use super::execution::{ContainerFileListCall, container_file_list_handler};
-use super::{
-    ContainerFileListDeps, ContainerFileListRequest, alist_container_files, list_container_files,
-};
+use super::execution::ContainerFileListCall;
+use super::execution::blocking::container_file_list_handler;
+use super::{ContainerFileListDeps, ContainerFileListRequest, list_container_files};
 use crate::api::container_file_endpoints::handler::ContainerConfigLookup;
 
 pub(crate) const CALL_ID: &str = "call-1";
@@ -116,18 +115,6 @@ impl ContainerCosts for ProviderCost {
     }
 }
 
-pub(crate) fn openai_config(api_base: &str) -> OpenAiContainerConfig {
-    OpenAiContainerConfig {
-        settings: Settings {
-            api_base: api_base.to_owned(),
-            organization: None,
-        },
-        globals: LiteLlmGlobals::default(),
-        env_api_key: None,
-        costs: Arc::new(ProviderCost),
-    }
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct EnvironmentCall {
     pub(crate) headers: BTreeMap<String, String>,
@@ -163,7 +150,15 @@ pub(crate) struct RecordingConfig {
 impl RecordingConfig {
     pub(crate) fn new(api_base: &str) -> Self {
         Self {
-            inner: openai_config(api_base),
+            inner: OpenAiContainerConfig {
+                settings: Settings {
+                    api_base: api_base.to_owned(),
+                    organization: None,
+                },
+                globals: LiteLlmGlobals::default(),
+                env_api_key: None,
+                costs: Arc::new(ProviderCost),
+            },
             environment: Mutex::default(),
             bases: Mutex::default(),
             transforms: Mutex::default(),
@@ -615,26 +610,14 @@ impl Fixture {
     }
 
     pub(crate) fn call(&self) -> Result<ContainerFileListResponse, ContainerFileListFailure> {
+        let request = self.request();
         list_container_files(
             &self.source,
             &self.hook,
             &self.lookup,
             self.deps(),
-            &self.request(),
+            &request,
         )
-    }
-
-    pub(crate) async fn async_call(
-        &self,
-    ) -> Result<ContainerFileListResponse, ContainerFileListFailure> {
-        alist_container_files(
-            &self.source,
-            &self.hook,
-            &self.lookup,
-            self.deps(),
-            &self.request(),
-        )
-        .await
     }
 
     pub(crate) fn params(&self) -> Object {
