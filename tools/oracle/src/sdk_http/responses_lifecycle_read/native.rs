@@ -120,14 +120,14 @@ fn fill_base(identity: &mut ReadIdentity, api_base: &str) {
 
 fn reply_outcome(reply: Result<TypedReply, Box<LifecycleFailure>>) -> StepOutcome {
     match reply {
-        Ok(reply) => success(Some(retrieved(&reply)), None),
+        Ok(answer) => success(Some(retrieved(&answer)), None),
         Err(failure) => failed(*failure),
     }
 }
 
 fn items_outcome(items: Result<Json, Box<LifecycleFailure>>) -> StepOutcome {
     match items {
-        Ok(items) => success(None, Some(items)),
+        Ok(page) => success(None, Some(page)),
         Err(failure) => failed(*failure),
     }
 }
