@@ -133,6 +133,27 @@ fn stage_is_registered() {
         panic!("an unscannable body passes");
     };
     assert_eq!(forwarded.principal.subject, "master_key");
+
+    // JSON under a binary content type still parses, like _parse_binary_body
+    let binary = RequestBodySafetyStageInput {
+        context: master_context(&master_key),
+        content_type: Some("application/x-protobuf".to_owned()),
+        body: Bytes::from_static(br#"{"api_base":"https://evil.example"}"#),
+        slot: Some(state_for(&config("")).request_body_safety.clone()),
+    };
+    let binary_input = StageInput::RequestBodySafety(Box::new(binary));
+    let Err(StageFailure::RequestBodySafety(binary_error)) =
+        dispatch(AuthBackend::RequestBodySafety, &binary_input, &master_key)
+    else {
+        panic!("a JSON protobuf body is still scanned");
+    };
+    assert!(
+        binary_error
+            .message
+            .contains("api_base is not allowed in request body"),
+        "{}",
+        binary_error.message
+    );
 }
 
 async fn mark_called(Extension(reached): Extension<Arc<AtomicBool>>, body: Bytes) -> String {
