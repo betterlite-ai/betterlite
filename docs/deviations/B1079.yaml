@@ -8,7 +8,7 @@ deviations:
       The rerank call view takes the boolean form only, so Python truthiness never
       decides whether an unsupported option is dropped; the task text routes the drop
       flag through the B002 normalizer instead.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L168
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L167
 kept_bugs:
   - what: >-
       Jina's api_base falls back to BEDROCK_API_BASE, a copy-paste of the Bedrock
