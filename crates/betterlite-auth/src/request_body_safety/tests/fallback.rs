@@ -108,7 +108,9 @@ fn fallback_list_mapping_shapes() {
 fn fallback_target_original_model_policy() {
     let fixture = Fixture {
         grants: Grants::exact(&[("granted-model", &["aws_role_name"])]),
-        ..Default::default()
+        allow: false,
+        hosts: Vec::new(),
+        max_fallbacks: 5,
     };
     fixture
         .check_json(
@@ -145,8 +147,10 @@ fn fallback_depth_boundary_before_type() {
     passes(&fixture, &chained(9, r#"{"other": "scalar"}"#));
 
     let zero = Fixture {
+        grants: Grants::default(),
+        allow: false,
+        hosts: Vec::new(),
         max_fallbacks: 0,
-        ..Default::default()
     };
     passes(&zero, r#"{"fallbacks": ["ok"]}"#);
     assert!(matches!(
@@ -156,8 +160,10 @@ fn fallback_depth_boundary_before_type() {
 
     // a negative limit fails even the absent root fields, which are validated at depth zero
     let negative = Fixture {
+        grants: Grants::default(),
+        allow: false,
+        hosts: Vec::new(),
         max_fallbacks: -1,
-        ..Default::default()
     };
     assert!(matches!(
         denied(&negative, "{}"),

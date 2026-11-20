@@ -36,9 +36,10 @@ fn pricing_field_banned() {
 #[test]
 fn root_model_list_always_denied() {
     let fixture = Fixture {
-        allow: true,
         grants: Grants::exact(&[("model", &["model_list"])]),
-        ..Default::default()
+        allow: true,
+        hosts: Vec::new(),
+        max_fallbacks: 5,
     };
     assert!(matches!(
         denied(&fixture, r#"{"model_list": []}"#),
@@ -60,8 +61,10 @@ fn opt_in_only_literal_true() {
     let body = r#"{"aws_role_name": "role"}"#;
     assert_eq!(denied_param(&Fixture::default(), body), "aws_role_name");
     let opted_in = Fixture {
+        grants: Grants::default(),
         allow: true,
-        ..Default::default()
+        hosts: Vec::new(),
+        max_fallbacks: 5,
     };
     passes(&opted_in, body);
 }
@@ -70,7 +73,9 @@ fn opt_in_only_literal_true() {
 fn one_grant_does_not_skip_next() {
     let fixture = Fixture {
         grants: Grants::exact(&[("model", &["aws_role_name"])]),
-        ..Default::default()
+        allow: false,
+        hosts: Vec::new(),
+        max_fallbacks: 5,
     };
     assert_eq!(
         denied_param(
@@ -253,8 +258,10 @@ fn nested_litellm_params_metadata() {
 fn url_bans_survive_credential_opt_in(#[case] field: &str, #[case] body: &str) {
     // the opt-in admits one field at a time, so the URL field paired with it is still refused
     let fixture = Fixture {
+        grants: Grants::default(),
         allow: true,
-        ..Default::default()
+        hosts: Vec::new(),
+        max_fallbacks: 5,
     };
     assert_eq!(denied_param(&fixture, body), field);
 }
@@ -266,7 +273,9 @@ fn model_exact_then_provider_prefix() {
             ("openai/gpt-4", &["aws_role_name"]),
             ("openai", &["aws_session_name"]),
         ]),
-        ..Default::default()
+        allow: false,
+        hosts: Vec::new(),
+        max_fallbacks: 5,
     };
 
     let granted = r#"{"aws_role_name": "role"}"#;
@@ -293,7 +302,9 @@ fn model_exact_then_provider_prefix() {
     // a known group without an opt-in does not fall back to its provider prefix
     let unset = Fixture {
         grants: Grants::exact(&[("openai", &["aws_session_name"])]).unset("openai/gpt-4"),
-        ..Default::default()
+        allow: false,
+        hosts: Vec::new(),
+        max_fallbacks: 5,
     };
     assert_eq!(
         denied_param_for(&unset, "openai/gpt-4", r#"{"aws_session_name": "s"}"#),
@@ -325,7 +336,9 @@ fn no_model_info_denies() {
 fn string_param_grant() {
     let fixture = Fixture {
         grants: Grants::exact(&[("model", &["aws_role_name"])]),
-        ..Default::default()
+        allow: false,
+        hosts: Vec::new(),
+        max_fallbacks: 5,
     };
     let granted = body(r#"{"aws_role_name": "role"}"#);
     fixture

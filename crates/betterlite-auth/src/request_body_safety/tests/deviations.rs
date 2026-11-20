@@ -27,10 +27,10 @@ fn destination_opt_in_still_denied() {
         Some(vec![ClientsideParamGrant::Matcher(matcher)]),
     );
     let fixture = Fixture {
+        grants,
         allow: true,
         hosts: allowlisted(),
-        grants,
-        ..Default::default()
+        max_fallbacks: DEFAULT_MAX_FALLBACKS,
     };
     assert_eq!(
         denied_param(&fixture, r#"{"api_base": "https://evil.example/v1"}"#),
