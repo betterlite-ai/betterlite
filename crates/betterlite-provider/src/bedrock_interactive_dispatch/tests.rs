@@ -1,0 +1,756 @@
+#![cfg(test)]
+
+use std::collections::BTreeMap;
+use std::convert::Infallible;
+use std::future::{Future, ready};
+use std::pin::Pin;
+use std::sync::{Mutex, PoisonError};
+use std::time::{Duration, SystemTime};
+
+use betterlite_bedrock::aws_settings::sources::Credentials;
+use betterlite_bedrock::model_routes::ParamMap;
+use betterlite_bedrock::search::error::SearchError;
+use betterlite_bedrock::signing::target::RegionInputs;
+use betterlite_bedrock::vector_stores::error::VectorStoreError;
+use betterlite_bedrock::vector_stores::request::{SearchOptionalParams, SearchQuery};
+use betterlite_config::loader::EnvironmentLookup;
+use betterlite_config::sections::bedrock_services_search::DEFAULT_SEARCH_TOOL_NAME;
+use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_models::decisions::Json;
+use betterlite_models::model_capability_predicates::CapabilityRequest;
+use betterlite_openai::openai_base_config::{Headers, Object};
+use betterlite_openai::reasoning_models::{DropParams, ReasoningCapabilities};
+use betterlite_openai::response_input::ResponsesInput;
+use betterlite_openai::response_params::bundled::BundledReasoningModels;
+use betterlite_openai::response_params::capabilities::{ModelInfo, ResponsesCapabilities};
+use betterlite_openai::response_params::params::ResponsesParams;
+use betterlite_openai::search::provider::SearchQuery as SearchInput;
+use betterlite_prompts::media::inline::RemoteMediaFetcher;
+use betterlite_prompts::media_fetch::error::ImageFetchError;
+use indexmap::IndexMap;
+use rstest::rstest;
+use secrecy::SecretString;
+use serde::de::DeserializeOwned;
+use tokio::runtime::Builder;
+
+use super::error::BedrockInteractiveError;
+use super::http::{LeafReply, LeafRequest, LeafTransport};
+use super::{responses, search, vector_retrieve};
+use dispatch_support::dispatched;
+
+const HOST: &str = "https://bedrock-runtime.us-east-1.amazonaws.com";
+const RESPONSES_HOST: &str = "https://bedrock-runtime.us-west-2.amazonaws.com";
+const RESPONSES_MODEL: &str = "openai.gpt-oss-120b";
+const GATEWAY: &str = "https://gateway.example.com/mcp";
+const ACCESS: &str = "AKIDBETTERLITEFIXTURE";
+const SECRET: &str = "fixture/secret/key/+EXAMPLEKEY0000";
+const DEADLINE: Duration = Duration::from_secs(600);
+const SESSION_UPDATE: &str = r#"{"type":"session.update","session":{}}"#;
+
+fn fixture_time() -> SystemTime {
+    SystemTime::UNIX_EPOCH
+        .checked_add(Duration::from_hours(490_896))
+        .unwrap()
+}
+
+fn credentials() -> Credentials {
+    Credentials {
+        access_key_id: SecretString::from(ACCESS.to_owned()),
+        secret_access_key: SecretString::from(SECRET.to_owned()),
+        session_token: None,
+    }
+}
+
+fn token(text: &str) -> SecretString {
+    SecretString::from(text.to_owned())
+}
+
+fn block_on<F>(future: F) -> F::Output
+where
+    F: Future,
+{
+    Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(future)
+}
+
+fn object(source: &str) -> Object {
+    serde_json::from_str(source).unwrap()
+}
+
+fn json(source: &str) -> Json {
+    serde_json::from_str(source).unwrap()
+}
+
+fn pjson<T>(source: &str) -> T
+where
+    T: DeserializeOwned,
+{
+    serde_json::from_str(source).unwrap()
+}
+
+fn text_field<'body>(object: &'body Object, name: &str) -> Option<&'body str> {
+    let value = object.get(name)?;
+    value.as_str()
+}
+
+fn object_field<'body>(object: &'body Object, name: &str) -> Option<&'body Object> {
+    let value = object.get(name)?;
+    value.as_object()
+}
+
+fn from_serialized<T>(value: &T) -> Json
+where
+    T: serde::Serialize,
+{
+    serde_json::from_str(&serde_json::to_string(value).unwrap()).unwrap()
+}
+
+fn body_object(body: &[u8]) -> Object {
+    serde_json::from_slice(body).unwrap()
+}
+
+fn header<'text>(headers: &'text [(String, Option<String>)], name: &str) -> Option<&'text str> {
+    let (_, value) = headers
+        .iter()
+        .find(|(key, _)| key.eq_ignore_ascii_case(name))?;
+    value.as_deref()
+}
+
+struct RecordingTransport {
+    reply: LeafReply,
+    requests: Mutex<Vec<LeafRequest>>,
+}
+
+impl RecordingTransport {
+    fn new(reply: LeafReply) -> Self {
+        Self {
+            reply,
+            requests: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn requests(&self) -> Vec<LeafRequest> {
+        self.requests
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    fn only_request(&self) -> LeafRequest {
+        let requests = self.requests();
+        assert_eq!(requests.len(), 1);
+        requests.into_iter().next().unwrap()
+    }
+}
+
+impl LeafTransport for RecordingTransport {
+    fn send(
+        &self,
+        request: LeafRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<LeafReply, TransportError>> + Send + '_>> {
+        assert_eq!(request.deadline, DEADLINE);
+        self.requests
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(request);
+        Box::pin(ready(Ok(self.reply.clone())))
+    }
+}
+
+struct Capabilities;
+
+impl ReasoningCapabilities for Capabilities {
+    fn supports_factory(
+        &mut self,
+        _request: &CapabilityRequest<'_>,
+        _key: &str,
+    ) -> impl Future<Output = bool> + Send {
+        ready(false)
+    }
+
+    fn declared_value_factory(
+        &mut self,
+        _request: &CapabilityRequest<'_>,
+        _key: &str,
+    ) -> impl Future<Output = Option<String>> + Send {
+        ready(None)
+    }
+
+    fn is_explicitly_disabled_factory(
+        &mut self,
+        _request: &CapabilityRequest<'_>,
+        _key: &str,
+    ) -> impl Future<Output = bool> + Send {
+        ready(false)
+    }
+
+    fn supports_response_schema(
+        &mut self,
+        _request: &CapabilityRequest<'_>,
+    ) -> impl Future<Output = bool> + Send {
+        ready(false)
+    }
+
+    fn catalogue_declares_default(&mut self) -> bool {
+        false
+    }
+}
+
+impl ResponsesCapabilities for Capabilities {
+    fn model_info(&mut self, _model: &str) -> impl Future<Output = ModelInfo> + Send {
+        ready(ModelInfo::Unavailable)
+    }
+}
+
+struct MapFetcher;
+
+impl RemoteMediaFetcher for MapFetcher {
+    fn convert_url(&self, url: &str) -> impl Future<Output = Result<String, ImageFetchError>> {
+        ready(Err(ImageFetchError::Rejected {
+            url: url.to_owned(),
+        }))
+    }
+
+    fn convert_urls(
+        &self,
+        urls: &[String],
+    ) -> impl Future<Output = Result<Vec<String>, ImageFetchError>> {
+        ready(Err(ImageFetchError::Rejected {
+            url: urls.first().cloned().unwrap_or_default(),
+        }))
+    }
+}
+
+struct Invocation<'call> {
+    model: Option<&'call str>,
+    api_key: Option<&'call SecretString>,
+}
+
+fn responses_operation<'call>(
+    input: &'call ResponsesInput,
+    params: &'call ResponsesParams,
+    model_cost: &'call ParamMap,
+    capabilities: &'call mut Capabilities,
+    invocation: &Invocation<'call>,
+) -> responses::Operation<'call, MapFetcher, Capabilities> {
+    responses::Operation {
+        aws: responses::AwsRequest {
+            credentials: credentials(),
+            api_base: Some(RESPONSES_HOST),
+            aws_region_name: Some("us-west-2"),
+            aws_bedrock_runtime_endpoint: None,
+            environment_endpoint: None,
+            region_inputs: RegionInputs::default(),
+            api_key: invocation.api_key,
+            environment_token: None,
+            headers: IndexMap::new(),
+            signing_params: BTreeMap::new(),
+            now: fixture_time(),
+        },
+        body: responses::BodyRequest {
+            input,
+            params,
+            model_info: None,
+        },
+        model: invocation.model,
+        model_cost,
+        fetcher: MapFetcher,
+        capabilities,
+        drop_params: DropParams {
+            global: false,
+            request: false,
+        },
+        bundled: BundledReasoningModels::default(),
+        deadline: DEADLINE,
+    }
+}
+
+const RESPONSES_INPUT: &str = r#"[{"type":"message","role":"user","content":"keep"}]"#;
+const RESPONSES_PARAMS: &str = r#"{"background": true, "temperature": 0.5, "tools": [{"type": "function", "name": "f"}, {"type": "web_search"}]}"#;
+
+fn responses_cost() -> ParamMap {
+    serde_json::from_str(r#"{"openai.gpt-oss-120b": {"supported_endpoints": ["/v1/responses"]}}"#)
+        .unwrap()
+}
+
+fn responses_body() -> Object {
+    let input: ResponsesInput = serde_json::from_str(RESPONSES_INPUT).unwrap();
+    let params: ResponsesParams = serde_json::from_str(RESPONSES_PARAMS).unwrap();
+    let model_cost = responses_cost();
+    let mut capabilities = Capabilities;
+    let bearer = token("fixture-token");
+    let operation = responses_operation(
+        &input,
+        &params,
+        &model_cost,
+        &mut capabilities,
+        &Invocation {
+            model: Some(RESPONSES_MODEL),
+            api_key: Some(&bearer),
+        },
+    );
+    let reply = LeafReply {
+        status: 200,
+        headers: Vec::new(),
+        body: br#"{"id":"resp_1"}"#.to_vec(),
+        chunks: Vec::new(),
+    };
+    let transport = RecordingTransport::new(reply);
+    let outcome = dispatched!(Responses, operation.run(&transport)).unwrap();
+    let request = transport.only_request();
+    assert_eq!(request.method, "POST");
+    assert_eq!(request.url, format!("{RESPONSES_HOST}/openai/v1/responses"));
+    assert_eq!(
+        header(&request.headers, "Authorization"),
+        Some("Bearer fixture-token")
+    );
+    assert_eq!(outcome.status, 200);
+    assert_eq!(outcome.body, br#"{"id":"resp_1"}"#.to_vec());
+    body_object(&request.body)
+}
+
+fn responses_case() {
+    let body = responses_body();
+    assert_eq!(text_field(&body, "model"), Some(RESPONSES_MODEL));
+    assert_eq!(body.get("input"), Some(&pjson(RESPONSES_INPUT)));
+    assert_eq!(body.get("background"), None);
+    assert_eq!(body.get("temperature"), Some(&pjson("0.5")));
+    assert_eq!(
+        body.get("tools"),
+        Some(&pjson(r#"[{"type":"function","name":"f"}]"#))
+    );
+    responses_remote_image();
+    responses_unsupported_model();
+    responses_rejected_reply();
+}
+
+fn responses_rejected_reply() {
+    let input: ResponsesInput = serde_json::from_str(r#""plain text""#).unwrap();
+    let params: ResponsesParams = serde_json::from_str("{}").unwrap();
+    let model_cost = responses_cost();
+    let mut capabilities = Capabilities;
+    let operation = responses_operation(
+        &input,
+        &params,
+        &model_cost,
+        &mut capabilities,
+        &Invocation {
+            model: Some(RESPONSES_MODEL),
+            api_key: None,
+        },
+    );
+    let transport = RecordingTransport::new(LeafReply {
+        status: 400,
+        headers: Vec::new(),
+        body: b"bad \xff body".to_vec(),
+        chunks: Vec::new(),
+    });
+    let error = dispatched!(Responses, operation.run(&transport)).unwrap_err();
+    match error {
+        responses::OperationError::Rejected {
+            status, message, ..
+        } => {
+            assert_eq!(status, 400);
+            assert_eq!(message, "bad \u{FFFD} body");
+        }
+        other @ (responses::OperationError::Leaf(_)
+        | responses::OperationError::UnsupportedModel { .. }
+        | responses::OperationError::Transport(_)
+        | responses::OperationError::Headers { .. }) => {
+            panic!("expected a rejected reply, got {other}")
+        }
+    }
+}
+
+fn responses_remote_image() {
+    let input: ResponsesInput = serde_json::from_str(
+        r#"[{"type":"message","role":"user","content":[{"type":"input_image","image_url":"https://images.example/cat.png"}]}]"#,
+    )
+    .unwrap();
+    let params: ResponsesParams = serde_json::from_str("{}").unwrap();
+    let model_cost = responses_cost();
+    let mut capabilities = Capabilities;
+    let operation = responses_operation(
+        &input,
+        &params,
+        &model_cost,
+        &mut capabilities,
+        &Invocation {
+            model: Some(RESPONSES_MODEL),
+            api_key: None,
+        },
+    );
+    let reply = LeafReply {
+        status: 200,
+        headers: Vec::new(),
+        body: Vec::new(),
+        chunks: Vec::new(),
+    };
+    let transport = RecordingTransport::new(reply);
+    let error = dispatched!(Responses, operation.run(&transport)).unwrap_err();
+    assert!(matches!(error, responses::OperationError::Leaf(_)));
+    assert!(transport.requests().is_empty());
+}
+
+fn responses_unsupported_model() {
+    let input: ResponsesInput = serde_json::from_str(r#""plain text""#).unwrap();
+    let params: ResponsesParams = serde_json::from_str("{}").unwrap();
+    let model_cost = ParamMap::new();
+    let mut capabilities = Capabilities;
+    let operation = responses_operation(
+        &input,
+        &params,
+        &model_cost,
+        &mut capabilities,
+        &Invocation {
+            model: Some("mystery.model"),
+            api_key: None,
+        },
+    );
+    let transport = RecordingTransport::new(LeafReply {
+        status: 200,
+        headers: Vec::new(),
+        body: Vec::new(),
+        chunks: Vec::new(),
+    });
+    let error = dispatched!(Responses, operation.run(&transport)).unwrap_err();
+    match error {
+        responses::OperationError::UnsupportedModel { model } => assert_eq!(model, "mystery.model"),
+        other @ (responses::OperationError::Leaf(_)
+        | responses::OperationError::Transport(_)
+        | responses::OperationError::Rejected { .. }
+        | responses::OperationError::Headers { .. }) => {
+            panic!("expected an unsupported model, got {other}")
+        }
+    }
+}
+
+const SEARCH_REPLY: &str = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"[{\\\"title\\\":\\\"Docs\\\",\\\"url\\\":\\\"https://docs.example.com\\\",\\\"text\\\":\\\"snippet\\\",\\\"publishedDate\\\":\\\"2026-01-01\\\"}]\"}]}}";
+
+fn search_operation<'call>(
+    query: &'call SearchInput,
+    optional: &'call IndexMap<String, Json>,
+    configured: Option<&'call str>,
+    api_key: Option<&'call SecretString>,
+    lookup: &'call (dyn EnvironmentLookup + Sync),
+) -> search::Operation<'call> {
+    search::Operation {
+        query,
+        optional_params: optional,
+        configured_tool_name: configured,
+        headers: Headers::new(),
+        configured_protocol_version: None,
+        api_base: Some(GATEWAY),
+        configured_gateway_url: None,
+        session_region: None,
+        api_key,
+        credentials: credentials(),
+        lookup,
+        now: fixture_time(),
+        deadline: DEADLINE,
+    }
+}
+
+fn assert_search_headers(headers: &[(String, Option<String>)]) {
+    assert_eq!(
+        header(headers, "Authorization"),
+        Some("Bearer gateway-token")
+    );
+    assert_eq!(header(headers, "Content-Type"), Some("application/json"));
+    assert_eq!(
+        header(headers, "Accept"),
+        Some("application/json, text/event-stream")
+    );
+    assert_eq!(header(headers, "MCP-Protocol-Version"), Some("2025-03-26"));
+}
+
+fn search_case() {
+    let query = SearchInput::Single("bedrock agents".to_owned());
+    let optional: IndexMap<String, Json> = serde_json::from_str(r#"{"max_results": 3}"#).unwrap();
+    let bearer = token("gateway-token");
+    let lookup: BTreeMap<String, String> = BTreeMap::new();
+    let operation = search_operation(&query, &optional, None, Some(&bearer), &lookup);
+    let reply = LeafReply {
+        status: 200,
+        headers: vec![("content-type".to_owned(), "application/json".to_owned())],
+        body: SEARCH_REPLY.as_bytes().to_vec(),
+        chunks: Vec::new(),
+    };
+    let transport = RecordingTransport::new(reply);
+    let outcome = dispatched!(Search, operation.run(&transport)).unwrap();
+    let request = transport.only_request();
+    assert_eq!(request.url, GATEWAY);
+    assert_eq!(request.method, "POST");
+    assert_search_headers(&request.headers);
+    let body = body_object(&request.body);
+    let params = object_field(&body, "params").unwrap();
+    assert_eq!(text_field(params, "name"), Some(DEFAULT_SEARCH_TOOL_NAME));
+    let arguments = object_field(params, "arguments").unwrap();
+    assert_eq!(text_field(arguments, "query"), Some("bedrock agents"));
+    assert_eq!(arguments.get("maxResults"), Some(&pjson("3")));
+    assert_eq!(outcome.response.results.len(), 1);
+    assert_eq!(outcome.response.results[0].title, "Docs");
+    assert_eq!(outcome.response.results[0].snippet, "snippet");
+    search_reply_error();
+}
+
+#[test]
+fn search_leaf_failure() {
+    let query = SearchInput::Single("q".to_owned());
+    let optional = IndexMap::new();
+    let lookup: BTreeMap<String, String> = BTreeMap::new();
+    let operation = search_operation(&query, &optional, Some("other-tool"), None, &lookup);
+    let transport = RecordingTransport::new(LeafReply {
+        status: 200,
+        headers: Vec::new(),
+        body: SEARCH_REPLY.as_bytes().to_vec(),
+        chunks: Vec::new(),
+    });
+    let error = dispatched!(Search, operation.run(&transport)).unwrap_err();
+    match error {
+        search::OperationError::Leaf(SearchError::ToolName { tool_name }) => {
+            assert_eq!(tool_name, "other-tool");
+        }
+        other @ (search::OperationError::Leaf(_)
+        | search::OperationError::Reply(_)
+        | search::OperationError::Transport(_)) => {
+            panic!("expected a tool name failure, got {other}")
+        }
+    }
+    assert!(transport.requests().is_empty());
+}
+
+fn search_reply_error() {
+    let query = SearchInput::Single("q".to_owned());
+    let optional = IndexMap::new();
+    let bearer = token("gateway-token");
+    let lookup: BTreeMap<String, String> = BTreeMap::new();
+    let operation = search_operation(&query, &optional, None, Some(&bearer), &lookup);
+    let transport = RecordingTransport::new(LeafReply {
+        status: 200,
+        headers: Vec::new(),
+        body: br#"{"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"bad"}}"#.to_vec(),
+        chunks: Vec::new(),
+    });
+    let error = dispatched!(Search, operation.run(&transport)).unwrap_err();
+    match error {
+        search::OperationError::Reply(reply) => assert_eq!(reply.status(), Some(502)),
+        other @ (search::OperationError::Leaf(_) | search::OperationError::Transport(_)) => {
+            panic!("expected a reply error, got {other}")
+        }
+    }
+}
+
+const VECTOR_REPLY: &str = concat!(
+    r#"{"retrievalResults":[{"content":{"text":"found"},"score":0.9,"#,
+    r#""metadata":{"x-amz-bedrock-kb-source-uri":"s3://bucket/doc.pdf"}}]}"#
+);
+
+fn vector_operation<'call>(
+    query: &'call SearchQuery,
+    optional: &'call SearchOptionalParams,
+    litellm_params: &'call IndexMap<String, Json>,
+    extra_body: Option<&'call IndexMap<String, Json>>,
+) -> vector_retrieve::Operation<'call> {
+    vector_retrieve::Operation {
+        vector_store_id: "KB123",
+        query,
+        optional,
+        litellm_params,
+        extra_body,
+        api_base: None,
+        configured_endpoint: None,
+        environment_endpoint: None,
+        aws_region_name: Some("us-east-1"),
+        environment_region_name: None,
+        environment_region: None,
+        headers: BTreeMap::new(),
+        signing_params: serde_json::from_str(r#"{"aws_region_name":"us-east-1"}"#).unwrap(),
+        api_key: None,
+        configured_bearer: None,
+        credentials: credentials(),
+        region_inputs: RegionInputs::default(),
+        now: fixture_time(),
+        deadline: DEADLINE,
+    }
+}
+
+fn vector_case() {
+    let query = SearchQuery::Text("hello".to_owned());
+    let optional = SearchOptionalParams {
+        filters: Some(json(r#"{"equals":{"key":"k","value":"v"}}"#)),
+        max_num_results: Some(5),
+        ranking_options: None,
+        rewrite_query: None,
+    };
+    let litellm_params: IndexMap<String, Json> =
+        serde_json::from_str(r#"{"aws_region_name":"us-east-1"}"#).unwrap();
+    let extra: IndexMap<String, Json> =
+        serde_json::from_str(r#"{"userContext":{"user":"u"}}"#).unwrap();
+    let operation = vector_operation(&query, &optional, &litellm_params, Some(&extra));
+    let reply = LeafReply {
+        status: 200,
+        headers: Vec::new(),
+        body: VECTOR_REPLY.as_bytes().to_vec(),
+        chunks: Vec::new(),
+    };
+    let transport = RecordingTransport::new(reply);
+    let outcome = dispatched!(VectorRetrieve, operation.run(&transport)).unwrap();
+    let request = transport.only_request();
+    assert_vector_request(&request);
+    assert_vector_response(&from_serialized(&outcome.response));
+}
+
+fn assert_vector_request(request: &LeafRequest) {
+    assert_eq!(
+        request.url,
+        "https://bedrock-agent-runtime.us-east-1.amazonaws.com/knowledgebases/KB123/retrieve"
+    );
+    let authorization = header(&request.headers, "Authorization").unwrap();
+    assert!(authorization.starts_with("AWS4-HMAC-SHA256 Credential=AKIDBETTERLITEFIXTURE/"));
+    assert!(authorization.contains("/us-east-1/bedrock/aws4_request"));
+    let body = body_object(&request.body);
+    let retrieval = object_field(&body, "retrievalQuery").unwrap();
+    assert_eq!(text_field(retrieval, "text"), Some("hello"));
+    let configuration = object_field(&body, "retrievalConfiguration").unwrap();
+    let search = object_field(configuration, "vectorSearchConfiguration").unwrap();
+    assert_eq!(search.get("numberOfResults"), Some(&pjson("5")));
+    assert_eq!(
+        search.get("filter"),
+        Some(&pjson(r#"{"equals":{"key":"k","value":"v"}}"#))
+    );
+    assert_eq!(body.get("userContext"), Some(&pjson(r#"{"user":"u"}"#)));
+}
+
+fn assert_vector_response(response: &Json) {
+    let Json::Object(envelope) = response else {
+        panic!("the vector response is an object");
+    };
+    let Some(Json::List(data)) = envelope.get("data") else {
+        panic!("the vector response carries a data list");
+    };
+    let Some(Json::Object(first)) = data.first() else {
+        panic!("the vector response carries one result");
+    };
+    assert_eq!(
+        first.get("file_id"),
+        Some(&Json::Text("s3://bucket/doc.pdf".to_owned()))
+    );
+    assert_eq!(
+        first.get("filename"),
+        Some(&Json::Text("doc.pdf".to_owned()))
+    );
+    assert_eq!(first.get("score"), Some(&json("0.9")));
+}
+
+#[test]
+fn vector_leaf_failure() {
+    let query = SearchQuery::Text("hello".to_owned());
+    let optional = SearchOptionalParams {
+        filters: None,
+        max_num_results: Some(5),
+        ranking_options: None,
+        rewrite_query: None,
+    };
+    let litellm_params = IndexMap::new();
+    let extra: IndexMap<String, Json> =
+        serde_json::from_str(r#"{"retrievalConfiguration":"nope"}"#).unwrap();
+    let operation = vector_operation(&query, &optional, &litellm_params, Some(&extra));
+    let transport = RecordingTransport::new(LeafReply {
+        status: 200,
+        headers: Vec::new(),
+        body: VECTOR_REPLY.as_bytes().to_vec(),
+        chunks: Vec::new(),
+    });
+    let error = dispatched!(VectorRetrieve, operation.run(&transport)).unwrap_err();
+    match error {
+        vector_retrieve::OperationError::Leaf(VectorStoreError::RetrievalConfigNotObject) => {}
+        other @ (vector_retrieve::OperationError::Leaf(_)
+        | vector_retrieve::OperationError::Transport(_)) => {
+            panic!("expected a retrieval configuration failure, got {other}")
+        }
+    }
+    assert!(transport.requests().is_empty());
+}
+
+#[test]
+fn bedrock_interactive_dispatch_leaf_request_debug_names_headers_without_values() {
+    let request = LeafRequest {
+        method: "POST".to_owned(),
+        url: "https://bedrock-runtime.example/model/x/invoke".to_owned(),
+        headers: vec![
+            (
+                "Authorization".to_owned(),
+                Some("AWS4-HMAC-SHA256 secret".to_owned()),
+            ),
+            ("X-Trace".to_owned(), None),
+        ],
+        body: b"hello".to_vec(),
+        deadline: DEADLINE,
+    };
+    let rendered = format!("{request:?}");
+    assert_eq!(
+        rendered,
+        r#"LeafRequest { method: "POST", url: "https://bedrock-runtime.example/model/x/invoke", headers: ["Authorization", "X-Trace"], body: 5, deadline: 600s }"#
+    );
+    assert!(!rendered.contains("AWS4-HMAC-SHA256"));
+}
+
+mod dispatch_support;
+mod passthrough_support;
+mod realtime_support;
+
+use passthrough_support::passthrough_case;
+use realtime_support::realtime_case;
+
+#[derive(Debug, Clone, Copy)]
+enum Scenario {
+    Responses,
+    Passthrough,
+    Search,
+    VectorRetrieve,
+    RealtimeBridge,
+}
+
+#[rstest]
+#[case::responses(Scenario::Responses)]
+#[case::passthrough(Scenario::Passthrough)]
+#[case::search(Scenario::Search)]
+#[case::vector_retrieve(Scenario::VectorRetrieve)]
+#[case::realtime_bridge(Scenario::RealtimeBridge)]
+fn bedrock_interactive_dispatch_cases(#[case] scenario: Scenario) {
+    match scenario {
+        Scenario::Responses => responses_case(),
+        Scenario::Passthrough => passthrough_case(),
+        Scenario::Search => search_case(),
+        Scenario::VectorRetrieve => vector_case(),
+        Scenario::RealtimeBridge => realtime_case(),
+    }
+}
+
+#[test]
+fn bedrock_interactive_dispatch_unsupported_operation() {
+    let error = block_on(super::dispatch(super::BedrockInteractiveOperation::<
+        Infallible,
+    >::Unsupported {
+        operation: "embedding",
+    }))
+    .expect_err("an operation this task does not own is refused");
+    assert_eq!(
+        error.to_string(),
+        "betterlite does not run the embedding operation through the Bedrock interactive provider"
+    );
+    match error {
+        BedrockInteractiveError::Unsupported { operation } => assert_eq!(operation, "embedding"),
+        other @ (BedrockInteractiveError::Responses(_)
+        | BedrockInteractiveError::Passthrough(_)
+        | BedrockInteractiveError::Search(_)
+        | BedrockInteractiveError::VectorRetrieve(_)
+        | BedrockInteractiveError::RealtimeBridge(_)) => {
+            panic!("expected an unsupported operation, got {other}")
+        }
+    }
+}

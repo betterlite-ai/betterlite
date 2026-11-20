@@ -1,0 +1,15 @@
+kind: helper
+name: gemini-rag-store-create-store-ok
+call:
+  b3454:
+    script:
+      - status: 200
+        body: '{"name":"fileSearchStores/s1"}'
+    options:
+      name: my-store
+      vector_store:
+        custom_llm_provider: gemini
+    environment:
+      GOOGLE_API_KEY: google-key
+env: {}
+compare: {ignore: []}

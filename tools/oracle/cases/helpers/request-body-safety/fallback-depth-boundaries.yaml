@@ -1,0 +1,23 @@
+kind: helper
+name: request-body-safety-fallback-depth-boundaries
+call:
+  request_body_safety:
+    request_body:
+      model: gpt-4o
+      fallbacks:
+        - {a: [{a: [{a: [{a: [{a: [{a: [{a: [{a: [{a: [{a: [[]]}]}]}]}]}]}]}]}]}]}
+    general_settings: {}
+    model: gpt-4o
+    model_list: []
+calls:
+  - request_body_safety:
+      request_body:
+        model: gpt-4o
+        fallbacks:
+          - {a: [{a: [{a: [{a: [{a: [{a: [{a: [{a: [{a: [{a: [{a: [[]]}]}]}]}]}]}]}]}]}]}]}
+      general_settings: {}
+      model: gpt-4o
+      model_list: []
+env: {}
+compare:
+  ignore: []
