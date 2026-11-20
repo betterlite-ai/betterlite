@@ -12,13 +12,13 @@ use secrecy::SecretString;
 use serde_json::Number;
 use uuid::Uuid;
 
-use crate::claude_platform::stream::StreamFlags;
+use crate::claude_platform::stream::{StreamFlags, get_model_response_iterator};
 use crate::mantle_chat::HAS_CUSTOM_STREAM_WRAPPER;
 use crate::mantle_chat::environment::{chat_headers, messages_headers};
 use crate::mantle_chat::messages::{move_betas_into_header, restore_messages_fields};
 use crate::mantle_chat::request::restore_body_fields;
 use crate::mantle_chat::response::transform_response;
-use crate::mantle_chat::stream::{messages_iterator, model_response_iterator};
+use crate::mantle_chat::stream::messages_iterator;
 use crate::mantle_chat::url::complete_url;
 use crate::mantle_inputs::records::MantleGlobals;
 use crate::request_policy::{BedrockRequestPolicy, Params as MetadataParams, RequestValue};
@@ -690,6 +690,7 @@ pub(super) fn mantle_native_sse() {
     messages_iterator_case();
 }
 
+// get_model_response_iterator: the mantle chat keeps the native Anthropic SSE iterator, with sync_stream and json_mode passed through.
 fn chat_iterator_cases() {
     let custom_wrapper = HAS_CUSTOM_STREAM_WRAPPER;
     assert!(
@@ -702,7 +703,7 @@ fn chat_iterator_cases() {
 }
 
 fn chat_text_chunks(ids: &FixedIds) {
-    let mut chunks = model_response_iterator(
+    let mut chunks = get_model_response_iterator(
         sse_chunks(&[
             r#"{"type":"message_start","message":{"model":"claude","usage":{"input_tokens":1,"output_tokens":2}}}"#,
             r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}"#,
@@ -736,7 +737,7 @@ fn chat_text_chunks(ids: &FixedIds) {
 }
 
 fn chat_tool_chunk(ids: &FixedIds) {
-    let mut suppressed = model_response_iterator(
+    let mut suppressed = get_model_response_iterator(
         sse_chunks(&[
             r#"{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"j","name":"json_tool_call","input":{}}}"#,
         ])
