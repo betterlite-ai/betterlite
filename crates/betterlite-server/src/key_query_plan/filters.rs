@@ -49,7 +49,7 @@ pub enum KeyScalar {
 
 // one Prisma where entry; the enum fixes the value shape each operator accepts
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum KeyPredicate {
+pub enum Where {
     IsNull(KeyColumn),
     IsNotNull(KeyColumn),
     Equals(KeyColumn, KeyScalar),
@@ -59,24 +59,29 @@ pub enum KeyPredicate {
     ContainsInsensitive(KeyColumn, String),
     In(KeyColumn, Vec<String>),
     HasSome(KeyColumn, Vec<String>),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum WhereEntry {
-    Predicate(KeyPredicate),
     And(Vec<WhereClause>),
     Or(Vec<WhereClause>),
 }
 
 // a Prisma where object: its entries are ANDed, and an empty one matches every row
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct WhereClause(pub Vec<WhereEntry>);
+pub type WhereClause = Vec<Where>;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum TextMatching {
     #[default]
     Exact,
     Substring,
+}
+
+impl Where {
+    // the caller picks equals or contains-insensitive for the same column
+    #[must_use]
+    pub fn matching(column: KeyColumn, matching: TextMatching, value: &str) -> Self {
+        match matching {
+            TextMatching::Exact => Self::Equals(column, KeyScalar::Text(String::from(value))),
+            TextMatching::Substring => Self::ContainsInsensitive(column, String::from(value)),
+        }
+    }
 }
 
 // every field but the two matching modes is one argument of LiteLLM's filter builder
@@ -106,42 +111,26 @@ pub struct KeyFilters {
 
 #[must_use]
 pub fn filter_out_ui_session_tokens() -> WhereClause {
-    WhereClause(vec![WhereEntry::Or(vec![
-        WhereClause(vec![WhereEntry::Predicate(KeyPredicate::IsNull(
-            KeyColumn::TeamId,
-        ))]),
-        WhereClause(vec![WhereEntry::Predicate(KeyPredicate::NotEquals(
-            KeyColumn::TeamId,
-            KeyScalar::Text(String::from(UI_SESSION_TOKEN_TEAM_ID)),
-        ))]),
-    ])])
+    let null_team = Where::IsNull(KeyColumn::TeamId);
+    let dashboard = Where::NotEquals(
+        KeyColumn::TeamId,
+        KeyScalar::Text(String::from(UI_SESSION_TOKEN_TEAM_ID)),
+    );
+    vec![Where::Or(vec![vec![null_team], vec![dashboard]])]
 }
 
+// an exact token hit or a case-insensitive alias substring, never a prefix search
 #[must_use]
 pub fn build_key_search_where(search: &str) -> WhereClause {
-    WhereClause(vec![WhereEntry::Or(vec![
-        WhereClause(vec![WhereEntry::Predicate(KeyPredicate::Equals(
-            KeyColumn::Token,
-            KeyScalar::Text(String::from(search)),
-        ))]),
-        WhereClause(vec![WhereEntry::Predicate(
-            KeyPredicate::ContainsInsensitive(KeyColumn::KeyAlias, String::from(search)),
-        )]),
-    ])])
+    let token = Where::Equals(KeyColumn::Token, KeyScalar::Text(String::from(search)));
+    let alias = Where::ContainsInsensitive(KeyColumn::KeyAlias, String::from(search));
+    vec![Where::Or(vec![vec![token], vec![alias]])]
 }
 
 #[must_use]
-pub fn truthy(value: &Option<String>) -> Option<&str> {
+pub fn non_empty(value: &Option<String>) -> Option<&str> {
     match value {
         Some(text) if !text.is_empty() => Some(text.as_str()),
         Some(_) | None => None,
-    }
-}
-
-#[must_use]
-pub fn matching_predicate(column: KeyColumn, matching: TextMatching, value: &str) -> KeyPredicate {
-    match matching {
-        TextMatching::Exact => KeyPredicate::Equals(column, KeyScalar::Text(String::from(value))),
-        TextMatching::Substring => KeyPredicate::ContainsInsensitive(column, String::from(value)),
     }
 }

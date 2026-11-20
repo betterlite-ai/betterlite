@@ -20,16 +20,11 @@ pub const SORT_COLUMNS: [SortColumn; 6] = [
 
 impl SortColumn {
     #[must_use]
-    pub const fn from_wire(text: &str) -> Option<Self> {
-        match text.as_bytes() {
-            b"spend" => Some(Self::Spend),
-            b"max_budget" => Some(Self::MaxBudget),
-            b"created_at" => Some(Self::CreatedAt),
-            b"updated_at" => Some(Self::UpdatedAt),
-            b"token" => Some(Self::Token),
-            b"key_alias" => Some(Self::KeyAlias),
-            _ => None,
-        }
+    pub fn from_wire(text: &str) -> Option<Self> {
+        SORT_COLUMNS
+            .iter()
+            .copied()
+            .find(|column| column.wire() == text)
     }
 
     #[must_use]
@@ -114,8 +109,9 @@ pub fn validate_sort_params(
 
 pub fn validate_sort_column(sort_by: &str, sort_order: &str) -> Result<SortBy, SortError> {
     let Some(column) = SortColumn::from_wire(sort_by) else {
+        let columns: Vec<&str> = SORT_COLUMNS.iter().map(|column| column.wire()).collect();
         return Err(SortError::Column {
-            columns: permitted_columns(),
+            columns: columns.join(", "),
         });
     };
     let lowered = sort_order.to_lowercase();
@@ -123,12 +119,4 @@ pub fn validate_sort_column(sort_by: &str, sort_order: &str) -> Result<SortBy, S
         return Err(SortError::Order);
     };
     Ok(SortBy { column, order })
-}
-
-fn permitted_columns() -> String {
-    SORT_COLUMNS
-        .iter()
-        .map(|column| column.wire())
-        .collect::<Vec<_>>()
-        .join(", ")
 }

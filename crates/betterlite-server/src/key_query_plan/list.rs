@@ -5,7 +5,7 @@ use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_db::postgres_store::errors::DbError;
 
-use crate::key_query_plan::error::KeyQueryPlanError;
+use crate::key_query_plan::KeyQueryPlanError;
 use crate::key_query_plan::plan::{KeyListQuery, KeyQueryPlan, KeyTable, build_plan};
 use crate::key_query_plan::response::{
     KeyListEntry, KeyListResponseObject, KeyRow, attach_user_expansion, entry_for_row,
@@ -80,6 +80,7 @@ async fn render_rows<S: KeyListSource>(
     query: &KeyListQuery,
 ) -> Result<Vec<KeyListEntry>, KeyQueryPlanError> {
     let expand_user = query.expand.iter().any(|name| name == "user");
+    let full_object = query.return_full_object || expand_user;
     let mut keys = Vec::with_capacity(rows.len());
     for mut row in rows {
         if matches!(plan.table, KeyTable::Live) {
@@ -88,11 +89,7 @@ async fn render_rows<S: KeyListSource>(
         if expand_user {
             attach_user_expansion(&mut row, user_map)?;
         }
-        keys.push(entry_for_row(
-            row,
-            plan.table,
-            query.return_full_object || expand_user,
-        )?);
+        keys.push(entry_for_row(row, plan.table, full_object)?);
     }
     Ok(keys)
 }

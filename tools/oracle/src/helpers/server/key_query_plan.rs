@@ -7,7 +7,7 @@ use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::key_query_plan::filters::globals::build_key_filter_conditions;
 use betterlite_server::key_query_plan::filters::{
-    KeyFilters, KeyPredicate, KeyScalar, TextMatching, WhereClause, WhereEntry,
+    KeyFilters, KeyScalar, TextMatching, Where, WhereClause,
 };
 use betterlite_server::key_query_plan::sort::validate_sort_params;
 use betterlite_server::key_query_plan::status::{
@@ -43,7 +43,8 @@ struct FilterArgs {
     #[serde(flatten)]
     filters: KeyFilters,
     use_substring_matching: Option<bool>,
-    use_key_alias_substring_matching: Option<bool>,
+    #[serde(rename = "use_key_alias_substring_matching")]
+    alias_substring: Option<bool>,
 }
 
 pub(crate) struct Op;
@@ -87,9 +88,7 @@ fn status_answer(
             format!("the expiry is not a timestamp: {error}"),
         )
     })?;
-    let value = serde_json::to_value(status)
-        .map_err(|error| failure("ValueError", None, error.to_string()))?;
-    Ok(value)
+    serde_json::to_value(status).map_err(|error| failure("ValueError", None, error.to_string()))
 }
 
 fn status_clause_answer(status_filter: Option<&str>, now: &str) -> Result<Value, Box<HelperError>> {
@@ -109,11 +108,9 @@ fn sort_answer(sort_by: Option<&str>, sort_order: &str) -> Result<Value, Box<Hel
     let Some(sort) = validated else {
         return Ok(Value::Null);
     };
+    let direction = sort.order.sql().to_lowercase();
     let mut entry = Map::new();
-    entry.insert(
-        sort.column.wire().to_owned(),
-        Value::String(sort.order.sql().to_lowercase()),
-    );
+    entry.insert(sort.column.wire().to_owned(), Value::String(direction));
     Ok(Value::Object(entry))
 }
 
@@ -121,7 +118,7 @@ fn filters_answer(args: &FilterArgs, now: &str) -> Result<Value, Box<HelperError
     let instant = parse_now(now)?;
     let mut filters = args.filters.clone();
     filters.user_matching = matching(args.use_substring_matching.unwrap_or(false));
-    filters.key_alias_matching = matching(args.use_key_alias_substring_matching.unwrap_or(false));
+    filters.key_alias_matching = matching(args.alias_substring.unwrap_or(false));
     Ok(clause_value(&build_key_filter_conditions(
         &filters, instant,
     )))
@@ -149,47 +146,44 @@ fn parse_now(now: &str) -> Result<DateTime<Utc>, Box<HelperError>> {
 
 fn clause_value(clause: &WhereClause) -> Value {
     let mut fields = Map::new();
-    for entry in &clause.0 {
-        match entry {
-            WhereEntry::Predicate(predicate) => {
-                let (column, value) = predicate_value(predicate);
-                fields.insert(column.to_owned(), value);
-            }
-            WhereEntry::And(children) => {
-                let clauses = children.iter().map(clause_value).collect();
-                fields.insert(String::from("AND"), Value::Array(clauses));
-            }
-            WhereEntry::Or(children) => {
-                let clauses = children.iter().map(clause_value).collect();
-                fields.insert(String::from("OR"), Value::Array(clauses));
-            }
-        }
+    for entry in clause {
+        let (key, value) = entry_value(entry);
+        fields.insert(key, value);
     }
     Value::Object(fields)
 }
 
-fn predicate_value(predicate: &KeyPredicate) -> (&'static str, Value) {
-    match predicate {
-        KeyPredicate::IsNull(column) => (column.wire(), Value::Null),
-        KeyPredicate::IsNotNull(column) => (column.wire(), json!({"not": null})),
-        KeyPredicate::Equals(column, scalar) => (column.wire(), scalar_value(scalar)),
-        KeyPredicate::NotEquals(column, scalar) => {
-            (column.wire(), json!({"not": scalar_value(scalar)}))
-        }
-        KeyPredicate::Before(column, instant) => {
-            let bound = instant.to_rfc3339_opts(SecondsFormat::AutoSi, true);
-            (column.wire(), json!({"lt": bound}))
-        }
-        KeyPredicate::AtOrAfter(column, instant) => {
-            let bound = instant.to_rfc3339_opts(SecondsFormat::AutoSi, true);
-            (column.wire(), json!({"gte": bound}))
-        }
-        KeyPredicate::ContainsInsensitive(column, text) => (
-            column.wire(),
+fn entry_value(entry: &Where) -> (String, Value) {
+    match entry {
+        Where::And(children) => (
+            String::from("AND"),
+            Value::Array(children.iter().map(clause_value).collect()),
+        ),
+        Where::Or(children) => (
+            String::from("OR"),
+            Value::Array(children.iter().map(clause_value).collect()),
+        ),
+        Where::IsNull(column) => (column.wire().to_owned(), Value::Null),
+        Where::IsNotNull(column) => (column.wire().to_owned(), json!({"not": null})),
+        Where::Equals(column, scalar) => (column.wire().to_owned(), scalar_value(scalar)),
+        Where::NotEquals(column, scalar) => (
+            column.wire().to_owned(),
+            json!({"not": scalar_value(scalar)}),
+        ),
+        Where::Before(column, instant) => (
+            column.wire().to_owned(),
+            json!({"lt": instant.to_rfc3339_opts(SecondsFormat::AutoSi, true)}),
+        ),
+        Where::AtOrAfter(column, instant) => (
+            column.wire().to_owned(),
+            json!({"gte": instant.to_rfc3339_opts(SecondsFormat::AutoSi, true)}),
+        ),
+        Where::ContainsInsensitive(column, text) => (
+            column.wire().to_owned(),
             json!({"contains": text, "mode": "insensitive"}),
         ),
-        KeyPredicate::In(column, values) => (column.wire(), json!({"in": values})),
-        KeyPredicate::HasSome(column, values) => (column.wire(), json!({"hasSome": values})),
+        Where::In(column, values) => (column.wire().to_owned(), json!({"in": values})),
+        Where::HasSome(column, values) => (column.wire().to_owned(), json!({"hasSome": values})),
     }
 }
 

@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use betterlite_db::identity_rows::key::Expiry;
 
-use crate::key_query_plan::filters::{KeyColumn, KeyPredicate, KeyScalar, WhereClause, WhereEntry};
+use crate::key_query_plan::filters::{KeyColumn, KeyScalar, Where, WhereClause};
 
 pub const VALID_EXPIRES_FILTER_VALUES: [&str; 2] = ["active", "expired"];
 
@@ -47,21 +47,17 @@ pub fn derive_key_status(
     let Some(expires) = source.expires.as_ref() else {
         return Ok(KeyStatus::Active);
     };
-    let instant = expiry_instant(expires)?;
+    let instant = match expires {
+        Expiry::DateTime(value) => value.with_timezone(&Utc),
+        Expiry::Text(text) => {
+            parse_utc(text).ok_or_else(|| StatusError::Expiry { text: text.clone() })?
+        }
+    };
     Ok(if instant < now {
         KeyStatus::Expired
     } else {
         KeyStatus::Active
     })
-}
-
-fn expiry_instant(expiry: &Expiry) -> Result<DateTime<Utc>, StatusError> {
-    match expiry {
-        Expiry::DateTime(value) => Ok(value.with_timezone(&Utc)),
-        Expiry::Text(text) => {
-            parse_utc(text).ok_or_else(|| StatusError::Expiry { text: text.clone() })
-        }
-    }
 }
 
 fn parse_utc(text: &str) -> Option<DateTime<Utc>> {
@@ -76,38 +72,23 @@ fn parse_utc(text: &str) -> Option<DateTime<Utc>> {
 #[must_use]
 pub fn build_expires_where_clause(expires_filter: &str, now: DateTime<Utc>) -> WhereClause {
     if expires_filter == "expired" {
-        return WhereClause(vec![WhereEntry::And(vec![
-            WhereClause(vec![WhereEntry::Predicate(KeyPredicate::IsNotNull(
-                KeyColumn::Expires,
-            ))]),
-            WhereClause(vec![WhereEntry::Predicate(KeyPredicate::Before(
-                KeyColumn::Expires,
-                now,
-            ))]),
-        ])]);
+        return vec![Where::And(vec![
+            vec![Where::IsNotNull(KeyColumn::Expires)],
+            vec![Where::Before(KeyColumn::Expires, now)],
+        ])];
     }
-    WhereClause(vec![WhereEntry::Or(vec![
-        WhereClause(vec![WhereEntry::Predicate(KeyPredicate::IsNull(
-            KeyColumn::Expires,
-        ))]),
-        WhereClause(vec![WhereEntry::Predicate(KeyPredicate::AtOrAfter(
-            KeyColumn::Expires,
-            now,
-        ))]),
-    ])])
+    vec![Where::Or(vec![
+        vec![Where::IsNull(KeyColumn::Expires)],
+        vec![Where::AtOrAfter(KeyColumn::Expires, now)],
+    ])]
 }
 
 #[must_use]
 pub fn not_blocked_where_clause() -> WhereClause {
-    WhereClause(vec![WhereEntry::Or(vec![
-        WhereClause(vec![WhereEntry::Predicate(KeyPredicate::IsNull(
-            KeyColumn::Blocked,
-        ))]),
-        WhereClause(vec![WhereEntry::Predicate(KeyPredicate::Equals(
-            KeyColumn::Blocked,
-            KeyScalar::Bool(false),
-        ))]),
-    ])])
+    vec![Where::Or(vec![
+        vec![Where::IsNull(KeyColumn::Blocked)],
+        vec![Where::Equals(KeyColumn::Blocked, KeyScalar::Bool(false))],
+    ])]
 }
 
 #[must_use]
@@ -116,14 +97,15 @@ pub fn build_status_where_clause(
     now: DateTime<Utc>,
 ) -> Option<WhereClause> {
     let filter = status_filter?;
-    match filter {
-        "revoked" => Some(WhereClause(vec![WhereEntry::Predicate(
-            KeyPredicate::Equals(KeyColumn::Blocked, KeyScalar::Bool(true)),
-        )])),
-        "active" | "expired" => Some(WhereClause(vec![WhereEntry::And(vec![
-            not_blocked_where_clause(),
-            build_expires_where_clause(filter, now),
-        ])])),
-        _ => None,
+    if filter == "revoked" {
+        return Some(vec![Where::Equals(
+            KeyColumn::Blocked,
+            KeyScalar::Bool(true),
+        )]);
     }
+    if !VALID_EXPIRES_FILTER_VALUES.contains(&filter) {
+        return None;
+    }
+    let expiry = build_expires_where_clause(filter, now);
+    Some(vec![Where::And(vec![not_blocked_where_clause(), expiry])])
 }

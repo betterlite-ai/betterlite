@@ -15,10 +15,11 @@ use betterlite_db::postgres_store::rows::KeyColumn;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_db::user_repository::tables::USER_TABLE;
 
-use crate::key_query_plan::error::KeyQueryPlanError;
+use crate::key_query_plan::KeyQueryPlanError;
 use crate::key_query_plan::plan::{KeyQueryPlan, KeyTable};
 use crate::key_query_plan::response::KeyRow;
-use crate::key_query_plan::sql::{SqlValue, count_query, page_query};
+use crate::key_query_plan::sql::{RenderedQuery, SqlValue, count_query, page_query};
+// ast-grep-ignore: no-long-names
 use crate::object_permissions::attach::attach_object_permission_to_dict;
 
 // the seam a key list reads through; production goes to Postgres and tests record the call order
@@ -70,7 +71,11 @@ impl KeyListSource for PrismaClient<'_> {
         &self,
         row: &mut KeyRow,
     ) -> impl Future<Output = Result<(), KeyQueryPlanError>> + Send {
-        async move { attach_permission(*self, row).await }
+        async move {
+            // ast-grep-ignore: no-long-names
+            attach_object_permission_to_dict(row, Some(*self)).await?;
+            Ok(())
+        }
     }
 }
 
@@ -78,13 +83,7 @@ async fn fetch_page(
     client: PrismaClient<'_>,
     plan: &KeyQueryPlan,
 ) -> Result<Vec<KeyRow>, KeyQueryPlanError> {
-    let query = page_query(plan);
-    let params: Vec<&(dyn ToSql + Sync)> = query.params.iter().map(SqlValue::bind).collect();
-    let session = read_store(client).session().await?;
-    let rows = session
-        .query(query.sql.as_str(), &params)
-        .await
-        .map_err(backend::<Infallible>)?;
+    let rows = run(client, &page_query(plan)).await?;
     match plan.table {
         KeyTable::Live => rows.iter().map(decode_live_row).collect(),
         KeyTable::Deleted => rows
@@ -98,13 +97,8 @@ async fn fetch_page(
 }
 
 async fn count(client: PrismaClient<'_>, plan: &KeyQueryPlan) -> Result<i64, KeyQueryPlanError> {
-    let query = count_query(plan);
-    let params: Vec<&(dyn ToSql + Sync)> = query.params.iter().map(SqlValue::bind).collect();
-    let session = read_store(client).session().await?;
-    let row = session
-        .query_one(query.sql.as_str(), &params)
-        .await
-        .map_err(backend::<Infallible>)?;
+    let rows = run(client, &count_query(plan)).await?;
+    let row = rows.first().ok_or(KeyQueryPlanError::MissingRow)?;
     let total: i64 = row.try_get(0).map_err(backend::<Infallible>)?;
     Ok(total)
 }
@@ -121,20 +115,21 @@ async fn find_users(
     Ok(repository.find_many_in(KeyColumn::Id, ids).await?)
 }
 
-async fn attach_permission(
+async fn run(
     client: PrismaClient<'_>,
-    row: &mut KeyRow,
-) -> Result<(), KeyQueryPlanError> {
-    attach_object_permission_to_dict(row, Some(client)).await?;
-    Ok(())
+    query: &RenderedQuery,
+) -> Result<Vec<Row>, KeyQueryPlanError> {
+    let params: Vec<&(dyn ToSql + Sync)> = query.params.iter().map(SqlValue::bind).collect();
+    let session = read_store(client).session().await?;
+    Ok(session
+        .query(query.sql.as_str(), &params)
+        .await
+        .map_err(backend::<Infallible>)?)
 }
 
 fn read_store<'db>(client: PrismaClient<'db>) -> &'db PostgresStore {
-    if client
-        .availability
-        .reader_unavailable
-        .load(Ordering::SeqCst)
-    {
+    let availability = client.availability;
+    if availability.reader_unavailable.load(Ordering::SeqCst) {
         client.writer
     } else {
         client.reader
@@ -145,8 +140,8 @@ fn decode_live_row(row: &Row) -> Result<KeyRow, KeyQueryPlanError> {
     let document: String = row.try_get(0).map_err(backend::<Infallible>)?;
     let mut fields = decode_mapping(&document)?;
     let budget: Option<String> = row.try_get(1).map_err(backend::<Infallible>)?;
-    if let Some(document) = budget {
-        let value: JsonData = serde_json::from_str(&document).map_err(KeyQueryPlanError::Row)?;
+    if let Some(budget_json) = budget {
+        let value: JsonData = serde_json::from_str(&budget_json).map_err(KeyQueryPlanError::Row)?;
         fields.insert(String::from("litellm_budget_table"), value);
     }
     Ok(fields)
@@ -154,12 +149,8 @@ fn decode_live_row(row: &Row) -> Result<KeyRow, KeyQueryPlanError> {
 
 fn decode_mapping(document: &str) -> Result<BTreeMap<String, JsonData>, KeyQueryPlanError> {
     let value: JsonData = serde_json::from_str(document).map_err(KeyQueryPlanError::Row)?;
-    match value {
-        JsonData::Object(fields) => Ok(fields),
-        JsonData::Null
-        | JsonData::Bool(_)
-        | JsonData::Number(_)
-        | JsonData::String(_)
-        | JsonData::Array(_) => Err(KeyQueryPlanError::RowObject),
-    }
+    let JsonData::Object(fields) = value else {
+        return Err(KeyQueryPlanError::RowObject);
+    };
+    Ok(fields)
 }

@@ -7,7 +7,7 @@ use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::key::DeletedVerificationToken;
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
 
-use crate::key_query_plan::error::KeyQueryPlanError;
+use crate::key_query_plan::KeyQueryPlanError;
 use crate::key_query_plan::plan::KeyTable;
 
 pub type KeyRow = BTreeMap<String, JsonData>;
@@ -34,25 +34,18 @@ pub fn entry_for_row(
     full_object: bool,
 ) -> Result<KeyListEntry, KeyQueryPlanError> {
     if full_object {
-        return match table {
+        return Ok(match table {
             KeyTable::Live => {
                 let auth = UserAPIKeyAuth::construct(AuthInput::Dict(row))?;
-                Ok(KeyListEntry::Auth(Box::new(auth)))
+                KeyListEntry::Auth(Box::new(auth))
             }
-            KeyTable::Deleted => Ok(KeyListEntry::Deleted(Box::new(deleted_row(&row)?))),
-        };
+            KeyTable::Deleted => KeyListEntry::Deleted(Box::new(deleted_row(&row)?)),
+        });
     }
-    match row.get("token") {
-        Some(JsonData::String(token)) => Ok(KeyListEntry::Token(token.clone())),
-        Some(
-            JsonData::Null
-            | JsonData::Bool(_)
-            | JsonData::Number(_)
-            | JsonData::Array(_)
-            | JsonData::Object(_),
-        )
-        | None => Err(KeyQueryPlanError::MissingToken),
-    }
+    let Some(JsonData::String(token)) = row.get("token") else {
+        return Err(KeyQueryPlanError::MissingToken);
+    };
+    Ok(KeyListEntry::Token(token.clone()))
 }
 
 // the archived table is dumped through its own model, which keeps the deletion metadata
@@ -67,17 +60,15 @@ pub fn attach_user_expansion(
     row: &mut KeyRow,
     users: &BTreeMap<String, LiteLLMUserTable>,
 ) -> Result<(), KeyQueryPlanError> {
-    let owner_id = non_empty_text(row.get("user_id")).map(String::from);
-    if let Some(user_id) = owner_id
-        && let Some(user) = users.get(&user_id)
+    if let Some(user_id) = non_empty_text(row.get("user_id"))
+        && let Some(user) = users.get(user_id)
     {
         let document = serde_json::to_string(user).map_err(KeyQueryPlanError::Row)?;
         let value = serde_json::from_str(&document).map_err(KeyQueryPlanError::Row)?;
         row.insert(String::from("user"), value);
     }
-    let creator_id = non_empty_text(row.get("created_by")).map(String::from);
-    if let Some(user_id) = creator_id
-        && let Some(user) = users.get(&user_id)
+    if let Some(user_id) = non_empty_text(row.get("created_by"))
+        && let Some(user) = users.get(user_id)
     {
         let mut fields = BTreeMap::new();
         fields.insert(
@@ -92,18 +83,10 @@ pub fn attach_user_expansion(
 }
 
 fn non_empty_text(value: Option<&JsonData>) -> Option<&str> {
-    match value {
-        Some(JsonData::String(text)) if !text.is_empty() => Some(text),
-        Some(
-            JsonData::Null
-            | JsonData::Bool(_)
-            | JsonData::Number(_)
-            | JsonData::Array(_)
-            | JsonData::Object(_)
-            | JsonData::String(_),
-        )
-        | None => None,
-    }
+    let Some(JsonData::String(text)) = value else {
+        return None;
+    };
+    Some(text).filter(|entry| !entry.is_empty())
 }
 
 fn optional_text(value: &Option<String>) -> JsonData {

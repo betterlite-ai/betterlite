@@ -3,7 +3,7 @@ use tokio_postgres::types::ToSql;
 
 use betterlite_db::table_ops::access::BUDGET_TABLE;
 
-use crate::key_query_plan::filters::{KeyPredicate, KeyScalar, WhereClause, WhereEntry};
+use crate::key_query_plan::filters::{KeyScalar, Where, WhereClause};
 use crate::key_query_plan::plan::{KeyQueryPlan, KeyTable};
 use crate::key_query_plan::sort::SortBy;
 
@@ -80,35 +80,21 @@ pub fn count_query(plan: &KeyQueryPlan) -> RenderedQuery {
 }
 
 fn order_sql(sort: &[SortBy]) -> String {
-    let parts: Vec<String> = sort
-        .iter()
-        .map(|entry| {
-            let column = entry.column.wire();
-            let direction = entry.order.sql();
-            format!("r.\"{column}\" {direction}")
-        })
-        .collect();
-    parts.join(", ")
+    sort.iter()
+        .map(|entry| format!("r.\"{}\" {}", entry.column.wire(), entry.order.sql()))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn clause_sql(clause: &WhereClause, builder: &mut SqlBuilder) -> String {
     let parts: Vec<String> = clause
-        .0
         .iter()
-        .map(|entry| entry_sql(entry, builder))
+        .map(|entry| node_sql(entry, builder))
         .collect();
     if parts.is_empty() {
         return String::from("TRUE");
     }
     parts.join(" AND ")
-}
-
-fn entry_sql(entry: &WhereEntry, builder: &mut SqlBuilder) -> String {
-    match entry {
-        WhereEntry::Predicate(predicate) => predicate_sql(predicate, builder),
-        WhereEntry::And(children) => group_sql(children, builder, "AND"),
-        WhereEntry::Or(children) => group_sql(children, builder, "OR"),
-    }
 }
 
 fn group_sql(children: &[WhereClause], builder: &mut SqlBuilder, joiner: &str) -> String {
@@ -119,37 +105,28 @@ fn group_sql(children: &[WhereClause], builder: &mut SqlBuilder, joiner: &str) -
     format!("({})", parts.join(joiner))
 }
 
-fn predicate_sql(predicate: &KeyPredicate, builder: &mut SqlBuilder) -> String {
-    let (column, operator, parameter) = match predicate {
-        KeyPredicate::IsNull(column) => (column, "IS", String::from("NULL")),
-        KeyPredicate::IsNotNull(column) => (column, "IS", String::from("NOT NULL")),
-        KeyPredicate::Equals(column, scalar) => (column, "=", scalar_bind(scalar, builder)),
-        KeyPredicate::NotEquals(column, scalar) => (column, "<>", scalar_bind(scalar, builder)),
-        KeyPredicate::Before(column, instant) => (column, "<", timestamp_bind(instant, builder)),
-        KeyPredicate::AtOrAfter(column, instant) => {
-            (column, ">=", timestamp_bind(instant, builder))
+fn node_sql(entry: &Where, builder: &mut SqlBuilder) -> String {
+    let (column, operator, parameter) = match entry {
+        Where::And(children) => return group_sql(children, builder, "AND"),
+        Where::Or(children) => return group_sql(children, builder, "OR"),
+        Where::IsNull(column) => (column, "IS", String::from("NULL")),
+        Where::IsNotNull(column) => (column, "IS", String::from("NOT NULL")),
+        Where::Equals(column, scalar) => (column, "=", scalar_bind(scalar, builder)),
+        Where::NotEquals(column, scalar) => (column, "<>", scalar_bind(scalar, builder)),
+        Where::Before(column, instant) => (column, "<", timestamp_bind(instant, builder)),
+        Where::AtOrAfter(column, instant) => (column, ">=", timestamp_bind(instant, builder)),
+        Where::ContainsInsensitive(column, text) => {
+            let pattern = format!("%{text}%");
+            (column, "ILIKE", builder.bind(SqlValue::Text(pattern)))
         }
-        KeyPredicate::ContainsInsensitive(column, text) => (
-            column,
-            "ILIKE",
-            builder.bind(SqlValue::Text(format!("%{text}%"))),
-        ),
-        KeyPredicate::In(column, values) => (
-            column,
-            "= ANY",
-            format!(
-                "{}::text[]",
-                builder.bind(SqlValue::TextList(values.clone()))
-            ),
-        ),
-        KeyPredicate::HasSome(column, values) => (
-            column,
-            "&&",
-            format!(
-                "{}::text[]",
-                builder.bind(SqlValue::TextList(values.clone()))
-            ),
-        ),
+        Where::In(column, values) => {
+            let list = builder.bind(SqlValue::TextList(values.clone()));
+            (column, "= ANY", format!("{list}::text[]"))
+        }
+        Where::HasSome(column, values) => {
+            let list = builder.bind(SqlValue::TextList(values.clone()));
+            (column, "&&", format!("{list}::text[]"))
+        }
     };
     format!("r.\"{}\" {operator} {parameter}", column.wire())
 }

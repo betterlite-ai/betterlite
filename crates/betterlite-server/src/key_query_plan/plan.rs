@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 
 use betterlite_db::table_ops::access::KEY_TABLE;
 
-use crate::key_query_plan::error::KeyQueryPlanError;
+use crate::key_query_plan::KeyQueryPlanError;
 use crate::key_query_plan::filters::globals::build_key_filter_conditions;
 use crate::key_query_plan::filters::{KeyFilters, WhereClause};
 use crate::key_query_plan::sort::{DEFAULT_SORT, SortBy, validate_sort_column};
@@ -35,22 +35,6 @@ pub struct KeyListQuery {
     pub sort_order: String,
     pub expand: Vec<String>,
     pub return_full_object: bool,
-}
-
-impl KeyListQuery {
-    #[must_use]
-    pub fn new(now: DateTime<Utc>, page: i64, size: i64) -> Self {
-        Self {
-            now,
-            page,
-            size,
-            filters: KeyFilters::default(),
-            sort_by: None,
-            sort_order: String::from("desc"),
-            expand: Vec::new(),
-            return_full_object: false,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
