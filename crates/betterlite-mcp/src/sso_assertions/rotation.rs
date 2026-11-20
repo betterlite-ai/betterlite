@@ -36,7 +36,7 @@ where
     for AssertionRow {
         user_id,
         assertion_b64,
-    } in rows.find_all().await?
+    } in rows.find_all().await.map_err(RotationError::Store)?
     {
         let stored = StoredValue::<Infallible>::Text(SecretString::from(assertion_b64));
         let Some(StoredValue::Text(plaintext)) =
