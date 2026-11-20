@@ -501,10 +501,10 @@ async fn request_headers_reject_names_and_values() {
     let Err(name_error) = fixture.run(ClientKind::Sync, &deps, &bad_name_call).await else {
         panic!("a header name HTTP cannot carry fails the call");
     };
-    let ImageEditHttpError::Request(built) = name_error else {
+    let ImageEditHttpError::Request(name_request) = name_error else {
         panic!("a header name HTTP cannot carry fails outside the request build: {name_error}");
     };
-    let RequestError::HeaderName { name, .. } = built else {
+    let RequestError::HeaderName { name, .. } = name_request else {
         panic!("a header name HTTP cannot carry fails the name");
     };
     assert_eq!(name, "bad name");
@@ -514,10 +514,10 @@ async fn request_headers_reject_names_and_values() {
     let Err(value_error) = fixture.run(ClientKind::Sync, &deps, &bad_value_call).await else {
         panic!("a header value HTTP cannot carry fails the call");
     };
-    let ImageEditHttpError::Request(built) = value_error else {
+    let ImageEditHttpError::Request(value_request) = value_error else {
         panic!("a header value HTTP cannot carry fails outside the request build: {value_error}");
     };
-    let RequestError::HeaderValue { name, .. } = built else {
+    let RequestError::HeaderValue { name, .. } = value_request else {
         panic!("a header value HTTP cannot carry fails the value");
     };
     assert_eq!(name, "x");
