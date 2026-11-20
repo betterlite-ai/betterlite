@@ -1,0 +1,6 @@
+kind: helper
+name: anthropic-guardrail-write-back-hoisted-system-empty-is-none
+call:
+  b3674: {"function": "hoisted", "scenarios": [{"data": {"model": "claude-sonnet-4-5", "messages": []}}, {"data": {"model": "claude-sonnet-4-5", "system": "", "messages": []}}, {"data": {"model": "claude-sonnet-4-5", "system": [], "messages": []}}, {"data": {"model": "claude-sonnet-4-5", "system": null, "messages": []}}, {"data": {"model": "claude-sonnet-4-5", "system": 0, "messages": []}}, {"data": {"model": "claude-sonnet-4-5", "system": false, "messages": []}}]}
+env: {}
+compare: {ignore: []}
