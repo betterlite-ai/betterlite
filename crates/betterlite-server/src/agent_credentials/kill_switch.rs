@@ -25,12 +25,12 @@ pub fn serialize_agent_kill_switch(
     incoming: Option<&AgentKillSwitchConfig>,
     existing: Option<&AgentJson>,
 ) -> Result<String, AgentCredentialsError> {
-    let stored = restore_kill_switch(incoming, parse_agent_kill_switch(existing).as_ref());
-    let Some(stored) = stored else {
+    let restored = restore_kill_switch(incoming, parse_agent_kill_switch(existing).as_ref());
+    let Some(config) = restored else {
         return Ok(String::from("null"));
     };
-    let mut value = serde_json::to_value(&stored).map_err(AgentCredentialsError::Serialize)?;
-    if let Some(auth) = stored.auth.as_ref() {
+    let mut value = serde_json::to_value(&config).map_err(AgentCredentialsError::Serialize)?;
+    if let Some(auth) = config.auth.as_ref() {
         write_auth_secret(&mut value, auth);
     }
     strip_nul(&mut value);
