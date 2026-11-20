@@ -1,22 +1,11 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
-
-use crate::loader::ConfigError;
-
-fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
-    pairs
-        .iter()
-        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-        .collect()
-}
-
 mod loads_rerank_settings {
     use std::collections::BTreeMap;
 
     use secrecy::{ExposeSecret as _, SecretString};
 
-    use crate::api::rerank_provider_plan::{Environment, loads_rerank_settings};
+    use crate::api::rerank_provider_plan::loads_rerank_settings;
     use crate::loader::ConfigError;
 
     fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -33,12 +22,32 @@ mod loads_rerank_settings {
     #[test]
     fn unset_settings_take_their_defaults() {
         let settings = loads_rerank_settings("litellm_settings: {}\n", &environment(&[])).unwrap();
-        assert_eq!(settings.api_key, None);
+        assert_eq!(text(settings.api_key.as_ref()), None);
         assert_eq!(settings.api_base, None);
         assert_eq!(settings.headers, None);
-        assert_eq!(settings.togetherai_api_key, None);
+        assert_eq!(text(settings.togetherai_api_key.as_ref()), None);
         assert!(!settings.drop_params);
-        assert_eq!(settings.environment, Environment::default());
+        let environment = &settings.environment;
+        assert_eq!(environment.cohere_api_base, None);
+        assert_eq!(environment.azure_ai_api_base, None);
+        assert_eq!(environment.infinity_api_base, None);
+        assert_eq!(environment.bedrock_api_base, None);
+        assert_eq!(text(environment.togetherai_api_key.as_ref()), None);
+        assert_eq!(text(environment.jina_ai_api_key.as_ref()), None);
+        assert_eq!(text(environment.nvidia_nim_api_key.as_ref()), None);
+        assert_eq!(environment.nvidia_nim_api_base, None);
+        assert_eq!(text(environment.hosted_vllm_api_key.as_ref()), None);
+        assert_eq!(environment.hosted_vllm_api_base, None);
+        assert_eq!(text(environment.deepinfra_api_key.as_ref()), None);
+        assert_eq!(environment.deepinfra_api_base, None);
+        assert_eq!(text(environment.fireworks_api_key.as_ref()), None);
+        assert_eq!(text(environment.fireworks_ai_api_key.as_ref()), None);
+        assert_eq!(text(environment.fireworksai_api_key.as_ref()), None);
+        assert_eq!(text(environment.fireworks_ai_token.as_ref()), None);
+        assert_eq!(environment.fireworks_ai_api_base, None);
+        assert_eq!(text(environment.voyage_api_key.as_ref()), None);
+        assert_eq!(text(environment.voyage_ai_api_key.as_ref()), None);
+        assert_eq!(environment.voyage_api_base, None);
     }
 
     #[test]
@@ -109,10 +118,10 @@ mod loads_rerank_settings {
             &environment(&[]),
         )
         .unwrap();
-        assert_eq!(settings.api_key, None);
+        assert_eq!(text(settings.api_key.as_ref()), None);
         assert_eq!(settings.api_base, None);
         assert_eq!(settings.headers, None);
-        assert_eq!(settings.togetherai_api_key, None);
+        assert_eq!(text(settings.togetherai_api_key.as_ref()), None);
     }
 
     #[test]
@@ -273,6 +282,6 @@ mod loads_rerank_settings {
         )
         .unwrap();
         assert_eq!(settings.environment.cohere_api_base, None);
-        assert_eq!(settings.environment.jina_ai_api_key, None);
+        assert_eq!(text(settings.environment.jina_ai_api_key.as_ref()), None);
     }
 }

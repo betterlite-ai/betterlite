@@ -29,7 +29,7 @@ struct RawSettings {
 }
 
 // The provider variables the dispatcher's last-resort fallbacks read; an empty one counts as unset.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default)]
 pub struct Environment {
     pub cohere_api_base: Option<String>,
     pub azure_ai_api_base: Option<String>,
@@ -57,94 +57,103 @@ impl Environment {
     // The loaded snapshot wins; a field the snapshot left empty reads the lookup, as the process env holds the same values
     #[must_use]
     pub fn resolve(&self, lookup: &dyn EnvironmentLookup) -> Self {
-        let read = |name: &str| lookup.lookup(name).filter(|value| !value.is_empty());
-        let secret = |name: &str| read(name).map(SecretString::from);
+        let secrets = self.resolve_secrets(lookup);
+        secrets.resolve_bases(lookup)
+    }
+
+    fn resolve_secrets(&self, lookup: &dyn EnvironmentLookup) -> Self {
         Self {
-            cohere_api_base: self
-                .cohere_api_base
-                .clone()
-                .or_else(|| read("COHERE_API_BASE")),
-            azure_ai_api_base: self
-                .azure_ai_api_base
-                .clone()
-                .or_else(|| read("AZURE_AI_API_BASE")),
-            infinity_api_base: self
-                .infinity_api_base
-                .clone()
-                .or_else(|| read("INFINITY_API_BASE")),
-            bedrock_api_base: self
-                .bedrock_api_base
-                .clone()
-                .or_else(|| read("BEDROCK_API_BASE")),
-            togetherai_api_key: self
-                .togetherai_api_key
-                .clone()
-                .or_else(|| secret("TOGETHERAI_API_KEY")),
-            jina_ai_api_key: self
-                .jina_ai_api_key
-                .clone()
-                .or_else(|| secret("JINA_AI_API_KEY")),
-            nvidia_nim_api_key: self
-                .nvidia_nim_api_key
-                .clone()
-                .or_else(|| secret("NVIDIA_NIM_API_KEY")),
-            nvidia_nim_api_base: self
-                .nvidia_nim_api_base
-                .clone()
-                .or_else(|| read("NVIDIA_NIM_API_BASE")),
-            hosted_vllm_api_key: self
-                .hosted_vllm_api_key
-                .clone()
-                .or_else(|| secret("HOSTED_VLLM_API_KEY")),
-            hosted_vllm_api_base: self
-                .hosted_vllm_api_base
-                .clone()
-                .or_else(|| read("HOSTED_VLLM_API_BASE")),
-            deepinfra_api_key: self
-                .deepinfra_api_key
-                .clone()
-                .or_else(|| secret("DEEPINFRA_API_KEY")),
-            deepinfra_api_base: self
-                .deepinfra_api_base
-                .clone()
-                .or_else(|| read("DEEPINFRA_API_BASE")),
-            fireworks_api_key: self
-                .fireworks_api_key
-                .clone()
-                .or_else(|| secret("FIREWORKS_API_KEY")),
-            fireworks_ai_api_key: self
-                .fireworks_ai_api_key
-                .clone()
-                .or_else(|| secret("FIREWORKS_AI_API_KEY")),
-            fireworksai_api_key: self
-                .fireworksai_api_key
-                .clone()
-                .or_else(|| secret("FIREWORKSAI_API_KEY")),
-            fireworks_ai_token: self
-                .fireworks_ai_token
-                .clone()
-                .or_else(|| secret("FIREWORKS_AI_TOKEN")),
-            fireworks_ai_api_base: self
-                .fireworks_ai_api_base
-                .clone()
-                .or_else(|| read("FIREWORKS_AI_API_BASE")),
-            voyage_api_key: self
-                .voyage_api_key
-                .clone()
-                .or_else(|| secret("VOYAGE_API_KEY")),
-            voyage_ai_api_key: self
-                .voyage_ai_api_key
-                .clone()
-                .or_else(|| secret("VOYAGE_AI_API_KEY")),
-            voyage_api_base: self
-                .voyage_api_base
-                .clone()
-                .or_else(|| read("VOYAGE_API_BASE")),
+            togetherai_api_key: secret(
+                self.togetherai_api_key.as_ref(),
+                lookup,
+                "TOGETHERAI_API_KEY",
+            ),
+            jina_ai_api_key: secret(self.jina_ai_api_key.as_ref(), lookup, "JINA_AI_API_KEY"),
+            nvidia_nim_api_key: secret(
+                self.nvidia_nim_api_key.as_ref(),
+                lookup,
+                "NVIDIA_NIM_API_KEY",
+            ),
+            hosted_vllm_api_key: secret(
+                self.hosted_vllm_api_key.as_ref(),
+                lookup,
+                "HOSTED_VLLM_API_KEY",
+            ),
+            deepinfra_api_key: secret(self.deepinfra_api_key.as_ref(), lookup, "DEEPINFRA_API_KEY"),
+            fireworks_api_key: secret(self.fireworks_api_key.as_ref(), lookup, "FIREWORKS_API_KEY"),
+            fireworks_ai_api_key: secret(
+                self.fireworks_ai_api_key.as_ref(),
+                lookup,
+                "FIREWORKS_AI_API_KEY",
+            ),
+            fireworksai_api_key: secret(
+                self.fireworksai_api_key.as_ref(),
+                lookup,
+                "FIREWORKSAI_API_KEY",
+            ),
+            fireworks_ai_token: secret(
+                self.fireworks_ai_token.as_ref(),
+                lookup,
+                "FIREWORKS_AI_TOKEN",
+            ),
+            voyage_api_key: secret(self.voyage_api_key.as_ref(), lookup, "VOYAGE_API_KEY"),
+            voyage_ai_api_key: secret(self.voyage_ai_api_key.as_ref(), lookup, "VOYAGE_AI_API_KEY"),
+            ..self.clone()
+        }
+    }
+
+    fn resolve_bases(&self, lookup: &dyn EnvironmentLookup) -> Self {
+        Self {
+            cohere_api_base: text(self.cohere_api_base.as_ref(), lookup, "COHERE_API_BASE"),
+            azure_ai_api_base: text(self.azure_ai_api_base.as_ref(), lookup, "AZURE_AI_API_BASE"),
+            infinity_api_base: text(self.infinity_api_base.as_ref(), lookup, "INFINITY_API_BASE"),
+            bedrock_api_base: text(self.bedrock_api_base.as_ref(), lookup, "BEDROCK_API_BASE"),
+            nvidia_nim_api_base: text(
+                self.nvidia_nim_api_base.as_ref(),
+                lookup,
+                "NVIDIA_NIM_API_BASE",
+            ),
+            hosted_vllm_api_base: text(
+                self.hosted_vllm_api_base.as_ref(),
+                lookup,
+                "HOSTED_VLLM_API_BASE",
+            ),
+            deepinfra_api_base: text(
+                self.deepinfra_api_base.as_ref(),
+                lookup,
+                "DEEPINFRA_API_BASE",
+            ),
+            fireworks_ai_api_base: text(
+                self.fireworks_ai_api_base.as_ref(),
+                lookup,
+                "FIREWORKS_AI_API_BASE",
+            ),
+            voyage_api_base: text(self.voyage_api_base.as_ref(), lookup, "VOYAGE_API_BASE"),
+            ..self.clone()
         }
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+fn text(snapshot: Option<&String>, lookup: &dyn EnvironmentLookup, name: &str) -> Option<String> {
+    snapshot
+        .cloned()
+        .or_else(|| lookup.lookup(name).filter(|value| !value.is_empty()))
+}
+
+fn secret(
+    snapshot: Option<&SecretString>,
+    lookup: &dyn EnvironmentLookup,
+    name: &str,
+) -> Option<SecretString> {
+    snapshot.cloned().or_else(|| {
+        lookup
+            .lookup(name)
+            .filter(|value| !value.is_empty())
+            .map(SecretString::from)
+    })
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct RerankSettings {
     pub api_key: Option<SecretString>,
     pub api_base: Option<String>,
@@ -191,10 +200,7 @@ impl Raw {
                 lookup,
             )?
             .filter(|value| !value.expose_secret().is_empty()),
-            drop_params: settings
-                .drop_params
-                .or(Some(environment_flag.enabled))
-                .unwrap_or(false),
+            drop_params: settings.drop_params.unwrap_or(environment_flag.enabled),
             environment: Environment::default().resolve(lookup),
         })
     }
