@@ -138,6 +138,11 @@ async fn delete_and_cancel_encoded_provider() {
         assert_eq!(answer.id.as_deref(), Some("resp_a"));
         assert_eq!(answer.object.as_deref(), Some("response"));
         assert_eq!(answer.deleted, Some(true));
+        assert_eq!(state.litellm_params.get("metadata"), Some(&metadata));
+        assert_eq!(
+            state.litellm_params.get("litellm_metadata"),
+            Some(&metadata)
+        );
         let delete_requests = wire.requests();
         assert_eq!(delete_requests.len(), 1);
         assert_wire(&delete_requests[0], Method::DELETE, "resp%2Fa");
