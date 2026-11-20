@@ -19,6 +19,7 @@ pub(super) struct Sent {
     pub(super) elapsed: Duration,
 }
 
+// The vector-store write path keeps this converter private in betterlite-core, so the rerank module repeats it
 // An httpx.HTTPStatusError carries the masked response: its text and its headers less content-encoding, with content-length recomputed
 #[must_use]
 pub(super) fn status_facts(reply: &UpstreamResponse) -> FailureFacts {
@@ -58,16 +59,16 @@ fn masked_headers(headers: &http::HeaderMap) -> HeaderMap {
 
 #[must_use]
 pub(super) fn send_facts(error: &RerankSendError, sent: &Sent) -> FailureFacts {
-    match error {
-        RerankSendError::Timeout => timeout_facts(sent),
-        RerankSendError::Failed { message } => FailureFacts {
-            response_status: None,
-            status: None,
-            text: None,
-            headers: None,
-            response: None,
-            display: message.clone(),
-        },
+    if matches!(error, RerankSendError::Timeout) {
+        return timeout_facts(sent);
+    }
+    FailureFacts {
+        response_status: None,
+        status: None,
+        text: None,
+        headers: None,
+        response: None,
+        display: error.to_string(),
     }
 }
 

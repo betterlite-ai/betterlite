@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::future::Future;
 use std::time::Duration;
 
@@ -40,12 +41,15 @@ pub struct RerankHttpRequest {
     pub timeout: Option<Duration>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[derive(Debug, Error)]
 pub enum RerankSendError {
     #[error("the request timed out")]
     Timeout,
-    #[error("{message}")]
-    Failed { message: String },
+    #[error(transparent)]
+    Failed(#[from] HttpError),
+    // reqwest's builder error is not nameable outside betterlite-http, so the cause stays boxed
+    #[error(transparent)]
+    Build(Box<dyn Error + Send + Sync>),
 }
 
 pub trait RerankTransport: Send + Sync {
@@ -77,11 +81,14 @@ impl<Client> Selected<'_, Client> {
 }
 
 // An httpx client of the other kind is replaced by the handler's own client, and a matching one is reused as is
-pub(super) fn select_client<'borrow, S: ClientSource>(
+pub(super) fn select_client<'borrow, S>(
     supplied: Option<&'borrow SuppliedClient<'_, S::Client>>,
     source: &'borrow S,
     kind: ClientKind,
-) -> Result<Selected<'borrow, S::Client>, ClientError> {
+) -> Result<Selected<'borrow, S::Client>, ClientError>
+where
+    S: ClientSource,
+{
     if let Some(client) = supplied
         && client.kind == kind
     {
@@ -105,9 +112,7 @@ impl RerankTransport for ProxiedClient {
             .headers(request.headers)
             .body(request.body)
             .build()
-            .map_err(|error| RerankSendError::Failed {
-                message: error.to_string(),
-            })?;
+            .map_err(|error| RerankSendError::Build(Box::new(error)))?;
         self.execute_buffered(built, self.limits.body_bytes)
             .await
             .map_err(send_failure)
@@ -118,7 +123,5 @@ fn send_failure(error: HttpError) -> RerankSendError {
     if matches!(error, HttpError::Timeout) {
         return RerankSendError::Timeout;
     }
-    RerankSendError::Failed {
-        message: error.to_string(),
-    }
+    RerankSendError::Failed(error)
 }

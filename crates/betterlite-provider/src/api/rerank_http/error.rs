@@ -24,7 +24,7 @@ where
     Failure: Error + Send + Sync + 'static,
 {
     #[error(transparent)]
-    Config(#[source] Failure),
+    Config(Failure),
     #[error(transparent)]
     Provider(#[from] BaseLlmException),
     #[error(transparent)]

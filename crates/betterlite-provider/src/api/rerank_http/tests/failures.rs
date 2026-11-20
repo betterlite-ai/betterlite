@@ -4,9 +4,9 @@ use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::rerank_contracts::records::RerankResponse;
 
-use super::super::client::{ClientKind, RerankSendError};
+use super::super::client::ClientKind;
 use super::super::error::RerankHttpError;
-use super::{Bench, ConfigError, HeaderMap, Refusal, Reply, RerankLogging, supplied_sent};
+use super::{Bench, ConfigError, Fault, HeaderMap, Refusal, Reply, RerankLogging, supplied_sent};
 
 // LiteLLM lets httpx reject a bad URL or header and turns the exception into a synthesized 500 provider error
 pub(super) async fn before_the_send() {
@@ -27,7 +27,11 @@ pub(super) async fn before_the_send() {
         Err(RerankHttpError::RequestUrl { .. })
     ));
     assert!(matches!(
-        refused(Refusal::Header).await,
+        refused(Refusal::HeaderName).await,
+        Err(RerankHttpError::HeaderName { name, .. }) if name == "x bad"
+    ));
+    assert!(matches!(
+        refused(Refusal::HeaderValue).await,
         Err(RerankHttpError::HeaderValue { .. })
     ));
 }
@@ -75,19 +79,24 @@ async fn rerank_http_provider_failure() {
 
 async fn send_failure_conversion() {
     let mut bench = Bench::new();
-    bench.supplied.fail(RerankSendError::Failed {
-        message: String::from("connection refused"),
-    });
+    bench.supplied.fail(Fault::Send);
     let mut logging = RerankLogging::default();
     let outcome = bench.run(Json::Bool(false), None, &mut logging).await;
     let Err(RerankHttpError::Provider(error)) = outcome else {
         panic!("a failed send becomes the provider error");
     };
     assert_eq!(error.status_code, 500);
-    assert_eq!(error.message, "rerank:connection refused");
+    assert_eq!(
+        error.message,
+        "rerank:the response body is larger than 1024 bytes"
+    );
     assert_eq!(
         bench.config.errors(),
-        vec![(String::from("connection refused"), 500, HeaderMap::new())]
+        vec![(
+            String::from("the response body is larger than 1024 bytes"),
+            500,
+            HeaderMap::new()
+        )]
     );
     assert!(
         !bench
@@ -104,7 +113,7 @@ async fn timeout_conversion(is_async: Json, expected: &str) {
     } else {
         ClientKind::Sync
     };
-    bench.supplied.fail(RerankSendError::Timeout);
+    bench.supplied.fail(Fault::Timeout);
     let mut logging = RerankLogging::default();
     let outcome = bench
         .run(is_async, Some(Duration::from_secs(5)), &mut logging)

@@ -14,6 +14,7 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 use url::Url;
 
+use self::client::RerankTransport as _;
 use self::client::{
     ClientKind, ClientSource, RerankHttpRequest, SuppliedClient, client_kind, select_client,
 };
@@ -63,11 +64,14 @@ struct Prepared {
 }
 
 // rerank and arerank share one front half: validate, complete URL, transform and pre-call all run before the transport
-fn prepare<C: BaseRerankConfig>(
+fn prepare<C>(
     config: &C,
     call: &RerankCall<'_>,
     log: &mut RerankLogContext<'_, '_>,
-) -> Result<Prepared, RerankHttpError<C::Error>> {
+) -> Result<Prepared, RerankHttpError<C::Error>>
+where
+    C: BaseRerankConfig,
+{
     let headers = config
         .validate_environment(EnvironmentRequest {
             headers: call.headers.unwrap_or(&EMPTY_HEADERS),
@@ -102,9 +106,10 @@ fn prepare<C: BaseRerankConfig>(
     })
 }
 
-fn wire_headers<Failure: Error + Send + Sync + 'static>(
-    headers: &Headers,
-) -> Result<HeaderMap, RerankHttpError<Failure>> {
+fn wire_headers<Failure>(headers: &Headers) -> Result<HeaderMap, RerankHttpError<Failure>>
+where
+    Failure: Error + Send + Sync + 'static,
+{
     let mut map = HeaderMap::new();
     for (name, value) in headers {
         let header_name = HeaderName::from_bytes(name.as_bytes()).map_err(|source| {
@@ -132,12 +137,15 @@ fn request_body(data: &Params) -> Vec<u8> {
     python_json::dumps(&Json::Object(object)).into_bytes()
 }
 
-fn transform_response<C: BaseRerankConfig>(
+fn transform_response<C>(
     config: &C,
     call: RerankCall<'_>,
     data: &Params,
     reply: &UpstreamResponse,
-) -> Result<RerankResponse, RerankHttpError<C::Error>> {
+) -> Result<RerankResponse, RerankHttpError<C::Error>>
+where
+    C: BaseRerankConfig,
+{
     let raw_response = provider_response(reply);
     config
         .transform_rerank_response(

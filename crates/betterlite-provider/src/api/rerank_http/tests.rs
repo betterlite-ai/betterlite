@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
+use betterlite_http::error::HttpError;
 use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use betterlite_http_fixture::reply::reply as http_reply;
 use betterlite_http_fixture::request::Request;
@@ -27,6 +28,7 @@ use betterlite_openai::api::rerank_contracts::records::RerankResponse;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
 use http::header::{HeaderMap as HttpHeaders, HeaderValue};
+use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::de::DeserializeOwned;
 use serde_json::Number;
@@ -46,7 +48,10 @@ use crate::api::rerank_contracts::{
 const INIT: &str = r#"{"model":"rerank-test","call_type":"rerank","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
 const REPLY: &str = r#"{"id":"r","results":[{"index":0,"relevance_score":0.5}]}"#;
 
-fn parses<T: DeserializeOwned>(text: &str) -> T {
+fn parses<T>(text: &str) -> T
+where
+    T: DeserializeOwned,
+{
     serde_json::from_str(text).expect("the fixture parses")
 }
 
@@ -165,12 +170,16 @@ impl Fixture {
         self.state.model_call_details.get("input")
     }
 
-    // the body the pre-call callback sees, through the additional_args LiteLLM stores
-    fn logged_body(&self) -> Option<&Json> {
+    fn additional_args(&self) -> Option<&IndexMap<String, Json>> {
         let Json::Object(details) = self.state.model_call_details.get("additional_args")? else {
             return None;
         };
-        details.get("complete_input_dict")
+        Some(details)
+    }
+
+    // the body the pre-call callback sees, through the additional_args LiteLLM stores
+    fn logged_body(&self) -> Option<&Json> {
+        self.additional_args()?.get("complete_input_dict")
     }
 }
 
@@ -181,7 +190,8 @@ enum Refusal {
     Transform,
     Response,
     Url,
-    Header,
+    HeaderValue,
+    HeaderName,
     PreCall,
 }
 
@@ -194,7 +204,8 @@ impl Refusal {
             | Refusal::Validate
             | Refusal::Transform
             | Refusal::Url
-            | Refusal::Header
+            | Refusal::HeaderValue
+            | Refusal::HeaderName
             | Refusal::PreCall => 0,
         }
     }
@@ -223,6 +234,7 @@ struct SeenArgs {
 struct Recorded {
     errors: Vec<(String, u16, HeaderMap)>,
     headers_in: Option<Headers>,
+    params_in: Option<Params>,
     raw: Option<RerankProviderResponse>,
     transform: Option<SeenArgs>,
 }
@@ -231,7 +243,8 @@ struct RecordingConfig {
     base: String,
     events: Events,
     refusal: Refusal,
-    bad_header: bool,
+    bad_value: bool,
+    bad_name: bool,
     recorded: Mutex<Recorded>,
 }
 
@@ -241,7 +254,8 @@ impl RecordingConfig {
             base: base.to_owned(),
             events: events.clone(),
             refusal: Refusal::None,
-            bad_header: false,
+            bad_value: false,
+            bad_name: false,
             recorded: Mutex::default(),
         }
     }
@@ -273,7 +287,10 @@ impl BaseRerankConfig for RecordingConfig {
             |key| key.expose_secret().to_owned(),
         );
         headers.insert("x-api-key".to_owned(), key);
-        if self.bad_header {
+        if self.bad_name {
+            headers.insert("x bad".to_owned(), String::from("value"));
+        }
+        if self.bad_value {
             headers.insert("x-bad".to_owned(), String::from("bad\nvalue"));
         }
         Ok(headers)
@@ -284,9 +301,10 @@ impl BaseRerankConfig for RecordingConfig {
         _model: &str,
         optional: &Params,
         _headers: &Headers,
-        _litellm_params: Option<&Params>,
+        litellm_params: Option<&Params>,
     ) -> Result<Params, ConfigError> {
         self.events.push("transform");
+        self.recorded().params_in = litellm_params.cloned();
         if self.refusal == Refusal::Transform {
             return Err(ConfigError::Transform);
         }
@@ -405,11 +423,18 @@ struct Sent {
     logging: bool,
 }
 
+// The mock transport fails the way the pooled one does: a timeout, or a typed send failure
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Fault {
+    Timeout,
+    Send,
+}
+
 #[derive(Clone)]
 struct Wire {
     label: &'static str,
     reply: Reply,
-    failure: Option<RerankSendError>,
+    fault: Option<Fault>,
     events: Events,
     sent: Arc<Mutex<Vec<Sent>>>,
 }
@@ -419,7 +444,7 @@ impl Wire {
         Self {
             label,
             reply: reply.clone(),
-            failure: None,
+            fault: None,
             events: events.clone(),
             sent: Arc::default(),
         }
@@ -429,8 +454,8 @@ impl Wire {
         self.sent.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    fn fail(&mut self, error: RerankSendError) {
-        self.failure = Some(error);
+    fn fail(&mut self, fault: Fault) {
+        self.fault = Some(fault);
     }
 }
 
@@ -446,11 +471,9 @@ impl RerankTransport for Wire {
             request,
             logging: logging.is_some(),
         });
-        let answer = match &self.failure {
-            Some(RerankSendError::Timeout) => Err(RerankSendError::Timeout),
-            Some(RerankSendError::Failed { message }) => Err(RerankSendError::Failed {
-                message: message.clone(),
-            }),
+        let answer = match self.fault {
+            Some(Fault::Timeout) => Err(RerankSendError::Timeout),
+            Some(Fault::Send) => Err(RerankSendError::Failed(HttpError::TooLarge { limit: 1024 })),
             None => Ok(UpstreamResponse {
                 status: self.reply.status,
                 headers: self.reply.headers.clone(),
@@ -520,6 +543,8 @@ struct Bench {
     events: Events,
     fixture: Fixture,
     optional: Params,
+    headers: Option<Headers>,
+    litellm_params: Option<Params>,
     key: SecretString,
     model_response: RerankResponse,
     supplied_kind: ClientKind,
@@ -539,6 +564,8 @@ impl Bench {
             events,
             fixture: Fixture::default(),
             optional: params(r#"{"query": "hi", "documents": ["a"]}"#),
+            headers: None,
+            litellm_params: None,
             key: SecretString::from(String::from("sk-caller")),
             model_response: response(
                 r#"{"id": "caller", "results": [{"index": 1, "relevance_score": 0.5}]}"#,
@@ -554,7 +581,8 @@ impl Bench {
         bench.config.refusal = refusal;
         match refusal {
             Refusal::Url => bench.config.base = String::from("not a url"),
-            Refusal::Header => bench.config.bad_header = true,
+            Refusal::HeaderValue => bench.config.bad_value = true,
+            Refusal::HeaderName => bench.config.bad_name = true,
             Refusal::PreCall => bench.fixture.state.request_logging.raw_request_only = true,
             Refusal::None | Refusal::Validate | Refusal::Transform | Refusal::Response => {}
         }
@@ -572,8 +600,8 @@ impl Bench {
             optional_params: &self.optional,
             api_base: None,
             api_key: Some(&self.key),
-            litellm_params: None,
-            headers: None,
+            litellm_params: self.litellm_params.as_ref(),
+            headers: self.headers.as_ref(),
             timeout,
             is_async,
             model_response: self.model_response.clone(),
@@ -655,7 +683,7 @@ async fn rerank_http_payload() {
     assert_eq!(wire_headers(&request), only_api_key());
     assert_eq!(answer, model_response);
     assert_payload_transform(&config, &events);
-    assert_payload_callback(&fixture, &logging);
+    assert_payload_callback(&fixture, &logging, &base);
 }
 
 fn wire_headers(request: &Request) -> BTreeMap<String, String> {
@@ -687,6 +715,7 @@ fn only_api_key() -> BTreeMap<String, String> {
 fn assert_payload_transform(config: &RecordingConfig, events: &Events) {
     let recorded = config.recorded();
     assert_eq!(recorded.headers_in.as_ref(), Some(&Headers::new()));
+    assert_eq!(recorded.params_in, None);
     let raw = recorded.raw.as_ref().expect("the transformer saw a reply");
     assert_eq!(raw.status_code, 200);
     assert_eq!(raw.body, REPLY.as_bytes());
@@ -716,10 +745,16 @@ fn assert_payload_transform(config: &RecordingConfig, events: &Events) {
     );
 }
 
-fn assert_payload_callback(fixture: &Fixture, logging: &RerankLogging) {
+fn assert_payload_callback(fixture: &Fixture, logging: &RerankLogging, api_base: &str) {
     let expected = params(r#"{"query": "é", "documents": ["a"]}"#);
     assert_eq!(fixture.input(), Some(&Json::Text(String::from("é"))));
     assert_eq!(fixture.logged_body(), Some(&object(&expected)));
+    let args = fixture
+        .additional_args()
+        .expect("the pre-call stored its arguments");
+    assert_eq!(args.get("api_base"), Some(&Json::Text(api_base.to_owned())));
+    let masked = IndexMap::from([("x-api-key".to_owned(), Json::Text(String::from("sk****er")))]);
+    assert_eq!(args.get("headers"), Some(&Json::Object(masked)));
     assert_eq!(
         logging.model_call_details.get("transformer_saw"),
         Some(&Json::Bool(true))
@@ -729,6 +764,32 @@ fn assert_payload_callback(fixture: &Fixture, logging: &RerankLogging) {
     let details = Json::Object(fixture.state.model_call_details.clone());
     let text = serde_json::to_string(&details).expect("the callback details serialize");
     assert!(!text.contains("sk-caller"));
+}
+
+// LiteLLM hands the caller's headers and litellm_params to the config, and a provider reads an auth header or parameter from them
+#[tokio::test]
+async fn rerank_http_forwards_caller_headers_and_params() {
+    let mut bench = Bench::new();
+    let headers = Headers::from([("authorization".to_owned(), String::from("Bearer caller"))]);
+    let litellm_params = params(r#"{"azure_ai_api_version": "2024-01-01"}"#);
+    bench.headers = Some(headers.clone());
+    bench.litellm_params = Some(litellm_params.clone());
+    let mut logging = RerankLogging::default();
+    bench
+        .run(Json::Bool(false), None, &mut logging)
+        .await
+        .expect("the rerank succeeds");
+    {
+        let recorded = bench.config.recorded();
+        assert_eq!(recorded.headers_in.as_ref(), Some(&headers));
+        assert_eq!(recorded.params_in.as_ref(), Some(&litellm_params));
+    }
+    let sent = supplied_sent(&bench);
+    let authorization = sent[0].request.headers.get("authorization");
+    assert_eq!(
+        authorization.and_then(|value| value.to_str().ok()),
+        Some("Bearer caller")
+    );
 }
 
 // httpx follows a redirect with the caller's headers attached; the pooled client returns the 3xx as the provider's answer
@@ -746,8 +807,7 @@ async fn rerank_http_never_follows_a_redirect() {
         body: b"{}".to_vec(),
         timeout: None,
     };
-    let answer = client
-        .send(request, None)
+    let answer = RerankTransport::send(&client, request, None)
         .await
         .expect("the redirect is the answer itself");
     assert_eq!(answer.status, 302);
