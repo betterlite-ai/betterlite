@@ -82,15 +82,14 @@ async fn claim_tier_model(
         .iter()
         .map(|candidate| AffinityPin(model_pin(candidate)))
         .collect();
-    let claimed = placement
-        .claims
-        .claim(
-            &cache_key,
-            &requested,
-            placement.session_affinity_ttl_seconds,
-            Some(&eligible),
-        )
-        .await?;
+    // boxed so the claim's Redis future never nests this body's layout past rustc's query limit
+    let claimed = Box::pin(placement.claims.claim(
+        &cache_key,
+        &requested,
+        placement.session_affinity_ttl_seconds,
+        Some(&eligible),
+    ))
+    .await?;
     let Some(pinned) = claimed_model(&claimed.pin) else {
         return Ok(None);
     };
