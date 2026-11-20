@@ -1,13 +1,14 @@
 use std::time::Duration;
 
 use betterlite_models::decisions::Json;
+use http::Method;
 use indexmap::IndexMap;
-use reqwest::Method;
 
 use super::support::{CHARACTER_BODY, Fixture, Seen, character_object, get_call, params, secret};
 use crate::api::video_character_transport::clients::CharacterBody;
 
 const BASE: &str = "https://api.example/v1";
+const COMPLETE: &str = "https://api.example/v1/videos";
 const CHARACTER_URL: &str = "https://api.example/v1/characters/char-1";
 
 #[test]
@@ -45,7 +46,7 @@ fn lookup_sends_a_get_with_the_transforms_params() {
         fixture.config.seen()[2],
         Seen::GetRequest {
             character_id: String::from("char-1"),
-            api_base: String::from(BASE),
+            api_base: String::from(COMPLETE),
             headers: Vec::new(),
         }
     );

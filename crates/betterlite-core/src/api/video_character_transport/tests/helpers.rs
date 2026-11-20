@@ -1,13 +1,10 @@
 use betterlite_http::interactions::base::{RequestFailure, RequestHeaders};
 use betterlite_http::proxy::UpstreamResponse;
-use betterlite_http::proxy::multipart::MultipartPart;
-use betterlite_http::proxy::transport_error::TransportError;
 use http::header::{HeaderMap, HeaderValue};
 use secrecy::SecretString;
 
-use crate::api::video_character_transport::clients::CharacterBody;
 use crate::api::video_character_transport::service::wire::{
-    body_text, header_map, multipart_body, request_url, response_headers, status_failure,
+    body_text, header_map, multipart_boundary, request_url, response_headers, status_failure,
 };
 
 #[test]
@@ -121,66 +118,60 @@ fn request_url_refuses_an_unparsable_url() {
 }
 
 #[test]
-fn multipart_body_marks_the_boundary_it_encoded() {
-    let parts = vec![
-        MultipartPart {
-            name: String::from("name"),
-            file_name: None,
-            content_type: None,
-            data: b"Wren".to_vec(),
-        },
-        MultipartPart {
-            name: String::from("video"),
-            file_name: Some(String::from("clip.mp4")),
-            content_type: Some(String::from("video/mp4")),
-            data: b"video-bytes".to_vec(),
-        },
-    ];
-
-    let body = multipart_body(&parts, "b-1").unwrap();
-
-    let CharacterBody::Multipart { content_type, data } = body else {
-        panic!("a creation sends a multipart body");
-    };
-    assert_eq!(content_type, "multipart/form-data; boundary=b-1");
-    let expected = String::from(
-        "--b-1\r\nContent-Disposition: form-data; name=\"name\"\r\n\r\nWren\r\n--b-1\r\nContent-Disposition: form-data; name=\"video\"; filename=\"clip.mp4\"\r\nContent-Type: video/mp4\r\n\r\nvideo-bytes\r\n--b-1--\r\n",
+fn multipart_boundary_reads_the_callers_content_type() {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        "content-type",
+        HeaderValue::from_static("multipart/form-data; boundary=b-1"),
     );
-    assert_eq!(data, expected.into_bytes());
+
+    assert_eq!(multipart_boundary(&headers), Some("b-1"));
 }
 
 #[test]
-fn multipart_body_refuses_a_part_that_holds_the_boundary() {
-    let parts = vec![MultipartPart {
-        name: String::from("video"),
-        file_name: None,
-        content_type: None,
-        data: b"a--b-1--b".to_vec(),
-    }];
+fn multipart_boundary_strips_the_quotes_around_it() {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        "content-type",
+        HeaderValue::from_static("multipart/form-data; charset=utf-8; Boundary=\"b-2\""),
+    );
 
-    let error = multipart_body(&parts, "b-1").unwrap_err();
-
-    let TransportError::MultipartBoundary { boundary } = error else {
-        panic!("a part holding the boundary is refused");
-    };
-    assert_eq!(boundary, "b-1");
+    assert_eq!(multipart_boundary(&headers), Some("b-2"));
 }
 
 #[test]
-fn multipart_body_refuses_a_content_type_with_a_line_break() {
-    let parts = vec![MultipartPart {
-        name: String::from("video"),
-        file_name: None,
-        content_type: Some(String::from("video/mp4\r\nx: y")),
-        data: Vec::new(),
-    }];
+fn multipart_boundary_is_none_without_a_boundary_parameter() {
+    let mut absent = HeaderMap::new();
+    assert_eq!(multipart_boundary(&absent), None);
 
-    let error = multipart_body(&parts, "b-1").unwrap_err();
+    absent.insert(
+        "content-type",
+        HeaderValue::from_static("application/octet-stream"),
+    );
+    assert_eq!(multipart_boundary(&absent), None);
 
-    let TransportError::MultipartContentType { content_type } = error else {
-        panic!("a content type with a line break is refused");
-    };
-    assert_eq!(content_type, "video/mp4\r\nx: y");
+    absent.insert(
+        "content-type",
+        HeaderValue::from_static("multipart/form-data"),
+    );
+    assert_eq!(multipart_boundary(&absent), None);
+
+    absent.insert(
+        "content-type",
+        HeaderValue::from_static("multipart/form-data; boundaryish=b-3"),
+    );
+    assert_eq!(multipart_boundary(&absent), None);
+}
+
+#[test]
+fn multipart_boundary_keeps_an_empty_boundary() {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        "content-type",
+        HeaderValue::from_static("multipart/form-data; boundary="),
+    );
+
+    assert_eq!(multipart_boundary(&headers), Some(""));
 }
 
 #[test]

@@ -6,12 +6,14 @@ use std::time::Duration;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::{TlsPolicy, Verification};
 use betterlite_config::types::ProxyTrust;
-use betterlite_http::interactions::base::clients::{HttpClients, async_client};
+use betterlite_http::interactions::base::clients::HttpClients;
 use betterlite_http::interactions::base::{
     ClientError, ErrorClasses, Params, RequestFailure, RequestHeaders, ResponseHeaders,
 };
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::multipart::MultipartPart;
+use betterlite_http_fixture::reply::reply;
+use betterlite_http_fixture::server::{Serving, serve};
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
 };
@@ -26,15 +28,16 @@ use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
 use futures_util::FutureExt as _;
+use http::Method;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
-use reqwest::Client;
-use reqwest::blocking::Client as BlockingClient;
 use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
+use url::Url;
 
 use crate::api::bfl::edit::media::SuppliedMedia;
 use crate::api::video_character_transport::clients::{
-    CharacterAsyncClient, CharacterClients, CharacterRequest, CharacterSyncClient, SuppliedClients,
+    AsyncSender, CharacterAsyncClient, CharacterBody, CharacterClients, CharacterRequest,
+    CharacterSyncClient, SuppliedClients, SyncSender,
 };
 use crate::api::video_character_transport::config::{
     CharacterConfig, CharacterContext, CharacterEnvironment,
@@ -182,6 +185,7 @@ pub(crate) enum Seen {
 
 pub(crate) struct RecordingConfig {
     pub(crate) events: Events,
+    pub(crate) complete_url: String,
     pub(crate) create_url: String,
     pub(crate) get_url: String,
     pub(crate) query: Vec<(String, String)>,
@@ -199,6 +203,7 @@ pub(crate) fn recording(events: &Events) -> RecordingConfig {
     let base = "https://api.example/v1";
     RecordingConfig {
         events: events.clone(),
+        complete_url: format!("{base}/videos"),
         create_url: format!("{base}/characters"),
         get_url: format!("{base}/characters/char-1"),
         query: Vec::new(),
@@ -300,7 +305,7 @@ impl CharacterConfig for RecordingConfig {
             api_base: api_base.map(str::to_owned),
         });
         self.url_error.as_deref().map_or_else(
-            || Ok(self.create_url.clone()),
+            || Ok(self.complete_url.clone()),
             |message| Err(test_error(message)),
         )
     }
@@ -765,14 +770,50 @@ pub(crate) fn real_clients() -> HttpClients {
     HttpClients::new(tls, Arc::new(proxy))
 }
 
-pub(crate) fn blocking_client() -> BlockingClient {
+pub(crate) fn blocking_client() -> SyncSender {
     let mut clients = real_clients();
     clients
-        .sync_client(&Params::new(), None)
+        .select_sync(&Params::new(), None)
         .expect("the blocking client builds")
 }
 
-pub(crate) fn async_http_client() -> Client {
+pub(crate) fn async_http_client() -> AsyncSender {
     let mut clients = real_clients();
-    async_client(&mut clients, &Params::new(), None).expect("the async client builds")
+    clients
+        .select_async(&Params::new(), None)
+        .expect("the async client builds")
+}
+
+// the failure a blocking send raises when its deadline passes, taken from a real client so a fake wire can replay it
+pub(crate) fn timeout_failure() -> RequestFailure {
+    let serving = serve(reply("200 OK", &[], "{}"), Duration::from_millis(300))
+        .expect("the slow server starts");
+    let failure = blocking_client()
+        .send_blocking(slow_request(&serving))
+        .expect_err("the deadline ends the send");
+    drop(serving.finish());
+    failure
+}
+
+// the same failure from the async client, which a test that already runs a runtime must take this way
+pub(crate) async fn async_timeout_failure() -> RequestFailure {
+    let serving = serve(reply("200 OK", &[], "{}"), Duration::from_millis(300))
+        .expect("the slow server starts");
+    let failure = async_http_client()
+        .send(slow_request(&serving))
+        .await
+        .expect_err("the deadline ends the send");
+    drop(serving.finish());
+    failure
+}
+
+fn slow_request(serving: &Serving) -> CharacterRequest {
+    CharacterRequest {
+        method: Method::GET,
+        url: Url::parse(&format!("http://{}/slow", serving.address))
+            .expect("the fixture url parses"),
+        headers: HeaderMap::new(),
+        body: CharacterBody::Empty,
+        timeout: Some(Duration::from_millis(20)),
+    }
 }

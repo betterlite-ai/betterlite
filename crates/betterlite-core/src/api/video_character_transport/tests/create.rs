@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
+use http::Method;
 use indexmap::IndexMap;
-use reqwest::Method;
 use secrecy::SecretString;
 
 use super::support::{
@@ -12,6 +12,7 @@ use super::support::{
 use crate::api::video_character_transport::clients::{CharacterBody, CharacterRequest};
 
 const BASE: &str = "https://api.example/v1";
+const COMPLETE: &str = "https://api.example/v1/videos";
 
 #[test]
 fn creation_posts_the_transforms_multipart_parts() {
@@ -56,12 +57,19 @@ fn assert_created_multipart(request: &CharacterRequest) {
             .unwrap(),
         "Bearer sk-provider"
     );
-    let CharacterBody::Multipart { content_type, data } = &request.body else {
-        panic!("a creation sends multipart form data");
-    };
-    let boundary = content_type
+    let content_types: Vec<&str> = request
+        .headers
+        .get_all("content-type")
+        .iter()
+        .map(|value| value.to_str().unwrap())
+        .collect();
+    assert_eq!(content_types.len(), 1);
+    let boundary = content_types[0]
         .strip_prefix("multipart/form-data; boundary=")
         .expect("the content type names its boundary");
+    let CharacterBody::Multipart(data) = &request.body else {
+        panic!("a creation sends multipart form data");
+    };
     let expected = format!(
         "--{boundary}\r\nContent-Disposition: form-data; name=\"name\"\r\n\r\nWren\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"video\"; filename=\"clip.mp4\"\r\nContent-Type: video/mp4\r\n\r\nvideo-bytes\r\n--{boundary}--\r\n"
     );
@@ -85,7 +93,7 @@ fn creation_forwards_the_calls_timeout() {
 }
 
 #[test]
-fn creation_sends_the_name_video_and_base_to_the_transform() {
+fn creation_sends_the_name_video_and_complete_url_to_the_transform() {
     let mut fixture = Fixture::new();
     fixture
         .config
@@ -112,7 +120,7 @@ fn creation_sends_the_name_video_and_base_to_the_transform() {
             Seen::CreateRequest {
                 name: String::from("Wren"),
                 video: b"video-bytes".to_vec(),
-                api_base: String::from(BASE),
+                api_base: String::from(COMPLETE),
                 headers: vec![(String::from("x-provider"), String::from("acme"))],
             },
             Seen::Reply {
@@ -164,7 +172,7 @@ fn creation_passes_the_callers_headers_and_key_to_validation() {
 }
 
 #[test]
-fn creation_lets_the_callers_header_win_over_the_providers() {
+fn creation_lets_the_providers_header_win_over_the_callers() {
     let mut fixture = Fixture::new();
     fixture
         .config
@@ -185,7 +193,7 @@ fn creation_lets_the_callers_header_win_over_the_providers() {
             .unwrap()
             .to_str()
             .unwrap(),
-        "caller"
+        "provider"
     );
 }
 

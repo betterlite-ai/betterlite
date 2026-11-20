@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use betterlite_http::interactions::base::{ClientError, RequestFailure, ResponseHeaders};
 use betterlite_http::proxy::multipart::MultipartPart;
 use betterlite_http::proxy::transport_error::TransportError;
@@ -5,11 +7,11 @@ use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_models::controls::json_value::JsonValue;
 
 use super::support::{
-    CHARACTER_BODY, FakeWire, Fixture, Seen, TestError, create_call, extra_headers, get_call,
-    params, secret, video,
+    CHARACTER_BODY, FakeWire, Fixture, Seen, TestError, async_timeout_failure, create_call,
+    extra_headers, get_call, params, secret, timeout_failure, video,
 };
 use crate::api::video_character_transport::error::CharacterError;
-use crate::api::video_character_transport::service::CharacterTransport;
+use crate::api::video_character_transport::service::{CharacterCall, CharacterTransport};
 
 const BASE: &str = "https://api.example/v1";
 
@@ -126,7 +128,7 @@ fn creation_passes_a_send_failure_through() {
 
     let error = fixture.sync_create(&call, None).unwrap_err();
 
-    let CharacterError::Transport(RequestFailure::BodyTooLarge { limit }) = error else {
+    let CharacterError::Request(RequestFailure::BodyTooLarge { limit }) = error else {
         panic!("a send failure keeps its typed reason");
     };
     assert_eq!(limit, 4);
@@ -349,6 +351,38 @@ fn a_multipart_part_that_breaks_the_boundary_is_refused() {
 }
 
 #[test]
+fn a_multipart_part_with_a_broken_content_type_is_refused() {
+    let mut fixture = Fixture::new();
+    fixture.config.files = Some(vec![MultipartPart {
+        name: String::from("video"),
+        file_name: None,
+        content_type: Some(String::from("video/mp4\r\nx: y")),
+        data: Vec::new(),
+    }]);
+    let litellm = params(&[("api_base", BASE)]);
+    let clip = video();
+    let call = create_call("Wren", &clip, &litellm);
+    let env = fixture.log.env();
+    let mut transport = CharacterTransport::with_generated_boundary(
+        &fixture.config,
+        &mut fixture.clients,
+        &mut fixture.state,
+        &env,
+    );
+
+    let error = match transport.video_create_character_handler(&call) {
+        Ok(_handled) => panic!("the part's content type cannot be sent"),
+        Err(error) => error,
+    };
+
+    let CharacterError::Multipart(TransportError::MultipartContentType { content_type }) = error
+    else {
+        panic!("a part content type with a line break is refused");
+    };
+    assert_eq!(content_type, "video/mp4\r\nx: y");
+}
+
+#[test]
 fn a_header_that_cannot_be_sent_is_refused() {
     let mut fixture = Fixture::new();
     let litellm = params(&[("api_base", BASE)]);
@@ -359,7 +393,7 @@ fn a_header_that_cannot_be_sent_is_refused() {
 
     let error = fixture.sync_create(&call, None).unwrap_err();
 
-    let CharacterError::Transport(RequestFailure::HeaderValue(_)) = error else {
+    let CharacterError::Request(RequestFailure::HeaderValue(_)) = error else {
         panic!("a header with a newline is refused");
     };
 }
@@ -374,11 +408,110 @@ fn a_url_the_transform_returns_unparsable_is_refused() {
 
     let error = fixture.sync_create(&call, None).unwrap_err();
 
-    let CharacterError::Transport(RequestFailure::Url(_)) = error else {
+    let CharacterError::Request(RequestFailure::Url(_)) = error else {
         panic!("the transform's url is parsed before the send");
     };
     assert_eq!(
         fixture.events.recorded(),
         ["select-sync", "validate", "url", "transform-create", "log",]
     );
+}
+
+#[test]
+fn creation_turns_a_send_timeout_into_the_provider_408() {
+    let mut fixture = Fixture::new();
+    let events = fixture.events.clone();
+    fixture.use_wire(FakeWire::failing(&events, timeout_failure()));
+    let litellm = params(&[("api_base", BASE)]);
+    let clip = video();
+    let mut call = create_call("Wren", &clip, &litellm);
+    call.timeout = Some(Duration::from_millis(50));
+
+    let error = fixture.sync_create(&call, None).unwrap_err();
+
+    let CharacterError::Provider(TestError {
+        message,
+        status_code,
+        headers,
+    }) = error
+    else {
+        panic!("a timed-out POST becomes the provider's error");
+    };
+    assert_eq!(
+        message,
+        "litellm.Timeout: Connection timed out after 0.05 seconds."
+    );
+    assert_eq!(status_code, 408);
+    assert!(headers.is_empty());
+    assert_eq!(fixture.config.errors().len(), 1);
+}
+
+#[test]
+fn creation_names_none_when_a_timed_out_post_carried_no_timeout() {
+    let mut fixture = Fixture::new();
+    let events = fixture.events.clone();
+    fixture.use_wire(FakeWire::failing(&events, timeout_failure()));
+    let litellm = params(&[("api_base", BASE)]);
+    let clip = video();
+    let call = create_call("Wren", &clip, &litellm);
+
+    let error = fixture.sync_create(&call, None).unwrap_err();
+
+    let CharacterError::Provider(TestError { message, .. }) = error else {
+        panic!("a timed-out POST becomes the provider's error");
+    };
+    assert_eq!(
+        message,
+        "litellm.Timeout: Connection timed out after None seconds."
+    );
+}
+
+#[tokio::test]
+async fn async_creation_turns_a_send_timeout_into_the_provider_408() {
+    let mut fixture = Fixture::new();
+    let events = fixture.events.clone();
+    let failure = async_timeout_failure().await;
+    fixture.use_wire(FakeWire::failing(&events, failure));
+    let litellm = params(&[("api_base", BASE)]);
+    let clip = video();
+    let mut call = create_call("Wren", &clip, &litellm);
+    call.timeout = Some(Duration::from_millis(50));
+
+    let error = fixture
+        .async_call(CharacterCall::Create(&call), None)
+        .await
+        .unwrap_err();
+
+    let CharacterError::Provider(TestError {
+        message,
+        status_code,
+        ..
+    }) = error
+    else {
+        panic!("a timed-out POST becomes the provider's error");
+    };
+    assert_eq!(status_code, 408);
+    assert!(
+        message
+            .starts_with("litellm.Timeout: Connection timed out. Timeout passed=0.05, time taken="),
+        "{message}"
+    );
+    assert!(message.ends_with(" seconds"), "{message}");
+}
+
+#[test]
+fn lookup_keeps_a_send_timeout_typed() {
+    let mut fixture = Fixture::new();
+    let events = fixture.events.clone();
+    fixture.use_wire(FakeWire::failing(&events, timeout_failure()));
+    let litellm = params(&[("api_base", BASE)]);
+    let call = get_call("char-1", &litellm);
+
+    let error = fixture.sync_get(&call, None).unwrap_err();
+
+    let CharacterError::Request(RequestFailure::Transport(source)) = error else {
+        panic!("a lookup timeout keeps its typed reason");
+    };
+    assert!(source.is_timeout());
+    assert!(fixture.config.errors().is_empty());
 }

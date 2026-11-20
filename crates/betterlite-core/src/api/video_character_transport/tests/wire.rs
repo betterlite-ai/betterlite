@@ -71,6 +71,46 @@ fn creation_writes_the_multipart_body_and_headers_to_the_wire() {
 }
 
 #[test]
+fn creation_keeps_the_callers_content_type_and_its_boundary() {
+    let serving = serve(reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
+    let base = format!("http://{}", serving.address);
+    let (mut config, log, mut state, mut clients) = parts("video_create_character");
+    config.create_url = format!("{base}/v1/characters");
+    let env = log.env();
+    let mut transport =
+        CharacterTransport::with_generated_boundary(&config, &mut clients, &mut state, &env);
+    transport.boundary = || String::from("generated-boundary");
+    let litellm = params(&[("api_base", base.as_str())]);
+    let caller_headers = extra_headers(&[(
+        "content-type",
+        "multipart/form-data; boundary=caller-boundary",
+    )]);
+    let clip = video();
+    let mut call = create_call("Wren", &clip, &litellm);
+    call.extra_headers = Some(&caller_headers);
+
+    let object = match transport.video_create_character_handler(&call) {
+        Ok(CharacterHandled::Done(object)) => object,
+        Ok(CharacterHandled::Pending(_)) => panic!("a sync call answers in place"),
+        Err(error) => panic!("the creation reaches the server: {error:?}"),
+    };
+
+    assert_eq!(object, config.object);
+    let request = serving.finish().unwrap();
+    let content_types: Vec<&str> = request
+        .head
+        .lines()
+        .filter(|line| line.to_ascii_lowercase().starts_with("content-type:"))
+        .collect();
+    assert_eq!(
+        content_types,
+        ["content-type: multipart/form-data; boundary=caller-boundary"]
+    );
+    assert!(request.body.starts_with("--caller-boundary\r\n"));
+    assert!(request.body.contains("\r\n--caller-boundary--\r\n"));
+}
+
+#[test]
 fn creation_forwards_its_timeout_to_the_post() {
     let serving = serve(reply("200 OK", &[], "{}"), Duration::from_millis(300)).unwrap();
     let base = format!("http://{}", serving.address);
@@ -89,10 +129,19 @@ fn creation_forwards_its_timeout_to_the_post() {
         Err(error) => error,
     };
 
-    let CharacterError::Transport(RequestFailure::Transport(source)) = error else {
-        panic!("the timeout surfaces as a transport failure");
+    let CharacterError::Provider(TestError {
+        message,
+        status_code,
+        ..
+    }) = error
+    else {
+        panic!("the timeout becomes the provider's error");
     };
-    assert!(source.is_timeout());
+    assert_eq!(status_code, 408);
+    assert_eq!(
+        message,
+        "litellm.Timeout: Connection timed out after 0.05 seconds."
+    );
     drop(serving.finish());
 }
 
@@ -245,10 +294,21 @@ async fn async_creation_forwards_its_timeout_to_the_post() {
         .await
         .unwrap_err();
 
-    let CharacterError::Transport(RequestFailure::Transport(source)) = error else {
-        panic!("the timeout surfaces as a transport failure");
+    let CharacterError::Provider(TestError {
+        message,
+        status_code,
+        ..
+    }) = error
+    else {
+        panic!("the timeout becomes the provider's error");
     };
-    assert!(source.is_timeout());
+    assert_eq!(status_code, 408);
+    assert!(
+        message
+            .starts_with("litellm.Timeout: Connection timed out. Timeout passed=0.05, time taken="),
+        "{message}"
+    );
+    assert!(message.ends_with(" seconds"), "{message}");
     drop(serving.finish());
 }
 
@@ -318,7 +378,7 @@ fn creation_refuses_a_reply_past_the_response_cap() {
         Err(error) => error,
     };
 
-    let CharacterError::Transport(RequestFailure::BodyTooLarge { limit }) = error else {
+    let CharacterError::Request(RequestFailure::BodyTooLarge { limit }) = error else {
         panic!("the cap names the limit it refused");
     };
     assert_eq!(limit, MAX_RESPONSE_BYTES);
