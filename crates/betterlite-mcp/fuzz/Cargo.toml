@@ -12,11 +12,13 @@ workspace = true
 cargo-fuzz = true
 
 [dependencies]
+betterlite-auth = { path = "../../betterlite-auth" }
 betterlite-config = { path = "../../betterlite-config" }
 betterlite-mcp = { path = ".." }
 chrono = { version = "0.4.45", default-features = false }
 libfuzzer-sys = "0.4.9"
 secrecy = "0.10.3"
+serde_json = "1.0.154"
 
 [[bin]]
 name = "session_token"
@@ -53,6 +55,14 @@ bench = false
 [[bin]]
 name = "connector_import_request"
 path = "fuzz_targets/connector_import_request.rs"
+test = false
+doc = false
+bench = false
+
+
+[[bin]]
+name = "sso_assertion_decode"
+path = "fuzz_targets/sso_assertion_decode.rs"
 test = false
 doc = false
 bench = false

@@ -1,0 +1,27 @@
+kind: helper
+name: login-exp-out-of-range
+call:
+  b10003:
+    function: login
+    id_token: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjI1MzQwMjMwMDgwMH0.c2lnbmF0dXJl"
+env: {}
+compare: {ignore: []}
+calls:
+  - b10003:
+      function: login
+      id_token: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOi02MjEzNTU5NjgwMX0.c2lnbmF0dXJl"
+  - b10003:
+      function: login
+      id_token: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjI1MzQwMjMwMDc5OX0.c2lnbmF0dXJl"
+  - b10003:
+      function: login
+      id_token: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOi02MjEzNTU5NjgwMH0.c2lnbmF0dXJl"
+  - b10003:
+      function: login
+      id_token: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjB9.c2lnbmF0dXJl"
+  - b10003:
+      function: login
+      id_token: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjFlMzAwfQ.c2lnbmF0dXJl"
+  - b10003:
+      function: login
+      id_token: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjFlMTl9.c2lnbmF0dXJl"
