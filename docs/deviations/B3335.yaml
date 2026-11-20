@@ -1,0 +1,83 @@
+task: B3335
+deviations:
+  - what: >-
+      Character creation forwards the caller's timeout to the POST, while character lookup omits the
+      per-send timeout from the GET even though both public handlers accept one.
+    why: >-
+      LiteLLM's lookup calls sync_httpx_client.get and async_httpx_client.get without a timeout argument, so a
+      provider lookup waits as long as its client allows; the creation POST alone receives the caller's deadline.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7810
+  - what: >-
+      A creation with no timeout keeps its client's 600 second deadline on both the sync and async sends. LiteLLM's
+      sync post falls back to the httpx client's 600 second default as well, while its async post passes timeout=None
+      to httpx, which waits without a deadline.
+    why: >-
+      Every betterlite HTTP client bounds a request (B173); the transport never sends an unbounded call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L799-L830
+  - what: >-
+      Every failure other than a create POST whose send times out reaches the caller as CharacterError::Request
+      with its typed reason: a create POST's non-timeout send fault, a sync create POST whose reply body read
+      passes the deadline, a lookup GET timeout or other fault, a reply over the response cap, and a request the
+      transport cannot build (an unparsable URL or an illegal header value). LiteLLM's _handle_error turns each
+      of those caught exceptions into the provider's error class, with a synthesized 500 when the exception
+      carries no status code.
+    why: >-
+      The shared handle_error (B2402) passes a failure without a status through typed, so a network fault is not
+      reported as a provider 500 with the fault's text as its message; a create POST whose send times out is the
+      one failure mapped to the provider's error, with the 408 litellm.Timeout carries.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6077-L6085
+  - what: >-
+      A sync create POST whose reply body read passes the caller's deadline reaches the caller as a typed body
+      failure, while a create POST whose send times out becomes the provider's 408. LiteLLM's sync post reads the
+      body inside self.client.send(req, stream=False), so that timeout raises litellm.Timeout with status 408.
+    why: >-
+      reqwest reports a blocking body-read timeout as an io::Error, and betterlite-core cannot name reqwest to
+      inspect it because deny.toml lists the crates allowed to depend on reqwest directly; the async body read
+      keeps its reqwest::Error and does become the 408.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1511-L1521
+  - what: >-
+      The provider error built from a synthesized 500 does not carry LiteLLM's status_code_is_synthesized marker.
+    why: >-
+      The shared ErrorClasses::get_error_class takes a message, a status and headers only; the marker belongs to the
+      error conversion layer B2402 owns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6109-L6110
+  - what: >-
+      An error reply's body reads as UTF-8 with U+FFFD for each invalid sequence, whatever charset its content type
+      names; httpx decodes response.text with the charset the reply carries.
+    why: >-
+      Reply bodies are read as bytes here and decoded once, so the same bytes give the same message everywhere.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6083
+  - what: >-
+      A query key that both the transform's URL and its params carry keeps the URL's value, and a key only the
+      params carry is appended; httpx's params argument replaces the URL's value for a shared key.
+    why: >-
+      The shared outbound query merge keeps the absolute URL the transform built authoritative.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7952
+  - what: >-
+      A multipart part whose data holds the encoding boundary, or whose content type carries a line break, fails
+      with a typed transport error before the send; httpx encodes the body without checking either.
+    why: >-
+      Encoding is explicit here, and sending a body the provider would read wrong is worse than refusing it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7806-L7811
+  - what: >-
+      A reply larger than the shared response cap fails as a body-too-large transport error before status checking;
+      httpx reads a reply without a size cap.
+    why: >-
+      Every provider reply goes through the shared bounded reader, so one answer cannot grow without bound.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7812
+  - what: >-
+      An error reply's headers decode as UTF-8 per value, falling back to iso-8859-1 for that value alone;
+      httpx picks one encoding for the whole header set, so one value that is not UTF-8 makes every value read
+      as iso-8859-1.
+    why: >-
+      Each header is decoded once as it is read, so a provider that mixes a UTF-8 value with a latin-1 one keeps
+      both readable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6090-L6091
+kept_bugs:
+  - what: >-
+      A caller's extra_headers cannot override a header the provider's validate_environment writes: the provider's
+      value wins, so the OpenAI bearer replaces a caller's Authorization header.
+    why: >-
+      LiteLLM hands extra_headers to validate_environment as the dict the provider writes into, then re-applies that
+      same mutated dict; betterlite's validate_environment takes the caller's map and returns the map to send.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L86-L91
