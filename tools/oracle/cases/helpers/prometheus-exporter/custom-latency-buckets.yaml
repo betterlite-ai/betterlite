@@ -1,0 +1,12 @@
+kind: helper
+name: prometheus-exporter-custom-latency-buckets
+call:
+  b3875:
+    prometheus_metrics_config: []
+    prometheus_exclude_metrics: []
+    prometheus_exclude_labels: []
+    prometheus_latency_buckets: [0.5, 2.5]
+    prometheus_emit_input_sequence_length_label: false
+    caller_identity: api_key_alias
+env: {}
+compare: {ignore: []}
