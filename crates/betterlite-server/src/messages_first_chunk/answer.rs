@@ -14,7 +14,6 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use futures_util::StreamExt as _;
 use futures_util::stream::{self, BoxStream};
-use serde::Serialize;
 
 use super::frame_error::{frame_error_code, frame_error_object};
 use crate::first_byte_sse::{ByteStream, ProducedResponse, StreamedResponse};
@@ -83,14 +82,7 @@ pub async fn first_chunk_answer(
                 "Error consuming first chunk from generator: {}",
                 abort.detail
             );
-            let failure = SseFailure {
-                status_code: Some(abort.status),
-                code: None,
-                error_type: None,
-                param: None,
-                detail: Some(Box::new(JsonValue::String(abort.detail))),
-                provider_specific_fields: None,
-            };
+            let failure = sse_failure_from_detail(Some(abort.status), abort.detail);
             return sse_failure_answer(&failure, &headers, refresh.as_deref()).await;
         }
     };
@@ -120,17 +112,14 @@ async fn anthropic_error_answer(
 ) -> ProducedResponse {
     let identifier = call_id(&resolved, call_id_in_body);
     match frame.json_body(identifier) {
-        Ok(answer) => plain_json(frame.status_code, resolved, answer),
+        Ok(answer) => {
+            let status = StatusCode::from_u16(frame.status_code)
+                .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+            ProducedResponse::Plain((status, resolved, Json(answer)).into_response())
+        }
         Err(error) => {
             tracing::error!(message = BODY_FAILURE_LOG, error = %error);
-            let failure = SseFailure {
-                status_code: None,
-                code: None,
-                error_type: None,
-                param: None,
-                detail: Some(Box::new(JsonValue::String(error.to_string()))),
-                provider_specific_fields: None,
-            };
+            let failure = sse_failure_from_detail(None, error.to_string());
             sse_failure_answer(&failure, headers, refresh).await
         }
     }
@@ -155,7 +144,8 @@ fn frame_answer(
     }
     let mut envelope = JsonObject::new();
     envelope.insert(String::from(ERROR_KEY), Json::Object(error));
-    plain_json(code, resolved, Json::Object(envelope))
+    let status = StatusCode::from_u16(code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    ProducedResponse::Plain((status, resolved, Json(Json::Object(envelope))).into_response())
 }
 
 async fn sse_failure_answer(
@@ -177,9 +167,15 @@ fn call_id(headers: &HeaderMap, call_id_in_body: bool) -> Option<&str> {
     error_body_call_id(call_id_in_body, identifier)
 }
 
-fn plain_json<T: Serialize>(status: u16, headers: HeaderMap, body: T) -> ProducedResponse {
-    let code = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-    ProducedResponse::Plain((code, headers, Json(body)).into_response())
+fn sse_failure_from_detail(status_code: Option<u16>, detail: String) -> SseFailure {
+    SseFailure {
+        status_code,
+        code: None,
+        error_type: None,
+        param: None,
+        detail: Some(Box::new(JsonValue::String(detail))),
+        provider_specific_fields: None,
+    }
 }
 
 fn sse_answer(status: StatusCode, headers: HeaderMap, body: ByteStream) -> ProducedResponse {
