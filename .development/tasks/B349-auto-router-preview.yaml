@@ -153,8 +153,8 @@ out_of_scope:
   _pct (L660-L663), _cache_bucket (L666-L667), _savings_cohort (L670-L675), _compared_row (L678-L692),
   _benchmark_totals (L695-L729), _benchmark_group (L732-L753), _summed_agg_row (L756-L790), _strategy_router_key
   (L793-L812), _idle_router_groups (L815-L837).'
-- 'litellm/proxy/management_helpers/auto_router_availability.py: B379 owns: _catalog_field (L47-L50),
-  build_auto_router_catalog (L53-L80), auto_router_availability (L83-L148).'
+- 'litellm/proxy/management_helpers/auto_router_availability.py: B10021 owns: _catalog_field (L47-L50),
+  build_auto_router_catalog (L53-L80); B379 owns auto_router_availability (L83-L148).'
 - 'litellm/types/management_endpoints/auto_router_endpoints.py: B345 owns: StartShadowEvalRequest._reject_the_retired_turn_budget
   (L443-L448), StartShadowEvalRequest._round_percentage (L452-L453), StartShadowEvalRequest._dedupe_targets
   (L457-L460), StartShadowEvalRequest._models_are_names (L464-L467), StartShadowEvalRequest._at_least_one_target_at_most_hundred
