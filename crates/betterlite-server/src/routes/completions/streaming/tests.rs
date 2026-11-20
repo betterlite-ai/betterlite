@@ -493,6 +493,37 @@ fn frames(text: &str) -> Vec<&str> {
         .collect()
 }
 
+// convert_chat_to_text_completion's body as the route writes it: every field, both null details, no system_fingerprint
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RecoveredCompletion {
+    id: String,
+    object: String,
+    created: i64,
+    model: String,
+    choices: Vec<RecoveredLimitChoice>,
+    usage: RecoveredLimitUsage,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RecoveredLimitChoice {
+    text: String,
+    index: i64,
+    logprobs: Json,
+    finish_reason: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RecoveredLimitUsage {
+    prompt_tokens: u64,
+    completion_tokens: u64,
+    total_tokens: u64,
+    completion_tokens_details: Json,
+    prompt_tokens_details: Json,
+}
+
 // a chat deployment on the completions route answers LiteLLM's length-truncated text completion, not a 500
 #[tokio::test]
 async fn a_chat_deployment_recovers_the_output_limit_on_the_completions_route() {
@@ -505,15 +536,25 @@ async fn a_chat_deployment_recovers_the_output_limit_on_the_completions_route() 
             .and_then(|value| value.to_str().ok()),
         Some("upstream-answer")
     );
-    let reply: RecoveredText = serde_json::from_slice(&body).expect("reply");
+    let reply: RecoveredCompletion = serde_json::from_slice(&body).expect("reply");
+    assert!(reply.id.starts_with("chatcmpl-"), "{}", reply.id);
     assert_eq!(reply.object, "text_completion");
+    assert!(reply.created > 0, "{}", reply.created);
     assert_eq!(reply.model, "chat-model");
     assert_eq!(reply.choices.len(), 1);
-    assert_eq!(reply.choices[0].text.as_deref(), Some(""));
-    assert_eq!(reply.choices[0].finish_reason.as_deref(), Some("length"));
-    assert!(reply.usage.prompt_tokens > 0);
-    assert_eq!(reply.usage.completion, 0);
-    assert_eq!(reply.usage.total, reply.usage.prompt_tokens);
+    assert_eq!(reply.choices[0].text, "");
+    assert_eq!(reply.choices[0].index, 0);
+    assert_eq!(reply.choices[0].logprobs, Json::Null);
+    assert_eq!(reply.choices[0].finish_reason, "length");
+    assert!(
+        reply.usage.prompt_tokens > 0,
+        "{}",
+        reply.usage.prompt_tokens
+    );
+    assert_eq!(reply.usage.completion_tokens, 0);
+    assert_eq!(reply.usage.total_tokens, reply.usage.prompt_tokens);
+    assert_eq!(reply.usage.completion_tokens_details, Json::Null);
+    assert_eq!(reply.usage.prompt_tokens_details, Json::Null);
     let sent_text = String::from_utf8(sent).expect("sent body");
     assert!(sent_text.contains("\"messages\""), "{sent_text}");
 }
