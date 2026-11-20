@@ -2,7 +2,7 @@ id: B8790
 milestone: M8 platform
 title: Mount the policy test, impact, compliance and catalog routes and set the guardrail embedder
 status: todo
-depends_on: [B8667, B8666, B8665, B8630, B8631, B3246, B3680, B3247, B3249, B3251, B3253]
+depends_on: [B8667, B8666, B8665, B8630, B8631, B3246, B3680, B3247, B3249, B3251, B3253, B860, B9942]
 file: tasks/B8790-policy-tools-mount.yaml
 covers: []
 parent: null
