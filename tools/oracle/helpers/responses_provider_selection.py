@@ -1,3 +1,4 @@
+import litellm
 import os
 from collections.abc import Callable, Mapping
 from typing import Final, Literal, NotRequired, Protocol, TypeAlias, TypedDict, cast
@@ -13,6 +14,8 @@ from litellm.types.router import GenericLiteLLMParams
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
+# an unknown model prints LiteLLM's provider list to stdout, where only the answer belongs
+litellm.suppress_debug_info = True
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 ASYNC_KEY = "_async_prompt_merged_params"
 
