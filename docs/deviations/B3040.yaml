@@ -41,4 +41,4 @@ kept_bugs:
     why: >-
       Setups tune the variable against this comparison, and turning it into a greater-or-equal test would enforce
       limits a working configuration expects to stay relaxed.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3315-L3318
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3319-L3326
