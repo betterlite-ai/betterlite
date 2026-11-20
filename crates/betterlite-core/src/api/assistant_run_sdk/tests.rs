@@ -556,6 +556,11 @@ async fn openai_timeout_selection() {
             Duration::from_secs(6),
         ),
         (
+            Some(RunTimeout::Plain(TimeoutValue::Number(2.5_f64))),
+            None,
+            Duration::from_millis(2500),
+        ),
+        (
             Some(RunTimeout::Plain(TimeoutValue::String(String::from("7.5")))),
             None,
             Duration::from_millis(7500),
