@@ -103,11 +103,7 @@ where
     }
 
     // post_call_processing, the cache write, the metadata update and the success log, in that order
-    fn post_call(
-        &mut self,
-        outcome: CallOutcome,
-        times: CallTimes,
-    ) -> Result<CallOutcome, CallError> {
+    fn post_call(&self, outcome: CallOutcome, times: CallTimes) -> Result<CallOutcome, CallError> {
         let input = PostCallInput {
             call_type: &self.call_type,
             model: self.model.as_deref(),

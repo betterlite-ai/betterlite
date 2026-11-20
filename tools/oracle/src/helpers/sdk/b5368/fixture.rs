@@ -13,13 +13,13 @@ use betterlite_sdk::call_setup::correlation::CallOutcome;
 use betterlite_sdk::call_setup::providers::ProviderRegistry;
 use betterlite_sdk::call_wrapper::budget::BudgetState;
 use betterlite_sdk::call_wrapper::cache::CacheHandler;
-use betterlite_sdk::call_wrapper::error::{CallError, class_name, plain_error};
+use betterlite_sdk::call_wrapper::error::{CallError, class_name};
 use betterlite_sdk::call_wrapper::retry::WrapperRetryDefaults;
 use betterlite_sdk::call_wrapper::state::WrapperOptions;
 use betterlite_sdk::call_wrapper::{CallWrapper, SetupState, WrapperFlags};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
-use serde_json::{Number, Value};
+use serde_json::{Number, Value, json};
 
 use super::input::{BudgetSpec, Input, Mode};
 use super::ports::{
@@ -47,11 +47,12 @@ fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
 }
 
 fn wrapper(input: &Input) -> Result<CallWrapper<NoRules>, Box<HelperError>> {
-    let cache: Option<Arc<dyn CacheHandler>> = input.cache.as_ref().map(|spec| {
-        Arc::new(ScriptedCache {
-            hit: spec.hit.clone(),
-        })
-    });
+    let cache: Option<Arc<dyn CacheHandler>> =
+        input.cache.as_ref().map(|spec| -> Arc<dyn CacheHandler> {
+            Arc::new(ScriptedCache {
+                hit: spec.hit.clone(),
+            })
+        });
     Ok(CallWrapper {
         rules: NoRules,
         setup: setup_state()?,

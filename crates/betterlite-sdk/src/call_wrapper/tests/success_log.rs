@@ -66,7 +66,7 @@ async fn a_deferred_log_waits_for_the_stream_to_end() {
         .expect("the logging state builds");
     {
         let mut state = handle.state.lock().expect("the state lock is free");
-        state.deferred.defer_async_logging = true
+        state.deferred.defer_async_logging = true;
     };
     let stub = Stub::new("acompletion");
     fixture
