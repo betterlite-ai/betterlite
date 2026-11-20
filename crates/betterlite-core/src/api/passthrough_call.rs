@@ -39,7 +39,6 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 use thiserror::Error;
 
-use self::config::ConfigError;
 use self::send::{Failure, Fault, run};
 use crate::passthrough_stream::async_lifecycle::AsyncPassthroughStream;
 use crate::passthrough_stream::spend_collection::OwnedProviderSpend;

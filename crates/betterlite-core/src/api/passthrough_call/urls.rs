@@ -29,11 +29,12 @@ pub(crate) fn complete_url(
 ) -> Result<(Url, String), ConfigError> {
     match config.tag {
         PassthroughConfigTag::VLLM => {
-            let base = request.api_base.filter(|base| !base.is_empty()).ok_or(
-                ConfigError::ValueError {
+            let base = request
+                .api_base
+                .filter(|base| !base.is_empty())
+                .ok_or_else(|| ConfigError::ValueError {
                     message: VLLM_MISSING_BASE.to_owned(),
-                },
-            )?;
+                })?;
             let url =
                 config.format_url(request.target.endpoint, base, request.request_query_params)?;
             Ok((url, base.to_owned()))
