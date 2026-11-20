@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::future::Future;
 
 use betterlite_models::decisions::Json;

@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 
 use super::support::{

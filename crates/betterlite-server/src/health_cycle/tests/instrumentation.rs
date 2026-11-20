@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::time::{Duration, Instant};
 
 use betterlite_router::model_catalog_lookup::error::LookupError;

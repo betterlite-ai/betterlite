@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::sync::atomic::Ordering;
 
 use super::state::build_deployment_health_states;
