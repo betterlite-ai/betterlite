@@ -14,6 +14,7 @@ use betterlite_router::complexity_placement::params_on_request::{
 };
 use betterlite_router::complexity_placement::pools::tier_pools;
 use betterlite_router::complexity_placement::{TierChoice, TierPlacement};
+use betterlite_router::complexity_scoring::tier::{ComplexityTier, Tier};
 use betterlite_router::context_placement::ContextPlacement;
 use betterlite_router::context_placement::error::PlacementError;
 use betterlite_router::context_placement::facts::{ModelLimitKey, RouterModelInfo};
@@ -26,7 +27,7 @@ use betterlite_router::routing_groups::index::RoutingGroupIndex;
 use betterlite_router::routing_value_store::StoreSettings;
 use betterlite_router::tier_definitions::model::TierSet;
 
-use self::world::{deployments, tier, tier_set};
+use self::world::{deployments, tier_set};
 use super::wire::{Input, Output, StepInput, StepOutput};
 use crate::router_probes::error::OperationError;
 use crate::router_probes::random::InjectedRandom;
@@ -176,7 +177,8 @@ async fn step_output(
 ) -> Result<StepOutput, OperationError> {
     let mut kwargs = step.request_kwargs.clone();
     mark_raw_model_name(service.config, &mut kwargs);
-    let tier = tier(&step.tier);
+    let tier = ComplexityTier::built_in(&step.tier)
+        .map_or_else(|| Tier::Named(step.tier.to_owned()), Tier::BuiltIn);
     let choice = TierChoice {
         tier: &tier,
         allowed_models: step.allowed_models.as_deref(),

@@ -4,17 +4,12 @@ use betterlite_config::sections::tier_definitions::{TierEntry, TierPool as WireT
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_router::catalog_updates::catalog::DeploymentCatalog;
-use betterlite_router::complexity_scoring::tier::{ComplexityTier, Tier};
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use betterlite_router::tier_definitions::model::{TierModelEntry, TierPool, TierSet};
 use indexmap::IndexMap;
 use serde_json::Number;
 
 use super::super::wire::DeploymentInput;
-
-pub(super) fn tier(name: &str) -> Tier {
-    ComplexityTier::built_in(name).map_or_else(|| Tier::Named(name.to_owned()), Tier::BuiltIn)
-}
 
 pub(super) fn tier_set(tiers: &IndexMap<String, WireTierPool>) -> TierSet {
     TierSet {
