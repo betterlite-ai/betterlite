@@ -106,21 +106,18 @@ fn restored_array(
     masker: &SensitiveDataMasker,
     depth: usize,
 ) -> AgentJson {
-    let existing_items = existing_array_items(existing);
-    AgentJson::Array(
-        items
-            .iter()
-            .enumerate()
-            .map(|(index, item)| {
-                restored_nested(
-                    item,
-                    existing_items.get(index),
-                    masker,
-                    depth.saturating_add(1),
-                )
-            })
-            .collect(),
-    )
+    let stored = existing.and_then(AgentJson::as_array);
+    let mut restored = Vec::with_capacity(items.len());
+    for (index, item) in items.iter().enumerate() {
+        let position = stored.and_then(|values| values.get(index));
+        restored.push(restored_nested(
+            item,
+            position,
+            masker,
+            depth.saturating_add(1),
+        ));
+    }
+    AgentJson::Array(restored)
 }
 
 fn existing_object_fields(existing: Option<&AgentJson>) -> BTreeMap<String, AgentJson> {
@@ -131,13 +128,6 @@ fn existing_object_fields(existing: Option<&AgentJson>) -> BTreeMap<String, Agen
         .iter()
         .map(|(key, nested)| (key.clone(), nested.clone()))
         .collect()
-}
-
-fn existing_array_items(existing: Option<&AgentJson>) -> &[AgentJson] {
-    let Some(items) = existing.and_then(AgentJson::as_array) else {
-        return &[];
-    };
-    items
 }
 
 fn is_marker(value: &AgentJson) -> bool {
