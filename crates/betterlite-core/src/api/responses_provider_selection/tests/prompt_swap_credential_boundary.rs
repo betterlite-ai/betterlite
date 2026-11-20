@@ -237,7 +237,7 @@ fn an_unresolvable_swapped_model_is_a_resolution_error() {
 }
 
 #[test]
-fn a_broken_original_resolution_fails_the_swap() {
+fn a_broken_original_resolution_keeps_the_swap() {
     let request = SwapRequest {
         original_model: "gpt-4o",
         swapped_model: "claude-3",
@@ -245,13 +245,7 @@ fn a_broken_original_resolution_fails_the_swap() {
         prompt_id: Some("p-1"),
     };
     let kwargs = parameters(&[("api_key", json(r#""sk-test""#))]);
-    let error = resolve_swapped_provider(&request, &kwargs, &BrokenOriginal)
-        .expect_err("only a missing provider is allowed to keep the swap");
-    let PromptError::Swap(PromptSwapError::Resolution(cause)) = error else {
-        panic!("the original resolution error propagates");
-    };
-    assert!(matches!(
-        cause,
-        ResolutionError::EndpointWithoutProvider { .. }
-    ));
+    let provider = resolve_swapped_provider(&request, &kwargs, &BrokenOriginal)
+        .expect("every original resolution failure keeps the swap");
+    assert_eq!(provider, "anthropic");
 }

@@ -29,12 +29,10 @@ pub fn resolve_swapped_provider(
     };
     let key_absent = kwargs
         .get("api_key")
-        .filter(|value| **value != JsonValue::Null)
-        .is_none();
+        .is_none_or(|value| *value == JsonValue::Null);
     let base_absent = kwargs
         .get("api_base")
-        .filter(|value| **value != JsonValue::Null)
-        .is_none();
+        .is_none_or(|value| *value == JsonValue::Null);
     if key_absent && base_absent {
         return Ok(swapped_provider);
     }
@@ -42,8 +40,7 @@ pub fn resolve_swapped_provider(
         Some(provider) => provider.to_owned(),
         None => match provider_of(resolver, request.original_model) {
             Ok(provider) => provider,
-            Err(ResolutionError::MissingProvider { .. }) => return Ok(swapped_provider),
-            Err(error) => return Err(PromptError::Swap(PromptSwapError::Resolution(error))),
+            Err(_unresolved) => return Ok(swapped_provider),
         },
     };
     if swapped_provider == original_provider {
