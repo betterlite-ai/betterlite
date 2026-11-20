@@ -1,0 +1,8 @@
+general_settings:
+  allow_client_side_credentials: true
+model_list:
+  - model_name: broken-grant
+    litellm_params:
+      model: openai/gpt-4o
+      configurable_clientside_auth_params:
+        - 7
