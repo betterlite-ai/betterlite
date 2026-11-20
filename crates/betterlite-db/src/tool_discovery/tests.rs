@@ -3,6 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use tokio::task::JoinSet;
 use tokio::time::timeout;
 
 use super::{ToolDiscoveryError, ToolDiscoveryItem, ToolDiscoveryQueue};
@@ -119,12 +120,14 @@ async fn a_flush_wakes_a_waiter_for_room() {
     let queue = Arc::new(ToolDiscoveryQueue::new(1).expect("a queue"));
     queue.add_update(named("search")).await;
     let waiting = Arc::clone(&queue);
-    let producer = tokio::spawn(async move { waiting.add_update(named("fetch")).await });
+    let mut producers = JoinSet::new();
+    producers.spawn(async move { waiting.add_update(named("fetch")).await });
     tokio::task::yield_now().await;
     assert_eq!(queue.flush(), [named("search")]);
-    timeout(Duration::from_secs(1), producer)
+    timeout(Duration::from_secs(1), producers.join_next())
         .await
         .expect("the flush wakes the producer")
+        .expect("the producer task finished")
         .expect("the producer queued the tool");
     assert_eq!(queue.flush(), [named("fetch")]);
 }

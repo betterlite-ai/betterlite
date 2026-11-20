@@ -226,15 +226,17 @@ async fn a_flush_wakes_a_waiter_for_room() {
         .await
         .expect("the first increment");
     let waiting = Arc::clone(&queue);
-    let producer = tokio::spawn(async move { waiting.add_update(same_window("2.0", None)).await });
+    let mut producers = JoinSet::new();
+    producers.spawn(async move { waiting.add_update(same_window("2.0", None)).await });
     tokio::task::yield_now().await;
     assert_eq!(
         queue.flush().expect("the first increment flushes"),
         [same_window("1.0", None)]
     );
-    timeout(Duration::from_secs(1), producer)
+    timeout(Duration::from_secs(1), producers.join_next())
         .await
         .expect("the flush wakes the producer")
+        .expect("the producer task finished")
         .expect("the producer queued the increment")
         .expect("the increment queued");
     assert_eq!(
