@@ -66,6 +66,15 @@ fn public_mcp_servers_absent_null_and_empty(
 }
 
 #[rstest]
+#[case::absent("", true)]
+#[case::null("litellm_settings:\n  public_mcp_hub_strict_whitelist:\n", true)]
+#[case::false_flag("litellm_settings:\n  public_mcp_hub_strict_whitelist: false\n", false)]
+fn mcp_hub_strict_whitelist_absent_null_and_false(#[case] source: &str, #[case] expected: bool) {
+    let settings = load(source, &[]).unwrap();
+    assert_eq!(settings.public_mcp_hub_strict, expected);
+}
+
+#[rstest]
 #[case::defaults("", &[], DEFAULT_BLOG_POSTS_URL)]
 #[case::environment(
     "",
