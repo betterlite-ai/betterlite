@@ -3,21 +3,26 @@
 mod support;
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::time::{sleep, timeout};
+use tokio_util::sync::CancellationToken;
+use tokio_util::task::TaskTracker;
 
 use super::{CALLBACK_NAME, Overrides, PubSubError};
 use crate::callback_logger::CallbackLogger as _;
 use crate::callback_logger::event::LoggerEvent;
 use crate::gcs_mock::auth::VertexAuthProvider;
 use crate::registry::catalog::gcs_pubsub::ProjectionError;
+use crate::registry::catalog::gcs_pubsub::flush::spawn_flush_loop;
 use crate::registry::catalog::gcs_pubsub::payload::spend_log_payload;
 
 use support::{
     CREDENTIALS, PAYLOAD, PROJECT, TOKEN, TOPIC, capture_logs, configured, event, event_from,
-    event_with_metadata, messages, open, open_with, published, try_open,
+    event_with_metadata, messages, open, open_with, open_with_flush, published, try_open,
 };
 
 fn overrides(project: Option<&str>, topic: Option<&str>) -> Overrides {
@@ -475,6 +480,7 @@ async fn callback_logger_publishes_the_spend_projection_for_the_v1_flag() {
         ("user_api_key", "sk-secret"),
         ("billing_agent_id", "agent-9"),
         ("user_api_key_end_user_id", "end-user-2"),
+        ("user_api_key_user_id", "user-7"),
     ]);
     fixture
         .logger
@@ -503,6 +509,8 @@ async fn callback_logger_publishes_the_spend_projection_for_the_v1_flag() {
     assert_eq!(member(&body, "cache_key"), &text("Cache OFF"));
     assert_eq!(member(&body, "cache_hit"), &text("False"));
     assert_eq!(member(&body, "end_user"), &text("end-user-2"));
+    assert_eq!(member(&body, "user"), &text("user-7"));
+    assert_eq!(member(&body, "request_tags"), &text("[\"team-a\"]"));
     assert_eq!(member(&body, "billing_agent_id"), &text("agent-9"));
     assert_eq!(member(&body, "messages"), &text("{}"));
     assert_eq!(member(&body, "request_duration_ms"), &json("1500"));
@@ -629,6 +637,58 @@ async fn the_spillover_headers_reach_the_projected_metadata() {
         member(&member(&clean, "azure_spillover"), "from_deployment"),
         &text("dep-1")
     );
+}
+
+#[tokio::test]
+async fn the_namespaced_mcp_tool_reaches_the_projected_record() {
+    let fixture = open(&v1_environment(), Overrides::default(), 1);
+    let tool = PAYLOAD.replace(
+        "\"user_api_key_end_user_id\": \"end-user-1\"",
+        "\"user_api_key_end_user_id\": \"end-user-1\", \
+         \"mcp_tool_call_metadata\": {\"namespaced_tool_name\": \"tool-1\"}",
+    );
+    let body = projected(&fixture, event_from(&tool)).await;
+    assert_eq!(member(&body, "mcp_namespaced_tool_name"), &text("tool-1"));
+}
+
+#[tokio::test]
+async fn the_guardrail_information_reaches_the_projected_metadata() {
+    let fixture = open(&v1_environment(), Overrides::default(), 1);
+    let guarded = PAYLOAD.replace(
+        "\"error_str\": null",
+        "\"error_str\": null, \"guardrail_information\": [{\"guardrail_name\": \"my-guard\"}]",
+    );
+    let body = projected(&fixture, event_from(&guarded)).await;
+    let clean = cleaned(&body);
+    let Json::List(entries) = member(&clean, "guardrail_information") else {
+        panic!("the guardrail information is a list");
+    };
+    assert_eq!(member(&entries[0], "guardrail_name"), &text("my-guard"));
+}
+
+#[tokio::test]
+async fn the_flush_loop_publishes_on_its_interval() {
+    let fixture = open_with_flush(
+        &configured(),
+        Overrides::default(),
+        Duration::from_millis(10),
+    );
+    let logger = Arc::new(fixture.logger);
+    let tracker = TaskTracker::new();
+    let shutdown = CancellationToken::new();
+    spawn_flush_loop(&logger, tracker.clone(), shutdown.clone());
+    logger
+        .async_log_success_event(Arc::new(event()))
+        .await
+        .expect("the event is accepted");
+    assert!(fixture.delivery.requests().is_empty());
+    sleep(Duration::from_millis(500)).await;
+    assert_eq!(fixture.delivery.requests().len(), 1);
+    shutdown.cancel();
+    tracker.close();
+    timeout(Duration::from_secs(2), tracker.wait())
+        .await
+        .expect("the flush loop stops on shutdown");
 }
 
 #[tokio::test]

@@ -12,8 +12,9 @@ use crate::http_analytics_loggers::delivery::PooledDelivery;
 use crate::private_json::error::PrivateJsonError;
 use crate::spend_metadata::SpendMetadataError;
 
-mod flush;
+pub(crate) mod flush;
 pub(crate) mod payload;
+mod publish;
 
 mod tests;
 

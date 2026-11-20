@@ -242,10 +242,18 @@ pub(crate) struct Fixture {
 
 pub(crate) type TestLogger = GcsPubSubLogger<FakeAuth, Captured>;
 
+pub(crate) fn settings(batch_size: usize) -> BatchSettings {
+    BatchSettings {
+        batch_size,
+        flush_interval: Duration::from_secs(5),
+        max_queue_size: DEFAULT_MAX_QUEUE_SIZE,
+    }
+}
+
 pub(crate) fn assemble(
     environment: &[(&str, &str)],
     overrides: Overrides,
-    batch_size: usize,
+    batch: BatchSettings,
     project: fn(&LoggerEvent) -> Result<Json, ProjectionError>,
 ) -> Result<(TestLogger, FakeAuth, Captured), PubSubError<FakeAuth, Captured>> {
     let variables: BTreeMap<String, String> = environment
@@ -261,11 +269,7 @@ pub(crate) fn assemble(
             auth: auth.clone(),
             delivery: delivery.clone(),
             project,
-            batch: BatchSettings {
-                batch_size,
-                flush_interval: Duration::from_secs(5),
-                max_queue_size: DEFAULT_MAX_QUEUE_SIZE,
-            },
+            batch,
         },
     )?;
     Ok((logger, auth, delivery))
@@ -275,7 +279,7 @@ pub(crate) fn try_open(
     environment: &[(&str, &str)],
     overrides: Overrides,
 ) -> Result<TestLogger, PubSubError<FakeAuth, Captured>> {
-    Ok(assemble(environment, overrides, 512, spend_log_payload)?.0)
+    Ok(assemble(environment, overrides, settings(512), spend_log_payload)?.0)
 }
 
 pub(crate) fn open(
@@ -293,7 +297,25 @@ pub(crate) fn open_with(
     project: fn(&LoggerEvent) -> Result<Json, ProjectionError>,
 ) -> Fixture {
     let (logger, auth, delivery) =
-        assemble(environment, overrides, batch_size, project).expect("the logger builds");
+        assemble(environment, overrides, settings(batch_size), project).expect("the logger builds");
+    Fixture {
+        logger,
+        auth,
+        delivery,
+    }
+}
+
+pub(crate) fn open_with_flush(
+    environment: &[(&str, &str)],
+    overrides: Overrides,
+    flush_interval: Duration,
+) -> Fixture {
+    let batch = BatchSettings {
+        flush_interval,
+        ..settings(512)
+    };
+    let (logger, auth, delivery) =
+        assemble(environment, overrides, batch, spend_log_payload).expect("the logger builds");
     Fixture {
         logger,
         auth,
