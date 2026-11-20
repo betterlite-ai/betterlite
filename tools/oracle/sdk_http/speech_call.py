@@ -1,14 +1,23 @@
 import os
+from collections.abc import Coroutine
 from concurrent.futures import ThreadPoolExecutor
+from typing import Final, TypeAlias
 
 import litellm
 import openai
+from litellm.main import speech as litellm_speech
 from litellm.types.llms.openai import HttpxBinaryResponseContent
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic import JsonValue as Json
 
-SENTINEL = "$API_BASE"
-NO_RETRIES = 0
+from openai_chat import Failure, project_failure as chat_failure
+
+SENTINEL: Final = "$API_BASE"
+NO_RETRIES: Final = 0
+# speech returns the audio, or a coroutine of it on its internal async path
+SpeechAnswer: TypeAlias = (
+    HttpxBinaryResponseContent | Coroutine[object, object, HttpxBinaryResponseContent]
+)
 
 
 class StreamedSpeechError(TypeError):
@@ -67,15 +76,6 @@ class BinaryValue(BaseModel):
     body: list[int]
 
 
-class Failure(BaseModel):
-    cls: str = Field(serialization_alias="class")
-    status: int
-    type: str | None = None
-    param: str | None = None
-    code: str | None = None
-    message: str
-
-
 class StepOutcome(BaseModel):
     value: BinaryValue | None = None
     failure: Failure | None = None
@@ -93,10 +93,6 @@ class SpeechCallOutcome(BaseModel):
     speech_call: SpeechCallValue
 
 
-def endpoint(value: str | None, api_base: str) -> str | None:
-    return api_base if value == SENTINEL else value
-
-
 # litellm reads provider bases and keys from the environment, so the sentinel resolves there too
 def apply_environment(api_base: str) -> None:
     for name, value in list(os.environ.items()):
@@ -104,22 +100,22 @@ def apply_environment(api_base: str) -> None:
             os.environ[name] = api_base
 
 
-def apply_globals(globals: Globals, api_base: str) -> None:
-    litellm.api_base = endpoint(globals.api_base, api_base)
-    litellm.api_version = globals.api_version
-    litellm.api_key = globals.api_key
-    litellm.openai_key = globals.openai_key
-    litellm.azure_key = globals.azure_key
-    litellm.num_retries = globals.num_retries
+def apply_globals(shared: Globals, api_base: str) -> None:
+    litellm.api_base = api_base if shared.api_base == SENTINEL else shared.api_base
+    litellm.api_version = shared.api_version
+    litellm.api_key = shared.api_key
+    litellm.openai_key = shared.openai_key
+    litellm.azure_key = shared.azure_key
+    litellm.num_retries = shared.num_retries
 
 
 def speak(step: Step, api_base: str) -> HttpxBinaryResponseContent:
-    answer = litellm.speech(
+    answer: SpeechAnswer = litellm_speech(
         model=step.model,
         input=step.input,
         voice=step.voice,
         api_key=step.api_key,
-        api_base=endpoint(step.api_base, api_base),
+        api_base=api_base if step.api_base == SENTINEL else step.api_base,
         api_version=step.api_version,
         organization=step.organization,
         project=step.project,
@@ -132,42 +128,19 @@ def speak(step: Step, api_base: str) -> HttpxBinaryResponseContent:
         client=None,
         headers=step.headers,
         custom_llm_provider=step.custom_llm_provider,
-        base_url=endpoint(step.base_url, api_base),
+        base_url=api_base if step.base_url == SENTINEL else step.base_url,
         **step.kwargs,
     )
-    if not isinstance(answer, HttpxBinaryResponseContent):
-        raise StreamedSpeechError
-    return answer
-
-
-def status_of(error: openai.APIError) -> int:
-    value: object = getattr(error, "status_code", None)
-    return value if isinstance(value, int) else 0
-
-
-def text_field(error: openai.APIError, name: str) -> str | None:
-    value: object = getattr(error, name, None)
-    return value if isinstance(value, str) else None
-
-
-def openai_failure(error: openai.APIError) -> Failure:
-    fields: dict[str, str | int | None] = {
-        "cls": type(error).__name__,
-        "status": status_of(error),
-        "type": text_field(error, "type"),
-        "param": text_field(error, "param"),
-        "message": error.message,
-    }
-    code = text_field(error, "code")
-    if code is not None:
-        fields["code"] = code
-    return Failure.model_validate(fields)
+    match answer:
+        case HttpxBinaryResponseContent():
+            return answer
+    raise StreamedSpeechError
 
 
 def project_failure(error: BaseException) -> StepOutcome:
     match error:
         case openai.APIError():
-            return StepOutcome(failure=openai_failure(error))
+            return StepOutcome(failure=chat_failure(error).failure)
         case BaseException():
             return StepOutcome(
                 failure=Failure(cls=type(error).__name__, status=0, message=str(error))
@@ -178,10 +151,11 @@ def run_step(step: Step, api_base: str) -> StepOutcome:
     with ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(speak, step, api_base)
     raised = future.exception()
-    if raised is not None:
-        if isinstance(raised, StreamedSpeechError):
+    match raised:
+        case StreamedSpeechError():
             raise raised
-        return project_failure(raised)
+        case BaseException():
+            return project_failure(raised)
     answer = future.result()
     return StepOutcome(
         value=BinaryValue(status=answer.response.status_code, body=list(answer.content))

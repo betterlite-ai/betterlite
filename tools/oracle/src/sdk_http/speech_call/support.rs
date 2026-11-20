@@ -35,20 +35,12 @@ use super::super::result::{Failure, Nullable};
 use super::{API_BASE_SENTINEL, Globals, Step};
 
 // a base or a key written as the sentinel takes the harness mock's origin
-pub(super) fn environment(
-    env: &BTreeMap<String, String>,
-    api_base: &str,
-) -> BTreeMap<String, String> {
-    env.iter()
-        .map(|(name, value)| {
-            let resolved = if value == API_BASE_SENTINEL {
-                api_base.to_owned()
-            } else {
-                value.clone()
-            };
-            (name.clone(), resolved)
-        })
-        .collect()
+pub(super) fn harness(value: &str, api_base: &str) -> String {
+    if value == API_BASE_SENTINEL {
+        api_base.to_owned()
+    } else {
+        value.to_owned()
+    }
 }
 
 pub(super) fn settings(
@@ -60,7 +52,12 @@ pub(super) fn settings(
         .api_base
         .as_deref()
         .map(|value| harness(value, api_base));
-    let source = serde_json::json!({
+    load(&source(globals, base), environment)
+}
+
+// litellm_settings as the case sets it, with the base already resolved to the mock origin
+fn source(globals: &Globals, base: Option<String>) -> String {
+    serde_json::json!({
         "litellm_settings": {
             "api_base": base,
             "api_key": globals.api_key,
@@ -72,20 +69,30 @@ pub(super) fn settings(
             "num_retries": globals.num_retries,
             "request_timeout": globals.request_timeout,
         }
-    });
+    })
+    .to_string()
+}
+
+fn load(source: &str, environment: &BTreeMap<String, String>) -> Result<Settings, SdkHttpError> {
     ConfigLoader {
         lookup: environment.clone(),
     }
-    .load(&source.to_string())
+    .load(source)
     .map(|config| config.sections.speech_call)
     .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))
 }
 
-fn harness(value: &str, api_base: &str) -> String {
-    if value == API_BASE_SENTINEL {
-        api_base.to_owned()
-    } else {
-        value.to_owned()
+// the resolve context's globals: the case's key and base, with every other credential unset
+pub(super) fn credentials(globals: &Globals, api_base: &str) -> GlobalCredentials {
+    GlobalCredentials {
+        api_key: globals.api_key.as_deref().map(SecretString::from),
+        api_base: globals
+            .api_base
+            .as_deref()
+            .map(|value| harness(value, api_base)),
+        xai_key: None,
+        inception_key: None,
+        lemonade_key: None,
     }
 }
 
@@ -100,22 +107,14 @@ pub(super) struct Fixture {
 impl Fixture {
     pub(super) fn new(
         environment: &BTreeMap<String, String>,
-        globals: &Globals,
-        api_base: &str,
+        globals: GlobalCredentials,
     ) -> Result<Self, SdkHttpError> {
         Ok(Self {
             catalog: ModelCatalog::parse(b"{}", UnknownFields::Reject)
                 .map_err(|error| SdkHttpError::Invalid(error.to_string()))?,
             names: BTreeSet::new(),
             environment: environment.clone(),
-            globals: GlobalCredentials {
-                api_key: globals.api_key.clone().map(SecretString::from),
-                api_base: globals
-                    .api_base
-                    .as_deref()
-                    .map(|value| harness(value, api_base)),
-                ..GlobalCredentials::default()
-            },
+            globals,
         })
     }
 
@@ -187,7 +186,7 @@ pub(super) fn logging() -> Result<LoggingState, SdkHttpError> {
         r#"{"model":"tts-1","call_type":"speech","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#,
     )
     .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
-    let redactor = redactor()?;
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SdkHttpError::Redactor)?;
     LoggingState::new(
         init,
         CorrelationSetup {
@@ -199,10 +198,6 @@ pub(super) fn logging() -> Result<LoggingState, SdkHttpError> {
         Duration::default,
     )
     .map_err(SdkHttpError::LoggingState)
-}
-
-pub(super) fn redactor() -> Result<Redactor, SdkHttpError> {
-    Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SdkHttpError::Redactor)
 }
 
 // the Lyria catalog answer the case scripts; no config object handles a tag, which is B157's absent case
@@ -254,7 +249,7 @@ pub(super) fn failure(error: &SpeechException) -> Result<Failure, SdkHttpError> 
             status: class.metadata().status_code,
             kind: field(class.metadata().error_type),
             param: field(class.metadata().param),
-            code: class.metadata().openai_code,
+            code: Some(class.metadata().openai_code),
             message: error.message.clone(),
         }),
     }

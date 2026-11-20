@@ -16,6 +16,7 @@ use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::chat::execution::ChatError;
 use betterlite_openai::files::error::StatusError;
 use betterlite_openai::files::records::BinaryContent;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
 
 use super::super::OpenaiChat;
@@ -120,12 +121,15 @@ pub(super) async fn execute(
     api_base: &str,
     env: &BTreeMap<String, String>,
 ) -> Result<SdkResult, SdkHttpError> {
-    let environment = support::environment(env, api_base);
+    let environment: BTreeMap<String, String> = env
+        .iter()
+        .map(|(name, value)| (name.clone(), support::harness(value, api_base)))
+        .collect();
     let settings = support::settings(&call.globals, &environment, api_base)?;
-    let fixture = Fixture::new(&environment, &call.globals, api_base)?;
+    let fixture = Fixture::new(&environment, support::credentials(&call.globals, api_base))?;
     let context = fixture.context();
     let transport = outbound_client(&environment)?;
-    let redactor = support::redactor()?;
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SdkHttpError::Redactor)?;
     let mut outcomes = Vec::with_capacity(call.steps.len());
     for step in &call.steps {
         let native_call = support::speak(step, api_base)?;
