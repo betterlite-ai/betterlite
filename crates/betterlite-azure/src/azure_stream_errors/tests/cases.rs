@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_logging::logging_pre_post::args::RawBody;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_models::decisions::Json;
-use betterlite_streaming::stream_chunk_shaping::records::StreamChunk;
+use betterlite_streaming::stream_chunk_shaping::records::{JsonValue, StreamChunk};
 use futures_util::StreamExt as _;
 use rstest::rstest;
 use secrecy::{ExposeSecret, SecretString};
@@ -201,6 +201,18 @@ fn assert_raw_headers(stream: &AzureChatStream) {
     );
 }
 
+// CustomStreamWrapper copies its base hidden params, including the shaped additional headers, onto each chunk
+fn assert_shaped_additional_headers(chunks: &[StreamChunk]) {
+    let shaped = chunks[0].hidden_params.get("additional_headers");
+    let Some(JsonValue::Object(fields)) = shaped else {
+        panic!("a chunk carries the shaped additional headers");
+    };
+    assert_eq!(
+        fields.get("llm_provider-x-custom-name"),
+        Some(&JsonValue::String("MiXeD".to_owned()))
+    );
+}
+
 fn stream_header_difference() {
     let sources = plain_sources();
     let fixture = CallFixture::default();
@@ -220,6 +232,8 @@ fn stream_header_difference() {
     ))
     .expect("sync opens");
     assert_processed_headers(&sync_stream);
+    let sync_chunks = collected(sync_stream.chunks);
+    assert_shaped_additional_headers(&sync_chunks);
     let async_source = scripted_source(ClientKind::AsyncAzureOpenAi, &headers, sse_payload());
     let async_stream = block_on(async_streaming(
         &async_source,
@@ -229,6 +243,8 @@ fn stream_header_difference() {
     ))
     .expect("async opens");
     assert_raw_headers(&async_stream);
+    let async_chunks = collected(async_stream.chunks);
+    assert_shaped_additional_headers(&async_chunks);
     assert_eq!(recorder.response_headers.len(), 2);
     assert_eq!(
         recorder.response_headers[1]
