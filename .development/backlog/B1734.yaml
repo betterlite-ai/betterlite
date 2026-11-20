@@ -1,7 +1,7 @@
 id: B1734
 milestone: M4 keys, spend and management
 title: Keep window increments distinct and roll up tool and model usage
-status: todo
+status: done
 depends_on: [B171, B198, B204, B700, B708, B860, B1690, B1716]
 file: tasks/B1734-window-and-model-queues.yaml
 covers:
@@ -12,7 +12,7 @@ covers:
   - "litellm/proxy/_types.py"
 parent: B070
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2642
