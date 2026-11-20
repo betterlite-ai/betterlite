@@ -20,6 +20,7 @@ probes:
               id: bad-id
               mode: unsupported-mode
         model_id: outer-id
+        # bad-id fails its own probe and is dropped from the answer on both sides, so the compared row is the router verdict
         failed: [bad-id]
 compare:
   ignore: []
