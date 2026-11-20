@@ -9,7 +9,7 @@ use rstest::rstest;
 use self::support::{catalog, catalog_inputs};
 use crate::callback_logger::CallbackLogger;
 use crate::otel::legacy_metrics::filter::CallbackSettingsView;
-use crate::otel::legacy_policy::config::{OpenTelemetryConfig, Signals};
+use crate::otel::legacy_policy::config::{Exporter, OpenTelemetryConfig, Signals};
 use crate::otel::logger_runtime::tests::support::{fixture, fixture_disabled};
 use crate::otel::model::utils::coercion::OtelModelValue;
 use crate::registry::catalog::CatalogError;
@@ -120,6 +120,15 @@ fn otel_without_v2_builds_the_legacy_opentelemetry() {
         .expect("the name is available")
         .expect("the legacy logger builds");
     assert_eq!(logger.callback_name(), "opentelemetry");
+}
+
+#[test]
+fn the_otel_arm_takes_its_legacy_config_from_the_environment() {
+    let inputs = catalog_inputs("", &[IN_MEMORY, ("OTEL_SERVICE_NAME", "from-env")]);
+    let shared = SharedOtel::new(&inputs);
+    let config = super::legacy_config(&inputs, &shared);
+    assert_eq!(config.exporter, Exporter::InMemory);
+    assert_eq!(config.service_name, "from-env");
 }
 
 #[test]
