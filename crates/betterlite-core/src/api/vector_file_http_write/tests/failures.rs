@@ -137,10 +137,7 @@ async fn malformed_reply_is_the_transforms_error(#[case] operation: Operation) {
     );
     let asked = config.errors();
     assert_eq!(asked.len(), 1);
-    assert_eq!(
-        (asked[0].1, asked[0].2.clone()),
-        (200, error.headers.clone())
-    );
+    assert_eq!((asked[0].1, asked[0].2.clone()), (200, error.headers));
     assert_eq!(wire.requests().len(), 1);
 }
 
@@ -222,7 +219,7 @@ async fn status_failure_keeps_the_masked_reply() {
     );
 }
 
-// LiteLLM builds the URL string and hands the headers to httpx inside the send; betterlite rejects either with no request made
+// LiteLLM builds the URL string and hands the headers to httpx inside the send; betterlite rejects each with no request made
 #[tokio::test]
 async fn prepare_failures_make_no_request() {
     let events = Events::new();
@@ -250,33 +247,67 @@ async fn prepare_failures_make_no_request() {
     assert_eq!(fixture.input(), Some(&json(r#""""#)));
     assert_eq!(events.recorded(), ["log"]);
     assert!(wire.requests().is_empty());
+}
 
+// A header name HTTP cannot carry fails with the typed name error, after the pre-call and with nothing sent
+#[tokio::test]
+async fn header_name_failure_makes_no_request() {
+    let events = Events::new();
+    let wire = Wire::replying(Reply::json(200, FILE), &events);
+    let source = Source::new(wire.clone());
     let settings = openai_settings();
-    let openai = openai_config(&settings, "sk-provider");
-    let openai_deps = WriteDeps {
-        config: &openai,
+    let config = openai_config(&settings, "sk-provider");
+    let deps = WriteDeps {
+        config: &config,
         source: &source,
         supplied: None,
     };
-    let bad = caller_headers(&[("X-Trace", "bad\nvalue")]);
-    let bad_call = update_call(
+    let params = params("http://unused.test");
+    let request = update_request(r#"{"attributes":{}}"#);
+    let mut fixture = Fixture::new("vector_store_file_update");
+    let bad = caller_headers(&[("bad name", "ok")]);
+    let call = update_call(
         target("vs_a", "file_a", &params, Some(&bad), None),
         &request,
         None,
     );
-    let result = run(
-        &mut fixture,
-        &openai_deps,
-        ClientKind::Sync,
-        &bad_call,
-        &events,
-    )
-    .await;
+    let result = run(&mut fixture, &deps, ClientKind::Sync, &call, &events).await;
+    let Err(FileWriteError::HeaderName { name, .. }) = result else {
+        panic!("a header name HTTP cannot carry fails the header name");
+    };
+    assert_eq!(name, "bad name");
+    assert_eq!(events.recorded(), ["log"]);
+    assert!(wire.requests().is_empty());
+}
+
+// A header value HTTP cannot carry fails with the typed value error, after the pre-call and with nothing sent
+#[tokio::test]
+async fn header_value_failure_makes_no_request() {
+    let events = Events::new();
+    let wire = Wire::replying(Reply::json(200, FILE), &events);
+    let source = Source::new(wire.clone());
+    let settings = openai_settings();
+    let config = openai_config(&settings, "sk-provider");
+    let deps = WriteDeps {
+        config: &config,
+        source: &source,
+        supplied: None,
+    };
+    let params = params("http://unused.test");
+    let request = update_request(r#"{"attributes":{}}"#);
+    let mut fixture = Fixture::new("vector_store_file_update");
+    let bad = caller_headers(&[("X-Trace", "bad\nvalue")]);
+    let call = update_call(
+        target("vs_a", "file_a", &params, Some(&bad), None),
+        &request,
+        None,
+    );
+    let result = run(&mut fixture, &deps, ClientKind::Sync, &call, &events).await;
     let Err(FileWriteError::HeaderValue { name, .. }) = result else {
         panic!("a header value HTTP cannot carry fails the header value");
     };
     assert_eq!(name, "X-Trace");
-    assert_eq!(events.recorded(), ["log", "log"]);
+    assert_eq!(events.recorded(), ["log"]);
     assert!(wire.requests().is_empty());
 }
 

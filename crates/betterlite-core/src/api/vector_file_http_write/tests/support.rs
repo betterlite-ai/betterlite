@@ -508,6 +508,6 @@ pub(crate) fn update_call<'call>(
     })
 }
 
-pub(crate) const fn delete_call<'call>(target: WriteTarget<'call>) -> WriteCall<'call> {
+pub(crate) const fn delete_call(target: WriteTarget<'_>) -> WriteCall<'_> {
     WriteCall::Delete(DeleteCall { target })
 }

@@ -142,10 +142,8 @@ async fn file_write_header_order(#[case] beta: Option<&str>, #[case] expected_be
     let requests = wire.requests();
     assert_eq!(requests.len(), 1);
     let sent = |name: &str| {
-        requests[0]
-            .headers
-            .get(name)
-            .and_then(|value| value.to_str().ok())
+        let value = requests[0].headers.get(name)?;
+        value.to_str().ok()
     };
     assert_eq!(sent("authorization"), Some("Bearer sk-provider"));
     assert_eq!(sent("content-type"), Some("application/json"));
