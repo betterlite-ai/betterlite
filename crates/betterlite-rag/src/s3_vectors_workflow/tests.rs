@@ -272,7 +272,7 @@ fn assert_credentials(settings: &S3VectorsSettings) {
 
 #[tokio::test]
 async fn dimension_without_a_model_sends_nothing() {
-    let embedder = FakeEmbedder::new(vec![vec![1.0, 2.0]], false);
+    let embedder = FakeEmbedder::new(vec![vec![1.0_f64, 2.0_f64]], false);
     let dimension = detect_dimension(&embedder, None, DEFAULT_DIMENSION).await;
     assert_eq!(dimension, DEFAULT_DIMENSION);
     assert!(embedder.calls().is_empty());
@@ -280,7 +280,7 @@ async fn dimension_without_a_model_sends_nothing() {
 
 #[tokio::test]
 async fn dimension_probes_with_the_single_test_input() {
-    let embedder = FakeEmbedder::new(vec![vec![1.0, 2.0, 3.0], vec![4.0]], false);
+    let embedder = FakeEmbedder::new(vec![vec![1.0_f64, 2.0_f64, 3.0_f64], vec![4.0_f64]], false);
     let dimension = detect_dimension(&embedder, Some("vendor/model"), 512).await;
     assert_eq!(dimension, 3);
     assert_eq!(
@@ -300,7 +300,7 @@ async fn dimension_empty_answer_returns_the_default() {
 
 #[tokio::test]
 async fn dimension_embed_error_returns_the_default() {
-    let embedder = FakeEmbedder::new(vec![vec![1.0]], true);
+    let embedder = FakeEmbedder::new(vec![vec![1.0_f64]], true);
     assert_eq!(detect_dimension(&embedder, Some("m"), 512).await, 512);
 }
 
@@ -328,7 +328,7 @@ async fn flow_creates_the_bucket_then_the_generated_index() {
 #[tokio::test]
 async fn flow_probes_only_when_the_dimension_is_unset() {
     let api = FakeApi::new();
-    let embedder = FakeEmbedder::new(vec![vec![1.0, 2.0, 3.0]], false);
+    let embedder = FakeEmbedder::new(vec![vec![1.0_f64, 2.0_f64, 3.0_f64]], false);
     let workflow = S3VectorsWorkflow::new(
         s3_settings(
             r#"{"vector_bucket_name": "b", "index_name": "idx", "dimension": 512, "litellm_embedding_model": "vendor/model"}"#,
@@ -348,7 +348,7 @@ async fn flow_probes_only_when_the_dimension_is_unset() {
 #[tokio::test]
 async fn flow_probes_the_model_and_uses_the_first_vector_length() {
     let api = FakeApi::new();
-    let embedder = FakeEmbedder::new(vec![vec![1.0, 2.0, 3.0, 4.0]], false);
+    let embedder = FakeEmbedder::new(vec![vec![1.0_f64, 2.0_f64, 3.0_f64, 4.0_f64]], false);
     let workflow = S3VectorsWorkflow::new(
         s3_settings(r#"{"vector_bucket_name": "b", "litellm_embedding_model": "vendor/model"}"#),
         api.clone(),
@@ -386,7 +386,7 @@ async fn flow_runs_once_per_workflow() {
 #[tokio::test]
 async fn flow_keeps_the_index_name_and_dimension_after_a_failure() {
     let api = FakeApi::failing(vec![Failure::Index]);
-    let embedder = FakeEmbedder::new(vec![vec![1.0, 2.0]], false);
+    let embedder = FakeEmbedder::new(vec![vec![1.0_f64, 2.0_f64]], false);
     let workflow = S3VectorsWorkflow::new(
         s3_settings(r#"{"vector_bucket_name": "b", "litellm_embedding_model": "vendor/model"}"#),
         api.clone(),
@@ -413,7 +413,7 @@ async fn flow_keeps_the_index_name_and_dimension_after_a_failure() {
 #[tokio::test]
 async fn flow_retries_the_bucket_without_a_second_probe() {
     let api = FakeApi::failing(vec![Failure::Bucket]);
-    let embedder = FakeEmbedder::new(vec![vec![0.5, 0.25]], false);
+    let embedder = FakeEmbedder::new(vec![vec![0.5_f64, 0.25_f64]], false);
     let workflow = S3VectorsWorkflow::new(
         s3_settings(r#"{"vector_bucket_name": "b", "litellm_embedding_model": "vendor/model"}"#),
         api.clone(),
@@ -440,7 +440,7 @@ async fn flow_retries_the_bucket_without_a_second_probe() {
 #[tokio::test]
 async fn embed_returns_none_for_no_chunks() {
     let api = FakeApi::new();
-    let embedder = FakeEmbedder::new(vec![vec![1.0]], false);
+    let embedder = FakeEmbedder::new(vec![vec![1.0_f64]], false);
     let workflow = S3VectorsWorkflow::new(
         s3_settings(r#"{"vector_bucket_name": "b"}"#),
         api,
@@ -453,7 +453,7 @@ async fn embed_returns_none_for_no_chunks() {
 
 #[tokio::test]
 async fn embed_uses_the_configured_model_in_order() {
-    let embedder = FakeEmbedder::new(vec![vec![0.5], vec![0.25]], false);
+    let embedder = FakeEmbedder::new(vec![vec![0.5_f64], vec![0.25_f64]], false);
     let workflow = S3VectorsWorkflow::new(
         s3_settings(r#"{"vector_bucket_name": "b", "litellm_embedding_model": "vendor/model"}"#),
         FakeApi::new(),
@@ -462,7 +462,7 @@ async fn embed_uses_the_configured_model_in_order() {
     );
     let chunks = vec!["one".to_owned(), "two".to_owned()];
     let vectors = workflow.embed(&chunks).await.unwrap();
-    assert_eq!(vectors, Some(vec![vec![0.5], vec![0.25]]));
+    assert_eq!(vectors, Some(vec![vec![0.5_f64], vec![0.25_f64]]));
     assert_eq!(
         embedder.calls(),
         vec![(
@@ -474,7 +474,7 @@ async fn embed_uses_the_configured_model_in_order() {
 
 #[tokio::test]
 async fn embed_falls_back_to_the_default_model_and_stores_it() {
-    let embedder = FakeEmbedder::new(vec![vec![0.5]], false);
+    let embedder = FakeEmbedder::new(vec![vec![0.5_f64]], false);
     let workflow = S3VectorsWorkflow::new(
         s3_settings(r#"{"vector_bucket_name": "b"}"#),
         FakeApi::new(),
@@ -483,11 +483,11 @@ async fn embed_falls_back_to_the_default_model_and_stores_it() {
     );
     assert_eq!(
         workflow.embed(&["one".to_owned()]).await.unwrap(),
-        Some(vec![vec![0.5]])
+        Some(vec![vec![0.5_f64]])
     );
     assert_eq!(
         workflow.embed(&["two".to_owned()]).await.unwrap(),
-        Some(vec![vec![0.5]])
+        Some(vec![vec![0.5_f64]])
     );
     assert_eq!(
         embedder.calls(),
@@ -498,9 +498,9 @@ async fn embed_falls_back_to_the_default_model_and_stores_it() {
     );
 
     let chunks = vec!["three".to_owned()];
-    let embeddings = vec![vec![0.5]];
+    let embeddings = vec![vec![0.5_f64]];
     workflow
-        .store(Some("a.txt"), &chunks, Some(embeddings.as_slice()))
+        .store_vectors(Some("a.txt"), &chunks, Some(embeddings.as_slice()))
         .await
         .unwrap();
     let calls = embedder.calls();
@@ -529,9 +529,9 @@ async fn store_builds_an_entry_per_pair_with_the_filename() {
     let api = FakeApi::new();
     let workflow = rag_workflow(&api);
     let chunks = vec!["first".to_owned(), "second".to_owned()];
-    let embeddings = vec![vec![0.5, 0.25], vec![0.125, 0.0625]];
+    let embeddings = vec![vec![0.5_f64, 0.25_f64], vec![0.125_f64, 0.0625_f64]];
     let (id, name) = workflow
-        .store(Some("notes.txt"), &chunks, Some(embeddings.as_slice()))
+        .store_vectors(Some("notes.txt"), &chunks, Some(embeddings.as_slice()))
         .await
         .unwrap();
     assert_eq!(id.as_deref(), Some("rag:idx"));
@@ -550,14 +550,14 @@ async fn store_builds_an_entry_per_pair_with_the_filename() {
                         "first",
                         "0",
                         Some("notes.txt"),
-                        vec![0.5, 0.25]
+                        vec![0.5_f64, 0.25_f64]
                     ),
                     entry(
                         "notes.txt_1",
                         "second",
                         "1",
                         Some("notes.txt"),
-                        vec![0.125, 0.0625]
+                        vec![0.125_f64, 0.0625_f64]
                     ),
                 ],
             },
@@ -570,14 +570,14 @@ async fn store_truncates_to_the_shorter_list() {
     let api = FakeApi::new();
     let workflow = rag_workflow(&api);
     let more_chunks = vec!["one".to_owned(), "two".to_owned(), "three".to_owned()];
-    let two_vectors = vec![vec![1.0], vec![2.0]];
+    let two_vectors = vec![vec![1.0_f64], vec![2.0_f64]];
     workflow
-        .store(Some("a.txt"), &more_chunks, Some(two_vectors.as_slice()))
+        .store_vectors(Some("a.txt"), &more_chunks, Some(two_vectors.as_slice()))
         .await
         .unwrap();
     let one_chunk = vec!["one".to_owned()];
     workflow
-        .store(Some("a.txt"), &one_chunk, Some(two_vectors.as_slice()))
+        .store_vectors(Some("a.txt"), &one_chunk, Some(two_vectors.as_slice()))
         .await
         .unwrap();
 
@@ -600,9 +600,9 @@ async fn store_without_a_filename_uses_chunk_keys() {
     let api = FakeApi::new();
     let workflow = rag_workflow(&api);
     let chunks = vec!["first".to_owned()];
-    let embeddings = vec![vec![0.5]];
+    let embeddings = vec![vec![0.5_f64]];
     let (id, name) = workflow
-        .store(None, &chunks, Some(embeddings.as_slice()))
+        .store_vectors(None, &chunks, Some(embeddings.as_slice()))
         .await
         .unwrap();
     assert_eq!(id.as_deref(), Some("rag:idx"));
@@ -612,7 +612,7 @@ async fn store_without_a_filename_uses_chunk_keys() {
         Call::Vectors {
             bucket_name: "rag".to_owned(),
             index_name: "idx".to_owned(),
-            vectors: vec![entry("chunk_0", "first", "0", None, vec![0.5])],
+            vectors: vec![entry("chunk_0", "first", "0", None, vec![0.5_f64])],
         }
     );
 }
@@ -622,9 +622,9 @@ async fn store_treats_an_empty_filename_as_absent() {
     let api = FakeApi::new();
     let workflow = rag_workflow(&api);
     let chunks = vec!["first".to_owned()];
-    let embeddings = vec![vec![0.5]];
+    let embeddings = vec![vec![0.5_f64]];
     let (_, name) = workflow
-        .store(Some(""), &chunks, Some(embeddings.as_slice()))
+        .store_vectors(Some(""), &chunks, Some(embeddings.as_slice()))
         .await
         .unwrap();
     assert_eq!(name.as_deref(), Some(""));
@@ -633,7 +633,7 @@ async fn store_treats_an_empty_filename_as_absent() {
         Call::Vectors {
             bucket_name: "rag".to_owned(),
             index_name: "idx".to_owned(),
-            vectors: vec![entry("chunk_0", "first", "0", None, vec![0.5])],
+            vectors: vec![entry("chunk_0", "first", "0", None, vec![0.5_f64])],
         }
     );
 }
@@ -648,19 +648,19 @@ async fn store_rejects_missing_content_after_initializing() {
         UNIQUE_ID.to_owned(),
     );
     let chunks = vec!["one".to_owned()];
-    let embeddings = vec![vec![1.0]];
+    let embeddings = vec![vec![1.0_f64]];
     let no_chunks = workflow
-        .store(Some("a.txt"), &[], Some(embeddings.as_slice()))
+        .store_vectors(Some("a.txt"), &[], Some(embeddings.as_slice()))
         .await
         .unwrap_err();
     assert_eq!(no_chunks.to_string(), NO_CONTENT_MESSAGE);
     let no_embeddings = workflow
-        .store(Some("a.txt"), &chunks, None)
+        .store_vectors(Some("a.txt"), &chunks, None)
         .await
         .unwrap_err();
     assert_eq!(no_embeddings.to_string(), NO_CONTENT_MESSAGE);
     let empty_embeddings = workflow
-        .store(Some("a.txt"), &chunks, Some(&[]))
+        .store_vectors(Some("a.txt"), &chunks, Some(&[]))
         .await
         .unwrap_err();
     assert_eq!(empty_embeddings.to_string(), NO_CONTENT_MESSAGE);
@@ -679,7 +679,7 @@ async fn store_trait_impl_forwards_the_columns() {
     let api = FakeApi::new();
     let workflow = rag_workflow(&api);
     let chunks = vec!["first".to_owned()];
-    let embeddings = vec![vec![0.5]];
+    let embeddings = vec![vec![0.5_f64]];
     let request = StoreRequest {
         file_content: Some(b"ignored bytes"),
         filename: Some("notes.txt"),
@@ -701,7 +701,7 @@ async fn store_trait_impl_forwards_the_columns() {
                 "first",
                 "0",
                 Some("notes.txt"),
-                vec![0.5]
+                vec![0.5_f64]
             )],
         }
     );
@@ -742,7 +742,13 @@ async fn store_signs_every_request_through_the_bedrock_clients() {
     assert_eq!(body.index_name, "idx");
     assert_eq!(
         body.vectors,
-        vec![entry("a.txt_0", "one", "0", Some("a.txt"), vec![0.5, 0.25])]
+        vec![entry(
+            "a.txt_0",
+            "one",
+            "0",
+            Some("a.txt"),
+            vec![0.5_f64, 0.25_f64]
+        )]
     );
 }
 
@@ -770,9 +776,9 @@ async fn store_through_the_signed_api() -> (RecordingTransport, Option<String>) 
         UNIQUE_ID.to_owned(),
     );
     let chunks = vec!["one".to_owned()];
-    let embeddings = vec![vec![0.5, 0.25]];
+    let embeddings = vec![vec![0.5_f64, 0.25_f64]];
     let (id, _) = workflow
-        .store(Some("a.txt"), &chunks, Some(embeddings.as_slice()))
+        .store_vectors(Some("a.txt"), &chunks, Some(embeddings.as_slice()))
         .await
         .unwrap();
     (transport, id)

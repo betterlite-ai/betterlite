@@ -164,7 +164,7 @@ fn dimension_for(runtime: &Runtime, case: &DimensionCase) -> HelperResult {
     let chunks = vec!["one".to_owned()];
     let embeddings = vec![vec![0.5_f64]];
     runtime
-        .block_on(workflow.store(Some("a.txt"), &chunks, Some(embeddings.as_slice())))
+        .block_on(workflow.store_vectors(Some("a.txt"), &chunks, Some(embeddings.as_slice())))
         .or_value_error()?;
     Ok(json!({"operations": recorder.operations()}))
 }
@@ -179,7 +179,7 @@ pub(super) fn flow(runtime: &Runtime, cases: &[FlowCase]) -> HelperResult {
 
 fn flow_for(runtime: &Runtime, case: &FlowCase) -> HelperResult {
     let (workflow, recorder) = build_workflow(case, false)?;
-    let outcome = runtime.block_on(workflow.store(
+    let outcome = runtime.block_on(workflow.store_vectors(
         case.filename.as_deref(),
         &case.chunks,
         Some(case.embeddings.as_slice()),
@@ -238,12 +238,11 @@ fn store_call(
     runtime: &Runtime,
     call: &StoreCall,
 ) -> HelperResult {
-    let outcome = runtime.block_on(workflow.store(
+    result_value(runtime.block_on(workflow.store_vectors(
         call.filename.as_deref(),
         &call.chunks,
         call.embeddings.as_deref(),
-    ));
-    result_value(outcome)
+    )))
 }
 
 fn result_value(outcome: StoreOutcome) -> HelperResult {

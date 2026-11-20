@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
@@ -22,7 +22,7 @@ pub(super) const UNIQUE_ID: &str = "abcd1234";
 
 #[derive(Debug, thiserror::Error)]
 #[error("the scripted S3 Vectors API failed")]
-struct ScriptedFailure;
+pub(super) struct ScriptedFailure;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Failure {
@@ -74,12 +74,13 @@ impl FakeApi {
     }
 
     fn next_failure(&self, operation: Failure) -> Result<(), ScriptedFailure> {
-        let mut failures = self.failures.lock().unwrap();
-        if failures.first() == Some(&operation) {
-            failures.remove(0);
-            return Err(ScriptedFailure);
+        let mut failures = self.failures.lock().unwrap_or_else(PoisonError::into_inner);
+        if failures.first() != Some(&operation) {
+            return Ok(());
         }
-        Ok(())
+        failures.remove(0);
+        drop(failures);
+        Err(ScriptedFailure)
     }
 }
 
@@ -118,9 +119,11 @@ impl S3VectorsApi for FakeApi {
     }
 }
 
+pub(super) type EmbedCalls = Vec<(String, Vec<String>)>;
+
 #[derive(Debug, Clone)]
 pub(super) struct FakeEmbedder {
-    calls: Arc<Mutex<Vec<(String, Vec<String>)>>>,
+    calls: Arc<Mutex<EmbedCalls>>,
     answer: Vec<Vec<f64>>,
     failing: bool,
 }
@@ -216,7 +219,7 @@ impl AwsRagTransport for RecordingTransport {
         self.sent.lock().unwrap().push(RecordedRequest {
             url: request.url.clone(),
             headers: request.headers.clone(),
-            body: request.body.clone(),
+            body: request.body,
         });
         self.replies
             .lock()

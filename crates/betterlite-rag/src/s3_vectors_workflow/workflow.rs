@@ -158,7 +158,8 @@ where
         Ok(Some(vectors))
     }
 
-    pub async fn store(
+    // clippy's same_name_method refuses `store` while the type also implements RagStore
+    pub async fn store_vectors(
         &self,
         filename: Option<&str>,
         chunks: &[String],

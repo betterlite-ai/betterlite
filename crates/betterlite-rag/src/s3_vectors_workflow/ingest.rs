@@ -13,6 +13,6 @@ where
     type Error = WorkflowError<Api::Error>;
 
     async fn store(&self, request: StoreRequest<'_>) -> Result<StoreResult, Self::Error> {
-        S3VectorsWorkflow::store(self, request.filename, request.chunks, request.embeddings).await
+        Self::store_vectors(self, request.filename, request.chunks, request.embeddings).await
     }
 }
