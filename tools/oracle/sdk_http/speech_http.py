@@ -1,20 +1,17 @@
 import asyncio
-from collections.abc import Coroutine
+from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime
-from typing import Final, Literal
+from typing import Final, Literal, Protocol, TypedDict
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
-from litellm.llms.base_llm.text_to_speech.transformation import (
-    BaseTextToSpeechConfig,
-    TextToSpeechRequestData,
-)
+from litellm.llms.base_llm.text_to_speech.transformation import BaseTextToSpeechConfig
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
 from litellm.llms.custom_httpx.llm_http_handler import BaseLLMHTTPHandler
 from litellm.types.llms.openai import HttpxBinaryResponseContent
 from litellm.types.utils import CallTypes
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 from typing_extensions import override
 
 MODEL: Final = "speech-model"
@@ -25,6 +22,8 @@ API_BASE_REQUIRED: Final = "api_base is required"
 Mode = Literal["sync", "async"]
 Client = HTTPHandler | AsyncHTTPHandler | None
 SpeechWork = HttpxBinaryResponseContent | Coroutine[object, object, HttpxBinaryResponseContent]
+OBJECTS: Final = TypeAdapter(dict[str, object] | None)
+PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
 
 
 class Transformed(BaseModel):
@@ -59,6 +58,12 @@ class SpeechHttpCall(BaseModel):
     steps: list[Step]
 
 
+class RequestData(TypedDict, total=False):
+    dict_body: dict[str, JsonValue]
+    ssml_body: str
+    headers: dict[str, str]
+
+
 class BinaryValue(BaseModel):
     status: int
     body: list[int]
@@ -66,9 +71,11 @@ class BinaryValue(BaseModel):
 
 
 class Failure(BaseModel):
-    class_name: str = Field(serialization_alias="class")
-    status: int
-    synthesized: bool
+    model_config = ConfigDict(from_attributes=True)
+
+    class_name: str = Field(default="BaseLLMException", serialization_alias="class")
+    status_code: int = Field(serialization_alias="status")
+    status_code_is_synthesized: bool = Field(serialization_alias="synthesized")
     message: str
     headers: dict[str, str]
 
@@ -90,12 +97,31 @@ class SpeechHttpOutcome(BaseModel):
     speech_http: SpeechHttpValue
 
 
-HANDLER: Final = BaseLLMHTTPHandler()
+SPEECH_CALL = Callable[..., SpeechWork]
+ASYNC_SPEECH_CALL = Callable[..., Coroutine[object, object, HttpxBinaryResponseContent]]
+
+
+class Handlers(Protocol):
+    @property
+    def text_to_speech_handler(self) -> SPEECH_CALL: ...
+
+    @property
+    def async_text_to_speech_handler(self) -> ASYNC_SPEECH_CALL: ...
+
+
+HANDLER: Handlers = BaseLLMHTTPHandler()
 
 
 class StepConfig(BaseTextToSpeechConfig):
-    step: Step
-    error_headers: dict[str, str]
+    def __init__(self, step: Step) -> None:
+        self.step = step
+        self.data: RequestData = {}
+        if step.transformed.dict_body is not None:
+            self.data["dict_body"] = step.transformed.dict_body
+        if step.transformed.ssml_body is not None:
+            self.data["ssml_body"] = step.transformed.ssml_body
+        if step.transformed.headers is not None:
+            self.data["headers"] = step.transformed.headers
 
     @override
     def get_supported_openai_params(self, model: str) -> list[str]:
@@ -137,8 +163,8 @@ class StepConfig(BaseTextToSpeechConfig):
     @override
     def transform_text_to_speech_request(  # ast-grep-ignore: no-long-names
         self, *_args: JsonValue, **_kwargs: JsonValue
-    ) -> TextToSpeechRequestData:
-        return request_data(self.step.transformed)
+    ) -> RequestData:
+        return self.data
 
     @override
     def transform_text_to_speech_response(  # ast-grep-ignore: no-long-names
@@ -150,78 +176,18 @@ class StepConfig(BaseTextToSpeechConfig):
     def get_error_class(
         self, error_message: str, status_code: int, headers: dict[str, str]
     ) -> BaseLLMException:
-        self.error_headers = dict(headers)
         return BaseLLMException(
-            status_code=status_code, message=error_message, headers=self.error_headers
+            status_code=status_code, message=error_message, headers=headers
         )
 
 
-def step_config(step: Step) -> StepConfig:
-    config = StepConfig()
-    config.step = step
-    config.error_headers = {}
-    return config
-
-
-# text_body and binary_body have no send branch, so both sides drop them
-def request_data(transformed: Transformed) -> TextToSpeechRequestData:
-    data: TextToSpeechRequestData = {}
-    if transformed.dict_body is not None:
-        data["dict_body"] = transformed.dict_body
-    if transformed.ssml_body is not None:
-        data["ssml_body"] = transformed.ssml_body
-    if transformed.headers is not None:
-        data["headers"] = transformed.headers
-    return data
-
-
-def litellm_params(step: Step, api_base: str) -> dict[str, JsonValue]:
-    params: dict[str, JsonValue] = {"api_base": api_base}
-    if step.api_key is not None:
-        params["api_key"] = step.api_key
-    if step.ssl_verify is not None:
-        params["ssl_verify"] = step.ssl_verify
-    return params
-
-
-# ast-grep-ignore: no-loose-types - the handler takes extra_headers as dict[str, object]
-def provided_headers(headers: dict[str, str] | None) -> dict[str, object] | None:
-    if headers is None:
-        return None
-    mapped: dict[str, object] = {}  # ast-grep-ignore: no-loose-types
-    for name, value in headers.items():
-        mapped[name] = value
-    return mapped
-
-
-def supplied_client(kind: Mode | None) -> Client:
-    match kind:
-        case None:
-            return None
-        case "sync":
-            return HTTPHandler()
-        case "async":
-            return AsyncHTTPHandler()
-
-
-async def closed(client: Client) -> None:
-    match client:
-        case HTTPHandler():
-            client.close()
-        case AsyncHTTPHandler():
-            await client.close()
-        case None:
-            pass
-
-
 def logging_object() -> Logging:
-    now = datetime.now(UTC)
     return Logging(
         model=MODEL,
         messages=None,
         stream=False,
         call_type=CallTypes.speech,
-        start_time=now,
+        start_time=datetime.now(UTC),
         litellm_call_id="call-1",
         function_id="fn-1",
         litellm_trace_id="trace-1",
@@ -236,53 +202,65 @@ async def settled(work: SpeechWork) -> HttpxBinaryResponseContent:
             return work
 
 
-def binary(response: HttpxBinaryResponseContent) -> BinaryValue:
-    raw = response.response
-    return BinaryValue(
-        status=raw.status_code,
-        body=list(raw.content),
-        headers=dict(raw.headers),
-    )
-
-
-def failure(error: BaseLLMException, headers: dict[str, str]) -> Failure:
-    return Failure(
-        class_name=type(error).__name__,
-        status=error.status_code,
-        synthesized=error.status_code_is_synthesized,
-        message=error.message,
-        headers=headers,
-    )
-
-
 async def execute_step(step: Step, api_base: str) -> StepOutcome:
-    config = step_config(step)
-    params = litellm_params(step, api_base)
-    extra = provided_headers(step.extra_headers)
-    client = supplied_client(step.supplied)
+    config = StepConfig(step)
+    params: dict[str, JsonValue] = {"api_base": api_base}
+    if step.api_key is not None:
+        params["api_key"] = step.api_key
+    if step.ssl_verify is not None:
+        params["ssl_verify"] = step.ssl_verify
+    client: Client = None
+    if step.supplied == "sync":
+        client = HTTPHandler()
+    if step.supplied == "async":
+        client = AsyncHTTPHandler()
+    extra = OBJECTS.validate_python(step.extra_headers)
     timeout = DEFAULT_TIMEOUT if step.timeout_seconds is None else float(step.timeout_seconds)
     try:
-        match step.mode:
-            case "sync":
-                work = HANDLER.text_to_speech_handler(
-                    MODEL, step.input, step.voice, config, step.optional_params,
-                    PROVIDER, params, logging_object(), timeout, extra, client,
-                )
-                response = await settled(work)
-            case "async":
-                response = await HANDLER.async_text_to_speech_handler(
-                    MODEL, step.input, step.voice, config, step.optional_params,
-                    PROVIDER, params, logging_object(), timeout, extra, client,
-                )
-    except BaseLLMException as error:
-        return StepOutcome(failure=failure(error, config.error_headers))
-    finally:
-        await closed(client)
-    return StepOutcome(value=binary(response))
+        if step.mode == "sync":
+            work = HANDLER.text_to_speech_handler(
+                MODEL,
+                step.input,
+                step.voice,
+                config,
+                step.optional_params,
+                PROVIDER,
+                params,
+                logging_object(),
+                timeout,
+                extra,
+                client,
+            )
+            response = await settled(work)
+        else:
+            response = await HANDLER.async_text_to_speech_handler(
+                MODEL,
+                step.input,
+                step.voice,
+                config,
+                step.optional_params,
+                PROVIDER,
+                params,
+                logging_object(),
+                timeout,
+                extra,
+                client,
+            )
+    except PROVIDER_ERROR as error:
+        return StepOutcome(failure=Failure.model_validate(error))
+    raw = response.response
+    return StepOutcome(
+        value=BinaryValue(
+            status=raw.status_code,
+            body=list(raw.content),
+            headers=dict(raw.headers),
+        )
+    )
 
 
 async def collect_steps(steps: list[Step], api_base: str) -> Outcome:
-    return Outcome(steps=[await execute_step(step, api_base) for step in steps])
+    outcomes = [await execute_step(step, api_base) for step in steps]
+    return Outcome(steps=outcomes)
 
 
 class SpeechHttpRequest(BaseModel):
@@ -292,5 +270,5 @@ class SpeechHttpRequest(BaseModel):
 
     def serialize(self, api_base: str) -> str:
         outcome = asyncio.run(collect_steps(self.speech_http.steps, api_base))
-        envelope = SpeechHttpOutcome(speech_http=SpeechHttpValue(value=outcome))
-        return envelope.model_dump_json(by_alias=True)
+        value = SpeechHttpValue(value=outcome)
+        return SpeechHttpOutcome(speech_http=value).model_dump_json(by_alias=True)
