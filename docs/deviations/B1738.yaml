@@ -1,0 +1,53 @@
+task: B1738
+deviations:
+  - what: >-
+      A cohort that betterlite's safe_dumps cannot encode (JSON past its 1 MiB or 64-level
+      contract) fails the publication with a typed Encode error. The source's safe_dumps has no
+      such ceiling and always produces text.
+    why: >-
+      safe_dumps is B192's shared encoder and its bounded decode is the one every writer uses; the
+      error is raised before the RPUSH pipeline is attempted, exactly where the source's
+      serialization would raise.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/redis_update_buffer.py#L355-L359
+  - what: >-
+      A drained daily or window cohort whose memory queue is full when it is restored is kept in
+      the publisher's staging and joins the next tick's aggregate. The source awaits
+      queue.put(...), which blocks until the flusher frees room.
+    why: >-
+      The only flusher of these queues is the scheduler tick that just drained them, so the
+      source's blocking put would wait on a flush that cannot start; the staged cohort is the same
+      one the queue would hold, and it keeps its place ahead of the next drain.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/redis_update_buffer.py#L478-L486
+  - what: >-
+      The daily-tag single push catches the typed Redis failure of betterlite's append port. The
+      source wraps the push and the gauge emission in a broad except Exception.
+    why: >-
+      betterlite's gauge sink returns no error and the append port has one failure type, so no
+      other exception exists to catch; the observable behavior (log the failure, keep nothing) is
+      the source's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/redis_update_buffer.py#L181-L199
+  - what: >-
+      Betterlite restores a drained window cohort one transaction at a time, so a queue that is
+      full keeps the remaining transactions in the publisher's staging. The source puts the whole
+      tuple into the queue as one item.
+    why: >-
+      The window queue holds batches of transactions, and one restored batch competes for the same
+      slots as the batches a flush left behind; restoring per transaction keeps every increment
+      available, and the next flush aggregates the rows back into the same per-window tuples.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/redis_update_buffer.py#L483-L484
+kept_bugs:
+  - what: >-
+      The daily-tag publisher drains its queue before it asks whether a Redis client exists, and a
+      failed push only logs, so the drained tag aggregate is lost. The source does the same.
+    why: >-
+      The task requires this observable loss to be kept rather than given the main publisher's
+      restoration; the tag cohort is small and its scheduler has no retry path in the source.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/redis_update_buffer.py#L770-L784
+  - what: >-
+      A pipeline that fails after Redis executed some of its commands restores every drained
+      cohort, so a cohort Redis already published is pushed again on the next tick. Delivery is
+      at-least-once, not exactly-once.
+    why: >-
+      The source drains first and restores the whole drain on any exception; betterlite cannot
+      tell which commands ran, and losing the drain instead would drop spend.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/redis_update_buffer.py#L360-L388
