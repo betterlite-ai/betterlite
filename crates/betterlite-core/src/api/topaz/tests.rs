@@ -29,6 +29,13 @@ fn text(value: &str) -> Json {
     Json::Text(value.to_owned())
 }
 
+fn settings(api_key: Option<&str>, api_base: &str) -> TopazSettings {
+    TopazSettings {
+        api_key: api_key.map(SecretString::from),
+        api_base: api_base.to_owned(),
+    }
+}
+
 #[test]
 fn topaz_models_keep_their_pinned_names() {
     assert_eq!(
@@ -53,10 +60,7 @@ fn topaz_api_key_takes_a_truthy_explicit_value_first(
     #[case] configured: Option<&str>,
     #[case] expected: Option<&str>,
 ) {
-    let loaded = TopazSettings {
-        api_key: configured.map(SecretString::from),
-        api_base: DEFAULT_API_BASE.to_owned(),
-    };
+    let loaded = settings(configured, DEFAULT_API_BASE);
     let explicit = explicit.map(SecretString::from);
     let found = get_api_key(explicit.as_ref(), &loaded).map(|key| key.expose_secret().to_owned());
 
@@ -72,17 +76,15 @@ fn topaz_api_key_takes_a_truthy_explicit_value_first(
 #[case::empty_explicit_base(Some(""), "https://configured.test", "https://configured.test")]
 #[case::no_explicit_base(None, "https://configured.test", "https://configured.test")]
 #[case::default_host(None, DEFAULT_API_BASE, DEFAULT_API_BASE)]
-fn topaz_api_base_takes_a_truthy_explicit_value_first(
+fn topaz_api_base_prefers_explicit(
     #[case] explicit: Option<&str>,
     #[case] configured: &str,
     #[case] expected: &str,
 ) {
-    let loaded = TopazSettings {
-        api_key: None,
-        api_base: configured.to_owned(),
-    };
-
-    assert_eq!(get_api_base(explicit, &loaded), expected);
+    assert_eq!(
+        get_api_base(explicit, &settings(None, configured)),
+        expected
+    );
 }
 
 #[test]
