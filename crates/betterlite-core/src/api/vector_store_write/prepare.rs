@@ -1,6 +1,6 @@
 use std::str::FromStr as _;
 use std::sync::{Mutex, PoisonError};
-use std::time::{Duration, TryFromFloatSecsError};
+use std::time::Duration;
 
 use betterlite_context::resource_config_selection::vector_stores::{
     VectorStoresConfigTag, select_vector_stores_config,
@@ -107,49 +107,28 @@ pub(crate) fn update_options(
     provider: &str,
 ) -> Result<UpdateParams, VectorStoreWriteFailure> {
     let mut candidates = IndexMap::new();
-    insert_candidate(&mut candidates, "name", request.name).map_err(|error| {
-        failure(
-            VectorStoreWriteError::Params(error),
-            provider,
-            deps.redactor,
-        )
-    })?;
-    insert_candidate(&mut candidates, "expires_after", request.expires_after).map_err(|error| {
-        failure(
-            VectorStoreWriteError::Params(error),
-            provider,
-            deps.redactor,
-        )
-    })?;
-    insert_candidate(&mut candidates, "metadata", request.metadata).map_err(|error| {
-        failure(
-            VectorStoreWriteError::Params(error),
-            provider,
-            deps.redactor,
-        )
-    })?;
+    insert_candidate(&mut candidates, "name", request.name)
+        .map_err(VectorStoreWriteError::Params)
+        .map_err(|error| failure(error, provider, deps.redactor))?;
+    insert_candidate(&mut candidates, "expires_after", request.expires_after)
+        .map_err(VectorStoreWriteError::Params)
+        .map_err(|error| failure(error, provider, deps.redactor))?;
+    insert_candidate(&mut candidates, "metadata", request.metadata)
+        .map_err(VectorStoreWriteError::Params)
+        .map_err(|error| failure(error, provider, deps.redactor))?;
     for field in CREATE_FIELDS {
         if let Some(value) = request.transport.kwargs.get(field) {
             candidates.insert(field.to_owned(), value.clone());
         }
     }
     candidates.retain(|_field, value| !matches!(value, Json::Null));
-    log_update(deps.logging, request, &candidates, provider).map_err(|error| {
-        failure(
-            VectorStoreWriteError::Logging(error),
-            provider,
-            deps.redactor,
-        )
-    })?;
+    log_update(deps.logging, request, &candidates, provider)
+        .map_err(VectorStoreWriteError::Logging)
+        .map_err(|error| failure(error, provider, deps.redactor))?;
     serde_json::to_value(candidates)
         .and_then(serde_json::from_value::<UpdateParams>)
-        .map_err(|error| {
-            failure(
-                VectorStoreWriteError::Params(error),
-                provider,
-                deps.redactor,
-            )
-        })
+        .map_err(VectorStoreWriteError::Params)
+        .map_err(|error| failure(error, provider, deps.redactor))
 }
 
 // delete logs the id alone; the parameters B2402 sends are the empty create-parameter filter output
@@ -199,7 +178,7 @@ fn insert_candidate<T>(
     value: Option<&T>,
 ) -> Result<(), serde_json::Error>
 where
-    T: Serialize,
+    T: Serialize + ?Sized,
 {
     let Some(value) = value else {
         return Ok(());

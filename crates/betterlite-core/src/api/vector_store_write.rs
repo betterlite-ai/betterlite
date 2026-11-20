@@ -55,7 +55,7 @@ pub struct VectorStoreWriteRequest<'request> {
     pub metadata: Option<&'request IndexMap<String, Json>>,
 }
 
-impl<'request> VectorStoreWriteRequest<'request> {
+impl VectorStoreWriteRequest<'_> {
     // aupdate and adelete insert their flag into a copy of the kwargs, as LiteLLM does before its shared write
     const fn flagged<'flagged>(
         &'flagged self,
