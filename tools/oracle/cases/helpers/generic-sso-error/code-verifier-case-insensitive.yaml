@@ -1,0 +1,9 @@
+kind: helper
+name: generic-sso-error-code-verifier-case-insensitive
+call:
+  generic_sso_error:
+    message: "invalid_grant: Code Verifier required by the authorization server"
+    source: {status: 401, error_type: auth_error, param: null, code: "401"}
+    environment: {}
+env: {}
+compare: {ignore: []}

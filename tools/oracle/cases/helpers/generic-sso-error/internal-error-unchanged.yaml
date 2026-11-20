@@ -1,0 +1,13 @@
+kind: helper
+name: generic-sso-error-internal-error-unchanged
+call:
+  generic_sso_error:
+    message: "the SSO header 'X-Tenant' has no equals sign"
+    source:
+      status: 500
+      error_type: internal_server_error
+      param: null
+      code: "500"
+    environment: {GENERIC_CLIENT_USE_PKCE: "false"}
+env: {}
+compare: {ignore: []}

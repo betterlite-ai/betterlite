@@ -1,0 +1,13 @@
+kind: helper
+name: generic-sso-error-enabled-pkce-retains-original-error
+call:
+  generic_sso_error:
+    message: "the authorization server returned error 'PKCE_required': None"
+    source:
+      status: 401
+      error_type: auth_error
+      param: token_exchange
+      code: "401"
+    environment: {GENERIC_CLIENT_USE_PKCE: "true"}
+env: {}
+compare: {ignore: []}

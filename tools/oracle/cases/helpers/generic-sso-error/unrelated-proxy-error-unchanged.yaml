@@ -1,0 +1,9 @@
+kind: helper
+name: generic-sso-error-unrelated-proxy-error-unchanged
+call:
+  generic_sso_error:
+    message: "the authorization server returned error 'access_denied': Some(\"user refused\")"
+    source: {status: 401, error_type: auth_error, param: null, code: "401"}
+    environment: {}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,9 @@
+kind: helper
+name: generic-sso-error-lowercase-pkce-alone-unchanged
+call:
+  generic_sso_error:
+    message: "the authorization server returned error 'pkce_required': None"
+    source: {status: 401, error_type: auth_error, param: null, code: "401"}
+    environment: {}
+env: {}
+compare: {ignore: []}
