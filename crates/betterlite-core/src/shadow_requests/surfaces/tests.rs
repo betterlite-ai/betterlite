@@ -192,8 +192,9 @@ async fn anthropic_row_rejects_messages_that_are_not_an_array_of_objects(#[case]
 }
 
 #[rstest]
-#[case::null(r#"{"model":"m","messages":null}"#)]
-#[case::absent(r#"{"model":"m"}"#)]
+#[case::null(r#"{"model":null,"messages":null}"#)]
+#[case::absent("{}")]
+#[case::empty(r#"{"model":""}"#)]
 #[tokio::test]
 async fn anthropic_row_names_an_empty_model(#[case] source: &str) {
     let request = chat_request("anthropic_messages", &object(source), &object("{}"))
