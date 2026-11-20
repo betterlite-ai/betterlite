@@ -42,6 +42,7 @@ fn create_posts_the_transformed_body_with_the_default_timeout() {
     let request = &sent[0];
     assert_eq!(request.method, ContainerMethod::Post);
     assert_eq!(request.url, BASE);
+    assert!(request.query.is_empty(), "the POST sends no params");
     assert_eq!(request.timeout, Some(Duration::from_secs(600)));
     let authorization = request.headers.get("Authorization").map(String::as_str);
     let content_type = request.headers.get("Content-Type").map(String::as_str);
