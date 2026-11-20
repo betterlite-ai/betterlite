@@ -67,7 +67,7 @@ deviations:
   - what: The pre-call runs through B8801's shared step instead of a method on one shared request processing class.
     why: No task builds ProxyBaseLLMRequestProcessing as a whole; the pre-call steps and their order are LiteLLM's and live in B8801, shared by every route.
 out_of_scope:
-  - "The mount and the route deps: B8640 and B8609; B101 and B8609 prove these paths over HTTP. The other pass-through port adapters: B8641."
+  - "The mount and the route deps: B8640 and B10026; B101 and B10026 prove these paths over HTTP. The other pass-through port adapters: B8641."
   - "Reply shaping and exception mapping: B8693. The core entry and route choice: B8692. The SDK call: B8690. The router executor and trait: B8691."
   - "The shared pre-call step: B8801, with B8800's ports and B8802's production adapters. The hook functions: B8399 with its parts. B004's header code."
 pitfalls:

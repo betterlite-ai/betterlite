@@ -142,7 +142,7 @@ checks:
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - "B8640 and B8610 store and distribute one runtime through the app; B8606-B8609 own family mounts and B102 owns HTTP integration. This task registers no routes and changes no shared module."
+  - "B8640 and B8610 store and distribute one runtime through the app; B8606-B8609 and B10026 own family mounts and B102 owns HTTP integration. This task registers no routes and changes no shared module."
   - "All pass_through_endpoints.py function bodies stay with B2302, B3600, B3607, B3610-B3617, B6510 and B8520; B102 records the unused and enterprise-only exclusions. Only the logger's assembly is added here."
   - "success_handler.py methods belong to B3605-B3607. streaming_handler.py methods belong to B3608-B3609. This task supplies their production inputs and does not port their algorithms again."
   - "Every Transcribe helper, decoder, policy and pricing function belongs to B3644-B3646; AssemblyAI methods to B3647; TinyFish functions to B3648-B3649. Their returned tasks must support the shared tracker before this builder is dispatched."

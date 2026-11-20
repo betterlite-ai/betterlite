@@ -1,0 +1,30 @@
+kind: helper
+name: http-exception-with-redacted-assessments
+call:
+  b3722:
+    bedrock_decisions:
+      http_exception:
+        response:
+          outputs:
+            - text: "Request blocked: "
+            - text: secret
+          assessments:
+            - wordPolicy:
+                customWords:
+                  - match: secret
+                    action: BLOCKED
+            - sensitiveInformationPolicy:
+                regexes:
+                  - name: account
+                    regex: '\d{4}'
+                    match: "1234"
+                    action: BLOCKED
+        request_data:
+          model: gpt-4o
+        guardrail:
+          name: gr-name
+          identifier: gr-1
+          version: "3"
+          disable_exception_on_block: false
+env: {}
+compare: {ignore: []}

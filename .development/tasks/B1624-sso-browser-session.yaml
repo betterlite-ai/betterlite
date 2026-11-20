@@ -17,7 +17,7 @@ description: >-
   received claims), then value merge. Issue the dashboard key through B893 with team_id
   litellm-dashboard, duration LITELLM_UI_SESSION_DURATION=24h and litellm.max_ui_session_budget=1.0.
   Preserve the subsequent order: PROXY_ADMIN_ID promotion, admin_only role check, Microsoft
-  enrollment, assertion retention/diagnostics, UI token construction and redirect. An admin_only
+  enrollment, assertion retention (B10011's retain) and B1617's capture diagnostics, UI token construction and redirect. An admin_only
   rejection is 401 after the key was written; no rollback is claimed. EXPERIMENTAL_UI_LOGIN
   defaults absent/disabled and replaces the returned key with B1223's session token only
   after ordinary key creation. Encode the outer JWT with B788, then use B1618's return-target

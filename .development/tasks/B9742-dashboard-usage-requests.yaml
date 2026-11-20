@@ -140,7 +140,7 @@ deviations:
 out_of_scope:
   - B9090 retains every unchanged function in the usage, old-usage, UsagePage, EntityUsageExport and auxiliary usage files; B9091 builds them.
   - B8482/B8661/B8662 compose the existing activity and spend services; B815 and B1604 own team-member spend and tag listing.
-  - B074 owns /usage/ai/chat HTTP coverage and B8673 its mount; B147 owns browser SSE rendering using those dependencies.
+  - B074 owns /usage/ai/chat HTTP coverage and B10025 its mount; B147 owns browser SSE rendering using those dependencies.
   - Shared model/team/organization/resource selectors are B9731/B9733/B9735 client contracts with B007/B060/B813/B1212/B059/B4784 backend owners.
 pitfalls:
   - timezone is minutes west of UTC, so a Berlin winter page sends -60 rather than 60.

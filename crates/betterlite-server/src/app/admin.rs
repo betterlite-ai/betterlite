@@ -6,3 +6,4 @@ pub mod public_hubs;
 pub mod roi;
 pub mod search_usage;
 pub mod urls;
+pub mod usage_chat;
