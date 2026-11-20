@@ -40,11 +40,15 @@ fn credential_opt_in_default_and_literal_true() {
         parsed("general_settings: {allow_client_side_credentials: true}")
             .allow_client_side_credentials
     );
-    // a string is not the bool the module compares with `is True`; the typed load refuses it
-    assert!(matches!(
-        load("general_settings: {allow_client_side_credentials: 'true'}"),
-        Err(ConfigError::Yaml { .. })
-    ));
+    // the module compares with `is True`, so a quoted string or a number is not the literal true
+    assert!(
+        !parsed("general_settings: {allow_client_side_credentials: 'true'}")
+            .allow_client_side_credentials
+    );
+    assert!(
+        !parsed("general_settings: {allow_client_side_credentials: 1}")
+            .allow_client_side_credentials
+    );
 }
 
 #[test]
@@ -70,7 +74,10 @@ model_list:
         Some(&ClientsideParamGrant::Exact("aws_session_name".to_owned()))
     );
     assert_eq!(settings.model_grants.get("unset-model"), Some(&None));
+}
 
+#[test]
+fn api_base_matcher_and_grant_types() {
     let object_yaml = "\
 model_list:
   - model_name: matcher-model
@@ -97,7 +104,7 @@ model_list:
     )
     .expect_err("a number is not a grant");
     assert!(
-        matches!(error, ConfigError::InvalidScalar { ref path, .. } if path.contains("configurable_clientside_auth_params")),
+        matches!(&error, ConfigError::InvalidScalar { path, .. } if path.contains("configurable_clientside_auth_params")),
         "{error:?}"
     );
 }

@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use serde::Deserialize;
+use serde::de::IgnoredAny;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::resolve::resolve_string;
@@ -20,7 +21,14 @@ const GRANTS_PATH: &str = "configurable_clientside_auth_params";
 #[derive(Debug, Default, Deserialize)]
 struct GeneralSettings {
     #[serde(default)]
-    allow_client_side_credentials: Option<bool>,
+    allow_client_side_credentials: Option<LiteralBoolean>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum LiteralBoolean {
+    Boolean(bool),
+    Other(IgnoredAny),
 }
 
 // litellm_settings is set raw on the litellm module, and the host matcher accepts a bare string as one entry
@@ -99,10 +107,10 @@ impl Section for Raw {
         let max_fallbacks = betterlite_env::number::<i64>(MAX_FALLBACKS_VARIABLE, &text)?
             .unwrap_or(DEFAULT_MAX_FALLBACKS);
         Ok(Settings {
-            allow_client_side_credentials: self
-                .general_settings
-                .allow_client_side_credentials
-                .unwrap_or(false),
+            allow_client_side_credentials: matches!(
+                self.general_settings.allow_client_side_credentials,
+                Some(LiteralBoolean::Boolean(true))
+            ),
             allowed_hosts: allowed_hosts(self.litellm_settings.destination_hosts, lookup)?,
             model_grants: model_grants(self.model_list)?,
             max_fallbacks,
