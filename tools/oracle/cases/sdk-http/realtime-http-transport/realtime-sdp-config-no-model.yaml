@@ -1,0 +1,21 @@
+kind: sdk_http
+name: realtime-http-transport-sdp-config-no-model
+call:
+  realtime_http_transport:
+    handler: calls
+    echo_config: true
+    ephemeral_key: ep-test
+    sdp: [118, 61, 48, 13, 10]
+    session: {voice: alloy}
+    timeout_seconds: 30
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {answer: v=0}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [x-ephemeral, content-type]
+  ignore:
+    - pointer: /upstream/0/body
+      why: each side picks its own multipart boundary, so the encoded body cannot match byte for byte
