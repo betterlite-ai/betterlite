@@ -1,12 +1,10 @@
-use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::team_fields::schema::MetadataSchemaField;
 use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_db::identity_rows::PydanticBool;
 use serde::{Deserialize, Serialize};
-use serde_json::Number;
 
-use crate::scim_records::lax_bool::ScimBool;
 use crate::team_request_contracts::metadata::TeamMetadataFieldSchema;
 
 pub const DEFAULT_REJECTED_MESSAGE: &str = "Team metadata failed validation.";
@@ -79,7 +77,11 @@ impl TeamMetadataValidationResult {
         let JsonData::Object(entries) = value else {
             return None;
         };
-        let valid = bool_field(entries.get("valid")?)?;
+        let valid = serde_json::from_value::<PydanticBool>(
+            serde_json::to_value(entries.get("valid")?).ok()?,
+        )
+        .ok()
+        .map(|flag| flag.0)?;
         let error_message = match entries.get("error_message") {
             None | Some(JsonData::Null) => None,
             Some(JsonData::String(message)) => Some(message.clone()),
@@ -92,35 +94,6 @@ impl TeamMetadataValidationResult {
             error_message,
         })
     }
-}
-
-// pydantic's bool validator: true and false spellings, the numbers 0 and 1, and nothing else.
-fn bool_field(value: &JsonData) -> Option<bool> {
-    match value {
-        JsonData::Bool(flag) => Some(*flag),
-        JsonData::Number(number) => number_bool(number),
-        JsonData::String(text) => scim_bool(text),
-        JsonData::Null | JsonData::Array(_) | JsonData::Object(_) => None,
-    }
-}
-
-fn number_bool(number: &Number) -> Option<bool> {
-    let real = number.as_f64()?;
-    if real.partial_cmp(&0.0_f64) == Some(Ordering::Equal) {
-        return Some(false);
-    }
-    if real.partial_cmp(&1.0_f64) == Some(Ordering::Equal) {
-        return Some(true);
-    }
-    None
-}
-
-// ScimBool is betterlite's pydantic-lax bool, so the accepted spellings come from one place.
-fn scim_bool(text: &str) -> Option<bool> {
-    let value = serde_json::to_value(text).ok()?;
-    serde_json::from_value::<ScimBool>(value)
-        .ok()
-        .map(|flag| flag.0)
 }
 
 #[must_use]
