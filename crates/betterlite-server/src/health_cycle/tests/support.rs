@@ -19,6 +19,7 @@ use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use serde_json::Number;
 use tokio::time::sleep;
+use tokio_util::task::TaskTracker;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::{MakeWriter, fmt};
 
@@ -128,11 +129,13 @@ pub(crate) async fn cycle(
     policy: &ProbePolicy,
 ) -> Result<HealthCheckResult, HealthCycleError> {
     let mut random = seeded_random();
+    let tasks = TaskTracker::new();
     let deps = HealthCycleDeps {
         provider,
         models,
         policy,
         random: &mut random,
+        tasks: &tasks,
     };
     perform_health_check(request, deps).await
 }

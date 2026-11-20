@@ -1,8 +1,7 @@
-use std::path::Path;
 use std::time::Duration;
 
 use crate::health_cycle::concurrency::DispatchMode;
-use crate::health_cycle::rss::{RSS_STATUS_PATH, format_rss_mb, rss_mb_from, thread_count};
+use crate::health_cycle::rss::{ProcessMetrics, format_rss_mb};
 
 const DEFAULT_SOURCE: &str = "unknown";
 const DEFAULT_CYCLE_ID: &str = "unknown";
@@ -25,6 +24,13 @@ impl Default for InstrumentationContext {
     }
 }
 
+// One cycle's identity and its one process measurement, shared by every line the cycle writes
+#[derive(Clone, Copy, Debug)]
+pub struct CycleTrace<'trace> {
+    pub context: &'trace InstrumentationContext,
+    pub metrics: ProcessMetrics,
+}
+
 // The three model counts perform_health_check reads before it dispatches: requested, after the model filter, after the id dedupe
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct CycleCounts {
@@ -45,98 +51,89 @@ pub fn cycle_skipped(context: &InstrumentationContext, reason: &str) {
     );
 }
 
-pub fn cycle_start(
-    context: &InstrumentationContext,
-    counts: &CycleCounts,
-    max_concurrency: Option<i64>,
-) {
-    if !context.enabled {
+pub fn cycle_start(trace: CycleTrace<'_>, counts: &CycleCounts, max_concurrency: Option<i64>) {
+    if !trace.context.enabled {
         return;
     }
     let limit = max_concurrency.map_or_else(|| "None".to_owned(), |number| number.to_string());
-    let rss = format_rss_mb(rss_mb_from(Path::new(RSS_STATUS_PATH)));
+    let rss = format_rss_mb(trace.metrics.rss_mb);
     tracing::debug!(
-        source = %context.source,
-        cycle_id = %context.cycle_id,
+        source = %trace.context.source,
+        cycle_id = %trace.context.cycle_id,
         requested_model_count = counts.requested,
         post_model_filter_count = counts.post_filter,
         deduped_model_count = counts.deduped,
         max_concurrency = %limit,
-        thread_count = thread_count(),
+        thread_count = trace.metrics.thread_count,
         rss_mb = %rss,
         "health_check_cycle_start",
     );
 }
 
 pub fn dispatch_summary(
-    context: &InstrumentationContext,
+    trace: CycleTrace<'_>,
     mode: DispatchMode,
     model_count: usize,
     max_concurrency: Option<i64>,
     peak_in_flight: usize,
 ) {
-    if !context.enabled {
+    if !trace.context.enabled {
         return;
     }
     let limit = max_concurrency.map_or_else(|| "None".to_owned(), |number| number.to_string());
-    let rss = format_rss_mb(rss_mb_from(Path::new(RSS_STATUS_PATH)));
+    let rss = format_rss_mb(trace.metrics.rss_mb);
     tracing::debug!(
-        source = %context.source,
-        cycle_id = %context.cycle_id,
-        mode = mode.name(),
+        source = %trace.context.source,
+        cycle_id = %trace.context.cycle_id,
+        mode = %mode.name(),
         model_count = model_count,
         max_concurrency = %limit,
         peak_in_flight = peak_in_flight,
-        thread_count = thread_count(),
+        thread_count = trace.metrics.thread_count,
         rss_mb = %rss,
         "health_check_dispatch_summary",
     );
 }
 
 pub fn cycle_complete(
-    context: &InstrumentationContext,
+    trace: CycleTrace<'_>,
     model_count: usize,
     healthy_count: usize,
     unhealthy_count: usize,
     elapsed: Duration,
 ) {
-    if !context.enabled {
+    if !trace.context.enabled {
         return;
     }
     let milliseconds = elapsed.as_secs_f64().mul_add(1000.0_f64, 0.0_f64);
     let duration = format!("{milliseconds:.2}");
-    let rss = format_rss_mb(rss_mb_from(Path::new(RSS_STATUS_PATH)));
+    let rss = format_rss_mb(trace.metrics.rss_mb);
     tracing::debug!(
-        source = %context.source,
-        cycle_id = %context.cycle_id,
+        source = %trace.context.source,
+        cycle_id = %trace.context.cycle_id,
         model_count = model_count,
         healthy_count = healthy_count,
         unhealthy_count = unhealthy_count,
         duration_ms = %duration,
-        thread_count = thread_count(),
+        thread_count = trace.metrics.thread_count,
         rss_mb = %rss,
         "health_check_cycle_complete",
     );
 }
 
-pub fn cycle_failed(
-    context: &InstrumentationContext,
-    model_count: usize,
-    elapsed: Duration,
-    error: &str,
-) {
-    if !context.enabled {
+pub fn cycle_failed(trace: CycleTrace<'_>, model_count: usize, elapsed: Duration, error: &str) {
+    if !trace.context.enabled {
         return;
     }
     let milliseconds = elapsed.as_secs_f64().mul_add(1000.0_f64, 0.0_f64);
     let duration = format!("{milliseconds:.2}");
-    let rss = format_rss_mb(rss_mb_from(Path::new(RSS_STATUS_PATH)));
+    let rss = format_rss_mb(trace.metrics.rss_mb);
     tracing::error!(
-        source = %context.source,
-        cycle_id = %context.cycle_id,
+        source = %trace.context.source,
+        cycle_id = %trace.context.cycle_id,
         model_count = model_count,
         duration_ms = %duration,
-        thread_count = thread_count(),
+        thread_count = trace.metrics.thread_count,
         rss_mb = %rss,
         error = %error,
         "health_check_cycle_failed",

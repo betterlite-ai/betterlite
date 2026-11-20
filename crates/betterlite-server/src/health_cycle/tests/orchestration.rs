@@ -4,6 +4,7 @@ use std::future::Future;
 
 use betterlite_models::decisions::Json;
 use betterlite_router::model_catalog_lookup::alias::{AliasMap, AliasTarget};
+use tokio_util::task::TaskTracker;
 
 use super::cycle::{HealthCycleDeps, perform_health_check};
 use super::endpoints::HealthCheckResult;
@@ -27,11 +28,13 @@ fn the_cycle_future_is_send() {
     let models = FakeModels::default();
     let probe_policy = policy();
     let mut random = seeded_random();
+    let tasks = TaskTracker::new();
     let deps = HealthCycleDeps {
         provider: &provider,
         models: &models,
         policy: &probe_policy,
         random: &mut random,
+        tasks: &tasks,
     };
     let _sendable: Box<
         dyn Future<Output = Result<HealthCheckResult, HealthCycleError>> + Send + '_,
@@ -69,8 +72,17 @@ async fn dependency_probes_leave_the_answer() {
         Some(&text("auto_router/complexity_router"))
     );
     let logs = buffer.text();
-    assert!(logs.contains("model_count=2"), "{logs}");
-    assert!(logs.contains("peak_in_flight=2"), "{logs}");
+    let dispatch = logs
+        .lines()
+        .find(|line| line.contains("health_check_dispatch_summary"))
+        .expect("the dispatch line is logged");
+    assert!(dispatch.contains("model_count=2"), "{dispatch}");
+    assert!(dispatch.contains("peak_in_flight=2"), "{dispatch}");
+    let completion = logs
+        .lines()
+        .find(|line| line.contains("health_check_cycle_complete"))
+        .expect("the completion line is logged");
+    assert!(completion.contains("model_count=1"), "{completion}");
 }
 
 #[tokio::test]

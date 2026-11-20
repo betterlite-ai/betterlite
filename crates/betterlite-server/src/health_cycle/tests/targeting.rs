@@ -50,14 +50,20 @@ async fn an_unknown_model_id_keeps_the_whole_list() {
 
 #[tokio::test]
 async fn a_model_name_routes_only_its_own_deployments() {
+    let (buffer, _guard) = capture_logs();
     let rows = shared_and_other();
     let mut request = plain_request(&rows);
     request.model = Some("shared");
+    let context = context("cycle-target-1", "background");
+    request.instrumentation = Some(&context);
     let provider = FakeProvider::new();
     cycle(request, &provider, &FakeModels::default(), &policy())
         .await
         .expect("the cycle runs");
     assert_eq!(provider.calls(), vec!["openai/shared".to_owned()]);
+    let logs = buffer.text();
+    assert!(logs.contains("requested_model_count=2"), "{logs}");
+    assert!(logs.contains("post_model_filter_count=1"), "{logs}");
 }
 
 #[tokio::test]

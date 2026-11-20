@@ -12,4 +12,7 @@ deviations:
   - what: The cycle_failed line adds an error field with the failure text, where LiteLLM's logger.exception logs the same fields and then the exception's traceback.
     why: betterlite's cycle errors are typed values rather than live Python exceptions, so there is no traceback to attach; the error field names the failure and every field LiteLLM logs stays on the line.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L949-L960
+  - what: Every instrumentation line of one cycle carries the same process measurement, taken once before the cycle starts, where LiteLLM calls threading.active_count() and _rss_mb_for_log() at each line it writes.
+    why: the measurement reads /proc/self/status, which blocks, so the async cycle takes it once on the server's blocking pool and hands the values to the sync log helpers; a read per line would either block a runtime worker or make every helper async.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L606-L617
 kept_bugs: []

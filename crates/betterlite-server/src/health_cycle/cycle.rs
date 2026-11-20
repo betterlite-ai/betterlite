@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::time::Instant;
 
 use betterlite_config::sections::health_probe_policy::Settings as ProbePolicy;
@@ -5,6 +6,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use rand::Rng;
+use tokio_util::task::TaskTracker;
 
 // ast-grep-ignore: no-long-names - LiteLLM's _dependency_deployments_to_probe, kept for parity
 use crate::health::router::dependency_deployments_to_probe as dependencies_to_probe;
@@ -15,8 +17,10 @@ use crate::health_cycle::endpoints::HealthCheckResult;
 use crate::health_cycle::error::HealthCycleError;
 use crate::health_cycle::ports::ProviderHealth;
 use crate::health_cycle::probe::{PreparedProbe, prepare_probe};
+use crate::health_cycle::rss::{ProcessMetrics, RSS_STATUS_PATH, measure_process};
 use crate::health_cycle::telemetry::{
-    CycleCounts, InstrumentationContext, cycle_complete, cycle_failed, cycle_skipped, cycle_start,
+    CycleCounts, CycleTrace, InstrumentationContext, cycle_complete, cycle_failed, cycle_skipped,
+    cycle_start,
 };
 use crate::health_cycle::verdict::rebuild_after_verdicts;
 use crate::health_probe_settings::model_info::HealthCheckModelInfo;
@@ -38,7 +42,7 @@ pub struct HealthCheckRequest<'call> {
     pub instrumentation: Option<&'call InstrumentationContext>,
 }
 
-// The cycle's dependencies, injected: the transport, the model facts, the probe policy and the random source
+// The cycle's dependencies, injected: the transport, the model facts, the probe policy, the random source and the server's task tracker
 pub struct HealthCycleDeps<'deps, R, M>
 where
     R: Rng + Send,
@@ -48,6 +52,7 @@ where
     pub models: &'deps M,
     pub policy: &'deps ProbePolicy,
     pub random: &'deps mut R,
+    pub tasks: &'deps TaskTracker,
 }
 
 struct CyclePlan {
@@ -103,7 +108,7 @@ fn expand_dependencies(
 fn plan_cycle(
     model_list: &[DeploymentSpec],
     request: &HealthCheckRequest<'_>,
-    context: &InstrumentationContext,
+    trace: CycleTrace<'_>,
 ) -> Result<Option<CyclePlan>, HealthCycleError> {
     let started = Instant::now();
     let requested_count = model_list.len();
@@ -112,7 +117,7 @@ fn plan_cycle(
         request.skip_disabled,
     );
     if narrowed.is_empty() {
-        cycle_skipped(context, "no_models_after_filter");
+        cycle_skipped(trace.context, "no_models_after_filter");
         return Ok(None);
     }
     let requested = filter_deployments_by_id(&narrowed);
@@ -127,7 +132,7 @@ fn plan_cycle(
         .chain(dependency_probes.iter())
         .cloned()
         .collect();
-    cycle_start(context, &counts, request.max_concurrency);
+    cycle_start(trace, &counts, request.max_concurrency);
     Ok(Some(CyclePlan {
         checked,
         dependency_probes,
@@ -157,7 +162,7 @@ async fn run_cycle<R, M>(
     dependency_probes: &[DeploymentSpec],
     request: &HealthCheckRequest<'_>,
     deps: &mut HealthCycleDeps<'_, R, M>,
-    context: &InstrumentationContext,
+    trace: CycleTrace<'_>,
 ) -> Result<HealthCheckResult, HealthCycleError>
 where
     R: Rng + Send,
@@ -168,7 +173,7 @@ where
         provider: deps.provider,
         details: request.details,
         max_concurrency: request.max_concurrency,
-        instrumentation: context,
+        trace,
     };
     let probed = perform_health_checks(checked, &prepared, &settings).await;
     rebuild_after_verdicts(probed, checked, request.lookup, dependency_probes)
@@ -177,7 +182,7 @@ where
 // The cycle's closing line, on the result or on the error: both carry the model count and the run's duration
 pub(crate) fn finish_cycle(
     outcome: Result<HealthCheckResult, HealthCycleError>,
-    context: &InstrumentationContext,
+    trace: CycleTrace<'_>,
     model_count: usize,
     started: Instant,
 ) -> Result<HealthCheckResult, HealthCycleError> {
@@ -185,7 +190,7 @@ pub(crate) fn finish_cycle(
     match outcome {
         Ok(result) => {
             cycle_complete(
-                context,
+                trace,
                 model_count,
                 result.healthy_endpoints.len(),
                 result.unhealthy_endpoints.len(),
@@ -194,7 +199,7 @@ pub(crate) fn finish_cycle(
             Ok(result)
         }
         Err(error) => {
-            cycle_failed(context, model_count, elapsed, &error.to_string());
+            cycle_failed(trace, model_count, elapsed, &error.to_string());
             Err(error)
         }
     }
@@ -212,7 +217,16 @@ where
     let Some(model_list) = starting_models(request.model_list, request.cli_model, &context) else {
         return Ok(HealthCheckResult::default());
     };
-    let Some(plan) = plan_cycle(&model_list, &request, &context)? else {
+    let metrics = if context.enabled {
+        measure_process(deps.tasks, Path::new(RSS_STATUS_PATH)).await
+    } else {
+        ProcessMetrics::default()
+    };
+    let trace = CycleTrace {
+        context: &context,
+        metrics,
+    };
+    let Some(plan) = plan_cycle(&model_list, &request, trace)? else {
         return Ok(HealthCheckResult::default());
     };
     let result = run_cycle(
@@ -220,8 +234,8 @@ where
         &plan.dependency_probes,
         &request,
         &mut deps,
-        &context,
+        trace,
     )
     .await;
-    finish_cycle(result, &context, plan.counts.deduped, plan.started)
+    finish_cycle(result, trace, plan.counts.deduped, plan.started)
 }

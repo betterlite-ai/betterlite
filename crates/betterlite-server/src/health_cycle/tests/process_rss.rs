@@ -1,13 +1,20 @@
 #![cfg(test)]
 
+#[cfg(target_os = "linux")]
+use std::fs;
 use std::path::Path;
+#[cfg(target_os = "linux")]
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(target_os = "linux")]
 use std::thread;
 
 use rstest::rstest;
+use tokio_util::task::TaskTracker;
 
+#[cfg(target_os = "linux")]
+use crate::health_cycle::rss::RSS_STATUS_PATH;
 use crate::health_cycle::rss::{
-    RSS_STATUS_PATH, RssUnit, host_rss_unit, rss_mb, rss_mb_from, status_number, thread_count,
+    RssUnit, host_rss_unit, measure_process, process_metrics, rss_mb, status_number,
 };
 
 #[rstest]
@@ -47,6 +54,21 @@ fn vmhwm_scales_as_bytes_when_the_platform_says_so() {
     assert_eq!(rss_mb(peak, RssUnit::Bytes).to_bits(), 1.0_f64.to_bits());
 }
 
+#[test]
+fn one_status_read_carries_both_metrics() {
+    let status = "Name:\tbetterlite\nVmHWM:\t   2048 kB\nThreads:\t4\n";
+    let metrics = process_metrics(Some(status));
+    assert_eq!(metrics.rss_mb.map(f64::to_bits), Some(2.0_f64.to_bits()));
+    assert_eq!(metrics.thread_count, 4);
+}
+
+#[test]
+fn a_status_without_the_fields_has_no_metrics() {
+    let metrics = process_metrics(Some("Name:\tbetterlite\n"));
+    assert_eq!(metrics.rss_mb, None);
+    assert_eq!(metrics.thread_count, 0);
+}
+
 #[rstest]
 #[case::missing_field("Name:\tbetterlite\nThreads:\t4\n")]
 #[case::malformed_value("VmHWM:\t soon kB\n")]
@@ -56,15 +78,18 @@ fn an_unusable_status_has_no_measurement(#[case] status: &str) {
     assert_eq!(status_number(status, "VmHWM:"), None);
 }
 
-#[test]
-fn an_unreadable_status_has_no_measurement() {
-    assert_eq!(rss_mb_from(Path::new("")), None);
+#[tokio::test]
+async fn an_unreadable_status_has_no_measurement() {
+    let metrics = measure_process(&TaskTracker::new(), Path::new("")).await;
+    assert_eq!(metrics.rss_mb, None);
+    assert_eq!(metrics.thread_count, 0);
 }
 
 #[cfg(target_os = "linux")]
-#[test]
-fn a_live_process_reports_its_peak_from_vmhwm() {
-    let measured = rss_mb_from(Path::new(RSS_STATUS_PATH)).expect("linux exposes a measurement");
+#[tokio::test]
+async fn a_live_process_reports_its_peak_from_vmhwm() {
+    let metrics = measure_process(&TaskTracker::new(), Path::new(RSS_STATUS_PATH)).await;
+    let measured = metrics.rss_mb.expect("linux exposes a measurement");
     assert!(measured > 0.0_f64, "a live peak is positive: {measured}");
 }
 
@@ -78,7 +103,8 @@ fn a_live_thread_count_sees_the_os_threads() {
                 thread::park();
             }
         });
-        let counted = thread_count();
+        let status = fs::read_to_string(RSS_STATUS_PATH).expect("linux exposes a status file");
+        let counted = process_metrics(Some(&status)).thread_count;
         release.store(true, Ordering::Release);
         parked.thread().unpark();
         parked.join().expect("the helper thread stops");

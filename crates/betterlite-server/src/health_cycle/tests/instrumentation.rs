@@ -7,11 +7,14 @@ use betterlite_router::model_catalog_lookup::error::LookupError;
 use super::cycle::finish_cycle;
 use super::endpoints::HealthCheckResult;
 use super::error::HealthCycleError;
+use super::rss::ProcessMetrics;
 use super::support::{
     FakeModels, FakeProvider, Reply, capture_logs, context, cycle, deployment, object,
     plain_request, policy, text,
 };
-use super::telemetry::{InstrumentationContext, cycle_complete, cycle_failed, cycle_skipped};
+use super::telemetry::{
+    CycleTrace, InstrumentationContext, cycle_complete, cycle_failed, cycle_skipped,
+};
 use crate::health::router::error::RouterHealthError;
 
 #[tokio::test]
@@ -103,7 +106,11 @@ fn a_cycle_result_logs_its_completion() {
     result
         .unhealthy_endpoints
         .push(object(vec![("model_id", text("c"))]));
-    let returned = finish_cycle(Ok(result), &context, 3, Instant::now())
+    let trace = CycleTrace {
+        context: &context,
+        metrics: ProcessMetrics::default(),
+    };
+    let returned = finish_cycle(Ok(result), trace, 3, Instant::now())
         .expect("a completed cycle passes its result through");
     assert_eq!(returned.healthy_endpoints.len(), 1);
     let logs = buffer.text();
@@ -130,7 +137,11 @@ fn a_failed_cycle_keeps_its_error_after_logging() {
     let failure = HealthCycleError::Router(RouterHealthError::Lookup(LookupError::InvalidRow {
         index: 4,
     }));
-    let error = finish_cycle(Err(failure), &context, 2, Instant::now())
+    let trace = CycleTrace {
+        context: &context,
+        metrics: ProcessMetrics::default(),
+    };
+    let error = finish_cycle(Err(failure), trace, 2, Instant::now())
         .expect_err("a failed cycle returns its error");
     assert!(matches!(error, HealthCycleError::Router(_)));
     let logs = buffer.text();
@@ -142,7 +153,11 @@ fn a_failed_cycle_keeps_its_error_after_logging() {
 fn a_failed_cycle_logs_its_error() {
     let (buffer, _guard) = capture_logs();
     let context = context("cycle-9", "background");
-    cycle_failed(&context, 2, Duration::from_millis(5), "lookup failed");
+    let trace = CycleTrace {
+        context: &context,
+        metrics: ProcessMetrics::default(),
+    };
+    cycle_failed(trace, 2, Duration::from_millis(5), "lookup failed");
     let logs = buffer.text();
     assert!(logs.contains("health_check_cycle_failed"), "{logs}");
     assert!(logs.contains("model_count=2"), "{logs}");
@@ -154,7 +169,11 @@ fn a_failed_cycle_logs_its_error() {
 fn the_completion_line_renders_the_elapsed_milliseconds() {
     let (buffer, _guard) = capture_logs();
     let context = context("cycle-14", "background");
-    cycle_complete(&context, 1, 1, 0, Duration::from_millis(1500));
+    let trace = CycleTrace {
+        context: &context,
+        metrics: ProcessMetrics::default(),
+    };
+    cycle_complete(trace, 1, 1, 0, Duration::from_millis(1500));
     let logs = buffer.text();
     assert!(logs.contains("duration_ms=1500.00"), "{logs}");
 }
@@ -163,7 +182,11 @@ fn the_completion_line_renders_the_elapsed_milliseconds() {
 fn the_failed_line_renders_the_elapsed_milliseconds() {
     let (buffer, _guard) = capture_logs();
     let context = context("cycle-15", "background");
-    cycle_failed(&context, 1, Duration::from_millis(250), "boom");
+    let trace = CycleTrace {
+        context: &context,
+        metrics: ProcessMetrics::default(),
+    };
+    cycle_failed(trace, 1, Duration::from_millis(250), "boom");
     let logs = buffer.text();
     assert!(logs.contains("duration_ms=250.00"), "{logs}");
 }
@@ -182,7 +205,43 @@ fn a_skipped_cycle_logs_its_reason() {
 fn a_disabled_context_silences_the_cycle_lines() {
     let (buffer, _guard) = capture_logs();
     let context = InstrumentationContext::default();
+    let trace = CycleTrace {
+        context: &context,
+        metrics: ProcessMetrics::default(),
+    };
     cycle_skipped(&context, "no_models");
-    cycle_failed(&context, 1, Duration::ZERO, "boom");
+    cycle_failed(trace, 1, Duration::ZERO, "boom");
     assert_eq!(buffer.text(), "");
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn the_cycle_lines_carry_the_live_process_metrics() {
+    let (buffer, _guard) = capture_logs();
+    let rows = [deployment("a", "a-id", r#"{"model":"openai/a"}"#)];
+    let mut request = plain_request(&rows);
+    let context = context("cycle-live", "background");
+    request.instrumentation = Some(&context);
+    let provider = FakeProvider::new();
+    cycle(request, &provider, &FakeModels::default(), &policy())
+        .await
+        .expect("the cycle runs");
+    let logs = buffer.text();
+    let start = logs
+        .lines()
+        .find(|line| line.contains("health_check_cycle_start"))
+        .expect("the start line is logged");
+    let rss = start
+        .split("rss_mb=")
+        .nth(1)
+        .and_then(|rest| rest.split_whitespace().next())
+        .expect("the start line carries an rss value");
+    assert_ne!(rss, "unknown", "{start}");
+    let threads = start
+        .split("thread_count=")
+        .nth(1)
+        .and_then(|rest| rest.split_whitespace().next())
+        .expect("the start line carries a thread count");
+    let threads: usize = threads.parse().expect("the thread count is a number");
+    assert!(threads >= 1, "{start}");
 }

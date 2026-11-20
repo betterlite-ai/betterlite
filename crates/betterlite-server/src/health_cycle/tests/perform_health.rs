@@ -7,10 +7,12 @@ use super::dispatch::{DispatchSettings, perform_health_checks};
 use super::endpoints::separate_results;
 use super::ports::{ProbeFailure, ProbeResponse};
 use super::probe::ProbeOutcome;
+use super::rss::ProcessMetrics;
 use super::support::{
     FakeModels, FakeProvider, capture_logs, context, cycle, deployment, deployment_with_info,
     failure, number, object, plain_request, policy, prepare_all, text,
 };
+use super::telemetry::CycleTrace;
 
 fn leaf_with_secret() -> DeploymentSpec {
     deployment(
@@ -73,6 +75,7 @@ fn a_failed_row_holds_the_exception_status_but_not_the_exception() {
     assert_eq!(endpoint.get("error"), Some(&text("rate limited")));
     assert_eq!(endpoint.get("exception_status"), Some(&number(429)));
     assert_eq!(endpoint.get("exception"), None);
+    assert_eq!(endpoint.get("raw_request_typed_dict"), None);
     assert_eq!(endpoint.get("model_id"), Some(&text("leaf-id")));
     assert_eq!(
         result.exceptions_by_model_id.get("leaf-id"),
@@ -126,11 +129,15 @@ async fn the_dispatch_summary_counts_the_run() {
     let prepared = prepare_all(&rows);
     let provider = FakeProvider::new();
     let context = context("cycle-3", "background");
+    let trace = CycleTrace {
+        context: &context,
+        metrics: ProcessMetrics::default(),
+    };
     let settings = DispatchSettings {
         provider: &provider,
         details: true,
         max_concurrency: Some(2),
-        instrumentation: &context,
+        trace,
     };
     let result = perform_health_checks(&rows, &prepared, &settings).await;
     assert_eq!(result.healthy_endpoints.len(), 3);
@@ -153,11 +160,15 @@ async fn a_disabled_context_logs_no_summary() {
     let prepared = prepare_all(&rows);
     let provider = FakeProvider::new();
     let context = super::telemetry::InstrumentationContext::default();
+    let trace = CycleTrace {
+        context: &context,
+        metrics: ProcessMetrics::default(),
+    };
     let settings = DispatchSettings {
         provider: &provider,
         details: true,
         max_concurrency: None,
-        instrumentation: &context,
+        trace,
     };
     let result = perform_health_checks(&rows, &prepared, &settings).await;
     assert_eq!(result.healthy_endpoints.len(), 1);
@@ -212,4 +223,24 @@ fn a_failure_row_keeps_the_raw_request_when_the_probe_logged_one() {
         .first()
         .expect("the failed probe is reported");
     assert_eq!(endpoint.get("raw_request_typed_dict"), Some(&raw));
+}
+
+// ahealth_check always writes the key for a mode-set error, null when the request was never logged
+#[test]
+fn a_null_raw_request_stays_null() {
+    let exception = ProbeFailure {
+        message: "bad request".to_owned(),
+        status_code: 400,
+        raw_request_typed_dict: Some(Json::Null),
+    };
+    let result = separate_results(
+        &[deployment("leaf", "leaf-id", r#"{"model":"openai/leaf"}"#)],
+        &[ProbeOutcome::Failed(exception)],
+        true,
+    );
+    let endpoint = result
+        .unhealthy_endpoints
+        .first()
+        .expect("the failed probe is reported");
+    assert_eq!(endpoint.get("raw_request_typed_dict"), Some(&Json::Null));
 }

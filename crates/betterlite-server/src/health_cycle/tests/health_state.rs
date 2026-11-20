@@ -51,7 +51,12 @@ fn rows_without_a_usable_id_are_skipped() {
         object(vec![("model_id", text(""))]),
         object(vec![("model_id", number(7))]),
     ];
-    let states = build_deployment_health_states(&healthy, &[], &fixed_clock(10.0));
+    let unhealthy = [
+        object(vec![("model", text("openai/b"))]),
+        object(vec![("model_id", text(""))]),
+        object(vec![("model_id", number(7))]),
+    ];
+    let states = build_deployment_health_states(&healthy, &unhealthy, &fixed_clock(10.0));
     assert!(states.is_empty());
 }
 

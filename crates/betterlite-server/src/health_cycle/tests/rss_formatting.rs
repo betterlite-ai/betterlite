@@ -1,10 +1,13 @@
 #![cfg(test)]
 
-use std::path::Path;
+#[cfg(target_os = "linux")]
+use std::fs;
 
 use rstest::rstest;
 
-use crate::health_cycle::rss::{RSS_STATUS_PATH, format_rss_mb, rss_mb_from};
+use crate::health_cycle::rss::format_rss_mb;
+#[cfg(target_os = "linux")]
+use crate::health_cycle::rss::{RSS_STATUS_PATH, process_metrics};
 
 #[rstest]
 #[case::zero(Some(0.0_f64), "0.00")]
@@ -23,7 +26,8 @@ fn a_missing_measurement_renders_as_unknown() {
 #[cfg(target_os = "linux")]
 #[test]
 fn the_live_measurement_renders_as_a_number() {
-    let rendered = format_rss_mb(rss_mb_from(Path::new(RSS_STATUS_PATH)));
+    let status = fs::read_to_string(RSS_STATUS_PATH).expect("linux exposes a status file");
+    let rendered = format_rss_mb(process_metrics(Some(&status)).rss_mb);
     assert_ne!(rendered, "unknown");
     let parsed: f64 = rendered.parse().expect("the log holds a decimal number");
     assert!(parsed >= 0.0_f64);

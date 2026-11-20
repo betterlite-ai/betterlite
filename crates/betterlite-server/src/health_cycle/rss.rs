@@ -2,6 +2,7 @@ use std::fs;
 use std::path::Path;
 
 use num_traits::ToPrimitive as _;
+use tokio_util::task::TaskTracker;
 
 // _get_process_rss_mb reads resource.getrusage(RUSAGE_SELF).ru_maxrss, the peak RSS, which /proc reports as VmHWM
 pub(crate) const RSS_STATUS_PATH: &str = "/proc/self/status";
@@ -15,6 +16,13 @@ const BYTES_TO_MEGABYTES: f64 = 0.000_000_953_674_316_406_25;
 pub enum RssUnit {
     Kilobytes,
     Bytes,
+}
+
+// The two readings the instrumentation lines report, taken from one status snapshot
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ProcessMetrics {
+    pub rss_mb: Option<f64>,
+    pub thread_count: usize,
 }
 
 // ru_maxrss counts kB on Linux and bytes on macOS, which is the one platform difference the measurement keeps
@@ -47,23 +55,30 @@ pub(crate) fn status_number(status: &str, field: &str) -> Option<u64> {
     value.parse().ok()
 }
 
-// resource.getrusage has no safe wrapper in this dependency set, so the Linux status file stands in and a missing one is None
+// resource.getrusage has no safe wrapper in this dependency set, so the Linux status file stands in and a missing field is None
 #[must_use]
-pub fn rss_mb_from(status_path: &Path) -> Option<f64> {
-    fs::read_to_string(status_path)
-        .ok()
-        .and_then(|status| status_number(&status, RSS_FIELD))
-        .map(|peak| rss_mb(peak, host_rss_unit()))
+pub fn process_metrics(status: Option<&str>) -> ProcessMetrics {
+    let peak_mb = status
+        .and_then(|text| status_number(text, RSS_FIELD))
+        .map(|peak| rss_mb(peak, host_rss_unit()));
+    let thread_count = status
+        .and_then(|text| status_number(text, THREADS_FIELD))
+        .and_then(|count| usize::try_from(count).ok())
+        .unwrap_or_default();
+    ProcessMetrics {
+        rss_mb: peak_mb,
+        thread_count,
+    }
 }
 
-// threading.active_count() has no async twin: the OS thread count is the measure, and a platform without /proc reports zero
+// The async cycle reads the status file on the server's blocking pool, so no worker thread waits on the filesystem
 #[must_use]
-pub fn thread_count() -> usize {
-    fs::read_to_string(RSS_STATUS_PATH)
-        .ok()
-        .and_then(|status| status_number(&status, THREADS_FIELD))
-        .and_then(|count| usize::try_from(count).ok())
-        .unwrap_or_default()
+pub async fn measure_process(tasks: &TaskTracker, status_path: &Path) -> ProcessMetrics {
+    let path = status_path.to_owned();
+    let status = tasks
+        .spawn_blocking(move || fs::read_to_string(path).ok())
+        .await;
+    process_metrics(status.ok().flatten().as_deref())
 }
 
 // _rss_mb_for_log: two decimals, or "unknown" when the measurement failed
