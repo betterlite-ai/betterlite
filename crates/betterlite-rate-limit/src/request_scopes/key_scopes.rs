@@ -47,24 +47,6 @@ struct IdentityScope<'request> {
     prefix: Option<&'request str>,
 }
 
-impl<'request> IdentityScope<'request> {
-    const fn new(
-        key: &'static str,
-        id: Option<&'request str>,
-        rpm_limit: Option<i64>,
-        tpm_limit: Option<i64>,
-        prefix: Option<&'request str>,
-    ) -> Self {
-        Self {
-            key,
-            id,
-            rpm_limit,
-            tpm_limit,
-            prefix,
-        }
-    }
-}
-
 // LiteLLM's _create_rate_limit_descriptors: every key-owned descriptor, appended in the handler's order
 pub fn create_rate_limit_descriptors(
     builder: &RequestScopeBuilder<'_>,
@@ -132,34 +114,34 @@ fn identity_scopes<'auth>(
 ) -> [IdentityScope<'auth>; 4] {
     let team_id = account_limits(inputs.auth).team_id;
     [
-        IdentityScope::new(
-            "user",
-            view.user_id,
-            view.user_rpm_limit,
-            view.user_tpm_limit,
-            None,
-        ),
-        IdentityScope::new(
-            "team",
-            team_id,
-            view.team_rpm_limit,
-            view.team_tpm_limit,
-            None,
-        ),
-        IdentityScope::new(
-            "team_member",
-            view.user_id,
-            view.team_member_rpm_limit,
-            view.team_member_tpm_limit,
-            Some(team_id.unwrap_or(NONE_TEXT)),
-        ),
-        IdentityScope::new(
-            "end_user",
-            view.end_user_id,
-            view.end_user_rpm_limit,
-            view.end_user_tpm_limit,
-            None,
-        ),
+        IdentityScope {
+            key: "user",
+            id: view.user_id,
+            rpm_limit: view.user_rpm_limit,
+            tpm_limit: view.user_tpm_limit,
+            prefix: None,
+        },
+        IdentityScope {
+            key: "team",
+            id: team_id,
+            rpm_limit: view.team_rpm_limit,
+            tpm_limit: view.team_tpm_limit,
+            prefix: None,
+        },
+        IdentityScope {
+            key: "team_member",
+            id: view.user_id,
+            rpm_limit: view.team_member_rpm_limit,
+            tpm_limit: view.team_member_tpm_limit,
+            prefix: Some(team_id.unwrap_or(NONE_TEXT)),
+        },
+        IdentityScope {
+            key: "end_user",
+            id: view.end_user_id,
+            rpm_limit: view.end_user_rpm_limit,
+            tpm_limit: view.end_user_tpm_limit,
+            prefix: None,
+        },
     ]
 }
 

@@ -104,7 +104,9 @@ impl DeploymentHealthSource for BrokenSource {
         _model: &str,
     ) -> Result<Option<Vec<DeploymentRef>>, DeploymentHealthError> {
         if self.deployments_fail {
-            return Err(DeploymentHealthError::new("router unavailable"));
+            return Err(DeploymentHealthError {
+                message: "router unavailable".to_owned(),
+            });
         }
         Ok(Some(vec![DeploymentRef {
             id: Some("deployment-1".to_owned()),
@@ -115,7 +117,9 @@ impl DeploymentHealthSource for BrokenSource {
         &self,
         _deployment_id: &str,
     ) -> Result<i64, DeploymentHealthError> {
-        Err(DeploymentHealthError::new("counter unavailable"))
+        Err(DeploymentHealthError {
+            message: "counter unavailable".to_owned(),
+        })
     }
 }
 

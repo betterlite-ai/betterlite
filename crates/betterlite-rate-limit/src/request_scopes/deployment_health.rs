@@ -4,16 +4,7 @@ mod tests;
 #[derive(Debug, Eq, PartialEq, thiserror::Error)]
 #[error("{message}")]
 pub struct DeploymentHealthError {
-    message: String,
-}
-
-impl DeploymentHealthError {
-    #[must_use]
-    pub fn new(message: &str) -> Self {
-        Self {
-            message: message.to_owned(),
-        }
-    }
+    pub message: String,
 }
 
 // One router deployment of the model; the id is the router's model_info.id and may be missing
