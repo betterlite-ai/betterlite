@@ -52,15 +52,15 @@ fn numbers_become_seconds(#[case] value: &str, #[case] expected: f64) {
 }
 
 #[rstest]
-#[case::bad("bad")]
-#[case::nan("nan")]
-#[case::inf("inf")]
-#[case::numeric_text("1.5")]
-fn strings_stay_text(#[case] value: &str) {
+#[case::bad("bad", "bad")]
+#[case::nan("nan", "nan")]
+#[case::inf("inf", "inf")]
+#[case::numeric_text("'1.5'", "1.5")]
+fn strings_stay_text(#[case] value: &str, #[case] expected: &str) {
     let loaded = settings(&source(value), &[]).expect("a string loads");
     assert_eq!(
         loaded.sse_keepalive_ping_interval_seconds,
-        Some(PingSetting::Text(value.to_owned()))
+        Some(PingSetting::Text(expected.to_owned()))
     );
 }
 
