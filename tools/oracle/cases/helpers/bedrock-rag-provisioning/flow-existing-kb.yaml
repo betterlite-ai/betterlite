@@ -1,0 +1,13 @@
+kind: helper
+name: flow-existing-kb
+call:
+  b3457:
+    step: flow
+    vector:
+      custom_llm_provider: bedrock
+      aws_region_name: us-west-2
+      vector_store_id: KB123
+    environment: {}
+    unique_id: "0123abcd"
+env: {}
+compare: {ignore: []}

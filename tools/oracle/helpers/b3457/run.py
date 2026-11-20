@@ -1,0 +1,243 @@
+import asyncio
+import os
+from typing import Final
+
+from litellm.rag.ingestion.bedrock_ingestion import BedrockRAGIngestion
+from litellm.types.rag import BedrockVectorStoreOptions, RAGIngestOptions
+from pydantic import JsonValue
+from typing_extensions import override
+
+from .fakes import DOCUMENT, INDEX, FakeClient, FakeIndexError, Scripted, install_fakes
+from .inputs import (
+    CollectionInput,
+    FlowInput,
+    IndexInput,
+    Input,
+    PoliciesInput,
+    RoleInput,
+    StoreInput,
+)
+
+SLEEPS: Final[list[float]] = []
+
+DETECTED_SOURCE: Final[dict[str, JsonValue]] = {
+    "dataSource": {
+        "dataSourceId": "ds1",
+        "dataSourceConfiguration": {
+            "s3Configuration": {
+                "bucketArn": "arn:aws:s3:::detected",
+                "inclusionPrefixes": ["kb/"],
+            }
+        },
+    }
+}
+
+
+async def fast_sleep(delay: float, result: None = None) -> None:
+    SLEEPS.append(delay)
+    return result
+
+
+class RecordingIngestion(BedrockRAGIngestion):
+    def __init__(
+        self,
+        vector: BedrockVectorStoreOptions,
+        environment: dict[str, str],
+        client: FakeClient,
+    ) -> None:
+        self.client = client
+        saved = dict(os.environ)
+        os.environ.clear()
+        os.environ.update(environment)
+        try:
+            super().__init__(ingest_options=RAGIngestOptions(vector_store=vector))
+        finally:
+            os.environ.clear()
+            os.environ.update(saved)
+
+    @override
+    def _get_boto3_client(self, service_name: str) -> FakeClient:
+        return self.client
+
+    def collection(self, unique_id: str, account_id: str, caller_arn: str) -> tuple[str, str]:
+        return asyncio.run(
+            self._create_opensearch_collection(unique_id, account_id, caller_arn)
+        )
+
+    def role(self, unique_id: str, account_id: str, collection_arn: str) -> str:
+        return asyncio.run(
+            self._create_bedrock_role(unique_id, account_id, collection_arn)
+        )
+
+    def flow(self) -> tuple[str | None, str | None]:
+        return asyncio.run(self.store(None, None, None, [], None))
+
+    def stored(
+        self, content: str | None, filename: str | None, content_type: str | None
+    ) -> tuple[str | None, str | None]:
+        encoded = None if content is None else content.encode()
+        return asyncio.run(self.store(encoded, filename, content_type, [], None))
+
+    def created(self, key: str) -> str:
+        return str(self._created_resources[key])
+
+    def created_keys(self) -> list[str]:
+        return sorted(self._created_resources)
+
+
+def content_type_value(value: str) -> str | None:
+    if value == "":
+        return None
+    return value
+
+
+def scripted_client() -> FakeClient:
+    return FakeClient(
+        Scripted(
+            knowledge_base_id="kb1",
+            data_source_id="ds1",
+            data_sources=[{"dataSourceId": "ds1"}],
+            data_source=DETECTED_SOURCE,
+        )
+    )
+
+
+def policies(input_value: PoliciesInput) -> JsonValue:
+    client = scripted_client()
+    client.scripted.statuses = ["ACTIVE"]
+    ingestion = RecordingIngestion(input_value["vector"], input_value["environment"], client)
+    name, _arn = ingestion.collection(
+        input_value["unique_id"], input_value["account_id"], input_value["caller_arn"]
+    )
+    recorded = client.scripted.policies
+    return {
+        "encryption": DOCUMENT.validate_json(recorded[0]),
+        "network": DOCUMENT.validate_json(recorded[1]),
+        "access": DOCUMENT.validate_json(recorded[2]),
+        "collection": name,
+    }
+
+
+def collection(input_value: CollectionInput) -> JsonValue:
+    client = scripted_client()
+    client.scripted.statuses = list(input_value["statuses"])
+    ingestion = RecordingIngestion(input_value["vector"], input_value["environment"], client)
+    try:
+        name, arn = ingestion.collection(
+            input_value["unique_id"], input_value["account_id"], input_value["caller_arn"]
+        )
+    except TimeoutError:
+        return {
+            "outcome": "timeout",
+            "created": ingestion.created("opensearch_collection"),
+            "operations": client.scripted.operations,
+        }
+    return {
+        "outcome": "created",
+        "name": name,
+        "arn": arn,
+        "created": ingestion.created("opensearch_collection"),
+        "operations": client.scripted.operations,
+    }
+
+
+def index(input_value: IndexInput) -> JsonValue:
+    client = scripted_client()
+    install_fakes(list(input_value["failures"]), client.scripted.operations)
+    client.scripted.statuses = ["ACTIVE"]
+    client.scripted.collection_endpoint = input_value["endpoint"]
+    ingestion = RecordingIngestion(input_value["vector"], input_value["environment"], client)
+    outcome = "created"
+    try:
+        ingestion.flow()
+    except FakeIndexError:
+        outcome = "raised"
+    except RuntimeError:
+        outcome = "exhausted"
+    return {
+        "outcome": outcome,
+        "attempts": INDEX.attempts,
+        "index_name": INDEX.index_name,
+        "index_body": INDEX.body,
+    }
+
+
+def role(input_value: RoleInput) -> JsonValue:
+    unique_id = input_value["unique_id"]
+    account_id = input_value["account_id"]
+    client = scripted_client()
+    client.scripted.role_arn = f"arn:aws:iam::{account_id}:role/litellm-bedrock-kb-{unique_id}"
+    ingestion = RecordingIngestion(input_value["vector"], input_value["environment"], client)
+    arn = ingestion.role(unique_id, account_id, input_value["collection_arn"])
+    return {
+        "outcome": "created",
+        "role_arn": arn,
+        "created": ingestion.created("iam_role"),
+        "operations": client.scripted.operations,
+        "role_name": client.scripted.role_params["RoleName"],
+        "policy_name": client.scripted.policy_params["PolicyName"],
+        "trust_document": DOCUMENT.validate_json(
+            str(client.scripted.role_params["AssumeRolePolicyDocument"])
+        ),
+        "permissions_document": DOCUMENT.validate_json(
+            str(client.scripted.policy_params["PolicyDocument"])
+        ),
+    }
+
+
+def flow(input_value: FlowInput) -> JsonValue:
+    client = scripted_client()
+    install_fakes([], client.scripted.operations)
+    client.scripted.statuses = ["ACTIVE"]
+    ingestion = RecordingIngestion(input_value["vector"], input_value["environment"], client)
+    knowledge_base, _file_key = ingestion.flow()
+    return {
+        "outcome": "initialized",
+        "operations": client.scripted.operations,
+        "knowledge_base_id": knowledge_base,
+        "data_source_id": ingestion.data_source_id,
+        "s3_bucket": ingestion.s3_bucket,
+        "s3_prefix": ingestion.s3_prefix,
+        "created_keys": ingestion.created_keys(),
+        "index_body": INDEX.body,
+    }
+
+
+def store(input_value: StoreInput) -> JsonValue:
+    client = scripted_client()
+    install_fakes([], client.scripted.operations)
+    client.scripted.job_statuses = list(input_value["job_statuses"])
+    ingestion = RecordingIngestion(input_value["vector"], input_value["environment"], client)
+    knowledge_base, file_key = ingestion.stored(
+        input_value["content"], input_value["filename"], input_value["content_type"]
+    )
+    return {
+        "outcome": "stored",
+        "knowledge_base_id": knowledge_base,
+        "file_key": file_key,
+        "operations": client.scripted.operations,
+        "content_type": content_type_value(client.scripted.content_type),
+    }
+
+
+def dispatch(input_value: Input) -> JsonValue:
+    if input_value["step"] == "policies":
+        return policies(input_value)
+    if input_value["step"] == "collection":
+        return collection(input_value)
+    if input_value["step"] == "index":
+        return index(input_value)
+    if input_value["step"] == "role":
+        return role(input_value)
+    if input_value["step"] == "flow":
+        return flow(input_value)
+    return store(input_value)
+
+
+def run(input_value: Input) -> JsonValue:
+    saved = asyncio.sleep
+    asyncio.__dict__["sleep"] = fast_sleep
+    try:
+        return dispatch(input_value)
+    finally:
+        asyncio.__dict__["sleep"] = saved
