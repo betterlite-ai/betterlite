@@ -159,7 +159,7 @@ fn a_null_mock_response_is_no_mock() {
 }
 
 #[test]
-fn an_unparseable_mock_response_is_a_value_error() {
+fn an_unparsable_mock_response_is_a_value_error() {
     let mut fixture = Fixture::new();
     fixture.kwargs.insert(
         "mock_response".to_owned(),

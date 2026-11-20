@@ -7,7 +7,6 @@ use betterlite_openai::containers::container_file_http::transport::ContainerMeth
 use indexmap::IndexMap;
 
 use super::error::FileListHandlerError;
-// ast-grep-ignore: no-long-names
 use super::execution::async_container_file_list_handler;
 use super::execution::blocking::container_file_list_handler;
 use super::execution::{extra_query_object, query_pairs};
@@ -96,7 +95,6 @@ async fn a_supplied_async_client_is_reused() {
     let client = fixture.source.client.clone();
 
     let call = fixture.handler_call::<FakeSource>(&params, None, Some(&client));
-    // ast-grep-ignore: no-long-names
     let response = async_container_file_list_handler(&fixture.source, &fixture.hook, &call)
         .await
         .expect("the send");
@@ -112,7 +110,6 @@ async fn a_new_async_client_is_built_with_ssl_verify() {
     let params = object(r#"{"ssl_verify":"/certs/ca.pem"}"#);
 
     let call = fixture.handler_call::<FakeSource>(&params, None, None);
-    // ast-grep-ignore: no-long-names
     async_container_file_list_handler(&fixture.source, &fixture.hook, &call)
         .await
         .expect("the file list decodes");

@@ -42,7 +42,6 @@ pub struct ContainerFileListCall<'call, Source: ClientSource> {
     pub async_client: Option<&'call Source::Asynchronous>,
 }
 
-// llm_http_handler's async_container_file_list_handler, in LiteLLM's order: client, request, send, transform
 // ast-grep-ignore: no-long-names
 pub async fn async_container_file_list_handler<Source, Hook>(
     clients: &Source,
