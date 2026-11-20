@@ -9,28 +9,26 @@ use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_objects::ResponsesApiResponse;
 use betterlite_openai::response_input::ResponsesInput;
-use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
+use betterlite_prompts::arguments::json::Object;
 use http::{HeaderMap as HttpHeaders, Method};
 use serde_json::value::RawValue;
 use url::Url;
 
 use crate::api::responses_agentic_execution::LoggingView;
 use crate::api::responses_agentic_execution::executor::ContinuationExecutor;
-use crate::api::responses_compact_http::body::signed_body_kwargs;
 use crate::api::responses_compact_http::service::facts::Sent;
 use crate::api::responses_compact_http::service::{ClientKind, SharedSession, SuppliedClient};
 use crate::api::responses_hook_policy::callbacks::{
     CallbackLists, DeploymentHookDispatcher, NamedCallbackResolver, custom_logger_callbacks,
 };
 use crate::api::responses_stream_driver::source::PayloadSource;
-use crate::api::vector_store_http_write::error::{ClientError, display_facts};
+use crate::api::vector_store_http_write::error::ClientError;
 
-use self::finish::{checked, transformed, typed};
+use self::finish::{Finish, checked, transformed, typed};
 use self::hook::Applied;
-use self::request::{endpoint_url, wire_body, wire_headers};
-use super::config::{CreateConfig, CreateParams, CreateSignRequest, Headers, Params};
-use super::convert::is_true;
-use super::error::{CreateError, provider_error};
+use self::request::{begin, wire};
+use super::config::{CreateConfig, CreateParams, Headers, Params};
+use super::error::CreateError;
 
 mod finish;
 mod hook;
@@ -88,10 +86,11 @@ pub struct CreateCall<'call> {
     pub shared_session: Option<SharedSession>,
 }
 
-pub struct CreateHooks<'hooks, D: ?Sized> {
+pub struct CreateHooks<'hooks, D: ?Sized, E: ?Sized> {
     pub callbacks: CallbackLists<'hooks>,
     pub resolver: &'hooks dyn NamedCallbackResolver,
     pub dispatcher: &'hooks D,
+    pub executor: &'hooks E,
     pub logging: Option<LoggingView<'hooks>>,
 }
 
@@ -143,13 +142,73 @@ impl<Client> Selected<'_, Client> {
     }
 }
 
+// The request as the transform, signing and pre-call steps leave it, plus what the iterator keeps
+struct Staged {
+    applied: Applied,
+    mode: ClientKind,
+    effective_stream: bool,
+    stream_requested: bool,
+    data: Object,
+    context: Params,
+    headers: Headers,
+    api_base: String,
+    params: Params,
+    litellm_metadata: Option<Params>,
+}
+
+impl Staged {
+    // A streaming send hands the selected client's source over; a buffered one is transformed and finished
+    async fn respond<C, D, E>(
+        &self,
+        config: &C,
+        hooks: &CreateHooks<'_, D, E>,
+        answer: SentReply,
+        log: &mut LogContext<'_, '_>,
+    ) -> Result<CreateOutcome, CreateError>
+    where
+        C: CreateConfig,
+        D: ?Sized,
+        E: ContinuationExecutor + ?Sized,
+    {
+        let setup = StreamSetup {
+            model: self.applied.model.clone(),
+            custom_llm_provider: self.applied.custom_llm_provider.clone(),
+            litellm_metadata: self.litellm_metadata.clone(),
+            request_data: Some(self.context.clone()),
+            call_type: Some(String::from("responses")),
+        };
+        match answer {
+            SentReply::Streaming(source) => Ok(CreateOutcome::Live(CreateLive { setup, source })),
+            SentReply::Buffered(answer) => {
+                let reply = transformed(config, answer, log)?;
+                if self.stream_requested {
+                    let response = typed(reply.response)?;
+                    return Ok(CreateOutcome::Synthetic(CreateSynthetic {
+                        setup,
+                        response,
+                    }));
+                }
+                let callbacks = custom_logger_callbacks(&hooks.callbacks, hooks.resolver);
+                let job = Finish {
+                    applied: &self.applied,
+                    mode: self.mode,
+                    callbacks: &callbacks,
+                    logging: hooks.logging,
+                    executor: hooks.executor,
+                    body: reply.response,
+                };
+                finish::finish(config, job, log).await
+            }
+        }
+    }
+}
+
 // One shared sender for both handlers, following the source's statements in order
 pub async fn run<C, S, D, E>(
     deps: &CreateDeps<'_, C, S>,
     mode: ClientKind,
     call: &CreateCall<'_>,
-    hooks: &CreateHooks<'_, D>,
-    executor: &E,
+    hooks: &CreateHooks<'_, D, E>,
     log: &mut LogContext<'_, '_>,
 ) -> Result<CreateOutcome, CreateError>
 where
@@ -165,87 +224,16 @@ where
         ClientKind::Asynchronous => Applied::original(call),
     };
     let client = request::select_client(deps, mode, &applied.params, call.shared_session)?;
-    let (headers, api_base) = request::validated_environment(deps.config, call, &applied)?;
-    let requested_stream = applied
-        .optional_params
-        .get("stream")
-        .is_some_and(PromptJson::is_truthy);
-    let mut data = request::transform(deps.config, mode, &applied, &headers).await?;
-    data = request::normalize(deps.config, data)?;
-    if let Some(extra_body) = call.extra_body.filter(|body| !body.is_empty()) {
-        let transformed = request::extra_body(deps.config, extra_body, &data, &applied)?;
-        data.extend(transformed);
-    }
-    let is_stream_request =
-        requested_stream || data.get("stream").is_some_and(PromptJson::is_truthy);
-    let mut effective_stream = is_stream_request;
-    let params = applied.params.to_map();
-    let context = hook::request_context(&applied.input, &applied.optional_params, &params)?;
-    if is_stream_request && is_true(call.fake_stream) {
-        effective_stream = false;
-        data.shift_remove("stream");
-    }
-    let signing = CreateSignRequest {
-        headers: &headers,
-        optional_params: &params,
-        request_data: &data,
-        api_base: &api_base,
-        api_key: applied.params.api_key.as_ref(),
-        model: &applied.model,
-        stream: effective_stream,
-        fake_stream: call.fake_stream,
-    };
-    let signed = request::sign(deps.config, mode, &signing).await?;
-    let body = wire_body(&signed_body_kwargs(signed.body.as_deref(), &data))?;
-    hook::pre_call(&applied.input, &api_base, &signed.headers, &data, log)?;
-    let timeout = request::timeout(call.timeout, &applied.optional_params).map_err(|message| {
-        CreateError::Provider(provider_error(&display_facts(message), deps.config))
-    })?;
-    let wire = CreateRequest {
-        method: Method::POST,
-        url: endpoint_url(&api_base)?,
-        headers: wire_headers(&signed.headers)?,
-        body,
-        timeout,
-    };
+    let staged = begin(deps.config, mode, call, applied).await?;
+    let (post, timeout) = wire(deps.config, mode, call, &staged, log).await?;
     let started = Instant::now();
-    let reply = client.get().send(wire, effective_stream).await;
+    let reply = client.get().send(post, staged.effective_stream).await;
     let sent = Sent {
         mode,
         requested: Some(timeout),
         effective: timeout,
         elapsed: started.elapsed(),
     };
-    let answer = checked(reply, effective_stream, &sent, deps.config)?;
-    let setup = StreamSetup {
-        model: applied.model.clone(),
-        custom_llm_provider: applied.custom_llm_provider.clone(),
-        litellm_metadata: call.litellm_metadata.cloned(),
-        request_data: Some(context),
-        call_type: Some(String::from("responses")),
-    };
-    match answer {
-        SentReply::Streaming(source) => Ok(CreateOutcome::Live(CreateLive { setup, source })),
-        SentReply::Buffered(answer) => {
-            let reply = transformed(deps.config, answer, log)?;
-            if is_stream_request {
-                return Ok(CreateOutcome::Synthetic(CreateSynthetic {
-                    setup,
-                    response: typed(reply.response)?,
-                }));
-            }
-            let callbacks = custom_logger_callbacks(&hooks.callbacks, hooks.resolver);
-            finish::finish(
-                deps.config,
-                mode,
-                &applied,
-                &callbacks,
-                hooks.logging,
-                executor,
-                reply.response,
-                log,
-            )
-            .await
-        }
-    }
+    let answer = checked(reply, staged.effective_stream, &sent, deps.config)?;
+    staged.respond(deps.config, hooks, answer, log).await
 }

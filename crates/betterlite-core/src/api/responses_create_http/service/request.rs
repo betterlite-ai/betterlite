@@ -1,35 +1,34 @@
 use std::time::Duration;
 
 use betterlite_http::proxy::outbound::RequestBody;
-use betterlite_prompts::arguments::json::Object;
+use betterlite_models::decisions::Json;
+use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
 use http::HeaderMap as HttpHeaders;
+use http::Method;
 use http::header::{HeaderName, HeaderValue};
 use url::Url;
 
 use crate::api::responses_compact_http::body::SignedBody;
 use crate::api::responses_compact_http::error::Stage;
 use crate::api::responses_compact_http::service::{ClientKind, SharedSession};
+use crate::api::vector_store_http_write::error::display_facts;
 
 use super::super::config::{
     CreateConfig, CreateParams, CreateSignRequest, CreateTransformRequest, ExtraBodyRequest,
-    Headers, Signed,
+    Headers,
 };
-use super::super::convert::python_float;
-use super::super::error::CreateError;
+use super::super::convert::{FloatError, float_value};
+use super::super::error::{CreateError, provider_error};
 use super::hook::{self, Applied};
-use super::{ClientSource, CreateCall, CreateDeps, Selected};
+use super::{ClientSource, CreateCall, CreateDeps, CreateRequest, LogContext, Selected, Staged};
 
 // The supplied client is reused only when its class matches the handler's, as isinstance does in LiteLLM
-pub(super) fn select_client<'deps, C, S>(
+pub(super) fn select_client<'deps, C: CreateConfig, S: ClientSource>(
     deps: &'deps CreateDeps<'_, C, S>,
     mode: ClientKind,
     params: &CreateParams,
     shared_session: Option<SharedSession>,
-) -> Result<Selected<'deps, S::Client>, CreateError>
-where
-    C: CreateConfig,
-    S: ClientSource,
-{
+) -> Result<Selected<'deps, S::Client>, CreateError> {
     if let Some(supplied) = &deps.supplied
         && supplied.kind == mode
     {
@@ -78,8 +77,36 @@ where
     Ok((headers, api_base))
 }
 
-// The async handler awaits async_transform_responses_api_request; the sync one calls the sync form
-pub(super) async fn transform<C>(
+// The transform, extra_body and request-context steps, then the stream flags fake prep changes
+pub(super) async fn begin<C: CreateConfig>(
+    config: &C,
+    mode: ClientKind,
+    call: &CreateCall<'_>,
+    applied: Applied,
+) -> Result<Staged, CreateError> {
+    let (headers, api_base) = validated_environment(config, call, &applied)?;
+    let mut data = transformed_data(config, mode, &applied, &headers).await?;
+    data = overlaid(config, call, &applied, data)?;
+    let (stream_requested, effective_stream) =
+        stream_flags(call, &applied.optional_params, &mut data);
+    let params = applied.params.to_map();
+    let context = hook::request_context(&applied.input, &applied.optional_params, &params)?;
+    Ok(Staged {
+        applied,
+        mode,
+        effective_stream,
+        stream_requested,
+        data,
+        context,
+        headers,
+        api_base,
+        params,
+        litellm_metadata: call.litellm_metadata.cloned(),
+    })
+}
+
+// The provider's transform step and normalize step; the async handler awaits the off-loop transform
+async fn transformed_data<C>(
     config: &C,
     mode: ClientKind,
     applied: &Applied,
@@ -88,7 +115,7 @@ pub(super) async fn transform<C>(
 where
     C: CreateConfig,
 {
-    let request = CreateTransformRequest {
+    let transform = CreateTransformRequest {
         model: &applied.model,
         input: &applied.input,
         optional_params: &applied.optional_params,
@@ -96,74 +123,128 @@ where
         headers,
     };
     let transformed = match mode {
-        ClientKind::Sync => config.transform_request(&request),
-        ClientKind::Asynchronous => config.transform_request_off_loop(&request).await,
-    };
-    transformed.map_err(|source| CreateError::Step {
+        ClientKind::Sync => config.transform_request(&transform),
+        ClientKind::Asynchronous => config.transform_request_off_loop(&transform).await,
+    }
+    .map_err(|source| CreateError::Step {
         stage: Stage::Transform,
         source,
-    })
-}
-
-pub(super) fn normalize<C>(config: &C, data: Object) -> Result<Object, CreateError>
-where
-    C: CreateConfig,
-{
+    })?;
     config
-        .normalize_request(data)
+        .normalize_request(transformed)
         .map_err(|source| CreateError::Step {
             stage: Stage::Normalize,
             source,
         })
 }
 
-pub(super) fn extra_body<C>(
+// transform_extra_body gets the normalized data and its result overwrites the matching keys, as {**data, **extra}
+fn overlaid<C>(
     config: &C,
-    extra_body: &Object,
-    request: &Object,
+    call: &CreateCall<'_>,
     applied: &Applied,
+    data: Object,
 ) -> Result<Object, CreateError>
 where
     C: CreateConfig,
 {
-    config
-        .transform_extra_body(&ExtraBodyRequest {
-            extra_body,
-            request,
-            model: &applied.model,
-            params: &applied.params,
-        })
-        .map_err(|source| CreateError::Step {
-            stage: Stage::Normalize,
-            source,
-        })
+    let Some(extra_body) = call.extra_body.filter(|body| !body.is_empty()) else {
+        return Ok(data);
+    };
+    let request = ExtraBodyRequest {
+        extra_body,
+        request: &data,
+        model: &applied.model,
+        params: &applied.params,
+    };
+    let transformed =
+        config
+            .transform_extra_body(&request)
+            .map_err(|source| CreateError::Step {
+                stage: Stage::Normalize,
+                source,
+            })?;
+    let mut merged = data;
+    merged.extend(transformed);
+    Ok(merged)
 }
 
-// The async handler awaits sign_request_off_loop_if_aws; the sync handler calls sign_request directly
-pub(super) async fn sign<C>(
+// stream is bool(optional stream) or bool(body stream); an exact fake_stream=true buffers and drops body.stream
+fn stream_flags(
+    call: &CreateCall<'_>,
+    optional_params: &Object,
+    data: &mut Object,
+) -> (bool, bool) {
+    let requested = optional_params
+        .get("stream")
+        .is_some_and(PromptJson::is_truthy);
+    let stream_requested = requested || data.get("stream").is_some_and(PromptJson::is_truthy);
+    if stream_requested && matches!(call.fake_stream, Some(Json::Bool(true))) {
+        data.shift_remove("stream");
+        return (stream_requested, false);
+    }
+    (stream_requested, stream_requested)
+}
+
+// The signing step sees the final body; a signed byte string replaces it, then pre-call logs the request
+pub(super) async fn wire<C>(
     config: &C,
     mode: ClientKind,
-    request: &CreateSignRequest<'_>,
-) -> Result<Signed, CreateError>
+    call: &CreateCall<'_>,
+    staged: &Staged,
+    log: &mut LogContext<'_, '_>,
+) -> Result<(CreateRequest, Duration), CreateError>
 where
     C: CreateConfig,
 {
-    let signed = match mode {
-        ClientKind::Sync => config.sign_request(request),
-        ClientKind::Asynchronous => config.sign_request_off_loop(request).await,
+    let signing = CreateSignRequest {
+        headers: &staged.headers,
+        optional_params: &staged.params,
+        request_data: &staged.data,
+        api_base: &staged.api_base,
+        api_key: staged.applied.params.api_key.as_ref(),
+        model: &staged.applied.model,
+        stream: staged.effective_stream,
+        fake_stream: call.fake_stream,
     };
-    signed.map_err(|source| CreateError::Step {
+    let signed = match mode {
+        ClientKind::Sync => config.sign_request(&signing),
+        ClientKind::Asynchronous => config.sign_request_off_loop(&signing).await,
+    }
+    .map_err(|source| CreateError::Step {
         stage: Stage::Sign,
         source,
-    })
+    })?;
+    let body = wire_body(&signed_body_kwargs(signed.body.as_deref(), &staged.data))?;
+    hook::pre_call(
+        &staged.applied.input,
+        &staged.api_base,
+        &signed.headers,
+        &staged.data,
+        log,
+    )?;
+    let timeout = timeout(call.timeout, &staged.applied.optional_params).map_err(|error| {
+        CreateError::Provider(provider_error(&display_facts(error.to_string()), config))
+    })?;
+    let post = CreateRequest {
+        method: Method::POST,
+        url: endpoint_url(&staged.api_base)?,
+        headers: wire_headers(&signed.headers)?,
+        body,
+        timeout,
+    };
+    Ok((post, timeout))
 }
 
 // timeout or float(optional_params.get("timeout", 0)): an explicit zero falls through to the optional map
-pub(super) fn timeout(explicit: Option<f64>, optional_params: &Object) -> Result<Duration, String> {
+pub(super) fn timeout(
+    explicit: Option<f64>,
+    optional_params: &Object,
+) -> Result<Duration, FloatError> {
     let computed = match explicit.filter(|value| *value != 0.0_f64) {
         Some(value) => value,
         None => match optional_params.get("timeout") {
-            Some(value) => python_float(value)?,
+            Some(value) => float_value(value)?,
             None => 0.0_f64,
         },
     };

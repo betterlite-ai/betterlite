@@ -13,7 +13,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use crate::api::responses_compact_http::error::ConfigFailure;
 use crate::api::vector_store_http_write::error::{BaseLlmException, HeaderMap};
 
-use super::convert::PythonValue as _;
+use super::convert::ValueKind as _;
 use super::error::ParamError;
 
 pub type Headers = BTreeMap<String, String>;
@@ -55,42 +55,32 @@ impl CreateParams {
     pub fn from_map(map: Params) -> Result<Self, ParamError> {
         let mut params = Self::default();
         for (key, value) in map {
-            match key.as_str() {
-                API_BASE_KEY => params.api_base = text_field(key, value)?,
-                API_KEY_KEY => {
-                    params.api_key = text_field(key, value)?.map(SecretString::from);
+            let name = key.as_str();
+            match (name, value) {
+                (API_BASE_KEY | API_KEY_KEY | SSL_VERIFY_KEY, Json::Null) => {}
+                (API_BASE_KEY, Json::Text(text)) => params.api_base = Some(text),
+                (API_KEY_KEY, Json::Text(text)) => params.api_key = Some(SecretString::from(text)),
+                (SSL_VERIFY_KEY, Json::Bool(flag)) => params.ssl_verify = Some(flag),
+                (API_BASE_KEY | API_KEY_KEY, other) => {
+                    return Err(ParamError::FieldType {
+                        field: name.to_owned(),
+                        expected: "a string",
+                        found: other.value_kind(),
+                    });
                 }
-                SSL_VERIFY_KEY => params.ssl_verify = bool_field(key, value)?,
-                _ => {
-                    params.extra.insert(key, value);
+                (SSL_VERIFY_KEY, other) => {
+                    return Err(ParamError::FieldType {
+                        field: name.to_owned(),
+                        expected: "a boolean",
+                        found: other.value_kind(),
+                    });
+                }
+                (_, other) => {
+                    params.extra.insert(name.to_owned(), other);
                 }
             }
         }
         Ok(params)
-    }
-}
-
-fn text_field(field: String, value: Json) -> Result<Option<String>, ParamError> {
-    match value {
-        Json::Null => Ok(None),
-        Json::Text(text) => Ok(Some(text)),
-        other => Err(ParamError::FieldType {
-            field,
-            expected: "a string",
-            found: other.python_type(),
-        }),
-    }
-}
-
-fn bool_field(field: String, value: Json) -> Result<Option<bool>, ParamError> {
-    match value {
-        Json::Null => Ok(None),
-        Json::Bool(flag) => Ok(Some(flag)),
-        other => Err(ParamError::FieldType {
-            field,
-            expected: "a boolean",
-            found: other.python_type(),
-        }),
     }
 }
 

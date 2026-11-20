@@ -11,7 +11,7 @@ use crate::api::responses_hook_policy::callbacks::{
 };
 
 use super::super::config::{CreateParams, Headers, Params};
-use super::super::convert::{PythonValue as _, round_trip};
+use super::super::convert::{ValueKind as _, round_trip};
 use super::super::error::{CreateError, ParamError};
 use super::{CreateCall, LogContext};
 
@@ -91,7 +91,7 @@ pub(super) fn optional_headers(optional_params: &Object) -> Result<Headers, Crea
         PromptJson::Object(fields) => fields,
         other => {
             return Err(CreateError::OptionalHeaders {
-                found: other.python_type(),
+                found: other.value_kind(),
             });
         }
     };
@@ -106,7 +106,7 @@ pub(super) fn optional_headers(optional_params: &Object) -> Result<Headers, Crea
             | PromptJson::Object(_)) => {
                 return Err(CreateError::OptionalHeader {
                     name: name.clone(),
-                    found: other.python_type(),
+                    found: other.value_kind(),
                 });
             }
         };

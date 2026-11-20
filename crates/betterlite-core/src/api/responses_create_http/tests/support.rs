@@ -214,9 +214,15 @@ impl CreateTransport for Wire {
     }
 }
 
+struct Supplied {
+    kind: ClientKind,
+    wire: Wire,
+}
+
 pub(super) struct Source {
     pub(super) wire: Wire,
     pub(super) created: Mutex<Vec<(Option<bool>, Option<SharedSession>)>>,
+    supplied: Option<Supplied>,
 }
 
 impl Source {
@@ -224,6 +230,18 @@ impl Source {
         Self {
             wire,
             created: Mutex::new(Vec::new()),
+            supplied: None,
+        }
+    }
+
+    pub(super) fn with_supplied(wire: Wire, kind: ClientKind, supplied: Wire) -> Self {
+        Self {
+            wire,
+            created: Mutex::new(Vec::new()),
+            supplied: Some(Supplied {
+                kind,
+                wire: supplied,
+            }),
         }
     }
 
@@ -599,6 +617,8 @@ pub(super) const NO_CALLBACKS: CallbackLists<'static> = CallbackLists {
 
 pub(super) struct NoResolver;
 
+pub(super) const NO_RESOLVER: NoResolver = NoResolver;
+
 impl NamedCallbackResolver for NoResolver {
     fn resolve(&self, _name: &str) -> Option<PolicyCallback> {
         None
@@ -606,6 +626,8 @@ impl NamedCallbackResolver for NoResolver {
 }
 
 pub(super) struct NoExecutor;
+
+pub(super) const NO_EXECUTOR: NoExecutor = NoExecutor;
 
 #[async_trait]
 impl ContinuationExecutor for NoExecutor {
@@ -627,37 +649,56 @@ impl ContinuationExecutor for NoExecutor {
     }
 }
 
+pub(super) fn config_with(fail: Option<Stage>, signed_body: Option<Vec<u8>>) -> Config {
+    Config {
+        fail,
+        signed_body,
+        validated: Mutex::new(Vec::new()),
+        signed: Mutex::new(Vec::new()),
+        off_loop_sign: AtomicBool::new(false),
+        off_loop_transform: AtomicBool::new(false),
+    }
+}
+
+pub(super) fn create_deps<'deps>(
+    config: &'deps Config,
+    source: &'deps Source,
+) -> CreateDeps<'deps, Config, Source> {
+    CreateDeps {
+        config,
+        source,
+        supplied: source.supplied.as_ref().map(|supplied| SuppliedClient {
+            kind: supplied.kind,
+            transport: &supplied.wire,
+        }),
+    }
+}
+
 pub(super) async fn execute(
-    config: &Config,
-    source: &Source,
-    supplied: Option<SuppliedClient<'_, Wire>>,
+    deps: &CreateDeps<'_, Config, Source>,
     mode: ClientKind,
     call: &CreateCall<'_>,
-    hooks: &CreateHooks<'_, Dispatcher>,
+    hooks: &CreateHooks<'_, Dispatcher, NoExecutor>,
 ) -> Result<CreateOutcome, CreateError> {
     let mut fixture = Fixture::new();
     let env = base_env(&fixture.redactor, &fixture.sink, fixture.now);
-    let deps = CreateDeps {
-        config,
-        source,
-        supplied,
-    };
     let mut log = LogContext {
         state: &mut fixture.state,
         env: &env,
     };
-    run(&deps, mode, call, hooks, &NoExecutor, &mut log).await
+    run(deps, mode, call, hooks, &mut log).await
 }
 
 pub(super) fn hooks<'hooks>(
     callbacks: CallbackLists<'hooks>,
     dispatcher: &'hooks Dispatcher,
     resolver: &'hooks NoResolver,
-) -> CreateHooks<'hooks, Dispatcher> {
+) -> CreateHooks<'hooks, Dispatcher, NoExecutor> {
     CreateHooks {
         callbacks,
         resolver,
         dispatcher,
+        executor: &NO_EXECUTOR,
         logging: None,
     }
 }

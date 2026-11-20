@@ -2,7 +2,6 @@ use betterlite_models::decisions::Json;
 use betterlite_prompts::arguments::json::Json as PromptJson;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use serde_json::value::{RawValue, to_raw_value};
 
 use super::error::CreateError;
 
@@ -12,54 +11,36 @@ where
     Source: Serialize + ?Sized,
     Target: DeserializeOwned,
 {
-    let text = serde_json::to_string(value).map_err(CreateError::Encode)?;
-    serde_json::from_str(&text).map_err(CreateError::Encode)
-}
-
-pub(crate) fn raw_value<Source>(value: &Source) -> Result<Box<RawValue>, CreateError>
-where
-    Source: Serialize + ?Sized,
-{
-    to_raw_value(value).map_err(CreateError::Encode)
-}
-
-// fake_stream is checked with `is True`, so only the boolean true satisfies it
-pub(crate) fn is_true(value: Option<&Json>) -> bool {
-    matches!(value, Some(Json::Bool(true)))
+    serde_json::from_str(&serde_json::to_string(value).map_err(CreateError::Encode)?)
+        .map_err(CreateError::Encode)
 }
 
 // Python's type names, as float() and the type errors print them
-pub(crate) trait PythonValue {
-    fn python_type(&self) -> &'static str;
+pub(crate) trait ValueKind {
+    fn value_kind(&self) -> &'static str;
 }
 
-impl PythonValue for Json {
-    fn python_type(&self) -> &'static str {
-        match self {
-            Self::Null => "NoneType",
-            Self::Bool(_) => "bool",
-            Self::Text(_) => "str",
-            Self::List(_) => "list",
-            Self::Object(_) => "dict",
-            Self::Number(number) => number_type_name(&number.to_string()),
+// The two Json enums carry the same variants, so one body implements both
+macro_rules! value_kinds {
+    ($($json:ty),+ $(,)?) => {$(
+        impl ValueKind for $json {
+            fn value_kind(&self) -> &'static str {
+                match self {
+                    Self::Null => "NoneType",
+                    Self::Bool(_) => "bool",
+                    Self::Text(_) => "str",
+                    Self::List(_) => "list",
+                    Self::Object(_) => "dict",
+                    Self::Number(number) => number_kind(&number.to_string()),
+                }
+            }
         }
-    }
+    )+};
 }
 
-impl PythonValue for PromptJson {
-    fn python_type(&self) -> &'static str {
-        match self {
-            Self::Null => "NoneType",
-            Self::Bool(_) => "bool",
-            Self::Text(_) => "str",
-            Self::List(_) => "list",
-            Self::Object(_) => "dict",
-            Self::Number(number) => number_type_name(&number.to_string()),
-        }
-    }
-}
+value_kinds!(Json, PromptJson);
 
-fn number_type_name(text: &str) -> &'static str {
+fn number_kind(text: &str) -> &'static str {
     if text.contains(|character: char| matches!(character, '.' | 'e' | 'E')) {
         "float"
     } else {
@@ -67,21 +48,26 @@ fn number_type_name(text: &str) -> &'static str {
     }
 }
 
-// float(value) for the shapes an optional timer can carry; the message is Python's own text
-pub(crate) fn python_float(value: &PromptJson) -> Result<f64, String> {
+// float(value) for the shapes an optional timer can carry; Display is Python's own message
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum FloatError {
+    #[error("float() argument must be a string or a real number, not '{kind}'")]
+    NotANumber { kind: &'static str },
+    #[error("could not convert string to float: '{text}'")]
+    Text { text: String },
+}
+
+pub(crate) fn float_value(value: &PromptJson) -> Result<f64, FloatError> {
     match value {
         PromptJson::Bool(flag) => Ok(if *flag { 1.0_f64 } else { 0.0_f64 }),
         PromptJson::Number(number) => Ok(number.as_f64().unwrap_or(f64::INFINITY)),
-        PromptJson::Text(text) => parse_float_text(text).map_err(|()| float_text_error(text)),
-        other => Err(format!(
-            "float() argument must be a string or a real number, not '{}'",
-            other.python_type()
-        )),
+        PromptJson::Text(text) => {
+            parse_float_text(text).map_err(|()| FloatError::Text { text: text.clone() })
+        }
+        other => Err(FloatError::NotANumber {
+            kind: other.value_kind(),
+        }),
     }
-}
-
-fn float_text_error(text: &str) -> String {
-    format!("could not convert string to float: '{text}'")
 }
 
 fn parse_float_text(text: &str) -> Result<f64, ()> {
@@ -89,13 +75,17 @@ fn parse_float_text(text: &str) -> Result<f64, ()> {
     if trimmed.is_empty() {
         return Err(());
     }
-    let (sign, rest) = match trimmed.strip_prefix('-') {
-        Some(rest) => (-1.0_f64, rest),
-        None => (1.0_f64, trimmed.strip_prefix('+').unwrap_or(trimmed)),
+    let (negative, rest) = match trimmed.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, trimmed.strip_prefix('+').unwrap_or(trimmed)),
     };
     let lowered = rest.to_ascii_lowercase();
     if matches!(lowered.as_str(), "inf" | "infinity") {
-        return Ok(sign * f64::INFINITY);
+        return Ok(if negative {
+            f64::NEG_INFINITY
+        } else {
+            f64::INFINITY
+        });
     }
     if lowered == "nan" {
         return Ok(f64::NAN);
@@ -103,10 +93,7 @@ fn parse_float_text(text: &str) -> Result<f64, ()> {
     if !valid_decimal(rest) {
         return Err(());
     }
-    rest.replace('_', "")
-        .parse::<f64>()
-        .map(|value| sign * value)
-        .map_err(|_| ())
+    trimmed.replace('_', "").parse::<f64>().map_err(|_| ())
 }
 
 // Python allows digits, one dot, underscores between digits and one exponent at the end
@@ -156,6 +143,10 @@ fn valid_digits(text: &str) -> bool {
 
 fn digit_neighbour(bytes: &[u8], index: usize) -> bool {
     index > 0
-        && bytes.get(index + 1).is_some_and(u8::is_ascii_digit)
-        && bytes.get(index - 1).is_some_and(u8::is_ascii_digit)
+        && bytes
+            .get(index.saturating_add(1))
+            .is_some_and(u8::is_ascii_digit)
+        && bytes
+            .get(index.saturating_sub(1))
+            .is_some_and(u8::is_ascii_digit)
 }
