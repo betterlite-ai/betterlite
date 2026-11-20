@@ -251,6 +251,26 @@ async fn explicit_provider_wins_over_hooks() {
     );
 }
 
+#[tokio::test]
+async fn empty_hook_provider_falls_back_to_resolution() {
+    let mut harness = Harness::new(Resolver::new(Some("anthropic")));
+    harness
+        .hooks
+        .push(Arc::new(Hook::new(HookEffect::Replace(map(
+            r#"{"litellm_params":{"custom_llm_provider":""}}"#,
+        )))));
+    let seams = harness.seams();
+    let entry = request(
+        "claude-sonnet-4-20250514",
+        vec![json(r#"{"role":"user","content":"hi"}"#)],
+    );
+    let prepared = continuation(execute(entry, &seams).await.unwrap());
+    assert_eq!(
+        prepared.dispatch.custom_llm_provider,
+        Some("anthropic".to_owned())
+    );
+}
+
 #[rstest]
 #[case::tools_type(r#"{"tools":5}"#, "the field tools must be a list")]
 #[case::stream_type(r#"{"stream":"yes"}"#, "the field stream must be a boolean")]
@@ -264,6 +284,7 @@ async fn explicit_provider_wins_over_hooks() {
 )]
 #[case::litellm_params_text(r#"{"litellm_params":"text"}"#, "'str' object has no attribute 'get'")]
 #[case::litellm_params_number(r#"{"litellm_params":5}"#, "'int' object has no attribute 'get'")]
+#[case::litellm_params_float(r#"{"litellm_params":5.5}"#, "'float' object has no attribute 'get'")]
 #[tokio::test]
 async fn hook_map_type_errors(#[case] replacement: &str, #[case] expected: &str) {
     let mut harness = Harness::new(Resolver::new(None));
