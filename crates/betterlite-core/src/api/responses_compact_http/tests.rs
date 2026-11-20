@@ -7,16 +7,25 @@ mod support;
 
 use std::time::Duration;
 
+use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json as LoggedJson;
 use betterlite_openai::response_events::ReplyBody;
 use http::Method;
 use rstest::rstest;
 
-use self::support::{
-    COMPACT_OK, Events, Fixture, Reply, Source, TestCall, Wire, body_json, caller_headers,
-    compact_deps, extra_body, json, keyed_params, openai_config, optional_params, text_input,
+use self::compact_transport_errors::{
+    ConfigSpec, Expect, HeaderExpect, LOG_EVENTS, ProviderExpect, RequestUrlExpect, SIGN_EVENTS,
+    STATUS_304_EVENTS, Scenario, StepExpect, TRANSFORM_EVENTS, VALIDATE_EVENTS, WireSpec, check,
+    run,
 };
+use self::support::{
+    COMPACT_OK, Events, FailureStage, Fixture, Reply, Source, TestCall, Wire, body_json,
+    caller_headers, compact_deps, extra_body, json, keyed_params, masked_headers, openai_config,
+    optional_params, text_input,
+};
+use crate::api::responses_compact_http::error::Stage;
 use crate::api::responses_compact_http::service::ClientKind;
+use crate::api::vector_store_http_write::error::HeaderMap;
 
 #[rstest]
 #[case::sync(ClientKind::Sync)]
@@ -118,36 +127,211 @@ async fn compact_signed_body_order() {
     compact_signed_body_order::async_call().await;
 }
 
+#[rstest]
+#[case::status_429(Scenario {
+    config: ConfigSpec::OpenAi("sk-unused"),
+    wire: WireSpec::Reply(
+        Reply::json(429, "slow down")
+            .with_header("retry-after", "3")
+            .with_header("content-type", "text/plain")
+            .with_header("content-encoding", "gzip")
+            .with_header("content-length", "999"),
+    ),
+    mode: ClientKind::Asynchronous,
+    headers: None,
+    expect: Expect::Provider(ProviderExpect {
+        status: 429,
+        synthesized: false,
+        message: String::from("slow down"),
+        headers: masked_headers(&[
+            ("content-length", "9"),
+            ("content-type", "text/plain"),
+            ("retry-after", "3"),
+        ]),
+        logged: true,
+        events: None,
+    }),
+})]
+#[case::status_304(Scenario {
+    config: ConfigSpec::OpenAi("sk-unused"),
+    wire: WireSpec::Reply(
+        Reply::json(304, "")
+            .with_header("content-type", "text/plain")
+            .with_header("etag", "\"v1\"")
+            .with_header("content-encoding", "gzip")
+            .with_header("content-length", "999"),
+    ),
+    mode: ClientKind::Sync,
+    headers: None,
+    expect: Expect::Provider(ProviderExpect {
+        status: 304,
+        synthesized: false,
+        message: String::new(),
+        headers: masked_headers(&[("content-type", "text/plain"), ("etag", "\"v1\"")]),
+        logged: true,
+        events: Some(STATUS_304_EVENTS),
+    }),
+})]
+#[case::malformed_200(Scenario {
+    config: ConfigSpec::OpenAi("sk-unused"),
+    wire: WireSpec::Reply(
+        Reply::json(200, "{not json").with_header("retry-after", "3"),
+    ),
+    mode: ClientKind::Sync,
+    headers: None,
+    expect: Expect::Step(StepExpect {
+        stage: Stage::Response,
+        text: String::from("{not json"),
+        prefix: false,
+        display: Some("response transform failed: {not json"),
+        events: None,
+        sent: true,
+    }),
+})]
+#[case::non_utf8_200(Scenario {
+    config: ConfigSpec::Recording("http://mock.test/v1/responses"),
+    wire: WireSpec::Reply(Reply::bytes(200, vec![0xff_u8])),
+    mode: ClientKind::Sync,
+    headers: None,
+    expect: Expect::Step(StepExpect {
+        stage: Stage::Response,
+        text: String::from("invalid utf-8 sequence"),
+        prefix: true,
+        display: None,
+        events: None,
+        sent: true,
+    }),
+})]
+#[case::non_utf8_429(Scenario {
+    config: ConfigSpec::OpenAi("sk-unused"),
+    wire: WireSpec::Reply(
+        Reply::bytes(429, vec![0xff_u8, 0xfe_u8]).with_header("retry-after", "3"),
+    ),
+    mode: ClientKind::Asynchronous,
+    headers: None,
+    expect: Expect::Provider(ProviderExpect {
+        status: 429,
+        synthesized: false,
+        message: String::from("2 bytes that are not UTF-8"),
+        headers: masked_headers(&[("content-length", "2"), ("retry-after", "3")]),
+        logged: false,
+        events: None,
+    }),
+})]
+#[case::sign_failure(Scenario {
+    config: ConfigSpec::Scripted("http://mock.test/v1/responses", FailureStage::Sign),
+    wire: WireSpec::Reply(Reply::json(200, COMPACT_OK)),
+    mode: ClientKind::Sync,
+    headers: None,
+    expect: Expect::Step(StepExpect {
+        stage: Stage::Sign,
+        text: String::from("scripted provider failure"),
+        prefix: false,
+        display: None,
+        events: Some(SIGN_EVENTS),
+        sent: false,
+    }),
+})]
+#[case::validation_failure(Scenario {
+    config: ConfigSpec::Scripted("http://mock.test/v1/responses", FailureStage::Validate),
+    wire: WireSpec::Reply(Reply::json(200, COMPACT_OK)),
+    mode: ClientKind::Sync,
+    headers: None,
+    expect: Expect::Step(StepExpect {
+        stage: Stage::Validate,
+        text: String::from("scripted provider failure"),
+        prefix: false,
+        display: None,
+        events: Some(VALIDATE_EVENTS),
+        sent: false,
+    }),
+})]
+#[case::normalization_failure(Scenario {
+    config: ConfigSpec::Scripted("http://mock.test/v1/responses", FailureStage::Normalize),
+    wire: WireSpec::Reply(Reply::json(200, COMPACT_OK)),
+    mode: ClientKind::Sync,
+    headers: None,
+    expect: Expect::Step(StepExpect {
+        stage: Stage::Normalize,
+        text: String::from("scripted provider failure"),
+        prefix: false,
+        display: None,
+        events: None,
+        sent: false,
+    }),
+})]
+#[case::base_url_failure(Scenario {
+    config: ConfigSpec::Recording("not a url"),
+    wire: WireSpec::Reply(Reply::json(200, COMPACT_OK)),
+    mode: ClientKind::Sync,
+    headers: None,
+    expect: Expect::Step(StepExpect {
+        stage: Stage::Transform,
+        text: String::from("the API base is not a valid URL"),
+        prefix: true,
+        display: None,
+        events: Some(TRANSFORM_EVENTS),
+        sent: false,
+    }),
+})]
+#[case::transformed_url_failure(Scenario {
+    config: ConfigSpec::Transformed("http://mock.test/v1/responses", "not a url"),
+    wire: WireSpec::Reply(Reply::json(200, COMPACT_OK)),
+    mode: ClientKind::Sync,
+    headers: None,
+    expect: Expect::RequestUrl(RequestUrlExpect {
+        url: String::from("not a url"),
+        events: Some(LOG_EVENTS),
+    }),
+})]
+#[case::header_name_failure(Scenario {
+    config: ConfigSpec::Recording("http://mock.test/v1/responses"),
+    wire: WireSpec::Reply(Reply::json(200, COMPACT_OK)),
+    mode: ClientKind::Sync,
+    headers: Some(caller_headers(&[("bad name", "value")])),
+    expect: Expect::Header(HeaderExpect::Name {
+        name: String::from("bad name"),
+        events: Some(LOG_EVENTS),
+    }),
+})]
+#[case::header_value_failure(Scenario {
+    config: ConfigSpec::Recording("http://mock.test/v1/responses"),
+    wire: WireSpec::Reply(Reply::json(200, COMPACT_OK)),
+    mode: ClientKind::Sync,
+    headers: Some(caller_headers(&[("X-Trace", "trace\n")])),
+    expect: Expect::Header(HeaderExpect::Value {
+        name: String::from("X-Trace"),
+    }),
+})]
+#[case::transport_failure(Scenario {
+    config: ConfigSpec::Recording("http://mock.test/v1/responses"),
+    wire: WireSpec::Closed,
+    mode: ClientKind::Asynchronous,
+    headers: None,
+    expect: Expect::Provider(ProviderExpect {
+        status: 500,
+        synthesized: true,
+        message: TransportError::Closed.to_string(),
+        headers: HeaderMap::new(),
+        logged: true,
+        events: None,
+    }),
+})]
 #[tokio::test]
-async fn compact_transport_errors() {
+async fn compact_transport_errors(#[case] scenario: Scenario) {
     let params = keyed_params("http://mock.test/v1", "sk-provider");
     let input = text_input("hello");
     let optional = optional_params("{}");
     let call = TestCall::new("gpt-4o", &input, &optional, &params);
-    compact_transport_errors::status_429(&call).await;
-    compact_transport_errors::status_304(&call).await;
-    compact_transport_errors::malformed_200(&call).await;
-    compact_transport_errors::non_utf8_200(&call).await;
-    compact_transport_errors::non_utf8_429(&call).await;
-    compact_transport_errors::sign_failure(&call).await;
-    compact_transport_errors::validation_failure(&call).await;
-    compact_transport_errors::normalization_failure(&call).await;
-    compact_transport_errors::base_url_failure(&call).await;
-    compact_transport_errors::transformed_url_failure(&call).await;
-    compact_transport_errors::header_name_failure(&call).await;
-    compact_transport_errors::header_value_failure(&call).await;
-    compact_transport_errors::transport_failure(&call).await;
+    let outcome = run(&scenario, &call).await;
+    check(&outcome, &scenario.expect);
 }
 
 #[tokio::test]
 async fn compact_client_timeout() {
     compact_client_timeout::supplied_sync_client().await;
-    compact_client_timeout::wrong_kind_client().await;
-    compact_client_timeout::absent_client().await;
+    compact_client_timeout::client_selection().await;
     compact_client_timeout::timeouts_forwarded().await;
     compact_client_timeout::timeout_messages();
-    compact_client_timeout::async_timeout_messages();
-    compact_client_timeout::sync_timeout().await;
-    compact_client_timeout::configured_sync_timeout().await;
-    compact_client_timeout::async_timeout().await;
+    compact_client_timeout::slow_timeouts().await;
 }

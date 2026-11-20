@@ -1,14 +1,18 @@
+use std::sync::Arc;
+
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_openai::response_events::ResponsesReply;
 
 use super::support::{
-    COMPACT_OK, Events, FailureStage, Fixture, RecordingConfig, Reply, Script, Source, TestCall,
-    Wire, caller_headers, compact_deps, masked_headers, openai_config,
+    Events, FailureStage, Fixture, RecordingConfig, Reply, Script, Source, TestCall, Wire,
+    compact_deps, openai_config,
 };
+use crate::api::responses_compact_http::config::Headers;
 use crate::api::responses_compact_http::error::{CompactError, Stage};
-use crate::api::responses_compact_http::service::ClientKind;
+use crate::api::responses_compact_http::service::{ClientKind, CompactRequest};
 use crate::api::vector_store_http_write::error::HeaderMap;
 
-const STATUS_304_EVENTS: [&str; 7] = [
+pub(super) const STATUS_304_EVENTS: &[&str] = &[
     "validate",
     "url",
     "transform",
@@ -18,346 +22,203 @@ const STATUS_304_EVENTS: [&str; 7] = [
     "send",
 ];
 
-pub(super) async fn status_429(call: &TestCall<'_>) {
-    let events = Events::new();
-    let config = openai_config("sk-unused", &events);
-    let wire = Wire::replying(
-        Reply::json(429, "slow down")
-            .with_header("retry-after", "3")
-            .with_header("content-type", "text/plain")
-            .with_header("content-encoding", "gzip")
-            .with_header("content-length", "999"),
-        &events,
-    );
-    let source = Source::new(wire.clone());
-    let deps = compact_deps(&config, &source);
-    let mut fixture = Fixture::new("responses");
-    let result = fixture
-        .run(&deps, ClientKind::Asynchronous, &call.call(), &events)
-        .await;
-    let Err(CompactError::Provider(error)) = result else {
-        panic!("a 429 is a provider error");
-    };
-    let masked = masked_headers(&[
-        ("content-length", "9"),
-        ("content-type", "text/plain"),
-        ("retry-after", "3"),
-    ]);
-    assert_eq!(error.status_code, 429);
-    assert!(!error.status_code_is_synthesized);
-    assert_eq!(error.message, "slow down");
-    assert_eq!(error.headers, masked);
-    assert_eq!(wire.requests().len(), 1);
-    assert_eq!(
-        config.errors(),
-        vec![(String::from("slow down"), 429_u16, masked)]
-    );
+pub(super) const SIGN_EVENTS: &[&str] = &["validate", "url", "transform", "normalize", "sign"];
+
+pub(super) const VALIDATE_EVENTS: &[&str] = &["validate"];
+
+pub(super) const TRANSFORM_EVENTS: &[&str] = &["validate", "url", "transform"];
+
+pub(super) const LOG_EVENTS: &[&str] =
+    &["validate", "url", "transform", "normalize", "sign", "log"];
+
+pub(super) enum ConfigSpec {
+    OpenAi(&'static str),
+    Recording(&'static str),
+    Scripted(&'static str, FailureStage),
+    Transformed(&'static str, &'static str),
 }
 
-pub(super) async fn status_304(call: &TestCall<'_>) {
-    let events = Events::new();
-    let config = openai_config("sk-unused", &events);
-    let wire = Wire::replying(
-        Reply::json(304, "")
-            .with_header("content-type", "text/plain")
-            .with_header("etag", "\"v1\"")
-            .with_header("content-encoding", "gzip")
-            .with_header("content-length", "999"),
-        &events,
-    );
-    let source = Source::new(wire.clone());
-    let deps = compact_deps(&config, &source);
-    let mut fixture = Fixture::new("responses");
-    let result = fixture
-        .run(&deps, ClientKind::Sync, &call.call(), &events)
-        .await;
-    let Err(CompactError::Provider(error)) = result else {
-        panic!("a 304 is a provider error, as raise_for_status raises for it");
-    };
-    let kept = masked_headers(&[("content-type", "text/plain"), ("etag", "\"v1\"")]);
-    assert_eq!(error.status_code, 304);
-    assert!(!error.status_code_is_synthesized);
-    assert!(error.message.is_empty());
-    assert_eq!(error.headers, kept);
-    assert_eq!(wire.requests().len(), 1);
-    assert_eq!(events.recorded(), STATUS_304_EVENTS);
-    assert_eq!(config.errors(), vec![(String::new(), 304_u16, kept)]);
+impl ConfigSpec {
+    fn build(&self, events: &Events) -> RecordingConfig {
+        match self {
+            Self::OpenAi(key) => openai_config(key, events),
+            Self::Recording(base) => RecordingConfig::new(base, events),
+            Self::Scripted(base, stage) => {
+                RecordingConfig::new(base, events).scripted(Script::Fail(*stage))
+            }
+            Self::Transformed(base, url) => {
+                RecordingConfig::new(base, events).scripted(Script::TransformTo(String::from(*url)))
+            }
+        }
+    }
 }
 
-pub(super) async fn malformed_200(call: &TestCall<'_>) {
-    let events = Events::new();
-    let config = openai_config("sk-unused", &events);
-    let wire = Wire::replying(
-        Reply::json(200, "{not json").with_header("retry-after", "3"),
-        &events,
-    );
-    let source = Source::new(wire.clone());
-    let deps = compact_deps(&config, &source);
-    let mut fixture = Fixture::new("responses");
-    let result = fixture
-        .run(&deps, ClientKind::Sync, &call.call(), &events)
-        .await;
-    let Err(CompactError::Step {
-        stage,
-        source: failure,
-    }) = result
-    else {
-        panic!("a malformed reply fails in the response transform");
-    };
-    assert_eq!(stage, Stage::Response);
-    assert_eq!(failure.to_string(), "{not json");
-    let error = CompactError::Step {
-        stage,
-        source: failure,
-    };
-    assert_eq!(error.to_string(), "response transform failed: {not json");
-    assert_eq!(wire.requests().len(), 1);
-    assert!(config.errors().is_empty());
+pub(super) enum WireSpec {
+    Reply(Reply),
+    Closed,
 }
 
-pub(super) async fn non_utf8_200(call: &TestCall<'_>) {
-    let events = Events::new();
-    let config = RecordingConfig::new("http://mock.test/v1/responses", &events);
-    let wire = Wire::replying(Reply::bytes(200, vec![0xff_u8]), &events);
-    let source = Source::new(wire.clone());
-    let deps = compact_deps(&config, &source);
-    let mut fixture = Fixture::new("responses");
-    let result = fixture
-        .run(&deps, ClientKind::Sync, &call.call(), &events)
-        .await;
-    let Err(CompactError::Step {
-        stage,
-        source: failure,
-    }) = result
-    else {
-        panic!("a reply body that is not UTF-8 fails before the response transform");
-    };
-    assert_eq!(stage, Stage::Response);
-    assert!(failure.to_string().starts_with("invalid utf-8 sequence"));
-    assert_eq!(wire.requests().len(), 1);
-    assert!(config.errors().is_empty());
+pub(super) struct Scenario {
+    pub(super) config: ConfigSpec,
+    pub(super) wire: WireSpec,
+    pub(super) mode: ClientKind,
+    pub(super) headers: Option<Headers>,
+    pub(super) expect: Expect,
 }
 
-pub(super) async fn non_utf8_429(call: &TestCall<'_>) {
-    let events = Events::new();
-    let config = openai_config("sk-unused", &events);
-    let wire = Wire::replying(
-        Reply::bytes(429, vec![0xff_u8, 0xfe_u8]).with_header("retry-after", "3"),
-        &events,
-    );
-    let source = Source::new(wire.clone());
-    let deps = compact_deps(&config, &source);
-    let mut fixture = Fixture::new("responses");
-    let result = fixture
-        .run(&deps, ClientKind::Asynchronous, &call.call(), &events)
-        .await;
-    let Err(CompactError::Provider(error)) = result else {
-        panic!("a 429 with a binary body is a provider error");
-    };
-    assert_eq!(error.status_code, 429);
-    assert!(!error.status_code_is_synthesized);
-    assert_eq!(error.message, "2 bytes that are not UTF-8");
-    assert_eq!(
-        error.headers,
-        masked_headers(&[("content-length", "2"), ("retry-after", "3")])
-    );
-    assert_eq!(wire.requests().len(), 1);
+pub(super) enum Expect {
+    Provider(ProviderExpect),
+    Step(StepExpect),
+    RequestUrl(RequestUrlExpect),
+    Header(HeaderExpect),
 }
 
-pub(super) async fn sign_failure(call: &TestCall<'_>) {
-    let events = Events::new();
-    let config = RecordingConfig::new("http://mock.test/v1/responses", &events)
-        .scripted(Script::Fail(FailureStage::Sign));
-    let wire = Wire::replying(Reply::json(200, COMPACT_OK), &events);
-    let source = Source::new(wire.clone());
-    let deps = compact_deps(&config, &source);
-    let mut fixture = Fixture::new("responses");
-    let result = fixture
-        .run(&deps, ClientKind::Sync, &call.call(), &events)
-        .await;
-    let Err(CompactError::Step {
-        stage,
-        source: failure,
-    }) = result
-    else {
-        panic!("a signing failure bypasses _handle_error");
-    };
-    assert_eq!(stage, Stage::Sign);
-    assert_eq!(failure.to_string(), "scripted provider failure");
-    assert!(wire.requests().is_empty());
-    assert!(config.errors().is_empty());
-    assert_eq!(
-        events.recorded(),
-        vec!["validate", "url", "transform", "normalize", "sign"]
-    );
+pub(super) struct ProviderExpect {
+    pub(super) status: u16,
+    pub(super) synthesized: bool,
+    pub(super) message: String,
+    pub(super) headers: HeaderMap,
+    pub(super) logged: bool,
+    pub(super) events: Option<&'static [&'static str]>,
 }
 
-pub(super) async fn validation_failure(call: &TestCall<'_>) {
-    let events = Events::new();
-    let config = RecordingConfig::new("http://mock.test/v1/responses", &events)
-        .scripted(Script::Fail(FailureStage::Validate));
-    let wire = Wire::replying(Reply::json(200, COMPACT_OK), &events);
-    let source = Source::new(wire.clone());
-    let deps = compact_deps(&config, &source);
-    let mut fixture = Fixture::new("responses");
-    let result = fixture
-        .run(&deps, ClientKind::Sync, &call.call(), &events)
-        .await;
-    let Err(CompactError::Step {
-        stage,
-        source: failure,
-    }) = result
-    else {
-        panic!("a validation failure bypasses _handle_error");
-    };
-    assert_eq!(stage, Stage::Validate);
-    assert_eq!(failure.to_string(), "scripted provider failure");
-    assert!(wire.requests().is_empty());
-    assert!(config.errors().is_empty());
-    assert_eq!(events.recorded(), vec!["validate"]);
+pub(super) struct StepExpect {
+    pub(super) stage: Stage,
+    pub(super) text: String,
+    pub(super) prefix: bool,
+    pub(super) display: Option<&'static str>,
+    pub(super) events: Option<&'static [&'static str]>,
+    pub(super) sent: bool,
 }
 
-pub(super) async fn normalization_failure(call: &TestCall<'_>) {
-    let events = Events::new();
-    let config = RecordingConfig::new("http://mock.test/v1/responses", &events)
-        .scripted(Script::Fail(FailureStage::Normalize));
-    let wire = Wire::replying(Reply::json(200, COMPACT_OK), &events);
-    let source = Source::new(wire.clone());
-    let deps = compact_deps(&config, &source);
-    let mut fixture = Fixture::new("responses");
-    let result = fixture
-        .run(&deps, ClientKind::Sync, &call.call(), &events)
-        .await;
-    let Err(CompactError::Step {
-        stage,
-        source: failure,
-    }) = result
-    else {
-        panic!("a normalization failure bypasses _handle_error");
-    };
-    assert_eq!(stage, Stage::Normalize);
-    assert_eq!(failure.to_string(), "scripted provider failure");
-    assert!(wire.requests().is_empty());
+pub(super) struct RequestUrlExpect {
+    pub(super) url: String,
+    pub(super) events: Option<&'static [&'static str]>,
 }
 
-pub(super) async fn base_url_failure(call: &TestCall<'_>) {
-    let events = Events::new();
-    let config = RecordingConfig::new("not a url", &events);
-    let wire = Wire::replying(Reply::json(200, COMPACT_OK), &events);
-    let source = Source::new(wire.clone());
-    let deps = compact_deps(&config, &source);
-    let mut fixture = Fixture::new("responses");
-    let result = fixture
-        .run(&deps, ClientKind::Sync, &call.call(), &events)
-        .await;
-    let Err(CompactError::Step {
-        stage,
-        source: failure,
-    }) = result
-    else {
-        panic!("a base URL that is not a URL fails in the transform");
-    };
-    assert_eq!(stage, Stage::Transform);
-    assert!(
-        failure
-            .to_string()
-            .starts_with("the API base is not a valid URL")
-    );
-    assert!(wire.requests().is_empty());
-    assert!(config.errors().is_empty());
-    assert_eq!(events.recorded(), vec!["validate", "url", "transform"]);
+pub(super) enum HeaderExpect {
+    Name {
+        name: String,
+        events: Option<&'static [&'static str]>,
+    },
+    Value {
+        name: String,
+    },
 }
 
-pub(super) async fn transformed_url_failure(call: &TestCall<'_>) {
-    let events = Events::new();
-    let config = RecordingConfig::new("http://mock.test/v1/responses", &events)
-        .scripted(Script::TransformTo(String::from("not a url")));
-    let wire = Wire::replying(Reply::json(200, COMPACT_OK), &events);
-    let source = Source::new(wire.clone());
-    let deps = compact_deps(&config, &source);
-    let mut fixture = Fixture::new("responses");
-    let result = fixture
-        .run(&deps, ClientKind::Sync, &call.call(), &events)
-        .await;
-    let Err(CompactError::RequestUrl { url, .. }) = result else {
-        panic!("a transformed URL that is not a URL fails before the send");
-    };
-    assert_eq!(url, "not a url");
-    assert!(wire.requests().is_empty());
-    assert_eq!(
-        events.recorded(),
-        vec!["validate", "url", "transform", "normalize", "sign", "log"]
-    );
+pub(super) struct Outcome {
+    result: Result<ResponsesReply, CompactError>,
+    requests: Vec<Arc<CompactRequest>>,
+    errors: Vec<(String, u16, HeaderMap)>,
+    events: Vec<String>,
 }
 
-pub(super) async fn header_name_failure(call: &TestCall<'_>) {
+pub(super) async fn run(scenario: &Scenario, base: &TestCall<'_>) -> Outcome {
     let events = Events::new();
-    let config = RecordingConfig::new("http://mock.test/v1/responses", &events);
-    let wire = Wire::replying(Reply::json(200, COMPACT_OK), &events);
+    let config = scenario.config.build(&events);
+    let wire = match &scenario.wire {
+        WireSpec::Reply(reply) => Wire::replying(reply.clone(), &events),
+        WireSpec::Closed => Wire::failing(TransportError::Closed, &events),
+    };
     let source = Source::new(wire.clone());
     let deps = compact_deps(&config, &source);
-    let bad = caller_headers(&[("bad name", "value")]);
-    let mut bad_call = TestCall::new(call.model, call.input, call.optional_params, call.params);
-    bad_call.extra_headers = Some(&bad);
+    let mut call = TestCall::new(base.model, base.input, base.optional_params, base.params);
+    call.extra_headers = scenario.headers.as_ref();
     let mut fixture = Fixture::new("responses");
     let result = fixture
-        .run(&deps, ClientKind::Sync, &bad_call.call(), &events)
+        .run(&deps, scenario.mode, &call.call(), &events)
         .await;
-    let Err(CompactError::HeaderName { name, .. }) = result else {
-        panic!("a header name HTTP cannot carry fails before the send");
-    };
-    assert_eq!(name, "bad name");
-    assert!(wire.requests().is_empty());
-    assert_eq!(
-        events.recorded(),
-        vec!["validate", "url", "transform", "normalize", "sign", "log"]
-    );
+    Outcome {
+        result,
+        requests: wire.requests(),
+        errors: config.errors(),
+        events: events.recorded(),
+    }
 }
 
-pub(super) async fn header_value_failure(call: &TestCall<'_>) {
-    let events = Events::new();
-    let config = RecordingConfig::new("http://mock.test/v1/responses", &events);
-    let wire = Wire::replying(Reply::json(200, COMPACT_OK), &events);
-    let source = Source::new(wire.clone());
-    let deps = compact_deps(&config, &source);
-    let bad = caller_headers(&[("X-Trace", "trace\n")]);
-    let mut bad_call = TestCall::new(call.model, call.input, call.optional_params, call.params);
-    bad_call.extra_headers = Some(&bad);
-    let mut fixture = Fixture::new("responses");
-    let result = fixture
-        .run(&deps, ClientKind::Sync, &bad_call.call(), &events)
-        .await;
-    let Err(CompactError::HeaderValue { name, .. }) = result else {
-        panic!("a header value HTTP cannot carry fails before the send");
-    };
-    assert_eq!(name, "X-Trace");
-    assert!(wire.requests().is_empty());
+pub(super) fn check(outcome: &Outcome, expect: &Expect) {
+    match expect {
+        Expect::Provider(provider) => provider.check(outcome),
+        Expect::Step(step) => step.check(outcome),
+        Expect::RequestUrl(url) => url.check(outcome),
+        Expect::Header(HeaderExpect::Name { name, events }) => {
+            let Err(CompactError::HeaderName { name: found, .. }) = &outcome.result else {
+                panic!("a header name HTTP cannot carry is named in the error");
+            };
+            assert_eq!(found, name);
+            assert!(outcome.requests.is_empty());
+            check_events(outcome, *events);
+        }
+        Expect::Header(HeaderExpect::Value { name }) => {
+            let Err(CompactError::HeaderValue { name: found, .. }) = &outcome.result else {
+                panic!("a header value HTTP cannot carry is named in the error");
+            };
+            assert_eq!(found, name);
+            assert!(outcome.requests.is_empty());
+        }
+    }
 }
 
-pub(super) async fn transport_failure(call: &TestCall<'_>) {
-    let events = Events::new();
-    let config = RecordingConfig::new("http://mock.test/v1/responses", &events);
-    let wire = Wire::failing(TransportError::Closed, &events);
-    let source = Source::new(wire.clone());
-    let deps = compact_deps(&config, &source);
-    let mut fixture = Fixture::new("responses");
-    let result = fixture
-        .run(&deps, ClientKind::Asynchronous, &call.call(), &events)
-        .await;
-    let Err(CompactError::Provider(error)) = result else {
-        panic!("a transport failure is a provider error");
+fn check_events(outcome: &Outcome, expected: Option<&'static [&'static str]>) {
+    let Some(wanted) = expected else {
+        return;
     };
-    assert_eq!(error.status_code, 500);
-    assert!(error.status_code_is_synthesized);
-    assert_eq!(error.message, TransportError::Closed.to_string());
-    assert!(error.headers.is_empty());
-    assert_eq!(wire.requests().len(), 1);
-    assert_eq!(
-        config.errors(),
-        vec![(
-            TransportError::Closed.to_string(),
-            500_u16,
-            HeaderMap::new()
-        )]
-    );
+    let recorded: Vec<&str> = outcome.events.iter().map(String::as_str).collect();
+    assert_eq!(recorded.as_slice(), wanted);
+}
+
+impl ProviderExpect {
+    fn check(&self, outcome: &Outcome) {
+        let Err(CompactError::Provider(error)) = &outcome.result else {
+            panic!("the reply is the provider error");
+        };
+        assert_eq!(error.status_code, self.status);
+        assert_eq!(error.status_code_is_synthesized, self.synthesized);
+        assert_eq!(error.message, self.message);
+        assert_eq!(error.headers, self.headers);
+        assert_eq!(outcome.requests.len(), 1);
+        if self.logged {
+            let entry = (self.message.clone(), self.status, self.headers.clone());
+            assert_eq!(outcome.errors, vec![entry]);
+        }
+        check_events(outcome, self.events);
+    }
+}
+
+impl StepExpect {
+    fn check(&self, outcome: &Outcome) {
+        let Err(error) = &outcome.result else {
+            panic!("the failure is a typed step error");
+        };
+        let CompactError::Step {
+            stage,
+            source: failure,
+        } = error
+        else {
+            panic!("the failure names its step");
+        };
+        assert_eq!(*stage, self.stage);
+        if self.prefix {
+            assert!(failure.to_string().starts_with(&self.text));
+        } else {
+            assert_eq!(failure.to_string(), self.text);
+        }
+        if let Some(display) = self.display {
+            assert_eq!(error.to_string(), display);
+        }
+        assert!(outcome.errors.is_empty());
+        assert_eq!(outcome.requests.len(), usize::from(self.sent));
+        check_events(outcome, self.events);
+    }
+}
+
+impl RequestUrlExpect {
+    fn check(&self, outcome: &Outcome) {
+        let Err(CompactError::RequestUrl { url, .. }) = &outcome.result else {
+            panic!("the transformed URL is named in the error");
+        };
+        assert_eq!(url, &self.url);
+        assert!(outcome.requests.is_empty());
+        check_events(outcome, self.events);
+    }
 }
