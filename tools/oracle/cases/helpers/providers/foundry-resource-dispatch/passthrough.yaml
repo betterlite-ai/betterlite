@@ -12,6 +12,7 @@ calls:
       case: passthrough
       model: azure/azureml_model
       endpoint: /providers/custom/route
+      status: 200
       body: not json
 env: {}
 compare: {ignore: []}

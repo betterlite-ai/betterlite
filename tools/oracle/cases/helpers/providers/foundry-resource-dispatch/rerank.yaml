@@ -9,6 +9,8 @@ call:
 calls:
   - foundry_resource_dispatch:
       case: rerank
+      status: 200
       body: '{"id":"r2","results":[]}'
+      model_group: null
 env: {}
 compare: {ignore: []}
