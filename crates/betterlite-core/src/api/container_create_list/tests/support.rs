@@ -474,12 +474,18 @@ impl Fixture {
 
     pub(crate) fn state(&self) -> LoggedState {
         let state = self.logging.lock().unwrap_or_else(PoisonError::into_inner);
+        let call_type = state.call_type.clone();
+        let model = state.model.clone();
+        let custom_llm_provider = state.custom_llm_provider.clone();
+        let optional_params = state.optional_params.clone();
+        let litellm_params = state.litellm_params.clone();
+        drop(state);
         LoggedState {
-            call_type: state.call_type.clone(),
-            model: state.model.clone(),
-            custom_llm_provider: state.custom_llm_provider.clone(),
-            optional_params: state.optional_params.clone(),
-            litellm_params: state.litellm_params.clone(),
+            call_type,
+            model,
+            custom_llm_provider,
+            optional_params,
+            litellm_params,
         }
     }
 
