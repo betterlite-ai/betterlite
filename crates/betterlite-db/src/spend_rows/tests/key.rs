@@ -145,9 +145,8 @@ fn replays_the_spend_counter_key_corpus(#[files("fuzz/corpus/spend_counter_key/*
 fn expected_corpus_key(stem: &str) -> String {
     match stem {
         "key-plain" => "key:abc".to_owned(),
-        "team-window" => "window:team:1d".to_owned(),
+        "team-window" | "window-token-team" => "window:team:1d".to_owned(),
         "window-token-key" => "window:key:1h".to_owned(),
-        "window-token-team" => "window:team:1d".to_owned(),
         "ambiguous-window" => "window:key:2d".to_owned(),
         "empty-window-duration" => "key:a:window:".to_owned(),
         "member-last-colon" => "team_member:user:with:colon:team-1".to_owned(),
