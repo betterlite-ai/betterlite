@@ -157,17 +157,17 @@ pub(crate) fn removal(metric: &str, labels: &[Option<&str>]) -> ProbeEvent {
     }
 }
 
-pub(crate) fn source<'settings>(
-    settings: &'settings PrometheusLabelSettings,
+pub(crate) const fn source(
+    settings: &PrometheusLabelSettings,
     tracking: EndUserCostTrackingSettings,
-) -> LabelSource<'settings> {
+) -> LabelSource<'_> {
     LabelSource::Values {
         settings,
         end_user_settings: tracking,
     }
 }
 
-pub(crate) fn prometheus_only() -> EndUserCostTrackingSettings {
+pub(crate) const fn prometheus_only() -> EndUserCostTrackingSettings {
     EndUserCostTrackingSettings {
         disable_end_user_cost_tracking: None,
         enable_prometheus_only: Some(true),

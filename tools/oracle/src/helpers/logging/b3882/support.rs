@@ -39,7 +39,7 @@ pub(super) const PROVIDER_REMAINING: &str = "litellm_provider_remaining_budget_m
 pub(super) const SHAPE_ERROR_MESSAGE: &str = "the call shape does not match its function";
 
 impl BudgetRowCall {
-    pub(super) fn snapshot(&self) -> BudgetTableSnapshot {
+    pub(super) const fn snapshot(&self) -> BudgetTableSnapshot {
         BudgetTableSnapshot {
             max_budget: self.max_budget,
             budget_reset_at: self.budget_reset_at,
@@ -76,7 +76,7 @@ pub(super) fn field(
     })
 }
 
-pub(super) fn label_source(
+pub(super) const fn label_source(
     settings: &PrometheusLabelSettings,
     track_end_user: bool,
 ) -> LabelSource<'_> {

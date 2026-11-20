@@ -10,7 +10,7 @@ use crate::end_user::EndUserCostTrackingSettings;
 use crate::prometheus::budget_gauges::gauge::{EntityBudgetGauges, GaugeField};
 use crate::prometheus::budget_gauges::test_support::{ProbeGauge, field, new_log, words};
 
-fn gate(disable: Option<bool>, enable: Option<bool>) -> EndUserCostTrackingSettings {
+const fn gate(disable: Option<bool>, enable: Option<bool>) -> EndUserCostTrackingSettings {
     EndUserCostTrackingSettings {
         disable_end_user_cost_tracking: disable,
         enable_prometheus_only: enable,
