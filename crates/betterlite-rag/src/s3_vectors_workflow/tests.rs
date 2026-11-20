@@ -14,8 +14,8 @@ use self::fixtures::{
     s3_settings, s3_settings_in,
 };
 use self::support::{
-    Call, Failure, FakeApi, FakeEmbedder, FixedClock, PutVectorsBody, RecordingTransport,
-    StaticResolver, UNIQUE_ID,
+    Call, Failure, FakeApi, FakeEmbedder, FixedClock, PutVectorsBody, RecordedRequest,
+    RecordingTransport, StaticResolver, UNIQUE_ID,
 };
 use super::dimension::{EmbedError, detect_dimension};
 use super::settings::{DEFAULT_DIMENSION, S3VectorsSettings, SettingsError};
@@ -711,15 +711,7 @@ async fn store_trait_impl_forwards_the_columns() {
 async fn store_signs_every_request_through_the_bedrock_clients() {
     let (transport, resolver, id) = store_through_the_signed_api().await;
     assert_eq!(id.as_deref(), Some("sign-bucket:idx"));
-
-    let credential_calls = resolver.calls();
-    assert_eq!(credential_calls.len(), 5);
-    assert!(credential_calls.iter().all(|(settings, region)| {
-        region == "eu-central-1"
-            && settings.region_name.as_deref() == Some("eu-central-1")
-            && settings.access_key_id.as_ref().unwrap().expose_secret() == "AKIDS3VECTORSLIVE"
-            && settings.secret_access_key.as_ref().unwrap().expose_secret() == "vectors-live-secret"
-    }));
+    assert_signing_settings(&resolver);
 
     let sent = transport.sent();
     assert_eq!(sent.len(), 5);
@@ -731,6 +723,34 @@ async fn store_signs_every_request_through_the_bedrock_clients() {
         sent[4].url,
         "https://s3vectors.eu-central-1.api.aws/PutVectors"
     );
+    assert_signed_identity(&sent);
+
+    let body: PutVectorsBody = serde_json::from_slice(&sent[4].body).unwrap();
+    assert_eq!(body.index_name, "idx");
+    assert_eq!(
+        body.vectors,
+        vec![entry(
+            "a.txt_0",
+            "one",
+            "0",
+            Some("a.txt"),
+            vec![0.5_f64, 0.25_f64]
+        )]
+    );
+}
+
+fn assert_signing_settings(resolver: &StaticResolver) {
+    let credential_calls = resolver.calls();
+    assert_eq!(credential_calls.len(), 5);
+    assert!(credential_calls.iter().all(|(settings, region)| {
+        region == "eu-central-1"
+            && settings.region_name.as_deref() == Some("eu-central-1")
+            && settings.access_key_id.as_ref().unwrap().expose_secret() == "AKIDS3VECTORSLIVE"
+            && settings.secret_access_key.as_ref().unwrap().expose_secret() == "vectors-live-secret"
+    }));
+}
+
+fn assert_signed_identity(sent: &[RecordedRequest]) {
     let authorizations: Vec<&str> = sent
         .iter()
         .filter_map(|request| {
@@ -746,19 +766,6 @@ async fn store_signs_every_request_through_the_bedrock_clients() {
         value.contains("Credential=AKIDS3VECTORSLIVE/")
             && value.contains("/eu-central-1/s3vectors/aws4_request")
     }));
-
-    let body: PutVectorsBody = serde_json::from_slice(&sent[4].body).unwrap();
-    assert_eq!(body.index_name, "idx");
-    assert_eq!(
-        body.vectors,
-        vec![entry(
-            "a.txt_0",
-            "one",
-            "0",
-            Some("a.txt"),
-            vec![0.5_f64, 0.25_f64]
-        )]
-    );
 }
 
 async fn store_through_the_signed_api() -> (RecordingTransport, StaticResolver, Option<String>) {
