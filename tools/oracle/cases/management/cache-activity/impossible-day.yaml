@@ -12,6 +12,7 @@ request:
 upstream: []
 database:
   seed:
+    dashboard: {logs: []}
     users: [{user_id: alice}]
     keys: [{token: sk-alice-token, user_id: alice}]
     teams: [{team_id: team-red}]
