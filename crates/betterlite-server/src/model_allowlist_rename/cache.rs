@@ -23,6 +23,7 @@ impl AllowlistCache for AuthInvalidation {
 }
 
 // The five pinned key shapes, in the row's kind and with no deduplication or sorting.
+#[must_use]
 pub fn cache_keys(row: &TouchedRow) -> Vec<String> {
     match row.kind {
         AllowlistKind::Team => {

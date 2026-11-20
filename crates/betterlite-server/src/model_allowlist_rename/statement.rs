@@ -149,6 +149,7 @@ const APPEND_SET_CLAUSE: &str = "array_append(\"models\", $2)";
 const APPEND_WHERE_CLAUSE: &str = "$1 = ANY(\"models\") AND NOT ($2 = ANY(\"models\"))";
 
 impl AllowlistRewrite {
+    #[must_use]
     pub fn sql(&self) -> String {
         let (set_clause, where_clause) = match self {
             Self::Append { .. } => (APPEND_SET_CLAUSE, APPEND_WHERE_CLAUSE),

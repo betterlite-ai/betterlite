@@ -35,8 +35,8 @@ pub trait AllowlistDatabase: Send + Sync {
     ) -> impl Future<Output = Result<Vec<TouchedRow>, ModelAllowlistError>> + Send;
 }
 
-// sync_model_allowlists_for_renamed_model: the rename's old name stays granted while a sibling serves it.
-pub async fn sync_model_allowlists_for_renamed_model<Grants, Allowlists, Cache>(
+// sync_renamed_model_allowlists: the rename's old name stays granted while a sibling serves it.
+pub async fn sync_renamed_model_allowlists<Grants, Allowlists, Cache>(
     grants: &Grants,
     allowlists: &Allowlists,
     cache: &Cache,

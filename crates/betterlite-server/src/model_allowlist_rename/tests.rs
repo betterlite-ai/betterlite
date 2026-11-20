@@ -13,7 +13,7 @@ use super::fixtures::{
 };
 use super::postgres::PostgresAllowlists;
 use super::statement::{AllowlistKind, AllowlistRewrite, TouchedRow};
-use super::{ModelAllowlistError, sync_model_allowlists_for_renamed_model};
+use super::{ModelAllowlistError, sync_renamed_model_allowlists};
 
 mod adapter;
 mod postgres;
@@ -83,7 +83,7 @@ async fn all_entity_allowlists() {
     let database = ScriptedAllowlists::new(entity_rows(), events.clone());
     let cache = ScriptedAllowlistCache::recording(events.clone());
     let request = rename("old", "new");
-    sync_model_allowlists_for_renamed_model(&grant_counts(0), &database, &cache, None, &request)
+    sync_renamed_model_allowlists(&grant_counts(0), &database, &cache, None, &request)
         .await
         .unwrap();
     assert_eq!(
@@ -95,7 +95,7 @@ async fn all_entity_allowlists() {
     );
     assert_eq!(arrays(&database), vec![Some(names(&["new"])); 5]);
     assert_eq!(calls(&cache), vec![names(&ENTITY_KEYS)]);
-    let recorded = events.recorded();
+    let recorded = events.lock().expect("events").clone();
     assert_eq!(recorded.first(), Some(&AllowlistEvent::SqlCompleted));
     assert_eq!(recorded.len(), 2);
 }
@@ -120,7 +120,7 @@ async fn duplicate_target_name() {
     database.reverse_rows = true;
     let cache = ScriptedAllowlistCache::recording(EventLog::default());
     let request = rename("old", "new");
-    sync_model_allowlists_for_renamed_model(&grant_counts(0), &database, &cache, None, &request)
+    sync_renamed_model_allowlists(&grant_counts(0), &database, &cache, None, &request)
         .await
         .unwrap();
     assert_eq!(
@@ -149,13 +149,13 @@ async fn exact_name_only() {
     );
     let first = ScriptedAllowlistCache::recording(events.clone());
     let request = rename("old", "new");
-    sync_model_allowlists_for_renamed_model(&grant_counts(0), &database, &first, None, &request)
+    sync_renamed_model_allowlists(&grant_counts(0), &database, &first, None, &request)
         .await
         .unwrap();
     assert_eq!(calls(&first), vec![names(&["k-exact"])]);
     let second = ScriptedAllowlistCache::recording(events);
     let wildcard = rename("gpt-*", "gpt-4o");
-    sync_model_allowlists_for_renamed_model(&grant_counts(0), &database, &second, None, &wildcard)
+    sync_renamed_model_allowlists(&grant_counts(0), &database, &second, None, &wildcard)
         .await
         .unwrap();
     assert_eq!(calls(&second), vec![names(&["k-wildcard"])]);
@@ -181,7 +181,7 @@ async fn key_cache_invalidation() {
     );
     let cache = ScriptedAllowlistCache::recording(EventLog::default());
     let request = rename("old", "new");
-    sync_model_allowlists_for_renamed_model(&grant_counts(0), &database, &cache, None, &request)
+    sync_renamed_model_allowlists(&grant_counts(0), &database, &cache, None, &request)
         .await
         .unwrap();
     assert_eq!(calls(&cache), vec![names(&["sk-abc", ""])]);
@@ -200,7 +200,7 @@ async fn team_cache_invalidation() {
     );
     let cache = ScriptedAllowlistCache::recording(EventLog::default());
     let request = rename("old", "new");
-    sync_model_allowlists_for_renamed_model(&grant_counts(0), &database, &cache, None, &request)
+    sync_renamed_model_allowlists(&grant_counts(0), &database, &cache, None, &request)
         .await
         .unwrap();
     assert_eq!(
@@ -223,7 +223,7 @@ async fn rename_same_no_io() {
     let events = EventLog::default();
     let cache = ScriptedAllowlistCache::recording(events.clone());
     let request = rename("same", "same");
-    sync_model_allowlists_for_renamed_model(
+    sync_renamed_model_allowlists(
         &model_grants,
         &PostgresAllowlists { client: None },
         &cache,
@@ -233,7 +233,7 @@ async fn rename_same_no_io() {
     .await
     .unwrap();
     assert!(calls(&cache).is_empty());
-    assert!(events.recorded().is_empty());
+    assert!(events.lock().expect("events").is_empty());
 }
 
 #[tokio::test]
@@ -248,7 +248,7 @@ async fn append_when_backed() {
     );
     let cache = ScriptedAllowlistCache::recording(EventLog::default());
     let request = rename("old", "new");
-    sync_model_allowlists_for_renamed_model(&grant_counts(1), &database, &cache, None, &request)
+    sync_renamed_model_allowlists(&grant_counts(1), &database, &cache, None, &request)
         .await
         .unwrap();
     assert_eq!(
@@ -283,10 +283,9 @@ async fn sibling_query_failure_stops_before_statement() {
     );
     let cache = ScriptedAllowlistCache::recording(events);
     let request = rename("old", "new");
-    let error =
-        sync_model_allowlists_for_renamed_model(&model_grants, &database, &cache, None, &request)
-            .await
-            .expect_err("the sibling query fails");
+    let error = sync_renamed_model_allowlists(&model_grants, &database, &cache, None, &request)
+        .await
+        .expect_err("the sibling query fails");
     assert!(matches!(
         error,
         ModelAllowlistError::Grants(ModelSyncError::Database(DbError::NoDbConnected))
@@ -305,21 +304,15 @@ async fn statement_failure_stops_before_cache() {
     let events = EventLog::default();
     let cache = ScriptedAllowlistCache::recording(events.clone());
     let request = rename("old", "new");
-    let error = sync_model_allowlists_for_renamed_model(
-        &grant_counts(0),
-        &database,
-        &cache,
-        None,
-        &request,
-    )
-    .await
-    .expect_err("the statement fails");
+    let error = sync_renamed_model_allowlists(&grant_counts(0), &database, &cache, None, &request)
+        .await
+        .expect_err("the statement fails");
     assert!(matches!(
         error,
         ModelAllowlistError::Database(DbError::NoDbConnected)
     ));
     assert!(calls(&cache).is_empty());
-    assert!(events.recorded().is_empty());
+    assert!(events.lock().expect("events").is_empty());
     assert_eq!(arrays(&database), vec![Some(names(&["old"]))]);
 }
 
@@ -329,12 +322,12 @@ async fn empty_rewrite_evicts_empty_tuple() {
     let database = ScriptedAllowlists::new(Vec::new(), events.clone());
     let cache = ScriptedAllowlistCache::recording(events.clone());
     let request = rename("absent", "new");
-    sync_model_allowlists_for_renamed_model(&grant_counts(0), &database, &cache, None, &request)
+    sync_renamed_model_allowlists(&grant_counts(0), &database, &cache, None, &request)
         .await
         .unwrap();
     assert_eq!(calls(&cache), vec![Vec::new()]);
     assert_eq!(
-        events.recorded(),
+        events.lock().expect("events").clone(),
         vec![
             AllowlistEvent::SqlCompleted,
             AllowlistEvent::CacheCall(Vec::new()),
@@ -351,20 +344,14 @@ async fn cache_failure_follows_committed_statement() {
     );
     let cache = ScriptedAllowlistCache::failing(events.clone(), 3);
     let request = rename("old", "new");
-    let error = sync_model_allowlists_for_renamed_model(
-        &grant_counts(0),
-        &database,
-        &cache,
-        None,
-        &request,
-    )
-    .await
-    .expect_err("the eviction reports an error");
+    let error = sync_renamed_model_allowlists(&grant_counts(0), &database, &cache, None, &request)
+        .await
+        .expect_err("the eviction reports an error");
     assert!(matches!(error, ModelAllowlistError::Cache(_)));
     assert_eq!(arrays(&database), vec![Some(names(&["new"]))]);
     assert_eq!(calls(&cache), vec![names(&["team_id:t-1"])]);
     assert_eq!(
-        events.recorded(),
+        events.lock().expect("events").clone(),
         vec![
             AllowlistEvent::SqlCompleted,
             AllowlistEvent::CacheCall(names(&["team_id:t-1"])),

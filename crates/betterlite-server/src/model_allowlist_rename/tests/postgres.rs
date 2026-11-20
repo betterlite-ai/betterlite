@@ -19,7 +19,7 @@ use crate::model_allowlist_rename::fixtures::{
     AllowlistEvent, EventLog, ObservedAllowlists, ScriptedAllowlistCache,
 };
 use crate::model_allowlist_rename::postgres::PostgresAllowlists;
-use crate::model_allowlist_rename::{ModelAllowlistError, sync_model_allowlists_for_renamed_model};
+use crate::model_allowlist_rename::{ModelAllowlistError, sync_renamed_model_allowlists};
 use crate::model_visibility::testing::{Row as SnapshotRow, Snapshot};
 
 const TEAM_TABLE: &str = "LiteLLM_TeamTable";
@@ -249,7 +249,7 @@ impl Harness {
             },
             events: self.events.clone(),
         };
-        sync_model_allowlists_for_renamed_model(&grants, &allowlists, cache, catalog, rename).await
+        sync_renamed_model_allowlists(&grants, &allowlists, cache, catalog, rename).await
     }
 }
 
@@ -267,16 +267,16 @@ fn request<'request>(
 
 pub(super) async fn pinned_rows(pool: &Pool) {
     equal_names(pool).await;
-    database_sibling(pool).await;
-    config_sibling(pool).await;
-    last_sibling(pool).await;
-    duplicate_old(pool).await;
-    existing_new(pool).await;
-    no_old(pool).await;
-    null_array(pool).await;
-    empty_array(pool).await;
-    literal_wildcard(pool).await;
-    quoted_name(pool).await;
+    run_pinned_case(pool, &DATABASE_SIBLING).await;
+    run_pinned_case(pool, &CONFIG_SIBLING).await;
+    run_pinned_case(pool, &LAST_SIBLING).await;
+    run_pinned_case(pool, &DUPLICATE_OLD).await;
+    run_pinned_case(pool, &EXISTING_NEW).await;
+    run_pinned_case(pool, &NO_OLD).await;
+    run_pinned_case(pool, &NULL_ARRAY).await;
+    run_pinned_case(pool, &EMPTY_ARRAY).await;
+    run_pinned_case(pool, &LITERAL_WILDCARD).await;
+    run_pinned_case(pool, &QUOTED_NAME).await;
     pinned_writer(pool).await;
 }
 
@@ -287,335 +287,331 @@ async fn equal_names(pool: &Pool) {
     harness.run(&rename, &cache, None).await.unwrap();
     assert!(cache.calls.lock().expect("calls").is_empty());
     assert!(
-        harness.events.recorded().is_empty(),
+        harness.events.lock().expect("events").is_empty(),
         "equal names return before the sibling query, the statement and the cache"
     );
 }
 
-async fn database_sibling(pool: &Pool) {
-    insert_model(pool, "dep-sib", "sib-new").await;
-    insert_model(pool, "dep-sib-other", "sib-old").await;
-    insert_team(
-        pool,
-        Some("t-sib"),
-        None,
-        array(&["sib-old", "x"]).as_deref(),
-    )
-    .await;
-    insert_allowlist(
-        pool,
-        KEY_TABLE,
-        "token",
-        "k-sib",
-        array(&["sib-old"]).as_deref(),
-    )
-    .await;
-    insert_allowlist(
-        pool,
-        ORG_TABLE,
-        "organization_id",
-        "o-sib",
-        array(&["sib-old"]).as_deref(),
-    )
-    .await;
-    insert_allowlist(
-        pool,
-        PROJECT_TABLE,
-        "project_id",
-        "p-sib",
-        array(&["sib-old"]).as_deref(),
-    )
-    .await;
-    insert_allowlist(
-        pool,
-        USER_TABLE,
-        "user_id",
-        "u-sib",
-        array(&["sib-old"]).as_deref(),
-    )
-    .await;
-    let harness = Harness::new(pool);
-    let cache = harness.cache();
-    let rename = request("dep-sib", "sib-old", "sib-new");
-    harness.run(&rename, &cache, None).await.unwrap();
-    assert_eq!(
-        stored(pool, TEAM_TABLE, "team_id", "t-sib").await,
-        array(&["sib-old", "x", "sib-new"])
-    );
-    assert_eq!(
-        stored(pool, KEY_TABLE, "token", "k-sib").await,
-        array(&["sib-old", "sib-new"])
-    );
-    assert_eq!(
-        stored(pool, ORG_TABLE, "organization_id", "o-sib").await,
-        array(&["sib-old", "sib-new"])
-    );
-    assert_eq!(
-        stored(pool, PROJECT_TABLE, "project_id", "p-sib").await,
-        array(&["sib-old", "sib-new"])
-    );
-    assert_eq!(
-        stored(pool, USER_TABLE, "user_id", "u-sib").await,
-        array(&["sib-old", "sib-new"])
-    );
-    assert_keys(
-        &cache,
-        &[
-            "team_id:t-sib",
-            "k-sib",
-            "org_id:o-sib",
-            "org_id:o-sib:with_budget",
-            "project_id:p-sib",
+type AllowlistModels = Option<&'static [&'static str]>;
+type AllowlistRow = (&'static str, &'static str, &'static str, AllowlistModels);
+type TeamRow = (Option<&'static str>, Option<&'static str>, AllowlistModels);
+
+// Each case seeds its rows, renames one model, then pins the persisted arrays and the evicted keys.
+struct PinnedCase {
+    name: &'static str,
+    deployments: &'static [(&'static str, &'static str)],
+    teams: &'static [TeamRow],
+    allowlists: &'static [AllowlistRow],
+    catalog: &'static [(&'static str, &'static str)],
+    model_id: &'static str,
+    old_name: &'static str,
+    new_name: &'static str,
+    stored: &'static [AllowlistRow],
+    keys: &'static [&'static str],
+}
+
+const DATABASE_SIBLING: PinnedCase = PinnedCase {
+    name: "database_sibling",
+    deployments: &[("dep-sib", "sib-new"), ("dep-sib-other", "sib-old")],
+    teams: &[(Some("t-sib"), None, Some(&["sib-old", "x"]))],
+    allowlists: &[
+        (KEY_TABLE, "token", "k-sib", Some(&["sib-old"])),
+        (ORG_TABLE, "organization_id", "o-sib", Some(&["sib-old"])),
+        (PROJECT_TABLE, "project_id", "p-sib", Some(&["sib-old"])),
+        (USER_TABLE, "user_id", "u-sib", Some(&["sib-old"])),
+    ],
+    catalog: &[],
+    model_id: "dep-sib",
+    old_name: "sib-old",
+    new_name: "sib-new",
+    stored: &[
+        (
+            TEAM_TABLE,
+            "team_id",
+            "t-sib",
+            Some(&["sib-old", "x", "sib-new"]),
+        ),
+        (KEY_TABLE, "token", "k-sib", Some(&["sib-old", "sib-new"])),
+        (
+            ORG_TABLE,
+            "organization_id",
+            "o-sib",
+            Some(&["sib-old", "sib-new"]),
+        ),
+        (
+            PROJECT_TABLE,
+            "project_id",
+            "p-sib",
+            Some(&["sib-old", "sib-new"]),
+        ),
+        (
+            USER_TABLE,
+            "user_id",
             "u-sib",
-        ],
-    );
-}
+            Some(&["sib-old", "sib-new"]),
+        ),
+    ],
+    keys: &[
+        "team_id:t-sib",
+        "k-sib",
+        "org_id:o-sib",
+        "org_id:o-sib:with_budget",
+        "project_id:p-sib",
+        "u-sib",
+    ],
+};
 
-async fn config_sibling(pool: &Pool) {
-    insert_team(
-        pool,
-        Some("t-cfg"),
-        Some("cfg-alias"),
-        array(&["cfg-old"]).as_deref(),
-    )
-    .await;
-    insert_allowlist(
-        pool,
-        USER_TABLE,
-        "user_id",
-        "u-cfg",
-        array(&["cfg-old"]).as_deref(),
-    )
-    .await;
-    let router_catalog = catalog(&[("cfg-old", "dep-cfg")]);
-    let harness = Harness::new(pool);
-    let cache = harness.cache();
-    let rename = request("dep-1", "cfg-old", "cfg-new");
-    harness
-        .run(&rename, &cache, Some(&router_catalog))
-        .await
-        .unwrap();
-    assert_eq!(
-        stored(pool, TEAM_TABLE, "team_id", "t-cfg").await,
-        array(&["cfg-old", "cfg-new"])
-    );
-    assert_eq!(
-        stored(pool, USER_TABLE, "user_id", "u-cfg").await,
-        array(&["cfg-old", "cfg-new"])
-    );
-    assert_keys(&cache, &["team_id:t-cfg", "team_alias:cfg-alias", "u-cfg"]);
-}
+const CONFIG_SIBLING: PinnedCase = PinnedCase {
+    name: "config_sibling",
+    deployments: &[],
+    teams: &[(Some("t-cfg"), Some("cfg-alias"), Some(&["cfg-old"]))],
+    allowlists: &[(USER_TABLE, "user_id", "u-cfg", Some(&["cfg-old"]))],
+    catalog: &[("cfg-old", "dep-cfg")],
+    model_id: "dep-1",
+    old_name: "cfg-old",
+    new_name: "cfg-new",
+    stored: &[
+        (
+            TEAM_TABLE,
+            "team_id",
+            "t-cfg",
+            Some(&["cfg-old", "cfg-new"]),
+        ),
+        (
+            USER_TABLE,
+            "user_id",
+            "u-cfg",
+            Some(&["cfg-old", "cfg-new"]),
+        ),
+    ],
+    keys: &["team_id:t-cfg", "team_alias:cfg-alias", "u-cfg"],
+};
 
-async fn last_sibling(pool: &Pool) {
-    insert_model(pool, "dep-last", "last-new").await;
-    insert_allowlist(
-        pool,
-        PROJECT_TABLE,
-        "project_id",
-        "p-last",
-        array(&["last-old", "last-old", "z"]).as_deref(),
-    )
-    .await;
-    insert_allowlist(
-        pool,
-        ORG_TABLE,
-        "organization_id",
-        "o-last",
-        array(&["last-new", "last-old"]).as_deref(),
-    )
-    .await;
-    let harness = Harness::new(pool);
-    let cache = harness.cache();
-    let rename = request("dep-last", "last-old", "last-new");
-    harness.run(&rename, &cache, None).await.unwrap();
-    assert_eq!(
-        stored(pool, PROJECT_TABLE, "project_id", "p-last").await,
-        array(&["last-new", "last-new", "z"])
-    );
-    assert_eq!(
-        stored(pool, ORG_TABLE, "organization_id", "o-last").await,
-        array(&["last-new"])
-    );
-    assert_keys(
-        &cache,
-        &[
-            "project_id:p-last",
-            "org_id:o-last",
-            "org_id:o-last:with_budget",
-        ],
-    );
-}
+const LAST_SIBLING: PinnedCase = PinnedCase {
+    name: "last_sibling",
+    deployments: &[("dep-last", "last-new")],
+    teams: &[],
+    allowlists: &[
+        (
+            PROJECT_TABLE,
+            "project_id",
+            "p-last",
+            Some(&["last-old", "last-old", "z"]),
+        ),
+        (
+            ORG_TABLE,
+            "organization_id",
+            "o-last",
+            Some(&["last-new", "last-old"]),
+        ),
+    ],
+    catalog: &[],
+    model_id: "dep-last",
+    old_name: "last-old",
+    new_name: "last-new",
+    stored: &[
+        (
+            PROJECT_TABLE,
+            "project_id",
+            "p-last",
+            Some(&["last-new", "last-new", "z"]),
+        ),
+        (ORG_TABLE, "organization_id", "o-last", Some(&["last-new"])),
+    ],
+    keys: &[
+        "project_id:p-last",
+        "org_id:o-last",
+        "org_id:o-last:with_budget",
+    ],
+};
 
-async fn duplicate_old(pool: &Pool) {
-    insert_allowlist(
-        pool,
+const DUPLICATE_OLD: PinnedCase = PinnedCase {
+    name: "duplicate_old",
+    deployments: &[],
+    teams: &[],
+    allowlists: &[(
         KEY_TABLE,
         "token",
         "k-dup",
-        array(&["dup-old", "x", "dup-old"]).as_deref(),
-    )
-    .await;
-    let harness = Harness::new(pool);
-    let cache = harness.cache();
-    let rename = request("dep-1", "dup-old", "dup-new");
-    harness.run(&rename, &cache, None).await.unwrap();
-    assert_eq!(
-        stored(pool, KEY_TABLE, "token", "k-dup").await,
-        array(&["dup-new", "x", "dup-new"])
-    );
-    assert_keys(&cache, &["k-dup"]);
-}
-
-async fn existing_new(pool: &Pool) {
-    insert_model(pool, "dep-exist", "exist-new").await;
-    insert_model(pool, "dep-exist-sibling", "exist-old").await;
-    insert_allowlist(
-        pool,
+        Some(&["dup-old", "x", "dup-old"]),
+    )],
+    catalog: &[],
+    model_id: "dep-1",
+    old_name: "dup-old",
+    new_name: "dup-new",
+    stored: &[(
         KEY_TABLE,
         "token",
-        "k-exist-both",
-        array(&["exist-new", "exist-old"]).as_deref(),
-    )
-    .await;
-    insert_allowlist(
-        pool,
-        KEY_TABLE,
-        "token",
-        "k-exist-append",
-        array(&["exist-old"]).as_deref(),
-    )
-    .await;
-    let harness = Harness::new(pool);
-    let cache = harness.cache();
-    let rename = request("dep-exist", "exist-old", "exist-new");
-    harness.run(&rename, &cache, None).await.unwrap();
-    assert_eq!(
-        stored(pool, KEY_TABLE, "token", "k-exist-both").await,
-        array(&["exist-new", "exist-old"])
-    );
-    assert_eq!(
-        stored(pool, KEY_TABLE, "token", "k-exist-append").await,
-        array(&["exist-old", "exist-new"])
-    );
-    assert_keys(&cache, &["k-exist-append"]);
+        "k-dup",
+        Some(&["dup-new", "x", "dup-new"]),
+    )],
+    keys: &["k-dup"],
+};
+
+const EXISTING_NEW: PinnedCase = PinnedCase {
+    name: "existing_new",
+    deployments: &[
+        ("dep-exist", "exist-new"),
+        ("dep-exist-sibling", "exist-old"),
+    ],
+    teams: &[],
+    allowlists: &[
+        (
+            KEY_TABLE,
+            "token",
+            "k-exist-both",
+            Some(&["exist-new", "exist-old"]),
+        ),
+        (KEY_TABLE, "token", "k-exist-append", Some(&["exist-old"])),
+    ],
+    catalog: &[],
+    model_id: "dep-exist",
+    old_name: "exist-old",
+    new_name: "exist-new",
+    stored: &[
+        (
+            KEY_TABLE,
+            "token",
+            "k-exist-both",
+            Some(&["exist-new", "exist-old"]),
+        ),
+        (
+            KEY_TABLE,
+            "token",
+            "k-exist-append",
+            Some(&["exist-old", "exist-new"]),
+        ),
+    ],
+    keys: &["k-exist-append"],
+};
+
+const NO_OLD: PinnedCase = PinnedCase {
+    name: "no_old",
+    deployments: &[],
+    teams: &[],
+    allowlists: &[(USER_TABLE, "user_id", "u-no-old", Some(&["unrelated"]))],
+    catalog: &[],
+    model_id: "dep-1",
+    old_name: "no-old",
+    new_name: "no-new",
+    stored: &[(USER_TABLE, "user_id", "u-no-old", Some(&["unrelated"]))],
+    keys: &[],
+};
+
+const NULL_ARRAY: PinnedCase = PinnedCase {
+    name: "null_array",
+    deployments: &[],
+    teams: &[(Some("t-null"), None, None)],
+    allowlists: &[(KEY_TABLE, "token", "k-null", None)],
+    catalog: &[],
+    model_id: "dep-1",
+    old_name: "null-old",
+    new_name: "null-new",
+    stored: &[
+        (TEAM_TABLE, "team_id", "t-null", None),
+        (KEY_TABLE, "token", "k-null", None),
+    ],
+    keys: &[],
+};
+
+const EMPTY_ARRAY: PinnedCase = PinnedCase {
+    name: "empty_array",
+    deployments: &[],
+    teams: &[],
+    allowlists: &[(USER_TABLE, "user_id", "u-empty", Some(&[]))],
+    catalog: &[],
+    model_id: "dep-1",
+    old_name: "empty-old",
+    new_name: "empty-new",
+    stored: &[(USER_TABLE, "user_id", "u-empty", Some(&[]))],
+    keys: &[],
+};
+
+const LITERAL_WILDCARD: PinnedCase = PinnedCase {
+    name: "literal_wildcard",
+    deployments: &[],
+    teams: &[],
+    allowlists: &[
+        (PROJECT_TABLE, "project_id", "p-wild-new", Some(&["gpt-4o"])),
+        (
+            PROJECT_TABLE,
+            "project_id",
+            "p-wild-literal",
+            Some(&["gpt-*"]),
+        ),
+    ],
+    catalog: &[],
+    model_id: "dep-1",
+    old_name: "gpt-*",
+    new_name: "gpt-4o",
+    stored: &[
+        (PROJECT_TABLE, "project_id", "p-wild-new", Some(&["gpt-4o"])),
+        (
+            PROJECT_TABLE,
+            "project_id",
+            "p-wild-literal",
+            Some(&["gpt-4o"]),
+        ),
+    ],
+    keys: &["project_id:p-wild-literal"],
+};
+
+const QUOTED_NAME: PinnedCase = PinnedCase {
+    name: "quoted_name",
+    deployments: &[],
+    teams: &[],
+    allowlists: &[
+        (KEY_TABLE, "token", "k-quote", Some(&["it's \"quoted\" $1"])),
+        (KEY_TABLE, "token", "k-quote-other", Some(&["it"])),
+    ],
+    catalog: &[],
+    model_id: "dep-1",
+    old_name: "it's \"quoted\" $1",
+    new_name: "new 'name'",
+    stored: &[
+        (KEY_TABLE, "token", "k-quote", Some(&["new 'name'"])),
+        (KEY_TABLE, "token", "k-quote-other", Some(&["it"])),
+    ],
+    keys: &["k-quote"],
+};
+
+fn to_array(models: AllowlistModels) -> Option<Vec<String>> {
+    models.map(expected)
 }
 
-async fn no_old(pool: &Pool) {
-    insert_allowlist(
-        pool,
-        USER_TABLE,
-        "user_id",
-        "u-no-old",
-        array(&["unrelated"]).as_deref(),
-    )
-    .await;
+async fn run_pinned_case(pool: &Pool, case: &PinnedCase) {
+    for (model_id, model_name) in case.deployments {
+        insert_model(pool, model_id, model_name).await;
+    }
+    for (team_id, team_alias, models) in case.teams {
+        let values = to_array(*models);
+        insert_team(pool, *team_id, *team_alias, values.as_deref()).await;
+    }
+    for (table, id_column, id, models) in case.allowlists {
+        let values = to_array(*models);
+        insert_allowlist(pool, table, id_column, id, values.as_deref()).await;
+    }
+    let router_catalog = if case.catalog.is_empty() {
+        None
+    } else {
+        Some(catalog(case.catalog))
+    };
     let harness = Harness::new(pool);
     let cache = harness.cache();
-    let rename = request("dep-1", "no-old", "no-new");
-    harness.run(&rename, &cache, None).await.unwrap();
-    assert_eq!(
-        stored(pool, USER_TABLE, "user_id", "u-no-old").await,
-        array(&["unrelated"])
-    );
-    assert_keys(&cache, &[]);
-}
-
-async fn null_array(pool: &Pool) {
-    insert_team(pool, Some("t-null"), None, None).await;
-    insert_allowlist(pool, KEY_TABLE, "token", "k-null", None).await;
-    let harness = Harness::new(pool);
-    let cache = harness.cache();
-    let rename = request("dep-1", "null-old", "null-new");
-    harness.run(&rename, &cache, None).await.unwrap();
-    assert_eq!(stored(pool, TEAM_TABLE, "team_id", "t-null").await, None);
-    assert_eq!(stored(pool, KEY_TABLE, "token", "k-null").await, None);
-    assert_keys(&cache, &[]);
-}
-
-async fn empty_array(pool: &Pool) {
-    insert_allowlist(
-        pool,
-        USER_TABLE,
-        "user_id",
-        "u-empty",
-        array(&[]).as_deref(),
-    )
-    .await;
-    let harness = Harness::new(pool);
-    let cache = harness.cache();
-    let rename = request("dep-1", "empty-old", "empty-new");
-    harness.run(&rename, &cache, None).await.unwrap();
-    assert_eq!(
-        stored(pool, USER_TABLE, "user_id", "u-empty").await,
-        array(&[])
-    );
-    assert_keys(&cache, &[]);
-}
-
-async fn literal_wildcard(pool: &Pool) {
-    insert_allowlist(
-        pool,
-        PROJECT_TABLE,
-        "project_id",
-        "p-wild-new",
-        array(&["gpt-4o"]).as_deref(),
-    )
-    .await;
-    insert_allowlist(
-        pool,
-        PROJECT_TABLE,
-        "project_id",
-        "p-wild-literal",
-        array(&["gpt-*"]).as_deref(),
-    )
-    .await;
-    let harness = Harness::new(pool);
-    let cache = harness.cache();
-    let rename = request("dep-1", "gpt-*", "gpt-4o");
-    harness.run(&rename, &cache, None).await.unwrap();
-    assert_eq!(
-        stored(pool, PROJECT_TABLE, "project_id", "p-wild-new").await,
-        array(&["gpt-4o"])
-    );
-    assert_eq!(
-        stored(pool, PROJECT_TABLE, "project_id", "p-wild-literal").await,
-        array(&["gpt-4o"])
-    );
-    assert_keys(&cache, &["project_id:p-wild-literal"]);
-}
-
-async fn quoted_name(pool: &Pool) {
-    let old_name = "it's \"quoted\" $1";
-    let new_name = "new 'name'";
-    insert_allowlist(
-        pool,
-        KEY_TABLE,
-        "token",
-        "k-quote",
-        array(&[old_name]).as_deref(),
-    )
-    .await;
-    insert_allowlist(
-        pool,
-        KEY_TABLE,
-        "token",
-        "k-quote-other",
-        array(&["it"]).as_deref(),
-    )
-    .await;
-    let harness = Harness::new(pool);
-    let cache = harness.cache();
-    let rename = request("dep-1", old_name, new_name);
-    harness.run(&rename, &cache, None).await.unwrap();
-    assert_eq!(
-        stored(pool, KEY_TABLE, "token", "k-quote").await,
-        array(&[new_name])
-    );
-    assert_eq!(
-        stored(pool, KEY_TABLE, "token", "k-quote-other").await,
-        array(&["it"])
-    );
-    assert_keys(&cache, &["k-quote"]);
+    let rename = request(case.model_id, case.old_name, case.new_name);
+    harness
+        .run(&rename, &cache, router_catalog.as_ref())
+        .await
+        .unwrap();
+    for (table, id_column, id, models) in case.stored {
+        let name = case.name;
+        assert_eq!(
+            stored(pool, table, id_column, id).await,
+            to_array(*models),
+            "the {name} case"
+        );
+    }
+    assert_keys(&cache, case.keys);
 }
 
 async fn pinned_writer(pool: &Pool) {
@@ -683,7 +679,7 @@ async fn one_table_failure(pool: &Pool) {
         array(&["onefail-old"])
     );
     assert!(cache.calls.lock().expect("calls").is_empty());
-    assert!(harness.events.recorded().is_empty());
+    assert!(harness.events.lock().expect("events").is_empty());
 }
 
 async fn eviction_failure(pool: &Pool) {
@@ -724,7 +720,7 @@ async fn eviction_failure(pool: &Pool) {
         keys,
         expected(&["k-evict", "team_alias:evict-alias", "team_id:t-evict"])
     );
-    let recorded = harness.events.recorded();
+    let recorded = harness.events.lock().expect("events").clone();
     assert_eq!(recorded.first(), Some(&AllowlistEvent::SqlCompleted));
     assert_eq!(
         recorded.len(),

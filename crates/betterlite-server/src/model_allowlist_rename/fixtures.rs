@@ -19,22 +19,7 @@ pub(crate) enum AllowlistEvent {
     CacheCall(Vec<String>),
 }
 
-#[derive(Clone, Default)]
-pub(crate) struct EventLog {
-    events: Arc<Mutex<Vec<AllowlistEvent>>>,
-}
-
-impl EventLog {
-    pub(crate) fn record(&self, event: AllowlistEvent) {
-        let mut events = self.events.lock().expect("events");
-        events.push(event);
-    }
-
-    pub(crate) fn recorded(&self) -> Vec<AllowlistEvent> {
-        let events = self.events.lock().expect("events");
-        events.clone()
-    }
-}
+pub(crate) type EventLog = Arc<Mutex<Vec<AllowlistEvent>>>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ScriptedRow {
@@ -87,15 +72,7 @@ impl ScriptedAllowlists {
             let Some(models) = row.models.as_mut() else {
                 continue;
             };
-            let applied = match rewrite {
-                AllowlistRewrite::Append { old_name, new_name } => {
-                    append_name(models, old_name, new_name)
-                }
-                AllowlistRewrite::Replace { old_name, new_name } => {
-                    replace_name(models, old_name, new_name)
-                }
-            };
-            if applied {
+            if rewrite_array(models, rewrite) {
                 touched.push(TouchedRow {
                     kind: row.kind,
                     object_id: row.object_id.clone(),
@@ -107,37 +84,44 @@ impl ScriptedAllowlists {
         if self.reverse_rows {
             touched.reverse();
         }
+        self.events
+            .lock()
+            .expect("events")
+            .push(AllowlistEvent::SqlCompleted);
         touched
     }
 }
 
-fn append_name(models: &mut Vec<String>, old_name: &str, new_name: &str) -> bool {
-    let holds_old = models.iter().any(|name| name == old_name);
-    let holds_new = models.iter().any(|name| name == new_name);
-    if !holds_old || holds_new {
-        return false;
-    }
-    models.push(new_name.to_owned());
-    true
-}
-
-fn replace_name(models: &mut Vec<String>, old_name: &str, new_name: &str) -> bool {
-    if !models.iter().any(|name| name == old_name) {
-        return false;
-    }
-    let replaced = models
-        .iter()
-        .filter(|name| name.as_str() != new_name)
-        .map(|name| {
-            if name == old_name {
-                new_name.to_owned()
-            } else {
-                name.clone()
+// The two statements' array behavior: append only adds, replace removes every new name and rewrites every old one.
+fn rewrite_array(models: &mut Vec<String>, rewrite: &AllowlistRewrite) -> bool {
+    match rewrite {
+        AllowlistRewrite::Append { old_name, new_name } => {
+            let holds_old = models.iter().any(|name| name == old_name);
+            let holds_new = models.iter().any(|name| name == new_name);
+            let append = holds_old && !holds_new;
+            if append {
+                models.push(new_name.to_owned());
             }
-        })
-        .collect();
-    *models = replaced;
-    true
+            append
+        }
+        AllowlistRewrite::Replace { old_name, new_name } => {
+            if !models.iter().any(|name| name == old_name) {
+                return false;
+            }
+            let mut kept = Vec::with_capacity(models.len());
+            for name in models.drain(..) {
+                if name != *new_name {
+                    kept.push(if name == *old_name {
+                        new_name.clone()
+                    } else {
+                        name
+                    });
+                }
+            }
+            *models = kept;
+            true
+        }
+    }
 }
 
 impl AllowlistDatabase for ScriptedAllowlists {
@@ -149,9 +133,7 @@ impl AllowlistDatabase for ScriptedAllowlists {
         let outcome = if self.failure {
             Err(ModelAllowlistError::Database(DbError::NoDbConnected))
         } else {
-            let touched = self.apply(rewrite);
-            self.events.record(AllowlistEvent::SqlCompleted);
-            Ok(touched)
+            Ok(self.apply(rewrite))
         };
         async move { outcome }
     }
@@ -188,7 +170,10 @@ impl AllowlistCache for ScriptedAllowlistCache {
     ) -> impl Future<Output = Result<(), InvalidationError>> + Send {
         let keys = cache_keys.to_vec();
         self.calls.lock().expect("calls").push(keys.clone());
-        self.events.record(AllowlistEvent::CacheCall(keys));
+        self.events
+            .lock()
+            .expect("events")
+            .push(AllowlistEvent::CacheCall(keys));
         let outcome = self.failure.map_or(Ok(()), |code| {
             Err(InvalidationError::SpendOutOfRange(Decimal::new(code, 0)))
         });
@@ -208,7 +193,10 @@ impl AllowlistDatabase for ObservedAllowlists<'_> {
         rewrite: &AllowlistRewrite,
     ) -> Result<Vec<TouchedRow>, ModelAllowlistError> {
         let touched = self.inner.rewrite_allowlists(rewrite).await?;
-        self.events.record(AllowlistEvent::SqlCompleted);
+        self.events
+            .lock()
+            .expect("events")
+            .push(AllowlistEvent::SqlCompleted);
         Ok(touched)
     }
 }
