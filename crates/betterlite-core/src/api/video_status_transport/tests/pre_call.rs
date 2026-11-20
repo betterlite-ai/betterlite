@@ -5,7 +5,7 @@ use betterlite_models::decisions::Json;
 use super::harness::{Call, harness};
 use super::support::{
     API_BASE, COMPLETE_URL, Kind, base_params, conversions, json, operation, plain_headers,
-    pre_calls, sync_sends,
+    pre_calls, provider_headers, sync_sends,
 };
 use crate::api::video_status_transport::error::VideoStatusError;
 use crate::api::video_status_transport::records::Params;
@@ -13,6 +13,8 @@ use crate::api::video_status_transport::records::Params;
 #[test]
 fn pre_call_records_the_documented_payload() {
     let mut run = harness();
+    run.deps.config.complete_url = Ok("https://complete/v1".to_owned());
+    run.deps.config.environment = Ok(provider_headers());
     run.deps.config.transformed = Ok((COMPLETE_URL.to_owned(), operation()));
     let params = base_params(API_BASE);
     let headers = plain_headers();
@@ -25,7 +27,7 @@ fn pre_call_records_the_documented_payload() {
     assert_eq!(
         records[0].additional_args,
         json(
-            r#"{"api_base":"https://built/videos/video_1","headers":{"x-caller":"given"},"video_id":"video_1","data":{"operationName":"projects/p/operations/o"}}"#
+            r#"{"api_base":"https://built/videos/video_1","headers":{"x-caller":"given","authorization":"provider","x-provider":"default"},"video_id":"video_1","data":{"operationName":"projects/p/operations/o"}}"#
         )
     );
 }

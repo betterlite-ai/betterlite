@@ -202,7 +202,11 @@ impl VideoStatusConfig for FakeConfig {
                 params: request.litellm_params.cloned(),
             });
         });
-        self.environment.clone()
+        self.environment.clone().map(|provider| {
+            let mut headers = request.headers.clone();
+            headers.extend(provider);
+            headers
+        })
     }
 
     fn get_complete_url(
@@ -349,7 +353,7 @@ impl FakeFactories {
     }
 }
 
-const fn allowed<T>(refuse: bool, value: T) -> Result<T, PoolError> {
+fn allowed<T>(refuse: bool, value: T) -> Result<T, PoolError> {
     if refuse {
         return Err(PoolError::Closed);
     }
@@ -524,7 +528,7 @@ pub(crate) fn plain_headers() -> Headers {
     Headers::from([("x-caller".to_owned(), "given".to_owned())])
 }
 
-// the caller's Authorization must win over the provider's, so the merge test uses this one
+// the provider's Authorization overwrites the caller's, as LiteLLM's in-place update does, so the merge test uses this one
 pub(crate) fn extra_headers() -> Headers {
     Headers::from([
         ("x-caller".to_owned(), "given".to_owned()),
@@ -580,10 +584,10 @@ pub(crate) fn provider_headers() -> Headers {
     ])
 }
 
-// what the request transform sees once the caller's headers are copied over the provider's defaults
+// what the request transform sees once the provider's validation has overwritten the caller's headers
 pub(crate) fn merged_headers() -> Headers {
     Headers::from([
-        ("authorization".to_owned(), "caller".to_owned()),
+        ("authorization".to_owned(), "provider".to_owned()),
         ("x-provider".to_owned(), "default".to_owned()),
         ("x-caller".to_owned(), "given".to_owned()),
     ])
@@ -591,6 +595,11 @@ pub(crate) fn merged_headers() -> Headers {
 
 pub(crate) fn provider() -> ProviderId {
     ProviderId::from_str(PROVIDER).expect("the fixture provider is known")
+}
+
+// a second known provider, so a test proves the resolved name reaches the factory and the transform
+pub(crate) fn runway() -> ProviderId {
+    ProviderId::from_str("runwayml").expect("the fixture provider is known")
 }
 
 // an extra_body the request must never carry

@@ -49,7 +49,7 @@ fn request_build_validate_environment_gets_the_api_key() {
 }
 
 #[test]
-fn request_build_extra_headers_win_over_provider_defaults() {
+fn request_build_provider_headers_overwrite_the_callers() {
     let mut run = harness();
     run.deps.config.environment = Ok(provider_headers());
     let params = Params::new();

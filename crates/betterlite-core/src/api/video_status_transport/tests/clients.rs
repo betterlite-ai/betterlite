@@ -2,8 +2,8 @@
 
 use super::harness::{Call, harness};
 use super::support::{
-    Owner, Supply, async_builds, async_sends, conversions, provider, ssl_params, sync_builds,
-    sync_sends, text_ssl_params,
+    Owner, Supply, async_builds, async_responses, async_sends, conversions, provider, runway,
+    ssl_params, sync_builds, sync_sends, text_ssl_params,
 };
 use crate::api::video_status_transport::error::VideoStatusError;
 use crate::api::video_status_transport::records::Params;
@@ -112,6 +112,23 @@ async fn client_choice_async_builds_the_pooled_client_for_the_provider() {
         .await
         .expect("the status call succeeds");
     assert_eq!(async_builds(&run.events()), vec![(provider(), None)]);
+}
+
+#[tokio::test]
+async fn client_choice_async_builds_the_client_for_the_calls_own_provider() {
+    let mut run = harness();
+    let params = Params::new();
+    let mut call = Call::new(&params);
+    call.custom_llm_provider = "runwayml";
+    run.asynchronous(call)
+        .await
+        .expect("the status call succeeds");
+    let events = run.events();
+    assert_eq!(async_builds(&events), vec![(runway(), None)]);
+    assert_eq!(
+        async_responses(&events)[0].provider.as_deref(),
+        Some("runwayml")
+    );
 }
 
 #[tokio::test]

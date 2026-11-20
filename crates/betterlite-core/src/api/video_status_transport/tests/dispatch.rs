@@ -89,5 +89,5 @@ async fn async_flag_returns_future_forwarding_every_argument() {
         Some("sk-test".to_owned())
     );
     assert_eq!(request_transforms(&events)[0].headers, merged_headers());
-    assert_eq!(async_sends(&events)[0].0, Owner::Built);
+    assert_eq!(async_sends(&events)[0].0, Owner::Supplied);
 }

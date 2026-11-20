@@ -163,12 +163,14 @@ impl<'call> Call<'call> {
     }
 }
 
+pub(crate) type Outcome = Result<VideoObject, VideoStatusError>;
+
 impl Harness {
     pub(crate) fn events(&self) -> Journal {
         observed(&self.deps.events)
     }
 
-    pub(crate) fn sync(&mut self, call: Call<'_>) -> Result<VideoObject, VideoStatusError> {
+    pub(crate) fn sync(&mut self, call: Call<'_>) -> Outcome {
         let env = self.fixture.environment();
         let handler = self.deps.handler(&env);
         let request = call.status(&mut self.state, &self.supplied_sync, &self.supplied_async);
@@ -180,18 +182,16 @@ impl Harness {
         }
     }
 
-    pub(crate) async fn asynchronous(
-        &mut self,
-        call: Call<'_>,
-    ) -> Result<VideoObject, VideoStatusError> {
-        self.flagged(call).await.1
+    pub(crate) async fn asynchronous(&mut self, call: Call<'_>) -> Outcome {
+        let env = self.fixture.environment();
+        let handler = self.deps.handler(&env);
+        let config = &self.deps.config;
+        let request = call.status(&mut self.state, &self.supplied_sync, &self.supplied_async);
+        handler.async_video_status_handler(config, request).await
     }
 
     // The flagged entry point, with what it recorded before the future is awaited
-    pub(crate) async fn flagged(
-        &mut self,
-        call: Call<'_>,
-    ) -> (Journal, Result<VideoObject, VideoStatusError>) {
+    pub(crate) async fn flagged(&mut self, call: Call<'_>) -> (Journal, Outcome) {
         let env = self.fixture.environment();
         let handler = self.deps.handler(&env);
         let request = call.status(&mut self.state, &self.supplied_sync, &self.supplied_async);
