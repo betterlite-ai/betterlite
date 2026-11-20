@@ -162,7 +162,7 @@ pub(crate) fn realtime_row(run: &RealtimeRun) -> shared::HelperResult {
 fn realtime_response(
     result: Result<
         realtime_bridge::Outcome,
-        realtime_bridge::Error<RealtimeTransportError<Failing, io::Error>>,
+        realtime_bridge::OperationError<RealtimeTransportError<Failing, io::Error>>,
     >,
     scope: &EventScope,
 ) -> shared::Value {
@@ -174,7 +174,7 @@ fn realtime_response(
             "status_code": shared::Value::Null,
             "committed": committed,
         }),
-        Err(realtime_bridge::Error::Session { source }) => shared::json!({
+        Err(realtime_bridge::OperationError::Session { source }) => shared::json!({
             "outcome": "error",
             "error_kind": transport_kind(&source),
             "status_code": source.status_code(),

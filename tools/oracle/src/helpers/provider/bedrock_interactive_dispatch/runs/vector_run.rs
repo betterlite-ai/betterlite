@@ -72,9 +72,9 @@ fn success(outcome: &vector_retrieve::Outcome) -> shared::Value {
     shared::Value::Object(row)
 }
 
-fn failure(error: &vector_retrieve::Error) -> shared::Value {
+fn failure(error: &vector_retrieve::OperationError) -> shared::Value {
     match error {
-        vector_retrieve::Error::Leaf(_) => shared::error_row("leaf", None),
-        vector_retrieve::Error::Transport(_) => shared::error_row("transport", None),
+        vector_retrieve::OperationError::Leaf(_) => shared::error_row("leaf", None),
+        vector_retrieve::OperationError::Transport(_) => shared::error_row("transport", None),
     }
 }

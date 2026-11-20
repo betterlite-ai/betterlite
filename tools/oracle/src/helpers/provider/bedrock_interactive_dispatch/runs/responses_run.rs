@@ -161,12 +161,16 @@ fn success(outcome: &responses::Outcome) -> shared::Value {
     shared::Value::Object(row)
 }
 
-fn failure(error: &responses::Error) -> shared::Value {
+fn failure(error: &responses::OperationError) -> shared::Value {
     match error {
-        responses::Error::Leaf(_) => shared::error_row("leaf", None),
-        responses::Error::UnsupportedModel { .. } => shared::error_row("unsupported_model", None),
-        responses::Error::Transport(_) => shared::error_row("transport", None),
-        responses::Error::Rejected { status, .. } => shared::error_row("rejected", Some(*status)),
-        responses::Error::Headers { .. } => shared::error_row("headers", None),
+        responses::OperationError::Leaf(_) => shared::error_row("leaf", None),
+        responses::OperationError::UnsupportedModel { .. } => {
+            shared::error_row("unsupported_model", None)
+        }
+        responses::OperationError::Transport(_) => shared::error_row("transport", None),
+        responses::OperationError::Rejected { status, .. } => {
+            shared::error_row("rejected", Some(*status))
+        }
+        responses::OperationError::Headers { .. } => shared::error_row("headers", None),
     }
 }

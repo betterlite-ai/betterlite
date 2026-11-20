@@ -375,14 +375,9 @@ fn passthrough_missing_credentials() {
         chunks: Vec::new(),
     });
     let error = dispatched!(Passthrough, operation.run(&transport)).unwrap_err();
-    match error {
-        passthrough::OperationError::Leaf(PassthroughFailure::Signing(_)) => {}
-        other @ passthrough::OperationError::Leaf(_)
-        | other @ passthrough::OperationError::Transport(_)
-        | other @ passthrough::OperationError::Collector { .. } => {
-            panic!("expected a signing failure, got {other}")
-        }
-    }
+    let passthrough::OperationError::Leaf(PassthroughFailure::Signing(_)) = error else {
+        panic!("expected a signing failure");
+    };
     assert!(transport.requests().is_empty());
 }
 

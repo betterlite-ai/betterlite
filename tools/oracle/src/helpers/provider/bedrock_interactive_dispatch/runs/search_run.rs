@@ -60,10 +60,10 @@ fn success(outcome: &search::Outcome) -> shared::Value {
     shared::Value::Object(row)
 }
 
-fn failure(error: &search::Error) -> shared::Value {
+fn failure(error: &search::OperationError) -> shared::Value {
     match error {
-        search::Error::Leaf(_) => shared::error_row("leaf", None),
-        search::Error::Reply(reply) => shared::error_row("reply", reply.status()),
-        search::Error::Transport(_) => shared::error_row("transport", None),
+        search::OperationError::Leaf(_) => shared::error_row("leaf", None),
+        search::OperationError::Reply(reply) => shared::error_row("reply", reply.status()),
+        search::OperationError::Transport(_) => shared::error_row("transport", None),
     }
 }

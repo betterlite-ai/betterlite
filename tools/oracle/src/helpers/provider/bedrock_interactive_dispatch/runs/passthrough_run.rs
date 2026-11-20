@@ -200,10 +200,10 @@ fn success(outcome: &passthrough::Outcome, endpoint_url: &str) -> shared::Helper
     Ok(shared::Value::Object(row))
 }
 
-fn failure(error: &passthrough::Error) -> shared::Value {
+fn failure(error: &passthrough::OperationError) -> shared::Value {
     match error {
-        passthrough::Error::Leaf(_) => shared::error_row("leaf", None),
-        passthrough::Error::Transport(_) => shared::error_row("transport", None),
-        passthrough::Error::Collector { .. } => shared::error_row("collector", None),
+        passthrough::OperationError::Leaf(_) => shared::error_row("leaf", None),
+        passthrough::OperationError::Transport(_) => shared::error_row("transport", None),
+        passthrough::OperationError::Collector { .. } => shared::error_row("collector", None),
     }
 }
