@@ -336,7 +336,40 @@ fn responses_to_input_errors_when_the_message_is_missing() {
     let error =
         apply_guardrail_responses_to_input(fields(&mut no_messages), &["X".to_owned()], &scanned)
             .unwrap_err();
-    assert_eq!(error, WriteBackError::TargetMissing { target });
+    assert_eq!(
+        error,
+        WriteBackError::TargetMissing {
+            target: target.clone()
+        }
+    );
+
+    let mut scalar_messages = json!({"messages": "not a list"});
+    let error = apply_guardrail_responses_to_input(
+        fields(&mut scalar_messages),
+        &["X".to_owned()],
+        &scanned,
+    )
+    .unwrap_err();
+    assert_eq!(
+        error,
+        WriteBackError::TargetMissing {
+            target: target.clone()
+        }
+    );
+
+    let row_target = MessageTextTarget::MessageContent { msg_idx: 0 };
+    let row_scanned = [ScannedText {
+        text: "x".to_owned(),
+        target: InputWriteBackTarget::Message(row_target.clone()),
+    }];
+    let mut scalar_row = json!({"messages": ["not a message"]});
+    let error = apply_guardrail_responses_to_input(
+        fields(&mut scalar_row),
+        &["X".to_owned()],
+        &row_scanned,
+    )
+    .unwrap_err();
+    assert_eq!(error, WriteBackError::TargetMissing { target: row_target });
 }
 
 #[test]
@@ -524,6 +557,17 @@ fn tool_calls_ignores_a_returned_list_of_the_wrong_length() {
         absent_answer[0]["content"][1]["input"],
         json!({"kept": true})
     );
+}
+
+#[test]
+fn tool_calls_stops_at_the_shortest_list() {
+    let (scanned, pre, mut messages) = scanned_pair();
+    let returned = vec![json!({"function": {"name": "renamed", "arguments": "{\"q\":\"new\"}"}})];
+    apply_guardrail_tool_calls_to_input(&mut messages, &scanned, &pre[..1], Some(&returned), None)
+        .unwrap();
+    assert_eq!(messages[0]["content"][0]["input"], json!({"q": "new"}));
+    assert_eq!(messages[0]["content"][0]["name"], "renamed");
+    assert_eq!(messages[0]["content"][1]["input"], json!({"kept": true}));
 }
 
 #[test]

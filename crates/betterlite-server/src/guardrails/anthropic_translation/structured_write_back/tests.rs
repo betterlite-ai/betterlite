@@ -75,6 +75,9 @@ async fn hoisting_returns_none_for_a_missing_or_empty_system() {
         r#"{"model": "gpt-4o", "system": null}"#,
         r#"{"model": "gpt-4o", "system": ""}"#,
         r#"{"model": "gpt-4o", "system": []}"#,
+        r#"{"model": "gpt-4o", "system": 0}"#,
+        r#"{"model": "gpt-4o", "system": false}"#,
+        r#"{"model": "gpt-4o", "system": {}}"#,
     ] {
         assert_eq!(
             hoisted_top_level_system_message(&data(raw)).await.unwrap(),
@@ -232,6 +235,24 @@ fn fold_ignores_a_leading_row_that_does_not_convert() {
         request.get("system"),
         Some(&json!([{"type": "text", "text": "kept"}]))
     );
+}
+
+#[test]
+fn fold_ignores_an_existing_system_of_another_type() {
+    for system in [
+        json!(null),
+        json!(0_i64),
+        json!(false),
+        json!({"text": "x"}),
+    ] {
+        let mut request = Map::new();
+        request.insert("system".to_owned(), system);
+        fold_leading_systems_into_top_level(&mut request, &[system_row("new")], true);
+        assert_eq!(
+            request.get("system"),
+            Some(&json!([{"type": "text", "text": "new"}]))
+        );
+    }
 }
 
 #[test]
@@ -466,6 +487,28 @@ async fn structured_preserves_a_midturn_system_row() {
         ]))
     );
     assert_eq!(request.get("system"), None);
+}
+
+#[tokio::test]
+async fn structured_treats_a_mixed_case_system_role_as_system() {
+    let mut request =
+        data(r#"{"model": "gpt-4o", "messages": [{"role": "user", "content": "u"}]}"#);
+    let returned = vec![
+        user_row("u"),
+        json!({"role": "System", "content": "reminder"}),
+        user_row("u2"),
+    ];
+    write_back_structured_messages(&mut request, &returned, None, true)
+        .await
+        .unwrap();
+    assert_eq!(
+        request.get("messages"),
+        Some(&json!([
+            user_turn("u"),
+            {"role": "system", "content": "reminder"},
+            user_turn("u2")
+        ]))
+    );
 }
 
 #[tokio::test]
