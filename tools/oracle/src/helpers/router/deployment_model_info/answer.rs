@@ -2,8 +2,7 @@ use std::future::Future;
 use std::sync::Arc;
 
 use betterlite_core::cost::completion::lookup::NoHfConfig;
-use betterlite_models::full_model_metadata::HelperSources;
-use betterlite_models::full_model_metadata::cache::ModelInfoCache;
+use betterlite_models::full_model_metadata::{HelperSources, cache::ModelInfoCache};
 use betterlite_models::model_catalog_keys::ModelCostKeys;
 use betterlite_models::model_metadata_resolution::MetadataEnvironment;
 use betterlite_models::model_metadata_resolution::dynamic::NoDynamicMetadata;
@@ -18,8 +17,7 @@ use betterlite_router::deployment_model_info::metadata::{
 use betterlite_router::deployment_model_info::router_info::{
     SuppliedDeployment, get_router_model_info,
 };
-use betterlite_router::model_catalog_lookup::alias::AliasMap;
-use betterlite_router::model_catalog_lookup::lookup::CatalogLookup;
+use betterlite_router::model_catalog_lookup::{alias::AliasMap, lookup::CatalogLookup};
 use betterlite_router::routing_groups::index::RoutingGroupIndex;
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
