@@ -169,10 +169,7 @@ class FixtureConfig(WhisperConfig):
         raw_response: httpx.Response,
     ) -> TranscriptionResponse:
         _ = raw_response
-        response = TranscriptionResponse()
-        if self.call.response is None:
-            return response
-        return response.model_copy(update=self.call.response)
+        return TranscriptionResponse().model_copy(update=self.call.response)
 
     @property
     @override
