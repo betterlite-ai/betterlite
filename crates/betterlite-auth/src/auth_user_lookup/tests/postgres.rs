@@ -17,6 +17,7 @@ use tokio_util::task::TaskTracker;
 use super::tests::support::{FakeCache, FakeEnrollment, FakeReset, request_with};
 use crate::auth_user_lookup::cache::UserCache;
 use crate::auth_user_lookup::cadence::{Cadence, WallClock};
+use crate::auth_user_lookup::error::UserLookupError;
 use crate::auth_user_lookup::lookup::{UserLookup, UserLookupRequest};
 use crate::auth_user_lookup::ports::{BudgetResetCalculator, DefaultTeamEnrollment};
 use crate::auth_user_lookup::store::{DatabaseUserStore, UserStore};
@@ -24,6 +25,8 @@ use crate::auth_user_lookup::store::{DatabaseUserStore, UserStore};
 const SEED_CASE_EMAIL: &str = "INSERT INTO \"LiteLLM_UserTable\" (user_id, user_email) VALUES ('case-user', 'MixedCase@Example.com'), ('other-user', 'other@example.com')";
 const SEED_BACKFILL: &str = "INSERT INTO \"LiteLLM_UserTable\" (user_id, user_email) VALUES ('filled-user', 'stored@example.com'), ('empty-user', ''), ('null-user', NULL)";
 const SEED_SSO: &str = "INSERT INTO \"LiteLLM_UserTable\" (user_id, user_email, sso_user_id, updated_at) VALUES ('sso-user', 'sso@example.com', 'old-sso', TIMESTAMP '2000-01-01 00:00:00')";
+const SEED_CAP: &str = "INSERT INTO \"LiteLLM_UserTable\" (user_id, user_email, user_alias) VALUES ('cap-user', 'cap@example.com', 'cap')";
+const ROW_CAP_BYTES: i64 = 0x0010_0000;
 
 #[derive(Parser)]
 struct Environment {
@@ -129,6 +132,29 @@ async fn stored_updated_after(store: &PostgresStore, user_id: &str, floor: &str)
         .await
         .expect("the stored user");
     row.try_get(0).expect("the updated_at comparison")
+}
+
+async fn row_text_len(store: &PostgresStore, user_id: &str) -> i64 {
+    let sql = "SELECT length((to_jsonb(entry) || jsonb_build_object('organization_memberships', COALESCE((SELECT jsonb_agg(member) FROM \"LiteLLM_OrganizationMembership\" AS member WHERE member.\"user_id\" = entry.\"user_id\"), '[]'::jsonb)))::text) FROM \"LiteLLM_UserTable\" AS entry WHERE entry.\"user_id\" = $1";
+    let client = store.session().await.expect("the database connection");
+    client
+        .query_one(sql, &[&user_id])
+        .await
+        .expect("the stored user")
+        .try_get(0)
+        .expect("the row text length")
+}
+
+async fn grow_alias_to(store: &PostgresStore, user_id: &str, target: i64) {
+    let length = row_text_len(store, user_id).await;
+    let delta = target - length;
+    assert!(delta >= 0, "the seeded row starts below the target");
+    let sql = "UPDATE \"LiteLLM_UserTable\" SET user_alias = COALESCE(user_alias, '') || repeat('a', $2) WHERE user_id = $1";
+    let client = store.session().await.expect("the database connection");
+    client
+        .execute(sql, &[&user_id, &delta])
+        .await
+        .expect("the row growth");
 }
 
 async fn user_count(store: &PostgresStore, user_id: &str) -> i64 {
@@ -239,6 +265,35 @@ async fn sso_update_overwrite_reaches_rows() {
         stored_updated_after(&store.reader, "sso-user", "2000-01-02").await,
         "the update stamps updated_at like Prisma's @updatedAt"
     );
+    close(fixture, store).await;
+}
+
+#[tokio::test]
+async fn row_cap_boundary() {
+    let (fixture, store) = database().await;
+    seed(&store.reader, SEED_CAP).await;
+    grow_alias_to(&store.writer, "cap-user", ROW_CAP_BYTES).await;
+    assert_eq!(row_text_len(&store.reader, "cap-user").await, ROW_CAP_BYTES);
+    let lookup = lookup_for(&store, Arc::new(FakeCache::new(60.0)));
+    let user = lookup
+        .get_user_object(request_with(Some("cap-user"), None, None))
+        .await
+        .expect("the row at the cap decodes")
+        .expect("the capped user");
+    assert_eq!(user.user_id, "cap-user");
+
+    grow_alias_to(&store.writer, "cap-user", ROW_CAP_BYTES + 1).await;
+    let over = lookup_for(&store, Arc::new(FakeCache::new(60.0)));
+    let result = over
+        .get_user_object(request_with(Some("cap-user"), None, None))
+        .await;
+    match result {
+        Err(UserLookupError::UserMissing(failure)) => assert!(
+            failure.to_string().contains("over the"),
+            "the failure names the row cap: {failure}"
+        ),
+        other => panic!("a row over the cap fails the lookup: {other:?}"),
+    }
     close(fixture, store).await;
 }
 

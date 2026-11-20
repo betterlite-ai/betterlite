@@ -1,6 +1,7 @@
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
+use betterlite_db::postgres_store::rows::{KeyColumn, Table};
 use rstest::rstest;
 
 use super::logs::Logs;
@@ -9,8 +10,57 @@ use super::support::{
     user_with,
 };
 use crate::auth_identity::errors::AuthError;
+use crate::auth_read::user_rows::UserEmailFilter;
 use crate::auth_user_lookup::error::UserLookupError;
 use crate::auth_user_lookup::lookup::UserLookupRequest;
+use crate::auth_user_lookup::rows::{UserFilter, UserRows};
+
+const COUNT_ALL_SQL: &str = "SELECT count(*) FROM \"LiteLLM_UserTable\"";
+const COUNT_SSO_SQL: &str =
+    "SELECT count(*) FROM \"LiteLLM_UserTable\" AS entry WHERE entry.\"sso_user_id\" = $1";
+const COUNT_EMAIL_SQL: &str =
+    "SELECT count(*) FROM \"LiteLLM_UserTable\" AS entry WHERE entry.\"user_email\" = $1";
+const COUNT_EMAIL_CASE_SQL: &str = "SELECT count(*) FROM \"LiteLLM_UserTable\" AS entry WHERE LOWER(entry.\"user_email\") = LOWER($1)";
+const MEMBERSHIP_SQL: &str = "SELECT row_to_json(entry)::text FROM \"LiteLLM_UserTable\" AS entry WHERE entry.\"user_id\" = ANY($1::text[])";
+
+fn email_filter(address: Option<&str>, insensitive: bool) -> UserFilter {
+    UserFilter::Email(UserEmailFilter {
+        address: address.map(str::to_owned),
+        insensitive,
+    })
+}
+
+#[test]
+fn count_builds_the_filter_query() {
+    assert_eq!(UserRows.count(None).sql, COUNT_ALL_SQL);
+    assert_eq!(UserRows.count(Some(&[])).sql, COUNT_ALL_SQL);
+    assert!(UserRows.count(None).parameters.is_empty());
+
+    let sso_filters = [UserFilter::SsoId("sso-1".to_owned())];
+    let sso = UserRows.count(Some(&sso_filters));
+    assert_eq!(sso.sql, COUNT_SSO_SQL);
+    assert_eq!(sso.parameters.len(), 1);
+
+    let insensitive_filters = [email_filter(Some("A@example.com"), true)];
+    let insensitive = UserRows.count(Some(&insensitive_filters));
+    assert_eq!(insensitive.sql, COUNT_EMAIL_CASE_SQL);
+    assert_eq!(insensitive.parameters.len(), 1);
+
+    let sensitive_filters = [email_filter(Some("A@example.com"), false)];
+    let sensitive = UserRows.count(Some(&sensitive_filters));
+    assert_eq!(sensitive.sql, COUNT_EMAIL_SQL);
+    assert_eq!(sensitive.parameters.len(), 1);
+
+    let no_address_filters = [email_filter(None, true)];
+    let no_address = UserRows.count(Some(&no_address_filters));
+    assert_eq!(no_address.sql, COUNT_ALL_SQL);
+    assert!(no_address.parameters.is_empty());
+}
+
+#[test]
+fn membership_builds_the_any_query() {
+    assert_eq!(UserRows.membership(KeyColumn::Id), MEMBERSHIP_SQL);
+}
 
 #[tokio::test]
 async fn none_id_skips_lookup() {
