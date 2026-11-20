@@ -3,8 +3,9 @@ use std::time::Duration;
 use betterlite_core::api::genai_http::error::GenAiHttpError;
 use betterlite_core::api::genai_http::service::{
     AsyncGenerateContentOutcome, GenerateContentCall, GenerateContentDeps, GenerateContentOutcome,
-    StreamSettings, async_generate_content, generate_content,
+    async_generate_content, generate_content,
 };
+use betterlite_core::api::genai_http::stream::StreamSettings;
 use betterlite_core::api::vector_store_http_write::service::LogContext;
 use betterlite_core::genai_setup::params::GenerateContentLiteLLMParams;
 use betterlite_models::catalog::BundledCatalog;

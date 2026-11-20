@@ -102,30 +102,7 @@ impl GenerateContentHttpConfig for NativeConfig {
             }
             let vertex = VertexSettings::default();
             let studio = StudioSettings::default();
-            let auth = NativeAuth {
-                provider: self.provider,
-                model: call.model,
-                api_base: call.api_base,
-                stream: call.stream,
-                params: VertexParams {
-                    project: call.params.vertex_project.as_deref(),
-                    ai_project: None,
-                    location: call.params.vertex_location.as_deref(),
-                    ai_location: None,
-                    credentials: None,
-                    ai_credentials: None,
-                },
-                vertex: &vertex,
-                studio: &studio,
-                studio_keys: NativeParams {
-                    api_key: call
-                        .params
-                        .api_key
-                        .as_ref()
-                        .map(|key| AuthValue::Key(key.clone())),
-                    gemini_api_key: None,
-                },
-            };
+            let auth = auth_input(self.provider, call, &vertex, &studio);
             let target = native_auth(self.catalog.as_ref(), &auth, |_credentials, _project| {
                 ready(Ok(AccessToken {
                     token: SecretString::from(""),
@@ -166,6 +143,39 @@ impl GenerateContentHttpConfig for NativeConfig {
             headers,
             status_code_is_synthesized: false,
         }
+    }
+}
+
+// The NativeAuth the vertex auth reads: the call's fields, the loaded settings and the Studio key
+fn auth_input<'call>(
+    provider: NativeProvider,
+    call: &'call AuthCall<'_>,
+    vertex: &'call VertexSettings,
+    studio: &'call StudioSettings,
+) -> NativeAuth<'call> {
+    NativeAuth {
+        provider,
+        model: call.model,
+        api_base: call.api_base,
+        stream: call.stream,
+        params: VertexParams {
+            project: call.params.vertex_project.as_deref(),
+            ai_project: None,
+            location: call.params.vertex_location.as_deref(),
+            ai_location: None,
+            credentials: None,
+            ai_credentials: None,
+        },
+        vertex,
+        studio,
+        studio_keys: NativeParams {
+            api_key: call
+                .params
+                .api_key
+                .as_ref()
+                .map(|key| AuthValue::Key(key.clone())),
+            gemini_api_key: None,
+        },
     }
 }
 
