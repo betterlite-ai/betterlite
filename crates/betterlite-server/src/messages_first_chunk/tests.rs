@@ -275,6 +275,34 @@ fn a_usable_code_warns_about_nothing() {
 }
 
 #[test]
+fn a_null_or_missing_code_warns_about_nothing() {
+    let (logs, _guard) = capture_logs(tracing::Level::WARN);
+    assert_eq!(
+        frame_error_code(b"data: {\"error\": {\"code\": null}}"),
+        None
+    );
+    assert_eq!(
+        frame_error_code(b"data: {\"error\": {\"message\": \"x\"}}"),
+        None
+    );
+    assert!(logs.contents().is_empty());
+}
+
+#[test]
+fn a_code_string_of_non_ascii_digits_warns_twice() {
+    let (logs, _guard) = capture_logs(tracing::Level::WARN);
+    let digits: String = [0x0664_u32, 0x0660_u32, 0x0664_u32]
+        .into_iter()
+        .filter_map(char::from_u32)
+        .collect();
+    let chunk = format!("data: {{\"error\": {{\"code\": \"{digits}\"}}}}");
+    assert_eq!(frame_error_code(chunk.as_bytes()), None);
+    let contents = logs.contents();
+    assert!(contents.contains(&format!("not a valid integer: {digits}")));
+    assert!(contents.contains(&format!("not-convertible code: {digits}")));
+}
+
+#[test]
 fn frame_error_object_defaults_with_litellms_key_order() {
     assert_eq!(
         serialized_object(b"data: {\"error\": \"nope\"}"),
