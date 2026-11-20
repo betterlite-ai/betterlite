@@ -535,11 +535,15 @@ impl PreCallHook for RecordingHook {
             }
         }
         let mut params = BTreeMap::new();
-        if let Some(Json::Object(logged)) = args.passthrough.get("params") {
-            for (name, value) in logged {
-                if let Json::Text(text) = value {
-                    params.insert(name.clone(), text.clone());
-                }
+        let empty = IndexMap::new();
+        let logged = match args.passthrough.get("params") {
+            Some(Json::Object(entries)) => entries,
+            Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Text(_))
+            | None => &empty,
+        };
+        for (name, value) in logged {
+            if let Json::Text(text) = value {
+                params.insert(name.clone(), text.clone());
             }
         }
         let container_id = match args.passthrough.get("container_id") {

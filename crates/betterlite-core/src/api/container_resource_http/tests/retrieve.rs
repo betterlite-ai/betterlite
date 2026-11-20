@@ -22,7 +22,7 @@ fn run_retrieve(
     fixture: &Fixture,
     call: &ContainerResourceCall<'_, FakeSource>,
 ) -> ContainerObject {
-    done(fixture.handler().container_retrieve_handler(call, false)).expect("the retrieve succeeds")
+    done(fixture.handler().container_retrieve_handler(call, false))
 }
 
 fn retrieve_error(

@@ -20,7 +20,7 @@ fn run_delete(
     fixture: &Fixture,
     call: &ContainerResourceCall<'_, FakeSource>,
 ) -> DeleteContainerResult {
-    done(fixture.handler().container_delete_handler(call, false)).expect("the delete succeeds")
+    done(fixture.handler().container_delete_handler(call, false))
 }
 
 fn delete_error(

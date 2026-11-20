@@ -46,11 +46,11 @@ pub enum ContainerResourceHttpError {
     #[error("{exception}")]
     Provider {
         #[source]
-        pub exception: BaseLlmException,
-        pub status_code_is_synthesized: bool,
+        exception: BaseLlmException,
+        status_code_is_synthesized: bool,
     },
     #[error("the {name} query value is not a string, a number or a boolean")]
-    QueryValue { pub name: String },
+    QueryValue { name: String },
 }
 
 pub type RetrieveResult = Result<ContainerObject, ContainerResourceHttpError>;
@@ -106,35 +106,21 @@ pub struct ContainerResourceHandler<Source: ClientSource, Hook: PreCallHook> {
     pub logging: Hook,
 }
 // LiteLLM spells the blocking and async entry points of each endpoint out twice; one request shape serves both
+#[rustfmt::skip]
 macro_rules! endpoints {
-    ($($sync:ident, $asynchronous:ident, $kind:ident, $result:ident;)+) => {
-        $(
-            pub fn $sync(
-                &self,
-                call: &ContainerResourceCall<'_, Source>,
-                is_async: bool,
-            ) -> Result<
-                Handled<<$kind as Resource>::Reply, impl Future<Output = $result>>,
-                ContainerResourceHttpError,
-            > {
-                if is_async {
-                    return Ok(Handled::Pending(self.$asynchronous(call)));
-                }
-                self.sync_call::<$kind>(call).map(Handled::Done)
+    ($($sync:ident, $asynchronous:ident, $kind:ident, $result:ident;)+) => { $(
+        pub fn $sync(&self, call: &ContainerResourceCall<'_, Source>, is_async: bool) -> Result<Handled<<$kind as Resource>::Reply, impl Future<Output = $result>>, ContainerResourceHttpError> {
+            if is_async {
+                return Ok(Handled::Pending(self.$asynchronous(call)));
             }
-
-            pub async fn $asynchronous(
-                &self,
-                call: &ContainerResourceCall<'_, Source>,
-            ) -> $result {
-                let (client, request) = self.async_begin::<$kind>(call)?;
-                let reply = AsyncClient::send(client.get(), &request)
-                    .await
-                    .map_err(|error| transport_failure(&error, call.config, None))?;
-                decoded::<$kind>(call.config, &reply)
-            }
-        )+
-    };
+            self.sync_call::<$kind>(call).map(Handled::Done)
+        }
+        pub async fn $asynchronous(&self, call: &ContainerResourceCall<'_, Source>) -> $result {
+            let (client, request) = self.async_begin::<$kind>(call)?;
+            let reply = AsyncClient::send(client.get(), &request).await.map_err(|error| transport_failure(&error, call.config, None))?;
+            decoded::<$kind>(call.config, &reply)
+        }
+    )+ };
 }
 impl<Source: ClientSource, Hook: PreCallHook> ContainerResourceHandler<Source, Hook> {
     endpoints! {
@@ -142,10 +128,13 @@ impl<Source: ClientSource, Hook: PreCallHook> ContainerResourceHandler<Source, H
         container_delete_handler, acontainer_delete_handler, Delete, DeleteResult;
     }
 
-    fn sync_call<Kind: Resource>(
+    fn sync_call<Kind>(
         &self,
         call: &ContainerResourceCall<'_, Source>,
-    ) -> Result<Kind::Reply, ContainerResourceHttpError> {
+    ) -> Result<Kind::Reply, ContainerResourceHttpError>
+    where
+        Kind: Resource,
+    {
         let params = read_params(call.litellm_params)?;
         let client = Selected::choose(call.blocking_client, || {
             self.clients.blocking_client(params.ssl_verify.as_ref())
@@ -157,13 +146,16 @@ impl<Source: ClientSource, Hook: PreCallHook> ContainerResourceHandler<Source, H
         decoded::<Kind>(call.config, &reply)
     }
 
-    fn async_begin<'inner, Kind: Resource>(
+    fn async_begin<'inner, Kind>(
         &self,
         call: &ContainerResourceCall<'inner, Source>,
     ) -> Result<
         (Selected<'inner, Source::Asynchronous>, ContainerHttpRequest),
         ContainerResourceHttpError,
-    > {
+    >
+    where
+        Kind: Resource,
+    {
         let params = read_params(call.litellm_params)?;
         let client = Selected::choose(call.async_client, || {
             self.clients.async_client(params.ssl_verify.as_ref())
@@ -174,11 +166,14 @@ impl<Source: ClientSource, Hook: PreCallHook> ContainerResourceHandler<Source, H
     }
 
     // LiteLLM's order: provider headers, base URL, transform, extra query, log, then the method's request
-    fn prepare<Kind: Resource>(
+    fn prepare<Kind>(
         &self,
         call: &ContainerResourceCall<'_, Source>,
         params: &CallParams<'_>,
-    ) -> Result<ContainerHttpRequest, ContainerResourceHttpError> {
+    ) -> Result<ContainerHttpRequest, ContainerResourceHttpError>
+    where
+        Kind: Resource,
+    {
         let headers = request_headers(call.config, call.extra_headers, params.api_key.as_ref());
         let api_base = call
             .config
@@ -288,15 +283,20 @@ fn transport_failure(
     }
 }
 
-fn decoded<Kind: Resource>(
+fn decoded<Kind>(
     config: &dyn BaseContainerConfig,
     reply: &ContainerHttpReply,
-) -> Result<Kind::Reply, ContainerResourceHttpError> {
+) -> Result<Kind::Reply, ContainerResourceHttpError>
+where
+    Kind: Resource,
+{
     raise_for_error_status(config, reply).map_err(|exception| {
         ContainerResourceHttpError::Provider {
             exception,
             status_code_is_synthesized: false,
         }
     })?;
-    Kind::decode(config, &reply.body).map_err(ContainerFileHttpError::Config)
+    Kind::decode(config, &reply.body)
+        .map_err(ContainerFileHttpError::Config)
+        .map_err(ContainerResourceHttpError::from)
 }
