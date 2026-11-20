@@ -136,13 +136,18 @@ struct OutcomeView {
     seen: Vec<Seen>,
 }
 
+#[derive(Default)]
+struct Route<'route> {
+    thread_id: Option<&'route str>,
+    assistant_id: Option<&'route str>,
+    client: Option<AssistantClient>,
+}
+
 async fn dispatch(
     settings: &Settings,
     operation: AssistantOperation,
     data: BTreeMap<String, Json>,
-    thread_id: Option<&str>,
-    assistant_id: Option<&str>,
-    client: Option<AssistantClient>,
+    route: Route<'_>,
     replies: &[(u16, &str)],
 ) -> OutcomeView {
     let recorder = Arc::new(Recorder::default());
@@ -181,9 +186,9 @@ async fn dispatch(
     let request = AssistantRequest {
         operation,
         data: &data,
-        thread_id,
-        assistant_id,
-        client,
+        thread_id: route.thread_id,
+        assistant_id: route.assistant_id,
+        client: route.client,
         event_handler: None,
     };
     let result = dispatcher.dispatch(&request).await;
@@ -239,9 +244,7 @@ async fn dispatch_all_assistant_operations() {
             ("api_base", text(MOCK_BASE)),
             ("api_key", text("sk-test")),
         ]),
-        None,
-        None,
-        None,
+        Route::default(),
         &[(200, ASSISTANT)],
     )
     .await;
@@ -260,9 +263,10 @@ async fn dispatch_all_assistant_operations() {
         &settings,
         AssistantOperation::ListAssistants,
         openai_data(),
-        None,
-        None,
-        Some(supplied("sk-supplied")),
+        Route {
+            client: Some(supplied("sk-supplied")),
+            ..Route::default()
+        },
         &[(200, PAGE)],
     )
     .await;
@@ -281,9 +285,10 @@ async fn dispatch_all_assistant_operations() {
         &settings,
         AssistantOperation::DeleteAssistant,
         openai_data(),
-        None,
-        Some("asst_a"),
-        None,
+        Route {
+            assistant_id: Some("asst_a"),
+            ..Route::default()
+        },
         &[(200, DELETED)],
     )
     .await;
@@ -301,9 +306,7 @@ async fn dispatch_all_assistant_operations() {
         &settings,
         AssistantOperation::CreateThread,
         openai_data(),
-        None,
-        None,
-        None,
+        Route::default(),
         &[(200, THREAD)],
     )
     .await;
@@ -319,9 +322,10 @@ async fn dispatch_all_assistant_operations() {
         &settings,
         AssistantOperation::GetThread,
         openai_data(),
-        Some("thread_a"),
-        None,
-        None,
+        Route {
+            thread_id: Some("thread_a"),
+            ..Route::default()
+        },
         &[(200, THREAD)],
     )
     .await;
@@ -342,9 +346,10 @@ async fn dispatch_all_assistant_operations() {
             ("api_base", text(MOCK_BASE)),
             ("api_key", text("sk-test")),
         ]),
-        Some("thread_a"),
-        None,
-        None,
+        Route {
+            thread_id: Some("thread_a"),
+            ..Route::default()
+        },
         &[(200, MESSAGE)],
     )
     .await;
@@ -362,9 +367,10 @@ async fn dispatch_all_assistant_operations() {
         &settings,
         AssistantOperation::ListMessages,
         openai_data(),
-        Some("thread_a"),
-        None,
-        None,
+        Route {
+            thread_id: Some("thread_a"),
+            ..Route::default()
+        },
         &[(200, MESSAGE_PAGE)],
     )
     .await;
@@ -382,9 +388,10 @@ async fn dispatch_all_assistant_operations() {
             ("api_base", text(MOCK_BASE)),
             ("api_key", text("sk-test")),
         ]),
-        Some("thread_a"),
-        None,
-        None,
+        Route {
+            thread_id: Some("thread_a"),
+            ..Route::default()
+        },
         &[(200, RUN)],
     )
     .await;
@@ -408,9 +415,10 @@ async fn dispatch_all_assistant_operations() {
             ("api_base", text(MOCK_BASE)),
             ("api_key", text("sk-test")),
         ]),
-        Some("thread_a"),
-        None,
-        None,
+        Route {
+            thread_id: Some("thread_a"),
+            ..Route::default()
+        },
         &[(200, RUN)],
     )
     .await;
@@ -436,9 +444,7 @@ async fn assistant_config_overlays_request() {
         &settings,
         AssistantOperation::CreateAssistant,
         data(&[("api_key", text("request-key")), ("model", text("gpt-4o"))]),
-        None,
-        None,
-        None,
+        Route::default(),
         &[(200, ASSISTANT)],
     )
     .await;
@@ -471,9 +477,7 @@ async fn assistant_config_overlays_request() {
             ("api_version", text("2024-05-01-preview")),
             ("model", text("gpt-4o")),
         ]),
-        None,
-        None,
-        None,
+        Route::default(),
         &[(200, ASSISTANT)],
     )
     .await;
@@ -493,13 +497,11 @@ async fn assistant_config_overlays_request() {
             ("api_key", text("request-key")),
             ("model", text("gpt-4o")),
         ]),
-        None,
-        None,
-        None,
+        Route::default(),
         &[],
     )
     .await;
-    let Err(AssistantDispatchError::Failure(failure)) = empty.result else {
+    let Err(AssistantDispatchError::Failure { failure }) = empty.result else {
         panic!("the empty provider did not surface as a failure");
     };
     assert_eq!(failure.class, "BadRequestError");
@@ -529,6 +531,27 @@ async fn assistant_config_overlays_request() {
         );
         assert!(outcome.seen.is_empty());
     }
+
+    // the route's path keyword already sits in kwargs, so the configured parameters replace it
+    let overridden = configured("openai", &[("assistant_id", text("asst_configured"))]);
+    let removed_override = dispatch(
+        &overridden,
+        AssistantOperation::DeleteAssistant,
+        openai_data(),
+        Route {
+            assistant_id: Some("asst_a"),
+            ..Route::default()
+        },
+        &[(200, DELETED)],
+    )
+    .await;
+    removed_override
+        .result
+        .expect("the configured id call succeeds");
+    assert_eq!(
+        removed_override.seen[0].url,
+        "https://mock.test/v1/assistants/asst_configured"
+    );
 }
 
 #[tokio::test]
@@ -537,9 +560,7 @@ async fn assistant_dispatch_requires_provider() {
         &Settings::default(),
         AssistantOperation::CreateAssistant,
         data(&[("model", text("gpt-4o-mini")), ("api_key", text("sk-test"))]),
-        None,
-        None,
-        None,
+        Route::default(),
         &[],
     )
     .await;
@@ -562,9 +583,7 @@ async fn assistant_dispatch_requires_provider() {
         &empty_config,
         AssistantOperation::CreateAssistant,
         data(&[("model", text("gpt-4o-mini"))]),
-        None,
-        None,
-        None,
+        Route::default(),
         &[],
     )
     .await;
@@ -584,9 +603,7 @@ async fn assistant_dispatch_requires_provider() {
         &only_provider,
         AssistantOperation::CreateAssistant,
         data(&[("model", text("gpt-4o-mini"))]),
-        None,
-        None,
-        None,
+        Route::default(),
         &[],
     )
     .await;
@@ -603,19 +620,81 @@ async fn assistant_dispatch_requires_provider() {
             ("custom_llm_provider", text("anthropic")),
             ("model", text("claude-3")),
         ]),
-        None,
-        None,
-        None,
+        Route::default(),
         &[],
     )
     .await;
-    let Err(AssistantDispatchError::Failure(failure)) = rejected.result else {
+    let Err(AssistantDispatchError::Failure { failure }) = rejected.result else {
         panic!("the unsupported provider did not surface as a failure");
     };
     assert_eq!(failure.class, "BadRequestError");
     assert_eq!(failure.status, Some(400));
-    assert!(failure.message.contains("'create_assistants'"), "{failure}");
+    assert!(
+        failure.message.contains("'create_assistants'"),
+        "{failure:?}"
+    );
     assert!(rejected.seen.is_empty());
+}
+
+#[tokio::test]
+async fn missing_arguments_use_the_interpreter_wording() {
+    let settings = configured("openai", &[]);
+    let absent = dispatch(
+        &settings,
+        AssistantOperation::CreateMessage,
+        openai_data(),
+        Route {
+            thread_id: Some("thread_a"),
+            ..Route::default()
+        },
+        &[],
+    )
+    .await;
+    let Err(AssistantDispatchError::TypeError { message }) = absent.result else {
+        panic!("the missing role and content did not raise");
+    };
+    assert_eq!(
+        message,
+        "a_add_message() missing 2 required positional arguments: 'role' and 'content'"
+    );
+    assert!(absent.seen.is_empty());
+
+    let threaded = dispatch(
+        &settings,
+        AssistantOperation::RunThread,
+        openai_data(),
+        Route {
+            thread_id: Some("thread_a"),
+            ..Route::default()
+        },
+        &[],
+    )
+    .await;
+    let Err(AssistantDispatchError::TypeError { message }) = threaded.result else {
+        panic!("the missing assistant id did not raise");
+    };
+    assert_eq!(
+        message,
+        "arun_thread() missing 1 required positional argument: 'assistant_id'"
+    );
+    assert!(threaded.seen.is_empty());
+
+    let unthreaded = dispatch(
+        &settings,
+        AssistantOperation::CreateMessage,
+        openai_data(),
+        Route::default(),
+        &[],
+    )
+    .await;
+    let Err(AssistantDispatchError::TypeError { message }) = unthreaded.result else {
+        panic!("the missing thread id did not raise");
+    };
+    assert_eq!(
+        message,
+        "a_add_message() missing 3 required positional arguments: 'thread_id', 'role', and 'content'"
+    );
+    assert!(unthreaded.seen.is_empty());
 }
 
 #[test]

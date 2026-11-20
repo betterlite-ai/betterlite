@@ -88,9 +88,11 @@ fn a_nonempty_mapping_without_params_fails_to_load() {
 
 #[test]
 fn a_mapping_without_a_provider_loads_for_the_dispatcher() {
-    let loaded =
-        settings("assistant_settings:\n  litellm_params:\n    api_key: sk-config\n", &[])
-            .expect("only the factory reads custom_llm_provider");
+    let loaded = settings(
+        "assistant_settings:\n  litellm_params:\n    api_key: sk-config\n",
+        &[],
+    )
+    .expect("only the factory reads custom_llm_provider");
     let config = loaded.config.expect("the assistant is configured");
     assert_eq!(config.custom_llm_provider, None);
     assert_eq!(

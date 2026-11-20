@@ -53,6 +53,33 @@ struct Merged {
     kwargs: BTreeMap<String, Json>,
 }
 
+// the wrapper's own named arguments: a configured copy of either collides with the call (router.py#L7190)
+fn check_arguments(
+    operation: AssistantOperation,
+    kwargs: &BTreeMap<String, Json>,
+) -> Result<(), AssistantDispatchError> {
+    for name in ["custom_llm_provider", "client"] {
+        if kwargs.contains_key(name) {
+            return Err(AssistantDispatchError::duplicate_argument(
+                operation.function(),
+                name,
+            ));
+        }
+    }
+    Ok(())
+}
+
+// the caller's explicit provider, or None for the two values Python treats as unset
+fn caller_provider(value: Option<&Json>) -> Result<Option<String>, AssistantDispatchError> {
+    match value {
+        None | Some(Json::Null) => Ok(None),
+        Some(Json::Text(provider)) => Ok(Some(provider.clone())),
+        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            Err(AssistantDispatchError::invalid("custom_llm_provider"))
+        }
+    }
+}
+
 impl<'deps, 'resolution, T, S> AssistantDispatcher<'deps, 'resolution, T, S>
 where
     T: AssistantsTransport + RunStreamTransport,
@@ -69,43 +96,26 @@ where
     // _pass_through_assistants_endpoint_factory: bind the caller's provider and client, overlay the
     // configured litellm_params only when the provider is null, then call the installed function.
     fn merge(&self, request: &AssistantRequest<'_>) -> Result<Merged, AssistantDispatchError> {
-        if let Some(name) = request.operation.path_argument() {
+        if let Some(name) = request.operation.path_argument()
+            && request.data.contains_key(name)
+        {
             // the route passes this id as a keyword next to **data, so a body key of that name collides
-            if request.data.contains_key(name) {
-                return Err(AssistantDispatchError::multiple_values(name));
-            }
+            return Err(AssistantDispatchError::multiple_values(name));
         }
-        let caller = match request.data.get("custom_llm_provider") {
-            None | Some(Json::Null) => None,
-            Some(Json::Text(provider)) => Some(provider.clone()),
-            Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-                return Err(AssistantDispatchError::invalid("custom_llm_provider"));
-            }
-        };
+        let caller = caller_provider(request.data.get("custom_llm_provider"))?;
         let mut kwargs = request.data.clone();
         kwargs.remove("custom_llm_provider");
         kwargs.remove("client");
+        if let (Some(name), Some(value)) = (request.operation.path_argument(), request.path_value())
+        {
+            // the route's keyword is in kwargs before the factory runs, so the overlay can replace it
+            kwargs.insert(name.to_owned(), Json::Text(value.to_owned()));
+        }
         let provider = match caller {
             Some(provider) => provider,
             None => self.overlay(&mut kwargs)?,
         };
-        // the installed function takes these two as its own named arguments, so a config copy collides
-        if kwargs.contains_key("custom_llm_provider") {
-            return Err(AssistantDispatchError::duplicate_argument(
-                request.operation.function(),
-                "custom_llm_provider",
-            ));
-        }
-        if kwargs.contains_key("client") {
-            return Err(AssistantDispatchError::duplicate_argument(
-                request.operation.function(),
-                "client",
-            ));
-        }
-        if let (Some(name), Some(value)) = (request.operation.path_argument(), request.path_value())
-        {
-            kwargs.insert(name.to_owned(), Json::Text(value.to_owned()));
-        }
+        check_arguments(request.operation, &kwargs)?;
         Ok(Merged { provider, kwargs })
     }
 
