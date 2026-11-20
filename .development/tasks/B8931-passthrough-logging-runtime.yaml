@@ -16,8 +16,8 @@ description: >-
   client and its server-owned task tracker, B198 clock/ID source, B3602 credential router, B8611
   router views, B594 credential resolver, B595 signer, and B8930's enabled setting. Use the merged
   public types rather than making a second config or service registry. Expose completion,
-  streaming, binder and speech_rates on PassThroughRuntime, using the handles accepted by B3613's
-  HandlerDeps, B3612's WebSocketDeps and B3625's SpeechRates. Also expose the provider dispatcher
+  streaming and binder on PassThroughRuntime, using the handles accepted by B3613's HandlerDeps and
+  B3612's WebSocketDeps; B3625 (later work) adds speech_rates for its SpeechRates when it mounts its routes. Also expose the provider dispatcher
   and collected-chunks router for composition tests. All state is per constructed runtime; no
   process globals, environment reads, independent HTTP pools or extra logging worker.
 
@@ -41,11 +41,12 @@ description: >-
   Implement B3638's cost port over B068, preserving response kind, model, provider, optional call
   type and vertex_location. Use it for B3639's VertexPredictLogger and B3642's VertexPassthroughHandler
   with the Vertex batch service. Construct B3640's GeminiPassthroughLogger and VertexStreamCollector
-  over that same calculator, and B3643's VertexAiLiveLogger over the supplied CostRecorder.
+  over that same calculator. B3643's VertexAiLiveLogger is later work and is built with the Vertex Live route.
 
-  Implement CatalogSpeechRates once over B193's live catalog view: its TranscribeRates and
-  SpeechRates implementations both call B3644's transcribe_cost_per_second for
-  transcribe/StartTranscriptionJob.input_cost_per_second. Missing or invalid entries remain None,
+  Implement CatalogSpeechRates once over B193's live catalog view: its TranscribeRates
+  implementation calls B3644's transcribe_cost_per_second for
+  transcribe/StartTranscriptionJob.input_cost_per_second, and B3625 adds a SpeechRates implementation over the same
+  lookup later. Missing or invalid entries remain None,
   never zero. This lets the admission route and delayed logger see the same price. Build the
   B3645 live-pricing dependency bundle from the supplied credentials, signer, HTTP client and
   clock, then call B3646's TranscribeLogger::production once. Share its one download permit and
@@ -117,7 +118,7 @@ references:
 dod:
   - text: The production graph has a real handler for every provider branch and all four stream collectors, reuses its pricing and payload resources and keeps batch registries absent.
     proof: [provider-tests]
-  - text: TinyFish, AssemblyAI and Transcribe use the lower success sink without recursion, and both Transcribe rate ports read the same catalog and share one live logger.
+  - text: TinyFish, AssemblyAI and Transcribe use the lower success sink without recursion, and the Transcribe rate port reads the catalog and shares one live logger.
     proof: [billing-tests]
   - text: The Anthropic probes and partial usage, TinyFish marker, byte cost injection and reservation binder reach their real leaves with request-local state.
     proof: [stream-tests]
@@ -141,7 +142,7 @@ checks:
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - "B8640 and B8610 store and distribute one runtime through the app; B8606-B8609 own family mounts and B102 owns HTTP integration. This task registers no routes and changes no shared module."
+  - "B8640 and B8610 store and distribute one runtime through the app; B8606-B8609 and B10026 own family mounts and B102 owns HTTP integration. This task registers no routes and changes no shared module."
   - "All pass_through_endpoints.py function bodies stay with B2302, B3600, B3607, B3610-B3617, B6510 and B8520; B102 records the unused and enterprise-only exclusions. Only the logger's assembly is added here."
   - "success_handler.py methods belong to B3605-B3607. streaming_handler.py methods belong to B3608-B3609. This task supplies their production inputs and does not port their algorithms again."
   - "Every Transcribe helper, decoder, policy and pricing function belongs to B3644-B3646; AssemblyAI methods to B3647; TinyFish functions to B3648-B3649. Their returned tasks must support the shared tracker before this builder is dispatched."

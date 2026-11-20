@@ -3,7 +3,7 @@ title: Attached-file create, update and delete HTTP routes
 description: >-
   Implement server::api::vector_file_mutation_routes for POST /v1/vector_stores/{vector_store_id}/files
   and /vector_stores/{vector_store_id}/files, POST both prefixes with /{file_id}, and DELETE both
-  prefixes with /{file_id}. Own each complete handler; B1075 resolves ids/credentials/provider and B1061
+  prefixes with /{file_id}. Own each complete handler; B1075 resolves ids/credentials/provider and B10014
   checks original-store access. B1100 supplies request-body decoding for POST; DELETE does not read a body.
   B004 runs avector_store_file_create/update/delete with model=null and the injected proxy/user defaults,
   B1072/B1074 execute SDK calls, B003/B732 authenticate. No route-specific settings or helper adapter.

@@ -11,7 +11,8 @@ description: >-
   global: the rate_limiter_settings section of B3031, the LimiterClock and FailClosedPolicy of B3031, the
   window store of B3032, the atomic counters of B3033, the settlement of B3034, the gauges of B3035, the
   WindowedAdmission of B3036, the token adjustments of B3037, a boxed ModelGroupResolver, and the batch
-  limit counters of B1045. Build it once at boot and share it as an `Arc`. It exposes the parts as
+  limiter slot, an `Option<Arc<dyn CallTypeRateLimiter>>` read through `batch_limiter()`. Boot passes None until the Batch API's
+  own task fills the slot, so nothing here uses the batch tasks. Build it once at boot and share it as an `Arc`. It exposes the parts as
   read-only accessors. It owns an error enum `LimiterAssemblyError` with one `#[from]` variant per owner
   error it can see.
 

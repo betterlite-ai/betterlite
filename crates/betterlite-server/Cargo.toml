@@ -9,6 +9,7 @@ publish.workspace = true
 testing = []
 
 [dependencies]
+aes = "0.9.3"
 aho-corasick = "1.1.5"
 async-stream = "0.3.6"
 async-trait = "0.1.92"
@@ -60,6 +61,7 @@ betterlite-transcribe = { path = "../betterlite-transcribe" }
 betterlite-vertex = { path = "../betterlite-vertex" }
 bytes = "1.12.1"
 caseless = "0.2.2"
+cbc = { version = "0.2.1", features = ["alloc"] }
 chrono = { workspace = true }
 crc32fast = "1.5.3"
 deadpool-postgres.workspace = true
@@ -71,6 +73,7 @@ futures-channel = { version = "0.3.34", features = ["sink"] }
 futures-util = { version = "0.3.34", default-features = false, features = ["alloc", "async-await", "sink"] }
 getrandom = "0.4.3"
 hex.workspace = true
+hmac = "0.13.0"
 http = "1.5.0"
 http-body = "1.1.0"
 hyper-util = { workspace = true, features = ["server-auto", "tokio", "service"] }
@@ -128,6 +131,7 @@ rquickjs = "0.14.0"
 rstest = "=0.27.0"
 rustls = { workspace = true, features = ["std", "tls12"] }
 signal-hook = { version = "0.4.6", default-features = false }
+temp-env = { version = "0.3.6", features = ["async_closure"] }
 tempfile = "3.27.0"
 tokio = { workspace = true, features = ["test-util"] }
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs", "tls12"] }

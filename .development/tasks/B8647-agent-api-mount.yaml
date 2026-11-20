@@ -17,7 +17,9 @@ description: >-
 
   6. Mount (app/agents.rs). mount merges, in this order, agent_identity_routes, agent_read_routes, agent_write_routes and the B4786 routes, each given its state from items 2 to 5 and B8645's AgentServices built once in mount with AgentServices::new(&state.config, &state.shared). axum prefers the static paths (/v1/agents/identity/providers, /v1/agents/make_public) over /v1/agents/{agent_id} on its own; do not register a path twice, and do not call .fallback. mount_public merges agent_fields_routes(), the route LiteLLM serves with no key check. Delete the stale comment line "Awaits a future B003 integration task..." above agent_fields_routes in crates/betterlite-server/src/public_endpoints/agent_fields.rs and change nothing else there.
 
-  HTTP oracle cases through the booted proxy. The cases below moved here from the route tasks; write each from that task's text, with the config its name implies (master key set, no database unless the name says db). From B4781 (items 6 and 7 of its text): providers-jwt-off-empty, providers-jwt-on-issuers, providers-no-key-401 and status-no-database-503. From B4784 (its list and lookup sections): the ten listing cases, covering config agents in order, public agent groups present and empty, the redacted litellm_params, the three 422 query errors, the 400 agent_search_not_configured, the bad key 401 and GET by id without a database. From B4785 (its check order): the 401 without a key on POST and DELETE and the no-database answers of POST, PUT, PATCH and DELETE. From B4786 (its DoD lines): the fifteen kill switch and make_public cases. Plus one of this task's own: GET /public/agents/fields without a key answers 200 with the bundled list.
+  7. Model list agent rows. B4784 makes B060's /model_group/info and B850's /v2/model/info handlers take the agent access resolver and the registry as inputs. Give them AgentServices.access and the registry of the AgentServices built once in item 6, so the three model list cases below show the a2a rows.
+
+  HTTP oracle cases through the booted proxy. The cases below moved here from the route tasks; write each from that task's text, with the config its name implies (master key set, no database unless the name says db). From B4781 (items 6 and 7 of its text): providers-jwt-off-empty, providers-jwt-on-issuers, providers-no-key-401 and status-no-database-503. From B4784 (its list and lookup sections): the ten listing cases, covering config agents in order, public agent groups present and empty, the redacted litellm_params, the three 422 query errors, the 400 agent_search_not_configured, the bad key 401 and GET by id without a database. From B4785 (its check order): the 401 without a key on POST and DELETE and the no-database answers of POST, PUT, PATCH and DELETE. From B4786 (its DoD lines): the fifteen kill switch and make_public cases. From B060 and B850 (B4784 adds their agent rows): exact-group-filter-and-agent-append on /model_group/info, and agents-appended-after-search-sort and final-filters-apply-to-agents on /v2/model/info, each with a config agent and a key restricted to it. Plus one of this task's own: GET /public/agents/fields without a key answers 200 with the bundled list.
 scope:
   paths:
     - crates/betterlite-server/src/app/agents.rs
@@ -39,6 +41,9 @@ scope:
     - tools/oracle/cases/agents/writes/patch-no-database-500.yaml
     - tools/oracle/cases/agents/writes/delete-no-database-500.yaml
     - tools/oracle/cases/agents/writes/delete-no-key-401.yaml
+    - tools/oracle/cases/management/model-management/exact-group-filter-and-agent-append.yaml
+    - tools/oracle/cases/management/model-info-v2/agents-appended-after-search-sort.yaml
+    - tools/oracle/cases/management/model-info-v2/final-filters-apply-to-agents.yaml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_lazy_features.py#L91-L108
@@ -59,6 +64,8 @@ dod:
   - text: StoreIdentityStatus answers the policy_unavailable failure without a database, and InferenceAgentEmbedders answers None without a model list and otherwise embeds through B8631's RouterEmbedder.
     proof: [api-tests]
   - text: The identity, list, lookup, write and admin action routes answer through the booted proxy as LiteLLM does, with 401 for a missing or bad key, and /public/agents/fields answers 200 without a key.
+    proof: [oracle]
+  - text: /model_group/info and /v2/model/info list an agent the key may call as an a2a row, after the model_group filter and after the sort, with the final filters applied, through the booted proxy as LiteLLM does.
     proof: [oracle]
 checks:
   optional: []
@@ -106,13 +113,16 @@ oracle_cases:
   - tools/oracle/cases/management/agent-admin-actions/make-public-bulk-validate-all.yaml
   - tools/oracle/cases/management/agent-admin-actions/make-public-bulk-success.yaml
   - tools/oracle/cases/management/agent-admin-actions/make-public-bulk-db-missing.yaml
+  - tools/oracle/cases/management/model-management/exact-group-filter-and-agent-append.yaml
+  - tools/oracle/cases/management/model-info-v2/agents-appended-after-search-sort.yaml
+  - tools/oracle/cases/management/model-info-v2/final-filters-apply-to-agents.yaml
 deviations:
   - what: The agents routes are registered at startup, not on the first request under a matching prefix.
     why: betterlite has no lazy import cost. LiteLLM's OpenAPI document omits them until warmed; the answers to requests are the same.
 out_of_scope:
   - "The handlers and their checks: B4781, B4784, B4785, B4786 and B3191. GET /agent/daily/activity: B8482."
   - "The admission and invocation helper cases stay with B4781 and the merged card helper cases with B4785."
-  - "The adapters for the agent auth ports: B8645 and B8646. A2A and skills routes: B8648. The embedder itself: B8631."
+  - "The adapters for the agent auth ports: B8645 and B8646. A2A routes: B8648. Skills discovery routes: B10027. The embedder itself: B8631."
 pitfalls:
   - Mount /public/agents/fields only through mount_public; merged in mount it gets the key check and answers 401 where LiteLLM answers 200.
   - The public group holder is one value shared by the list route and both make_public routes; two copies make a make_public call invisible to the list.

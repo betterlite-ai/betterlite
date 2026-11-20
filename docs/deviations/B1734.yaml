@@ -1,0 +1,54 @@
+task: B1734
+deviations:
+  - what: >-
+      The tool discovery buffer keeps at most the spend queue's capacity in pending unique names,
+      and an add for a new tool awaits a flush once it is full. The source appends to an
+      unbounded list.
+    why: >-
+      The repository requires bounded queues, and the existing spend-queue capacity supplies the
+      bound without another setting. The first item for an unseen name is never dropped; it waits
+      for the next flush.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/tool_discovery_queue.py#L27-L52
+  - what: >-
+      The window spend queue drains, aggregates and reinserts its batches while holding the queue
+      lock, so a compaction cannot wait on room in the queue it is refilling. The source drains
+      through an async flush and then awaits a put of the aggregated record.
+    why: >-
+      The source's await put can wait for room that only the compaction itself would make;
+      betterlite's owned state makes the drain and reinsert one step that always finishes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/window_spend_update_queue.py#L161-L164
+  - what: >-
+      A window flush or compaction whose aggregation fails puts every drained batch back before
+      reporting the error. The source has already drained the queue when the aggregation raises,
+      so those increments are lost.
+    why: >-
+      Losing queued spend is data loss no working setup can rely on; the failure still reaches
+      the caller as a WindowQueueError.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/window_spend_update_queue.py#L161-L164
+  - what: >-
+      Window spend increments are summed as exact decimals and a sum that leaves the decimal range
+      reports SpendOverflow. The source sums floats with math.fsum, whose overflow becomes an
+      infinity.
+    why: >-
+      The spend column stores an exact decimal and the task requires checked Decimal money; an
+      infinity has no decimal column value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/window_spend_update_queue.py#L111-L128
+  - what: >-
+      Model usage spend totals are summed as exact decimals and token, request and success totals
+      as checked bigints, and a total that leaves its range reports SpendOverflow or
+      CountOverflow. The source sums floats and unbounded Python integers, so its spend total can
+      become an infinity and its counters never overflow.
+    why: >-
+      The daily model usage row stores a double precision spend and bigint counters; a total the
+      column cannot hold fails where it is produced instead of reaching the database.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/model_usage_rollup.py#L135-L141
+kept_bugs:
+  - what: >-
+      A string startTime gives up its first ten characters as the row's date without checking
+      that they are a calendar date, so "2026-13-45T00:00:00Z" rolls up under the date
+      "2026-13-45". The source slices the same way.
+    why: >-
+      The task requires the prefix to be taken without further validation, the date column is
+      text, and the oracle case date-prefix-unknown-model-and-status pins both sides to the
+      unvalidated prefix.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/model_usage_rollup.py#L85-L88
