@@ -29,6 +29,7 @@ AsyncReadHandler = Callable[..., Coroutine[object, object, object]]
 class ReadArguments(TypedDict):
     vector_store_id: str
     file_id: str
+    # ast-grep-ignore: no-long-names
     vector_store_files_provider_config: BaseVectorStoreFilesConfig
     custom_llm_provider: str
     litellm_params: GenericLiteLLMParams
@@ -39,7 +40,9 @@ class ReadArguments(TypedDict):
 
 class ReadHandlers(Protocol):
     @property
-    def vector_store_file_retrieve_handler(self) -> ReadHandler: ...
+    def vector_store_file_retrieve_handler(  # ast-grep-ignore: no-long-names
+        self,
+    ) -> ReadHandler: ...
 
     @property
     def async_vector_store_file_retrieve_handler(  # ast-grep-ignore: no-long-names
@@ -47,7 +50,9 @@ class ReadHandlers(Protocol):
     ) -> AsyncReadHandler: ...
 
     @property
-    def vector_store_file_content_handler(self) -> ReadHandler: ...
+    def vector_store_file_content_handler(  # ast-grep-ignore: no-long-names
+        self,
+    ) -> ReadHandler: ...
 
     @property
     def async_vector_store_file_content_handler(  # ast-grep-ignore: no-long-names
