@@ -43,9 +43,9 @@ fn build_v2(
     runtime: Option<&LoggerRuntime>,
     in_memory: &mut Vec<Arc<dyn CallbackLogger>>,
 ) -> Result<Arc<dyn CallbackLogger>, CatalogError> {
-    let runtime = maybe::require_runtime(runtime, "otel")?;
+    let active = maybe::require_runtime(runtime, "otel")?;
     {
-        let held = runtime
+        let held = active
             .loggers
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
@@ -57,7 +57,7 @@ fn build_v2(
         message: source.to_string(),
     })?;
     let logger = build_otel_v2_logger(
-        runtime,
+        active,
         config,
         Some("otel"),
         InjectedProviders::default(),

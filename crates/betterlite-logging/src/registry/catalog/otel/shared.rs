@@ -43,6 +43,7 @@ impl SharedOtel {
         }
         let clients = otlp_http_clients(inputs)?;
         *slot = Some(clients.clone());
+        drop(slot);
         Ok(clients)
     }
 

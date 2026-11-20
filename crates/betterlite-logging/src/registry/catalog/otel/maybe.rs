@@ -43,9 +43,9 @@ pub fn v2(
     if !v2_enabled(inputs)? {
         return Ok(None);
     }
-    let runtime = require_runtime(runtime, name)?;
+    let active = require_runtime(runtime, name)?;
     let built =
-        maybe_construct_otel_v2(runtime, name, in_memory).map_err(|source| CatalogError::Init {
+        maybe_construct_otel_v2(active, name, in_memory).map_err(|source| CatalogError::Init {
             message: source.to_string(),
         })?;
     Ok(built.map(|logger| Arc::clone(&logger.callback)))

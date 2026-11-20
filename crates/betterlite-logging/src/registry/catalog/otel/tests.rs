@@ -89,13 +89,19 @@ fn the_settings_view_carries_the_configured_attribute_lists() {
         &[],
     );
     let view = AttributeSettings::from_settings(&inputs.config.sections.otel_settings);
-    let expected = OtelModelValue::Object(BTreeMap::from([(
-        "include_list".to_owned(),
-        OtelModelValue::Array(vec![OtelModelValue::String(
-            "gen_ai.request.model".to_owned(),
-        )]),
-    )]));
-    assert_eq!(view.otel_attributes(), Some(expected));
+    let value = view.otel_attributes().expect("the view carries the lists");
+    let OtelModelValue::Object(mapping) = value else {
+        panic!("the attributes convert to a mapping");
+    };
+    let Some(OtelModelValue::Array(items)) = mapping.get("include_list") else {
+        panic!("include_list carries an array");
+    };
+    assert_eq!(items.len(), 1);
+    assert_eq!(
+        items.first().and_then(OtelModelValue::as_str),
+        Some("gen_ai.request.model")
+    );
+    assert_eq!(mapping.len(), 1);
 }
 
 #[test]
@@ -184,12 +190,14 @@ fn otel_with_v2_reads_the_message_flags_from_the_callback_settings() {
     let yaml = "callback_settings:\n  otel:\n    message_logging: false\n    turn_off_message_logging: true\n";
     let catalog =
         catalog(yaml, &[("LITELLM_OTEL_V2", "true")]).with_runtime(Arc::new(fixture.runtime));
-    let logger = catalog
+    catalog
         .resolve_logger("otel")
         .expect("the name is available")
         .expect("the V2 logger builds");
-    assert!(!logger.message_logging());
-    assert!(logger.turn_off_message_logging());
+    let records = fixture.constructor.records();
+    let settings = &records.first().expect("one build").settings;
+    assert!(!settings.message_logging);
+    assert!(settings.turn_off_message_logging);
 }
 
 // a value betterlite_env cannot read as a bool fails the logger init instead of guessing
@@ -276,8 +284,8 @@ fn a_phoenix_variable_starts_the_arize_phoenix_logger(#[case] variable: &str) {
         .existing("arize_phoenix")
         .expect("the phoenix logger was started");
     assert_eq!(phoenix.callback_name(), "arize_phoenix");
-    let names: Vec<&str> = catalog
-        .in_memory_loggers()
+    let loggers = catalog.in_memory_loggers();
+    let names: Vec<&str> = loggers
         .iter()
         .map(|logger| logger.callback_name())
         .collect();
@@ -342,8 +350,8 @@ fn phoenix_started_after_otel_with_the_switch_on_builds_the_v2_logger() {
         .resolve_logger("otel")
         .expect("the name is available")
         .expect("the V2 logger builds");
-    let names: Vec<&str> = catalog
-        .in_memory_loggers()
+    let loggers = catalog.in_memory_loggers();
+    let names: Vec<&str> = loggers
         .iter()
         .map(|logger| logger.callback_name())
         .collect();

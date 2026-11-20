@@ -11,9 +11,9 @@ const EXCLUDE_LIST: &str = "exclude_list";
 // LiteLLM's OTELMetricAttributeFilter as the filter's untyped input, holding only the keys that are set.
 #[must_use]
 pub fn value(attributes: Option<&OtelAttributes>) -> Option<OtelModelValue> {
-    let attributes = attributes?;
+    let configured = attributes?;
     let mut mapping = BTreeMap::new();
-    if let Some(include) = &attributes.include_list {
+    if let Some(include) = &configured.include_list {
         mapping.insert(
             INCLUDE_LIST.to_owned(),
             OtelModelValue::Array(
@@ -25,7 +25,7 @@ pub fn value(attributes: Option<&OtelAttributes>) -> Option<OtelModelValue> {
             ),
         );
     }
-    if let Some(exclude) = &attributes.exclude_list {
+    if let Some(exclude) = &configured.exclude_list {
         mapping.insert(
             EXCLUDE_LIST.to_owned(),
             OtelModelValue::Array(

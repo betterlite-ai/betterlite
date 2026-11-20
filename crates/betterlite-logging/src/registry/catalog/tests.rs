@@ -249,8 +249,8 @@ fn every_built_logger_is_listed_in_memory_in_build_order() {
     assert!(catalog.in_memory_loggers().is_empty());
     catalog.resolve_logger("pagerduty").expect("available");
     catalog.resolve_logger("smtp_email").expect("available");
-    let names: Vec<&str> = catalog
-        .in_memory_loggers()
+    let loggers = catalog.in_memory_loggers();
+    let names: Vec<&str> = loggers
         .iter()
         .map(|logger| logger.callback_name())
         .collect();

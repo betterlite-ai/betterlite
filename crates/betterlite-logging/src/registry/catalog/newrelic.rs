@@ -25,7 +25,7 @@ pub fn build(
     }
     let deps = NewRelicDeps {
         agent: None,
-        environment: inputs.env.clone(),
+        environment: Arc::clone(&inputs.env),
         clock: system_clock(),
         ids: Arc::new(SystemUuids),
         backoff: Arc::new(MetricBackoff::default()),

@@ -39,11 +39,11 @@ pub(crate) fn legacy_config(
         .ok_or_else(|| CatalogError::Init {
             message: format!("{SIGNOZ_INGESTION_ENDPOINT_ENV} not found in environment variables"),
         })?;
-    let base = base.trim_end_matches('/');
-    let endpoint = if base.ends_with(TRACES_PATH) {
-        base.to_owned()
+    let host = base.trim_end_matches('/');
+    let endpoint = if host.ends_with(TRACES_PATH) {
+        host.to_owned()
     } else {
-        format!("{base}{TRACES_PATH}")
+        format!("{host}{TRACES_PATH}")
     };
     let headers = inputs
         .env

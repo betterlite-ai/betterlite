@@ -6,7 +6,7 @@ use crate::registry::catalog::CatalogError;
 use crate::registry::catalog::otel::shared::SharedOtel;
 use crate::registry::catalog::otel::tests::support::catalog_inputs;
 
-use super::{CALLBACK_NAME, build, legacy_config};
+use super::{build, legacy_config};
 
 const TOKEN: (&str, &str) = ("LOGFIRE_TOKEN", "logfire-token");
 
