@@ -2,7 +2,7 @@ import time
 from typing import Final, Literal, NotRequired, TypeAlias, TypedDict
 
 from litellm.caching.dual_cache import LimitedSizeOrderedDict
-from litellm.proxy._types import RoleBasedPermissions
+from litellm.proxy._types import RBAC_ROLES, RoleBasedPermissions
 from litellm.proxy.auth.auth_checks import (
     _should_check_db,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2473-L2484
     _update_last_db_access_time,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2487-L2488
@@ -19,6 +19,8 @@ ROLE_PERMISSIONS: Final[TypeAdapter[list[RoleBasedPermissions]]] = TypeAdapter(
 )
 
 JSON_VALUE: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
+
+ROLE: Final[TypeAdapter[RBAC_ROLES]] = TypeAdapter(RBAC_ROLES)
 
 
 class ShouldCheck(TypedDict):
@@ -97,9 +99,7 @@ def run(input_value: Input) -> JsonValue:
 
 
 def cadence_report(call: CadenceCall) -> JsonValue:
-    tracker: LimitedSizeOrderedDict[str, tuple[JsonValue | None, float]] = (
-        LimitedSizeOrderedDict(max_size=call["max_size"])
-    )
+    tracker: LimitedSizeOrderedDict = LimitedSizeOrderedDict(max_size=call["max_size"])  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L40
     saved = time.time
     time.time = ScriptedClock(call["times_ms"])
     decisions: list[JsonValue] = []
@@ -118,7 +118,7 @@ def role_report(call: RoleSelectionCall) -> JsonValue:
     settings: dict[str, JsonValue] = {}
     if "role_permissions" in call:
         settings["role_permissions"] = call["role_permissions"]
-    role = RoleBasedPermissions.model_validate({"role": call["role"]}).role
+    role = ROLE.validate_python(call["role"])
     try:
         models = get_role_based_models(role, settings)
         routes = get_role_based_routes(role, settings)
@@ -136,7 +136,9 @@ def validation_report(call: RoleValidationCall) -> JsonValue:
         entries = ROLE_PERMISSIONS.validate_python(call["role_permissions"])
     except ValidationError:
         return {"valid": False}
-    dumped: list[JsonValue] = [entry.model_dump(mode="json") for entry in entries]
+    dumped: list[JsonValue] = [
+        JSON_VALUE.validate_json(entry.model_dump_json()) for entry in entries
+    ]
     return {"valid": True, "entries": dumped}
 
 

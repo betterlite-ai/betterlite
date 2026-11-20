@@ -1,5 +1,4 @@
 use std::collections::VecDeque;
-use std::fmt;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -178,12 +177,6 @@ fn classification(error: &ErrorCase) -> Value {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
 struct NamedFailure(String);
-
-impl fmt::Display for NamedFailure {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for NamedFailure {}
