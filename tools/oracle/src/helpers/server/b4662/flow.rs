@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 use std::sync::{Mutex, PoisonError};
 
 use async_trait::async_trait;
-use betterlite_db::mcp_server_encoding::credentials::CredentialBlob;
 use betterlite_mcp::server_record::OAuth2Flow;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -177,7 +176,7 @@ fn stamp_view(stamp: &StampCall) -> Value {
 pub(super) fn classify(input: &ClassifyInput) -> Result<Value, Box<HelperError>> {
     let mut results = Vec::with_capacity(input.signals.len());
     for signal in &input.signals {
-        let credentials: Option<CredentialBlob> = decode_stored(signal.credentials.as_ref())?;
+        let credentials = decode_stored(signal.credentials.as_ref())?;
         let classification = classify_null_flow_row(&FlowSignals {
             has_per_user_tokens: signal.has_per_user_tokens,
             authorization_url: signal.authorization_url.as_deref(),
