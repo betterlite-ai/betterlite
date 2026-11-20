@@ -11,7 +11,7 @@ use betterlite_config::sections::vertex_credential_sources::VertexSettings;
 use betterlite_core::rag::ingestion::IngestionPorts;
 use betterlite_core::rag::ingestion::IngestionState;
 use betterlite_core::rag::ingestion::config::IngestionOptions;
-use betterlite_core::rag::ingestion::store::{StoreRequest, StoreResult};
+use betterlite_core::rag::ingestion::store::{RagStore, StoreRequest, StoreResult};
 use betterlite_core::rag::vertex_ingestion::VertexIngestion;
 use betterlite_core::rag::vertex_ingestion::error::VertexIngestionError;
 use betterlite_core::rag::vertex_ingestion::ports::VertexIngestionPorts;
@@ -19,6 +19,7 @@ use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
+use tokio::time::Instant;
 
 use fakes::{NoCredentials, NoFetch, NoOcr, ScriptedHttp, ScriptedToken};
 use inputs::{FileInput, Input};
@@ -110,7 +111,7 @@ async fn store_and_time(
         embeddings: None,
         existing_file_id: None,
     };
-    let started = tokio::time::Instant::now();
+    let started = Instant::now();
     let outcome = ingestion.store(request).await;
     (outcome, started.elapsed())
 }

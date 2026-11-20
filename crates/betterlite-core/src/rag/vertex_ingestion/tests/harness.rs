@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::io;
+use std::str::from_utf8;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -19,7 +20,7 @@ use crate::rag::ingestion::IngestionState;
 use crate::rag::ingestion::config::{ChunkingStrategyMap, IngestionOptions};
 use crate::rag::ingestion::credentials::{CredentialLookup, CredentialLookupError};
 use crate::rag::ingestion::ocr::{OcrError, OcrOperation, OcrRequest, OcrResponse};
-use crate::rag::ingestion::store::{StoreRequest, StoreResult};
+use crate::rag::ingestion::store::{RagStore, StoreRequest, StoreResult};
 use crate::rag::ingestion::upload::{FetchedResponse, UrlFetch, UrlFetchError};
 
 use super::super::VertexIngestion;
@@ -159,8 +160,12 @@ impl ScriptedHttp {
     }
 
     fn reply(&self) -> Result<HttpReply, PortError> {
-        let mut replies = self.replies.lock().unwrap_or_else(PoisonError::into_inner);
-        let Some((status, body)) = replies.pop_front() else {
+        let popped = self
+            .replies
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop_front();
+        let Some((status, body)) = popped else {
             return Err(PortError::new(ExhaustedScript));
         };
         Ok(HttpReply { status, body })
@@ -175,9 +180,7 @@ impl ScriptedHttp {
 }
 
 fn text(bytes: &[u8]) -> String {
-    std::str::from_utf8(bytes)
-        .expect("a UTF-8 request part")
-        .to_owned()
+    from_utf8(bytes).expect("a UTF-8 request part").to_owned()
 }
 
 enum Part<'request> {
@@ -192,7 +195,7 @@ impl Part<'_> {
             Part::Json(request) => Call {
                 kind: Kind::Json,
                 url: request.url.to_owned(),
-                token: request.token.expose_secret().clone(),
+                token: request.token.expose_secret().to_owned(),
                 body: text(request.body),
                 filename: String::new(),
                 file: Vec::new(),
@@ -202,7 +205,7 @@ impl Part<'_> {
             Part::Get(request) => Call {
                 kind: Kind::Get,
                 url: request.url.to_owned(),
-                token: request.token.expose_secret().clone(),
+                token: request.token.expose_secret().to_owned(),
                 body: String::new(),
                 filename: String::new(),
                 file: Vec::new(),
@@ -212,7 +215,7 @@ impl Part<'_> {
             Part::Multipart(request) => Call {
                 kind: Kind::Multipart,
                 url: request.url.to_owned(),
-                token: request.token.expose_secret().clone(),
+                token: request.token.expose_secret().to_owned(),
                 body: text(request.metadata),
                 filename: request.filename.to_owned(),
                 file: request.file.to_vec(),
