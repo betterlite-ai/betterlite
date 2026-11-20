@@ -18,22 +18,12 @@ use super::error::MantleMessagesError;
 #[must_use]
 pub fn model_response_iterator<Source, Counter>(
     streaming_response: Source,
-    sync_stream: bool,
-    json_mode: Option<bool>,
+    flags: StreamFlags,
     counter: Counter,
     ids: &dyn IdSource,
     max_event_bytes: usize,
 ) -> ChunkStream<Source, Counter> {
-    get_model_response_iterator(
-        streaming_response,
-        StreamFlags {
-            sync_stream,
-            json_mode,
-        },
-        counter,
-        ids,
-        max_event_bytes,
-    )
+    get_model_response_iterator(streaming_response, flags, counter, ids, max_event_bytes)
 }
 
 // get_async_streaming_response_iterator: B962's native iterator, with response, request body and logging unchanged.

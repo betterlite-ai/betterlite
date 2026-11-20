@@ -101,19 +101,20 @@ where
 }
 
 // LiteLLM inlines every remote part before the synchronous transform, so its failures come first.
-pub async fn async_transform_request<
-    Source: DynamicMetadataSource,
-    Transport: ModelInfoClient,
-    Fetcher: RemoteMediaFetcher + Sync,
-    Blocks: FileBlocks + Sync,
+pub async fn async_transform_request<Metadata, Client, Media, Files, Ids, Lookup>(
+    request: &ClaudeInvokeRequest<'_>,
+    sources: &mut TransformSources<'_, '_, Metadata, Client, Media, Files, Ids, Lookup>,
+) -> Result<ClaudeInvokePrepared, ClaudeInvokeError<Files::Failure>>
+where
+    Metadata: DynamicMetadataSource,
+    Client: ModelInfoClient,
+    Media: RemoteMediaFetcher + Sync,
+    Files: FileBlocks + Sync,
     Ids: Fn() -> String + Sync,
     Lookup: ModelInfoLookup,
->(
-    request: &ClaudeInvokeRequest<'_>,
-    sources: &mut TransformSources<'_, '_, Source, Transport, Fetcher, Blocks, Ids, Lookup>,
-) -> Result<ClaudeInvokePrepared, ClaudeInvokeError<Blocks::Failure>> {
+{
     let inlined_request = ClaudeInvokeRequest {
-        messages: inlined_messages::<Fetcher, Blocks>(&request.messages, sources.prompts.fetcher)
+        messages: inlined_messages::<Media, Files>(&request.messages, sources.prompts.fetcher)
             .await?,
         ..ClaudeInvokeRequest::clone(request)
     };

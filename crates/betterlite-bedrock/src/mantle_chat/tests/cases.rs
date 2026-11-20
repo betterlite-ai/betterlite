@@ -12,6 +12,7 @@ use secrecy::SecretString;
 use serde_json::Number;
 use uuid::Uuid;
 
+use crate::claude_platform::stream::StreamFlags;
 use crate::mantle_chat::HAS_CUSTOM_STREAM_WRAPPER;
 use crate::mantle_chat::environment::{chat_headers, messages_headers};
 use crate::mantle_chat::messages::{move_betas_into_header, restore_messages_fields};
@@ -540,6 +541,14 @@ fn restored_model_anywhere() {
         );
         assert!(!body.contains_key("stream"));
     }
+    caller_beta_not_in_chat_body(&fixture, &mut session, &fetcher);
+}
+
+fn caller_beta_not_in_chat_body(
+    fixture: &Fixture,
+    session: &mut ChatSession<'_>,
+    fetcher: &MapFetcher,
+) {
     let mut beta_request = fixture.chat_request(
         "mantle/fixture-plain",
         prompt_messages(),
@@ -550,7 +559,7 @@ fn restored_model_anywhere() {
         "fine-grained-tool-streaming-2025-05-14".to_owned(),
     );
     let beta_body = session
-        .transform(&beta_request, &fetcher, Mode::Sync)
+        .transform(&beta_request, fetcher, Mode::Sync)
         .expect("the caller beta request transforms");
     assert!(!beta_body.contains_key("anthropic_beta"));
 }
@@ -688,6 +697,11 @@ fn chat_iterator_cases() {
         "the mantle chat keeps the native SSE wrapper"
     );
     let ids = FixedIds(fixed_id());
+    chat_text_chunks(&ids);
+    chat_tool_chunk(&ids);
+}
+
+fn chat_text_chunks(ids: &FixedIds) {
     let mut chunks = model_response_iterator(
         sse_chunks(&[
             r#"{"type":"message_start","message":{"model":"claude","usage":{"input_tokens":1,"output_tokens":2}}}"#,
@@ -695,10 +709,12 @@ fn chat_iterator_cases() {
         ])
         .into_iter()
         .map(Ok::<_, ReceiveError<CounterError>>),
-        false,
-        None,
+        StreamFlags {
+            sync_stream: false,
+            json_mode: None,
+        },
         Counting,
-        &ids,
+        ids,
         MAX_EVENT_BYTES,
     );
     let start = anthropic_decoded(
@@ -717,16 +733,21 @@ fn chat_iterator_cases() {
     );
     assert_eq!(text.choices[0].delta.content, "hi");
     assert_eq!(text.id, format!("chatcmpl-{}", fixed_id()));
+}
+
+fn chat_tool_chunk(ids: &FixedIds) {
     let mut suppressed = model_response_iterator(
         sse_chunks(&[
             r#"{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"j","name":"json_tool_call","input":{}}}"#,
         ])
         .into_iter()
         .map(Ok::<_, ReceiveError<CounterError>>),
-        true,
-        Some(true),
+        StreamFlags {
+            sync_stream: true,
+            json_mode: Some(true),
+        },
         Counting,
-        &ids,
+        ids,
         MAX_EVENT_BYTES,
     );
     let tool = anthropic_decoded(

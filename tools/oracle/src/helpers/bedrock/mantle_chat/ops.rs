@@ -6,6 +6,7 @@ use betterlite_anthropic::stream_decode::error::ReceiveError;
 use betterlite_anthropic::stream_decode::{DecodedChunk, TransportChunk};
 use betterlite_anthropic::stream_state::state::UuidV4;
 use betterlite_anthropic::usage::ReasoningTokenCounter;
+use betterlite_bedrock::claude_platform::stream::StreamFlags;
 use betterlite_bedrock::invoke_primitives::config::Params as InvokeParams;
 use betterlite_bedrock::mantle_chat::HAS_CUSTOM_STREAM_WRAPPER;
 use betterlite_bedrock::mantle_chat::environment::{chat_headers, messages_headers};
@@ -172,8 +173,10 @@ fn native_sse(call: &NativeSseCall) -> HelperResult {
     });
     let decoded = model_response_iterator(
         source,
-        false,
-        None,
+        StreamFlags {
+            sync_stream: false,
+            json_mode: None,
+        },
         Counting,
         &UuidV4,
         LIMITS.max_event_bytes,
