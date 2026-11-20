@@ -32,7 +32,7 @@ pub struct WindowSpendStore {
 
 impl WindowSpendStore {
     #[must_use]
-    pub fn from_store(store: PostgresStore) -> Self {
+    pub const fn from_store(store: PostgresStore) -> Self {
         Self {
             store,
             transaction_timeout: DEFAULT_TRANSACTION_TIMEOUT,
