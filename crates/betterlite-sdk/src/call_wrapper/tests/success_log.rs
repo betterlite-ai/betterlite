@@ -15,8 +15,8 @@ use super::support::saw_log;
 use super::support::value;
 use crate::call_setup::correlation::CallOutcome;
 use crate::call_wrapper::logging::{
-    AsyncSuccessLog, CallLogging, DispatchFlags, SUCCESS_LOG_JOB, SuccessLogInput,
-    SuccessLogScheduler, dispatch_success_logging, success_result,
+    AsyncSuccessLog, DispatchFlags, SUCCESS_LOG_JOB, SuccessLogInput, SuccessLogScheduler,
+    dispatch_success_logging, success_result,
 };
 use crate::call_wrapper::ports::CallTimes;
 use crate::call_wrapper::state::WrapperOptions;
@@ -228,10 +228,9 @@ fn a_rejected_success_log_is_warned_about() {
             true,
         )
         .expect("the logging state builds");
-    let logging: Arc<dyn CallLogging> = Arc::clone(&fixture.logging);
     let scheduler: Arc<dyn SuccessLogScheduler> = Arc::new(RejectingScheduler);
     dispatch_success_logging(
-        &logging,
+        &fixture.wrapper.logging,
         &scheduler,
         &handle,
         SuccessLogInput {
