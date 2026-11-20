@@ -25,6 +25,7 @@ ProviderConfig = Literal["present", "missing"]
 
 AUDIO: Final[FileTypes] = ("a.wav", b"abc", "audio/wav")
 RESPONSE: Final = TypeAdapter(TranscriptionResponse)
+PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
 AsyncWork: TypeAlias = Coroutine[object, object, TranscriptionResponse]
 Work: TypeAlias = TranscriptionResponse | AsyncWork
 
@@ -179,7 +180,7 @@ class FixtureConfig(WhisperConfig):
 
 
 class Handlers(Protocol):
-    def audio_transcriptions(
+    def audio_transcriptions(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L1642-L1665
         self,
         *,
         model: str,
@@ -197,7 +198,7 @@ class Handlers(Protocol):
         provider_config: FixtureConfig | None,
     ) -> Work: ...
 
-    def async_audio_transcriptions(
+    def async_audio_transcriptions(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L1728-L1751
         self,
         *,
         model: str,
@@ -221,7 +222,9 @@ HANDLER: Handlers = BaseLLMHTTPHandler()
 def view(response: TranscriptionResponse, names: list[str]) -> View:
     fields = RESPONSE_TEXT.validate_json(response.model_dump_json())
     hidden = get_provider_response_headers_from_hidden_params(response)
-    headers = {} if hidden is None else {name: hidden[name] for name in names if name in hidden}
+    headers: dict[str, str] = {}
+    if hidden is not None:
+        headers = {name: hidden[name] for name in names if name in hidden}
     return View(text=fields.text, words=fields.words, headers=headers)
 
 
@@ -273,7 +276,7 @@ def run_http(call: HttpCall, api_base: str) -> Outcome:
                     provider_config=provider_config,
                 )
             )
-    except BaseLLMException as error:
+    except PROVIDER_ERROR as error:
         return Outcome(result=None, failure=Failure.model_validate(error), raised=None)
     except ValueError as error:
         raised = Raised(cls=type(error).__name__, message=str(error))
