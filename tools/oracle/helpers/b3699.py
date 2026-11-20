@@ -1,5 +1,5 @@
 import asyncio
-from typing import Final, Literal, TypedDict
+from typing import Final, Literal, NotRequired, TypedDict
 
 from litellm.exceptions import ModifyResponseException
 from litellm.proxy.guardrails.guardrail_hooks.litellm_content_filter.content_filter import (
@@ -68,10 +68,10 @@ class McpInput(TypedDict):
     request_data: dict[str, Json]
 
 
-class Inputs(TypedDict, total=False):
+class Inputs(TypedDict):
     texts: list[str]
-    images: list[str]
-    tool_calls: list[ChatCompletionMessageToolCall]
+    images: NotRequired[list[str]]
+    tool_calls: NotRequired[list[ChatCompletionMessageToolCall]]
 
 
 DISPATCH: Final[TypeAdapter[Dispatch]] = TypeAdapter(Dispatch)
@@ -164,10 +164,6 @@ def tool_call_tag(call: ChatCompletionMessageToolCall) -> Json:
     return {"id": dump["id"], "type": dump["type"], "function": function}
 
 
-def filtered_texts(inputs: Inputs) -> list[Json]:
-    return list[Json](inputs.get("texts", []))
-
-
 async def run_images(request: ImagesInput) -> Json:
     params: dict[str, Json] = {
         "model": "openai/gpt-4o-mini",
@@ -209,7 +205,7 @@ async def run_competitor(request: CompetitorInput) -> Json:
     inputs: Inputs = {"texts": [request["text"]]}
     request_data: dict[str, Json] = {"model": request["model"]}
     error = await guardrail_error(guardrail, inputs, request_data)
-    return output(filtered_texts(inputs), [], request_data, error)
+    return output(list[Json](inputs["texts"]), [], request_data, error)
 
 
 async def run_tool_calls(request: ToolCallsInput) -> Json:
@@ -224,7 +220,7 @@ async def run_tool_calls(request: ToolCallsInput) -> Json:
     request_data: dict[str, Json] = {}
     error = await guardrail_error(guardrail, inputs, request_data)
     projected: list[Json] = [tool_call_tag(call) for call in calls]
-    return output(filtered_texts(inputs), projected, request_data, error)
+    return output(list[Json](inputs["texts"]), projected, request_data, error)
 
 
 async def run_mcp(request: McpInput) -> Json:
@@ -237,7 +233,7 @@ async def run_mcp(request: McpInput) -> Json:
     inputs: Inputs = {"texts": []}
     request_data: dict[str, Json] = dict(request["request_data"])
     error = await guardrail_error(guardrail, inputs, request_data)
-    return output(filtered_texts(inputs), [], request_data, error)
+    return output(list[Json](inputs["texts"]), [], request_data, error)
 
 
 def run(input_value: dict[str, Json]) -> Json:
