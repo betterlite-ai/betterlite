@@ -151,29 +151,20 @@ fn custom_params(
     );
     inner.insert(
         String::from("max_tokens"),
-        chat.request
-            .max_tokens
-            .map_or(serde_json::Value::Null, |limit| {
-                serde_json::Value::Number(serde_json::Number::from(limit))
-            }),
+        number_or_null(
+            chat.request
+                .max_tokens
+                .map(serde_json::Number::from)
+                .as_ref(),
+        ),
     );
     inner.insert(
         String::from("temperature"),
-        chat.request
-            .temperature
-            .as_ref()
-            .map_or(serde_json::Value::Null, |number| {
-                serde_json::Value::Number(number.clone())
-            }),
+        number_or_null(chat.request.temperature.as_ref()),
     );
     inner.insert(
         String::from("top_p"),
-        chat.request
-            .top_p
-            .as_ref()
-            .map_or(serde_json::Value::Null, |number| {
-                serde_json::Value::Number(number.clone())
-            }),
+        number_or_null(chat.request.top_p.as_ref()),
     );
     inner.insert(
         String::from("top_k"),
@@ -185,6 +176,13 @@ fn custom_params(
         },
     );
     Ok(inner)
+}
+
+// a number field goes out as the number when set and as an explicit null otherwise
+fn number_or_null(number: Option<&serde_json::Number>) -> serde_json::Value {
+    number
+        .cloned()
+        .map_or(serde_json::Value::Null, serde_json::Value::Number)
 }
 
 // extra_body expands last, so it may replace the model or the whole params object
