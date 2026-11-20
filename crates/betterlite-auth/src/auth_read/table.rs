@@ -21,7 +21,7 @@ where
     Repository(RepositoryFault<Failure>),
 }
 
-// access and session build RepositoryFault<Infallible>, so only the source-free variants pass through
+// access and session answer RepositoryFault<Infallible>, so InvalidRecord cannot exist and the other variants pass through
 pub(crate) fn widen<Failure>(error: RepositoryFault<Infallible>) -> RepositoryFault<Failure> {
     match error {
         RepositoryFault::NoDbConnected => RepositoryFault::NoDbConnected,
