@@ -16,7 +16,6 @@ use betterlite_router::deployment_model_info::cache::DiscoveryCache;
 use betterlite_router::deployment_model_info::deployment_info::get_deployment_model_info;
 use betterlite_router::deployment_model_info::discovery::CatalogSnapshot;
 use betterlite_router::deployment_model_info::metadata::{ModelMetadataSource, RouterMetadata};
-use serde::de::DeserializeOwned;
 
 const CACHE_READ_KEY: &str = "cache_read_input_token_cost";
 
@@ -190,7 +189,8 @@ fn priced_from_info(
     info: &JsonObject,
     public: Option<&PricedModel>,
 ) -> Result<PricedModel, DeploymentPriceError> {
-    let mut record = price_record(info)?;
+    let serialized = serde_json::to_string(info)?;
+    let mut record: PriceRecord = serde_json::from_str(&serialized)?;
     if let Some(public) = public {
         for (key, value) in &public.record {
             record.entry(key.clone()).or_insert_with(|| value.clone());
@@ -205,25 +205,33 @@ fn priced_from_info(
     })
 }
 
-fn price_record(info: &JsonObject) -> Result<PriceRecord, DeploymentPriceError> {
-    let text = serde_json::to_string(info)?;
-    Ok(serde_json::from_str(&text)?)
-}
-
 // B845 merges custom fields over the built-in entry, so a table the custom entry carries wins.
 fn tables(
     info: &JsonObject,
     public: Option<&PricedModel>,
 ) -> (Vec<Tier>, Option<OffPeakBlock>, bool) {
     let tiered_pricing = match info.get("tiered_pricing") {
-        Some(value) => decode(value).unwrap_or_default(),
+        Some(value) => {
+            let serialized = serde_json::to_string(value);
+            serialized
+                .ok()
+                .and_then(|text| serde_json::from_str(&text).ok())
+                .unwrap_or_default()
+        }
         None => public.map_or_else(Vec::new, |priced| priced.tiered_pricing.clone()),
     };
     let (off_peak_pricing, off_peak_cache_read_present) = match info.get("off_peak_pricing") {
-        Some(value) => (
-            decode::<OffPeakBlockEntry>(value).and_then(|entry| entry.as_block().cloned()),
-            matches!(value, Json::Object(fields) if fields.contains_key(CACHE_READ_KEY)),
-        ),
+        Some(value) => {
+            let serialized = serde_json::to_string(value);
+            let block = serialized
+                .ok()
+                .and_then(|text| serde_json::from_str::<OffPeakBlockEntry>(&text).ok())
+                .and_then(|entry| entry.as_block().cloned());
+            (
+                block,
+                matches!(value, Json::Object(fields) if fields.contains_key(CACHE_READ_KEY)),
+            )
+        }
         None => match public {
             Some(priced) => (
                 priced.off_peak_pricing.clone(),
@@ -239,13 +247,4 @@ fn tables(
     )
 }
 
-fn decode<T>(value: &Json) -> Option<T>
-where
-    T: DeserializeOwned,
-{
-    let text = serde_json::to_string(value).ok()?;
-    serde_json::from_str(&text).ok()
-}
-
-#[cfg(test)]
 mod tests;

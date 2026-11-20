@@ -1,15 +1,20 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_models::catalog::BundledCatalog;
-use betterlite_models::model_registration::{JsonObject, ModelRegistry};
+use betterlite_models::model_catalog_keys::ModelCostKeys;
+use betterlite_models::model_registration::{JsonObject, ModelCostEntries, ModelRegistry};
 use betterlite_models::price_fields::decimal_lexeme::parse_decimal_lexeme;
 use betterlite_models::price_lookup::PriceRecord;
+use betterlite_models::provider_model_sets::ProviderModelSets;
 use betterlite_models::savings_pricing::caching::{RequestPricingInput, request_savings_pricing};
 use betterlite_models::savings_pricing::context::{ModelIdentity, SavingsPricingContext};
 use betterlite_models::tiered_pricing::Scalar;
+use betterlite_router::catalog_updates::catalog::DeploymentCatalog;
+use betterlite_router::deployment_model_info::cache::DiscoveryCache;
 use rust_decimal::Decimal;
 
 use crate::cost_estimate_route::testing::service_from;
@@ -26,11 +31,15 @@ fn deployment_pricing(costs: &str) -> DeploymentPricing {
     let model_cost: JsonObject =
         serde_json::from_str(costs).expect("the fixture is a model cost map");
     DeploymentPricing {
+        catalog: Arc::new(DeploymentCatalog::default()),
+        discovery: DiscoveryCache::for_deployments(0),
         registry: ModelRegistry {
             model_cost,
-            ..ModelRegistry::default()
+            runtime_registered: ModelCostEntries::default(),
+            provider_sets: ProviderModelSets::default(),
+            keys: ModelCostKeys::default(),
+            live_replay: None,
         },
-        ..DeploymentPricing::default()
     }
 }
 
@@ -163,9 +172,8 @@ async fn the_cost_resource_carries_the_savings_context() {
         bundled_catalog: bundled.get(),
     };
     let slot = Slot::new(&config, &shared);
-    let context = slot
-        .savings_context()
-        .expect("the built cost service carries a savings context");
+    let service = slot.service.as_ref().expect("the built cost service");
+    let context = Context::new(&service.lookup, &slot.deployments);
     let pricing = request_savings_pricing(
         &context,
         &RequestPricingInput {
