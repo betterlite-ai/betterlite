@@ -7,7 +7,9 @@ description: >-
 
 
   The _has_file_search_tool predicate is an already computed bool in CreateDispatch input, supplied by B1078; B955
-  must not import the planner through the base executor.
+  must not import the planner through the base executor. B080 composes a refusing MCP and file-search interception into
+  B1078's port in crates/betterlite-server/src/routes/responses.rs until this task lands; replace both arms there with this dispatch and add the gateway MCP request and its
+  provider follow-up to B080's create_route_aliases case.
 
 
   Implement crates/betterlite-core/src/api/responses_mcp_dispatch.rs. Use ResponsesMcpDispatchInput and ResponsesMcpDispatchResult
@@ -65,6 +67,8 @@ scope:
   - tools/oracle/helpers/responses_mcp_dispatch/**
   - tools/oracle/fuzz/corpus/helper_case/responses_mcp_dispatch-*
   - tools/oracle/cases/helpers/responses-mcp-dispatch/**
+  - crates/betterlite-server/src/routes/responses.rs
+  - tools/oracle/cases/api/responses-routes/create-route-aliases.yaml
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L157-L424

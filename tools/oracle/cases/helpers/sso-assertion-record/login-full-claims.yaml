@@ -1,0 +1,9 @@
+kind: helper
+name: login-full-claims
+call:
+  b10003:
+    function: login
+    id_token: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MDAwMDAwMDAsImlzcyI6Imh0dHBzOi8vaWRwLmV4YW1wbGUiLCJzdWIiOiJ1c2VyLTEifQ.c2lnbmF0dXJl"
+    refresh_token: refresh-1
+env: {}
+compare: {ignore: []}

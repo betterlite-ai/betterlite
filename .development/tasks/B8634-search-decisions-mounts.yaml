@@ -87,7 +87,7 @@ deviations: []
 out_of_scope:
 - "Route behavior: B8275 and B8276. The search, tool pick and decisions calls: B3272, B3273, B3515. The authorization checks: B749, B737, B4114."
 - "The provider arms of the messages selector chain (anthropic, bedrock, vertex_ai, azure_ai, github_copilot): each provider's task. The api base lookup itself: B7320."
-- "The container and /utils mounts and the inference mount order after this task: B8635."
+- "The /utils mount and the inference mount order after this task: B8635. The container mounts: B7326 and B3372."
 pitfalls:
 - 'GET /v1/search/tools has no role or visibility filter; do not reuse B3275''s /search_tools/list filter here.'
 - 'The search tool list comes from the router''s search_tools, so with no router or no tools the answer is data: [] and never a 500.'

@@ -413,6 +413,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "compliance_request"
+path = "fuzz_targets/compliance_request.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "spend_estimate"
 path = "fuzz_targets/spend_estimate.rs"
 test = false

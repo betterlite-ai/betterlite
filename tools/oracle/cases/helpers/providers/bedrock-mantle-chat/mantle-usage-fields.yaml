@@ -1,0 +1,9 @@
+kind: helper
+name: bedrock-mantle-usage-fields
+call:
+  bedrock_mantle_chat:
+    function: messages_response
+    body: '{"id":"msg_1","type":"message","role":"assistant","model":"claude","content":[{"type":"text","text":"hi"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":7,"cache_read_input_tokens":3,"cache_creation_input_tokens":null,"extra":"kept"}}'
+    status: 200
+env: {}
+compare: {ignore: []}
