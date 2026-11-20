@@ -1,0 +1,29 @@
+kind: helper
+name: gemini-rag-store-upload-seed
+call:
+  b3454:
+    script:
+      - status: 200
+        headers:
+          x-goog-upload-url: https://upload.test/session
+        body: '{}'
+      - status: 200
+        body: '{"name":"files/1"}'
+    options:
+      name: notes
+      chunking_strategy:
+        white_space_config:
+          max_tokens_per_chunk: 512
+      vector_store:
+        custom_llm_provider: gemini
+        api_base: https://gemini.test
+        vector_store_id: fileSearchStores/s
+        custom_metadata:
+          - key: topic
+            stringValue: gemini
+    environment:
+      GEMINI_API_KEY: gemini-key
+    file_content_base64: aGVsbG8=
+    filename: a.txt
+env: {}
+compare: {ignore: []}
