@@ -141,7 +141,7 @@ pub struct FeatureFlag {
 impl FeatureFlag {
     pub fn enabled<L>(&mut self, lookup: &L) -> Result<bool, ConfigError>
     where
-        L: EnvironmentLookup,
+        L: EnvironmentLookup + ?Sized,
     {
         if let Some(enabled) = self.enabled {
             return Ok(enabled);
