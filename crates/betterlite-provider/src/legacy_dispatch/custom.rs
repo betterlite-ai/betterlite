@@ -149,28 +149,33 @@ fn custom_params(
         String::from("prompt"),
         JsonValue::Array(vec![JsonValue::Text(prompt)]),
     );
+    // a number field goes out as the number when set and as an explicit null otherwise
     inner.insert(
         String::from("max_tokens"),
-        number_or_null(chat.request.max_tokens.map(Number::from).as_ref()),
+        chat.request
+            .max_tokens
+            .map(Number::from)
+            .map_or(JsonValue::Null, JsonValue::Number),
     );
     inner.insert(
         String::from("temperature"),
-        number_or_null(chat.request.temperature.as_ref()),
+        chat.request
+            .temperature
+            .clone()
+            .map_or(JsonValue::Null, JsonValue::Number),
     );
     inner.insert(
         String::from("top_p"),
-        number_or_null(chat.request.top_p.as_ref()),
+        chat.request
+            .top_p
+            .clone()
+            .map_or(JsonValue::Null, JsonValue::Number),
     );
     inner.insert(
         String::from("top_k"),
         params.get("top_k").cloned().unwrap_or(JsonValue::Null),
     );
     Ok(inner)
-}
-
-// a number field goes out as the number when set and as an explicit null otherwise
-fn number_or_null(number: Option<&Number>) -> JsonValue {
-    number.cloned().map_or(JsonValue::Null, JsonValue::Number)
 }
 
 // extra_body expands last, so it may replace the model or the whole params object
