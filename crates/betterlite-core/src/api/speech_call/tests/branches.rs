@@ -309,6 +309,28 @@ fn runwayml_needs_its_config_and_dispatches_with_it() {
 }
 
 #[test]
+fn openai_compatible_providers_use_the_openai_branch() {
+    let variables = [("OPENAI_API_KEY", "sk-compatible")];
+    let harness = Harness::new(
+        loaded_settings(SOURCE, &variables),
+        RecordingTransport::ok("audio/mpeg", &[1]),
+        &variables,
+    );
+    let native = SpeechCall {
+        voice: named_voice("alloy"),
+        ..base_call("groq/playai-tts")
+    };
+    harness.run_ok(&native);
+    let sent = harness.transport.sent();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].url.path(), "/openai/v1/audio/speech");
+    assert_eq!(
+        header(&sent[0], "authorization").as_deref(),
+        Some("Bearer sk-compatible")
+    );
+}
+
+#[test]
 fn the_mapping_receives_drop_params_false_and_the_options() {
     let harness = branch_harness(
         Configs::scripted(ScriptedConfig::keeping(r#"{"mapped": true}"#)),

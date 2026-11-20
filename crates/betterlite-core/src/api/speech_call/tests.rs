@@ -11,5 +11,6 @@ mod branches;
 mod credentials;
 mod defaults;
 mod errors;
+mod logging;
 mod support;
 mod vertex;

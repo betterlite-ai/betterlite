@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use betterlite_openai::speech::request::SpeechOptions;
 use http::Method;
 use rust_decimal::Decimal;
@@ -41,6 +43,7 @@ fn native_defaults_post_the_audio_speech_body() {
     assert_eq!(sent.len(), 1);
     assert_eq!(sent[0].method, Method::POST);
     assert_eq!(sent[0].url.path(), "/v1/audio/speech");
+    assert_eq!(sent[0].deadline, Duration::from_secs(6_000));
     assert_eq!(
         header(&sent[0], "authorization").as_deref(),
         Some("Bearer sk-default")

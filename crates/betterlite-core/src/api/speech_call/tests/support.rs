@@ -38,6 +38,7 @@ use tokio::runtime::{Builder, Runtime};
 
 use crate::api::speech_call::call::SpeechCall;
 use crate::api::speech_call::error::{SpeechCallError, SpeechException};
+use crate::api::speech_call::logging::SpeechCallLogging;
 use crate::api::speech_call::operations::{
     SpeechConfigOperation, SpeechConfigSource, SpeechMappingOptions, SpeechOperation,
     SpeechOperationKind, SpeechOperations,
@@ -572,6 +573,16 @@ where
     }
 
     pub(super) fn run(&self, call: &SpeechCall) -> Result<BinaryContent, SpeechException> {
+        let mut logging = logging_state();
+        self.run_logged(call, &mut logging)
+    }
+
+    // a run whose logging object the test keeps, so it can read the call record and the pre-call hook
+    pub(super) fn run_logged(
+        &self,
+        call: &SpeechCall,
+        logging: &mut dyn SpeechCallLogging,
+    ) -> Result<BinaryContent, SpeechException> {
         let context = self.fixture.context();
         let dispatch = SpeechDispatch {
             settings: &self.settings,
@@ -581,8 +592,7 @@ where
             configs: &self.configs,
             operations: &self.operations,
         };
-        let mut logging = logging_state();
-        runtime().block_on(dispatch.speech(call, &mut logging, &redactor()))
+        runtime().block_on(dispatch.speech(call, logging, &redactor()))
     }
 
     pub(super) fn run_ok(&self, call: &SpeechCall) -> BinaryContent {
