@@ -1,3 +1,4 @@
+use std::str::from_utf8;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -58,13 +59,16 @@ impl NativeOcrPassthrough for ScriptedOcr {
         endpoint: &str,
         body: &[u8],
     ) -> Result<Option<OCRResponse>, OcrError> {
+        let Ok(text) = from_utf8(body) else {
+            return Err(OcrError::InvalidRequest(String::from("malformed OCR body")));
+        };
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(RecordedOcrCall {
                 model: model.to_owned(),
                 endpoint: endpoint.to_owned(),
-                body: String::from_utf8_lossy(body).into_owned(),
+                body: text.to_owned(),
             });
         if self.malformed {
             return Err(OcrError::InvalidRequest(String::from("malformed OCR body")));
