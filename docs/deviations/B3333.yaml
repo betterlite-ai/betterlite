@@ -25,8 +25,11 @@ deviations:
     why: 'Environment-driven limits are settings in betterlite, and this cap belongs to the multipart encoder rather than the video transport. The default value and the exact error message match.'
     link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_request_utils.py#L16-L39'
   - what: 'A failing POST status reaches get_error_class with the raw response text; LiteLLM first runs the text and the URL through mask_sensitive_info when it raises MaskedHTTPStatusError.'
-    why: 'Masking is owned by the error mapping and redaction layers (B2402 for provider HTTP errors, B249 to B252 for logged data), not by the transport. Header filtering matches LiteLLM: content-encoding and content-length are dropped because the body is already decoded.'
+    why: 'Masking is owned by the error mapping and redaction layers (B2402 for provider HTTP errors, B249 to B252 for logged data), not by the transport. The header set matches LiteLLM: content-encoding is dropped because the body is already decoded, and content-length is rebuilt from the decoded body the way httpx writes it into the masked response.'
     link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L553-L600'
+  - what: 'litellm_params.ssl_verify is read as a boolean; any other JSON type is a BadField naming the field, and a CA bundle path comes from the TLS policy the config resolves.'
+    why: 'LiteLLM declares ssl_verify as bool | str | None and turns a string that names an existing file into the CA bundle the client verifies with. betterlite reads the deployment field as a boolean only, and the resolved TLS policy is the path that reaches a CA bundle.'
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1377-L1395'
 kept_bugs:
   - what: 'A content GET that answers 404 or 500 raises nothing: the response goes to the content transform, which the base class returns unchanged, so the error body comes back as the video bytes.'
     why: 'The content reference owns the GET branch and the response transform inside the same try, and a working LiteLLM setup relies on the transform seeing every response rather than on httpx raising.'

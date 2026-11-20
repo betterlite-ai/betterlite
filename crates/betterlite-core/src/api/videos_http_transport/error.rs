@@ -38,7 +38,7 @@ pub enum VideoTransportError<ConfigError: StdError> {
     #[error("{}", .0.message)]
     Provider(Box<ProviderError>),
     #[error(transparent)]
-    Config(#[from] ConfigError),
+    Config(ConfigError),
     #[error(transparent)]
     Client(#[from] ClientError),
     #[error(transparent)]

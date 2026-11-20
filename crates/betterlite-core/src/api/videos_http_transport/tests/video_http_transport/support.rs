@@ -675,11 +675,14 @@ impl Bench {
     }
 }
 
-pub(crate) const fn video_deps<'deps, C, S: ClientSource>(
+pub(crate) const fn video_deps<'deps, C, S>(
     config: &'deps C,
     source: &'deps S,
     supplied: Option<SuppliedClient<'deps, S::Client>>,
-) -> VideoDeps<'deps, C, S> {
+) -> VideoDeps<'deps, C, S>
+where
+    S: ClientSource,
+{
     VideoDeps {
         config,
         source,

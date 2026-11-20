@@ -1,3 +1,5 @@
+use std::slice::from_ref;
+
 use betterlite_http::proxy::multipart::MultipartPart;
 use betterlite_models::decisions::Json;
 use sha2::{Digest as _, Sha256};
@@ -79,19 +81,17 @@ fn absorb(hasher: &mut Sha256, bytes: &[u8]) {
 fn data_parts(data: &Params) -> Result<Vec<MultipartPart>, SendFailure> {
     let mut parts = Vec::new();
     for (name, value) in data {
-        if let Json::List(items) = value {
-            for item in items {
-                let Some(text) = primitive(item) else {
-                    return Err(primitive_error(name));
-                };
-                parts.push(text_part(name.clone(), text));
-            }
-            continue;
-        }
-        let Some(text) = primitive(value) else {
-            return Err(primitive_error(name));
+        let items = if let Json::List(items) = value {
+            items.as_slice()
+        } else {
+            from_ref(value)
         };
-        parts.push(text_part(name.clone(), text));
+        for item in items {
+            let Some(text) = primitive(item) else {
+                return Err(primitive_error(name));
+            };
+            parts.push(text_part(name.clone(), text));
+        }
     }
     Ok(parts)
 }

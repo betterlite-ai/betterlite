@@ -225,7 +225,7 @@ where
         Ok(response) => response,
         Err(error) => return Err(failed_send(&error, sent, elapsed)),
     };
-    if sent.verb == HttpVerb::Post && response.status >= 400 {
+    if sent.verb == HttpVerb::Post && !(200..=299).contains(&response.status) {
         return Err(SendFailure::Status {
             status: response.status,
             headers: response_headers(&response),
@@ -237,7 +237,7 @@ where
 
 // The masked HTTPStatusError keeps every response header but the encoding and the length of the compressed body
 fn response_headers(response: &UpstreamResponse) -> Headers {
-    response
+    let mut headers: Headers = response
         .headers
         .iter()
         .filter(|(name, _)| !matches!(name.as_str(), "content-encoding" | "content-length"))
@@ -248,7 +248,12 @@ fn response_headers(response: &UpstreamResponse) -> Headers {
             );
             (name.as_str().to_owned(), text)
         })
-        .collect()
+        .collect();
+    // httpx re-encodes the decoded body into the masked response, so a non-empty one carries a new content-length
+    if !response.body.is_empty() {
+        headers.insert("content-length".to_owned(), response.body.len().to_string());
+    }
+    headers
 }
 
 fn body_text(body: &[u8]) -> String {

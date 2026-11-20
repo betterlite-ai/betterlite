@@ -237,12 +237,25 @@ async fn a_failing_status_becomes_the_provider_error_with_its_headers() {
         Some("req-1")
     );
     assert!(!recorded[0].2.contains_key("content-encoding"));
-    assert!(!recorded[0].2.contains_key("content-length"));
+    assert_eq!(
+        recorded[0].2.get("content-length").map(String::as_str),
+        Some("21")
+    );
+}
+
+#[tokio::test]
+async fn an_empty_failing_body_adds_no_content_length() {
+    let mut bench = Bench::with_reply(Reply::new(500, "").with_header("content-length", "20"));
+    let error = run(&mut bench, &Params::new(), &Params::new(), false)
+        .await
+        .expect_err("the failing status");
+    assert_eq!(provider_error(error).status_code, 500);
+    assert!(!bench.config.errors()[0].2.contains_key("content-length"));
 }
 
 #[rstest]
 #[case::created(201_u16)]
-#[case::just_below_client_error(399_u16)]
+#[case::last_success(299_u16)]
 #[tokio::test]
 async fn a_successful_status_goes_to_the_transform_unchanged(#[case] status: u16) {
     let mut bench = Bench::with_reply(Reply::new(status, "{}"));
@@ -257,10 +270,12 @@ async fn a_successful_status_goes_to_the_transform_unchanged(#[case] status: u16
 }
 
 #[rstest]
+#[case::multiple_choices(300_u16)]
+#[case::just_below_client_error(399_u16)]
 #[case::bad_request(400_u16)]
 #[case::server_error(500_u16)]
 #[tokio::test]
-async fn four_hundred_and_up_is_a_provider_error(#[case] status: u16) {
+async fn a_status_outside_the_success_range_is_a_provider_error(#[case] status: u16) {
     let mut bench = Bench::with_reply(Reply::new(status, "boom"));
     let error = run(&mut bench, &Params::new(), &Params::new(), false)
         .await
