@@ -64,7 +64,15 @@ fn parse_field(index: usize, value: &JsonValue) -> Result<MetadataSchemaField, S
             });
         }
     }
-    let Some(configured) = object.get("key") else {
+    let key = required_key(index, object.get("key"))?;
+    Ok(MetadataSchemaField {
+        key: key.to_owned(),
+        label: optional_label(index, object.get("label"))?,
+    })
+}
+
+fn required_key(index: usize, configured: Option<&JsonValue>) -> Result<&str, SchemaError> {
+    let Some(configured) = configured else {
         return Err(SchemaError::Field {
             index,
             field: "key",
@@ -85,23 +93,24 @@ fn parse_field(index: usize, value: &JsonValue) -> Result<MetadataSchemaField, S
             message: "String should have at least 1 character",
         });
     }
-    let label = match object.get("label") {
-        None | Some(JsonValue::Null) => None,
-        Some(JsonValue::String(text)) => Some(text.clone()),
+    Ok(key)
+}
+
+fn optional_label(
+    index: usize,
+    configured: Option<&JsonValue>,
+) -> Result<Option<String>, SchemaError> {
+    match configured {
+        None | Some(JsonValue::Null) => Ok(None),
+        Some(JsonValue::String(text)) => Ok(Some(text.clone())),
         Some(
             JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Object(_) | JsonValue::Array(_),
-        ) => {
-            return Err(SchemaError::Field {
-                index,
-                field: "label",
-                message: "Input should be a valid string",
-            });
-        }
-    };
-    Ok(MetadataSchemaField {
-        key: key.clone(),
-        label,
-    })
+        ) => Err(SchemaError::Field {
+            index,
+            field: "label",
+            message: "Input should be a valid string",
+        }),
+    }
 }
 
 fn duplicate_keys(fields: &[MetadataSchemaField]) -> Vec<String> {

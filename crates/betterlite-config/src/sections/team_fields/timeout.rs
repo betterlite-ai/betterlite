@@ -12,19 +12,17 @@ pub(super) fn resolve_timeout<L>(
 where
     L: EnvironmentLookup,
 {
-    let Some(raw) = raw else {
+    let Some(chosen) = raw else {
         return Ok(ValidationTimeout::Finite(DEFAULT_TIMEOUT));
     };
-    let seconds = match raw {
+    let seconds = match chosen {
         RawScalar::Integer(seconds) => return Ok(integer_timeout(seconds)),
         RawScalar::Float(seconds) => seconds,
         RawScalar::Text(text) => match environment_seconds(&text, lookup)? {
             Some(seconds) => seconds,
             None => return Ok(ValidationTimeout::Finite(DEFAULT_TIMEOUT)),
         },
-        RawScalar::Boolean(_) | RawScalar::Other(_) => {
-            return Ok(ValidationTimeout::Finite(DEFAULT_TIMEOUT));
-        }
+        RawScalar::Other(_) => return Ok(ValidationTimeout::Finite(DEFAULT_TIMEOUT)),
     };
     Ok(float_timeout(seconds))
 }
@@ -37,14 +35,12 @@ fn integer_timeout(seconds: i64) -> ValidationTimeout {
 }
 
 fn float_timeout(seconds: f64) -> ValidationTimeout {
-    if seconds.is_nan() || seconds <= 0.0 {
+    if seconds.is_nan() || seconds <= 0.0_f64 {
         return ValidationTimeout::Finite(DEFAULT_TIMEOUT);
     }
     if seconds.is_infinite() {
         return ValidationTimeout::Unlimited;
     }
-    match Duration::try_from_secs_f64(seconds) {
-        Ok(duration) => ValidationTimeout::Finite(duration),
-        Err(_) => ValidationTimeout::Unlimited,
-    }
+    Duration::try_from_secs_f64(seconds)
+        .map_or(ValidationTimeout::Unlimited, ValidationTimeout::Finite)
 }

@@ -7,8 +7,9 @@ use rstest::rstest;
 
 use crate::loader::{ConfigError, ConfigLoader};
 use crate::sections::team_fields::schema::MetadataSchemaField;
+use crate::sections::team_fields::timeout::resolve_timeout;
 use crate::sections::team_fields::{
-    DEFAULT_TIMEOUT, DEFAULT_UNAVAILABLE_MESSAGE, Settings, ValidationTimeout,
+    DEFAULT_TIMEOUT, DEFAULT_UNAVAILABLE_MESSAGE, RawScalar, Settings, ValidationTimeout,
 };
 
 fn loaded_with(source: &str, lookup: BTreeMap<String, String>) -> Settings {
@@ -138,12 +139,33 @@ fn timeout_nonpositive(#[case] raw: &str) {
 }
 
 #[rstest]
-#[case::nan(".nan", ValidationTimeout::Finite(DEFAULT_TIMEOUT))]
-#[case::infinity(".inf", ValidationTimeout::Unlimited)]
-#[case::negative_infinity("-.inf", ValidationTimeout::Finite(DEFAULT_TIMEOUT))]
-fn timeout_nonfinite(#[case] raw: &str, #[case] expected: ValidationTimeout) {
+#[case::nan(".nan")]
+#[case::infinity(".inf")]
+#[case::negative_infinity("-.inf")]
+fn timeout_nonfinite(#[case] raw: &str) {
+    // The shared YAML loader rejects non-finite floats before the team_fields section sees them.
     let source = format!("general_settings:\n  team_metadata_validation_timeout: {raw}\n");
-    assert_eq!(loaded(&source).timeout, expected);
+    let message = yaml_message(failed(&source));
+    assert!(message.contains("non-finite float"), "{message}");
+}
+
+#[test]
+fn timeout_overflow_from_environment_is_unlimited() {
+    let lookup = BTreeMap::from([("TIMEOUT".to_owned(), "1e20".to_owned())]);
+    let source = "general_settings:\n  team_metadata_validation_timeout: os.environ/TIMEOUT\n";
+    assert_eq!(
+        loaded_with(source, lookup).timeout,
+        ValidationTimeout::Unlimited
+    );
+}
+
+#[test]
+fn timeout_scalar_nonfinite() {
+    let lookup = BTreeMap::<String, String>::new();
+    let nan = resolve_timeout(Some(RawScalar::Float(f64::NAN)), &lookup).unwrap();
+    assert_eq!(nan, ValidationTimeout::Finite(DEFAULT_TIMEOUT));
+    let infinite = resolve_timeout(Some(RawScalar::Float(f64::INFINITY)), &lookup).unwrap();
+    assert_eq!(infinite, ValidationTimeout::Unlimited);
 }
 
 #[test]

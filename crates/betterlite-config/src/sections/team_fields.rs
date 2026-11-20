@@ -56,7 +56,6 @@ enum RawScalar {
     Integer(i64),
     Float(f64),
     Text(String),
-    Boolean(bool),
     Other(IgnoredAny),
 }
 
