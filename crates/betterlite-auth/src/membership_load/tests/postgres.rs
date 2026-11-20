@@ -18,8 +18,8 @@ use secrecy::SecretString;
 use tokio_postgres::NoTls;
 use tokio_util::task::TaskTracker;
 
-use crate::auth_read::table::AuthReadError;
 use crate::membership_load::MembershipLookup;
+use crate::membership_load::error::MembershipReadFailure;
 use crate::membership_load::rows::{DatabaseTeamMembership, TeamMembershipRows};
 use crate::membership_load::tests::support::{
     FakeCache, RecordedWrite, WriteKind, drain, expect_absent, index, key,
@@ -248,11 +248,11 @@ async fn missing_pool_is_a_repository_error() {
         .find_membership("user-1", "team-1")
         .await
         .expect_err("the read has no database");
+    let MembershipReadFailure::Access(source) = &failure else {
+        panic!("the database access fault is the reported failure");
+    };
     assert!(
-        matches!(
-            failure.source.as_ref(),
-            AuthReadError::Repository(DbError::NoDbConnected)
-        ),
+        matches!(source.as_ref(), DbError::NoDbConnected),
         "{failure}"
     );
 }

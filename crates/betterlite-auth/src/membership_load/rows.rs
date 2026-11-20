@@ -21,7 +21,7 @@ use super::error::MembershipReadFailure;
 use crate::auth_read::adapter::AuthReadAdapter;
 use crate::auth_read::include::{Including, IncludingQuery};
 use crate::auth_read::repository::RepositoryTable;
-use crate::auth_read::table::{AuthReadError, AuthTable, FindOne, Presence, ReadContext, widen};
+use crate::auth_read::table::{AuthTable, FindOne, Presence, ReadContext};
 
 const ONE_SQL: &str = "SELECT row_to_json(entry)::text FROM \"LiteLLM_TeamMembership\" AS entry WHERE entry.\"user_id\" = $1 AND entry.\"team_id\" = $2 LIMIT $3";
 
@@ -212,7 +212,7 @@ where
     bounded
         .find_first(request)
         .await
-        .map_err(|source| MembershipReadFailure {
+        .map_err(|source| MembershipReadFailure::Table {
             source: Box::new(source),
         })
 }
@@ -264,9 +264,7 @@ impl TeamMembershipRows for DatabaseTeamMembership {
     }
 }
 
-// A session or table fault is B700's repository error; the row decoder adds the record failure.
+// The access or session fault is B700's repository error and never a row failure.
 fn read_fault(source: DbError) -> MembershipReadFailure {
-    MembershipReadFailure {
-        source: Box::new(AuthReadError::Repository(widen(source))),
-    }
+    MembershipReadFailure::Access(Box::new(source))
 }

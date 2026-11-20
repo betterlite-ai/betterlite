@@ -288,7 +288,7 @@ impl TeamMembershipRows for FakeRows {
 }
 
 pub(crate) fn read_failure(source: AuthReadError<MembershipRowError>) -> MembershipReadFailure {
-    MembershipReadFailure {
+    MembershipReadFailure::Table {
         source: Box::new(source),
     }
 }

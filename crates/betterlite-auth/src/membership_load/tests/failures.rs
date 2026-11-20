@@ -11,7 +11,7 @@ use super::support::{
     shared, stored_membership,
 };
 use crate::auth_read::table::AuthReadError;
-use crate::membership_load::error::MembershipLoadError;
+use crate::membership_load::error::{MembershipLoadError, MembershipReadFailure};
 use crate::membership_load::index::MembershipIndex;
 use crate::membership_load::load::{MembershipLoad, shared_result};
 
@@ -95,7 +95,10 @@ async fn row_validation_does_not_cache_negative() {
     let MembershipLoadError::Read(failure) = &*error else {
         panic!("the shared failure carries the row failure");
     };
-    let AuthReadError::Repository(DbError::InvalidRecord { .. }) = failure.source.as_ref() else {
+    let MembershipReadFailure::Table { source } = failure else {
+        panic!("the row validation failure carries the table error");
+    };
+    let AuthReadError::Repository(DbError::InvalidRecord { .. }) = source.as_ref() else {
         panic!("the row validation failure is a repository record error");
     };
     assert!(cache.writes().is_empty());

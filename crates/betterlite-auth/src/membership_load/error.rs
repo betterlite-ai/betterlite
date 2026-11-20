@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use betterlite_db::postgres_store::errors::DbError;
 use thiserror::Error;
 
 use super::rows::MembershipRowError;
@@ -7,12 +8,17 @@ use crate::auth_cache::AuthCacheError;
 use crate::auth_cache::payload::PayloadError;
 use crate::auth_read::table::AuthReadError;
 
-// A membership read through B2315's bounded table, with the row's own failure type preserved.
+// A membership read through B2315's bounded table; an access or session fault carries no row failure.
 #[derive(Debug, Error)]
-#[error("the team membership lookup failed")]
-pub struct MembershipReadFailure {
-    #[source]
-    pub source: Box<AuthReadError<MembershipRowError>>,
+pub enum MembershipReadFailure {
+    // The access or session failed before a table existed, so its repository error stands alone.
+    #[error(transparent)]
+    Access(Box<DbError>),
+    #[error("the team membership lookup failed")]
+    Table {
+        #[source]
+        source: Box<AuthReadError<MembershipRowError>>,
+    },
 }
 
 // Every way auth_checks.py's get_team_membership can leave before answering a membership.

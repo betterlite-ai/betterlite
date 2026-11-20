@@ -13,7 +13,7 @@ use super::support::{
 };
 use crate::auth_cache::keys::NO_TEAM_MEMBERSHIP;
 use crate::auth_read::table::{AuthReadError, Presence};
-use crate::membership_load::error::MembershipLoadError;
+use crate::membership_load::error::{MembershipLoadError, MembershipReadFailure};
 use crate::membership_load::index::MembershipIndex;
 use crate::membership_load::rows::{MembershipFilter, MembershipInclude, read_membership};
 
@@ -259,7 +259,10 @@ async fn membership_lookup_deadline_and_metric() {
         harness.tracker.stalled_within(30.0_f64),
         "the stalled lookup is recorded"
     );
-    let AuthReadError::Lookup(DbLookupError::Deadline(deadline)) = *failure.source else {
+    let MembershipReadFailure::Table { source } = failure else {
+        panic!("the deadline is a table failure");
+    };
+    let AuthReadError::Lookup(DbLookupError::Deadline(deadline)) = *source else {
         panic!("the read reports its deadline");
     };
     assert_eq!(deadline.lookup, "team_membership");
