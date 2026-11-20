@@ -1,5 +1,5 @@
 use std::error::Error as StdError;
-use std::future::Future;
+use std::future::{Future, ready};
 
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::decisions::Json;
@@ -118,7 +118,7 @@ pub trait VideoHttpConfig: Send + Sync {
         raw_response: &UpstreamResponse,
         logging_obj: &mut VideoLogging,
     ) -> impl Future<Output = Result<Vec<u8>, Self::Error>> + Send {
-        async move { self.transform_video_content_response(raw_response, logging_obj) }
+        ready(self.transform_video_content_response(raw_response, logging_obj))
     }
 
     // _handle_error's getattr chain: a plain exception has no status, and one that does keeps it

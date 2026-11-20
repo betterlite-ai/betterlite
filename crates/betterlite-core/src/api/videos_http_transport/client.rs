@@ -204,7 +204,7 @@ where
     Client: VideoTransport,
 {
     let outcome = match request {
-        Ok(request) => send(client, request, sent).await,
+        Ok(built) => send(client, built, sent).await,
         Err(failure) => Err(failure),
     };
     outcome.map_err(|failure| VideoTransportError::Provider(Box::new(convert(config, failure))))

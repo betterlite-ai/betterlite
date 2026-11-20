@@ -339,7 +339,7 @@ pub(crate) enum TestError {
     Transform,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Environment {
     pub(crate) headers: Headers,
     pub(crate) model: String,
@@ -606,12 +606,12 @@ impl VideoHttpConfig for RecordingConfig {
         self.content_response(raw_response, logging_obj, "content_sync", "sync")
     }
 
-    async fn async_transform_video_content_response(
+    fn async_transform_video_content_response(
         &self,
         raw_response: &UpstreamResponse,
         logging_obj: &mut VideoLogging,
-    ) -> Result<Vec<u8>, TestError> {
-        self.content_response(raw_response, logging_obj, "content_async", "async")
+    ) -> impl Future<Output = Result<Vec<u8>, TestError>> + Send {
+        ready(self.content_response(raw_response, logging_obj, "content_async", "async"))
     }
 
     fn error_facts(&self, error: &TestError) -> ErrorFacts {
@@ -675,7 +675,7 @@ impl Bench {
     }
 }
 
-pub(crate) fn video_deps<'deps, C, S: ClientSource>(
+pub(crate) const fn video_deps<'deps, C, S: ClientSource>(
     config: &'deps C,
     source: &'deps S,
     supplied: Option<SuppliedClient<'deps, S::Client>>,
@@ -715,7 +715,7 @@ pub(crate) fn request_file(
     }
 }
 
-pub(crate) fn generation_call<'call>(
+pub(crate) const fn generation_call<'call>(
     optional: &'call Params,
     litellm: &'call Params,
 ) -> VideoGenerationCall<'call> {
@@ -731,7 +731,7 @@ pub(crate) fn generation_call<'call>(
     }
 }
 
-pub(crate) fn content_call<'call>(
+pub(crate) const fn content_call<'call>(
     video_id: &'call str,
     litellm: &'call Params,
 ) -> VideoContentCall<'call> {

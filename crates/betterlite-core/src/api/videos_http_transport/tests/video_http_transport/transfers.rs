@@ -3,6 +3,7 @@ use std::time::Duration;
 use betterlite_openai::error::ProviderError;
 use tokio::io::AsyncReadExt as _;
 use tokio::net::TcpListener;
+use tokio::time::sleep;
 
 use super::support::{
     BASE, Bench, ClientRequestRecord, Events, Fixture, IMPATIENT, ProxiedSource, RecordingConfig,
@@ -18,7 +19,7 @@ fn provider_error(error: VideoTransportError<TestError>) -> ProviderError {
     let VideoTransportError::Provider(provider) = error else {
         panic!("the error is not a provider error");
     };
-    provider
+    *provider
 }
 
 #[tokio::test]
@@ -188,5 +189,5 @@ async fn hold_open(listener: TcpListener) {
     let mut chunk = [0_u8; 4096];
     let read = stream.read(&mut chunk).await.expect("the request bytes");
     assert_ne!(read, 0, "the client sends its request before the deadline");
-    tokio::time::sleep(Duration::from_secs(30)).await;
+    sleep(Duration::from_secs(30)).await;
 }

@@ -10,6 +10,7 @@ use http::Method;
 use rstest::rstest;
 use tokio::io::AsyncReadExt as _;
 use tokio::net::TcpListener;
+use tokio::time::sleep;
 
 use super::support::{
     BASE, Bench, ClientRequestRecord, CreateReply, Environment, Events, Failure, Fixture,
@@ -40,7 +41,7 @@ fn provider_error(error: VideoTransportError<TestError>) -> ProviderError {
     let VideoTransportError::Provider(provider) = error else {
         panic!("the error is not a provider error");
     };
-    provider
+    *provider
 }
 
 #[tokio::test]
@@ -64,12 +65,12 @@ async fn a_request_with_files_sends_the_data_fields_before_the_file_parts() {
     assert_eq!(boundary.len(), 64);
     assert_eq!(parts.len(), 3);
     assert_eq!(parts[0].name, "prompt");
-    assert_eq!(parts[0].data, "a cat".as_bytes());
+    assert_eq!(parts[0].data.as_slice(), b"a cat");
     assert_eq!(parts[1].name, "seconds");
     assert_eq!(parts[2].name, "input_reference");
     assert_eq!(parts[2].file_name.as_deref(), Some("clip.mp4"));
     assert_eq!(parts[2].content_type.as_deref(), Some("video/mp4"));
-    assert_eq!(parts[2].data, "file-bytes".as_bytes());
+    assert_eq!(parts[2].data.as_slice(), b"file-bytes");
 }
 
 #[tokio::test]
@@ -636,5 +637,5 @@ async fn hold_open(listener: TcpListener) {
     let mut chunk = [0_u8; 4096];
     let read = stream.read(&mut chunk).await.expect("the request bytes");
     assert_ne!(read, 0, "the client sends its request before the deadline");
-    tokio::time::sleep(Duration::from_secs(30)).await;
+    sleep(Duration::from_secs(30)).await;
 }

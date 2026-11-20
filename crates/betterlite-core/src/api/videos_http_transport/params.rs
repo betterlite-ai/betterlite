@@ -73,7 +73,7 @@ pub fn optional_headers(optional_params: &Params) -> Result<Headers, BadField> {
     Ok(headers)
 }
 
-fn extra_headers_error() -> BadField {
+const fn extra_headers_error() -> BadField {
     BadField {
         field: "video_generation_optional_request_params.extra_headers",
         expected: "a map of string to string",

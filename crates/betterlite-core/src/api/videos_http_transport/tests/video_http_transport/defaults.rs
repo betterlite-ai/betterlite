@@ -126,14 +126,14 @@ async fn the_base_async_content_transform_answers_with_the_sync_one() {
     let response = UpstreamResponse {
         status: 200,
         headers: HeaderMap::new(),
-        body: "bytes".as_bytes().to_vec(),
+        body: b"bytes".to_vec(),
     };
     let mut logging = VideoLogging::default();
     let bytes = Plain::new()
         .async_transform_video_content_response(&response, &mut logging)
         .await
         .expect("the bytes");
-    assert_eq!(bytes.as_slice(), "bytes".as_bytes());
+    assert_eq!(bytes.as_slice(), b"bytes");
     assert_eq!(
         logging.model_call_details.get("plain_sync_mark"),
         Some(&Json::Bool(true))

@@ -6,6 +6,7 @@ use betterlite_models::decisions::Json;
 use http::Method;
 use tokio::io::AsyncReadExt as _;
 use tokio::net::TcpListener;
+use tokio::time::sleep;
 
 use super::support::{
     BASE, Bench, ClientRequestRecord, Events, Failure, Fixture, IMPATIENT, PROVIDER, ProxiedSource,
@@ -41,7 +42,7 @@ async fn params_from_the_transform_go_out_as_a_post_without_a_timeout() {
     let bytes = run(&mut bench, "video-1", &Params::new(), false)
         .await
         .expect("the content");
-    assert_eq!(bytes.as_slice(), "video-bytes".as_bytes());
+    assert_eq!(bytes.as_slice(), b"video-bytes");
     let requests = bench.wire.requests();
     let request = &requests[0];
     assert_eq!(request.method, Method::POST);
@@ -59,7 +60,7 @@ async fn an_empty_params_map_sends_a_get_with_no_body() {
     let bytes = run(&mut bench, "video-1", &Params::new(), false)
         .await
         .expect("the content");
-    assert_eq!(bytes.as_slice(), "video-bytes".as_bytes());
+    assert_eq!(bytes.as_slice(), b"video-bytes");
     let requests = bench.wire.requests();
     let request = &requests[0];
     assert_eq!(request.method, Method::GET);
@@ -174,10 +175,10 @@ async fn a_failing_get_status_reaches_the_content_transform() {
     let bytes = run(&mut bench, "video-1", &Params::new(), false)
         .await
         .expect("the content");
-    assert_eq!(bytes.as_slice(), "boom".as_bytes());
+    assert_eq!(bytes.as_slice(), b"boom");
     assert_eq!(
         bench.config.content_replies(),
-        vec![(500_u16, "boom".as_bytes().to_vec())]
+        vec![(500_u16, b"boom".to_vec())]
     );
     assert!(bench.config.errors().is_empty());
 }
@@ -389,5 +390,5 @@ async fn hold_open(listener: TcpListener) {
     let mut chunk = [0_u8; 4096];
     let read = stream.read(&mut chunk).await.expect("the request bytes");
     assert_ne!(read, 0, "the client sends its request before the deadline");
-    tokio::time::sleep(Duration::from_secs(30)).await;
+    sleep(Duration::from_secs(30)).await;
 }

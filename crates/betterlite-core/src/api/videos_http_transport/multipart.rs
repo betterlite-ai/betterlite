@@ -2,7 +2,7 @@ use betterlite_http::proxy::multipart::MultipartPart;
 use betterlite_models::decisions::Json;
 use sha2::{Digest as _, Sha256};
 
-use super::client::SendFailure;
+use super::error::SendFailure;
 use super::video_config::{Params, RequestFile};
 
 // LiteLLM's DEFAULT_MAX_RECURSE_DEPTH, which its environment can change and a betterlite config cannot
@@ -154,7 +154,7 @@ fn text_part(name: String, text: String) -> MultipartPart {
         name,
         file_name: None,
         content_type: None,
-        data: text.as_bytes().to_vec(),
+        data: text.into_bytes(),
     }
 }
 
