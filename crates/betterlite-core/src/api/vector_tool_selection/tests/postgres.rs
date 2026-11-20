@@ -6,6 +6,7 @@ use betterlite_db::auxiliary_repository::repository::{PrismaClient, TableError};
 use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_models::decisions::Json;
+use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use betterlite_redis::config_sync::publish::{PublishChange, PublishFuture};
 use clap::Parser;
@@ -150,12 +151,22 @@ async fn assert_seeded_rows(writer: &PostgresStore) {
         .await
         .unwrap()
         .expect("the seeded row");
+    assert_identity(&found);
+    assert_params(&found);
+    assert!(database.find_store("vs_absent").await.unwrap().is_none());
+    assert_tables(&database).await;
+}
+
+fn assert_identity(found: &LiteLlmManagedVectorStore) {
     assert_eq!(found.vector_store_id.as_deref(), Some("vs_known"));
     assert_eq!(found.custom_llm_provider.as_deref(), Some("bedrock"));
     assert_eq!(found.vector_store_name.as_deref(), Some("notes"));
     assert_eq!(found.vector_store_description, None);
     assert_eq!(found.vector_store_metadata, None);
     assert_eq!(found.litellm_credential_name, None);
+}
+
+fn assert_params(found: &LiteLlmManagedVectorStore) {
     assert!(found.created_at.is_some());
     assert_eq!(
         found.litellm_params,
@@ -163,7 +174,9 @@ async fn assert_seeded_rows(writer: &PostgresStore) {
             serde_json::to_value(Json::Object(object(vec![("api_key", text("inline"))]))).unwrap()
         )
     );
-    assert!(database.find_store("vs_absent").await.unwrap().is_none());
+}
+
+async fn assert_tables(database: &PrismaVectorStoreSelection<'_>) {
     let rows = database.stores().await.unwrap();
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].vector_store_id.as_deref(), Some("vs_known"));

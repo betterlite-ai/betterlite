@@ -91,13 +91,13 @@ where
     };
     let params_by_id = match tools {
         None => IndexMap::new(),
-        Some(tools) => pop_recognised_tools(registry, tools, &mut ids)?,
+        Some(present) => pop_recognised_tools(registry, present, &mut ids)?,
     };
     let mut selected = Vec::new();
     for id in &ids {
         let mut store = match database {
             None => registry.store_by_id(id).cloned(),
-            Some(database) => select_verified_store(registry, id, database).await,
+            Some(source) => select_verified_store(registry, id, source).await,
         };
         if let (Some(record), Some(params)) = (&mut store, params_by_id.get(id)) {
             merge_tool_params(record, params)?;
@@ -109,6 +109,7 @@ where
     Ok(selected)
 }
 
+// the cached record answers once the database confirms it; a missing row or a missing record falls back to B1062's every-row read and the first match joins the cache
 async fn select_verified_store<D>(
     registry: &mut VectorStoreRegistry,
     vector_store_id: &str,
@@ -117,53 +118,36 @@ async fn select_verified_store<D>(
 where
     D: VectorStoreSelectionDatabase,
 {
-    let Some(cached) = registry.store_by_id(vector_store_id).cloned() else {
-        return fallback_store(registry, vector_store_id, database).await;
-    };
-    if registry.is_config(vector_store_id) {
-        return Some(cached);
-    }
-    match database.find_store(vector_store_id).await {
-        Ok(Some(_)) => Some(cached),
-        Ok(None) => {
-            tracing::debug!(
-                "Vector store {vector_store_id} found in memory but deleted from database, removing from cache"
-            );
-            registry.remove_store(vector_store_id);
-            fallback_store(registry, vector_store_id, database).await
+    if let Some(cached) = registry.store_by_id(vector_store_id).cloned() {
+        if registry.is_config(vector_store_id) {
+            return Some(cached);
         }
-        Err(error) => {
-            tracing::debug!("Error verifying vector store {vector_store_id} in database: {error}");
-            Some(cached)
+        match database.find_store(vector_store_id).await {
+            Ok(Some(_)) => return Some(cached),
+            Ok(None) => {
+                tracing::debug!(
+                    "Vector store {vector_store_id} found in memory but deleted from database, removing from cache"
+                );
+                registry.remove_store(vector_store_id);
+            }
+            Err(error) => {
+                tracing::debug!(
+                    "Error verifying vector store {vector_store_id} in database: {error}"
+                );
+                return Some(cached);
+            }
         }
     }
-}
-
-// B1062's get_litellm_managed_vector_store_from_registry_or_db reads every row and caches the first match
-async fn fallback_store<D: VectorStoreDatabase>(
-    registry: &mut VectorStoreRegistry,
-    vector_store_id: &str,
-    database: &D,
-) -> Option<LiteLlmManagedVectorStore> {
-    let rows = read_rows(database, vector_store_id).await?;
+    let outcome = rows_from_database(Some(database)).await;
+    if let Some(error) = outcome.as_ref().err() {
+        tracing::debug!("Error fetching vector store {vector_store_id} from database: {error}");
+    }
+    let rows: Vec<LiteLlmManagedVectorStore> = outcome.ok()?;
     let found = rows
         .into_iter()
         .find(|row| row.vector_store_id.as_deref() == Some(vector_store_id))?;
     registry.add_store(found.clone());
     Some(found)
-}
-
-async fn read_rows<D: VectorStoreDatabase>(
-    database: &D,
-    vector_store_id: &str,
-) -> Option<Vec<LiteLlmManagedVectorStore>> {
-    match rows_from_database(Some(database)).await {
-        Ok(rows) => Some(rows),
-        Err(error) => {
-            tracing::debug!("Error fetching vector store {vector_store_id} from database: {error}");
-            None
-        }
-    }
 }
 
 // VectorStoreToolParams.to_dict drops absent options and the stored value overwrites each shared key

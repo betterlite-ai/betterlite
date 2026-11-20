@@ -146,9 +146,9 @@ fn tool_id_types_are_errors() {
         "vector_store_ids",
         Json::List(vec![number(1)]),
     )])];
-    let error = pop_recognised_tools(&registry, &mut numbers, &mut Vec::new()).unwrap_err();
+    let list_error = pop_recognised_tools(&registry, &mut numbers, &mut Vec::new()).unwrap_err();
     assert_eq!(
-        error.to_string(),
+        list_error.to_string(),
         "tool.vector_store_ids must be a list of strings"
     );
 }
