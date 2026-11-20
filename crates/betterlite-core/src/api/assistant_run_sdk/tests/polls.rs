@@ -322,6 +322,39 @@ async fn a_supplied_client_timeout_becomes_the_poll_deadline() {
 }
 
 #[tokio::test]
+async fn a_supplied_azure_client_reaches_the_request() {
+    let (recorder, fixture) = openai_recorder();
+    recorder.queue(200, QUEUED);
+    recorder.queue(200, COMPLETED);
+    let sdk = fixture.sdk(ProviderRuns {
+        transport: Arc::clone(&recorder),
+    });
+    let mut input = call("openai");
+    input.client = Some(RunClient {
+        class: RunClientClass::Azure,
+        api_key: secret("client-key"),
+        base_url: Some(String::from(BASE)),
+        api_version: Some(String::from("2024-02-15-preview")),
+        azure_ad_token: secret("client-token"),
+        timeout: Some(5.0_f64),
+        ..RunClient::default()
+    });
+    let reply = polled(sdk.run_thread(input).await.unwrap()).unwrap();
+    assert_eq!(reply.status, "completed");
+    let seen = recorder.requests();
+    assert_eq!(
+        seen[0].url,
+        format!("{BASE}/threads/thread_a/runs?api-version=2024-02-15-preview")
+    );
+    assert_eq!(
+        seen[0].authorization.as_deref(),
+        Some("Bearer client-token")
+    );
+    assert!(seen[0].api_key.is_none());
+    assert_eq!(seen[0].deadline, Duration::from_secs(5));
+}
+
+#[tokio::test]
 async fn litellm_params_reach_only_the_azure_branch() {
     let fixture = Fixture::new();
     let operations = CaptureRuns::default();
