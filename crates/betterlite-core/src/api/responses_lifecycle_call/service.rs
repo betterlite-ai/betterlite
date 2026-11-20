@@ -73,7 +73,7 @@ where
         log: LifecycleLog<'_, '_>,
     ) -> Result<TypedReply, LifecycleFailure> {
         let mut inner = call.clone();
-        decode(&mut inner.identity);
+        inner.identity = decode(&call.identity);
         inner.aget_responses = Some(Json::Bool(true));
         let mut reply = self.get_responses(&inner, log).await?;
         // the id is already encoded by now, so the wrapper's second rewrite reads it back unchanged
@@ -109,7 +109,7 @@ where
         mut call: ResponsesInputItemsCall,
         log: LifecycleLog<'_, '_>,
     ) -> Result<Json, LifecycleFailure> {
-        decode(&mut call.identity);
+        call.identity = decode(&call.identity);
         call.alist_input_items = Some(Json::Bool(true));
         self.list_input_items(&call, log).await
     }

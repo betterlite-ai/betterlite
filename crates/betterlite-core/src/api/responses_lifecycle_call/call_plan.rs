@@ -95,13 +95,15 @@ pub(super) fn affinity(
 }
 
 // the wrapper's decode: a nonempty encoded id and provider replace the raw ones, and the wrapper replays with them
-pub(super) fn decode(identity: &mut ReadIdentity) {
+pub(super) fn decode(identity: &ReadIdentity) -> ReadIdentity {
     let resolved = resolve(
         &identity.response_id,
         identity.custom_llm_provider.as_deref(),
     );
-    identity.response_id = resolved.response_id;
-    identity.custom_llm_provider = resolved.provider;
+    let mut decoded = identity.clone();
+    decoded.response_id = resolved.response_id;
+    decoded.custom_llm_provider = resolved.provider;
+    decoded
 }
 
 // the decoded id, the provider the id or the caller names, and the config tag behind the provider
