@@ -32,11 +32,11 @@ pub type OrganizationMembershipRows<'db> = PrismaTableRepository<'db, Organizati
 
 // LiteLLM's _team_db reads client.db and converts rows with _to_model; TeamRepository holds both paths.
 pub fn team_table(client: Option<PrismaClient<'_>>) -> Result<TeamRepository<'_>, DbError> {
-    let client = client.ok_or(DbError::NoDbConnected)?;
+    let connected = client.ok_or(DbError::NoDbConnected)?;
     Ok(TeamRepository {
         database: TeamDatabase {
-            db: read_store(client),
-            writer_db: client.writer,
+            db: read_store(connected),
+            writer_db: connected.writer,
         },
         use_writer: false,
     })

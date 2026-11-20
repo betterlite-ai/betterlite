@@ -292,6 +292,8 @@ const REJECTS_EMPTY: &str =
 
 const SLEEPS: &str = "import asyncio\n\nasync def validate(payload):\n    await asyncio.sleep(30)\n    return {\"valid\": True}\n";
 
+const AWAITS: &str = "import asyncio\n\nasync def validate(payload):\n    await asyncio.sleep(0.05)\n    return {\"valid\": True}\n";
+
 const RAISES: &str =
     "async def validate(payload):\n    raise ValueError(\"database exploded secret-token-123\")\n";
 
@@ -425,6 +427,19 @@ async fn validator_timeout() {
 }
 
 #[tokio::test]
+async fn unlimited_timeout_awaits() {
+    let workspace = Workspace::new();
+    let module = workspace.module("b801_awaits", AWAITS);
+    let hooks = PythonHooks::new(Some(workspace.config_path.clone()));
+    let settings = Settings {
+        timeout: ValidationTimeout::Unlimited,
+        ..hook_settings(&module, "validate")
+    };
+    let validators = install_hook(settings.clone(), &hooks).await;
+    check(&validators, &data("{}"), &settings).await.unwrap();
+}
+
+#[tokio::test]
 async fn validator_raised_503() {
     let workspace = Workspace::new();
     let module = workspace.module("b801_raises", RAISES);
@@ -548,11 +563,11 @@ async fn missing_validator_bridge() {
 
 #[test]
 fn sanitize_crlf() {
-    assert_eq!(sanitize_for_log(LogValue::Display("a\rb")), "ab");
-    assert_eq!(sanitize_for_log(LogValue::Display("a\nb")), "ab");
-    assert_eq!(sanitize_for_log(LogValue::Display("a\r\nb")), "ab");
+    assert_eq!(sanitize_for_log(LogValue::Display(&"a\rb")), "ab");
+    assert_eq!(sanitize_for_log(LogValue::Display(&"a\nb")), "ab");
+    assert_eq!(sanitize_for_log(LogValue::Display(&"a\r\nb")), "ab");
     assert_eq!(
-        sanitize_for_log(LogValue::Display("plain text")),
+        sanitize_for_log(LogValue::Display(&"plain text")),
         "plain text"
     );
 }

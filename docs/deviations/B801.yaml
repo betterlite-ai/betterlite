@@ -15,6 +15,21 @@ deviations:
       betterlite's hook bridge carries JSON between Python and Rust, so the payload is rebuilt with the same
       attribute names and the result must have a JSON form; docs/compatibility.md says output is standard JSON.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/team_metadata_validation.py#L126-L133
+  - what: >-
+      A YAML team_metadata_validation_timeout of .inf or .nan fails the config load instead of mapping .inf to an
+      unlimited deadline and .nan to the 5 second default.
+    why: >-
+      The shared YAML loader rejects non-finite floats by policy before the team_fields section sees them; the
+      unlimited deadline still loads through a numeric os.environ value such as 1e20, and the section maps an
+      infinite f64 to Unlimited when it is handed one directly.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/team_metadata_validation.py#L142-L146
+  - what: >-
+      A callback with no finite deadline is given 9e9 seconds instead of infinity, and a configured deadline above
+      that value is clamped to it.
+    why: >-
+      LiteLLM passes timeout=inf to asyncio.wait_for, but betterlite waits on Future.result, whose timeout CPython
+      caps at PY_TIMEOUT_MAX (2^63 - 1 nanoseconds); 9e9 seconds stays under the cap and behaves as no deadline.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/team_metadata_validation.py#L104-L139
 kept_bugs:
   - what: >-
       A rejected result whose error_message is the empty string surfaces the default rejection message, because

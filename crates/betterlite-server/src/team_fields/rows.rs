@@ -26,11 +26,12 @@ impl GeneralSettingsMap {
         let JsonValue::Object(entries) = value else {
             return Err(SettingsMapError);
         };
-        let entries = entries
-            .iter()
-            .map(|(name, value)| (name.clone(), value.clone()))
-            .collect();
-        Ok(Self { entries })
+        Ok(Self {
+            entries: entries
+                .iter()
+                .map(|(name, value)| (name.clone(), value.clone()))
+                .collect(),
+        })
     }
 }
 

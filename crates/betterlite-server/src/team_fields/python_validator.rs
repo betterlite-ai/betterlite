@@ -116,10 +116,13 @@ impl TeamMetadataValidator for PythonValidator {
     }
 }
 
+// CPython refuses a Future.result timeout at or above PY_TIMEOUT_MAX, 2^63 - 1 nanoseconds.
+const MAX_CALLBACK_TIMEOUT: Duration = Duration::from_secs(9_000_000_000);
+
 fn deadline(timeout: ValidationTimeout) -> Duration {
     match timeout {
-        ValidationTimeout::Finite(duration) => duration,
-        ValidationTimeout::Unlimited => Duration::MAX,
+        ValidationTimeout::Finite(duration) => duration.min(MAX_CALLBACK_TIMEOUT),
+        ValidationTimeout::Unlimited => MAX_CALLBACK_TIMEOUT,
     }
 }
 
