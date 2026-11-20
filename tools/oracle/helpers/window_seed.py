@@ -52,10 +52,6 @@ def seed_step(step: SeedBaseStep) -> str:
     return f"{_seed_base(totals=totals, batch_spend=step['batch_spend']):.6f}"
 
 
-def exclusion_step(step: ExclusionStep) -> str:
-    return _exclusion_upper_bound(datetime.fromisoformat(step["started_at"])).isoformat()
-
-
 def params_step(step: UpsertParamsStep) -> Params:
     entity_type, entity_id, window_duration, window_start, spend, increment, now = _upsert_params(
         transaction=step["transaction"],
@@ -79,7 +75,8 @@ def run(input_value: Input) -> dict[str, Result]:
         if step["kind"] == "seed_base":
             results[step["name"]] = seed_step(step)
         elif step["kind"] == "exclusion_upper_bound":
-            results[step["name"]] = exclusion_step(step)
+            started_at = datetime.fromisoformat(step["started_at"])
+            results[step["name"]] = _exclusion_upper_bound(started_at).isoformat()
         else:
             results[step["name"]] = params_step(step)
     return results

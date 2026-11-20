@@ -54,38 +54,31 @@ pub fn decode_spend_counter_key<'key>(
     durations: &dyn WindowDurationValidity,
 ) -> Result<SpendCounterKey<'key>, CounterKeyError> {
     let text = str::from_utf8(bytes).map_err(CounterKeyError::NotText)?;
-    Ok(decode_counter_text(text, durations))
-}
-
-fn decode_counter_text<'key>(
-    text: &'key str,
-    durations: &dyn WindowDurationValidity,
-) -> SpendCounterKey<'key> {
     if let Some(token) = text.strip_prefix(KEY_PREFIX) {
-        return window_or_primary(WindowEntity::Key, token, durations);
+        return Ok(window_or_primary(WindowEntity::Key, token, durations));
     }
     if let Some(suffix) = text.strip_prefix(TEAM_MEMBER_PREFIX) {
-        return match suffix.rsplit_once(':') {
+        return Ok(match suffix.rsplit_once(':') {
             Some((user_id, team_id)) => SpendCounterKey::TeamMember { user_id, team_id },
             None => SpendCounterKey::Unknown(text),
-        };
+        });
     }
     if let Some(team_id) = text.strip_prefix(TEAM_PREFIX) {
-        return window_or_primary(WindowEntity::Team, team_id, durations);
+        return Ok(window_or_primary(WindowEntity::Team, team_id, durations));
     }
     if let Some(user_id) = text.strip_prefix(USER_PREFIX) {
-        return SpendCounterKey::User(user_id);
+        return Ok(SpendCounterKey::User(user_id));
     }
     if let Some(organization_id) = text.strip_prefix(ORGANIZATION_PREFIX) {
-        return SpendCounterKey::Organization(organization_id);
+        return Ok(SpendCounterKey::Organization(organization_id));
     }
     if let Some(project_id) = text.strip_prefix(PROJECT_PREFIX) {
-        return SpendCounterKey::Project(project_id);
+        return Ok(SpendCounterKey::Project(project_id));
     }
     if let Some(user_id) = text.strip_prefix(END_USER_COUNTER_PREFIX) {
-        return SpendCounterKey::EndUser(user_id);
+        return Ok(SpendCounterKey::EndUser(user_id));
     }
-    SpendCounterKey::Unknown(text)
+    Ok(SpendCounterKey::Unknown(text))
 }
 
 // A key/team ID keeps every delimiter literally unless the last :window: suffix parses, which is what makes it a per-window counter with no primary row

@@ -1,14 +1,13 @@
-use chrono::NaiveDateTime;
+use chrono::{NaiveDateTime, Timelike as _};
 use deadpool_postgres::GenericClient as _;
 use rust_decimal::Decimal;
 use tokio_postgres::types::ToSql;
 
+use crate::postgres_store::errors::backend;
 use crate::postgres_store::session::PostgresStore;
 
-use super::error::{WindowSpendError, database};
-use super::seed::{
-    SeedEntity, SeedQuery, WindowSeedTotals, WindowSpendLogs, exclusion_upper_bound,
-};
+use super::error::WindowSpendError;
+use super::seed::{SeedEntity, SeedQuery, WindowSeedTotals, WindowSpendLogs};
 
 pub(super) const EXISTING_ROWS_SQL: &str = r#"SELECT entity_type, entity_id, window_duration FROM "LiteLLM_BudgetWindowSpend" WHERE (entity_type, entity_id, window_duration) IN (SELECT * FROM unnest($1::text[], $2::text[], $3::text[]))"#;
 
@@ -34,15 +33,21 @@ impl WindowSpendLogs for SqlWindowSpendLogs {
             SeedEntity::Key => KEY_SEED_SQL,
             SeedEntity::Team => TEAM_SEED_SQL,
         };
-        let bound: Option<NaiveDateTime> = query.batch_started_at.map(exclusion_upper_bound);
+        let bound: Option<NaiveDateTime> = query
+            .batch_started_at
+            .map(|started_at| started_at.with_nanosecond(0).unwrap_or(started_at));
         let values: [&(dyn ToSql + Sync); 3] = [&query.entity_id, &query.window_start, &bound];
         let client = self.store.session().await?;
         let row = client
             .query_one(statement, &values)
             .await
-            .map_err(database)?;
-        let total: Decimal = row.try_get(0).map_err(database)?;
-        let before_batch: Decimal = row.try_get(1).map_err(database)?;
+            .map_err(|source| WindowSpendError::Database(backend(source)))?;
+        let total: Decimal = row
+            .try_get(0)
+            .map_err(|source| WindowSpendError::Database(backend(source)))?;
+        let before_batch: Decimal = row
+            .try_get(1)
+            .map_err(|source| WindowSpendError::Database(backend(source)))?;
         Ok(WindowSeedTotals {
             total,
             before_batch,

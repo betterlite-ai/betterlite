@@ -79,14 +79,12 @@ async fn stored_spend_row(
     let found = client
         .query_opt(statement, parameters)
         .await
-        .map_err(database)?;
+        .map_err(|source| SpendRowsError::Database(backend(source)))?;
     let Some(row) = found else {
         return Ok(None);
     };
-    let spend: Option<Decimal> = row.try_get(0).map_err(database)?;
+    let spend: Option<Decimal> = row
+        .try_get(0)
+        .map_err(|source| SpendRowsError::Database(backend(source)))?;
     Ok(Some(SpendRow { spend }))
-}
-
-fn database(source: tokio_postgres::Error) -> SpendRowsError {
-    SpendRowsError::Database(backend(source))
 }

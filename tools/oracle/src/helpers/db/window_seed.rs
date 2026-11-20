@@ -2,13 +2,11 @@ use std::collections::BTreeMap;
 use std::fmt::Display;
 
 use betterlite_db::window_queue::WindowSpendTransaction;
-use betterlite_db::window_spend::seed::{
-    WindowSeedTotals, exclusion_upper_bound, seed_base, window_instant,
-};
+use betterlite_db::window_spend::seed::{WindowSeedTotals, seed_base, window_instant};
 use betterlite_db::window_spend::upsert::upsert_params;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
-use chrono::NaiveDateTime;
+use chrono::{NaiveDateTime, Timelike as _};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -67,7 +65,9 @@ fn result_for(step: &Step) -> Result<(String, Value), Box<HelperError>> {
             json!(seed_amount(*total, *before_batch, *batch_spend)?),
         )),
         Step::ExclusionUpperBound { name, started_at } => {
-            Ok((name.clone(), json!(floored_instant(started_at)?)))
+            let instant = window_instant(started_at).map_err(failure)?;
+            let floored = instant.with_nanosecond(0).unwrap_or(instant);
+            Ok((name.clone(), json!(isoformat(floored))))
         }
         Step::UpsertParams {
             name,
@@ -89,11 +89,6 @@ fn seed_amount(
     };
     let base = seed_base(&totals, batch_spend).map_err(failure)?;
     Ok(format!("{base:.6}"))
-}
-
-fn floored_instant(started_at: &str) -> Result<String, Box<HelperError>> {
-    let instant = window_instant(started_at).map_err(failure)?;
-    Ok(isoformat(exclusion_upper_bound(instant)))
 }
 
 fn params_value(

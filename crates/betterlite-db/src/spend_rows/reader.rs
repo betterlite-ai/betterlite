@@ -39,15 +39,10 @@ impl<Rows: SpendCounterRows> SpendCounterReader<Rows> {
             .await
     }
 
-    // The floor read opens no db lookup gate, as end_user_from_db does not either; only the bounded lookup guards it
+    // The floor read opens no db lookup gate, unlike the primary row read; only the bounded lookup guards it
     pub async fn end_user_from_db(&self, counter_key: &str) -> Option<Decimal> {
         let rows = self.rows.as_ref().map(Arc::clone)?;
-        let key = counter_key.to_owned();
-        let durations = Arc::clone(&self.durations);
-        let lookup = async move {
-            let answer = end_user_answer(rows.as_ref(), durations.as_ref(), &key).await;
-            Ok::<_, DbLookupError>(answer)
-        };
+        let lookup = end_user_lookup(rows, Arc::clone(&self.durations), counter_key.to_owned());
         self.bounded_amount(lookup, END_USER_SPEND_LOOKUP, counter_key)
             .await
     }
@@ -94,39 +89,40 @@ impl<Rows: SpendCounterRows> SpendCounterReader<Rows> {
     }
 }
 
+async fn end_user_lookup<Rows: SpendCounterRows>(
+    rows: Arc<Rows>,
+    durations: Arc<dyn WindowDurationValidity>,
+    counter_key: String,
+) -> Result<LookupAnswer<SpendRow, Rows::Error>, DbLookupError> {
+    let answer = match decode_spend_counter_key(counter_key.as_bytes(), durations.as_ref()) {
+        Ok(SpendCounterKey::EndUser(user_id)) => {
+            match rows.spend_row(SpendRowLookup::EndUser(user_id)).await {
+                Ok(row) => LookupAnswer::Row(row),
+                Err(error) => LookupAnswer::Failed(error),
+            }
+        }
+        Ok(_other) | Err(_error) => LookupAnswer::Row(None),
+    };
+    Ok(answer)
+}
+
 async fn gated_primary<Rows: SpendCounterRows>(
     gate: &LoopBoundSemaphore,
     rows: &Rows,
     durations: &dyn WindowDurationValidity,
     counter_key: &str,
 ) -> LookupAnswer<SpendRow, Rows::Error> {
-    let _permit = match gate.current() {
-        Some(semaphore) => semaphore.acquire_owned().await.ok(),
-        None => None,
-    };
     let Ok(key) = decode_spend_counter_key(counter_key.as_bytes(), durations) else {
         return LookupAnswer::Row(None);
     };
     let Some(lookup) = primary_lookup(key) else {
         return LookupAnswer::Row(None);
     };
-    match rows.spend_row(lookup).await {
-        Ok(row) => LookupAnswer::Row(row),
-        Err(error) => LookupAnswer::Failed(error),
-    }
-}
-
-async fn end_user_answer<Rows: SpendCounterRows>(
-    rows: &Rows,
-    durations: &dyn WindowDurationValidity,
-    counter_key: &str,
-) -> LookupAnswer<SpendRow, Rows::Error> {
-    let Ok(SpendCounterKey::EndUser(user_id)) =
-        decode_spend_counter_key(counter_key.as_bytes(), durations)
-    else {
-        return LookupAnswer::Row(None);
+    let _permit = match gate.current() {
+        Some(semaphore) => semaphore.acquire_owned().await.ok(),
+        None => None,
     };
-    match rows.spend_row(SpendRowLookup::EndUser(user_id)).await {
+    match rows.spend_row(lookup).await {
         Ok(row) => LookupAnswer::Row(row),
         Err(error) => LookupAnswer::Failed(error),
     }

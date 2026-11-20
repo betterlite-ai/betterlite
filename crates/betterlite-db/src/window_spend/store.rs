@@ -7,10 +7,11 @@ use rust_decimal::Decimal;
 use tokio::time::timeout;
 use tokio_postgres::types::ToSql;
 
+use crate::postgres_store::errors::backend;
 use crate::postgres_store::session::PostgresStore;
 use crate::window_queue::WindowSpendTransaction;
 
-use super::error::{WindowSpendError, database};
+use super::error::WindowSpendError;
 use super::seed::{SeedEntity, SeedQuery, WindowSpendLogs, seed_base, window_instant};
 use super::sql::{EXISTING_ROWS_SQL, ROLL_WINDOW_SPEND_SQL, UPSERT_WINDOW_SPEND_SQL};
 use super::upsert::{PrimaryKey, WindowUpsertParams, primary_key, upsert_params};
@@ -81,7 +82,7 @@ impl WindowSpendStore {
         client
             .execute(ROLL_WINDOW_SPEND_SQL, &values)
             .await
-            .map_err(database)?;
+            .map_err(|source| WindowSpendError::Database(backend(source)))?;
         Ok(())
     }
 
@@ -102,12 +103,18 @@ impl WindowSpendStore {
         let rows = client
             .query(EXISTING_ROWS_SQL, &values)
             .await
-            .map_err(database)?;
+            .map_err(|source| WindowSpendError::Database(backend(source)))?;
         let mut keys = HashSet::with_capacity(rows.len());
         for row in rows {
-            let entity_type: String = row.try_get(0).map_err(database)?;
-            let entity_id: String = row.try_get(1).map_err(database)?;
-            let window_duration: String = row.try_get(2).map_err(database)?;
+            let entity_type: String = row
+                .try_get(0)
+                .map_err(|source| WindowSpendError::Database(backend(source)))?;
+            let entity_id: String = row
+                .try_get(1)
+                .map_err(|source| WindowSpendError::Database(backend(source)))?;
+            let window_duration: String = row
+                .try_get(2)
+                .map_err(|source| WindowSpendError::Database(backend(source)))?;
             keys.insert((entity_type, entity_id, window_duration));
         }
         Ok(keys)
@@ -116,11 +123,17 @@ impl WindowSpendStore {
     async fn apply_upserts(&self, params: &[WindowUpsertParams]) -> Result<(), WindowSpendError> {
         let mut client = self.store.session().await?;
         let work = async {
-            let transaction = client.transaction().await.map_err(database)?;
+            let transaction = client
+                .transaction()
+                .await
+                .map_err(|source| WindowSpendError::Database(backend(source)))?;
             for parameter in params {
                 execute_upsert(&transaction, parameter).await?;
             }
-            transaction.commit().await.map_err(database)
+            transaction
+                .commit()
+                .await
+                .map_err(|source| WindowSpendError::Database(backend(source)))
         };
         match timeout(self.transaction_timeout, work).await {
             Ok(result) => result,
@@ -195,6 +208,6 @@ async fn execute_upsert(
     transaction
         .execute(UPSERT_WINDOW_SPEND_SQL, &values)
         .await
-        .map_err(database)?;
+        .map_err(|source| WindowSpendError::Database(backend(source)))?;
     Ok(())
 }

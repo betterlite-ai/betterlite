@@ -5,12 +5,12 @@ use rust_decimal::Decimal;
 use crate::postgres_store::session::PostgresStore;
 use crate::window_queue::WindowQueueError;
 use crate::window_spend::error::WindowSpendError;
-use crate::window_spend::seed::{SeedEntity, exclusion_upper_bound, seed_base, window_instant};
+use crate::window_spend::seed::{SeedEntity, seed_base, window_instant};
 use crate::window_spend::store::{
     DEFAULT_TRANSACTION_TIMEOUT, WindowSpendStore, ordered_transactions,
 };
 use crate::window_spend::tests::support::{
-    Increment, decimal, key_transaction, naive, totals, transaction, window_transaction,
+    Increment, decimal, key_transaction, naive, totals, transaction,
 };
 use crate::window_spend::upsert::{primary_key, upsert_params};
 
@@ -28,22 +28,6 @@ fn seed_base_subtracts_the_batch_and_floors_at_the_before_batch_sum() {
 fn seed_base_reports_an_underflow() {
     let underflowing = seed_base(&totals(&Decimal::MIN.to_string(), "0"), decimal("1"));
     assert!(matches!(underflowing, Err(WindowSpendError::Overflow)));
-}
-
-#[test]
-fn exclusion_upper_bound_floors_to_the_whole_second() {
-    assert_eq!(
-        exclusion_upper_bound(naive("2026-01-01T00:00:00.000900")),
-        naive("2026-01-01T00:00:00")
-    );
-    assert_eq!(
-        exclusion_upper_bound(naive("2026-01-01T00:00:00.000000")),
-        naive("2026-01-01T00:00:00")
-    );
-    assert_eq!(
-        exclusion_upper_bound(naive("2026-01-01T23:59:59.999999")),
-        naive("2026-01-01T23:59:59")
-    );
 }
 
 #[test]
@@ -172,9 +156,23 @@ fn ordered_transactions_sort_by_primary_key_then_window_start() {
     let transactions = vec![
         key_transaction("k2", "2026-01-01T00:00:00.000000", "1"),
         key_transaction("k1", "2026-01-01T01:00:00.000000", "1"),
-        window_transaction("team", "t1", "1h", "2026-01-01T00:00:00.000000", "1"),
+        transaction(&Increment {
+            entity_type: "team",
+            entity_id: "t1",
+            window_duration: "1h",
+            window_start: "2026-01-01T00:00:00.000000",
+            spend: "1",
+            started_at: None,
+        }),
         key_transaction("k1", "2026-01-01T00:00:00.000000", "1"),
-        window_transaction("key", "k1", "1d", "2026-01-01T00:00:00.000000", "1"),
+        transaction(&Increment {
+            entity_type: "key",
+            entity_id: "k1",
+            window_duration: "1d",
+            window_start: "2026-01-01T00:00:00.000000",
+            spend: "1",
+            started_at: None,
+        }),
     ];
     let ordered: Vec<_> = ordered_transactions(&transactions)
         .iter()

@@ -17,7 +17,7 @@ use crate::spend_queues::entity::SpendAmount;
 use crate::window_queue::WindowSpendTransaction;
 use crate::window_spend::error::WindowSpendError;
 use crate::window_spend::seed::{SeedQuery, WindowSeedTotals, WindowSpendLogs};
-use crate::window_spend::store::{WindowRoll, WindowSpendStore};
+use crate::window_spend::store::WindowSpendStore;
 
 const TABLES: &str = r#"
 CREATE TABLE "LiteLLM_BudgetWindowSpend" (
@@ -84,29 +84,19 @@ pub(crate) fn transaction(increment: &Increment<'_>) -> WindowSpendTransaction {
     }
 }
 
-pub(crate) fn window_transaction(
-    entity_type: &str,
-    entity_id: &str,
-    window_duration: &str,
-    window_start: &str,
-    spend: &str,
-) -> WindowSpendTransaction {
-    transaction(&Increment {
-        entity_type,
-        entity_id,
-        window_duration,
-        window_start,
-        spend,
-        started_at: None,
-    })
-}
-
 pub(crate) fn key_transaction(
     entity_id: &str,
     window_start: &str,
     spend: &str,
 ) -> WindowSpendTransaction {
-    window_transaction("key", entity_id, "1h", window_start, spend)
+    transaction(&Increment {
+        entity_type: "key",
+        entity_id,
+        window_duration: "1h",
+        window_start,
+        spend,
+        started_at: None,
+    })
 }
 
 pub(crate) async fn database() -> (PostgresFixture, Pool) {
@@ -156,24 +146,8 @@ pub(crate) async fn execute(pool: &Pool, statement: &str, parameters: &[&(dyn To
 pub(crate) struct StoredWindow {
     pub(crate) window_start: NaiveDateTime,
     pub(crate) spend: Decimal,
-}
-
-pub(crate) async fn window_row(
-    pool: &Pool,
-    entity_type: &str,
-    entity_id: &str,
-    window_duration: &str,
-) -> Option<StoredWindow> {
-    let client = pool.get().await.expect("the database connection");
-    let statement = r#"SELECT window_start, spend::numeric FROM "LiteLLM_BudgetWindowSpend" WHERE entity_type = $1 AND entity_id = $2 AND window_duration = $3"#;
-    let row = client
-        .query_opt(statement, &[&entity_type, &entity_id, &window_duration])
-        .await
-        .expect("the stored window");
-    row.map(|found| StoredWindow {
-        window_start: found.get(0),
-        spend: found.get(1),
-    })
+    pub(crate) created_at: NaiveDateTime,
+    pub(crate) updated_at: NaiveDateTime,
 }
 
 pub(crate) async fn stored_window(
@@ -182,74 +156,41 @@ pub(crate) async fn stored_window(
     entity_id: &str,
     window_duration: &str,
 ) -> StoredWindow {
-    window_row(pool, entity_type, entity_id, window_duration)
-        .await
-        .expect("a stored window")
-}
-
-pub(crate) async fn window_timestamps(
-    pool: &Pool,
-    entity_type: &str,
-    entity_id: &str,
-    window_duration: &str,
-) -> (NaiveDateTime, NaiveDateTime) {
     let client = pool.get().await.expect("the database connection");
-    let statement = r#"SELECT created_at, updated_at FROM "LiteLLM_BudgetWindowSpend" WHERE entity_type = $1 AND entity_id = $2 AND window_duration = $3"#;
     let row = client
-        .query_one(statement, &[&entity_type, &entity_id, &window_duration])
+        .query_one(
+            r#"SELECT window_start, spend::numeric, created_at, updated_at FROM "LiteLLM_BudgetWindowSpend" WHERE entity_type = $1 AND entity_id = $2 AND window_duration = $3"#,
+            &[&entity_type, &entity_id, &window_duration],
+        )
         .await
-        .expect("the stored window timestamps");
-    (row.get(0), row.get(1))
+        .expect("the stored window");
+    StoredWindow {
+        window_start: row.get(0),
+        spend: row.get(1),
+        created_at: row.get(2),
+        updated_at: row.get(3),
+    }
 }
 
-pub(crate) async fn insert_window(
-    pool: &Pool,
-    entity_type: &str,
-    entity_id: &str,
-    window_start: &str,
-    spend: &str,
-) {
-    let statement = r#"INSERT INTO "LiteLLM_BudgetWindowSpend" (entity_type, entity_id, window_duration, window_start, spend, updated_at) VALUES ($1, $2, '1h', $3, $4::numeric::double precision, '2025-12-31T23:00:00.000')"#;
-    execute(
-        pool,
-        statement,
-        &[
-            &entity_type,
-            &entity_id,
-            &naive(window_start),
-            &decimal(spend),
-        ],
-    )
-    .await;
-}
+pub(crate) const INSERT_WINDOW_SQL: &str = r#"INSERT INTO "LiteLLM_BudgetWindowSpend" (entity_type, entity_id, window_duration, window_start, spend, updated_at) VALUES ('key', $1, '1h', $2, $3::numeric::double precision, '2025-12-31T23:00:00.000')"#;
 
 pub(crate) async fn insert_log(
     pool: &Pool,
     api_key: &str,
-    team_id: &str,
+    team_id: Option<&str>,
     spend: &str,
     start_time: &str,
 ) {
-    let statement = r#"INSERT INTO "LiteLLM_SpendLogs" (api_key, team_id, spend, "startTime") VALUES ($1, $2, $3::numeric::double precision, $4)"#;
-    execute(
-        pool,
-        statement,
-        &[&api_key, &team_id, &decimal(spend), &naive(start_time)],
-    )
-    .await;
-}
-
-pub(crate) async fn roll_window(pool: &Pool, entity_id: &str, new_window_start: &str, now: &str) {
-    store(pool)
-        .roll_window_spend_row(&WindowRoll {
-            entity_type: "key",
-            entity_id,
-            window_duration: "1h",
-            new_window_start: naive(new_window_start),
-            now: utc(now),
-        })
+    let values: [&(dyn ToSql + Sync); 4] =
+        [&api_key, &team_id, &decimal(spend), &naive(start_time)];
+    let client = pool.get().await.expect("the database connection");
+    client
+        .execute(
+            r#"INSERT INTO "LiteLLM_SpendLogs" (api_key, team_id, spend, "startTime") VALUES ($1, $2, $3::numeric::double precision, $4)"#,
+            &values,
+        )
         .await
-        .expect("the rolled window");
+        .expect("the fixture row");
 }
 
 pub(crate) async fn close(fixture: PostgresFixture, pool: Pool) {
