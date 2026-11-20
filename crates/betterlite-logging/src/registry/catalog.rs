@@ -14,7 +14,6 @@ pub mod datadog_cost_management;
 pub mod datadog_llm_observability;
 pub mod datadog_metrics;
 pub mod deepeval;
-mod dispatch;
 pub mod dotprompt;
 pub mod dynamodb;
 pub mod focus;
@@ -149,7 +148,7 @@ impl LoggerCatalog {
         Self {
             inputs,
             runtime: None,
-            build: Arc::new(dispatch::build_logger),
+            build: Arc::new(otel::dispatch::build_logger),
             built: Mutex::new(BTreeMap::new()),
             in_memory: Mutex::new(Vec::new()),
             shared: Mutex::new(None),
