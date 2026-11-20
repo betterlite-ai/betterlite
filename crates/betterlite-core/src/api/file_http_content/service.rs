@@ -1,6 +1,7 @@
 use std::future::Future;
 use std::time::Duration;
 
+use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_pre_post::args::AdditionalArgs;
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_pre_post::pre_call::PreCall;
@@ -9,8 +10,8 @@ use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_openai::files::records::FileContentRequest;
 use betterlite_openai::files::stream::flatten_headers;
-use http::HeaderMap as HttpHeaders;
 use http::header::{CONTENT_ENCODING, CONTENT_LENGTH, HeaderName, HeaderValue};
+use http::{HeaderMap as HttpHeaders, Method};
 use indexmap::IndexMap;
 use url::Url;
 
