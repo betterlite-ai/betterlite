@@ -68,6 +68,7 @@ impl ServerRegistry {
     }
 
     #[must_use]
+    // ast-grep-ignore: no-one-line-functions - B4731 and B817 call this read from betterlite-server
     pub fn is_config_declared_server(&self, server_id: &str) -> bool {
         self.config_servers.contains_key(server_id)
     }
