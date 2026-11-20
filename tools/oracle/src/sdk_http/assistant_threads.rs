@@ -1,6 +1,4 @@
-use std::collections::BTreeMap;
-use std::future::Future;
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use betterlite_azure::endpoints::projection::SessionKind;
 use betterlite_config::sections::azure_endpoints;
@@ -72,39 +70,48 @@ enum Facade<'call> {
 }
 
 impl CallKind for Call {
-    fn send(
+    async fn send(
         &self,
         api_base: &str,
         env: &BTreeMap<String, String>,
-    ) -> impl Future<Output = Result<SdkResult, SdkHttpError>> {
-        send(self, api_base, env)
+    ) -> Result<SdkResult, SdkHttpError> {
+        let resources = resources(env);
+        let azure = azure_endpoints::Settings::default();
+        let sources = NoSources;
+        let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SdkHttpError::Redactor)?;
+        let threads = AssistantThreads {
+            transport: Arc::new(outbound_client(env)?),
+            resources: &resources,
+            azure: &azure,
+            environment: env,
+            sources: &sources,
+            redactor: &redactor,
+            refresh_enabled: false,
+            session: SessionKind::Dedicated,
+        };
+        // the harness owns the mock origin, so it takes the place of the configured api_base
+        let mut kwargs = self.kwargs.clone();
+        kwargs.insert(String::from("api_base"), Json::Text(api_base.to_owned()));
+        let facade = prepare(self, &mut kwargs)?;
+        match (self.mode, facade) {
+            (Mode::Sync, Facade::Create(call)) => match threads.create_thread(call).await {
+                Ok(thread) => Ok(thread_outcome(thread)),
+                Err(error) => Ok(sync_failure(&error)),
+            },
+            (Mode::Sync, Facade::Get(call)) => match threads.get_thread(call).await {
+                Ok(thread) => Ok(thread_outcome(thread)),
+                Err(error) => Ok(sync_failure(&error)),
+            },
+            (Mode::Async, Facade::Create(call)) => match threads.acreate_thread(call).await {
+                Ok(thread) => Ok(thread_outcome(thread)),
+                Err(failure) => async_failure(&failure),
+            },
+            (Mode::Async, Facade::Get(call)) => match threads.aget_thread(call).await {
+                Ok(thread) => Ok(thread_outcome(thread)),
+                Err(failure) => async_failure(&failure),
+            },
+        }
     }
-}
-
-async fn send(
-    call: &Call,
-    api_base: &str,
-    env: &BTreeMap<String, String>,
-) -> Result<SdkResult, SdkHttpError> {
-    let resources = resources(env);
-    let azure = azure_endpoints::Settings::default();
-    let sources = NoSources;
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SdkHttpError::Redactor)?;
-    let threads = AssistantThreads {
-        transport: Arc::new(outbound_client(env)?),
-        resources: &resources,
-        azure: &azure,
-        environment: env,
-        sources: &sources,
-        redactor: &redactor,
-        refresh_enabled: false,
-        session: SessionKind::Dedicated,
-    };
-    // the harness owns the mock origin, so it takes the place of the configured api_base
-    let mut kwargs = call.kwargs.clone();
-    kwargs.insert(String::from("api_base"), Json::Text(api_base.to_owned()));
-    let facade = prepare(call, &mut kwargs)?;
-    dispatch(&threads, call.mode, facade).await
 }
 
 fn prepare<'call>(
@@ -120,51 +127,17 @@ fn prepare<'call>(
             client: None,
             kwargs,
         })),
-        Operation::Get => Ok(Facade::Get(get_call(call, kwargs)?)),
-    }
-}
-
-fn get_call<'call>(
-    call: &'call Call,
-    kwargs: &'call mut BTreeMap<String, Json>,
-) -> Result<GetThreadCall<'call, ProxiedClient>, SdkHttpError> {
-    let thread_id = call
-        .thread_id
-        .clone()
-        .ok_or_else(|| SdkHttpError::Invalid(String::from("a get call needs a thread_id")))?;
-    Ok(GetThreadCall {
-        custom_llm_provider: call.provider.clone(),
-        thread_id,
-        client: None,
-        kwargs,
-    })
-}
-
-async fn dispatch<'deps, 'call>(
-    threads: &AssistantThreads<'deps, ProxiedClient>,
-    mode: Mode,
-    facade: Facade<'call>,
-) -> Result<SdkResult, SdkHttpError>
-where
-    'deps: 'call,
-{
-    match (mode, facade) {
-        (Mode::Sync, Facade::Create(call)) => match threads.create_thread(call).await {
-            Ok(thread) => Ok(thread_outcome(thread)),
-            Err(error) => Ok(sync_failure(&error)),
-        },
-        (Mode::Sync, Facade::Get(call)) => match threads.get_thread(call).await {
-            Ok(thread) => Ok(thread_outcome(thread)),
-            Err(error) => Ok(sync_failure(&error)),
-        },
-        (Mode::Async, Facade::Create(call)) => match threads.acreate_thread(call).await {
-            Ok(thread) => Ok(thread_outcome(thread)),
-            Err(failure) => async_failure(&failure),
-        },
-        (Mode::Async, Facade::Get(call)) => match threads.aget_thread(call).await {
-            Ok(thread) => Ok(thread_outcome(thread)),
-            Err(failure) => async_failure(&failure),
-        },
+        Operation::Get => {
+            let thread_id = call.thread_id.clone().ok_or_else(|| {
+                SdkHttpError::Invalid(String::from("a get call needs a thread_id"))
+            })?;
+            Ok(Facade::Get(GetThreadCall {
+                custom_llm_provider: call.provider.clone(),
+                thread_id,
+                client: None,
+                kwargs,
+            }))
+        }
     }
 }
 
