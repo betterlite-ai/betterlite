@@ -42,15 +42,15 @@ pub(super) async fn per_user_analytics(
         Ok(records) => records,
         Err(source) => return query_failed(FAILURE, &source),
     };
-    page_records(store, records, pagination).await
+    page_records(store, &records, pagination).await
 }
 
 async fn page_records(
     store: &dyn UserAgentAnalyticsStore,
-    records: Vec<TagSpendRecord>,
+    records: &[TagSpendRecord],
     pagination: Pagination,
 ) -> Response {
-    let tokens = metrics::api_keys(&records);
+    let tokens = metrics::api_keys(records);
     if tokens.is_empty() {
         return Json(metrics::page(Vec::new(), pagination)).into_response();
     }
@@ -63,7 +63,7 @@ async fn page_records(
         Ok(emails) => emails,
         Err(source) => return query_failed(FAILURE, &source),
     };
-    match metrics::aggregate(&records, &owners, &emails) {
+    match metrics::aggregate(records, &owners, &emails) {
         Ok(users) => Json(metrics::page(users, pagination)).into_response(),
         Err(source) => query_failed(FAILURE, &source),
     }
