@@ -21,9 +21,8 @@ description: >-
   schema defaults, not404. Mark is_public_model_group=true only for membership in the nonnull
   litellm_settings.public_model_groups list (default absent); public marking does not grant visibility.
 
-  Next B4784's agent_model_groups (LiteLLM's append_agents_to_model_group) runs even when the model_group filter matched no model;
-  agents can therefore survive that filter. Its own lookup/access failures DEBUG-log and preserve
-  prior rows. B007 TeamModelNameTranslator builds internal-to-public names for the callback filtering
+  Agent rows are not listed here. Later B4784 adds its agent_model_groups (LiteLLM's append_agents_to_model_group) to this handler between the model_group filter and the callback filtering step, and depends on this task.
+  B007 TeamModelNameTranslator builds internal-to-public names for the callback filtering
   step. B8598 hidden_listing_names (_names_hidden_by_listing_callbacks) receives unique public names in first-seen order;
   filter by those names but return the original group objects, without renaming their model_group.
   Preserve source order and null/default schema fields. No route-owned except block or
@@ -66,7 +65,6 @@ dod:
       admin_view_catalog_arguments, ordinary_caller_scope_arguments,
       undiscoverable_before_group_lookup, first_seen_dedup_and_exact_empty_filter,
       missing_group_metadata_default_row, public_group_marking_not_authorization,
-      agents_appended_after_model_filter, agent_failure_retains_rows,
       callback_unique_public_names_original_group_objects, dependency_errors_not_locally_wrapped,
       authenticated_routes_no_database_writes.'
     proof: [behavior-tests, oracle]
@@ -88,16 +86,15 @@ oracle_cases:
   - tools/oracle/cases/management/model-management/deprecation-aliases-and-window.yaml
   - tools/oracle/cases/management/model-management/empty-installation.yaml
   - tools/oracle/cases/management/model-management/admin-and-scoped-group-visibility.yaml
-  - tools/oracle/cases/management/model-management/exact-group-filter-and-agent-append.yaml
+  - tools/oracle/cases/management/model-management/exact-group-filter.yaml
   - tools/oracle/cases/management/model-management/public-marking-and-callback-filter.yaml
 deviations: []
 out_of_scope:
   - B843 owns date bucketing and deprecation collection; B846 owns router group metadata.
   - B007/B759/B8398 own list construction and name translation; B842 owns discovery policy.
-  - B4784 owns agent append policy (agent_model_groups and agent_model_infos); stored-model writes remain B832-B840 and their existing owners.
+  - B4784 owns agent append policy (agent_model_groups and agent_model_infos) and adds the agent rows to /model_group/info after this task; stored-model writes remain B832-B840 and their existing owners.
 pitfalls:
   - The public-name map affects callback filtering but does not rename the returned group objects.
-  - Appended agents are outside the model_group filter applied earlier.
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

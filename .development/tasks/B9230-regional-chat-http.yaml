@@ -151,7 +151,7 @@ out_of_scope:
   - B7325 owns every authenticator function and B8178 owns every file_handler.py function; no OAuth client, token cache or uploader is duplicated here.
   - B8312 owns regional_host_dispatch and regional_host_keys, including _complete_gigachat, _complete_minimax and _complete_nlp_cloud; B024 owns _complete_custom_openai. Other main.py functions retain their existing task owners.
   - B004/B005 own chat routes and streaming, B8610 owns the composition root, and B8633 owns the production chat generator. None of those mounts or ports changes in this fixture task.
-  - Native Messages are already covered by B8580 with B8634's selector chain; GigaChat passthrough belongs to B3627, B8609 and B8690/B8694. B8312 retains its ordinary MiniMax/NLP Cloud cases.
+  - Native Messages are already covered by B8580 with B8634's selector chain; GigaChat passthrough belongs to B3627, B10026 and B8690/B8694. B8312 retains its ordinary MiniMax/NLP Cloud cases.
   - B9232 supplies the generated-filename comparison and successful GigaChat upload, cache-hit and upload-rejection HTTP cases; this task's malformed image fails before that boundary.
 pitfalls:
   - Tencent extra_body is an SDK transport argument; the upstream JSON contains thinking at the top level.

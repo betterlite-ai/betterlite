@@ -1,0 +1,21 @@
+task: B8230
+deviations:
+  - what: The claim JSON is written by serde_json, so a non-ASCII user_id is raw UTF-8 and not the \uXXXX escapes of Python's json.dumps, and the encrypted bytes differ from LiteLLM's even for the same claim.
+    why: The plugin decrypts the Fernet token and parses the JSON, so both texts carry the same values; Fernet already adds a random IV and a timestamp, so no byte-identical token exists anyway.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/plugin_routes.py#L149-L155
+  - what: A malformed entry in general_settings.plugins returns a typed PluginError naming the entry index and the failing field, where LiteLLM raises a pydantic ValidationError.
+    why: The error text of a Python library is not part of the wire contract, and both keep the old registry when an entry fails.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/plugin_routes.py#L186-L190
+  - what: verify_plugin_session_claim rejects a claim whose top level is not a JSON object, whose exp is a JSON string, or whose fields have another type, with "Invalid, tampered, or expired plugin session claim", where LiteLLM raises AttributeError from dict access or ValueError from int() outside its converted error.
+    why: Besides the Fernet token this module also writes the claim, so a claim of the wrong shape is treated as invalid; docs/compatibility.md stops parity at the declared types.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/plugin_routes.py#L170-L173
+  - what: The request body forwarded to a plugin is capped at 16 MiB and a larger one answers 413 with the plain-text body "Request body too large"; LiteLLM reads the whole body with no limit.
+    why: An unauthenticated-size body read into memory has no bound, and an admin plugin call is small in every working setup; betterlite refuses instead of allocating without limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/plugin_routes.py#L285
+  - what: The plugin response is read through the B173 outbound client, so a response body over 16 MiB or a header block over 64 KiB answers 502 with "Cannot connect to plugin '<name>' at <url>"; LiteLLM returns the plugin response whole whatever its size.
+    why: The task sends plugin calls through the same pooled client as the pass-through routes, and that client bounds what it buffers; a plugin answer of that size is not what any working dashboard load uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/plugin_routes.py#L323-L327
+  - what: The Fernet seal and open are written in-tree over aes 0.9.3, cbc 0.2.1, hmac 0.13.0, sha2 0.11.1, base64 0.23.1 and subtle 2.6.1, where the task names the fernet crate on crates.io with its rustcrypto backend.
+    why: The newest fernet release, 0.2.2, is MPL-2.0, and deny.toml allows that license only through a per-crate exception backed by THIRD_PARTY_NOTICES.md, both outside this task's scope, so `cargo deny --locked check` fails with the crate even though its rustcrypto feature would resolve aes 0.8, cbc 0.1, hmac 0.12, sha2 0.10 and base64 0.22 from versions already in the lock. It also generates its own IV, so the byte-for-byte Python token test could not be written through it; the in-tree code takes the IV, timestamp and now explicitly, follows the same Fernet spec, and decrypts a token produced by Python's cryptography 43.0.0.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/plugin_routes.py#L127-L155
+kept_bugs: []

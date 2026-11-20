@@ -1,0 +1,1 @@
+{"model":"m","messages":[{"role":"user","content":"hi"}],"completion_response":{"id":"x","object":"chat.completion","created":1,"model":"m","choices":[]}}

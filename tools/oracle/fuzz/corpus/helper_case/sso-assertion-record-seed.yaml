@@ -1,0 +1,8 @@
+kind: helper
+name: sso-assertion-record-seed
+call: {b10003: {function: login, id_token: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MDAwMDAwMDAsImlzcyI6Imh0dHBzOi8vaWRwLmV4YW1wbGUiLCJzdWIiOiJ1c2VyLTEifQ.c2lnbmF0dXJl", refresh_token: refresh-1}}
+calls:
+  - b10003: {function: login, id_token: null, refresh_token: 7}
+  - b10003: {function: expiry, expires_at: "2023-11-14T22:13:20+00:00", now: "2023-11-14T22:13:20+00:00"}
+env: {}
+compare: {ignore: []}

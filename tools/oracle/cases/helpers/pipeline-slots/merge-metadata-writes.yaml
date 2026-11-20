@@ -1,0 +1,60 @@
+kind: helper
+name: merge-metadata-writes
+call:
+  b8391:
+    function: merge_metadata_writes
+    data:
+      metadata:
+        keep: 1
+        guardrails: ["pii"]
+        applied_guardrails: ["old"]
+    modified:
+      metadata:
+        applied_guardrails: ["pii"]
+        guardrails: ["pii"]
+        logged: true
+calls:
+  - b8391:
+      function: merge_metadata_writes
+      data: {}
+      modified:
+        metadata:
+          applied_guardrails: ["pii"]
+          guardrails: ["pii"]
+        litellm_metadata:
+          applied_policies: ["policy-a"]
+  - b8391:
+      function: merge_metadata_writes
+      data:
+        metadata:
+          keep: 1
+      modified:
+        metadata: 5
+        litellm_metadata: [1, 2]
+  - b8391:
+      function: merge_metadata_writes
+      data:
+        metadata: "old"
+      modified:
+        metadata:
+          applied_guardrails: ["pii"]
+  - b8391:
+      function: merge_metadata_writes
+      data:
+        litellm_metadata:
+          first: 1
+      modified:
+        metadata:
+          guardrails: ["pii"]
+        litellm_metadata:
+          second: 2
+  - b8391:
+      function: merge_metadata_writes
+      data:
+        metadata:
+          keep: 1
+      modified:
+        model: gpt-4o
+env: {}
+compare:
+  ignore: []
