@@ -1,0 +1,32 @@
+kind: helper
+name: compression-retrieval-loop-followup-kwargs
+call:
+  b3544:
+    function: plan
+    model: claude-3-sonnet
+    tool_calls: []
+    thinking_blocks: []
+    messages: []
+    optional_params: {}
+    kwargs:
+      litellm_call_id: call-1
+      max_tokens: 64
+      model: claude-3-sonnet
+      _compression_interception: true
+      _compression_interception_depth: 1
+      litellm_logging_obj: {marker: true}
+      x_compression_interception: kept
+calls:
+  - b3544:
+      function: plan
+      model: claude-3-sonnet
+      tool_calls: []
+      thinking_blocks: []
+      messages: []
+      optional_params: {max_tokens: 32}
+      kwargs:
+        litellm_call_id: ""
+        _compression_interception: 0
+        litellm_logging_obj: null
+env: {}
+compare: {ignore: []}

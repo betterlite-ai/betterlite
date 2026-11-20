@@ -2,8 +2,9 @@ id: B566
 title: Foundry passthrough URLs and response projections
 description: >-
   Add FoundryPassthroughPlan with route-prefix deduplication, query relaying and typed OCR/nonstream/stream logging
-  projection. B8690 and B103 own routing and forwarding, and B092 owns the public OCR response API. Keep endpoint selection
-  operator-derived.
+  projection. B8690 and B103 own routing and forwarding, and B092 owns the public OCR route. The OCR projector is
+  B6808's betterlite_ocr::ocr_provider::passthrough_response(model, endpoint, body), and it returns B3300's OCRResponse;
+  add betterlite-ocr to this crate's Cargo.toml. Keep endpoint selection operator-derived.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure_ai/passthrough/transformation.py:
@@ -264,8 +265,9 @@ out_of_scope:
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- 'litellm-rust/crates/core/src/ocr/provider_config.rs: resolve_provider_config and OCR response bodies belong to
-  B092; this task recognizes the logged_ocr_response seam and invokes an injected OCR projector from that owner.'
+- 'litellm-rust/crates/core/src/ocr/provider_config.rs: resolve_provider_config and the passthrough projection are
+  B6808''s betterlite_ocr::ocr_provider (passthrough_response), and the OCR response bodies are B3300''s OCRResponse;
+  this task recognizes the logged_ocr_response seam and invokes passthrough_response as its injected OCR projector.'
 pitfalls:
 - 'The oracle helper for this task is pre-registered as foundry_passthrough in the foundry group. Replace the stub Op in tools/oracle/src/helpers/foundry/passthrough.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/foundry_passthrough.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Only the exact models path segment truncates the Foundry root; Models is retained.

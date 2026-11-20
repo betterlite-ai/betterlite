@@ -6,6 +6,7 @@ use opentelemetry::trace::Span;
 use crate::langfuse_otel_attributes::llm_obs::LangfuseLLMObsOTELAttributes;
 use crate::langfuse_otel_attributes::writer::set_langfuse_otel_attributes;
 use crate::otel::integrations::arize_attributes::set_attributes as set_arize_attributes;
+use crate::otel::integrations::arize_messages::ArizeOtelAttributes;
 use crate::otel::integrations::langtrace::LangtraceAttributes;
 use crate::otel::integrations::weave_attributes::set_weave_otel_attributes;
 use crate::otel::model::metadata::wire::MetadataMap;
@@ -23,7 +24,13 @@ use last_wins::LastWins;
 mod last_wins;
 mod tests;
 
-const VENDOR_NAMES: [&str; 3] = ["langtrace", "langfuse_otel", "weave_otel"];
+const VENDOR_NAMES: [&str; 5] = [
+    "langtrace",
+    "langfuse_otel",
+    "weave_otel",
+    "arize",
+    "arize_phoenix",
+];
 
 pub fn set_attributes<S>(
     span: &mut S,
@@ -107,6 +114,13 @@ fn write_vendor_attributes<S>(
                 redact_messages(kwargs),
             );
         }
+        // ArizeLogger.set_attributes routes both Arize callbacks to _utils.set_attributes
+        "arize" | "arize_phoenix" => set_arize_attributes::<ArizeOtelAttributes, S>(
+            span,
+            kwargs,
+            response.unwrap_or(&OtelModelValue::Null(())),
+            redact_messages(kwargs),
+        ),
         _ => {}
     }
 }

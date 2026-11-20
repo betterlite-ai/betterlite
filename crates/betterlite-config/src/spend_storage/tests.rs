@@ -202,3 +202,77 @@ fn rejects_a_stored_budget_that_is_not_a_number(#[case] configured: &str) {
     let error = decode_spend_storage_policy(row.as_bytes()).unwrap_err();
     assert!(error.to_string().contains("litellm_settings.max_budget"));
 }
+
+#[rstest]
+#[case::defaults("litellm_settings: {}\n", None, None)]
+#[case::null_values(
+    "litellm_settings:\n  disable_end_user_cost_tracking: null\n  enable_end_user_cost_tracking_prometheus_only: null\n",
+    None,
+    None
+)]
+#[case::disable_true(
+    "litellm_settings:\n  disable_end_user_cost_tracking: true\n",
+    Some(true),
+    None
+)]
+#[case::disable_false(
+    "litellm_settings:\n  disable_end_user_cost_tracking: false\n",
+    Some(false),
+    None
+)]
+#[case::prometheus_true(
+    "litellm_settings:\n  enable_end_user_cost_tracking_prometheus_only: true\n",
+    None,
+    Some(true)
+)]
+#[case::prometheus_false(
+    "litellm_settings:\n  enable_end_user_cost_tracking_prometheus_only: false\n",
+    None,
+    Some(false)
+)]
+#[case::both_set(
+    "litellm_settings:\n  disable_end_user_cost_tracking: false\n  enable_end_user_cost_tracking_prometheus_only: true\n",
+    Some(false),
+    Some(true)
+)]
+fn loads_end_user_spend_settings(
+    #[case] source: &str,
+    #[case] disable: Option<bool>,
+    #[case] prometheus_only: Option<bool>,
+) {
+    let settings = load(source, &[]);
+    assert_eq!(settings.disable_end_user_cost_tracking, disable);
+    assert_eq!(settings.enable_prometheus_only, prometheus_only);
+}
+
+#[rstest]
+#[case::disable_string(
+    "litellm_settings:\n  disable_end_user_cost_tracking: \"true\"\n",
+    "litellm_settings.disable_end_user_cost_tracking"
+)]
+#[case::disable_number(
+    "litellm_settings:\n  disable_end_user_cost_tracking: 1\n",
+    "litellm_settings.disable_end_user_cost_tracking"
+)]
+#[case::prometheus_string(
+    "litellm_settings:\n  enable_end_user_cost_tracking_prometheus_only: \"true\"\n",
+    "litellm_settings.enable_end_user_cost_tracking_prometheus_only"
+)]
+#[case::prometheus_list(
+    "litellm_settings:\n  enable_end_user_cost_tracking_prometheus_only: [true]\n",
+    "litellm_settings.enable_end_user_cost_tracking_prometheus_only"
+)]
+fn loads_end_user_spend_settings_rejects_a_wrong_type(#[case] source: &str, #[case] path: &str) {
+    let error = load_spend_storage_policy(source, &environment(&[])).unwrap_err();
+    assert!(error.to_string().contains(path));
+}
+
+#[test]
+fn loads_end_user_spend_settings_from_a_stored_policy_row() {
+    let decoded = decode_spend_storage_policy(
+        br#"{"litellm_settings":{"disable_end_user_cost_tracking":true,"enable_end_user_cost_tracking_prometheus_only":false},"environment":{}}"#,
+    )
+    .unwrap();
+    assert_eq!(decoded.disable_end_user_cost_tracking, Some(true));
+    assert_eq!(decoded.enable_prometheus_only, Some(false));
+}

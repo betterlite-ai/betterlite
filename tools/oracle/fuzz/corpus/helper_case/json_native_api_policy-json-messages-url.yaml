@@ -1,0 +1,24 @@
+kind: helper
+name: json-native-api-policy-json-messages-url-seed
+call:
+  json_native_api_policy:
+    calls:
+      - kind: json_messages_url
+        model: crusoe/probe-model
+        environment: {PROBE_BASE: "https://env.invalid/v1"}
+        descriptor:
+          base_url: "https://descriptor.invalid/v1/"
+          api_key_env: PROBE_KEY
+          api_base_env: PROBE_BASE
+      - kind: json_messages_url
+        model: sail/any
+        environment: {}
+      - kind: json_messages_url
+        model: poe/probe-model
+        environment: {}
+        api_base: "https://explicit.invalid/v1/messages"
+        descriptor:
+          base_url: "https://descriptor.invalid/v1"
+          api_key_env: PROBE_KEY
+env: {}
+compare: {ignore: []}
