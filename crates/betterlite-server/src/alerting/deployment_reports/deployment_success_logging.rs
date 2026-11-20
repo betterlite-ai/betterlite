@@ -22,7 +22,7 @@ pub async fn log_success_event<Cache, Clock>(
 ) -> u8
 where
     Cache: DailyReportCache,
-    Clock: UtcClock,
+    Clock: UtcClock + Send + Sync,
 {
     let Some(metrics) = success_event_metrics(clock, alert_types, event) else {
         return 0;
@@ -38,7 +38,7 @@ pub fn success_event_metrics<'event, Clock>(
     event: &SuccessEvent<'event>,
 ) -> Option<DeploymentMetrics<'event>>
 where
-    Clock: UtcClock,
+    Clock: UtcClock + Send + Sync,
 {
     if !alert_types.contains(&AlertType::DailyReports) {
         return None;

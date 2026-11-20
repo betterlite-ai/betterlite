@@ -73,7 +73,7 @@ where
     Cache: DailyReportCache,
     Sender: ModelAlertSender,
     ApiBase: ApiBaseResolver,
-    Clock: UtcClock,
+    Clock: UtcClock + Send + Sync,
     Sleeper: AlertSleeper,
     Jitter: ReportJitter,
 {
