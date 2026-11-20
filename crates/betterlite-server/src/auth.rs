@@ -24,6 +24,7 @@ pub mod auth_route_patterns;
 pub mod auth_route_policy;
 pub mod auth_tag_budgets;
 pub mod auth_tenant_budgets;
+pub mod body_buffering;
 pub mod budget_admission_handoff;
 pub mod central_auth_checks;
 pub mod current_spend;
@@ -69,11 +70,14 @@ use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, res
 use crate::auth::auth_resource_grants::{
     ResourceGrantStageInput, database_for_request, rule_for_request as grant_rule_for_request,
 };
-use crate::auth::failures::{stage_failure_response, unreadable_body_response};
+use crate::auth::body_buffering::{BufferError, max_body_bytes, read_body};
+use crate::auth::failures::{
+    body_too_large_response, stage_failure_response, unreadable_body_response,
+};
 use crate::auth::request_body_safety::RequestBodySafetyStageInput;
 use crate::error_body::AuthenticationFailure;
 use crate::state::ServerState;
-use axum::body::{Body, Bytes, to_bytes};
+use axum::body::{Body, Bytes};
 use axum::extract::State;
 use axum::http::{HeaderMap, Request, header};
 use axum::middleware::Next;
@@ -103,10 +107,19 @@ pub(crate) async fn authenticate(
     for backend in INSTALLED_STAGES {
         // the safety stage is the one body reader; only an authenticated caller makes it buffer anything
         if *backend == AuthBackend::RequestBodySafety && body.is_none() {
+            let limit = max_body_bytes(&request);
             let stream = mem::replace(request.body_mut(), Body::empty());
-            match to_bytes(stream, usize::MAX).await {
+            match read_body(stream, limit).await {
                 Ok(bytes) => body = Some(bytes),
-                Err(error) => {
+                Err(BufferError::TooLarge { observed }) => {
+                    tracing::debug!(
+                        observed,
+                        limit,
+                        "the request body exceeds the auth-time buffering bound"
+                    );
+                    return body_too_large_response(observed, limit);
+                }
+                Err(BufferError::Unreadable(error)) => {
                     tracing::debug!(error = %error, "the request body could not be buffered");
                     return unreadable_body_response();
                 }

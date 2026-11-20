@@ -73,6 +73,15 @@ deviations:
       LiteLLM reaches model.split and raises AttributeError, which surfaces as an auth_error 401. betterlite
       answers the same 401 from the no-group denial path.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L192-L220
+  - what: >-
+      The auth-time body read is capped at general_settings.max_request_size_mb bytes when that is set, and
+      at betterlite's default JSON body size (16 MiB) otherwise; a larger body is refused with a 413
+      invalid_request_error naming body and request_too_large instead of being buffered.
+    why: >-
+      LiteLLM awaits the whole request body at auth time with no byte cap, so an authenticated caller could
+      stream an arbitrarily large body and exhaust proxy memory before any route limit runs. The cap keeps
+      the pre-read bounded; a request under the cap is buffered and forwarded unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L224
 kept_bugs:
   - what: >-
       A configurable_clientside_auth_params matcher entry is applied with Python re.match semantics, so an

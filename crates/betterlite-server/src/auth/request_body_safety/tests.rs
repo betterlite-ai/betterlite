@@ -13,6 +13,7 @@ use axum::http::{Request, StatusCode, header};
 use axum::routing::post;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
+use betterlite_core::api::api_boundaries::ApiLimits;
 use secrecy::SecretString;
 use tower::ServiceExt as _;
 
@@ -156,20 +157,20 @@ fn application(config: &Config, reached: &Arc<AtomicBool>) -> Router {
     .layer(Extension(Arc::clone(reached)))
 }
 
-fn request(content_type: &'static str, body: &'static str) -> Request<Body> {
+fn request(content_type: &'static str, body: &str) -> Request<Body> {
     Request::builder()
         .method("POST")
         .uri(MODEL_ROUTE)
         .header(header::AUTHORIZATION, "Bearer secret-master-key")
         .header(header::CONTENT_TYPE, content_type)
-        .body(Body::from(body))
+        .body(Body::from(body.to_owned()))
         .expect("the request builds")
 }
 
 async fn run_request_with(
     config: &Config,
     content_type: &'static str,
-    body: &'static str,
+    body: &str,
 ) -> (StatusCode, String, bool) {
     let reached = Arc::new(AtomicBool::new(false));
     let response = application(config, &reached)
@@ -237,6 +238,54 @@ async fn unreadable_bodies_are_buffered_after_authentication() {
     let text = String::from_utf8(body.to_vec()).expect("the response body is UTF-8");
     assert!(text.contains("Failed to buffer the request body"), "{text}");
     assert!(!reached.load(Ordering::Acquire));
+}
+
+#[tokio::test]
+async fn oversized_bodies_are_refused_before_the_handler() {
+    // with no configured size the auth read keeps the default JSON body cap, so one byte over it is a 413
+    let default_cap = ApiLimits::default().max_json_bytes;
+    let oversized = "x".repeat(default_cap + 1);
+    let (status, body, reached) =
+        run_request_with(&config(""), "application/json", &oversized).await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+    assert!(
+        body.contains("\"type\":\"invalid_request_error\""),
+        "{body}"
+    );
+    assert!(body.contains("\"param\":\"body\""), "{body}");
+    assert!(body.contains("\"code\":\"request_too_large\""), "{body}");
+    assert!(!reached);
+
+    // the configured max_request_size_mb lowers the bound, and a body exactly at it is still forwarded
+    let at_limit = "x".repeat(1_048_576);
+    let (at_status, _at_body, at_reached) = run_request_with(
+        &config("  max_request_size_mb: 1\n"),
+        "application/json",
+        &at_limit,
+    )
+    .await;
+    assert_eq!(at_status, StatusCode::OK);
+    assert!(at_reached);
+
+    let over = "x".repeat(1_048_576 + 1);
+    let (over_status, over_body, over_reached) = run_request_with(
+        &config("  max_request_size_mb: 1\n"),
+        "application/json",
+        &over,
+    )
+    .await;
+    assert_eq!(over_status, StatusCode::PAYLOAD_TOO_LARGE);
+    assert!(
+        over_body.contains("\"code\":\"request_too_large\""),
+        "{over_body}"
+    );
+    assert!(!over_reached);
+
+    // the same body is under the default cap, so the fallback does not lower the bound
+    let (default_status, _default_body, default_reached) =
+        run_request_with(&config(""), "application/json", &over).await;
+    assert_eq!(default_status, StatusCode::OK);
+    assert!(default_reached);
 }
 
 #[tokio::test]
