@@ -14,11 +14,14 @@ from prometheus_client import CollectorRegistry, Gauge
 from typing_extensions import override
 
 from .inputs import (
+    ALL_METRICS,
     CustomerCall,
+    CustomerRow,
     CustomerRowCall,
-    KeyCall,
+    EntityCall,
     KeyListCall,
-    OrgCall,
+    KeyListEntry,
+    OrganizationRow,
     OrgListCall,
     ProviderCall,
     RemainingBudgetCall,
@@ -26,27 +29,8 @@ from .inputs import (
     TeamCall,
     TeamMembersCall,
     UserCall,
-)
-from .records import CustomerRow, OrganizationRow, budget_row, parse_optional
-
-ALL_METRICS: Final = (
-    "litellm_remaining_team_budget_metric",
-    "litellm_team_max_budget_metric",
-    "litellm_team_budget_remaining_hours_metric",
-    "litellm_team_members_metric",
-    "litellm_remaining_org_budget_metric",
-    "litellm_org_max_budget_metric",
-    "litellm_org_budget_remaining_hours_metric",
-    "litellm_remaining_api_key_budget_metric",
-    "litellm_api_key_max_budget_metric",
-    "litellm_api_key_budget_remaining_hours_metric",
-    "litellm_remaining_user_budget_metric",
-    "litellm_user_max_budget_metric",
-    "litellm_user_budget_remaining_hours_metric",
-    "litellm_remaining_customer_budget_metric",
-    "litellm_customer_max_budget_metric",
-    "litellm_customer_budget_remaining_hours_metric",
-    "litellm_provider_remaining_budget_metric",
+    budget_row,
+    parse_optional,
 )
 
 
@@ -65,6 +49,18 @@ def full_labels(provided: dict[str, list[str]]) -> dict[str, list[str]]:
 def sample_sort_key(row: SampleRow) -> tuple[str, list[tuple[str, str]]]:
     labels = sorted(row["labels"].items())
     return (row["metric"], labels)
+
+
+def key_entry(entry: KeyListEntry) -> UserAPIKeyAuth | str:
+    if entry["kind"] == "token":
+        return entry["token"]
+    return UserAPIKeyAuth(
+        token=entry["token"],
+        key_alias=entry["key_alias"],
+        spend=entry["spend"],
+        max_budget=entry["max_budget"],
+        budget_reset_at=parse_optional(entry["budget_reset_at"]),
+    )
 
 
 class ProbeLogger(PrometheusLogger):
@@ -141,45 +137,46 @@ class ProbeLogger(PrometheusLogger):
         reset_at = datetime.fromisoformat(call["reset_at"])
         return self._get_remaining_hours_for_budget_reset(budget_reset_at=reset_at)
 
-    def team(self, call: TeamCall) -> None:
-        team = LiteLLM_TeamTable(
-            team_id=call["team_id"],
-            team_alias=call["team_alias"],
-            spend=call["spend"],
-            max_budget=call["max_budget"],
-            budget_reset_at=parse_optional(call["budget_reset_at"]),
-        )
-        self._set_team_budget_metrics(team)
-
-    def org(self, call: OrgCall) -> None:
-        self._set_org_budget_metrics(
-            org_id=call["org_id"],
-            org_alias=call["org_alias"],
-            spend=call["spend"],
-            max_budget=call["max_budget"],
-            budget_reset_at=parse_optional(call["budget_reset_at"]),
-        )
-
-    def key(self, call: KeyCall) -> None:
-        key = UserAPIKeyAuth(
-            token=call["token"],
-            key_alias=call["key_alias"],
-            spend=call["spend"],
-            max_budget=call["max_budget"],
-            budget_reset_at=parse_optional(call["budget_reset_at"]),
-        )
-        self._set_key_budget_metrics(key)
-
-    def user(self, call: UserCall) -> None:
-        user = LiteLLM_UserTable(
-            user_id=call["user_id"],
-            user_email=call["user_email"],
-            user_alias=call["user_alias"],
-            spend=call["spend"],
-            max_budget=call["max_budget"],
-            budget_reset_at=parse_optional(call["budget_reset_at"]),
-        )
-        self._set_user_budget_metrics(user)
+    def entity(self, call: EntityCall) -> None:
+        if call["function"] == "team":
+            self._set_team_budget_metrics(
+                LiteLLM_TeamTable(
+                    team_id=call["team_id"],
+                    team_alias=call["team_alias"],
+                    spend=call["spend"],
+                    max_budget=call["max_budget"],
+                    budget_reset_at=parse_optional(call["budget_reset_at"]),
+                )
+            )
+        elif call["function"] == "org":
+            self._set_org_budget_metrics(
+                org_id=call["org_id"],
+                org_alias=call["org_alias"],
+                spend=call["spend"],
+                max_budget=call["max_budget"],
+                budget_reset_at=parse_optional(call["budget_reset_at"]),
+            )
+        elif call["function"] == "key":
+            self._set_key_budget_metrics(
+                UserAPIKeyAuth(
+                    token=call["token"],
+                    key_alias=call["key_alias"],
+                    spend=call["spend"],
+                    max_budget=call["max_budget"],
+                    budget_reset_at=parse_optional(call["budget_reset_at"]),
+                )
+            )
+        else:
+            self._set_user_budget_metrics(
+                LiteLLM_UserTable(
+                    user_id=call["user_id"],
+                    user_email=call["user_email"],
+                    user_alias=call["user_alias"],
+                    spend=call["spend"],
+                    max_budget=call["max_budget"],
+                    budget_reset_at=parse_optional(call["budget_reset_at"]),
+                )
+            )
 
     def customer(self, call: CustomerCall) -> None:
         self._set_customer_budget_metrics(
@@ -208,20 +205,7 @@ class ProbeLogger(PrometheusLogger):
         )
 
     def key_list(self, call: KeyListCall) -> None:
-        keys: list[str | UserAPIKeyAuth] = []
-        for entry in call["entries"]:
-            if entry["kind"] == "token":
-                keys.append(entry["token"])
-            else:
-                keys.append(
-                    UserAPIKeyAuth(
-                        token=entry["token"],
-                        key_alias=entry["key_alias"],
-                        spend=entry["spend"],
-                        max_budget=entry["max_budget"],
-                        budget_reset_at=parse_optional(entry["budget_reset_at"]),
-                    )
-                )
+        keys = [key_entry(entry) for entry in call["entries"]]
         asyncio.run(self._set_key_list_budget_metrics(keys))
 
     def org_list(self, call: OrgListCall) -> None:
@@ -234,7 +218,7 @@ class ProbeLogger(PrometheusLogger):
             )
             for row in call["rows"]
         ]
-        asyncio.run(self._set_org_list_budget_metrics(rows))
+        asyncio.run(self._set_org_list_budget_metrics(rows))  # type: ignore[misc]  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3893
 
     def customer_row(self, call: CustomerRowCall) -> None:
         customer = CustomerRow(

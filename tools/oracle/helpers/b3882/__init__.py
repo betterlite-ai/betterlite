@@ -14,6 +14,7 @@ from .inputs import (
     KeyListCall,
     OrgCall,
     OrgListCall,
+    PROVIDER_METRIC,
     ProviderCall,
     RemainingBudgetCall,
     RemainingHoursCall,
@@ -21,62 +22,56 @@ from .inputs import (
     TeamMembersCall,
     UserCall,
 )
-from .metrics import ProbeLogger
+from .metrics import ProbeLogger, SampleRow
 
 _JSON: Final = TypeAdapter(JsonValue)
 
-# LiteLLM fixes this one gauge's label list to api_provider, so its cases name no labels
-PROVIDER_METRIC: Final = "litellm_provider_remaining_budget_metric"
-
-
-def probe(labels_by_metric: dict[str, list[str]], now: str) -> ProbeLogger:
-    return ProbeLogger(labels_by_metric, datetime.fromisoformat(now))
-
 
 def sample_output(logger: ProbeLogger) -> JsonValue:
-    return _JSON.validate_python({"samples": logger.samples()})
+    payload: dict[str, list[SampleRow]] = {"samples": logger.samples()}
+    return _JSON.validate_python(payload)
 
 
 def remaining_budget(call: RemainingBudgetCall) -> JsonValue:
     logger = ProbeLogger({}, datetime(1970, 1, 1, tzinfo=UTC))
-    remaining = logger.remaining_budget(call)
-    return _JSON.validate_python({"remaining": format(remaining, ".6f")})
+    payload: dict[str, str] = {"remaining": format(logger.remaining_budget(call), ".6f")}
+    return _JSON.validate_python(payload)
 
 
 def remaining_hours(call: RemainingHoursCall) -> JsonValue:
     logger = ProbeLogger({}, datetime.fromisoformat(call["now"]))
-    hours = logger.remaining_hours(call)
-    return _JSON.validate_python({"hours": format(hours, ".6f")})
+    payload: dict[str, str] = {"hours": format(logger.remaining_hours(call), ".6f")}
+    return _JSON.validate_python(payload)
 
 
 def team(call: TeamCall) -> JsonValue:
-    logger = probe(call["labels_by_metric"], call["now"])
-    logger.team(call)
+    logger = ProbeLogger(call["labels_by_metric"], datetime.fromisoformat(call["now"]))
+    logger.entity(call)
     return sample_output(logger)
 
 
 def org(call: OrgCall) -> JsonValue:
-    logger = probe(call["labels_by_metric"], call["now"])
-    logger.org(call)
+    logger = ProbeLogger(call["labels_by_metric"], datetime.fromisoformat(call["now"]))
+    logger.entity(call)
     return sample_output(logger)
 
 
 def key(call: KeyCall) -> JsonValue:
-    logger = probe(call["labels_by_metric"], call["now"])
-    logger.key(call)
+    logger = ProbeLogger(call["labels_by_metric"], datetime.fromisoformat(call["now"]))
+    logger.entity(call)
     return sample_output(logger)
 
 
 def user(call: UserCall) -> JsonValue:
-    logger = probe(call["labels_by_metric"], call["now"])
-    logger.user(call)
+    logger = ProbeLogger(call["labels_by_metric"], datetime.fromisoformat(call["now"]))
+    logger.entity(call)
     return sample_output(logger)
 
 
 def customer(call: CustomerCall) -> JsonValue:
     litellm.disable_end_user_cost_tracking = False
     litellm.enable_end_user_cost_tracking_prometheus_only = call["enable_end_user_tracking"]
-    logger = probe(call["labels_by_metric"], call["now"])
+    logger = ProbeLogger(call["labels_by_metric"], datetime.fromisoformat(call["now"]))
     logger.customer(call)
     return sample_output(logger)
 
@@ -84,7 +79,7 @@ def customer(call: CustomerCall) -> JsonValue:
 def customer_row(call: CustomerRowCall) -> JsonValue:
     litellm.disable_end_user_cost_tracking = False
     litellm.enable_end_user_cost_tracking_prometheus_only = call["enable_end_user_tracking"]
-    logger = probe(call["labels_by_metric"], call["now"])
+    logger = ProbeLogger(call["labels_by_metric"], datetime.fromisoformat(call["now"]))
     logger.customer_row(call)
     return sample_output(logger)
 
@@ -102,13 +97,13 @@ def provider(call: ProviderCall) -> JsonValue:
 
 
 def key_list(call: KeyListCall) -> JsonValue:
-    logger = probe(call["labels_by_metric"], call["now"])
+    logger = ProbeLogger(call["labels_by_metric"], datetime.fromisoformat(call["now"]))
     logger.key_list(call)
     return sample_output(logger)
 
 
 def org_list(call: OrgListCall) -> JsonValue:
-    logger = probe(call["labels_by_metric"], call["now"])
+    logger = ProbeLogger(call["labels_by_metric"], datetime.fromisoformat(call["now"]))
     logger.org_list(call)
     return sample_output(logger)
 
@@ -135,13 +130,15 @@ def entity_dispatch(input_value: EntityInput) -> JsonValue:
 
 def customer_dispatch(input_value: CustomerInput) -> JsonValue:
     if input_value["function"] == "customer":
-        return customer(input_value)
-    if input_value["function"] == "team_members":
-        return team_members(input_value)
-    if input_value["function"] == "provider":
-        return provider(input_value)
-    if input_value["function"] == "key_list":
-        return key_list(input_value)
-    if input_value["function"] == "org_list":
-        return org_list(input_value)
-    return customer_row(input_value)
+        answer = customer(input_value)
+    elif input_value["function"] == "team_members":
+        answer = team_members(input_value)
+    elif input_value["function"] == "provider":
+        answer = provider(input_value)
+    elif input_value["function"] == "key_list":
+        answer = key_list(input_value)
+    elif input_value["function"] == "org_list":
+        answer = org_list(input_value)
+    else:
+        answer = customer_row(input_value)
+    return answer

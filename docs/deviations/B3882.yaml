@@ -16,7 +16,7 @@ deviations:
       the carried snapshots (B3890) and the stored columns are UTC, and a local-time clock would make the gauge depend on the host.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4515-L4519
   - what: >-
-      remaining_hours_for_budget_reset takes `now` as an argument from an injected clock instead of reading the wall clock.
+      hours_until_reset takes `now` as an argument from an injected clock instead of reading the wall clock.
     why: >-
       tests and oracle cases need exact values, and the per-request path already carries a clock for the series tracker.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4519
