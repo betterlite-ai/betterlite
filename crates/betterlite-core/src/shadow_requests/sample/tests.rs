@@ -53,6 +53,20 @@ fn string_messages_request<'request>(
     Box::pin(async { Ok(object(r#"{"messages":["hi"]}"#)) })
 }
 
+fn text_messages_request<'request>(
+    _kwargs: &'request Object,
+    _model_parameters: &'request Object,
+) -> ChatRequestFuture<'request> {
+    Box::pin(async { Ok(object(r#"{"messages":"hi"}"#)) })
+}
+
+fn absent_messages_request<'request>(
+    _kwargs: &'request Object,
+    _model_parameters: &'request Object,
+) -> ChatRequestFuture<'request> {
+    Box::pin(async { Ok(object(r#"{"model":"m"}"#)) })
+}
+
 fn custom_ops(chat_request: ChatRequestFn) -> SurfaceOps {
     SurfaceOps {
         chat_request,
@@ -127,6 +141,20 @@ async fn a_failing_request_build_skips_the_sample() {
 #[tokio::test]
 async fn messages_that_are_not_an_array_of_objects_skip_the_sample() {
     let ops = custom_ops(string_messages_request);
+    let sample = judgeable_sample(&ops, &object("{}"), &object("{}"), &chat_reply("answer")).await;
+    assert!(sample.is_none());
+}
+
+#[tokio::test]
+async fn a_text_messages_value_skips_the_sample() {
+    let ops = custom_ops(text_messages_request);
+    let sample = judgeable_sample(&ops, &object("{}"), &object("{}"), &chat_reply("answer")).await;
+    assert!(sample.is_none());
+}
+
+#[tokio::test]
+async fn a_built_request_without_messages_skips_the_sample() {
+    let ops = custom_ops(absent_messages_request);
     let sample = judgeable_sample(&ops, &object("{}"), &object("{}"), &chat_reply("answer")).await;
     assert!(sample.is_none());
 }

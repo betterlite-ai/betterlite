@@ -130,6 +130,26 @@ fn body_keys_that_are_absent_become_null() {
 }
 
 #[test]
+fn a_non_object_proxy_server_request_is_rebuilt_around_the_snapshot_body() {
+    let current = metadata("g");
+    let snapshot = captured("{}", &current);
+    let rebuilt = post_guardrail_kwargs(
+        &object(r#"{"model":"m","litellm_params":{"api_key":"k","proxy_server_request":"x"}}"#),
+        &current,
+        Surface::Chat,
+        Some(&snapshot),
+    )
+    .unwrap();
+    assert_eq!(
+        rebuilt,
+        object(
+            r#"{"model":"m","messages":null,"system":null,"instructions":null,
+                "litellm_params":{"api_key":"k","proxy_server_request":{"body":{}}}}"#
+        )
+    );
+}
+
+#[test]
 fn a_non_object_litellm_params_is_rebuilt_around_the_snapshot_body() {
     let current = metadata("g");
     let snapshot = captured("{}", &current);
