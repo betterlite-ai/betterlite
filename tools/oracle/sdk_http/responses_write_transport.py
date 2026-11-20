@@ -130,13 +130,17 @@ class Handlers(Protocol):
     def delete_response_api_handler(self) -> SyncDelete: ...
 
     @property
-    def async_delete_response_api_handler(self) -> AsyncDelete: ...
+    def async_delete_response_api_handler(  # ast-grep-ignore: no-long-names
+        self,
+    ) -> AsyncDelete: ...
 
     @property
     def cancel_response_api_handler(self) -> SyncCancel: ...
 
     @property
-    def async_cancel_response_api_handler(self) -> AsyncCancel: ...
+    def async_cancel_response_api_handler(  # ast-grep-ignore: no-long-names
+        self,
+    ) -> AsyncCancel: ...
 
 
 HANDLER: Handlers = BaseLLMHTTPHandler()
