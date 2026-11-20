@@ -84,6 +84,17 @@ struct CompletionState {
     counter: Option<Arc<Counter>>,
 }
 
+impl CompletionState {
+    // the per-request handle the route's dispatch calls run through
+    fn calls(&self) -> Arc<CompletionCalls> {
+        Arc::new(CompletionCalls {
+            state: Arc::clone(&self.state),
+            execution: Arc::clone(&self.execution),
+            counter: self.counter.clone(),
+        })
+    }
+}
+
 // one per request: LiteLLM's completion route answers a failure with the call id header alone, never with the provider's
 struct CompletionCalls {
     state: Arc<ServerState>,
@@ -187,11 +198,49 @@ async fn execute(
 ) -> Response {
     let asked_model = request.model.clone();
     let endpoint = state.execution.endpoint(deployment).await;
-    let calls = Arc::new(CompletionCalls {
-        state: Arc::clone(&state.state),
-        execution: Arc::clone(&state.execution),
-        counter: state.counter.clone(),
-    });
+    let calls = state.calls();
+    let operation = text_operation(request, calls, state, deployment, call_id);
+    let context = dispatch_context();
+    let answered = state.dispatch.execute(operation, &context).await;
+    let mut result = match answered {
+        Ok(CallResult::TextCompletion(completion)) => completion,
+        Ok(CallResult::TextStream(stream)) => {
+            return streaming::render(stream, deployment, call_id, started);
+        }
+        Ok(_) => {
+            let unbuilt = DispatchError::NotBuilt {
+                entry: "text_stream",
+            };
+            return render(&failure_answer(unbuilt), call_id, state.include_call_id);
+        }
+        Err(error) => return render(&failure_answer(error), call_id, state.include_call_id),
+    };
+    // common_request_processing._override_openai_response_model answers the model the client named
+    if let Some(model) = asked_model {
+        result.response.model = Some(model);
+    }
+    // the completion handler leaves get_custom_headers no provider header, so a text answer has only x-litellm-*
+    if matches!(endpoint, CompletionEndpoint::Text) {
+        let headers = success_headers(
+            &HeaderMap::new(),
+            deployment,
+            call_id,
+            result.upstream_time,
+            started.elapsed(),
+        );
+        return (headers, Json(result.response)).into_response();
+    }
+    chat_response(&result, deployment, call_id, state, started)
+}
+
+// the dispatch operation for the route's parsed request: a stream or a buffered completion
+fn text_operation(
+    request: CompletionRequest,
+    calls: Arc<CompletionCalls>,
+    state: &CompletionState,
+    deployment: &ChatDeployment,
+    call_id: &str,
+) -> Operation {
     let streaming = request.stream == Some(true);
     let call = TextCompletionRequest {
         call_id: call_id.to_owned(),
@@ -200,69 +249,21 @@ async fn execute(
         dispatch: Arc::clone(&state.dispatch),
         calls,
     };
-    let operation = if streaming {
+    if streaming {
         Operation::TextStream(call)
     } else {
         Operation::TextCompletion(call)
-    };
-    let context = DispatchContext::start(CallInputs {
+    }
+}
+
+// a fresh call context for the route's dispatch
+fn dispatch_context() -> DispatchContext {
+    DispatchContext::start(CallInputs {
         now: SystemTime::now,
         id: Uuid::new_v4,
         deadline: None,
         privacy: false,
-    });
-    let result = state.dispatch.execute(operation, &context).await;
-    completion_response(
-        result,
-        asked_model,
-        endpoint,
-        state,
-        deployment,
-        call_id,
-        started,
-    )
-}
-
-// the dispatch's answer: the converted completion, the text stream, or the failure the route renders itself
-fn completion_response(
-    dispatched: Result<CallResult, DispatchError>,
-    asked_model: Option<String>,
-    endpoint: CompletionEndpoint,
-    state: &CompletionState,
-    deployment: &ChatDeployment,
-    call_id: &str,
-    started: Instant,
-) -> Response {
-    match dispatched {
-        Ok(CallResult::TextCompletion(mut result)) => {
-            // common_request_processing._override_openai_response_model answers the model the client named
-            if let Some(model) = asked_model {
-                result.response.model = Some(model);
-            }
-            // the completion handler leaves get_custom_headers no provider header, so a text answer has only x-litellm-*
-            if matches!(endpoint, CompletionEndpoint::Text) {
-                let headers = success_headers(
-                    &HeaderMap::new(),
-                    deployment,
-                    call_id,
-                    result.upstream_time,
-                    started.elapsed(),
-                );
-                return (headers, Json(result.response)).into_response();
-            }
-            chat_response(&result, deployment, call_id, state, started)
-        }
-        Ok(CallResult::TextStream(result)) => {
-            streaming::render(result, deployment, call_id, started)
-        }
-        Ok(_) => {
-            let unbuilt = DispatchError::NotBuilt {
-                entry: "text_stream",
-            };
-            render(&failure_answer(unbuilt), call_id, state.include_call_id)
-        }
-        Err(error) => render(&failure_answer(error), call_id, state.include_call_id),
-    }
+    })
 }
 
 // A chat answer keeps its provider headers, which the route repeats with llm_provider-
