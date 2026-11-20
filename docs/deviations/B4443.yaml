@@ -9,4 +9,7 @@ deviations:
   - what: Exceptions are ProbeFailure values carrying the message, the status code and the raw request typed dict, returned in exceptions_by_model_id beside the JSON rows; LiteLLM returns the live Python exception objects from the same map.
     why: the JSON answer keeps the same integer exception_status and never the exception itself, and the typed value gives B8388 the status without an untyped object.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L619-L655
+  - what: The cycle_failed line adds an error field with the failure text, where LiteLLM's logger.exception logs the same fields and then the exception's traceback.
+    why: betterlite's cycle errors are typed values rather than live Python exceptions, so there is no traceback to attach; the error field names the failure and every field LiteLLM logs stays on the line.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L949-L960
 kept_bugs: []
