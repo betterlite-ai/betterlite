@@ -101,9 +101,13 @@ fn cached_token(cache: &SsoAssertionCache, user_id: &str) -> Option<String> {
 }
 
 fn stored_assertion(rows: &MemoryAssertionRows) -> Option<SsoIdentityAssertion> {
-    let locked = rows.rows.lock().unwrap_or_else(PoisonError::into_inner);
-    let row = locked.first()?;
-    let stored = StoredValue::<Infallible>::Text(SecretString::from(row.assertion_b64.clone()));
+    let assertion_b64 = rows
+        .rows
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .first()
+        .map(|row| row.assertion_b64.clone())?;
+    let stored = StoredValue::<Infallible>::Text(SecretString::from(assertion_b64));
     let opened = cipher_with(Some(SALT_KEY)).decrypt_value(
         stored,
         ASSERTION_DECRYPT_FIELD,

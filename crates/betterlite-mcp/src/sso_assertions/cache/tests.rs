@@ -47,8 +47,10 @@ fn assertion(token: &str) -> SsoIdentityAssertion {
     }
 }
 
-fn token_of(assertion: Option<SsoIdentityAssertion>) -> Option<String> {
-    assertion.map(|found| found.id_token.expose_secret().to_owned())
+fn cached_token(cache: &SsoAssertionCache, user_id: &str) -> Option<String> {
+    cache
+        .get(user_id)
+        .map(|found| found.id_token.expose_secret().to_owned())
 }
 
 #[rstest]
@@ -61,7 +63,10 @@ fn get_returns_none_for_an_unknown_user() {
 fn get_returns_a_live_assertion() {
     let (cache, _clock) = cache_with(Duration::from_secs(60), 8);
     cache.set_if_unchanged("alice", &assertion("first-token"), 0);
-    assert_eq!(token_of(cache.get("alice")).as_deref(), Some("first-token"));
+    assert_eq!(
+        cached_token(&cache, "alice").as_deref(),
+        Some("first-token")
+    );
 }
 
 #[rstest]
@@ -87,7 +92,7 @@ fn rewriting_a_live_key_keeps_its_first_expiry() {
     clock.advance(Duration::from_secs(30));
     cache.set_if_unchanged("alice", &assertion("second-token"), cache.epoch());
     assert_eq!(
-        token_of(cache.get("alice")).as_deref(),
+        cached_token(&cache, "alice").as_deref(),
         Some("second-token")
     );
     clock.advance(Duration::from_secs(31));
@@ -102,7 +107,7 @@ fn rewriting_an_expired_key_starts_a_new_lifetime() {
     cache.set_if_unchanged("alice", &assertion("second-token"), cache.epoch());
     clock.advance(Duration::from_secs(1));
     assert_eq!(
-        token_of(cache.get("alice")).as_deref(),
+        cached_token(&cache, "alice").as_deref(),
         Some("second-token")
     );
 }
@@ -118,7 +123,7 @@ fn set_if_unchanged_skips_a_stale_epoch(
     cache.set_if_unchanged("alice", &assertion("first-token"), 0);
     cache.invalidate(invalidated_user);
     cache.set_if_unchanged("alice", &assertion("second-token"), 0);
-    assert_eq!(token_of(cache.get("alice")).as_deref(), expected);
+    assert_eq!(cached_token(&cache, "alice").as_deref(), expected);
 }
 
 #[rstest]
@@ -139,7 +144,7 @@ fn invalidate_removes_only_that_users_entry() {
     cache.invalidate("alice");
     assert!(cache.get("alice").is_none());
     assert_eq!(
-        token_of(cache.get("bravo")).as_deref(),
+        cached_token(&cache, "bravo").as_deref(),
         Some("second-token")
     );
 }
@@ -163,7 +168,7 @@ fn a_write_drops_every_expired_entry() {
     assert!(cache.get("alice").is_none());
     assert!(cache.get("bravo").is_none());
     assert_eq!(
-        token_of(cache.get("charlie")).as_deref(),
+        cached_token(&cache, "charlie").as_deref(),
         Some("third-token")
     );
 }
@@ -177,7 +182,7 @@ fn a_write_at_the_expiry_drops_the_entry() {
     assert_eq!(cache.state.lock().unwrap().entries.len(), 1);
     assert!(cache.get("alice").is_none());
     assert_eq!(
-        token_of(cache.get("bravo")).as_deref(),
+        cached_token(&cache, "bravo").as_deref(),
         Some("second-token")
     );
 }
@@ -192,11 +197,11 @@ fn a_full_cache_evicts_the_earliest_expiry() {
     cache.set_if_unchanged("charlie", &assertion("third-token"), cache.epoch());
     assert!(cache.get("alice").is_none());
     assert_eq!(
-        token_of(cache.get("bravo")).as_deref(),
+        cached_token(&cache, "bravo").as_deref(),
         Some("second-token")
     );
     assert_eq!(
-        token_of(cache.get("charlie")).as_deref(),
+        cached_token(&cache, "charlie").as_deref(),
         Some("third-token")
     );
 }
@@ -209,11 +214,11 @@ fn an_expiry_tie_evicts_the_first_key() {
     cache.set_if_unchanged("charlie", &assertion("third-token"), 0);
     assert!(cache.get("alice").is_none());
     assert_eq!(
-        token_of(cache.get("bravo")).as_deref(),
+        cached_token(&cache, "bravo").as_deref(),
         Some("second-token")
     );
     assert_eq!(
-        token_of(cache.get("charlie")).as_deref(),
+        cached_token(&cache, "charlie").as_deref(),
         Some("third-token")
     );
 }
@@ -224,5 +229,8 @@ fn the_cache_never_judges_the_assertions_own_expiry() {
     let mut stale = assertion("first-token");
     stale.expires_at = DateTime::from_timestamp(0, 0);
     cache.set_if_unchanged("alice", &stale, 0);
-    assert_eq!(token_of(cache.get("alice")).as_deref(), Some("first-token"));
+    assert_eq!(
+        cached_token(&cache, "alice").as_deref(),
+        Some("first-token")
+    );
 }
