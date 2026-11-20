@@ -568,26 +568,29 @@ pub(crate) struct Capture {
 }
 
 pub(crate) fn captured(wire: &Wire) -> Vec<Capture> {
-    wire.requests()
+    wire.requests().iter().map(capture_one).collect()
+}
+
+fn capture_one(request: &SpeechWireRequest) -> Capture {
+    Capture {
+        method: request.method.as_str().to_owned(),
+        url: request.url.to_string(),
+        headers: capture_headers(request),
+        body: body_bytes(request).map(<[u8]>::to_vec),
+    }
+}
+
+fn capture_headers(request: &SpeechWireRequest) -> Vec<(String, String)> {
+    let mut headers: Vec<(String, String)> = request
+        .headers
         .iter()
-        .map(|request| {
-            let mut headers: Vec<(String, String)> = request
-                .headers
-                .iter()
-                .filter_map(|(name, value)| {
-                    value
-                        .to_str()
-                        .ok()
-                        .map(|text| (name.as_str().to_owned(), text.to_owned()))
-                })
-                .collect();
-            headers.sort();
-            Capture {
-                method: request.method.as_str().to_owned(),
-                url: request.url.to_string(),
-                headers,
-                body: body_bytes(request).map(<[u8]>::to_vec),
-            }
+        .filter_map(|(name, value)| {
+            value
+                .to_str()
+                .ok()
+                .map(|text| (name.as_str().to_owned(), text.to_owned()))
         })
-        .collect()
+        .collect();
+    headers.sort();
+    headers
 }
