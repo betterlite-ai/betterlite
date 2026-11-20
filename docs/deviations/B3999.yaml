@@ -61,7 +61,7 @@ deviations:
     why: >-
       The merged metadata is where the event keeps that stamp, and the stamp is written to litellm_params
       metadata before the event is built, so both paths see the same boolean.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L716-L719
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L724-L725
   - what: >-
       An event enqueued while a flush is publishing stays queued for the next cycle. LiteLLM's async_send_batch
       clears the whole log_queue in its finally block, so an event appended during the loop is discarded.
