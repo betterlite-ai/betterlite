@@ -196,6 +196,24 @@ async fn delete_omits_empty_body(#[case] mode: ClientKind) {
         body_json(&interface_wire.requests()[1]),
         json(r#"{"purge":true}"#)
     );
+    let bare = RecordingConfig::without_media_type("http://mock.test/v1/responses");
+    let bare_wire = Wire::replying(Reply::json(200, DELETED), &events);
+    let bare_source = Source::new(bare_wire.clone());
+    let bare_deps = WriteDeps {
+        config: &bare,
+        source: &bare_source,
+        supplied: None,
+        shared_session: None,
+    };
+    let mut bare_fixture = Fixture::new("responses");
+    let bare_call = delete_call("resp_a", &write_params, None, None, None);
+    run(&mut bare_fixture, &bare_deps, mode, &bare_call, &events)
+        .await
+        .expect("the delete without a provider media type succeeds");
+    assert_eq!(
+        header(&bare_wire.requests()[0], "content-type").as_deref(),
+        Some("application/json")
+    );
 }
 
 #[rstest]
@@ -284,6 +302,25 @@ async fn cancel_posts_empty_object(#[case] mode: ClientKind) {
         headers.get("X-Trace"),
         Some(&Json::Text(String::from("trace-a")))
     );
+    let bare = RecordingConfig::without_media_type("http://mock.test/v1/responses");
+    let bare_wire = Wire::replying(
+        Reply::json(200, CANCELLED).with_header("content-type", "application/json"),
+        &events,
+    );
+    let bare_source = Source::new(bare_wire.clone());
+    let bare_deps = WriteDeps {
+        config: &bare,
+        source: &bare_source,
+        supplied: None,
+        shared_session: None,
+    };
+    let mut bare_fixture = Fixture::new("responses");
+    let bare_call = operation_call(Operation::Cancel, "resp_a", &write_params, None, None);
+    run(&mut bare_fixture, &bare_deps, mode, &bare_call, &events)
+        .await
+        .expect("the cancel without a provider media type succeeds");
+    // LiteLLM sets the media type only for delete, never for cancel
+    assert_eq!(header(&bare_wire.requests()[0], "content-type"), None);
 }
 
 #[rstest]

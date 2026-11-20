@@ -297,6 +297,7 @@ pub(crate) struct RecordingConfig {
     pub(crate) base: String,
     payload: Mutex<Option<ResourceObject>>,
     errors: Mutex<Vec<(String, u16, HeaderMap)>>,
+    media_type: bool,
 }
 
 impl RecordingConfig {
@@ -305,6 +306,15 @@ impl RecordingConfig {
             base: base.to_owned(),
             payload: Mutex::default(),
             errors: Mutex::default(),
+            media_type: true,
+        }
+    }
+
+    // A provider whose validate_environment leaves the media type unset, as hosted_vllm's responses config does
+    pub(crate) fn without_media_type(base: &str) -> Self {
+        Self {
+            media_type: false,
+            ..Self::new(base)
         }
     }
 
@@ -345,9 +355,11 @@ impl ResponsesConfig for RecordingConfig {
         mut headers: BTreeMap<String, String>,
         _params: &WriteParams,
     ) -> BTreeMap<String, String> {
-        headers
-            .entry(String::from("Content-Type"))
-            .or_insert_with(|| String::from("application/json"));
+        if self.media_type {
+            headers
+                .entry(String::from("Content-Type"))
+                .or_insert_with(|| String::from("application/json"));
+        }
         headers.insert(
             String::from("Authorization"),
             String::from("Bearer sk-provider"),
