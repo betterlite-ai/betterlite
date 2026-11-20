@@ -127,7 +127,6 @@ class FailureView(BaseModel):
 
 
 class RaisedStatus(BaseModel):
-    # mapped LiteLLM exceptions carry status_code; a raw openai error leaves the default
     status_code: int | None = None
 
 
@@ -171,9 +170,7 @@ def run_once(run: Run, api_base: str) -> RunOutcome:
 
 
 def base_of(value: str | None, api_base: str) -> str | None:
-    if value == SENTINEL:
-        return api_base
-    return value
+    return api_base if value == SENTINEL else value
 
 
 def supplied_client(spec: SuppliedClient | None, api_base: str) -> Supplied | None:
@@ -221,10 +218,9 @@ def call_args(invocation: Input, client: AsyncOpenAI | None, api_base: str) -> C
 
 
 def required_assistant_id(invocation: Input) -> str:
-    assistant_id = invocation.assistant_id
-    if assistant_id is None:
+    if invocation.assistant_id is None:
         raise TypeError("assistant_id is required for delete_assistant")
-    return assistant_id
+    return invocation.assistant_id
 
 
 def run_mode(
