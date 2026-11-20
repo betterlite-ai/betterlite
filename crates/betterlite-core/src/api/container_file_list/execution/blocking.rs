@@ -23,7 +23,9 @@ where
         clients.blocking_client(params.ssl_verify.as_ref())
     })?;
     let request = prepare_request(hook, call, &params)?;
-    let reply = BlockingClient::send(client.get(), &request)
+    let reply = client
+        .get()
+        .send(&request)
         .map_err(|error| transport_error(call.config, error))?;
     finish(call.config, &reply)
 }

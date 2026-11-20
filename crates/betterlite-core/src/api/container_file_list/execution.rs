@@ -58,7 +58,9 @@ where
         clients.async_client(params.ssl_verify.as_ref())
     })?;
     let request = prepare_request(hook, call, &params)?;
-    let reply = AsyncClient::send(client.get(), &request)
+    let reply = client
+        .get()
+        .send(&request)
         .await
         .map_err(|error| transport_error(call.config, error))?;
     finish(call.config, &reply)
