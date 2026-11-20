@@ -453,23 +453,6 @@ fn assert_sync_pre_refusal(source: &ScriptedSource, call: &StreamCall<'_>) {
     ));
 }
 
-fn assert_async_pre_refusal(source: &ScriptedSource, call: &StreamCall<'_>) {
-    let mut refused = Recorder {
-        pre: Vec::new(),
-        response_headers: Vec::new(),
-        fail_pre: true,
-    };
-    let error = block_on(async_streaming(source, call, &mut refused, runtime()))
-        .err()
-        .expect("a refused pre_call fails the async call");
-    let failure = azure_failure(error);
-    assert_eq!(failure.status, Reported::Present(Some(500)));
-    assert_eq!(
-        failure.message,
-        Reported::Present(Some("pre_call refused".to_owned()))
-    );
-}
-
 fn stream_logging() {
     let source = scripted_source(ClientKind::AzureOpenAi, &[], sse_payload());
     let fixture = credential_fixture(
@@ -482,7 +465,25 @@ fn stream_logging() {
     assert_oidc_pre(&source, &call);
     assert_sync_pre_refusal(&source, &call);
     let async_source = scripted_source(ClientKind::AsyncAzureOpenAi, &[], sse_payload());
-    assert_async_pre_refusal(&async_source, &call);
+    let mut refused = Recorder {
+        pre: Vec::new(),
+        response_headers: Vec::new(),
+        fail_pre: true,
+    };
+    let error = block_on(async_streaming(
+        &async_source,
+        &call,
+        &mut refused,
+        runtime(),
+    ))
+    .err()
+    .expect("a refused pre_call fails the async call");
+    let failure = azure_failure(error);
+    assert_eq!(failure.status, Reported::Present(Some(500)));
+    assert_eq!(
+        failure.message,
+        Reported::Present(Some("pre_call refused".to_owned()))
+    );
 }
 
 fn assert_sync_refuses_async(
