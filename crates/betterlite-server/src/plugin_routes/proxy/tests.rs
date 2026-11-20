@@ -25,12 +25,6 @@ fn plugin_state(upstream: Arc<FakeUpstream>) -> PluginState {
     state(platform_registry(), upstream, None)
 }
 
-fn key_header(source: &Arc<KeyHeaderSource>) -> Option<Arc<dyn KeyHeaderName>> {
-    let concrete: Arc<KeyHeaderSource> = Arc::clone(source);
-    let erased: Arc<dyn KeyHeaderName> = concrete;
-    Some(erased)
-}
-
 fn get_request(uri: &str) -> Request<Body> {
     Request::builder().uri(uri).body(Body::empty()).unwrap()
 }
@@ -337,8 +331,10 @@ async fn drops_unsafe_response_headers_and_forces_the_sandbox() {
 async fn reads_the_custom_key_header_on_every_request() {
     let upstream = FakeUpstream::answering(reply(StatusCode::OK, ""));
     let source = KeyHeaderSource::named("X-Custom-Key");
-    let concrete: Arc<FakeUpstream> = Arc::clone(&upstream);
-    let app = router(state(platform_registry(), concrete, key_header(&source)));
+    let upstream_clone: Arc<FakeUpstream> = Arc::clone(&upstream);
+    let source_clone: Arc<KeyHeaderSource> = Arc::clone(&source);
+    let header: Arc<dyn KeyHeaderName> = source_clone;
+    let app = router(state(platform_registry(), upstream_clone, Some(header)));
     let mut first = authorized(
         get_request("/plugin-proxy/litellm-platform-plugin/path"),
         master_key(),
