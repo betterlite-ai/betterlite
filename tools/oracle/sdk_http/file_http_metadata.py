@@ -1,14 +1,15 @@
 import asyncio
-from collections.abc import Awaitable
 from datetime import UTC, datetime
-from typing import Final, Literal, TypeVar
+from typing import Final, Literal, cast
 
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.llms.base_llm.files.transformation import BaseFilesConfig
 from litellm.llms.custom_httpx.llm_http_handler import BaseLLMHTTPHandler
+from litellm.types.llms.openai import OpenAIFileObject
 from litellm.types.utils import LlmProviders
 from litellm.utils import ProviderConfigManager
+from openai.types.file_deleted import FileDeleted
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 Operation = Literal["retrieve", "delete", "list"]
@@ -65,18 +66,6 @@ def logging_fixture(operation: Operation) -> Logging:
     )
 
 
-Payload = TypeVar("Payload")
-
-
-# the sync handlers are annotated with a coroutine arm the mode flag never takes
-def settled(result: Payload | Awaitable[Payload]) -> Payload:
-    match result:
-        case Awaitable():
-            raise ValueError("the sync file handler returned a coroutine")
-        case object():
-            return result
-
-
 def execute(
     call: MetadataCall,
     config: BaseFilesConfig,
@@ -91,7 +80,9 @@ def execute(
         retrieved = HANDLER.retrieve_file(
             file_id, config, litellm_params, headers, logging_obj, timeout=timeout
         )
-        return JSON.validate_json(settled(retrieved).model_dump_json(exclude_none=True))
+        return JSON.validate_json(
+            cast("OpenAIFileObject", retrieved).model_dump_json(exclude_none=True)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad2cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L4563
+        )
     if call.operation == "retrieve":
         fetched = asyncio.run(
             HANDLER.async_retrieve_file(
@@ -103,7 +94,9 @@ def execute(
         removed = HANDLER.delete_file(
             file_id, config, litellm_params, headers, logging_obj, timeout=timeout
         )
-        return JSON.validate_json(settled(removed).model_dump_json(exclude_none=True))
+        return JSON.validate_json(
+            cast("FileDeleted", removed).model_dump_json(exclude_none=True)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad2cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L4687
+        )
     if call.operation == "delete":
         deleted = asyncio.run(
             HANDLER.async_delete_file(
@@ -115,7 +108,7 @@ def execute(
         listed = HANDLER.list_files(
             call.purpose, config, litellm_params, headers, logging_obj, timeout=timeout
         )
-        files = settled(listed)
+        files = cast("list[OpenAIFileObject]", listed)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad2cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L4811
         return [JSON.validate_json(entry.model_dump_json(exclude_none=True)) for entry in files]
     listed_async = asyncio.run(
         HANDLER.async_list_files(
