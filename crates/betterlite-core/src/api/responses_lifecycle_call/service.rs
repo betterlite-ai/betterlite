@@ -62,19 +62,23 @@ where
         self.retrieved_reply(outcome, &plan, &call.identity)
     }
 
-    // the wrapper decodes first, hands the sync function its decoded id and provider, and rewrites once more
     pub async fn aget_responses(
         &self,
         call: &ResponsesRetrieveCall,
         log: LifecycleLog<'_, '_>,
     ) -> Result<TypedReply, Box<LifecycleFailure>> {
-        let mut inner = call.clone();
-        inner.identity = decode(&call.identity);
-        inner.aget_responses = Some(Json::Bool(true));
-        let mut reply = self.get_responses(&inner, log).await?;
-        // the id is already encoded by now, so the wrapper's second rewrite reads it back unchanged
-        let provider = inner.identity.custom_llm_provider.as_deref();
-        self.rewrite(&mut reply.response, provider, &inner.identity)?;
+        self.retrieve_twice(call, log).await
+    }
+
+    async fn retrieve_twice(
+        &self,
+        call: &ResponsesRetrieveCall,
+        log: LifecycleLog<'_, '_>,
+    ) -> Result<TypedReply, Box<LifecycleFailure>> {
+        let twin = retrieved_twin(call);
+        let mut reply = self.get_responses(&twin, log).await?;
+        let provider = twin.identity.custom_llm_provider.as_deref();
+        self.rewrite(&mut reply.response, provider, &twin.identity)?;
         Ok(reply)
     }
 
@@ -93,18 +97,14 @@ where
         self.item_page(outcome, &plan.provider)
     }
 
-    // the wrapper decodes and sets the mode flag, and the sync function does the rest
     pub async fn alist_input_items(
         &self,
-        mut call: ResponsesInputItemsCall,
+        call: ResponsesInputItemsCall,
         log: LifecycleLog<'_, '_>,
     ) -> Result<Json, Box<LifecycleFailure>> {
-        call.identity = decode(&call.identity);
-        call.alist_input_items = Some(Json::Bool(true));
-        self.list_input_items(&call, log).await
+        self.list_input_items(&input_items_twin(&call), log).await
     }
 
-    // the shared sync path: resolve the plan, log the pre-call, build the request and run it
     async fn run_read(
         &self,
         read: SdkRead<'_>,
@@ -216,4 +216,18 @@ where
             ))
         })
     }
+}
+
+fn retrieved_twin(call: &ResponsesRetrieveCall) -> ResponsesRetrieveCall {
+    let mut twin = call.clone();
+    twin.identity = decode(&call.identity);
+    twin.aget_responses = Some(Json::Bool(true));
+    twin
+}
+
+fn input_items_twin(call: &ResponsesInputItemsCall) -> ResponsesInputItemsCall {
+    let mut twin = call.clone();
+    twin.identity = decode(&call.identity);
+    twin.alist_input_items = Some(Json::Bool(true));
+    twin
 }

@@ -46,7 +46,6 @@ pub(super) async fn execute(
     })
 }
 
-// the openai responses deployment the case env configures, over the mock's pooled client
 fn build_service(
     config: &Config,
     env: &BTreeMap<String, String>,
@@ -72,7 +71,6 @@ fn build_service(
     })
 }
 
-// the configured REQUEST_TIMEOUT a read takes when the caller names none
 fn default_timeout(config: &Config) -> Result<Duration, SdkHttpError> {
     Duration::try_from_secs_f64(config.sections.routing_timeouts.global.seconds)
         .map_err(|error| SdkHttpError::Invalid(error.to_string()))
@@ -122,23 +120,23 @@ fn fill_base(identity: &mut ReadIdentity, api_base: &str) {
 
 fn reply_outcome(reply: Result<TypedReply, Box<LifecycleFailure>>) -> StepOutcome {
     match reply {
-        Ok(reply) => StepOutcome {
-            retrieved: Some(retrieved(&reply)),
-            items: None,
-            failure: None,
-        },
+        Ok(reply) => success(Some(retrieved(&reply)), None),
         Err(failure) => failed(*failure),
     }
 }
 
 fn items_outcome(items: Result<Json, Box<LifecycleFailure>>) -> StepOutcome {
     match items {
-        Ok(items) => StepOutcome {
-            retrieved: None,
-            items: Some(items),
-            failure: None,
-        },
+        Ok(items) => success(None, Some(items)),
         Err(failure) => failed(*failure),
+    }
+}
+
+fn success(retrieved: Option<Retrieved>, items: Option<Json>) -> StepOutcome {
+    StepOutcome {
+        retrieved,
+        items,
+        failure: None,
     }
 }
 
@@ -150,7 +148,6 @@ fn failed(failure: LifecycleFailure) -> StepOutcome {
     }
 }
 
-// The response fields a caller reads off the object the SDK hands back
 fn retrieved(reply: &TypedReply) -> Retrieved {
     Retrieved {
         id: reply.response.id.clone(),

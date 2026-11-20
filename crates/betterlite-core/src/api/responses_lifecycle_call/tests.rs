@@ -252,9 +252,7 @@ fn assert_listing_records(records: &[Recorded]) {
 async fn read_ignored_extras_and_context() {
     let mut fixture = extras_fixture();
     let headers = assert_ignored_extras(&mut fixture).await;
-    assert_timeout_variants(&mut fixture).await;
-    assert_mode_flags(&mut fixture).await;
-    assert_zero_phases(&mut fixture).await;
+    assert_call_variants(&mut fixture).await;
     assert_read_records(&fixture.service.executor.records(), &headers);
     assert_eq!(fixture.state().model, "responses");
     assert_eq!(
@@ -298,126 +296,55 @@ async fn assert_ignored_extras(fixture: &mut Fixture) -> BTreeMap<String, String
     headers
 }
 
-async fn assert_timeout_variants(fixture: &mut Fixture) {
-    assert_scalar_timeouts(fixture).await;
-    assert_phase_timeouts(fixture).await;
+// a read the test expects to succeed, dropped because the fixture records what the service handed it
+async fn expect_retrieve(fixture: &mut Fixture, call: &ResponsesRetrieveCall) {
+    drop(fixture.retrieve(call).await.expect("the retrieve succeeds"));
 }
 
-// an absent timeout and an explicit zero both take the configured default
-async fn assert_scalar_timeouts(fixture: &mut Fixture) {
-    drop(
-        fixture
-            .retrieve(&retrieve(NO_CALL_ID))
-            .await
-            .expect("the default-timeout retrieve succeeds"),
-    );
+async fn expect_list(fixture: &mut Fixture, call: &ResponsesInputItemsCall) {
+    drop(fixture.list(call).await.expect("the listing succeeds"));
+}
+
+// an httpx.Timeout's phases, with only the two the read cares about named
+fn phases_with(connect: Option<Number>, read: Option<Number>) -> LifecycleTimeout {
+    LifecycleTimeout::Phases(Box::new(LifecyclePhases {
+        connect,
+        read,
+        write: None,
+        pool: None,
+    }))
+}
+
+// absent, zero and phase timeouts follow the SDK defaults, and only a JSON true flag selects the async client
+async fn assert_call_variants(fixture: &mut Fixture) {
+    expect_retrieve(fixture, &retrieve(NO_CALL_ID)).await;
     let mut zero = retrieve(NO_CALL_ID);
     zero.identity.timeout = Some(LifecycleTimeout::Seconds(Number::from(0_i32)));
-    drop(
-        fixture
-            .retrieve(&zero)
-            .await
-            .expect("the zero-timeout retrieve succeeds"),
-    );
-}
-
-// a phases object uses its read phase, and a phases object without one keeps the default
-async fn assert_phase_timeouts(fixture: &mut Fixture) {
-    let mut phases = retrieve(NO_CALL_ID);
-    phases.identity.timeout = Some(LifecycleTimeout::Phases(Box::new(LifecyclePhases {
-        connect: None,
-        read: Some(Number::from(9_i32)),
-        write: None,
-        pool: None,
-    })));
-    drop(
-        fixture
-            .retrieve(&phases)
-            .await
-            .expect("the phased retrieve succeeds"),
-    );
+    expect_retrieve(fixture, &zero).await;
+    let mut read_phase = retrieve(NO_CALL_ID);
+    read_phase.identity.timeout = Some(phases_with(None, Some(Number::from(9_i32))));
+    expect_retrieve(fixture, &read_phase).await;
     let mut no_read = retrieve(NO_CALL_ID);
-    no_read.identity.timeout = Some(LifecycleTimeout::Phases(Box::new(LifecyclePhases {
-        connect: Some(Number::from(3_i32)),
-        read: None,
-        write: None,
-        pool: None,
-    })));
-    drop(
-        fixture
-            .retrieve(&no_read)
-            .await
-            .expect("the connect-only retrieve succeeds"),
-    );
-}
-
-async fn assert_mode_flags(fixture: &mut Fixture) {
-    assert_retrieve_flags(fixture).await;
-    assert_list_flags(fixture).await;
-}
-
-// a number or a text flag stays on the sync client, and only a JSON true selects the async one
-async fn assert_retrieve_flags(fixture: &mut Fixture) {
+    no_read.identity.timeout = Some(phases_with(Some(Number::from(3_i32)), None));
+    expect_retrieve(fixture, &no_read).await;
     let mut number_flag = retrieve(NO_CALL_ID);
     number_flag.aget_responses = Some(json("1"));
-    drop(
-        fixture
-            .retrieve(&number_flag)
-            .await
-            .expect("the number-flagged retrieve succeeds"),
-    );
+    expect_retrieve(fixture, &number_flag).await;
     let mut text_flag = retrieve(NO_CALL_ID);
     text_flag.aget_responses = Some(Json::Text(String::from("true")));
-    drop(
-        fixture
-            .retrieve(&text_flag)
-            .await
-            .expect("the text-flagged retrieve succeeds"),
-    );
+    expect_retrieve(fixture, &text_flag).await;
     let mut bool_flag = retrieve(NO_CALL_ID);
     bool_flag.aget_responses = Some(Json::Bool(true));
-    drop(
-        fixture
-            .retrieve(&bool_flag)
-            .await
-            .expect("the bool-flagged retrieve succeeds"),
-    );
-}
-
-async fn assert_list_flags(fixture: &mut Fixture) {
+    expect_retrieve(fixture, &bool_flag).await;
     let mut items_number = input_items(NO_CALL_ID);
     items_number.alist_input_items = Some(json("1"));
-    drop(
-        fixture
-            .list(&items_number)
-            .await
-            .expect("the number-flagged listing succeeds"),
-    );
+    expect_list(fixture, &items_number).await;
     let mut items_bool = input_items(NO_CALL_ID);
     items_bool.alist_input_items = Some(Json::Bool(true));
-    drop(
-        fixture
-            .alist(&items_bool)
-            .await
-            .expect("the bool-flagged listing succeeds"),
-    );
-}
-
-// a phases read of zero seconds falls back to the default, like a whole-number zero timeout
-async fn assert_zero_phases(fixture: &mut Fixture) {
+    expect_list(fixture, &items_bool).await;
     let mut zero_read = retrieve(NO_CALL_ID);
-    zero_read.identity.timeout = Some(LifecycleTimeout::Phases(Box::new(LifecyclePhases {
-        connect: None,
-        read: Some(Number::from(0_i32)),
-        write: None,
-        pool: None,
-    })));
-    drop(
-        fixture
-            .retrieve(&zero_read)
-            .await
-            .expect("the zero-read retrieve succeeds"),
-    );
+    zero_read.identity.timeout = Some(phases_with(None, Some(Number::from(0_i32))));
+    expect_retrieve(fixture, &zero_read).await;
 }
 
 fn assert_read_records(records: &[Recorded], headers: &BTreeMap<String, String>) {
@@ -611,19 +538,21 @@ async fn assert_dod_failure(fixture: &mut Fixture) {
     assert_eq!(source.message, DOD_404);
 }
 
+// the failed read, with the class, status and flat fields checked to read as null rather than absent
+async fn expect_failure(fixture: &mut Fixture, reason: &str) -> Box<LifecycleFailure> {
+    null_fields(fixture.retrieve(&retrieve(CALL)).await.expect_err(reason))
+}
+
+// the class, status and message an SDK exception carries
+fn assert_sdk_failure(failure: &LifecycleFailure, class: &str, status: u16, message: &str) {
+    assert_eq!((failure.class, failure.status), (class, status));
+    assert_eq!(failure.message, message);
+}
+
 async fn assert_plain_failure(fixture: &mut Fixture) {
-    let plain = null_fields(
-        fixture
-            .retrieve(&retrieve(CALL))
-            .await
-            .expect_err("the plain 404 fails"),
-    );
-    assert_eq!(plain.class, "NotFoundError");
-    assert_eq!(plain.status, 404);
-    assert_eq!(
-        plain.message,
-        format!("NotFoundError: OpenAIException - {PLAIN_404}")
-    );
+    let plain = expect_failure(fixture, "the plain 404 fails").await;
+    let message = format!("NotFoundError: OpenAIException - {PLAIN_404}");
+    assert_sdk_failure(&plain, "NotFoundError", 404, &message);
 }
 
 async fn assert_server_failure(fixture: &mut Fixture) {
@@ -646,16 +575,7 @@ async fn assert_server_failure(fixture: &mut Fixture) {
 }
 
 async fn assert_auth_failure(fixture: &mut Fixture) {
-    let auth = null_fields(
-        fixture
-            .retrieve(&retrieve(CALL))
-            .await
-            .expect_err("the 401 fails"),
-    );
-    assert_eq!(auth.class, "AuthenticationError");
-    assert_eq!(auth.status, 401);
-    assert_eq!(
-        auth.message,
-        "AuthenticationError: OpenAIException - unauthorized"
-    );
+    let auth = expect_failure(fixture, "the 401 fails").await;
+    let message = "AuthenticationError: OpenAIException - unauthorized";
+    assert_sdk_failure(&auth, "AuthenticationError", 401, message);
 }

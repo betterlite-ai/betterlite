@@ -19,7 +19,6 @@ use crate::api::responses_read_http::service::ClientKind;
 use super::error::{LifecycleError, LifecycleFailure};
 use super::input::{LifecycleOperation, LifecyclePhases, LifecycleTimeout, ReadIdentity};
 
-// The decoded id and provider, the selected config tag, and the provider name the failure mapping labels
 pub(super) struct ReadCallPlan {
     pub(super) response_id: String,
     pub(super) provider: String,
@@ -98,7 +97,6 @@ pub(super) fn affinity(
     )
 }
 
-// the wrapper's decode: a nonempty encoded id and provider replace the raw ones, and the wrapper replays with them
 pub(super) fn decode(identity: &ReadIdentity) -> ReadIdentity {
     let resolved = resolve(
         &identity.response_id,
@@ -184,7 +182,6 @@ pub(super) fn log_call(
     })
 }
 
-// the optional and additional params the read records: the decoded id and the selected provider
 fn call_update(plan: &ReadCallPlan) -> CallUpdate {
     CallUpdate {
         model: None,
@@ -200,7 +197,6 @@ fn call_update(plan: &ReadCallPlan) -> CallUpdate {
     }
 }
 
-// the caller's metadata fields as update_from_kwargs reads them off the local variables
 fn call_kwargs(identity: &ReadIdentity) -> IndexMap<String, Json> {
     let mut kwargs = IndexMap::new();
     if let Some(metadata) = &identity.metadata {

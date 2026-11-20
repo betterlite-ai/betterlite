@@ -106,7 +106,6 @@ pub enum LifecycleTimeout {
     Phases(Box<LifecyclePhases>),
 }
 
-// httpx.Timeout's four phases, each a number of seconds
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct LifecyclePhases {
@@ -116,7 +115,6 @@ pub struct LifecyclePhases {
     pub pool: Option<Number>,
 }
 
-// get_responses: the shared identity, its three extras and the mode flag aget_responses sets
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ResponsesRetrieveCall {
     #[serde(flatten)]
@@ -130,7 +128,6 @@ pub struct ResponsesRetrieveCall {
     pub aget_responses: Option<Json>,
 }
 
-// alist_input_items: the shared identity and the five pagination arguments, whose absent limit and order are 20 and desc
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ResponsesInputItemsCall {
     #[serde(flatten)]
