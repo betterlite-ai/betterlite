@@ -1,0 +1,9 @@
+kind: helper
+name: competitor-intent-reframe
+call:
+  b3699: {"operation": "competitor", "text": "Qatar Airways is better", "model": "gpt-test", "config": {"brand_self": ["Acme Air"], "competitors": ["Qatar"], "locations": ["Qatar"], "policy": {"competitor_comparison": "reframe"}, "threshold_high": 0.7, "threshold_medium": 0.45, "threshold_low": 0.3, "refuse_message_template": null, "reframe_message_template": "I can help with our own fares. Would you like details?"}, "patterns": [], "blocked_words": []}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/detections
+      why: LiteLLM records the passthrough exception string as the guardrail response, so its log carries no detections
