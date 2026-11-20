@@ -187,7 +187,7 @@ enum Refusal {
 
 impl Refusal {
     // only the response transformer refuses after the send; every other refusal stops the call before one
-    fn sent(self) -> usize {
+    const fn sent(self) -> usize {
         match self {
             Refusal::Response => 1,
             Refusal::None
