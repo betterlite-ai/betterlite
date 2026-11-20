@@ -7,7 +7,7 @@ import openai
 from litellm.types.vector_stores import VectorStoreCreateResponse
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
-from openai_chat import Failure, optional_text, status_code
+from openai_chat import Failure, project_failure
 
 Operation = Literal["update", "delete"]
 Mode = Literal["sync", "async"]
@@ -167,34 +167,15 @@ def adelete_write(run: Run, api_base: str) -> JsonValue:
     return JSON.validate_python(asyncio.run(held))
 
 
-def project_failure(error: openai.APIError) -> Failure:
-    return Failure.model_validate(
-        {
-            "cls": type(error).__name__,
-            "status": status_code(error),
-            "message": error.message,
-            **optional_text(error, "type"),
-            **optional_text(error, "param"),
-            **optional_text(error, "code"),
-        }
-    )
-
-
 def written(run: Run, api_base: str) -> JsonValue:
-    match (run.operation, run.mode):
-        case ("update", "sync"):
-            return update_write(run, api_base)
-        case ("update", "async"):
-            return aupdate_write(run, api_base)
-        case ("delete", "sync"):
-            return delete_write(run, api_base)
-        case ("delete", "async"):
-            return adelete_write(run, api_base)
+    if run.operation == "update":
+        return update_write(run, api_base) if run.mode == "sync" else aupdate_write(run, api_base)
+    return delete_write(run, api_base) if run.mode == "sync" else adelete_write(run, api_base)
 
 
 def run_once(run: Run, api_base: str) -> RunOutcome:
     try:
         value = written(run, api_base)
     except openai.APIError as error:
-        return RunOutcome(failure=project_failure(error))
+        return RunOutcome(failure=project_failure(error).failure)
     return RunOutcome(value=value)
