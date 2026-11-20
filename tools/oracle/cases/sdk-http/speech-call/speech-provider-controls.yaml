@@ -16,15 +16,18 @@ call:
         api_key: el-key
         kwargs:
           __elevenlabs_query_params__: {enable_logging: false}
+        operation_body: [0, 255, 98, 105, 110, 97, 114, 121, 128, 10]
       - model: edenai/tts
         voice: voice-id
         api_base: '$API_BASE'
         api_key: ed-key
+        operation_body: [0, 255, 98, 105, 110, 97, 114, 121, 128, 10]
       - model: azure/my-deployment
         voice: alloy
         api_base: '$API_BASE'
         api_key: az-call
         api_version: '2024-06-01'
+        operation_body: [0, 255, 98, 105, 110, 97, 114, 121, 128, 10]
       - model: openai/tts-1
         voice: alloy
 upstream:
