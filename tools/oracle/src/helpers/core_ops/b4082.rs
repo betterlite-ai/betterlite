@@ -127,13 +127,8 @@ fn guardrail_row(input: &Input, ops: &SurfaceOps) -> Option<Object> {
 }
 
 fn row(call_type: &str) -> Result<&'static SurfaceOps, Box<HelperError>> {
-    match surface_ops(call_type) {
-        Some(ops) => Ok(ops),
-        None => Err(failure(
-            "KeyError",
-            format!("unknown call type: {call_type}"),
-        )),
-    }
+    surface_ops(call_type)
+        .ok_or_else(|| failure("KeyError", format!("unknown call type: {call_type}")))
 }
 
 fn new_runtime() -> Result<Runtime, Box<HelperError>> {
