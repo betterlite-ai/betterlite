@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use betterlite_models::decisions::Json;
 use betterlite_models::full_model_metadata::parameters::SupportedParameterSource as _;
 use rstest::rstest;
 
@@ -260,6 +261,49 @@ async fn responses_row_never_forwards_surface_only_keys() {
     assert_eq!(
         request,
         object(r#"{"messages":[{"role":"user","content":"hello"}],"model":"gpt-4o"}"#)
+    );
+}
+
+// NoCapabilities answers false for every model, so a system turn after the first user turn
+// becomes a user message even on a model that declares mid-conversation system support.
+#[tokio::test]
+async fn anthropic_row_converts_a_mid_conversation_system_turn_without_model_metadata() {
+    let kwargs = object(
+        r#"{"model":"claude-sonnet-5","messages":[{"role":"user","content":"hi"},
+            {"role":"system","content":"be brief"},{"role":"user","content":"again"}]}"#,
+    );
+    let request = chat_request("anthropic_messages", &kwargs, &object("{}"))
+        .await
+        .unwrap();
+    let Some(Json::List(messages)) = request.get("messages") else {
+        panic!("messages is not a list");
+    };
+    let roles: Vec<Option<&str>> = messages
+        .iter()
+        .map(|message| {
+            message
+                .as_object()
+                .and_then(|fields| fields.get("role"))
+                .and_then(Json::as_str)
+        })
+        .collect();
+    assert_eq!(roles, [Some("user"), Some("user"), Some("user")]);
+}
+
+// The bridge probe answers false for every model, so a Responses-mode model drops the summary
+// that LiteLLM keeps when the model map routes the chat request back through the Responses API.
+#[tokio::test]
+async fn responses_row_drops_a_reasoning_summary_for_a_responses_mode_model() {
+    let kwargs = object(
+        r#"{"model":"azure/codex-mini","messages":"hello",
+            "litellm_params":{"proxy_server_request":{"body":{"reasoning":{"summary":"auto"}}}}}"#,
+    );
+    let request = chat_request("responses", &kwargs, &object("{}"))
+        .await
+        .unwrap();
+    assert_eq!(
+        request,
+        object(r#"{"messages":[{"role":"user","content":"hello"}],"model":"azure/codex-mini"}"#)
     );
 }
 

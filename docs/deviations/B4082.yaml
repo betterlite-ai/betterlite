@@ -36,4 +36,30 @@ deviations:
       The skip outcome is the same and no panic is caught; the log line names the typed cause instead of
       the exception text.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L420-L439
+  - what: >-
+      The shadow normalizer resolves no model metadata: the Responses row's transformer is given a completion
+      bridge probe that answers false for every model (NoBridge in
+      crates/betterlite-core/src/shadow_requests/surfaces/environment.rs), so a request for a model whose
+      metadata is mode responses, such as azure/codex-mini, loses reasoning.summary from the normalized chat
+      request. LiteLLM asks responses_api_bridge_check, which reads the model map, and keeps the summary for
+      those models so litellm.completion can route them back through the Responses API.
+    why: >-
+      The production probe (SdkBridgeProbe) needs a ResponsesBridgeCapabilities over the model map, which is
+      the model-metadata work of B5655 and B5656 and is not reachable from the betterlite-core shadow module;
+      the task calls the transformer with no provider and the shadow call carries no model metadata. A model
+      the map does not route back matches LiteLLM, because both sides drop a summary that has no chat
+      equivalent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L327-L357
+  - what: >-
+      The Anthropic row's translate_anthropic_to_openai call is given capability predicates that answer false
+      for every model (NoCapabilities in the same file), so a system message after the first user turn is
+      converted to a user message even for a model whose metadata declares
+      supports_mid_conversation_system, such as claude-sonnet-5. LiteLLM's
+      target_supports_mid_conversation_system reads the model map, so the system role survives there.
+    why: >-
+      The capability environment the production path uses (CapabilityEnvironment over model metadata) is the
+      model-metadata work of B2217, B2219 and B2220 and is not reachable from the betterlite-core shadow
+      module; the shadow call carries no provider or model metadata. A conversation with no system turn after
+      the first user turn matches LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L213-L216
 kept_bugs: []
