@@ -36,20 +36,6 @@ fn text_of(value: Option<&JsonValue>) -> Option<String> {
     }
 }
 
-fn inner_error_code(inner: Option<&JsonValue>) -> Option<String> {
-    match inner {
-        Some(JsonValue::Object(fields)) => text_of(fields.get("code")),
-        Some(
-            JsonValue::Null
-            | JsonValue::Bool(_)
-            | JsonValue::Number(_)
-            | JsonValue::String(_)
-            | JsonValue::Array(_),
-        )
-        | None => None,
-    }
-}
-
 #[must_use]
 pub fn is_content_filter(code: &str, error_type: &str, inner_code: Option<&str>) -> bool {
     code == CONTENT_FILTER
@@ -66,7 +52,17 @@ pub fn decode_content_filter_error(
     let (error, inner) = extract_azure_error(&value);
     let code = text_of(error.get("code")).unwrap_or_default();
     let error_type = text_of(error.get("type")).unwrap_or_default();
-    let inner_code = inner_error_code(inner.as_ref());
+    let inner_code = match inner.as_ref() {
+        Some(JsonValue::Object(fields)) => text_of(fields.get("code")),
+        Some(
+            JsonValue::Null
+            | JsonValue::Bool(_)
+            | JsonValue::Number(_)
+            | JsonValue::String(_)
+            | JsonValue::Array(_),
+        )
+        | None => None,
+    };
     if !is_content_filter(&code, &error_type, inner_code.as_deref()) {
         return Ok(None);
     }
