@@ -1,7 +1,6 @@
 use std::sync::Arc;
-use std::time::Duration;
 
-use betterlite_auth::auth_model_lists::credential::{CredentialEntry, CredentialSnapshot};
+use betterlite_auth::auth_model_lists::credential::CredentialSnapshot;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::model_registration::JsonObject;
 use tokio::net::TcpListener;

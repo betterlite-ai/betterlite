@@ -1,8 +1,8 @@
 use super::discovery::{CatalogSnapshot, get_discovered_model_info, holds};
 use super::metadata::{ModelMetadataSource, RouterMetadata};
+use super::text;
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::model_catalog_lookup::error::LookupError;
-use crate::model_catalog_lookup::fields::text;
 use crate::model_catalog_lookup::lookup::CatalogLookup;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_catalog_keys::ModelCostKeys;

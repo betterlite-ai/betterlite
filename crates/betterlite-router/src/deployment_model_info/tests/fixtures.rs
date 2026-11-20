@@ -13,7 +13,6 @@ use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use betterlite_models::catalog_generalizations::CatalogGeneralizations;
-use betterlite_models::decisions::Json;
 use betterlite_models::fetch_policy::response::FetchResponse;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::lemonade_model_metadata::{ModelInfoClient, ModelInfoRequest};
@@ -267,7 +266,7 @@ pub struct Unmapped;
 pub struct FakeSource {
     pub answers: BTreeMap<String, JsonObject>,
     pub failing: bool,
-    seen: Mutex<Vec<String>>,
+    pub seen: Mutex<Vec<String>>,
 }
 
 impl FakeSource {

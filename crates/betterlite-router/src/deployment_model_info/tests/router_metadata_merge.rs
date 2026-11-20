@@ -7,8 +7,8 @@ use rstest::rstest;
 use serde_json::Number;
 
 use super::fixtures::{
-    Events, FakeSource, Lookups, Resolver, Unmapped, catalog, limits, object, record, registry,
-    snapshot, spec,
+    Events, FakeSource, Lookups, Resolver, Unmapped, capture, catalog, limits, object, record,
+    registry, snapshot, spec,
 };
 use crate::catalog_updates::catalog::DeploymentCatalog;
 use crate::deployment_model_info::cache::DiscoveryCache;
@@ -170,7 +170,7 @@ async fn malformed_params_error_and_id() {
         dict_error.to_string(),
         "Deployment missing valid litellm_params. Got: dict, deployment_id: one"
     );
-    let anonymous = object(r#"{}"#);
+    let anonymous = object("{}");
     let no_id = SuppliedDeployment {
         model_info: &anonymous,
         litellm_params: None,
@@ -297,7 +297,7 @@ async fn azure_positive_input_or_context_fallback_debug(#[case] entry: &str) {
     );
     let case = azure_case(entry);
     let events = Events::default();
-    let _guard = tracing::subscriber::set_default(events.clone());
+    let _guard = tracing::subscriber::set_default(capture(events.clone()));
     let outcome = case
         .merged(Some(azure_supplied(&info, &params)), "g", None)
         .await;
@@ -326,7 +326,7 @@ async fn azure_zero_stub_or_output_only_error_continues(#[case] entry: &str) {
     );
     let case = azure_case(entry);
     let events = Events::default();
-    let _guard = tracing::subscriber::set_default(events.clone());
+    let _guard = tracing::subscriber::set_default(capture(events.clone()));
     let outcome = case
         .merged(Some(azure_supplied(&info, &params)), "g", None)
         .await;
@@ -364,7 +364,7 @@ async fn wildcard_same_id_and_bad_candidate() {
             .is_some()
     );
     assert_eq!(case.source.seen(), vec!["openai/gpt-4o".to_owned()]);
-    let broken = catalog(vec![spec("openai/*", r#"{}"#, r#"{"id":"wild"}"#)]);
+    let broken = catalog(vec![spec("openai/*", "{}", r#"{"id":"wild"}"#)]);
     let bad = Case::plain(
         Arc::clone(&broken),
         FakeSource::answering(&[("openai/*", r#"{"max_input_tokens":6}"#)]),
@@ -584,7 +584,7 @@ async fn no_custom_id_no_discovery() {
         r#"{"model":"openai/first"}"#,
         r#"{"id":"absent-id"}"#,
     )]);
-    let mut case = Case::plain(
+    let case = Case::plain(
         Arc::clone(&catalog),
         FakeSource::answering(&[(
             "custom-model",
@@ -598,7 +598,7 @@ async fn no_custom_id_no_discovery() {
     let info = case.info("absent-id", "custom-model").await.unwrap();
     assert_eq!(info.get("max_input_tokens"), Some(&number(20)));
     assert!(info.get("max_output_tokens").is_none());
-    let mut with_custom = Case::new(
+    let with_custom = Case::new(
         Arc::clone(&catalog),
         FakeSource::answering(&[(
             "custom-model",
@@ -716,7 +716,7 @@ async fn discovery_overlay_and_configured_precedence_against_source() {
         r#"{"model":"openai/first"}"#,
         r#"{"id":"one","max_input_tokens":7}"#,
     )]);
-    let mut case = Case::plain(
+    let case = Case::plain(
         Arc::clone(&catalog),
         FakeSource::answering(&[(
             "openai/first",

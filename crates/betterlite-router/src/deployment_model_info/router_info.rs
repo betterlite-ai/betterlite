@@ -2,7 +2,7 @@ use super::deployment_info::get_model_info;
 use super::discovery::{CatalogSnapshot, copy_configured, get_discovered_model_info};
 use super::error::RouterMetadataError;
 use super::metadata::{ModelMetadataSource, RouterMetadata};
-use crate::model_catalog_lookup::fields::text;
+use super::text;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_catalog_keys::ModelCostKeys;
 use betterlite_models::model_registration::{JsonObject, ModelRegistry};

@@ -1,6 +1,6 @@
 use super::cache::DiscoveryCache;
+use super::text;
 use crate::catalog_updates::catalog::DeploymentCatalog;
-use crate::model_catalog_lookup::fields::text;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_openai::compatible_models::TokenLimits;

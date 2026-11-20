@@ -125,9 +125,10 @@ fn metadata_answer(
         client: NoHfConfig,
         base_url: HF_CONFIG_BASE_URL.to_owned(),
     };
+    let dynamic = NoDynamicMetadata;
     let sources = HelperSources {
         environment: &environment,
-        dynamic: &NoDynamicMetadata,
+        dynamic: &dynamic,
         hf: &hf,
     };
     let cache = ModelInfoCache::new(64);
@@ -135,8 +136,9 @@ fn metadata_answer(
         sources: &sources,
         cache: &cache,
     };
+    let snapshot = CatalogSnapshot { catalog: engine };
     let metadata = RouterMetadata {
-        snapshot: &CatalogSnapshot { catalog: engine },
+        snapshot: &snapshot,
         discovery,
         registry: &fixture.registry,
         resolution: &resolution,
