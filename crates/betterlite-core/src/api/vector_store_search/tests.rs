@@ -37,7 +37,10 @@ use self::search::SearchConfigFake;
 use super::error::{SdkFailure, VectorStoreSearchError, failure};
 use super::executor::{DirectExecutor, EmbeddingExecutorSource, SelectedExecutor};
 use super::provider::resolve_provider;
-use super::service::{Entry, OptionalParamFilters, SdkDeps, VectorStoreConfigs, entry_from_flag};
+use super::service::{
+    Entry, OptionalParamFilters, OwnedCreateReadConfig, SdkDeps, VectorStoreConfigs,
+    entry_from_flag,
+};
 use crate::api::vector_search_execution::config::{
     EmbeddingEntry, Params, QueryEmbeddingExecutor, SearchConfig, SearchQuery, SearchRequest,
     StoreFailure, VectorStoreLogging, VectorStoreResponse,
@@ -47,9 +50,10 @@ use crate::api::vector_search_execution::service::signing::{
     SignFuture, SignInput, SignedSearch, SigningSeam,
 };
 use crate::api::vector_store_http_create_read::config::{CapabilityError, CreateReadConfig};
+use crate::api::vector_store_http_create_read::error::CreateReadError;
 use crate::api::vector_store_http_write::config::{WriteConfig, WriteParams};
 use crate::api::vector_store_http_write::error::{
-    BaseLlmException, ClientError, HeaderMap as WireHeaders, UrlFailure,
+    BaseLlmException, ClientError, HeaderMap as WireHeaders, UrlFailure, WriteError,
 };
 use crate::api::vector_store_http_write::service::{
     ClientKind, ClientSource, SuppliedClient, WriteRequest, WriteTransport,
@@ -96,6 +100,7 @@ struct Seen {
     search_litellm_params: Vec<Params>,
     search_optionals: Vec<Params>,
     clients: Vec<String>,
+    ssl_verify: Vec<Option<bool>>,
     executor_supplied: Vec<bool>,
 }
 
@@ -121,7 +126,8 @@ struct Source {
 impl ClientSource for Source {
     type Client = FakeClient;
 
-    fn client(&self, _ssl_verify: Option<bool>) -> Result<FakeClient, ClientError> {
+    fn client(&self, ssl_verify: Option<bool>) -> Result<FakeClient, ClientError> {
+        self.seen.with(|seen| seen.ssl_verify.push(ssl_verify));
         Ok(FakeClient {
             name: String::from("created"),
             answer: self.answer.clone(),
@@ -248,6 +254,23 @@ impl WriteConfig for CreateConfig {
         headers: WireHeaders,
     ) -> BaseLlmException {
         exception(message, status_code, headers)
+    }
+}
+
+// a config whose capability check refuses, so the wrapper can be seen to pass the refusal on
+struct Rejecting {
+    write: CreateConfig,
+}
+
+impl CreateReadConfig for Rejecting {
+    fn validate_create(&self) -> Result<(), CapabilityError> {
+        Err(CapabilityError {
+            message: String::from("no create"),
+        })
+    }
+
+    fn provider(&self) -> &dyn WriteConfig {
+        &self.write
     }
 }
 
@@ -582,4 +605,38 @@ fn provider_errors_keep_the_sdk_status() {
     assert_eq!(provider.kind, WireField::Null);
     assert_eq!(provider.param, WireField::Null);
     assert_eq!(provider.code, WireField::Null);
+}
+
+#[test]
+fn create_errors_keep_the_sdk_status() {
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds");
+    let provider = failure(
+        &VectorStoreSearchError::Create {
+            provider: String::from("openai"),
+            source: CreateReadError::Write(WriteError::Provider(exception(
+                "missing",
+                404,
+                WireHeaders::new(),
+            ))),
+        },
+        &redactor,
+    );
+    assert_eq!(provider.class, "NotFoundError");
+    assert_eq!(provider.status, Some(404));
+    assert_eq!(provider.kind, WireField::Null);
+}
+
+#[test]
+fn owned_configs_keep_the_inner_capability() {
+    let owned = OwnedCreateReadConfig {
+        inner: Box::new(Rejecting {
+            write: CreateConfig {
+                seen: Shared::default(),
+            },
+        }),
+    };
+    let error = owned
+        .validate_create()
+        .expect_err("the inner refusal survives the wrapper");
+    assert_eq!(error.to_string(), "no create");
 }

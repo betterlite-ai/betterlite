@@ -135,6 +135,10 @@ async fn search_logs_litellm_params() {
         litellm_params.get("use_litellm_proxy"),
         Some(&Json::Bool(false))
     );
+    assert_eq!(
+        litellm_params.get("api_base"),
+        Some(&Json::Text(String::from("https://mock.invalid/v1")))
+    );
 }
 
 #[rstest]

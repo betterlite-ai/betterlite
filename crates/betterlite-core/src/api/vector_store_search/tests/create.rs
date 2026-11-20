@@ -65,6 +65,7 @@ async fn create_optional_fields(#[case] entry: Entry) {
             &json(CREATE_OPTIONALS)
         );
         assert_eq!(seen.create_api_keys, vec![Some(String::from("sk-client"))]);
+        assert_eq!(seen.ssl_verify.last(), Some(&None));
     });
     assert_eq!(logs.detail("optional_params"), json(CREATE_OPTIONALS));
     assert_eq!(
@@ -138,4 +139,25 @@ async fn create_sends_the_declared_fields() {
             Some("yes")
         );
     });
+}
+
+// ssl_verify is the GenericLiteLLMParams flag the caller set, handed to the client source as given
+#[rstest]
+#[case::verify(r#"{"api_base":"https://mock.invalid/v1","ssl_verify":true}"#, true)]
+#[case::skip(r#"{"api_base":"https://mock.invalid/v1","ssl_verify":false}"#, false)]
+#[tokio::test]
+async fn create_ssl_verify_reaches_the_client(#[case] input: &str, #[case] expected: bool) {
+    let fakes = Fakes::new();
+    let source = fakes.source(CREATE_RESULT);
+    let mut logs = Logs::new("vector_store_create");
+    let optional = Params::new();
+    let kwargs = params(input);
+    let call = create_call(&optional, &kwargs, Entry::Sync);
+    let deps = fakes.deps(&source, None);
+    logs.run_create(&deps, &call)
+        .await
+        .expect("the mock provider answers");
+    fakes
+        .seen
+        .with(|seen| assert_eq!(seen.ssl_verify, vec![Some(expected)]));
 }
