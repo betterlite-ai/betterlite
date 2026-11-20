@@ -3,15 +3,11 @@ use std::ops::{Div, Mul};
 
 use async_trait::async_trait;
 use betterlite_config::sections::alert_settings::types::{AlertType, SlackAlertingArgs};
-use betterlite_logging::alert_dispatch::destination::AlertDestination;
-use betterlite_logging::alert_dispatch::{Alert, AlertLevel};
 use betterlite_logging::analytics::python::float_text;
 use chrono::NaiveDate;
-use indexmap::IndexMap;
 use serde::Serialize;
 
-use super::spend_reports::{SpendAlertCache, SpendAlertClock, SpendAlertSender};
-
+mod dispatch;
 pub mod postgres;
 
 #[path = "user_spend_alerts/tests/evaluate.rs"]
@@ -93,6 +89,7 @@ pub struct UserSpendAlerts<C, S, R, K> {
     pub clock: K,
 }
 
+#[must_use]
 pub fn evaluate_user_spend(
     row: &UserSpendRow,
     args: &SlackAlertingArgs,
@@ -130,8 +127,8 @@ fn daily_threshold_event(
         kind: UserSpendAlertKind::DailyThreshold,
         alert_type: AlertType::UserSpendThresholds,
         message: format!(
-            "User Daily Spend Threshold Crossed:\nUser: `{}`\nSpend Today: `${:.2}`\nDaily Threshold: `${:.2}`",
-            row.user_id, row.daily_spend, threshold,
+            "User Daily Spend Threshold Crossed:\nUser: `{}`\nSpend Today: `${:.2}`\nDaily Threshold: `{threshold:.2}`",
+            row.user_id, row.daily_spend,
         ),
         cache_key: format!("user_spend_alert_daily_{}_{today_text}", row.user_id),
         cache_ttl: day_seconds(hours_in_a_day),
@@ -153,8 +150,8 @@ fn monthly_threshold_event(
         kind: UserSpendAlertKind::MonthlyThreshold,
         alert_type: AlertType::UserSpendThresholds,
         message: format!(
-            "User Monthly Spend Threshold Crossed:\nUser: `{}`\nSpend This Month: `${:.2}`\nMonthly Threshold: `${:.2}`",
-            row.user_id, row.monthly_spend, threshold,
+            "User Monthly Spend Threshold Crossed:\nUser: `{}`\nSpend This Month: `${:.2}`\nMonthly Threshold: `{threshold:.2}`",
+            row.user_id, row.monthly_spend,
         ),
         cache_key: format!("user_spend_alert_monthly_{}_{month_text}", row.user_id),
         cache_ttl: day_seconds(hours_in_a_day).saturating_mul(MONTHLY_TTL_DAYS),
@@ -182,111 +179,13 @@ fn anomaly_event(
         kind: UserSpendAlertKind::Anomaly,
         alert_type: AlertType::UserSpendAnomalies,
         message: format!(
-            "User Spend Anomaly Detected:\nUser: `{}`\nSpend Today: `${:.2}`\nDaily Average (last {} days): `${:.2}`\nTrigger: spend above `{}x` the daily average (minimum `${:.2}`)",
+            "User Spend Anomaly Detected:\nUser: `{}`\nSpend Today: `${:.2}`\nDaily Average (last {} days): `{average:.2}`\nTrigger: spend above `{}x` the daily average (minimum `{minimum:.2}`)",
             row.user_id,
             row.daily_spend,
             args.spend_anomaly_baseline_days,
-            average,
             float_text(multiplier),
-            minimum,
         ),
         cache_key: format!("user_spend_alert_anomaly_{}_{today_text}", row.user_id),
         cache_ttl: day_seconds(hours_in_a_day),
     })
-}
-
-impl<C, S, R, K> UserSpendAlerts<C, S, R, K>
-where
-    C: SpendAlertCache,
-    S: SpendAlertSender,
-    R: UserSpendSource,
-    K: SpendAlertClock,
-{
-    pub async fn send_user_spend_alerts(&self, has_database: bool) {
-        if let Err(error) = self.send_pass(has_database).await {
-            tracing::error!("Error sending user spend alerts: {error}");
-        }
-    }
-
-    async fn send_pass(
-        &self,
-        has_database: bool,
-    ) -> Result<(), UserSpendAlertError<R::Error, S::Error>> {
-        let Some(destinations) = self.alerting.as_deref() else {
-            return Ok(());
-        };
-        if !destinations.contains(&AlertDestination::Slack) {
-            return Ok(());
-        }
-        let checks = UserSpendChecks {
-            thresholds: self.alert_types.contains(&AlertType::UserSpendThresholds),
-            anomalies: self.alert_types.contains(&AlertType::UserSpendAnomalies),
-        };
-        if !checks.thresholds && !checks.anomalies {
-            return Ok(());
-        }
-        if !has_database {
-            return Ok(());
-        }
-        let today = self.clock.utc_date();
-        let rows = self
-            .source
-            .rows(today, self.alerting_args.spend_anomaly_baseline_days)
-            .await
-            .map_err(UserSpendAlertError::Rows)?;
-        let mut events = Vec::new();
-        for row in &rows {
-            events.extend(evaluate_user_spend(
-                row,
-                &self.alerting_args,
-                today,
-                checks,
-                self.hours_in_a_day,
-            ));
-        }
-        let mut new_events = Vec::new();
-        for event in events {
-            if self.cache.get(&event.cache_key).await.is_none() {
-                new_events.push(event);
-            }
-        }
-        for alert_type in [
-            AlertType::UserSpendThresholds,
-            AlertType::UserSpendAnomalies,
-        ] {
-            let typed: Vec<&UserSpendAlertEvent> = new_events
-                .iter()
-                .filter(|event| event.alert_type == alert_type)
-                .collect();
-            if typed.is_empty() {
-                continue;
-            }
-            let message = typed
-                .iter()
-                .map(|event| event.message.as_str())
-                .collect::<Vec<_>>()
-                .join("\n\n");
-            let metadata = IndexMap::new();
-            let alert = Alert {
-                message: &message,
-                level: AlertLevel::High,
-                alert_type,
-                alerting_metadata: &metadata,
-                user_info: None,
-                request_model: None,
-                api_base: None,
-                kwargs: &metadata,
-            };
-            self.sender
-                .send_alert(alert)
-                .await
-                .map_err(UserSpendAlertError::Send)?;
-            for event in typed {
-                self.cache
-                    .set(&event.cache_key, "SENT", event.cache_ttl)
-                    .await;
-            }
-        }
-        Ok(())
-    }
 }

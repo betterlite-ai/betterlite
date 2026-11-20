@@ -1,4 +1,5 @@
 use std::error::Error as StdError;
+use std::fmt::Write as _;
 
 use async_trait::async_trait;
 use betterlite_config::sections::alert_settings::types::{AlertType, SlackAlertingArgs};
@@ -76,6 +77,7 @@ pub struct SpendReports<C, S, K> {
 }
 
 // LiteLLM keeps int(time_range[:-1]) and rejects a last character other than d or D
+#[must_use]
 pub(crate) fn parse_days(text: &str) -> Result<u32, TimeRangeError> {
     let mut characters = text.chars();
     let Some(unit) = characters.next_back() else {
@@ -247,10 +249,10 @@ fn push_sections(message: &mut String, teams: &[SpendRow], tags: &[SpendRow]) {
 }
 
 fn push_rows(message: &mut String, label: &str, rows: &[SpendRow]) {
-    message.push_str(&format!("\n*{label} Spend Report:*\n"));
+    let _ignored = writeln!(message, "\n*{label} Spend Report:*");
     for row in rows {
         let spend = float_text(float_rounded(row.total_spend, SPEND_REPORT_PLACES).as_f64());
         let name = row.name.as_deref().unwrap_or("None");
-        message.push_str(&format!("{label}: `{name}` | Spend: `${spend}`\n"));
+        let _ignored = writeln!(message, "{label}: `{name}` | Spend: `${spend}`");
     }
 }

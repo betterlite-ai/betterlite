@@ -107,6 +107,7 @@ where
     }
 }
 
+#[must_use]
 pub fn plan_spend_jobs(
     spend_report_frequency: Option<&str>,
     args: &SlackAlertingArgs,
