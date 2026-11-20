@@ -1,5 +1,4 @@
-use std::collections::BTreeMap;
-
+use indexmap::IndexMap;
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 
@@ -40,7 +39,7 @@ enum RawFlag {
     Float(f64),
     Text(String),
     List(Vec<IgnoredAny>),
-    Mapping(BTreeMap<String, IgnoredAny>),
+    Mapping(IndexMap<String, IgnoredAny>),
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
