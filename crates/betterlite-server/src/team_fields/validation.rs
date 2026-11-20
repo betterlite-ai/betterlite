@@ -1,4 +1,4 @@
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, PoisonError, RwLock};
 
 use async_trait::async_trait;
 use betterlite_config::sections::team_fields::Settings as TeamFieldsSettings;
@@ -117,18 +117,19 @@ pub struct TeamMetadataValidatorRegistry {
 
 impl TeamMetadataValidatorRegistry {
     pub fn set(&self, validator: Option<Arc<dyn TeamMetadataValidator>>) {
-        match self.validator.write() {
-            Ok(mut current) => *current = validator,
-            Err(poisoned) => *poisoned.into_inner() = validator,
-        }
+        let mut current = self
+            .validator
+            .write()
+            .unwrap_or_else(PoisonError::into_inner);
+        *current = validator;
     }
 
     #[must_use]
     pub fn get(&self) -> Option<Arc<dyn TeamMetadataValidator>> {
-        match self.validator.read() {
-            Ok(current) => (*current).clone(),
-            Err(poisoned) => poisoned.into_inner().clone(),
-        }
+        self.validator
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 }
 
@@ -139,18 +140,16 @@ pub struct TeamMetadataSchemaRegistry {
 
 impl TeamMetadataSchemaRegistry {
     pub fn set(&self, fields: Vec<TeamMetadataFieldSchema>) {
-        match self.fields.write() {
-            Ok(mut current) => *current = fields,
-            Err(poisoned) => *poisoned.into_inner() = fields,
-        }
+        let mut current = self.fields.write().unwrap_or_else(PoisonError::into_inner);
+        *current = fields;
     }
 
     #[must_use]
     pub fn get(&self) -> Vec<TeamMetadataFieldSchema> {
-        match self.fields.read() {
-            Ok(current) => (*current).clone(),
-            Err(poisoned) => poisoned.into_inner().clone(),
-        }
+        self.fields
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 }
 

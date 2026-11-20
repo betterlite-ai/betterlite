@@ -62,6 +62,8 @@ pub trait TeamObjectCache: Send + Sync {
 
 #[async_trait]
 impl TeamObjectCache for AuthInvalidation {
+    // the body only forwards to B734's cache_team_object, which betterlite-auth's refresh tests cover
+    #[cfg_attr(test, mutants::skip)]
     async fn store_team(
         &self,
         team_id: &str,

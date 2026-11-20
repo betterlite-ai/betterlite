@@ -54,11 +54,13 @@ fn read_store(client: PrismaClient<'_>) -> &PostgresStore {
     client.reader
 }
 
+#[must_use]
 // ast-grep-ignore: no-one-line-functions - LiteLLM's _raw_team_db exposes the same raw team table
 pub fn raw_team_table<'database>(repository: &TeamRepository<'database>) -> TeamTable<'database> {
     repository.table()
 }
 
+#[must_use]
 // ast-grep-ignore: no-one-line-functions - LiteLLM's _team_membership_db builds the membership table on the client
 pub fn team_membership_table(
     client: Option<PrismaClient<'_>>,
@@ -67,6 +69,7 @@ pub fn team_membership_table(
     PrismaTableRepository::new(client, publish, TeamMembership)
 }
 
+#[must_use]
 pub const fn user_table<C>(database: Option<&C>) -> UserRepository<'_, C> {
     UserRepository {
         db: database,
@@ -75,6 +78,7 @@ pub const fn user_table<C>(database: Option<&C>) -> UserRepository<'_, C> {
     }
 }
 
+#[must_use]
 pub const fn organization_table<C>(database: Option<&C>) -> OrganizationRepository<'_, C> {
     StoredRepository {
         db: database,
@@ -82,6 +86,7 @@ pub const fn organization_table<C>(database: Option<&C>) -> OrganizationReposito
     }
 }
 
+#[must_use]
 // ast-grep-ignore: no-one-line-functions - LiteLLM's _org_membership_db builds the membership table on the client
 pub fn organization_membership_table(
     client: Option<PrismaClient<'_>>,
@@ -90,11 +95,13 @@ pub fn organization_membership_table(
     PrismaTableRepository::new(client, publish, OrganizationMembership)
 }
 
+#[must_use]
 // ast-grep-ignore: no-one-line-functions - LiteLLM's _budget_db builds BudgetRepository on the supplied client
 pub fn budget_table(client: Option<PrismaClient<'_>>) -> BudgetRepository<'_> {
     BudgetRepository::new(client)
 }
 
+#[must_use]
 // ast-grep-ignore: no-one-line-functions - LiteLLM's _model_db builds ModelRepository on the supplied client
 pub fn model_table(
     client: Option<PrismaClient<'_>>,
@@ -105,6 +112,7 @@ pub fn model_table(
     ModelRepository::new(client, publish, encryption_key, cipher)
 }
 
+#[must_use]
 // ast-grep-ignore: no-one-line-functions - LiteLLM's _deleted_team_db selects the deleted-team table
 pub fn deleted_team_table(
     client: Option<PrismaClient<'_>>,
@@ -113,6 +121,7 @@ pub fn deleted_team_table(
     PrismaTableRepository::new(client, publish, DeletedTeamTable)
 }
 
+#[must_use]
 // ast-grep-ignore: no-one-line-functions - LiteLLM's _access_group_db selects the access-group table
 pub fn access_group_table(
     client: Option<PrismaClient<'_>>,
@@ -121,6 +130,7 @@ pub fn access_group_table(
     PrismaTableRepository::new(client, publish, AccessGroupTable)
 }
 
+#[must_use]
 // ast-grep-ignore: no-one-line-functions - LiteLLM's _verification_token_db reads litellm_verificationtoken
 pub fn tokens_table<C: DatabaseClient>(
     database: Option<WriterPinnedClient<'_, C>>,
@@ -176,7 +186,8 @@ impl<'transaction, 'client> TeamTransaction<'transaction, 'client> {
     }
 
     // _MemberDeleteTx.litellm_usertable reads the user table on the same transaction, never a new connection.
-    pub fn user_table(&self) -> UserRepository<'transaction, DbSession<'client>> {
+    #[must_use]
+    pub const fn user_table(&self) -> UserRepository<'transaction, DbSession<'client>> {
         UserRepository {
             db: Some(self.session),
             writer_db: Some(self.session),

@@ -16,6 +16,7 @@ use betterlite_server::team_fields::metadata::{
 };
 use betterlite_server::team_fields::python_validator::ValidatorFailure;
 use betterlite_server::team_fields::validation::{
+    TeamMetadataError,
     TeamMetadataValidator,
     TeamMetadataValidatorRegistry,
     // ast-grep-ignore: no-long-names - LiteLLM names this validate_team_metadata_if_configured
@@ -178,6 +179,13 @@ pub(super) fn validate_answer(call: &ValidateCall<'_>) -> HelperResult {
         request, &registry, &settings,
     ));
     let payload = fake.as_ref().and_then(|fake| fake.recorded());
+    validation_answer(outcome, payload)
+}
+
+fn validation_answer(
+    outcome: Result<(), TeamMetadataError>,
+    payload: Option<Value>,
+) -> HelperResult {
     match outcome {
         Ok(()) => Ok(json!({"status": null, "error": null, "payload": payload})),
         Err(error) => Ok(json!({
