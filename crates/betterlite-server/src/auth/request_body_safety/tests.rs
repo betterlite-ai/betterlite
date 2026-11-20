@@ -206,7 +206,7 @@ fn broken_body() -> Body {
 }
 
 #[tokio::test]
-async fn unreadable_bodies_are_buffered_after_authentication() {
+async fn rejected_keys_answer_before_the_body_read() {
     // a broken body under a rejected key never reaches the body read, so the master key stage answers first
     let rejected = Request::builder()
         .method("POST")
@@ -235,7 +235,10 @@ async fn unreadable_bodies_are_buffered_after_authentication() {
         "{rejected_text}"
     );
     assert!(!reached.load(Ordering::Acquire));
+}
 
+#[tokio::test]
+async fn unreadable_bodies_are_buffered_after_authentication() {
     // under the master key the failed read becomes the buffering 400 and the handler never runs
     let broken = Request::builder()
         .method("POST")
@@ -244,18 +247,18 @@ async fn unreadable_bodies_are_buffered_after_authentication() {
         .header(header::CONTENT_TYPE, "application/json")
         .body(broken_body())
         .expect("the request builds");
-    let buffered_reached = Arc::new(AtomicBool::new(false));
-    let buffered_response = application(&config(""), &buffered_reached)
+    let reached = Arc::new(AtomicBool::new(false));
+    let response = application(&config(""), &reached)
         .oneshot(broken)
         .await
         .expect("the request reaches the router");
-    assert_eq!(buffered_response.status(), StatusCode::BAD_REQUEST);
-    let body = to_bytes(buffered_response.into_body(), usize::MAX)
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("the response body is readable");
     let text = String::from_utf8(body.to_vec()).expect("the response body is UTF-8");
     assert!(text.contains("Failed to buffer the request body"), "{text}");
-    assert!(!buffered_reached.load(Ordering::Acquire));
+    assert!(!reached.load(Ordering::Acquire));
 }
 
 #[tokio::test]
