@@ -1,0 +1,284 @@
+#![cfg(test)]
+
+use std::sync::{Arc, Mutex};
+
+use betterlite_db::database_failures::gate::{DbLookupStallTracker, SystemClock};
+use betterlite_db::database_replica::availability::Availability;
+use betterlite_db::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
+use betterlite_db::postgres_store::session::PostgresStore;
+use betterlite_postgres_fixture::connection::PostgresFixture;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use clap::Parser;
+use deadpool_postgres::{Manager, Pool};
+use secrecy::{ExposeSecret as _, SecretString};
+use tokio_postgres::NoTls;
+use tokio_util::task::TaskTracker;
+
+use super::tests::support::{FakeCache, FakeEnrollment, FakeReset};
+use crate::auth_user_lookup::cache::UserCache;
+use crate::auth_user_lookup::cadence::{Cadence, WallClock};
+use crate::auth_user_lookup::lookup::{UserLookup, UserLookupRequest};
+use crate::auth_user_lookup::ports::{BudgetResetCalculator, DefaultTeamEnrollment};
+use crate::auth_user_lookup::store::{DatabaseUserStore, UserStore};
+
+const SEED_CASE_EMAIL: &str = "INSERT INTO \"LiteLLM_UserTable\" (user_id, user_email) VALUES ('case-user', 'MixedCase@Example.com'), ('other-user', 'other@example.com')";
+const SEED_BACKFILL: &str = "INSERT INTO \"LiteLLM_UserTable\" (user_id, user_email) VALUES ('filled-user', 'stored@example.com'), ('empty-user', ''), ('null-user', NULL)";
+const SEED_SSO: &str = "INSERT INTO \"LiteLLM_UserTable\" (user_id, user_email, sso_user_id) VALUES ('sso-user', 'sso@example.com', 'old-sso')";
+
+#[derive(Parser)]
+struct Environment {
+    #[arg(long, env = "POSTGRES_TEST_URL")]
+    url: Option<String>,
+}
+
+async fn database() -> (PostgresFixture, Arc<DatabaseUserStore>) {
+    let url = Environment::parse_from(["auth-user-lookup-postgres-tests"])
+        .url
+        .map(SecretString::from);
+    let statements = catalog_statements(&PACKAGED_CATALOGS).expect("the migration text");
+    let fixture = PostgresFixture::provision_with_statements(url.as_ref(), statements)
+        .resolve()
+        .await
+        .expect("the database fixture");
+    let pool = Pool::builder(Manager::new(
+        fixture
+            .options
+            .url
+            .expose_secret()
+            .parse()
+            .expect("the database url"),
+        NoTls,
+    ))
+    .max_size(4)
+    .build()
+    .expect("the database pool");
+    let store = PostgresStore { pool: Some(pool) };
+    let tracker = Arc::new(DbLookupStallTracker {
+        clock: SystemClock,
+        last_hit: Mutex::new(None),
+    });
+    let database = DatabaseUserStore {
+        reader: store.clone(),
+        writer: store,
+        availability: Arc::new(Availability::default()),
+        default_deadline_seconds: 5.0,
+        tracker,
+        tasks: TaskTracker::new(),
+    };
+    (fixture, Arc::new(database))
+}
+
+async fn close(fixture: PostgresFixture, store: Arc<DatabaseUserStore>) {
+    store.tasks.close();
+    store.tasks.wait().await;
+    if let Some(pool) = store.writer.pool.as_ref() {
+        pool.close();
+    }
+    fixture.close_async().await.expect("the fixture teardown");
+}
+
+fn lookup_for(store: &Arc<DatabaseUserStore>, cache: Arc<FakeCache>) -> UserLookup {
+    let cache_port: Arc<dyn UserCache> = cache;
+    let store_port: Arc<dyn UserStore> = Arc::clone(store);
+    let reset: Arc<dyn BudgetResetCalculator> = Arc::new(FakeReset::default());
+    let enrollment: Arc<dyn DefaultTeamEnrollment> = Arc::new(FakeEnrollment::default());
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the built-in patterns compile");
+    UserLookup {
+        cache: cache_port,
+        store: Some(store_port),
+        cadence: Arc::new(Cadence::new(100, Arc::new(WallClock))),
+        db_cache_expiry: 5,
+        budget_reset: reset,
+        enrollment,
+        tasks: TaskTracker::new(),
+        defaults: None,
+        redactor: Arc::new(redactor),
+    }
+}
+
+async fn seed(store: &PostgresStore, sql: &str) {
+    let client = store.session().await.expect("the database connection");
+    client.batch_execute(sql).await.expect("the seeded rows");
+}
+
+async fn stored_email(store: &PostgresStore, user_id: &str) -> Option<String> {
+    let client = store.session().await.expect("the database connection");
+    let row = client
+        .query_one(
+            "SELECT user_email FROM \"LiteLLM_UserTable\" WHERE user_id = $1",
+            &[&user_id],
+        )
+        .await
+        .expect("the stored user");
+    row.try_get(0).expect("the user email column")
+}
+
+async fn stored_sso(store: &PostgresStore, user_id: &str) -> Option<String> {
+    let client = store.session().await.expect("the database connection");
+    let row = client
+        .query_one(
+            "SELECT sso_user_id FROM \"LiteLLM_UserTable\" WHERE user_id = $1",
+            &[&user_id],
+        )
+        .await
+        .expect("the stored user");
+    row.try_get(0).expect("the sso id column")
+}
+
+async fn user_count(store: &PostgresStore, user_id: &str) -> i64 {
+    let client = store.session().await.expect("the database connection");
+    let row = client
+        .query_one(
+            "SELECT count(*) FROM \"LiteLLM_UserTable\" WHERE user_id = $1",
+            &[&user_id],
+        )
+        .await
+        .expect("the user count");
+    row.try_get(0).expect("the count column")
+}
+
+#[tokio::test]
+async fn email_case_insensitive_first() {
+    let (fixture, store) = database().await;
+    seed(&store.reader, SEED_CASE_EMAIL).await;
+    let lookup = lookup_for(&store, Arc::new(FakeCache::new(60.0)));
+    let user = lookup
+        .get_user_object(UserLookupRequest {
+            user_id: Some("requested-case"),
+            user_email: Some("mixedcase@example.com"),
+            ..UserLookupRequest::default()
+        })
+        .await
+        .expect("the fuzzy email lookup")
+        .expect("the matched user");
+    assert_eq!(user.user_id, "case-user");
+    assert_eq!(user.user_email.as_deref(), Some("MixedCase@Example.com"));
+    close(fixture, store).await;
+}
+
+#[tokio::test]
+async fn backfill_only_null_email() {
+    let (fixture, store) = database().await;
+    seed(&store.reader, SEED_BACKFILL).await;
+    let lookup = lookup_for(&store, Arc::new(FakeCache::new(60.0)));
+
+    let filled = lookup
+        .get_user_object(UserLookupRequest {
+            user_id: Some("filled-user"),
+            user_email: Some("new@example.com"),
+            ..UserLookupRequest::default()
+        })
+        .await
+        .expect("the stored user")
+        .expect("the stored user is present");
+    assert_eq!(filled.user_email.as_deref(), Some("stored@example.com"));
+    assert_eq!(
+        stored_email(&store.reader, "filled-user").await.as_deref(),
+        Some("stored@example.com")
+    );
+
+    let empty = lookup
+        .get_user_object(UserLookupRequest {
+            user_id: Some("empty-user"),
+            user_email: Some("new@example.com"),
+            ..UserLookupRequest::default()
+        })
+        .await
+        .expect("the stored user")
+        .expect("the stored user is present");
+    assert_eq!(empty.user_email.as_deref(), Some(""));
+    assert_eq!(
+        stored_email(&store.reader, "empty-user").await.as_deref(),
+        Some("")
+    );
+
+    let null = lookup
+        .get_user_object(UserLookupRequest {
+            user_id: Some("null-user"),
+            user_email: Some("new@example.com"),
+            ..UserLookupRequest::default()
+        })
+        .await
+        .expect("the stored user")
+        .expect("the stored user is present");
+    assert_eq!(null.user_email.as_deref(), Some("new@example.com"));
+    assert_eq!(
+        stored_email(&store.reader, "null-user").await.as_deref(),
+        Some("new@example.com")
+    );
+    close(fixture, store).await;
+}
+
+#[tokio::test]
+async fn sso_update_overwrite_reaches_rows() {
+    let (fixture, store) = database().await;
+    seed(&store.reader, SEED_SSO).await;
+    let lookup = lookup_for(&store, Arc::new(FakeCache::new(60.0)));
+    let user = lookup
+        .get_user_object(UserLookupRequest {
+            user_id: Some("wanted"),
+            sso_user_id: Some("new-sso"),
+            user_email: Some("sso@example.com"),
+            ..UserLookupRequest::default()
+        })
+        .await
+        .expect("the fuzzy lookup")
+        .expect("the matched user");
+    assert_eq!(user.user_id, "sso-user");
+    lookup.tasks.close();
+    lookup.tasks.wait().await;
+    assert_eq!(
+        stored_sso(&store.reader, "sso-user").await.as_deref(),
+        Some("new-sso")
+    );
+    close(fixture, store).await;
+}
+
+#[tokio::test]
+async fn created_row_and_memberships_persist() {
+    let (fixture, store) = database().await;
+    let lookup = lookup_for(&store, Arc::new(FakeCache::new(60.0)));
+    let user = lookup
+        .get_user_object(UserLookupRequest {
+            user_id: Some("fresh-user"),
+            user_email: Some("fresh@example.com"),
+            user_id_upsert: true,
+            ..UserLookupRequest::default()
+        })
+        .await
+        .expect("the upsert")
+        .expect("the created user");
+    assert_eq!(user.user_id, "fresh-user");
+    assert_eq!(user.user_email.as_deref(), Some("fresh@example.com"));
+    assert_eq!(user.organization_memberships, Some(Vec::new()));
+    assert_eq!(user_count(&store.reader, "fresh-user").await, 1);
+    assert_eq!(
+        stored_email(&store.reader, "fresh-user").await.as_deref(),
+        Some("fresh@example.com")
+    );
+    close(fixture, store).await;
+}
+
+#[tokio::test]
+async fn partial_failure_keeps_created_row() {
+    let (fixture, store) = database().await;
+    let cache = Arc::new(FakeCache::new(60.0));
+    cache
+        .write_fails
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let lookup = lookup_for(&store, cache);
+    let result = lookup
+        .get_user_object(UserLookupRequest {
+            user_id: Some("partial-user"),
+            user_email: Some("partial@example.com"),
+            user_id_upsert: true,
+            ..UserLookupRequest::default()
+        })
+        .await;
+    match result {
+        Err(_) => {}
+        Ok(value) => panic!("the cache write failure fails the lookup: {value:?}"),
+    }
+    assert_eq!(user_count(&store.reader, "partial-user").await, 1);
+    close(fixture, store).await;
+}
