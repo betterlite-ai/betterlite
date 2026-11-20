@@ -214,7 +214,7 @@ fn logged_json(value: &PromptJson) -> LoggedJson {
     }
 }
 
-// One send: a transport failure or a status of 400 or more goes through _handle_error, and only a success is transformed
+// One send: a transport failure or any status outside 2xx goes through _handle_error, and only a success is transformed
 pub async fn send<C, S>(
     prepared: PreparedCompact<'_, C, S>,
     log: &mut LogContext<'_, '_>,
@@ -258,7 +258,7 @@ where
         })
 }
 
-// The send catch: a transport failure and a status of 400 or more go through _handle_error
+// The send catch: a transport failure and any status outside 2xx go through _handle_error, since httpx's raise_for_status raises for a 3xx too
 fn checked_reply<C>(
     reply: Result<UpstreamResponse, TransportError>,
     sent: &Sent,
@@ -273,7 +273,7 @@ where
             config,
         ))
     })?;
-    if answer.status >= 400 {
+    if !(200..=299).contains(&answer.status) {
         return Err(CompactError::Provider(provider_error(
             &facts::status_facts(&answer),
             config,

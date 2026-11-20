@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::fmt::Debug;
 use std::future::{Future, ready};
 use std::mem::take;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_config::proxy::ProxyPolicy;
@@ -12,6 +12,8 @@ use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::outbound::RequestBody;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
+use betterlite_http_fixture::reply::reply;
+use betterlite_http_fixture::server::{Serving, serve};
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
 };
@@ -56,6 +58,11 @@ use crate::api::responses_compact_http::service::{
 };
 use crate::api::vector_store_http_write::error::{BaseLlmException, ClientError, HeaderMap};
 
+pub(crate) const COMPACT_OK: &str = r#"{"id":"resp_compact","created_at":100,"object":"response","status":"completed","model":"gpt-4o","output":[]}"#;
+pub(crate) const ITEM_INPUT: &str =
+    r#"[{"type":"message","role":"user","content":[{"type":"input_text","text":"hello"}]}]"#;
+pub(crate) const NORMALIZED_BODY: &str = r#"{"instructions":"short","model":"gpt-4o","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"hello"}]}],"normalized":true}"#;
+
 #[derive(Clone, Default)]
 pub(crate) struct Events(Arc<Mutex<Vec<String>>>);
 
@@ -90,6 +97,8 @@ pub(crate) struct Fixture {
     sink: Sink,
     pub(crate) state: LoggingState,
     now: DateTime<FixedOffset>,
+    // Each run's pre-call details, since the response transform overwrites the state's additional_args
+    calls: Arc<Mutex<Vec<LoggedJson>>>,
 }
 
 impl Fixture {
@@ -117,6 +126,7 @@ impl Fixture {
             sink: Sink,
             state,
             now,
+            calls: Arc::default(),
         }
     }
 
@@ -131,7 +141,12 @@ impl Fixture {
         C: CompactConfig,
         S: ClientSource,
     {
-        let logger = |_details: &LoggedJson| -> Result<(), PrePostError> {
+        let calls = Arc::clone(&self.calls);
+        let logger = |details: &LoggedJson| -> Result<(), PrePostError> {
+            calls
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(details.clone());
             events.push("log");
             Ok(())
         };
@@ -161,16 +176,29 @@ impl Fixture {
         .await
     }
 
-    pub(crate) fn logged(&self, name: &str) -> Option<&LoggedJson> {
-        let LoggedJson::Object(details) = self.state.model_call_details.get("additional_args")?
-        else {
+    pub(crate) fn logged(&self, name: &str) -> Option<LoggedJson> {
+        let LoggedJson::Object(details) = self.first_call()? else {
             return None;
         };
-        details.get(name)
+        let LoggedJson::Object(args) = details.get("additional_args")? else {
+            return None;
+        };
+        args.get(name).cloned()
     }
 
-    pub(crate) fn input(&self) -> Option<&LoggedJson> {
-        self.state.model_call_details.get("input")
+    pub(crate) fn input(&self) -> Option<LoggedJson> {
+        let LoggedJson::Object(details) = self.first_call()? else {
+            return None;
+        };
+        details.get("input").cloned()
+    }
+
+    fn first_call(&self) -> Option<LoggedJson> {
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .first()
+            .cloned()
     }
 }
 
@@ -228,10 +256,12 @@ impl Reply {
     }
 }
 
+type RecordedRequests = Arc<Mutex<Vec<Arc<CompactRequest>>>>;
+
 #[derive(Clone, Default)]
 struct WireState {
     failure: Arc<Mutex<Option<TransportError>>>,
-    requests: Arc<Mutex<Vec<CompactRequest>>>,
+    requests: RecordedRequests,
 }
 
 #[derive(Clone)]
@@ -260,11 +290,12 @@ impl Wire {
         wire
     }
 
-    pub(crate) fn requests(&self) -> MutexGuard<'_, Vec<CompactRequest>> {
+    pub(crate) fn requests(&self) -> Vec<Arc<CompactRequest>> {
         self.state
             .requests
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 }
 
@@ -288,7 +319,7 @@ impl CompactTransport for Wire {
             .requests
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(request);
+            .push(Arc::new(request));
         if let Some(error) = failure {
             return ready(Err(error));
         }
@@ -320,7 +351,6 @@ pub(crate) struct SignRecord {
     pub(crate) api_key: Option<String>,
     pub(crate) optional_params: CompactParams,
     pub(crate) data: Object,
-    pub(crate) headers: Headers,
 }
 
 struct RecordingState {
@@ -543,7 +573,6 @@ impl CompactConfig for RecordingConfig {
                         api_key: request.api_key.map(|key| key.expose_secret().to_owned()),
                         optional_params: request.optional_params.clone(),
                         data: request.request_data.clone(),
-                        headers: request.headers.clone(),
                     });
                 let mut headers = request.headers.clone();
                 headers.insert(String::from("X-Signed"), String::from("yes"));
@@ -612,9 +641,11 @@ impl WorkloadIdentity for NoIdentity {
     }
 }
 
+type Calls = Vec<(Option<bool>, Option<SharedSession>)>;
+
 pub(crate) struct Source {
     wire: Wire,
-    calls: Arc<Mutex<Vec<(Option<bool>, Option<SharedSession>)>>>,
+    calls: Arc<Mutex<Calls>>,
 }
 
 impl Source {
@@ -625,7 +656,7 @@ impl Source {
         }
     }
 
-    pub(crate) fn calls(&self) -> Vec<(Option<bool>, Option<SharedSession>)> {
+    pub(crate) fn calls(&self) -> Calls {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -724,6 +755,44 @@ pub(crate) fn text_input(text: &str) -> ResponsesInput {
 
 pub(crate) fn items_input(json: &str) -> ResponsesInput {
     serde_json::from_str(json).expect("the input fixture is valid")
+}
+
+pub(crate) fn json(text: &str) -> PromptJson {
+    serde_json::from_str(text).expect("the expected JSON parses")
+}
+
+pub(crate) fn logged(text: &str) -> LoggedJson {
+    serde_json::from_str(text).expect("the expected log parses")
+}
+
+pub(crate) fn compact_deps<'deps, C, S>(
+    config: &'deps C,
+    source: &'deps S,
+) -> CompactDeps<'deps, C, S>
+where
+    C: CompactConfig,
+    S: ClientSource,
+{
+    CompactDeps {
+        config,
+        source,
+        supplied: None,
+    }
+}
+
+pub(crate) fn masked_headers(pairs: &[(&str, &str)]) -> HeaderMap {
+    pairs
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), LoggedJson::Text((*value).to_owned())))
+        .collect()
+}
+
+pub(crate) fn slow_server() -> Serving {
+    serve(
+        reply("200 OK", &[("content-type", "application/json")], "{}"),
+        Duration::from_millis(500),
+    )
+    .expect("the fixture serves")
 }
 
 pub(crate) struct TestCall<'call> {
