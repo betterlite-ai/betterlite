@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::TlsPolicy;
@@ -32,17 +32,13 @@ use betterlite_provider::api::file_contracts::config::{
 };
 use betterlite_provider::manus_files::ManusFilesConfig;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use betterlite_secret_managers::secret_lookup::SecretLookup;
-use betterlite_secret_managers::secret_lookup::ports::{
-    AzureOidcError, AzureOidcTokens, OidcClock, OidcHttp, OidcHttpError, OidcRequest, OidcResponse,
-    OidcTokenCache,
-};
 use chrono::{DateTime, FixedOffset};
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::ExposeSecret as _;
 use serde_json::Value;
 use thiserror::Error;
 
 use super::super::error::SdkHttpError;
+use super::secrets::secrets;
 
 // The pooled client the selected deployment would get; the case env only carries the key and the proxy settings
 pub(super) struct Source {
@@ -185,44 +181,6 @@ fn query_params(params: FileParams) -> Result<QueryParams, ContentError> {
         query.insert(name, text);
     }
     Ok(query)
-}
-
-struct NoOidc;
-
-impl OidcHttp for NoOidc {
-    fn get(&self, _request: OidcRequest) -> Result<OidcResponse, OidcHttpError> {
-        Err(OidcHttpError::Request {
-            message: String::from("the oracle makes no OIDC network call"),
-        })
-    }
-}
-
-impl AzureOidcTokens for NoOidc {
-    fn token(&self, _scope: &str) -> Result<Option<SecretString>, AzureOidcError> {
-        Err(AzureOidcError::Provider {
-            message: String::from("the oracle has no Azure token provider"),
-        })
-    }
-}
-
-impl OidcClock for NoOidc {
-    fn now(&self) -> Instant {
-        Instant::now()
-    }
-
-    fn unix_seconds(&self) -> i64 {
-        0
-    }
-}
-
-fn secrets() -> SecretLookup {
-    SecretLookup {
-        manager: None,
-        oidc_http: Arc::new(NoOidc),
-        azure_tokens: Arc::new(NoOidc),
-        clock: Arc::new(NoOidc),
-        oidc_cache: OidcTokenCache::default(),
-    }
 }
 
 pub(super) struct Sink;

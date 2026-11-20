@@ -12,6 +12,7 @@ use super::error::SdkHttpError;
 use super::result::kinds::SdkResult;
 
 mod native;
+mod secrets;
 mod support;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
