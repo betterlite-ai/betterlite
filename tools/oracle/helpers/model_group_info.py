@@ -1,4 +1,4 @@
-from typing import Final, Literal, Protocol, TypedDict
+from typing import Final, Literal, TypedDict
 
 import litellm
 from litellm.exceptions import BadRequestError
@@ -22,10 +22,6 @@ class Input(TypedDict):
     lookup_error: bool
     provider_error: Literal["none", "bad_request", "other"]
     missing_ids: list[int]
-
-
-class RouterStorage(Protocol):
-    model_list: list[dict[str, JsonValue]]
 
 
 class FixedDeploymentInfo:
@@ -77,14 +73,14 @@ class FailingProvider:
 
 def run(input_value: Input) -> JsonValue:
     litellm.suppress_debug_info = True
-    router = Router(model_list=input_value["model_list"])
-    router.model_group_alias = input_value["model_group_alias"]
-    litellm.model_cost = dict(input_value["model_cost"])
-    storage: RouterStorage = router
+    model_list: list[dict[str, JsonValue]] = input_value["model_list"]
     for index in input_value["missing_ids"]:
-        model_info = storage.model_list[index].get("model_info")
+        model_info = model_list[index].get("model_info")
         if isinstance(model_info, dict):  # ast-grep-ignore: no-isinstance
             del model_info["id"]
+    router = Router(model_list=model_list)
+    router.model_group_alias = input_value["model_group_alias"]
+    litellm.model_cost = dict(input_value["model_cost"])
     deployment_info = FixedDeploymentInfo(
         input_value["deployment_info"], failing=input_value["lookup_error"]
     )
