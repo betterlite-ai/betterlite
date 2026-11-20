@@ -75,6 +75,9 @@ fn response_has_exception_reads_the_output_kept_in_extra() {
     )));
     assert!(!response_has_exception(&response(r#"{"Output":"text"}"#)));
     assert!(!response_has_exception(&response(r#"{"Output":null}"#)));
+    assert!(!response_has_exception(&response(
+        r#"{"Output":{"__type":["Exception"]}}"#
+    )));
     assert!(!response_has_exception(&response(r#"{"action":"NONE"}"#)));
 }
 
