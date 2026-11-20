@@ -58,11 +58,11 @@ pub(crate) async fn stream(
     headers: HeaderMap,
     upstream_time: Duration,
 ) -> Result<ChatStreamAnswer, ChatFailure> {
-    let (frames, stream_headers) =
+    let (frames, recovered) =
         recovered_frames(&calls.executor, &calls.counter, sent, headers).await?;
     Ok(ChatStreamAnswer {
         body: stream::iter(frames.into_iter().map(Ok)).boxed(),
-        upstream_headers: stream_headers,
+        upstream_headers: recovered,
         upstream_time,
     })
 }
