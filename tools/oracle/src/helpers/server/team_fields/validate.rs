@@ -166,9 +166,9 @@ pub(super) fn validate_answer(call: &ValidateCall<'_>) -> HelperResult {
         team_id: call.team_id,
         team_alias: call.team_alias,
         requester: TeamMetadataRequester {
-            user_id: call.requester.user_id.clone(),
-            user_email: call.requester.user_email.clone(),
-            user_role: call.requester.user_role.clone(),
+            user_id: call.requester.id.clone(),
+            user_email: call.requester.email.clone(),
+            user_role: call.requester.role.clone(),
         },
     };
     let runtime = Builder::new_current_thread()
@@ -179,10 +179,10 @@ pub(super) fn validate_answer(call: &ValidateCall<'_>) -> HelperResult {
         request, &registry, &settings,
     ));
     let payload = fake.as_ref().and_then(|recorder| recorder.recorded());
-    Ok(validation_answer(outcome, payload))
+    Ok(validation_answer(outcome, payload.as_ref()))
 }
 
-fn validation_answer(outcome: Result<(), TeamMetadataError>, payload: Option<Value>) -> Value {
+fn validation_answer(outcome: Result<(), TeamMetadataError>, payload: Option<&Value>) -> Value {
     match outcome {
         Ok(()) => json!({"status": null, "error": null, "payload": payload}),
         Err(error) => json!({

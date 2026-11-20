@@ -21,12 +21,29 @@ use self::validate::{Behaviour, FakeValidator, validate_answer};
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RequesterInput {
+    #[serde(rename = "user_id", default)]
+    id: Option<String>,
+    #[serde(rename = "user_email", default)]
+    email: Option<String>,
+    #[serde(rename = "user_role", default)]
+    role: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ValidateInput {
+    general_settings: BTreeMap<String, JsonValue>,
+    validator: String,
+    operation: String,
     #[serde(default)]
-    user_id: Option<String>,
+    metadata: Option<JsonValue>,
     #[serde(default)]
-    user_email: Option<String>,
+    existing_metadata: Option<JsonValue>,
     #[serde(default)]
-    user_role: Option<String>,
+    team_id: Option<String>,
+    #[serde(default)]
+    team_alias: Option<String>,
+    requester: RequesterInput,
 }
 
 #[derive(Deserialize)]
@@ -38,20 +55,7 @@ pub(crate) enum Input {
     Registry {
         steps: Vec<String>,
     },
-    Validate {
-        general_settings: BTreeMap<String, JsonValue>,
-        validator: String,
-        operation: String,
-        #[serde(default)]
-        metadata: Option<JsonValue>,
-        #[serde(default)]
-        existing_metadata: Option<JsonValue>,
-        #[serde(default)]
-        team_id: Option<String>,
-        #[serde(default)]
-        team_alias: Option<String>,
-        requester: RequesterInput,
-    },
+    Validate(Box<ValidateInput>),
     Sanitize {
         value: String,
     },
@@ -82,24 +86,15 @@ impl Helper for Op {
         match input {
             Input::Schema { schema } => Ok(schema_answer(schema)),
             Input::Registry { steps } => registry_answer(steps),
-            Input::Validate {
-                general_settings,
-                validator,
-                operation,
-                metadata,
-                existing_metadata,
-                team_id,
-                team_alias,
-                requester,
-            } => validate_answer(&ValidateCall {
-                general_settings,
-                validator,
-                operation,
-                metadata: metadata.as_ref(),
-                existing_metadata: existing_metadata.as_ref(),
-                team_id: team_id.as_deref(),
-                team_alias: team_alias.as_deref(),
-                requester,
+            Input::Validate(call) => validate_answer(&ValidateCall {
+                general_settings: &call.general_settings,
+                validator: &call.validator,
+                operation: &call.operation,
+                metadata: call.metadata.as_ref(),
+                existing_metadata: call.existing_metadata.as_ref(),
+                team_id: call.team_id.as_deref(),
+                team_alias: call.team_alias.as_deref(),
+                requester: &call.requester,
             }),
             Input::Sanitize { value } => Ok(json!({
                 "text": sanitize_for_log(LogValue::Display(value)),
@@ -124,15 +119,17 @@ fn invalid(message: String) -> Box<HelperError> {
 }
 
 fn schema_answer(schema: &JsonValue) -> Value {
-    match parse_team_metadata_schema(Some(schema)) {
-        Ok(fields) => json!({
-            "fields": fields
-                .iter()
-                .map(|field| json!({"key": field.key, "label": field.label}))
-                .collect::<Vec<_>>(),
-        }),
-        Err(_) => json!({"failed": true}),
-    }
+    parse_team_metadata_schema(Some(schema)).map_or_else(
+        |_error| json!({"failed": true}),
+        |fields| {
+            json!({
+                "fields": fields
+                    .iter()
+                    .map(|field| json!({"key": field.key, "label": field.label}))
+                    .collect::<Vec<_>>(),
+            })
+        },
+    )
 }
 
 fn registry_answer(steps: &[String]) -> HelperResult {
