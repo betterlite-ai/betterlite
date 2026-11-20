@@ -35,14 +35,7 @@ impl FoundryPassthroughLogging for TraitFoundryLogging<'_> {
 
 // RerankResponse.model_validate: id, results and meta are optional, but a sent result needs its index and score
 fn rerank_response(body: &Object) -> Option<Object> {
-    let results_fit = body.get("results").is_none_or(|value| {
-        value.is_null()
-            || value.as_array().is_some_and(|results| {
-                results
-                    .iter()
-                    .all(|result| result.as_object().is_some_and(rerank_result_fits))
-            })
-    });
+    let results_fit = optional_object_list(body, "results", rerank_result_fits);
     let meta_fits = body
         .get("meta")
         .is_none_or(|value| value.is_null() || value.is_object());
@@ -64,20 +57,28 @@ fn rerank_result_fits(fields: &Object) -> bool {
     index_fits && score_fits && document_fits
 }
 
+// a sent list is null or a list of objects that each pass their own field check
+fn optional_object_list(body: &Object, name: &str, entry_fits: fn(&Object) -> bool) -> bool {
+    body.get(name).is_none_or(|value| {
+        value.is_null()
+            || value.as_array().is_some_and(|entries| {
+                entries
+                    .iter()
+                    .all(|entry| entry.as_object().is_some_and(entry_fits))
+            })
+    })
+}
+
 // ImagesResponse.model_validate: created is required, and data, when sent, is a list of image objects
 fn image_response(body: &Object) -> Option<Object> {
     let created_is_integer = body
         .get("created")
         .is_some_and(|value| value.is_i64() || value.is_u64());
-    let data_fits = body.get("data").is_none_or(|value| {
-        value.is_null()
-            || value.as_array().is_some_and(|entries| {
-                entries
-                    .iter()
-                    .all(|entry| entry.as_object().is_some_and(image_entry_fits))
-            })
-    });
-    (created_is_integer && data_fits).then(|| body.clone())
+    let images_fit = optional_object_list(body, "data", image_entry_fits);
+    if !(created_is_integer && images_fit) {
+        return None;
+    }
+    Some(body.clone())
 }
 
 pub const FOUNDRY_RELAY_SHAPES: [RelayShape<'static, Object>; 2] = [
