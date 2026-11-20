@@ -20,8 +20,8 @@ pub async fn attach_object_permission_to_dict(
     if object_permission_id.is_empty() {
         return Ok(());
     }
-    let object_permission_id = object_permission_id.clone();
-    if let Some(row) = find_object_permission(client, &object_permission_id).await? {
+    let found = find_object_permission(client, object_permission_id).await?;
+    if let Some(row) = found {
         // The row dump replaces an attached object wholesale, the same value model_dump and the v1 dict fallback return.
         data_dict.insert("object_permission".to_owned(), row);
     }

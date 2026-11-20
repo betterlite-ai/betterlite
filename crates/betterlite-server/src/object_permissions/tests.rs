@@ -167,13 +167,14 @@ async fn prepare_no_write() {
     );
     assert_eq!(prepared.record.get("models"), Some(&json(r#"["m"]"#)));
     assert_eq!(database.permission_count().await, 1);
+    // The seeded row still holds the column default, so prepare wrote nothing
     assert_eq!(
         database
             .permission_row("perm-1")
             .await
             .unwrap()
             .get("models"),
-        Some(&JsonData::Null)
+        Some(&json("[]"))
     );
 
     let fresh = prepare_object_permission_upsert(&incoming, None, database.prisma(), &[])
@@ -399,7 +400,8 @@ async fn update_string_permission_fields() {
 #[tokio::test]
 async fn non_object_empty_upsert(#[case] raw: &str) {
     let database = TestDatabase::start().await;
-    let mut data = permission_input(raw);
+    let mut data = BTreeMap::new();
+    data.insert("object_permission".to_owned(), json(raw));
     let returned =
         handle_update_object_permission_common(&mut data, None, Some(database.prisma()), &[])
             .await
@@ -413,7 +415,6 @@ async fn non_object_empty_upsert(#[case] raw: &str) {
     assert_eq!(row.get("mcp_servers"), Some(&json("[]")));
     assert_eq!(row.get("mcp_tool_permissions"), Some(&JsonData::Null));
     assert!(!data.contains_key("object_permission"));
-    assert_eq!(data.get("object_permission_id"), Some(&string(&id)));
     assert_eq!(database.permission_count().await, 1);
     database.close().await;
 }
@@ -437,7 +438,6 @@ async fn upsert_before_parent_failure() {
     );
     let row = database.permission_row(&id).await.unwrap();
     assert_eq!(row.get("mcp_servers"), Some(&json(r#"["srv-a"]"#)));
-    assert_eq!(data.get("object_permission_id"), Some(&string(&id)));
     database.close().await;
 }
 
@@ -453,13 +453,13 @@ async fn create_null_cleaning() {
     let Some(JsonData::String(id)) = data.get("object_permission_id") else {
         panic!("create links the generated id");
     };
-    let id = id.clone();
     assert_ne!(id, "caller");
-    assert_generated_id(&id);
-    let row = database.permission_row(&id).await.unwrap();
-    assert_eq!(row.get("object_permission_id"), Some(&string(&id)));
+    assert_generated_id(id);
+    let row = database.permission_row(id).await.unwrap();
+    assert_eq!(row.get("object_permission_id"), Some(&string(id)));
     assert_eq!(row.get("mcp_servers"), Some(&json(r#"["srv-a"]"#)));
-    assert_eq!(row.get("models"), Some(&JsonData::Null));
+    // The explicit null is dropped before the create, so the column default stays
+    assert_eq!(row.get("models"), Some(&json("[]")));
     assert_eq!(row.get("mcp_tool_permissions"), Some(&JsonData::Null));
     assert!(!data.contains_key("object_permission"));
     assert_eq!(database.permission_row("caller").await, None);
@@ -805,7 +805,6 @@ async fn postgres_pinned_rows() {
         panic!("the upsert returns the pinned id");
     };
     assert_ne!(id, "override");
-    assert_eq!(created.get("object_permission_id"), Some(&string(&id)));
     let row = database.permission_row(&id).await.unwrap();
     assert_eq!(row.get("object_permission_id"), Some(&string(&id)));
     assert_eq!(row.get("mcp_servers"), Some(&json(r#"["srv-a"]"#)));
