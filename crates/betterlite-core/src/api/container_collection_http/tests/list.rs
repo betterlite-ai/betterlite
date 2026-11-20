@@ -120,6 +120,26 @@ fn list_renders_every_extra_query_value_as_httpx_would() {
 }
 
 #[test]
+fn list_sends_an_array_extra_query_as_one_json_text_value() {
+    let mut extra = Map::new();
+    extra.insert(String::from("tag"), json!(["a", "b"]));
+    let fixture = Fixture::new(200, LIST_BODY);
+    let query = ContainerListQuery {
+        after: None,
+        limit: None,
+        order: None,
+        extra_query: Some(&extra),
+    };
+    let call = fixture.list_call(query, None);
+    container_list_handler(&call, &fixture.source, None, &fixture.hook).unwrap();
+    assert_eq!(
+        rendered(&fixture.sent()[0]),
+        BTreeMap::from([(String::from("tag"), String::from("[\"a\",\"b\"]"))]),
+        "httpx repeats the key once per element; the rendered map holds the array's JSON text instead"
+    );
+}
+
+#[test]
 fn list_logs_the_params_before_the_get() {
     let fixture = Fixture::new(202, LIST_BODY);
     let call = fixture.list_call(all_page(), None);

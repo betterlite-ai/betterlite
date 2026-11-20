@@ -170,13 +170,17 @@ pub(super) struct FakeClient {
 
 impl FakeClient {
     pub(super) fn answering(events: &Events, status: u16, body: &str) -> Self {
+        Self::answering_bytes(events, status, body.as_bytes().to_vec())
+    }
+
+    pub(super) fn answering_bytes(events: &Events, status: u16, body: Vec<u8>) -> Self {
         Self {
             requests: Arc::default(),
             events: Arc::clone(events),
             reply: ContainerHttpReply {
                 status,
                 headers: BTreeMap::from([(REQUEST_HEADERS.to_owned(), REQUEST_ID.to_owned())]),
-                body: body.as_bytes().to_vec(),
+                body,
             },
             failure: Arc::default(),
         }
@@ -351,8 +355,13 @@ pub(super) struct Fixture {
 
 impl Fixture {
     pub(super) fn new(status: u16, body: &str) -> Self {
+        Self::with_bytes(status, body.as_bytes().to_vec())
+    }
+
+    // A reply body that is not text, for the error text a body's bytes produce
+    pub(super) fn with_bytes(status: u16, body: Vec<u8>) -> Self {
         let events: Events = Arc::default();
-        let client = FakeClient::answering(&events, status, body);
+        let client = FakeClient::answering_bytes(&events, status, body);
         Self {
             config: StubConfig::with_base(BASE),
             params: Map::new(),

@@ -256,6 +256,20 @@ fn create_reports_the_whole_body_for_an_error_status() {
 }
 
 #[test]
+fn create_reports_the_size_of_a_non_utf8_error_body() {
+    let fixture = Fixture::with_bytes(400, vec![0xff, 0xfe]);
+    let call = fixture.create_call("box", None);
+    let failure =
+        container_create_handler(&call, &fixture.source, None, &fixture.hook).unwrap_err();
+    let provider = provider_error(&failure);
+    assert_eq!(provider.status_code, 400);
+    assert_eq!(
+        provider.message, "2 bytes that are not UTF-8",
+        "the body's bytes are reported by size where httpx would decode replacement characters"
+    );
+}
+
+#[test]
 fn create_lets_a_3xx_body_through_to_the_transform() {
     let fixture = Fixture::new(300, CREATE_BODY);
     let call = fixture.create_call("box", None);
