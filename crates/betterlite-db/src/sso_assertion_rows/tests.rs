@@ -1,7 +1,7 @@
 #![cfg(test)]
 
-use std::sync::{Mutex, PoisonError};
 use std::sync::atomic::Ordering;
+use std::sync::{Mutex, PoisonError};
 
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
