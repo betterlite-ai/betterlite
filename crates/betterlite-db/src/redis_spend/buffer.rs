@@ -184,7 +184,7 @@ fn daily_slot(reply: BufferReply) -> Result<Option<DailySpendUpdate>, RedisSpend
     match reply {
         BufferReply::Missing => Ok(None),
         BufferReply::Scalar(_) => Err(RedisSpendError::ScalarReply),
-        BufferReply::List(items) => aggregate_daily_items(items)
+        BufferReply::List(items) => aggregate_daily_items(&items)
             .map(Some)
             .map_err(RedisSpendError::from),
     }
@@ -194,23 +194,23 @@ fn window_slot(reply: BufferReply) -> Result<Option<Vec<WindowSpendTransaction>>
     match reply {
         BufferReply::Missing => Ok(None),
         BufferReply::Scalar(_) => Err(RedisSpendError::ScalarReply),
-        BufferReply::List(items) => aggregate_window_items(items),
+        BufferReply::List(items) => aggregate_window_items(&items),
     }
 }
 
-fn aggregate_daily_items(items: Vec<Vec<u8>>) -> Result<DailySpendUpdate, SpendBufferError> {
+fn aggregate_daily_items(items: &[Vec<u8>]) -> Result<DailySpendUpdate, SpendBufferError> {
     let mut records = Vec::with_capacity(items.len());
-    for item in &items {
+    for item in items {
         records.push(decode_daily_batch(item)?);
     }
     aggregate_daily_rows(&records).map_err(SpendBufferError::from)
 }
 
 fn aggregate_window_items(
-    items: Vec<Vec<u8>>,
+    items: &[Vec<u8>],
 ) -> Result<Option<Vec<WindowSpendTransaction>>, RedisSpendError> {
     let mut batches = Vec::with_capacity(items.len());
-    for item in &items {
+    for item in items {
         batches.push(decode_window_batch(item)?);
     }
     aggregate_window_spend(&batches)

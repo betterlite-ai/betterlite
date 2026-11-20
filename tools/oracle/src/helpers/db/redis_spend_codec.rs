@@ -182,7 +182,8 @@ fn script_replies(lists: &ScriptedLists, input: &Input) {
 async fn scenario(input: &Input) -> Result<BTreeMap<String, Value>, Box<HelperError>> {
     let lists = Arc::new(ScriptedLists::default());
     script_replies(&lists, input);
-    let port: Arc<dyn SpendBufferLists> = Arc::clone(&lists);
+    let owned: Arc<ScriptedLists> = Arc::clone(&lists);
+    let port: Arc<dyn SpendBufferLists> = owned;
     let buffer = RedisUpdateBuffer {
         lists: if input.attached { Some(port) } else { None },
         enabled: input.enabled,

@@ -69,10 +69,10 @@ pub fn decode_spend_buffer(
         }
         SpendBufferKind::Daily => decode_daily_batch(bytes).map(SpendBufferRecord::Daily),
         SpendBufferKind::Window => decode_window_batch(bytes).map(SpendBufferRecord::Window),
-        SpendBufferKind::Log => match decode_log_record(bytes)? {
-            Some(row) => Ok(SpendBufferRecord::Log(row)),
-            None => Ok(SpendBufferRecord::IgnoredLogRow),
-        },
+        SpendBufferKind::Log => decode_log_record(bytes)?
+            .map_or(Ok(SpendBufferRecord::IgnoredLogRow), |row| {
+                Ok(SpendBufferRecord::Log(row))
+            }),
     }
 }
 
@@ -135,50 +135,23 @@ pub fn combine_entity_transactions(
 ) -> Result<SpendUpdateTransactions, SpendBufferError> {
     let mut combined = SpendUpdateTransactions::default();
     for batch in batches {
-        accumulate(
-            &mut combined.user_list_transactions,
-            &batch.user_list_transactions,
-        )?;
-        accumulate(
-            &mut combined.end_user_list_transactions,
-            &batch.end_user_list_transactions,
-        )?;
-        accumulate(
-            &mut combined.key_list_transactions,
-            &batch.key_list_transactions,
-        )?;
-        accumulate(
-            &mut combined.team_list_transactions,
-            &batch.team_list_transactions,
-        )?;
-        accumulate(
-            &mut combined.team_member_list_transactions,
-            &batch.team_member_list_transactions,
-        )?;
-        accumulate(
-            &mut combined.org_list_transactions,
-            &batch.org_list_transactions,
-        )?;
-        accumulate(
-            &mut combined.org_member_list_transactions,
-            &batch.org_member_list_transactions,
-        )?;
-        accumulate(
-            &mut combined.project_list_transactions,
-            &batch.project_list_transactions,
-        )?;
-        accumulate(
-            &mut combined.tag_list_transactions,
-            &batch.tag_list_transactions,
-        )?;
-        accumulate(
-            &mut combined.agent_list_transactions,
-            &batch.agent_list_transactions,
-        )?;
-        accumulate(
-            &mut combined.model_access_group_spend,
-            &batch.model_access_group_spend,
-        )?;
+        #[rustfmt::skip]
+        let pairs = [
+            (&mut combined.user_list_transactions, &batch.user_list_transactions),
+            (&mut combined.end_user_list_transactions, &batch.end_user_list_transactions),
+            (&mut combined.key_list_transactions, &batch.key_list_transactions),
+            (&mut combined.team_list_transactions, &batch.team_list_transactions),
+            (&mut combined.team_member_list_transactions, &batch.team_member_list_transactions),
+            (&mut combined.org_list_transactions, &batch.org_list_transactions),
+            (&mut combined.org_member_list_transactions, &batch.org_member_list_transactions),
+            (&mut combined.project_list_transactions, &batch.project_list_transactions),
+            (&mut combined.tag_list_transactions, &batch.tag_list_transactions),
+            (&mut combined.agent_list_transactions, &batch.agent_list_transactions),
+            (&mut combined.model_access_group_spend, &batch.model_access_group_spend),
+        ];
+        for (totals, entities) in pairs {
+            accumulate(totals, entities)?;
+        }
     }
     Ok(combined)
 }
