@@ -500,6 +500,25 @@ async fn store_create_sends_a_negative_ttl_days() {
 }
 
 #[tokio::test]
+async fn store_create_rejects_a_wrong_typed_field() {
+    let harness = harness(r#"{"vector_store": {"ttl_days": "soon"}}"#);
+    let error = harness
+        .ingestion
+        .store(request(None, None, None, None))
+        .await
+        .expect_err("the string ttl_days");
+    assert!(matches!(
+        &error,
+        OpenAiIngestionError::FieldType {
+            field: "ttl_days",
+            ..
+        }
+    ));
+    assert_eq!(error.to_string(), "`ttl_days` must be a whole number");
+    assert!(harness.calls.snapshot().is_empty());
+}
+
+#[tokio::test]
 async fn store_create_keeps_an_existing_store() {
     let harness = harness(r#"{"vector_store": {"vector_store_id": "vs_1"}}"#);
     let (store_id, file_id) = harness
