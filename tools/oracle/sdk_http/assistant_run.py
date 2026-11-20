@@ -29,7 +29,7 @@ class Recorder(openai.AssistantEventHandler):
         self.ended = True
 
 
-# the wrappers have no return annotation, so their inferred Any goes through this facade
+# the wrappers have no return annotation, so the calls go through this facade
 class Runs(Protocol):
     def run_thread(self, *, event_handler: Recorder | None = None, **kwargs: Json) -> Run: ...
 

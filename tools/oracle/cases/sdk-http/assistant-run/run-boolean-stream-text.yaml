@@ -7,7 +7,7 @@ call:
     provider: openai
     thread_id: thread_a
     assistant_id: asst_a
-    stream: true
+    stream: "true"
     params: {api_key: 'sk-test'}
 upstream:
   - status: 200
