@@ -1,0 +1,6 @@
+task: B1064
+deviations:
+  - what: An empty custom_llm_provider is an APIConnectionError with status 500 and null type/param/code, where LiteLLM's exception_type answers None and the raise itself fails with TypeError.
+    why: A caller who passes an empty provider gets a mapped SDK error from betterlite, and no call can end in a TypeError that names no vector store at all.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2387
+kept_bugs: []
