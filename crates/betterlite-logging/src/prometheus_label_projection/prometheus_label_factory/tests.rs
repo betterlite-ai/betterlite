@@ -162,9 +162,9 @@ fn the_context_path_leaves_an_unsupported_end_user_unresolved() {
     let values = test_support::values(&[("user", "u1"), ("end_user", "e1")]);
     let settings = test_support::settings(&[]);
     let resolver = Arc::new(CountingResolver::new(Resolution::Failure));
-    let context =
-        PrometheusLabelFactoryContext::with_resolver(&values, &settings, Arc::clone(&resolver))
-            .expect("the context");
+    let shared_resolver = Arc::clone(&resolver);
+    let context = PrometheusLabelFactoryContext::with_resolver(&values, &settings, shared_resolver)
+        .expect("the context");
     let projected = labels(&["user"], &values, LabelSource::Context(&context));
     assert_eq!(projected, map_of(&[("user", Some("u1"))]));
     assert_eq!(
@@ -292,9 +292,9 @@ fn the_context_path_resolves_the_end_user_once() {
     let values = test_support::values(&[("end_user", "e1")]);
     let settings = test_support::settings(&[]);
     let resolver = Arc::new(CountingResolver::new(Resolution::Echo));
-    let context =
-        PrometheusLabelFactoryContext::with_resolver(&values, &settings, Arc::clone(&resolver))
-            .expect("the context");
+    let shared_resolver = Arc::clone(&resolver);
+    let context = PrometheusLabelFactoryContext::with_resolver(&values, &settings, shared_resolver)
+        .expect("the context");
     let projected = labels(&["end_user"], &values, LabelSource::Context(&context));
     assert_eq!(projected, map_of(&[("end_user", Some("resolved-e1"))]));
     let again = labels(&["end_user"], &values, LabelSource::Context(&context));

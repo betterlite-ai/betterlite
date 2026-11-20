@@ -13,10 +13,11 @@ fn context(
 ) -> PrometheusLabelFactoryContext {
     let mut values = test_support::values(&[]);
     values.end_user = end_user.map(str::to_owned);
+    let shared_resolver = Arc::clone(resolver);
     PrometheusLabelFactoryContext::with_resolver(
         &values,
         &test_support::settings(&[]),
-        Arc::clone(resolver),
+        shared_resolver,
     )
     .expect("the context")
 }

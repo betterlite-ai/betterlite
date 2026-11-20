@@ -82,10 +82,11 @@ fn settings_without_custom_tags_produce_no_tag_labels() {
 fn construction_does_not_resolve_the_end_user() {
     let values = test_support::values(&[("end_user", "abc")]);
     let resolver = Arc::new(CountingResolver::new(Resolution::Echo));
+    let shared_resolver = Arc::clone(&resolver);
     let context = PrometheusLabelFactoryContext::with_resolver(
         &values,
         &test_support::settings(&[]),
-        Arc::clone(&resolver),
+        shared_resolver,
     )
     .expect("the context");
     assert_eq!(
