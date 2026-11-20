@@ -94,9 +94,9 @@ async fn list_omits_absent_fields(#[case] mode: ClientKind) {
     );
 }
 
-// httpx merges the base URL's own query with the call's params, and the base value wins a repeated name
+// HTTPHandler.get folds the base URL's query into the call's params, and the map it sends keeps the call's names first
 #[tokio::test]
-async fn list_merges_the_base_query_and_keeps_its_value() {
+async fn list_folds_the_base_query_and_keeps_its_value() {
     let events = Events::new();
     let wire = Wire::replying(Reply::json(200, PAGE), &events);
     let source = Source::new(wire.clone());
@@ -118,7 +118,122 @@ async fn list_merges_the_base_query_and_keeps_its_value() {
         .await
         .expect("the list succeeds");
     let requests = wire.requests();
-    assert_eq!(requests[0].url.query(), Some("limit=5&after=vs_a"));
+    assert_eq!(requests[0].url.query(), Some("after=vs_a&limit=5"));
+}
+
+// parse_qsl drops a blank pair, so a base value that is empty never reaches the query
+#[tokio::test]
+async fn list_drops_a_blank_base_value() {
+    let events = Events::new();
+    let wire = Wire::replying(Reply::json(200, PAGE), &events);
+    let source = Source::new(wire.clone());
+    let config = RecordingConfig::new(
+        "http://mock.test/v1/vector_stores?limit=&order=desc",
+        &events,
+    );
+    let deps = deps(&config, &source, None);
+    let params = params("http://unused.test");
+    let call = CreateReadCall::List(ListCall {
+        target: target(&params),
+        query: ListQuery {
+            after: None,
+            before: None,
+            limit: None,
+            order: None,
+        },
+        extra_body: None,
+    });
+    let mut fixture = Fixture::new("vector_store_list");
+    run(&mut fixture, &deps, ClientKind::Sync, &call, &events)
+        .await
+        .expect("the list succeeds");
+    let requests = wire.requests();
+    assert_eq!(requests[0].url.query(), Some("order=desc"));
+}
+
+// the URL's query is read into a dict, so a name repeated there keeps only its last value, and one line goes out
+#[tokio::test]
+async fn list_keeps_the_last_base_value_of_a_repeated_name() {
+    let events = Events::new();
+    let wire = Wire::replying(Reply::json(200, PAGE), &events);
+    let source = Source::new(wire.clone());
+    let config = RecordingConfig::new("http://mock.test/v1/vector_stores?limit=1&limit=2", &events);
+    let deps = deps(&config, &source, None);
+    let params = params("http://unused.test");
+    let call = CreateReadCall::List(ListCall {
+        target: target(&params),
+        query: ListQuery {
+            after: None,
+            before: None,
+            limit: Some(0),
+            order: None,
+        },
+        extra_body: None,
+    });
+    let mut fixture = Fixture::new("vector_store_list");
+    run(&mut fixture, &deps, ClientKind::Sync, &call, &events)
+        .await
+        .expect("the list succeeds");
+    let requests = wire.requests();
+    assert_eq!(requests[0].url.query(), Some("limit=2"));
+}
+
+// urllib's urlencode quotes with quote_plus: a space becomes '+', '*' is encoded and '~' is left alone
+#[tokio::test]
+async fn list_quotes_values_like_urlencode() {
+    let events = Events::new();
+    let wire = Wire::replying(Reply::json(200, PAGE), &events);
+    let source = Source::new(wire.clone());
+    let config = RecordingConfig::new("http://mock.test/v1/vector_stores?order=a~b*c", &events);
+    let deps = deps(&config, &source, None);
+    let params = params("http://unused.test");
+    let call = CreateReadCall::List(ListCall {
+        target: target(&params),
+        query: ListQuery {
+            after: Some("a b~*"),
+            before: None,
+            limit: None,
+            order: None,
+        },
+        extra_body: None,
+    });
+    let mut fixture = Fixture::new("vector_store_list");
+    run(&mut fixture, &deps, ClientKind::Sync, &call, &events)
+        .await
+        .expect("the list succeeds");
+    let requests = wire.requests();
+    assert_eq!(requests[0].url.query(), Some("after=a+b~%2A&order=a~b%2Ac"));
+}
+
+// httpx builds the request from the merged map alone, so a base query that merges to nothing leaves no query behind
+#[tokio::test]
+async fn list_clears_a_base_query_that_merges_to_nothing() {
+    let events = Events::new();
+    let wire = Wire::replying(Reply::json(200, PAGE), &events);
+    let source = Source::new(wire.clone());
+    let config = RecordingConfig::new("http://mock.test/v1/vector_stores?limit=", &events);
+    let deps = deps(&config, &source, None);
+    let params = params("http://unused.test");
+    let call = CreateReadCall::List(ListCall {
+        target: target(&params),
+        query: ListQuery {
+            after: None,
+            before: None,
+            limit: None,
+            order: None,
+        },
+        extra_body: None,
+    });
+    let mut fixture = Fixture::new("vector_store_list");
+    run(&mut fixture, &deps, ClientKind::Sync, &call, &events)
+        .await
+        .expect("the list succeeds");
+    let requests = wire.requests();
+    assert_eq!(requests[0].url.query(), None);
+    assert_eq!(
+        requests[0].url.as_str(),
+        "http://mock.test/v1/vector_stores"
+    );
 }
 
 // LiteLLM returns response.json() itself: an array is as good a list answer as an object

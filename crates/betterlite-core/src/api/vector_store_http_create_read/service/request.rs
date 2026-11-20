@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use betterlite_http::url_path::encode_segment;
 use betterlite_models::decisions::Json;
+use betterlite_models::passthrough_policies::query_merge::decode_request_query;
 use betterlite_openai::vector_stores::Headers as OpenAiHeaders;
 use betterlite_openai::vector_stores::store::create_request;
 use indexmap::IndexMap;
@@ -22,7 +23,7 @@ pub(super) fn select_client<'borrow, 'deps, C, S>(
     deps: &'borrow CreateReadDeps<'deps, C, S>,
     mode: ClientKind,
     ssl_verify: Option<bool>,
-) -> Result<Selected<'borrow, S::Client>, CreateReadError>
+) -> Result<Selected<'borrow, S::Client>, WriteError>
 where
     'deps: 'borrow,
     C: CreateReadConfig,
@@ -96,25 +97,25 @@ pub(super) fn list_endpoint(
         url: api_base.clone(),
         source,
     })?;
-    let mut pairs: Vec<(String, String)> = url
-        .query_pairs()
-        .map(|(name, value)| (name.into_owned(), value.into_owned()))
+    // HTTPHandler.get overwrites the call's params with the URL's query, and httpx sends only that map
+    let mut merged: IndexMap<String, String> = entries(&call.query)
+        .into_iter()
+        .map(|(name, param)| (name.to_owned(), param.text()))
         .collect();
-    for (name, param) in entries(&call.query) {
-        // httpx merges the call's params into the URL's own query, so a name both carry keeps the URL's value
-        if pairs.iter().any(|(existing, _)| existing.as_str() == name) {
-            continue;
+    for (name, values) in decode_request_query(url.query().unwrap_or_default()) {
+        // dict(parse_qsl(...)) drops a blank value and keeps the last of a repeated name
+        if let Some(value) = values.last() {
+            merged.insert(name, value.clone());
         }
-        pairs.push((name.to_owned(), param.text()));
     }
-    if !pairs.is_empty() {
+    if merged.is_empty() {
+        url.set_query(None);
+    } else {
         let mut serializer = form_urlencoded::Serializer::new(String::new());
-        serializer.extend_pairs(
-            pairs
-                .iter()
-                .map(|(name, value)| (name.as_str(), value.as_str())),
-        );
-        url.set_query(Some(&serializer.finish()));
+        serializer.extend_pairs(&merged);
+        // urlencode quotes with quote_plus, which leaves '~' alone and encodes '*'
+        let query = serializer.finish().replace('*', "%2A").replace("%7E", "~");
+        url.set_query(Some(&query));
     }
     Ok((api_base, url))
 }
