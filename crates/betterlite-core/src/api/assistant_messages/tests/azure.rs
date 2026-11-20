@@ -94,7 +94,10 @@ fn azure_attachment_drop_and_content_drops_invalid_attachments_with_drop_params(
 #[case::dict("{}", "dict")]
 #[case::float("5.5", "float")]
 #[case::int("-5", "int")]
-fn azure_attachment_drop_and_content_rejects_non_list_attachments(raw: &str, kind: &str) {
+fn azure_attachment_drop_and_content_rejects_non_list_attachments(
+    #[case] raw: &str,
+    #[case] kind: &str,
+) {
     let fixture = Fixture::new();
     let message = data(&format!(
         r#"{{"role":"user","content":"hello","attachments":{raw}}}"#

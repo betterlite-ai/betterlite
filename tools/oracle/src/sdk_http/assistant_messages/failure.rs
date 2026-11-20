@@ -154,7 +154,7 @@ fn body_fields(body: &[u8]) -> (Nullable, Nullable, Nullable) {
     let Ok(Value::Object(mut fields)) = serde_json::from_slice::<Value>(body) else {
         return (Some(None), Some(None), Some(None));
     };
-    let flat = match fields.shift_remove("error") {
+    let flat = match fields.remove("error") {
         Some(Value::Object(inner)) => inner,
         // a non-mapping body leaves APIError's type/param/code unset
         Some(_) => return (Some(None), Some(None), Some(None)),

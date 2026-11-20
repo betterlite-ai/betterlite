@@ -12,7 +12,6 @@ use betterlite_core::api::assistant_messages::service::{
 };
 use betterlite_core::api::resource_sdk_settings::ResourceSdkSettings;
 use betterlite_foundry::chat::sources::NoSources;
-use betterlite_http::proxy::ProxiedClient;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use secrecy::SecretString;
