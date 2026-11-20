@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+mod cache;
 mod end_user;
 mod entities;
 mod groups;
