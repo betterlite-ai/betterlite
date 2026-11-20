@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_config::loader::ConfigLoader;
+use betterlite_config::types::Config;
 use betterlite_context::resource_config_selection::responses::ResponsesModelFacts;
 use betterlite_core::api::responses_lifecycle_call::error::LifecycleFailure;
 use betterlite_core::api::responses_lifecycle_call::executor::HttpReadExecutor;
@@ -35,9 +36,21 @@ pub(super) async fn execute(
     }
     .load("model_list: []")
     .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
-    let default_timeout =
-        Duration::try_from_secs_f64(config.sections.routing_timeouts.global.seconds)
-            .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
+    let service = build_service(&config, env)?;
+    let mut steps = Vec::with_capacity(call.steps.len());
+    for step in &call.steps {
+        steps.push(run_step(step, &service, api_base).await?);
+    }
+    Ok(SdkResult::ResponsesLifecycleRead {
+        value: Box::new(Outcome { steps }),
+    })
+}
+
+// the openai responses deployment the case env configures, over the mock's pooled client
+fn build_service(
+    config: &Config,
+    env: &BTreeMap<String, String>,
+) -> Result<Lifecycle, SdkHttpError> {
     let settings = &config.sections.resource_sdk_settings;
     let provider = OpenAiReadConfig::new(
         LiteLlmGlobals::default(),
@@ -48,29 +61,21 @@ pub(super) async fn execute(
         },
         NoWorkloadIdentity,
     );
-    let origin = source(&config, env)?;
-    let service = ResponsesLifecycle {
+    Ok(ResponsesLifecycle {
         executor: HttpReadExecutor {
             config: provider,
-            source: origin,
+            source: source(config, env)?,
         },
-        default_timeout,
+        default_timeout: default_timeout(config)?,
         facts: ResponsesModelFacts::default(),
         redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SdkHttpError::Redactor)?,
-    };
-    let mut steps = Vec::with_capacity(call.steps.len());
-    for step in &call.steps {
-        steps.push(run_step(step, &service, api_base).await?);
-    }
-    Ok(SdkResult::ResponsesLifecycleRead {
-        value: Box::new(Outcome { steps }),
     })
 }
 
-// what one read answered: the rewritten response or the provider's own item page
-enum Answered {
-    Reply(Result<TypedReply, LifecycleFailure>),
-    Items(Result<Json, LifecycleFailure>),
+// the configured REQUEST_TIMEOUT a read takes when the caller names none
+fn default_timeout(config: &Config) -> Result<Duration, SdkHttpError> {
+    Duration::try_from_secs_f64(config.sections.routing_timeouts.global.seconds)
+        .map_err(|error| SdkHttpError::Invalid(error.to_string()))
 }
 
 async fn run_step(
@@ -84,29 +89,28 @@ async fn run_step(
         state: &mut fixture.state,
         env,
     };
-    let answered = match step {
+    match step {
         Step::GetResponses(inner) => {
             let mut call = inner.call.clone();
             fill_base(&mut call.identity, api_base);
-            Answered::Reply(service.get_responses(&call, log).await)
+            Ok(reply_outcome(service.get_responses(&call, log).await))
         }
         Step::AgetResponses(inner) => {
             let mut call = inner.call.clone();
             fill_base(&mut call.identity, api_base);
-            Answered::Reply(service.aget_responses(&call, log).await)
+            Ok(reply_outcome(service.aget_responses(&call, log).await))
         }
         Step::ListInputItems(inner) => {
             let mut call = inner.call.clone();
             fill_base(&mut call.identity, api_base);
-            Answered::Items(service.list_input_items(&call, log).await)
+            Ok(items_outcome(service.list_input_items(&call, log).await))
         }
         Step::AlistInputItems(inner) => {
             let mut call = inner.call.clone();
             fill_base(&mut call.identity, api_base);
-            Answered::Items(service.alist_input_items(call, log).await)
+            Ok(items_outcome(service.alist_input_items(call, log).await))
         }
-    };
-    Ok(outcome(answered))
+    }
 }
 
 // the SDK reads a null base as its own default, so the harness base stands in for an absent one
@@ -116,24 +120,33 @@ fn fill_base(identity: &mut ReadIdentity, api_base: &str) {
     }
 }
 
-// the step answers what the read returned, or the exception class the SDK raises instead
-fn outcome(answered: Answered) -> StepOutcome {
-    match answered {
-        Answered::Reply(Ok(reply)) => StepOutcome {
+fn reply_outcome(reply: Result<TypedReply, Box<LifecycleFailure>>) -> StepOutcome {
+    match reply {
+        Ok(reply) => StepOutcome {
             retrieved: Some(retrieved(&reply)),
             items: None,
             failure: None,
         },
-        Answered::Items(Ok(items)) => StepOutcome {
+        Err(failure) => failed(*failure),
+    }
+}
+
+fn items_outcome(items: Result<Json, Box<LifecycleFailure>>) -> StepOutcome {
+    match items {
+        Ok(items) => StepOutcome {
             retrieved: None,
             items: Some(items),
             failure: None,
         },
-        Answered::Reply(Err(failure)) | Answered::Items(Err(failure)) => StepOutcome {
-            retrieved: None,
-            items: None,
-            failure: Some(failure_of(failure)),
-        },
+        Err(failure) => failed(*failure),
+    }
+}
+
+fn failed(failure: LifecycleFailure) -> StepOutcome {
+    StepOutcome {
+        retrieved: None,
+        items: None,
+        failure: Some(failure_of(failure)),
     }
 }
 
