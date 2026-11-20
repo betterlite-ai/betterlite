@@ -2,10 +2,11 @@ use std::collections::BTreeMap;
 
 use betterlite_config::rag::document::ingest::S3VectorsVectorStoreOptions;
 
-use super::support::Call;
+use super::support::{Call, FakeApi, FakeEmbedder, UNIQUE_ID};
 use crate::bedrock_ingestion::client::AwsRagResponse;
 use crate::s3_vectors_ingestion::{S3VectorData, S3VectorEntry};
 use crate::s3_vectors_workflow::settings::S3VectorsSettings;
+use crate::s3_vectors_workflow::workflow::S3VectorsWorkflow;
 
 pub(super) fn options(text: &str) -> S3VectorsVectorStoreOptions {
     serde_json::from_str(text).unwrap()
@@ -24,6 +25,15 @@ pub(super) fn s3_settings(text: &str) -> S3VectorsSettings {
 
 pub(super) fn s3_settings_in(text: &str, pairs: &[(&str, &str)]) -> S3VectorsSettings {
     S3VectorsSettings::from_vector_store_config(&options(text), None, &environment(pairs)).unwrap()
+}
+
+pub(super) fn rag_workflow(api: &FakeApi) -> S3VectorsWorkflow<FakeApi, FakeEmbedder> {
+    S3VectorsWorkflow::new(
+        s3_settings(r#"{"vector_bucket_name": "rag", "index_name": "idx", "dimension": 4}"#),
+        api.clone(),
+        FakeEmbedder::new(Vec::new(), false),
+        UNIQUE_ID.to_owned(),
+    )
 }
 
 pub(super) fn bucket_call(name: &str) -> Call {
@@ -51,8 +61,8 @@ pub(super) fn entry(
         ("source_text".to_owned(), text.to_owned()),
         ("chunk_index".to_owned(), index.to_owned()),
     ]);
-    if let Some(filename) = filename {
-        metadata.insert("filename".to_owned(), filename.to_owned());
+    if let Some(name) = filename {
+        metadata.insert("filename".to_owned(), name.to_owned());
     }
     S3VectorEntry {
         key: key.to_owned(),

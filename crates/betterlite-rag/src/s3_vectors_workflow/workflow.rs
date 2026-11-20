@@ -141,18 +141,15 @@ where
             let runtime = self.runtime.lock().unwrap_or_else(PoisonError::into_inner);
             runtime.embedding_model.clone()
         };
-        let model = match configured {
-            Some(model) => model,
-            None => {
-                warn!("No embedding config provided, using default text-embedding-3-small");
-                let fallback = FALLBACK_EMBEDDING_MODEL.to_owned();
-                self.runtime
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .embedding_model = Some(fallback.clone());
-                fallback
-            }
-        };
+        let model = configured.unwrap_or_else(|| {
+            warn!("No embedding config provided, using default text-embedding-3-small");
+            let fallback = FALLBACK_EMBEDDING_MODEL.to_owned();
+            self.runtime
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .embedding_model = Some(fallback.clone());
+            fallback
+        });
         let vectors = self
             .embedder
             .embed(&model, chunks.to_vec())
@@ -161,7 +158,6 @@ where
         Ok(Some(vectors))
     }
 
-    #[must_use]
     pub async fn store(
         &self,
         filename: Option<&str>,
@@ -171,7 +167,7 @@ where
         let resolved = self.ensure_config_initialized().await?;
         let vectors = embeddings.unwrap_or(&[]);
         if chunks.is_empty() || vectors.is_empty() {
-            error!("{}", NO_CONTENT_MESSAGE);
+            error!("{NO_CONTENT_MESSAGE}");
             return Err(WorkflowError::NoContent);
         }
         let entries = chunks
@@ -207,8 +203,8 @@ where
             let runtime = self.runtime.lock().unwrap_or_else(PoisonError::into_inner);
             (runtime.dimension, runtime.embedding_model.clone())
         };
-        if let Some(dimension) = dimension {
-            return dimension;
+        if let Some(configured) = dimension {
+            return configured;
         }
         let detected = detect_dimension(
             &self.embedder,
@@ -246,17 +242,17 @@ fn vector_entry(
     chunk: &str,
     vector: &[f64],
 ) -> S3VectorEntry {
-    let name = filename.filter(|name| !name.is_empty());
-    let key = match name {
-        Some(name) => format!("{name}_{index}"),
-        None => format!("chunk_{index}"),
-    };
+    let name = filename.filter(|value| !value.is_empty());
+    let key = name.map_or_else(
+        || format!("chunk_{index}"),
+        |value| format!("{value}_{index}"),
+    );
     let mut metadata = BTreeMap::from([
         ("source_text".to_owned(), chunk.to_owned()),
         ("chunk_index".to_owned(), index.to_string()),
     ]);
-    if let Some(name) = name {
-        metadata.insert("filename".to_owned(), name.to_owned());
+    if let Some(value) = name {
+        metadata.insert("filename".to_owned(), value.to_owned());
     }
     S3VectorEntry {
         key,

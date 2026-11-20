@@ -10,8 +10,8 @@ use betterlite_core::rag::ingestion::store::{RagStore, StoreRequest};
 use secrecy::ExposeSecret as _;
 
 use self::fixtures::{
-    accepted, bucket_call, entry, environment, index_call, not_found, options, s3_settings,
-    s3_settings_in,
+    accepted, bucket_call, entry, environment, index_call, not_found, options, rag_workflow,
+    s3_settings, s3_settings_in,
 };
 use self::support::{
     Call, Failure, FakeApi, FakeEmbedder, FixedClock, PutVectorsBody, RecordingTransport,
@@ -230,6 +230,11 @@ fn settings_keep_the_credentials_out_of_errors_and_debug() {
     let settings = s3_settings(
         r#"{"vector_bucket_name": "b", "aws_access_key_id": "AKIDEXAMPLE", "aws_secret_access_key": "vectors-secret", "aws_session_token": "session-token", "aws_session_name": "session-name", "aws_profile_name": "vectors-profile", "aws_role_name": "vectors-role", "aws_web_identity_token": "web-identity-token", "aws_sts_endpoint": "https://sts.example", "aws_external_id": "external"}"#,
     );
+    assert_credentials(&settings);
+    assert!(!format!("{settings:?}").contains("AKIDEXAMPLE"));
+}
+
+fn assert_credentials(settings: &S3VectorsSettings) {
     let credentials = &settings.credentials;
     assert_eq!(
         credentials.access_key_id.as_ref().unwrap().expose_secret(),
@@ -263,7 +268,6 @@ fn settings_keep_the_credentials_out_of_errors_and_debug() {
         Some("https://sts.example")
     );
     assert_eq!(credentials.external_id.as_deref(), Some("external"));
-    assert!(!format!("{settings:?}").contains("AKIDEXAMPLE"));
 }
 
 #[tokio::test]
@@ -523,12 +527,7 @@ async fn embed_propagates_the_embedder_error() {
 #[tokio::test]
 async fn store_builds_an_entry_per_pair_with_the_filename() {
     let api = FakeApi::new();
-    let workflow = S3VectorsWorkflow::new(
-        s3_settings(r#"{"vector_bucket_name": "rag", "index_name": "idx", "dimension": 4}"#),
-        api.clone(),
-        FakeEmbedder::new(Vec::new(), false),
-        UNIQUE_ID.to_owned(),
-    );
+    let workflow = rag_workflow(&api);
     let chunks = vec!["first".to_owned(), "second".to_owned()];
     let embeddings = vec![vec![0.5, 0.25], vec![0.125, 0.0625]];
     let (id, name) = workflow
@@ -569,12 +568,7 @@ async fn store_builds_an_entry_per_pair_with_the_filename() {
 #[tokio::test]
 async fn store_truncates_to_the_shorter_list() {
     let api = FakeApi::new();
-    let workflow = S3VectorsWorkflow::new(
-        s3_settings(r#"{"vector_bucket_name": "rag", "index_name": "idx", "dimension": 4}"#),
-        api.clone(),
-        FakeEmbedder::new(Vec::new(), false),
-        UNIQUE_ID.to_owned(),
-    );
+    let workflow = rag_workflow(&api);
     let more_chunks = vec!["one".to_owned(), "two".to_owned(), "three".to_owned()];
     let two_vectors = vec![vec![1.0], vec![2.0]];
     workflow
@@ -592,21 +586,19 @@ async fn store_truncates_to_the_shorter_list() {
         panic!("expected a put_vectors call")
     };
     assert_eq!(vectors.len(), 2);
-    let Call::Vectors { vectors, .. } = &calls[3] else {
+    let Call::Vectors {
+        vectors: truncated, ..
+    } = &calls[3]
+    else {
         panic!("expected a put_vectors call")
     };
-    assert_eq!(vectors.len(), 1);
+    assert_eq!(truncated.len(), 1);
 }
 
 #[tokio::test]
 async fn store_without_a_filename_uses_chunk_keys() {
     let api = FakeApi::new();
-    let workflow = S3VectorsWorkflow::new(
-        s3_settings(r#"{"vector_bucket_name": "rag", "index_name": "idx", "dimension": 4}"#),
-        api.clone(),
-        FakeEmbedder::new(Vec::new(), false),
-        UNIQUE_ID.to_owned(),
-    );
+    let workflow = rag_workflow(&api);
     let chunks = vec!["first".to_owned()];
     let embeddings = vec![vec![0.5]];
     let (id, name) = workflow
@@ -628,12 +620,7 @@ async fn store_without_a_filename_uses_chunk_keys() {
 #[tokio::test]
 async fn store_treats_an_empty_filename_as_absent() {
     let api = FakeApi::new();
-    let workflow = S3VectorsWorkflow::new(
-        s3_settings(r#"{"vector_bucket_name": "rag", "index_name": "idx", "dimension": 4}"#),
-        api.clone(),
-        FakeEmbedder::new(Vec::new(), false),
-        UNIQUE_ID.to_owned(),
-    );
+    let workflow = rag_workflow(&api);
     let chunks = vec!["first".to_owned()];
     let embeddings = vec![vec![0.5]];
     let (_, name) = workflow
@@ -690,12 +677,7 @@ async fn store_rejects_missing_content_after_initializing() {
 #[tokio::test]
 async fn store_trait_impl_forwards_the_columns() {
     let api = FakeApi::new();
-    let workflow = S3VectorsWorkflow::new(
-        s3_settings(r#"{"vector_bucket_name": "rag", "index_name": "idx", "dimension": 4}"#),
-        api.clone(),
-        FakeEmbedder::new(Vec::new(), false),
-        UNIQUE_ID.to_owned(),
-    );
+    let workflow = rag_workflow(&api);
     let chunks = vec!["first".to_owned()];
     let embeddings = vec![vec![0.5]];
     let request = StoreRequest {
@@ -727,34 +709,7 @@ async fn store_trait_impl_forwards_the_columns() {
 
 #[tokio::test]
 async fn store_signs_every_request_through_the_bedrock_clients() {
-    let settings = s3_settings(
-        r#"{"vector_bucket_name": "sign-bucket", "index_name": "idx", "dimension": 2}"#,
-    );
-    let transport = RecordingTransport::answering(vec![
-        not_found(),
-        accepted(),
-        not_found(),
-        accepted(),
-        accepted(),
-    ]);
-    let api = SignedS3Vectors::<'static, _>::new(
-        &settings,
-        Box::new(StaticResolver),
-        Box::new(FixedClock),
-        transport.clone(),
-    );
-    let workflow = S3VectorsWorkflow::new(
-        settings,
-        api,
-        FakeEmbedder::new(Vec::new(), false),
-        UNIQUE_ID.to_owned(),
-    );
-    let chunks = vec!["one".to_owned()];
-    let embeddings = vec![vec![0.5, 0.25]];
-    let (id, _) = workflow
-        .store(Some("a.txt"), &chunks, Some(embeddings.as_slice()))
-        .await
-        .unwrap();
+    let (transport, id) = store_through_the_signed_api().await;
     assert_eq!(id.as_deref(), Some("sign-bucket:idx"));
 
     let sent = transport.sent();
@@ -789,4 +744,36 @@ async fn store_signs_every_request_through_the_bedrock_clients() {
         body.vectors,
         vec![entry("a.txt_0", "one", "0", Some("a.txt"), vec![0.5, 0.25])]
     );
+}
+
+async fn store_through_the_signed_api() -> (RecordingTransport, Option<String>) {
+    let settings = s3_settings(
+        r#"{"vector_bucket_name": "sign-bucket", "index_name": "idx", "dimension": 2}"#,
+    );
+    let transport = RecordingTransport::answering(vec![
+        not_found(),
+        accepted(),
+        not_found(),
+        accepted(),
+        accepted(),
+    ]);
+    let api = SignedS3Vectors::<'static, _>::new(
+        &settings,
+        Box::new(StaticResolver),
+        Box::new(FixedClock),
+        transport.clone(),
+    );
+    let workflow = S3VectorsWorkflow::new(
+        settings,
+        api,
+        FakeEmbedder::new(Vec::new(), false),
+        UNIQUE_ID.to_owned(),
+    );
+    let chunks = vec!["one".to_owned()];
+    let embeddings = vec![vec![0.5, 0.25]];
+    let (id, _) = workflow
+        .store(Some("a.txt"), &chunks, Some(embeddings.as_slice()))
+        .await
+        .unwrap();
+    (transport, id)
 }
