@@ -1,0 +1,13 @@
+kind: helper
+name: request_body_safety_seed
+call:
+  request_body_safety:
+    request_body:
+      model: seed-model
+      langfuse_host: https://evil.example
+    general_settings: {}
+    model: seed-model
+    model_list: []
+env: {}
+compare:
+  ignore: []

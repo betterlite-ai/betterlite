@@ -1,0 +1,23 @@
+kind: helper
+name: request-body-safety-nested-url-denied
+call:
+  request_body_safety:
+    request_body:
+      model: gpt-4o
+      extra_body:
+        api_base: https://evil.example
+    general_settings: {}
+    model: gpt-4o
+    model_list: []
+calls:
+  - request_body_safety:
+      request_body:
+        model: gpt-4o
+        metadata:
+          api_base: https://evil.example
+      general_settings: {}
+      model: gpt-4o
+      model_list: []
+env: {}
+compare:
+  ignore: []

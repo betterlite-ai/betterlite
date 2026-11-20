@@ -1,0 +1,46 @@
+kind: helper
+name: request-body-safety-nonurl-grants-and-error-order
+call:
+  request_body_safety:
+    request_body:
+      model: grant-model
+      aws_role_name: admin
+      aws_session_name: session
+    general_settings: {}
+    model: grant-model
+    model_list:
+      - model_name: grant-model
+        litellm_params:
+          model: openai/gpt-4o
+          configurable_clientside_auth_params: [aws_role_name]
+calls:
+  - request_body_safety:
+      request_body:
+        model: grant-model
+        aws_session_name: session
+      general_settings: {}
+      model: other-model
+      model_list:
+        - model_name: grant-model
+          litellm_params:
+            model: openai/gpt-4o
+            configurable_clientside_auth_params: [aws_session_name]
+  - request_body_safety:
+      request_body:
+        model: gpt-4o
+        aws_role_name: admin
+      general_settings:
+        allow_client_side_credentials: true
+      model: gpt-4o
+      model_list: []
+  - request_body_safety:
+      request_body:
+        model: gpt-4o
+        aws_role_name: admin
+      general_settings:
+        allow_client_side_credentials: "true"
+      model: gpt-4o
+      model_list: []
+env: {}
+compare:
+  ignore: []

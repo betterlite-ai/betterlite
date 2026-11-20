@@ -1,0 +1,13 @@
+kind: helper
+name: request-body-safety-banned-observability-field
+call:
+  request_body_safety:
+    request_body:
+      model: gpt-4o
+      langfuse_host: https://evil.example
+    general_settings: {}
+    model: gpt-4o
+    model_list: []
+env: {}
+compare:
+  ignore: []
