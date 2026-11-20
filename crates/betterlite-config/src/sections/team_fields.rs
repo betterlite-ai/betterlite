@@ -3,6 +3,8 @@ mod tests;
 
 pub mod schema;
 
+mod timeout;
+
 use std::fmt::Display;
 use std::time::Duration;
 
@@ -15,6 +17,7 @@ use crate::sections::Section;
 use crate::sections::settings::JsonValue;
 
 use self::schema::{MetadataSchemaField, parse_team_metadata_schema};
+use self::timeout::resolve_timeout;
 
 pub const VALIDATOR_SETTING: &str = "custom_team_metadata_validate";
 pub const SCHEMA_SETTING: &str = "team_metadata_schema";
@@ -57,6 +60,32 @@ enum RawScalar {
     Other(IgnoredAny),
 }
 
+#[derive(Debug)]
+enum ResolvedScalar {
+    Missing,
+    Text(String),
+    Other,
+}
+
+impl ResolvedScalar {
+    // get_instance_fn reads the name off a str, so any other shape fails the config load.
+    fn required(self, path: &str, message: &str) -> Result<Option<String>, ConfigError> {
+        match self {
+            Self::Missing => Ok(None),
+            Self::Text(text) if !text.is_empty() => Ok(Some(text)),
+            Self::Text(_) | Self::Other => Err(yaml_error(path, message)),
+        }
+    }
+
+    // A nonblank string is used as written, spaces included; empty, blank and other shapes keep the default.
+    fn or_default(self, default: &str) -> String {
+        match self {
+            Self::Text(text) if !text.trim().is_empty() => text,
+            Self::Missing | Self::Text(_) | Self::Other => default.to_owned(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
     pub validator: Option<String>,
@@ -92,78 +121,34 @@ impl Section for Raw {
     {
         let general = self.general_settings;
         Ok(Settings {
-            validator: resolve_validator(general.validator, lookup)?,
+            validator: scalar_text(general.validator, VALIDATOR_PATH, lookup)?.required(
+                VALIDATOR_PATH,
+                "the value must be a string naming a callable",
+            )?,
             schema: parse_team_metadata_schema(general.schema.as_ref())
                 .map_err(|source| yaml_error(SCHEMA_PATH, source))?,
             timeout: resolve_timeout(general.timeout, lookup)?,
-            unavailable_message: resolve_message(general.message, lookup)?,
+            unavailable_message: scalar_text(general.message, MESSAGE_PATH, lookup)?
+                .or_default(DEFAULT_UNAVAILABLE_MESSAGE),
         })
     }
 }
 
-// get_instance_fn reads the name off a str, so any other JSON shape fails the config load instead of validation.
-fn resolve_validator<L>(raw: Option<RawScalar>, lookup: &L) -> Result<Option<String>, ConfigError>
+// Text resolves an os.environ/ reference; every other shape stays distinguishable for each setting.
+fn scalar_text<L>(
+    raw: Option<RawScalar>,
+    path: &str,
+    lookup: &L,
+) -> Result<ResolvedScalar, ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let Some(raw) = raw else {
-        return Ok(None);
-    };
-    let RawScalar::Text(text) = raw else {
-        return Err(yaml_error(
-            VALIDATOR_PATH,
-            "the value must be a string naming a callable",
-        ));
-    };
-    let name = resolve_string(text, VALIDATOR_PATH, lookup)?;
-    if name.is_empty() {
-        return Err(yaml_error(
-            VALIDATOR_PATH,
-            "the value must be a string naming a callable",
-        ));
-    }
-    Ok(Some(name))
-}
-
-// A positive number is a deadline, positive infinity has none, and every other scalar keeps the default.
-fn resolve_timeout<L>(raw: Option<RawScalar>, lookup: &L) -> Result<ValidationTimeout, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let Some(raw) = raw else {
-        return Ok(ValidationTimeout::Finite(DEFAULT_TIMEOUT));
-    };
-    let seconds = match raw {
-        RawScalar::Integer(seconds) => return Ok(integer_timeout(seconds)),
-        RawScalar::Float(seconds) => seconds,
-        RawScalar::Text(text) => match environment_seconds(&text, lookup)? {
-            Some(seconds) => seconds,
-            None => return Ok(ValidationTimeout::Finite(DEFAULT_TIMEOUT)),
-        },
-        RawScalar::Boolean(_) | RawScalar::Other(_) => {
-            return Ok(ValidationTimeout::Finite(DEFAULT_TIMEOUT));
+    match raw {
+        None => Ok(ResolvedScalar::Missing),
+        Some(RawScalar::Text(text)) => {
+            Ok(ResolvedScalar::Text(resolve_string(text, path, lookup)?))
         }
-    };
-    Ok(float_timeout(seconds))
-}
-
-fn integer_timeout(seconds: i64) -> ValidationTimeout {
-    match u64::try_from(seconds) {
-        Ok(0) | Err(_) => ValidationTimeout::Finite(DEFAULT_TIMEOUT),
-        Ok(value) => ValidationTimeout::Finite(Duration::from_secs(value)),
-    }
-}
-
-fn float_timeout(seconds: f64) -> ValidationTimeout {
-    if seconds.is_nan() || seconds <= 0.0 {
-        return ValidationTimeout::Finite(DEFAULT_TIMEOUT);
-    }
-    if seconds.is_infinite() {
-        return ValidationTimeout::Unlimited;
-    }
-    match Duration::try_from_secs_f64(seconds) {
-        Ok(duration) => ValidationTimeout::Finite(duration),
-        Err(_) => ValidationTimeout::Unlimited,
+        Some(_) => Ok(ResolvedScalar::Other),
     }
 }
 
@@ -182,24 +167,6 @@ where
         });
     };
     Ok(betterlite_env::number::<f64>(name, &value)?)
-}
-
-// A nonblank string is used as written, spaces included; empty, blank and non-string values keep the default.
-fn resolve_message<L>(raw: Option<RawScalar>, lookup: &L) -> Result<String, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let Some(raw) = raw else {
-        return Ok(DEFAULT_UNAVAILABLE_MESSAGE.to_owned());
-    };
-    let RawScalar::Text(text) = raw else {
-        return Ok(DEFAULT_UNAVAILABLE_MESSAGE.to_owned());
-    };
-    let message = resolve_string(text, MESSAGE_PATH, lookup)?;
-    if message.trim().is_empty() {
-        return Ok(DEFAULT_UNAVAILABLE_MESSAGE.to_owned());
-    }
-    Ok(message)
 }
 
 fn yaml_error<M>(path: &str, message: M) -> ConfigError
