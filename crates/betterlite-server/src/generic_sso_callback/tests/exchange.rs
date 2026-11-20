@@ -1,12 +1,12 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
-use betterlite_config::sso_mappings::INCLUDE_CLIENT_ID_ENV;
+use betterlite_config::sso_mappings::{INCLUDE_CLIENT_ID_ENV, SSO_HEADERS_ENV};
 use betterlite_error::proxy_error_types::ProxyErrorTypes;
 use betterlite_models::controls::json_value::JsonValue;
 use secrecy::ExposeSecret as _;
 
 use crate::generic_sso_callback::failure::GenericSsoError;
-use crate::sso_pkce::PKCE_VERIFIER_CACHE_PREFIX;
+use crate::sso_pkce::{PKCE_CACHE_MISS_PARAM, PKCE_VERIFIER_CACHE_PREFIX};
 
 use super::support::{
     CLIENT_ID, FakeCache, FakeRows, Fixture, REDIRECT_URI, Replies, TokenReply, VERIFIER, call,
@@ -155,6 +155,101 @@ async fn an_access_token_augmentation_failure_keeps_the_verifier() {
     .unwrap_err();
     assert!(matches!(&error, GenericSsoError::Claims(_)));
     assert_eq!(error.response().status, 500);
+    assert!(cache.deletes().is_empty());
+}
+
+#[tokio::test]
+async fn the_configured_headers_reach_the_non_pkce_provider() {
+    let mut fixture = Fixture::start(Replies::new()).await;
+    let sources = mapping(
+        &fixture.base,
+        &[(SSO_HEADERS_ENV, "X-Api-Key=header-secret")],
+    );
+    fixture.sources = sources;
+    call(
+        &fixture,
+        &fixture.callback_url("code=abc"),
+        None,
+        &FakeRows::absent(),
+        &FakeCache::empty(),
+    )
+    .await
+    .unwrap();
+    let seen = fixture.requests();
+    assert_eq!(seen.len(), 2);
+    assert_eq!(seen[0].header("x-api-key"), Some("header-secret"));
+    assert_eq!(seen[1].header("x-api-key"), Some("header-secret"));
+}
+
+#[tokio::test]
+async fn a_header_the_pkce_exchange_cannot_send_answers_its_typed_failure() {
+    let mut fixture = Fixture::start(Replies::new()).await;
+    fixture.pkce = pkce(true);
+    let sources = mapping(&fixture.base, &[(SSO_HEADERS_ENV, "X-Api-Key=line\nbreak")]);
+    fixture.sources = sources;
+    let cache = FakeCache::holding_verifier();
+    let error = call(
+        &fixture,
+        &fixture.callback_url("code=abc&state=state-1"),
+        Some("state-1"),
+        &FakeRows::absent(),
+        &cache,
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(&error, GenericSsoError::TokenExchange(_)));
+    let response = error.response();
+    assert_eq!(
+        (
+            response.status,
+            response.error_type,
+            response.param.as_deref(),
+            response.code.as_str(),
+        ),
+        (
+            401,
+            ProxyErrorTypes::AuthError,
+            Some("token_exchange"),
+            "401"
+        )
+    );
+    assert!(fixture.requests().is_empty());
+    assert!(cache.deletes().is_empty());
+}
+
+#[tokio::test]
+async fn a_strict_cache_miss_answers_the_pkce_cache_error() {
+    let mut fixture = Fixture::start(Replies::new()).await;
+    let mut settings = pkce(true);
+    settings.strict_cache_miss = true;
+    fixture.pkce = settings;
+    let cache = FakeCache::empty();
+    let error = call(
+        &fixture,
+        &fixture.callback_url("code=abc&state=state-1"),
+        Some("state-1"),
+        &FakeRows::absent(),
+        &cache,
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(&error, GenericSsoError::Pkce(_)));
+    let response = error.response();
+    assert_eq!(
+        (
+            response.status,
+            response.error_type,
+            response.param.as_deref(),
+            response.code.as_str(),
+        ),
+        (
+            401,
+            ProxyErrorTypes::AuthError,
+            Some(PKCE_CACHE_MISS_PARAM),
+            "401"
+        )
+    );
+    assert!(fixture.requests().is_empty());
     assert!(cache.deletes().is_empty());
 }
 

@@ -70,6 +70,61 @@ async fn a_role_mapping_failure_precedes_the_header_failure() {
 }
 
 #[tokio::test]
+async fn a_header_without_an_equals_sign_answers_the_internal_error() {
+    let mut fixture = Fixture::start(Replies::new()).await;
+    let sources = mapping(&fixture.base, &[(SSO_HEADERS_ENV, "no-equals-sign")]);
+    fixture.sources = sources;
+    let error = call(
+        &fixture,
+        &fixture.callback_url("code=abc&state=state-1"),
+        Some("state-1"),
+        &FakeRows::absent(),
+        &FakeCache::empty(),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(&error, GenericSsoError::Header(_)));
+    let response = error.response();
+    assert_eq!(
+        (
+            response.status,
+            response.error_type,
+            response.param.as_deref()
+        ),
+        (500, ProxyErrorTypes::InternalServerError, None)
+    );
+    assert_eq!(response.code, "500");
+    assert!(fixture.requests().is_empty());
+}
+
+#[tokio::test]
+async fn a_header_a_request_cannot_carry_answers_the_internal_error() {
+    let mut fixture = Fixture::start(Replies::new()).await;
+    let sources = mapping(&fixture.base, &[(SSO_HEADERS_ENV, "X-Api-Key=line\nbreak")]);
+    fixture.sources = sources;
+    let error = call(
+        &fixture,
+        &fixture.callback_url("code=abc&state=state-1"),
+        Some("state-1"),
+        &FakeRows::absent(),
+        &FakeCache::empty(),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(&error, GenericSsoError::HeaderBuild(_)));
+    let response = error.response();
+    assert_eq!(
+        (
+            response.status,
+            response.error_type,
+            response.param.as_deref()
+        ),
+        (500, ProxyErrorTypes::InternalServerError, None)
+    );
+    assert!(fixture.requests().is_empty());
+}
+
+#[tokio::test]
 async fn a_missing_state_cookie_is_refused() {
     let mut fixture = Fixture::start(Replies::new()).await;
     fixture.pkce = pkce(true);
