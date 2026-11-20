@@ -1,6 +1,7 @@
 import asyncio
+from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime
-from typing import Final, Literal
+from typing import Final, Literal, Protocol
 
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
@@ -29,7 +30,32 @@ JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 OBJECTS: Final = TypeAdapter(dict[str, object] | None)
 PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
 
-HANDLER: Final = BaseLLMHTTPHandler()
+# the file objects carry Any, so the handlers are read through a view that returns object
+SyncHandler = Callable[..., object]
+AsyncHandler = Callable[..., Coroutine[object, object, object]]
+
+
+class Handlers(Protocol):
+    @property
+    def vector_store_file_create_handler(  # ast-grep-ignore: no-long-names
+        self,
+    ) -> SyncHandler: ...
+
+    @property
+    def async_vector_store_file_create_handler(  # ast-grep-ignore: no-long-names
+        self,
+    ) -> AsyncHandler: ...
+
+    @property
+    def vector_store_file_list_handler(self) -> SyncHandler: ...
+
+    @property
+    def async_vector_store_file_list_handler(  # ast-grep-ignore: no-long-names
+        self,
+    ) -> AsyncHandler: ...
+
+
+HANDLERS: Handlers = BaseLLMHTTPHandler()
 
 
 class CreateValues(BaseModel):
@@ -157,7 +183,7 @@ def execute(
         create = requested_create(call.create_request)
         if call.mode == "sync":
             return JSON.validate_python(
-                HANDLER.vector_store_file_create_handler(
+                HANDLERS.vector_store_file_create_handler(
                     vector_store_id=call.vector_store_id,
                     create_request=create,
                     vector_store_files_provider_config=config,
@@ -171,7 +197,7 @@ def execute(
             )
         return JSON.validate_python(
             asyncio.run(
-                HANDLER.async_vector_store_file_create_handler(
+                HANDLERS.async_vector_store_file_create_handler(
                     vector_store_id=call.vector_store_id,
                     create_request=create,
                     vector_store_files_provider_config=config,
@@ -187,7 +213,7 @@ def execute(
     query = requested_query(call.query_params)
     if call.mode == "sync":
         return JSON.validate_python(
-            HANDLER.vector_store_file_list_handler(
+            HANDLERS.vector_store_file_list_handler(
                 vector_store_id=call.vector_store_id,
                 query_params=query,
                 vector_store_files_provider_config=config,
@@ -201,7 +227,7 @@ def execute(
         )
     return JSON.validate_python(
         asyncio.run(
-            HANDLER.async_vector_store_file_list_handler(
+            HANDLERS.async_vector_store_file_list_handler(
                 vector_store_id=call.vector_store_id,
                 query_params=query,
                 vector_store_files_provider_config=config,
