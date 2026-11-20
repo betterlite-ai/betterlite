@@ -75,12 +75,12 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let disabled = match self.general_settings.key_generation_disabled {
-            Entry::Absent | Entry::Null(()) => false,
-            Entry::Value(flag) => flag_value(flag, lookup)?,
+        // absent and null both take the setting's false default
+        let Entry::Value(flag) = self.general_settings.key_generation_disabled else {
+            return Ok(Settings::default());
         };
         Ok(Settings {
-            key_generation_disabled: disabled,
+            key_generation_disabled: flag_value(flag, lookup)?,
         })
     }
 }
