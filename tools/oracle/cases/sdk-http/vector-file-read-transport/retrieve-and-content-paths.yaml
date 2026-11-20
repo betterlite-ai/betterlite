@@ -1,0 +1,20 @@
+kind: sdk_http
+name: vector-file-read-transport-retrieve-and-content-paths
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  vector_file_read_transport:
+    mode: async
+    vector_store_id: vs/a
+    file_id: file/b
+    operations: [retrieve, content]
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file_b, object: vector_store.file, status: completed}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {file_id: file_b, filename: b, content: [{type: text, text: hello}]}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
