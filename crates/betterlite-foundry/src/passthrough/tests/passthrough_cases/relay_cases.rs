@@ -25,6 +25,35 @@ const FLUX_BODY: &[u8] = br#"{"created":1,"data":[{"url":"https://image.test/one
 const RERANK_ENDPOINT: &str = "/rerank";
 const FLUX_ENDPOINT: &str = "/providers/blackforestlabs/v1/flux-2-pro";
 
+// every body gives a declared field the wrong type, so the shape must not log
+const REJECTED_RERANK_BODIES: &[&str] = &[
+    r#"{"results":[{"index":0}]}"#,
+    r#"{"results":[{"relevance_score":0.5}]}"#,
+    r#"{"results":[{"index":0.5,"relevance_score":0.5}]}"#,
+    r#"{"results":[{"index":"1","relevance_score":0.5}]}"#,
+    r#"{"results":[{"index":0,"relevance_score":"x"}]}"#,
+    r#"{"results":[{"index":0,"relevance_score":true}]}"#,
+    r#"{"results":[{"index":0,"relevance_score":0.5,"document":null}]}"#,
+    r#"{"results":[{"index":0,"relevance_score":0.5,"document":{}}]}"#,
+    r#"{"results":[{"index":0,"relevance_score":0.5,"document":{"text":5}}]}"#,
+    r#"{"results":{}}"#,
+    r#"{"results":[5]}"#,
+    r#"{"id":5}"#,
+    r#"{"meta":[]}"#,
+];
+const REJECTED_FLUX_BODIES: &[&str] = &[
+    r#"{"created":"yesterday"}"#,
+    r#"{"data":[]}"#,
+    r#"{"created":null}"#,
+    r#"{"created":1.5}"#,
+    r#"{"created":true}"#,
+    r#"{"created":1,"data":{}}"#,
+    r#"{"created":1,"data":[5]}"#,
+    r#"{"created":1,"data":[{"url":5}]}"#,
+    r#"{"created":1,"data":[{"b64_json":5}]}"#,
+    r#"{"created":1,"data":[{"revised_prompt":5}]}"#,
+];
+
 fn relayed_shape(body: &[u8], endpoint: &str) -> (Option<Object>, Option<String>) {
     let mut logging = RecordingLogging::default();
     let parsed = logged_relay_shape(&FOUNDRY_RELAY_SHAPES, 200_u16, body, &mut logging, endpoint);
@@ -78,45 +107,14 @@ fn relay_shapes_accept_their_declared_fields() {
 }
 
 fn relay_shapes_reject_other_shapes() {
-    rerank_bodies_are_rejected();
-    image_bodies_are_rejected();
+    reject_bodies(REJECTED_RERANK_BODIES, RERANK_ENDPOINT);
+    reject_bodies(REJECTED_FLUX_BODIES, FLUX_ENDPOINT);
     only_a_matching_200_logs_a_relay_shape();
 }
 
-fn rerank_bodies_are_rejected() {
-    for body in [
-        &br#"{"results":[{"index":0}]}"#[..],
-        &br#"{"results":[{"relevance_score":0.5}]}"#[..],
-        &br#"{"results":[{"index":0.5,"relevance_score":0.5}]}"#[..],
-        &br#"{"results":[{"index":"1","relevance_score":0.5}]}"#[..],
-        &br#"{"results":[{"index":0,"relevance_score":"x"}]}"#[..],
-        &br#"{"results":[{"index":0,"relevance_score":true}]}"#[..],
-        &br#"{"results":[{"index":0,"relevance_score":0.5,"document":null}]}"#[..],
-        &br#"{"results":[{"index":0,"relevance_score":0.5,"document":{}}]}"#[..],
-        &br#"{"results":[{"index":0,"relevance_score":0.5,"document":{"text":5}}]}"#[..],
-        &br#"{"results":{}}"#[..],
-        &br#"{"results":[5]}"#[..],
-        &br#"{"id":5}"#[..],
-        &br#"{"meta":[]}"#[..],
-    ] {
-        assert_shape_rejected(body, RERANK_ENDPOINT);
-    }
-}
-
-fn image_bodies_are_rejected() {
-    for body in [
-        &br#"{"created":"yesterday"}"#[..],
-        &br#"{"data":[]}"#[..],
-        &br#"{"created":null}"#[..],
-        &br#"{"created":1.5}"#[..],
-        &br#"{"created":true}"#[..],
-        &br#"{"created":1,"data":{}}"#[..],
-        &br#"{"created":1,"data":[5]}"#[..],
-        &br#"{"created":1,"data":[{"url":5}]}"#[..],
-        &br#"{"created":1,"data":[{"b64_json":5}]}"#[..],
-        &br#"{"created":1,"data":[{"revised_prompt":5}]}"#[..],
-    ] {
-        assert_shape_rejected(body, FLUX_ENDPOINT);
+fn reject_bodies(bodies: &[&str], endpoint: &str) {
+    for body in bodies {
+        assert_shape_rejected(body.as_bytes(), endpoint);
     }
 }
 
