@@ -39,11 +39,11 @@ where
         .labels(&label_pairs(&remaining))
         .set(remaining_budget(amounts.max_budget, amounts.spend).metric_value());
     if let Some(max_budget) = amounts.max_budget {
-        let max = prometheus_label_factory(&gauges.max.supported_labels, values, source)?;
+        let max_labels = prometheus_label_factory(&gauges.max.supported_labels, values, source)?;
         gauges
             .max
             .collector
-            .labels(&label_pairs(&max))
+            .labels(&label_pairs(&max_labels))
             .set(MetricValue::Finite(max_budget));
     }
     if let Some(reset_at) = amounts.reset_at {

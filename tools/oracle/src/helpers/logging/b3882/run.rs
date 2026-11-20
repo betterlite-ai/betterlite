@@ -66,7 +66,7 @@ fn customer_row_value(input: &Input) -> HelperResult {
     let tracker = BoundedPrometheusSeriesTracker::default();
     let limits = SeriesLimits::default();
     let row = customer.row();
-    let defaults = default_budget.as_ref().map(BudgetRowCall::snapshot);
+    let fallback = default_budget.as_ref().map(BudgetRowCall::snapshot);
     let context = customer_context(
         &settings,
         *enable_end_user_tracking,
@@ -74,7 +74,7 @@ fn customer_row_value(input: &Input) -> HelperResult {
         &tracker,
         &limits,
     );
-    set_customer_row_gauges(&gauges, &row, defaults.as_ref(), context)
+    set_customer_row_gauges(&gauges, &row, fallback.as_ref(), context)
         .map_err(|error| helper_error("RuntimeError", &error.to_string()))?;
     Ok(samples_value(&log.drain()))
 }

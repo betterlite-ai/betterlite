@@ -53,12 +53,12 @@ fn write_customer(
     gauges: &EntityBudgetGauges<ProbeGauge>,
     call: &CustomerBudgetGaugeInput,
     now: DateTime<Utc>,
-    enabled: bool,
+    prometheus_only: bool,
 ) -> Result<(), Box<HelperError>> {
     let settings = PrometheusLabelSettings::with_defaults();
     let tracker = BoundedPrometheusSeriesTracker::default();
     let limits = SeriesLimits::default();
-    let context = customer_context(&settings, enabled, now, &tracker, &limits);
+    let context = customer_context(&settings, prometheus_only, now, &tracker, &limits);
     set_customer_budget_metrics(gauges, call, context)
         .map_err(|error| helper_error("RuntimeError", &error.to_string()))
 }

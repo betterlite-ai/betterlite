@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use betterlite_logging::prometheus::budget_gauges::gauge::{EntityBudgetGauges, GaugeField};
+use betterlite_logging::prometheus::budget_gauges::gauge::EntityBudgetGauges;
 use betterlite_oracle_helper_api::error::HelperError;
 
 use super::probe::{ProbeGauge, ProbeLog};
