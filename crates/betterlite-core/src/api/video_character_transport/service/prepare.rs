@@ -18,8 +18,8 @@ use secrecy::{ExposeSecret as _, SecretString};
 use super::super::clients::{CharacterBody, CharacterRequest};
 use super::super::config::{CharacterConfig, CharacterContext, CharacterEnvironment};
 use super::super::error::{CharacterError, CharacterFault, converted};
+use super::CharacterCall;
 use super::wire::{header_map, multipart_boundary, request_url};
-use super::{CharacterCall, CharacterCreateCall};
 
 // the litellm_params fields the handlers read before a transform sees them
 struct CallParts<'call> {
@@ -71,7 +71,21 @@ where
         headers: &headers,
     };
     let exchange = match call {
-        CharacterCall::Create(create) => created(config, create, context)?,
+        CharacterCall::Create(create) => {
+            let (url, files) = config
+                .transform_create_request(create.name, create.video, context)
+                .map_err(CharacterError::Provider)?;
+            let named =
+                IndexMap::from([(String::from("name"), Json::Text(create.name.to_owned()))]);
+            Exchange {
+                url,
+                method: Method::POST,
+                query: Vec::new(),
+                parts: Some(files),
+                logged: Some(named),
+                timeout: create.timeout,
+            }
+        }
         CharacterCall::Get(get) => {
             let (url, query) = config
                 .transform_get_request(get.character_id, context)
@@ -134,28 +148,6 @@ where
         headers: wire_headers,
         body,
         timeout: exchange.timeout,
-    })
-}
-
-fn created<C>(
-    config: &C,
-    call: &CharacterCreateCall<'_>,
-    context: CharacterContext<'_>,
-) -> Result<Exchange, CharacterFault<C>>
-where
-    C: CharacterConfig,
-{
-    let (url, parts) = config
-        .transform_create_request(call.name, call.video, context)
-        .map_err(CharacterError::Provider)?;
-    let named = IndexMap::from([(String::from("name"), Json::Text(call.name.to_owned()))]);
-    Ok(Exchange {
-        url,
-        method: Method::POST,
-        query: Vec::new(),
-        parts: Some(parts),
-        logged: Some(named),
-        timeout: call.timeout,
     })
 }
 
