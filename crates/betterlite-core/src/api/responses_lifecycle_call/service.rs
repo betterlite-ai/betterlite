@@ -1,13 +1,10 @@
+use std::collections::BTreeMap;
 use std::time::Duration;
 
-use betterlite_context::resource_config_selection::responses::{
-    ResponsesModelFacts, select_responses_config,
-};
+use betterlite_context::resource_config_selection::responses::ResponsesModelFacts;
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_state::LoggingState;
-use betterlite_logging::logging_state::updates::{CallUpdate, update_from_kwargs};
 use betterlite_models::decisions::Json;
-use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::api::responses_objects::ResponsesApiResponse;
 use betterlite_openai::response_resources::request::ListInputItemsQuery;
 use betterlite_openai::response_resources::response::TypedReply;
@@ -15,19 +12,23 @@ use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
 
 use crate::api::response_id_traversal::response_id::rewrite_typed_response;
-use crate::api::responses_read_http::service::{LogContext, ReadOutcome};
+use crate::api::responses_read_http::config::ReadParams;
+use crate::api::responses_read_http::service::{ClientKind, LogContext, ReadOutcome};
 
 use super::call_plan::{
-    LifecycleOperation, ReadCallPlan, affinity, mode_flag, resolve, timeout_deadline,
+    ReadCallPlan, affinity, decode, log_call, mode_flag, select, timeout_deadline,
 };
 use super::error::{LifecycleError, LifecycleFailure};
 use super::executor::{ReadRequest, ResponsesReadExecutor};
-use super::input::{LifecycleParams, ResponsesInputItemsCall, ResponsesRetrieveCall};
+use super::input::{
+    LifecycleOperation, ReadExtras, ReadIdentity, ResponsesInputItemsCall, ResponsesRetrieveCall,
+    SdkRead,
+};
 
-// the state and the pre-call environment the read logs through, borrowed for one call
+// the state and the pre-call environment the read logs through, owned for one call
 pub struct LifecycleLog<'borrow, 'env> {
     pub state: &'borrow mut LoggingState,
-    pub env: &'borrow PrePostEnv<'env>,
+    pub env: PrePostEnv<'env>,
 }
 
 pub struct ResponsesLifecycle<Executor> {
@@ -35,6 +36,16 @@ pub struct ResponsesLifecycle<Executor> {
     pub default_timeout: Duration,
     pub facts: ResponsesModelFacts,
     pub redactor: Redactor,
+}
+
+// the per-call pieces a read request carries besides the resolved plan and its params
+struct ReadSpec<'call> {
+    provider: Option<&'call str>,
+    extra_headers: Option<&'call BTreeMap<String, String>>,
+    extra_body: Option<&'call IndexMap<String, Json>>,
+    query: Option<&'call ListInputItemsQuery>,
+    timeout: Option<Duration>,
+    mode: ClientKind,
 }
 
 impl<Executor> ResponsesLifecycle<Executor>
@@ -45,40 +56,14 @@ where
     pub async fn get_responses(
         &self,
         call: &ResponsesRetrieveCall,
-        mut log: LifecycleLog<'_, '_>,
+        log: LifecycleLog<'_, '_>,
     ) -> Result<TypedReply, LifecycleFailure> {
-        let plan = self.plan(
-            &call.response_id,
-            call.custom_llm_provider.as_deref(),
-            LifecycleOperation::Retrieve,
-        )?;
-        self.log_call(&mut log, &plan, &call.params)?;
-        let params = call.params.read_params();
-        let timeout = timeout_deadline(call.timeout.as_ref(), self.default_timeout);
-        let request = ReadRequest {
-            tag: &plan.tag,
-            response_id: &plan.response_id,
-            params: &params,
-            extra_headers: call.extra_headers.as_ref(),
+        let extras = ReadExtras::Retrieve {
             extra_body: call.extra_body.as_ref(),
-            query: None,
-            timeout,
-            mode: mode_flag(call.aget_responses.as_ref()),
-            log: LogContext {
-                state: log.state,
-                env: log.env,
-            },
+            flag: call.aget_responses.as_ref(),
         };
-        match self.executor.read(request).await {
-            Ok(ReadOutcome::Response(mut reply)) => {
-                self.rewrite(&mut reply.response, &plan, &call.params)?;
-                Ok(*reply)
-            }
-            Ok(ReadOutcome::InputItems(_)) => {
-                Err(self.failure(LifecycleError::UnexpectedInputItems, Some(&plan.provider)))
-            }
-            Err(error) => Err(self.failure(LifecycleError::Read(error), Some(&plan.provider))),
-        }
+        let (outcome, plan) = self.run_read(call.identity.sdk_read(extras), log).await?;
+        self.retrieved_reply(outcome, &plan, &call.identity)
     }
 
     // the wrapper decodes first, hands the sync function its decoded id and provider, and rewrites once more
@@ -87,33 +72,21 @@ where
         call: &ResponsesRetrieveCall,
         log: LifecycleLog<'_, '_>,
     ) -> Result<TypedReply, LifecycleFailure> {
-        let resolved = resolve(&call.response_id, call.custom_llm_provider.as_deref());
         let mut inner = call.clone();
-        inner.response_id = resolved.response_id;
-        inner.custom_llm_provider = resolved.provider.clone();
+        decode(&mut inner.identity);
         inner.aget_responses = Some(Json::Bool(true));
         let mut reply = self.get_responses(&inner, log).await?;
         // the id is already encoded by now, so the wrapper's second rewrite reads it back unchanged
-        let metadata = affinity(inner.params.litellm_metadata.as_ref())
-            .map_err(|error| self.failure(error, resolved.provider.as_deref()))?;
-        rewrite_typed_response(&mut reply.response, resolved.provider.as_deref(), &metadata)
-            .map_err(|error| {
-                self.failure(LifecycleError::Rewrite(error), resolved.provider.as_deref())
-            })?;
+        let provider = inner.identity.custom_llm_provider.as_deref();
+        self.rewrite(&mut reply.response, provider, &inner.identity)?;
         Ok(reply)
     }
 
     pub async fn list_input_items(
         &self,
         call: &ResponsesInputItemsCall,
-        mut log: LifecycleLog<'_, '_>,
+        log: LifecycleLog<'_, '_>,
     ) -> Result<Json, LifecycleFailure> {
-        let plan = self.plan(
-            &call.response_id,
-            call.custom_llm_provider.as_deref(),
-            LifecycleOperation::InputItems,
-        )?;
-        self.log_call(&mut log, &plan, &call.params)?;
         let query = ListInputItemsQuery {
             after: call.after.clone(),
             before: call.before.clone(),
@@ -121,140 +94,135 @@ where
             limit: call.limit,
             order: call.order,
         };
-        let params = call.params.read_params();
-        let timeout = timeout_deadline(call.timeout.as_ref(), self.default_timeout);
-        let request = ReadRequest {
-            tag: &plan.tag,
-            response_id: &plan.response_id,
-            params: &params,
-            extra_headers: call.extra_headers.as_ref(),
-            extra_body: None,
-            query: Some(&query),
-            timeout,
-            mode: mode_flag(call.alist_input_items.as_ref()),
-            log: LogContext {
-                state: log.state,
-                env: log.env,
-            },
+        let extras = ReadExtras::InputItems {
+            query,
+            flag: call.alist_input_items.as_ref(),
         };
-        // the item list is the provider's own JSON: no id rewrite touches it
-        match self.executor.read(request).await {
-            Ok(ReadOutcome::InputItems(items)) => Ok(items),
-            Ok(ReadOutcome::Response(_)) => {
-                Err(self.failure(LifecycleError::UnexpectedResponse, Some(&plan.provider)))
-            }
-            Err(error) => Err(self.failure(LifecycleError::Read(error), Some(&plan.provider))),
-        }
+        let read = call.identity.sdk_read(extras);
+        let (outcome, plan) = self.run_read(read, log).await?;
+        self.item_page(outcome, &plan.provider)
     }
 
     // the wrapper decodes and sets the mode flag, and the sync function does the rest
     pub async fn alist_input_items(
         &self,
-        call: &ResponsesInputItemsCall,
+        mut call: ResponsesInputItemsCall,
         log: LifecycleLog<'_, '_>,
     ) -> Result<Json, LifecycleFailure> {
-        let resolved = resolve(&call.response_id, call.custom_llm_provider.as_deref());
-        let mut inner = call.clone();
-        inner.response_id = resolved.response_id;
-        inner.custom_llm_provider = resolved.provider;
-        inner.alist_input_items = Some(Json::Bool(true));
-        self.list_input_items(&inner, log).await
+        decode(&mut call.identity);
+        call.alist_input_items = Some(Json::Bool(true));
+        self.list_input_items(&call, log).await
     }
 
-    fn plan(
+    // the plan, the pre-call and the read params both sync entries settle before the request is built
+    fn start(
         &self,
-        response_id: &str,
-        explicit_provider: Option<&str>,
+        identity: &ReadIdentity,
         operation: LifecycleOperation,
-    ) -> Result<ReadCallPlan, LifecycleFailure> {
-        let resolved = resolve(response_id, explicit_provider);
-        let Some(provider) = resolved.provider else {
-            return Err(self.failure(LifecycleError::MissingProvider, None));
-        };
-        let unsupported = match operation {
-            LifecycleOperation::Retrieve => LifecycleError::UnsupportedRetrieve {
-                provider: provider.clone(),
-            },
-            LifecycleOperation::InputItems => LifecycleError::UnsupportedInputItems {
-                provider: provider.clone(),
-            },
-        };
-        let Some(tag) = provider
-            .parse::<ProviderId>()
-            .ok()
-            .and_then(|id| select_responses_config(Some(id), None, &self.facts))
-        else {
-            return Err(self.failure(unsupported, Some(&provider)));
-        };
-        Ok(ReadCallPlan {
-            response_id: resolved.response_id,
-            provider,
-            tag,
-        })
+        log: &mut LifecycleLog<'_, '_>,
+    ) -> Result<(ReadCallPlan, ReadParams), LifecycleFailure> {
+        let plan = select(
+            &identity.response_id,
+            identity.custom_llm_provider.as_deref(),
+            operation,
+            &self.facts,
+            &self.redactor,
+        )?;
+        log_call(&mut *log.state, &plan, identity, &self.redactor)?;
+        Ok((plan, identity.read_params()))
     }
 
-    // update_from_kwargs(kwargs=local_vars, model=None, optional_params, litellm_params, custom_llm_provider)
-    fn log_call(
+    // the shared sync path: resolve the plan, log the pre-call, build the request and run it
+    async fn run_read(
         &self,
-        log: &mut LifecycleLog<'_, '_>,
+        read: SdkRead<'_>,
+        mut log: LifecycleLog<'_, '_>,
+    ) -> Result<(ReadOutcome, ReadCallPlan), LifecycleFailure> {
+        let operation = read.extras.operation();
+        let (extra_body, query, flag) = match read.extras {
+            ReadExtras::Retrieve { extra_body, flag } => (extra_body, None, flag),
+            ReadExtras::InputItems { query, flag } => (None, Some(query), flag),
+        };
+        let (plan, params) = self.start(read.identity, operation, &mut log)?;
+        let spec = ReadSpec {
+            provider: Some(&plan.provider),
+            extra_headers: read.identity.extra_headers.as_ref(),
+            extra_body,
+            query: query.as_ref(),
+            timeout: timeout_deadline(read.identity.timeout.as_ref(), self.default_timeout),
+            mode: mode_flag(flag),
+        };
+        let outcome = self.read(&plan, &params, spec, log).await?;
+        Ok((outcome, plan))
+    }
+
+    // B904 re-encodes the retrieved id from litellm_metadata.model_info.id and the provider
+    fn retrieved_reply(
+        &self,
+        outcome: ReadOutcome,
         plan: &ReadCallPlan,
-        params: &LifecycleParams,
-    ) -> Result<(), LifecycleFailure> {
-        let mut kwargs = IndexMap::new();
-        if let Some(metadata) = &params.metadata {
-            kwargs.insert(String::from("metadata"), Json::Object(metadata.clone()));
-        }
-        if let Some(litellm_metadata) = &params.litellm_metadata {
-            kwargs.insert(
-                String::from("litellm_metadata"),
-                Json::Object(litellm_metadata.clone()),
-            );
-        }
-        let mut litellm_params = IndexMap::new();
-        litellm_params.insert(
-            String::from("litellm_call_id"),
-            params
-                .litellm_call_id
-                .as_ref()
-                .map_or(Json::Null, |id| Json::Text(id.clone())),
-        );
-        let mut optional_params = IndexMap::new();
-        optional_params.insert(
-            String::from("response_id"),
-            Json::Text(plan.response_id.clone()),
-        );
-        let mut additional_params = IndexMap::new();
-        additional_params.insert(
-            String::from("custom_llm_provider"),
-            Json::Text(plan.provider.clone()),
-        );
-        update_from_kwargs(
-            &mut *log.state,
-            &kwargs,
-            Some(&litellm_params),
-            CallUpdate {
-                model: None,
-                user: None,
-                optional_params,
-                additional_params,
+        identity: &ReadIdentity,
+    ) -> Result<TypedReply, LifecycleFailure> {
+        let ReadOutcome::Response(mut reply) = outcome else {
+            return Err(LifecycleFailure::new(
+                LifecycleError::UnexpectedInputItems,
+                Some(&plan.provider),
+                &self.redactor,
+            ));
+        };
+        self.rewrite(&mut reply.response, Some(&plan.provider), identity)?;
+        Ok(*reply)
+    }
+
+    // the item list is the provider's own JSON: no id rewrite touches it
+    fn item_page(&self, outcome: ReadOutcome, provider: &str) -> Result<Json, LifecycleFailure> {
+        let ReadOutcome::InputItems(items) = outcome else {
+            return Err(LifecycleFailure::new(
+                LifecycleError::UnexpectedResponse,
+                Some(provider),
+                &self.redactor,
+            ));
+        };
+        Ok(items)
+    }
+
+    // B2416 over the resolved plan; a failed read answers the SDK exception for the selected provider
+    async fn read(
+        &self,
+        plan: &ReadCallPlan,
+        params: &ReadParams,
+        spec: ReadSpec<'_>,
+        log: LifecycleLog<'_, '_>,
+    ) -> Result<ReadOutcome, LifecycleFailure> {
+        let request = ReadRequest {
+            tag: &plan.tag,
+            response_id: &plan.response_id,
+            params,
+            extra_headers: spec.extra_headers,
+            extra_body: spec.extra_body,
+            query: spec.query,
+            timeout: spec.timeout,
+            mode: spec.mode,
+            log: LogContext {
+                state: log.state,
+                env: &log.env,
             },
-        )
-        .map_err(|error| self.failure(LifecycleError::Logging(error), Some(&plan.provider)))
+        };
+        self.executor.read(request).await.map_err(|error| {
+            LifecycleFailure::new(LifecycleError::Read(error), spec.provider, &self.redactor)
+        })
     }
 
     fn rewrite(
         &self,
         response: &mut ResponsesApiResponse,
-        plan: &ReadCallPlan,
-        params: &LifecycleParams,
+        provider: Option<&str>,
+        identity: &ReadIdentity,
     ) -> Result<(), LifecycleFailure> {
-        let metadata = affinity(params.litellm_metadata.as_ref())
-            .map_err(|error| self.failure(error, Some(&plan.provider)))?;
-        rewrite_typed_response(response, Some(&plan.provider), &metadata)
-            .map_err(|error| self.failure(LifecycleError::Rewrite(error), Some(&plan.provider)))
-    }
-
-    fn failure(&self, error: LifecycleError, provider: Option<&str>) -> LifecycleFailure {
-        LifecycleFailure::new(error, provider.unwrap_or_default(), &self.redactor)
+        let metadata = affinity(identity.litellm_metadata.as_ref())
+            .map_err(|error| LifecycleFailure::new(error, provider, &self.redactor))?;
+        rewrite_typed_response(response, provider, &metadata).map_err(|error| {
+            LifecycleFailure::new(LifecycleError::Rewrite(error), provider, &self.redactor)
+        })
     }
 }

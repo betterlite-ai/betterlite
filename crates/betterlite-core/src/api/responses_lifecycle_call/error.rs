@@ -42,19 +42,20 @@ pub struct LifecycleFailure {
 
 impl LifecycleFailure {
     #[must_use]
-    pub fn new(error: LifecycleError, provider: &str, redactor: &Redactor) -> Self {
-        let raw = raw_exception(&error, provider);
+    pub fn new(error: LifecycleError, provider: Option<&str>, redactor: &Redactor) -> Self {
+        let raw = raw_exception(&error, provider.unwrap_or_default());
         let class = dispatch(&DispatchInput::Raw(Box::new(raw)), redactor);
         let metadata = class.metadata();
+        let (name, text) = class_and_message(&class);
         Self {
-            class: class_name(&class),
+            class: name,
             status: metadata.status_code,
             kind: metadata.error_type,
             param: metadata.param,
             code: metadata
                 .openai_code
                 .map_or(WireField::Null, WireField::Text),
-            message: class_message(&class).to_owned(),
+            message: text.to_owned(),
             error,
         }
     }
@@ -86,56 +87,38 @@ fn raw_exception(error: &LifecycleError, provider: &str) -> RawException {
     }
 }
 
-// the exception classes exception_type() raises for the families the read path reaches
-const fn class_name(class: &ErrorClass) -> &'static str {
+// the exception class exception_type() raises for the families the read path reaches, and the message it carries
+fn class_and_message(class: &ErrorClass) -> (&'static str, &str) {
     match class {
-        ErrorClass::Authentication(_) => "AuthenticationError",
-        ErrorClass::NotFound(_) => "NotFoundError",
-        ErrorClass::PermissionDenied(_) => "PermissionDeniedError",
-        ErrorClass::BadRequest(_) => "BadRequestError",
-        ErrorClass::UnprocessableEntity(_) => "UnprocessableEntityError",
-        ErrorClass::ContextWindowExceeded(_) => "ContextWindowExceededError",
-        ErrorClass::ContentPolicyViolation(_) => "ContentPolicyViolationError",
-        ErrorClass::ServiceUnavailable(_) => "ServiceUnavailableError",
-        ErrorClass::BadGateway(_) => "BadGatewayError",
-        ErrorClass::InternalServer(_) => "InternalServerError",
-        ErrorClass::Timeout(_) => "Timeout",
-        ErrorClass::RateLimit(_) => "RateLimitError",
-        ErrorClass::ApiConnection(_) => "APIConnectionError",
-        ErrorClass::ApiResponseValidation(_) => "APIResponseValidationError",
-        ErrorClass::BudgetExceeded(_) => "BudgetExceededError",
-        ErrorClass::UnsupportedParams(_) => "UnsupportedParamsError",
-        ErrorClass::Api(_)
-        | ErrorClass::JsonSchemaValidation(_)
-        | ErrorClass::GuardrailRaised(_)
-        | ErrorClass::MidStreamFallback(_)
-        | ErrorClass::Unclassified(_) => "APIError",
-    }
-}
-
-// the message each raised class carries, which is what a caller reads off the exception
-fn class_message(class: &ErrorClass) -> &str {
-    match class {
-        ErrorClass::Authentication(details) => &details.message,
-        ErrorClass::NotFound(details) => &details.message,
-        ErrorClass::PermissionDenied(details) => &details.message,
-        ErrorClass::BadRequest(details) => &details.message,
-        ErrorClass::UnprocessableEntity(details) => &details.message,
-        ErrorClass::ContextWindowExceeded(details) => &details.message,
-        ErrorClass::ContentPolicyViolation(details) => &details.message,
-        ErrorClass::ServiceUnavailable(context)
-        | ErrorClass::BadGateway(context)
-        | ErrorClass::InternalServer(context)
-        | ErrorClass::ApiConnection(context)
-        | ErrorClass::ApiResponseValidation(context)
-        | ErrorClass::UnsupportedParams(context)
-        | ErrorClass::Unclassified(context) => &context.message,
-        ErrorClass::Timeout(details) => &details.context.message,
-        ErrorClass::RateLimit(details) => &details.context.message,
-        ErrorClass::MidStreamFallback(details) => &details.context.message,
-        ErrorClass::Api(details) => &details.context.message,
-        ErrorClass::BudgetExceeded(details) => details.message.as_deref().unwrap_or_default(),
-        ErrorClass::GuardrailRaised(details) => &details.message,
-        ErrorClass::JsonSchemaValidation(details) => &details.raw_response,
+        ErrorClass::Authentication(details) => ("AuthenticationError", &details.message),
+        ErrorClass::NotFound(details) => ("NotFoundError", &details.message),
+        ErrorClass::PermissionDenied(details) => ("PermissionDeniedError", &details.message),
+        ErrorClass::BadRequest(details) => ("BadRequestError", &details.message),
+        ErrorClass::UnprocessableEntity(details) => ("UnprocessableEntityError", &details.message),
+        ErrorClass::ContextWindowExceeded(details) => {
+            ("ContextWindowExceededError", &details.message)
+        }
+        ErrorClass::ContentPolicyViolation(details) => {
+            ("ContentPolicyViolationError", &details.message)
+        }
+        ErrorClass::ServiceUnavailable(context) => ("ServiceUnavailableError", &context.message),
+        ErrorClass::BadGateway(context) => ("BadGatewayError", &context.message),
+        ErrorClass::InternalServer(context) => ("InternalServerError", &context.message),
+        ErrorClass::Timeout(details) => ("Timeout", &details.context.message),
+        ErrorClass::RateLimit(details) => ("RateLimitError", &details.context.message),
+        ErrorClass::ApiConnection(context) => ("APIConnectionError", &context.message),
+        ErrorClass::ApiResponseValidation(context) => {
+            ("APIResponseValidationError", &context.message)
+        }
+        ErrorClass::BudgetExceeded(details) => (
+            "BudgetExceededError",
+            details.message.as_deref().unwrap_or_default(),
+        ),
+        ErrorClass::UnsupportedParams(context) => ("UnsupportedParamsError", &context.message),
+        ErrorClass::GuardrailRaised(details) => ("APIError", &details.message),
+        ErrorClass::JsonSchemaValidation(details) => ("APIError", &details.raw_response),
+        ErrorClass::MidStreamFallback(details) => ("APIError", &details.context.message),
+        ErrorClass::Api(details) => ("APIError", &details.context.message),
+        ErrorClass::Unclassified(context) => ("APIError", &context.message),
     }
 }
