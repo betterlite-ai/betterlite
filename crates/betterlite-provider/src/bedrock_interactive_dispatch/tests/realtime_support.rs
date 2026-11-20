@@ -398,9 +398,7 @@ fn realtime_connect_failure() {
         )
     )
     .unwrap_err();
-    let source = match error {
-        realtime_bridge::OperationError::Session { source } => source,
-    };
+    let realtime_bridge::OperationError::Session { source } = error;
     assert!(matches!(&source, RealtimeTransportError::Stream(_)));
     assert_eq!(source.status_code(), None);
     assert!(fixture.socket.sent().is_empty());
