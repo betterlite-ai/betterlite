@@ -9,8 +9,11 @@ deviations:
   - what: A status-error body decodes as UTF-8 with replacement, where httpx's response.text honours a charset named in the content type.
     why: betterlite's parity surface is standard JSON and UTF-8 text, so a body declared in another charset keeps its bytes' replacement text rather than a decoded string.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5052
+  - what: A transformed URL that does not parse fails with the typed RequestUrl error before the pre-call and before anything is sent.
+    why: LiteLLM hands the string to httpx. The buffered modes have already logged the pre-call and turn the unusable URL into a synthesized 500 BaseLLMException, and the streaming mode, which builds its request outside its try, lets httpx's InvalidURL escape. Nothing reaches the network on any path, so betterlite names the URL instead of a status the provider never sent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5046-L5049
   - what: A header name or value HTTP cannot carry fails with a typed error naming that header before any request is sent.
-    why: LiteLLM builds the streaming request outside its try, so the same header escapes as an httpx exception with no request made. betterlite names the header and never sends a partial request.
+    why: LiteLLM hands the strings to httpx, so the buffered modes turn the encode failure into a synthesized 500 BaseLLMException and the streaming mode, which builds its request outside its try, lets the httpx exception escape. Nothing is sent on any path; betterlite names the header instead of either shape.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5135
   - what: A missing Manus API key surfaces as the provider's typed error carrying LiteLLM's message.
     why: LiteLLM raises a bare ValueError from validate_environment, which a caller can only catch as ValueError. betterlite keeps the message and returns an error the caller can match by type.
