@@ -16,6 +16,7 @@ from pydantic import TypeAdapter
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 GUARDRAIL_NAME: Final = "content-filter-inputs"
+PARSE_DEPTH_LIMIT: Final = 127
 
 
 class Dispatch(TypedDict):
@@ -154,13 +155,45 @@ def tool_call(item: ToolCallInput) -> ChatCompletionMessageToolCall:
     return ChatCompletionMessageToolCall(function=function, id=item["id"], type=item["type"])
 
 
+def container_depth(text: str) -> int:
+    # serde_json refuses a document nested 128 containers deep, so the Rust projection keeps such arguments a string
+    open_containers = 0
+    deepest = 0
+    in_string = False
+    escaped = False
+    for character in text:
+        if escaped:
+            escaped = False
+        elif in_string:
+            if character == "\\":
+                escaped = True
+            elif character == '"':
+                in_string = False
+        elif character == '"':
+            in_string = True
+        elif character in "[{":
+            open_containers += 1
+            deepest = max(deepest, open_containers)
+        elif character in "]}":
+            open_containers -= 1
+    return deepest
+
+
+def parsed_arguments(arguments: str) -> Json:
+    if container_depth(arguments) > PARSE_DEPTH_LIMIT:
+        return arguments
+    try:
+        return JSON.validate_json(arguments)
+    except ValueError:
+        return arguments
+
+
 def tool_call_tag(call: ChatCompletionMessageToolCall) -> Json:
     dump = TOOL_CALL_DUMP.validate_json(call.model_dump_json())
-    try:
-        arguments: Json = JSON.validate_json(dump["function"]["arguments"])
-    except ValueError:
-        arguments = dump["function"]["arguments"]
-    function: Json = {"name": dump["function"]["name"], "arguments": arguments}
+    function: Json = {
+        "name": dump["function"]["name"],
+        "arguments": parsed_arguments(dump["function"]["arguments"]),
+    }
     return {"id": dump["id"], "type": dump["type"], "function": function}
 
 
