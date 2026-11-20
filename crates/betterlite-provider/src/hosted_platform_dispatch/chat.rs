@@ -23,7 +23,7 @@ pub async fn dispatch<P, R>(
     tag: ChatConfigTag,
     context: &DispatchContext<'_>,
     capabilities: &mut P,
-    handler: &dyn ChatCompletionHandler<Reply = R>,
+    handler: &(dyn ChatCompletionHandler<Reply = R> + Sync),
     log: &mut CallLogging<'_, '_>,
 ) -> Option<Result<R, DispatchError>>
 where
@@ -68,7 +68,7 @@ where
 async fn fireworks<P, R>(
     context: &DispatchContext<'_>,
     capabilities: &mut P,
-    handler: &dyn ChatCompletionHandler<Reply = R>,
+    handler: &(dyn ChatCompletionHandler<Reply = R> + Sync),
     log: &mut CallLogging<'_, '_>,
 ) -> Result<R, DispatchError>
 where
@@ -101,7 +101,7 @@ fn logged<R>(
 // _complete_groq: the passed base, litellm.api_base, GROQ_API_BASE and the public default; the passed key, litellm.api_key, litellm.groq_key and GROQ_API_KEY; the passed headers, then litellm.headers
 fn groq<R>(
     context: &DispatchContext<'_>,
-    handler: &dyn ChatCompletionHandler<Reply = R>,
+    handler: &(dyn ChatCompletionHandler<Reply = R> + Sync),
 ) -> Result<R, DispatchError> {
     let mut call = CompletionCall::from_context(context);
     call.api_base = Some(

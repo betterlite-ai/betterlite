@@ -13,7 +13,10 @@ use crate::hosted_platform_dispatch::embedding::dispatch;
 use crate::hosted_platform_dispatch::error::DispatchError;
 use crate::hosted_platform_dispatch::perplexity;
 
-fn assert_not_built<T: Debug>(outcome: Result<T, DispatchError>, operation: &str) {
+fn assert_not_built<T>(outcome: Result<T, DispatchError>, operation: &str)
+where
+    T: Debug,
+{
     let error = outcome.expect_err("the operation must answer an error");
     assert_eq!(
         error.to_string(),

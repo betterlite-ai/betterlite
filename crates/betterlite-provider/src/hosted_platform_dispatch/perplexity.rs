@@ -9,7 +9,7 @@ mod tests;
 
 // main.py's perplexity embedding arm (L7335-L7348); B5834 builds the shared HTTP embedding handler here
 #[rustfmt::skip]
-pub fn embedding(_call: &EmbeddingCall) -> Result<EmbeddingCall, DispatchError> {
+pub const fn embedding(_call: &EmbeddingCall) -> Result<EmbeddingCall, DispatchError> {
     Err(DispatchError::NotBuilt {
         provider: PROVIDER,
         operation: "embedding",
@@ -18,7 +18,7 @@ pub fn embedding(_call: &EmbeddingCall) -> Result<EmbeddingCall, DispatchError> 
 
 // the Perplexity Responses config B5360's tag selects; B5834 builds it here
 #[rustfmt::skip]
-pub fn responses(_call: &ResourceCall<'_>) -> Result<PreparedRequest, DispatchError> {
+pub const fn responses(_call: &ResourceCall<'_>) -> Result<PreparedRequest, DispatchError> {
     Err(DispatchError::NotBuilt {
         provider: PROVIDER,
         operation: "responses",
@@ -27,7 +27,7 @@ pub fn responses(_call: &ResourceCall<'_>) -> Result<PreparedRequest, DispatchEr
 
 // the Perplexity search config B5360's tag selects; B5834 builds it here
 #[rustfmt::skip]
-pub fn search(_call: &ResourceCall<'_>) -> Result<PreparedRequest, DispatchError> {
+pub const fn search(_call: &ResourceCall<'_>) -> Result<PreparedRequest, DispatchError> {
     Err(DispatchError::NotBuilt {
         provider: PROVIDER,
         operation: "search",
@@ -36,7 +36,7 @@ pub fn search(_call: &ResourceCall<'_>) -> Result<PreparedRequest, DispatchError
 
 // the Perplexity decisions config B5360's tag selects; B5834 builds it here
 #[rustfmt::skip]
-pub fn decisions(_call: &ResourceCall<'_>) -> Result<PreparedRequest, DispatchError> {
+pub const fn decisions(_call: &ResourceCall<'_>) -> Result<PreparedRequest, DispatchError> {
     Err(DispatchError::NotBuilt {
         provider: PROVIDER,
         operation: "decisions",

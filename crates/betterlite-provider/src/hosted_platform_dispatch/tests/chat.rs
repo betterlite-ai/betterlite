@@ -98,11 +98,17 @@ async fn groq_and_cloudflare_return_the_handler_error_without_logging_it() {
         }))
     ));
     assert_eq!(log.state.model_call_details.get("original_response"), None);
-    let fixture = cloudflare_fixture();
-    let handler = Recorder::failing(500);
-    let outcome = dispatch_chat(ChatConfigTag::CloudflareChat, &fixture, &handler, &mut log).await;
+    let cloudflare = cloudflare_fixture();
+    let cloudflare_handler = Recorder::failing(500);
+    let cloudflare_outcome = dispatch_chat(
+        ChatConfigTag::CloudflareChat,
+        &cloudflare,
+        &cloudflare_handler,
+        &mut log,
+    )
+    .await;
     assert!(matches!(
-        outcome,
+        cloudflare_outcome,
         Err(DispatchError::Handler(HandlerError::Upstream {
             status_code: 500
         }))
@@ -139,8 +145,8 @@ async fn fireworks_maps_extra_body_params_only_for_its_chat_config() {
     let call = handler.first();
     assert_eq!(call.provider_config, Some(ChatConfigTag::FireworksAi));
     let mapped = chat_object(&call.optional_params);
-    assert_eq!(mapped.get("temperature"), Some(&json!(1)));
-    assert_eq!(mapped.get("reasoning_effort"), Some(&json!(64)));
+    assert_eq!(mapped.get("temperature"), Some(&json!(1_u64)));
+    assert_eq!(mapped.get("reasoning_effort"), Some(&json!(64_u64)));
     assert_eq!(mapped.get("chat_template_kwargs"), None);
     assert_eq!(mapped.get("extra_body"), None);
 }
@@ -389,21 +395,31 @@ async fn groq_falls_back_from_the_request_headers_to_the_global_ones() {
         Some(headers(&[("x-scope", "global")]))
     );
     fixture.headers = Some(BTreeMap::new());
-    let handler = Recorder::succeeding();
-    dispatch_chat(ChatConfigTag::GroqChat, &fixture, &handler, &mut log)
-        .await
-        .expect("the groq arm answers");
+    let empty_headers_handler = Recorder::succeeding();
+    dispatch_chat(
+        ChatConfigTag::GroqChat,
+        &fixture,
+        &empty_headers_handler,
+        &mut log,
+    )
+    .await
+    .expect("the groq arm answers");
     assert_eq!(
-        handler.first().headers,
+        empty_headers_handler.first().headers,
         Some(headers(&[("x-scope", "global")]))
     );
     fixture.headers = Some(headers(&[("x-scope", "request")]));
-    let handler = Recorder::succeeding();
-    dispatch_chat(ChatConfigTag::GroqChat, &fixture, &handler, &mut log)
-        .await
-        .expect("the groq arm answers");
+    let request_headers_handler = Recorder::succeeding();
+    dispatch_chat(
+        ChatConfigTag::GroqChat,
+        &fixture,
+        &request_headers_handler,
+        &mut log,
+    )
+    .await
+    .expect("the groq arm answers");
     assert_eq!(
-        handler.first().headers,
+        request_headers_handler.first().headers,
         Some(headers(&[("x-scope", "request")]))
     );
 }
@@ -446,16 +462,21 @@ async fn groq_and_cloudflare_send_no_provider_config() {
         .await
         .expect("the groq arm answers");
     assert_eq!(handler.first().provider_config, None);
-    let mut fixture = Fixture::new();
-    fixture.provider = String::from("cloudflare");
-    fixture.provider_config = Some(ChatConfigTag::CloudflareChat);
-    fixture.api_key = Some(secret("sk-cloudflare"));
-    fixture.api_base = Some(String::from("https://mock.example.com/v1"));
-    let handler = Recorder::succeeding();
-    dispatch_chat(ChatConfigTag::CloudflareChat, &fixture, &handler, &mut log)
-        .await
-        .expect("the cloudflare arm answers");
-    assert_eq!(handler.first().provider_config, None);
+    let mut cloudflare = Fixture::new();
+    cloudflare.provider = String::from("cloudflare");
+    cloudflare.provider_config = Some(ChatConfigTag::CloudflareChat);
+    cloudflare.api_key = Some(secret("sk-cloudflare"));
+    cloudflare.api_base = Some(String::from("https://mock.example.com/v1"));
+    let cloudflare_handler = Recorder::succeeding();
+    dispatch_chat(
+        ChatConfigTag::CloudflareChat,
+        &cloudflare,
+        &cloudflare_handler,
+        &mut log,
+    )
+    .await
+    .expect("the cloudflare arm answers");
+    assert_eq!(cloudflare_handler.first().provider_config, None);
 }
 
 #[rstest]
@@ -598,12 +619,17 @@ async fn cloudflare_passes_headers_as_they_came_without_a_global_fallback() {
         .expect("the cloudflare arm answers");
     assert_eq!(handler.first().headers, None);
     fixture.headers = Some(headers(&[("x-scope", "request")]));
-    let handler = Recorder::succeeding();
-    dispatch_chat(ChatConfigTag::CloudflareChat, &fixture, &handler, &mut log)
-        .await
-        .expect("the cloudflare arm answers");
+    let request_headers_handler = Recorder::succeeding();
+    dispatch_chat(
+        ChatConfigTag::CloudflareChat,
+        &fixture,
+        &request_headers_handler,
+        &mut log,
+    )
+    .await
+    .expect("the cloudflare arm answers");
     assert_eq!(
-        handler.first().headers,
+        request_headers_handler.first().headers,
         Some(headers(&[("x-scope", "request")]))
     );
 }
