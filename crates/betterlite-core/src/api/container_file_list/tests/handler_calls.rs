@@ -264,10 +264,10 @@ fn the_handler_call_timeout_is_not_part_of_the_request() {
     let fixture = Fixture::new();
     let params = fixture.params();
     let mut quick = fixture.handler_call::<FakeSource>(&params, None, None);
-    quick.timeout_seconds = 5.0;
+    quick.timeout_seconds = 5.0_f64;
     container_file_list_handler(&fixture.source, &fixture.hook, &quick).expect("the send");
     let mut slow = fixture.handler_call::<FakeSource>(&params, None, None);
-    slow.timeout_seconds = 600.0;
+    slow.timeout_seconds = 600.0_f64;
     container_file_list_handler(&fixture.source, &fixture.hook, &slow).expect("the send");
 
     let requests = fixture.requests();

@@ -5,9 +5,14 @@ use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::sections::openai_credentials::Settings;
+use betterlite_config::types::ProxyTrust;
+use betterlite_http::proxy::limits::TransportLimits;
+use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::pool::PoolError;
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_http::proxy::{ProxiedClient, base_builder};
 use betterlite_logging::logging_pre_post::args::AdditionalArgs;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_logging::logging_pre_post::pre_call::PreCall;
@@ -26,8 +31,7 @@ use betterlite_openai::api::container_contracts::config::{
 };
 use betterlite_openai::api::container_contracts::error::{BaseLlmException, ContainerError};
 use betterlite_openai::api::container_contracts::records::{
-    ContainerFileListResponse, ContainerFileObject, ContainerListResponse, ContainerObject,
-    DeleteContainerResult,
+    ContainerFileListResponse, ContainerListResponse, ContainerObject, DeleteContainerResult,
 };
 use betterlite_openai::containers::OpenAiContainerConfig;
 use betterlite_openai::containers::container_file_http::PreCallHook;
@@ -41,10 +45,13 @@ use betterlite_openai::credentials::LiteLlmGlobals;
 use betterlite_openai::openai_base_config::Object;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
+use http::{HeaderMap, Method};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::json;
+use tokio::net::TcpListener;
+use url::Url;
 
 use super::error::{ContainerFileListFailure, FileListHandlerError};
 use super::execution::ContainerFileListCall;
@@ -191,8 +198,8 @@ impl RecordingConfig {
 impl BaseContainerConfig for RecordingConfig {
     fn get_supported_openai_params(&self) -> Vec<String> { self.inner.get_supported_openai_params() }
 
-    fn map_openai_params(&self, params: &Object, drop_params: bool) -> Object {
-        self.inner.map_openai_params(params, drop_params)
+    fn map_openai_params(&self, container_create_optional_params: &Object, drop_params: bool) -> Object {
+        self.inner.map_openai_params(container_create_optional_params, drop_params)
     }
 
     fn validate_environment(&self, headers: &BTreeMap<String, String>, api_key: Option<&str>) -> BTreeMap<String, String> {
@@ -211,36 +218,36 @@ impl BaseContainerConfig for RecordingConfig {
         self.inner.get_complete_url(api_base, params)
     }
 
-    fn transform_container_create_request(&self, name: &str, params: &Object, context: ContainerRequestContext<'_>) -> Object {
-        self.inner.transform_container_create_request(name, params, context)
+    fn transform_container_create_request(&self, name: &str, container_create_optional_request_params: &Object, context: ContainerRequestContext<'_>) -> Object {
+        self.inner.transform_container_create_request(name, container_create_optional_request_params, context)
     }
 
-    fn transform_container_create_response(&self, raw: &[u8]) -> Result<ContainerObject, ContainerError> {
-        self.inner.transform_container_create_response(raw)
+    fn transform_container_create_response(&self, raw_response: &[u8]) -> Result<ContainerObject, ContainerError> {
+        self.inner.transform_container_create_response(raw_response)
     }
 
     fn transform_container_list_request(&self, api_base: &str, context: ContainerRequestContext<'_>, query: &ContainerListQuery<'_>) -> (String, Object) {
         self.inner.transform_container_list_request(api_base, context, query)
     }
 
-    fn transform_container_list_response(&self, raw: &[u8]) -> Result<ContainerListResponse, ContainerError> {
-        self.inner.transform_container_list_response(raw)
+    fn transform_container_list_response(&self, raw_response: &[u8]) -> Result<ContainerListResponse, ContainerError> {
+        self.inner.transform_container_list_response(raw_response)
     }
 
-    fn transform_container_retrieve_request(&self, id: &str, api_base: &str, context: ContainerRequestContext<'_>) -> Result<(String, Object), ContainerError> {
-        self.inner.transform_container_retrieve_request(id, api_base, context)
+    fn transform_container_retrieve_request(&self, container_id: &str, api_base: &str, context: ContainerRequestContext<'_>) -> Result<(String, Object), ContainerError> {
+        self.inner.transform_container_retrieve_request(container_id, api_base, context)
     }
 
-    fn transform_container_retrieve_response(&self, raw: &[u8]) -> Result<ContainerObject, ContainerError> {
-        self.inner.transform_container_retrieve_response(raw)
+    fn transform_container_retrieve_response(&self, raw_response: &[u8]) -> Result<ContainerObject, ContainerError> {
+        self.inner.transform_container_retrieve_response(raw_response)
     }
 
-    fn transform_container_delete_request(&self, id: &str, api_base: &str, context: ContainerRequestContext<'_>) -> Result<(String, Object), ContainerError> {
-        self.inner.transform_container_delete_request(id, api_base, context)
+    fn transform_container_delete_request(&self, container_id: &str, api_base: &str, context: ContainerRequestContext<'_>) -> Result<(String, Object), ContainerError> {
+        self.inner.transform_container_delete_request(container_id, api_base, context)
     }
 
-    fn transform_container_delete_response(&self, raw: &[u8]) -> Result<DeleteContainerResult, ContainerError> {
-        self.inner.transform_container_delete_response(raw)
+    fn transform_container_delete_response(&self, raw_response: &[u8]) -> Result<DeleteContainerResult, ContainerError> {
+        self.inner.transform_container_delete_response(raw_response)
     }
 
     fn transform_container_file_list_request(&self, container_id: &str, api_base: &str, context: ContainerRequestContext<'_>, query: &ContainerListQuery<'_>) -> Result<(String, Object), ContainerError> {
@@ -257,20 +264,20 @@ impl BaseContainerConfig for RecordingConfig {
         self.inner.transform_container_file_list_request(container_id, api_base, context, query)
     }
 
-    fn transform_container_file_list_response(&self, raw: &[u8]) -> Result<ContainerFileListResponse, ContainerError> {
-        self.inner.transform_container_file_list_response(raw)
+    fn transform_container_file_list_response(&self, raw_response: &[u8]) -> Result<ContainerFileListResponse, ContainerError> {
+        self.inner.transform_container_file_list_response(raw_response)
     }
 
-    fn transform_container_file_content_request(&self, id: &str, file_id: &str, api_base: &str, context: ContainerRequestContext<'_>) -> Result<(String, Object), ContainerError> {
-        self.inner.transform_container_file_content_request(id, file_id, api_base, context)
+    fn transform_container_file_content_request(&self, container_id: &str, file_id: &str, api_base: &str, context: ContainerRequestContext<'_>) -> Result<(String, Object), ContainerError> {
+        self.inner.transform_container_file_content_request(container_id, file_id, api_base, context)
     }
 
-    fn transform_container_file_content_response(&self, raw: &[u8]) -> Result<Vec<u8>, ContainerError> {
-        self.inner.transform_container_file_content_response(raw)
+    fn transform_container_file_content_response(&self, raw_response: &[u8]) -> Result<Vec<u8>, ContainerError> {
+        self.inner.transform_container_file_content_response(raw_response)
     }
 
-    fn get_error_class(&self, message: &str, status_code: u16, headers: &BTreeMap<String, String>) -> BaseLlmException {
-        self.inner.get_error_class(message, status_code, headers)
+    fn get_error_class(&self, error_message: &str, status_code: u16, headers: &BTreeMap<String, String>) -> BaseLlmException {
+        self.inner.get_error_class(error_message, status_code, headers)
     }
 }
 
@@ -315,9 +322,8 @@ impl ContainerConfigLookup for Lookup {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(provider);
-        self.config
-            .as_ref()
-            .map(|config| config as &dyn BaseContainerConfig)
+        let config: &dyn BaseContainerConfig = self.config.as_ref()?;
+        Some(config)
     }
 }
 
@@ -325,6 +331,7 @@ impl ContainerConfigLookup for Lookup {
 pub(crate) enum Answer {
     Reply { status: u16, body: Vec<u8> },
     Failure,
+    Deadline(Arc<Mutex<Option<TransferError>>>),
 }
 
 // Answers every request the same way, keeps what it was asked, and notes when it sent
@@ -352,6 +359,14 @@ impl FakeClient {
             seen: Arc::default(),
             order: None,
             answer: Answer::Failure,
+        }
+    }
+
+    pub(crate) fn deadline(error: TransferError) -> Self {
+        Self {
+            seen: Arc::default(),
+            order: None,
+            answer: Answer::Deadline(Arc::new(Mutex::new(Some(error)))),
         }
     }
 
@@ -385,6 +400,14 @@ impl FakeClient {
                 body: body.clone(),
             }),
             Answer::Failure => Err(TransferError::Transport(TransportError::Closed)),
+            Answer::Deadline(deadline) => {
+                let error = deadline
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .take()
+                    .expect("the deadline is handed out once");
+                Err(error)
+            }
         }
     }
 }
@@ -454,6 +477,37 @@ impl ClientSource for FakeSource {
             .push(ssl_verify.cloned());
         Ok(self.client.clone())
     }
+}
+
+const DEADLINE_LIMITS: TransportLimits = TransportLimits {
+    read_timeout: Duration::from_millis(100),
+    ..TransportLimits::DEFAULT
+};
+
+// a real read timeout: a bound listener that never answers, and the client's own read limit ends the wait
+pub(crate) async fn deadline_failure() -> TransferError {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the listener");
+    let address = listener.local_addr().expect("the address");
+    let policy = Arc::new(
+        ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("the policy"),
+    );
+    let client = ProxiedClient::build(base_builder().http1_only(), &policy, DEADLINE_LIMITS)
+        .expect("the client");
+    let request = OutboundRequest {
+        method: Method::GET,
+        url: Url::parse(&format!("http://{address}/")).expect("the URL"),
+        query: Vec::new(),
+        headers: HeaderMap::new(),
+        body: RequestBody::Empty,
+        deadline: DEADLINE_LIMITS.read_timeout,
+    };
+    let failure = client
+        .send_buffered(request)
+        .await
+        .expect_err("the answer never comes");
+    TransferError::Transport(failure)
 }
 
 // what pre_call saw, and the logging state as it stood when the hook ran
@@ -637,12 +691,15 @@ impl Fixture {
         params
     }
 
-    pub(crate) fn handler_call<'call, Source: ClientSource>(
+    pub(crate) fn handler_call<'call, Source>(
         &'call self,
         params: &'call Object,
         blocking: Option<&'call Source::Blocking>,
         asynchronous: Option<&'call Source::Asynchronous>,
-    ) -> ContainerFileListCall<'call, Source> {
+    ) -> ContainerFileListCall<'call, Source>
+    where
+        Source: ClientSource,
+    {
         ContainerFileListCall {
             config: self.config(),
             litellm_params: params,

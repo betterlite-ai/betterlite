@@ -18,7 +18,7 @@ use super::asynchronous::alist_container_files;
 use super::prepare::{Prepared, prepare_call};
 use super::test_support::{
     API_KEY, CALL_ID, CONTAINER_ID, FILE_LIST_BODY, FILES_BASE, FakeClient, Fixture, Lookup,
-    REQUEST_TIMEOUT, RecordingHook, object,
+    REQUEST_TIMEOUT, RecordingHook, deadline_failure, object,
 };
 use crate::api::response_id_codecs::container::build_container_id;
 
@@ -78,7 +78,7 @@ fn an_empty_transform_query_sends_no_query_pairs() {
 #[test]
 fn the_declared_timeout_is_kept_when_the_caller_gives_one() {
     let mut fixture = Fixture::new();
-    fixture.timeout = Some(5.0);
+    fixture.timeout = Some(5.0_f64);
 
     let timeout = prepared_timeout(&fixture);
 
@@ -97,7 +97,7 @@ fn an_absent_timeout_uses_the_declared_six_hundred_seconds() {
 #[test]
 fn a_zero_timeout_falls_back_to_the_request_timeout() {
     let mut fixture = Fixture::new();
-    fixture.timeout = Some(0.0);
+    fixture.timeout = Some(0.0_f64);
 
     let timeout = prepared_timeout(&fixture);
 
@@ -107,9 +107,9 @@ fn a_zero_timeout_falls_back_to_the_request_timeout() {
 #[test]
 fn the_timeout_never_reaches_the_request() {
     let mut patient = Fixture::new();
-    patient.timeout = Some(600.0);
+    patient.timeout = Some(600.0_f64);
     let mut impatient = Fixture::new();
-    impatient.timeout = Some(1.0);
+    impatient.timeout = Some(1.0_f64);
 
     patient.call().expect("the file list decodes");
     impatient.call().expect("the file list decodes");
@@ -344,6 +344,7 @@ fn the_logging_object_and_async_flag_never_reach_the_params() {
         .unwrap_or_else(PoisonError::into_inner);
     assert!(state.litellm_params.get("litellm_logging_obj").is_none());
     assert!(state.litellm_params.get("async_call").is_none());
+    drop(state);
     let transforms = fixture.config().transforms();
     assert!(transforms[0].params.get("litellm_logging_obj").is_none());
     assert!(transforms[0].params.get("async_call").is_none());
@@ -485,7 +486,7 @@ fn a_ssl_verify_kwarg_reaches_the_transform_and_the_client_builder() {
         transforms[0]
             .params
             .get("ssl_verify")
-            .and_then(|value| value.as_bool()),
+            .and_then(serde_json::Value::as_bool),
         Some(true)
     );
 }
@@ -656,4 +657,54 @@ async fn a_transport_failure_through_the_async_operation_is_an_internal_server()
     .expect_err("the client is closed");
 
     assert!(matches!(&failure.class, ErrorClass::InternalServer(_)));
+}
+
+#[tokio::test]
+async fn a_client_deadline_is_a_408_timeout() {
+    let mut fixture = Fixture::new();
+    fixture.source.client = FakeClient::deadline(deadline_failure().await);
+
+    let failure = fixture.call().expect_err("the client ran out of time");
+
+    let ErrorClass::Timeout(details) = &failure.class else {
+        panic!("expected a timeout, got {:?}", failure.class);
+    };
+    assert_eq!(details.original_status.0, 408);
+    assert!(details.context.message.contains("read timeout"));
+    assert_eq!(details.context.provider.as_deref(), Some("openai"));
+}
+
+#[tokio::test]
+async fn the_async_entry_maps_handler_failures_with_the_callers_provider() {
+    let mut fixture = Fixture::answering(500, r#"{"error":{"message":"boom"}}"#);
+    fixture.container_id = build_container_id(Some("azure"), None, CONTAINER_ID);
+    let request = fixture.request();
+
+    let failure = alist_container_files(
+        &fixture.source,
+        &fixture.hook,
+        &fixture.lookup,
+        fixture.deps(),
+        &request,
+    )
+    .await
+    .expect_err("the provider answers 500");
+
+    let ErrorClass::InternalServer(context) = &failure.class else {
+        panic!(
+            "expected the caller's internal server, got {:?}",
+            failure.class
+        );
+    };
+    assert_eq!(context.provider.as_deref(), Some("openai"));
+}
+
+#[test]
+fn the_sync_entry_maps_handler_failures_with_the_decoded_provider() {
+    let mut fixture = Fixture::answering(500, r#"{"error":{"message":"boom"}}"#);
+    fixture.container_id = build_container_id(Some("azure"), None, CONTAINER_ID);
+
+    let failure = fixture.call().expect_err("the provider answers 500");
+
+    assert!(matches!(&failure.class, ErrorClass::Api(_)));
 }
