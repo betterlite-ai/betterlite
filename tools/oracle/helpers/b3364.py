@@ -160,10 +160,6 @@ def request_fields(wire: Wire) -> JsonValue:
     }
 
 
-def log_fields(calls: list[dict[str, JsonValue]]) -> JsonValue:
-    return [log_entry(call) for call in calls]
-
-
 def log_entry(call: dict[str, JsonValue]) -> JsonValue:
     args = ARGS.validate_python(call["additional_args"])
     headers: dict[str, JsonValue] = {
@@ -220,7 +216,7 @@ def handler_client(wire: Wire) -> HTTPHandler:
 def answer_fields(wire: Wire, log: RecordingLogging, payload: dict[str, JsonValue]) -> JsonValue:
     return {
         "request": request_fields(wire),
-        "log": log_fields(log.calls),
+        "log": [log_entry(call) for call in log.calls],
         **payload,
     }
 
