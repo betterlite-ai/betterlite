@@ -1,10 +1,9 @@
 import asyncio
-import traceback
 from collections.abc import Coroutine
-from pathlib import Path
 from typing import Literal, NotRequired, Protocol, TypeAlias, TypedDict, cast
 
 import httpx
+import litellm
 import openai
 from litellm import acreate_fine_tuning_job, create_fine_tuning_job  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L77-L89
 from litellm.fine_tuning import main as fine_tuning_main
@@ -136,7 +135,8 @@ class VertexRecorder(httpx.AsyncBaseTransport):
             url=request.url.copy_with(
                 scheme=self.origin.scheme, host=self.origin.host, port=self.origin.port
             ),
-            headers=request.headers, content=request.content,
+            headers=request.headers,
+            content=request.content,
         )
         return await self.inner.handle_async_request(forwarded)
 
@@ -190,21 +190,20 @@ def run_one(run: Run, api_base: str) -> RunOutcome:
     try:
         response = invoke(run, api_base)
     except openai.APIError as error:
-        job, failure = None, project_failure(error).failure
+        job = None
+        failure = project_failure(error).failure
     else:
-        job, failure = TypeAdapter(JobView).validate_json(response.model_dump_json()), None
+        job = TypeAdapter(JobView).validate_json(response.model_dump_json())
+        failure = None
     finally:
-        Path(".git/betterlite/B1052/gate").mkdir(parents=True, exist_ok=True)
-        Path(".git/betterlite/B1052/gate/d").write_text(f"{run.model} {traceback.format_exc()}")
         fine_tuning_main.vertex_fine_tuning_apis_instance.async_handler = previous
     return {"job": job, "failure": failure, "request_url": urls[0] if urls else None}
 
 
 def run_fine_tuning_create(call: FineTuningCreateCall, api_base: str) -> str:
+    litellm.suppress_debug_info = True  # the exit logging flush prints a banner on stdout
     vertex_auth: VertexAuth = gcs_bucket_mock_client
     vertex_auth.mock_vertex_auth_methods()
     runs = [run_one(run, api_base) for run in call.runs]
     outcome: Outcome = {"fine_tuning_create": {"value": {"runs": runs}}}
-    output = TypeAdapter(Outcome).dump_json(outcome, by_alias=True, exclude_unset=True).decode()
-    Path(f".git/betterlite/B1052/gate/o{len(runs)}").write_text(output)
-    return output
+    return TypeAdapter(Outcome).dump_json(outcome, by_alias=True, exclude_unset=True).decode()
