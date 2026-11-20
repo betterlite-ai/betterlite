@@ -4,6 +4,7 @@ use betterlite_openai::api::file_type_records::{UploadData, UploadUrlLocation};
 use betterlite_openai::files::records::FileCreate;
 use betterlite_prompts::media_metadata::{FileBody, FileData};
 use http::Method;
+use rstest::rstest;
 
 use crate::api::file_http_upload::config::{
     FileParams, FileResponse, FileUploadConfig, Headers, UploadParams,
@@ -150,39 +151,40 @@ fn provider_failure(error: UploadError) -> BaseLlmException {
 }
 
 // a 4xx initial answer is the provider's status, raised before the location decode, in both modes
+#[rstest]
+#[case::sync(Mode::Sync)]
+#[case::asynchronous(Mode::Asynchronous)]
 #[tokio::test]
-async fn two_step_initial_status_failure_keeps_the_provider_status() {
-    for mode in [Mode::Sync, Mode::Asynchronous] {
-        let mut harness = Harness::new(
-            manus_plan(),
-            API_BASE,
-            vec![answer(
-                429,
-                &[("content-type", "application/json")],
-                b"{\"error\":\"slow down\"}",
-            )],
-        );
-        let error = provider_failure(
-            harness
-                .run(mode, &create_call(), &params())
-                .await
-                .unwrap_err(),
-        );
-        assert_eq!(error.status_code, 429);
-        assert!(!error.status_code_is_synthesized);
-        assert_eq!(error.message, "{\"error\":\"slow down\"}");
-        assert_eq!(
-            error.headers.get("content-type"),
-            Some(&text("application/json"))
-        );
-        assert_eq!(harness.seen().len(), 1);
-        assert!(
-            !harness
-                .config
-                .calls()
-                .contains(&"transform_create_file_response")
-        );
-    }
+async fn two_step_initial_status_failure_keeps_the_provider_status(#[case] mode: Mode) {
+    let mut harness = Harness::new(
+        manus_plan(),
+        API_BASE,
+        vec![answer(
+            429,
+            &[("content-type", "application/json")],
+            b"{\"error\":\"slow down\"}",
+        )],
+    );
+    let error = provider_failure(
+        harness
+            .run(mode, &create_call(), &params())
+            .await
+            .unwrap_err(),
+    );
+    assert_eq!(error.status_code, 429);
+    assert!(!error.status_code_is_synthesized);
+    assert_eq!(error.message, "{\"error\":\"slow down\"}");
+    assert_eq!(
+        error.headers.get("content-type"),
+        Some(&text("application/json"))
+    );
+    assert_eq!(harness.seen().len(), 1);
+    assert!(
+        !harness
+            .config
+            .calls()
+            .contains(&"transform_create_file_response")
+    );
 }
 
 // a redirect is not an error for httpx, so the two-step still reads the upload URL from it
@@ -209,41 +211,42 @@ async fn two_step_redirect_answer_still_reads_the_location() {
 }
 
 // a failed post on the second step keeps the provider's status instead of a synthesized 500
+#[rstest]
+#[case::sync(Mode::Sync)]
+#[case::asynchronous(Mode::Asynchronous)]
 #[tokio::test]
-async fn two_step_second_post_status_failure_keeps_the_provider_status() {
-    for mode in [Mode::Sync, Mode::Asynchronous] {
-        let mut config = manus_config();
-        config.upload_request.method = String::from("POST");
-        let mut harness = Harness::new(
-            two_step_plan(config, Some(UploadUrlLocation::Body)),
-            API_BASE,
-            vec![
-                answer(
-                    200,
-                    &[],
-                    b"{\"upload_url\":\"http://uploads.example.test/manus/1\"}",
-                ),
-                answer(503, &[], b"upload unavailable"),
-            ],
-        );
-        let error = provider_failure(
-            harness
-                .run(mode, &create_call(), &params())
-                .await
-                .unwrap_err(),
-        );
-        assert_eq!(
-            (error.status_code, error.message.as_str()),
-            (503, "upload unavailable")
-        );
-        assert_eq!(harness.seen().len(), 2);
-        assert!(
-            !harness
-                .config
-                .calls()
-                .contains(&"transform_create_file_response")
-        );
-    }
+async fn two_step_second_post_status_failure_keeps_the_provider_status(#[case] mode: Mode) {
+    let mut config = manus_config();
+    config.upload_request.method = String::from("POST");
+    let mut harness = Harness::new(
+        two_step_plan(config, Some(UploadUrlLocation::Body)),
+        API_BASE,
+        vec![
+            answer(
+                200,
+                &[],
+                b"{\"upload_url\":\"http://uploads.example.test/manus/1\"}",
+            ),
+            answer(503, &[], b"upload unavailable"),
+        ],
+    );
+    let error = provider_failure(
+        harness
+            .run(mode, &create_call(), &params())
+            .await
+            .unwrap_err(),
+    );
+    assert_eq!(
+        (error.status_code, error.message.as_str()),
+        (503, "upload unavailable")
+    );
+    assert_eq!(harness.seen().len(), 2);
+    assert!(
+        !harness
+            .config
+            .calls()
+            .contains(&"transform_create_file_response")
+    );
 }
 
 // a put second step raises only in async mode; the sync handler hands the answer to the transform
@@ -318,28 +321,29 @@ async fn presigned_status_failure_raises_only_in_async_mode() {
 }
 
 // a text post raises on a 4xx in both modes, before the transform
+#[rstest]
+#[case::sync(Mode::Sync)]
+#[case::asynchronous(Mode::Asynchronous)]
 #[tokio::test]
-async fn traditional_post_status_failure_raises_in_both_modes() {
-    for mode in [Mode::Sync, Mode::Asynchronous] {
-        let mut harness = Harness::new(text_plan(), API_BASE, vec![answer(400, &[], b"rejected")]);
-        let error = provider_failure(
-            harness
-                .run(mode, &create_call(), &params())
-                .await
-                .unwrap_err(),
-        );
-        assert_eq!(
-            (error.status_code, error.message.as_str()),
-            (400, "rejected")
-        );
-        assert_eq!(harness.seen().len(), 1);
-        assert!(
-            !harness
-                .config
-                .calls()
-                .contains(&"transform_create_file_response")
-        );
-    }
+async fn traditional_post_status_failure_raises_in_both_modes(#[case] mode: Mode) {
+    let mut harness = Harness::new(text_plan(), API_BASE, vec![answer(400, &[], b"rejected")]);
+    let error = provider_failure(
+        harness
+            .run(mode, &create_call(), &params())
+            .await
+            .unwrap_err(),
+    );
+    assert_eq!(
+        (error.status_code, error.message.as_str()),
+        (400, "rejected")
+    );
+    assert_eq!(harness.seen().len(), 1);
+    assert!(
+        !harness
+            .config
+            .calls()
+            .contains(&"transform_create_file_response")
+    );
 }
 
 // a text put is unjudged in sync mode and raises in async mode
@@ -364,34 +368,33 @@ async fn traditional_put_status_failure_raises_only_in_async_mode() {
 }
 
 // a multipart upload posts whatever the config asks, so its 4xx raises in sync mode too
+#[rstest]
+#[case::sync(Mode::Sync)]
+#[case::asynchronous(Mode::Asynchronous)]
 #[tokio::test]
-async fn multipart_status_failure_raises_in_sync_mode() {
+async fn multipart_status_failure_raises_in_sync_mode(#[case] mode: Mode) {
     let file = FileData::Tuple3 {
         filename: Some(String::from("rows.jsonl")),
         content: FileBody::Bytes(b"{\"row\":1}\n".to_vec()),
         content_type: Some(String::from("application/jsonl")),
     };
     let parts = create_file_parts(Some(&file), Some("batch"), NOW).expect("anthropic parts");
-    for mode in [Mode::Sync, Mode::Asynchronous] {
-        let plan = UploadPlan::Multipart(Box::new(MultipartPlan {
-            parts: parts.clone(),
-        }));
-        let mut harness = Harness::build(
-            Config::with_method(plan, API_BASE, Method::PUT),
-            vec![answer(400, &[], b"form rejected")],
-        );
-        let error = provider_failure(
-            harness
-                .run(mode, &create_call(), &params())
-                .await
-                .unwrap_err(),
-        );
-        assert_eq!(
-            (error.status_code, error.message.as_str()),
-            (400, "form rejected")
-        );
-        assert_eq!(harness.seen()[0].method, Method::POST);
-    }
+    let plan = UploadPlan::Multipart(Box::new(MultipartPlan { parts }));
+    let mut harness = Harness::build(
+        Config::with_method(plan, API_BASE, Method::PUT),
+        vec![answer(400, &[], b"form rejected")],
+    );
+    let error = provider_failure(
+        harness
+            .run(mode, &create_call(), &params())
+            .await
+            .unwrap_err(),
+    );
+    assert_eq!(
+        (error.status_code, error.message.as_str()),
+        (400, "form rejected")
+    );
+    assert_eq!(harness.seen()[0].method, Method::POST);
 }
 
 // the body location's default key is upload_url when the plan names none
