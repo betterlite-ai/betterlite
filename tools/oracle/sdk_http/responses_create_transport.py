@@ -1,7 +1,7 @@
 import asyncio
-from collections.abc import Coroutine
+from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime
-from typing import Final, Literal
+from typing import Final, Literal, Protocol
 
 import litellm
 from litellm.integrations.custom_logger import CustomLogger
@@ -33,13 +33,28 @@ RESPONSES_API: Final[TypeAdapter[ResponsesAPIResponse]] = TypeAdapter(ResponsesA
 COMPLETED: Final[TypeAdapter[ResponseCompletedEvent]] = TypeAdapter(ResponseCompletedEvent)
 LITELLM_PARAMS: Final[TypeAdapter[GenericLiteLLMParams]] = TypeAdapter(GenericLiteLLMParams)
 PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
-HANDLER: Final = BaseLLMHTTPHandler()
 
 CreateWork = (
     ResponsesAPIResponse
     | StreamingBase
     | Coroutine[object, object, ResponsesAPIResponse | StreamingBase]
 )
+
+SyncCreateCall = Callable[..., CreateWork]
+AsyncCreateCall = Callable[..., Coroutine[object, object, ResponsesAPIResponse | StreamingBase]]
+
+
+class Handlers(Protocol):
+    @property
+    def response_api_handler(self) -> SyncCreateCall: ...
+
+    @property
+    def async_response_api_handler(  # ast-grep-ignore: no-long-names
+        self,
+    ) -> AsyncCreateCall: ...
+
+
+HANDLER: Handlers = BaseLLMHTTPHandler()
 
 
 class TransportCall(BaseModel):
