@@ -60,7 +60,8 @@ description: >-
 
 
   Registry arm. B8521's hook registry (crates/betterlite-guardrails/src/hook_registry) answers decision_model with
-  HookRegistryError::NotBuilt until this task lands. Replace that answer in hook_registry/kinds.rs with the
+  HookRegistryError::NotBuilt until this task lands. B8666's LiveGuardrail::build has no decision_model arm
+  either, so also add the `LiveGuardrail` variant and arm in crates/betterlite-server/src/guardrail_dispatch/live.rs. Replace that answer in hook_registry/kinds.rs with the
   decision_model arm: build_hook_spec calls initialize_decision_model and keeps the result as
   `HookSpec::DecisionModel(DecisionModelArgs)` in spec.rs, with its HookSpec::settings arm, and an initializer error
   comes back as HookRegistryError::Init with the message above. supported_event_hooks("decision_model") in hooks.rs is
@@ -83,6 +84,7 @@ scope:
     - tools/oracle/helpers/b8210/**
     - tools/oracle/src/helpers/guardrails/b8210.rs
     - tools/oracle/src/helpers/guardrails/b8210/**
+    - crates/betterlite-server/src/guardrail_dispatch/live.rs
   lint_tables: false
 
 references:

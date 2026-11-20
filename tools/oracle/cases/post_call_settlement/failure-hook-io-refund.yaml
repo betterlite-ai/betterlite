@@ -1,0 +1,18 @@
+kind: helper
+name: post-call-settlement-failure-hook-io-refund
+call:
+  b3046:
+    function: failure_hook
+    stash:
+      itpm_reserved_tokens: 120
+      itpm_reserved_scopes:
+        - [project, p1]
+      otpm_reserved_tokens: 280
+      otpm_reserved_scopes:
+        - [project, p1]
+      otpm_reserved_windows:
+        - {counter_key: "{project:p1}:tokens", window_start: "100", backend: local}
+    seed:
+      "{project:p1}:window": 100
+env: {}
+compare: {ignore: []}

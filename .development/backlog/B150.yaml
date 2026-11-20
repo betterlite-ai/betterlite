@@ -2,7 +2,7 @@ id: B150
 milestone: M10 admin ui
 title: Admin UI pages for settings, SSO, caching, logging, alerting, budgets, tags, pass-through and theme working against betterlite
 status: todo
-depends_on: [B1662, B1630, B860, B9942, B9770, B9771, B9772, B9773, B9774, B9775, B9776]
+depends_on: [B1662, B1630, B860, B9942, B9770, B9771, B9772, B9773, B9774]
 file: tasks/B150-dashboard-settings-http.yaml
 covers:
   - "ui/litellm-dashboard/src/app/(dashboard)/ui-theme/**"

@@ -1,0 +1,16 @@
+kind: helper
+name: azure-batches-create
+call:
+  azure_batches:
+    steps:
+    - action: create
+      args: {api_key: seed-1, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      data: {completion_window: 24h, endpoint: /v1/chat/completions, input_file_id: file_seed}
+      reply: {status: 200, body: {id: batch_seed, completion_window: 24h, created_at: 1, endpoint: /v1/chat/completions, input_file_id: file_seed, object: batch, status: validating, cancelled_at: null, cancelling_at: null, completed_at: null, error_file_id: null, errors: null, expired_at: null, expires_at: null, failed_at: null, finalizing_at: null, in_progress_at: null, metadata: null, model: null, output_file_id: null, request_counts: null, usage: null}}
+    - action: create
+      is_async: true
+      args: {api_key: seed-2, api_base: "https://fixture.test", api_version: preview, timeout: 7.5, max_retries: 7, organization: org-x}
+      data: {completion_window: 24h, endpoint: /v1/embeddings, input_file_id: file_seed, metadata: {stage: seed}}
+      reply: {status: 200, body: {id: batch_seed, completion_window: 24h, created_at: 1, endpoint: /v1/chat/completions, input_file_id: file_seed, object: batch, status: validating, cancelled_at: null, cancelling_at: null, completed_at: null, error_file_id: null, errors: null, expired_at: null, expires_at: null, failed_at: null, finalizing_at: null, in_progress_at: null, metadata: null, model: null, output_file_id: null, request_counts: null, usage: null}}
+env: {}
+compare: {ignore: []}

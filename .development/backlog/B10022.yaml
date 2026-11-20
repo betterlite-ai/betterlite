@@ -1,0 +1,14 @@
+id: B10022
+milestone: M5 api families
+title: Decisions provider list
+status: todo
+depends_on: [B171]
+file: tasks/B10022-decisions-providers.yaml
+covers:
+  - "litellm/decisions/call.py"
+parent: B099
+split_from: B3513
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

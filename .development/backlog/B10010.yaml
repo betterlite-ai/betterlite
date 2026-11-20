@@ -1,0 +1,14 @@
+id: B10010
+milestone: M9 agents and mcp
+title: SSO assertion rows and master-key rotation
+status: todo
+depends_on: [B707, B860, B1600]
+file: tasks/B10010-sso-assertion-rotation.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_store.py"
+parent: B137
+split_from: B4663
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
