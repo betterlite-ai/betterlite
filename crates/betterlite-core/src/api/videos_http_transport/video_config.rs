@@ -112,7 +112,6 @@ pub trait VideoHttpConfig: Send + Sync {
         logging_obj: &mut VideoLogging,
     ) -> Result<Vec<u8>, Self::Error>;
 
-    // The base class answers with the sync transform, which is what the async content handler awaits when a provider keeps it
     // ast-grep-ignore: no-long-names
     fn async_transform_video_content_response(
         &self,

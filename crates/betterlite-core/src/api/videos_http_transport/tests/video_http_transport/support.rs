@@ -410,6 +410,30 @@ impl RecordingConfig {
             .push(name);
     }
 
+    fn content_response(
+        &self,
+        raw_response: &UpstreamResponse,
+        logging_obj: &mut VideoLogging,
+        name: &'static str,
+        mark: &'static str,
+    ) -> Result<Vec<u8>, TestError> {
+        self.record(name);
+        self.content_replies
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((raw_response.status, raw_response.body.clone()));
+        if self.failures.contains(&Failure::ContentResponse) {
+            logging_obj
+                .model_call_details
+                .insert("content_failed_mark".to_owned(), Json::Bool(true));
+            return Err(TestError::Transform);
+        }
+        logging_obj
+            .model_call_details
+            .insert("content_mark".to_owned(), Json::Text(mark.to_owned()));
+        Ok(raw_response.body.clone())
+    }
+
     pub(crate) fn transforms(&self) -> Vec<&'static str> {
         self.transforms
             .lock()
@@ -579,21 +603,7 @@ impl VideoHttpConfig for RecordingConfig {
         raw_response: &UpstreamResponse,
         logging_obj: &mut VideoLogging,
     ) -> Result<Vec<u8>, TestError> {
-        self.record("content_sync");
-        self.content_replies
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((raw_response.status, raw_response.body.clone()));
-        if self.failures.contains(&Failure::ContentResponse) {
-            logging_obj
-                .model_call_details
-                .insert("content_failed_mark".to_owned(), Json::Bool(true));
-            return Err(TestError::Transform);
-        }
-        logging_obj
-            .model_call_details
-            .insert("content_mark".to_owned(), Json::Text("sync".to_owned()));
-        Ok(raw_response.body.clone())
+        self.content_response(raw_response, logging_obj, "content_sync", "sync")
     }
 
     async fn async_transform_video_content_response(
@@ -601,21 +611,7 @@ impl VideoHttpConfig for RecordingConfig {
         raw_response: &UpstreamResponse,
         logging_obj: &mut VideoLogging,
     ) -> Result<Vec<u8>, TestError> {
-        self.record("content_async");
-        self.content_replies
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((raw_response.status, raw_response.body.clone()));
-        if self.failures.contains(&Failure::ContentResponse) {
-            logging_obj
-                .model_call_details
-                .insert("content_failed_mark".to_owned(), Json::Bool(true));
-            return Err(TestError::Transform);
-        }
-        logging_obj
-            .model_call_details
-            .insert("content_mark".to_owned(), Json::Text("async".to_owned()));
-        Ok(raw_response.body.clone())
+        self.content_response(raw_response, logging_obj, "content_async", "async")
     }
 
     fn error_facts(&self, error: &TestError) -> ErrorFacts {
@@ -739,14 +735,15 @@ pub(crate) fn content_call<'call>(
     video_id: &'call str,
     litellm: &'call Params,
 ) -> VideoContentCall<'call> {
+    let timeout = Duration::from_secs(30);
     VideoContentCall {
         video_id,
         custom_llm_provider: PROVIDER,
         litellm_params: litellm,
+        variant: None,
         extra_headers: None,
         api_key: None,
-        variant: None,
-        timeout: Duration::from_secs(30),
+        timeout,
     }
 }
 

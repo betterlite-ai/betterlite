@@ -7,6 +7,7 @@ use betterlite_http_fixture::server::serve;
 use betterlite_models::decisions::Json;
 use betterlite_openai::error::ProviderError;
 use http::Method;
+use rstest::rstest;
 use tokio::io::AsyncReadExt as _;
 use tokio::net::TcpListener;
 
@@ -238,30 +239,32 @@ async fn a_failing_status_becomes_the_provider_error_with_its_headers() {
     assert!(!recorded[0].2.contains_key("content-length"));
 }
 
+#[rstest]
+#[case::created(201_u16)]
+#[case::just_below_client_error(399_u16)]
 #[tokio::test]
-async fn a_successful_status_goes_to_the_transform_unchanged() {
-    for status in [201_u16, 399] {
-        let mut bench = Bench::with_reply(Reply::new(status, "{}"));
-        run(&mut bench, &Params::new(), &Params::new(), false)
-            .await
-            .expect("the video");
-        assert!(bench.config.errors().is_empty());
-        assert_eq!(
-            bench.config.transforms(),
-            ["create_request", "create_response"]
-        );
-    }
+async fn a_successful_status_goes_to_the_transform_unchanged(#[case] status: u16) {
+    let mut bench = Bench::with_reply(Reply::new(status, "{}"));
+    run(&mut bench, &Params::new(), &Params::new(), false)
+        .await
+        .expect("the video");
+    assert!(bench.config.errors().is_empty());
+    assert_eq!(
+        bench.config.transforms(),
+        ["create_request", "create_response"]
+    );
 }
 
+#[rstest]
+#[case::bad_request(400_u16)]
+#[case::server_error(500_u16)]
 #[tokio::test]
-async fn four_hundred_and_up_is_a_provider_error() {
-    for status in [400_u16, 500] {
-        let mut bench = Bench::with_reply(Reply::new(status, "boom"));
-        let error = run(&mut bench, &Params::new(), &Params::new(), false)
-            .await
-            .expect_err("the failing status");
-        assert_eq!(provider_error(error).status_code, status);
-    }
+async fn four_hundred_and_up_is_a_provider_error(#[case] status: u16) {
+    let mut bench = Bench::with_reply(Reply::new(status, "boom"));
+    let error = run(&mut bench, &Params::new(), &Params::new(), false)
+        .await
+        .expect_err("the failing status");
+    assert_eq!(provider_error(error).status_code, status);
 }
 
 #[tokio::test]
@@ -378,23 +381,27 @@ async fn a_header_a_request_cannot_carry_is_a_synthesized_500() {
     assert!(provider.message.contains("header value"));
 }
 
+#[rstest]
+#[case::sync(false, ClientKind::Sync)]
+#[case::asynchronous(true, ClientKind::Asynchronous)]
 #[tokio::test]
-async fn the_client_source_gets_the_kind_the_ssl_verify_and_the_provider() {
-    for (is_async, kind) in [(false, ClientKind::Sync), (true, ClientKind::Asynchronous)] {
-        let mut bench = Bench::new();
-        let litellm = params(r#"{"ssl_verify":false}"#);
-        run(&mut bench, &Params::new(), &litellm, is_async)
-            .await
-            .expect("the video");
-        assert_eq!(
-            bench.source.calls(),
-            vec![ClientRequestRecord {
-                kind,
-                ssl_verify: Some(false),
-                provider: PROVIDER.to_owned(),
-            }]
-        );
-    }
+async fn the_client_source_gets_the_kind_the_ssl_verify_and_the_provider(
+    #[case] is_async: bool,
+    #[case] kind: ClientKind,
+) {
+    let mut bench = Bench::new();
+    let litellm = params(r#"{"ssl_verify":false}"#);
+    run(&mut bench, &Params::new(), &litellm, is_async)
+        .await
+        .expect("the video");
+    assert_eq!(
+        bench.source.calls(),
+        vec![ClientRequestRecord {
+            kind,
+            ssl_verify: Some(false),
+            provider: PROVIDER.to_owned(),
+        }]
+    );
 }
 
 #[tokio::test]

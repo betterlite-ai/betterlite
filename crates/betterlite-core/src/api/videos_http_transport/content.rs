@@ -74,8 +74,12 @@ where
         },
     )?;
     let headers = content_headers(deps.config, call);
-    let base = content_base(deps.config, call)?;
-    let (url, data) = content_transform(deps.config, call, &base, &headers)?;
+    let base = params::api_base(call.litellm_params)?;
+    let complete = deps
+        .config
+        .get_complete_url("", base, call.litellm_params)
+        .map_err(VideoTransportError::Config)?;
+    let (url, data) = content_transform(deps.config, call, &complete, &headers)?;
     Ok(Content {
         config: deps.config,
         client,
@@ -103,22 +107,6 @@ where
     headers
 }
 
-fn content_base<C>(
-    config: &C,
-    call: &VideoContentCall<'_>,
-) -> Result<String, VideoTransportError<C::Error>>
-where
-    C: VideoHttpConfig,
-{
-    config
-        .get_complete_url(
-            "",
-            params::api_base(call.litellm_params)?,
-            call.litellm_params,
-        )
-        .map_err(VideoTransportError::Config)
-}
-
 fn content_transform<C>(
     config: &C,
     call: &VideoContentCall<'_>,
@@ -128,16 +116,13 @@ fn content_transform<C>(
 where
     C: VideoHttpConfig,
 {
+    let context = VideoRequestContext {
+        api_base,
+        litellm_params: call.litellm_params,
+        headers,
+    };
     config
-        .transform_video_content_request(
-            call.video_id,
-            call.variant,
-            VideoRequestContext {
-                api_base,
-                litellm_params: call.litellm_params,
-                headers,
-            },
-        )
+        .transform_video_content_request(call.video_id, call.variant, context)
         .map_err(VideoTransportError::Config)
 }
 

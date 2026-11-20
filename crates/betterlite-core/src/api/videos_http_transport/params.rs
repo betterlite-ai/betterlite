@@ -6,10 +6,13 @@ use super::video_config::{Headers, Params};
 
 // GenericLiteLLMParams.api_base, which reads as no base at all when it is absent or null
 pub fn api_base(litellm_params: &Params) -> Result<Option<&str>, BadField> {
-    match litellm_params.get("api_base") {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(text)) => Ok(Some(text)),
-        Some(_) => Err(BadField {
+    let Some(value) = litellm_params.get("api_base") else {
+        return Ok(None);
+    };
+    match value {
+        Json::Null => Ok(None),
+        Json::Text(text) => Ok(Some(text)),
+        Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => Err(BadField {
             field: "litellm_params.api_base",
             expected: "a string",
         }),
@@ -19,9 +22,9 @@ pub fn api_base(litellm_params: &Params) -> Result<Option<&str>, BadField> {
 // The ssl_verify _get_httpx_client and get_async_httpx_client apply to the client they build
 pub fn ssl_verify(litellm_params: &Params) -> Result<Option<bool>, BadField> {
     match litellm_params.get("ssl_verify") {
-        None | Some(Json::Null) => Ok(None),
         Some(Json::Bool(value)) => Ok(Some(*value)),
-        Some(_) => Err(BadField {
+        Some(Json::Null) | None => Ok(None),
+        Some(Json::List(_) | Json::Number(_) | Json::Object(_) | Json::Text(_)) => Err(BadField {
             field: "litellm_params.ssl_verify",
             expected: "a boolean",
         }),
@@ -36,14 +39,19 @@ pub fn api_key(
     if let Some(key) = given {
         return Ok(Some(key.clone()));
     }
-    match litellm_params.get("api_key") {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(text)) => Ok(Some(SecretString::from(text.clone()))),
-        Some(_) => Err(BadField {
-            field: "litellm_params.api_key",
-            expected: "a string",
-        }),
+    let Some(value) = litellm_params.get("api_key") else {
+        return Ok(None);
+    };
+    if let Json::Text(text) = value {
+        return Ok(Some(SecretString::from(text.clone())));
     }
+    if matches!(value, Json::Null) {
+        return Ok(None);
+    }
+    Err(BadField {
+        field: "litellm_params.api_key",
+        expected: "a string",
+    })
 }
 
 // video_generation_optional_request_params.extra_headers, the headers validate_environment starts from
