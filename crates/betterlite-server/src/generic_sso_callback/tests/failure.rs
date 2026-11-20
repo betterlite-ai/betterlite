@@ -72,7 +72,10 @@ fn the_hint_message_names_okta_only_for_an_okta_endpoint() {
         "https://example.test/authorize",
         "https://example.test/token",
     );
-    assert!(generic.contains("Your OAuth provider requires PKCE"));
+    assert_eq!(
+        generic,
+        "SSO authentication failed: Your OAuth provider requires PKCE (Proof Key for Code Exchange) but it's not enabled in your LiteLLM configuration.\n\nSOLUTION: Add this environment variable and restart your proxy:\n  GENERIC_CLIENT_USE_PKCE=true\n\nOriginal error: original error"
+    );
     assert!(!generic.contains("For Docker"));
 }
 
@@ -124,6 +127,8 @@ async fn a_provider_error_with_the_phrase_code_verifier_is_a_hint() {
         error.response().param.as_deref(),
         Some(GENERIC_CLIENT_USE_PKCE_PARAM)
     );
+    assert!(error.to_string().contains("invalid_grant"));
+    assert!(error.to_string().contains("Code Verifier required"));
 }
 
 #[tokio::test]

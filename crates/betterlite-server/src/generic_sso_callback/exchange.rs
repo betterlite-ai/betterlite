@@ -31,7 +31,7 @@ use super::{GenericSsoCallback, GenericSsoConfig, SsoExchangeResult};
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum CallbackGuardError {
-    #[error("Invalid OAuth state parameter: it does not match the browser-bound state cookie")]
+    #[error("Invalid OAuth state parameter — does not match the browser-bound state cookie.")]
     State,
     #[error("Missing authorization code in callback")]
     Code,

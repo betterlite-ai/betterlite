@@ -39,4 +39,14 @@ deviations:
       unusable header next to the other token-exchange failures; no working setup can depend on a crash
       status, and a header that cannot be sent is an operator configuration error either way.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1619-L1629
+  - what: >-
+      The hint's last line, "Original error: ...", carries betterlite's typed exchange or conversion
+      message, the wording B1619, B1620 and B1629 declare, where the pinned line carries str() of the
+      fastapi-sso or oauthlib exception, whose text reads "(error) description".
+    why: >-
+      The hint's own words, its Okta branch, its 401 auth_error response and the trigger condition match
+      the pinned code; only the reused failure text differs, because the failure is a typed error whose
+      message is declared where the exchange lives. Both forms carry the provider error code, so the
+      operator sees the same diagnosis.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1448
 kept_bugs: []
