@@ -91,6 +91,11 @@ fn legacy_matching_allows_extra_stored_fields_and_bare_strings() {
     )])));
     assert!(!number.matches_legacy(&pin("model_id", "5")));
     assert_eq!(number.pinned_model_id(), None);
+    let mixed = StoredPin::Other(Json::Object(IndexMap::from([
+        ("model_id".to_owned(), Json::Text("dep-a".to_owned())),
+        ("tier".to_owned(), Json::Number(Number::from(5_u8))),
+    ])));
+    assert!(mixed.matches_legacy(&pin("model_id", "dep-a")));
 }
 
 #[test]
