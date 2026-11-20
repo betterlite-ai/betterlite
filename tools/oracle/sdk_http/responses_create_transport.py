@@ -44,43 +44,16 @@ CreateWork = (
     | Coroutine[object, object, ResponsesAPIResponse | StreamingBase]
 )
 
-SyncCreateCall = Callable[
-    [
-        str,
-        str | ResponseInputParam,
-        BaseResponsesAPIConfig,
-        dict[str, object],
-        str,
-        GenericLiteLLMParams,
-        Logging,
-        dict[str, object] | None,
-        dict[str, object] | None,
-        float | None,
-        HTTPHandler | AsyncHTTPHandler | None,
-        bool,
-        bool,
-        dict[str, object] | None,
-    ],
-    CreateWork,
-]
-AsyncCreateCall = Callable[
-    [
-        str,
-        str | ResponseInputParam,
-        BaseResponsesAPIConfig,
-        dict[str, object],
-        str,
-        GenericLiteLLMParams,
-        Logging,
-        dict[str, object] | None,
-        dict[str, object] | None,
-        float | None,
-        HTTPHandler | AsyncHTTPHandler | None,
-        bool,
-        dict[str, object] | None,
-    ],
-    Coroutine[object, object, ResponsesAPIResponse | StreamingBase],
-]
+SyncCreateCall = Callable[[
+    str, str | ResponseInputParam, BaseResponsesAPIConfig, dict[str, object], str,
+    GenericLiteLLMParams, Logging, dict[str, object] | None, dict[str, object] | None,
+    float | None, HTTPHandler | AsyncHTTPHandler | None, bool, bool, dict[str, object] | None,
+], CreateWork]
+AsyncCreateCall = Callable[[
+    str, str | ResponseInputParam, BaseResponsesAPIConfig, dict[str, object], str,
+    GenericLiteLLMParams, Logging, dict[str, object] | None, dict[str, object] | None,
+    float | None, HTTPHandler | AsyncHTTPHandler | None, bool, dict[str, object] | None,
+], Coroutine[object, object, ResponsesAPIResponse | StreamingBase]]
 
 
 class Handlers(Protocol):
@@ -231,39 +204,17 @@ def invoke(
     metadata = NULLABLE_OBJECTS.validate_python(call.litellm_metadata)
     timeout = None if call.timeout_seconds is None else float(call.timeout_seconds)
     fake_stream = call.fake_stream is True
+    is_async = False
     response_input = INPUT.validate_python(call.input)
     if call.mode == "sync":
         return HANDLER.response_api_handler(
-            call.model,
-            response_input,
-            config,
-            optional_params,
-            "openai",
-            litellm_params,
-            logging_obj,
-            extra_headers,
-            extra_body,
-            timeout,
-            None,
-            False,
-            fake_stream,
-            metadata,
+            call.model, response_input, config, optional_params, "openai", litellm_params,
+            logging_obj, extra_headers, extra_body, timeout, None, is_async, fake_stream, metadata,
         )
     return asyncio.run(
         HANDLER.async_response_api_handler(
-            call.model,
-            response_input,
-            config,
-            optional_params,
-            "openai",
-            litellm_params,
-            logging_obj,
-            extra_headers,
-            extra_body,
-            timeout,
-            None,
-            fake_stream,
-            metadata,
+            call.model, response_input, config, optional_params, "openai", litellm_params,
+            logging_obj, extra_headers, extra_body, timeout, None, fake_stream, metadata,
         )
     )
 
