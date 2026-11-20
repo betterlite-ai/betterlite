@@ -105,12 +105,13 @@ where
         })?;
     provisioner.state.created_resources.opensearch_collection = Some(name.to_owned());
     for _ in 0..COLLECTION_POLLS {
-        let call = aoss::batch_get_collection(&region, CollectionSelection::Id(&collection_id))?;
-        let response = provisioner
-            .send(&call)
+        let poll_call =
+            aoss::batch_get_collection(&region, CollectionSelection::Id(&collection_id))?;
+        let poll_response = provisioner
+            .send(&poll_call)
             .await?
-            .require_success(call.operation)?;
-        let detail = aoss::first_collection(&response.body, aoss::BATCH_GET_COLLECTION)?;
+            .require_success(poll_call.operation)?;
+        let detail = aoss::first_collection(&poll_response.body, aoss::BATCH_GET_COLLECTION)?;
         if detail.status.as_deref() == Some(ACTIVE) {
             let arn = detail.arn.ok_or(CallError::MissingEntry {
                 operation: aoss::BATCH_GET_COLLECTION,

@@ -21,14 +21,11 @@ where
             source,
         }
     })?;
-    let create_call = query::iam_request(
-        resources.region,
-        query::CREATE_ROLE,
-        &[
-            ("RoleName", role_name),
-            ("AssumeRolePolicyDocument", trust.as_str()),
-        ],
-    );
+    let create_fields = [
+        ("RoleName", role_name),
+        ("AssumeRolePolicyDocument", trust.as_str()),
+    ];
+    let create_call = query::iam_request(resources.region, query::CREATE_ROLE, &create_fields);
     let created = provisioner
         .send(&create_call)
         .await?
@@ -43,15 +40,12 @@ where
             }
         })?;
     let policy_name = format!("{role_name}-policy");
-    let attach_call = query::iam_request(
-        resources.region,
-        query::PUT_ROLE_POLICY,
-        &[
-            ("RoleName", role_name),
-            ("PolicyName", policy_name.as_str()),
-            ("PolicyDocument", permissions.as_str()),
-        ],
-    );
+    let attach_fields = [
+        ("RoleName", role_name),
+        ("PolicyName", policy_name.as_str()),
+        ("PolicyDocument", permissions.as_str()),
+    ];
+    let attach_call = query::iam_request(resources.region, query::PUT_ROLE_POLICY, &attach_fields);
     provisioner
         .send(&attach_call)
         .await?
