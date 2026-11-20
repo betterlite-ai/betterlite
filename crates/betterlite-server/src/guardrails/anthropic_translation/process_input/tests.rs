@@ -684,3 +684,51 @@ async fn mismatch_absent_texts_with_returned_tool_calls_are_accepted() {
         Some(2)
     );
 }
+
+#[tokio::test]
+async fn structured_path_keeps_a_midturn_system_row_answer() {
+    let mut data = body(json!({
+        "model": "claude-sonnet-4-5",
+        "messages": [
+            {"role": "user", "content": "hi"},
+            {"role": "system", "content": "mid"}
+        ]
+    }));
+    let answer = GuardrailApiInputs {
+        structured_messages: Some(vec![row("user", "edited"), row("system", "mid2")]),
+        ..NO_INPUTS
+    };
+    let guardrail = ScriptedGuardrail::new(answer).covering_full_request();
+    process_input_messages(&mut data, &guardrail, &context(), None)
+        .await
+        .unwrap();
+    let written = to_json(data.get("messages").expect("the messages"));
+    let messages = written.as_array().expect("an array");
+    assert_eq!(messages.len(), 2);
+    assert_eq!(
+        messages[0],
+        json!({"role": "user", "content": [{"type": "text", "text": "edited"}]})
+    );
+    assert_eq!(messages[1], json!({"role": "system", "content": "mid2"}));
+}
+
+#[tokio::test]
+async fn structured_path_drops_a_system_row_the_request_never_had() {
+    let mut data = body(json!({
+        "model": "claude-sonnet-4-5",
+        "messages": [{"role": "user", "content": "hi"}]
+    }));
+    let answer = GuardrailApiInputs {
+        structured_messages: Some(vec![row("user", "edited"), row("system", "added")]),
+        ..NO_INPUTS
+    };
+    let guardrail = ScriptedGuardrail::new(answer).covering_full_request();
+    process_input_messages(&mut data, &guardrail, &context(), None)
+        .await
+        .unwrap();
+    let written = to_json(data.get("messages").expect("the messages"));
+    assert_eq!(
+        written,
+        json!([{"role": "user", "content": [{"type": "text", "text": "edited"}]}])
+    );
+}
