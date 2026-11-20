@@ -194,6 +194,7 @@ impl BaseImageGenerationConfig for Fixture {
             optional_params: request.optional_params.clone(),
             litellm_params: request.litellm_params.clone(),
         });
+        drop(recorded);
         ImageHeaders::from([(String::from("x"), String::from("validated"))])
     }
 
@@ -206,6 +207,7 @@ impl BaseImageGenerationConfig for Fixture {
             model: request.model.to_owned(),
             stream: request.stream,
         });
+        drop(recorded);
         format!("{base}/images")
     }
 
@@ -216,10 +218,8 @@ impl BaseImageGenerationConfig for Fixture {
     ) -> Result<ImageParams, FixtureError> {
         let mut data = ImageParams::new();
         data.insert(String::from("model"), Json::Text(request.model.to_owned()));
-        data.insert(
-            String::from("prompt"),
-            Json::Text(request.prompt.to_owned()),
-        );
+        let prompt = Json::Text(request.prompt.to_owned());
+        data.insert(String::from("prompt"), prompt);
         Ok(data)
     }
 
