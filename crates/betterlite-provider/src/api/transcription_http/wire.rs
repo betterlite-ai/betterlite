@@ -11,6 +11,7 @@ use betterlite_openai::api::transcription_contract::{
     AudioTranscriptionData, AudioTranscriptionFileValue, AudioTranscriptionFiles,
     AudioTranscriptionRequestData,
 };
+use betterlite_openai::containers::container_file_http::request::read_params;
 use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::transcription::client::SharedSession;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
@@ -71,18 +72,15 @@ where
     {
         return Ok(Selected::Supplied(supplied.transport));
     }
-    // _get_httpx_client takes no params, while get_async_httpx_client reads ssl_verify and the shared session
-    let ssl_verify = match litellm_params.get("ssl_verify") {
-        Some(serde_json::Value::Bool(value)) => Some(*value),
-        Some(_) | None => None,
-    };
     let request = match mode {
+        // _get_httpx_client takes no params, so the sync client never reads ssl_verify
         ClientKind::Sync => ClientRequest {
             ssl_verify: None,
             shared_session: None,
         },
+        // get_async_httpx_client reads ssl_verify: a boolean, or a string naming a CA bundle
         ClientKind::Asynchronous => ClientRequest {
-            ssl_verify,
+            ssl_verify: read_params(litellm_params)?.ssl_verify,
             shared_session,
         },
     };
@@ -165,7 +163,18 @@ fn multipart(
     let boundary = boundary_from_content_type(content_type)
         .unwrap_or_else(|| Uuid::new_v4().simple().to_string());
     let body = encode(&boundary, &parts).map_err(TranscriptionHttpError::Multipart)?;
-    Ok(TranscriptionBody::Raw(body))
+    // The declared type is already a header, so the body variant repeats it and OutboundRequest keeps that one;
+    // going through the encoded path lets a redirected multipart post follow the way httpx does
+    let declared_value = HeaderValue::from_str(content_type).map_err(|source| {
+        TranscriptionHttpError::HeaderValue {
+            name: String::from("Content-Type"),
+            source,
+        }
+    })?;
+    Ok(TranscriptionBody::Encoded(RequestBody::Bytes {
+        content_type: declared_value,
+        data: body,
+    }))
 }
 
 fn multipart_parts(

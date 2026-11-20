@@ -4,6 +4,7 @@ use betterlite_http::error::HttpError;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::transcription_contract::AudioTranscriptionData;
+use betterlite_openai::containers::container_file_http::request::SslVerify;
 use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::transcription::client::SharedSession;
 use serde_json::Number;
@@ -95,7 +96,7 @@ async fn assert_boolean_atranscription_selects_async() {
     assert_eq!(
         calls,
         vec![ClientCall {
-            ssl_verify: Some(false),
+            ssl_verify: Some(SslVerify::Enabled(false)),
             shared_session: true,
         }]
     );

@@ -11,6 +11,7 @@ use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_subtitles::timing::SubtitleTimingError;
+use betterlite_openai::containers::container_file_http::ContainerFileHttpError;
 
 use crate::api::transcription_contract::TranscriptionContractError;
 use http::header::{InvalidHeaderName, InvalidHeaderValue};
@@ -31,6 +32,9 @@ pub enum TranscriptionHttpError {
     Logging(#[from] PrePostError),
     #[error(transparent)]
     Client(#[from] ClientError),
+    // ssl_verify is read with the container handler's parsing, so its type error arrives as it is
+    #[error(transparent)]
+    Params(#[from] ContainerFileHttpError),
     #[error(transparent)]
     Provider(#[from] BaseLlmException),
     #[error(transparent)]

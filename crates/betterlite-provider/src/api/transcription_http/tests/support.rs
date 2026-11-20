@@ -20,6 +20,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::api::transcription_contract::{
     AudioTranscriptionData, AudioTranscriptionRequestData, TranscriptionResponse,
 };
+use betterlite_openai::containers::container_file_http::request::SslVerify;
 use betterlite_openai::openai_base_config::Object;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
@@ -248,9 +249,9 @@ impl TranscriptionTransport for Wire {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ClientCall {
-    pub(crate) ssl_verify: Option<bool>,
+    pub(crate) ssl_verify: Option<SslVerify>,
     pub(crate) shared_session: bool,
 }
 

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_config::proxy::ProxyPolicy;
-use betterlite_config::tls::TlsPolicy;
+use betterlite_config::tls::{TlsPolicy, Verification};
 use betterlite_config::types::{Config, ProxyTrust};
 use betterlite_core::api::vector_store_http_write::error::ClientError;
 use betterlite_core::api::vector_store_http_write::service::LogContext;
@@ -23,6 +23,7 @@ use betterlite_openai::api::transcription_contract::{
     AudioTranscriptionData, AudioTranscriptionFileValue, AudioTranscriptionFiles,
     AudioTranscriptionRequestData, TranscriptionResponse,
 };
+use betterlite_openai::containers::container_file_http::request::SslVerify;
 use betterlite_openai::openai_base_config::Object;
 use betterlite_provider::api::transcription_contract::{
     AudioFile, AudioTranscriptionConfig, TranscriptionContractError,
@@ -52,9 +53,23 @@ pub(super) struct Source {
 impl ClientSource for Source {
     type Client = ProxiedClient;
 
-    fn client(&self, _request: ClientRequest<'_>) -> Result<ProxiedClient, ClientError> {
+    fn client(&self, request: ClientRequest<'_>) -> Result<ProxiedClient, ClientError> {
+        // get_ssl_configuration: a false disables verification, a string names the CA bundle, true keeps the policy
+        let tls = match request.ssl_verify.as_ref() {
+            None | Some(SslVerify::Enabled(true)) => self.tls.clone(),
+            Some(SslVerify::Enabled(false)) => TlsPolicy {
+                verification: Verification::Disabled,
+                ca_file: None,
+                ..self.tls.clone()
+            },
+            Some(SslVerify::CaBundle(path)) => TlsPolicy {
+                verification: Verification::CaFile(path.clone()),
+                ca_file: Some(path.clone()),
+                ..self.tls.clone()
+            },
+        };
         self.pool
-            .client(&self.tls, &self.routing)
+            .client(&tls, &self.routing)
             .map_err(ClientError::Pool)
     }
 }

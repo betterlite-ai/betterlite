@@ -1,6 +1,7 @@
 use betterlite_core::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::api::transcription_contract::AudioTranscriptionData;
+use betterlite_openai::containers::container_file_http::request::SslVerify;
 use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::transcription::client::SharedSession;
 
@@ -18,6 +19,9 @@ use crate::api::transcription_http::reply::TranscriptionReply;
 async fn transcription_http_client_policy() {
     assert_only_a_matching_supplied_client_is_reused().await;
     assert_fallback_client_reads_verification().await;
+    assert_ca_bundle_reaches_the_source().await;
+    assert_rejected_ssl_verify_names_the_field().await;
+    assert_sync_fallback_ignores_ssl_verify().await;
     assert_prepare_failures_bypass_the_error_converter().await;
     assert_logging_failure_bypasses_the_error_converter().await;
     assert_response_transform_failure_bypasses_the_error_converter().await;
@@ -53,10 +57,11 @@ async fn run(
     harness: &Harness,
     fixture: &mut Fixture,
     reused: Option<(&Wire, ClientKind)>,
+    litellm_json: &str,
     entry: Entry,
 ) -> Result<TranscriptionReply, TranscriptionHttpError> {
     let optional = object("{}");
-    let litellm = object(r#"{"ssl_verify":false}"#);
+    let litellm = object(litellm_json);
     let session = SharedSession;
     let mut request_call = call(&optional, &litellm);
     request_call.shared_session = Some(&session);
@@ -80,6 +85,7 @@ async fn assert_only_a_matching_supplied_client_is_reused() {
         &harness,
         &mut fixture,
         Some((&matching, ClientKind::Sync)),
+        r#"{"ssl_verify":false}"#,
         Entry::Audio,
     )
     .await
@@ -93,6 +99,7 @@ async fn assert_only_a_matching_supplied_client_is_reused() {
         &harness,
         &mut fixture,
         Some((&wrong_kind, ClientKind::Asynchronous)),
+        r#"{"ssl_verify":false}"#,
         Entry::Audio,
     )
     .await
@@ -111,9 +118,15 @@ async fn assert_only_a_matching_supplied_client_is_reused() {
 async fn fallback_calls(entry: Entry) -> Vec<ClientCall> {
     let harness = Harness::new();
     let mut fixture = Fixture::new("transcription");
-    run(&harness, &mut fixture, None, entry)
-        .await
-        .expect("the fallback sends");
+    run(
+        &harness,
+        &mut fixture,
+        None,
+        r#"{"ssl_verify":false}"#,
+        entry,
+    )
+    .await
+    .expect("the fallback sends");
     harness.source.calls()
 }
 
@@ -121,7 +134,7 @@ async fn assert_fallback_client_reads_verification() {
     assert_eq!(
         fallback_calls(Entry::Async).await,
         vec![ClientCall {
-            ssl_verify: Some(false),
+            ssl_verify: Some(SslVerify::Enabled(false)),
             shared_session: true,
         }]
     );
@@ -134,13 +147,82 @@ async fn assert_fallback_client_reads_verification() {
     );
 }
 
+async fn assert_ca_bundle_reaches_the_source() {
+    let harness = Harness::new();
+    let mut fixture = Fixture::new("transcription");
+    run(
+        &harness,
+        &mut fixture,
+        None,
+        r#"{"ssl_verify":"/etc/ca.pem"}"#,
+        Entry::Async,
+    )
+    .await
+    .expect("the CA bundle reaches the async client");
+    assert_eq!(
+        harness.source.calls(),
+        vec![ClientCall {
+            ssl_verify: Some(SslVerify::CaBundle(String::from("/etc/ca.pem"))),
+            shared_session: true,
+        }]
+    );
+}
+
+async fn assert_rejected_ssl_verify_names_the_field() {
+    let harness = Harness::new();
+    let mut fixture = Fixture::new("transcription");
+    let error = run(
+        &harness,
+        &mut fixture,
+        None,
+        r#"{"ssl_verify":1}"#,
+        Entry::Async,
+    )
+    .await
+    .expect_err("a value get_ssl_configuration cannot read fails");
+    assert!(matches!(error, TranscriptionHttpError::Params(_)));
+    assert_eq!(
+        error.to_string(),
+        "the ssl_verify parameter must be a boolean or a CA bundle path"
+    );
+    assert!(harness.source.calls().is_empty());
+    assert!(harness.source_wire.requests().is_empty());
+}
+
+async fn assert_sync_fallback_ignores_ssl_verify() {
+    let harness = Harness::new();
+    let mut fixture = Fixture::new("transcription");
+    run(
+        &harness,
+        &mut fixture,
+        None,
+        r#"{"ssl_verify":1}"#,
+        Entry::Audio,
+    )
+    .await
+    .expect("_get_httpx_client reads no params");
+    assert_eq!(
+        harness.source.calls(),
+        vec![ClientCall {
+            ssl_verify: None,
+            shared_session: false,
+        }]
+    );
+}
+
 async fn prepare_failure(failure: StageFailure) -> (TranscriptionHttpError, Harness) {
     let mut harness = Harness::new();
     harness.config.failure = failure;
     let mut fixture = Fixture::new("transcription");
-    let error = run(&harness, &mut fixture, None, Entry::Audio)
-        .await
-        .expect_err("the prepare stage fails");
+    let error = run(
+        &harness,
+        &mut fixture,
+        None,
+        r#"{"ssl_verify":false}"#,
+        Entry::Audio,
+    )
+    .await
+    .expect_err("the prepare stage fails");
     (error, harness)
 }
 
@@ -173,9 +255,15 @@ async fn assert_logging_failure_bypasses_the_error_converter() {
     let harness = Harness::new();
     let mut fixture = Fixture::new("transcription");
     fixture.state.request_logging.raw_request_only = true;
-    let error = run(&harness, &mut fixture, None, Entry::Audio)
-        .await
-        .expect_err("the logging hook fails");
+    let error = run(
+        &harness,
+        &mut fixture,
+        None,
+        r#"{"ssl_verify":false}"#,
+        Entry::Audio,
+    )
+    .await
+    .expect_err("the logging hook fails");
     assert!(matches!(error, TranscriptionHttpError::Logging(_)));
     assert!(harness.source.calls().is_empty());
     assert!(harness.source_wire.requests().is_empty());
@@ -185,9 +273,15 @@ async fn assert_response_transform_failure_bypasses_the_error_converter() {
     let mut harness = Harness::new();
     harness.config.failure = StageFailure::Response;
     let mut fixture = Fixture::new("transcription");
-    let error = run(&harness, &mut fixture, None, Entry::Audio)
-        .await
-        .expect_err("the response transform fails");
+    let error = run(
+        &harness,
+        &mut fixture,
+        None,
+        r#"{"ssl_verify":false}"#,
+        Entry::Audio,
+    )
+    .await
+    .expect_err("the response transform fails");
     assert!(matches!(
         error,
         TranscriptionHttpError::Contract(TranscriptionContractError::UnexpectedResponseTransform)

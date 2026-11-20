@@ -1,4 +1,5 @@
 use betterlite_core::api::vector_store_http_write::error::ClientError;
+use betterlite_openai::containers::container_file_http::request::SslVerify;
 use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::transcription::client::SharedSession;
 use indexmap::IndexMap;
@@ -38,7 +39,7 @@ pub struct UrlInput<'call> {
 
 // What get_async_httpx_client reads: params={"ssl_verify": ...} and the caller's shared session
 pub struct ClientRequest<'call> {
-    pub ssl_verify: Option<bool>,
+    pub ssl_verify: Option<SslVerify>,
     pub shared_session: Option<&'call SharedSession>,
 }
 
