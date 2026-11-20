@@ -14,9 +14,9 @@ use crate::keepalive_interval::PingSetting;
 use crate::sse_data_generator::types::{StreamCleanup, StreamHooks};
 
 pub const DEFAULT_LIMITS: WireDecodeLimits = WireDecodeLimits {
-    max_json_bytes: 16_777_216,
-    max_event_bytes: 1_048_576,
-    max_items: 65_536,
+    max_json_bytes: 0x0100_0000,
+    max_event_bytes: 0x0010_0000,
+    max_items: 0x0001_0000,
 };
 
 pub struct SharedStreamGenerator<Key, H> {

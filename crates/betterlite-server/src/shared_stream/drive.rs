@@ -135,7 +135,7 @@ where
     fn write(&mut self, item: StreamItem) -> Step<F::Out> {
         let ping = matches!(
             &item,
-            StreamItem::Bytes(bytes) if bytes.as_slice() == ANTHROPIC_PING_BYTES
+            StreamItem::Bytes(bytes) if bytes.as_ref() == ANTHROPIC_PING_BYTES
         );
         if !ping {
             self.guard.delivered = true;
