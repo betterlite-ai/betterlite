@@ -23,7 +23,7 @@ description: >-
   `ResolvedLogger` answer becomes `Arc<dyn CallbackLogger>`: Prometheus, Datadog, NewRelicMetrics and GenericApi carry
   types that implement the trait (B8561, B3933, B3944, B8252). LitellmAgent becomes a `HookLogger` defined here, which
   holds the name litellm_agent and keeps every trait default, since LiteLLM's LiteLLMAgentModelResolver overrides no
-  logging event; its prompt role stays with B8655's PromptLoggerFactory. When the server gives None for a name it has
+  logging event; its prompt role stays with the PromptLoggerFactory that B8747 builds. When the server gives None for a name it has
   an arm for (newrelic without a team key, or a generic_api entry with missing endpoint or headers), fall through to
   `self.catalog.resolve(name)` only for newrelic, whose global trace logger the catalog builds (B8746); for the other
   server names return Ok(None), as LiteLLM's arm returns None. Every remaining name goes to the catalog. Errors keep
@@ -43,9 +43,11 @@ description: >-
   awaited once before the listener opens. Right after it, one more line builds B115's
   `CatalogColdStorage::new(<litellm_settings.cold_storage_custom_logger from B1729's spend_storage section>, <the catalog Arc this slot holds>)`
   and hands it to the logging lifecycle. A RegistryError from init_callbacks stops startup with the message that names the
-  callback. The slot also exposes the ordered collection of loggers it constructed (the order B8910's selection and
-  publication read) and the one shared B8910 runtime, and B8910's publication runs after init_callbacks finishes, so
-  every configured V2 logger is in the collection when the provider is published. app/callbacks/hooks.rs (the skeleton declares it) holds `pub fn configured(state: &ServerState) ->
+  callback. The slot also exposes the catalog Arc, whose ordered list of built loggers (the order B8910's selection and
+  publication read) is B8746's, and B8910's publication runs after init_callbacks finishes, so every configured V2
+  logger is in the collection when the provider is published. The slot builds no OTel runtime: B110 builds the shared
+  one with B10007's build_proxy_runtime, and the call site B110 adds here hands it to B8746's
+  LoggerCatalog::with_runtime before the catalog goes into its Arc. app/callbacks/hooks.rs (the skeleton declares it) holds `pub fn configured(state: &ServerState) ->
   Result<Vec<(String, Arc<dyn ProxyCallback>)>, RegistryError>`: for each name of litellm_settings.callbacks that is
   one of the five hook names, in list order, call `hook_for(name, state)`. Here every hook_for arm returns
   UnavailableAdapter naming the hook, so a configured hook name stops startup until B8747 or B8749 fills its arm; any
@@ -55,7 +57,8 @@ description: >-
   Tests in state/callback_loggers/tests.rs build the slot with Slot::new from a Config parsed from YAML and the
   Shared test value B8610's tests build (read them first). Cases: prometheus resolves to the same Arc twice;
   litellm_agent gives a logger named litellm_agent whose events do nothing; pagerduty comes from the catalog; newrelic
-  without a team key reaches the catalog (UnavailableAdapter until B8746 fills it); generic_api with missing headers
+  without a team key reaches the catalog (with LITELLM_OTEL_V2 on and no runtime injected, UnavailableAdapter naming
+  newrelic, before B8746 fills the arm and after); generic_api with missing headers
   gives Ok(None); langsmith gives UnavailableAdapter naming langsmith; an unknown name gives UnavailableAdapter;
   websearch_interception and code_interpreter_interception give Ok(None). A
   hooks.rs test: a config with dynamic_rate_limiter in callbacks makes configured() fail naming it, and a config

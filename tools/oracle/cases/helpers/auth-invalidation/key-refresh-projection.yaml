@@ -1,0 +1,11 @@
+kind: helper
+name: auth-invalidation-key-refresh-projection
+call:
+  auth_invalidation:
+    scenario: key
+    management_ttl: 45.0
+    hashed_token: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    rehash_candidate: fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210
+    auth: {request_route: api}
+env: {}
+compare: {ignore: []}
