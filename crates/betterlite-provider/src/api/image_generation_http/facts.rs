@@ -27,20 +27,34 @@ pub(super) struct Sent {
     pub(super) elapsed: Duration,
 }
 
+// Every failure starts from these facts, then fills in the status or the display text it has
+fn failure_facts(display: String) -> FailureFacts {
+    FailureFacts {
+        response_status: None,
+        status: None,
+        text: None,
+        headers: None,
+        response: None,
+        display,
+    }
+}
+
 // httpx's HTTPStatusError hands the handler the decoded body and the response headers it will name, without content-encoding
+fn status_failure(reply: &UpstreamResponse) -> (FailureFacts, ImageHeaders) {
+    let (text, headers) = masked_reply(reply);
+    let facts = FailureFacts {
+        response_status: Some(i64::from(reply.status)),
+        text: Some(text),
+        ..failure_facts(String::new())
+    };
+    (facts, headers)
+}
+
 pub(super) fn status_error<C>(reply: &UpstreamResponse, config: &C) -> ImageGenerationError
 where
     C: BaseImageGenerationConfig,
 {
-    let (text, headers) = masked_reply(reply);
-    let facts = FailureFacts {
-        response_status: Some(i64::from(reply.status)),
-        status: None,
-        text: Some(text),
-        headers: None,
-        response: None,
-        display: String::new(),
-    };
+    let (facts, headers) = status_failure(reply);
     ImageGenerationError::Provider(Box::new(classify(&facts, &headers, config)))
 }
 
@@ -67,6 +81,20 @@ fn reply_text(reply: &UpstreamResponse) -> String {
     )
 }
 
+// A send failure is a timeout where httpx raises TimeoutException, and otherwise carries only the exception text
+fn transport_failure(error: &TransportError, sent: &Sent) -> FailureFacts {
+    if matches!(
+        error,
+        TransportError::ConnectTimeout(_) | TransportError::Deadline(_)
+    ) {
+        return FailureFacts {
+            status: Some(Json::Number(Number::from(408_u16))),
+            ..failure_facts(timeout_message(sent))
+        };
+    }
+    failure_facts(error.to_string())
+}
+
 pub(super) fn transport_error<C>(
     error: &TransportError,
     sent: &Sent,
@@ -75,33 +103,11 @@ pub(super) fn transport_error<C>(
 where
     C: BaseImageGenerationConfig,
 {
-    if matches!(
-        error,
-        TransportError::ConnectTimeout(_) | TransportError::Deadline(_)
-    ) {
-        let facts = FailureFacts {
-            response_status: None,
-            status: Some(Json::Number(Number::from(408_u16))),
-            text: None,
-            headers: None,
-            response: None,
-            display: timeout_message(sent),
-        };
-        return ImageGenerationError::Provider(Box::new(classify(
-            &facts,
-            &ImageHeaders::new(),
-            config,
-        )));
-    }
-    let facts = FailureFacts {
-        response_status: None,
-        status: None,
-        text: None,
-        headers: None,
-        response: None,
-        display: error.to_string(),
-    };
-    ImageGenerationError::Provider(Box::new(classify(&facts, &ImageHeaders::new(), config)))
+    ImageGenerationError::Provider(Box::new(classify(
+        &transport_failure(error, sent),
+        &ImageHeaders::new(),
+        config,
+    )))
 }
 
 fn timeout_message(sent: &Sent) -> String {

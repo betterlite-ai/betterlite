@@ -12,6 +12,7 @@ use betterlite_openai::api::image_contracts::records::{
 use betterlite_openai::error::ProviderError;
 use http::HeaderMap;
 use http::header::HeaderValue;
+use rstest::rstest;
 use secrecy::ExposeSecret as _;
 use serde_json::Number;
 use thiserror::Error;
@@ -533,34 +534,38 @@ async fn generation_multipart_fields() {
 }
 
 // A form field cannot hold an object or a list holding one, so the assembly names the field instead of sending
-#[test]
-fn generation_refuses_object_form_fields() {
-    let mut object = multipart_fixture();
-    object.echo = fields(&[(
+#[rstest]
+#[case::object(
+    fields(&[(
         "image",
         Json::Object(fields(&[("url", Json::Text(String::from("a")))])),
-    )]);
-    let mut nested = multipart_fixture();
-    nested.echo = fields(&[(
+    )]),
+    "image",
+)]
+#[case::nested_list(
+    fields(&[(
         "images",
         Json::List(vec![Json::Object(fields(&[(
             "url",
             Json::Text(String::from("a")),
         )]))]),
-    )]);
-    for (fixture, expected) in [(&object, "image"), (&nested, "images")] {
-        let params = litellm_params("http://127.0.0.1:9/v1", None, None);
-        let error = prepare_error(
-            fixture,
-            &params,
-            &caller_options(None),
-            &mut Recorder::default(),
-        )
-        .expect_err("the form value failure");
-        match error {
-            ImageGenerationError::FormValue { field } => assert_eq!(field, expected),
-            other => panic!("expected the form value failure, got {other}"),
-        }
+    )]),
+    "images",
+)]
+fn generation_refuses_object_form_fields(#[case] echo: ImageParams, #[case] expected: &str) {
+    let mut fixture = multipart_fixture();
+    fixture.echo = echo;
+    let params = litellm_params("http://127.0.0.1:9/v1", None, None);
+    let error = prepare_error(
+        &fixture,
+        &params,
+        &caller_options(None),
+        &mut Recorder::default(),
+    )
+    .expect_err("the form value failure");
+    match error {
+        ImageGenerationError::FormValue { field } => assert_eq!(field, expected),
+        other => panic!("expected the form value failure, got {other}"),
     }
 }
 
