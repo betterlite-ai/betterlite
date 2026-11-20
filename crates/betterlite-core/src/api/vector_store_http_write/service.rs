@@ -242,23 +242,41 @@ where
         .unwrap_or_else(|| client.get().default_timeout());
     let started = Instant::now();
     let reply = client.get().send(request).await;
-    let sent = Sent::for_write(mode, operation, timeout, started.elapsed());
-    let answer = reply.map_err(|error| {
+    // the sync handlers pass no timeout, so their message shows none; the async one shows the deadline it ran with
+    let sent = Sent {
+        mode,
+        operation,
+        timeout: match mode {
+            ClientKind::Sync => None,
+            ClientKind::Asynchronous => Some(timeout),
+        },
+        elapsed: started.elapsed(),
+    };
+    let response = reply.map_err(|error| {
         WriteError::Provider(handle_error(
             &facts::transport_facts(&error, &sent),
             Some(config),
         ))
     })?;
-    if answer.status < 400 {
+    answer(&response, operation, config)
+}
+
+// The reply's own step: under 400 an update's reply is transformed and a delete's decoded, and 400 or more becomes the provider's error
+fn answer<C: WriteConfig>(
+    reply: &UpstreamResponse,
+    operation: Operation,
+    config: &C,
+) -> Result<Json, WriteError> {
+    if reply.status < 400 {
         return match operation {
             Operation::Update => config
-                .transform_create_response(&facts::http_response(&answer))
+                .transform_create_response(&facts::http_response(reply))
                 .map_err(WriteError::Provider),
-            Operation::Delete => serde_json::from_slice(&answer.body).map_err(WriteError::Reply),
+            Operation::Delete => serde_json::from_slice(&reply.body).map_err(WriteError::Reply),
         };
     }
     Err(WriteError::Provider(handle_error(
-        &status_facts(&answer),
+        &status_facts(reply),
         Some(config),
     )))
 }
