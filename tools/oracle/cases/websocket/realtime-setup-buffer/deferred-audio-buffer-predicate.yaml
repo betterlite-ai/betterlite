@@ -1,0 +1,57 @@
+kind: helper
+name: deferred-audio-buffer-predicate
+call:
+  realtime_setup_buffer_websocket:
+    provider: {requires_session_configuration: false, fail_transform: false, dropped: []}
+    backend_failures: []
+    operations:
+      - {kind: deferred}
+      - {kind: should_buffer, text: '{"type": "input_audio_buffer.append", "audio": "QQ=="}'}
+      - {kind: should_buffer, text: '{"type": "input_audio_buffer.commit"}'}
+      - {kind: should_buffer, text: '{"type": "input_audio_buffer.clear"}'}
+      - {kind: should_buffer, text: '{"type": "input_audio_buffer.end"}'}
+      - {kind: should_buffer, text: '{"type": "session.update", "session": {}}'}
+      - {kind: should_buffer, text: '{not json'}
+      - {kind: should_buffer, text: '{"type": 7}'}
+      - {kind: buffer, text: '{"type": "input_audio_buffer.append", "audio": "QQ=="}'}
+      - {kind: buffer, text: '{"type": "session.update", "session": {}}'}
+      - {kind: buffer, text: '{not json'}
+      - {kind: complete, value: true}
+      - {kind: should_buffer, text: '{"type": "input_audio_buffer.append", "audio": "QQ=="}'}
+      - {kind: flushing, value: true}
+      - {kind: should_buffer, text: '{"type": "input_audio_buffer.append", "audio": "QQ=="}'}
+      - {kind: flushing, value: false}
+      - {kind: should_buffer, text: '{"type": "input_audio_buffer.append", "audio": "QQ=="}'}
+      - {kind: complete, value: false}
+      - {kind: should_buffer, text: '{"type": "input_audio_buffer.end"}'}
+      - {kind: flush}
+calls:
+  - realtime_setup_buffer_websocket:
+      provider: {requires_session_configuration: true, fail_transform: false, dropped: []}
+      backend_failures: []
+      operations:
+        - {kind: deferred}
+        - {kind: should_buffer, text: '{"type": "input_audio_buffer.append", "audio": "QQ=="}'}
+        - {kind: complete, value: false}
+        - {kind: should_buffer, text: '{"type": "input_audio_buffer.append", "audio": "QQ=="}'}
+        - {kind: flushing, value: true}
+        - {kind: should_buffer, text: '{"type": "input_audio_buffer.append", "audio": "QQ=="}'}
+  - realtime_setup_buffer_websocket:
+      provider: null
+      backend_failures: []
+      operations:
+        - {kind: deferred}
+        - {kind: should_buffer, text: '{"type": "input_audio_buffer.append", "audio": "QQ=="}'}
+        - {kind: buffer, text: '{"type": "input_audio_buffer.append", "audio": "QQ=="}'}
+        - {kind: flush}
+  - realtime_setup_buffer_websocket:
+      provider: {requires_session_configuration: false, fail_transform: false, dropped: []}
+      backend_failures: []
+      operations:
+        - {kind: should_buffer, text: '[1]'}
+        - {kind: buffer, text: '[1]'}
+        - {kind: should_buffer, text: '{"type": "input_audio_buffer.clear"}'}
+        - {kind: buffer, text: '{"type": "input_audio_buffer.clear"}'}
+        - {kind: flush}
+env: {}
+compare: {ignore: []}
