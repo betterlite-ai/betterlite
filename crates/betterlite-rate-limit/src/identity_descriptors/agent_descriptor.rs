@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use betterlite_auth::agent_policy::AgentResponse;
 use betterlite_core::api::request_destination::RequestData;
 
@@ -24,14 +22,11 @@ impl AgentDescriptorBuilder<'_> {
         data: &RequestData,
         policy: Option<&AgentResponse>,
     ) -> Vec<RateLimitDescriptor> {
-        let agent = match policy {
-            Some(policy) => Cow::Borrowed(policy),
-            None => {
-                let Some(found) = self.registry.agent_by_id(agent_id) else {
-                    return Vec::new();
-                };
-                Cow::Owned(found)
-            }
+        let Some(agent) = policy
+            .cloned()
+            .or_else(|| self.registry.agent_by_id(agent_id))
+        else {
+            return Vec::new();
         };
         let mut descriptors = Vec::new();
         if agent.rpm_limit.is_some() || agent.tpm_limit.is_some() {
