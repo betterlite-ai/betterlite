@@ -145,8 +145,8 @@ enum Sent<'borrow, 'call, C: GenerateContentHttpConfig> {
     AsyncEvents(Wire<'borrow, 'call, C>, StreamReply),
 }
 
-pub async fn generate_content<'deps, C, S>(
-    deps: &GenerateContentDeps<'deps, C, S>,
+pub async fn generate_content<C, S>(
+    deps: &GenerateContentDeps<'_, C, S>,
     call: &GenerateContentCall<'_>,
     log: &mut LogContext<'_, '_>,
 ) -> Result<GenerateContentOutcome<C::Response>, GenAiHttpError<C::Error>>
@@ -165,8 +165,8 @@ where
     }
 }
 
-pub async fn async_generate_content<'context, Client, Source>(
-    deps: &GenerateContentDeps<'context, Client, Source>,
+pub async fn async_generate_content<Client, Source>(
+    deps: &GenerateContentDeps<'_, Client, Source>,
     call: &GenerateContentCall<'_>,
     log: &mut LogContext<'_, '_>,
 ) -> Result<AsyncGenerateContentOutcome<Client::Response>, GenAiHttpError<Client::Error>>
@@ -233,9 +233,20 @@ where
         inputs,
         settings,
     };
+    answered(wire, reply, stream)
+}
+
+fn answered<'borrow, 'call, C>(
+    wire: Wire<'borrow, 'call, C>,
+    reply: WireReply,
+    stream: bool,
+) -> Result<Sent<'borrow, 'call, C>, GenAiHttpError<C::Error>>
+where
+    C: GenerateContentHttpConfig,
+{
     match reply {
         WireReply::Buffered(answer) => {
-            let answer = successful(config, answer)?;
+            let answer = successful(wire.config, answer)?;
             if stream {
                 Ok(Sent::SyncEvents(wire, answer))
             } else {

@@ -5,6 +5,7 @@ pub mod pricing;
 pub mod types;
 pub mod updates;
 
+use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::billed_tokens::BilledTokenRates;
 use betterlite_models::cost_breakdown::CostBreakdown;
 use betterlite_models::decisions::Json;
@@ -78,7 +79,7 @@ pub struct LoggingState {
     pub custom_llm_provider: Option<String>,
     pub model_call_details: IndexMap<String, Json>,
     // LiteLLM's model_call_details["httpx_response"], which B9840 reads and which cannot live in the JSON map
-    pub httpx_response: Option<betterlite_http::proxy::UpstreamResponse>,
+    pub httpx_response: Option<UpstreamResponse>,
     pub response_timing_metrics: IndexMap<String, f64>,
     pub message_copy_duration_ms: f64,
     pub callback_duration_ms: f64,
@@ -141,10 +142,10 @@ impl LoggingState {
         let session_id = session_id_from_kwargs(&init.kwargs)?;
         let trace_id = init.litellm_trace_id.clone().unwrap_or_else(next_trace_id);
         let (messages, copy_ms) = normalized_messages(init.messages.as_ref(), &mut clock);
-        let model_call_details = initial_model_call_details(&init, &trace_id);
         Ok(Self {
             // The literal moves the ids this borrows, so the correlation is built before them
             correlation: apply_correlation(&mut correlation, &trace_id, &session_id, redactor),
+            model_call_details: initial_model_call_details(&init, &trace_id),
             model: init.model,
             messages,
             stream: init.stream,
@@ -161,7 +162,6 @@ impl LoggingState {
             stream_options: None,
             cost: CostState::default(),
             custom_llm_provider: None,
-            model_call_details,
             httpx_response: None,
             response_timing_metrics: IndexMap::new(),
             message_copy_duration_ms: copy_ms,

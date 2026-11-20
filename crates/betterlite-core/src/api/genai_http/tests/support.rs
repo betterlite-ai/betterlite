@@ -124,9 +124,9 @@ impl Fixture {
         }
     }
 
-    pub(crate) async fn sync_call<'deps, C, S>(
+    pub(crate) async fn sync_call<C, S>(
         &mut self,
-        deps: &GenerateContentDeps<'deps, C, S>,
+        deps: &GenerateContentDeps<'_, C, S>,
         call: &GenerateContentCall<'_>,
         events: &Events,
     ) -> Result<GenerateContentOutcome<C::Response>, GenAiHttpError<C::Error>>
@@ -137,12 +137,16 @@ impl Fixture {
         recorded_call!(self, events, generate_content, deps, call)
     }
 
-    pub(crate) async fn async_call<'deps, C: GenerateContentHttpConfig, S: ClientSource>(
+    pub(crate) async fn async_call<C, S>(
         &mut self,
         events: Events,
-        deps: &GenerateContentDeps<'deps, C, S>,
+        deps: &GenerateContentDeps<'_, C, S>,
         call: &GenerateContentCall<'_>,
-    ) -> Result<AsyncGenerateContentOutcome<C::Response>, GenAiHttpError<C::Error>> {
+    ) -> Result<AsyncGenerateContentOutcome<C::Response>, GenAiHttpError<C::Error>>
+    where
+        C: GenerateContentHttpConfig,
+        S: ClientSource,
+    {
         recorded_call!(self, events, async_generate_content, deps, call)
     }
 
@@ -164,7 +168,7 @@ fn pre_post_env<'env>(
     redactor: &'env Redactor,
     sink: &'env Sink,
     now: DateTime<FixedOffset>,
-    logger: &'env dyn Fn(&DecisionJson) -> Result<(), PrePostError>,
+    logger: &'env (dyn Fn(&DecisionJson) -> Result<(), PrePostError> + Sync),
 ) -> PrePostEnv<'env> {
     PrePostEnv {
         debug: DebugSettings::default(),
