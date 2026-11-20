@@ -161,22 +161,22 @@ def request_fields(wire: Wire) -> JsonValue:
 
 
 def log_fields(calls: list[dict[str, JsonValue]]) -> JsonValue:
-    entries: list[JsonValue] = []
-    for call in calls:
-        args = ARGS.validate_python(call["additional_args"])
-        headers: dict[str, JsonValue] = {}
-        for name, value in HEADERS.validate_python(args.get("headers")).items():
-            headers[name.lower()] = value
-        entries.append(
-            {
-                "input": call["input"],
-                "api_base": args.get("api_base"),
-                "headers": headers,
-                "body": args.get("complete_input_dict"),
-                "params": args.get("params"),
-            }
-        )
-    return entries
+    return [log_entry(call) for call in calls]
+
+
+def log_entry(call: dict[str, JsonValue]) -> JsonValue:
+    args = ARGS.validate_python(call["additional_args"])
+    headers: dict[str, JsonValue] = {
+        name.lower(): value
+        for name, value in HEADERS.validate_python(args.get("headers")).items()
+    }
+    return {
+        "input": call["input"],
+        "api_base": args.get("api_base"),
+        "headers": headers,
+        "body": args.get("complete_input_dict"),
+        "params": args.get("params"),
+    }
 
 
 def container_fields(view: ContainerView) -> JsonValue:
