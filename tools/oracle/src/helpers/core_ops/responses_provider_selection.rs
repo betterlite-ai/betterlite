@@ -1,11 +1,84 @@
+mod handlers;
+mod scripted;
+use betterlite_core::api::responses_provider_selection::ParameterMap;
+use betterlite_models::controls::json_value::JsonValue;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
-
+use betterlite_prompts::file_ids::mapping::FileIdMapping;
+use betterlite_prompts::file_ids::responses::ResponsesInput;
+use betterlite_prompts::file_ids::tools::ResponsesTool;
+use scripted::Hook;
+use serde::Deserialize;
+use std::collections::BTreeMap;
+#[derive(Debug, Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
+pub(crate) enum Call {
+    Selection(Selection),
+    Prefixes(Prefixes),
+    Compatible(Compatible),
+    CredentialBoundary(CredentialBoundary),
+    PromptCall(PromptCall),
+    FileMapping(FileMapping),
+}
+#[derive(Debug, Deserialize)]
+pub(crate) struct Selection {
+    provider: String,
+    model: String,
+    use_chat_completions_api: bool,
+    model_info: JsonValue,
+    kwargs: ParameterMap,
+    allowed_openai_params: Vec<String>,
+}
+#[derive(Debug, Deserialize)]
+pub(crate) struct Prefixes {
+    model: String,
+    flag_present: bool,
+    flag: Option<JsonValue>,
+}
+#[derive(Debug, Deserialize)]
+pub(crate) struct Compatible {
+    environment: BTreeMap<String, String>,
+    api_key: Option<String>,
+    api_base: Option<String>,
+    headers: BTreeMap<String, String>,
+}
+#[derive(Debug, Deserialize)]
+pub(crate) struct CredentialBoundary {
+    original_model: String,
+    swapped_model: String,
+    provider: Option<String>,
+    prompt_id: Option<String>,
+    kwargs: ParameterMap,
+    model_info: Option<JsonValue>,
+}
+#[derive(Debug, Deserialize)]
+pub(crate) struct PromptCall {
+    input: JsonValue,
+    model: String,
+    provider: Option<String>,
+    use_chat_completions_api: bool,
+    logging: bool,
+    hook: Option<Hook>,
+    async_outcome: Option<JsonValue>,
+    kwargs: ParameterMap,
+}
+#[derive(Debug, Deserialize)]
+pub(crate) struct FileMapping {
+    input: ResponsesInput,
+    tools: Option<Vec<ResponsesTool>>,
+    model_info: Option<JsonValue>,
+    mapping: Option<FileIdMapping>,
+}
 pub(crate) struct Op;
-
 impl Helper for Op {
-    type Input = serde_json::Value;
-
-    fn run(_input: &Self::Input) -> HelperResult {
-        Self::not_built("responses_provider_selection")
+    type Input = Call;
+    fn run(input: &Self::Input) -> HelperResult {
+        match input {
+            Call::Selection(case) => Ok(handlers::selection(case)),
+            Call::Prefixes(case) => Ok(handlers::prefixes(case)),
+            Call::Compatible(case) => handlers::compatible(case),
+            Call::CredentialBoundary(case) => handlers::credential_boundary(case),
+            Call::PromptCall(case) => handlers::prompt_call(case),
+            Call::FileMapping(case) => handlers::file_mapping(case),
+        }
     }
 }

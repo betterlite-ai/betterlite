@@ -1,0 +1,20 @@
+kind: helper
+name: vector-file-provider-registry-overwrites-caller
+call:
+  vector_file_provider:
+    vector_store_id: vs_a
+    custom_llm_provider: openai
+    kwargs: {api_key: caller, api_base: old, timeout: 7}
+    registry:
+      result: {api_key: registry, api_base: new, custom_llm_provider: azure}
+      error: null
+calls:
+  - vector_file_provider:
+      vector_store_id: vs_a
+      custom_llm_provider: openai
+      kwargs: {api_key: caller, timeout: 7}
+      registry:
+        result: {api_key: null}
+        error: null
+env: {}
+compare: {ignore: []}
