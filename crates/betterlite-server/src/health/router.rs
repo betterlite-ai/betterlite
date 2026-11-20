@@ -2,15 +2,12 @@ pub mod error;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use betterlite_models::decisions::Json;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use betterlite_router::model_catalog_lookup::lookup::CatalogLookup;
 
 use self::error::RouterHealthError;
 use crate::router_dependencies::dependencies::strategy_router_dependencies;
-use crate::router_dependencies::{
-    StrategyRouterDependency, StrategyRouterDependencyRole, classify_strategy_router_model,
-};
+use crate::router_dependencies::{StrategyRouterDependency, StrategyRouterDependencyRole};
 
 mod tests;
 
@@ -140,15 +137,7 @@ fn first_dependency_fault(
     Ok(None)
 }
 
-// _is_strategy_router_deployment: litellm_params.model selects one of the strategy routers.
-fn is_marker(deployment: &DeploymentSpec) -> bool {
-    matches!(
-        deployment.litellm_params.get("model"),
-        Some(Json::Text(model)) if classify_strategy_router_model(model).is_some()
-    )
-}
-
-// The routers a healthy probe reported, keyed by id: only these can gain a verdict, since a marker is never probed itself.
+// The checked deployments a healthy probe reported, keyed by id: only a strategy router carries dependencies, so no other endpoint gains a verdict.
 fn marked_routers<'checked>(
     healthy_endpoints: &[Endpoint],
     checked: &'checked [DeploymentSpec],
@@ -165,9 +154,7 @@ fn marked_routers<'checked>(
         let Some(&deployment) = by_id.get(id) else {
             continue;
         };
-        if is_marker(deployment) {
-            marked.insert(id.to_owned(), deployment);
-        }
+        marked.insert(id.to_owned(), deployment);
     }
     marked
 }
