@@ -88,6 +88,7 @@ description: >-
 scope:
   paths:
   - "crates/betterlite-azure/src/completion/stream.rs"
+  - crates/betterlite-openai/src/text_completion_transport/stream.rs
   - crates/betterlite-azure/Cargo.toml
   - crates/betterlite-azure/src/azure_stream_errors.rs
   - crates/betterlite-azure/src/azure_stream_errors/**
