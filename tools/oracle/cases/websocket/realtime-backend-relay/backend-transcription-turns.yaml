@@ -10,3 +10,6 @@ call:
       reason: ''
     pending: []
     force_transcription_model: null
+env: {}
+compare:
+  ignore: []
