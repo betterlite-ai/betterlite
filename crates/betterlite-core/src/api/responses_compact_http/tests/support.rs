@@ -109,7 +109,7 @@ impl Fixture {
             },
             &redactor,
             || String::from("generated"),
-            Duration::default(),
+            Duration::default,
         )
         .expect("the logging state builds");
         Self {
@@ -120,9 +120,9 @@ impl Fixture {
         }
     }
 
-    pub(crate) async fn run<'deps, C, S>(
+    pub(crate) async fn run<C, S>(
         &mut self,
-        deps: &'deps CompactDeps<'_, C, S>,
+        deps: &CompactDeps<'_, C, S>,
         mode: ClientKind,
         call: &CompactCall<'_>,
         events: &Events,
