@@ -2,7 +2,7 @@ id: B4777
 milestone: M9 agents and mcp
 title: Persist agent changes and retire managed identities
 status: todo
-depends_on: [B4144, B4770, B4772, B4775, B700, B816]
+depends_on: [B4144, B4770, B4772, B4775, B700, B816, B10012]
 file: tasks/B4777-agent-persistence.yaml
 covers:
   - "litellm/proxy/agent_endpoints/agent_registry.py"

@@ -1,0 +1,10 @@
+kind: helper
+name: status-200-intervened-is-intervened
+call:
+  b3722:
+    bedrock_decisions:
+      status:
+        status_code: 200
+        body: '{"action": "GUARDRAIL_INTERVENED", "assessments": [{"wordPolicy": {"customWords": [{"match": "secret", "action": "BLOCKED"}]}}]}'
+env: {}
+compare: {ignore: []}

@@ -1,7 +1,7 @@
 id: B8692
 title: Core LlmPassthrough dispatch entry and route choice
 description: >-
-  The proxy's passthrough route type, `allm_passthrough_route`, ends in LiteLLM's route_request (route_llm_request.py), which picks the router or the SDK call for the request data. The video and container routes copy their part of that choice into a core dispatch entry (B6460, B7430); this task does the same for the passthrough route type, so B8694's pipeline can hand the request to one core entry. betterlite-core cannot import betterlite-sdk or betterlite-router, so the router is reached through B8690's `PassthroughRouterCalls` and the router's model lists through B6460's `VideoRouteView`, both injected.
+  The proxy's passthrough route type, `allm_passthrough_route`, ends in LiteLLM's route_request (route_llm_request.py), which picks the router or the SDK call for the request data. The video and container routes copy their part of that choice into a core dispatch entry (B9944, B7430); this task does the same for the passthrough route type, so B8694's pipeline can hand the request to one core entry. betterlite-core cannot import betterlite-sdk or betterlite-router, so the router is reached through B8690's `PassthroughRouterCalls` and the router's model lists through B9944's `VideoRouteView` (betterlite-core api::video_router_calls, on main), both injected.
 
   Dispatch entry. The architect adds one core entry to B014's core-stubs list, `LlmPassthrough` with module `llm_passthrough` (operation/llm_passthrough.rs and dispatch/llm_passthrough.rs); this task replaces its NotBuilt stub and stub test and leaves operation.rs and dispatch.rs as they are. The request is `LlmPassthroughRequest { args: PassthroughCallArgs, route: PassthroughRouteInput }`; the result is B8690's `PassthroughReply`.
   `PassthroughRouteInput` holds `model: String` (the request data's model after pre-call), `team_id: Option<String>`, `is_proxy_admin_without_team: bool`, `has_api_key_or_base: bool` (the data has `api_key` or `api_base`), `has_user_config: bool`, `router_settings_override: Option<Map<String, Value>>` and `user_model: Option<String>`.
@@ -54,7 +54,7 @@ deviations:
   - what: A request whose data carries `user_config` gets a 400 invalid_request_error "user_config is not supported on pass-through routes" instead of a router built from that config.
     why: LiteLLM builds a throwaway Router from client-supplied config per request; betterlite has no per-request router. Open question in the notes.
 out_of_scope:
-  - "The rest of route_request and its other route types: B6460 (video), B7430 (containers) and the other route families."
+  - "The rest of route_request and its other route types: B9944 (video), B7430 (containers) and the other route families."
   - "The pre-call steps that set the data's model and router_settings_override, and the reply shaping: B8694 and B8693."
   - "Implementing VideoRouteView, BlockedModels and the direct call over the real router and SDK call: B8694."
 pitfalls:

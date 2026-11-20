@@ -2,7 +2,7 @@ id: B148
 milestone: M10 admin ui
 title: Admin UI pages for guardrails, policies and tool policies working against betterlite
 status: todo
-depends_on: [B144, B9740, B9750, B9751, B9752, B9753, B8772, B1607, B062, B8662, B9735, B8667, B8669, B8790, B9321, B9762, B9732]
+depends_on: [B144, B9740, B9750, B9751, B8772, B8662, B9735, B8667, B9732]
 file: tasks/B148-dashboard-governance-pages.yaml
 covers:
   - "ui/litellm-dashboard/src/app/(dashboard)/{guardrails-monitor,tool-policies}/**"
