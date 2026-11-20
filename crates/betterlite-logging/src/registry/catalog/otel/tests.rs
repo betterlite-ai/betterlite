@@ -7,8 +7,7 @@ use betterlite_config::sections::otel_settings::OtelAttributes;
 use rstest::rstest;
 
 use self::support::{catalog, catalog_inputs};
-use crate::callback_logger::CallbackLogger;
-use crate::otel::legacy_metrics::filter::CallbackSettingsView;
+use crate::otel::legacy_metrics::filter::CallbackSettingsView as _;
 use crate::otel::legacy_policy::config::{Exporter, OpenTelemetryConfig, Signals};
 use crate::otel::logger_runtime::tests::support::{fixture, fixture_disabled};
 use crate::otel::model::utils::coercion::OtelModelValue;
