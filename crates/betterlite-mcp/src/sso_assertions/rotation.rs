@@ -10,16 +10,16 @@ use betterlite_secrets::secret_codec::StoredValue;
 use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 
-// The store's failure type belongs to the caller, so it is carried rather than boxed.
+// No #[from]: From<Store> would overlap From<SecretError> at Store = SecretError (E0119).
 #[derive(Debug, Error)]
 pub enum RotationError<Store>
 where
     Store: StdError + Send + Sync + 'static,
 {
     #[error("the SSO identity assertion could not be re-encrypted: {0}")]
-    Cipher(#[from] SecretError),
+    Cipher(#[source] SecretError),
     #[error("the SSO identity assertion rows failed: {0}")]
-    Store(#[from] Store),
+    Store(#[source] Store),
 }
 
 // LiteLLM's rotate_sso_identity_assertions_master_key: one row at a time, so no whole-table plaintext.
@@ -48,14 +48,19 @@ where
             skipped = skipped.saturating_add(1);
             continue;
         };
-        let sealed = match cipher.encrypt_value(
-            StoredValue::<Infallible>::Text(plaintext),
-            Some(new_master_key),
-        )? {
+        let sealed = match cipher
+            .encrypt_value(
+                StoredValue::<Infallible>::Text(plaintext),
+                Some(new_master_key),
+            )
+            .map_err(RotationError::Cipher)?
+        {
             StoredValue::Text(ciphertext) => ciphertext,
             StoredValue::Other(never) => match never {},
         };
-        rows.update(&user_id, sealed.expose_secret()).await?;
+        rows.update(&user_id, sealed.expose_secret())
+            .await
+            .map_err(RotationError::Store)?;
         rotated = rotated.saturating_add(1);
     }
     tracing::info!(

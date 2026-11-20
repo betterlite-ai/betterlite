@@ -150,8 +150,7 @@ pub struct MemoryFailures {
     pub id_jag_server_exists: Option<usize>,
 }
 
-// The one fake the tests and the helper adapters share: insertion-ordered rows, the retention flag,
-// accepted-call counters and a failure for each method.
+// The shared fake: insertion order, the id_jag flag, call counters and a per-method failure.
 #[derive(Debug, Default)]
 pub struct MemoryAssertionRows {
     pub rows: Mutex<Vec<AssertionRow>>,
