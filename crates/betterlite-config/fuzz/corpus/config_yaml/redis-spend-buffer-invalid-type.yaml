@@ -1,0 +1,5 @@
+general_settings:
+  use_redis_transaction_buffer:
+    nested: true
+  disable_spend_updates: false
+model_list: []
