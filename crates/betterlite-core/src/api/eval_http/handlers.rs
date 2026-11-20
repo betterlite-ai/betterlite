@@ -26,7 +26,7 @@ pub async fn list_evals_handler(connection: &EvalConnection<'_>, log: &mut EvalL
 
 // GET with no params and no timeout, and no body in the pre-call
 #[rustfmt::skip]
-pub async fn get_eval_handler(connection: &EvalConnection<'_>, log: EvalLogging<'_, '_>) -> Result<Eval, EvalHttpError> {
+pub async fn get_eval_handler(connection: &EvalConnection<'_>, log: &mut EvalLogging<'_, '_>) -> Result<Eval, EvalHttpError> {
     let exchange = EvalExchange { method: EvalMethod::Get, body: None, query: None, timeout: None, input: "", complete_input_dict: None };
     let reply = eval_exchange(connection, &exchange, log).await?;
     connection.config.transform_get_eval_response(&reply.raw_response()).map_err(EvalHttpError::from)
