@@ -4,26 +4,24 @@ use super::*;
 use crate::api::vector_store_http_write::service::LogContext;
 use crate::api::vector_store_search::service::{CreateCall, create_call::create};
 
-impl Logs {
-    pub(super) async fn run_create<S>(
-        &mut self,
-        deps: &SdkDeps<'_, S>,
-        call: &CreateCall<'_>,
-    ) -> Result<Json, VectorStoreSearchError>
-    where
-        S: ClientSource,
-    {
-        let env = pre_post_env(&self.redactor, &self.sink, self.now);
-        create(
-            deps,
-            call,
-            &mut LogContext {
-                state: &mut self.state,
-                env: &env,
-            },
-        )
-        .await
-    }
+pub(super) async fn run_create<S>(
+    logs: &mut Logs,
+    deps: &SdkDeps<'_, S>,
+    call: &CreateCall<'_>,
+) -> Result<Json, VectorStoreSearchError>
+where
+    S: ClientSource,
+{
+    let env = pre_post_env(&logs.redactor, &logs.sink, logs.now);
+    create(
+        deps,
+        call,
+        &mut LogContext {
+            state: &mut logs.state,
+            env: &env,
+        },
+    )
+    .await
 }
 
 pub(super) fn create_call<'call>(
@@ -54,7 +52,7 @@ async fn create_optional_fields(#[case] entry: Entry) {
     let kwargs = params(r#"{"api_key":"sk-client","api_base":"https://mock.invalid/v1"}"#);
     let call = create_call(&optional, &kwargs, entry);
     let deps = fakes.deps(&source, None);
-    let result = logs.run_create(&deps, &call).await;
+    let result = run_create(&mut logs, &deps, &call).await;
     assert_eq!(
         result.expect("the mock provider answers"),
         json(CREATE_RESULT)
@@ -99,13 +97,12 @@ async fn vector_mock_create_truthiness(#[case] mock: &str, #[case] posted: bool)
     let call = create_call(&optional, &kwargs, Entry::Sync);
     let deps = fakes.deps(&source, None);
     let before = fakes.seen.with(|seen| seen.clients.len());
-    let result = logs
-        .run_create(&deps, &call)
+    let result = run_create(&mut logs, &deps, &call)
         .await
         .expect("the create answers");
     assert_eq!(result, json(CREATE_RESULT));
     let after = fakes.seen.with(|seen| seen.clients.len());
-    assert_eq!(after, before + usize::from(posted));
+    assert_eq!(after, before.saturating_add(usize::from(posted)));
 }
 
 // a create with no optionals sends the five declared fields as nulls
@@ -121,7 +118,7 @@ async fn create_sends_the_declared_fields() {
     let mut call = create_call(&optional, &kwargs, Entry::Sync);
     call.extra_headers = Some(&headers);
     let deps = fakes.deps(&source, None);
-    logs.run_create(&deps, &call)
+    run_create(&mut logs, &deps, &call)
         .await
         .expect("the mock provider answers");
     fakes.seen.with(|seen| {
@@ -154,8 +151,7 @@ async fn create_mock_precedes_provider_resolution() {
     let mut call = create_call(&optional, &kwargs, Entry::Sync);
     call.custom_llm_provider = Some("bogus");
     let deps = fakes.deps(&source, None);
-    let result = logs
-        .run_create(&deps, &call)
+    let result = run_create(&mut logs, &deps, &call)
         .await
         .expect("the mock answers");
     assert_eq!(result, json(CREATE_RESULT));
@@ -175,10 +171,62 @@ async fn create_ssl_verify_reaches_the_client(#[case] input: &str, #[case] expec
     let kwargs = params(input);
     let call = create_call(&optional, &kwargs, Entry::Sync);
     let deps = fakes.deps(&source, None);
-    logs.run_create(&deps, &call)
+    run_create(&mut logs, &deps, &call)
         .await
         .expect("the mock provider answers");
     fakes
         .seen
         .with(|seen| assert_eq!(seen.ssl_verify, vec![Some(expected)]));
+}
+
+// an asynchronous create waits the resolved timeout: null uses REQUEST_TIMEOUT and an explicit value is that many seconds
+#[rstest]
+#[case::unset(None, Duration::from_secs(6000))]
+#[case::given(Some(3.0_f64), Duration::from_secs(3))]
+#[tokio::test]
+async fn create_timeout_follows_request_timeout(
+    #[case] given: Option<f64>,
+    #[case] expected: Duration,
+) {
+    let fakes = Fakes::new();
+    let source = fakes.source(CREATE_RESULT);
+    let mut logs = Logs::new("vector_store_create");
+    let optional = Params::new();
+    let kwargs = params(r#"{"api_base":"https://mock.invalid/v1"}"#);
+    let mut call = create_call(&optional, &kwargs, Entry::Asynchronous);
+    call.timeout = given;
+    let deps = fakes.deps(&source, None);
+    run_create(&mut logs, &deps, &call)
+        .await
+        .expect("the mock provider answers");
+    fakes
+        .seen
+        .with(|seen| assert_eq!(seen.search_timeouts, vec![Some(expected)]));
+}
+
+// update_from_kwargs(kwargs=kwargs) merges the caller's litellm_metadata into the logged litellm_params
+#[tokio::test]
+async fn create_logs_kwargs_metadata() {
+    let fakes = Fakes::new();
+    let source = fakes.source(CREATE_RESULT);
+    let mut logs = Logs::new("vector_store_create");
+    let optional = Params::new();
+    let kwargs =
+        params(r#"{"api_base":"https://mock.invalid/v1","litellm_metadata":{"trace":"caller"}}"#);
+    let call = create_call(&optional, &kwargs, Entry::Sync);
+    let deps = fakes.deps(&source, None);
+    run_create(&mut logs, &deps, &call)
+        .await
+        .expect("the mock provider answers");
+    let Json::Object(litellm_params) = logs.detail("litellm_params") else {
+        panic!("the logged litellm params are an object");
+    };
+    assert_eq!(
+        litellm_params.get("litellm_metadata"),
+        Some(&json(r#"{"trace":"caller"}"#))
+    );
+    assert_eq!(
+        litellm_params.get("metadata"),
+        Some(&json(r#"{"trace":"caller"}"#))
+    );
 }

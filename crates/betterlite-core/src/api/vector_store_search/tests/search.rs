@@ -1,31 +1,29 @@
 use rstest::rstest;
 
-use super::create::create_call;
+use super::create::{create_call, run_create};
 use super::*;
 use crate::api::vector_store_http_write::service::LogContext;
 use crate::api::vector_store_search::mock;
 use crate::api::vector_store_search::service::{SearchCall, search_call::search};
 
-impl Logs {
-    pub(super) async fn run_search<S>(
-        &mut self,
-        deps: &SdkDeps<'_, S>,
-        call: &SearchCall<'_>,
-    ) -> Result<Json, VectorStoreSearchError>
-    where
-        S: ClientSource,
-    {
-        let env = pre_post_env(&self.redactor, &self.sink, self.now);
-        search(
-            deps,
-            call,
-            &mut LogContext {
-                state: &mut self.state,
-                env: &env,
-            },
-        )
-        .await
-    }
+pub(super) async fn run_search<S>(
+    logs: &mut Logs,
+    deps: &SdkDeps<'_, S>,
+    call: &SearchCall<'_>,
+) -> Result<Json, VectorStoreSearchError>
+where
+    S: ClientSource,
+{
+    let env = pre_post_env(&logs.redactor, &logs.sink, logs.now);
+    search(
+        deps,
+        call,
+        &mut LogContext {
+            state: &mut logs.state,
+            env: &env,
+        },
+    )
+    .await
 }
 
 fn search_call<'call>(
@@ -60,7 +58,7 @@ async fn search_optional_fields() {
     let query = SearchQuery::Sequence(vec![String::from("one"), String::from("two")]);
     let call = search_call(&query, &optional, &kwargs, Entry::Asynchronous);
     let deps = fakes.deps(&source, None);
-    let result = logs.run_search(&deps, &call).await;
+    let result = run_search(&mut logs, &deps, &call).await;
     assert_eq!(
         result.expect("the mock provider answers"),
         json(SEARCH_RESULT)
@@ -70,10 +68,7 @@ async fn search_optional_fields() {
             seen.search_optionals.last().expect("the transform ran"),
             &params(SEARCH_OPTIONALS)
         );
-        assert_eq!(
-            seen.search_timeouts,
-            vec![Some(Duration::from_secs_f64(6000.0))]
-        );
+        assert_eq!(seen.search_timeouts, vec![Some(Duration::from_secs(6000))]);
     });
 }
 
@@ -89,7 +84,7 @@ async fn search_logs_optional_params() {
     let query = SearchQuery::Sequence(vec![String::from("one"), String::from("two")]);
     let call = search_call(&query, &optional, &kwargs, Entry::Asynchronous);
     let deps = fakes.deps(&source, None);
-    logs.run_search(&deps, &call)
+    run_search(&mut logs, &deps, &call)
         .await
         .expect("the mock provider answers");
     assert_eq!(
@@ -120,7 +115,7 @@ async fn search_logs_litellm_params() {
     let query = SearchQuery::Text(String::from("one"));
     let call = search_call(&query, &optional, &kwargs, Entry::Sync);
     let deps = fakes.deps(&source, None);
-    logs.run_search(&deps, &call)
+    run_search(&mut logs, &deps, &call)
         .await
         .expect("the mock provider answers");
     let Json::Object(litellm_params) = logs.detail("litellm_params") else {
@@ -142,9 +137,9 @@ async fn search_logs_litellm_params() {
 }
 
 #[rstest]
-#[case::unset(None, Duration::from_secs_f64(6000.0))]
-#[case::zero(Some(0.0), Duration::from_secs_f64(6000.0))]
-#[case::given(Some(3.0), Duration::from_secs(3))]
+#[case::unset(None, Duration::from_secs(6000))]
+#[case::zero(Some(0.0_f64), Duration::from_secs(6000))]
+#[case::given(Some(3.0_f64), Duration::from_secs(3))]
 #[tokio::test]
 async fn search_timeout_follows_request_timeout(
     #[case] given: Option<f64>,
@@ -159,7 +154,7 @@ async fn search_timeout_follows_request_timeout(
     let mut call = search_call(&query, &optional, &kwargs, Entry::Sync);
     call.timeout = given;
     let deps = fakes.deps(&source, None);
-    logs.run_search(&deps, &call)
+    run_search(&mut logs, &deps, &call)
         .await
         .expect("the mock provider answers");
     fakes
@@ -188,7 +183,7 @@ async fn registry_overlays_search_credentials() {
     let optional = params(r#"{"name":"notes"}"#);
     let call = search_call(&query, &optional, &kwargs, Entry::Sync);
     let deps = fakes.deps(&source, None);
-    logs.run_search(&deps, &call)
+    run_search(&mut logs, &deps, &call)
         .await
         .expect("the mock provider answers");
     // the overlay lands before the pre-call logging, so the recorded params carry it too
@@ -228,7 +223,7 @@ async fn create_never_reads_the_registry() {
     let kwargs = params(r#"{"api_key":"sk-client","api_base":"https://mock.invalid/v1"}"#);
     let invocation = create_call(&optional, &kwargs, Entry::Sync);
     let deps = fakes.deps(&source, None);
-    logs.run_create(&deps, &invocation)
+    run_create(&mut logs, &deps, &invocation)
         .await
         .expect("the mock provider answers");
     fakes.seen.with(|seen| {
@@ -251,8 +246,7 @@ async fn invalid_executor_fails_before_any_http() {
     let mut call = search_call(&query, &optional, &kwargs, Entry::Sync);
     call.executor = Some(DirectExecutor::Invalid);
     let deps = fakes.deps(&source, None);
-    let error = logs
-        .run_search(&deps, &call)
+    let error = run_search(&mut logs, &deps, &call)
         .await
         .expect_err("a non-executor is refused");
     assert_eq!(
@@ -266,9 +260,7 @@ async fn invalid_executor_fails_before_any_http() {
 async fn supplied_executor_reaches_the_embedding_source() {
     let fakes = Fakes::new();
     let source = fakes.source(SEARCH_RESULT);
-    let executor = RecordingExecutor {
-        _request_kwargs: Params::new(),
-    };
+    let executor = RecordingExecutor;
     let mut logs = Logs::new("vector_store_search");
     let kwargs = params(r#"{"api_base":"https://mock.invalid/v1"}"#);
     let optional = Params::new();
@@ -276,12 +268,73 @@ async fn supplied_executor_reaches_the_embedding_source() {
     let mut call = search_call(&query, &optional, &kwargs, Entry::Sync);
     call.executor = Some(DirectExecutor::Executor(&executor));
     let deps = fakes.deps(&source, None);
-    logs.run_search(&deps, &call)
+    run_search(&mut logs, &deps, &call)
         .await
         .expect("the mock provider answers");
     fakes
         .seen
         .with(|seen| assert_eq!(seen.executor_supplied, vec![true]));
+}
+
+// B1059 reads the request metadata from the kwargs after the private executor argument is popped and before asearch or the registry
+#[tokio::test]
+async fn executor_sees_the_request_kwargs_before_the_registry() {
+    let mut fakes = Fakes::new();
+    let credentials = JsonObject::from([(
+        String::from("api_key"),
+        Json::Text(String::from("sk-registry")),
+    )]);
+    fakes.registry = VectorStoreRegistry {
+        stores: vec![managed_store(Some("store-credential"))],
+        clock: Arc::new(Utc::now),
+        credentials: Arc::new(FixedCredentials(credentials)),
+    };
+    let source = fakes.source(SEARCH_RESULT);
+    let mut logs = Logs::new("vector_store_search");
+    let kwargs = params(
+        r#"{"api_key":"sk-client","api_base":"https://mock.invalid/v1","asearch":true,"_direct_vector_store_embedding_executor":{}}"#,
+    );
+    let optional = Params::new();
+    let query = SearchQuery::Text(String::from("one"));
+    let call = search_call(&query, &optional, &kwargs, Entry::Asynchronous);
+    let deps = fakes.deps(&source, None);
+    run_search(&mut logs, &deps, &call)
+        .await
+        .expect("the mock provider answers");
+    fakes.seen.with(|seen| {
+        let recorded = seen
+            .executor_kwargs
+            .last()
+            .expect("the executor source ran");
+        assert_eq!(
+            recorded.get("api_key"),
+            Some(&Json::Text(String::from("sk-client")))
+        );
+        assert_eq!(recorded.get("asearch"), Some(&Json::Bool(true)));
+        assert_eq!(
+            recorded.get("_direct_vector_store_embedding_executor"),
+            None
+        );
+    });
+}
+
+// the mock answers before the provider is resolved, so a provider no enum member names still returns the sample
+#[tokio::test]
+async fn search_mock_precedes_provider_resolution() {
+    let fakes = Fakes::new();
+    let source = fakes.source(SEARCH_RESULT);
+    let mut logs = Logs::new("vector_store_search");
+    let optional = Params::new();
+    let kwargs = params(r#"{"api_base":"https://mock.invalid/v1","mock_response":"yes"}"#);
+    let query = SearchQuery::Text(String::from("one"));
+    let mut call = search_call(&query, &optional, &kwargs, Entry::Sync);
+    call.custom_llm_provider = Some("bogus");
+    let deps = fakes.deps(&source, None);
+    let result = run_search(&mut logs, &deps, &call)
+        .await
+        .expect("the mock answers");
+    assert_eq!(result, json(SAMPLE_SEARCH));
+    fakes.seen.with(|seen| assert_eq!(seen.clients.len(), 0));
 }
 
 #[rstest]
@@ -305,8 +358,7 @@ async fn vector_mock_truthiness(#[case] mock: &str, #[case] expected: Option<&st
     let kwargs = params(mock);
     let call = search_call(&query, &optional, &kwargs, Entry::Sync);
     let deps = fakes.deps(&source, None);
-    let result = logs
-        .run_search(&deps, &call)
+    let result = run_search(&mut logs, &deps, &call)
         .await
         .expect("the search answers");
     match expected {
@@ -351,7 +403,7 @@ async fn supplied_client_reaches_the_transport() {
             transport: &supplied,
         }),
     );
-    logs.run_search(&deps, &call)
+    run_search(&mut logs, &deps, &call)
         .await
         .expect("the supplied client answers");
     supplied

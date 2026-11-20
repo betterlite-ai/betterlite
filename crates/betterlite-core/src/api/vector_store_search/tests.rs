@@ -34,7 +34,7 @@ use http::HeaderMap;
 use secrecy::ExposeSecret as _;
 
 use self::search::SearchConfigFake;
-use super::error::{SdkFailure, VectorStoreSearchError, failure};
+use super::error::{SdkFailure, SdkRaise, VectorStoreSearchError, failure};
 use super::executor::{DirectExecutor, EmbeddingExecutorSource, SelectedExecutor};
 use super::provider::resolve_provider;
 use super::service::{
@@ -102,6 +102,7 @@ struct Seen {
     clients: Vec<String>,
     ssl_verify: Vec<Option<bool>>,
     executor_supplied: Vec<bool>,
+    executor_kwargs: Vec<Params>,
 }
 
 #[derive(Clone, Default)]
@@ -314,20 +315,18 @@ impl EmbeddingExecutorSource for Executors {
         supplied: Option<&'selection dyn QueryEmbeddingExecutor>,
         request_kwargs: &Params,
     ) -> SelectedExecutor<'selection> {
-        self.seen
-            .with(|seen| seen.executor_supplied.push(supplied.is_some()));
-        match supplied {
-            Some(executor) => SelectedExecutor::Supplied(executor),
-            None => SelectedExecutor::Built(Box::new(RecordingExecutor {
-                _request_kwargs: request_kwargs.clone(),
-            })),
-        }
+        self.seen.with(|seen| {
+            seen.executor_supplied.push(supplied.is_some());
+            seen.executor_kwargs.push(request_kwargs.clone());
+        });
+        let Some(executor) = supplied else {
+            return SelectedExecutor::Built(Box::new(RecordingExecutor));
+        };
+        SelectedExecutor::Supplied(executor)
     }
 }
 
-struct RecordingExecutor {
-    _request_kwargs: Params,
-}
+struct RecordingExecutor;
 
 #[async_trait]
 impl QueryEmbeddingExecutor for RecordingExecutor {
@@ -561,34 +560,47 @@ fn vector_async_flag_truthiness() {
 #[test]
 fn local_errors_map_to_api_connection() {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds");
-    let mapped = failure(
+    let SdkRaise::Exception(mapped) = failure(
         &VectorStoreSearchError::Unsupported {
             operation: "create",
             provider: String::from("anthropic"),
         },
         &redactor,
-    );
+    ) else {
+        panic!("an unsupported provider is an SDK exception");
+    };
     assert_eq!(
         mapped,
         SdkFailure {
             class: String::from("APIConnectionError"),
-            status: Some(500),
+            status: 500,
             kind: WireField::Null,
             param: WireField::Null,
             code: WireField::Null,
             message: String::from("Vector store create is not supported for anthropic"),
         }
     );
-    let invalid = failure(&VectorStoreSearchError::InvalidEmbeddingExecutor, &redactor);
-    assert_eq!(invalid.class, "APIConnectionError");
-    assert_eq!(invalid.status, Some(500));
-    assert_eq!(invalid.kind, WireField::Null);
+}
+
+// the direct executor check runs before the try block, so the call fails as a bare TypeError the client decorator re-raises
+#[test]
+fn invalid_executor_raises_a_type_error() {
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds");
+    let SdkRaise::TypeError(invalid) =
+        failure(&VectorStoreSearchError::InvalidEmbeddingExecutor, &redactor)
+    else {
+        panic!("the direct executor check raises a TypeError");
+    };
+    assert_eq!(
+        invalid.message,
+        "Invalid direct vector store embedding executor"
+    );
 }
 
 #[test]
 fn provider_errors_keep_the_sdk_status() {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds");
-    let provider = failure(
+    let SdkRaise::Exception(provider) = failure(
         &VectorStoreSearchError::Search {
             provider: String::from("openai"),
             source: SearchError::Provider(BaseLlmException {
@@ -599,9 +611,11 @@ fn provider_errors_keep_the_sdk_status() {
             }),
         },
         &redactor,
-    );
+    ) else {
+        panic!("a provider status error is an SDK exception");
+    };
     assert_eq!(provider.class, "NotFoundError");
-    assert_eq!(provider.status, Some(404));
+    assert_eq!(provider.status, 404);
     assert_eq!(provider.kind, WireField::Null);
     assert_eq!(provider.param, WireField::Null);
     assert_eq!(provider.code, WireField::Null);
@@ -610,7 +624,7 @@ fn provider_errors_keep_the_sdk_status() {
 #[test]
 fn create_errors_keep_the_sdk_status() {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds");
-    let provider = failure(
+    let SdkRaise::Exception(provider) = failure(
         &VectorStoreSearchError::Create {
             provider: String::from("openai"),
             source: CreateReadError::Write(WriteError::Provider(exception(
@@ -620,9 +634,11 @@ fn create_errors_keep_the_sdk_status() {
             ))),
         },
         &redactor,
-    );
+    ) else {
+        panic!("a provider status error is an SDK exception");
+    };
     assert_eq!(provider.class, "NotFoundError");
-    assert_eq!(provider.status, Some(404));
+    assert_eq!(provider.status, 404);
     assert_eq!(provider.kind, WireField::Null);
 }
 
