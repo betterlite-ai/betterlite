@@ -1,3 +1,4 @@
+use std::slice::from_ref;
 use std::sync::Arc;
 
 use rust_decimal::Decimal;
@@ -228,9 +229,9 @@ async fn parking_needs_rows_an_enabled_buffer_and_attached_lists() {
     let row = decoded_row(r#"{"spend":1.5}"#);
     let mut disabled = attached(&lists);
     disabled.enabled = false;
-    assert!(!disabled.park_spend_logs(std::slice::from_ref(&row)).await);
+    assert!(!disabled.park_spend_logs(from_ref(&row)).await);
     assert!(!attached(&lists).park_spend_logs(&[]).await);
-    assert!(!detached().park_spend_logs(std::slice::from_ref(&row)).await);
+    assert!(!detached().park_spend_logs(from_ref(&row)).await);
     assert!(lists.pushed().is_empty());
 }
 
@@ -238,11 +239,7 @@ async fn parking_needs_rows_an_enabled_buffer_and_attached_lists() {
 async fn parking_pushes_the_encoded_rows_to_the_capped_key() {
     let lists = Arc::new(FakeLists::default());
     let row = decoded_row(r#"{"spend":1.5,"messages":"a\u0000b"}"#);
-    assert!(
-        attached(&lists)
-            .park_spend_logs(std::slice::from_ref(&row))
-            .await
-    );
+    assert!(attached(&lists).park_spend_logs(from_ref(&row)).await);
     let pushed = lists.pushed();
     assert_eq!(pushed.len(), 1);
     assert_eq!(pushed[0].key, REDIS_SPEND_LOGS_BUFFER_KEY);
@@ -264,11 +261,7 @@ async fn parking_logs_the_number_of_oldest_rows_the_cap_dropped() {
     let lists = Arc::new(FakeLists::default());
     lists.trim_size(REDIS_SPEND_LOGS_MAX_ROWS.saturating_add(3));
     let row = decoded_row(r#"{"spend":1.5}"#);
-    assert!(
-        attached(&lists)
-            .park_spend_logs(std::slice::from_ref(&row))
-            .await
-    );
+    assert!(attached(&lists).park_spend_logs(from_ref(&row)).await);
     assert!(logs.text().contains("dropped the 3 oldest spend logs"));
 }
 
@@ -278,11 +271,7 @@ async fn parking_at_the_cap_logs_no_drop() {
     let lists = Arc::new(FakeLists::default());
     lists.trim_size(REDIS_SPEND_LOGS_MAX_ROWS);
     let row = decoded_row(r#"{"spend":1.5}"#);
-    assert!(
-        attached(&lists)
-            .park_spend_logs(std::slice::from_ref(&row))
-            .await
-    );
+    assert!(attached(&lists).park_spend_logs(from_ref(&row)).await);
     assert!(
         !logs.text().contains("row cap"),
         "a push that stays within the cap must not warn: {}",
@@ -296,11 +285,7 @@ async fn a_trim_failure_keeps_the_rows_in_memory() {
     let lists = Arc::new(FakeLists::default());
     lists.fail_trim();
     let row = decoded_row(r#"{"spend":1.5}"#);
-    assert!(
-        !attached(&lists)
-            .park_spend_logs(std::slice::from_ref(&row))
-            .await
-    );
+    assert!(!attached(&lists).park_spend_logs(from_ref(&row)).await);
     assert!(
         logs.text()
             .contains("failed to park 1 spend log rows in Redis")

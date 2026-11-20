@@ -178,14 +178,14 @@ impl CapturedLogs {
 }
 
 impl Write for CapturedLogs {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let text =
-            from_utf8(buffer).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+            from_utf8(buf).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push_str(text);
-        Ok(buffer.len())
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
