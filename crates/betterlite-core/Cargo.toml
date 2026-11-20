@@ -46,6 +46,7 @@ jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-
 jsonschema = { version = "0.60.2", default-features = false, features = ["arbitrary-precision"] }
 lopdf = { version = "0.46.0", default-features = false }
 lru = "0.18.5"
+mime_guess = { version = "2.0.5", default-features = false }
 num-traits = "0.2.19"
 percent-encoding.workspace = true
 pyo3 = { version = "0.30.1", default-features = false }
