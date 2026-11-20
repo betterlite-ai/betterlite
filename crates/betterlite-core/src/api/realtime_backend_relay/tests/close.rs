@@ -13,10 +13,7 @@ async fn backend_close_and_logging() {
     let fixture = Fixture::default();
     let mut source = fixture.source.clone();
     source.close_with(1008, "policy");
-    let options = StateOptions {
-        logging: Logging::LoggerAndWorker,
-        ..StateOptions::default()
-    };
+    let options = StateOptions::default().logging(Logging::LoggerAndWorker);
     let token = CancellationToken::new();
     let (result, _state) = run(&options, &fixture, &mut source, &[], &token).await;
     let close = result.unwrap();
@@ -41,10 +38,7 @@ async fn close_1000_before_frames_logs_success() {
     let fixture = Fixture::default();
     let mut source = fixture.source.clone();
     source.close_with(1000, "");
-    let options = StateOptions {
-        logging: Logging::LoggerAndWorker,
-        ..StateOptions::default()
-    };
+    let options = StateOptions::default().logging(Logging::LoggerAndWorker);
     let token = CancellationToken::new();
     let (result, _state) = run(&options, &fixture, &mut source, &[], &token).await;
     assert_eq!(result.unwrap().code, 1000);
@@ -62,10 +56,7 @@ async fn close_1008_after_a_frame_logs_success() {
     let mut source = fixture.source.clone();
     source.text("not json");
     source.close_with(1008, "policy");
-    let options = StateOptions {
-        logging: Logging::LoggerAndWorker,
-        ..StateOptions::default()
-    };
+    let options = StateOptions::default().logging(Logging::LoggerAndWorker);
     let token = CancellationToken::new();
     let (result, _state) = run(&options, &fixture, &mut source, &[], &token).await;
     assert_eq!(result.unwrap().code, 1008);
@@ -78,10 +69,7 @@ async fn close_without_a_received_frame_maps_to_1006() {
     let fixture = Fixture::default();
     let mut source = fixture.source.clone();
     source.close(None);
-    let options = StateOptions {
-        logging: Logging::LoggerAndWorker,
-        ..StateOptions::default()
-    };
+    let options = StateOptions::default().logging(Logging::LoggerAndWorker);
     let token = CancellationToken::new();
     let (result, _state) = run(&options, &fixture, &mut source, &[], &token).await;
     let close = result.unwrap();
@@ -111,11 +99,9 @@ async fn cancellation_flushes_usage_logs_success_and_propagates() {
     fixture.provider.requires_session_configuration = true;
     fixture.provider.unbilled_seconds = Some(1);
     let mut source = fixture.source.clone();
-    let options = StateOptions {
-        provider: Flag(true),
-        logging: Logging::LoggerAndWorker,
-        ..StateOptions::default()
-    };
+    let options = StateOptions::default()
+        .provider()
+        .logging(Logging::LoggerAndWorker);
     let token = CancellationToken::new();
     token.cancel();
     let (result, state) = run(&options, &fixture, &mut source, &[], &token).await;
@@ -135,11 +121,9 @@ async fn raw_client_failure_ends_the_relay_with_1011() {
     let fixture = Fixture::default();
     let mut source = fixture.source.clone();
     source.text("not json");
-    let options = StateOptions {
-        logging: Logging::LoggerAndWorker,
-        client_failures: vec![0],
-        ..StateOptions::default()
-    };
+    let options = StateOptions::default()
+        .logging(Logging::LoggerAndWorker)
+        .client_failures(vec![0]);
     let token = CancellationToken::new();
     let (result, _state) = run(&options, &fixture, &mut source, &[], &token).await;
     let close = result.unwrap();
@@ -157,10 +141,7 @@ async fn missing_client_ends_the_relay_with_1011() {
     let fixture = Fixture::default();
     let mut source = fixture.source.clone();
     source.text("not json");
-    let options = StateOptions {
-        sockets: Sockets::BackendOnly,
-        ..StateOptions::default()
-    };
+    let options = StateOptions::default().sockets(Sockets::BackendOnly);
     let token = CancellationToken::new();
     let (result, _state) = run(&options, &fixture, &mut source, &[], &token).await;
     let close = result.unwrap();
@@ -178,11 +159,9 @@ async fn receive_failure_flushes_unbilled_usage_and_logs_success() {
     fixture.provider.unbilled_seconds = Some(2);
     let mut source = fixture.source.clone();
     source.fail_receive(0);
-    let options = StateOptions {
-        provider: Flag(true),
-        logging: Logging::LoggerAndWorker,
-        ..StateOptions::default()
-    };
+    let options = StateOptions::default()
+        .provider()
+        .logging(Logging::LoggerAndWorker);
     let token = CancellationToken::new();
     let (result, state) = run(&options, &fixture, &mut source, &[], &token).await;
     assert_eq!(result.unwrap().code, 1011);

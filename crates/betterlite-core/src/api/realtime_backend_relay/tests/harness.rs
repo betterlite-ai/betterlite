@@ -289,6 +289,52 @@ impl Default for ScriptedResponse {
     }
 }
 
+impl ScriptedResponse {
+    pub(super) fn new(response: Json) -> Self {
+        Self {
+            fail: false,
+            response,
+            current_output_item_id: None,
+            current_response_id: None,
+            current_delta_chunks: None,
+            current_conversation_id: None,
+            current_item_chunks: None,
+            current_delta_type: None,
+            session_configuration_request: None,
+        }
+    }
+
+    #[must_use]
+    pub(super) fn output_item(mut self, id: &str) -> Self {
+        self.current_output_item_id = Some(String::from(id));
+        self
+    }
+
+    #[must_use]
+    pub(super) fn response_id(mut self, id: &str) -> Self {
+        self.current_response_id = Some(String::from(id));
+        self
+    }
+
+    #[must_use]
+    pub(super) fn conversation_id(mut self, id: &str) -> Self {
+        self.current_conversation_id = Some(String::from(id));
+        self
+    }
+
+    #[must_use]
+    pub(super) fn delta_type(mut self, delta_type: AllDeltaType) -> Self {
+        self.current_delta_type = Some(delta_type);
+        self
+    }
+
+    #[must_use]
+    pub(super) fn session_configuration_request(mut self, request: &str) -> Self {
+        self.session_configuration_request = Some(String::from(request));
+        self
+    }
+}
+
 pub(super) fn message_types(messages: &[IndexMap<String, Json>]) -> Vec<String> {
     let mut types = Vec::new();
     for record in messages {
@@ -535,10 +581,7 @@ pub(super) fn normalizer(drop_types: &[&str], rename: &[(&str, &str)]) -> Normal
 pub(super) fn respond(fixture: &Fixture, response: Json) {
     lock(&fixture.provider.script)
         .responses
-        .push_back(ScriptedResponse {
-            response,
-            ..ScriptedResponse::default()
-        });
+        .push_back(ScriptedResponse::new(response));
 }
 
 impl RealtimeEventNormalizer for Normalizer {
@@ -600,6 +643,16 @@ impl Default for ScriptedGuardrail {
     fn default() -> Self {
         Self {
             outcome: GuardrailOutcome::Clean,
+            policy: RealtimeGuardrailPolicy::default(),
+            records: Arc::new(Mutex::new(GuardrailRecords::default())),
+        }
+    }
+}
+
+impl ScriptedGuardrail {
+    pub(super) fn blocking() -> Self {
+        Self {
+            outcome: GuardrailOutcome::Block,
             policy: RealtimeGuardrailPolicy::default(),
             records: Arc::new(Mutex::new(GuardrailRecords::default())),
         }
@@ -693,6 +746,62 @@ impl Default for StateOptions {
             pending_messages: Vec::new(),
             client_failures: Vec::new(),
         }
+    }
+}
+
+impl StateOptions {
+    #[must_use]
+    pub(super) fn provider(mut self) -> Self {
+        self.provider = Flag(true);
+        self
+    }
+
+    #[must_use]
+    pub(super) fn logging(mut self, logging: Logging) -> Self {
+        self.logging = logging;
+        self
+    }
+
+    #[must_use]
+    pub(super) fn pending(mut self, messages: &[&str]) -> Self {
+        self.pending_messages = messages.iter().map(|text| String::from(*text)).collect();
+        self
+    }
+
+    #[must_use]
+    pub(super) fn normalizer(mut self, normalizer: Normalizer) -> Self {
+        self.normalizer = Some(normalizer);
+        self
+    }
+
+    #[must_use]
+    pub(super) fn client_wants_beta(mut self) -> Self {
+        self.client_wants_beta = Flag(true);
+        self
+    }
+
+    #[must_use]
+    pub(super) fn force_transcription_model(mut self, model: &str) -> Self {
+        self.force_transcription_model = Some(String::from(model));
+        self
+    }
+
+    #[must_use]
+    pub(super) fn logged_event_types(mut self, types: LoggedEventTypes) -> Self {
+        self.logged_event_types = types;
+        self
+    }
+
+    #[must_use]
+    pub(super) fn client_failures(mut self, failures: Vec<usize>) -> Self {
+        self.client_failures = failures;
+        self
+    }
+
+    #[must_use]
+    pub(super) fn sockets(mut self, sockets: Sockets) -> Self {
+        self.sockets = sockets;
+        self
     }
 }
 

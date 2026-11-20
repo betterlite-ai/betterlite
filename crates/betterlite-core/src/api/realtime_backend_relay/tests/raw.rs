@@ -17,11 +17,9 @@ async fn backend_transcription_turns() {
     let mut source = fixture.source.clone();
     source.text(COMPLETED_FRAME);
     source.close_with(1000, "");
-    let options = StateOptions {
-        logged_event_types: LoggedEventTypes::All,
-        logging: Logging::LoggerAndWorker,
-        ..StateOptions::default()
-    };
+    let options = StateOptions::default()
+        .logged_event_types(LoggedEventTypes::All)
+        .logging(Logging::LoggerAndWorker);
     let token = CancellationToken::new();
     let (result, state) = run(&options, &fixture, &mut source, &[], &token).await;
     assert_eq!(result.unwrap().code, 1000);
@@ -50,10 +48,7 @@ async fn raw_transcription_session_captures_usage_and_skips_the_turn() {
     let mut source = fixture.source.clone();
     source.text(COMPLETED_FRAME);
     source.close_with(1000, "");
-    let options = StateOptions {
-        force_transcription_model: Some(String::from("gpt-realtime-whisper")),
-        ..StateOptions::default()
-    };
+    let options = StateOptions::default().force_transcription_model("gpt-realtime-whisper");
     let guardrail = ScriptedGuardrail::default();
     let records = Arc::clone(&guardrail.records);
     let guardrails: [&dyn RealtimeGuardrail<Error = Infallible>; 1] = [&guardrail];
@@ -73,10 +68,7 @@ async fn raw_blocked_transcript_sends_no_clean_turn() {
     let mut source = fixture.source.clone();
     source.text(COMPLETED_FRAME);
     source.close_with(1000, "");
-    let guardrail = ScriptedGuardrail {
-        outcome: GuardrailOutcome::Block,
-        ..ScriptedGuardrail::default()
-    };
+    let guardrail = ScriptedGuardrail::blocking();
     let records = Arc::clone(&guardrail.records);
     let guardrails: [&dyn RealtimeGuardrail<Error = Infallible>; 1] = [&guardrail];
     let token = CancellationToken::new();
@@ -130,10 +122,7 @@ async fn raw_transcription_session_created_marks_the_mode() {
     let created = r#"{"type":"transcription_session.created","session":{"id":"s1"}}"#;
     source.text(created);
     source.close_with(1000, "");
-    let options = StateOptions {
-        logged_event_types: LoggedEventTypes::All,
-        ..StateOptions::default()
-    };
+    let options = StateOptions::default().logged_event_types(LoggedEventTypes::All);
     let token = CancellationToken::new();
     let (result, state) = run(&options, &fixture, &mut source, &[], &token).await;
     assert_eq!(result.unwrap().code, 1000);

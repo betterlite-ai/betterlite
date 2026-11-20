@@ -14,11 +14,9 @@ async fn backend_frame_decoding() {
     source.text("not json");
     source.text("[]");
     source.close_with(1008, "policy");
-    let options = StateOptions {
-        normalizer: Some(normalizer(&[], &[("vendor.event", "vendor.event.v2")])),
-        logged_event_types: LoggedEventTypes::All,
-        ..StateOptions::default()
-    };
+    let options = StateOptions::default()
+        .normalizer(normalizer(&[], &[("vendor.event", "vendor.event.v2")]))
+        .logged_event_types(LoggedEventTypes::All);
     let token = CancellationToken::new();
     let (result, state) = run(&options, &fixture, &mut source, &[], &token).await;
     assert_eq!(result.unwrap().code, 1008);
@@ -47,11 +45,9 @@ async fn backend_frame_decoding_drops_normalized_events() {
     let mut source = fixture.source.clone();
     source.text(r#"{"type":"response.done","response":{}}"#);
     source.close_with(1000, "");
-    let options = StateOptions {
-        normalizer: Some(normalizer(&["response.done"], &[])),
-        logged_event_types: LoggedEventTypes::All,
-        ..StateOptions::default()
-    };
+    let options = StateOptions::default()
+        .normalizer(normalizer(&["response.done"], &[]))
+        .logged_event_types(LoggedEventTypes::All);
     let token = CancellationToken::new();
     let (result, state) = run(&options, &fixture, &mut source, &[], &token).await;
     assert_eq!(result.unwrap().code, 1000);
@@ -83,10 +79,7 @@ async fn skipped_binary_frame_still_marks_frames_sent() {
     let mut source = fixture.source.clone();
     source.binary(vec![0xff, 0xfe]);
     source.close_with(1008, "policy");
-    let options = StateOptions {
-        logging: Logging::LoggerAndWorker,
-        ..StateOptions::default()
-    };
+    let options = StateOptions::default().logging(Logging::LoggerAndWorker);
     let token = CancellationToken::new();
     let (result, state) = run(&options, &fixture, &mut source, &[], &token).await;
     assert_eq!(result.unwrap().code, 1008);
@@ -105,11 +98,9 @@ async fn raw_beta_client_gets_translated_events() {
     );
     source.text(r#"{"type":"conversation.item.done","item":{"id":"i"}}"#);
     source.close_with(1000, "");
-    let options = StateOptions {
-        client_wants_beta: Flag(true),
-        logged_event_types: LoggedEventTypes::All,
-        ..StateOptions::default()
-    };
+    let options = StateOptions::default()
+        .client_wants_beta()
+        .logged_event_types(LoggedEventTypes::All);
     let token = CancellationToken::new();
     let (result, state) = run(&options, &fixture, &mut source, &[], &token).await;
     assert_eq!(result.unwrap().code, 1000);

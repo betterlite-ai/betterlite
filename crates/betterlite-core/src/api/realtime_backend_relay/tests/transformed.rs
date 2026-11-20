@@ -19,11 +19,9 @@ async fn transformed_session_ready() {
     let mut source = fixture.source.clone();
     source.text(r#"{"type":"provider.frame"}"#);
     source.close_with(1000, "");
-    let options = StateOptions {
-        provider: Flag(true),
-        pending_messages: vec![String::from("audio-1"), String::from("audio-2")],
-        ..StateOptions::default()
-    };
+    let options = StateOptions::default()
+        .provider()
+        .pending(&["audio-1", "audio-2"]);
     let token = CancellationToken::new();
     let (result, state) = run(&options, &fixture, &mut source, &[], &token).await;
     assert_eq!(result.unwrap().code, 1000);
@@ -56,11 +54,9 @@ async fn transformed_session_list_result_keeps_event_order() {
     let mut source = fixture.source.clone();
     source.text(r#"{"type":"provider.frame"}"#);
     source.close_with(1000, "");
-    let options = StateOptions {
-        provider: Flag(true),
-        logged_event_types: LoggedEventTypes::All,
-        ..StateOptions::default()
-    };
+    let options = StateOptions::default()
+        .provider()
+        .logged_event_types(LoggedEventTypes::All);
     let token = CancellationToken::new();
     let (result, state) = run(&options, &fixture, &mut source, &[], &token).await;
     assert_eq!(result.unwrap().code, 1000);
@@ -84,24 +80,20 @@ async fn transformed_session_list_result_keeps_event_order() {
 async fn transformed_session_ready_updates_transform_input() {
     let fixture = Fixture::default();
     let mut script = lock(&fixture.provider.script);
-    script.responses.push_back(ScriptedResponse {
-        response: json(r#"{"type":"a"}"#),
-        current_output_item_id: Some(String::from("out-1")),
-        current_response_id: Some(String::from("resp-1")),
-        current_conversation_id: Some(String::from("conv-1")),
-        current_delta_type: Some(AllDeltaType::Text),
-        session_configuration_request: Some(String::from("cfg-1")),
-        ..ScriptedResponse::default()
-    });
+    script.responses.push_back(
+        ScriptedResponse::new(json(r#"{"type":"a"}"#))
+            .output_item("out-1")
+            .response_id("resp-1")
+            .conversation_id("conv-1")
+            .delta_type(AllDeltaType::Text)
+            .session_configuration_request("cfg-1"),
+    );
     drop(script);
     let mut source = fixture.source.clone();
     source.text(r#"{"type":"provider.frame"}"#);
     source.text(r#"{"type":"provider.frame"}"#);
     source.close_with(1000, "");
-    let options = StateOptions {
-        provider: Flag(true),
-        ..StateOptions::default()
-    };
+    let options = StateOptions::default().provider();
     let token = CancellationToken::new();
     let (result, _state) = run(&options, &fixture, &mut source, &[], &token).await;
     assert_eq!(result.unwrap().code, 1000);
@@ -132,12 +124,10 @@ async fn transformed_dropped_events_are_not_forwarded() {
     let mut source = fixture.source.clone();
     source.text(r#"{"type":"provider.frame"}"#);
     source.close_with(1000, "");
-    let options = StateOptions {
-        provider: Flag(true),
-        normalizer: Some(normalizer(&["vendor.drop"], &[])),
-        logged_event_types: LoggedEventTypes::All,
-        ..StateOptions::default()
-    };
+    let options = StateOptions::default()
+        .provider()
+        .normalizer(normalizer(&["vendor.drop"], &[]))
+        .logged_event_types(LoggedEventTypes::All);
     let token = CancellationToken::new();
     let (result, state) = run(&options, &fixture, &mut source, &[], &token).await;
     assert_eq!(result.unwrap().code, 1000);
@@ -158,10 +148,7 @@ async fn transformed_session_created_without_pending_does_not_flush() {
     let mut source = fixture.source.clone();
     source.text(r#"{"type":"provider.frame"}"#);
     source.close_with(1000, "");
-    let options = StateOptions {
-        provider: Flag(true),
-        ..StateOptions::default()
-    };
+    let options = StateOptions::default().provider();
     let token = CancellationToken::new();
     let (result, state) = run(&options, &fixture, &mut source, &[], &token).await;
     assert_eq!(result.unwrap().code, 1000);
@@ -180,11 +167,7 @@ async fn transformed_session_created_skips_flush_when_the_provider_configures_th
     let mut source = fixture.source.clone();
     source.text(r#"{"type":"provider.frame"}"#);
     source.close_with(1000, "");
-    let options = StateOptions {
-        provider: Flag(true),
-        pending_messages: vec![String::from("audio-1")],
-        ..StateOptions::default()
-    };
+    let options = StateOptions::default().provider().pending(&["audio-1"]);
     let token = CancellationToken::new();
     let (result, state) = run(&options, &fixture, &mut source, &[], &token).await;
     assert_eq!(result.unwrap().code, 1000);
@@ -203,20 +186,15 @@ async fn transformed_flush_failure_retains_frames_and_resets_flushing() {
     let fixture = Fixture::default();
     {
         let mut script = lock(&fixture.provider.script);
-        script.responses.push_back(ScriptedResponse {
-            response: json(SESSION_CREATED),
-            ..ScriptedResponse::default()
-        });
+        script
+            .responses
+            .push_back(ScriptedResponse::new(json(SESSION_CREATED)));
         script.request_failures.push(0);
     }
     let mut source = fixture.source.clone();
     source.text(r#"{"type":"provider.frame"}"#);
     source.close_with(1000, "");
-    let options = StateOptions {
-        provider: Flag(true),
-        pending_messages: vec![String::from("a"), String::from("b")],
-        ..StateOptions::default()
-    };
+    let options = StateOptions::default().provider().pending(&["a", "b"]);
     let token = CancellationToken::new();
     let (result, state) = run(&options, &fixture, &mut source, &[], &token).await;
     assert_eq!(result.unwrap().code, 1000);
@@ -242,10 +220,7 @@ async fn transformed_session_created_sends_disable_after_forwarding() {
     let mut source = fixture.source.clone();
     source.text(r#"{"type":"provider.frame"}"#);
     source.close_with(1000, "");
-    let options = StateOptions {
-        provider: Flag(true),
-        ..StateOptions::default()
-    };
+    let options = StateOptions::default().provider();
     let guardrail = ScriptedGuardrail::default();
     let records = Arc::clone(&guardrail.records);
     let guardrails: [&dyn RealtimeGuardrail<Error = Infallible>; 1] = [&guardrail];
@@ -277,10 +252,7 @@ async fn transformed_duplicate_session_created_retries_a_failed_disable() {
     source.text(r#"{"type":"provider.frame","n":1}"#);
     source.text(r#"{"type":"provider.frame","n":2}"#);
     source.close_with(1000, "");
-    let options = StateOptions {
-        provider: Flag(true),
-        ..StateOptions::default()
-    };
+    let options = StateOptions::default().provider();
     let guardrail = ScriptedGuardrail::default();
     let guardrails: [&dyn RealtimeGuardrail<Error = Infallible>; 1] = [&guardrail];
     let token = CancellationToken::new();
@@ -305,22 +277,21 @@ async fn transformed_client_send_failure_keeps_updated_state() {
     let mut fixture = Fixture::default();
     fixture.provider.requires_session_configuration = true;
     let mut script = lock(&fixture.provider.script);
-    script.responses.push_back(ScriptedResponse {
-        response: json(r#"{"type":"response.output_text.delta","delta":"hi"}"#),
-        current_output_item_id: Some(String::from("out-9")),
-        current_response_id: Some(String::from("resp-9")),
-        ..ScriptedResponse::default()
-    });
+    script.responses.push_back(
+        ScriptedResponse::new(json(
+            r#"{"type":"response.output_text.delta","delta":"hi"}"#,
+        ))
+        .output_item("out-9")
+        .response_id("resp-9"),
+    );
     drop(script);
     let mut source = fixture.source.clone();
     source.text(r#"{"type":"provider.frame"}"#);
     source.close_with(1000, "");
-    let options = StateOptions {
-        provider: Flag(true),
-        logged_event_types: LoggedEventTypes::All,
-        client_failures: vec![0],
-        ..StateOptions::default()
-    };
+    let options = StateOptions::default()
+        .provider()
+        .logged_event_types(LoggedEventTypes::All)
+        .client_failures(vec![0]);
     let token = CancellationToken::new();
     let (result, state) = run(&options, &fixture, &mut source, &[], &token).await;
     assert_eq!(result.unwrap().code, 1000);
@@ -347,11 +318,9 @@ async fn transformed_transcription_session_still_runs_guardrails() {
     let mut source = fixture.source.clone();
     source.text(r#"{"type":"provider.frame"}"#);
     source.close_with(1000, "");
-    let options = StateOptions {
-        provider: Flag(true),
-        force_transcription_model: Some(String::from("gpt-realtime-whisper")),
-        ..StateOptions::default()
-    };
+    let options = StateOptions::default()
+        .provider()
+        .force_transcription_model("gpt-realtime-whisper");
     let guardrail = ScriptedGuardrail::default();
     let records = Arc::clone(&guardrail.records);
     let guardrails: [&dyn RealtimeGuardrail<Error = Infallible>; 1] = [&guardrail];
@@ -379,10 +348,7 @@ async fn transformed_conversational_turn_asks_for_a_response() {
     let mut source = fixture.source.clone();
     source.text(r#"{"type":"provider.frame"}"#);
     source.close_with(1000, "");
-    let options = StateOptions {
-        provider: Flag(true),
-        ..StateOptions::default()
-    };
+    let options = StateOptions::default().provider();
     let token = CancellationToken::new();
     let (result, _state) = run(&options, &fixture, &mut source, &[], &token).await;
     assert_eq!(result.unwrap().code, 1000);
@@ -407,11 +373,9 @@ async fn transformed_session_events_do_not_mark_transcription_mode() {
     let mut source = fixture.source.clone();
     source.text(r#"{"type":"provider.frame"}"#);
     source.close_with(1000, "");
-    let options = StateOptions {
-        provider: Flag(true),
-        logged_event_types: LoggedEventTypes::All,
-        ..StateOptions::default()
-    };
+    let options = StateOptions::default()
+        .provider()
+        .logged_event_types(LoggedEventTypes::All);
     let token = CancellationToken::new();
     let (result, state) = run(&options, &fixture, &mut source, &[], &token).await;
     assert_eq!(result.unwrap().code, 1000);

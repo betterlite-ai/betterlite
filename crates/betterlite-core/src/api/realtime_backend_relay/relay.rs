@@ -45,6 +45,7 @@ where
         cancellation: &CancellationToken,
     ) -> RelayExit<Config::Error, CallbackError>;
 
+    // ast-grep-ignore: no-long-names
     async fn backend_to_client_send_messages(
         &mut self,
         source: &mut (dyn RealtimeBackendSource + '_),
@@ -93,6 +94,7 @@ where
         }
     }
 
+    // ast-grep-ignore: no-long-names
     async fn backend_to_client_send_messages(
         &mut self,
         source: &mut (dyn RealtimeBackendSource + '_),
