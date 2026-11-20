@@ -1,0 +1,21 @@
+task: B3877
+deviations:
+  - what: A negative amount returns PrometheusUsageError::NegativeAmount before any counter of that emission is touched, where LiteLLM's _inc_labeled_counter passes the value to prometheus_client's inc(), which raises ValueError after the call; earlier increments of the same emitter still land and later ones stop on both sides.
+    why: betterlite checks the amount before it renders labels or reaches the counter, so a caller gets a typed error naming the amount instead of an uncaught ValueError raised by the client library.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1329-L1343
+  - what: In _resolve_provider_cache_tokens a token count of true or false counts as 1 or 0 in LiteLLM because bool is a subclass of int, where betterlite reads only a JSON integer and treats a bool as an absent field.
+    why: betterlite's Json::Bool is distinct from Json::Number and the declared field type is a token count, so a malformed provider usage dict with a boolean there reads as no cache tokens instead of one cache token.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1815-L1836
+  - what: A token count outside the i64 range in an integer-typed usage field (cache_read_input_tokens, cache_creation_input_tokens, cache_write_tokens, cache_creation_tokens) is treated as absent, where LiteLLM keeps the arbitrary-precision Python int.
+    why: betterlite stores those counts as i64, and a JSON number that does not fit it is outside the field's type, so it reads as no tokens instead of overflowing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1838-L1846
+  - what: Sparse usage amounts are incremented as the exact JSON decimal, where LiteLLM converts them with float() first and so loses precision above 2^53 and on values with more fraction digits than a double holds.
+    why: betterlite parses the number text into a Decimal and increments that, which keeps the amount the provider reported instead of the nearest double.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1712-L1734
+  - what: A usage number whose magnitude is outside Decimal's range (above roughly 7.9e28) is incremented as a positive infinity, where LiteLLM converts it to a finite float and increments that.
+    why: betterlite falls back to an explicit infinity when the number text cannot be held as a Decimal, the same fallback prometheus_client applies to an infinite float value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1724-L1734
+kept_bugs:
+  - what: A supported label whose value is absent reaches the counter as the literal string "None", because LiteLLM fills every supported label that is missing from the enum values with None and prometheus_client renders each label value with str().
+    why: Metrics scraped from a working LiteLLM deployment carry "None" in those label values, and dashboards and recording rules match on them, so betterlite keeps the literal rather than rendering an empty string.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4679-L4681

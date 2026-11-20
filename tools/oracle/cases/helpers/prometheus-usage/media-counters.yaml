@@ -1,0 +1,66 @@
+kind: helper
+name: prometheus-usage-media-counters
+call:
+  b3877:
+    function: media
+    values: {user: alice}
+    supported_labels:
+      litellm_video_duration_seconds_metric: [user]
+      litellm_images_generated_metric: [user]
+    response_cost: 0.0
+    cache_hit: null
+    total_tokens: 0
+    prompt_tokens: 0
+    completion_tokens: 0
+    usage_object: {duration_seconds: 12.5, output_image_count: 2}
+calls:
+  - b3877:
+      function: media
+      values: {user: alice}
+      supported_labels:
+        litellm_video_duration_seconds_metric: [user]
+        litellm_images_generated_metric: [user]
+      response_cost: 0.0
+      cache_hit: null
+      total_tokens: 0
+      prompt_tokens: 0
+      completion_tokens: 0
+      usage_object: null
+  - b3877:
+      function: media
+      values: {user: alice}
+      supported_labels:
+        litellm_video_duration_seconds_metric: [user]
+        litellm_images_generated_metric: [user]
+      response_cost: 0.0
+      cache_hit: null
+      total_tokens: 0
+      prompt_tokens: 0
+      completion_tokens: 0
+      usage_object: {duration_seconds: 0, output_image_count: 0}
+  - b3877:
+      function: media
+      values: {user: alice}
+      supported_labels:
+        litellm_video_duration_seconds_metric: [user]
+        litellm_images_generated_metric: [user]
+      response_cost: 0.0
+      cache_hit: null
+      total_tokens: 0
+      prompt_tokens: 0
+      completion_tokens: 0
+      usage_object: {duration_seconds: 3.0, output_image_count: "4"}
+  - b3877:
+      function: media
+      values: {user: alice}
+      supported_labels:
+        litellm_video_duration_seconds_metric: [user]
+        litellm_images_generated_metric: [user]
+      response_cost: 0.0
+      cache_hit: null
+      total_tokens: 0
+      prompt_tokens: 0
+      completion_tokens: 0
+      usage_object: {duration_seconds: true, output_image_count: -2}
+env: {}
+compare: {ignore: []}
