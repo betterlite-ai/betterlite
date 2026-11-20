@@ -1,0 +1,6 @@
+task: B820
+deviations:
+  - what: The two sync functions take an already-built database port, so an absent database fails on the first query instead of in raw_executor before still_backed; a delete whose name is still config-served returns without needing one.
+    why: The port is the executor and callers build PostgresModelGrants themselves, as in B819; a proxy with access groups always has Postgres behind it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/access_group_model_sync.py#L102-L116
+kept_bugs: []

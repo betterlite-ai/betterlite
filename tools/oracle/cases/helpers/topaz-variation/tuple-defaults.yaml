@@ -1,0 +1,20 @@
+kind: helper
+name: topaz-variation-tuple-defaults
+call:
+  topaz_variation:
+    calls:
+      - function: upload
+        file: {kind: bytes, content: pixels}
+      - function: upload
+        file: {kind: tuple2, filename: null, content: pixels}
+      - function: upload
+        file: {kind: tuple3, filename: "", content: pixels, content_type: ""}
+      - function: upload
+        file: {kind: tuple4, filename: shot.png, content: pixels, content_type: image/jpeg, headers: {x-part: "1"}}
+      - function: upload
+        file: {kind: other}
+      - function: upload
+        file: {kind: bytes, content: pixels}
+        optional_params: {output_format: url}
+env: {}
+compare: {ignore: []}

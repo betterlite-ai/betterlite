@@ -1,0 +1,12 @@
+kind: helper
+name: vector-file-provider-registry-seed
+call:
+  vector_file_provider:
+    vector_store_id: vs_a
+    custom_llm_provider: openai
+    kwargs: {api_key: caller, timeout: 7}
+    registry:
+      result: {api_key: registry, api_base: new}
+      error: null
+env: {}
+compare: {ignore: []}
