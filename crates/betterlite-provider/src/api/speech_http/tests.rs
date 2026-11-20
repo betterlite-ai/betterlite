@@ -9,6 +9,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::api::speech_provider_contract::TextToSpeechRequestData;
 use betterlite_openai::openai_base_config::Object;
 use http::Method;
+use http::header::HeaderValue;
 use indexmap::IndexMap;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
@@ -164,6 +165,7 @@ async fn speech_http_body_and_headers() {
             r#"{"dict_body":{"input":"hello"},"ssml_body":"ignored","headers":{"x":"provider"}}"#
         ))
     );
+    assert_eq!(fixture.logged("api_key"), None);
 }
 
 #[tokio::test]
@@ -588,6 +590,55 @@ async fn speech_http_status_error_without_body() {
     assert_eq!(error.status_code, 429);
     assert_eq!(error.message, "");
     assert_eq!(error.headers, headers(&[("retry-after", "3")]));
+}
+
+#[tokio::test]
+async fn speech_http_status_error_binary_text() {
+    let mut reply = Reply::bytes(429, &[0xff, 0xfe]);
+    reply.headers.insert(
+        "x-binary",
+        HeaderValue::from_bytes(&[0xff]).expect("an opaque header value"),
+    );
+    let wire = Wire::replying(reply);
+    let source = Source::new(wire);
+    let config = RecordingConfig::new(
+        Ok(URL.to_owned()),
+        data(Some(r#"{"input":"hello"}"#), None, None),
+        headers(&[("x", "validated")]),
+    );
+    let deps = SpeechDeps {
+        config: &config,
+        source: &source,
+        supplied: None,
+    };
+    let declared = params(None, Some(URL), None);
+    let optional = Object::new();
+    let litellm = Object::new();
+    let call = SpeechCall {
+        model: "tts-1",
+        input: "hello",
+        voice: None,
+        optional_params: &optional,
+        litellm_params: &litellm,
+        extra_headers: None,
+        params: &declared,
+        timeout: None,
+    };
+    let mut fixture = Fixture::new();
+    let Err(SpeechError::Provider(error)) = run(&mut fixture, &deps, Mode::Sync, &call).await
+    else {
+        panic!("a 429 with binary text is a provider error");
+    };
+    assert_eq!(error.status_code, 429);
+    assert_eq!(error.message, "2 bytes that are not UTF-8");
+    assert_eq!(
+        error.headers.get("x-binary").map(String::as_str),
+        Some("1 bytes that are not UTF-8")
+    );
+    assert_eq!(
+        error.headers.get("content-length").map(String::as_str),
+        Some("2")
+    );
 }
 
 #[tokio::test]
