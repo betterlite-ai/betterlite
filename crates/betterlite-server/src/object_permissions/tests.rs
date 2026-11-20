@@ -686,6 +686,26 @@ async fn unresolved_identifier() {
 }
 
 #[tokio::test]
+async fn single_match_not_ambiguous() {
+    let database = TestDatabase::start().await;
+    database.seed_server("srv-only", Some("unique"), None).await;
+    let mut data = permission_input(r#"{"mcp_tool_permissions": {"unique": ["t1"]}}"#);
+    let returned =
+        handle_update_object_permission_common(&mut data, None, Some(database.prisma()), &[])
+            .await
+            .unwrap();
+    let Some(id) = returned else {
+        panic!("a key that names one server is not ambiguous");
+    };
+    let row = database.permission_row(&id).await.unwrap();
+    assert_eq!(
+        row.get("mcp_tool_permissions"),
+        Some(&string(r#"{"unique":["t1"]}"#))
+    );
+    database.close().await;
+}
+
+#[tokio::test]
 async fn cache_id_filter_order() {
     let eviction = RecordingEviction::default();
     let endpoint = Arc::new(RecordingEndpoint::default());
