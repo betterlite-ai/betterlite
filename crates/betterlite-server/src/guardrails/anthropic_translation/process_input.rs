@@ -57,7 +57,7 @@ struct StructuredView {
 }
 
 #[derive(Default)]
-struct Scanned {
+struct RequestScan {
     texts: Vec<String>,
     scanned: Vec<ScannedText>,
     images: Vec<String>,
@@ -69,13 +69,13 @@ struct Scanned {
 struct RequestState {
     tools: Vec<PromptObject>,
     structured: StructuredView,
-    scanned: Scanned,
+    scanned: RequestScan,
     scan_only: bool,
 }
 
 struct AnswerContext<'ctx> {
     structured: &'ctx StructuredView,
-    scanned: &'ctx Scanned,
+    scanned: &'ctx RequestScan,
     scan_only: bool,
     guardrail_name: Option<&'ctx str>,
     covers_full_request: bool,

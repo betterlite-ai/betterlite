@@ -24,12 +24,12 @@ pub fn image_sources(block: &Map<String, Value>) -> Vec<String> {
     else {
         return Vec::new();
     };
-    match source
+    let found_media_type = source
         .get(MEDIA_TYPE)
         .and_then(Value::as_str)
-        .filter(|media_type| !media_type.is_empty())
-    {
-        Some(media_type) => vec![format!("data:{media_type};base64,{data}")],
-        None => vec![data.to_owned()],
-    }
+        .filter(|candidate| !candidate.is_empty());
+    vec![found_media_type.map_or_else(
+        || data.to_owned(),
+        |found| format!("data:{found};base64,{data}"),
+    )]
 }

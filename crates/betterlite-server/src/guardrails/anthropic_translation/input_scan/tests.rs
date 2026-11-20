@@ -39,7 +39,7 @@ fn message_target(text: &str, target: MessageTextTarget) -> ScannedText {
     }
 }
 
-fn object(value: Value) -> Map<String, Value> {
+fn object(value: &Value) -> Map<String, Value> {
     value.as_object().cloned().expect("an object fixture")
 }
 
@@ -259,7 +259,7 @@ fn extract_tool_use_is_not_scanned_in_scan_only() {
 #[case(json!({"type": "image", "source": "text"}), vec![])]
 #[case(json!({"type": "image"}), vec![])]
 fn image_sources_url_and_missing_sources(#[case] block: Value, #[case] expected: Vec<String>) {
-    assert_eq!(image_sources(&object(block)), expected);
+    assert_eq!(image_sources(&object(&block)), expected);
 }
 
 #[rstest]
@@ -271,7 +271,7 @@ fn image_sources_url_and_missing_sources(#[case] block: Value, #[case] expected:
 #[case(json!({"source": {"type": "base64", "data": "D"}}), vec!["D".to_owned()])]
 #[case(json!({"source": {"type": "base64", "media_type": "image/png", "data": ""}}), vec![])]
 fn image_sources_base64_forms(#[case] block: Value, #[case] expected: Vec<String>) {
-    assert_eq!(image_sources(&object(block)), expected);
+    assert_eq!(image_sources(&object(&block)), expected);
 }
 
 #[test]
@@ -359,21 +359,21 @@ fn top_level_system_missing_content_scans_nothing() {
 
 #[tokio::test]
 async fn structured_messages_missing_or_null_is_none() {
-    let missing = object(json!({"model": "claude-sonnet-4-5"}));
+    let missing = object(&json!({"model": "claude-sonnet-4-5"}));
     assert_eq!(get_structured_messages(&missing).await.unwrap(), None);
-    let null = object(json!({"model": "claude-sonnet-4-5", "messages": null}));
+    let null = object(&json!({"model": "claude-sonnet-4-5", "messages": null}));
     assert_eq!(get_structured_messages(&null).await.unwrap(), None);
 }
 
 #[tokio::test]
 async fn structured_messages_empty_translation_is_none() {
-    let data = object(json!({"model": "claude-sonnet-4-5", "messages": []}));
+    let data = object(&json!({"model": "claude-sonnet-4-5", "messages": []}));
     assert_eq!(get_structured_messages(&data).await.unwrap(), None);
 }
 
 #[tokio::test]
 async fn structured_messages_include_the_top_level_system_row() {
-    let data = object(json!({
+    let data = object(&json!({
         "model": "claude-sonnet-4-5",
         "system": "trusted",
         "messages": [{"role": "user", "content": "hi"}]

@@ -8,7 +8,7 @@ use betterlite_prompts::arguments::json::Object as PromptObject;
 use crate::guardrails::anthropic_translation::input_scan::serde_convert;
 
 use super::error::ProcessInputError;
-use super::{MODEL, Scanned};
+use super::{MODEL, RequestScan};
 
 pub(super) fn tools_to_check(
     scan_only: bool,
@@ -35,7 +35,7 @@ fn checked_tools(tools: &[PromptObject]) -> Result<Vec<GuardrailToolParam>, Proc
 
 pub(super) fn guardrail_inputs(
     data: &Object,
-    scanned: &Scanned,
+    scanned: &RequestScan,
     structured_messages: &[GuardrailMessage],
     tools: Vec<GuardrailToolParam>,
 ) -> Result<GuardrailApiInputs, ProcessInputError> {

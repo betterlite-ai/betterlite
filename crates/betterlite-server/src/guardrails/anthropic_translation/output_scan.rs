@@ -121,10 +121,7 @@ where
         return Ok(());
     }
     let mut fresh = BTreeMap::new();
-    let context_data = match request_data {
-        Some(data) => data,
-        None => &mut fresh,
-    };
+    let context_data = request_data.unwrap_or(&mut fresh);
     add_response_context(context_data, response, user_api_key_dict);
     let inputs = output_inputs(&body, &extracted)?;
     let answer = run_output_guardrail(guardrail, inputs, context_data, logging_obj).await?;

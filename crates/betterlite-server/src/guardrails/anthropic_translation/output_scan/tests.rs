@@ -21,7 +21,7 @@ fn to_json(item: &GuardrailValue) -> Value {
     serde_json::to_value(item).expect("a JSON value")
 }
 
-fn blocks(raw: Value) -> Vec<Value> {
+fn blocks(raw: &Value) -> Vec<Value> {
     raw.as_array().cloned().expect("an array of blocks")
 }
 
@@ -38,7 +38,7 @@ fn text_block(text: &str) -> Value {
 
 #[test]
 fn output_extract_texts_and_tool_calls_with_positions() {
-    let content = blocks(json!([
+    let content = blocks(&json!([
         text_block("first"),
         {"type": "tool_use", "id": "toolu_1", "name": "get", "input": {"a": 1}},
         {"type": "thinking", "thinking": "hmm"},
@@ -58,7 +58,7 @@ fn output_extract_texts_and_tool_calls_with_positions() {
 
 #[test]
 fn output_extract_skips_empty_text_and_unknown_blocks() {
-    let content = blocks(json!([
+    let content = blocks(&json!([
         text_block(""),
         {"type": "image", "source": {"type": "url", "url": "http://x"}},
         "junk",
@@ -73,7 +73,7 @@ fn output_extract_skips_empty_text_and_unknown_blocks() {
 
 #[test]
 fn output_extract_malformed_tool_use_names_the_position() {
-    let content = blocks(json!([
+    let content = blocks(&json!([
         text_block("a"),
         {"type": "tool_use", "name": "get", "input": {}}
     ]));
@@ -177,7 +177,7 @@ async fn output_call_adds_the_response_context() {
 
 #[tokio::test]
 async fn output_apply_shorter_reply_rewrites_the_prefix() {
-    let mut content = blocks(json!([
+    let mut content = blocks(&json!([
         text_block("first"),
         {"type": "tool_use", "id": "toolu_1", "name": "get", "input": {}},
         text_block("second")
@@ -190,7 +190,7 @@ async fn output_apply_shorter_reply_rewrites_the_prefix() {
 
 #[tokio::test]
 async fn output_apply_longer_reply_is_too_many_texts() {
-    let mut content = blocks(json!([text_block("first"), text_block("second")]));
+    let mut content = blocks(&json!([text_block("first"), text_block("second")]));
     let responses = vec!["a".to_owned(), "b".to_owned(), "c".to_owned()];
     let error = apply_responses_to_output(&mut content, &responses, &[0, 1]).unwrap_err();
     assert!(matches!(
@@ -204,7 +204,7 @@ async fn output_apply_longer_reply_is_too_many_texts() {
 
 #[tokio::test]
 async fn output_apply_leaves_non_text_blocks_and_missing_positions_alone() {
-    let mut content = blocks(json!([
+    let mut content = blocks(&json!([
         {"type": "tool_use", "id": "toolu_1", "name": "get", "input": {}}
     ]));
     let before = content.clone();

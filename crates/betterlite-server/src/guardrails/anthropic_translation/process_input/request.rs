@@ -17,7 +17,9 @@ use crate::guardrails::anthropic_translation::structured_write_back::{
 use crate::guardrails::tool_call_identity::tool_call_shapes;
 
 use super::error::ProcessInputError;
-use super::{InputContext, MESSAGES, ROLE, RequestState, SYSTEM, Scanned, StructuredView, TOOLS};
+use super::{
+    InputContext, MESSAGES, ROLE, RequestScan, RequestState, SYSTEM, StructuredView, TOOLS,
+};
 
 struct ChatView {
     tools: Vec<PromptObject>,
@@ -111,8 +113,8 @@ fn scan_messages(
     hoisted: Option<&Value>,
     scan_only: bool,
     flags: ScopeFlags,
-) -> Scanned {
-    let mut scanned = Scanned::default();
+) -> RequestScan {
+    let mut scanned = RequestScan::default();
     if let Some(message) = hoisted
         && !scan_only
     {

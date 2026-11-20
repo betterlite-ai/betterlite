@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::sync::Mutex;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -79,13 +80,13 @@ impl ScriptedGuardrail {
 }
 
 impl GuardrailContract for ScriptedGuardrail {
-    async fn apply_guardrail(
+    fn apply_guardrail(
         &self,
         inputs: GuardrailApiInputs,
         request_data: &mut BTreeMap<String, GuardrailValue>,
         input_type: GuardrailInputType,
         _logging_obj: Option<&mut GuardrailLogTarget>,
-    ) -> Result<GuardrailApiInputs, GuardrailFailure> {
+    ) -> impl Future<Output = Result<GuardrailApiInputs, GuardrailFailure>> + Send {
         let recording = Recording {
             inputs,
             input_type,
@@ -95,7 +96,8 @@ impl GuardrailContract for ScriptedGuardrail {
             .recorded
             .lock()
             .expect("the recording lock is not poisoned") = Some(recording);
-        Ok(self.answer.clone())
+        let answer = self.answer.clone();
+        async move { Ok(answer) }
     }
 
     fn messages_cover_full_request(&self) -> bool {

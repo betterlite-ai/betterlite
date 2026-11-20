@@ -3,6 +3,7 @@
     expect(
         clippy::default_numeric_fallback,
         clippy::disallowed_methods,
+        clippy::disallowed_types,
         reason = "serde_json test fixtures built with json! are concise and type-directed"
     )
 )]
