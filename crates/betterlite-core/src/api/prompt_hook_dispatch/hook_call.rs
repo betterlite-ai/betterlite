@@ -48,20 +48,26 @@ enum HookMode {
 }
 
 // LiteLLM's get_chat_completion_prompt: no tools reach the selection and the selected manager's sync hook runs.
-pub async fn get_chat_completion_prompt<BackendError: Error + Send + Sync + 'static>(
+pub async fn get_chat_completion_prompt<BackendError>(
     dispatch: &mut PromptHookDispatch<'_, BackendError>,
     request: PromptCallRequest<'_, BackendError>,
-) -> Result<ChatCompletionPrompt, PromptOrchestrationError<BackendError>> {
+) -> Result<ChatCompletionPrompt, PromptOrchestrationError<BackendError>>
+where
+    BackendError: Error + Send + Sync + 'static,
+{
     let dynamic = Json::Object(dispatch.state.callback_dynamic_params.clone());
     let manager = explicit_or_selected(dispatch, &request, &dynamic, None);
     run_hook(dispatch, request, &dynamic, manager, HookMode::Sync).await
 }
 
 // LiteLLM's async_get_chat_completion_prompt: the tools go to the selection and the selected manager's async hook runs.
-pub fn async_completion_prompt<'call, BackendError: Error + Send + Sync + 'static>(
+pub fn async_completion_prompt<'call, BackendError>(
     dispatch: &'call mut PromptHookDispatch<'_, BackendError>,
     request: AsyncPromptCallRequest<'call, BackendError>,
-) -> CompletionFuture<'call, BackendError> {
+) -> CompletionFuture<'call, BackendError>
+where
+    BackendError: Error + Send + Sync + 'static,
+{
     Box::pin(async move {
         let AsyncPromptCallRequest { call, tools } = request;
         let dynamic = Json::Object(dispatch.state.callback_dynamic_params.clone());
@@ -70,14 +76,17 @@ pub fn async_completion_prompt<'call, BackendError: Error + Send + Sync + 'stati
     })
 }
 
-async fn run_hook<BackendError: Error + Send + Sync + 'static>(
+async fn run_hook<BackendError>(
     dispatch: &mut PromptHookDispatch<'_, BackendError>,
     request: PromptCallRequest<'_, BackendError>,
     dynamic_callback_params: &Json,
     manager: Option<Arc<dyn PromptManager<BackendError> + Send + Sync>>,
     mode: HookMode,
-) -> Result<ChatCompletionPrompt, PromptOrchestrationError<BackendError>> {
-    let Some(manager) = manager else {
+) -> Result<ChatCompletionPrompt, PromptOrchestrationError<BackendError>>
+where
+    BackendError: Error + Send + Sync + 'static,
+{
+    let Some(selected) = manager else {
         return Ok(store_input(dispatch, &request));
     };
     let before = count_request_breakpoints(
@@ -86,8 +95,8 @@ async fn run_hook<BackendError: Error + Send + Sync + 'static>(
     );
     let call = manager_request(&request, dynamic_callback_params);
     let prompt = match mode {
-        HookMode::Sync => manager.get_chat_completion_prompt(call).await?,
-        HookMode::Async => manager.async_completion_prompt(call).await?,
+        HookMode::Sync => selected.get_chat_completion_prompt(call).await?,
+        HookMode::Async => selected.async_completion_prompt(call).await?,
     };
     Ok(complete_call(
         dispatch,
@@ -98,12 +107,15 @@ async fn run_hook<BackendError: Error + Send + Sync + 'static>(
     ))
 }
 
-fn explicit_or_selected<'call, BackendError: Error + Send + Sync + 'static>(
+fn explicit_or_selected<'call, BackendError>(
     dispatch: &mut PromptHookDispatch<'_, BackendError>,
     request: &PromptCallRequest<'call, BackendError>,
     dynamic_callback_params: &Json,
     tools: Option<&'call [JsonObject]>,
-) -> Option<Arc<dyn PromptManager<BackendError> + Send + Sync>> {
+) -> Option<Arc<dyn PromptManager<BackendError> + Send + Sync>>
+where
+    BackendError: Error + Send + Sync + 'static,
+{
     if let Some(manager) = &request.manager {
         return Some(Arc::clone(manager));
     }
@@ -120,10 +132,13 @@ fn explicit_or_selected<'call, BackendError: Error + Send + Sync + 'static>(
     )
 }
 
-fn store_input<BackendError: Error + Send + Sync + 'static>(
+fn store_input<BackendError>(
     dispatch: &mut PromptHookDispatch<'_, BackendError>,
     request: &PromptCallRequest<'_, BackendError>,
-) -> ChatCompletionPrompt {
+) -> ChatCompletionPrompt
+where
+    BackendError: Error + Send + Sync + 'static,
+{
     let messages = request.messages.to_vec();
     dispatch.state.messages = Some(messages.clone());
     ChatCompletionPrompt {
@@ -133,13 +148,16 @@ fn store_input<BackendError: Error + Send + Sync + 'static>(
     }
 }
 
-fn complete_call<BackendError: Error + Send + Sync + 'static>(
+fn complete_call<BackendError>(
     dispatch: &mut PromptHookDispatch<'_, BackendError>,
     request_kwargs: Option<&mut JsonObject>,
     breakpoints_before: usize,
     injected_for_every_deployment: bool,
     prompt: ChatCompletionPrompt,
-) -> ChatCompletionPrompt {
+) -> ChatCompletionPrompt
+where
+    BackendError: Error + Send + Sync + 'static,
+{
     dispatch.state.messages = Some(prompt.messages.clone());
     if let Some(kwargs) = request_kwargs {
         let after = count_request_breakpoints(
@@ -154,10 +172,13 @@ fn complete_call<BackendError: Error + Send + Sync + 'static>(
     prompt
 }
 
-fn manager_request<'request, BackendError: Error + Send + Sync + 'static>(
+fn manager_request<'request, BackendError>(
     request: &'request PromptCallRequest<'request, BackendError>,
     dynamic_callback_params: &'request Json,
-) -> ChatCompletionPromptRequest<'request> {
+) -> ChatCompletionPromptRequest<'request>
+where
+    BackendError: Error + Send + Sync + 'static,
+{
     ChatCompletionPromptRequest {
         model: request.model,
         messages: request.messages.to_vec(),

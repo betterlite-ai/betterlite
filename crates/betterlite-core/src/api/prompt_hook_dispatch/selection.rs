@@ -23,10 +23,13 @@ pub struct PromptSelectionRequest<'request> {
 }
 
 // LiteLLM's get_custom_logger_for_prompt_management; the six steps run first match wins.
-pub fn select_prompt_manager<BackendError: Error + Send + Sync + 'static>(
+pub fn select_prompt_manager<BackendError>(
     dispatch: &mut PromptHookDispatch<'_, BackendError>,
     request: &PromptSelectionRequest<'_>,
-) -> Option<Arc<dyn PromptManager<BackendError> + Send + Sync>> {
+) -> Option<Arc<dyn PromptManager<BackendError> + Send + Sync>>
+where
+    BackendError: Error + Send + Sync + 'static,
+{
     // Step 1: a known compatible callback name the model starts with wins, and its init decides.
     for name in dispatch.factory.known_callbacks() {
         if !request.model.starts_with(*name) {
@@ -68,10 +71,13 @@ pub fn select_prompt_manager<BackendError: Error + Send + Sync + 'static>(
 }
 
 // Steps 2 and 3: a prompt id and dynamic params pick the first manager that runs, and every other case falls back.
-fn detected_or_fallback<BackendError: Error + Send + Sync + 'static>(
+fn detected_or_fallback<BackendError>(
     managers: &[Arc<dyn PromptManager<BackendError> + Send + Sync>],
     request: &PromptSelectionRequest<'_>,
-) -> Option<Arc<dyn PromptManager<BackendError> + Send + Sync>> {
+) -> Option<Arc<dyn PromptManager<BackendError> + Send + Sync>>
+where
+    BackendError: Error + Send + Sync + 'static,
+{
     if let Some(prompt_id) = request.prompt_id.filter(|id| !id.is_empty())
         && let Some(dynamic) = request.dynamic_callback_params
         && let Some(manager) = first_running_manager(managers, Some(prompt_id), request, dynamic)
@@ -86,12 +92,15 @@ fn detected_or_fallback<BackendError: Error + Send + Sync + 'static>(
     first_running_manager(managers, None, request, dynamic)
 }
 
-fn first_running_manager<BackendError: Error + Send + Sync + 'static>(
+fn first_running_manager<BackendError>(
     managers: &[Arc<dyn PromptManager<BackendError> + Send + Sync>],
     prompt_id: Option<&str>,
     request: &PromptSelectionRequest<'_>,
     dynamic_callback_params: &StandardCallbackDynamicParams,
-) -> Option<Arc<dyn PromptManager<BackendError> + Send + Sync>> {
+) -> Option<Arc<dyn PromptManager<BackendError> + Send + Sync>>
+where
+    BackendError: Error + Send + Sync + 'static,
+{
     managers
         .iter()
         .find(|manager| {
@@ -102,18 +111,21 @@ fn first_running_manager<BackendError: Error + Send + Sync + 'static>(
         .map(Arc::clone)
 }
 
-fn stamped<BackendError: Error + Send + Sync + 'static>(
+fn stamped<BackendError>(
     dispatch: &mut PromptHookDispatch<'_, BackendError>,
     manager: Arc<dyn PromptManager<BackendError> + Send + Sync>,
-) -> Arc<dyn PromptManager<BackendError> + Send + Sync> {
+) -> Arc<dyn PromptManager<BackendError> + Send + Sync>
+where
+    BackendError: Error + Send + Sync + 'static,
+{
     write_stamp(dispatch, manager.integration_name());
     manager
 }
 
-fn write_stamp<BackendError: Error + Send + Sync + 'static>(
-    dispatch: &mut PromptHookDispatch<'_, BackendError>,
-    integration: &str,
-) {
+fn write_stamp<BackendError>(dispatch: &mut PromptHookDispatch<'_, BackendError>, integration: &str)
+where
+    BackendError: Error + Send + Sync + 'static,
+{
     dispatch.state.model_call_details.insert(
         INTEGRATION_KEY.to_owned(),
         Json::Text(integration.to_owned()),
