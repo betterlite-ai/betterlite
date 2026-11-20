@@ -128,13 +128,8 @@ pub struct ReplyInput<'request> {
 
 // the reply as sent, then the cost it carries goes to the call log and a reply without one leaves it alone
 pub fn transform_response(input: ReplyInput<'_>) -> Result<ResponseRecord, EdenAiMessagesError> {
-    let ReplyInput {
-        body,
-        status,
-        limits,
-        state,
-    } = input;
-    let record = decode_messages_response(body, status, limits)?;
+    let (body, status_code, limits, state) = (input.body, input.status, input.limits, input.state);
+    let record = decode_messages_response(body, status_code, limits)?;
     if let Some(cost) = reply_cost(&record)
         && let Ok(number) = Number::from_str(&cost.normalize().to_string())
     {
