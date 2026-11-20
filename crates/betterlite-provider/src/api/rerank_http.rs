@@ -177,13 +177,13 @@ where
     let selected = select_client(deps.supplied.as_ref(), deps.source, kind)?;
     let logging = matches!(kind, ClientKind::Asynchronous).then_some(&*call.logging);
     let started = Instant::now();
-    let reply = selected.get().send(prepared.request, logging).await;
+    let answer = selected.get().send(prepared.request, logging).await;
     let sent = Sent {
         kind,
         timeout: call.timeout,
         elapsed: started.elapsed(),
     };
-    let reply = reply.map_err(|error| {
+    let reply = answer.map_err(|error| {
         let failure = handle_error(&send_facts(&error, &sent), None);
         RerankHttpError::Provider(deps.config.get_error_class(
             &failure.message,

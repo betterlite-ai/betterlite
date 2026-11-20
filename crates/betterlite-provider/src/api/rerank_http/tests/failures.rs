@@ -10,30 +10,29 @@ use super::{Bench, ConfigError, Fault, HeaderMap, Refusal, Reply, RerankLogging,
 
 // LiteLLM lets httpx reject a bad URL or header and turns the exception into a synthesized 500 provider error
 pub(super) async fn before_the_send() {
-    assert!(matches!(
-        refused(Refusal::Validate).await,
-        Err(RerankHttpError::Config(ConfigError::Validate))
-    ));
-    assert!(matches!(
-        refused(Refusal::Transform).await,
-        Err(RerankHttpError::Config(ConfigError::Transform))
-    ));
-    assert!(matches!(
-        refused(Refusal::PreCall).await,
-        Err(RerankHttpError::Logging(PrePostError::RawRequestCaptured))
-    ));
-    assert!(matches!(
-        refused(Refusal::Url).await,
-        Err(RerankHttpError::RequestUrl { .. })
-    ));
-    assert!(matches!(
-        refused(Refusal::HeaderName).await,
-        Err(RerankHttpError::HeaderName { name, .. }) if name == "x bad"
-    ));
-    assert!(matches!(
-        refused(Refusal::HeaderValue).await,
-        Err(RerankHttpError::HeaderValue { .. })
-    ));
+    let Err(RerankHttpError::Config(ConfigError::Validate)) = refused(Refusal::Validate).await
+    else {
+        panic!("validate refuses before the send");
+    };
+    let Err(RerankHttpError::Config(ConfigError::Transform)) = refused(Refusal::Transform).await
+    else {
+        panic!("transform refuses before the send");
+    };
+    let Err(RerankHttpError::Logging(PrePostError::RawRequestCaptured)) =
+        refused(Refusal::PreCall).await
+    else {
+        panic!("the pre-call refuses before the send");
+    };
+    let Err(RerankHttpError::RequestUrl { .. }) = refused(Refusal::Url).await else {
+        panic!("a bad URL is a typed error");
+    };
+    let Err(RerankHttpError::HeaderName { name, .. }) = refused(Refusal::HeaderName).await else {
+        panic!("a bad header name is a typed error");
+    };
+    assert_eq!(name, "x bad");
+    let Err(RerankHttpError::HeaderValue { .. }) = refused(Refusal::HeaderValue).await else {
+        panic!("a bad header value is a typed error");
+    };
 }
 
 async fn refused(refusal: Refusal) -> Result<RerankResponse, RerankHttpError<ConfigError>> {

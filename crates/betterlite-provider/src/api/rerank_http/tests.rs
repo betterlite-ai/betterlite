@@ -106,22 +106,26 @@ struct Fixture {
 impl Default for Fixture {
     fn default() -> Self {
         let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds");
+        let mut context = CorrelationContext::default();
+        let setup = CorrelationSetup {
+            context: &mut context,
+            settings: CorrelationSettings::default(),
+        };
+        let state = LoggingState::new(
+            parses(INIT),
+            setup,
+            &redactor,
+            || String::from("generated"),
+            Duration::default,
+        )
+        .expect("the logging state builds");
+        let now =
+            DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00").expect("the clock parses");
         Self {
-            state: LoggingState::new(
-                parses(INIT),
-                CorrelationSetup {
-                    context: &mut CorrelationContext::default(),
-                    settings: CorrelationSettings::default(),
-                },
-                &redactor,
-                || String::from("generated"),
-                Duration::default,
-            )
-            .expect("the logging state builds"),
             redactor,
             sink: Sink,
-            now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00")
-                .expect("the clock parses"),
+            state,
+            now,
         }
     }
 }
@@ -199,14 +203,14 @@ impl Refusal {
     // only the response transformer refuses after the send; every other refusal stops the call before one
     const fn sent(self) -> usize {
         match self {
-            Refusal::Response => 1,
-            Refusal::None
-            | Refusal::Validate
-            | Refusal::Transform
-            | Refusal::Url
-            | Refusal::HeaderValue
-            | Refusal::HeaderName
-            | Refusal::PreCall => 0,
+            Self::Response => 1,
+            Self::None
+            | Self::Validate
+            | Self::Transform
+            | Self::Url
+            | Self::HeaderValue
+            | Self::HeaderName
+            | Self::PreCall => 0,
         }
     }
 }
@@ -346,8 +350,8 @@ impl BaseRerankConfig for RecordingConfig {
         {
             let mut recorded = self.recorded();
             recorded.raw = Some(request.raw_response.clone());
-            recorded.transform = Some(seen);
-        }
+            recorded.transform = Some(seen)
+        };
         if self.refusal == Refusal::Response {
             return Err(ConfigError::Response);
         }
@@ -377,16 +381,16 @@ impl BaseRerankConfig for RecordingConfig {
 
     fn get_error_class(
         &self,
-        message: &str,
+        error_message: &str,
         status_code: u16,
         headers: HeaderMap,
     ) -> BaseLlmException {
         self.recorded()
             .errors
-            .push((message.to_owned(), status_code, headers.clone()));
+            .push((error_message.to_owned(), status_code, headers.clone()));
         BaseLlmException {
             status_code,
-            message: format!("rerank:{message}"),
+            message: format!("rerank:{error_message}"),
             headers,
         }
     }
@@ -610,7 +614,7 @@ impl Bench {
         let deps = RerankDeps {
             config: &self.config,
             source: &self.source,
-            supplied: self.use_supplied.then(|| SuppliedClient {
+            supplied: self.use_supplied.then_some(SuppliedClient {
                 kind: self.supplied_kind,
                 transport: &self.supplied,
             }),
@@ -639,19 +643,22 @@ struct Payload {
 impl Payload {
     fn new(serving: Serving, events: Events) -> Self {
         let base = format!("http://{}/v1/rerank", serving.address);
+        let config = RecordingConfig::new(&base, &events);
+        let optional = params(r#"{"query": "\u00e9", "documents": ["a"]}"#);
+        let key = SecretString::from(String::from("sk-caller"));
+        let model_response =
+            response(r#"{"id": "caller", "results": [{"index": 3, "relevance_score": 0.25}]}"#);
         Self {
-            config: RecordingConfig::new(&base, &events),
-            optional: params(r#"{"query": "\u00e9", "documents": ["a"]}"#),
-            key: SecretString::from(String::from("sk-caller")),
-            model_response: response(
-                r#"{"id": "caller", "results": [{"index": 3, "relevance_score": 0.25}]}"#,
-            ),
+            serving,
+            base,
+            config,
+            events,
+            optional,
+            key,
+            model_response,
             fixture: Fixture::default(),
             logging: RerankLogging::default(),
             answer: None,
-            serving,
-            base,
-            events,
         }
     }
 
@@ -810,14 +817,15 @@ async fn rerank_http_forwards_caller_headers_and_params() {
     {
         let recorded = bench.config.recorded();
         assert_eq!(recorded.headers_in.as_ref(), Some(&headers));
-        assert_eq!(recorded.params_in.as_ref(), Some(&litellm_params));
-    }
-    let sent = supplied_sent(&bench);
-    let authorization = sent[0].request.headers.get("authorization");
-    assert_eq!(
-        authorization.and_then(|value| value.to_str().ok()),
-        Some("Bearer caller")
-    );
+        assert_eq!(recorded.params_in.as_ref(), Some(&litellm_params))
+    };
+    let authorization = supplied_sent(&bench)[0]
+        .request
+        .headers
+        .get("authorization")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    assert_eq!(authorization.as_deref(), Some("Bearer caller"));
 }
 
 // httpx follows a redirect with the caller's headers attached; the pooled client returns the 3xx as the provider's answer

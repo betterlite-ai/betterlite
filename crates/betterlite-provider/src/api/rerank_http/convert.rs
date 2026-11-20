@@ -96,13 +96,13 @@ fn timeout_facts(sent: &Sent) -> FailureFacts {
 }
 
 pub(super) fn requested_timeout(timeout: Option<Duration>) -> String {
-    let Some(timeout) = timeout else {
+    let Some(limit) = timeout else {
         return "None".to_owned();
     };
-    if timeout.subsec_nanos() == 0 {
-        return timeout.as_secs().to_string();
+    if limit.subsec_nanos() == 0 {
+        return limit.as_secs().to_string();
     }
-    timeout.as_secs_f64().to_string()
+    limit.as_secs_f64().to_string()
 }
 
 // Python's round(seconds, 3) renders as 0.1, 1.0 or 12.345, never with trailing zeros past the digit
