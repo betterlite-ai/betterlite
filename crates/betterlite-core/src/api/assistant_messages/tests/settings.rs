@@ -451,7 +451,7 @@ fn message_settings_and_failures_reads_a_nested_error_message() {
     let ErrorClass::BadRequest(details) = failure.class else {
         panic!("the 400 must map to the bad request class");
     };
-    assert!(details.message.contains("deep failure"));
+    assert_eq!(details.message, "OpenAIException - deep failure");
 }
 
 #[test]
