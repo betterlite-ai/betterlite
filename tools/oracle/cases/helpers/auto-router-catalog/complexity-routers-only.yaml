@@ -1,0 +1,25 @@
+kind: helper
+name: auto-router-catalog-complexity-routers-only
+call:
+  b10021:
+    rows:
+      - model_id: semantic
+        model_name: semantic
+        litellm_params: {model: auto_router/semantic_router}
+      - model_id: complexity
+        model_name: complexity
+        litellm_params: {model: auto_router/complexity_router, complexity_router_config: {classifier_type: heuristic_v2}}
+      - model_id: adaptive
+        model_name: adaptive
+        litellm_params: {model: auto_router/adaptive_router}
+      - model_id: quality
+        model_name: quality
+        litellm_params: {model: auto_router/quality_router}
+      - model_id: plain
+        model_name: plain
+        litellm_params: {model: gpt-4o}
+      - model_id: complexity-v2
+        model_name: complexity-v2
+        litellm_params: {model: auto_router/complexity_router_v2}
+env: {}
+compare: {ignore: []}

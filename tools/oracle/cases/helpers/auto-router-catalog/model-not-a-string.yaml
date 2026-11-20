@@ -1,0 +1,25 @@
+kind: helper
+name: auto-router-catalog-model-not-a-string
+call:
+  b10021:
+    rows:
+      - model_id: missing
+        model_name: missing
+        litellm_params: {}
+      - model_id: "null"
+        model_name: "null"
+        litellm_params: {model: null}
+      - model_id: number
+        model_name: number
+        litellm_params: {model: 7}
+      - model_id: list
+        model_name: list
+        litellm_params: {model: [auto_router/complexity_router]}
+      - model_id: object
+        model_name: object
+        litellm_params: {model: {name: auto_router/complexity_router}}
+      - model_id: kept
+        model_name: kept
+        litellm_params: {model: auto_router/complexity_router}
+env: {}
+compare: {ignore: []}
