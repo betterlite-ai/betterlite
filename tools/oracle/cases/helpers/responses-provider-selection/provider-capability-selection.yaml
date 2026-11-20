@@ -1,0 +1,127 @@
+kind: helper
+name: provider-capability-selection
+call:
+  responses_provider_selection:
+    action: selection
+    provider: openai
+    model: gpt-4o
+    use_chat_completions_api: false
+    model_info: {}
+    kwargs: {}
+    allowed_openai_params: []
+calls:
+  - responses_provider_selection:
+      action: selection
+      provider: openai
+      model: gpt-4o
+      use_chat_completions_api: true
+      model_info: {}
+      kwargs: {}
+      allowed_openai_params: []
+  - responses_provider_selection:
+      action: selection
+      provider: openai_like
+      model: llama
+      use_chat_completions_api: false
+      model_info: {supported_endpoints: [/v1/responses]}
+      kwargs: {}
+      allowed_openai_params: []
+  - responses_provider_selection:
+      action: selection
+      provider: openai
+      model: gpt-4o
+      use_chat_completions_api: false
+      model_info: {supported_endpoints: [/responses]}
+      kwargs: {}
+      allowed_openai_params: []
+  - responses_provider_selection:
+      action: selection
+      provider: openai
+      model: gpt-4o
+      use_chat_completions_api: false
+      model_info: {supported_endpoints: /v1/responses}
+      kwargs: {}
+      allowed_openai_params: []
+  - responses_provider_selection:
+      action: selection
+      provider: openai
+      model: gpt-4o
+      use_chat_completions_api: false
+      model_info: text
+      kwargs: {}
+      allowed_openai_params: []
+  - responses_provider_selection:
+      action: selection
+      provider: unknown_provider
+      model: m
+      use_chat_completions_api: false
+      model_info: {}
+      kwargs: {api_base: 7}
+      allowed_openai_params: []
+  - responses_provider_selection:
+      action: selection
+      provider: unknown_provider
+      model: m
+      use_chat_completions_api: false
+      model_info: {}
+      kwargs: {api_base: ""}
+      allowed_openai_params: []
+  - responses_provider_selection:
+      action: selection
+      provider: openai
+      model: gpt-4o
+      use_chat_completions_api: false
+      model_info: {}
+      kwargs:
+        temperature: 0.2
+        api_key: sk-test
+        vendor_option: x
+        client_metadata: {}
+        custom_option: 1
+      allowed_openai_params: [custom_option, client_metadata]
+  - responses_provider_selection:
+      action: selection
+      provider: unknown_provider
+      model: m
+      use_chat_completions_api: false
+      model_info: {}
+      kwargs:
+        temperature: 0.2
+        api_key: sk-test
+        vendor_option: x
+        client_metadata: {}
+      allowed_openai_params: []
+  - responses_provider_selection:
+      action: selection
+      provider: azure
+      model: azure/gpt-4o
+      use_chat_completions_api: false
+      model_info: {}
+      kwargs: {}
+      allowed_openai_params: []
+  - responses_provider_selection:
+      action: selection
+      provider: xai
+      model: xai/grok
+      use_chat_completions_api: false
+      model_info: {}
+      kwargs: {}
+      allowed_openai_params: []
+  - responses_provider_selection:
+      action: selection
+      provider: openai_like
+      model: llama
+      use_chat_completions_api: true
+      model_info: {supported_endpoints: [/v1/responses]}
+      kwargs: {}
+      allowed_openai_params: []
+  - responses_provider_selection:
+      action: selection
+      provider: openai
+      model: openai/chat_completions/gpt-4o
+      use_chat_completions_api: false
+      model_info: {}
+      kwargs: {}
+      allowed_openai_params: []
+env: {}
+compare: {ignore: []}

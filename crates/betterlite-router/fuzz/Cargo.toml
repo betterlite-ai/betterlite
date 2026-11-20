@@ -82,3 +82,10 @@ path = "fuzz_targets/class_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "affinity"
+path = "fuzz_targets/affinity.rs"
+test = false
+doc = false
+bench = false
