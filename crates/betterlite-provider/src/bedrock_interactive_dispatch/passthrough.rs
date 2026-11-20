@@ -8,7 +8,6 @@ use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::passthrough::transformation::BasePassthroughConfig as _;
-use betterlite_openai::passthrough::transformation::PassthroughStreamCollector as _;
 use betterlite_openai::passthrough::transformation::types::{
     PassthroughError, PassthroughLogging, PassthroughSigning, PassthroughTarget,
     PassthroughUrlRequest, RelayedResponse,

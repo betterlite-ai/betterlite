@@ -356,10 +356,10 @@ fn responses_rejected_reply() {
             assert_eq!(status, 400);
             assert_eq!(message, "bad \u{FFFD} body");
         }
-        other @ responses::OperationError::Leaf(_)
-        | other @ responses::OperationError::UnsupportedModel { .. }
-        | other @ responses::OperationError::Transport(_)
-        | other @ responses::OperationError::Headers { .. } => {
+        other @ (responses::OperationError::Leaf(_)
+        | responses::OperationError::UnsupportedModel { .. }
+        | responses::OperationError::Transport(_)
+        | responses::OperationError::Headers { .. }) => {
             panic!("expected a rejected reply, got {other}")
         }
     }
@@ -419,10 +419,10 @@ fn responses_unsupported_model() {
     let error = dispatched!(Responses, operation.run(&transport)).unwrap_err();
     match error {
         responses::OperationError::UnsupportedModel { model } => assert_eq!(model, "mystery.model"),
-        other @ responses::OperationError::Leaf(_)
-        | other @ responses::OperationError::Transport(_)
-        | other @ responses::OperationError::Rejected { .. }
-        | other @ responses::OperationError::Headers { .. } => {
+        other @ (responses::OperationError::Leaf(_)
+        | responses::OperationError::Transport(_)
+        | responses::OperationError::Rejected { .. }
+        | responses::OperationError::Headers { .. }) => {
             panic!("expected an unsupported model, got {other}")
         }
     }
@@ -514,9 +514,9 @@ fn search_leaf_failure() {
         search::OperationError::Leaf(SearchError::ToolName { tool_name }) => {
             assert_eq!(tool_name, "other-tool");
         }
-        other @ search::OperationError::Leaf(_)
-        | other @ search::OperationError::Reply(_)
-        | other @ search::OperationError::Transport(_) => {
+        other @ (search::OperationError::Leaf(_)
+        | search::OperationError::Reply(_)
+        | search::OperationError::Transport(_)) => {
             panic!("expected a tool name failure, got {other}")
         }
     }
@@ -537,7 +537,7 @@ fn search_reply_error() {
     let error = dispatched!(Search, operation.run(&transport)).unwrap_err();
     match error {
         search::OperationError::Reply(reply) => assert_eq!(reply.status(), Some(502)),
-        other @ search::OperationError::Leaf(_) | other @ search::OperationError::Transport(_) => {
+        other @ (search::OperationError::Leaf(_) | search::OperationError::Transport(_)) => {
             panic!("expected a reply error, got {other}")
         }
     }
@@ -667,8 +667,8 @@ fn vector_leaf_failure() {
     let error = dispatched!(VectorRetrieve, operation.run(&transport)).unwrap_err();
     match error {
         vector_retrieve::OperationError::Leaf(VectorStoreError::RetrievalConfigNotObject) => {}
-        other @ vector_retrieve::OperationError::Leaf(_)
-        | other @ vector_retrieve::OperationError::Transport(_) => {
+        other @ (vector_retrieve::OperationError::Leaf(_)
+        | vector_retrieve::OperationError::Transport(_)) => {
             panic!("expected a retrieval configuration failure, got {other}")
         }
     }
@@ -744,11 +744,11 @@ fn bedrock_interactive_dispatch_unsupported_operation() {
     );
     match error {
         BedrockInteractiveError::Unsupported { operation } => assert_eq!(operation, "embedding"),
-        other @ BedrockInteractiveError::Responses(_)
-        | other @ BedrockInteractiveError::Passthrough(_)
-        | other @ BedrockInteractiveError::Search(_)
-        | other @ BedrockInteractiveError::VectorRetrieve(_)
-        | other @ BedrockInteractiveError::RealtimeBridge(_) => {
+        other @ (BedrockInteractiveError::Responses(_)
+        | BedrockInteractiveError::Passthrough(_)
+        | BedrockInteractiveError::Search(_)
+        | BedrockInteractiveError::VectorRetrieve(_)
+        | BedrockInteractiveError::RealtimeBridge(_)) => {
             panic!("expected an unsupported operation, got {other}")
         }
     }
