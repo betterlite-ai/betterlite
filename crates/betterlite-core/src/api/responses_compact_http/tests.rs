@@ -2,8 +2,8 @@
 
 mod compact_client_timeout;
 mod compact_signed_body_order;
-mod compact_transport_errors;
 mod support;
+mod transport_errors;
 
 use std::time::Duration;
 
@@ -13,15 +13,15 @@ use betterlite_openai::response_events::ReplyBody;
 use http::Method;
 use rstest::rstest;
 
-use self::compact_transport_errors::{
-    ConfigSpec, Expect, HeaderExpect, LOG_EVENTS, ProviderExpect, RequestUrlExpect, SIGN_EVENTS,
-    STATUS_304_EVENTS, Scenario, StepExpect, TRANSFORM_EVENTS, VALIDATE_EVENTS, WireSpec, check,
-    run,
-};
 use self::support::{
     COMPACT_OK, Events, FailureStage, Fixture, Reply, Source, TestCall, Wire, body_json,
     caller_headers, compact_deps, extra_body, json, keyed_params, masked_headers, openai_config,
     optional_params, text_input,
+};
+use self::transport_errors::{
+    ConfigSpec, Expect, HeaderExpect, LOG_EVENTS, ProviderExpect, RequestUrlExpect, SIGN_EVENTS,
+    STATUS_304_EVENTS, Scenario, StepExpect, TRANSFORM_EVENTS, VALIDATE_EVENTS, WireSpec, check,
+    run,
 };
 use crate::api::responses_compact_http::error::Stage;
 use crate::api::responses_compact_http::service::ClientKind;
