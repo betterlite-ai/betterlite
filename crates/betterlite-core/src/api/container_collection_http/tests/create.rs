@@ -7,7 +7,8 @@ use betterlite_logging::logging_pre_post::args::RawBody;
 use betterlite_models::decisions::Json;
 use betterlite_openai::containers::container_file_http::request::SslVerify;
 use betterlite_openai::containers::container_file_http::transport::ContainerMethod;
-use serde_json::{Map, Value, json};
+use betterlite_openai::openai_base_config::Object;
+use serde_json::json;
 
 use super::tests::{
     BASE, BlockingFake, CREATE_BODY, FakeClient, Fixture, REQUEST_HEADERS, REQUEST_ID,
@@ -17,9 +18,9 @@ use super::{
     ContainerCollectionError, DEFAULT_TIMEOUT, acontainer_create_handler, container_create_handler,
 };
 
-fn api_key_params(value: &str) -> Map<String, Value> {
-    let mut params = Map::new();
-    params.insert(String::from("api_key"), Value::String(value.to_owned()));
+fn api_key_params(value: &str) -> Object {
+    let mut params = Object::new();
+    params.insert(String::from("api_key"), json!(value));
     params
 }
 
@@ -48,11 +49,13 @@ fn create_posts_the_transformed_body_with_the_default_timeout() {
         request.headers.get("Content-Type").map(String::as_str),
         Some("application/json")
     );
-    let body: Value = serde_json::from_slice(request.body.as_deref().unwrap()).unwrap();
-    assert_eq!(
-        body,
-        json!({"name": "box", "expires_after": {"anchor": "last_active_at", "minutes": 20}})
-    );
+    let body: Object = serde_json::from_slice(request.body.as_deref().unwrap()).unwrap();
+    let expected: Object = serde_json::from_value(json!({
+        "name": "box",
+        "expires_after": {"anchor": "last_active_at", "minutes": 20}
+    }))
+    .unwrap();
+    assert_eq!(body, expected);
     assert_eq!(object.id, "cntr_abc");
     assert_eq!(object.name.as_deref(), Some("box"));
     assert_eq!(object.status, "running");
@@ -204,7 +207,7 @@ fn create_builds_the_blocking_client_with_the_ssl_verify_param() {
     let mut fixture = Fixture::new(200, CREATE_BODY);
     fixture
         .params
-        .insert(String::from("ssl_verify"), Value::Bool(false));
+        .insert(String::from("ssl_verify"), json!(false));
     let call = fixture.create_call("box", None);
     container_create_handler(&call, &fixture.source, None, &fixture.hook).unwrap();
     assert_eq!(

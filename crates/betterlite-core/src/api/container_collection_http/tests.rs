@@ -32,10 +32,10 @@ use betterlite_openai::containers::container_file_http::transport::{
     ContainerHttpReply, TransferError,
 };
 use betterlite_openai::containers::{replies, requests};
+use betterlite_openai::openai_base_config::Object;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use http::Method;
 use http::header::HeaderMap;
-use serde_json::{Map, Value};
 use tokio::io::AsyncReadExt as _;
 use tokio::net::TcpListener;
 use tokio::time::sleep;
@@ -54,10 +54,10 @@ pub(super) const REQUEST_HEADERS: &str = "x-request-id";
 pub(super) const REQUEST_ID: &str = "req_1";
 
 type EnvironmentCall = (BTreeMap<String, String>, Option<String>);
-type BaseCall = (Option<String>, Map<String, Value>);
-type CreateCall = (String, Map<String, Value>, BTreeMap<String, String>);
-type ListCall = (String, BTreeMap<String, String>, Map<String, Value>);
-type Prepared = (String, Map<String, Value>);
+type BaseCall = (Option<String>, Object);
+type CreateCall = (String, Object, BTreeMap<String, String>);
+type ListCall = (String, BTreeMap<String, String>, Object);
+type Prepared = (String, Object);
 type Reply<T> = Result<T, ContainerError>;
 
 // Records what the handler hands the provider config, and transforms through the real request and reply helpers
@@ -85,8 +85,8 @@ impl StubConfig {
 impl BaseContainerConfig for StubConfig {
     fn get_supported_openai_params(&self) -> Vec<String> { Vec::new() }
 
-    fn map_openai_params(&self, _params: &Map<String, Value>, _drop_params: bool) -> Map<String, Value> {
-        Map::new()
+    fn map_openai_params(&self, _params: &Object, _drop_params: bool) -> Object {
+        Object::new()
     }
 
     fn validate_environment(&self, headers: &BTreeMap<String, String>, api_key: Option<&str>) -> BTreeMap<String, String> {
@@ -96,14 +96,14 @@ impl BaseContainerConfig for StubConfig {
         merged
     }
 
-    fn get_complete_url(&self, api_base: Option<&str>, litellm_params: &Map<String, Value>) -> Reply<String> {
+    fn get_complete_url(&self, api_base: Option<&str>, litellm_params: &Object) -> Reply<String> {
         self.bases.lock().unwrap_or_else(PoisonError::into_inner).push((api_base.map(str::to_owned), litellm_params.clone()));
         Ok(self.api_base.clone())
     }
 
     fn transform_container_create_request(
-        &self, name: &str, params: &Map<String, Value>, context: ContainerRequestContext<'_>,
-    ) -> Map<String, Value> {
+        &self, name: &str, params: &Object, context: ContainerRequestContext<'_>,
+    ) -> Object {
         self.creates.lock().unwrap_or_else(PoisonError::into_inner).push((name.to_owned(), params.clone(), context.headers.clone()));
         requests::create_request(name, params)
     }
@@ -126,7 +126,7 @@ impl BaseContainerConfig for StubConfig {
 
     fn transform_container_retrieve_request(
         &self, _id: &str, _base: &str, _context: ContainerRequestContext<'_>,
-    ) -> Reply<Prepared> { Ok((String::new(), Map::new())) }
+    ) -> Reply<Prepared> { Ok((String::new(), Object::new())) }
 
     fn transform_container_retrieve_response(&self, raw: &[u8]) -> Reply<ContainerObject> {
         replies::decode_container_reply(raw)
@@ -134,7 +134,7 @@ impl BaseContainerConfig for StubConfig {
 
     fn transform_container_delete_request(
         &self, _id: &str, _base: &str, _context: ContainerRequestContext<'_>,
-    ) -> Reply<Prepared> { Ok((String::new(), Map::new())) }
+    ) -> Reply<Prepared> { Ok((String::new(), Object::new())) }
 
     fn transform_container_delete_response(&self, _raw: &[u8]) -> Reply<DeleteContainerResult> {
         Err(ContainerError::ApiBaseRequired)
@@ -142,7 +142,7 @@ impl BaseContainerConfig for StubConfig {
 
     fn transform_container_file_list_request(
         &self, _id: &str, _base: &str, _context: ContainerRequestContext<'_>, _query: &ContainerListQuery<'_>,
-    ) -> Reply<Prepared> { Ok((String::new(), Map::new())) }
+    ) -> Reply<Prepared> { Ok((String::new(), Object::new())) }
 
     fn transform_container_file_list_response(&self, _raw: &[u8]) -> Reply<ContainerFileListResponse> {
         Err(ContainerError::ApiBaseRequired)
@@ -150,7 +150,7 @@ impl BaseContainerConfig for StubConfig {
 
     fn transform_container_file_content_request(
         &self, _id: &str, _file: &str, _base: &str, _context: ContainerRequestContext<'_>,
-    ) -> Reply<Prepared> { Ok((String::new(), Map::new())) }
+    ) -> Reply<Prepared> { Ok((String::new(), Object::new())) }
 
     fn transform_container_file_content_response(&self, _raw: &[u8]) -> Reply<Vec<u8>> {
         Err(ContainerError::ApiBaseRequired)
@@ -344,8 +344,8 @@ pub(super) fn logging_state() -> LoggingState {
 // Everything one call borrows, owned in one place so a test changes only the part it is about
 pub(super) struct Fixture {
     pub(super) config: StubConfig,
-    pub(super) params: Map<String, Value>,
-    pub(super) create_params: Map<String, Value>,
+    pub(super) params: Object,
+    pub(super) create_params: Object,
     pub(super) logging: Mutex<LoggingState>,
     pub(super) extra_headers: Option<BTreeMap<String, String>>,
     pub(super) events: Events,
@@ -364,8 +364,8 @@ impl Fixture {
         let client = FakeClient::answering_bytes(&events, status, body);
         Self {
             config: StubConfig::with_base(BASE),
-            params: Map::new(),
-            create_params: Map::new(),
+            params: Object::new(),
+            create_params: Object::new(),
             logging: Mutex::new(logging_state()),
             extra_headers: None,
             source: FakeSource::over(client.clone(), client),
@@ -379,8 +379,8 @@ impl Fixture {
         let client = FakeClient::failing(&events, failure);
         Self {
             config: StubConfig::with_base(BASE),
-            params: Map::new(),
-            create_params: Map::new(),
+            params: Object::new(),
+            create_params: Object::new(),
             logging: Mutex::new(logging_state()),
             extra_headers: None,
             source: FakeSource::over(client.clone(), client),

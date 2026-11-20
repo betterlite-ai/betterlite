@@ -7,7 +7,8 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::api::container_contracts::config::ContainerListQuery;
 use betterlite_openai::containers::container_file_http::request::SslVerify;
 use betterlite_openai::containers::container_file_http::transport::ContainerMethod;
-use serde_json::{Map, Value, json};
+use betterlite_openai::openai_base_config::Object;
+use serde_json::json;
 
 use super::tests::{
     API_VERSION, BASE, BlockingFake, FakeClient, Fixture, LIST_BODY, deadline_failure,
@@ -35,9 +36,9 @@ fn empty_page() -> ContainerListQuery<'static> {
     }
 }
 
-fn api_key(value: &str) -> Map<String, Value> {
-    let mut params = Map::new();
-    params.insert(String::from("api_key"), Value::String(value.to_owned()));
+fn api_key(value: &str) -> Object {
+    let mut params = Object::new();
+    params.insert(String::from("api_key"), json!(value));
     params
 }
 
@@ -91,7 +92,7 @@ fn list_keeps_the_url_query_when_the_params_are_empty() {
 
 #[test]
 fn list_renders_every_extra_query_value_as_httpx_would() {
-    let mut extra = Map::new();
+    let mut extra = Object::new();
     extra.insert(String::from("page"), json!(5));
     extra.insert(String::from("flag"), json!(true));
     extra.insert(String::from("none"), json!(null));
@@ -99,7 +100,7 @@ fn list_renders_every_extra_query_value_as_httpx_would() {
     let mut fixture = Fixture::new(200, LIST_BODY);
     fixture
         .params
-        .insert(String::from("api_key"), Value::String(String::from("sk-1")));
+        .insert(String::from("api_key"), json!("sk-1"));
     let query = ContainerListQuery {
         after: None,
         limit: None,
@@ -121,7 +122,7 @@ fn list_renders_every_extra_query_value_as_httpx_would() {
 
 #[test]
 fn list_sends_an_array_extra_query_as_one_json_text_value() {
-    let mut extra = Map::new();
+    let mut extra = Object::new();
     extra.insert(String::from("tag"), json!(["a", "b"]));
     let fixture = Fixture::new(200, LIST_BODY);
     let query = ContainerListQuery {
@@ -142,7 +143,7 @@ fn list_sends_an_array_extra_query_as_one_json_text_value() {
 #[test]
 fn list_logs_the_params_before_the_get() {
     let fixture = Fixture::new(202, LIST_BODY);
-    let mut extra = Map::new();
+    let mut extra = Object::new();
     extra.insert(String::from("page"), json!(5));
     let query = ContainerListQuery {
         after: Some("cntr_a"),
@@ -233,10 +234,9 @@ fn list_sends_through_the_supplied_client_and_builds_none() {
 #[test]
 fn list_builds_the_blocking_client_with_the_ssl_verify_param() {
     let mut fixture = Fixture::new(200, LIST_BODY);
-    fixture.params.insert(
-        String::from("ssl_verify"),
-        Value::String(String::from("/etc/ca.pem")),
-    );
+    fixture
+        .params
+        .insert(String::from("ssl_verify"), json!("/etc/ca.pem"));
     let call = fixture.list_call(empty_page(), None);
     container_list_handler(&call, &fixture.source, None, &fixture.hook).unwrap();
     assert_eq!(
