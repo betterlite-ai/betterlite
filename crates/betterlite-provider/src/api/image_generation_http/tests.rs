@@ -5,16 +5,20 @@ use std::mem;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
+use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::{
     ImageData, ImageHeaders, ImageParams, ImageResponse, ImageUsage,
 };
 use betterlite_openai::error::ProviderError;
+use http::HeaderMap;
+use http::header::HeaderValue;
 use secrecy::ExposeSecret as _;
 use serde_json::Number;
 use thiserror::Error;
 
 use super::error::ImageGenerationError;
+use super::facts;
 use super::log::{ImageGenerationLogger, PreCallRecord};
 use super::{
     ClientKind, ImageGenerationCall, ImageGenerationDeps, ImageGenerationOutcome, SuppliedClient,
@@ -847,4 +851,37 @@ async fn generation_transport_failure() {
         "the client is shutting down and takes no new requests"
     );
     assert_eq!(error.headers, Some(Vec::new()));
+}
+
+// The masked error headers drop the transport encodings and restate the decoded body's length
+#[test]
+fn generation_masks_error_headers() {
+    let fixture = Fixture::working(ImageHeaders::new());
+    let mut headers = HeaderMap::new();
+    headers.insert("content-encoding", HeaderValue::from_static("gzip"));
+    headers.insert("content-length", HeaderValue::from_static("999"));
+    headers.insert("x-request-id", HeaderValue::from_static("img_1"));
+    let reply = UpstreamResponse {
+        status: 429,
+        headers,
+        body: b"slow".to_vec(),
+    };
+    let error = facts::status_error(&reply, &fixture);
+    match error {
+        ImageGenerationError::Provider(error) => {
+            assert_eq!(error.message, "slow");
+            let masked = error.headers.expect("the masked headers");
+            assert!(
+                !masked
+                    .iter()
+                    .any(|(name, _)| name.as_str() == "content-encoding")
+            );
+            let length = masked
+                .iter()
+                .find(|(name, _)| name.as_str() == "content-length")
+                .map(|(_, value)| value.as_str());
+            assert_eq!(length, Some("4"));
+        }
+        other => panic!("expected the provider error, got {other}"),
+    }
 }
