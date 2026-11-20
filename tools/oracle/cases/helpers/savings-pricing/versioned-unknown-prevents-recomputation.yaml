@@ -1,0 +1,13 @@
+kind: helper
+name: versioned-unknown-prevents-recomputation
+call:
+  savings_pricing:
+    operation: compute_savings_spend
+    compression_saved_tokens: 0
+    gateway_injected_cache: false
+    recorded_autorouter_savings: 5.0
+    recorded_autorouter_savings_estimate:
+      version: 4
+      status: estimated
+compare: {ignore: []}
+env: {}
