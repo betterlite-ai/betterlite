@@ -140,10 +140,10 @@ fn a_missing_messages_key_fails_before_pre_call() {
     .expect("a missing messages key fails");
     let failure = azure_failure(error);
     assert_eq!(failure.class, "KeyError");
-    assert_eq!(
-        failure.message,
-        Reported::Present(Some("'messages'".to_owned()))
-    );
+    // a KeyError carries no status_code or message attribute; str(e) is the quoted key
+    assert_eq!(failure.status, Reported::Absent);
+    assert_eq!(failure.message, Reported::Absent);
+    assert_eq!(failure.text, "'messages'");
     assert!(recorder.pre.is_empty());
 
     let async_source = scripted_source(ClientKind::AsyncAzureOpenAi, &[], sse_payload());
