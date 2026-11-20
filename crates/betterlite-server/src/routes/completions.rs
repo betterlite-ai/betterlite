@@ -25,10 +25,11 @@ use betterlite_openai::completion_chat_bridge::answer::text_answer_body;
 use betterlite_openai::completion_chat_bridge::{CompletionEndpoint, chat_request};
 use betterlite_openai::text_completion_execution::CompletionExecutor;
 use betterlite_openai::text_completion_request::{CompletionRequest, CompletionRequestError};
+use betterlite_provider::operation::OperationResult;
 use tokio::sync::OnceCell;
 use uuid::Uuid;
 
-use crate::server::chat_setup::provider_call::answer_chat;
+use crate::server::chat_setup::provider_call::{CallError, answer_chat};
 use crate::state::ServerState;
 
 use super::chat::MAX_CALL_ID_LENGTH;
@@ -116,17 +117,20 @@ impl TextCompletionCall for CompletionCalls {
         let control = ControlOptions::default();
         match mode {
             ChatCallMode::Buffered => {
-                let (completion, headers, time) =
+                let (result, headers, time) =
                     answer_chat(&self.state.executor, &chat, &call.deployment, control)
                         .await
                         .map_err(|error| chat_call_failure(error, self))?;
+                let OperationResult::Chat(completion) = result else {
+                    return Err(chat_call_failure(CallError::Mismatched, self));
+                };
                 Ok(ChatCallAnswer::Buffered(text_result(converted(
                     completion, headers, time,
                 )?)))
             }
             ChatCallMode::Streamed => {
                 let started = Instant::now();
-                let upstream = streaming::provider_stream(
+                let (result, _) = streaming::provider_stream(
                     &self.state.executor,
                     &call.deployment,
                     &chat,
@@ -135,10 +139,13 @@ impl TextCompletionCall for CompletionCalls {
                 )
                 .await
                 .map_err(|error| chat_call_failure(error, self))?;
+                let OperationResult::Stream(stream) = result else {
+                    return Err(chat_call_failure(CallError::Mismatched, self));
+                };
                 let options = call.request.stream_options.as_ref();
                 let include_usage = options.is_some_and(|chosen| chosen.include_usage);
                 Ok(ChatCallAnswer::Streamed(chat_stream_answer(
-                    upstream,
+                    *stream,
                     call.request.model.as_deref(),
                     include_usage,
                     started.elapsed(),

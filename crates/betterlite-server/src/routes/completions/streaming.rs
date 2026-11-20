@@ -9,7 +9,6 @@ use axum::http::{HeaderMap, HeaderName, HeaderValue};
 use axum::response::{IntoResponse as _, Response};
 use betterlite_core::message_utilities::response_streams::StreamError;
 use betterlite_core::operation::text_stream::TextStreamResult;
-use betterlite_http::proxy::StreamResponse;
 use betterlite_models::controls::control_options::ControlOptions;
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat::ChatRequest;
@@ -43,7 +42,7 @@ pub(crate) async fn provider_stream(
     request: &ChatRequest,
     control: ControlOptions,
     usage: StreamUsage,
-) -> Result<StreamResponse, CallError<ChatError>> {
+) -> Result<(OperationResult, HeaderMap), CallError<ChatError>> {
     let provider = Provider::from_deployment(deployment).map_err(chat_error)?;
     let inputs = Deployment::from_chat(deployment);
     let operation = OperationRequest::Stream(Box::new(ChatOperation {
@@ -67,11 +66,9 @@ pub(crate) async fn provider_stream(
         .execute(client, &prepared, &inputs)
         .await
         .map_err(chat_error)?;
+    let upstream_headers = answer.headers().clone();
     let result = provider.decode(&prepared, answer).map_err(chat_error)?;
-    let OperationResult::Stream(stream) = result else {
-        return Err(CallError::Mismatched);
-    };
-    Ok(*stream)
+    Ok((result, upstream_headers))
 }
 
 // the chat route's auto-injected usage options have no place in a bridged completion's provider body

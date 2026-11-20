@@ -15,6 +15,7 @@ use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::chat::deployment::{ChatDeployment, OpenAiDefaults};
 use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_openai::text_completion_stream::{DONE_FRAME, without_nulls};
+use betterlite_provider::operation::OperationResult;
 use futures_util::{StreamExt as _, stream};
 use http::HeaderMap;
 use rand::SeedableRng as _;
@@ -299,7 +300,7 @@ async fn chat_stream_answer_decodes_the_chat_events() {
         br#"{"model":"chat-model","messages":[{"role":"user","content":"hi"}],"stream":true}"#,
     )
     .expect("chat request");
-    let upstream = provider_stream(
+    let (result, headers) = provider_stream(
         &executor,
         &deployment,
         &parsed,
@@ -308,7 +309,16 @@ async fn chat_stream_answer_decodes_the_chat_events() {
     )
     .await
     .expect("provider stream");
-    let answer = chat_stream_answer(upstream, Some("client"), false, Duration::ZERO);
+    assert_eq!(
+        headers
+            .get("content-type")
+            .and_then(|value| value.to_str().ok()),
+        Some("text/event-stream")
+    );
+    let OperationResult::Stream(stream) = result else {
+        panic!("the provider answers a stream");
+    };
+    let answer = chat_stream_answer(*stream, Some("client"), false, Duration::ZERO);
     let items = timeout(Duration::from_secs(5), answer.body.collect::<Vec<_>>())
         .await
         .expect("the stream ends within five seconds");
