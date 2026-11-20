@@ -1,0 +1,52 @@
+kind: helper
+name: rate-limit-request-scopes-user-team-end-user
+call:
+  b3040:
+    function: create
+    auth:
+      api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      user_id: u1
+      user_rpm_limit: 2
+      user_tpm_limit: 3
+      team_id: team-1
+      team_rpm_limit: 4
+      team_tpm_limit: 5
+      team_member_rpm_limit: 6
+      team_member_tpm_limit: 7
+      end_user_id: e1
+      end_user_rpm_limit: 8
+      end_user_tpm_limit: 9
+    server: {}
+    data: {}
+    rpm_limit_type: null
+    tpm_limit_type: null
+    model_has_failures: false
+    call_type: null
+    groups: {}
+    registry: []
+    tag_limits: []
+    window_size: 60
+calls:
+  - b3040:
+      function: create
+      auth:
+        api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        user_id: u1
+        user_rpm_limit: 0
+        user_tpm_limit: 0
+        team_id: team-1
+        team_rpm_limit: 0
+        end_user_id: e1
+        end_user_tpm_limit: 0
+      server: {}
+      data: {}
+      rpm_limit_type: null
+      tpm_limit_type: null
+      model_has_failures: false
+      call_type: null
+      groups: {}
+      registry: []
+      tag_limits: []
+      window_size: 60
+env: {}
+compare: {ignore: []}
