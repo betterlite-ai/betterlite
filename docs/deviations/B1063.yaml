@@ -1,0 +1,9 @@
+task: B1063
+deviations:
+  - what: The fallback read failure logs the vector store id in "Error fetching vector store <id> from database" followed by the error, where LiteLLM's effective diagnostic carries no id.
+    why: The id-bearing message is LiteLLM's own outer-catch text, but its inner helper swallows the read error two frames down and returns None, so the outer catch never runs and the id-less inner message is what a proxy actually logs. The id is what makes the line useful, and the control flow is unchanged (the id is skipped either way).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L363-L369
+kept_bugs:
+  - what: A recognized tool that carries rewrite_query fails after the top-level vector_store_ids were popped, the recognized ids were appended and the tool list was left whole, because the ids are extended before the tool params are extracted and the tools are removed only after the whole loop.
+    why: LiteLLM builds VectorStoreToolParams from VECTOR_STORE_OPENAI_PARAMS with a dataclass that lacks rewrite_query, so every such request fails; the partial mutation is what its caller sees, and no working setup can rely on a completed selection instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L176-L186
