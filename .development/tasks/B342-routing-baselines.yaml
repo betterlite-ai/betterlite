@@ -21,7 +21,11 @@ description: 'Compute the canonical counterfactual baseline through B068 cost ca
   _most_expensive (L137-L143), resolve_baseline (L146-L162). Implement these behaviors through the typed
   Rust services above; synchronous facades and structural accessors reuse the same primitive instead of
   separate ports.
-  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B344 calls this service.'
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B344 calls this service.
+  B8633''s ChatRequestLogging (crates/betterlite-server/src/app/inference/chat_stream) lands first with
+  baseline_cache_active answering false and invalidate_baseline doing nothing, since no baseline cache context
+  exists before this task. Replace both: baseline_cache_active checks for this task''s baseline cache context on the
+  logging object, and invalidate_baseline calls invalidate_baseline_cache with the reason and the completed flag.'
 scope:
   paths:
   - crates/betterlite-router/src/routing_baselines.rs
@@ -36,6 +40,8 @@ scope:
   - tools/oracle/helpers/b342/**
   - tools/oracle/src/helpers/router/b342.rs
   - tools/oracle/src/helpers/router/b342/**
+  - crates/betterlite-server/src/app/inference/chat_stream.rs
+  - crates/betterlite-server/src/app/inference/chat_stream/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/savings_baseline.py#L27-L162

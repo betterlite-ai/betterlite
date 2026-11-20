@@ -12,7 +12,9 @@ description: 'Implement benchmark and per-key session read endpoints over B387 a
   services instead of copying their algorithms. Function coverage in litellm/proxy/management_endpoints/auto_router_endpoints.py:
   get_auto_router_benchmarks (L846-L907), get_auto_router_session (L916-L959). Implement these behaviors
   through the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
-  instead of separate ports. B1100 registers routes/auto_router_read_api.rs as a stub, so fill only crates/betterlite-server/src/routes/auto_router_read_api.rs and leave routes.rs and state.rs as they are.'
+  instead of separate ports. B1100 registers routes/auto_router_read_api.rs as a stub, so fill only crates/betterlite-server/src/routes/auto_router_read_api.rs and leave routes.rs and state.rs as they are.
+
+  Dashboard page query. The cost optimization page sends GET /auto_router/benchmarks with benchmarksWindow''s dates and optional api_key and user_id, and reads groups and totals even when no router rollup exists. benchmarksWindow extends an interval ending today to UTC today only when UTC today is past the local date (useAutoRouterBenchmarks.ts L6-L37). Send that concrete query through the booted proxy in tools/oracle/cases/ui/cost/benchmarks-window-query.yaml; B9743 freezes the boundary in its component test.'
 scope:
   paths:
   - crates/betterlite-server/src/auto_router_read_api.rs
@@ -29,6 +31,7 @@ scope:
   - tools/oracle/helpers/b355/**
   - tools/oracle/src/helpers/server/b355.rs
   - tools/oracle/src/helpers/server/b355/**
+  - tools/oracle/cases/ui/cost/benchmarks-window-query.yaml
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L840-L959
@@ -54,6 +57,8 @@ dod:
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
+- text: "The cost optimization page's benchmarks query matches LiteLLM through the booted proxy, with and without a router rollup."
+  proof: [oracle]
 checks:
   optional:
   - mutants
@@ -78,6 +83,7 @@ oracle_cases:
 - tools/oracle/cases/routing/auto-router-read-api/session-key-isolation.yaml
 - tools/oracle/cases/routing/auto-router-read-api/bounded-session-lookup.yaml
 - tools/oracle/cases/routing/auto-router-read-api/pending-rollup-404.yaml
+- tools/oracle/cases/ui/cost/benchmarks-window-query.yaml
 deviations: []
 out_of_scope:
 - Dashboard rendering or full spend-log export.

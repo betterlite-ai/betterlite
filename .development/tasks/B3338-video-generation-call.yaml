@@ -49,6 +49,10 @@ description: >-
 
   The Python overloads (avideo_generation flag true or false) are typing only. In Rust, expose two entry points that share
   one private implementation, and no flag argument.
+  Health check. B4449's `NativeHealthBackend` (crates/betterlite-server/src/health_native_backend) lands first and answers
+  the video_generation mode with `HealthProbeError` naming it as not built. Once this task is merged, add its field to
+  NativeHealthBackend and replace that answer with a call to this task's entry, converting B4440's call arguments in
+  and the reply out with hidden params headers carried over, as B4449 does for the other modes.
 scope:
   paths:
     - crates/betterlite-core/src/api/video_generation_call.rs
@@ -59,6 +63,8 @@ scope:
     - tools/oracle/helpers/b3338/**
     - tools/oracle/src/helpers/core_ops/b3338.rs
     - tools/oracle/src/helpers/core_ops/b3338/**
+    - crates/betterlite-server/src/health_native_backend.rs
+    - crates/betterlite-server/src/health_native_backend/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L33-L116

@@ -1,0 +1,20 @@
+kind: helper
+name: extract-blocked-assessments-grounding-policy
+call:
+  b3722:
+    bedrock_decisions:
+      blocked_assessments:
+        response:
+          assessments:
+            - contextualGroundingPolicy:
+                filters:
+                  - type: GROUNDING
+                    threshold: 0.75
+                    score: 0.5
+                    action: BLOCKED
+                  - type: RELEVANCE
+                    threshold: 0.5
+                    score: 0.9
+                    action: BLOCKED
+env: {}
+compare: {ignore: []}

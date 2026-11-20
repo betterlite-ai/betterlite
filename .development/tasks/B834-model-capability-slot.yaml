@@ -49,6 +49,11 @@ description: >-
   Native-only deviation tests in this production module: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.
   Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
   do not add these differing results to oracle equality cases.
+
+  B1215 (POST /model/new, crates/betterlite-server/src/model_create) and B835 (PATCH, model_patch) land first and
+  write through the plain model table, the same table the slot yields with no member auto-router write. Once this
+  module is merged, wrap both writes in AutoRouterCapabilitySlot with the effective params, the model id and the
+  member write, as LiteLLM's add_new_model and patch_model do (model_management_endpoints.py L2476 and L1235).
 scope:
   paths:
     - crates/betterlite-server/src/model_capability_slot.rs
@@ -63,6 +68,10 @@ scope:
     - tools/oracle/fuzz/corpus/helper_case/model-capability-slot-*
     - crates/betterlite-server/src/model_capability_slot/fixtures.rs
     - crates/betterlite-server/src/model_capability_slot/fixtures/**
+    - crates/betterlite-server/src/model_create.rs
+    - crates/betterlite-server/src/model_create/**
+    - crates/betterlite-server/src/model_patch.rs
+    - crates/betterlite-server/src/model_patch/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L521-L675
