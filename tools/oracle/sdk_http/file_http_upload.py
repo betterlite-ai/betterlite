@@ -172,7 +172,7 @@ class FixtureLogging(Logging):
     observed: dict[str, JsonValue] | None
 
     def __init__(self) -> None:
-        super().__init__(model="", messages="", stream=False, call_type="create_file", start_time=datetime(2026, 1, 1, tzinfo=UTC), litellm_call_id="file-http-upload", function_id="file-http-upload")  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L556  # noqa: E501
+        super().__init__(model="", messages="", stream=False, call_type="create_file", start_time=datetime(2026, 1, 1, tzinfo=UTC), litellm_call_id="file-http-upload", function_id="file-http-upload")  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L556  # noqa: E501
         self.observed = None
 
     @override
@@ -213,7 +213,7 @@ class FixtureConfig(MistralFilesConfig):
         return transformed_value(self.case.plan, self.api_base.removesuffix("/v1"))
 
     @override
-    def transform_create_file_response(
+    def transform_create_file_response(  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/files/transformation.py#L187  # noqa: E501
         self, model: str | None, raw_response: httpx.Response, logging_obj: Logging,
         litellm_params: dict[str, JsonValue],  # type: ignore[override]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/files/transformation.py#L187
     ) -> OpenAIFileObject:
@@ -259,7 +259,7 @@ def run_upload(case: UploadCall, api_base: str) -> Outcome:
         "purpose": "batch",
     }
     try:
-        work = BaseLLMHTTPHandler().create_file(
+        work = BaseLLMHTTPHandler().create_file(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L3437  # noqa: E501
             create_file_data=create_file_data,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1283
             litellm_params=dict[str, JsonValue](case.litellm_params),
             provider_config=FixtureConfig(case, api_base),
