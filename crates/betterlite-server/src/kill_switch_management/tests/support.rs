@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, VecDeque};
+use std::future::{self, Future};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -133,38 +134,46 @@ impl KillSwitchHttpClient for FakeClient {
         request: &KillSwitchRequest,
         timeout: Duration,
     ) -> Result<BuiltRequest, FakeError> {
-        match &self.build_error {
-            Some(message) => Err(FakeError {
-                message: message.clone(),
-            }),
-            None => Ok(BuiltRequest {
-                request: request.clone(),
-                timeout,
-            }),
-        }
+        self.build_error.as_ref().map_or_else(
+            || {
+                Ok(BuiltRequest {
+                    request: request.clone(),
+                    timeout,
+                })
+            },
+            |message| {
+                Err(FakeError {
+                    message: message.clone(),
+                })
+            },
+        )
     }
 
-    async fn send(
+    fn send(
         &self,
         request: BuiltRequest,
         options: KillSwitchSendOptions,
-    ) -> Result<FakeResponse, FakeError> {
+    ) -> impl Future<Output = Result<FakeResponse, FakeError>> + Send {
         lock(&self.sent).push(Sent {
             request: request.request,
             timeout: request.timeout,
             options,
         });
-        match &self.send_error {
-            Some(message) => Err(FakeError {
-                message: message.clone(),
-            }),
-            None => Ok(FakeResponse {
-                status: self.status,
-                chunks: self.chunks.iter().cloned().collect(),
-                close_error: self.close_error.clone(),
-                probe: Arc::clone(&self.probe),
-            }),
-        }
+        future::ready(self.send_error.as_ref().map_or_else(
+            || {
+                Ok(FakeResponse {
+                    status: self.status,
+                    chunks: self.chunks.iter().cloned().collect(),
+                    close_error: self.close_error.clone(),
+                    probe: Arc::clone(&self.probe),
+                })
+            },
+            |message| {
+                Err(FakeError {
+                    message: message.clone(),
+                })
+            },
+        ))
     }
 }
 
@@ -175,23 +184,26 @@ impl KillSwitchResponse for FakeResponse {
         self.status
     }
 
-    async fn next_text_chunk(&mut self) -> Option<Result<String, FakeError>> {
+    fn next_text_chunk(
+        &mut self,
+    ) -> impl Future<Output = Option<Result<String, FakeError>>> + Send {
         let chunk = self.chunks.pop_front();
         let mut probe = lock(&self.probe);
         let read = probe.chunks_read.saturating_add(1);
         probe.chunks_read = read;
         drop(probe);
-        chunk.map(|result| result.map_err(|message| FakeError { message }))
+        future::ready(chunk.map(|result| result.map_err(|message| FakeError { message })))
     }
 
-    async fn close(&mut self) -> Result<(), FakeError> {
+    fn close(&mut self) -> impl Future<Output = Result<(), FakeError>> + Send {
         let mut probe = lock(&self.probe);
         probe.closed = true;
         drop(probe);
-        match self.close_error.take() {
-            Some(message) => Err(FakeError { message }),
-            None => Ok(()),
-        }
+        future::ready(
+            self.close_error
+                .take()
+                .map_or(Ok(()), |message| Err(FakeError { message })),
+        )
     }
 }
 

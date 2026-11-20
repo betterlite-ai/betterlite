@@ -146,6 +146,8 @@ async fn delivering_sends_without_redirects_and_with_streaming() {
             follow_redirects: false,
         }
     );
+    assert_eq!(sent.request.url, "https://agent.example/stop");
+    assert_eq!(sent.request.method, AgentKillSwitchMethod::Post);
 }
 
 #[tokio::test]
@@ -161,7 +163,8 @@ async fn delivering_uses_the_default_timeout_of_ten_seconds() {
 async fn delivering_uses_the_timeout_it_is_given() {
     let client = FakeClient::scripted(200, Vec::new());
     let config = config_with_auth(None);
-    fire_kill_switch("agent-1", &config, &client, Duration::from_secs(3)).await;
+    let result = fire_kill_switch("agent-1", &config, &client, Duration::from_secs(3)).await;
+    assert!(result.succeeded());
     let sent = first_sent(&client).expect("the request is sent");
     assert_eq!(sent.timeout, Duration::from_secs(3));
 }
@@ -203,7 +206,7 @@ async fn delivering_stops_reading_once_the_cap_is_reached() {
 
 #[tokio::test]
 async fn delivering_counts_the_cap_in_characters_not_bytes() {
-    let client = FakeClient::scripted(200, vec![Ok("é".repeat(2100))]);
+    let client = FakeClient::scripted(200, vec![Ok("\u{e9}".repeat(2100))]);
     let result = fire_agent(&client).await;
     let body = result.response_body.expect("a body is read");
     assert_eq!(body.chars().count(), RESPONSE_BODY_MAX_CHARS);
@@ -306,7 +309,7 @@ async fn delivering_ignores_a_read_error_after_the_cap() {
 #[tokio::test]
 async fn delivering_records_an_invalid_url_as_an_error() {
     let mut config = config_with_auth(None);
-    config.url = String::from("not a url");
+    config.url = String::from("https://agent.example/stop\n");
     let client = FakeClient::scripted(200, Vec::new());
     let result = fire_kill_switch("agent-1", &config, &client, DEFAULT_TIMEOUT).await;
     let Some(error) = result.error.as_deref() else {
