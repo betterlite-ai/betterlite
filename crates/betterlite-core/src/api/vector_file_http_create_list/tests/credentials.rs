@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use rstest::rstest;
 use secrecy::SecretString;
 
 use super::support::{
@@ -13,6 +14,12 @@ use crate::api::vector_file_http_create_list::config::FilesParams;
 use crate::api::vector_file_http_create_list::service::{
     ClientKind, CreateCall, FileCall, FileDeps, ListCall,
 };
+
+#[derive(Clone, Copy, Debug)]
+enum CallerHeaders {
+    Missing,
+    Empty,
+}
 
 fn provider_params(api_base: &str) -> FilesParams {
     FilesParams {
@@ -86,17 +93,20 @@ async fn create_list_credentials() {
     assert_eq!(events.recorded(), ["log", "send", "log", "send"]);
     let requests = wire.requests();
     assert_eq!(requests.len(), 2);
-    for sent in requests.iter() {
+    assert!(requests.iter().all(|sent| {
         let header = |name: &str| sent.headers.get(name).and_then(|value| value.to_str().ok());
-        assert_eq!(header("authorization"), Some("Bearer sk-provider"));
-        assert_eq!(header("content-type"), Some("application/json"));
-        assert_eq!(header("openai-beta"), Some("assistants=v1"));
-        assert_eq!(header("x-trace"), Some("x"));
-    }
+        header("authorization") == Some("Bearer sk-provider")
+            && header("content-type") == Some("application/json")
+            && header("openai-beta") == Some("assistants=v1")
+            && header("x-trace") == Some("x")
+    }));
 }
 
+#[rstest]
+#[case::no_caller_headers(CallerHeaders::Missing)]
+#[case::empty_caller_headers(CallerHeaders::Empty)]
 #[tokio::test]
-async fn list_without_caller_headers_adds_v2_beta() {
+async fn list_without_caller_headers_adds_v2_beta(#[case] caller: CallerHeaders) {
     let settings = openai_settings();
     let config = openai_config(&settings, "sk-env");
     let events = Events::new();
@@ -114,30 +124,31 @@ async fn list_without_caller_headers_adds_v2_beta() {
         headers: Some(&empty),
         ..CallRequest::new("vs_a", &files)
     };
+    let request = match caller {
+        CallerHeaders::Missing => &plain,
+        CallerHeaders::Empty => &blank,
+    };
     let query: IndexMap<String, Json> = IndexMap::new();
     let original = file_params("{}");
     let mut fixture = Fixture::new("vector_store_file_list");
-    for request in [&plain, &blank] {
-        let call = FileCall::List(ListCall {
-            target: request.target(),
-            query_params: &original,
-            extra_query: Some(&query),
-        });
-        run(
-            &mut fixture,
-            &deps,
-            ClientKind::Asynchronous,
-            &call,
-            &events,
-        )
-        .await
-        .expect("the list succeeds");
-    }
+    let call = FileCall::List(ListCall {
+        target: request.target(),
+        query_params: &original,
+        extra_query: Some(&query),
+    });
+    run(
+        &mut fixture,
+        &deps,
+        ClientKind::Asynchronous,
+        &call,
+        &events,
+    )
+    .await
+    .expect("the list succeeds");
     let requests = wire.requests();
-    assert_eq!(requests.len(), 2);
-    for sent in requests.iter() {
-        let header = |name: &str| sent.headers.get(name).and_then(|value| value.to_str().ok());
-        assert_eq!(header("openai-beta"), Some("assistants=v2"));
-        assert_eq!(header("authorization"), Some("Bearer sk-provider"));
-    }
+    assert_eq!(requests.len(), 1);
+    let sent = &requests[0];
+    let header = |name: &str| sent.headers.get(name).and_then(|value| value.to_str().ok());
+    assert_eq!(header("openai-beta"), Some("assistants=v2"));
+    assert_eq!(header("authorization"), Some("Bearer sk-provider"));
 }

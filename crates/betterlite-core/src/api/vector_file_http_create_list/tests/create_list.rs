@@ -1,6 +1,7 @@
 use betterlite_models::decisions::Json;
 use http::Method;
 use indexmap::IndexMap;
+use rstest::rstest;
 
 use super::support::{
     CallRequest, Events, Fixture, Reply, Source, Wire, body_bytes, body_json, extra, file_params,
@@ -89,8 +90,19 @@ async fn create_overlay_before_cleaning() {
     );
 }
 
+#[derive(Clone, Copy, Debug)]
+enum AttributeOverlay {
+    Capped,
+    Listed,
+    Empty,
+}
+
+#[rstest]
+#[case::capped(AttributeOverlay::Capped)]
+#[case::listed(AttributeOverlay::Listed)]
+#[case::empty(AttributeOverlay::Empty)]
 #[tokio::test]
-async fn create_cleans_attributes_after_the_overlay() {
+async fn create_cleans_attributes_after_the_overlay(#[case] overlay: AttributeOverlay) {
     let settings = openai_settings();
     let config = openai_config(&settings, "sk-provider");
     let events = Events::new();
@@ -104,44 +116,51 @@ async fn create_cleans_attributes_after_the_overlay() {
     let files = params("http://mock.test/v1");
     let request = CallRequest::new("vs_a", &files);
     let original = file_params(r#"{"file_id":"old"}"#);
-    let mut many = String::from(r#"{"attributes":{"#);
-    for index in (1..=18_u32).rev() {
-        many.push_str(&format!(r#""k{index:02}":"v{index}","#));
-    }
-    many.push_str(r#""kept_number":2,"hidden_params":"secret"}}"#);
+    let entries = (1..=18_u32)
+        .rev()
+        .map(|index| format!(r#""k{index:02}":"v{index}","#))
+        .collect::<String>();
+    let many = format!(r#"{{"attributes":{{{entries}"kept_number":2,"hidden_params":"secret"}}}}"#);
     let capped = extra(&many);
     let listed = extra(r#"{"attributes":["a","b"]}"#);
     let empty = extra(r#"{"attributes":{}}"#);
+    let chosen = match overlay {
+        AttributeOverlay::Capped => &capped,
+        AttributeOverlay::Listed => &listed,
+        AttributeOverlay::Empty => &empty,
+    };
     let mut fixture = Fixture::new("vector_store_file_create");
-    for overlay in [&capped, &listed, &empty] {
-        let call = FileCall::Create(CreateCall {
-            target: request.target(),
-            create_request: &original,
-            extra_body: Some(overlay),
-        });
-        run(&mut fixture, &deps, ClientKind::Sync, &call, &events)
-            .await
-            .expect("the create succeeds");
-    }
+    let call = FileCall::Create(CreateCall {
+        target: request.target(),
+        create_request: &original,
+        extra_body: Some(chosen),
+    });
+    run(&mut fixture, &deps, ClientKind::Sync, &call, &events)
+        .await
+        .expect("the create succeeds");
     let requests = wire.requests();
-    assert_eq!(requests.len(), 3);
-    let Json::Object(first) = body_json(&requests[0]) else {
-        panic!("the body is an object");
-    };
-    let Some(Json::Object(attributes)) = first.get("attributes") else {
-        panic!("the attributes are an object");
-    };
-    assert_eq!(attributes.len(), 16);
-    assert_eq!(attributes.keys().next().map(String::as_str), Some("k18"));
-    assert_eq!(attributes.keys().last().map(String::as_str), Some("k03"));
-    assert_eq!(
-        body_json(&requests[1]),
-        json(r#"{"file_id":"old","attributes":["a","b"]}"#)
-    );
-    assert_eq!(
-        body_json(&requests[2]),
-        json(r#"{"file_id":"old","attributes":{}}"#)
-    );
+    assert_eq!(requests.len(), 1);
+    match overlay {
+        AttributeOverlay::Capped => {
+            let Json::Object(first) = body_json(&requests[0]) else {
+                panic!("the body is an object");
+            };
+            let Some(Json::Object(attributes)) = first.get("attributes") else {
+                panic!("the attributes are an object");
+            };
+            assert_eq!(attributes.len(), 16);
+            assert_eq!(attributes.keys().next().map(String::as_str), Some("k18"));
+            assert_eq!(attributes.keys().last().map(String::as_str), Some("k03"));
+        }
+        AttributeOverlay::Listed => assert_eq!(
+            body_json(&requests[0]),
+            json(r#"{"file_id":"old","attributes":["a","b"]}"#)
+        ),
+        AttributeOverlay::Empty => assert_eq!(
+            body_json(&requests[0]),
+            json(r#"{"file_id":"old","attributes":{}}"#)
+        ),
+    }
 }
 
 #[tokio::test]
@@ -218,14 +237,15 @@ async fn list_query_overlay() {
     ];
     assert_eq!(requests[1].query, plain_query);
     assert_eq!(requests[2].query, plain_query);
-    for sent in requests.iter() {
-        assert_eq!(body_bytes(sent), None);
-    }
+    assert!(requests.iter().all(|sent| body_bytes(sent).is_none()));
 }
 
 // a query string carries text, so a nested value is refused by name instead of being stringified
+#[rstest]
+#[case::filter_object(r#"{"filter":{"status":"completed"}}"#, "filter")]
+#[case::nested_list(r#"{"order":[["asc"]]}"#, "order")]
 #[tokio::test]
-async fn list_rejects_nested_query_values() {
+async fn list_rejects_nested_query_values(#[case] nested: &str, #[case] key: &str) {
     let settings = openai_settings();
     let config = openai_config(&settings, "sk-provider");
     let events = Events::new();
@@ -239,22 +259,17 @@ async fn list_rejects_nested_query_values() {
     let files = params("http://mock.test/v1");
     let request = CallRequest::new("vs_a", &files);
     let original = file_params("{}");
-    let nested = [
-        extra(r#"{"filter":{"status":"completed"}}"#),
-        extra(r#"{"order":[["asc"]]}"#),
-    ];
+    let overlay = extra(nested);
     let mut fixture = Fixture::new("vector_store_file_list");
-    for (overlay, key) in nested.iter().zip(["filter", "order"]) {
-        let call = FileCall::List(ListCall {
-            target: request.target(),
-            query_params: &original,
-            extra_query: Some(overlay),
-        });
-        let result = run(&mut fixture, &deps, ClientKind::Sync, &call, &events).await;
-        let Err(FileTransportError::QueryValue { name }) = result else {
-            panic!("a nested query value is a typed error");
-        };
-        assert_eq!(name, key);
-    }
+    let call = FileCall::List(ListCall {
+        target: request.target(),
+        query_params: &original,
+        extra_query: Some(&overlay),
+    });
+    let result = run(&mut fixture, &deps, ClientKind::Sync, &call, &events).await;
+    let Err(FileTransportError::QueryValue { name }) = result else {
+        panic!("a nested query value is a typed error");
+    };
+    assert_eq!(name, key);
     assert!(wire.requests().is_empty());
 }

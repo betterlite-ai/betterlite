@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::serve;
+use rstest::rstest;
 
 use super::support::{
     CallRequest, Events, Fixture, IMPATIENT, ProxiedSource, RecordingConfig, Reply, Source, Wire,
@@ -13,8 +14,16 @@ use crate::api::vector_file_http_create_list::service::{
     ClientKind, CreateCall, FileCall, FileDeps, ListCall,
 };
 
+#[rstest]
+#[case::sync_timed(ClientKind::Sync, Some(Duration::from_secs(7)))]
+#[case::sync_plain(ClientKind::Sync, None)]
+#[case::async_timed(ClientKind::Asynchronous, Some(Duration::from_secs(7)))]
+#[case::async_plain(ClientKind::Asynchronous, None)]
 #[tokio::test]
-async fn create_passes_timeout_in_both_modes() {
+async fn create_passes_timeout_in_both_modes(
+    #[case] mode: ClientKind,
+    #[case] timeout: Option<Duration>,
+) {
     let settings = openai_settings();
     let config = openai_config(&settings, "sk-provider");
     let events = Events::new();
@@ -26,35 +35,32 @@ async fn create_passes_timeout_in_both_modes() {
         supplied: None,
     };
     let files = params("http://mock.test/v1");
-    let timed = CallRequest {
-        timeout: Some(Duration::from_secs(7)),
+    let request = CallRequest {
+        timeout,
         ..CallRequest::new("vs_a", &files)
     };
-    let plain = CallRequest::new("vs_a", &files);
     let original = file_params(r#"{"file_id":"file_a"}"#);
     let mut fixture = Fixture::new("vector_store_file_create");
-    for mode in [ClientKind::Sync, ClientKind::Asynchronous] {
-        for request in [&timed, &plain] {
-            let call = FileCall::Create(CreateCall {
-                target: request.target(),
-                create_request: &original,
-                extra_body: None,
-            });
-            run(&mut fixture, &deps, mode, &call, &events)
-                .await
-                .expect("the create succeeds");
-        }
-    }
+    let call = FileCall::Create(CreateCall {
+        target: request.target(),
+        create_request: &original,
+        extra_body: None,
+    });
+    run(&mut fixture, &deps, mode, &call, &events)
+        .await
+        .expect("the create succeeds");
     let requests = wire.requests();
-    assert_eq!(requests.len(), 4);
-    assert_eq!(requests[0].timeout, Some(Duration::from_secs(7)));
-    assert_eq!(requests[1].timeout, None);
-    assert_eq!(requests[2].timeout, Some(Duration::from_secs(7)));
-    assert_eq!(requests[3].timeout, None);
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].timeout, timeout);
 }
 
+#[rstest]
+#[case::sync_timed(ClientKind::Sync, Some(Duration::from_secs(7)))]
+#[case::sync_plain(ClientKind::Sync, None)]
+#[case::async_timed(ClientKind::Asynchronous, Some(Duration::from_secs(7)))]
+#[case::async_plain(ClientKind::Asynchronous, None)]
 #[tokio::test]
-async fn list_never_passes_timeout() {
+async fn list_never_passes_timeout(#[case] mode: ClientKind, #[case] timeout: Option<Duration>) {
     let settings = openai_settings();
     let config = openai_config(&settings, "sk-provider");
     let events = Events::new();
@@ -66,30 +72,23 @@ async fn list_never_passes_timeout() {
         supplied: None,
     };
     let files = params("http://mock.test/v1");
-    let timed = CallRequest {
-        timeout: Some(Duration::from_secs(7)),
+    let request = CallRequest {
+        timeout,
         ..CallRequest::new("vs_a", &files)
     };
-    let plain = CallRequest::new("vs_a", &files);
     let query = file_params(r#"{"limit":2}"#);
     let mut fixture = Fixture::new("vector_store_file_list");
-    for mode in [ClientKind::Sync, ClientKind::Asynchronous] {
-        for request in [&timed, &plain] {
-            let call = FileCall::List(ListCall {
-                target: request.target(),
-                query_params: &query,
-                extra_query: None,
-            });
-            run(&mut fixture, &deps, mode, &call, &events)
-                .await
-                .expect("the list succeeds");
-        }
-    }
+    let call = FileCall::List(ListCall {
+        target: request.target(),
+        query_params: &query,
+        extra_query: None,
+    });
+    run(&mut fixture, &deps, mode, &call, &events)
+        .await
+        .expect("the list succeeds");
     let requests = wire.requests();
-    assert_eq!(requests.len(), 4);
-    for sent in requests.iter() {
-        assert_eq!(sent.timeout, None);
-    }
+    assert_eq!(requests.len(), 1);
+    assert!(requests[0].timeout.is_none());
 }
 
 #[tokio::test]

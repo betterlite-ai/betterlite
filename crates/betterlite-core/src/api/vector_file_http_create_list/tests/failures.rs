@@ -3,6 +3,7 @@ use std::time::Duration;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::vector_file_contracts::records::FileParams;
+use rstest::rstest;
 
 use super::support::{
     CallRequest, Events, Fixture, RecordingConfig, Reply, Source, Wire, caller_headers,
@@ -11,7 +12,7 @@ use super::support::{
 use super::{FILE, json, run};
 use crate::api::vector_file_http_create_list::error::FileTransportError;
 use crate::api::vector_file_http_create_list::service::{
-    ClientKind, CreateCall, FileCall, FileDeps, ListCall, SuppliedClient,
+    ClientKind, CreateCall, FileCall, FileDeps, ListCall, Operation, SuppliedClient,
 };
 use crate::api::vector_store_http_write::error::HeaderMap;
 
@@ -26,86 +27,88 @@ fn create_call<'call>(
     })
 }
 
+#[rstest]
+#[case::sync(ClientKind::Sync)]
+#[case::asynchronous(ClientKind::Asynchronous)]
 #[tokio::test]
-async fn create_list_failure_boundaries() {
-    for mode in [ClientKind::Sync, ClientKind::Asynchronous] {
-        let settings = openai_settings();
-        let config = openai_config(&settings, "sk-provider");
-        let events = Events::new();
-        let wire = Wire::replying(
-            Reply::json(429, "slow down")
-                .with_header("retry-after", "3")
-                .with_header("content-type", "text/plain")
-                .with_header("content-length", "9"),
-            &events,
-        );
-        let source = Source::new(wire.clone());
-        let deps = FileDeps {
-            config: &config,
-            source: &source,
-            supplied: None,
-        };
-        let files = params("http://mock.test/v1");
-        let request = CallRequest::new("vs_a", &files);
-        let original = file_params(r#"{"file_id":"file_a"}"#);
-        let mut fixture = Fixture::new("vector_store_file_create");
-        let call = create_call(&request, &original);
-        let result = run(&mut fixture, &deps, mode, &call, &events).await;
-        let Err(FileTransportError::Provider(error)) = result else {
-            panic!("a 429 is a provider error");
-        };
-        assert_eq!(error.status_code, 429);
-        assert!(!error.status_code_is_synthesized);
-        assert_eq!(error.message, "slow down");
-        assert_eq!(
-            error.headers,
-            HeaderMap::from([
-                ("content-length".to_owned(), Json::Text("9".to_owned()),),
-                (
-                    "content-type".to_owned(),
-                    Json::Text("text/plain".to_owned()),
-                ),
-                ("retry-after".to_owned(), Json::Text("3".to_owned())),
-            ])
-        );
-        assert_eq!(wire.requests().len(), 1);
-    }
+async fn create_list_failure_boundaries(#[case] mode: ClientKind) {
+    let settings = openai_settings();
+    let config = openai_config(&settings, "sk-provider");
+    let events = Events::new();
+    let wire = Wire::replying(
+        Reply::json(429, "slow down")
+            .with_header("retry-after", "3")
+            .with_header("content-type", "text/plain")
+            .with_header("content-length", "9"),
+        &events,
+    );
+    let source = Source::new(wire.clone());
+    let deps = FileDeps {
+        config: &config,
+        source: &source,
+        supplied: None,
+    };
+    let files = params("http://mock.test/v1");
+    let request = CallRequest::new("vs_a", &files);
+    let original = file_params(r#"{"file_id":"file_a"}"#);
+    let mut fixture = Fixture::new("vector_store_file_create");
+    let call = create_call(&request, &original);
+    let result = run(&mut fixture, &deps, mode, &call, &events).await;
+    let Err(FileTransportError::Provider(error)) = result else {
+        panic!("a 429 is a provider error");
+    };
+    assert_eq!(error.status_code, 429);
+    assert!(!error.status_code_is_synthesized);
+    assert_eq!(error.message, "slow down");
+    assert_eq!(
+        error.headers,
+        HeaderMap::from([
+            ("content-length".to_owned(), Json::Text("9".to_owned()),),
+            (
+                "content-type".to_owned(),
+                Json::Text("text/plain".to_owned()),
+            ),
+            ("retry-after".to_owned(), Json::Text("3".to_owned())),
+        ])
+    );
+    assert_eq!(wire.requests().len(), 1);
 }
 
+#[rstest]
+#[case::sync(ClientKind::Sync)]
+#[case::asynchronous(ClientKind::Asynchronous)]
 #[tokio::test]
-async fn send_failure_becomes_a_synthesized_500() {
+async fn send_failure_becomes_a_synthesized_500(#[case] mode: ClientKind) {
     let settings = openai_settings();
     let config = openai_config(&settings, "sk-provider");
     let original = file_params(r#"{"file_id":"file_a"}"#);
     let files = params("http://mock.test/v1");
     let request = CallRequest::new("vs_a", &files);
     let mut fixture = Fixture::new("vector_store_file_create");
-    for mode in [ClientKind::Sync, ClientKind::Asynchronous] {
-        let events = Events::new();
-        let wire = Wire::failing(TransportError::Closed, &events);
-        let source = Source::new(wire.clone());
-        let deps = FileDeps {
-            config: &config,
-            source: &source,
-            supplied: None,
-        };
-        let result = run(
-            &mut fixture,
-            &deps,
-            mode,
-            &create_call(&request, &original),
-            &events,
-        )
-        .await;
-        let Err(FileTransportError::Provider(error)) = result else {
-            panic!("a failed send is a provider error");
-        };
-        assert_eq!(error.status_code, 500);
-        assert!(error.status_code_is_synthesized);
-        assert_eq!(error.message, TransportError::Closed.to_string());
-        assert!(error.headers.is_empty());
-        assert_eq!(wire.requests().len(), 1);
-    }
+    let events = Events::new();
+    let wire = Wire::failing(TransportError::Closed, &events);
+    let source = Source::new(wire.clone());
+    let deps = FileDeps {
+        config: &config,
+        source: &source,
+        supplied: None,
+    };
+    let result = run(
+        &mut fixture,
+        &deps,
+        mode,
+        &create_call(&request, &original),
+        &events,
+    )
+    .await;
+    let Err(FileTransportError::Provider(error)) = result else {
+        panic!("a failed send is a provider error");
+    };
+    assert_eq!(error.status_code, 500);
+    assert!(error.status_code_is_synthesized);
+    assert_eq!(error.message, TransportError::Closed.to_string());
+    assert!(error.headers.is_empty());
+    assert_eq!(wire.requests().len(), 1);
 }
 
 #[tokio::test]
@@ -137,8 +140,11 @@ async fn list_status_error_body_is_a_result() {
     assert_eq!(wire.requests().len(), 1);
 }
 
+#[rstest]
+#[case::create(Operation::Create)]
+#[case::list(Operation::List)]
 #[tokio::test]
-async fn malformed_reply_fails_outside_handle_error() {
+async fn malformed_reply_fails_outside_handle_error(#[case] operation: Operation) {
     let settings = openai_settings();
     let config = openai_config(&settings, "sk-provider");
     let events = Events::new();
@@ -157,34 +163,33 @@ async fn malformed_reply_fails_outside_handle_error() {
     let original = file_params(r#"{"file_id":"file_a"}"#);
     let query = file_params(r#"{"limit":2}"#);
     let mut fixture = Fixture::new("vector_store_file_create");
-    for call in [
-        create_call(&request, &original),
-        FileCall::List(ListCall {
+    let call = match operation {
+        Operation::Create => create_call(&request, &original),
+        Operation::List => FileCall::List(ListCall {
             target: request.target(),
             query_params: &query,
             extra_query: None,
         }),
-    ] {
-        let result = run(
-            &mut fixture,
-            &deps,
-            ClientKind::Asynchronous,
-            &call,
-            &events,
-        )
-        .await;
-        let Err(FileTransportError::Provider(error)) = result else {
-            panic!("an unparsable reply is a provider error");
-        };
-        assert_eq!(error.status_code, 200);
-        assert!(!error.status_code_is_synthesized);
-        assert_eq!(error.message, "vector store reply is not valid JSON");
-        assert_eq!(
-            error.headers.get("retry-after"),
-            Some(&Json::Text("3".to_owned()))
-        );
-    }
-    assert_eq!(wire.requests().len(), 2);
+    };
+    let result = run(
+        &mut fixture,
+        &deps,
+        ClientKind::Asynchronous,
+        &call,
+        &events,
+    )
+    .await;
+    let Err(FileTransportError::Provider(error)) = result else {
+        panic!("an unparsable reply is a provider error");
+    };
+    assert_eq!(error.status_code, 200);
+    assert!(!error.status_code_is_synthesized);
+    assert_eq!(error.message, "vector store reply is not valid JSON");
+    assert_eq!(
+        error.headers.get("retry-after"),
+        Some(&Json::Text("3".to_owned()))
+    );
+    assert_eq!(wire.requests().len(), 1);
 }
 
 // the decoder refuses a reply over its byte limit before parsing, where LiteLLM hands any size to response.json()
