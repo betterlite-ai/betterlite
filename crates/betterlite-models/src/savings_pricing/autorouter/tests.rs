@@ -211,6 +211,14 @@ fn compute_requires_baseline_usage_for_cache_buckets() {
         compute_autorouter_savings(&identity_context(), &input),
         Some(decimal("0"))
     );
+    let writes = cache_usage(0, 4);
+    let mut write_input = base_input(&writes, &database);
+    write_input.baseline_info = Some(&info);
+    write_input.selected_info = Some(&info);
+    assert_eq!(
+        compute_autorouter_savings(&identity_context(), &write_input),
+        None
+    );
 }
 
 fn observed_input<'a>(

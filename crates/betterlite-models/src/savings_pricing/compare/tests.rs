@@ -463,6 +463,10 @@ fn same_prices_compares_flat_values() {
     let different = record(r#"{"input_cost_per_token": 1e-5, "output_cost_per_token": 2}"#);
     let missing = record(r#"{"input_cost_per_token": 1e-6}"#);
     let nested = record(r#"{"tiered_pricing": [{"input_cost_per_token": 1e-6}]}"#);
+    let superset =
+        record(r#"{"input_cost_per_token": 1e-6, "output_cost_per_token": 2, "mode": "chat"}"#);
+    assert!(!same_prices(Some(&one), Some(&superset)));
+    assert!(!same_prices(Some(&superset), Some(&one)));
     assert!(same_prices(Some(&one), Some(&equivalent)));
     assert!(!same_prices(Some(&one), Some(&different)));
     assert!(!same_prices(Some(&one), Some(&missing)));
@@ -499,17 +503,17 @@ fn same_usage_compares_every_field() {
     assert!(same_usage(&base, &other));
     other.usage.prompt_tokens = 11;
     assert!(!same_usage(&base, &other));
-    let mut other = detailed_usage();
-    other.usage.completion_tokens_details = Some(Default::default());
-    assert!(!same_usage(&base, &other));
-    let mut other = detailed_usage();
-    if let Some(details) = other.usage.prompt_tokens_details.as_mut() {
+    let mut other_completion = detailed_usage();
+    other_completion.usage.completion_tokens_details = Some(Default::default());
+    assert!(!same_usage(&base, &other_completion));
+    let mut other_prompt = detailed_usage();
+    if let Some(details) = other_prompt.usage.prompt_tokens_details.as_mut() {
         details.cached_tokens = 9;
     }
-    assert!(!same_usage(&base, &other));
-    let mut other = detailed_usage();
-    other.cache_creation_token_details = Some(Default::default());
-    assert!(!same_usage(&base, &other));
+    assert!(!same_usage(&base, &other_prompt));
+    let mut other_ttl = detailed_usage();
+    other_ttl.cache_creation_token_details = Some(Default::default());
+    assert!(!same_usage(&base, &other_ttl));
 }
 
 #[test]

@@ -139,7 +139,7 @@ fn baseline_request_usage_keeps_priced_cache_buckets() {
 }
 
 #[test]
-fn baseline_request_usage_folds_unpriced_writes_into_text() {
+fn baseline_request_usage_folds_unpriced_writes_while_reads_stay_priced() {
     let mut original = usage(
         r#"{"prompt_tokens": 10, "cache_read_input_tokens": 4,
             "prompt_tokens_details": {"cache_write_tokens": 6}}"#,
