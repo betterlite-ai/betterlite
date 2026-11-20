@@ -537,6 +537,139 @@ fn metadata_answers_the_carried_response_status() {
     assert_eq!(metadata.code, "422");
 }
 
+fn budget_class(message: Option<&str>) -> ErrorClass {
+    ErrorClass::BudgetExceeded(Box::new(BudgetExceededDetails {
+        current_cost: Decimal::new(125, 1),
+        max_budget: Decimal::from(10_i32),
+        message: message.map(str::to_owned),
+        provider: "openai".to_owned(),
+        entity_type: None,
+        entity_id: None,
+        status_code: 422,
+    }))
+}
+
+fn json_schema_class() -> ErrorClass {
+    ErrorClass::JsonSchemaValidation(Box::new(SchemaValidationDetails {
+        model: "gpt-4".to_owned(),
+        provider: "openai".to_owned(),
+        raw_response: "{\"bad\": true}".to_owned(),
+        schema: "{\"type\": \"object\"}".to_owned(),
+    }))
+}
+
+#[rstest]
+#[case::authentication(
+    ErrorClass::Authentication(Box::new(ResponseDetails::from(context("bad key")))),
+    "bad key"
+)]
+#[case::not_found(
+    ErrorClass::NotFound(Box::new(ResponseDetails::from(context("no such model")))),
+    "no such model"
+)]
+#[case::permission_denied(
+    ErrorClass::PermissionDenied(Box::new(ResponseDetails::from(context("denied")))),
+    "denied"
+)]
+#[case::bad_request(
+    ErrorClass::BadRequest(Box::new(ResponseDetails::from(context("bad body")))),
+    "bad body"
+)]
+#[case::unprocessable_entity(
+    ErrorClass::UnprocessableEntity(Box::new(ResponseDetails::from(context("unprocessable")))),
+    "unprocessable"
+)]
+#[case::context_window_exceeded(
+    ErrorClass::ContextWindowExceeded(Box::new(ResponseDetails::from(context("too long")))),
+    "too long"
+)]
+#[case::content_policy_violation(
+    ErrorClass::ContentPolicyViolation(Box::new(ResponseDetails::from(context("policy")))),
+    "policy"
+)]
+#[case::guardrail_raised(
+    ErrorClass::GuardrailRaised(Box::new(GuardrailDetails {
+        guardrail_name: None,
+        message: "blocked".to_owned(),
+        status_code: 400,
+        blocked_content: true,
+    })),
+    "blocked"
+)]
+#[case::timeout(
+    ErrorClass::Timeout(Box::new(TimeoutDetails {
+        context: context("timed out"),
+        original_status: TimeoutStatus::default(),
+    })),
+    "timed out"
+)]
+#[case::rate_limit(
+    ErrorClass::RateLimit(Box::new(RateLimitDetails {
+        context: context("slow down"),
+        category: RateLimitCategory::LitellmRateLimit,
+        dimension: None,
+        headers: BTreeMap::new(),
+    })),
+    "slow down"
+)]
+#[case::budget_exceeded(budget_class(Some("over budget")), "over budget")]
+#[case::service_unavailable(
+    ErrorClass::ServiceUnavailable(Box::new(context("unavailable"))),
+    "unavailable"
+)]
+#[case::bad_gateway(ErrorClass::BadGateway(Box::new(context("gateway"))), "gateway")]
+#[case::internal_server(ErrorClass::InternalServer(Box::new(context("internal"))), "internal")]
+#[case::api(
+    ErrorClass::Api(Box::new(ApiDetails {
+        context: context("api failure"),
+        status: 500,
+    })),
+    "api failure"
+)]
+#[case::api_connection(
+    ErrorClass::ApiConnection(Box::new(context("connection"))),
+    "connection"
+)]
+#[case::api_response_validation(
+    ErrorClass::ApiResponseValidation(Box::new(context("validation"))),
+    "validation"
+)]
+#[case::json_schema_validation(
+    json_schema_class(),
+    r#"litellm.JSONSchemaValidationError: model=gpt-4, returned an invalid response={"bad": true}, for schema={"type": "object"}.
+Access raw response with `e.raw_response`"#
+)]
+#[case::unsupported_params(
+    ErrorClass::UnsupportedParams(Box::new(context("unknown kwarg"))),
+    "unknown kwarg"
+)]
+#[case::mid_stream_fallback(
+    ErrorClass::MidStreamFallback(Box::new(MidStreamFallbackDetails {
+        context: context("fallback"),
+        original_status: MidStreamStatus::default(),
+        generated_content: String::new(),
+        is_pre_first_chunk: true,
+    })),
+    "fallback"
+)]
+#[case::unclassified(ErrorClass::Unclassified(Box::new(context("plain"))), "plain")]
+fn message_reports_each_familys_constructed_text(
+    #[case] class: ErrorClass,
+    #[case] expected: &str,
+) {
+    assert_eq!(class.message(), expected);
+}
+
+#[rstest]
+#[case::absent(None)]
+#[case::empty(Some(""))]
+fn message_builds_the_budget_text_when_none_or_empty_was_given(#[case] message: Option<&str>) {
+    assert_eq!(
+        budget_class(message).message(),
+        "Budget has been exceeded! Current cost: 12.5, Max budget: 10"
+    );
+}
+
 #[rstest]
 #[case::authentication("authentication", 401)]
 #[case::not_found("not_found", 404)]

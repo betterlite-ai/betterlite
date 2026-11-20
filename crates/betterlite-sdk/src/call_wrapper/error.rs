@@ -2,7 +2,6 @@ use betterlite_error::error::{ErrorClass, ErrorContext};
 use betterlite_models::decisions::Json;
 use thiserror::Error;
 
-use super::messages::error_message;
 use crate::call_setup::credentials::CredentialError;
 use crate::call_setup::function_setup::CallSetupError;
 use crate::call_setup::hooks::HookError;
@@ -17,7 +16,7 @@ pub enum CallErrorKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[error("{}", error_message(.class))]
+#[error("{}", .class.message())]
 pub struct CallError {
     pub class: ErrorClass,
     pub kind: CallErrorKind,

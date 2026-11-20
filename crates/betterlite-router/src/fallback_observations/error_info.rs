@@ -1,6 +1,5 @@
 use betterlite_error::envelope::WireField;
 use betterlite_error::error::ErrorClass;
-use betterlite_error::error::details::{BudgetExceededDetails, SchemaValidationDetails};
 use betterlite_error::error::metadata::ErrorMetadata;
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_models::decisions::Json;
@@ -42,36 +41,36 @@ pub struct FamilyFields {
 
 #[must_use]
 pub fn family_fields(class: &ErrorClass) -> FamilyFields {
-    let (message, missing_type_name) = match class {
-        ErrorClass::Authentication(details) => (details.message.clone(), "Exception"),
-        ErrorClass::NotFound(details) => (details.message.clone(), "Exception"),
-        ErrorClass::PermissionDenied(details) => (details.message.clone(), "Exception"),
-        ErrorClass::UnprocessableEntity(details) => (details.message.clone(), "Exception"),
-        ErrorClass::BadRequest(details)
-        | ErrorClass::ContextWindowExceeded(details)
-        | ErrorClass::ContentPolicyViolation(details) => (details.message.clone(), "Exception"),
-        ErrorClass::GuardrailRaised(details) => {
-            (details.message.clone(), "GuardrailRaisedException")
-        }
-        ErrorClass::Timeout(details) => (details.context.message.clone(), "Exception"),
-        ErrorClass::RateLimit(details) => (details.context.message.clone(), "Exception"),
-        ErrorClass::BudgetExceeded(details) => (budget_message(details), "BudgetExceededError"),
-        ErrorClass::ServiceUnavailable(context)
-        | ErrorClass::BadGateway(context)
-        | ErrorClass::InternalServer(context)
-        | ErrorClass::ApiConnection(context)
-        | ErrorClass::ApiResponseValidation(context)
-        | ErrorClass::Unclassified(context) => (context.message.clone(), "Exception"),
-        ErrorClass::UnsupportedParams(context) => {
-            (context.message.clone(), "UnsupportedParamsError")
-        }
-        ErrorClass::Api(details) => (details.context.message.clone(), "Exception"),
-        ErrorClass::MidStreamFallback(details) => (details.context.message.clone(), "Exception"),
-        ErrorClass::JsonSchemaValidation(details) => (schema_message(details), "Exception"),
-    };
     FamilyFields {
-        message,
-        missing_type_name,
+        message: class.message(),
+        missing_type_name: missing_type_name(class),
+    }
+}
+
+// the class name getattr(error, "type", error.__class__.__name__) reports when the exception carries no type attribute
+const fn missing_type_name(class: &ErrorClass) -> &'static str {
+    match class {
+        ErrorClass::GuardrailRaised(_) => "GuardrailRaisedException",
+        ErrorClass::BudgetExceeded(_) => "BudgetExceededError",
+        ErrorClass::UnsupportedParams(_) => "UnsupportedParamsError",
+        ErrorClass::Authentication(_)
+        | ErrorClass::NotFound(_)
+        | ErrorClass::PermissionDenied(_)
+        | ErrorClass::UnprocessableEntity(_)
+        | ErrorClass::BadRequest(_)
+        | ErrorClass::ContextWindowExceeded(_)
+        | ErrorClass::ContentPolicyViolation(_)
+        | ErrorClass::Timeout(_)
+        | ErrorClass::RateLimit(_)
+        | ErrorClass::ServiceUnavailable(_)
+        | ErrorClass::BadGateway(_)
+        | ErrorClass::InternalServer(_)
+        | ErrorClass::ApiConnection(_)
+        | ErrorClass::ApiResponseValidation(_)
+        | ErrorClass::Unclassified(_)
+        | ErrorClass::Api(_)
+        | ErrorClass::MidStreamFallback(_)
+        | ErrorClass::JsonSchemaValidation(_) => "Exception",
     }
 }
 
@@ -97,31 +96,6 @@ fn code_text(class: &ErrorClass, metadata: &ErrorMetadata) -> Option<String> {
         return None;
     }
     Some(metadata.status_code.to_string())
-}
-
-// BudgetExceededError.__init__ replaces an absent or empty message with the costs it was given
-fn budget_message(details: &BudgetExceededDetails) -> String {
-    details
-        .message
-        .as_deref()
-        .filter(|message| !message.is_empty())
-        .map_or_else(
-            || {
-                format!(
-                    "Budget has been exceeded! Current cost: {}, Max budget: {}",
-                    details.current_cost, details.max_budget
-                )
-            },
-            str::to_owned,
-        )
-}
-
-// JSONSchemaValidationError.__init__ builds its message from the identity and the response it validated
-fn schema_message(details: &SchemaValidationDetails) -> String {
-    format!(
-        "litellm.JSONSchemaValidationError: model={}, returned an invalid response={}, for schema={}.\nAccess raw response with `e.raw_response`",
-        details.model, details.raw_response, details.schema
-    )
 }
 
 // get_fallback_errors_from_headers: a list keeps its object entries, a JSON string parses, anything else contributes nothing
