@@ -12,13 +12,7 @@ impl Section for Raw {
             .callback_settings
             .and_then(|settings| settings.otel)
             .unwrap_or_default();
-        references::resolve(&mut raw, lookup)?;
-        raw.exporters = structured_setting(lookup, "exporters", raw.exporters.take())?;
-        raw.resource_attributes = structured_setting(
-            lookup,
-            "resource_attributes",
-            raw.resource_attributes.take(),
-        )?;
+        resolve_raw(&mut raw, lookup)?;
         let core = CoreSettings::resolve(&raw, lookup)?;
         let exporters = resolve_exporters(&raw, &core);
         let mapper_names = resolve_mapper_names(&raw, lookup, core.legacy_compat);
@@ -51,6 +45,21 @@ impl Section for Raw {
             baggage_team_metadata_keys,
         })
     }
+}
+
+// the raw entries resolve before the typed fields: environment references first, then the structured lists
+fn resolve_raw<L>(raw: &mut RawOtel, lookup: &L) -> Result<(), ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    references::resolve(raw, lookup)?;
+    raw.exporters = structured_setting(lookup, "exporters", raw.exporters.take())?;
+    raw.resource_attributes = structured_setting(
+        lookup,
+        "resource_attributes",
+        raw.resource_attributes.take(),
+    )?;
+    Ok(())
 }
 
 struct CoreSettings {
