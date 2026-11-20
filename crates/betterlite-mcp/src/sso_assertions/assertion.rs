@@ -98,9 +98,7 @@ pub fn decode_payload(text: &str) -> Result<SsoIdentityAssertion, AssertionError
         id_token: SecretString::from(payload.id_token),
         refresh_token: payload
             .refresh_token
-            .as_deref()
             .filter(|value| !value.is_empty())
-            .map(str::to_owned)
             .map(SecretString::from),
         issuer: payload.issuer,
         expires_at,
