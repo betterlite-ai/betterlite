@@ -133,12 +133,12 @@ fn operation_outcome(handler: &Handler, call: &Call<'_>, input: &Input) -> Helpe
         Operation::Retrieve => settle(
             handler.container_retrieve_handler(call, input.asynchronous),
             input,
-            |record| json!({"kind": "ok", "record": container_json(record)}),
+            container_json,
         ),
         Operation::Delete => settle(
             handler.container_delete_handler(call, input.asynchronous),
             input,
-            |record| json!({"kind": "ok", "record": deletion_json(record)}),
+            deletion_json,
         ),
     }
 }
