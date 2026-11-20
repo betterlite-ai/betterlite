@@ -103,9 +103,8 @@ impl VertexIngestion {
         if corpus_id.is_empty() {
             return Ok(None);
         }
-        let file_id = self
-            .upload_file(corpus_id, filename, content, request.content_type)
-            .await?;
+        let file_id =
+            upload::upload_file(self, corpus_id, filename, content, request.content_type).await?;
         Ok(Some(file_id))
     }
 
@@ -126,7 +125,7 @@ impl VertexIngestion {
         match &self.credentials {
             CredentialChoice::None => Ok(None),
             CredentialChoice::Record(text) => {
-                ConfiguredCredentials::from_text(text.expose_secret().clone())
+                ConfiguredCredentials::from_text(text.expose_secret().to_owned())
                     .map(Some)
                     .map_err(|source| VertexIngestionError::Credentials { source })
             }
@@ -156,7 +155,7 @@ impl RagStore for VertexIngestion {
         };
         let corpus_id = match self.existing_corpus_id() {
             Some(corpus_id) => corpus_id,
-            None => self.create_corpus(project, self.display_name()).await?,
+            None => corpus::create_corpus(self, project, self.display_name()).await?,
         };
         let file_id = self.store_file(&corpus_id, &request).await?;
         Ok((Some(corpus_id), file_id))

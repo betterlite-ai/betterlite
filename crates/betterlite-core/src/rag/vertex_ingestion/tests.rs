@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
 use rstest::rstest;
+use tokio::time::Instant;
 
 use crate::rag::ingestion::IngestionState;
 
@@ -26,11 +27,9 @@ const UPLOAD_URL: &str =
 
 #[test]
 fn flags_supports_existing_file_id_matches_the_shared_state() {
-    assert!(!VertexIngestion::SUPPORTS_EXISTING_FILE_ID);
-    assert_eq!(
-        VertexIngestion::SUPPORTS_EXISTING_FILE_ID,
-        IngestionState::SUPPORTS_EXISTING_FILE_ID
-    );
+    let supported = VertexIngestion::SUPPORTS_EXISTING_FILE_ID;
+    assert!(!supported);
+    assert_eq!(supported, IngestionState::SUPPORTS_EXISTING_FILE_ID);
 }
 
 #[tokio::test]
@@ -75,8 +74,8 @@ async fn flags_existing_file_id_is_ignored() {
         content_type: None,
         existing_file_id: Some("legacy"),
     };
-    let (_, file_id) = store(&idle, idle_file).await.expect("a skipped upload");
-    assert_eq!(file_id, None);
+    let (_, skipped_file_id) = store(&idle, idle_file).await.expect("a skipped upload");
+    assert_eq!(skipped_file_id, None);
 }
 
 #[tokio::test]
@@ -473,14 +472,11 @@ async fn poll_pending_operation_polls_until_done() {
         None,
         &[(200, NOT_DONE), (200, DONE)],
     );
-    let started = tokio::time::Instant::now();
+    let started = Instant::now();
     let (corpus, _) = store(&harness, File::default())
         .await
         .expect("a polled corpus");
-    assert_eq!(
-        tokio::time::Instant::now() - started,
-        Duration::from_secs(2)
-    );
+    assert_eq!(started.elapsed(), Duration::from_secs(2));
     assert_eq!(corpus.as_deref(), Some("corpora/1"));
     let calls = harness.http.calls();
     assert_eq!(calls.len(), 3);
@@ -582,15 +578,12 @@ async fn poll_gives_up_after_thirty_attempts() {
         None,
         &replies,
     );
-    let started = tokio::time::Instant::now();
+    let started = Instant::now();
     let error = store(&harness, File::default())
         .await
         .expect_err("a timeout");
     assert_eq!(error.to_string(), "Operation timed out after 30 attempts");
-    assert_eq!(
-        tokio::time::Instant::now() - started,
-        Duration::from_secs(60)
-    );
+    assert_eq!(started.elapsed(), Duration::from_secs(60));
     assert_eq!(harness.http.calls().len(), 31);
     assert_eq!(harness.token.credentials_seen().len(), 1);
 }

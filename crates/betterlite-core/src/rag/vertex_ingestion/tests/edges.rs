@@ -23,10 +23,10 @@ async fn upload_null_rag_file_parts_fall_back() {
         None,
         &[(200, r#"{"ragFile":null,"name":"top"}"#)],
     );
-    let (_, file_id) = store(&uploaded, File::new(b"data", "notes.txt"))
+    let (_, null_part_file_id) = store(&uploaded, File::new(b"data", "notes.txt"))
         .await
         .expect("an uploaded file");
-    assert_eq!(file_id.as_deref(), Some("uploaded"));
+    assert_eq!(null_part_file_id.as_deref(), Some("uploaded"));
 }
 
 #[tokio::test]
