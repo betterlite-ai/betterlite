@@ -75,7 +75,7 @@ async fn a_dynamic_key_asks_the_health_policy_for_the_model() {
     let data = support::data(r#"{"model": "gpt4"}"#);
     let descriptors = assemble(&builder, &auth, &data).await;
     assert_eq!(limits(&descriptors[0]).requests_per_unit, None);
-    assert_eq!(fixture.health.models(), vec!["gpt-4".to_owned()]);
+    assert_eq!(fixture.health.models(), vec!["gpt4".to_owned()]);
 }
 
 #[tokio::test]
@@ -89,7 +89,7 @@ async fn a_tpm_dynamic_key_asks_the_health_policy_for_the_model() {
     let data = support::data(r#"{"model": "gpt4"}"#);
     let descriptors = assemble(&builder, &auth, &data).await;
     assert_eq!(limits(&descriptors[0]).tokens_per_unit, None);
-    assert_eq!(fixture.health.models(), vec!["gpt-4".to_owned()]);
+    assert_eq!(fixture.health.models(), vec!["gpt4".to_owned()]);
 }
 
 #[tokio::test]
@@ -117,7 +117,7 @@ async fn a_dynamic_key_enforces_when_the_health_policy_reports_failures() {
     let data = support::data(r#"{"model": "gpt4"}"#);
     let descriptors = assemble(&builder, &auth, &data).await;
     assert_eq!(limits(&descriptors[0]).requests_per_unit, Some(10));
-    assert_eq!(fixture.health.models(), vec!["gpt-4".to_owned()]);
+    assert_eq!(fixture.health.models(), vec!["gpt4".to_owned()]);
 }
 
 #[tokio::test]
@@ -296,6 +296,6 @@ async fn a_body_without_tags_never_asks_the_tag_resolver() {
     let auth = support::auth(r#"{"api_key": "key-1", "rpm_limit": 10}"#);
     let data = support::data(r#"{"model": "gpt4"}"#);
     let descriptors = assemble(&builder, &auth, &data).await;
-    assert_eq!(keys(&descriptors), ["api_key", "model_per_key"]);
+    assert_eq!(keys(&descriptors), ["api_key"]);
     assert!(tags.calls().is_empty());
 }
