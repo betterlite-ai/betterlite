@@ -1,6 +1,6 @@
 import asyncio
-from functools import partial
-from typing import Literal
+from collections.abc import Coroutine
+from typing import Literal, Protocol, cast
 
 import litellm.assistants.main as runs
 import openai
@@ -27,6 +27,26 @@ class Recorder(openai.AssistantEventHandler):
     @override
     def on_end(self) -> None:
         self.ended = True
+
+
+# the wrappers have no return annotation, so their inferred Any goes through this facade
+class Runs(Protocol):
+    def run_thread(self, *, event_handler: Recorder | None = None, **kwargs: Json) -> Run: ...
+
+    def arun_thread(
+        self, *, event_handler: Recorder | None = None, **kwargs: Json
+    ) -> Coroutine[None, None, Run]: ...
+
+    def run_thread_stream(
+        self, *, event_handler: Recorder | None = None, **kwargs: Json
+    ) -> AssistantStreamManager[openai.AssistantEventHandler]: ...
+
+    def arun_thread_stream(
+        self, *, event_handler: Recorder | None = None, **kwargs: Json
+    ) -> AsyncAssistantStreamManager[openai.AsyncAssistantEventHandler]: ...
+
+
+RUNS = cast(Runs, runs)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L1165-L1365
 
 
 class Call(BaseModel):
@@ -141,7 +161,7 @@ def mode_outcome(call: Call, options: dict[str, Json], handler: Recorder | None)
         case "run_stream":
             return run_stream_call(call, options, handler)
         case "arun_stream":
-            manager = partial(runs.arun_thread_stream, **options)(event_handler=handler)
+            manager = RUNS.arun_thread_stream(**options, event_handler=handler)
             return async_manager(manager, handler)
 
 
@@ -156,31 +176,31 @@ def api_failure(error: openai.APIError, response: ResponseView | None = None) ->
 
 def run_call(call: Call, options: dict[str, Json], handler: Recorder | None) -> Outcome:
     if call.stream is not True:
-        response: Run = partial(runs.run_thread, **options)(event_handler=handler)
+        response: Run = RUNS.run_thread(**options, event_handler=handler)
         return run_outcome(response)
     stream_options = {name: value for name, value in options.items() if name != "stream"}
     if call.arun_thread is True:
-        manager = partial(runs.arun_thread_stream, **stream_options)(event_handler=handler)
+        manager = RUNS.arun_thread_stream(**stream_options, event_handler=handler)
         return async_manager(manager, handler)
-    sync = partial(runs.run_thread_stream, **stream_options)(event_handler=handler)
+    sync = RUNS.run_thread_stream(**stream_options, event_handler=handler)
     return sync_manager(sync, handler)
 
 
 def arun_call(call: Call, options: dict[str, Json], handler: Recorder | None) -> Outcome:
     if call.stream is not True:
-        held = partial(runs.arun_thread, **options)(event_handler=handler)
+        held = RUNS.arun_thread(**options, event_handler=handler)
         response: Run = asyncio.run(held)
         return run_outcome(response)
     stream_options = {name: value for name, value in options.items() if name != "stream"}
-    manager = partial(runs.arun_thread_stream, **stream_options)(event_handler=handler)
+    manager = RUNS.arun_thread_stream(**stream_options, event_handler=handler)
     return async_manager(manager, handler)
 
 
 def run_stream_call(call: Call, options: dict[str, Json], handler: Recorder | None) -> Outcome:
     if call.arun_thread is True:
-        manager = partial(runs.arun_thread_stream, **options)(event_handler=handler)
+        manager = RUNS.arun_thread_stream(**options, event_handler=handler)
         return async_manager(manager, handler)
-    sync = partial(runs.run_thread_stream, **options)(event_handler=handler)
+    sync = RUNS.run_thread_stream(**options, event_handler=handler)
     return sync_manager(sync, handler)
 
 
