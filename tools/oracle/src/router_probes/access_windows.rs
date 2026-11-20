@@ -97,14 +97,14 @@ fn filtered(
     deployments: Vec<DeploymentSpec>,
 ) -> Result<Result<Vec<DeploymentSpec>, CatalogLookupError>, OperationError> {
     match input.mode {
-        Mode::Team => filter_team_based_models(
+        Mode::Team => Ok(filter_team_based_models(
             deployments,
             Authority {
                 team_id: input.team_id.as_deref(),
                 proxy_admin: input.proxy_admin,
             },
             &input.model,
-        ),
+        )),
         Mode::Reserved => {
             let millis = input
                 .now_unix_millis
@@ -112,13 +112,13 @@ fn filtered(
             let now = DateTime::<Utc>::from_timestamp_millis(millis)
                 .ok_or_else(|| invalid("now_unix_millis is out of range"))?;
             let database = TimeZoneDatabase::from_env();
-            reserved_deployments(
+            Ok(reserved_deployments(
                 &input.model,
                 &deployments,
                 input.team_id.as_deref(),
                 now,
                 &database,
-            )
+            ))
         }
     }
 }

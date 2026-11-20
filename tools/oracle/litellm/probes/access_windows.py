@@ -1,4 +1,4 @@
-from datetime import datetime, time, timezone
+from datetime import UTC, datetime, time
 from types import SimpleNamespace
 from typing import ClassVar, Final, Literal
 
@@ -74,7 +74,7 @@ def entry(deployment: Deployment) -> dict[str, object]:
     return {"model_name": deployment.model_name, "model_info": model_info}
 
 
-def request_kwargs(model: str, team_id: str | None, proxy_admin: bool) -> dict[str, object]:
+def request_kwargs(model: str, team_id: str | None, *, proxy_admin: bool) -> dict[str, object]:
     metadata: dict[str, object] = {"model_group": model}
     if team_id is not None:
         metadata["user_api_key_team_id"] = team_id
@@ -85,7 +85,7 @@ def request_kwargs(model: str, team_id: str | None, proxy_admin: bool) -> dict[s
 
 def moment(unix_millis: int) -> datetime:
     seconds, millis = divmod(unix_millis, 1000)
-    return datetime.fromtimestamp(seconds, tz=timezone.utc).replace(microsecond=millis * 1000)
+    return datetime.fromtimestamp(seconds, tz=UTC).replace(microsecond=millis * 1000)
 
 
 class AccessWindows(Operation):
@@ -105,7 +105,10 @@ class AccessWindows(Operation):
 
     def team(self, deployments: list[dict[str, object]]) -> Output:
         try:
-            kept = filter_team_based_models(deployments, request_kwargs(self.model, self.team_id, self.proxy_admin))
+            kept = filter_team_based_models(
+                deployments,
+                request_kwargs(self.model, self.team_id, proxy_admin=self.proxy_admin),
+            )
         except BadRequestError as error:
             return Output(kept=[], error=str(error.message).removeprefix(BAD_REQUEST_PREFIX))
         return Output(kept=[returned.model_info.id for returned in SHAPED.validate_python(kept)], error=None)
