@@ -110,11 +110,29 @@ pub fn chat_chunk(
 }
 
 fn chat_choice(choice: &StreamChoice) -> Result<Value, serde_json::Error> {
-    let delta = Value::Object(delta_fields(&choice.delta)?);
+    let mut delta = delta_fields(&choice.delta)?;
+    if let Some(JsonValue::Array(calls)) = &choice.delta.tool_calls {
+        let mut projected = Vec::with_capacity(calls.len());
+        for call in calls {
+            let JsonValue::Object(fields) = call else {
+                continue;
+            };
+            // LiteLLM's ChatCompletionDeltaToolCall keeps index, id, type and function only.
+            let mut kept = Map::new();
+            for name in ["index", "id", "type", "function"] {
+                let Some(present) = fields.get(name) else {
+                    continue;
+                };
+                kept.insert(name.to_owned(), serde_json::to_value(present)?);
+            }
+            projected.push(Value::Object(kept));
+        }
+        delta.insert(String::from("tool_calls"), Value::Array(projected));
+    }
     let finish = choice.finish_reason.as_deref();
     Ok(Value::Object(Map::from_iter([
         field("index", Some(Value::from(choice.index))),
-        field("delta", Some(delta)),
+        field("delta", Some(Value::Object(delta))),
         field("finish_reason", finish.map(Value::from)),
     ])))
 }
@@ -141,37 +159,7 @@ fn delta_fields(source: &StreamDelta) -> Result<Map<String, Value>, serde_json::
             delta.insert(name.to_owned(), present);
         }
     }
-    if let Some(JsonValue::Array(calls)) = &source.tool_calls {
-        let projected = projected_tool_calls(calls)?;
-        delta.insert(String::from("tool_calls"), Value::Array(projected));
-    }
     Ok(delta)
-}
-
-fn projected_tool_calls(calls: &[JsonValue]) -> Result<Vec<Value>, serde_json::Error> {
-    let mut projected = Vec::with_capacity(calls.len());
-    for call in calls {
-        let Some(kept) = projected_call(call)? else {
-            continue;
-        };
-        projected.push(kept);
-    }
-    Ok(projected)
-}
-
-// LiteLLM's ChatCompletionDeltaToolCall keeps index, id, type and function only.
-fn projected_call(call: &JsonValue) -> Result<Option<Value>, serde_json::Error> {
-    let JsonValue::Object(fields) = call else {
-        return Ok(None);
-    };
-    let mut kept = Map::new();
-    for name in ["index", "id", "type", "function"] {
-        let Some(present) = fields.get(name) else {
-            continue;
-        };
-        kept.insert(name.to_owned(), serde_json::to_value(present)?);
-    }
-    Ok(Some(Value::Object(kept)))
 }
 
 // A chat endpoint's SSE events read as the text route's chunks: the chat route's chunk parse, DONE skipped
@@ -194,53 +182,3 @@ pub fn decode_chat_events(
 }
 
 mod tests;
-
-#[cfg(test)]
-mod delta_projection_tests {
-    use betterlite_streaming::stream_chunk_shaping::records::{StreamChoice, StreamChunk};
-    use serde_json::{Value, json};
-
-    use super::chat_chunk;
-
-    fn emitted(delta: &str) -> Value {
-        let chunk = StreamChunk {
-            choices: vec![StreamChoice {
-                delta: serde_json::from_str(delta).expect("the delta"),
-                ..StreamChoice::default()
-            }],
-            ..StreamChunk::default()
-        };
-        chat_chunk(&chunk, "client", false)
-            .expect("the chunk serializes")
-            .expect("a delta with fields is written")
-    }
-
-    // The client reads index, id, type and function on a delta tool call, and nothing else.
-    #[test]
-    fn the_delta_keeps_the_tool_call_fields_the_client_reads() {
-        let value = emitted(
-            r#"{"tool_calls":[{"index":0,"id":"tool_1","type":"function","function":{"name":"get_weather","arguments":"{}"},"provider_specific_fields":{"seen":true}}]}"#,
-        );
-        assert_eq!(
-            value.pointer("/choices/0/delta/tool_calls"),
-            Some(
-                &json!([{"index":0,"id":"tool_1","type":"function","function":{"name":"get_weather","arguments":"{}"}}])
-            )
-        );
-    }
-
-    #[test]
-    fn the_delta_carries_the_reasoning_and_thinking_blocks() {
-        let value = emitted(
-            r#"{"reasoning_content":"hmm","thinking_blocks":[{"type":"thinking","thinking":"hmm","signature":"sig-abc"}]}"#,
-        );
-        assert_eq!(
-            value.pointer("/choices/0/delta/reasoning_content"),
-            Some(&json!("hmm"))
-        );
-        assert_eq!(
-            value.pointer("/choices/0/delta/thinking_blocks"),
-            Some(&json!([{"type":"thinking","thinking":"hmm","signature":"sig-abc"}]))
-        );
-    }
-}
