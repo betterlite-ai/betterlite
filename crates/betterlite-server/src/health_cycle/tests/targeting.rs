@@ -1,8 +1,8 @@
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 
 use super::support::{
-    FakeModels, FakeProvider, cycle, deployment, deployment_with_info, plain_request, policy,
-    text_field,
+    FakeModels, FakeProvider, capture_logs, context, cycle, deployment, deployment_with_info,
+    plain_request, policy, text_field,
 };
 
 fn shared_and_other() -> [DeploymentSpec; 2] {
@@ -118,9 +118,12 @@ async fn a_model_name_falls_back_to_the_deployed_model() {
 
 #[tokio::test]
 async fn an_unmatched_model_name_probes_nothing() {
+    let (buffer, _guard) = capture_logs();
     let rows = shared_and_other();
+    let context = context("cycle-target", "background");
     let mut request = plain_request(&rows);
     request.model = Some("nowhere");
+    request.instrumentation = Some(&context);
     let provider = FakeProvider::new();
     let result = cycle(request, &provider, &FakeModels::default(), &policy())
         .await
@@ -128,4 +131,7 @@ async fn an_unmatched_model_name_probes_nothing() {
     assert!(provider.calls().is_empty());
     assert!(result.healthy_endpoints.is_empty());
     assert!(result.unhealthy_endpoints.is_empty());
+    let logs = buffer.text();
+    assert!(logs.contains("reason=no_models_after_filter"), "{logs}");
+    assert!(!logs.contains("health_check_cycle_start"), "{logs}");
 }

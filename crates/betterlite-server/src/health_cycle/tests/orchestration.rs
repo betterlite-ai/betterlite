@@ -38,15 +38,18 @@ fn the_cycle_future_is_send() {
 
 #[tokio::test]
 async fn dependency_probes_leave_the_answer() {
+    let (buffer, _guard) = capture_logs();
     let rows = [
         deployment("outer", "outer-id", COMPLEXITY_ROUTER),
         deployment("leaf", "leaf-id", r#"{"model":"openai/leaf"}"#),
     ];
     let fixture = Fixture::new(&rows);
     let lookup = fixture.lookup();
+    let context = context("cycle-deps", "background");
     let mut request = plain_request(&rows);
     request.model_id = Some("outer-id");
     request.lookup = Some(&lookup);
+    request.instrumentation = Some(&context);
     let provider = FakeProvider::new();
     let result = cycle(request, &provider, &FakeModels::default(), &policy())
         .await
@@ -63,6 +66,9 @@ async fn dependency_probes_leave_the_answer() {
         endpoint.get("model"),
         Some(&text("auto_router/complexity_router"))
     );
+    let logs = buffer.text();
+    assert!(logs.contains("model_count=2"), "{logs}");
+    assert!(logs.contains("peak_in_flight=2"), "{logs}");
 }
 
 #[tokio::test]
