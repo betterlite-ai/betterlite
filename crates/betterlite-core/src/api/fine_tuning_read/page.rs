@@ -69,8 +69,7 @@ fn normalize_list(value: &Json, element: &Shape) -> Json {
     Json::List(items.iter().map(|item| normalize(item, element)).collect())
 }
 
-// a tagged value takes its type's shape, item by item for a list, and the union's first member's shape
-// for any type it doesn't name
+// a tagged value takes its type's shape, item by item for a list, and its first member's shape otherwise
 fn normalize_tagged(
     value: &Json,
     variants: &'static [(&'static str, Shape)],
@@ -197,8 +196,7 @@ const GRADERS: Shape = Shape::Tagged(
     &STRING_CHECK_GRADER,
 );
 
-// a grader writes the keys its union member declares, and a type the union names no member for takes
-// its first member's shape
+// a grader writes the keys its union member declares, and any other type the first member's keys
 const GRADER: Shape = Shape::Tagged(
     &[
         ("multi", MULTI_GRADER),

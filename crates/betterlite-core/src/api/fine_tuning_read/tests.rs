@@ -188,8 +188,7 @@ fn azure(calls: &[RecordedTarget]) -> RecordedCall {
 // every fine-tuning job field the fixtures share; each fixture changes what its call reads
 const JOB: &str = r#"{"id": "ft_a", "object": "fine_tuning.job", "created_at": 1700000000, "model": "gpt-4o-mini-2024-07-18", "organization_id": "org_1", "result_files": ["file_r"], "status": "succeeded", "training_file": "file_1", "hyperparameters": {"n_epochs": 3}, "seed": 42}"#;
 
-// the page carries the fields list doesn't normalize, one key the job shape never declares, and a
-// reinforcement job whose python grader leaves out the optional image_tag
+// the page carries unnormalized fields, an undeclared key, and a python grader that omits image_tag
 const PAGE: &str = r#"{"object": "list", "has_more": true, "data": [{"id": "ft_a", "object": "fine_tuning.job", "created_at": 1700000000, "model": "gpt-4o-mini-2024-07-18", "organization_id": null, "result_files": null, "status": "canceling", "training_file": "file_1", "hyperparameters": {"n_epochs": 3}, "seed": 42, "method": {"type": "supervised", "hyperparameters": {"n_epochs": "auto"}}, "unknown_top": 1}, {"id": "ft_r", "object": "fine_tuning.job", "created_at": 1700000001, "model": "gpt-4o-mini-2024-07-18", "organization_id": "org_1", "result_files": ["file_r"], "status": "running", "training_file": "file_2", "hyperparameters": {"n_epochs": 2}, "seed": 7, "method": {"type": "reinforcement", "reinforcement": {"grader": {"type": "python", "name": "grade", "source": "def grade(): return 1"}}}}]}"#;
 
 // the azure answer differs in the fields its normalization reads
@@ -304,6 +303,23 @@ async fn list_page_preserves_metadata_and_jobs() {
     assert_eq!(fields.len(), 3);
     assert_eq!(job["method"]["hyperparameters"]["n_epochs"], json!("auto"));
     assert_eq!(job.as_object().expect("a job object").len(), 20);
+}
+
+// a listed job's method writes its four keys, and a python grader keeps the optional image_tag as null
+#[tokio::test]
+async fn list_page_shapes_the_reinforcement_method() {
+    let fake = Fake::answering(&page());
+    let outcome = run(
+        &fake,
+        &ConfiguredSettings::default(),
+        &input(r#"{"list": {}}"#),
+    )
+    .await
+    .expect("a listed page");
+    let FineTuningReadOutcome::Page(FineTuningPage(page)) = outcome else {
+        panic!("list answered a job");
+    };
+    let page_json = serde_json::to_value(page).expect("a page serializes");
     let method = &page_json["data"][1]["method"];
     assert_eq!(method["type"], json!("reinforcement"));
     assert_eq!(method["dpo"], json!(null));
@@ -317,12 +333,11 @@ async fn list_page_preserves_metadata_and_jobs() {
     assert_eq!(grader.get("source"), Some(&json!("def grade(): return 1")));
 }
 
-// a multi grader writes the grader its graders field names, and a grader type the union names no
-// member for keeps the first member's keys with its own keys after them
+// a multi grader writes the grader its graders field names, including a nested label model's items
 #[tokio::test]
-async fn page_shapes_multi_graders_and_the_union_fallback() {
+async fn page_shapes_a_multi_grader() {
     let fake = Fake::answering(
-        br#"{"data": [{"id": "ft_m", "method": {"type": "reinforcement", "reinforcement": {"grader": {"type": "multi", "name": "both", "calculate_output": "inner", "graders": {"type": "label_model", "name": "labeler", "model": "gpt-4o", "input": [{"role": "user", "content": "rate"}], "labels": ["good", "bad"], "passing_labels": ["good"]}}}}}, {"id": "ft_l", "method": {"type": "reinforcement", "reinforcement": {"grader": {"type": "label_model", "name": "labeler", "model": "gpt-4o", "input": [{"role": "user", "content": "rate"}], "labels": ["good"], "passing_labels": ["good"]}}}}], "has_more": false}"#,
+        br#"{"data": [{"id": "ft_m", "method": {"type": "reinforcement", "reinforcement": {"grader": {"type": "multi", "name": "both", "calculate_output": "inner", "graders": {"type": "label_model", "name": "labeler", "model": "gpt-4o", "input": [{"role": "user", "content": "rate"}], "labels": ["good", "bad"], "passing_labels": ["good"]}}}}}], "has_more": false}"#,
     );
     let outcome = run(
         &fake,
@@ -350,7 +365,26 @@ async fn page_shapes_multi_graders_and_the_union_fallback() {
         nested.get("input"),
         Some(&json!([{"content": "rate", "role": "user", "type": null}]))
     );
-    let fallback = page_json["data"][1]["method"]["reinforcement"]["grader"]
+}
+
+// a grader type the union names no member for keeps the first member's keys with its own after them
+#[tokio::test]
+async fn page_shapes_an_unknown_grader_as_the_union_fallback() {
+    let fake = Fake::answering(
+        br#"{"data": [{"id": "ft_l", "method": {"type": "reinforcement", "reinforcement": {"grader": {"type": "label_model", "name": "labeler", "model": "gpt-4o", "input": [{"role": "user", "content": "rate"}], "labels": ["good"], "passing_labels": ["good"]}}}}], "has_more": false}"#,
+    );
+    let outcome = run(
+        &fake,
+        &ConfiguredSettings::default(),
+        &input(r#"{"list": {}}"#),
+    )
+    .await
+    .expect("a listed page");
+    let FineTuningReadOutcome::Page(FineTuningPage(page)) = outcome else {
+        panic!("list answered a job");
+    };
+    let page_json = serde_json::to_value(page).expect("a page serializes");
+    let fallback = page_json["data"][0]["method"]["reinforcement"]["grader"]
         .as_object()
         .expect("a fallback grader object");
     assert_eq!(fallback.len(), 8);
