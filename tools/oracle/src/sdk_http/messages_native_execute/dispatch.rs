@@ -96,7 +96,14 @@ pub(super) fn record_failure(
             });
         }
         MessagesExecuteError::Classified(class) => outcome.failure = Some(class_failure(&class)),
-        other => return Err(SdkHttpError::Invalid(other.to_string())),
+        remaining @ (MessagesExecuteError::Transform(_)
+        | MessagesExecuteError::FakeStream(_)
+        | MessagesExecuteError::MissingAttribute { .. }
+        | MessagesExecuteError::DuplicateKeyword { .. }
+        | MessagesExecuteError::AdvisorNotBuilt
+        | MessagesExecuteError::FieldType { .. }) => {
+            return Err(SdkHttpError::Invalid(remaining.to_string()));
+        }
     }
     Ok(())
 }
@@ -119,7 +126,7 @@ fn wire(field: WireField) -> Json {
     }
 }
 
-fn class_name(class: &ErrorClass) -> &'static str {
+const fn class_name(class: &ErrorClass) -> &'static str {
     match class {
         ErrorClass::Authentication(_) => "AuthenticationError",
         ErrorClass::NotFound(_) => "NotFoundError",
@@ -134,14 +141,13 @@ fn class_name(class: &ErrorClass) -> &'static str {
         ErrorClass::ServiceUnavailable(_) => "ServiceUnavailableError",
         ErrorClass::BadGateway(_) => "BadGatewayError",
         ErrorClass::InternalServer(_) => "InternalServerError",
-        ErrorClass::Api(_) => "APIError",
+        ErrorClass::Api(_) | ErrorClass::Unclassified(_) => "APIError",
         ErrorClass::ApiConnection(_) => "APIConnectionError",
         ErrorClass::ApiResponseValidation(_) => "APIResponseValidationError",
         ErrorClass::JsonSchemaValidation(_) => "JSONSchemaValidationError",
         ErrorClass::UnsupportedParams(_) => "UnsupportedParamsError",
         ErrorClass::GuardrailRaised(_) => "GuardrailRaisedError",
         ErrorClass::MidStreamFallback(_) => "MidStreamFallbackError",
-        ErrorClass::Unclassified(_) => "APIError",
     }
 }
 

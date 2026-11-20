@@ -155,7 +155,9 @@ impl MessagesInterceptor for ScriptedInterceptor {
     ) -> Result<MessagesEntryResult, MessagesExecuteError> {
         match &self.script.answer {
             Json::Null => Ok(MessagesEntryResult::None),
-            value => Ok(MessagesEntryResult::Response(value.clone())),
+            Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
+                Ok(MessagesEntryResult::Response(self.script.answer.clone()))
+            }
         }
     }
 }
