@@ -1,0 +1,2 @@
+general_settings:
+  disable_key_generate_for_org_admin: "false"
