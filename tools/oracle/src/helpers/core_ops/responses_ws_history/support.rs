@@ -60,6 +60,7 @@ impl Socket {
                 .map_err(|error| helper_error("ValueError", error.to_string()))?;
             parsed.push(value);
         }
+        drop(frames);
         Ok(parsed)
     }
 }

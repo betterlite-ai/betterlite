@@ -211,8 +211,7 @@ class Probe(Handler):
         for stored in case["store"]:
             self._store_history(stored["id"], MESSAGES.validate_python(stored["messages"]))
         first = self._get_history_messages(case["first"])
-        _appended = list(first)
-        _appended.append(OBJECTS.validate_python(case["append"]))
+        first.append(OBJECTS.validate_python(case["append"]))
         again = self._get_history_messages(case["first"])
         applied: list[JsonValue] = []
         for row in case["applied"]:

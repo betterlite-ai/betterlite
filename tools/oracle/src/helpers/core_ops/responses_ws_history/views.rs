@@ -57,7 +57,7 @@ async fn frame_view(
             let parsed = handler.parse_message(&row.payload).await;
             let message =
                 parsed.map_err(|error| helper_error("AttributeError", error.to_string()))?;
-            Ok(parse_view(message, socket.since(start)?))
+            Ok(parse_view(message, &socket.since(start)?))
         }
         other => Err(helper_error(
             "InvalidInput",
@@ -66,7 +66,7 @@ async fn frame_view(
     }
 }
 
-fn parse_view(message: Option<IndexMap<String, Json>>, frames: Vec<Value>) -> Value {
+fn parse_view(message: Option<IndexMap<String, Json>>, frames: &[Value]) -> Value {
     let Some(fields) = message else {
         return json!({"kind": "ignored", "message": null, "frames": frames});
     };
@@ -151,9 +151,8 @@ pub(super) fn history_view(handler: &mut ManagedResponsesWebSocket<Socket>, case
             .session_history
             .insert(stored.id.clone(), stored.messages.clone());
     }
-    let first = get_history_messages(handler, &case.first);
-    let mut appended = first.clone();
-    appended.push(case.append.clone());
+    let mut first = get_history_messages(handler, &case.first);
+    first.push(case.append.clone());
     let again = get_history_messages(handler, &case.first);
     let mut applied = Vec::with_capacity(case.applied.len());
     for row in &case.applied {
