@@ -140,7 +140,7 @@ fn factories() -> GuardrailFactories {
 #[case::hooks_alice(wire::ALICE, &[PreCall, DuringCall, PostCall])]
 #[case::hooks_aporia(wire::APORIA, &[DuringCall, PostCall])]
 #[case::hooks_azure_prompt_shield(wire::AZURE_PROMPT_SHIELD, &[PreCall, DuringCall])]
-#[case::hooks_azure_text_moderations(wire::AZURE_TEXT_MODERATIONS, &[PreCall, DuringCall])]
+#[case::hooks_azure_text_moderations(wire::AZURE_TEXT_MODERATIONS, &[PreCall, PostCall])]
 #[case::hooks_block_code_execution(wire::BLOCK_CODE_EXECUTION, &[PreCall, PostCall, DuringCall])]
 #[case::hooks_cato_networks(wire::CATO_NETWORKS, &[PreCall, DuringCall, PostCall])]
 #[case::hooks_cisco_ai_defense(
@@ -188,10 +188,10 @@ fn factories() -> GuardrailFactories {
 )]
 #[case::hooks_pillar(wire::PILLAR, &[PreCall, DuringCall, PostCall, PreMcpCall, DuringMcpCall])]
 #[case::hooks_promptguard(wire::PROMPTGUARD, &[PreCall, PostCall])]
-#[case::hooks_qostodian_nexus(wire::QOSTODIAN_NEXUS, &[])]
+#[case::hooks_qostodian_nexus(wire::QOSTODIAN_NEXUS, &[PreCall, PostCall, DuringCall])]
 #[case::hooks_qualifire(wire::QUALIFIRE, &[PreCall, DuringCall, PostCall])]
 #[case::hooks_repelloai(wire::REPELLOAI, &[PreCall, PostCall])]
-#[case::hooks_rubrik(wire::RUBRIK, &[])]
+#[case::hooks_rubrik(wire::RUBRIK, &[PreCall, PostCall])]
 #[case::hooks_semantic_guard(wire::SEMANTIC_GUARD, &[PreCall, PostCall])]
 #[case::hooks_singulr(wire::SINGULR, &[PreCall, PostCall, LoggingOnly, PreMcpCall, PostMcpCall])]
 #[case::hooks_straiker(wire::STRAIKER, &[PreCall, PostCall])]
@@ -245,7 +245,7 @@ fn test_third_party_a_arms_hold_their_own_args(#[case] kind: &str) {
             assert!(
                 matches!(&build_ok(kind).kind, HookKind::CiscoAiDefense(_)),
                 "{kind}"
-            )
+            );
         }
         wire::CONDUCT => assert!(
             matches!(&build_ok(kind).kind, HookKind::Conduct(_)),
@@ -255,19 +255,19 @@ fn test_third_party_a_arms_hold_their_own_args(#[case] kind: &str) {
             assert!(
                 matches!(&build_ok(kind).kind, HookKind::CrowdstrikeAidr(_)),
                 "{kind}"
-            )
+            );
         }
         wire::DEEP_KEEP => {
             assert!(
                 matches!(&build_ok(kind).kind, HookKind::Deepkeep(_)),
                 "{kind}"
-            )
+            );
         }
         wire::GENERIC_GUARDRAIL_API => {
             assert!(
                 matches!(&build_ok(kind).kind, HookKind::GenericGuardrailApi(_)),
                 "{kind}"
-            )
+            );
         }
         wire::GRAYSWAN => assert!(
             matches!(&build_ok(kind).kind, HookKind::Grayswan(_)),
@@ -277,7 +277,7 @@ fn test_third_party_a_arms_hold_their_own_args(#[case] kind: &str) {
             assert!(
                 matches!(&build_ok(kind).kind, HookKind::GuardrailsAi(_)),
                 "{kind}"
-            )
+            );
         }
         wire::HEADROOM => assert!(
             matches!(&build_ok(kind).kind, HookKind::Headroom(_)),
@@ -302,7 +302,7 @@ fn test_third_party_b_arms_hold_their_own_args(#[case] kind: &str) {
             assert!(
                 matches!(&build_ok(kind).kind, HookKind::PanwPrismaAirs(_)),
                 "{kind}"
-            )
+            );
         }
         wire::PILLAR => assert!(
             matches!(&build_ok(kind).kind, HookKind::Pillar(_)),
@@ -324,7 +324,7 @@ fn test_third_party_b_arms_hold_their_own_args(#[case] kind: &str) {
             assert!(
                 matches!(&build_ok(kind).kind, HookKind::VigilGuard(_)),
                 "{kind}"
-            )
+            );
         }
         wire::XECGUARD => assert!(
             matches!(&build_ok(kind).kind, HookKind::Xecguard(_)),
@@ -352,25 +352,25 @@ fn test_hook_initializer_arms_hold_their_own_args(#[case] kind: &str) {
             assert!(
                 matches!(&build_ok(kind).kind, HookKind::AzurePromptShield(_)),
                 "{kind}"
-            )
+            );
         }
         wire::AZURE_TEXT_MODERATIONS => {
             assert!(
                 matches!(&build_ok(kind).kind, HookKind::AzureTextModerations(_)),
                 "{kind}"
-            )
+            );
         }
         wire::IBM_GUARDRAILS => {
             assert!(
                 matches!(&build_ok(kind).kind, HookKind::IbmGuardrails(_)),
                 "{kind}"
-            )
+            );
         }
         wire::MICROSOFT_PURVIEW => {
             assert!(
                 matches!(&build_ok(kind).kind, HookKind::MicrosoftPurview(_)),
                 "{kind}"
-            )
+            );
         }
         wire::MODEL_ARMOR => assert!(
             matches!(&build_ok(kind).kind, HookKind::ModelArmor(_)),
@@ -380,7 +380,7 @@ fn test_hook_initializer_arms_hold_their_own_args(#[case] kind: &str) {
             assert!(
                 matches!(&build_ok(kind).kind, HookKind::OpenaiModeration(_)),
                 "{kind}"
-            )
+            );
         }
         _other => panic!("{kind} is not a hook initializer name"),
     }
@@ -395,13 +395,13 @@ fn test_content_filter_and_signer_arms_hold_their_own_args(#[case] kind: &str) {
             assert!(
                 matches!(&build_ok(kind).kind, HookKind::LitellmContentFilter(_)),
                 "{kind}"
-            )
+            );
         }
         wire::MCP_JWT_SIGNER => {
             assert!(
                 matches!(&build_ok(kind).kind, HookKind::McpJwtSigner(_)),
                 "{kind}"
-            )
+            );
         }
         _other => panic!("{kind} is not a content filter or signer name"),
     }
@@ -420,13 +420,13 @@ fn test_vendor_initializer_arms_hold_their_own_args(#[case] kind: &str) {
             assert!(
                 matches!(&build_ok(kind).kind, HookKind::Promptguard(_)),
                 "{kind}"
-            )
+            );
         }
         wire::QOSTODIAN_NEXUS => {
             assert!(
                 matches!(&build_ok(kind).kind, HookKind::QostodianNexus(_)),
                 "{kind}"
-            )
+            );
         }
         wire::QUALIFIRE => assert!(
             matches!(&build_ok(kind).kind, HookKind::Qualifire(_)),
@@ -436,7 +436,7 @@ fn test_vendor_initializer_arms_hold_their_own_args(#[case] kind: &str) {
             assert!(
                 matches!(&build_ok(kind).kind, HookKind::SemanticGuard(_)),
                 "{kind}"
-            )
+            );
         }
         wire::SINGULR => assert!(
             matches!(&build_ok(kind).kind, HookKind::Singulr(_)),
@@ -446,7 +446,7 @@ fn test_vendor_initializer_arms_hold_their_own_args(#[case] kind: &str) {
             assert!(
                 matches!(&build_ok(kind).kind, HookKind::ZscalerAiGuard(_)),
                 "{kind}"
-            )
+            );
         }
         _other => panic!("{kind} is not a vendor initializer name"),
     }
@@ -471,7 +471,7 @@ fn test_class_arms_keep_their_params(#[case] kind: &str) {
             assert!(
                 matches!(&build_ok(kind).kind, HookKind::BlockCodeExecution(_)),
                 "{kind}"
-            )
+            );
         }
         wire::COMPRESR => assert!(
             matches!(&build_ok(kind).kind, HookKind::Compresr(_)),
@@ -481,13 +481,13 @@ fn test_class_arms_keep_their_params(#[case] kind: &str) {
             assert!(
                 matches!(&build_ok(kind).kind, HookKind::CustomCode(_)),
                 "{kind}"
-            )
+            );
         }
         wire::HIDDENLAYER => {
             assert!(
                 matches!(&build_ok(kind).kind, HookKind::Hiddenlayer(_)),
                 "{kind}"
-            )
+            );
         }
         wire::JAVELIN => assert!(
             matches!(&build_ok(kind).kind, HookKind::Javelin(_)),
@@ -497,7 +497,7 @@ fn test_class_arms_keep_their_params(#[case] kind: &str) {
             assert!(
                 matches!(&build_ok(kind).kind, HookKind::LlmAsAJudge(_)),
                 "{kind}"
-            )
+            );
         }
         wire::NOMA => assert!(matches!(&build_ok(kind).kind, HookKind::Noma(_)), "{kind}"),
         wire::NOMA_V2 => assert!(
@@ -517,7 +517,7 @@ fn test_class_arms_keep_their_params(#[case] kind: &str) {
             assert!(
                 matches!(&build_ok(kind).kind, HookKind::Repelloai(_)),
                 "{kind}"
-            )
+            );
         }
         _other => panic!("{kind} is not a class name"),
     }
@@ -535,7 +535,7 @@ fn test_ported_arms_hold_their_own_args(#[case] kind: &str) {
             assert!(
                 matches!(&build_ok(kind).kind, HookKind::CatoNetworks(_)),
                 "{kind}"
-            )
+            );
         }
         wire::DYNAMOAI => assert!(
             matches!(&build_ok(kind).kind, HookKind::Dynamoai(_)),
@@ -545,7 +545,7 @@ fn test_ported_arms_hold_their_own_args(#[case] kind: &str) {
             assert!(
                 matches!(&build_ok(kind).kind, HookKind::Enkryptai(_)),
                 "{kind}"
-            )
+            );
         }
         _other => panic!("{kind} is not a ported name"),
     }
