@@ -103,7 +103,7 @@ pub(super) fn stream(stream: Box<PassthroughRelay>) -> Result<PassthroughReply, 
         .map_err(|error| super::relay_fault(&error))?;
     Ok(PassthroughReply {
         status,
-        headers: header_pairs(&headers),
+        headers: header_pairs(headers),
         body: PassthroughBody::Stream(stream),
     })
 }
