@@ -348,6 +348,21 @@ async fn expand_missing_users_and_unknown_names() {
 }
 
 #[tokio::test]
+async fn empty_identifiers_skip_user_lookup() {
+    let mut source = FakeSource::default();
+    source.page = vec![row(r#"{"token":"k1","user_id":"","created_by":""}"#)];
+    source.total = 1;
+    let mut request = query(1, 10);
+    request.expand = vec![String::from("user")];
+    let response = list_keys_with(&source, &request).await.unwrap();
+    // an empty identifier is no user to look up, so no query runs
+    assert!(!source.calls().contains(&String::from("users")));
+    let fields = entry_fields(&response.keys[0]);
+    assert_eq!(fields.get("user"), Some(&JsonData::Null));
+    assert_eq!(fields.get("created_by_user"), Some(&JsonData::Null));
+}
+
+#[tokio::test]
 async fn token_only_still_attaches_permission() {
     let mut source = FakeSource::default();
     source.page = vec![row(r#"{"token":"k1"}"#), row(r#"{"token":"k2"}"#)];
