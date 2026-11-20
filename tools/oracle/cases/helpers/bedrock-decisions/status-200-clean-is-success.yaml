@@ -1,0 +1,10 @@
+kind: helper
+name: status-200-clean-is-success
+call:
+  b3722:
+    bedrock_decisions:
+      status:
+        status_code: 200
+        body: '{"action": "NONE"}'
+env: {}
+compare: {ignore: []}

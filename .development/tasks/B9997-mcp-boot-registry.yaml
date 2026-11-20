@@ -27,8 +27,9 @@ description: >-
   returns the status, headers and body bytes as a FetchedDocument, or a FetchError for a transport failure.
   `CipherDecryptor` implements B6763's Decryptor over B1600's stored cipher with the key the config resolves (the
   master key or LITELLM_SALT_KEY, as B1600 reads it), returning the value unchanged when it does not decrypt.
-  `RegistrySettings` (B4731) is filled from the loaded config: public_mcp_servers, public_hub_strict and
-  internal_ip_ranges from the keys B4731 names. `ToolRegistrySink` implements B6764's OpenApiToolSink over the
+  `RegistrySettings` (B4731) is filled from the loaded config: public_mcp_servers (None becomes an empty list) and
+  public_hub_strict from B10009's config.sections.public_discovery (litellm_settings.public_mcp_servers and
+  public_mcp_hub_strict_whitelist), and internal_ip_ranges from general_settings.mcp_internal_ip_ranges as B4731 names it. `ToolRegistrySink` implements B6764's OpenApiToolSink over the
   ToolRegistry, writing the base and the prefixed name into the tool name mapping as B6764 says.
   `InstructionsCacheCell` implements B6764's InstructionsCache with a `OnceLock<Arc<dyn InstructionsCache>>`: clear()
   forwards to the value once it is set and does nothing before, since no instructions are cached until B6592's

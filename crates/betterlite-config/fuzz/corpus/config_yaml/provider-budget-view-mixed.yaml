@@ -1,0 +1,7 @@
+router_settings:
+  provider_budget_config:
+    anthropic:
+      time_period: 10d
+    vertex_ai:
+      budget_limit: 0.000000000001
+    bedrock: {}

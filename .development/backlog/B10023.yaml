@@ -1,0 +1,14 @@
+id: B10023
+milestone: M5 api families
+title: Global SSE keepalive interval config section
+status: todo
+depends_on: [B002]
+file: tasks/B10023-sse-keepalive-section.yaml
+covers:
+  - "litellm/__init__.py"
+parent: null
+split_from: B089
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
