@@ -75,11 +75,8 @@ class ScriptedStream(AsyncIterator[JsonValue]):
 class LogCapture(logging.Filter):
     def __init__(self, model: str) -> None:
         super().__init__()
-        self._wanted = (
-            f"AnthropicResponsesStreamWrapper: upstream Responses stream for {model} failed",
-            "AnthropicResponsesStreamWrapper: upstream Responses stream for "
-            f"{model} ended without a terminal event",
-        )
+        prefix = f"AnthropicResponsesStreamWrapper: upstream Responses stream for {model}"
+        self._wanted = (f"{prefix} failed", f"{prefix} ended without a terminal event")
         self.records: list[str] = []
 
     @override
