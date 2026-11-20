@@ -1,14 +1,15 @@
 import asyncio
 import base64
+import importlib
 from functools import partial
 from typing import Literal, NotRequired, TypeAlias, TypedDict
 
 import litellm
+import litellm.vector_store_files.main as vector_store_files_main
+import litellm.vector_stores.main as vector_stores_main
 from litellm.rag.ingestion import openai_ingestion
-from litellm.rag.ingestion.openai_ingestion import OpenAIRAGIngestion
 from litellm.types.llms.openai import OpenAIFileObject
 from litellm.types.rag import RAGIngestOptions
-from litellm.types.vector_store_files import VectorStoreFileObject
 from litellm.types.vector_stores import VectorStoreCreateResponse
 from pydantic import JsonValue
 
@@ -78,6 +79,10 @@ class CallRecorder:
         self._script = script
         self.calls: list[CallView] = []
 
+    def _guard(self, error: str | None) -> None:
+        if error is not None:
+            raise RuntimeError(error)
+
     async def create(
         self,
         *,
@@ -97,9 +102,7 @@ class CallRecorder:
                 api_base=api_base,
             )
         )
-        create_error = self._script["create_error"]
-        if create_error is not None:
-            raise RuntimeError(create_error)
+        self._guard(self._script["create_error"])
         create_id = self._script["create_id"]
         if create_id is None:
             return VectorStoreCreateResponse()
@@ -113,7 +116,7 @@ class CallRecorder:
         chunking_strategy: dict[str, JsonValue] | None,
         api_key: str | None = None,
         **kwargs: JsonValue,
-    ) -> VectorStoreFileObject:
+    ) -> None:
         self.calls.append(
             AttachCallView(
                 port="vector_file_attach",
@@ -124,10 +127,7 @@ class CallRecorder:
                 api_base=kwargs.get("api_base"),
             )
         )
-        attach_error = self._script["attach_error"]
-        if attach_error is not None:
-            raise RuntimeError(attach_error)
-        return VectorStoreFileObject()
+        self._guard(self._script["attach_error"])
 
     async def upload(
         self,
@@ -151,9 +151,7 @@ class CallRecorder:
                 api_base=api_base,
             )
         )
-        upload_error = self._script["upload_error"]
-        if upload_error is not None:
-            raise RuntimeError(upload_error)
+        self._guard(self._script["upload_error"])
         return OpenAIFileObject(
             id=self._script["upload_id"],
             bytes=len(content),
@@ -179,11 +177,12 @@ def _script(input_value: StoreInput) -> Script:
 
 
 def run(input_value: StoreInput) -> StoreView:
-    instance = OpenAIRAGIngestion(input_value["options"])
     recorder = CallRecorder(_script(input_value))
-    openai_ingestion.vector_store_acreate = partial(recorder.create)
-    openai_ingestion.vector_store_file_acreate = partial(recorder.attach)
+    vector_stores_main.acreate = partial(recorder.create)
+    vector_store_files_main.acreate = partial(recorder.attach)
     litellm.acreate_file = partial(recorder.upload)
+    importlib.reload(openai_ingestion)
+    instance = openai_ingestion.OpenAIRAGIngestion(input_value["options"])
     encoded = input_value.get("file_content_base64")
     content = None if encoded is None else base64.b64decode(encoded)
     stored = asyncio.run(
