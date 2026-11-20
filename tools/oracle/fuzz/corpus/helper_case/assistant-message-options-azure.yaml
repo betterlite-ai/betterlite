@@ -1,0 +1,9 @@
+kind: helper
+name: assistant-message-options-azure-seed
+call:
+  assistant_message_options:
+    custom_llm_provider: azure
+    drop_params: true
+    attachments: [{tools: []}]
+env: {}
+compare: {ignore: []}
