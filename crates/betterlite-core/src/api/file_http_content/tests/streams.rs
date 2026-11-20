@@ -9,20 +9,36 @@ use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::serve;
 use betterlite_models::decisions::Json;
 use betterlite_openai::files::error::FilesError;
-use betterlite_openai::files::stream::StreamExit;
+use betterlite_openai::files::stream::{FileContentStreamingResult, StreamExit};
 use futures_util::StreamExt as _;
 use http::Method;
 use indexmap::IndexMap;
 use rstest::rstest;
 
 use super::support::{
-    Events, Fixture, IMPATIENT, ProxiedSource, Source, Wire, fetch_stream, gated, locked, params,
+    Events, Fixture, IMPATIENT, ProxiedSource, Source, Wire, gated, locked, params,
     provider_headers, recording_config, request, retrieve_call, streaming,
 };
-use crate::api::file_http_content::config::{Headers, QueryParams};
+use crate::api::file_http_content::config::{FileContentConfig, Headers, QueryParams};
 use crate::api::file_http_content::error::ContentError;
-use crate::api::file_http_content::service::ContentDeps;
+use crate::api::file_http_content::service::streaming::retrieve_content_streaming;
+use crate::api::file_http_content::service::{ClientSource, ContentDeps, RetrieveCall};
 use crate::api::vector_store_http_write::error::HeaderMap as ErrorHeaders;
+
+async fn fetch_stream<'deps, C, S>(
+    fixture: &mut Fixture,
+    deps: &'deps ContentDeps<'deps, C, S>,
+    call: &RetrieveCall<'_>,
+    chunk: NonZeroUsize,
+    events: &Events,
+) -> Result<FileContentStreamingResult, ContentError>
+where
+    C: FileContentConfig,
+    S: ClientSource,
+{
+    let prepared = fixture.prepare(deps, call, events)?;
+    retrieve_content_streaming(prepared, chunk, &mut fixture.state).await
+}
 
 #[tokio::test]
 async fn streaming_prepared_query_overrides_the_url_and_returns_before_the_body() {

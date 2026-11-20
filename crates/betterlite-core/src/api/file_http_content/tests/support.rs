@@ -35,6 +35,7 @@ use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
+use url::Url;
 
 use crate::api::file_http_content::config::{
     BodyStream, BufferedResponse, ContentParams, FileContentConfig, Headers, QueryParams,
@@ -43,8 +44,7 @@ use crate::api::file_http_content::config::{
 use crate::api::file_http_content::error::ContentError;
 use crate::api::file_http_content::service::{
     BufferedReply, ClientSource, ContentDeps, ContentRequest, ContentTransport, LogContext,
-    PreparedContent, RetrieveCall, StreamedReply, prepare, retrieve_content_streaming,
-    retrieve_file_content,
+    PreparedContent, RetrieveCall, StreamedReply, prepare,
 };
 use crate::api::vector_store_http_write::error::{BaseLlmException, ClientError};
 
@@ -163,17 +163,33 @@ impl Fixture {
 }
 
 pub(crate) enum Answer {
-    Buffered {
-        status: u16,
-        headers: HttpHeaders,
-        body: Vec<u8>,
-    },
-    Stream {
-        status: u16,
-        headers: HttpHeaders,
-        body: BodyStream,
-    },
+    Buffered(u16, HttpHeaders, Vec<u8>),
+    Stream(u16, HttpHeaders, BodyStream),
     Failure(TransportError),
+}
+
+impl TryFrom<(Url, Answer)> for BufferedReply {
+    type Error = TransportError;
+
+    fn try_from((url, answer): (Url, Answer)) -> Result<Self, Self::Error> {
+        match answer {
+            Answer::Buffered(status, headers, body) => Ok(Self::new(status, url, headers, body)),
+            Answer::Failure(error) => Err(error),
+            Answer::Stream(..) => panic!("a buffered send needs a buffered answer"),
+        }
+    }
+}
+
+impl TryFrom<(Url, Answer)> for StreamedReply {
+    type Error = TransportError;
+
+    fn try_from((url, answer): (Url, Answer)) -> Result<Self, Self::Error> {
+        match answer {
+            Answer::Stream(status, headers, body) => Ok(Self::new(status, url, headers, body)),
+            Answer::Failure(error) => Err(error),
+            Answer::Buffered(..) => panic!("a streaming send needs a stream answer"),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -203,6 +219,17 @@ impl Wire {
             .take()
             .expect("the wire answers once")
     }
+
+    // every call records the request it carried and the URL it went to before the answer is taken
+    fn record(&self, request: ContentRequest) -> (Url, Answer) {
+        self.events.push("send");
+        let answered = request.url.clone();
+        self.requests
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(request);
+        (answered, self.take())
+    }
 }
 
 impl ContentTransport for Wire {
@@ -210,54 +237,16 @@ impl ContentTransport for Wire {
         &self,
         request: ContentRequest,
     ) -> impl Future<Output = Result<BufferedReply, TransportError>> + Send {
-        self.events.push("send");
-        let answered = request.url.clone();
-        self.requests
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(request);
-        let answer = self.take();
-        ready(match answer {
-            Answer::Buffered {
-                status,
-                headers,
-                body,
-            } => Ok(BufferedReply {
-                status,
-                url: answered,
-                headers,
-                body,
-            }),
-            Answer::Failure(error) => Err(error),
-            Answer::Stream { .. } => panic!("a buffered send needs a buffered answer"),
-        })
+        let (answered, answer) = self.record(request);
+        ready(BufferedReply::try_from((answered, answer)))
     }
 
     fn send_stream(
         &self,
         request: ContentRequest,
     ) -> impl Future<Output = Result<StreamedReply, TransportError>> + Send {
-        self.events.push("send");
-        let answered = request.url.clone();
-        self.requests
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(request);
-        let answer = self.take();
-        ready(match answer {
-            Answer::Stream {
-                status,
-                headers,
-                body,
-            } => Ok(StreamedReply {
-                status,
-                url: answered,
-                headers,
-                body,
-            }),
-            Answer::Failure(error) => Err(error),
-            Answer::Buffered { .. } => panic!("a streaming send needs a stream answer"),
-        })
+        let (answered, answer) = self.record(request);
+        ready(StreamedReply::try_from((answered, answer)))
     }
 }
 
@@ -580,7 +569,9 @@ pub(crate) fn request(file_id: &str, extra_body: IndexMap<String, String>) -> Fi
     }
 }
 
-pub(crate) fn http_headers(pairs: &[(&'static str, &'static str)]) -> HttpHeaders {
+pub(crate) type HeaderPairs = [(&'static str, &'static str)];
+
+pub(crate) fn http_headers(pairs: &HeaderPairs) -> HttpHeaders {
     let mut headers = HttpHeaders::new();
     for (name, value) in pairs {
         headers.append(
@@ -591,28 +582,12 @@ pub(crate) fn http_headers(pairs: &[(&'static str, &'static str)]) -> HttpHeader
     headers
 }
 
-pub(crate) fn buffered(
-    status: u16,
-    headers: &[(&'static str, &'static str)],
-    body: &[u8],
-) -> Answer {
-    Answer::Buffered {
-        status,
-        headers: http_headers(headers),
-        body: body.to_vec(),
-    }
+pub(crate) fn buffered(status: u16, headers: &HeaderPairs, body: &[u8]) -> Answer {
+    Answer::Buffered(status, http_headers(headers), body.to_vec())
 }
 
-pub(crate) fn streaming(
-    status: u16,
-    headers: &[(&'static str, &'static str)],
-    body: BodyStream,
-) -> Answer {
-    Answer::Stream {
-        status,
-        headers: http_headers(headers),
-        body,
-    }
+pub(crate) fn streaming(status: u16, headers: &HeaderPairs, body: BodyStream) -> Answer {
+    Answer::Stream(status, http_headers(headers), body)
 }
 
 pub(crate) fn key(text: &str) -> SecretString {
@@ -645,33 +620,4 @@ pub(crate) fn wire_header<'request>(
         .headers
         .get(name)
         .and_then(|value| value.to_str().ok())
-}
-
-pub(crate) async fn fetch<'deps, C, S>(
-    fixture: &mut Fixture,
-    deps: &'deps ContentDeps<'deps, C, S>,
-    call: &RetrieveCall<'_>,
-    events: &Events,
-) -> Result<BinaryContent, ContentError>
-where
-    C: FileContentConfig,
-    S: ClientSource,
-{
-    let prepared = fixture.prepare(deps, call, events)?;
-    retrieve_file_content(prepared, &mut fixture.state).await
-}
-
-pub(crate) async fn fetch_stream<'deps, C, S>(
-    fixture: &mut Fixture,
-    deps: &'deps ContentDeps<'deps, C, S>,
-    call: &RetrieveCall<'_>,
-    chunk: NonZeroUsize,
-    events: &Events,
-) -> Result<FileContentStreamingResult, ContentError>
-where
-    C: FileContentConfig,
-    S: ClientSource,
-{
-    let prepared = fixture.prepare(deps, call, events)?;
-    retrieve_content_streaming(prepared, chunk, &mut fixture.state).await
 }

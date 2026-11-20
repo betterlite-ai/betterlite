@@ -5,21 +5,39 @@ use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::serve;
 use betterlite_models::decisions::Json;
+use betterlite_openai::files::records::BinaryContent;
 use http::Method;
 use indexmap::IndexMap;
 use rstest::rstest;
 
 use super::support::{
     Answer, Events, Fixture, ProxiedSource, Source, Wire, buffered, caller_headers, extra_body,
-    fetch, key, locked, params, provider_headers, recording_config, request, retrieve_call,
+    key, locked, params, provider_headers, recording_config, request, retrieve_call,
     unavailable_config, wire_header,
 };
-use crate::api::file_http_content::config::{ContentParams, Headers, QueryParams};
+use crate::api::file_http_content::config::{
+    ContentParams, FileContentConfig, Headers, QueryParams,
+};
 use crate::api::file_http_content::error::ContentError;
-use crate::api::file_http_content::service::ContentDeps;
+use crate::api::file_http_content::service::buffered::retrieve_file_content;
+use crate::api::file_http_content::service::{ClientSource, ContentDeps, RetrieveCall};
 use crate::api::vector_store_http_write::error::HeaderMap as ErrorHeaders;
 
 const BINARY: [u8; 10] = [0x00, 0xFF, 0x62, 0x69, 0x6E, 0x61, 0x72, 0x79, 0x80, 0x0A];
+
+async fn fetch<'deps, C, S>(
+    fixture: &mut Fixture,
+    deps: &'deps ContentDeps<'deps, C, S>,
+    call: &RetrieveCall<'_>,
+    events: &Events,
+) -> Result<BinaryContent, ContentError>
+where
+    C: FileContentConfig,
+    S: ClientSource,
+{
+    let prepared = fixture.prepare(deps, call, events)?;
+    retrieve_file_content(prepared, &mut fixture.state).await
+}
 
 #[tokio::test]
 async fn preparation_logs_the_transformed_request() {

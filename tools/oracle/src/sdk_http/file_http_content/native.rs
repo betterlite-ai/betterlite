@@ -5,9 +5,10 @@ use std::time::Duration;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_core::api::file_http_content::config::{ContentParams, FileContentConfig, Headers};
 use betterlite_core::api::file_http_content::error::ContentError;
+use betterlite_core::api::file_http_content::service::buffered::retrieve_file_content;
+use betterlite_core::api::file_http_content::service::streaming::retrieve_content_streaming;
 use betterlite_core::api::file_http_content::service::{
-    ClientSource, ContentDeps, PreparedContent, RetrieveCall, prepare, retrieve_content_streaming,
-    retrieve_file_content,
+    ClientSource, ContentDeps, PreparedContent, RetrieveCall, prepare,
 };
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;

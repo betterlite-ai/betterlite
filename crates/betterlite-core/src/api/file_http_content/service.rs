@@ -1,5 +1,4 @@
 use std::future::Future;
-use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use betterlite_logging::logging_pre_post::args::AdditionalArgs;
@@ -8,25 +7,23 @@ use betterlite_logging::logging_pre_post::pre_call::PreCall;
 use betterlite_logging::logging_pre_post::pre_call::pre_call;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
-use betterlite_openai::files::records::{BinaryContent, FileContentRequest};
-use betterlite_openai::files::stream::{
-    FileContentStreamingResult, flatten_headers, read_error_body,
-};
+use betterlite_openai::files::records::FileContentRequest;
+use betterlite_openai::files::stream::flatten_headers;
+use http::HeaderMap as HttpHeaders;
 use http::header::{CONTENT_ENCODING, CONTENT_LENGTH, HeaderName, HeaderValue};
-use http::{HeaderMap as HttpHeaders, Method};
 use indexmap::IndexMap;
 use url::Url;
 
 use crate::api::vector_store_http_write::error::ClientError;
 
-use super::config::{
-    BodyStream, ContentParams, FileContentConfig, Headers, QueryParams, StreamContext,
-};
+use super::config::{BodyStream, ContentParams, FileContentConfig, Headers, QueryParams};
 use super::error::ContentError;
 
+pub mod buffered;
 mod facts;
 mod proxied;
 mod query;
+pub mod streaming;
 
 pub struct ContentRequest {
     pub method: Method,
@@ -36,19 +33,27 @@ pub struct ContentRequest {
     pub timeout: Option<Duration>,
 }
 
-pub struct BufferedReply {
+// The answered URL is the one the response came from: a redirect changes it from the requested one
+pub struct Reply<B> {
     pub status: u16,
     pub url: Url,
     pub headers: HttpHeaders,
-    pub body: Vec<u8>,
+    pub body: B,
 }
 
-pub struct StreamedReply {
-    pub status: u16,
-    pub url: Url,
-    pub headers: HttpHeaders,
-    pub body: BodyStream,
+impl<B> Reply<B> {
+    pub(super) fn new(status: u16, url: Url, headers: HttpHeaders, body: B) -> Self {
+        Self {
+            status,
+            url,
+            headers,
+            body,
+        }
+    }
 }
+
+pub type BufferedReply = Reply<Vec<u8>>;
+pub type StreamedReply = Reply<BodyStream>;
 
 // The selected client: both buffered modes run over one pooled client class, and streaming asks it for the body unread
 pub trait ContentTransport: Send + Sync {
@@ -182,100 +187,6 @@ fn wire_headers(headers: &Headers) -> Result<HttpHeaders, ContentError> {
         map.insert(header_name, header_value);
     }
     Ok(map)
-}
-
-// retrieve_file_content and async_retrieve_file_content share this GET: no per-call timeout, and a status of 400 or more raises the provider's error
-pub async fn retrieve_file_content<C, S>(
-    prepared: PreparedContent<'_, C, S>,
-    logging: &mut LoggingState,
-) -> Result<BinaryContent, ContentError>
-where
-    C: FileContentConfig,
-    S: ClientSource,
-{
-    let PreparedContent {
-        config,
-        client,
-        url,
-        query,
-        headers,
-        params,
-        ..
-    } = prepared;
-    let pairs: Vec<(String, String)> = query.into_iter().collect();
-    let reply = client
-        .send(ContentRequest {
-            method: Method::GET,
-            url,
-            query: pairs,
-            headers,
-            timeout: None,
-        })
-        .await
-        .map_err(|error| ContentError::Provider(facts::transport_error(config, &error)))?;
-    if reply.status >= 400 {
-        return Err(ContentError::Provider(facts::status_error(
-            config,
-            reply.status,
-            &reply.headers,
-            &reply.body,
-        )));
-    }
-    config.transform_content_response(&facts::buffered_response(reply), logging, &params)
-}
-
-// async_retrieve_file_content_streaming: the prepared query overrides the transform's own, and the body stays unread until the caller iterates
-pub async fn retrieve_content_streaming<C, S>(
-    prepared: PreparedContent<'_, C, S>,
-    chunk_size: NonZeroUsize,
-    logging: &mut LoggingState,
-) -> Result<FileContentStreamingResult, ContentError>
-where
-    C: FileContentConfig,
-    S: ClientSource,
-{
-    let PreparedContent {
-        config,
-        client,
-        url,
-        query,
-        headers,
-        params,
-        timeout,
-    } = prepared;
-    let target = query::streaming_url(&url, &query);
-    let reply = client
-        .send_stream(ContentRequest {
-            method: Method::GET,
-            url: target,
-            query: Vec::new(),
-            headers,
-            timeout,
-        })
-        .await
-        .map_err(|error| ContentError::Provider(facts::transport_error(config, &error)))?;
-    let StreamedReply {
-        status,
-        url: answered,
-        headers: response_headers,
-        body,
-    } = reply;
-    if status >= 400 {
-        let error_body = read_error_body(body).await;
-        return Err(ContentError::Provider(facts::status_error(
-            config,
-            status,
-            &response_headers,
-            &error_body,
-        )));
-    }
-    let decoded = decoded_body_headers(&response_headers);
-    let context = StreamContext {
-        request_url: answered.as_str(),
-        logging,
-        params: &params,
-    };
-    Ok(config.transform_content_stream(body, &decoded, chunk_size, context))
 }
 
 // aiter_bytes yields the decoded body, so a content-encoding other than identity leaves the transfer headers describing the wire bytes
