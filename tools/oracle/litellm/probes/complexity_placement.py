@@ -117,7 +117,7 @@ class ProbeRouter:
 # get_supported_openai_params answers from the case, so both sides see one provider capability map
 class SupportedParams:
     def __init__(self, supported: dict[str, list[str]]) -> None:
-        self.supported = supported
+        self.supported: dict[str, list[str]] = supported
 
     def __call__(
         self, model: str, custom_llm_provider: str | None = None, base_model: str | None = None
@@ -129,7 +129,7 @@ class SupportedParams:
 # random.choice does not route through random(), so the pick consumes the injected sample itself
 class InjectedChoice:
     def __init__(self, generator: InjectedRandom) -> None:
-        self.generator = generator
+        self.generator: InjectedRandom = generator
 
     def choice(self, seq: Sequence[str]) -> str:
         picked = int(self.generator.random() * len(seq))

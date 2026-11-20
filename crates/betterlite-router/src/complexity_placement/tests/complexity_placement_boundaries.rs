@@ -121,7 +121,6 @@ fn an_empty_medium_pool_is_reported_under_medium() {
 fn an_empty_default_model_is_used_as_given() {
     let mut world = World::new();
     world.default_model = Some(String::new());
-    world.set_pool("MEDIUM", single("mid"));
     let context = world.context();
     let service = world.service(&context);
     let mut no_draw = NoDraw;
@@ -390,28 +389,28 @@ fn a_non_object_effort_carrier_is_left_alone() {
         ("max_output_tokens", 3_i64),
     ],
     false,
-    "max_tokens"
+    1_i64
 )]
 #[case::chat_completion_and_output(
     &[("max_completion_tokens", 2_i64), ("max_output_tokens", 3_i64)],
     false,
-    "max_completion_tokens"
+    2_i64
 )]
-#[case::chat_output_only(&[("max_output_tokens", 3_i64)], false, "max_output_tokens")]
+#[case::chat_output_only(&[("max_output_tokens", 3_i64)], false, 3_i64)]
 #[case::responses_output_and_tokens(
     &[("max_output_tokens", 3_i64), ("max_tokens", 1_i64)],
     true,
-    "max_output_tokens"
+    3_i64
 )]
 #[case::responses_tokens_and_completion(
     &[("max_tokens", 1_i64), ("max_completion_tokens", 2_i64)],
     true,
-    "max_tokens"
+    1_i64
 )]
 fn a_ceiling_collapses_onto_its_surface_name(
     #[case] params: &[(&str, i64)],
     #[case] responses: bool,
-    #[case] surface: &str,
+    #[case] expected: i64,
 ) {
     let world = World::new();
     let lookup = world.lookup();
@@ -426,11 +425,11 @@ fn a_ceiling_collapses_onto_its_surface_name(
             .map(|(key, value)| (*key, number(*value)))
             .collect::<Vec<_>>(),
     );
-    let expected = params
-        .iter()
-        .find(|(key, _)| *key == surface)
-        .map(|(_, value)| *value)
-        .unwrap();
+    let surface = if responses {
+        "max_output_tokens"
+    } else {
+        "max_tokens"
+    };
     let mut caller = request(&[]);
     let pinned =
         pin_tier_params_onto_request(&target, "ghost", &tier_params, &mut caller, responses)
