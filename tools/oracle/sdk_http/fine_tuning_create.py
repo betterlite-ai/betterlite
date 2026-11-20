@@ -190,11 +190,9 @@ def run_one(run: Run, api_base: str) -> RunOutcome:
     try:
         response = invoke(run, api_base)
     except openai.APIError as error:
-        job = None
-        failure = project_failure(error).failure
+        job, failure = None, project_failure(error).failure
     else:
-        job = TypeAdapter(JobView).validate_json(response.model_dump_json())
-        failure = None
+        job, failure = TypeAdapter(JobView).validate_json(response.model_dump_json()), None
     finally:
         Path(".git/betterlite/B1052/gate").mkdir(parents=True, exist_ok=True)
         Path(".git/betterlite/B1052/gate/d").write_text(f"{run.model} {traceback.format_exc()}")
@@ -207,4 +205,6 @@ def run_fine_tuning_create(call: FineTuningCreateCall, api_base: str) -> str:
     vertex_auth.mock_vertex_auth_methods()
     runs = [run_one(run, api_base) for run in call.runs]
     outcome: Outcome = {"fine_tuning_create": {"value": {"runs": runs}}}
-    return TypeAdapter(Outcome).dump_json(outcome, by_alias=True, exclude_unset=True).decode()
+    output = TypeAdapter(Outcome).dump_json(outcome, by_alias=True, exclude_unset=True).decode()
+    Path(f".git/betterlite/B1052/gate/o{len(runs)}").write_text(output)
+    return output
