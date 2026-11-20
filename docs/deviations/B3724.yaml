@@ -1,0 +1,21 @@
+task: B3724
+deviations:
+  - what: Exhausted throttle retries re-raise the last HTTP 429 with AWS's own message; LiteLLM's HTTP 500 "Bedrock guardrail throttle retries exhausted" after the retry loop is unreachable.
+    why: Every loop iteration either returns or raises, so the trailing 500 can never run; betterlite keeps the real upstream status and message the caller would act on instead of a status LiteLLM never sends.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1185
+  - what: A guardrail with no guardrailIdentifier or guardrailVersion fails before sending, as HTTP 500 naming the missing field; LiteLLM interpolates None into the path and posts to /guardrail/None/version/None/apply.
+    why: A working ApplyGuardrail setup always configures both, so no caller relies on the unbuildable URL, and failing before the signed call reports the configuration error instead of an upstream 4xx.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L818-L822
+  - what: A 200 body that is not valid JSON becomes HTTP 500 with the decoder's message and no record; LiteLLM lets httpx_response.json() raise an uncaught JSONDecodeError out of make_bedrock_api_request.
+    why: betterlite reports a failed guardrail response through its typed HTTP failure path, so the proxy answers with a JSON 500 instead of unwinding on an exception the caller does not catch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1247
+  - what: A connection-level transport failure becomes HTTP 500 whose detail is the innermost exception message; LiteLLM logs {"error": str(e)} without usage and re-raises the raw transport exception.
+    why: betterlite surfaces every guardrail call failure as a JSON HTTP failure, while the record it writes (status guardrail_failed_to_respond, no usage, the exception text) matches what LiteLLM logs for that branch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1794-L1815
+  - what: A record that cannot be written is logged as a warning and the guardrail outcome is unchanged; LiteLLM lets the logging exception replace the block, success or failure it was recording.
+    why: A failed log sink must not decide whether a request is blocked or allowed, and the warning keeps the loss visible.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1290-L1320
+  - what: Guardrail dynamic extra_body parameters are applied unconditionally; LiteLLM ignores them unless litellm.proxy.proxy_server.premium_user is True.
+    why: betterlite is MIT and has no premium-user gate; dropping the parameters would silently disable a documented feature, so the oracle helper sets premium_user for LiteLLM to compare the same behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1182-L1189
+kept_bugs: []

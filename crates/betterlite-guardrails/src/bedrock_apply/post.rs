@@ -81,7 +81,7 @@ where
     parsed_response(call, &response_body, completed)
 }
 
-// the transport already failed, so this 500 carries the exception's own message and one failed-to-respond record
+// LiteLLM's connection branch logs {"error": str(e)} with no usage, since no chunk was billed in this call
 fn transport_failure(call: &mut PostCall<'_>, error: &PostError) -> ApplyError {
     let detail = transport_detail(error);
     if let Err(log_error) = write_failure(&mut call.logs, &detail, &[]) {
