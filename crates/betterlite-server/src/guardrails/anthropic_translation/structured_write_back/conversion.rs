@@ -69,28 +69,14 @@ pub(super) async fn placeholder(model: &str) -> Result<Vec<Value>, StructuredWri
 }
 
 pub(super) struct Conversion<'input> {
-    model: &'input str,
-    hoisted: Option<&'input Value>,
-    preserve_system_messages: bool,
+    pub(super) model: &'input str,
+    pub(super) hoisted: Option<&'input Value>,
+    pub(super) preserve_system_messages: bool,
     pub(super) hoisted_dropped: bool,
-    converted: Vec<Value>,
+    pub(super) converted: Vec<Value>,
 }
 
 impl<'input> Conversion<'input> {
-    pub(super) const fn new(
-        model: &'input str,
-        hoisted: Option<&'input Value>,
-        preserve_system_messages: bool,
-    ) -> Self {
-        Self {
-            model,
-            hoisted,
-            preserve_system_messages,
-            hoisted_dropped: false,
-            converted: Vec::new(),
-        }
-    }
-
     pub(super) async fn walk(&mut self, rows: &[Value]) -> Result<(), StructuredWriteBackError> {
         let mut run: Vec<Value> = Vec::new();
         for message in rows {

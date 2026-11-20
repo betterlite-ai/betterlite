@@ -13,6 +13,7 @@ use std::collections::HashSet;
 
 use betterlite_core::api::messages_chat_transform::compose::translate_anthropic_to_openai;
 use betterlite_core::api::messages_chat_transform::settings::AdapterSettings;
+use betterlite_core::api::responses_input_content::is_truthy;
 use betterlite_prompts::anthropic_history::groups::group_tool_exchanges;
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
 use serde_json::{Map, Value};
@@ -20,7 +21,7 @@ use serde_json::{Map, Value};
 use conversion::Conversion;
 use deps::{NoCapabilities, NoParameters};
 use error::StructuredWriteBackError;
-use system_rows::{is_present, text_block, text_block_row};
+use system_rows::{text_block, text_block_row};
 
 const CACHE_CONTROL: &str = "cache_control";
 const CONTENT: &str = "content";
@@ -58,7 +59,7 @@ pub async fn translate_to_openai(
 pub async fn hoisted_system_message(
     data: &Map<String, Value>,
 ) -> Result<Option<Value>, StructuredWriteBackError> {
-    let Some(system) = data.get(SYSTEM).filter(|value| is_present(value)) else {
+    let Some(system) = data.get(SYSTEM).filter(|&value| is_truthy(Some(value))) else {
         return Ok(None);
     };
     let mut probe = Map::new();
@@ -207,8 +208,13 @@ pub async fn write_back_structured_messages(
     if !leading.is_empty() && !only_the_hoisted_prompt {
         fold_leading_systems(data, leading, hoisted_system_message.is_none());
     }
-    let mut conversion = Conversion::new(&model, hoisted_system_message, preserve_system_messages);
-    conversion.hoisted_dropped = hoisted_in_leading;
+    let mut conversion = Conversion {
+        model: model.as_str(),
+        hoisted: hoisted_system_message,
+        preserve_system_messages,
+        hoisted_dropped: hoisted_in_leading,
+        converted: Vec::new(),
+    };
     conversion.walk(rest).await?;
     let converted = conversion.finish().await?;
     data.insert(MESSAGES.to_owned(), Value::Array(converted));
