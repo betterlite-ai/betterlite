@@ -194,3 +194,53 @@ pub fn decode_chat_events(
 }
 
 mod tests;
+
+#[cfg(test)]
+mod delta_projection_tests {
+    use betterlite_streaming::stream_chunk_shaping::records::{StreamChoice, StreamChunk};
+    use serde_json::{Value, json};
+
+    use super::chat_chunk;
+
+    fn emitted(delta: &str) -> Value {
+        let chunk = StreamChunk {
+            choices: vec![StreamChoice {
+                delta: serde_json::from_str(delta).expect("the delta"),
+                ..StreamChoice::default()
+            }],
+            ..StreamChunk::default()
+        };
+        chat_chunk(&chunk, "client", false)
+            .expect("the chunk serializes")
+            .expect("a delta with fields is written")
+    }
+
+    // The client reads index, id, type and function on a delta tool call, and nothing else.
+    #[test]
+    fn the_delta_keeps_the_tool_call_fields_the_client_reads() {
+        let value = emitted(
+            r#"{"tool_calls":[{"index":0,"id":"tool_1","type":"function","function":{"name":"get_weather","arguments":"{}"},"provider_specific_fields":{"seen":true}}]}"#,
+        );
+        assert_eq!(
+            value.pointer("/choices/0/delta/tool_calls"),
+            Some(
+                &json!([{"index":0,"id":"tool_1","type":"function","function":{"name":"get_weather","arguments":"{}"}}])
+            )
+        );
+    }
+
+    #[test]
+    fn the_delta_carries_the_reasoning_and_thinking_blocks() {
+        let value = emitted(
+            r#"{"reasoning_content":"hmm","thinking_blocks":[{"type":"thinking","thinking":"hmm","signature":"sig-abc"}]}"#,
+        );
+        assert_eq!(
+            value.pointer("/choices/0/delta/reasoning_content"),
+            Some(&json!("hmm"))
+        );
+        assert_eq!(
+            value.pointer("/choices/0/delta/thinking_blocks"),
+            Some(&json!([{"type":"thinking","thinking":"hmm","signature":"sig-abc"}]))
+        );
+    }
+}
