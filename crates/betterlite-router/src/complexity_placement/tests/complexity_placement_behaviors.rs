@@ -518,7 +518,7 @@ fn a_non_pinning_pass_restores_the_callers_ceiling() {
 
 #[test]
 fn a_tier_effort_drops_the_clients_other_carriers() {
-    let mut world = World::new();
+    let world = World::new();
     let lookup = world.lookup();
     let support = Support;
     let target = TierTarget {

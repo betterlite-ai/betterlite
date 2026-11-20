@@ -29,7 +29,7 @@ const THIRD: u64 = 3_002_399_751_580_330;
 const THIRD_PLUS_ONE: u64 = 3_002_399_751_580_331;
 const TWO_THIRDS: u64 = 6_004_799_503_160_661;
 const TWO_THIRDS_MINUS_ONE: u64 = 6_004_799_503_160_660;
-const HALF_MINUS_ONE: u64 = 4_503_599_627_370_495;
+const HALF_MINUS_ONE: u64 = 0x000F_FFFF_FFFF_FFFF;
 
 fn pin_of(model: &str) -> StoredPin {
     let mut fields = IndexMap::new();
@@ -49,8 +49,8 @@ fn a_three_model_draw_lands_like_random_choice(#[case] sample: u64, #[case] expe
 }
 
 #[rstest]
-#[case::just_below(HALF_MINUS_ONE, 0)]
-#[case::at_half(HALF, 1)]
+#[case::just_below(HALF_MINUS_ONE, "a")]
+#[case::at_half(HALF, "b")]
 fn a_two_model_pool_switches_at_half(#[case] sample: u64, #[case] expected: &str) {
     let mut world = World::new();
     world.set_pool("MEDIUM", pool(&["a", "b"]));
@@ -327,7 +327,7 @@ fn a_stamped_ceiling_keeps_the_first_stamp() {
 
 #[test]
 fn a_non_object_metadata_bucket_is_replaced_for_a_stamp() {
-    let mut world = World::new();
+    let world = World::new();
     let lookup = world.lookup();
     let support = Support;
     let target = TierTarget {
@@ -358,7 +358,7 @@ fn a_non_object_metadata_bucket_is_replaced_for_a_stamp() {
 
 #[test]
 fn a_non_object_effort_carrier_is_left_alone() {
-    let mut world = World::new();
+    let world = World::new();
     let lookup = world.lookup();
     let support = Support;
     let target = TierTarget {
@@ -413,7 +413,7 @@ fn a_ceiling_collapses_onto_its_surface_name(
     #[case] responses: bool,
     #[case] surface: &str,
 ) {
-    let mut world = World::new();
+    let world = World::new();
     let lookup = world.lookup();
     let support = Support;
     let target = TierTarget {
@@ -447,7 +447,7 @@ fn a_ceiling_collapses_onto_its_surface_name(
 
 #[test]
 fn an_empty_tier_params_map_changes_nothing() {
-    let mut world = World::new();
+    let world = World::new();
     let lookup = world.lookup();
     let support = Support;
     let target = TierTarget {

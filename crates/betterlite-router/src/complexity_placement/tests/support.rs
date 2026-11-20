@@ -37,10 +37,10 @@ pub(super) const MEDIUM: Tier = Tier::BuiltIn(ComplexityTier::Medium);
 
 // a 53-bit draw: 0, 2^51, 2^52, 3 * 2^51 and 2^53 - 1, the last sample below one
 pub(super) const ZERO: u64 = 0;
-pub(super) const QUARTER: u64 = 2_251_799_813_685_248;
-pub(super) const HALF: u64 = 4_503_599_627_370_496;
+pub(super) const QUARTER: u64 = 0x0008_0000_0000_0000;
+pub(super) const HALF: u64 = 0x0010_0000_0000_0000;
 pub(super) const THREE_QUARTERS: u64 = 6_755_399_441_055_744;
-pub(super) const LAST_SAMPLE: u64 = 9_007_199_254_740_991;
+pub(super) const LAST_SAMPLE: u64 = 0x001F_FFFF_FFFF_FFFF;
 
 pub(super) fn runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
@@ -51,8 +51,8 @@ pub(super) fn runtime() -> tokio::runtime::Runtime {
 
 // a 53-bit draw sequence, as the oracle's injected samples give it
 pub(super) struct ScriptedRng {
-    samples: Vec<u64>,
-    pub draws: usize,
+    pub(super) samples: Vec<u64>,
+    pub(super) draws: usize,
 }
 
 impl ScriptedRng {
