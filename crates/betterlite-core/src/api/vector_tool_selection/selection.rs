@@ -6,7 +6,7 @@ use betterlite_models::model_registration::JsonObject;
 use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
 
 use crate::api::vector_store_registry::error::VectorStoreRegistryError;
-use crate::api::vector_store_registry::repository::{VectorStoreDatabase, rows_from_database};
+use crate::api::vector_store_registry::repository::rows_from_database;
 use crate::api::vector_store_registry::store::VectorStoreRegistry;
 use crate::api::vector_store_registry::tools::{
     VectorStoreToolParams, extract_tool_params, ids_to_run,
