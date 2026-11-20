@@ -73,7 +73,7 @@ pub(super) fn run_images(input: &ImagesInput) -> HelperResult {
         Ok(()) => Value::Null,
         Err(error) => projection::failure(&error.into_failure()),
     };
-    Ok(output(&[], &detections, &[], &BTreeMap::new(), error))
+    Ok(output(&[], &detections, &[], &BTreeMap::new(), &error))
 }
 
 fn airline_settings(config: &CompetitorConfigInput) -> AirlineSettings {
@@ -122,7 +122,7 @@ pub(super) fn run_competitor(input: &CompetitorInput) -> HelperResult {
             Err(issue) => error = projection::action_failure(&issue),
         }
     }
-    Ok(output(&texts, &detections, &[], &BTreeMap::new(), error))
+    Ok(output(&texts, &detections, &[], &BTreeMap::new(), &error))
 }
 
 fn policy_error(
@@ -164,7 +164,7 @@ pub(super) fn run_tool_calls(input: &ToolCallsInput) -> HelperResult {
         &mut calls,
         &mut detections,
     ));
-    Ok(output(&[], &detections, &calls, &BTreeMap::new(), error))
+    Ok(output(&[], &detections, &calls, &BTreeMap::new(), &error))
 }
 
 pub(super) fn run_mcp(input: &McpInput) -> HelperResult {
@@ -183,5 +183,5 @@ pub(super) fn run_mcp(input: &McpInput) -> HelperResult {
         &mut request_data,
         &mut detections,
     ));
-    Ok(output(&[], &detections, &[], &request_data, error))
+    Ok(output(&[], &detections, &[], &request_data, &error))
 }

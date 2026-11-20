@@ -47,7 +47,7 @@ pub(super) fn output(
     detections: &[ContentFilterDetection],
     tool_calls: &[GuardrailValue],
     request_data: &BTreeMap<String, GuardrailValue>,
-    error: Value,
+    error: &Value,
 ) -> Value {
     json!({
         "texts": Value::Array(texts.iter().map(|text| Value::String(text.clone())).collect()),
