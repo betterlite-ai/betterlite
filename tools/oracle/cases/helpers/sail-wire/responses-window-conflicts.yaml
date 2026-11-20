@@ -1,0 +1,27 @@
+kind: helper
+name: sail-wire-responses-window-conflicts
+call:
+  b6411:
+    function: responses_params
+    model: llama-3-70b
+    steps:
+      - {params: {service_tier: flex}, drop_params: false, global_drop_params: false}
+      - {params: {service_tier: default}, drop_params: false, global_drop_params: false}
+      - {params: {service_tier: auto}, drop_params: false, global_drop_params: false}
+      - {params: {service_tier: balanced, metadata: {a: 1}}, drop_params: false, global_drop_params: false}
+      - {params: {metadata: {completion_window: standard}}, drop_params: false, global_drop_params: false}
+      - {params: {metadata: {completion_window: flex, a: 1}}, drop_params: false, global_drop_params: false}
+      - {params: {service_tier: default, metadata: {completion_window: flex}}, drop_params: false, global_drop_params: false}
+      - {params: {service_tier: default, metadata: {completion_window: flex}}, drop_params: true, global_drop_params: false}
+      - {params: {service_tier: flex, metadata: {completion_window: asap}}, drop_params: false, global_drop_params: false}
+      - {params: {service_tier: balanced, metadata: {completion_window: STANDARD}}, drop_params: false, global_drop_params: false}
+      - {params: {metadata: {completion_window: flash}}, drop_params: false, global_drop_params: false}
+      - {params: {metadata: {completion_window: flash, a: 1}}, drop_params: false, global_drop_params: true}
+      - {params: {service_tier: null, metadata: null}, drop_params: false, global_drop_params: false}
+      - {params: {service_tier: bogus}, drop_params: true, global_drop_params: false}
+      - {params: {service_tier: BALANCED}, drop_params: false, global_drop_params: false}
+      - {params: {metadata: {completion_window: 5}}, drop_params: true, global_drop_params: false}
+      - {params: {metadata: {}}, drop_params: false, global_drop_params: false}
+      - {params: {metadata: []}, drop_params: false, global_drop_params: false}
+env: {}
+compare: {ignore: []}

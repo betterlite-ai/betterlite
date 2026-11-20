@@ -36,12 +36,15 @@ description: >-
   `update_default_team_budgets(...)` runs only when litellm_settings.default_internal_user_params.teams is a non-empty list of
   objects, calling the team member budget update as the proxy admin (the hashed master key).
 
-  Tuning gate: `load_tuning_baselines(db, deployments)` reads the litellm_config row heuristic tuning baseline (B343's
-  TUNING_BASELINE_PARAM_NAME), decoding a JSON string or object into identity to fingerprint strings; with no row it
-  records B343's snapshot of the current routers and, on a unique violation (another pod won), reads the winner's row
+  Tuning gate: `load_tuning_baselines(db, deployments)` reads the litellm_config row heuristic tuning baseline (param_name
+  "auto_router_tuning_baseline_v3", LiteLLM's TUNING_BASELINE_PARAM_NAME), decoding a JSON string or object into identity to fingerprint strings; with no row it
+  records a snapshot of the current routers and, on a unique violation (another pod won), reads the winner's row
   instead. Any other error warns "Heuristic-v1 tuning baseline unavailable, gate not enforced this boot: {error}" and returns
   None. `enforce_tuning_baseline(...)` combines config and database deployments, loads the baselines and fails startup with
-  "model_list: {violation} {remedy}" when B343's tuning_limit_violation reports one.
+  "model_list: {violation} {remedy}" when tuning_limit_violation reports one. B343 omits auto_router_tuning_baseline.py as
+  licensing-only, so this task ports the pure helpers the gate calls itself, in startup_checks: snapshot_tuning_baselines
+  (L114-L123) with tuning_fingerprint, uses_heuristic_v1, router_identity, heuristic_v1_router_fingerprint and _mapping
+  (L39-L111), mutable_tuned_identities with is_mutable_tuned_candidate (L126-L144) and tuning_limit_violation (L147-L154).
 
   Oracle cases are helper cases on the pure parts (operation b8373 with an `operation:` field): the transaction buffer check
   for bool, "true" string, "false" string and no Redis; the budget-without-DB and fail-closed warning conditions; and the

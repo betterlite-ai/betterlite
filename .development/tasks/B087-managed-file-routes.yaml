@@ -25,6 +25,8 @@ description: >-
   B1100 registers routes/managed_file.rs as a stub, so fill only crates/betterlite-server/src/routes/managed_file.rs and leave routes.rs and state.rs as they are.
 
   Booted case from B036. B036 binds the xAI, Mistral and Codestral leaves but no longer runs their files case, since it needs these composed routes. Add providers/xai-mistral/native-files-lifecycle: the native files lifecycle of B036's providers through /{provider}/v1/files, /v1/files and /files (list and create at the root, retrieve and delete at /{file_id:path}, content at /{file_id:path}/content), with B900's multipart fixtures and B1139's ordered steps, comparing the upstream URL, auth and body, the status and headers, and the error type, param and code.
+
+  Gemini file arm. B035 answers Gemini file operations as not built and lands first. In its studio dispatch (crates/betterlite-provider/src/studio_dispatch and crates/betterlite-core/src/api/studio_bindings), install B1367's two-stage native file upload plan using B173 transport and B009 URL policy: the start request, the required resumable-upload URL, then the bytes with upload, finalize. A failed start must not send bytes, and cancellation drops the active response. Reuse B1028 and B1029's provider file operation contracts for retrieve and delete; native listing and content stay unsupported for Studio. Gemini file upload goes through POST /{provider}/v1/files, /v1/files and /files, retrieve and delete through GET and DELETE /{provider}/v1/files/{file_id:path}, /v1/files/{file_id:path} and /files/{file_id:path}. Write tools/oracle/cases/api/studio/resumable-files.yaml through these routes against a mock Gemini upstream.
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
@@ -42,10 +44,17 @@ scope:
   - tools/oracle/src/helpers/server/b087.rs
   - tools/oracle/src/helpers/server/b087/**
   - tools/oracle/cases/providers/xai-mistral/native-files-lifecycle.yaml
+  - crates/betterlite-provider/src/studio_dispatch.rs
+  - crates/betterlite-provider/src/studio_dispatch/**
+  - crates/betterlite-core/src/api/studio_bindings.rs
+  - crates/betterlite-core/src/api/studio_bindings/**
+  - tools/oracle/cases/api/studio/resumable-files.yaml
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L1434-L1649
   why: Delete aliases, raw cloud admin gate, credential routing and source error mapping.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/files/transformation.py#L1-L392
+  why: B1367 supplies the resumable request and result transforms the native file executor uses.
 dod:
 - text: >-
     delete_aliases_and_family sends DELETE /files/f,/v1/files/f,/openai/v1/files/f: each gets
@@ -94,6 +103,8 @@ dod:
   proof: [delete-tests, oracle, new-cases]
 - text: "B036's native files bindings answer upload, list, retrieve, content and delete through every composed file route alias as LiteLLM does."
   proof: [oracle]
+- text: "Gemini native file upload sends the start request before any bytes, sends no bytes after a failed start and closes on cancellation, through the booted proxy."
+  proof: [oracle]
 checks:
   optional: []
   commands:
@@ -110,6 +121,7 @@ oracle_cases:
 - tools/oracle/cases/api/managed-file-routes/delete-credential-routing.yaml
 - tools/oracle/cases/api/managed-file-routes/delete-status-headers-and-failures.yaml
 - tools/oracle/cases/providers/xai-mistral/native-files-lifecycle.yaml
+- tools/oracle/cases/api/studio/resumable-files.yaml
 deviations:
 - what: Legacy managed deletion without model routing returns 500 internal_server_error/code="500", message="Managed files hook not found", and leaves stored rows/content untouched.
   why: Max's managed files and batches decision is open; preserve the absent-hook MIT behavior without importing enterprise code or imposing a license check.

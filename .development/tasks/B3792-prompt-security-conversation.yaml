@@ -38,7 +38,8 @@ description: >-
   prompt_security_conversation/initialize.rs (tests in initialize/tests.rs) copies api_base, api_key, the guardrail name ("" when absent), mode as the event
   hook, default_on, streaming_transform_mode, file_sanitization_fail_open, block_on_file_modify and timeout, each None
   when the params leave it out, and registers nothing. B8521's hook registry answers prompt_security with
-  HookRegistryError::NotBuilt until this task lands. Put the prompt_security arm in its place in hook_registry/kinds.rs,
+  HookRegistryError::NotBuilt until this task lands. B8666's LiveGuardrail::build has no prompt_security arm either, so
+  also add the `LiveGuardrail` variant and arm in crates/betterlite-server/src/guardrail_dispatch/live.rs. Put the prompt_security arm in its place in hook_registry/kinds.rs,
   keeping the args as `HookSpec::PromptSecurity(PromptSecurityArgs)` in spec.rs with its settings arm, and give
   supported_event_hooks("prompt_security") in hooks.rs the list get_supported_event_hooks returns. Swap B8521's
   `unbuilt_prompt_security` test for `prompt_security_arm`, and drop prompt_security from the not-built row of
@@ -54,6 +55,7 @@ scope:
     - crates/betterlite-guardrails/src/hook_registry/error.rs
     - crates/betterlite-guardrails/src/hook_registry/tests.rs
     - docs/deviations/B8521.yaml
+    - crates/betterlite-server/src/guardrail_dispatch/live.rs
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L41-L66
