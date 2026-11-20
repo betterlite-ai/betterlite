@@ -50,11 +50,13 @@ pub(super) struct DiagnosticInput<'view> {
 }
 
 // Ports _record_zero_cost_diagnostic: one finding and one warning, neither of which fails the call.
-pub(super) fn record_diagnostic<Inference: ProviderInference>(
+pub(super) fn record_diagnostic<Inference>(
     recorder: &CostRecorder<'_, Inference>,
     log: &mut LoggingState,
     input: &DiagnosticInput<'_>,
-) {
+) where
+    Inference: ProviderInference,
+{
     if input.cost.is_none() && !input.calculation_failed {
         return;
     }
@@ -68,9 +70,7 @@ pub(super) fn record_diagnostic<Inference: ProviderInference>(
     }) else {
         return;
     };
-    if let Some(finding) = &found
-        && !log.cost.zero_cost_warned
-    {
+    if let Some(finding) = found.as_ref().filter(|_| !log.cost.zero_cost_warned) {
         log.cost.zero_cost_warned = true;
         tracing::warn!("{}", finding.warning);
     }
@@ -80,11 +80,14 @@ pub(super) fn record_diagnostic<Inference: ProviderInference>(
 }
 
 // Ports _zero_cost_finding: zero or unbilled costs only, priced through B1682 and B1683.
-fn zero_cost_finding<Inference: ProviderInference>(
+fn zero_cost_finding<Inference>(
     recorder: &CostRecorder<'_, Inference>,
     log: &LoggingState,
     input: &DiagnosticInput<'_>,
-) -> Result<Option<Finding>, DiagnosticError> {
+) -> Result<Option<Finding>, DiagnosticError>
+where
+    Inference: ProviderInference,
+{
     if input.cost.is_some_and(|cost| !cost.is_zero()) || identity::unbilled(log, input.background) {
         return Ok(None);
     }
@@ -108,8 +111,7 @@ fn zero_cost_finding<Inference: ProviderInference>(
     ) else {
         return Ok(None);
     };
-    let params = identity::metadata::params_view(&log.litellm_params);
-    let metadata = merge_litellm_metadata(&params);
+    let metadata = merge_litellm_metadata(&identity::metadata::params_view(&log.litellm_params));
     let provider = identity::text_field(&log.model_call_details, "custom_llm_provider")?;
     let warning = zero_cost_warning(
         &diagnostic,
@@ -125,11 +127,14 @@ fn zero_cost_finding<Inference: ProviderInference>(
 }
 
 // The pricing identity _zero_cost_finding hands to B1682, resolved before the price entry.
-fn priced_entry<Inference: ProviderInference>(
+fn priced_entry<Inference>(
     recorder: &CostRecorder<'_, Inference>,
     log: &LoggingState,
     input: &DiagnosticInput<'_>,
-) -> Result<Option<PricedEntry>, DiagnosticError> {
+) -> Result<Option<PricedEntry>, DiagnosticError>
+where
+    Inference: ProviderInference,
+{
     let named = input
         .litellm_model_name
         .as_deref()
@@ -177,15 +182,12 @@ fn priced_model<Inference>(
     let raw_router_entry = request
         .router_model_id
         .is_some_and(|id| recorder.lookup.raw_cost_map_entry(id).is_some());
-    let from_deployment = deployment_info(
-        &PricingQuery {
-            custom_pricing: request.custom_pricing,
-            router_model_id: request.router_model_id,
-            logging_params: Some(&log.litellm_params),
-        },
-        recorder.lookup,
-    )?
-    .is_some();
+    let query = PricingQuery {
+        custom_pricing: request.custom_pricing,
+        router_model_id: request.router_model_id,
+        logging_params: Some(&log.litellm_params),
+    };
+    let from_deployment = deployment_info(&query, recorder.lookup)?.is_some();
     let mut priced = PricedModel {
         record,
         tiered_pricing: Vec::new(),
