@@ -23,20 +23,14 @@ impl ProbeResponse {
     #[must_use]
     pub fn to_json(&self) -> JsonObject {
         let mut response = JsonObject::new();
-        if let Some(requests) = &self.remaining_requests {
-            response.insert(
-                "x-ratelimit-remaining-requests".to_owned(),
-                Json::Text(requests.clone()),
-            );
-        }
-        if let Some(tokens) = &self.remaining_tokens {
-            response.insert(
-                "x-ratelimit-remaining-tokens".to_owned(),
-                Json::Text(tokens.clone()),
-            );
-        }
-        if let Some(region) = &self.region {
-            response.insert("x-ms-region".to_owned(), Json::Text(region.clone()));
+        for (key, value) in [
+            ("x-ratelimit-remaining-requests", &self.remaining_requests),
+            ("x-ratelimit-remaining-tokens", &self.remaining_tokens),
+            ("x-ms-region", &self.region),
+        ] {
+            if let Some(value) = value {
+                response.insert(key.to_owned(), Json::Text(value.clone()));
+            }
         }
         response
     }
