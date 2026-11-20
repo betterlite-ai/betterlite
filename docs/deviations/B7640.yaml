@@ -10,7 +10,7 @@ deviations:
     why: Rust has no untyped dict; the fields read are the same ones LiteLLM reads.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L711-L767
   - what: An unhealthy endpoint's error is stored as JSON text when it is not a string, not as Python's repr.
-    why: LiteLLM calls `str(error)` on whatever the endpoint record holds; betterlite serializes the JSON value it carries, so a dict error reads {"detail":"boom"} where Python writes {'detail': 'boom'}.
+    why: LiteLLM calls `str(error)` on whatever the endpoint record holds, so a dict error becomes Python's repr with single quotes; betterlite serializes the JSON value it carries, so the same error reads as compact JSON.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L764-L765
   - what: A `model_info.id` that is not a non-empty string is treated as no model id.
     why: LiteLLM keeps any truthy `model_info.get("id")`, including a number; betterlite's deployment identity only accepts non-empty text, so a numeric id falls back to the model name as the lookup key.
