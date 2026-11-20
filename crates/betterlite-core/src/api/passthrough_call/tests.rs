@@ -527,6 +527,21 @@ async fn error_a_provider_without_a_passthrough_config_is_named() {
 }
 
 #[tokio::test]
+async fn error_a_model_without_a_provider_is_a_resolution_error() {
+    let mut args = vllm_args("http://127.0.0.1:1");
+    args.model = String::from("no-such-model-anywhere");
+    args.custom_llm_provider = None;
+    args.api_base = None;
+    let mut state = logging_state();
+    let http = proxy_client(1024);
+    let error = allm_passthrough_route(args, &mut state, &http)
+        .await
+        .err()
+        .expect("no provider can be found for the model");
+    assert!(matches!(error, PassthroughCallError::Resolution(_)));
+}
+
+#[tokio::test]
 async fn error_a_send_failure_goes_through_handle_error() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();

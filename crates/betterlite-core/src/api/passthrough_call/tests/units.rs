@@ -18,6 +18,7 @@ use betterlite_openai::passthrough::transformation::types::{
 };
 use indexmap::IndexMap;
 use rstest::rstest;
+use secrecy::SecretString;
 use serde_json::Number;
 
 use super::super::allm_passthrough_route;
@@ -260,6 +261,35 @@ async fn auth_refuses_non_string_provider_credentials(
         }
         other => panic!("unexpected error: {other}"),
     }
+}
+
+#[tokio::test]
+async fn auth_nvidia_nim_sets_the_bearer_header_only_for_a_key() {
+    let http = proxy_client(1024);
+    let key = SecretString::from("nim-key");
+    let headers = auth::validate(
+        PassthroughConfigTag::NvidiaNim,
+        Some(&key),
+        &Object::new(),
+        "https://example.test",
+        &http,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        headers.get("Authorization"),
+        Some(&String::from("Bearer nim-key"))
+    );
+    let bare = auth::validate(
+        PassthroughConfigTag::NvidiaNim,
+        None,
+        &Object::new(),
+        "https://example.test",
+        &http,
+    )
+    .await
+    .unwrap();
+    assert_eq!(bare.get("Authorization"), None);
 }
 
 #[test]
