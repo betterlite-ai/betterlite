@@ -7,7 +7,7 @@ use rust_decimal::Decimal;
 
 use crate::prometheus::bounded_series::CounterEmission;
 use crate::prometheus_helpers::bounded_series_tracker::{
-    BoundedPrometheusSeriesTracker, RemovableMetric, SeriesLimits, TrackerError,
+    BoundedPrometheusSeriesTracker, RemovableMetric, SeriesLimits,
 };
 use crate::prometheus_label_projection::label_factory_context::PrometheusLabelFactoryContext;
 use crate::prometheus_label_projection::prometheus_label_factory::{
@@ -58,11 +58,13 @@ where
 {
     pub fn observe(
         &self,
-        labels: &ProjectedLabels,
+        values: &UserApiKeyLabelValues,
+        source: LabelSource<'_>,
         seconds: Decimal,
         now: Instant,
-    ) -> Result<(), TrackerError<Metric::Error>> {
-        self.handle.observe(labels, seconds);
+    ) -> Result<(), LatencyRecordingError<Metric::Error>> {
+        let labels = prometheus_label_factory(self.handle.supported_labels, values, source)?;
+        self.handle.observe(&labels, seconds);
         let emission = CounterEmission {
             counter: self.handle.metric,
             metric_name: self.metric_name,
@@ -70,7 +72,8 @@ where
             tracker: self.tracker,
             limits: &self.limits,
         };
-        emission.track_end_user(labels, now)
+        emission.track_end_user(&labels, now)?;
+        Ok(())
     }
 }
 
@@ -130,6 +133,10 @@ impl<'labels> LatencyLabels<'labels> {
         })
     }
 
+    fn values(&self) -> &UserApiKeyLabelValues {
+        self.values.as_ref()
+    }
+
     const fn source(&self) -> LabelSource<'_> {
         match &self.context {
             Some(context) => LabelSource::Context(context),
@@ -158,23 +165,21 @@ where
 {
     let end_time = observation.timestamps.end_time.unwrap_or(observation.now);
     let latency_labels = LatencyLabels::new(*labels, observation.input_sequence_length)?;
-    record_time_to_first_token(histograms, observation, &latency_labels)?;
-    record_api_latency(histograms, observation, end_time, &latency_labels)?;
-    let queue_time = observation
-        .queue_time_seconds
-        .filter(|seconds| *seconds >= Decimal::ZERO);
-    record_total_latency(
-        histograms,
-        observation,
-        end_time,
-        queue_time,
-        &latency_labels,
-    )?;
-    record_queue_time(histograms, observation, queue_time, labels)?;
-    Ok(())
+    observe_time_to_first_token(histograms, observation, &latency_labels)?;
+    if let Some(seconds) =
+        safe_duration_seconds(observation.timestamps.api_call_start, Some(end_time))
+    {
+        histograms.api_latency.observe(
+            latency_labels.values(),
+            latency_labels.source(),
+            seconds,
+            observation.now_monotonic,
+        )?;
+    }
+    observe_total_and_queue_latency(histograms, observation, end_time, labels, &latency_labels)
 }
 
-fn record_time_to_first_token<Metric>(
+fn observe_time_to_first_token<Metric>(
     histograms: &LatencyHistograms<'_, Metric>,
     observation: &LatencyObservation<'_>,
     labels: &LatencyLabels<'_>,
@@ -185,104 +190,59 @@ where
     let time_to_first_token = safe_duration_seconds(
         observation.timestamps.api_call_start,
         observation.timestamps.completion_start,
-    );
-    match time_to_first_token {
-        Some(seconds) if observation.stream == Some(true) => {
-            let projected = prometheus_label_factory(
-                histograms.time_to_first_token.handle.supported_labels,
-                labels.values.as_ref(),
-                labels.source(),
-            )?;
-            histograms.time_to_first_token.observe(
-                &projected,
-                seconds,
-                observation.now_monotonic,
-            )?;
-        }
-        Some(_) | None => tracing::debug!(
+    )
+    .filter(|_| observation.stream == Some(true));
+    let Some(seconds) = time_to_first_token else {
+        tracing::debug!(
             "Time to first token metric not emitted, stream option in model_parameters is not True"
-        ),
-    }
-    Ok(())
+        );
+        return Ok(());
+    };
+    histograms.time_to_first_token.observe(
+        labels.values(),
+        labels.source(),
+        seconds,
+        observation.now_monotonic,
+    )
 }
 
-fn record_api_latency<Metric>(
+fn observe_total_and_queue_latency<Metric>(
     histograms: &LatencyHistograms<'_, Metric>,
     observation: &LatencyObservation<'_>,
     end_time: Decimal,
-    labels: &LatencyLabels<'_>,
-) -> Result<(), LatencyRecordingError<Metric::Error>>
-where
-    Metric: Collector + RemovableMetric,
-{
-    let Some(seconds) =
-        safe_duration_seconds(observation.timestamps.api_call_start, Some(end_time))
-    else {
-        return Ok(());
-    };
-    let projected = prometheus_label_factory(
-        histograms.api_latency.handle.supported_labels,
-        labels.values.as_ref(),
-        labels.source(),
-    )?;
-    histograms
-        .api_latency
-        .observe(&projected, seconds, observation.now_monotonic)?;
-    Ok(())
-}
-
-fn record_total_latency<Metric>(
-    histograms: &LatencyHistograms<'_, Metric>,
-    observation: &LatencyObservation<'_>,
-    end_time: Decimal,
-    queue_time: Option<Decimal>,
-    labels: &LatencyLabels<'_>,
-) -> Result<(), LatencyRecordingError<Metric::Error>>
-where
-    Metric: Collector + RemovableMetric,
-{
-    let Some(total_seconds) =
-        safe_duration_seconds(observation.timestamps.start_time, Some(end_time))
-    else {
-        return Ok(());
-    };
-    let observed_total = match queue_time {
-        Some(added) => total_seconds
-            .checked_add(added)
-            .ok_or(LatencyRecordingError::Overflow)?,
-        None => total_seconds,
-    };
-    let projected = prometheus_label_factory(
-        histograms.total_latency.handle.supported_labels,
-        labels.values.as_ref(),
-        labels.source(),
-    )?;
-    histograms
-        .total_latency
-        .observe(&projected, observed_total, observation.now_monotonic)?;
-    Ok(())
-}
-
-fn record_queue_time<Metric>(
-    histograms: &LatencyHistograms<'_, Metric>,
-    observation: &LatencyObservation<'_>,
-    queue_time: Option<Decimal>,
     labels: &LabelInputs<'_>,
+    latency_labels: &LatencyLabels<'_>,
 ) -> Result<(), LatencyRecordingError<Metric::Error>>
 where
     Metric: Collector + RemovableMetric,
 {
-    let Some(sample) = queue_time else {
-        return Ok(());
-    };
-    let projected = prometheus_label_factory(
-        histograms.queue_time.handle.supported_labels,
-        labels.values,
-        labels.source(),
-    )?;
-    histograms
-        .queue_time
-        .observe(&projected, sample, observation.now_monotonic)?;
+    let queue_time = observation
+        .queue_time_seconds
+        .filter(|seconds| *seconds >= Decimal::ZERO);
+    if let Some(total_seconds) =
+        safe_duration_seconds(observation.timestamps.start_time, Some(end_time))
+    {
+        let observed_total = match queue_time {
+            Some(added) => total_seconds
+                .checked_add(added)
+                .ok_or(LatencyRecordingError::Overflow)?,
+            None => total_seconds,
+        };
+        histograms.total_latency.observe(
+            latency_labels.values(),
+            latency_labels.source(),
+            observed_total,
+            observation.now_monotonic,
+        )?;
+    }
+    if let Some(sample) = queue_time {
+        histograms.queue_time.observe(
+            labels.values,
+            labels.source(),
+            sample,
+            observation.now_monotonic,
+        )?;
+    }
     Ok(())
 }
 

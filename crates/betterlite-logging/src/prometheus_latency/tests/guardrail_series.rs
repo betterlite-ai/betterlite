@@ -25,25 +25,17 @@ fn guardrail_observation(
     }
 }
 
-fn infallible_collectors<'collectors>(
-    latency: &'collectors RecordingMetric,
-    requests: &'collectors RecordingMetric,
-    errors: &'collectors RecordingMetric,
-) -> GuardrailCollectors<'collectors, Infallible> {
-    GuardrailCollectors {
-        latency,
-        requests,
-        errors,
-    }
-}
-
 #[test]
 fn success_records_latency_and_requests_without_an_error() {
     let events = EventLog::default();
     let latency = RecordingMetric::with_log("latency", &events);
     let requests = RecordingMetric::with_log("requests", &events);
     let errors = RecordingMetric::with_log("errors", &events);
-    let collectors = infallible_collectors(&latency, &requests, &errors);
+    let collectors: GuardrailCollectors<'_, Infallible> = GuardrailCollectors {
+        latency: &latency,
+        requests: &requests,
+        errors: &errors,
+    };
     record_guardrail_metrics(
         &collectors,
         &guardrail_observation(GuardrailStatus::Success, None),
@@ -79,7 +71,11 @@ fn an_error_with_a_type_increments_all_three_series() {
     let latency = RecordingMetric::with_log("latency", &events);
     let requests = RecordingMetric::with_log("requests", &events);
     let errors = RecordingMetric::with_log("errors", &events);
-    let collectors = infallible_collectors(&latency, &requests, &errors);
+    let collectors: GuardrailCollectors<'_, Infallible> = GuardrailCollectors {
+        latency: &latency,
+        requests: &requests,
+        errors: &errors,
+    };
     record_guardrail_metrics(
         &collectors,
         &guardrail_observation(GuardrailStatus::Error, Some("timeout")),
@@ -127,7 +123,11 @@ fn an_error_without_a_type_labels_none_and_skips_the_error_counter(
     let latency = RecordingMetric::with_log("latency", &events);
     let requests = RecordingMetric::with_log("requests", &events);
     let errors = RecordingMetric::with_log("errors", &events);
-    let collectors = infallible_collectors(&latency, &requests, &errors);
+    let collectors: GuardrailCollectors<'_, Infallible> = GuardrailCollectors {
+        latency: &latency,
+        requests: &requests,
+        errors: &errors,
+    };
     record_guardrail_metrics(
         &collectors,
         &guardrail_observation(GuardrailStatus::Error, error_type),
@@ -163,7 +163,11 @@ fn an_intervened_status_with_a_type_skips_the_error_counter() {
     let latency = RecordingMetric::with_log("latency", &events);
     let requests = RecordingMetric::with_log("requests", &events);
     let errors = RecordingMetric::with_log("errors", &events);
-    let collectors = infallible_collectors(&latency, &requests, &errors);
+    let collectors: GuardrailCollectors<'_, Infallible> = GuardrailCollectors {
+        latency: &latency,
+        requests: &requests,
+        errors: &errors,
+    };
     record_guardrail_metrics(
         &collectors,
         &guardrail_observation(GuardrailStatus::Intervened, Some("pii")),
@@ -193,25 +197,17 @@ fn an_intervened_status_with_a_type_skips_the_error_counter() {
     );
 }
 
-fn failing_collectors<'collectors>(
-    latency: &'collectors FailingSeries,
-    requests: &'collectors FailingSeries,
-    errors: &'collectors FailingSeries,
-) -> GuardrailCollectors<'collectors, RejectedLabels> {
-    GuardrailCollectors {
-        latency,
-        requests,
-        errors,
-    }
-}
-
 #[test]
 fn a_rejected_latency_sample_is_logged_and_skips_the_later_series() {
     let events = EventLog::default();
     let latency = FailingSeries::with_log("latency", &events, FailurePoint::Observe);
     let requests = FailingSeries::with_log("requests", &events, FailurePoint::NoFailure);
     let errors = FailingSeries::with_log("errors", &events, FailurePoint::NoFailure);
-    let collectors = failing_collectors(&latency, &requests, &errors);
+    let collectors: GuardrailCollectors<'_, RejectedLabels> = GuardrailCollectors {
+        latency: &latency,
+        requests: &requests,
+        errors: &errors,
+    };
     let (captured, _guard) = capture_logs();
     record_guardrail_metrics(
         &collectors,
@@ -231,7 +227,11 @@ fn a_rejected_request_increment_skips_the_error_counter() {
     let latency = FailingSeries::with_log("latency", &events, FailurePoint::NoFailure);
     let requests = FailingSeries::with_log("requests", &events, FailurePoint::Increment);
     let errors = FailingSeries::with_log("errors", &events, FailurePoint::NoFailure);
-    let collectors = failing_collectors(&latency, &requests, &errors);
+    let collectors: GuardrailCollectors<'_, RejectedLabels> = GuardrailCollectors {
+        latency: &latency,
+        requests: &requests,
+        errors: &errors,
+    };
     let (captured, _guard) = capture_logs();
     record_guardrail_metrics(
         &collectors,
@@ -263,7 +263,11 @@ fn a_rejected_error_increment_is_logged_and_not_returned() {
     let latency = FailingSeries::with_log("latency", &events, FailurePoint::NoFailure);
     let requests = FailingSeries::with_log("requests", &events, FailurePoint::NoFailure);
     let errors = FailingSeries::with_log("errors", &events, FailurePoint::Increment);
-    let collectors = failing_collectors(&latency, &requests, &errors);
+    let collectors: GuardrailCollectors<'_, RejectedLabels> = GuardrailCollectors {
+        latency: &latency,
+        requests: &requests,
+        errors: &errors,
+    };
     let (captured, _guard) = capture_logs();
     record_guardrail_metrics(
         &collectors,

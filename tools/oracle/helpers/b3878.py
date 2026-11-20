@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from typing import Literal, NotRequired, TypedDict, cast
+from typing import Literal, TypeAlias, TypedDict, cast
 
 from litellm.integrations.prometheus import PrometheusLogger
 from litellm.types.utils import StandardLoggingPayload
@@ -28,11 +28,22 @@ class DurationCall(TypedDict):
     end_time: float | None
 
 
-class Input(TypedDict):
-    function: Literal["overhead", "input_sequence_length", "safe_duration"]
-    overhead_calls: NotRequired[list[OverheadCall]]
-    bucket_calls: NotRequired[list[BucketCall]]
-    duration_calls: NotRequired[list[DurationCall]]
+class OverheadInput(TypedDict):
+    function: Literal["overhead"]
+    overhead_calls: list[OverheadCall]
+
+
+class BucketInput(TypedDict):
+    function: Literal["input_sequence_length"]
+    bucket_calls: list[BucketCall]
+
+
+class DurationInput(TypedDict):
+    function: Literal["safe_duration"]
+    duration_calls: list[DurationCall]
+
+
+Input: TypeAlias = OverheadInput | BucketInput | DurationInput
 
 
 class UpstreamUsage:
@@ -45,27 +56,16 @@ class ResponseUsage:
         self.usage = usage
 
 
-def as_payload(fields: dict[str, JsonValue]) -> StandardLoggingPayload:
-    return cast(StandardLoggingPayload, fields)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3570
-
-
-def timestamp(seconds: float | None) -> datetime | None:
-    return None if seconds is None else datetime.fromtimestamp(seconds, tz=UTC)
-
-
 def response_object(call: BucketCall) -> JsonValue | ResponseUsage:
     if not call["response_is_object"]:
-        usage = (
+        return ResponseUsage(
             {"prompt_tokens": call["response_usage_prompt_tokens"]}
             if call["response_has_usage"]
             else None
         )
-        return ResponseUsage(usage)
     if not call["response_has_usage"]:
-        empty: JsonValue = {}
-        return empty
-    response: JsonValue = {"usage": {"prompt_tokens": call["response_usage_prompt_tokens"]}}
-    return response
+        return {}
+    return {"usage": {"prompt_tokens": call["response_usage_prompt_tokens"]}}
 
 
 class ProbeLogger(PrometheusLogger):
@@ -73,19 +73,13 @@ class ProbeLogger(PrometheusLogger):
         pass
 
     def overhead_seconds(self, call: OverheadCall) -> float:
-        payload = as_payload({"guardrail_information": call["guardrail_information"]})
-        return self._get_guardrail_overhead_seconds(payload)
+        payload = cast(StandardLoggingPayload, {"guardrail_information": call["guardrail_information"]})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3570
+        return self._get_guardrail_overhead_seconds(payload)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3570
 
     def bucket(self, call: BucketCall) -> str:
-        payload = as_payload(
-            {
-                "prompt_tokens": call["prompt_tokens"],
-                "metadata": {"usage_object": call["metadata_usage"]},
-            }
-        )
         combined = call["combined_usage"]
         return self._get_input_sequence_length(
-            payload,
+            cast(StandardLoggingPayload, {"prompt_tokens": call["prompt_tokens"], "metadata": {"usage_object": call["metadata_usage"]}}),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3570
             {
                 "combined_usage_object": combined,
                 "_litellm_upstream_reported_usage": UpstreamUsage(
@@ -96,25 +90,29 @@ class ProbeLogger(PrometheusLogger):
         )
 
     def duration(self, call: DurationCall) -> float | None:
+        start_time = call["start_time"]
+        end_time = call["end_time"]
         return self._safe_duration_seconds(
-            start_time=timestamp(call["start_time"]),
-            end_time=timestamp(call["end_time"]),
+            start_time=None if start_time is None else datetime.fromtimestamp(start_time, tz=UTC),
+            end_time=None if end_time is None else datetime.fromtimestamp(end_time, tz=UTC),
         )
 
 
 def run(input_value: Input) -> JsonValue:
     logger = ProbeLogger()
-    if input_value["function"] == "overhead":
-        overhead: list[JsonValue] = [
-            logger.overhead_seconds(call) for call in input_value.get("overhead_calls", [])
-        ]
-        return {"seconds": overhead}
-    if input_value["function"] == "input_sequence_length":
-        buckets: list[JsonValue] = [
-            logger.bucket(call) for call in input_value.get("bucket_calls", [])
-        ]
-        return {"buckets": buckets}
-    durations: list[JsonValue] = [
-        logger.duration(call) for call in input_value.get("duration_calls", [])
-    ]
-    return {"seconds": durations}
+    match input_value["function"]:
+        case "overhead":
+            overhead: list[JsonValue] = [
+                logger.overhead_seconds(call) for call in input_value["overhead_calls"]
+            ]
+            return {"seconds": overhead}
+        case "input_sequence_length":
+            buckets: list[JsonValue] = [
+                logger.bucket(call) for call in input_value["bucket_calls"]
+            ]
+            return {"buckets": buckets}
+        case "safe_duration":
+            durations: list[JsonValue] = [
+                logger.duration(call) for call in input_value["duration_calls"]
+            ]
+            return {"seconds": durations}
