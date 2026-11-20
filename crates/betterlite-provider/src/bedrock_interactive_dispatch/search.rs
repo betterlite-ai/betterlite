@@ -1,6 +1,6 @@
 use std::future::{Future, ready};
 use std::pin::Pin;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use betterlite_bedrock::agentcore_search_reply::decode_agentcore_search_reply;
 use betterlite_bedrock::agentcore_search_reply::error::SearchReplyError;
@@ -37,6 +37,7 @@ pub struct Operation<'call> {
     pub credentials: Credentials,
     pub lookup: &'call (dyn EnvironmentLookup + Sync),
     pub now: SystemTime,
+    pub deadline: Duration,
 }
 
 #[derive(Debug)]
@@ -68,6 +69,7 @@ struct Signing<'call> {
     credentials: Credentials,
     lookup: &'call (dyn EnvironmentLookup + Sync),
     now: SystemTime,
+    deadline: Duration,
 }
 
 impl Operation<'_> {
@@ -86,6 +88,7 @@ impl Operation<'_> {
             credentials: self.credentials,
             lookup: self.lookup,
             now: self.now,
+            deadline: self.deadline,
         };
         let request = sign(signing).await?;
         let reply = transport.send(request.clone()).await?;
@@ -105,6 +108,7 @@ async fn sign(signing: Signing<'_>) -> Result<LeafRequest, Error> {
         credentials,
         lookup,
         now,
+        deadline,
     } = signing;
     let signed = sign_request(
         &SignRequest {
@@ -131,5 +135,6 @@ async fn sign(signing: Signing<'_>) -> Result<LeafRequest, Error> {
             .map(|(name, value)| (name, Some(value)))
             .collect(),
         body: signed.body,
+        deadline,
     })
 }

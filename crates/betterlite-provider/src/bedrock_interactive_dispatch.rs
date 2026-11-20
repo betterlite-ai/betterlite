@@ -1,3 +1,4 @@
+use std::error::Error as StdError;
 use std::future::{Future, ready};
 use std::pin::Pin;
 
@@ -22,12 +23,15 @@ pub struct BedrockInteractiveRequest;
 pub struct BedrockInteractivePrepared;
 
 // One executable operation per interactive leaf; the caller builds the future through the leaf module
-pub enum BedrockInteractiveOperation<'call> {
+pub enum BedrockInteractiveOperation<'call, Transport>
+where
+    Transport: StdError + 'static,
+{
     Responses(responses::RunFuture<'call>),
     Passthrough(passthrough::RunFuture<'call>),
     Search(search::RunFuture<'call>),
     VectorRetrieve(vector_retrieve::RunFuture<'call>),
-    RealtimeBridge(realtime_bridge::RunFuture<'call>),
+    RealtimeBridge(realtime_bridge::RunFuture<'call, Transport>),
     Unsupported { operation: &'static str },
 }
 
@@ -40,9 +44,9 @@ pub enum BedrockInteractiveResult {
     RealtimeBridge(realtime_bridge::Outcome),
 }
 
-pub type DispatchFuture<'call> = Pin<
+pub type DispatchFuture<'call, Transport> = Pin<
     Box<
-        dyn Future<Output = Result<BedrockInteractiveResult, BedrockInteractiveError>>
+        dyn Future<Output = Result<BedrockInteractiveResult, BedrockInteractiveError<Transport>>>
             + Send
             + 'call,
     >,
@@ -50,7 +54,12 @@ pub type DispatchFuture<'call> = Pin<
 
 // The closed enum is the only entry: an operation this task does not own is reported, never guessed
 #[must_use]
-pub fn dispatch(operation: BedrockInteractiveOperation<'_>) -> DispatchFuture<'_> {
+pub fn dispatch<Transport>(
+    operation: BedrockInteractiveOperation<'_, Transport>,
+) -> DispatchFuture<'_, Transport>
+where
+    Transport: StdError + Send + 'static,
+{
     match operation {
         BedrockInteractiveOperation::Responses(future) => {
             Box::pin(async move { Ok(BedrockInteractiveResult::Responses(future.await?)) })

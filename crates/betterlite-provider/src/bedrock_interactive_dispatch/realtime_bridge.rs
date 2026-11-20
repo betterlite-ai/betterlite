@@ -2,6 +2,7 @@ use std::error::Error as StdError;
 use std::future::Future;
 use std::pin::Pin;
 
+use betterlite_bedrock::realtime_transport::error::RealtimeTransportError;
 use betterlite_bedrock::realtime_transport::prepare::RealtimeCredentials;
 use betterlite_bedrock::realtime_transport::runtime::RealtimeRuntime;
 use betterlite_bedrock::realtime_transport::session::{RealtimeCall, RealtimeTransport};
@@ -10,16 +11,21 @@ use betterlite_bedrock::realtime_transport::session::{RealtimeCall, RealtimeTran
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Outcome;
 
+// The transport error stays typed, so a caller matches its variant instead of downcasting
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub enum Error<Transport>
+where
+    Transport: StdError + 'static,
+{
     #[error("the Bedrock realtime session failed")]
     Session {
         #[source]
-        source: Box<dyn StdError + Send + Sync>,
+        source: Transport,
     },
 }
 
-pub type RunFuture<'call> = Pin<Box<dyn Future<Output = Result<Outcome, Error>> + Send + 'call>>;
+pub type RunFuture<'call, Transport> =
+    Pin<Box<dyn Future<Output = Result<Outcome, Error<Transport>>> + Send + 'call>>;
 
 // B666 owns prepare, credentials, connect, the pumps and the close; this only names its session opener
 #[must_use]
@@ -27,7 +33,7 @@ pub fn session<'call, Runtime, Resolver, ClientError>(
     runtime: &'call Runtime,
     credentials: &'call Resolver,
     call: RealtimeCall<'call, ClientError>,
-) -> RunFuture<'call>
+) -> RunFuture<'call, RealtimeTransportError<Runtime::Error, ClientError>>
 where
     Runtime: RealtimeRuntime,
     Resolver: RealtimeCredentials,
@@ -39,9 +45,7 @@ where
             .await;
         match outcome {
             Ok(()) => Ok(Outcome),
-            Err(source) => Err(Error::Session {
-                source: Box::new(source),
-            }),
+            Err(source) => Err(Error::Session { source }),
         }
     })
 }

@@ -1,5 +1,6 @@
 use std::future::Future;
 use std::pin::Pin;
+use std::time::Duration;
 
 use betterlite_bedrock::passthrough::BedrockPassthroughPlan;
 use betterlite_bedrock::passthrough::error::PassthroughFailure;
@@ -11,7 +12,7 @@ use betterlite_openai::passthrough::transformation::types::{
     PassthroughError, PassthroughLogging, PassthroughSigning, PassthroughTarget,
     PassthroughUrlRequest, RelayedResponse,
 };
-use url::Url;
+use http::Method;
 
 use super::http::{LeafReply, LeafRequest, LeafTransport};
 
@@ -21,6 +22,8 @@ pub struct Operation<'call> {
     pub url_request: PassthroughUrlRequest<'call>,
     pub signing: PassthroughSigning<'call>,
     pub headers: Headers,
+    pub method: Method,
+    pub deadline: Duration,
     pub logging: &'call mut (dyn PassthroughLogging + Send),
 }
 
@@ -50,21 +53,35 @@ pub type RunFuture<'call> = Pin<Box<dyn Future<Output = Result<Outcome, Error>> 
 
 impl Operation<'_> {
     pub async fn run(self, transport: &dyn LeafTransport) -> Result<Outcome, Error> {
-        let Self {
-            plan,
-            url_request,
-            signing,
-            headers,
-            logging,
-        } = self;
-        let target = url_request.target;
-        let (url, endpoint_url) = plan.get_complete_url(&url_request)?;
-        let (request, streaming) = signed_request(&plan, headers, &signing, target, url)?;
+        let target = self.url_request.target;
+        let (url, endpoint_url) = self.plan.get_complete_url(&self.url_request)?;
+        let empty = Object::new();
+        let data = self.signing.request_data.unwrap_or(&empty);
+        let streaming = self.plan.is_streaming_request(target.endpoint, data);
+        let (signed_headers, body) = self
+            .plan
+            .sign_request(self.headers.clone(), &self.signing)?;
+        let request = LeafRequest {
+            method: self.method.as_str().to_owned(),
+            url: url.to_string(),
+            headers: signed_headers
+                .into_iter()
+                .map(|(name, value)| (name, Some(value)))
+                .collect(),
+            body: body.unwrap_or_default(),
+            deadline: self.deadline,
+        };
         let reply = transport.send(request.clone()).await?;
         let logged = if streaming {
-            collect(&plan, target, &reply, logging)?
+            let mut collector = self.plan.create_stream_collector(&target);
+            for chunk in &reply.chunks {
+                collector.add(chunk);
+            }
+            collector
+                .build_logged_response(self.logging)
+                .map_err(|source| Error::Collector { source })?
         } else {
-            buffered(&plan, target, &signing, &reply, logging)
+            buffered(&self.plan, target, &self.signing, &reply, self.logging)
         };
         Ok(Outcome {
             request,
@@ -74,44 +91,6 @@ impl Operation<'_> {
             logged,
         })
     }
-}
-
-fn signed_request(
-    plan: &BedrockPassthroughPlan<'_>,
-    headers: Headers,
-    signing: &PassthroughSigning<'_>,
-    target: PassthroughTarget<'_>,
-    url: Url,
-) -> Result<(LeafRequest, bool), Error> {
-    let empty = Object::new();
-    let data = signing.request_data.unwrap_or(&empty);
-    let streaming = plan.is_streaming_request(target.endpoint, data);
-    let (signed_headers, body) = plan.sign_request(headers, signing)?;
-    let request = LeafRequest {
-        method: String::from("POST"),
-        url: url.to_string(),
-        headers: signed_headers
-            .into_iter()
-            .map(|(name, value)| (name, Some(value)))
-            .collect(),
-        body: body.unwrap_or_default(),
-    };
-    Ok((request, streaming))
-}
-
-fn collect(
-    plan: &BedrockPassthroughPlan<'_>,
-    target: PassthroughTarget<'_>,
-    reply: &LeafReply,
-    logging: &mut dyn PassthroughLogging,
-) -> Result<Option<Json>, Error> {
-    let mut collector = plan.create_stream_collector(&target);
-    for chunk in &reply.chunks {
-        collector.add(chunk);
-    }
-    collector
-        .build_logged_response(logging)
-        .map_err(|source| Error::Collector { source })
 }
 
 fn buffered(

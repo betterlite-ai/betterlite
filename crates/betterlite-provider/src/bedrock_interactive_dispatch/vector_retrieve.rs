@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::pin::Pin;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use betterlite_bedrock::aws_settings::sources::Credentials;
 use betterlite_bedrock::credentials::error::CredentialError;
@@ -44,6 +44,7 @@ pub struct Operation<'call> {
     pub credentials: Credentials,
     pub region_inputs: RegionInputs<'call>,
     pub now: SystemTime,
+    pub deadline: Duration,
 }
 
 #[derive(Debug)]
@@ -73,6 +74,7 @@ struct Signing<'call> {
     credentials: Credentials,
     region_inputs: RegionInputs<'call>,
     now: SystemTime,
+    deadline: Duration,
 }
 
 impl Operation<'_> {
@@ -96,6 +98,7 @@ impl Operation<'_> {
             credentials: self.credentials,
             region_inputs: self.region_inputs,
             now: self.now,
+            deadline: self.deadline,
         };
         let request = sign(signing).await?;
         let reply = transport.send(request.clone()).await?;
@@ -128,6 +131,7 @@ async fn sign(signing: Signing<'_>) -> Result<LeafRequest, Error> {
         credentials,
         region_inputs,
         now,
+        deadline,
     } = signing;
     let pairs: Vec<(String, Option<String>)> = headers.into_iter().collect();
     let signed = sign_request(
@@ -155,5 +159,6 @@ async fn sign(signing: Signing<'_>) -> Result<LeafRequest, Error> {
             .map(|(name, value)| (name, Some(value)))
             .collect(),
         body: signed.body,
+        deadline,
     })
 }

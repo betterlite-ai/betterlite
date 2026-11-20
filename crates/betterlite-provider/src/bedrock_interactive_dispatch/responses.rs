@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::pin::Pin;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use betterlite_bedrock::aws_settings::sources::Credentials;
 use betterlite_bedrock::bedrock_settings::{BedrockError, HeaderError};
@@ -63,6 +63,7 @@ pub struct Operation<'call, Fetcher, Capabilities> {
     pub capabilities: &'call mut Capabilities,
     pub drop_params: DropParams,
     pub bundled: BundledReasoningModels,
+    pub deadline: Duration,
 }
 
 #[derive(Debug)]
@@ -135,6 +136,7 @@ where
             model,
             &url,
             serde_json::from_value(decisions).map_err(ResponsesError::Encode)?,
+            self.deadline,
         )
         .await?;
         deliver(transport, request).await
@@ -170,6 +172,7 @@ async fn sign(
     model: &str,
     url: &str,
     signing_data: IndexMap<String, Json>,
+    deadline: Duration,
 ) -> Result<LeafRequest, Error> {
     let mut headers = aws.headers;
     validate_environment(&mut headers, aws.api_key, aws.environment_token);
@@ -199,6 +202,7 @@ async fn sign(
         url: url.to_owned(),
         headers: signed.headers,
         body,
+        deadline,
     })
 }
 
