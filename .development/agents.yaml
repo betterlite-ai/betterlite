@@ -3,9 +3,9 @@ vendors:
   - id: openai
     limit_markers: ["hit your usage limit"]
     max_parallel: 12
-  - id: anthropic-2
+  - id: anthropic
     limit_markers: ["You've hit your", "Not logged in", "Can't reach the API server"]
-    max_parallel: 8
+    max_parallel: 14
     max_writers: 4
   - id: deepseek
     limit_markers: ["Insufficient Balance", "Authentication Fails", "Rate Limit Reached", "Server Overloaded", "Can't reach the API server"]
@@ -32,12 +32,11 @@ runners:
     args: [exec, -c, 'service_tier="default"', --model, "{model}", -c, "model_reasoning_effort=\"{effort}\"", --sandbox, read-only, -c, "web_search=\"live\"", -c, "approval_policy=\"never\"", --ephemeral, --output-schema, "{schema}", -o, "{output}", --cd, "{worktree}", "-"]
     output: file
   - id: claude-worker
-    vendor: anthropic-2
+    vendor: anthropic
     program: claude
     args: [-p, --model, "{model}", --effort, "{effort}", --append-system-prompt-file, "{instructions}", --permission-mode, acceptEdits, --settings, "{sandbox_settings}", --allowedTools, Read, Edit, Write, Glob, Grep, WebSearch, WebFetch, --disallowedTools, Agent, --output-format, json, --json-schema, "{schema_text}", --strict-mcp-config]
     resume: [-p, --resume, "{session}", --model, "{model}", --effort, "{effort}", --append-system-prompt-file, "{instructions}", --permission-mode, acceptEdits, --settings, "{sandbox_settings}", --allowedTools, Read, Edit, Write, Glob, Grep, WebSearch, WebFetch, --disallowedTools, Agent, --output-format, json, --json-schema, "{schema_text}", --strict-mcp-config]
     output: claude-json
-    env_file: "{home}/.config/betterlite/claude-2.env"
   - id: deepseek-worker
     vendor: deepseek
     program: claude
@@ -60,11 +59,10 @@ runners:
     output: claude-json
     env_file: "{home}/.config/betterlite/vercel-pareto.env"
   - id: claude-reviewer
-    vendor: anthropic-2
+    vendor: anthropic
     program: claude
     args: [-p, --model, "{model}", --effort, "{effort}", --append-system-prompt-file, "{instructions}", --allowedTools, "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", Read, Glob, Grep, WebSearch, WebFetch, --disallowedTools, Edit, Write, Agent, --output-format, json, --json-schema, "{schema_text}", --no-session-persistence, --strict-mcp-config]
     output: claude-json
-    env_file: "{home}/.config/betterlite/claude-2.env"
   - id: deepseek-reviewer
     vendor: deepseek
     program: claude
@@ -181,16 +179,16 @@ roles:
   reviewer:
     instructions: roles/reviewer.md
     ladder:
-      - runner: deepseek-reviewer
-        model: deepseek-flash[1m]
-        effort: max
-        attempts: 1
-        timeout_minutes: 45
       - runner: claude-reviewer
         model: claude-sonnet-5-5
         effort: high
         attempts: 1
         timeout_minutes: 30
+      - runner: deepseek-reviewer
+        model: deepseek-flash[1m]
+        effort: max
+        attempts: 1
+        timeout_minutes: 45
       - runner: codex-reviewer
         model: gpt-6-astra
         effort: high
@@ -199,14 +197,14 @@ roles:
   security_reviewer:
     instructions: roles/reviewer.md
     ladder:
-      - runner: deepseek-reviewer
-        model: deepseek-flash[1m]
-        effort: max
-        attempts: 1
-        timeout_minutes: 45
       - runner: claude-reviewer
         model: claude-opus-5-5
         effort: high
+        attempts: 1
+        timeout_minutes: 45
+      - runner: deepseek-reviewer
+        model: deepseek-flash[1m]
+        effort: max
         attempts: 1
         timeout_minutes: 45
       - runner: codex-reviewer
@@ -217,14 +215,14 @@ roles:
   parity_reviewer:
     instructions: roles/parity-reviewer.md
     ladder:
-      - runner: deepseek-reviewer
-        model: deepseek-flash[1m]
-        effort: max
-        attempts: 1
-        timeout_minutes: 45
       - runner: claude-reviewer
         model: claude-opus-5-5
         effort: high
+        attempts: 1
+        timeout_minutes: 45
+      - runner: deepseek-reviewer
+        model: deepseek-flash[1m]
+        effort: max
         attempts: 1
         timeout_minutes: 45
       - runner: codex-reviewer
