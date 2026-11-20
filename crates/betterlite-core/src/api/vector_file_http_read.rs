@@ -7,8 +7,7 @@ use betterlite_models::decisions::Json;
 
 use self::config::ReadConfig;
 use self::error::ReadError;
-use self::service::{ClientSource, LogContext, Operation, ReadCall, ReadDeps, prepare, send};
-use crate::api::vector_store_http_write::service::ClientKind;
+use self::service::{ClientSource, LogContext, ReadCall, ReadDeps, prepare, send};
 
 // The four attached-file GET handlers share one read: the mode picks the client, the operation picks the transforms
 pub struct VectorFileReadTransport<Source: ClientSource> {
@@ -22,13 +21,16 @@ impl<Source: ClientSource> VectorFileReadTransport<Source> {
         config: &C,
         call: ReadCall<'_, Source::Client>,
         mut log: LogContext<'_, '_>,
-        mode: ClientKind,
-        operation: Operation,
     ) -> Result<Json, ReadError>
     where
         C: ReadConfig,
     {
-        let ReadCall { target, client } = call;
+        let ReadCall {
+            target,
+            client,
+            mode,
+            operation,
+        } = call;
         let deps = ReadDeps {
             config,
             source: &self.source,

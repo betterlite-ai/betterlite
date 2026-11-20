@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::io::Error;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_config::sections::openai_credentials::Settings as OpenAiCredentialsSettings;
@@ -188,8 +189,11 @@ impl Wire {
         wire
     }
 
-    pub(crate) fn requests(&self) -> MutexGuard<'_, Vec<ReadRequest>> {
-        self.requests.lock().unwrap_or_else(PoisonError::into_inner)
+    pub(crate) fn requests(&self) -> Vec<ReadRequest> {
+        self.requests
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 }
 
@@ -323,7 +327,7 @@ impl ReadConfig for RecordingConfig {
     ) -> Result<String, PrepareFailure> {
         if self.refuse_url {
             return Err(PrepareFailure {
-                source: Box::new(std::io::Error::other("the base URL was refused")),
+                source: Box::new(Error::other("the base URL was refused")),
             });
         }
         Ok(self.base.clone())
@@ -462,6 +466,8 @@ where
     let call = ReadCall {
         target: invocation.target(),
         client: invocation.supplied,
+        mode: invocation.mode,
+        operation: invocation.operation,
     };
     let events = fixture.events.clone();
     let logger = move |_details: &Json| -> Result<(), PrePostError> {
@@ -473,7 +479,5 @@ where
         state: &mut fixture.state,
         env: &env,
     };
-    transport
-        .read(config, call, log, invocation.mode, invocation.operation)
-        .await
+    transport.read(config, call, log).await
 }

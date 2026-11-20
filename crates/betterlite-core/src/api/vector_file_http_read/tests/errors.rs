@@ -19,10 +19,8 @@ async fn read_error_scope() {
     let settings = openai_settings();
     let config = openai_config(&settings, "sk-provider");
     let events = Events::new();
-    let wire = Wire::replying(
-        Reply::json(404, "missing").with_header("X-Request-Id", "r"),
-        &events,
-    );
+    let reply = Reply::json(404, "missing").with_header("X-Request-Id", "r");
+    let wire = Wire::replying(reply, &events);
     let transport = VectorFileReadTransport {
         source: Source::new(wire.clone()),
     };

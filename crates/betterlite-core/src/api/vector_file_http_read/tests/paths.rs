@@ -12,12 +12,10 @@ use crate::api::vector_file_http_read::config::ReadConfig;
 use crate::api::vector_file_http_read::service::Operation;
 use crate::api::vector_store_http_write::service::ClientKind;
 
-async fn read<C: ReadConfig>(
-    operation: Operation,
-    mode: ClientKind,
-    config: &C,
-    body: &str,
-) -> (Json, Wire) {
+async fn read<C>(operation: Operation, mode: ClientKind, config: &C, body: &str) -> (Json, Wire)
+where
+    C: ReadConfig,
+{
     let events = Events::new();
     let wire = Wire::replying(Reply::json(200, body), &events);
     let transport = VectorFileReadTransport {

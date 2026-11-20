@@ -34,6 +34,7 @@ pub enum Operation {
     Content,
 }
 
+#[derive(Clone)]
 pub struct ReadRequest {
     pub method: Method,
     pub url: Url,
@@ -80,6 +81,8 @@ pub struct ReadTarget<'call> {
 pub struct ReadCall<'call, Client> {
     pub target: ReadTarget<'call>,
     pub client: Option<SuppliedClient<'call, Client>>,
+    pub mode: ClientKind,
+    pub operation: Operation,
 }
 
 enum Selected<'client, Client> {
