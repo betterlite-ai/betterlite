@@ -10,7 +10,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::passthrough_policies::header_forwarding::forward_headers_from_request;
 use betterlite_models::resolution::ResolvedModel;
 use betterlite_openai::openai_base_config::{Headers, Object};
-use betterlite_openai::passthrough::transformation::BasePassthroughConfig;
+use betterlite_openai::passthrough::transformation::BasePassthroughConfig as _;
 use betterlite_openai::passthrough::transformation::types::{
     PassthroughSigning, PassthroughTarget, PassthroughUrlRequest,
 };
@@ -149,10 +149,13 @@ async fn upstream(
         litellm_params: params,
     };
     let (url, base) = config.get_complete_url(&request)?;
-    let url = arn_encoded(url, resolved, &args.endpoint)?;
+    let encoded = arn_encoded(url, resolved, &args.endpoint)?;
     let headers =
         validate_auth(config.tag, resolved.api_key.as_ref(), params, &base, client).await?;
-    Ok(Upstream { url, headers })
+    Ok(Upstream {
+        url: encoded,
+        headers,
+    })
 }
 
 // steps 9 and 10: the caller's pass-through headers, then the provider's signature over them
@@ -251,8 +254,8 @@ const fn object_data<'value>(
     data: Option<&'value Object>,
     json: Option<&'value JsonValue>,
 ) -> Option<&'value Object> {
-    if let Some(data) = data {
-        return Some(data);
+    if let Some(map) = data {
+        return Some(map);
     }
     match json {
         Some(JsonValue::Object(fields)) => Some(fields),
@@ -269,11 +272,11 @@ const fn object_data<'value>(
 
 // SWAP MODEL IN JSON BODY: the caller's object reaches the wire with the resolved model inside it
 fn replaced_model(json: Option<&JsonValue>, model: &str) -> Option<JsonValue> {
-    let mut json = json.cloned()?;
-    if let JsonValue::Object(fields) = &mut json {
-        if fields.contains_key("model") {
-            fields.insert("model".to_owned(), JsonValue::String(model.to_owned()));
-        }
+    let mut body = json.cloned()?;
+    if let JsonValue::Object(fields) = &mut body
+        && fields.contains_key("model")
+    {
+        fields.insert("model".to_owned(), JsonValue::String(model.to_owned()));
     }
-    Some(json)
+    Some(body)
 }

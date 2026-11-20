@@ -117,20 +117,20 @@ pub(crate) fn sign_request(
                 .get("api_key")
                 .and_then(JsonValue::as_str)
                 .map(SecretString::from);
-            let Some(token) = token else {
+            let Some(secret) = token else {
                 return Err(ConfigError::ValueError {
                     message: MANTLE_NO_CREDENTIALS.to_owned(),
                 });
             };
-            let body = match context.request_data {
-                Some(data) => dumps_object(&json_object(data)).into_bytes(),
-                None => dumps_object(&json_object(&Object::new())).into_bytes(),
-            };
+            let body = context.request_data.map_or_else(
+                || dumps_object(&json_object(&Object::new())).into_bytes(),
+                |data| dumps_object(&json_object(data)).into_bytes(),
+            );
             let mut signed = headers;
             signed.insert(CONTENT_TYPE.to_owned(), JSON_CONTENT.to_owned());
             signed.insert(
                 AUTHORIZATION.to_owned(),
-                format!("Bearer {}", token.expose_secret()),
+                format!("Bearer {}", secret.expose_secret()),
             );
             Ok((signed, Some(body)))
         }

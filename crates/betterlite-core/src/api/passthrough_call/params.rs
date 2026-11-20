@@ -92,10 +92,10 @@ fn secret_value(api_key: Option<&SecretString>) -> JsonValue {
 // resolved_metadata: litellm_metadata wins when metadata is absent or null, then metadata is copied
 fn resolved_metadata(extra: &Object) -> JsonValue {
     let metadata = extra.get("metadata");
-    if metadata.is_none_or(JsonValue::is_null) {
-        if let Some(JsonValue::Object(fields)) = extra.get("litellm_metadata") {
-            return JsonValue::Object(fields.clone());
-        }
+    if metadata.is_none_or(JsonValue::is_null)
+        && let Some(JsonValue::Object(fields)) = extra.get("litellm_metadata")
+    {
+        return JsonValue::Object(fields.clone());
     }
     metadata.cloned().unwrap_or(JsonValue::Null)
 }
@@ -111,10 +111,10 @@ fn no_log(extra: &Object) -> JsonValue {
 
 // base_model, or metadata.model_info.base_model
 fn base_model(extra: &Object) -> JsonValue {
-    if let Some(value) = extra.get("base_model") {
-        if !value.is_null() {
-            return value.clone();
-        }
+    if let Some(value) = extra.get("base_model")
+        && !value.is_null()
+    {
+        return value.clone();
     }
     extra
         .get("metadata")
@@ -174,8 +174,8 @@ fn timeout_value(value: Option<&JsonValue>) -> Option<TimeoutValue> {
             Some(TimeoutValue::Number(if *flag { 1.0_f64 } else { 0.0_f64 }))
         }
         Some(JsonValue::String(text)) => Some(TimeoutValue::Text(text.clone())),
-        Some(value @ (JsonValue::Array(_) | JsonValue::Object(_))) => {
-            Some(TimeoutValue::Text(value.to_string()))
+        Some(other @ (JsonValue::Array(_) | JsonValue::Object(_))) => {
+            Some(TimeoutValue::Text(other.to_string()))
         }
     }
 }

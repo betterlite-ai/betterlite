@@ -82,15 +82,15 @@ fn watsonx_url(request: &PassthroughUrlRequest<'_>) -> Result<(Url, String), Con
         environment: &environment,
     };
     BasePassthroughConfig::get_complete_url(&config, request).map_err(|error| {
-        match error.status() {
-            Some(status) => ConfigError::Message {
+        error.status().map_or_else(
+            || ConfigError::ValueError {
+                message: error.to_string(),
+            },
+            |status| ConfigError::Message {
                 status,
                 message: error.to_string(),
             },
-            None => ConfigError::ValueError {
-                message: error.to_string(),
-            },
-        }
+        )
     })
 }
 
@@ -104,10 +104,10 @@ fn bedrock_url(
     let region = region(params, request.target.model, mantle)?;
     let configured = text_param(params, "aws_bedrock_runtime_endpoint")?;
     let base = runtime_endpoint(request.api_base, configured, &region, mantle);
-    let endpoint = match text_param(params, "model_id")? {
-        Some(model_id) => rewrite_model_path(request.target.endpoint, &encoded_model_id(model_id)),
-        None => request.target.endpoint.to_owned(),
-    };
+    let endpoint = text_param(params, "model_id")?.map_or_else(
+        || request.target.endpoint.to_owned(),
+        |model_id| rewrite_model_path(request.target.endpoint, &encoded_model_id(model_id)),
+    );
     let url = config.format_url(&endpoint, &base, request.request_query_params)?;
     Ok((url, base))
 }

@@ -19,6 +19,7 @@ use super::optional_text;
 use crate::api::passthrough_call::config::ConfigError;
 
 // the two Azure auth schemes: a deployment api key, or the Entra credentials in litellm_params
+#[derive(Clone, Copy)]
 pub(super) enum AzureKind {
     Key,
     Entra,
@@ -87,10 +88,10 @@ impl From<AzurePassthroughError> for ConfigError {
         match error {
             AzurePassthroughError::Provider(provider) => Self::Provider(provider),
             AzurePassthroughError::Token(token) => status_error(token.status(), token.to_string()),
-            error @ (AzurePassthroughError::MissingApiBase
+            problem @ (AzurePassthroughError::MissingApiBase
             | AzurePassthroughError::Url(_)
             | AzurePassthroughError::Passthrough(_)) => Self::ValueError {
-                message: error.to_string(),
+                message: problem.to_string(),
             },
         }
     }
@@ -130,7 +131,10 @@ pub(super) fn gigachat_error(error: GigachatPassthroughError) -> ConfigError {
 
 pub(super) const fn status_error(status: Option<u16>, message: String) -> ConfigError {
     match status {
-        Some(status) => ConfigError::Message { status, message },
+        Some(code) => ConfigError::Message {
+            status: code,
+            message,
+        },
         None => ConfigError::ValueError { message },
     }
 }

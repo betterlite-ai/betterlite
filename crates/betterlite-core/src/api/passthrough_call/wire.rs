@@ -67,17 +67,19 @@ fn body(request: &WireRequest<'_>) -> Result<RequestBody, ConfigError> {
     if let Some(files) = request.files {
         return multipart(files, request.data);
     }
-    match request.data {
-        Some(data) => urlencoded(data),
-        None => match request.json {
-            Some(json) => serde_json::to_vec(json)
+    if let Some(data) = request.data {
+        return urlencoded(data);
+    }
+    request.json.map_or_else(
+        || Ok(RequestBody::Empty),
+        |json| {
+            serde_json::to_vec(json)
                 .map(RequestBody::Json)
                 .map_err(|error| ConfigError::ValueError {
                     message: error.to_string(),
-                }),
-            None => Ok(RequestBody::Empty),
+                })
         },
-    }
+    )
 }
 
 fn header_map(headers: &Headers) -> Result<HeaderMap, ConfigError> {
@@ -98,10 +100,10 @@ fn header_map(headers: &Headers) -> Result<HeaderMap, ConfigError> {
 
 // httpx's Cookies jar sets the Cookie header itself, so the jar replaces a caller header of the same name
 fn cookie_header(cookies: Option<&[(String, String)]>) -> Result<Option<HeaderValue>, ConfigError> {
-    let Some(cookies) = cookies.filter(|cookies| !cookies.is_empty()) else {
+    let Some(pairs) = cookies.filter(|jar| !jar.is_empty()) else {
         return Ok(None);
     };
-    let joined = cookies
+    let joined = pairs
         .iter()
         .map(|(name, value)| format!("{name}={value}"))
         .collect::<Vec<_>>()
@@ -119,8 +121,8 @@ fn multipart(
     data: Option<&Object>,
 ) -> Result<RequestBody, ConfigError> {
     let mut parts = Vec::new();
-    if let Some(data) = data {
-        for (name, value) in data {
+    if let Some(fields) = data {
+        for (name, value) in fields {
             parts.push(MultipartPart {
                 name: name.clone(),
                 file_name: None,
@@ -175,12 +177,14 @@ fn primitive_text(name: &str, value: &JsonValue) -> Result<String, ConfigError> 
 
 // headers and reply pairs share one text form: a value that is not printable text keeps its bytes as latin-1
 pub(crate) fn header_text(value: &HeaderValue) -> String {
-    match value.to_str() {
-        Ok(text) => text.to_owned(),
-        Err(_) => value
-            .as_bytes()
-            .iter()
-            .map(|byte| char::from(*byte))
-            .collect(),
-    }
+    value.to_str().map_or_else(
+        |_| {
+            value
+                .as_bytes()
+                .iter()
+                .map(|byte| char::from(*byte))
+                .collect()
+        },
+        str::to_owned,
+    )
 }

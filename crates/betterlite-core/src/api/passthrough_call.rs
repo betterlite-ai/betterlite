@@ -208,9 +208,9 @@ fn map_fault(args: &PassthroughCallArgs, fault: Fault) -> PassthroughCallError {
         CallFailure::Provider(error) => {
             PassthroughCallError::Mapped(Box::new(mapped_error(error, synthesized)))
         }
-        CallFailure::PassedThrough(failure) => {
+        CallFailure::PassedThrough(problem) => {
             let error = ConfigError::ValueError {
-                message: failure.to_string(),
+                message: problem.to_string(),
             };
             PassthroughCallError::Mapped(Box::new(mapped_error(error, synthesized)))
         }

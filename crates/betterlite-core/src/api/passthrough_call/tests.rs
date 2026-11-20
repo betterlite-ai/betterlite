@@ -13,7 +13,7 @@ use betterlite_http_fixture::server::serve;
 use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::openai_base_config::Object;
-use betterlite_openai::passthrough::transformation::BasePassthroughConfig;
+use betterlite_openai::passthrough::transformation::BasePassthroughConfig as _;
 use betterlite_openai::passthrough::transformation::types::{
     PassthroughTarget, PassthroughUrlRequest,
 };
@@ -39,7 +39,7 @@ fn full_bytes(body: PassthroughBody) -> Bytes {
     let PassthroughBody::Full(bytes) = body else {
         panic!("expected a full reply");
     };
-    bytes
+    *bytes
 }
 
 fn json_object(pairs: &[(&str, &str)]) -> Object {
