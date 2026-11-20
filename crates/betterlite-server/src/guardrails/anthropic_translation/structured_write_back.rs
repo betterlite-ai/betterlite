@@ -164,6 +164,14 @@ pub fn defer_tool_exchange_systems(messages: &[Value]) -> Vec<Value> {
                 .is_some_and(|message| is_system(message))
         })
         .collect();
+    reorder_messages(messages, &held_positions, &exchange_ends)
+}
+
+fn reorder_messages(
+    messages: &[Value],
+    held_positions: &HashSet<usize>,
+    exchange_ends: &HashSet<usize>,
+) -> Vec<Value> {
     let mut ordered: Vec<Value> = Vec::with_capacity(messages.len());
     let mut held: Vec<Value> = Vec::new();
     for (index, message) in messages.iter().enumerate() {

@@ -159,10 +159,6 @@ def input_target(target: TargetInput) -> InputWriteBackTarget:
     return message_target(target)
 
 
-def tool_use_target(target: ToolTarget) -> ToolUseInputTarget:
-    return ToolUseInputTarget(msg_idx=target["msg_idx"], content_idx=target["content_idx"])
-
-
 def hoisted_reader() -> ReadHoisted:
     handler = AnthropicMessagesHandler()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L302-L304
     return cast(ReadHoisted, handler._hoisted_top_level_system_message)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L686-L699
@@ -204,7 +200,7 @@ def tool_use_answer(scenario: Scenario) -> dict[str, JsonValue]:
     if rewritten is None:
         return {"message": message, "input": None}
     _write_back_tool_use(message, target, shape, rewritten)  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L146-L153
-    return {"message": message, "input": cast(dict[str, JsonValue], rewritten)}
+    return {"message": message, "input": cast(dict[str, JsonValue], rewritten)}  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L229-L233
 
 
 def tool_calls_answer(scenario: Scenario) -> dict[str, JsonValue]:

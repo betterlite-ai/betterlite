@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use rstest::rstest;
 use serde_json::{Map, Value, json};
 
 use betterlite_guardrails::guardrail_message_scope::unappliable_rewrite::UnappliableRequestRewrite;
@@ -311,53 +312,38 @@ fn responses_to_input_writes_system_blocks_and_messages() {
     assert_eq!(data["messages"][0]["content"][0]["text"], "M");
 }
 
+#[rstest]
+#[case::short(json!({"messages": [{"content": "only"}]}))]
+#[case::no_messages(json!({"system": "s"}))]
+#[case::scalar_messages(json!({"messages": "not a list"}))]
 #[test]
-fn responses_to_input_errors_when_the_message_is_missing() {
+fn responses_to_input_errors_when_the_message_is_missing(#[case] mut data: Value) {
     let target = MessageTextTarget::MessageContent { msg_idx: 2 };
     let scanned = [ScannedText {
         text: "x".to_owned(),
         target: InputWriteBackTarget::Message(target.clone()),
     }];
-
-    let mut short = json!({"messages": [{"content": "only"}]});
     let error =
-        apply_responses_to_input(fields(&mut short), &["X".to_owned()], &scanned).unwrap_err();
+        apply_responses_to_input(fields(&mut data), &["X".to_owned()], &scanned).unwrap_err();
     assert_eq!(
         error,
         WriteBackError::TargetMissing {
             target: target.clone()
         }
     );
+}
 
-    let mut no_messages = json!({"system": "s"});
-    let error = apply_responses_to_input(fields(&mut no_messages), &["X".to_owned()], &scanned)
-        .unwrap_err();
-    assert_eq!(
-        error,
-        WriteBackError::TargetMissing {
-            target: target.clone()
-        }
-    );
-
-    let mut scalar_messages = json!({"messages": "not a list"});
-    let error = apply_responses_to_input(fields(&mut scalar_messages), &["X".to_owned()], &scanned)
-        .unwrap_err();
-    assert_eq!(
-        error,
-        WriteBackError::TargetMissing {
-            target: target.clone()
-        }
-    );
-
-    let row_target = MessageTextTarget::MessageContent { msg_idx: 0 };
-    let row_scanned = [ScannedText {
+#[test]
+fn responses_to_input_errors_when_the_message_row_is_not_an_object() {
+    let target = MessageTextTarget::MessageContent { msg_idx: 0 };
+    let scanned = [ScannedText {
         text: "x".to_owned(),
-        target: InputWriteBackTarget::Message(row_target.clone()),
+        target: InputWriteBackTarget::Message(target.clone()),
     }];
-    let mut scalar_row = json!({"messages": ["not a message"]});
-    let error = apply_responses_to_input(fields(&mut scalar_row), &["X".to_owned()], &row_scanned)
-        .unwrap_err();
-    assert_eq!(error, WriteBackError::TargetMissing { target: row_target });
+    let mut data = json!({"messages": ["not a message"]});
+    let error =
+        apply_responses_to_input(fields(&mut data), &["X".to_owned()], &scanned).unwrap_err();
+    assert_eq!(error, WriteBackError::TargetMissing { target });
 }
 
 #[test]

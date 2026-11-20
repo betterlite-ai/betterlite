@@ -22,33 +22,36 @@ impl Helper for Op {
     type Input = Request;
 
     fn run(input: &Self::Input) -> HelperResult {
+        let scenarios: &[Scenario] = &input.scenarios;
         match &input.function {
-            Function::SystemBlock => answers(&input.scenarios, system_block_answer),
-            Function::MessageText => answers(&input.scenarios, message_text_answer),
-            Function::ResponsesToInput => answers(&input.scenarios, responses_answer),
-            Function::ToolUse => answers(&input.scenarios, tool_use_answer),
-            Function::ToolCalls => answers(&input.scenarios, tool_calls_answer),
-            Function::Hoisted => answers(&input.scenarios, hoisted_answer),
-            Function::SystemConversion => answers(&input.scenarios, system_conversion_answer),
-            Function::Fold => answers(&input.scenarios, fold_answer),
+            Function::SystemBlock => answers(scenarios, |case| Ok(system_block_answer(case))),
+            Function::MessageText => answers(scenarios, message_text_answer),
+            Function::ResponsesToInput => answers(scenarios, responses_answer),
+            Function::ToolUse => answers(scenarios, |case| Ok(tool_use_answer(case))),
+            Function::ToolCalls => answers(scenarios, |case| Ok(tool_calls_answer(case))),
+            Function::Hoisted => answers(scenarios, hoisted_answer),
+            Function::SystemConversion => {
+                answers(scenarios, |case| Ok(system_conversion_answer(case)))
+            }
+            Function::Fold => answers(scenarios, |case| Ok(fold_answer(case))),
             Function::Defer => {
-                let mut output = Vec::with_capacity(input.scenarios.len());
-                for scenario in &input.scenarios {
+                let mut output = Vec::with_capacity(scenarios.len());
+                for scenario in scenarios {
                     output.push(json!({
                         "messages": defer_tool_exchange_systems(&scenario.messages)
                     }));
                 }
                 Ok(Value::Array(output))
             }
-            Function::Structured => answers(&input.scenarios, structured_answer),
+            Function::Structured => answers(scenarios, structured_answer),
         }
     }
 }
 
-fn answers(
-    scenarios: &[Scenario],
-    answer: fn(&Scenario) -> Result<Value, Box<HelperError>>,
-) -> HelperResult {
+fn answers<F>(scenarios: &[Scenario], answer: F) -> HelperResult
+where
+    F: Fn(&Scenario) -> Result<Value, Box<HelperError>>,
+{
     let mut output = Vec::with_capacity(scenarios.len());
     for scenario in scenarios {
         output.push(answer(scenario)?);

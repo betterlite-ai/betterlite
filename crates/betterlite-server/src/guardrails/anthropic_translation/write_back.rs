@@ -51,41 +51,37 @@ pub fn write_back_message_text(
     };
     match target {
         MessageTextTarget::MessageContent { .. } => {
-            let Value::String(slot) = content else {
-                return Ok(());
-            };
-            *slot = response.to_owned();
+            if let Value::String(slot) = content {
+                *slot = response.to_owned();
+            }
         }
         MessageTextTarget::ContentBlockText { content_idx, .. } => {
-            let Value::Array(blocks) = content else {
-                return Ok(());
-            };
-            block_at(blocks, *content_idx, target)?
-                .insert(TEXT.to_owned(), Value::String(response.to_owned()));
+            if let Value::Array(blocks) = content {
+                block_at(blocks, *content_idx, target)?
+                    .insert(TEXT.to_owned(), Value::String(response.to_owned()));
+            }
         }
         MessageTextTarget::ToolResultString { content_idx, .. } => {
-            let Value::Array(blocks) = content else {
-                return Ok(());
-            };
-            block_at(blocks, *content_idx, target)?
-                .insert(CONTENT.to_owned(), Value::String(response.to_owned()));
+            if let Value::Array(blocks) = content {
+                block_at(blocks, *content_idx, target)?
+                    .insert(CONTENT.to_owned(), Value::String(response.to_owned()));
+            }
         }
         MessageTextTarget::ToolResultBlockText {
             content_idx,
             block_idx,
             ..
         } => {
-            let Value::Array(blocks) = content else {
-                return Ok(());
-            };
-            let block = block_at(blocks, *content_idx, target)?;
-            let Some(Value::Array(inner)) = block.get_mut(CONTENT) else {
-                return Err(WriteBackError::TargetMissing {
-                    target: target.clone(),
-                });
-            };
-            block_at(inner, *block_idx, target)?
-                .insert(TEXT.to_owned(), Value::String(response.to_owned()));
+            if let Value::Array(blocks) = content {
+                let block = block_at(blocks, *content_idx, target)?;
+                let Some(Value::Array(inner)) = block.get_mut(CONTENT) else {
+                    return Err(WriteBackError::TargetMissing {
+                        target: target.clone(),
+                    });
+                };
+                block_at(inner, *block_idx, target)?
+                    .insert(TEXT.to_owned(), Value::String(response.to_owned()));
+            }
         }
     }
     Ok(())
@@ -157,20 +153,18 @@ pub fn apply_tool_calls_to_input(
         Some(returned) if returned.len() == pre_guardrail_tool_calls.len() => {
             tool_call_shapes(returned)
         }
-        Some(_) | None => {
-            let originals: Vec<Value> = scanned_tool_calls
+        Some(_) | None => tool_call_shapes(
+            &scanned_tool_calls
                 .iter()
                 .map(|scanned| scanned.tool_call.clone())
-                .collect();
-            tool_call_shapes(&originals)
-        }
+                .collect::<Vec<Value>>(),
+        ),
     };
     let mut rewrites = Vec::with_capacity(scanned_tool_calls.len());
-    for (scanned, (before, after)) in scanned_tool_calls.iter().zip(
-        pre_guardrail_tool_calls
-            .iter()
-            .zip(&after_guardrail_tool_calls),
-    ) {
+    let pre = pre_guardrail_tool_calls
+        .iter()
+        .zip(&after_guardrail_tool_calls);
+    for (scanned, (before, after)) in scanned_tool_calls.iter().zip(pre) {
         if before == after {
             continue;
         }
@@ -182,12 +176,10 @@ pub fn apply_tool_calls_to_input(
         rewrites.push((scanned, after, rewritten_input));
     }
     for (scanned, after, rewritten_input) in rewrites {
-        let Some(message) = messages.get_mut(scanned.target.msg_idx) else {
-            return Err(ApplyError::MessageMissing {
-                msg_idx: scanned.target.msg_idx,
-            });
-        };
-        let Some(fields) = message.as_object_mut() else {
+        let Some(fields) = messages
+            .get_mut(scanned.target.msg_idx)
+            .and_then(Value::as_object_mut)
+        else {
             return Err(ApplyError::MessageMissing {
                 msg_idx: scanned.target.msg_idx,
             });

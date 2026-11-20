@@ -44,9 +44,9 @@ pub(crate) struct Scenario {
     pub(crate) guardrail_name: Option<String>,
     pub(crate) messages: Vec<Value>,
     pub(crate) leading: Vec<Value>,
-    pub(crate) include_existing: bool,
-    pub(crate) preserve_system_messages: bool,
-    pub(crate) compute_hoisted: bool,
+    pub(crate) include_existing: Option<bool>,
+    pub(crate) preserve_system_messages: Option<bool>,
+    pub(crate) compute_hoisted: Option<bool>,
 }
 
 #[derive(Deserialize)]

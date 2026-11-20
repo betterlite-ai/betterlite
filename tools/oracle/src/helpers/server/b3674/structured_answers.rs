@@ -21,16 +21,17 @@ pub(super) fn hoisted_answer(scenario: &Scenario) -> Result<Value, Box<HelperErr
     Ok(json!({"message": message.unwrap_or(Value::Null)}))
 }
 
-pub(super) fn system_conversion_answer(scenario: &Scenario) -> Result<Value, Box<HelperError>> {
+pub(super) fn system_conversion_answer(scenario: &Scenario) -> Value {
     let message = Value::Object(scenario.message.clone());
     let row = system_row_to_anthropic(&message);
-    Ok(json!({"row": row.map_or(Value::Null, Value::Object)}))
+    json!({"row": row.map_or(Value::Null, Value::Object)})
 }
 
-pub(super) fn fold_answer(scenario: &Scenario) -> Result<Value, Box<HelperError>> {
+pub(super) fn fold_answer(scenario: &Scenario) -> Value {
     let mut data = scenario.data.clone();
-    fold_leading_systems(&mut data, &scenario.leading, scenario.include_existing);
-    Ok(json!({"data": data}))
+    let include_existing = scenario.include_existing.unwrap_or(false);
+    fold_leading_systems(&mut data, &scenario.leading, include_existing);
+    json!({"data": data})
 }
 
 pub(super) fn structured_answer(scenario: &Scenario) -> Result<Value, Box<HelperError>> {
@@ -44,7 +45,7 @@ async fn write_structured(
     data: &mut Map<String, Value>,
     scenario: &Scenario,
 ) -> Result<(), Box<HelperError>> {
-    let hoisted = if scenario.compute_hoisted {
+    let hoisted = if scenario.compute_hoisted.unwrap_or(false) {
         hoisted_system_message(data).await.or_value_error()?
     } else {
         None
@@ -53,7 +54,7 @@ async fn write_structured(
         data,
         &scenario.messages,
         hoisted.as_ref(),
-        scenario.preserve_system_messages,
+        scenario.preserve_system_messages.unwrap_or(false),
     )
     .await
     .or_value_error()

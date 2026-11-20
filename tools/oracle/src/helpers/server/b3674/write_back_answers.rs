@@ -13,10 +13,10 @@ use serde_json::{Value, json};
 use super::requests::{ScannedCallRequest, Scenario};
 use super::targets::message_target;
 
-pub(super) fn system_block_answer(scenario: &Scenario) -> Result<Value, Box<HelperError>> {
+pub(super) fn system_block_answer(scenario: &Scenario) -> Value {
     let mut system = scenario.system.clone();
     write_back_system_block(&mut system, scenario.block_idx, &scenario.response);
-    Ok(json!({"system": system}))
+    json!({"system": system})
 }
 
 pub(super) fn message_text_answer(scenario: &Scenario) -> Result<Value, Box<HelperError>> {
@@ -39,7 +39,7 @@ pub(super) fn responses_answer(scenario: &Scenario) -> Result<Value, Box<HelperE
     Ok(json!({"data": data}))
 }
 
-pub(super) fn tool_use_answer(scenario: &Scenario) -> Result<Value, Box<HelperError>> {
+pub(super) fn tool_use_answer(scenario: &Scenario) -> Value {
     let mut message = scenario.message.clone();
     let target = ToolUseInputTarget::from(&scenario.tool_target);
     let shape = ToolCallShape {
@@ -47,29 +47,27 @@ pub(super) fn tool_use_answer(scenario: &Scenario) -> Result<Value, Box<HelperEr
         arguments: scenario.arguments.clone(),
     };
     let Some(rewritten_input) = rewritten_tool_use_input(&scenario.arguments) else {
-        return Ok(json!({"message": message, "input": Value::Null}));
+        return json!({"message": message, "input": Value::Null});
     };
     let rewritten = Value::Object(rewritten_input.clone());
     write_back_tool_use(&mut message, &target, &shape, rewritten_input);
-    Ok(json!({"message": message, "input": rewritten}))
+    json!({"message": message, "input": rewritten})
 }
 
-pub(super) fn tool_calls_answer(scenario: &Scenario) -> Result<Value, Box<HelperError>> {
+pub(super) fn tool_calls_answer(scenario: &Scenario) -> Value {
     let mut messages = scenario.messages.clone();
-    let scanned = scanned_calls(&scenario.scanned_calls)?;
+    let scanned = scanned_calls(&scenario.scanned_calls);
     let pre = tool_call_shapes(&scenario.pre);
     let outcome = outcome_of(&mut messages, &scanned, &pre, scenario);
-    Ok(json!({"messages": messages, "outcome": outcome}))
+    json!({"messages": messages, "outcome": outcome})
 }
 
-fn scanned_calls(items: &[ScannedCallRequest]) -> Result<Vec<ScannedToolCall>, Box<HelperError>> {
+fn scanned_calls(items: &[ScannedCallRequest]) -> Vec<ScannedToolCall> {
     items
         .iter()
-        .map(|item| {
-            Ok(ScannedToolCall {
-                tool_call: item.tool_call.clone(),
-                target: ToolUseInputTarget::from(&item.tool_target),
-            })
+        .map(|item| ScannedToolCall {
+            tool_call: item.tool_call.clone(),
+            target: ToolUseInputTarget::from(&item.tool_target),
         })
         .collect()
 }
