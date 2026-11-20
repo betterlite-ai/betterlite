@@ -4,6 +4,7 @@ use betterlite_models::decisions::Json;
 
 use super::support::MarkingHook;
 use super::support::Stub;
+use super::support::cache_hit;
 use super::support::chat_request;
 use super::support::chat_stream;
 use super::support::fixture;
@@ -211,4 +212,141 @@ async fn async_call_drops_the_internal_call_flag() {
     let calls = stub.calls();
     let seen = calls.first().expect("the stub saw one request");
     assert_eq!(seen.get("_is_litellm_internal_call"), None);
+}
+
+#[tokio::test]
+async fn async_response_call_restores_the_correlation_context() {
+    let mut fixture = fixture();
+    let (handle, _prepared) = fixture
+        .wrapper
+        .start_logging(
+            "acompletion",
+            chat_request(r#"{"litellm_call_id":"call-1"}"#),
+            true,
+        )
+        .expect("the logging state builds");
+    let restored = handle
+        .state
+        .lock()
+        .expect("the state lock is free")
+        .correlation
+        .pre_call
+        .trace_id
+        .clone();
+    {
+        let mut correlation = handle
+            .correlation
+            .lock()
+            .expect("the correlation lock is free");
+        correlation.trace_id = String::from("active-trace");
+    }
+    let stub = Stub::new("acompletion");
+    fixture
+        .wrapper
+        .call(
+            &stub,
+            chat_request("{}"),
+            WrapperOptions {
+                logging: Some(handle.clone()),
+                internal_call: false,
+            },
+        )
+        .await
+        .expect("the call succeeds");
+    let trace_id = handle
+        .correlation
+        .lock()
+        .expect("the correlation lock is free")
+        .trace_id
+        .clone();
+    assert_eq!(trace_id, restored);
+    assert_eq!(restored, "");
+}
+
+#[tokio::test]
+async fn async_chat_stream_keeps_the_correlation_context() {
+    let mut fixture = fixture();
+    let (handle, _prepared) = fixture
+        .wrapper
+        .start_logging(
+            "acompletion",
+            chat_request(r#"{"litellm_call_id":"call-1"}"#),
+            true,
+        )
+        .expect("the logging state builds");
+    {
+        let mut correlation = handle
+            .correlation
+            .lock()
+            .expect("the correlation lock is free");
+        correlation.trace_id = String::from("active-trace");
+    }
+    let stream = chat_stream(value(r#"{"id":"stream-1"}"#), false);
+    let stub = Stub::responding("acompletion", stream.clone());
+    let outcome = fixture
+        .wrapper
+        .call(
+            &stub,
+            chat_request(r#"{"stream":true}"#),
+            WrapperOptions {
+                logging: Some(handle.clone()),
+                internal_call: false,
+            },
+        )
+        .await
+        .expect("the stream returns");
+    assert_eq!(outcome, stream);
+    let trace_id = handle
+        .correlation
+        .lock()
+        .expect("the correlation lock is free")
+        .trace_id
+        .clone();
+    assert_eq!(trace_id, "active-trace");
+}
+
+#[tokio::test]
+async fn async_call_syncs_the_logging_stream_flag() {
+    let mut fixture = fixture().with_cache();
+    let (handle, _prepared) = fixture
+        .wrapper
+        .start_logging(
+            "acompletion",
+            chat_request(r#"{"litellm_call_id":"call-1"}"#),
+            true,
+        )
+        .expect("the logging state builds");
+    {
+        let mut state = handle.state.lock().expect("the state lock is free");
+        state.stream = Some(false);
+    }
+    fixture
+        .cache
+        .set_found(cache_hit(response(value(r#"{"cached":true}"#))));
+    let stub = Stub::new("acompletion");
+    fixture
+        .wrapper
+        .call(
+            &stub,
+            chat_request(r#"{"stream":true}"#),
+            WrapperOptions {
+                logging: Some(handle.clone()),
+                internal_call: false,
+            },
+        )
+        .await
+        .expect("the cache answers");
+    assert_eq!(stub.call_count(), 0);
+    let stream = handle.state.lock().expect("the state lock is free").stream;
+    assert_eq!(stream, Some(true));
+}
+
+#[test]
+fn sync_async_flagged_stream_without_complete_response_is_not_assembled() {
+    let mut fixture = fixture();
+    let stream = chat_stream(value(r#"{"id":"stream-1"}"#), false);
+    let stub = Stub::responding("completion", stream.clone());
+    let request = chat_request(r#"{"acompletion":true,"stream":true}"#);
+    let outcome = run_sync(&mut fixture, &stub, request).expect("the short path answers");
+    assert_eq!(outcome, stream);
 }

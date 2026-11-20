@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
+use std::fmt::Debug;
 use std::mem::take;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -21,6 +22,11 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset, TimeDelta};
 use indexmap::IndexMap;
 use tokio::runtime::Runtime;
+use tracing::field::{Field, Visit};
+use tracing::subscriber::{DefaultGuard, set_default};
+use tracing::{Event, Subscriber};
+use tracing_subscriber::layer::SubscriberExt as _;
+use tracing_subscriber::layer::{Context, Layer};
 
 use crate::call_setup::RequestMap;
 use crate::call_setup::callbacks::CallbackLists;
@@ -501,12 +507,55 @@ impl RecordingLogging {
     }
 }
 
-fn result_label(result: &SuccessResult) -> &'static str {
+pub(crate) fn result_label(result: &SuccessResult) -> &'static str {
     match result {
         SuccessResult::Chat(_) => "chat",
         SuccessResult::Embeddings(_) => "embeddings",
         SuccessResult::Chunk(_) => "chunk",
         SuccessResult::Other(_) => "other",
+    }
+}
+
+// the tracing sink a test installs on its own thread to read what a step logged
+pub(crate) fn capture_logs() -> (Arc<Mutex<Vec<String>>>, DefaultGuard) {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let subscriber = tracing_subscriber::registry().with(CapturedEvents(Arc::clone(&events)));
+    (events, set_default(subscriber))
+}
+
+pub(crate) fn saw_log(events: &Mutex<Vec<String>>, needle: &str) -> bool {
+    events
+        .lock()
+        .expect("the event lock is free")
+        .iter()
+        .any(|line| line.contains(needle))
+}
+
+struct CapturedEvents(Arc<Mutex<Vec<String>>>);
+
+impl<S: Subscriber> Layer<S> for CapturedEvents {
+    fn on_event(&self, event: &Event<'_>, _context: Context<'_, S>) {
+        let mut fields = CapturedFields(Vec::new());
+        event.record(&mut fields);
+        if let Ok(mut events) = self.0.lock() {
+            events.extend(fields.0);
+        }
+    }
+}
+
+struct CapturedFields(Vec<String>);
+
+impl Visit for CapturedFields {
+    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
+        if field.name() == "message" {
+            self.0.push(format!("{value:?}"));
+        }
+    }
+
+    fn record_str(&mut self, field: &Field, value: &str) {
+        if field.name() == "message" {
+            self.0.push(value.to_owned());
+        }
     }
 }
 

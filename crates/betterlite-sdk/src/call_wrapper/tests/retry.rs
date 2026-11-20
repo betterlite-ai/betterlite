@@ -18,6 +18,7 @@ use super::support::response;
 use super::support::run_sync;
 use super::support::value;
 use crate::call_wrapper::error::class_status;
+use crate::call_wrapper::retry::max_retries_per_request_hit;
 use crate::call_wrapper::state::WrapperOptions;
 
 fn count(value: i64) -> Json {
@@ -305,4 +306,14 @@ fn class_status_carries_the_openai_codes_but_not_the_plain_exception() {
     let missing = ErrorClass::NotFound(Box::new(ResponseDetails::from(context("missing"))));
     assert_eq!(class_status(&missing), Some(404));
     assert_eq!(class_status(&plain("boom").class), None);
+}
+
+#[test]
+fn the_per_request_limit_needs_a_positive_count_at_or_over_the_limit() {
+    let at_limit = request(r#"{"metadata":{"request_retry_count":2}}"#);
+    assert!(max_retries_per_request_hit(&at_limit, Some(2)));
+    let below_limit = request(r#"{"metadata":{"request_retry_count":2}}"#);
+    assert!(!max_retries_per_request_hit(&below_limit, Some(3)));
+    let zero_count = request(r#"{"metadata":{"request_retry_count":0}}"#);
+    assert!(!max_retries_per_request_hit(&zero_count, Some(0)));
 }

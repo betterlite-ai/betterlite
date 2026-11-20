@@ -124,3 +124,17 @@ async fn aresponses_context_window_error_does_not_fall_back() {
     assert_eq!(error.to_string(), "too long");
     assert_eq!(stub.call_count(), 1);
 }
+
+#[tokio::test]
+async fn async_api_error_with_a_context_map_does_not_fall_back() {
+    let mut fixture = fixture();
+    let stub = Stub::failing("acompletion", api_error("boom"));
+    let request = chat_request(r#"{"context_window_fallback_dict":{"gpt-4o":"gpt-4o-mini"}}"#);
+    let error = fixture
+        .wrapper
+        .call(&stub, request, WrapperOptions::default())
+        .await
+        .expect_err("a non-context error has no fallback");
+    assert_eq!(error.to_string(), "boom");
+    assert_eq!(stub.call_count(), 1);
+}

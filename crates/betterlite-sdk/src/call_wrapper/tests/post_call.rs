@@ -64,6 +64,25 @@ fn an_enforced_response_schema_mismatch_is_a_validation_error() {
     assert_eq!(class, "JSONSchemaValidationError");
 }
 
+#[test]
+fn a_response_without_text_content_skips_validation() {
+    let outcome = CallOutcome::Response(value(r#"{"choices":[{"message":{"content":null}}]}"#));
+    let request = request(
+        r#"{"enable_json_schema_validation":true,"response_format":{"json_schema":{"schema":{"type":"object","required":["answer"]}}}}"#,
+    );
+    let input = PostCallInput {
+        call_type: "completion",
+        model: Some("gpt-4o"),
+        request: &request,
+        outcome: &outcome,
+        validation: Validation {
+            enable_json_schema_validation: false,
+            limits: SchemaLimits::default(),
+        },
+    };
+    post_call::run(&NoRules, &input).expect("a null content has nothing to validate");
+}
+
 #[tokio::test]
 async fn async_call_validates_the_response_format() {
     let mut fixture = fixture();
