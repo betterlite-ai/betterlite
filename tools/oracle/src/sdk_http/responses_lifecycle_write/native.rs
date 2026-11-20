@@ -72,21 +72,25 @@ async fn run_once(
     let redactor = &fixture.redactor;
     let request = request_of(run, api_base);
     match (run.operation, run.mode) {
-        (LifecycleOperation::Delete, Mode::Sync) => deleted(
+        (LifecycleOperation::Delete, Mode::Sync) => outcome(
             service.delete_responses(&request, &mut state, &env).await,
             redactor,
+            deleted_value,
         ),
-        (LifecycleOperation::Delete, Mode::Asynchronous) => deleted(
+        (LifecycleOperation::Delete, Mode::Asynchronous) => outcome(
             service.adelete_responses(&request, &mut state, &env).await,
             redactor,
+            deleted_value,
         ),
-        (LifecycleOperation::Cancel, Mode::Sync) => cancelled(
+        (LifecycleOperation::Cancel, Mode::Sync) => outcome(
             service.cancel_responses(&request, &mut state, &env).await,
             redactor,
+            cancelled_value,
         ),
-        (LifecycleOperation::Cancel, Mode::Asynchronous) => cancelled(
+        (LifecycleOperation::Cancel, Mode::Asynchronous) => outcome(
             service.acancel_responses(&request, &mut state, &env).await,
             redactor,
+            cancelled_value,
         ),
     }
 }
@@ -122,29 +126,15 @@ fn request_of(run: &Run, api_base: &str) -> ResponsesLifecycleWriteCall {
     }
 }
 
-fn deleted(
-    answer: Result<DeleteResponseResult, ResponsesLifecycleWriteError>,
+// One run's answer as the case compares it: the projection of a success, or the SDK exception the entry raised
+fn outcome<T>(
+    answer: Result<T, ResponsesLifecycleWriteError>,
     redactor: &Redactor,
+    project: fn(&T) -> Json,
 ) -> Result<RunOutcome, SdkHttpError> {
     match answer {
-        Ok(record) => Ok(RunOutcome {
-            result: Some(deleted_value(&record)),
-            error: None,
-        }),
-        Err(error) => Ok(RunOutcome {
-            result: None,
-            error: Some(failure(&error, redactor)?),
-        }),
-    }
-}
-
-fn cancelled(
-    answer: Result<TypedReply, ResponsesLifecycleWriteError>,
-    redactor: &Redactor,
-) -> Result<RunOutcome, SdkHttpError> {
-    match answer {
-        Ok(reply) => Ok(RunOutcome {
-            result: Some(cancelled_value(&reply)),
+        Ok(value) => Ok(RunOutcome {
+            result: Some(project(&value)),
             error: None,
         }),
         Err(error) => Ok(RunOutcome {

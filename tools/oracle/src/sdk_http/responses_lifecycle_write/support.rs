@@ -73,15 +73,17 @@ pub(super) struct Fixture {
     now: DateTime<FixedOffset>,
 }
 
+fn clock() -> Result<DateTime<FixedOffset>, SdkHttpError> {
+    DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00")
+        .map_err(|error| SdkHttpError::Invalid(error.to_string()))
+}
+
 impl Fixture {
     pub(super) fn new() -> Result<Self, SdkHttpError> {
-        let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SdkHttpError::Redactor)?;
-        let now = DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00")
-            .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
         Ok(Self {
-            redactor,
+            redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SdkHttpError::Redactor)?,
             sink: Sink,
-            now,
+            now: clock()?,
         })
     }
 
