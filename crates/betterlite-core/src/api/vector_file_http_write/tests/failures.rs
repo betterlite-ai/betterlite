@@ -115,6 +115,44 @@ async fn malformed_reply_is_the_transforms_error(#[case] operation: Operation) {
     assert_eq!(wire.requests().len(), 1);
 }
 
+// The OpenAI files config's own error class carries the reply's status, its parse failure text and its raw headers
+#[tokio::test]
+async fn openai_transform_parse_failure_uses_the_reply_status() {
+    let settings = openai_settings();
+    let config = openai_config(&settings, "sk-provider");
+    let events = Events::new();
+    let wire = Wire::replying(
+        Reply::json(200, "{not json").with_header("retry-after", "3"),
+        &events,
+    );
+    let source = Source::new(wire.clone());
+    let deps = WriteDeps {
+        config: &config,
+        source: &source,
+        supplied: None,
+    };
+    let params = params("http://mock.test/v1");
+    let request = update_request(r#"{"attributes":{}}"#);
+    let call = update_call(
+        target("vs_a", "file_a", &params, None, None),
+        &request,
+        None,
+    );
+    let mut fixture = Fixture::new("vector_store_file_update");
+    let result = run(&mut fixture, &deps, ClientKind::Sync, &call, &events).await;
+    let Err(FileWriteError::Provider(error)) = result else {
+        panic!("a reply the transform cannot parse is the transform's error");
+    };
+    assert_eq!(error.status_code, 200);
+    assert!(!error.status_code_is_synthesized);
+    assert!(
+        !error.message.is_empty(),
+        "the parser's complaint is the message"
+    );
+    assert_eq!(error.headers.get("retry-after"), Some(&json(r#""3""#)));
+    assert_eq!(wire.requests().len(), 1);
+}
+
 // _handle_error masks the reply: content-encoding drops out and content-length is the decoded body's own
 #[tokio::test]
 async fn status_failure_keeps_the_masked_reply() {
