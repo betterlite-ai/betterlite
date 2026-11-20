@@ -1,8 +1,6 @@
 use std::time::Instant;
 
-use betterlite_models::decisions::Json;
 use betterlite_prometheus::collector_factory::collector::MetricValue;
-use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
 use super::counters::{UsageCounters, UsageLabels};
@@ -44,34 +42,23 @@ pub fn increment_cache_metrics<C: UsageCounters>(
         }
         None => {}
     }
-    if let Some(usage) = object(payload.metadata.usage_object.as_ref()) {
-        increment_provider_cache(counters, usage, labels, now)?;
-    }
-    Ok(())
-}
-
-fn increment_provider_cache<C: UsageCounters>(
-    counters: &C,
-    usage: &IndexMap<String, Json>,
-    labels: UsageLabels<'_>,
-    now: Instant,
-) -> Result<(), PrometheusUsageError<C::Counter::Error>> {
+    let Some(usage) = object(payload.metadata.usage_object.as_ref()) else {
+        return Ok(());
+    };
     let (read, creation) = resolve_provider_cache_tokens(usage);
-    if read > 0 {
-        counters.inc(
-            UsageMetric::ProviderCacheReadTokens,
-            labels,
-            MetricValue::Finite(Decimal::from(read)),
-            now,
-        )?;
-    }
-    if creation > 0 {
-        counters.inc(
-            UsageMetric::ProviderCacheCreationTokens,
-            labels,
-            MetricValue::Finite(Decimal::from(creation)),
-            now,
-        )?;
+    let counts = [
+        (UsageMetric::ProviderCacheReadTokens, read),
+        (UsageMetric::ProviderCacheCreationTokens, creation),
+    ];
+    for (metric, count) in counts {
+        if count > 0 {
+            counters.inc(
+                metric,
+                labels,
+                MetricValue::Finite(Decimal::from(count)),
+                now,
+            )?;
+        }
     }
     Ok(())
 }

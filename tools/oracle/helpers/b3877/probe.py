@@ -8,6 +8,8 @@ from litellm.types.integrations.prometheus import (
 )
 from litellm.types.utils import (
     StandardLoggingPayload,
+)
+from litellm.types.utils import (
     StandardLoggingZeroCostDiagnostic as ZeroCostDiagnostic,
 )
 from pydantic import JsonValue
