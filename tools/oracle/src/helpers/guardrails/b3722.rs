@@ -158,11 +158,17 @@ fn log_failure_view(args: &LogFailureArgs) -> HelperResult {
 }
 
 fn call_log(catalog: &ModelCatalog) -> CallLog<'_> {
+    let start_time = SystemTime::UNIX_EPOCH
+        .checked_add(Duration::from_millis(100_250))
+        .unwrap_or(SystemTime::UNIX_EPOCH);
+    let now = SystemTime::UNIX_EPOCH
+        .checked_add(Duration::from_millis(102_750))
+        .unwrap_or(SystemTime::UNIX_EPOCH);
     CallLog {
         guardrail_provider: "bedrock",
         event_type: Some(GuardrailEventHooks::DuringCall),
-        start_time: SystemTime::UNIX_EPOCH + Duration::from_millis(100_250),
-        now: SystemTime::UNIX_EPOCH + Duration::from_millis(102_750),
+        start_time,
+        now,
         pricing: Pricing {
             catalog,
             aws_region_name: None,
