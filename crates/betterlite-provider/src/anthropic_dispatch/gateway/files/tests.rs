@@ -7,7 +7,7 @@ use betterlite_models::decisions::Json;
 use betterlite_prompts::media::inline::RemoteMediaFetcher;
 use betterlite_prompts::media_fetch::error::ImageFetchError;
 
-use super::prefetch;
+use super::{Files, Prefetched, prefetch};
 
 const ONE: &str = "http://files.example/one.pdf";
 const TWO: &str = "http://files.example/two.pdf";
@@ -62,4 +62,29 @@ async fn the_prefetch_fetches_each_file_url_once() {
     let calls = recorder.calls.lock().expect("the call log").clone();
     assert_eq!(calls, vec![String::from(ONE), String::from(TWO)]);
     assert!(fetched.values().all(Result::is_ok));
+}
+
+// The assembly fetches a batch through the prefetch first, so a prefetched answer never leaves the proxy again.
+#[tokio::test]
+async fn the_files_convert_urls_resolve_through_the_prefetch() {
+    let recorder = Recorder::default();
+    let prefetched = Prefetched::from([(
+        String::from(ONE),
+        Ok(String::from("data:application/pdf;base64,prefetched")),
+    )]);
+    let files = Files {
+        fetcher: &recorder,
+        fetched: &prefetched,
+    };
+    let urls = vec![String::from(ONE), String::from(TWO)];
+    let converted = files.convert_urls(&urls).await.expect("both urls convert");
+    assert_eq!(
+        converted,
+        vec![
+            String::from("data:application/pdf;base64,prefetched"),
+            format!("data:application/pdf;base64,{TWO}"),
+        ]
+    );
+    let calls = recorder.calls.lock().expect("the call log").clone();
+    assert_eq!(calls, vec![String::from(TWO)]);
 }

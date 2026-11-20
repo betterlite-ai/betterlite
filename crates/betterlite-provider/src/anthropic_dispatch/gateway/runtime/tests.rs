@@ -11,7 +11,10 @@ use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::catalog::ModelCatalog;
 use secrecy::ExposeSecret as _;
 
-use super::{AnthropicRuntime, credentials, environment, option_defaults, settings};
+use super::{
+    AnthropicRuntime, credentials, environment, legacy_defaults, option_defaults, request_flags,
+    settings,
+};
 
 fn config(lookup: &[(&str, &str)], yaml: &str) -> Config {
     let environment: BTreeMap<String, String> = lookup
@@ -100,6 +103,32 @@ fn the_option_defaults_read_the_option_values() {
     );
     assert_eq!(defaults.top_k, Some(7));
     assert_eq!(defaults.system.as_deref(), Some("sys"));
+}
+
+#[test]
+fn the_legacy_defaults_keep_the_raw_option_values() {
+    let config = config(
+        &[],
+        "litellm_settings:\n  max_tokens_to_sample: 42\n  temperature: 0.25\n",
+    );
+    let legacy = legacy_defaults(&config);
+    assert_eq!(legacy.max_tokens_to_sample, Some(42));
+    assert_eq!(legacy.temperature, Some(0.25));
+}
+
+#[test]
+fn the_request_flags_read_the_config_booleans() {
+    let configured = config(
+        &[],
+        "litellm_settings:\n  modify_params: true\n  disable_add_prefix_to_prompt: true\n",
+    );
+    let flags = request_flags(&configured);
+    assert!(flags.modify_params);
+    assert!(flags.disable_add_prefix_to_prompt);
+    let unset = config(&[], "litellm_settings: {}\n");
+    let fallbacks = request_flags(&unset);
+    assert!(!fallbacks.modify_params);
+    assert!(!fallbacks.disable_add_prefix_to_prompt);
 }
 
 #[test]
