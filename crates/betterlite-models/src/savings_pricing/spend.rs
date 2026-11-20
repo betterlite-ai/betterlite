@@ -88,9 +88,23 @@ where
     match recorded_savings(input) {
         Some(recorded) => recorded,
         None if input.recorded_estimate.is_some() => Decimal::ZERO,
-        None => request_savings(context, input)
-            .await
-            .unwrap_or(Decimal::ZERO),
+        None => autorouter_savings_for_request(
+            context,
+            &AutoRouterRequestInput {
+                model: input.model,
+                custom_llm_provider: input.custom_llm_provider,
+                routing_decision: input.routing_decision,
+                usage: input.usage,
+                model_id: input.model_id,
+                cost_breakdown: input.cost_breakdown,
+                baseline_usage: None,
+                baseline_provenance: None,
+                moment: input.fallback_moment,
+                database: input.database,
+            },
+        )
+        .await
+        .unwrap_or(Decimal::ZERO),
     }
 }
 
@@ -107,28 +121,6 @@ fn recorded_savings(input: &SavingsSpendInput<'_>) -> Option<Decimal> {
         autorouter_savings: input.recorded_autorouter_savings.cloned(),
     };
     recorded_autorouter_savings(&metadata)
-}
-
-async fn request_savings<C>(context: &C, input: &SavingsSpendInput<'_>) -> Option<Decimal>
-where
-    C: SavingsPricingContext,
-{
-    autorouter_savings_for_request(
-        context,
-        &AutoRouterRequestInput {
-            model: input.model,
-            custom_llm_provider: input.custom_llm_provider,
-            routing_decision: input.routing_decision,
-            usage: input.usage,
-            model_id: input.model_id,
-            cost_breakdown: input.cost_breakdown,
-            baseline_usage: None,
-            baseline_provenance: None,
-            moment: input.fallback_moment,
-            database: input.database,
-        },
-    )
-    .await
 }
 
 // max(tokens, 0) at the flat input rate; the caching and autorouter counterfactuals are separate.

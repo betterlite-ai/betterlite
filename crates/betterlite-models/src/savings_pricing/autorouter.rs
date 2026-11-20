@@ -73,11 +73,27 @@ where
     if input.baseline_usage.is_none() && has_cache_buckets(&input.usage.usage) {
         return None;
     }
-    let prices = baseline_prices(context, input, &baseline);
+    let prices = input
+        .baseline_info
+        .cloned()
+        .or_else(|| public_price(context, &baseline));
     let basis = pricing_basis_from_breakdown(input.cost_breakdown);
     let baseline_cost = baseline_token_cost(context, input, &baseline, prices.as_ref(), &basis)?;
     let recorded = recorded_token_cost(input.cost_breakdown);
-    let selected_cost = selected_token_cost(context, input, &selected, recorded, &basis)?;
+    let selected_cost = match recorded {
+        Some(cost) => cost,
+        None => cost_of_usage(
+            context,
+            &CostOfUsageInput {
+                identity: &selected,
+                usage: input.usage,
+                model_info: input.selected_info,
+                basis: &basis,
+                moment: input.moment,
+                database: input.database,
+            },
+        )?,
+    };
     if input.baseline_provenance == Some(AutoRouterProvenance::ObservedInitial) {
         let values = ComparisonValues {
             baseline: &baseline,
@@ -89,21 +105,6 @@ where
         return observed_equivalent(context, input, &values).then_some(Decimal::ZERO);
     }
     baseline_cost.checked_sub(selected_cost)
-}
-
-// A supplied baseline table is authoritative; an absent one falls back to the canonical public rates.
-fn baseline_prices<C>(
-    context: &C,
-    input: &AutoRouterSavingsInput<'_>,
-    baseline: &ModelIdentity,
-) -> Option<PricedModel>
-where
-    C: SavingsPricingContext,
-{
-    input.baseline_info.map_or_else(
-        || public_price(context, baseline),
-        |priced| Some(priced.clone()),
-    )
 }
 
 fn baseline_token_cost<C>(
@@ -124,33 +125,6 @@ where
             identity: baseline,
             usage: &usage,
             model_info: prices,
-            basis,
-            moment: input.moment,
-            database: input.database,
-        },
-    )
-}
-
-// The recorded selected token cost wins; pricing the selected usage is the fallback.
-fn selected_token_cost<C>(
-    context: &C,
-    input: &AutoRouterSavingsInput<'_>,
-    selected: &ModelIdentity,
-    recorded: Option<Decimal>,
-    basis: &PricingBasis,
-) -> Option<Decimal>
-where
-    C: SavingsPricingContext,
-{
-    if let Some(cost) = recorded {
-        return Some(cost);
-    }
-    cost_of_usage(
-        context,
-        &CostOfUsageInput {
-            identity: selected,
-            usage: input.usage,
-            model_info: input.selected_info,
             basis,
             moment: input.moment,
             database: input.database,

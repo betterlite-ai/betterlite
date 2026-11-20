@@ -149,9 +149,40 @@ where
             baseline: request.snapshot.actual_spend,
         });
     }
+    modeled_baseline(context, request, usage, actual)
+}
+
+// The baseline tokens at the snapshot's own recorded rates, as a supplied model info table.
+fn modeled_baseline<C>(
+    context: &C,
+    request: &ComparisonInput<'_>,
+    usage: &RequestUsage,
+    actual: Decimal,
+) -> Option<BaselineCosts>
+where
+    C: SavingsPricingContext,
+{
     let prices = request.snapshot.prices.as_ref()?;
     let recorded = request.snapshot.actual_token_cost?;
-    let token_cost = modeled_token_cost(context, request, usage, prices)?;
+    let token_cost = cost_of_usage(
+        context,
+        &CostOfUsageInput {
+            identity: &ModelIdentity {
+                model: request.snapshot.model.clone(),
+                provider: request.snapshot.provider.clone(),
+            },
+            usage,
+            model_info: Some(&PricedModel {
+                record: prices.clone(),
+                tiered_pricing: Vec::new(),
+                off_peak_pricing: None,
+                off_peak_cache_read_present: false,
+            }),
+            basis: &request.snapshot.basis,
+            moment: request.moment,
+            database: request.database,
+        },
+    )?;
     if token_cost < Decimal::ZERO {
         return None;
     }
@@ -164,39 +195,6 @@ where
         return None;
     }
     Some(BaselineCosts { actual, baseline })
-}
-
-// The baseline tokens at the snapshot's own recorded rates, as a supplied model info table.
-fn modeled_token_cost<C>(
-    context: &C,
-    request: &ComparisonInput<'_>,
-    usage: &RequestUsage,
-    prices: &ModelInfo,
-) -> Option<Decimal>
-where
-    C: SavingsPricingContext,
-{
-    let identity = ModelIdentity {
-        model: request.snapshot.model.clone(),
-        provider: request.snapshot.provider.clone(),
-    };
-    let supplied = PricedModel {
-        record: prices.clone(),
-        tiered_pricing: Vec::new(),
-        off_peak_pricing: None,
-        off_peak_cache_read_present: false,
-    };
-    cost_of_usage(
-        context,
-        &CostOfUsageInput {
-            identity: &identity,
-            usage,
-            model_info: Some(&supplied),
-            basis: &request.snapshot.basis,
-            moment: request.moment,
-            database: request.database,
-        },
-    )
 }
 
 // effective_baseline_info == selected_model_info, with nested values conservatively unequal.

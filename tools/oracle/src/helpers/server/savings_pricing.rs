@@ -128,7 +128,10 @@ impl Helper for Op {
         match input.operation {
             Operation::ComputeAutorouterSavings => autorouter_value(input),
             Operation::PriceBaselineComparison => baseline_comparison_value(input),
-            Operation::ComputeSavingsSpend => savings_spend_value(input),
+            Operation::ComputeSavingsSpend => {
+                let runtime = current_thread_runtime()?;
+                savings_spend_value(input, &runtime)
+            }
         }
     }
 }
@@ -166,20 +169,18 @@ fn autorouter_value(input: &Input) -> HelperResult {
 }
 
 fn baseline_comparison_value(input: &Input) -> HelperResult {
-    let context = case_context()?;
-    let database = TimeZoneDatabase::none();
     let Some(snapshot) = input.snapshot.as_ref() else {
         return Err(helper_error("InvalidInput", "snapshot is required"));
     };
     let baseline_usage = input.baseline_usage.as_ref().and_then(usage_input);
     let result = price_baseline_comparison(
-        &context,
+        &case_context()?,
         &ComparisonInput {
             snapshot,
             baseline_usage: baseline_usage.as_ref(),
             provenance: input.provenance,
             moment: DateTime::UNIX_EPOCH,
-            database: &database,
+            database: &TimeZoneDatabase::none(),
         },
     );
     Ok(result.map_or_else(
@@ -193,37 +194,48 @@ fn baseline_comparison_value(input: &Input) -> HelperResult {
     ))
 }
 
-fn savings_spend_value(input: &Input) -> HelperResult {
-    let context = case_context()?;
-    let database = TimeZoneDatabase::none();
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|error| helper_error("RuntimeError", &error.to_string()))?;
+fn savings_spend_value(input: &Input, runtime: &tokio::runtime::Runtime) -> HelperResult {
     let usage = input.usage.as_ref().and_then(usage_input);
     let billed_at = BilledAt::Missing;
-    let request = SavingsSpendInput {
-        model: input.model.as_deref(),
-        custom_llm_provider: input.custom_llm_provider.as_deref(),
-        compression_saved_tokens: input.compression_saved_tokens,
-        gateway_injected_cache: input.gateway_injected_cache,
-        routing_decision: input.routing_decision.as_ref(),
-        usage: usage.as_ref(),
-        model_id: input.model_id.as_deref(),
-        cost_breakdown: input.cost_breakdown.as_ref(),
-        recorded_autorouter_savings: input.recorded_autorouter_savings.as_ref(),
-        recorded_estimate: input.recorded_estimate.as_ref(),
-        billed_at: &billed_at,
-        fallback_moment: DateTime::UNIX_EPOCH,
-        database: &database,
-    };
-    let spend = runtime.block_on(compute_savings_spend(&context, &request));
+    let zone = TimeZoneDatabase::none();
+    let request = savings_spend_input(input, usage.as_ref(), &billed_at, &zone);
+    let spend = runtime.block_on(compute_savings_spend(&case_context()?, &request));
     Ok(serde_json::json!({
         "compression": spend.compression.normalize().to_string(),
         "prompt_caching": spend.prompt_caching.normalize().to_string(),
         "autorouter": spend.autorouter.normalize().to_string(),
         "gateway_injected_caching": spend.gateway_injected_caching.normalize().to_string(),
     }))
+}
+
+fn savings_spend_input<'input>(
+    input: &'input Input,
+    usage: Option<&'input RequestUsage>,
+    billed_at: &'input BilledAt,
+    zone: &'input TimeZoneDatabase,
+) -> SavingsSpendInput<'input> {
+    SavingsSpendInput {
+        model: input.model.as_deref(),
+        custom_llm_provider: input.custom_llm_provider.as_deref(),
+        compression_saved_tokens: input.compression_saved_tokens,
+        gateway_injected_cache: input.gateway_injected_cache,
+        routing_decision: input.routing_decision.as_ref(),
+        usage,
+        model_id: input.model_id.as_deref(),
+        cost_breakdown: input.cost_breakdown.as_ref(),
+        recorded_autorouter_savings: input.recorded_autorouter_savings.as_ref(),
+        recorded_estimate: input.recorded_estimate.as_ref(),
+        billed_at,
+        fallback_moment: DateTime::UNIX_EPOCH,
+        database: zone,
+    }
+}
+
+fn current_thread_runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| helper_error("RuntimeError", &error.to_string()))
 }
 
 // The public lookup every case prices from is the same bundled catalog the proxy ships.
