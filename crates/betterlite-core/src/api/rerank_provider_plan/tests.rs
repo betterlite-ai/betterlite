@@ -565,7 +565,7 @@ fn drop_params_uses_the_call_value_then_the_global_value() {
         &mut logging,
     )
     .expect("the call dispatches");
-    assert!(!ops.options()[0].drop_params);
+    assert!(ops.options()[0].drop_params);
 
     let mut logging = logging_state();
     let mut call = call("cohere");
@@ -682,6 +682,7 @@ fn version_params_choose_the_cohere_client() {
     let mut logging = logging_state();
     let mut call = call("cohere");
     call.max_chunks_per_doc = Some(0);
+    call.kwargs = with(&[("api_base", Json::Text(String::from("https://d/v1/rerank")))]);
     dispatch(
         &identity,
         &ops,

@@ -527,21 +527,73 @@ fn rerank_local_and_hosted_credentials() {
     assert_eq!(send.api_key.as_deref(), Some("dynamic-key"));
     assert_eq!(send.api_base.as_deref(), Some("https://dynamic.test"));
 
-    let mut empty_first = defaults();
-    empty_first.environment.fireworks_api_key = Some(SecretString::from(""));
-    empty_first.environment.fireworks_ai_api_key = Some(SecretString::from(""));
-    empty_first.environment.fireworksai_api_key = Some(SecretString::from(""));
-    empty_first.environment.fireworks_ai_token = Some(SecretString::from("token-key"));
-    run_one(&fireworks, &ops, &empty_first, &[], call("fireworks_ai"))
-        .expect("fireworks falls through the empty names");
-    assert_eq!(last(&ops).api_key.as_deref(), Some("token-key"));
+    let anonymous = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Custom("fireworks_ai".to_owned()),
+        None,
+        None,
+    );
+    let mut call_key = call("fireworks_ai");
+    call_key.kwargs = with(&[("api_key", text("call-key"))]);
+    run_one(
+        &anonymous,
+        &ops,
+        &defaults(),
+        &[("FIREWORKS_API_KEY", "env-first")],
+        call_key,
+    )
+    .expect("fireworks takes the call key");
+    assert_eq!(last(&ops).api_key.as_deref(), Some("call-key"));
 
-    let mut named = defaults();
-    named.environment.fireworks_ai_api_key = Some(SecretString::from("second-key"));
-    named.environment.fireworks_ai_token = Some(SecretString::from("token-key"));
-    run_one(&fireworks, &ops, &named, &[], call("fireworks_ai"))
-        .expect("fireworks takes the first set name");
+    run_one(
+        &anonymous,
+        &ops,
+        &defaults(),
+        &[
+            ("FIREWORKS_API_KEY", "env-first"),
+            ("FIREWORKS_AI_API_KEY", "second-key"),
+        ],
+        call("fireworks_ai"),
+    )
+    .expect("fireworks takes the first environment name");
+    assert_eq!(last(&ops).api_key.as_deref(), Some("env-first"));
+
+    run_one(
+        &anonymous,
+        &ops,
+        &defaults(),
+        &[
+            ("FIREWORKS_API_KEY", ""),
+            ("FIREWORKS_AI_API_KEY", "second-key"),
+            ("FIREWORKSAI_API_KEY", "third-key"),
+        ],
+        call("fireworks_ai"),
+    )
+    .expect("fireworks falls through the empty name");
     assert_eq!(last(&ops).api_key.as_deref(), Some("second-key"));
+
+    run_one(
+        &anonymous,
+        &ops,
+        &defaults(),
+        &[
+            ("FIREWORKSAI_API_KEY", "third-key"),
+            ("FIREWORKS_AI_TOKEN", "token-key"),
+        ],
+        call("fireworks_ai"),
+    )
+    .expect("fireworks takes the third name");
+    assert_eq!(last(&ops).api_key.as_deref(), Some("third-key"));
+
+    run_one(
+        &anonymous,
+        &ops,
+        &defaults(),
+        &[("FIREWORKS_AI_TOKEN", "token-key")],
+        call("fireworks_ai"),
+    )
+    .expect("fireworks takes the token");
+    assert_eq!(last(&ops).api_key.as_deref(), Some("token-key"));
     assert_eq!(
         last(&ops).api_base,
         None,

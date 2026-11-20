@@ -69,7 +69,7 @@ impl TimeoutArg {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default)]
 pub struct GenericParams {
     pub api_key: Option<SecretString>,
     pub api_base: Option<String>,
