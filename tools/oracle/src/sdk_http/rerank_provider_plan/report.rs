@@ -38,7 +38,7 @@ pub(super) fn logging_state(redactor: &Redactor) -> Result<LoggingState, SdkHttp
         },
         redactor,
         || String::from("generated"),
-        Duration::default(),
+        Duration::default,
     )
     .map_err(SdkHttpError::LoggingState)
 }
