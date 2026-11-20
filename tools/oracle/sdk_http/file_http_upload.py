@@ -2,7 +2,7 @@ import asyncio
 import json
 from collections.abc import Coroutine, Iterator, Mapping
 from datetime import UTC, datetime
-from typing import Final, Literal, NotRequired
+from typing import Final, Literal, NotRequired, TypedDict
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -12,7 +12,7 @@ from litellm.llms.custom_httpx.llm_http_handler import BaseLLMHTTPHandler
 from litellm.llms.mistral.files.transformation import MistralFilesConfig
 from litellm.types.llms.openai import CreateFileRequest, OpenAIFileObject
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
-from typing_extensions import TypedDict, override
+from typing_extensions import override
 
 Mode = Literal["sync", "async"]
 Content = str | list[int]
@@ -182,12 +182,12 @@ class FixtureLogging(Logging):
     observed: dict[str, JsonValue] | None
 
     def __init__(self) -> None:
-        super().__init__("", "", False, "create_file", datetime(2026, 1, 1, tzinfo=UTC), "file-http-upload", "file-http-upload")  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L556  # noqa: E501
+        super().__init__(model="", messages="", stream=False, call_type="create_file", start_time=datetime(2026, 1, 1, tzinfo=UTC), litellm_call_id="file-http-upload", function_id="file-http-upload")  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L556  # noqa: E501
         self.observed = None
 
     @override
     def pre_call(self, *args: JsonValue, **kwargs: JsonValue) -> None:
-        self.observed = {name: JSON.validate_json(json.dumps(value, default=list)) for name, value in kwargs.items()}
+        self.observed = {name: JSON.validate_json(json.dumps(value, default=list)) for name, value in kwargs.items()}  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L3643-L3658
         super().pre_call(*args, **kwargs)  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1350  # noqa: E501
 
 
@@ -204,7 +204,7 @@ class FixtureConfig(MistralFilesConfig):
 
     @override
     def validate_environment(  # type: ignore[override]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/files/transformation.py#L143  # noqa: E501
-        self, headers: Mapping[str, str], *_args: JsonValue, **_kwargs: JsonValue) -> dict[str, str]:
+        self, headers: Mapping[str, str], *_args: JsonValue, **_kwargs: JsonValue) -> dict[str, str]:  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/files/transformation.py#L143
         del headers
         return dict(self.case.headers)
 
@@ -247,7 +247,7 @@ def diagnostics_view(case: UploadCall, logging_obj: FixtureLogging) -> JsonValue
         return None
     args = TypeAdapter(dict[str, JsonValue]).validate_python(observed["additional_args"])
     return {
-        "input": observed.get("input"), "api_key": observed.get("api_key"), "api_base": args.get("api_base"),
+        "input": observed.get("input"), "api_key": observed.get("api_key"), "api_base": args.get("api_base"),  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L3643-L3658
         "headers": args.get("headers"), "complete_input_dict": args.get("complete_input_dict"),
     }
 
