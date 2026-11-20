@@ -31,40 +31,10 @@ fn response<const DEFAULT: u16>(message: &str) -> Box<ResponseDetails<DEFAULT>> 
     Box::new(ResponseDetails::from(context(message)))
 }
 
-fn budget(message: Option<&str>) -> ErrorClass {
-    ErrorClass::BudgetExceeded(Box::new(BudgetExceededDetails {
-        current_cost: Decimal::new(125, 1),
-        max_budget: Decimal::from(10_i32),
-        message: message.map(str::to_owned),
-        provider: "openai".to_owned(),
-        entity_type: None,
-        entity_id: None,
-        status_code: 422,
-    }))
-}
-
-fn guardrail(message: &str) -> ErrorClass {
-    ErrorClass::GuardrailRaised(Box::new(GuardrailDetails {
-        guardrail_name: None,
-        message: message.to_owned(),
-        status_code: 400,
-        blocked_content: true,
-    }))
-}
-
 fn timeout(message: &str) -> ErrorClass {
     ErrorClass::Timeout(Box::new(TimeoutDetails {
         context: context(message),
         original_status: TimeoutStatus::default(),
-    }))
-}
-
-fn rate_limit(message: &str) -> ErrorClass {
-    ErrorClass::RateLimit(Box::new(RateLimitDetails {
-        context: context(message),
-        category: RateLimitCategory::LitellmRateLimit,
-        dimension: None,
-        headers: BTreeMap::new(),
     }))
 }
 
@@ -118,10 +88,37 @@ fn every_field() -> RetryPolicy {
     Some(1)
 )]
 #[case::content_policy(ErrorClass::ContentPolicyViolation(response("policy")), Some(5))]
-#[case::guardrail_raised(guardrail("blocked"), Some(9))]
+#[case::guardrail_raised(
+    ErrorClass::GuardrailRaised(Box::new(GuardrailDetails {
+        guardrail_name: None,
+        message: "blocked".to_owned(),
+        status_code: 400,
+        blocked_content: true,
+    })),
+    Some(9)
+)]
 #[case::timeout(timeout("timed out"), Some(3))]
-#[case::rate_limit(rate_limit("slow down"), Some(4))]
-#[case::budget_exceeded(budget(None), Some(9))]
+#[case::rate_limit(
+    ErrorClass::RateLimit(Box::new(RateLimitDetails {
+        context: context("slow down"),
+        category: RateLimitCategory::LitellmRateLimit,
+        dimension: None,
+        headers: BTreeMap::new(),
+    })),
+    Some(4)
+)]
+#[case::budget_exceeded(
+    ErrorClass::BudgetExceeded(Box::new(BudgetExceededDetails {
+        current_cost: Decimal::new(125, 1),
+        max_budget: Decimal::from(10_i32),
+        message: None,
+        provider: "openai".to_owned(),
+        entity_type: None,
+        entity_id: None,
+        status_code: 422,
+    })),
+    Some(9)
+)]
 #[case::service_unavailable(
     ErrorClass::ServiceUnavailable(Box::new(context("unavailable"))),
     Some(7)
