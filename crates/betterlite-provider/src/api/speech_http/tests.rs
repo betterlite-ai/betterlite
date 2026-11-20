@@ -269,7 +269,7 @@ async fn speech_http_ssml() {
     let config = RecordingConfig::new(
         Ok(URL.to_owned()),
         data(None, Some("<speak>hello</speak>"), None),
-        headers(&[("x", "validated")]),
+        headers(&[("x", "validated"), ("y", "validated")]),
     );
     let deps = SpeechDeps {
         config: &config,
@@ -295,7 +295,10 @@ async fn speech_http_ssml() {
         .await
         .expect("the ssml call succeeds");
     let observed = config.observed();
-    assert_eq!(observed[0].headers, headers(&[("x", "caller")]));
+    assert_eq!(
+        observed[0].headers,
+        headers(&[("x", "caller"), ("y", "validated")])
+    );
     {
         let requests = wire.requests();
         assert_eq!(requests.len(), 1);
@@ -308,6 +311,7 @@ async fn speech_http_ssml() {
             Some("text/plain; charset=utf-8")
         );
         assert_eq!(header(&requests[0], "x").as_deref(), Some("caller"));
+        assert_eq!(header(&requests[0], "y").as_deref(), Some("validated"));
     }
     assert_eq!(
         fixture.logged("complete_input_dict"),
@@ -315,7 +319,10 @@ async fn speech_http_ssml() {
     );
     assert_eq!(
         fixture.logged("headers"),
-        Some(&Json::Object(headers_json(&[("x", "caller")])))
+        Some(&Json::Object(headers_json(&[
+            ("x", "caller"),
+            ("y", "validated")
+        ])))
     );
 }
 
