@@ -71,7 +71,7 @@ where
     })
 }
 
-pub(super) fn file_response(reply: &UpstreamResponse) -> FileResponse {
+pub(super) fn file_response(reply: &UpstreamResponse, url: &str) -> FileResponse {
     FileResponse {
         status_code: reply.status,
         headers: reply
@@ -80,6 +80,7 @@ pub(super) fn file_response(reply: &UpstreamResponse) -> FileResponse {
             .map(|(name, value)| (name.as_str().to_owned(), header_text(value)))
             .collect(),
         body: reply.body.clone(),
+        url: Some(url.to_owned()),
     }
 }
 

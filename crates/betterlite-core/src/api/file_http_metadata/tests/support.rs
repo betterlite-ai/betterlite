@@ -4,8 +4,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use betterlite_config::ProxyTrust;
 use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::base_builder;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::transport_error::TransportError;
@@ -420,11 +420,12 @@ pub(crate) struct RecordingConfig {
     base: String,
     failure: Option<Failure>,
     pages: Mutex<VecDeque<Vec<FileObject>>>,
-    nexts: Mutex<VecDeque<Option<NextPageRequest>>>,
+    nexts: Mutex<VecDeque<Option<BTreeMap<String, String>>>>,
     validates: Mutex<Vec<Validated>>,
     requested: Mutex<Vec<Requested>>,
     observed: Mutex<Vec<Observed>>,
     errors: Mutex<Vec<(String, u16, HeaderMap)>>,
+    urls: Mutex<Vec<Option<String>>>,
     next_calls: Mutex<usize>,
     events: Events,
     number_query: AtomicBool,
@@ -441,6 +442,7 @@ impl RecordingConfig {
             requested: Mutex::default(),
             observed: Mutex::default(),
             errors: Mutex::default(),
+            urls: Mutex::default(),
             next_calls: Mutex::default(),
             events: events.clone(),
             number_query: AtomicBool::new(false),
@@ -457,7 +459,7 @@ impl RecordingConfig {
         *self.pages.lock().unwrap_or_else(PoisonError::into_inner) = VecDeque::from(pages);
     }
 
-    pub(crate) fn set_nexts(&self, nexts: Vec<Option<NextPageRequest>>) {
+    pub(crate) fn set_nexts(&self, nexts: Vec<Option<BTreeMap<String, String>>>) {
         *self.nexts.lock().unwrap_or_else(PoisonError::into_inner) = VecDeque::from(nexts);
     }
 
@@ -488,6 +490,13 @@ impl RecordingConfig {
 
     pub(crate) fn errors(&self) -> Vec<(String, u16, HeaderMap)> {
         self.errors
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    pub(crate) fn urls(&self) -> Vec<Option<String>> {
+        self.urls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
@@ -630,6 +639,10 @@ impl RecordingConfig {
         F: FnOnce() -> T,
     {
         self.events.push("response");
+        self.urls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(raw_response.url.clone());
         self.observe(context.model_call_details);
         self.check_response(raw_response)?;
         Ok(answer())
@@ -738,6 +751,7 @@ impl MetadataConfig for RecordingConfig {
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front()
             .unwrap_or(None)
+            .map(|query| (self.base.clone(), query))
     }
 
     fn transform_list_files_response(

@@ -139,8 +139,8 @@ where
     for (name, value) in target.extra_headers.into_iter().flatten() {
         headers.insert(name.clone(), value.clone());
     }
-    let headers = validate_environment(deps.config, headers, &optional_params, litellm_params)?;
-    log_pre_call(&base, &headers, call, log)?;
+    let validated = validate_environment(deps.config, headers, &optional_params, litellm_params)?;
+    log_pre_call(&base, &validated, call, log)?;
     let timeout = target.timeout.filter(|_| operation.sends_timeout(mode));
     Ok(PreparedMetadata {
         config: deps.config,
@@ -150,11 +150,11 @@ where
         request: WriteRequest {
             method: operation.method(),
             url: request_url(&base, &query_pairs(&query)?)?,
-            headers: wire_headers(&headers)?,
+            headers: wire_headers(&validated)?,
             body: RequestBody::Empty,
             timeout,
         },
-        headers,
+        headers: validated,
     })
 }
 
@@ -176,10 +176,11 @@ where
         request,
     } = prepared;
     let timeout = request.timeout;
+    let url = request.url.to_string();
     let reply = send_once(config, client.get(), request, attempt).await?;
     match attempt.operation {
         Operation::Retrieve => {
-            let response = file_response(&reply);
+            let response = file_response(&reply, &url);
             let file = config.transform_retrieve_file_response(
                 &response,
                 ReplyContext {
@@ -189,9 +190,9 @@ where
             )?;
             Ok(MetadataValue::File(file))
         }
-        Operation::Delete => deleted(config, &reply, log, &litellm_params),
+        Operation::Delete => deleted(config, &reply, &url, log, &litellm_params),
         Operation::List => {
-            let mut listing = Listing {
+            let listing = Listing {
                 config,
                 client: client.get(),
                 attempt,
@@ -199,7 +200,7 @@ where
                 headers,
                 timeout,
             };
-            list_pages(&mut listing, log, reply)
+            list_pages(&listing, log, reply, url)
                 .await
                 .map(MetadataValue::Listed)
         }
@@ -207,9 +208,10 @@ where
 }
 
 // The delete client raises on a status of 400 or more before its transform sees the reply
-fn deleted<C: MetadataConfig>(
-    config: &C,
+fn deleted(
+    config: &dyn MetadataConfig,
     reply: &UpstreamResponse,
+    url: &str,
     log: &mut LogContext<'_, '_>,
     litellm_params: &FileParams,
 ) -> Result<MetadataValue, MetadataError> {
@@ -217,7 +219,7 @@ fn deleted<C: MetadataConfig>(
         let facts = status_facts(reply);
         return Err(MetadataError::Provider(provider_error(&facts, config)));
     }
-    let response = file_response(reply);
+    let response = file_response(reply, url);
     let deleted = config.transform_delete_file_response(
         &response,
         ReplyContext {

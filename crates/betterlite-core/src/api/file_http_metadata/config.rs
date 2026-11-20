@@ -13,12 +13,13 @@ pub type Headers = BTreeMap<String, String>;
 pub type PreparedRequest = (String, FileParams);
 pub type NextPageRequest = (String, BTreeMap<String, String>);
 
-// httpx.Response, with the body kept as bytes
+// httpx.Response, with the body kept as bytes and the request URL a provider transform reads for the file id
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileResponse {
     pub status_code: u16,
     pub headers: Headers,
     pub body: Vec<u8>,
+    pub url: Option<String>,
 }
 
 // What a response transform reads: the logging object's model_call_details, borrowed so the transform's writes stick, and the request's litellm_params

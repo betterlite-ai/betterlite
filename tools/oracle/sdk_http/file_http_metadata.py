@@ -77,41 +77,41 @@ def execute(
     headers: dict[str, str] = {} if call.extra_headers is None else call.extra_headers
     file_id = "" if call.file_id is None else call.file_id
     if call.operation == "retrieve" and call.mode == "sync":
-        retrieved = HANDLER.retrieve_file(
+        retrieved = HANDLER.retrieve_file(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L4553
             file_id, config, litellm_params, headers, logging_obj, timeout=timeout
         )
         return JSON.validate_json(
-            cast("OpenAIFileObject", retrieved).model_dump_json(exclude_none=True)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad2cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L4563
+            cast("OpenAIFileObject", retrieved).model_dump_json(exclude_none=True)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L4563
         )
     if call.operation == "retrieve":
         fetched = asyncio.run(
-            HANDLER.async_retrieve_file(
+            HANDLER.async_retrieve_file(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L4621
                 file_id, config, litellm_params, headers, logging_obj, None, timeout
             )
         )
         return JSON.validate_json(fetched.model_dump_json(exclude_none=True))
     if call.operation == "delete" and call.mode == "sync":
-        removed = HANDLER.delete_file(
+        removed = HANDLER.delete_file(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L4677
             file_id, config, litellm_params, headers, logging_obj, timeout=timeout
         )
         return JSON.validate_json(
-            cast("FileDeleted", removed).model_dump_json(exclude_none=True)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad2cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L4687
+            cast("FileDeleted", removed).model_dump_json(exclude_none=True)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L4687
         )
     if call.operation == "delete":
         deleted = asyncio.run(
-            HANDLER.async_delete_file(
+            HANDLER.async_delete_file(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L4745
                 file_id, config, litellm_params, headers, logging_obj, None, timeout
             )
         )
         return JSON.validate_json(deleted.model_dump_json(exclude_none=True))
     if call.mode == "sync":
-        listed = HANDLER.list_files(
+        listed = HANDLER.list_files(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L4801
             call.purpose, config, litellm_params, headers, logging_obj, timeout=timeout
         )
-        files = cast("list[OpenAIFileObject]", listed)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad2cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L4811
+        files = cast("list[OpenAIFileObject]", listed)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L4811
         return [JSON.validate_json(entry.model_dump_json(exclude_none=True)) for entry in files]
     listed_async = asyncio.run(
-        HANDLER.async_list_files(
+        HANDLER.async_list_files(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L4868
             call.purpose, config, litellm_params, headers, logging_obj, None, timeout
         )
     )

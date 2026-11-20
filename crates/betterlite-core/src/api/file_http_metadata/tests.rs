@@ -2,6 +2,7 @@
 
 mod support;
 
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_http::proxy::outbound::RequestBody;
@@ -19,7 +20,7 @@ use self::support::{
     RecordingConfig, Reply, SECRET, SHORT, Source, Stage, TIMEOUT, Wire, caller_headers, deleted,
     file_object, files, litellm_params, litellm_params_with, metadata_deps, run, target,
 };
-use crate::api::file_http_metadata::config::{FileParams, NextPageRequest};
+use crate::api::file_http_metadata::config::FileParams;
 use crate::api::file_http_metadata::error::MetadataError;
 use crate::api::file_http_metadata::service::{
     DeleteCall, ListCall, MetadataCall, MetadataDeps, MetadataTarget, MetadataValue, RetrieveCall,
@@ -516,6 +517,30 @@ async fn eager_file_pages_continuations() {
 }
 
 #[tokio::test]
+async fn response_transforms_receive_the_sent_url() {
+    let events = Events::new();
+    let config = RecordingConfig::new(BASE, &events);
+    config.set_pages(vec![files("a", 1), files("b", 1)]);
+    config.set_nexts(vec![Some(caller_headers(&[("pagination_token", "t1")]))]);
+    let wire = Wire::new(success_answers(2), &events);
+    let source = Source::new(wire.clone());
+    let deps = metadata_deps(&config, &source, None);
+    let params = litellm_params(BASE, SECRET);
+    let mut fixture = Fixture::new("file_list");
+    let call = Attempt::ListSync.call(&params, Some(TIMEOUT));
+    run(&mut fixture, &deps, ClientKind::Sync, &call, &events)
+        .await
+        .expect("the listing succeeds");
+    let sent: Vec<Option<String>> = wire
+        .requests()
+        .iter()
+        .map(|request| Some(request.url.to_string()))
+        .collect();
+    assert_eq!(sent.len(), 2);
+    assert_eq!(config.urls(), sent);
+}
+
+#[tokio::test]
 async fn an_empty_page_without_a_continuation_ends_the_listing() {
     let events = Events::new();
     let config = RecordingConfig::new(BASE, &events);
@@ -612,7 +637,7 @@ async fn file_listing_ceiling(#[case] case: CeilingCase) {
     let config = RecordingConfig::new(BASE, &events);
     let (pages, nexts, expected_len, expected_last, expected_nexts, expected_requests): (
         Vec<Vec<FileObject>>,
-        Vec<Option<NextPageRequest>>,
+        Vec<Option<BTreeMap<String, String>>>,
         usize,
         &str,
         usize,
@@ -845,8 +870,10 @@ async fn invalid_caller_headers_are_reported(#[case] name: &str, #[case] value: 
     });
     let result = run(&mut fixture, &deps, ClientKind::Sync, &call, &events).await;
     match result {
-        Err(MetadataError::HeaderName { name: reported, .. })
-        | Err(MetadataError::HeaderValue { name: reported, .. }) => {
+        Err(
+            MetadataError::HeaderName { name: reported, .. }
+            | MetadataError::HeaderValue { name: reported, .. },
+        ) => {
             assert_eq!(reported, name);
         }
         _ => panic!("the caller's header is reported"),
