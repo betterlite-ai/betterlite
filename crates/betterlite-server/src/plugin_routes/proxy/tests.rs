@@ -6,6 +6,7 @@ use std::sync::Arc;
 use axum::Router;
 use axum::body::Body;
 use axum::http::{HeaderMap, HeaderValue, Method, Request, StatusCode};
+use rstest::rstest;
 
 use super::{PluginReply, PluginState, REQUEST_BODY_LIMIT, target_url};
 use crate::plugin_routes::config::PluginRegistry;
@@ -86,35 +87,22 @@ async fn forward_method(app: Router, method: Method) -> StatusCode {
     status
 }
 
+#[rstest]
+#[case::get(Method::GET)]
+#[case::post(Method::POST)]
+#[case::put(Method::PUT)]
+#[case::delete(Method::DELETE)]
+#[case::patch(Method::PATCH)]
+#[case::options(Method::OPTIONS)]
+#[case::head(Method::HEAD)]
 #[tokio::test]
-async fn forwards_every_supported_method() {
+async fn forwards_every_supported_method(#[case] method: Method) {
     let upstream = FakeUpstream::answering(reply(StatusCode::OK, ""));
     let app = router(plugin_state(Arc::clone(&upstream)));
-    for method in [
-        Method::GET,
-        Method::POST,
-        Method::PUT,
-        Method::DELETE,
-        Method::PATCH,
-        Method::OPTIONS,
-    ] {
-        assert_eq!(forward_method(app.clone(), method).await, StatusCode::OK);
-    }
-    assert_eq!(forward_method(app, Method::HEAD).await, StatusCode::OK);
+    assert_eq!(forward_method(app, method.clone()).await, StatusCode::OK);
     let sent = upstream.sent();
-    let forwarded: Vec<Method> = sent.iter().map(|request| request.method.clone()).collect();
-    assert_eq!(
-        forwarded,
-        [
-            Method::GET,
-            Method::POST,
-            Method::PUT,
-            Method::DELETE,
-            Method::PATCH,
-            Method::OPTIONS,
-            Method::HEAD,
-        ]
-    );
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].method, method);
 }
 
 #[tokio::test]
