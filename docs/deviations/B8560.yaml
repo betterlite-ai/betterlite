@@ -4,7 +4,7 @@ deviations:
     why: Constructor wiring; module-level state is banned, and the server supplies the registered callback order LiteLLM's callback manager keeps and owns the global list it runs itself.
     link: ""
   - what: When a vector store registry is configured but the factory has no vector_store_pre_call_hook, step 5 selects nothing and writes no prompt_integration stamp, where LiteLLM writes the class name of None, "NoneType", and returns None.
-    why: "NoneType" is Python's None.__class__.__name__ showing through, and no working setup can read it as a prompt integration; the control flow is unchanged, since step 5 still ends the search and skips the registration.
+    why: Python's None.__class__.__name__ shows through there as the text NoneType, and no working setup can read it as a prompt integration; the control flow is unchanged, since step 5 still ends the search and skips the registration.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1290-L1300
   - what: The async hook call does not hand tools or the logging object to the prompt manager, where LiteLLM's async_get_chat_completion_prompt passes tools=tools and litellm_logging_obj=self.
     why: B4058's ChatCompletionPromptRequest carries neither the call's tools nor a logging handle, so there is no place in the manager contract to put them; the tools still reach prompt selection, which is the only code in this module that reads them.
