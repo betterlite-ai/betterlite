@@ -283,7 +283,8 @@ fn decision_returns_false_just_under_one_hour() {
 
 #[test]
 fn decision_prefers_the_model_id_key_when_it_has_text() {
-    let now = at(1000);
+    // the id key's row is over an hour old and the name key's is one second old, so the two keys disagree
+    let now = at(7200);
     let latest = latest_map(vec![
         latest_row("model-a", Some("dep-a"), "healthy", at(0)),
         latest_row("model-a", None, "healthy", ago(now, 1)),
