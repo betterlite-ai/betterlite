@@ -10,7 +10,7 @@ from litellm.router_utils.add_retry_fallback_headers import get_hidden_params_di
 from litellm.types.utils import ModelResponse, Usage
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, PrivateAttr, TypeAdapter
 
-# A missing model makes get_llm_provider print a provider list to stdout, which corrupts the JSON answer
+# get_llm_provider without a model prints a banner to stdout and breaks the JSON answer
 litellm.suppress_debug_info = True
 
 
