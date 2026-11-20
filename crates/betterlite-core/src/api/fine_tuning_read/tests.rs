@@ -317,12 +317,12 @@ async fn list_page_preserves_metadata_and_jobs() {
     assert_eq!(grader.get("source"), Some(&json!("def grade(): return 1")));
 }
 
-// the SDK's Grader union finds no member that accepts a multi grader's list, so it writes its first
-// member's keys and keeps calculate_output and graders as extras
+// a multi grader writes the grader its graders field names, and a grader type the union names no
+// member for keeps the first member's keys with its own keys after them
 #[tokio::test]
-async fn page_shapes_a_multi_grader_as_the_sdk_falls_back() {
+async fn page_shapes_multi_graders_and_the_union_fallback() {
     let fake = Fake::answering(
-        br#"{"data": [{"id": "ft_m", "method": {"type": "reinforcement", "reinforcement": {"grader": {"type": "multi", "name": "both", "calculate_output": "a + b", "graders": [{"type": "string_check", "name": "s", "input": "i", "operation": "eq", "reference": "r"}]}}}}], "has_more": false}"#,
+        br#"{"data": [{"id": "ft_m", "method": {"type": "reinforcement", "reinforcement": {"grader": {"type": "multi", "name": "both", "calculate_output": "inner", "graders": {"type": "label_model", "name": "labeler", "model": "gpt-4o", "input": [{"role": "user", "content": "rate"}], "labels": ["good", "bad"], "passing_labels": ["good"]}}}}}, {"id": "ft_l", "method": {"type": "reinforcement", "reinforcement": {"grader": {"type": "label_model", "name": "labeler", "model": "gpt-4o", "input": [{"role": "user", "content": "rate"}], "labels": ["good"], "passing_labels": ["good"]}}}}], "has_more": false}"#,
     );
     let outcome = run(
         &fake,
@@ -335,20 +335,33 @@ async fn page_shapes_a_multi_grader_as_the_sdk_falls_back() {
         panic!("list answered a job");
     };
     let page_json = serde_json::to_value(page).expect("a page serializes");
-    let grader = page_json["data"][0]["method"]["reinforcement"]["grader"]
+    let multi = page_json["data"][0]["method"]["reinforcement"]["grader"]
         .as_object()
         .expect("a multi grader object");
-    assert_eq!(grader.get("input"), Some(&json!(null)));
-    assert_eq!(grader.get("operation"), Some(&json!(null)));
-    assert_eq!(grader.get("reference"), Some(&json!(null)));
-    assert_eq!(grader.get("type"), Some(&json!("multi")));
-    assert_eq!(grader.get("calculate_output"), Some(&json!("a + b")));
+    assert_eq!(multi.len(), 4);
+    assert_eq!(multi.get("calculate_output"), Some(&json!("inner")));
+    let nested = multi
+        .get("graders")
+        .and_then(serde_json::Value::as_object)
+        .expect("a label model grader object");
+    assert_eq!(nested.len(), 6);
+    assert_eq!(nested.get("type"), Some(&json!("label_model")));
     assert_eq!(
-        grader.get("graders"),
-        Some(
-            &json!([{"type": "string_check", "name": "s", "input": "i", "operation": "eq", "reference": "r"}])
-        )
+        nested.get("input"),
+        Some(&json!([{"content": "rate", "role": "user", "type": null}]))
     );
+    let fallback = page_json["data"][1]["method"]["reinforcement"]["grader"]
+        .as_object()
+        .expect("a fallback grader object");
+    assert_eq!(fallback.len(), 8);
+    assert_eq!(
+        fallback.get("input"),
+        Some(&json!([{"role": "user", "content": "rate"}]))
+    );
+    assert_eq!(fallback.get("operation"), Some(&json!(null)));
+    assert_eq!(fallback.get("reference"), Some(&json!(null)));
+    assert_eq!(fallback.get("type"), Some(&json!("label_model")));
+    assert_eq!(fallback.get("labels"), Some(&json!(["good"])));
 }
 
 // every corpus seed reaches the page decoder, which answers a page or a JSON error and never panics

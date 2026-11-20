@@ -43,6 +43,16 @@ deviations:
       rely on the class; betterlite names the timeout as invalid where it reads it, and the
       request is never sent either way.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L552-L553
+  - what: >-
+      A listed job's grader its declared type can't hold, such as a text_similarity grader with no
+      evaluation_metric or a multi grader whose graders is a list, is shaped by the type it names,
+      where the openai SDK's union construction validates each member strictly, finds none and
+      writes the union's first member's StringCheckGrader keys with the raw value kept as extras.
+    why: >-
+      The value is outside the grader types the SDK declares, which docs/compatibility.md leaves
+      to pydantic's runtime; a provider sends a grader of its declared type, and betterlite takes
+      the type the value names instead of re-running the SDK's validation over it.
+    link: https://github.com/openai/openai-python/blob/v2.54.0/src/openai/_models.py#L588
 kept_bugs:
   - what: >-
       The list call's unsupported-provider message names 'create_batch' instead of the list

@@ -168,10 +168,40 @@ const SCORE_MODEL_GRADER: Shape = Shape::Object(&[
     ("sampling_params", SAMPLING_PARAMS),
 ]);
 
-// the union validates these four types and constructs its first member for every other type, since
-// MultiGrader's graders field rejects each list before the union reaches it
+// a nested label grader writes its input items, and a multi grader the grader its graders field names
+const LABEL_MODEL_GRADER: Shape = Shape::Object(&[
+    ("input", Shape::Objects(&GRADER_INPUT)),
+    ("labels", Shape::Any),
+    ("model", Shape::Any),
+    ("name", Shape::Any),
+    ("passing_labels", Shape::Any),
+    ("type", Shape::Any),
+]);
+
+const MULTI_GRADER: Shape = Shape::Object(&[
+    ("calculate_output", Shape::Any),
+    ("graders", GRADERS),
+    ("name", Shape::Any),
+    ("type", Shape::Any),
+]);
+
+// the graders a multi grader combines, which include the label grader the top-level union leaves out
+const GRADERS: Shape = Shape::Tagged(
+    &[
+        ("label_model", LABEL_MODEL_GRADER),
+        ("python", PYTHON_GRADER),
+        ("score_model", SCORE_MODEL_GRADER),
+        ("string_check", STRING_CHECK_GRADER),
+        ("text_similarity", TEXT_SIMILARITY_GRADER),
+    ],
+    &STRING_CHECK_GRADER,
+);
+
+// a grader writes the keys its union member declares, and a type the union names no member for takes
+// its first member's shape
 const GRADER: Shape = Shape::Tagged(
     &[
+        ("multi", MULTI_GRADER),
         ("python", PYTHON_GRADER),
         ("score_model", SCORE_MODEL_GRADER),
         ("string_check", STRING_CHECK_GRADER),

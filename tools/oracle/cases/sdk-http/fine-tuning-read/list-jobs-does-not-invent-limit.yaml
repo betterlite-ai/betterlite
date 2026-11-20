@@ -36,6 +36,8 @@ call:
           call: {}
       - list:
           call: {}
+      - list:
+          call: {}
 upstream:
   - status: 200
     headers: {content-type: application/json}
@@ -190,6 +192,46 @@ upstream:
                     content:
                       - {type: input_image, image_url: "https://example.test/i.png"}
                       - {type: input_text, text: score this}
+      has_more: false
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      object: list
+      data:
+        - id: ft_multi
+          created_at: 1700000004
+          error: null
+          fine_tuned_model: null
+          finished_at: null
+          hyperparameters: {batch_size: auto, learning_rate_multiplier: 2.0, n_epochs: 3}
+          model: gpt-4o-mini-2024-07-18
+          object: fine_tuning.job
+          organization_id: org-r
+          result_files: []
+          seed: 13
+          status: running
+          trained_tokens: null
+          training_file: file-train
+          validation_file: null
+          estimated_finish: null
+          integrations: null
+          metadata: null
+          method:
+            type: reinforcement
+            reinforcement:
+              grader:
+                type: multi
+                name: combo
+                calculate_output: labeler
+                graders:
+                  type: label_model
+                  name: labeler
+                  model: gpt-4o
+                  input:
+                    - role: user
+                      content: rate
+                  labels: [good, bad]
+                  passing_labels: [good]
       has_more: false
 compare:
   headers: []
