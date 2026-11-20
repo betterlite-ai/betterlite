@@ -11,7 +11,8 @@ use secrecy::SecretString;
 use super::auth_identity::StageFailure;
 use super::route_match::{RouteMatchError, decoded_route_path};
 use crate::cache_activity_routes::CACHE_ACTIVITY_PATH;
-use crate::error_body::{AuthenticationFailure, missing_credential_error};
+use crate::error_body::AuthenticationFailure;
+use crate::tracing_routes::router::unauthenticated;
 
 mod tests;
 
@@ -48,7 +49,7 @@ pub(crate) async fn stage(
     }
 }
 
-// The route declares LiteLLM's user_api_key_auth dependency itself, so a missing key gets that dependency's 401 body
+// The route declares LiteLLM's user_api_key_auth dependency itself, so a missing key gets that dependency's 401 envelope there
 fn failure_response(path: &str, failure: &StageFailure) -> Response {
     if path == CACHE_ACTIVITY_PATH
         && matches!(
@@ -57,7 +58,7 @@ fn failure_response(path: &str, failure: &StageFailure) -> Response {
                 if matches!(**authentication, AuthenticationFailure::Missing)
         )
     {
-        return missing_credential_error();
+        return unauthenticated();
     }
     super::stage_failure_response(failure)
 }

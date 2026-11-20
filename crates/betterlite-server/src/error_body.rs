@@ -25,19 +25,6 @@ pub(crate) fn json_error(
     (status, Json(body)).into_response()
 }
 
-// LiteLLM's user_api_key_auth dependency refuses a request with no key with this 401 auth_error, param the text "None"
-pub(crate) fn missing_credential_error() -> Response {
-    let body = ErrorResponse {
-        error: ErrorObject {
-            message: "Authentication Error, No api key passed in.".to_owned(),
-            error_type: WireField::Text("auth_error".to_owned()),
-            param: WireField::Text("None".to_owned()),
-            code: WireField::Text("401".to_owned()),
-        },
-    };
-    (StatusCode::UNAUTHORIZED, Json(body)).into_response()
-}
-
 pub(crate) fn authentication_error(failure: &AuthenticationFailure) -> Response {
     match failure {
         AuthenticationFailure::Missing => {
