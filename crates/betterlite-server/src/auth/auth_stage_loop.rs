@@ -19,7 +19,7 @@ use crate::auth::failures::{
 pub(crate) async fn run_stages(
     mut request: Request<Body>,
     master_key: &SecretString,
-) -> Result<(Request<Body>, Option<AuthContext>, Option<Bytes>), Response> {
+) -> Result<(Request<Body>, Option<AuthContext>, Option<Bytes>), Box<Response>> {
     let resolver = resolver_for(&request);
     let mut authenticated: Option<AuthContext> = None;
     let mut body: Option<Bytes> = None;
@@ -30,7 +30,7 @@ pub(crate) async fn run_stages(
             let stream = mem::replace(request.body_mut(), Body::empty());
             body = Some(match read_body(stream, limit).await {
                 Ok(bytes) => bytes,
-                Err(error) => return Err(buffer_failure_response(error, limit)),
+                Err(error) => return Err(Box::new(buffer_failure_response(error, limit))),
             });
         }
         let input = match stage_input(
@@ -41,7 +41,7 @@ pub(crate) async fn run_stages(
             body.as_ref(),
         ) {
             Ok(input) => input,
-            Err(failure) => return Err(stage_failure_response(&failure)),
+            Err(failure) => return Err(Box::new(stage_failure_response(&failure))),
         };
         match run_stage(*backend, input, master_key).await {
             Ok(context) => authenticated = Some(context),
@@ -61,8 +61,8 @@ fn buffer_failure_response(error: BufferError, limit: usize) -> Response {
             );
             body_too_large_response(observed, limit)
         }
-        BufferError::Unreadable(error) => {
-            tracing::debug!(error = %error, "the request body could not be buffered");
+        BufferError::Unreadable(reason) => {
+            tracing::debug!(error = %reason, "the request body could not be buffered");
             unreadable_body_response()
         }
     }
@@ -87,9 +87,10 @@ async fn run_stage(
     backend: AuthBackend,
     input: StageInput,
     master_key: &SecretString,
-) -> Result<AuthContext, Response> {
+) -> Result<AuthContext, Box<Response>> {
     let prefetched = prefetch_tag_budgets(input)
         .await
-        .map_err(|failure| stage_failure_response(&failure))?;
-    dispatch(backend, &prefetched, master_key).map_err(|failure| stage_failure_response(&failure))
+        .map_err(|failure| Box::new(stage_failure_response(&failure)))?;
+    dispatch(backend, &prefetched, master_key)
+        .map_err(|failure| Box::new(stage_failure_response(&failure)))
 }

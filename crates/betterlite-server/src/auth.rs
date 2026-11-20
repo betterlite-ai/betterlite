@@ -96,7 +96,7 @@ pub(crate) async fn authenticate(
         Ok((staged, authenticated, body)) => {
             auth_stage_loop::forward(staged, authenticated, body, next).await
         }
-        Err(response) => response,
+        Err(response) => *response,
     }
 }
 
