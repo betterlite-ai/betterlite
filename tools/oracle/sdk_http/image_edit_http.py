@@ -1,5 +1,4 @@
 import asyncio
-from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any, Final, Literal, override
 from urllib.parse import urlsplit
@@ -154,25 +153,6 @@ class FixtureConfig(BaseImageEditConfig):
         return data, files
 
     @override
-    async def async_transform_image_edit_request(
-        self,
-        model: str,
-        prompt: str | None,
-        image: FileTypes | None,
-        image_edit_optional_request_params: Mapping[str, object],
-        litellm_params: GenericLiteLLMParams,
-        headers: Mapping[str, str],
-    ) -> tuple[dict[str, str], list[FileEntry]]:
-        return self.transform_image_edit_request(
-            model=model,
-            prompt=prompt,
-            image=image,
-            image_edit_optional_request_params=dict(image_edit_optional_request_params),
-            litellm_params=litellm_params,
-            headers=dict(headers),
-        )
-
-    @override
     def finalize_image_edit_request_data(
         self,
         data: dict[str, str],
@@ -217,35 +197,20 @@ def text_or_none(content: bytes) -> str | None:
         return None
 
 
-def file_value(part: FilePart) -> dict[str, object]:
-    filename, content, content_type = part
-    return {
-        "filename": filename,
-        "content": text_or_none(content),
-        "content_type": content_type,
-    }
-
-
 def complete_value(value: object) -> JsonValue:
     completed = COMPLETE.validate_python(value)
     if isinstance(completed, dict):
         return JSON.validate_python(completed)
     return JSON.validate_python(
-        {name: file_value(part) for name, part in completed},
+        {
+            name: {
+                "filename": part[0],
+                "content": text_or_none(part[1]),
+                "content_type": part[2],
+            }
+            for name, part in completed
+        },
     )
-
-
-def header_names(value: object) -> list[str]:
-    headers = OBJECTS.validate_python(value)
-    if headers is None:
-        return []
-    return sorted(headers.keys())
-
-
-def api_base_path(value: object) -> str:
-    if isinstance(value, str):
-        return urlsplit(value).path
-    return ""
 
 
 def logged_call(logging_obj: Logging) -> LoggedCall | None:
@@ -253,32 +218,13 @@ def logged_call(logging_obj: Logging) -> LoggedCall | None:
     args = OBJECTS.validate_python(details.get("additional_args"))
     if args is None:
         return None
+    headers = OBJECTS.validate_python(args.get("headers"))
+    api_base = args.get("api_base")
     return LoggedCall(
         input=JSON.validate_python(details.get("input")),
         complete_input_dict=complete_value(args.get("complete_input_dict")),
-        header_names=header_names(args.get("headers")),
-        api_base_path=api_base_path(args.get("api_base")),
-    )
-
-
-def result_value(response: ImageResponse) -> JsonValue:
-    return JSON.validate_python(
-        response.model_dump(mode="json", exclude_none=True, exclude={"usage"}),
-    )
-
-
-def provider_headers(response: ImageResponse) -> dict[str, str] | None:
-    headers = get_provider_response_headers_from_hidden_params(response)
-    if headers is None:
-        return None
-    return dict(headers)
-
-
-def succeeded(response: ImageResponse, logging_obj: Logging) -> Outcome:
-    return Outcome(
-        result=result_value(response),
-        provider_headers=provider_headers(response),
-        logged=logged_call(logging_obj),
+        header_names=sorted(headers) if headers is not None else [],
+        api_base_path=urlsplit(api_base).path if isinstance(api_base, str) else "",
     )
 
 
@@ -341,7 +287,14 @@ def run_edit(call: EditCall, api_base: str) -> Outcome:
             failure=Failure.model_validate(error),
             logged=logged_call(logging_obj),
         )
-    return succeeded(answer, logging_obj)
+    stored = get_provider_response_headers_from_hidden_params(answer)
+    return Outcome(
+        result=JSON.validate_python(
+            answer.model_dump(mode="json", exclude_none=True, exclude={"usage"}),
+        ),
+        provider_headers=None if stored is None else dict(stored),
+        logged=logged_call(logging_obj),
+    )
 
 
 class ImageEditHttpRequest(BaseModel):

@@ -149,7 +149,7 @@ async fn edit_finalization_and_multipart() {
     assert_eq!(requests.len(), 1);
     let request = &requests[0];
     assert_eq!(request.url.as_str(), EDITS_URL);
-    assert_eq!(request.timeout, CALL_TIMEOUT);
+    assert_eq!(request.timeout, Some(CALL_TIMEOUT));
     assert_eq!(
         request
             .headers

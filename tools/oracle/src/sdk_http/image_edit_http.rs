@@ -2,8 +2,7 @@ use std::collections::BTreeMap;
 use std::future::Future;
 
 use betterlite_models::decisions::Json;
-use betterlite_openai::api::image_contracts::records::{ImageFile, ImageParams, ImageResponse};
-use betterlite_provider::api::image_edit_http::service::ClientKind;
+use betterlite_openai::api::image_contracts::records::{ImageParams, ImageResponse};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
@@ -22,15 +21,6 @@ pub enum Mode {
     Asynchronous,
 }
 
-impl Mode {
-    const fn client_kind(self) -> ClientKind {
-        match self {
-            Self::Sync => ClientKind::Sync,
-            Self::Asynchronous => ClientKind::Asynchronous,
-        }
-    }
-}
-
 // The uploaded image as the wire can carry it: the transform's content type or the one its file name implies
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -39,16 +29,6 @@ pub struct ImageInput {
     pub content: String,
     #[serde(default)]
     pub content_type: Option<String>,
-}
-
-impl ImageInput {
-    fn file(&self) -> ImageFile {
-        ImageFile {
-            filename: Some(self.filename.clone()),
-            content: self.content.clone().into_bytes(),
-            content_type: self.content_type.clone(),
-        }
-    }
 }
 
 // The handler's inputs: the mode and model, the transform's fields, the caller's headers and the arguments the handler ignores
@@ -74,13 +54,8 @@ pub struct Call {
     pub fake_stream: bool,
     #[serde(default)]
     pub litellm_metadata: Option<IndexMap<String, Json>>,
-    #[serde(default = "multipart_default")]
     pub multipart: bool,
     pub timeout_seconds: u64,
-}
-
-const fn multipart_default() -> bool {
-    true
 }
 
 // The exception _handle_error raises, as its callers can observe it

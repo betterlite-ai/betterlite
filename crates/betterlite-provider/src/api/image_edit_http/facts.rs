@@ -100,14 +100,13 @@ fn answer_headers(reply: &UpstreamResponse) -> ImageHeaders {
 }
 
 fn timeout_message(sent: Sent) -> String {
+    let timeout = seconds(sent.timeout);
     match sent.mode {
-        ClientKind::Sync => format!(
-            "litellm.Timeout: Connection timed out after {} seconds.",
-            seconds(sent.timeout)
-        ),
+        ClientKind::Sync => {
+            format!("litellm.Timeout: Connection timed out after {timeout} seconds.")
+        }
         ClientKind::Asynchronous => format!(
-            "litellm.Timeout: Connection timed out. Timeout passed={}, time taken={} seconds",
-            seconds(sent.timeout),
+            "litellm.Timeout: Connection timed out. Timeout passed={timeout}, time taken={} seconds",
             seconds(sent.elapsed)
         ),
     }

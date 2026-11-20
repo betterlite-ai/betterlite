@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_core::api::vector_store_http_write::error::ClientError;
+use betterlite_core::api::vector_store_http_write::service::{WriteRequest, WriteTransport};
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::RequestBody;
 use betterlite_http::proxy::transport_error::TransportError;
@@ -31,8 +32,8 @@ use thiserror::Error;
 
 use super::super::error::{ImageEditHttpError, RequestError};
 use super::super::service::{
-    ClientKind, ClientSource, EditRequest, EditTransport, ImageEditCall, ImageEditDeps,
-    ImageEditOutcome, LogContext, SuppliedClient,
+    ClientKind, ClientSource, ImageEditCall, ImageEditDeps, ImageEditOutcome, LogContext,
+    SuppliedClient,
 };
 use super::super::{async_image_edit_handler, image_edit_handler};
 use crate::api::image_contracts::edit::{
@@ -342,7 +343,7 @@ impl Reply {
 // The selected client's wire: it records each request and answers with the one scripted reply or failure
 #[derive(Clone, Default)]
 pub(super) struct Transport {
-    requests: Arc<Mutex<Vec<EditRequest>>>,
+    requests: Arc<Mutex<Vec<WriteRequest>>>,
     reply: Arc<Mutex<Option<Reply>>>,
     failure: Arc<Mutex<Option<TransportError>>>,
 }
@@ -366,15 +367,19 @@ impl Transport {
         transport
     }
 
-    pub(super) fn requests(&self) -> MutexGuard<'_, Vec<EditRequest>> {
+    pub(super) fn requests(&self) -> MutexGuard<'_, Vec<WriteRequest>> {
         self.requests.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 
-impl EditTransport for Transport {
+impl WriteTransport for Transport {
+    fn default_timeout(&self) -> Duration {
+        Duration::default()
+    }
+
     fn send(
         &self,
-        request: EditRequest,
+        request: WriteRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
         self.requests
             .lock()
@@ -546,7 +551,7 @@ pub(super) const fn deps<'deps>(
     }
 }
 
-pub(super) fn body_json(request: &EditRequest) -> Json {
+pub(super) fn body_json(request: &WriteRequest) -> Json {
     let RequestBody::Json(body) = &request.body else {
         panic!("the request carries a JSON body");
     };

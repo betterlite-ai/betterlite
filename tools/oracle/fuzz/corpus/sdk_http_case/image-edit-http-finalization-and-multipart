@@ -14,6 +14,7 @@ call:
       extra_headers: {x: option}
     api_key: key
     extra_headers: {x: caller}
+    multipart: true
     timeout_seconds: 5
 upstream:
   - status: 200

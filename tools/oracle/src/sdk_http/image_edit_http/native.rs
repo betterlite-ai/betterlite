@@ -1,18 +1,17 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use betterlite_config::loader::ConfigLoader;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::{ImageFile, ImageParams};
 use betterlite_provider::api::image_edit_http::error::ImageEditHttpError;
 use betterlite_provider::api::image_edit_http::service::{
-    ImageEditCall, ImageEditDeps, ImageEditOutcome,
+    ClientKind, ImageEditCall, ImageEditDeps, ImageEditOutcome,
 };
 
 use super::super::error::SdkHttpError;
 use super::super::result::kinds::SdkResult;
 use super::support::{Fixture, FixtureConfig, FixtureError, source};
-use super::{Call, Failure, LoggedCall, Outcome};
+use super::{Call, Failure, LoggedCall, Mode, Outcome};
 
 // The production handler over the mock's base: the same pooled client and pre-call a request would build
 pub(super) async fn execute(
@@ -20,16 +19,15 @@ pub(super) async fn execute(
     api_base: &str,
     env: &BTreeMap<String, String>,
 ) -> Result<SdkResult, SdkHttpError> {
-    let config = ConfigLoader {
-        lookup: env.clone(),
-    }
-    .load("model_list: []")
-    .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
-    let origin = source(&config, env)?;
+    let origin = source(env)?;
     let provider = FixtureConfig {
         multipart: call.multipart,
     };
-    let image = call.image.file();
+    let image = ImageFile {
+        filename: Some(call.image.filename.clone()),
+        content: call.image.content.clone().into_bytes(),
+        content_type: call.image.content_type.clone(),
+    };
     let params = litellm_params(call, api_base);
     let edit = edit_call(call, &image, &params);
     let deps = ImageEditDeps {
@@ -37,8 +35,12 @@ pub(super) async fn execute(
         source: &origin,
         supplied: None,
     };
+    let kind = match call.mode {
+        Mode::Sync => ClientKind::Sync,
+        Mode::Asynchronous => ClientKind::Asynchronous,
+    };
     let mut fixture = Fixture::new()?;
-    let result = fixture.run(call.mode.client_kind(), &deps, &edit).await;
+    let result = fixture.run(kind, &deps, &edit).await;
     let answer = outcome(result, fixture.logged())?;
     Ok(SdkResult::ImageEditHttp {
         value: Box::new(answer),

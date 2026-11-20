@@ -4,12 +4,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_config::proxy::ProxyPolicy;
-use betterlite_config::tls::TlsPolicy;
-use betterlite_config::types::{Config, ProxyTrust};
+use betterlite_config::types::ProxyTrust;
 use betterlite_core::api::vector_store_http_write::error::ClientError;
 use betterlite_http::proxy::ProxiedClient;
-use betterlite_http::proxy::limits::TransportLimits;
-use betterlite_http::proxy::pool::ClientPool;
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
 };
@@ -40,37 +37,24 @@ use url::Url;
 use super::super::error::SdkHttpError;
 use super::LoggedCall;
 
-// The pooled client the selected deployment would get; the case env only carries the proxy settings
-pub(super) struct Source {
-    pool: ClientPool,
-    tls: TlsPolicy,
-    routing: Arc<ProxyPolicy>,
-}
+// The client the handler selects; the case env only carries the proxy settings
+pub(super) struct Source(ProxiedClient);
 
 impl ClientSource for Source {
     type Client = ProxiedClient;
 
     fn client(&self, _ssl_verify: Option<bool>) -> Result<ProxiedClient, ClientError> {
-        self.pool
-            .client(&self.tls, &self.routing)
-            .map_err(ClientError::Pool)
+        Ok(self.0.clone())
     }
 }
 
-pub(super) fn source(
-    config: &Config,
-    env: &BTreeMap<String, String>,
-) -> Result<Source, SdkHttpError> {
-    let routing = Arc::new(
+pub(super) fn source(env: &BTreeMap<String, String>) -> Result<Source, SdkHttpError> {
+    let policy = Arc::new(
         ProxyPolicy::resolve(&ProxyTrust::default(), env).map_err(SdkHttpError::ProxyPolicy)?,
     );
-    let tls = TlsPolicy::resolve(config, env, None)
-        .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
-    Ok(Source {
-        pool: ClientPool::new(1, TransportLimits::DEFAULT),
-        tls,
-        routing,
-    })
+    let client =
+        ProxiedClient::outbound(&policy).map_err(|error| SdkHttpError::Client(Box::new(error)))?;
+    Ok(Source(client))
 }
 
 // The config's own refusals, kept apart from the provider's answer
@@ -117,13 +101,6 @@ impl BaseImageEditConfig for FixtureConfig {
             .map(|image| vec![(String::from("image"), image.clone())])
             .unwrap_or_default();
         Ok((data, files))
-    }
-
-    async fn async_transform_image_edit_request(
-        &self,
-        request: ImageEditRequest<'_>,
-    ) -> Result<(ImageParams, ImageFiles), Self::Error> {
-        self.transform_image_edit_request(request)
     }
 
     fn transform_image_edit_response(
@@ -276,14 +253,8 @@ impl Fixture {
             input,
             complete_input_dict,
             header_names,
-            api_base_path: path_of(api_base),
+            api_base_path: Url::parse(api_base)
+                .map_or_else(|_| String::new(), |url| url.path().to_owned()),
         })
-    }
-}
-
-fn path_of(api_base: &str) -> String {
-    match Url::parse(api_base) {
-        Ok(url) => url.path().to_owned(),
-        Err(_) => String::new(),
     }
 }

@@ -63,7 +63,6 @@ pub(super) fn caller_headers(optional: &ImageParams) -> Result<ImageHeaders, Req
     }
 }
 
-// The explicit extra_headers overwrite the validated ones, and only a non-empty mapping does
 pub(super) fn merge(mut validated: ImageHeaders, explicit: Option<&ImageHeaders>) -> ImageHeaders {
     if let Some(extra) = explicit.filter(|extra| !extra.is_empty()) {
         for (name, value) in extra {
@@ -74,10 +73,8 @@ pub(super) fn merge(mut validated: ImageHeaders, explicit: Option<&ImageHeaders>
 }
 
 pub(super) fn endpoint(resolved: &str) -> Result<Url, RequestError> {
-    Url::parse(resolved).map_err(|source| RequestError::Url {
-        url: resolved.to_owned(),
-        source,
-    })
+    let url = resolved.to_owned();
+    Url::parse(resolved).map_err(|source| RequestError::Url { url, source })
 }
 
 pub(super) fn wire_headers(headers: &ImageHeaders) -> Result<HeaderMap, RequestError> {
@@ -200,28 +197,23 @@ fn file_mapping(files: &ImageFiles) -> IndexMap<String, Json> {
     let mut mapping = IndexMap::new();
     for (name, file) in files {
         let mut record = IndexMap::new();
+        let content = std::str::from_utf8(&file.content);
         record.insert(
             String::from("filename"),
-            file.filename
-                .as_deref()
-                .map_or(Json::Null, |filename| Json::Text(filename.to_owned())),
+            text_or_null(file.filename.as_deref()),
         );
-        record.insert(
-            String::from("content"),
-            std::str::from_utf8(&file.content)
-                .map_or(Json::Null, |content| Json::Text(content.to_owned())),
-        );
+        record.insert(String::from("content"), text_or_null(content));
         record.insert(
             String::from("content_type"),
-            file.content_type
-                .as_deref()
-                .map_or(Json::Null, |content_type| {
-                    Json::Text(content_type.to_owned())
-                }),
+            text_or_null(file.content_type.as_deref()),
         );
         mapping.insert(name.clone(), Json::Object(record));
     }
     mapping
+}
+
+fn text_or_null(value: Option<&str>) -> Json {
+    value.map_or(Json::Null, |text| Json::Text(text.to_owned()))
 }
 
 fn text(params: &ImageParams, name: &str) -> Result<Option<String>, RequestError> {
