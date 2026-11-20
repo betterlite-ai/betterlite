@@ -1,0 +1,6 @@
+kind: helper
+name: anthropic-guardrail-write-back-structured-rewritten-hoisted-prompt-folds
+call:
+  b3674: {"function": "structured", "scenarios": [{"data": {"model": "claude-sonnet-4-5", "system": "be nice", "messages": [{"role": "user", "content": "stale"}]}, "messages": [{"role": "system", "content": "be nicer"}, {"role": "user", "content": "hello"}], "preserve_system_messages": false, "compute_hoisted": true}]}
+env: {}
+compare: {ignore: []}

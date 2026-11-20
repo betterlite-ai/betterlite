@@ -1,0 +1,6 @@
+kind: helper
+name: anthropic-guardrail-write-back-fold-leading-systems-with-existing-system
+call:
+  b3674: {"function": "fold", "scenarios": [{"data": {"system": "existing", "messages": []}, "leading": [{"role": "system", "content": "lead"}], "include_existing": true}, {"data": {"system": "existing", "messages": []}, "leading": [{"role": "system", "content": "lead"}], "include_existing": false}, {"data": {"system": [{"type": "text", "text": "block", "cache_control": {"type": "ephemeral"}}], "messages": []}, "leading": [{"role": "system", "content": [{"type": "text", "text": "x"}, {"type": "tool_use", "id": "toolu_1", "name": "lookup", "input": {}}]}], "include_existing": true}]}
+env: {}
+compare: {ignore: []}

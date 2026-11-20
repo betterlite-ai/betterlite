@@ -1,0 +1,6 @@
+kind: helper
+name: anthropic-guardrail-write-back-system-row-to-anthropic-blocks
+call:
+  b3674: {"function": "system_conversion", "scenarios": [{"message": {"role": "system", "content": "hello"}}, {"message": {"role": "system", "content": ""}}, {"message": {"role": "system", "content": [{"type": "text", "text": "a"}, {"type": "image", "source": {"type": "url", "url": "https://example.test/i.png"}}, {"type": "text", "text": ""}, {"type": "text", "text": "b", "cache_control": {"type": "ephemeral"}}, {"type": "text", "text": "c", "cache_control": null}]}}, {"message": {"role": "system", "content": {"nested": true}}}, {"message": {"role": "system", "content": [{"type": "text", "text": ""}, 5, "x"]}}]}
+env: {}
+compare: {ignore: []}

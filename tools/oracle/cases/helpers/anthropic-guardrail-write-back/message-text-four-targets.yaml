@@ -1,0 +1,6 @@
+kind: helper
+name: anthropic-guardrail-write-back-message-text-four-targets
+call:
+  b3674: {"function": "message_text", "scenarios": [{"message": {"role": "user", "content": "old"}, "target": {"kind": "message_content", "msg_idx": 0}, "response": "new"}, {"message": {"role": "user", "content": [{"type": "text", "text": "old"}, {"type": "image", "source": {}}]}, "target": {"kind": "content_block_text", "msg_idx": 0, "content_idx": 0}, "response": "new"}, {"message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_1", "content": "old"}]}, "target": {"kind": "tool_result_string", "msg_idx": 0, "content_idx": 0}, "response": "new"}, {"message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_1", "content": [{"type": "text", "text": "old"}]}]}, "target": {"kind": "tool_result_block_text", "msg_idx": 0, "content_idx": 0, "block_idx": 0}, "response": "new"}]}
+env: {}
+compare: {ignore: []}

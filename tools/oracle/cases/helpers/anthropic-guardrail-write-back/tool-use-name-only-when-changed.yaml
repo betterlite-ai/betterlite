@@ -1,0 +1,6 @@
+kind: helper
+name: anthropic-guardrail-write-back-tool-use-name-only-when-changed
+call:
+  b3674: {"function": "tool_use", "scenarios": [{"message": {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_1", "name": "lookup", "input": {"q": 1}}]}, "target": {"msg_idx": 0, "content_idx": 0}, "shape_name": "lookup", "arguments": "{\"q\": 2}"}, {"message": {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_1", "name": "lookup", "input": {"q": 1}}]}, "target": {"msg_idx": 0, "content_idx": 0}, "shape_name": "search", "arguments": "{\"q\": 3}"}, {"message": {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_1", "name": "lookup", "input": {"q": 1}}]}, "target": {"msg_idx": 0, "content_idx": 0}, "shape_name": null, "arguments": "{\"q\": 4}"}, {"message": {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_1", "name": "lookup", "input": {"q": 1}}]}, "target": {"msg_idx": 0, "content_idx": 0}, "shape_name": "search", "arguments": "[]"}, {"message": {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_1", "name": "lookup", "input": {"q": 1}}]}, "target": {"msg_idx": 0, "content_idx": 0}, "shape_name": "search", "arguments": ""}]}
+env: {}
+compare: {ignore: []}

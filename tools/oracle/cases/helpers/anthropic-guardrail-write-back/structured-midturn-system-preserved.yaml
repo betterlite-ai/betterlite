@@ -1,0 +1,6 @@
+kind: helper
+name: anthropic-guardrail-write-back-structured-midturn-system-preserved
+call:
+  b3674: {"function": "structured", "scenarios": [{"data": {"model": "claude-sonnet-4-5", "system": "top", "messages": []}, "messages": [{"role": "system", "content": "top"}, {"role": "user", "content": "one"}, {"role": "system", "content": "note"}, {"role": "user", "content": "two"}], "preserve_system_messages": true, "compute_hoisted": true}]}
+env: {}
+compare: {ignore: []}

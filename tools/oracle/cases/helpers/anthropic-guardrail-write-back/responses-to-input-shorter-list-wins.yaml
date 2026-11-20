@@ -1,0 +1,6 @@
+kind: helper
+name: anthropic-guardrail-write-back-responses-to-input-shorter-list-wins
+call:
+  b3674: {"function": "responses_to_input", "scenarios": [{"data": {"system": "old", "messages": [{"role": "user", "content": "a"}, {"role": "assistant", "content": "b"}]}, "responses": ["SYS", "MSG"], "scanned": [{"text": "old", "target": {"kind": "system_string"}}, {"text": "a", "target": {"kind": "message_content", "msg_idx": 0}}, {"text": "b", "target": {"kind": "message_content", "msg_idx": 1}}]}]}
+env: {}
+compare: {ignore: []}
