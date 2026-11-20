@@ -94,11 +94,13 @@ async fn get_query_and_no_timeout() {
     };
     let (mut bench, wire) = fake_bench(LIST, Reply::json(200, "{}"), configure);
     let params = json_params("{}");
+    let extra_headers = headers(&[("X-Trace", "trace-a")]);
     let mut setup = Setup::new("openai", &params);
     setup.after = Some("video_a");
     setup.limit = Some(2);
     setup.order = Some("desc");
     setup.extra_query = Some(&extra_query);
+    setup.extra_headers = Some(&extra_headers);
     setup.timeout = Some(Duration::from_secs(5));
     let answer = run(&mut bench, setup, CallKind::List, CallMode::Asynchronous)
         .await
@@ -125,6 +127,13 @@ fn assert_list_get(bench: &Bench<Source>, wire: &Wire, extra_query: &Params) {
     );
     assert_eq!(sent[0].timeout, None);
     assert!(matches!(sent[0].body, RequestBody::Empty));
+    assert_eq!(
+        sent[0]
+            .headers
+            .get("x-trace")
+            .and_then(|value| value.to_str().ok()),
+        Some("trace-a")
+    );
     assert_list_inputs(bench, extra_query);
 }
 
@@ -138,7 +147,7 @@ fn assert_list_inputs(bench: &Bench<Source>, extra_query: &Params) {
     assert_eq!(inputs[0].api_base, bench.config.base());
     assert_eq!(
         inputs[0].headers.get("X-Trace").map(String::as_str),
-        Some("config-trace")
+        Some("trace-a")
     );
 }
 
