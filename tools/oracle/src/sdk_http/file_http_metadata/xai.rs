@@ -45,30 +45,27 @@ impl XaiFilesConfig<'_> {
         let url = files_url(api_base, target, self.settings).map_err(failure)?;
         Ok((url, FileParams::new()))
     }
+}
 
-    fn file_reply(&self, raw_response: &FileResponse) -> Result<FileObject, BaseLlmException> {
-        decode_file_reply(&reply(raw_response), &LIMITS, |file: XaiFile| {
-            to_file_object(&file, Utc::now().timestamp())
-        })
-        .map_err(failure)
-    }
+fn file_reply(raw_response: &FileResponse) -> Result<FileObject, BaseLlmException> {
+    decode_file_reply(&reply(raw_response), &LIMITS, |file: XaiFile| {
+        to_file_object(&file, Utc::now().timestamp())
+    })
+    .map_err(failure)
+}
 
-    fn deleted_reply(&self, raw_response: &FileResponse) -> Result<FileDeleted, BaseLlmException> {
-        decode_file_reply(&reply(raw_response), &LIMITS, |file: XaiFileDeleted| {
-            to_file_deleted(&file)
-        })
-        .map_err(failure)
-    }
+fn deleted_reply(raw_response: &FileResponse) -> Result<FileDeleted, BaseLlmException> {
+    decode_file_reply(&reply(raw_response), &LIMITS, |file: XaiFileDeleted| {
+        to_file_deleted(&file)
+    })
+    .map_err(failure)
+}
 
-    fn listed_reply(
-        &self,
-        raw_response: &FileResponse,
-    ) -> Result<Vec<FileObject>, BaseLlmException> {
-        decode_file_reply(&reply(raw_response), &LIMITS, |page: XaiFileList| {
-            to_file_list(&page, Utc::now().timestamp())
-        })
-        .map_err(failure)
-    }
+fn listed_reply(raw_response: &FileResponse) -> Result<Vec<FileObject>, BaseLlmException> {
+    decode_file_reply(&reply(raw_response), &LIMITS, |page: XaiFileList| {
+        to_file_list(&page, Utc::now().timestamp())
+    })
+    .map_err(failure)
 }
 
 // httpx.Response carries http's header map; the contract flattens it, so a value that cannot come back is dropped
@@ -77,9 +74,9 @@ fn reply(response: &FileResponse) -> UpstreamResponse {
         .headers
         .iter()
         .filter_map(|(name, value)| {
-            let name = HeaderName::try_from(name.as_str()).ok()?;
-            let value = HeaderValue::from_bytes(value.as_bytes()).ok()?;
-            Some((name, value))
+            let header_name = HeaderName::try_from(name.as_str()).ok()?;
+            let header_value = HeaderValue::from_bytes(value.as_bytes()).ok()?;
+            Some((header_name, header_value))
         })
         .collect();
     UpstreamResponse {
@@ -105,7 +102,12 @@ fn failure(error: XaiFilesError) -> BaseLlmException {
                 .collect(),
             status_code_is_synthesized: false,
         },
-        other => {
+        other @ (XaiFilesError::FileDataRequired
+        | XaiFilesError::Media(_)
+        | XaiFilesError::Shared(_)
+        | XaiFilesError::Path { .. }
+        | XaiFilesError::Decode { .. }
+        | XaiFilesError::TooLarge { .. }) => {
             let carried = other.status_code();
             BaseLlmException {
                 status_code: carried.unwrap_or(500),
@@ -152,7 +154,7 @@ impl MetadataConfig for XaiFilesConfig<'_> {
         raw_response: &FileResponse,
         _context: ReplyContext<'_>,
     ) -> Result<FileObject, BaseLlmException> {
-        self.file_reply(raw_response)
+        file_reply(raw_response)
     }
 
     fn transform_delete_file_request(
@@ -167,7 +169,7 @@ impl MetadataConfig for XaiFilesConfig<'_> {
         raw_response: &FileResponse,
         _context: ReplyContext<'_>,
     ) -> Result<FileDeleted, BaseLlmException> {
-        self.deleted_reply(raw_response)
+        deleted_reply(raw_response)
     }
 
     fn transform_list_files_request(
@@ -197,7 +199,7 @@ impl MetadataConfig for XaiFilesConfig<'_> {
         raw_response: &FileResponse,
         _context: ReplyContext<'_>,
     ) -> Result<Vec<FileObject>, BaseLlmException> {
-        self.listed_reply(raw_response)
+        listed_reply(raw_response)
     }
 
     fn error_class(&self, message: &str, status_code: u16, headers: HeaderMap) -> BaseLlmException {
