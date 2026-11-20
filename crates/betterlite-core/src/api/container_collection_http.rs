@@ -6,7 +6,9 @@ use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 
 use betterlite_http::proxy::{pool::PoolError, transport_error::TransportError};
-use betterlite_logging::logging_pre_post::{args::RawBody, error::PrePostError};
+use betterlite_logging::logging_pre_post::args::RawBody;
+use betterlite_logging::logging_pre_post::error::PrePostError;
+use betterlite_logging::logging_pre_post::pre_call::PreCall;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::container_contracts::{config, error, records};
@@ -20,11 +22,10 @@ use thiserror::Error;
 
 // LiteLLM's declared timeout default for both container handlers
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
-
 // HTTPHandler.post turns a timeout into litellm.Timeout with this status; _handle_error gives every other exception a synthesized 500
 const REQUEST_TIMEOUT_STATUS: u16 = 408;
 const SERVER_ERROR_STATUS: u16 = 500;
-// B3363's container fetch carries no body and no deadline, so a collection call sends through its own request
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CollectionRequest {
     pub method: transport::ContainerMethod,
@@ -45,33 +46,33 @@ pub trait CollectionTransport: Send + Sync {
 pub trait CollectionClientSource: Send + Sync {
     type Blocking: CollectionTransport;
     type Asynchronous: CollectionTransport;
-
     fn blocking_client(&self, ssl_verify: Option<&SslVerify>) -> Result<Self::Blocking, PoolError>;
-
     fn async_client(&self, ssl_verify: Option<&SslVerify>)
     -> Result<Self::Asynchronous, PoolError>;
 }
 
-pub struct ContainerCreateCall<'call> {
+pub struct CollectionBase<'call, Source: CollectionClientSource> {
+    pub config: &'call dyn config::BaseContainerConfig,
+    pub litellm_params: &'call Object,
+    pub logging: &'call Mutex<LoggingState>,
+    pub extra_headers: Option<&'call BTreeMap<String, String>>,
+    pub timeout: Option<Duration>,
+    pub source: &'call Source,
+    pub blocking: Option<&'call Source::Blocking>,
+    pub asynchronous: Option<&'call Source::Asynchronous>,
+    pub hook: &'call dyn file::PreCallHook,
+}
+
+pub struct ContainerCreateCall<'call, Source: CollectionClientSource> {
+    pub base: CollectionBase<'call, Source>,
     pub name: &'call str,
     pub params: &'call Object,
-    pub config: &'call dyn config::BaseContainerConfig,
-    pub litellm_params: &'call Object,
-    pub logging: &'call Mutex<LoggingState>,
-    pub extra_headers: Option<&'call BTreeMap<String, String>>,
-    pub timeout: Option<Duration>,
 }
 
-pub struct ContainerListCall<'call> {
-    pub config: &'call dyn config::BaseContainerConfig,
-    pub litellm_params: &'call Object,
-    pub logging: &'call Mutex<LoggingState>,
-    pub extra_headers: Option<&'call BTreeMap<String, String>>,
+pub struct ContainerListCall<'call, Source: CollectionClientSource> {
+    pub base: CollectionBase<'call, Source>,
     pub query: config::ContainerListQuery<'call>,
-    // LiteLLM takes the timeout and never sends it, so a GET keeps the selected client's own deadline
-    pub timeout: Option<Duration>,
 }
-
 #[derive(Debug, Error)]
 pub enum ContainerCollectionError {
     #[error(transparent)]
@@ -85,9 +86,23 @@ pub enum ContainerCollectionError {
     #[error(transparent)]
     Logging(#[from] PrePostError),
     #[error("the container request body could not be encoded")]
-    Encode(#[source] serde_json::Error),
+    Encode(#[from] serde_json::Error),
     #[error("the blocking path was asked to wait for a client that never answered")]
     Suspended,
+}
+
+type Chosen<'client, 'params, Client> = (Selected<'client, Client>, request::CallParams<'params>);
+// LiteLLM's order: the params first, so a bad one fails before any client is built, then the supplied client or a fresh one
+impl<'call, Source: CollectionClientSource> CollectionBase<'call, Source> {
+    fn begin<'supplied, Client: CollectionTransport>(
+        &self,
+        supplied: Option<&'supplied Client>,
+        build: fn(&Source, Option<&SslVerify>) -> Result<Client, PoolError>,
+    ) -> Result<Chosen<'supplied, 'call, Client>, ContainerCollectionError> {
+        let params = request::read_params(self.litellm_params)?;
+        let client = Selected::choose(supplied, || build(self.source, params.ssl_verify.as_ref()))?;
+        Ok((client, params))
+    }
 }
 
 fn poll_once<Running: Future>(
@@ -102,113 +117,98 @@ fn poll_once<Running: Future>(
 }
 
 pub fn container_create_handler<Source: CollectionClientSource>(
-    call: &ContainerCreateCall<'_>,
-    source: &Source,
-    supplied: Option<&Source::Blocking>,
-    hook: &dyn file::PreCallHook,
+    call: &ContainerCreateCall<'_, Source>,
 ) -> Result<records::ContainerObject, ContainerCollectionError> {
-    let params = request::read_params(call.litellm_params)?;
-    let client = Selected::choose(supplied, || {
-        source.blocking_client(params.ssl_verify.as_ref())
-    })?;
-    poll_once(create_body(client.get(), &params, call, hook))?
+    let base = &call.base;
+    let (client, params) = base.begin(base.blocking, Source::blocking_client)?;
+    poll_once(create_body(client.get(), &params, call))?
 }
 
 pub async fn acontainer_create_handler<Source: CollectionClientSource>(
-    call: &ContainerCreateCall<'_>,
-    source: &Source,
-    supplied: Option<&Source::Asynchronous>,
-    hook: &dyn file::PreCallHook,
+    call: &ContainerCreateCall<'_, Source>,
 ) -> Result<records::ContainerObject, ContainerCollectionError> {
-    let params = request::read_params(call.litellm_params)?;
-    let client = Selected::choose(supplied, || source.async_client(params.ssl_verify.as_ref()))?;
-    create_body(client.get(), &params, call, hook).await
+    let base = &call.base;
+    let (client, params) = base.begin(base.asynchronous, Source::async_client)?;
+    create_body(client.get(), &params, call).await
 }
 
 pub fn container_list_handler<Source: CollectionClientSource>(
-    call: &ContainerListCall<'_>,
-    source: &Source,
-    supplied: Option<&Source::Blocking>,
-    hook: &dyn file::PreCallHook,
+    call: &ContainerListCall<'_, Source>,
 ) -> Result<records::ContainerListResponse, ContainerCollectionError> {
-    let params = request::read_params(call.litellm_params)?;
-    let client = Selected::choose(supplied, || {
-        source.blocking_client(params.ssl_verify.as_ref())
-    })?;
-    poll_once(list_body(client.get(), &params, call, hook))?
+    let base = &call.base;
+    let (client, params) = base.begin(base.blocking, Source::blocking_client)?;
+    poll_once(list_body(client.get(), &params, call))?
 }
 
 pub async fn acontainer_list_handler<Source: CollectionClientSource>(
-    call: &ContainerListCall<'_>,
-    source: &Source,
-    supplied: Option<&Source::Asynchronous>,
-    hook: &dyn file::PreCallHook,
+    call: &ContainerListCall<'_, Source>,
 ) -> Result<records::ContainerListResponse, ContainerCollectionError> {
-    let params = request::read_params(call.litellm_params)?;
-    let client = Selected::choose(supplied, || source.async_client(params.ssl_verify.as_ref()))?;
-    list_body(client.get(), &params, call, hook).await
+    let base = &call.base;
+    let (client, params) = base.begin(base.asynchronous, Source::async_client)?;
+    list_body(client.get(), &params, call).await
 }
 
-async fn create_body<Client: CollectionTransport>(
+async fn create_body<Client: CollectionTransport, Source: CollectionClientSource>(
     client: &Client,
     params: &request::CallParams<'_>,
-    call: &ContainerCreateCall<'_>,
-    hook: &dyn file::PreCallHook,
+    call: &ContainerCreateCall<'_, Source>,
 ) -> Result<records::ContainerObject, ContainerCollectionError> {
-    let config = call.config;
-    let extra = call.extra_headers.cloned().unwrap_or_default();
+    let base = &call.base;
+    let config = base.config;
+    let extra = base.extra_headers.cloned().unwrap_or_default();
     let api_key = params.api_key.as_ref().map(ExposeSecret::expose_secret);
-    // the JSON content type goes in after validate_environment and before the overlay, so an extra header of that name wins
     let mut headers = config.validate_environment(&extra, api_key);
     headers.insert("Content-Type".to_owned(), "application/json".to_owned());
     for (name, value) in &extra {
         headers.insert(name.clone(), value.clone());
     }
-    let url = config.get_complete_url(params.api_base, call.litellm_params)?;
-    let context = config::ContainerRequestContext {
-        litellm_params: call.litellm_params,
-        headers: &headers,
-    };
+    let (url, context) = target(config, params, base.litellm_params, &headers)?;
     let data = config.transform_container_create_request(call.name, call.params, context);
-    log_create(call, hook, &url, &headers, &data)?;
+    log_create(call, &url, &headers, &data)?;
+    let encoded = serde_json::to_vec(&data).map_err(ContainerCollectionError::Encode)?;
     let request = CollectionRequest {
         method: transport::ContainerMethod::Post,
         url,
         headers,
         query: Vec::new(),
-        body: Some(serde_json::to_vec(&data).map_err(ContainerCollectionError::Encode)?),
-        timeout: Some(call.timeout.unwrap_or(DEFAULT_TIMEOUT)),
+        body: Some(encoded),
+        timeout: Some(base.timeout.unwrap_or(DEFAULT_TIMEOUT)),
     };
-    let reply = client.send(&request).await.map_err(|failure| {
-        ContainerCollectionError::Provider(provider_failure(config, &failure, true))
-    })?;
-    post_status(config, &reply)?;
-    config
-        .transform_container_create_response(&reply.body)
-        .map_err(ContainerCollectionError::Config)
+    let reply = send(client, config, &request, true).await?;
+    if (400..=599).contains(&reply.status) {
+        let message = str::from_utf8(&reply.body).map_or_else(
+            |_| format!("{} bytes that are not UTF-8", reply.body.len()),
+            str::to_owned,
+        );
+        let provider = config.get_error_class(&message, reply.status, &reply.headers);
+        return Err(ContainerCollectionError::Provider(provider));
+    }
+    Ok(config.transform_container_create_response(&reply.body)?)
 }
 
-async fn list_body<Client: CollectionTransport>(
+async fn list_body<Client: CollectionTransport, Source: CollectionClientSource>(
     client: &Client,
     params: &request::CallParams<'_>,
-    call: &ContainerListCall<'_>,
-    hook: &dyn file::PreCallHook,
+    call: &ContainerListCall<'_, Source>,
 ) -> Result<records::ContainerListResponse, ContainerCollectionError> {
-    let config = call.config;
-    let headers = request::request_headers(config, call.extra_headers, params.api_key.as_ref());
-    let api_base = config.get_complete_url(params.api_base, call.litellm_params)?;
-    let context = config::ContainerRequestContext {
-        litellm_params: call.litellm_params,
-        headers: &headers,
-    };
-    let (url, list_params) =
-        config.transform_container_list_request(&api_base, context, &call.query);
-    let rendered = render_query(&list_params);
+    let config = call.base.config;
+    let headers =
+        request::request_headers(config, call.base.extra_headers, params.api_key.as_ref());
+    let (api_base, context) = target(config, params, call.base.litellm_params, &headers)?;
+    let (url, query) = config.transform_container_list_request(&api_base, context, &call.query);
+    let rendered: IndexMap<String, String> = query
+        .iter()
+        .map(|(name, value)| {
+            let text = match value.as_str() {
+                Some(text) => text.to_owned(),
+                None if value.is_null() => String::new(),
+                None => value.to_string(),
+            };
+            (name.clone(), text)
+        })
+        .collect();
     let record = request::pre_call_record(&url, &headers, &rendered);
-    let mut state = call.logging.lock().unwrap_or_else(PoisonError::into_inner);
-    let logged = hook.pre_call(&mut state, &record);
-    drop(state);
-    logged?;
+    log_record(call.base.logging, call.base.hook, &record)?;
     let request = CollectionRequest {
         method: transport::ContainerMethod::Get,
         url,
@@ -217,43 +217,60 @@ async fn list_body<Client: CollectionTransport>(
         body: None,
         timeout: None,
     };
-    let reply = client.send(&request).await.map_err(|failure| {
-        ContainerCollectionError::Provider(provider_failure(config, &failure, false))
-    })?;
+    let reply = send(client, config, &request, false).await?;
     response::raise_for_error_status(config, &reply)?;
-    config
-        .transform_container_list_response(&reply.body)
-        .map_err(ContainerCollectionError::Config)
+    Ok(config.transform_container_list_response(&reply.body)?)
 }
 
-// httpx writes a param that is not a string with str(), and a null one as the empty string
-fn render_query(params: &Object) -> IndexMap<String, String> {
-    params
-        .iter()
-        .map(|(name, value)| match value.as_str() {
-            Some(text) => (name.clone(), text.to_owned()),
-            None if value.is_null() => (name.clone(), String::new()),
-            None => (name.clone(), value.to_string()),
-        })
-        .collect()
+fn target<'call>(
+    config: &dyn config::BaseContainerConfig,
+    params: &request::CallParams<'_>,
+    litellm_params: &'call Object,
+    headers: &'call BTreeMap<String, String>,
+) -> Result<(String, config::ContainerRequestContext<'call>), ContainerCollectionError> {
+    let url = config.get_complete_url(params.api_base, litellm_params)?;
+    let context = config::ContainerRequestContext {
+        litellm_params,
+        headers,
+    };
+    Ok((url, context))
+}
+
+// Every exception from the send converts through _handle_error, with the status a POST timeout keeps and any other failure's 500
+async fn send<Client: CollectionTransport>(
+    client: &Client,
+    config: &dyn config::BaseContainerConfig,
+    request: &CollectionRequest,
+    posted: bool,
+) -> Result<transport::ContainerHttpReply, ContainerCollectionError> {
+    client.send(request).await.map_err(|failure| {
+        ContainerCollectionError::Provider(provider_failure(config, &failure, posted))
+    })
 }
 
 // LiteLLM's create pre_call: the name as input, the JSON about to be sent as the complete input, and no params
-fn log_create(
-    call: &ContainerCreateCall<'_>,
-    hook: &dyn file::PreCallHook,
+fn log_create<Source: CollectionClientSource>(
+    call: &ContainerCreateCall<'_, Source>,
     url: &str,
     headers: &BTreeMap<String, String>,
     data: &Object,
 ) -> Result<(), ContainerCollectionError> {
-    let encoded = serde_json::to_value(data).map_err(ContainerCollectionError::Encode)?;
-    let complete = serde_json::from_value(encoded).map_err(ContainerCollectionError::Encode)?;
     let mut record = request::pre_call_record(url, headers, &IndexMap::new());
     record.input = Json::Text(call.name.to_owned());
     record.additional_args.passthrough.clear();
-    record.additional_args.complete_input_dict = Some(RawBody::Object(complete));
-    let mut state = call.logging.lock().unwrap_or_else(PoisonError::into_inner);
-    let logged = hook.pre_call(&mut state, &record);
+    let logged = serde_json::from_value(serde_json::to_value(data)?)?;
+    record.additional_args.complete_input_dict = Some(RawBody::Object(logged));
+    log_record(call.base.logging, call.base.hook, &record)
+}
+
+// B249's pre_call through the hook, with the log guard released before the result is read
+fn log_record(
+    logging: &Mutex<LoggingState>,
+    hook: &dyn file::PreCallHook,
+    record: &PreCall,
+) -> Result<(), ContainerCollectionError> {
+    let mut state = logging.lock().unwrap_or_else(PoisonError::into_inner);
+    let logged = hook.pre_call(&mut state, record);
     drop(state);
     logged.map_err(ContainerCollectionError::from)
 }
@@ -278,24 +295,9 @@ fn provider_failure(
     config.get_error_class(&failure.to_string(), status, &BTreeMap::new())
 }
 
-// HTTPHandler.post calls raise_for_status, which raises on 4xx and 5xx only, so a 3xx body reaches the transform
-fn post_status(
-    config: &dyn config::BaseContainerConfig,
-    reply: &transport::ContainerHttpReply,
-) -> Result<(), ContainerCollectionError> {
-    if !(400..=599).contains(&reply.status) {
-        return Ok(());
-    }
-    let message = str::from_utf8(&reply.body).map_or_else(
-        |_| format!("{} bytes that are not UTF-8", reply.body.len()),
-        str::to_owned,
-    );
-    let provider = config.get_error_class(&message, reply.status, &reply.headers);
-    Err(ContainerCollectionError::Provider(provider))
-}
-
 #[path = "container_collection_http/tests/create.rs"]
 mod create;
 #[path = "container_collection_http/tests/list.rs"]
 mod list;
+#[path = "container_collection_http/tests.rs"]
 mod tests;

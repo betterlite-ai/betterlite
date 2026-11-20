@@ -18,20 +18,18 @@ use super::{
     CollectionRequest, ContainerCollectionError, acontainer_list_handler, container_list_handler,
 };
 
+const EMPTY_PAGE: ContainerListQuery<'static> = ContainerListQuery {
+    after: None,
+    limit: None,
+    order: None,
+    extra_query: None,
+};
+
 fn all_page() -> ContainerListQuery<'static> {
     ContainerListQuery {
         after: Some("cntr_a"),
         limit: Some(2),
         order: Some("asc"),
-        extra_query: None,
-    }
-}
-
-fn empty_page() -> ContainerListQuery<'static> {
-    ContainerListQuery {
-        after: None,
-        limit: None,
-        order: None,
         extra_query: None,
     }
 }
@@ -53,8 +51,9 @@ fn api_base_with_version() -> String {
 #[test]
 fn list_sends_a_get_with_the_rendered_query_and_no_timeout() {
     let fixture = Fixture::new(200, LIST_BODY);
-    let call = fixture.list_call(all_page(), Some(Duration::from_secs(5)));
-    let page = container_list_handler(&call, &fixture.source, None, &fixture.hook).unwrap();
+    let mut call = fixture.list_call(all_page());
+    call.base.timeout = Some(Duration::from_secs(5));
+    let page = container_list_handler(&call).unwrap();
     let sent = fixture.sent();
     assert_eq!(sent.len(), 1);
     let request = &sent[0];
@@ -79,8 +78,8 @@ fn list_sends_a_get_with_the_rendered_query_and_no_timeout() {
 #[test]
 fn list_keeps_the_url_query_when_the_params_are_empty() {
     let fixture = Fixture::new(200, LIST_BODY);
-    let call = fixture.list_call(empty_page(), None);
-    container_list_handler(&call, &fixture.source, None, &fixture.hook).unwrap();
+    let call = fixture.list_call(EMPTY_PAGE);
+    container_list_handler(&call).unwrap();
     let sent = fixture.sent();
     assert!(sent[0].query.is_empty(), "nothing is sent as params");
     assert_eq!(
@@ -107,8 +106,8 @@ fn list_renders_every_extra_query_value_as_httpx_would() {
         order: None,
         extra_query: Some(&extra),
     };
-    let call = fixture.list_call(query, None);
-    container_list_handler(&call, &fixture.source, None, &fixture.hook).unwrap();
+    let call = fixture.list_call(query);
+    container_list_handler(&call).unwrap();
     assert_eq!(
         rendered(&fixture.sent()[0]),
         BTreeMap::from([
@@ -131,8 +130,8 @@ fn list_sends_an_array_extra_query_as_one_json_text_value() {
         order: None,
         extra_query: Some(&extra),
     };
-    let call = fixture.list_call(query, None);
-    container_list_handler(&call, &fixture.source, None, &fixture.hook).unwrap();
+    let call = fixture.list_call(query);
+    container_list_handler(&call).unwrap();
     assert_eq!(
         rendered(&fixture.sent()[0]),
         BTreeMap::from([(String::from("tag"), String::from("[\"a\",\"b\"]"))]),
@@ -151,8 +150,8 @@ fn list_logs_the_params_before_the_get() {
         order: Some("asc"),
         extra_query: Some(&extra),
     };
-    let call = fixture.list_call(query, None);
-    container_list_handler(&call, &fixture.source, None, &fixture.hook).unwrap();
+    let call = fixture.list_call(query);
+    container_list_handler(&call).unwrap();
     assert_eq!(fixture.order(), vec!["log", "send"]);
     let calls = fixture.hook.calls();
     assert_eq!(calls.len(), 1);
@@ -190,8 +189,8 @@ fn list_overlays_extra_headers_after_validation_and_its_auth_mutation() {
         (String::from("X-Extra"), String::from("1")),
     ]);
     fixture.extra_headers = Some(extra.clone());
-    let call = fixture.list_call(empty_page(), None);
-    container_list_handler(&call, &fixture.source, None, &fixture.hook).unwrap();
+    let call = fixture.list_call(EMPTY_PAGE);
+    container_list_handler(&call).unwrap();
     let environment = fixture.config.environment.lock().unwrap().clone();
     assert_eq!(environment[0].0, extra);
     let sent = fixture.sent();
@@ -207,8 +206,8 @@ fn list_overlays_extra_headers_after_validation_and_its_auth_mutation() {
 fn list_adds_no_content_type() {
     let mut fixture = Fixture::new(200, LIST_BODY);
     fixture.params = api_key("sk-1");
-    let call = fixture.list_call(empty_page(), None);
-    container_list_handler(&call, &fixture.source, None, &fixture.hook).unwrap();
+    let call = fixture.list_call(EMPTY_PAGE);
+    container_list_handler(&call).unwrap();
     let sent = fixture.sent();
     assert!(!sent[0].headers.contains_key("Content-Type"));
     assert_eq!(
@@ -222,9 +221,9 @@ fn list_sends_through_the_supplied_client_and_builds_none() {
     let fixture = Fixture::new(200, LIST_BODY);
     let supplied = FakeClient::answering(&fixture.events, 200, LIST_BODY);
     let client = BlockingFake(supplied.clone());
-    let call = fixture.list_call(empty_page(), None);
-    let page =
-        container_list_handler(&call, &fixture.source, Some(&client), &fixture.hook).unwrap();
+    let mut call = fixture.list_call(EMPTY_PAGE);
+    call.base.blocking = Some(&client);
+    let page = container_list_handler(&call).unwrap();
     assert_eq!(page.data[0].id, "cntr_a");
     assert_eq!(supplied.seen().len(), 1);
     assert!(fixture.source.blocking.seen().is_empty());
@@ -237,8 +236,8 @@ fn list_builds_the_blocking_client_with_the_ssl_verify_param() {
     fixture
         .params
         .insert(String::from("ssl_verify"), json!("/etc/ca.pem"));
-    let call = fixture.list_call(empty_page(), None);
-    container_list_handler(&call, &fixture.source, None, &fixture.hook).unwrap();
+    let call = fixture.list_call(EMPTY_PAGE);
+    container_list_handler(&call).unwrap();
     assert_eq!(
         fixture.source.blocking_made.lock().unwrap().clone(),
         vec![Some(SslVerify::CaBundle(String::from("/etc/ca.pem")))]
@@ -249,8 +248,8 @@ fn list_builds_the_blocking_client_with_the_ssl_verify_param() {
 #[test]
 fn list_maps_a_url_failure_through_the_provider_exception() {
     let fixture = Fixture::failing(url_failure());
-    let call = fixture.list_call(empty_page(), None);
-    let failure = container_list_handler(&call, &fixture.source, None, &fixture.hook).unwrap_err();
+    let call = fixture.list_call(EMPTY_PAGE);
+    let failure = container_list_handler(&call).unwrap_err();
     let provider = provider_error(&failure);
     assert_eq!(provider.status_code, 500);
     assert_eq!(provider.message, "the request URL :: is not valid");
@@ -259,8 +258,8 @@ fn list_maps_a_url_failure_through_the_provider_exception() {
 #[tokio::test]
 async fn list_maps_a_timed_out_get_to_a_synthesized_500() {
     let fixture = Fixture::failing(deadline_failure().await);
-    let call = fixture.list_call(empty_page(), None);
-    let failure = container_list_handler(&call, &fixture.source, None, &fixture.hook).unwrap_err();
+    let call = fixture.list_call(EMPTY_PAGE);
+    let failure = container_list_handler(&call).unwrap_err();
     let provider = provider_error(&failure);
     assert_eq!(
         provider.status_code, 500,
@@ -273,8 +272,8 @@ fn list_reports_the_error_message_for_an_error_status() {
     let body =
         r#"{"error":{"message":"no such page","type":"invalid_request_error","code":"not_found"}}"#;
     let fixture = Fixture::new(404, body);
-    let call = fixture.list_call(empty_page(), None);
-    let failure = container_list_handler(&call, &fixture.source, None, &fixture.hook).unwrap_err();
+    let call = fixture.list_call(EMPTY_PAGE);
+    let failure = container_list_handler(&call).unwrap_err();
     let provider = provider_error(&failure);
     assert_eq!(provider.status_code, 404);
     assert_eq!(
@@ -286,8 +285,8 @@ fn list_reports_the_error_message_for_an_error_status() {
 #[test]
 fn list_keeps_the_body_text_when_the_error_has_no_message() {
     let fixture = Fixture::new(400, "plain failure");
-    let call = fixture.list_call(empty_page(), None);
-    let failure = container_list_handler(&call, &fixture.source, None, &fixture.hook).unwrap_err();
+    let call = fixture.list_call(EMPTY_PAGE);
+    let failure = container_list_handler(&call).unwrap_err();
     let provider = provider_error(&failure);
     assert_eq!(provider.status_code, 400);
     assert_eq!(provider.message, "plain failure");
@@ -296,8 +295,8 @@ fn list_keeps_the_body_text_when_the_error_has_no_message() {
 #[test]
 fn list_lets_a_3xx_body_through_to_the_transform() {
     let fixture = Fixture::new(304, LIST_BODY);
-    let call = fixture.list_call(empty_page(), None);
-    let page = container_list_handler(&call, &fixture.source, None, &fixture.hook).unwrap();
+    let call = fixture.list_call(EMPTY_PAGE);
+    let page = container_list_handler(&call).unwrap();
     assert_eq!(page.data[0].id, "cntr_a");
 }
 
@@ -305,8 +304,8 @@ fn list_lets_a_3xx_body_through_to_the_transform() {
 fn list_rejects_a_bad_param_before_it_asks_for_a_client() {
     let mut fixture = Fixture::new(200, LIST_BODY);
     fixture.params.insert(String::from("api_base"), json!(5));
-    let call = fixture.list_call(empty_page(), None);
-    let failure = container_list_handler(&call, &fixture.source, None, &fixture.hook).unwrap_err();
+    let call = fixture.list_call(EMPTY_PAGE);
+    let failure = container_list_handler(&call).unwrap_err();
     assert!(matches!(failure, ContainerCollectionError::Params(_)));
     assert!(fixture.source.blocking_made.lock().unwrap().is_empty());
     assert!(fixture.sent().is_empty());
@@ -321,8 +320,8 @@ fn list_asks_the_config_for_the_base_with_the_api_base_and_every_param() {
     fixture
         .params
         .insert(String::from("api_key"), json!("sk-9"));
-    let call = fixture.list_call(empty_page(), None);
-    container_list_handler(&call, &fixture.source, None, &fixture.hook).unwrap();
+    let call = fixture.list_call(EMPTY_PAGE);
+    container_list_handler(&call).unwrap();
     assert_eq!(
         fixture.config.bases.lock().unwrap().clone(),
         vec![(
@@ -335,10 +334,8 @@ fn list_asks_the_config_for_the_base_with_the_api_base_and_every_param() {
 #[tokio::test]
 async fn list_async_sends_through_the_async_client() {
     let fixture = Fixture::new(200, LIST_BODY);
-    let call = fixture.list_call(all_page(), None);
-    let page = acontainer_list_handler(&call, &fixture.source, None, &fixture.hook)
-        .await
-        .unwrap();
+    let call = fixture.list_call(all_page());
+    let page = acontainer_list_handler(&call).await.unwrap();
     assert_eq!(page.data[0].id, "cntr_a");
     assert_eq!(
         fixture.source.async_made.lock().unwrap().clone(),

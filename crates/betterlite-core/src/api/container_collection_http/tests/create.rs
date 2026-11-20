@@ -32,8 +32,8 @@ fn create_posts_the_transformed_body_with_the_default_timeout() {
         String::from("expires_after"),
         json!({"anchor": "last_active_at", "minutes": 20}),
     );
-    let call = fixture.create_call("box", None);
-    let object = container_create_handler(&call, &fixture.source, None, &fixture.hook).unwrap();
+    let call = fixture.create_call("box");
+    let object = container_create_handler(&call).unwrap();
     let sent = fixture.sent();
     assert_eq!(sent.len(), 1);
     let request = &sent[0];
@@ -70,8 +70,8 @@ fn create_validates_the_environment_before_the_content_type_goes_in() {
         String::from("X-Extra"),
         String::from("1"),
     )]));
-    let call = fixture.create_call("box", None);
-    container_create_handler(&call, &fixture.source, None, &fixture.hook).unwrap();
+    let call = fixture.create_call("box");
+    container_create_handler(&call).unwrap();
     let environment = fixture.config.environment.lock().unwrap().clone();
     assert_eq!(environment.len(), 1);
     let (seen, key) = &environment[0];
@@ -101,8 +101,8 @@ fn create_overlays_extra_headers_after_validation_and_its_auth_mutation() {
         (String::from("X-Extra"), String::from("1")),
     ]);
     fixture.extra_headers = Some(extra.clone());
-    let call = fixture.create_call("box", None);
-    container_create_handler(&call, &fixture.source, None, &fixture.hook).unwrap();
+    let call = fixture.create_call("box");
+    container_create_handler(&call).unwrap();
     let environment = fixture.config.environment.lock().unwrap().clone();
     assert_eq!(environment[0].0, extra);
     let sent = fixture.sent();
@@ -121,8 +121,8 @@ fn create_lets_an_extra_content_type_win_over_the_json_one() {
         String::from("Content-Type"),
         String::from("text/custom"),
     )]));
-    let call = fixture.create_call("box", None);
-    container_create_handler(&call, &fixture.source, None, &fixture.hook).unwrap();
+    let call = fixture.create_call("box");
+    container_create_handler(&call).unwrap();
     let sent = fixture.sent();
     assert_eq!(
         sent[0].headers.get("Content-Type").map(String::as_str),
@@ -133,8 +133,9 @@ fn create_lets_an_extra_content_type_win_over_the_json_one() {
 #[test]
 fn create_passes_the_given_timeout_to_the_post() {
     let fixture = Fixture::new(200, CREATE_BODY);
-    let call = fixture.create_call("box", Some(Duration::from_secs(5)));
-    container_create_handler(&call, &fixture.source, None, &fixture.hook).unwrap();
+    let mut call = fixture.create_call("box");
+    call.base.timeout = Some(Duration::from_secs(5));
+    container_create_handler(&call).unwrap();
     assert_eq!(fixture.sent()[0].timeout, Some(Duration::from_secs(5)));
 }
 
@@ -142,8 +143,8 @@ fn create_passes_the_given_timeout_to_the_post() {
 fn create_logs_the_name_and_the_body_before_the_post() {
     let mut fixture = Fixture::new(201, CREATE_BODY);
     fixture.params = api_key_params("sk-1");
-    let call = fixture.create_call("box", None);
-    let object = container_create_handler(&call, &fixture.source, None, &fixture.hook).unwrap();
+    let call = fixture.create_call("box");
+    let object = container_create_handler(&call).unwrap();
     assert_eq!(object.id, "cntr_abc");
     assert_eq!(fixture.order(), vec!["log", "send"]);
     let calls = fixture.hook.calls();
@@ -173,9 +174,8 @@ fn create_logs_the_name_and_the_body_before_the_post() {
 fn create_sends_nothing_when_the_pre_call_hook_fails() {
     let mut fixture = Fixture::new(200, CREATE_BODY);
     fixture.hook = RecordingHook::failing(&fixture.events);
-    let call = fixture.create_call("box", None);
-    let failure =
-        container_create_handler(&call, &fixture.source, None, &fixture.hook).unwrap_err();
+    let call = fixture.create_call("box");
+    let failure = container_create_handler(&call).unwrap_err();
     assert!(matches!(failure, ContainerCollectionError::Logging(_)));
     assert!(fixture.sent().is_empty());
     assert_eq!(fixture.order(), vec!["log"]);
@@ -185,10 +185,10 @@ fn create_sends_nothing_when_the_pre_call_hook_fails() {
 fn create_sends_through_the_supplied_client_and_builds_none() {
     let fixture = Fixture::new(200, CREATE_BODY);
     let supplied = FakeClient::answering(&fixture.events, 200, CREATE_BODY);
-    let call = fixture.create_call("box", None);
     let client = BlockingFake(supplied.clone());
-    let object =
-        container_create_handler(&call, &fixture.source, Some(&client), &fixture.hook).unwrap();
+    let mut call = fixture.create_call("box");
+    call.base.blocking = Some(&client);
+    let object = container_create_handler(&call).unwrap();
     assert_eq!(object.id, "cntr_abc");
     assert_eq!(supplied.seen().len(), 1);
     assert!(fixture.source.blocking.seen().is_empty());
@@ -201,8 +201,8 @@ fn create_builds_the_blocking_client_with_the_ssl_verify_param() {
     fixture
         .params
         .insert(String::from("ssl_verify"), json!(false));
-    let call = fixture.create_call("box", None);
-    container_create_handler(&call, &fixture.source, None, &fixture.hook).unwrap();
+    let call = fixture.create_call("box");
+    container_create_handler(&call).unwrap();
     assert_eq!(
         fixture.source.blocking_made.lock().unwrap().clone(),
         vec![Some(SslVerify::Enabled(false))]
@@ -213,9 +213,8 @@ fn create_builds_the_blocking_client_with_the_ssl_verify_param() {
 #[test]
 fn create_maps_a_url_failure_through_the_provider_exception() {
     let fixture = Fixture::failing(url_failure());
-    let call = fixture.create_call("box", None);
-    let failure =
-        container_create_handler(&call, &fixture.source, None, &fixture.hook).unwrap_err();
+    let call = fixture.create_call("box");
+    let failure = container_create_handler(&call).unwrap_err();
     let provider = provider_error(&failure);
     assert_eq!(provider.status_code, 500);
     assert_eq!(provider.message, "the request URL :: is not valid");
@@ -225,9 +224,8 @@ fn create_maps_a_url_failure_through_the_provider_exception() {
 #[tokio::test]
 async fn create_maps_a_timed_out_post_to_408() {
     let fixture = Fixture::failing(deadline_failure().await);
-    let call = fixture.create_call("box", None);
-    let failure =
-        container_create_handler(&call, &fixture.source, None, &fixture.hook).unwrap_err();
+    let call = fixture.create_call("box");
+    let failure = container_create_handler(&call).unwrap_err();
     let provider = provider_error(&failure);
     assert_eq!(provider.status_code, 408);
 }
@@ -236,9 +234,8 @@ async fn create_maps_a_timed_out_post_to_408() {
 fn create_reports_the_whole_body_for_an_error_status() {
     let body = r#"{"error":{"message":"bad name","type":"invalid_request_error","param":"name","code":"x"}}"#;
     let fixture = Fixture::new(400, body);
-    let call = fixture.create_call("box", None);
-    let failure =
-        container_create_handler(&call, &fixture.source, None, &fixture.hook).unwrap_err();
+    let call = fixture.create_call("box");
+    let failure = container_create_handler(&call).unwrap_err();
     let provider = provider_error(&failure);
     assert_eq!(provider.status_code, 400);
     assert_eq!(
@@ -254,9 +251,8 @@ fn create_reports_the_whole_body_for_an_error_status() {
 #[test]
 fn create_reports_the_size_of_a_non_utf8_error_body() {
     let fixture = Fixture::with_bytes(400, vec![0xff, 0xfe]);
-    let call = fixture.create_call("box", None);
-    let failure =
-        container_create_handler(&call, &fixture.source, None, &fixture.hook).unwrap_err();
+    let call = fixture.create_call("box");
+    let failure = container_create_handler(&call).unwrap_err();
     let provider = provider_error(&failure);
     assert_eq!(provider.status_code, 400);
     assert_eq!(
@@ -268,8 +264,8 @@ fn create_reports_the_size_of_a_non_utf8_error_body() {
 #[test]
 fn create_lets_a_3xx_body_through_to_the_transform() {
     let fixture = Fixture::new(300, CREATE_BODY);
-    let call = fixture.create_call("box", None);
-    let object = container_create_handler(&call, &fixture.source, None, &fixture.hook).unwrap();
+    let call = fixture.create_call("box");
+    let object = container_create_handler(&call).unwrap();
     assert_eq!(
         object.id, "cntr_abc",
         "raise_for_status leaves a redirect alone, so its body is transformed like a success"
@@ -280,9 +276,8 @@ fn create_lets_a_3xx_body_through_to_the_transform() {
 fn create_rejects_a_bad_param_before_it_asks_for_a_client() {
     let mut fixture = Fixture::new(200, CREATE_BODY);
     fixture.params.insert(String::from("api_key"), json!(5));
-    let call = fixture.create_call("box", None);
-    let failure =
-        container_create_handler(&call, &fixture.source, None, &fixture.hook).unwrap_err();
+    let call = fixture.create_call("box");
+    let failure = container_create_handler(&call).unwrap_err();
     assert!(matches!(failure, ContainerCollectionError::Params(_)));
     assert!(fixture.source.blocking_made.lock().unwrap().is_empty());
     assert!(fixture.sent().is_empty());
@@ -297,8 +292,8 @@ fn create_asks_the_config_for_the_base_with_the_api_base_and_every_param() {
     fixture
         .params
         .insert(String::from("api_key"), json!("sk-9"));
-    let call = fixture.create_call("box", None);
-    container_create_handler(&call, &fixture.source, None, &fixture.hook).unwrap();
+    let call = fixture.create_call("box");
+    container_create_handler(&call).unwrap();
     assert_eq!(
         fixture.config.bases.lock().unwrap().clone(),
         vec![(
@@ -312,10 +307,8 @@ fn create_asks_the_config_for_the_base_with_the_api_base_and_every_param() {
 async fn create_async_sends_through_the_async_client() {
     let mut fixture = Fixture::new(200, CREATE_BODY);
     fixture.params = api_key_params("sk-1");
-    let call = fixture.create_call("box", None);
-    let object = acontainer_create_handler(&call, &fixture.source, None, &fixture.hook)
-        .await
-        .unwrap();
+    let call = fixture.create_call("box");
+    let object = acontainer_create_handler(&call).await.unwrap();
     assert_eq!(object.id, "cntr_abc");
     assert_eq!(
         fixture.source.async_made.lock().unwrap().clone(),

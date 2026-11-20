@@ -42,8 +42,8 @@ use tokio::time::sleep;
 use url::Url;
 
 use super::{
-    CollectionClientSource, CollectionReply, CollectionRequest, CollectionTransport,
-    ContainerCollectionError, ContainerCreateCall, ContainerListCall,
+    CollectionBase, CollectionClientSource, CollectionReply, CollectionRequest,
+    CollectionTransport, ContainerCollectionError, ContainerCreateCall, ContainerListCall,
 };
 
 pub(super) const BASE: &str = "https://api.example.com/v1/containers";
@@ -188,10 +188,12 @@ impl FakeClient {
 
     pub(super) fn failing(events: &Events, failure: TransferError) -> Self {
         let client = Self::answering(events, 200, CREATE_BODY);
-        *client
+        let mut held = client
             .failure
             .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some(failure);
+            .unwrap_or_else(PoisonError::into_inner);
+        *held = Some(failure);
+        drop(held);
         client
     }
 
@@ -362,61 +364,60 @@ impl Fixture {
     pub(super) fn with_bytes(status: u16, body: Vec<u8>) -> Self {
         let events: Events = Arc::default();
         let client = FakeClient::answering_bytes(&events, status, body);
-        Self {
-            config: StubConfig::with_base(BASE),
-            params: Object::new(),
-            create_params: Object::new(),
-            logging: Mutex::new(logging_state()),
-            extra_headers: None,
-            source: FakeSource::over(client.clone(), client),
-            hook: RecordingHook::passing(&events),
-            events,
-        }
+        Self::over(events, client)
     }
 
     pub(super) fn failing(failure: TransferError) -> Self {
         let events: Events = Arc::default();
         let client = FakeClient::failing(&events, failure);
+        Self::over(events, client)
+    }
+
+    fn over(events: Events, client: FakeClient) -> Self {
         Self {
+            source: FakeSource::over(client.clone(), client),
+            hook: RecordingHook::passing(&events),
+            events,
             config: StubConfig::with_base(BASE),
             params: Object::new(),
             create_params: Object::new(),
             logging: Mutex::new(logging_state()),
             extra_headers: None,
-            source: FakeSource::over(client.clone(), client),
-            hook: RecordingHook::passing(&events),
-            events,
         }
     }
 
-    pub(super) fn create_call(
-        &self,
-        name: &str,
-        timeout: Option<Duration>,
-    ) -> ContainerCreateCall<'_> {
+    pub(super) fn base(&self, timeout: Option<Duration>) -> CollectionBase<'_, FakeSource> {
+        CollectionBase {
+            config: &self.config,
+            litellm_params: &self.params,
+            logging: &self.logging,
+            extra_headers: self.extra_headers.as_ref(),
+            timeout,
+            source: &self.source,
+            blocking: None,
+            asynchronous: None,
+            hook: &self.hook,
+        }
+    }
+
+    pub(super) fn create_call<'call>(
+        &'call self,
+        name: &'call str,
+    ) -> ContainerCreateCall<'call, FakeSource> {
         ContainerCreateCall {
+            base: self.base(None),
             name,
             params: &self.create_params,
-            config: &self.config,
-            litellm_params: &self.params,
-            logging: &self.logging,
-            extra_headers: self.extra_headers.as_ref(),
-            timeout,
         }
     }
 
-    pub(super) fn list_call(
-        &self,
-        query: ContainerListQuery<'_>,
-        timeout: Option<Duration>,
-    ) -> ContainerListCall<'_> {
+    pub(super) fn list_call<'call>(
+        &'call self,
+        query: ContainerListQuery<'call>,
+    ) -> ContainerListCall<'call, FakeSource> {
         ContainerListCall {
-            config: &self.config,
-            litellm_params: &self.params,
-            logging: &self.logging,
-            extra_headers: self.extra_headers.as_ref(),
+            base: self.base(None),
             query,
-            timeout,
         }
     }
 
