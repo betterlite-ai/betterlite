@@ -11,7 +11,7 @@ use thiserror::Error;
 
 use crate::api::api_boundaries::ApiLimitError;
 use crate::api::vector_store_http_write::error::{
-    BaseLlmException, ClientError, FailureFacts, ResponseFacts, handle_error, header_text,
+    BaseLlmException, ClientError, FailureFacts, ResponseFacts, header_text,
 };
 
 // A provider transform that fails before any request raises its own error, so it travels as a source
@@ -71,14 +71,6 @@ pub enum UploadError {
     Decode(#[source] Utf8Error),
     #[error("the request body could not be encoded")]
     Encode(#[source] serde_json::Error),
-}
-
-impl UploadError {
-    // _handle_error's conversion, over the facts B2402 reads off the caught exception
-    #[must_use]
-    pub fn provider(facts: &FailureFacts) -> Self {
-        Self::Provider(handle_error(facts, None))
-    }
 }
 
 // The exception facts when no response exists: text is a ValueError's message, display a failure's text

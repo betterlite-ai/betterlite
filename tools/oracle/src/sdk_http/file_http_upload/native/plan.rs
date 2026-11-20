@@ -27,11 +27,19 @@ pub(super) fn upload_plan(spec: &Plan, origin: &str) -> UploadPlan {
 fn two_step_plan(spec: &TwoStepSpec, origin: &str) -> TwoStepPlan {
     TwoStepPlan {
         initial_method: spec.initial_request.method.clone(),
-        initial_url: resolved(spec.initial_request.url.as_ref(), origin),
+        initial_url: spec
+            .initial_request
+            .url
+            .as_ref()
+            .map(|value| value.replace(PLACEHOLDER, origin)),
         initial_headers: spec.initial_request.headers.clone(),
         initial_data: Json::Object(spec.initial_request.data.clone()),
         upload_method: spec.upload_request.method.clone(),
-        upload_url: resolved(spec.upload_request.url.as_ref(), origin),
+        upload_url: spec
+            .upload_request
+            .url
+            .as_ref()
+            .map(|value| value.replace(PLACEHOLDER, origin)),
         upload_headers: spec.upload_request.headers.clone(),
         upload_data: upload_data(&spec.upload_request.data),
         url_location: spec.upload_url_location,
@@ -42,7 +50,7 @@ fn two_step_plan(spec: &TwoStepSpec, origin: &str) -> TwoStepPlan {
 fn presigned_plan(spec: &PresignedSpec, origin: &str) -> PresignedPlan {
     PresignedPlan {
         method: spec.method.clone(),
-        url: resolve(&spec.url, origin),
+        url: spec.url.replace(PLACEHOLDER, origin),
         headers: spec.headers.clone(),
         data: upload_data(&spec.data),
     }
@@ -75,12 +83,4 @@ fn upload_data(content: &Content) -> UploadData {
         Content::Text(text) => UploadData::Text(text.clone()),
         Content::Raw(bytes) => UploadData::Bytes(bytes.clone()),
     }
-}
-
-fn resolved(url: Option<&String>, origin: &str) -> Option<String> {
-    url.map(|value| resolve(value, origin))
-}
-
-fn resolve(url: &str, origin: &str) -> String {
-    url.replace(PLACEHOLDER, origin)
 }

@@ -20,8 +20,9 @@ use crate::api::file_http_upload::decoder::{decode_file_upload_location, upload_
 use crate::api::file_http_upload::error::{UploadError, failure_facts, status_failure};
 use crate::api::file_http_upload::media::BlockIter;
 use crate::api::file_http_upload::plan::{MediaPlan, PresignedPlan, TwoStepPlan, encoded_body};
+use crate::api::vector_store_http_write::error::handle_error;
 
-use super::wire::{headers_from, request_url};
+use super::wire::{headers_from, request_url, upload_method};
 use super::{BlockStream, ClientSource, Mode, UploadBody, UploadRequest, UploadTransport};
 
 // The answer transform_create_file_response reads, with the URL the last request was sent to
@@ -62,10 +63,11 @@ where
         if self.mode == Mode::Asynchronous {
             self.emit_error(&error);
         }
-        match error {
-            UploadError::Provider(_) => error,
-            other => UploadError::provider(&failure_facts(None, other.to_string())),
+        if matches!(error, UploadError::Provider(_)) {
+            return error;
         }
+        let facts = failure_facts(None, error.to_string());
+        UploadError::Provider(handle_error(&facts, None))
     }
 
     async fn run_two_step(&mut self, plan: &TwoStepPlan) -> Result<Reply, UploadError> {
@@ -81,12 +83,13 @@ where
             .await?;
         let (located_url, data) = located_upload(&initial.response, plan, self.limits)?;
         let Some(url) = located_url else {
-            return Err(UploadError::provider(&failure_facts(
+            let facts = failure_facts(
                 Some(String::from(
                     "Failed to get upload URL from initial request",
                 )),
                 String::new(),
-            )));
+            );
+            return Err(UploadError::Provider(handle_error(&facts, None)));
         };
         let method = upload_method(plan.upload_method.as_deref().unwrap_or("POST"))?;
         let upload_headers = headers_from(
@@ -128,33 +131,35 @@ where
     }
 
     async fn run_media(&self, plan: MediaPlan) -> Result<Reply, UploadError> {
-        match self.media_reply(plan).await {
-            Ok(reply) => match reply.response.status {
-                200 | 201 => Ok(reply),
-                202..=299 => Err(UploadError::provider(&failure_facts(
-                    Some(format!(
-                        "media upload: unexpected status {}",
-                        reply.response.status
-                    )),
-                    String::new(),
-                ))),
-                _ => Err(UploadError::provider(&status_failure(
-                    reply.response.status,
-                    &reply.response.body,
-                    &reply.response.headers,
-                ))),
-            },
-            Err(error) => Err(UploadError::provider(&failure_facts(
-                None,
-                error.to_string(),
-            ))),
-        }
-    }
-
-    async fn media_reply(&self, plan: MediaPlan) -> Result<Reply, UploadError> {
         let headers = self.media_headers(plan.content_type.as_deref())?;
         let body = UploadBody::Blocks(self.block_stream(plan.body_stream));
-        self.reply(Method::POST, self.api_base, headers, body).await
+        match self.reply(Method::POST, self.api_base, headers, body).await {
+            Ok(reply) => match reply.response.status {
+                200 | 201 => Ok(reply),
+                202..=299 => {
+                    let facts = failure_facts(
+                        Some(format!(
+                            "media upload: unexpected status {}",
+                            reply.response.status
+                        )),
+                        String::new(),
+                    );
+                    Err(UploadError::Provider(handle_error(&facts, None)))
+                }
+                _ => Err(UploadError::Provider(handle_error(
+                    &status_failure(
+                        reply.response.status,
+                        &reply.response.body,
+                        &reply.response.headers,
+                    ),
+                    None,
+                ))),
+            },
+            Err(error) => Err(UploadError::Provider(handle_error(
+                &failure_facts(None, error.to_string()),
+                None,
+            ))),
+        }
     }
 
     // Traditional uploads pick PUT only when the provider config asks for it, and fail as they are
@@ -275,23 +280,4 @@ fn located_upload(
             Ok((upload_url_from_headers(&response.headers), None))
         }
     }
-}
-
-// The sync handler decodes a bytes body before sending it, so invalid UTF-8 fails before HTTP
-pub fn traditional_body(mode: Mode, bytes: &[u8]) -> Result<Vec<u8>, UploadError> {
-    match mode {
-        Mode::Sync => {
-            std::str::from_utf8(bytes).map_err(UploadError::Decode)?;
-            Ok(bytes.to_vec())
-        }
-        Mode::Asynchronous => Ok(bytes.to_vec()),
-    }
-}
-
-// getattr(client, upload_method.lower()): the method name is uppercased back to the wire token
-fn upload_method(method: &str) -> Result<Method, UploadError> {
-    let token = method.to_ascii_uppercase();
-    Method::from_bytes(token.as_bytes()).map_err(|_source| UploadError::Method {
-        method: method.to_owned(),
-    })
 }

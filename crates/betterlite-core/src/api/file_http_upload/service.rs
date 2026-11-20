@@ -26,8 +26,9 @@ mod pre_call;
 mod proxied;
 mod wire;
 
-use exchange::{Exchange, Reply, traditional_body};
+use exchange::{Exchange, Reply};
 use pre_call::{caller_headers, log_pre_call};
+use wire::traditional_body;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
