@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::future::{Future, ready};
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
@@ -14,38 +13,17 @@ use betterlite_logging::logging_state::correlation::{
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_openai::embedding::EmbeddingInput;
-use betterlite_openai::fireworks_ai_chat_params::FireworksCapabilities;
 use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::message_content::Message;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::DateTime;
 use secrecy::SecretString;
 
-use crate::hosted_platform_dispatch::call::{CompletionCall, EmbeddingCall};
-use crate::hosted_platform_dispatch::chat::dispatch;
-use crate::hosted_platform_dispatch::context::{CallLogging, DispatchContext, DispatchSettings};
-use crate::hosted_platform_dispatch::error::DispatchError;
+use crate::hosted_platform_dispatch::call::CompletionCall;
+use crate::hosted_platform_dispatch::context::DispatchSettings;
 use crate::hosted_platform_dispatch::handler::{ChatCompletionHandler, HandlerError};
 
 const INIT: &str = r#"{"model":"gpt-4o","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
-
-pub(super) struct Capabilities {
-    pub(super) reasoning: bool,
-}
-
-impl FireworksCapabilities for Capabilities {
-    fn supports_function_calling(&mut self, _model: &str) -> impl Future<Output = bool> + Send {
-        ready(false)
-    }
-
-    fn supports_tool_choice(&mut self, _model: &str) -> impl Future<Output = bool> + Send {
-        ready(false)
-    }
-
-    fn supports_reasoning(&mut self, _model: &str) -> impl Future<Output = bool> + Send {
-        ready(self.reasoning)
-    }
-}
 
 struct Discard;
 
@@ -135,39 +113,6 @@ impl Fixture {
         }
     }
 
-    pub(super) fn context(&self) -> DispatchContext<'_> {
-        DispatchContext {
-            acompletion: self.acompletion,
-            api_base: self.api_base.as_deref(),
-            api_key: self.api_key.as_ref(),
-            custom_llm_provider: &self.provider,
-            groq_config: &self.groq_config,
-            headers: self.headers.as_ref(),
-            litellm_params: &self.litellm_params,
-            messages: &self.messages,
-            model: &self.model,
-            optional_params: &self.optional_params,
-            provider_config: self.provider_config,
-            stream: self.stream,
-            timeout: self.timeout,
-            settings: DispatchSettings::from(&self.settings),
-        }
-    }
-
-    pub(super) fn embedding_call(&self) -> EmbeddingCall {
-        EmbeddingCall {
-            model: self.model.clone(),
-            input: self.input.clone(),
-            optional_params: self.optional_params.clone(),
-            litellm_params: self.litellm_params.clone(),
-            api_key: self.api_key.clone(),
-            api_base: self.api_base.clone(),
-            headers: self.headers.clone(),
-            timeout: self.timeout.unwrap_or_default(),
-            aembedding: self.aembedding,
-        }
-    }
-
     pub(super) fn settings_view(&self) -> DispatchSettings<'_> {
         DispatchSettings::from(&self.settings)
     }
@@ -216,19 +161,6 @@ impl ChatCompletionHandler for Recorder {
             |status_code| Err(HandlerError::Upstream { status_code }),
         )
     }
-}
-
-pub(super) async fn dispatch_chat(
-    tag: ChatConfigTag,
-    fixture: &Fixture,
-    handler: &Recorder,
-    log: &mut CallLogging<'_, '_>,
-) -> Result<String, DispatchError> {
-    let context = fixture.context();
-    let mut capabilities = Capabilities { reasoning: true };
-    dispatch(tag, &context, &mut capabilities, handler, log)
-        .await
-        .expect("the hosted table has this arm")
 }
 
 pub(super) fn secret(value: &str) -> SecretString {

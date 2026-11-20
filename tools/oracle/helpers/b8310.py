@@ -14,7 +14,7 @@ UPSTREAM: Final = "{{upstream}}"
 KEPT_HEADERS: Final[tuple[str, ...]] = ("authorization", "x-scope")
 ENV_PREFIXES: Final[tuple[str, ...]] = ("GROQ_", "CLOUDFLARE_", "FIREWORKS_AI_")
 
-CHAT_ANSWER: Final[dict[str, object]] = {
+CHAT_ANSWER: Final[JsonValue] = {
     "id": "chatcmpl-1",
     "object": "chat.completion",
     "created": 1700000000,
@@ -29,7 +29,7 @@ CHAT_ANSWER: Final[dict[str, object]] = {
     ],
     "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
 }
-EMBEDDING_ANSWER: Final[dict[str, object]] = {
+EMBEDDING_ANSWER: Final[JsonValue] = {
     "object": "list",
     "data": [{"object": "embedding", "embedding": [0.1, 0.2], "index": 0}],
     "model": "oracle",
@@ -90,7 +90,7 @@ class Case(TypedDict):
 class RequestRecord(TypedDict):
     url: str
     headers: dict[str, str]
-    body: JsonValue
+    body: dict[str, JsonValue] | None
 
 
 class AnswerHandler(BaseHTTPRequestHandler):
@@ -109,7 +109,11 @@ class AnswerHandler(BaseHTTPRequestHandler):
                 "headers": {
                     name: lowered[name] for name in KEPT_HEADERS if name in lowered
                 },
-                "body": None if not content else TypeAdapter(JsonValue).validate_json(content),
+                "body": (
+                    None
+                    if not content
+                    else TypeAdapter(dict[str, JsonValue]).validate_json(content)
+                ),
             }
         )
         payload = server.answer["body"].encode()
@@ -158,37 +162,28 @@ def optional_params(case: Case) -> OptionalParams:
     return given
 
 
-def replace_environment(case: Case, upstream: str) -> None:
+def prepared(case: Case, server: AnswerServer) -> None:
     for name in list(os.environ):
         if name.startswith(ENV_PREFIXES):
             del os.environ[name]
-    for name, value in case.get("env", {}).items():
-        os.environ[name] = value.replace(UPSTREAM, upstream)
-
-
-def apply_globals(values: Globals | None, upstream: str) -> None:
-    if values is None:
-        return
-    api_base = values.get("api_base")
-    litellm.api_base = None if api_base is None else api_base.replace(UPSTREAM, upstream)
-    litellm.api_key = values.get("api_key")
-    litellm.groq_key = values.get("groq_key")
-    litellm.cloudflare_api_key = values.get("cloudflare_api_key")
-
-
-def apply_groq_config(case: Case) -> None:
+    environment = case.get("env")
+    if environment is not None:
+        for name, value in environment.items():
+            os.environ[name] = value.replace(UPSTREAM, server.base)
+    global_values = case.get("globals")
+    if global_values is not None:
+        global_base = global_values.get("api_base")
+        litellm.api_base = (
+            None if global_base is None else global_base.replace(UPSTREAM, server.base)
+        )
+        litellm.api_key = global_values.get("api_key")
+        litellm.groq_key = global_values.get("groq_key")
+        litellm.cloudflare_api_key = global_values.get("cloudflare_api_key")
     config = case.get("groq_config")
-    if config is None:
-        return
-    litellm.GroqChatConfig(
-        temperature=config.get("temperature"), top_p=config.get("top_p")
-    )
-
-
-def prepared(case: Case, server: AnswerServer) -> None:
-    replace_environment(case, server.base)
-    apply_globals(case.get("globals"), server.base)
-    apply_groq_config(case)
+    if config is not None:
+        litellm.GroqChatConfig(
+            temperature=config.get("temperature"), top_p=config.get("top_p")
+        )
     api_base = case.get("api_base")
     if api_base is not None:
         case["api_base"] = api_base.replace(UPSTREAM, server.base)
@@ -237,13 +232,13 @@ def params_view(recorded: RequestRecord | None) -> JsonValue:
     if recorded is None:
         return None
     body = recorded["body"]
-    if not isinstance(body, dict):
+    if body is None:
         return None
     params: dict[str, JsonValue] = {}
-    for name in body:
+    for name, value in body.items():
         if name in ("model", "messages", "stream"):
             continue
-        params[name] = body[name]
+        params[name] = value
     return params
 
 

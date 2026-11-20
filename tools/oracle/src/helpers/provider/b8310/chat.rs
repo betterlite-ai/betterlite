@@ -15,7 +15,7 @@ use serde_json::json;
 use tokio::runtime::Runtime;
 
 use super::fixtures::{Recorder, environment, logging, section_settings};
-use super::input::{Case, Provider};
+use super::input::{Case, Provider, as_object};
 use super::input_failure;
 use super::wire::{error_or_null, params_view, request_view};
 
@@ -33,8 +33,8 @@ struct PreResolved {
 pub(super) fn run(runtime: &Runtime, case: &Case) -> HelperResult {
     let env = environment(case);
     let settings = section_settings(case, &env);
-    let optional_params = case.optional_params()?;
-    let groq_config = case.groq_config()?;
+    let optional_params = as_object(case.optional_params.as_ref())?;
+    let groq_config = as_object(case.groq_config.as_ref())?;
     let pre = pre_resolved(case, &env);
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).or_value_error()?;
     let (mut state, prepost) = logging(&redactor)?;
@@ -96,13 +96,26 @@ fn pre_resolved(case: &Case, env: &BTreeMap<String, String>) -> PreResolved {
     match case.provider {
         Provider::Groq => PreResolved {
             api_base: Some(
-                nonempty(case.api_base.as_deref())
-                    .or_else(|| nonempty(env.get(GROQ_API_BASE).map(String::as_str)))
+                case.api_base
+                    .as_deref()
+                    .filter(|text| !text.is_empty())
+                    .or_else(|| {
+                        env.get(GROQ_API_BASE)
+                            .map(String::as_str)
+                            .filter(|text| !text.is_empty())
+                    })
                     .unwrap_or(GROQ_DEFAULT_API_BASE)
                     .to_owned(),
             ),
-            api_key: nonempty(case.api_key.as_deref())
-                .or_else(|| nonempty(env.get(GROQ_API_KEY).map(String::as_str)))
+            api_key: case
+                .api_key
+                .as_deref()
+                .filter(|text| !text.is_empty())
+                .or_else(|| {
+                    env.get(GROQ_API_KEY)
+                        .map(String::as_str)
+                        .filter(|text| !text.is_empty())
+                })
                 .map(SecretString::from),
         },
         Provider::FireworksAi | Provider::TogetherAi | Provider::Cloudflare => PreResolved {
@@ -110,10 +123,6 @@ fn pre_resolved(case: &Case, env: &BTreeMap<String, String>) -> PreResolved {
             api_key: case.api_key.as_deref().map(SecretString::from),
         },
     }
-}
-
-fn nonempty(value: Option<&str>) -> Option<&str> {
-    value.filter(|text| !text.is_empty())
 }
 
 // B2221 owns the model lookup; the case states the answer the arm is given

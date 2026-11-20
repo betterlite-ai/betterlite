@@ -106,23 +106,11 @@ pub(crate) struct Case {
     pub(super) answer: Option<Answer>,
 }
 
-impl Case {
-    pub(super) fn optional_params(&self) -> Result<Object, Box<HelperError>> {
-        match &self.optional_params {
-            None | Some(Json::Null) => Ok(Object::new()),
-            Some(given) => Ok(serde_json::from_value::<Object>(serde_json::to_value(
-                given,
-            )?)?),
-        }
-    }
-
-    // what litellm.GroqChatConfig.get_config() returns for the call
-    pub(super) fn groq_config(&self) -> Result<Object, Box<HelperError>> {
-        match &self.groq_config {
-            None | Some(Json::Null) => Ok(Object::new()),
-            Some(given) => Ok(serde_json::from_value::<Object>(serde_json::to_value(
-                given,
-            )?)?),
-        }
+pub(super) fn as_object(value: Option<&Json>) -> Result<Object, Box<HelperError>> {
+    match value {
+        None | Some(Json::Null) => Ok(Object::new()),
+        Some(given) => Ok(serde_json::from_value::<Object>(serde_json::to_value(
+            given,
+        )?)?),
     }
 }

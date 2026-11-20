@@ -321,8 +321,19 @@ fn hosted_platform_keys_config_cases(#[case] setting: Setting) {
 }
 
 // the provider variables sit beside the SDK globals, and each keeps its own value
-#[test]
-fn hosted_platform_keys_reads_every_setting_at_once() {
+#[rstest]
+#[case::api_base(Setting::ApiBase, "http://global:4000")]
+#[case::api_key(Setting::ApiKey, "sk-global")]
+#[case::headers(Setting::Headers, "x-scope=tenant")]
+#[case::groq_key(Setting::GroqKey, "sk-groq-global")]
+#[case::cloudflare_key(Setting::CloudflareKey, "sk-cloudflare-global")]
+#[case::groq_api_key(Setting::GroqApiKey, "sk-groq-env")]
+#[case::groq_api_base(Setting::GroqApiBase, "http://groq:8000/openai/v1")]
+#[case::cloudflare_api_key(Setting::CloudflareApiKey, "sk-cloudflare-env")]
+#[case::cloudflare_api_base(Setting::CloudflareApiBase, "https://gateway.ai.cloudflare.com/v1")]
+#[case::cloudflare_account_id(Setting::CloudflareAccountId, "account-1234")]
+#[case::fireworks_ai_api_key(Setting::FireworksAiApiKey, "sk-fireworks-env")]
+fn hosted_platform_keys_reads_every_setting_at_once(#[case] setting: Setting, #[case] value: &str) {
     let settings = load(
         "litellm_settings:\n  api_base: http://global:4000\n  api_key: sk-global\n  groq_key: sk-groq-global\n  cloudflare_api_key: sk-cloudflare-global\n  headers:\n    x-scope: tenant\n",
         &[
@@ -335,23 +346,5 @@ fn hosted_platform_keys_reads_every_setting_at_once() {
         ],
     )
     .unwrap();
-    let expected = [
-        (Setting::ApiBase, "http://global:4000"),
-        (Setting::ApiKey, "sk-global"),
-        (Setting::Headers, "x-scope=tenant"),
-        (Setting::GroqKey, "sk-groq-global"),
-        (Setting::CloudflareKey, "sk-cloudflare-global"),
-        (Setting::GroqApiKey, "sk-groq-env"),
-        (Setting::GroqApiBase, "http://groq:8000/openai/v1"),
-        (Setting::CloudflareApiKey, "sk-cloudflare-env"),
-        (
-            Setting::CloudflareApiBase,
-            "https://gateway.ai.cloudflare.com/v1",
-        ),
-        (Setting::CloudflareAccountId, "account-1234"),
-        (Setting::FireworksAiApiKey, "sk-fireworks-env"),
-    ];
-    for (setting, value) in expected {
-        assert_eq!(read(&settings, setting), Some(String::from(value)));
-    }
+    assert_eq!(read(&settings, setting), Some(String::from(value)));
 }

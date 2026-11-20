@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
 use betterlite_openai::cloudflare_chat;
 use betterlite_openai::fireworks_ai_chat_params::FireworksCapabilities;
@@ -7,7 +5,6 @@ use betterlite_openai::fireworks_ai_chat_params::extra_body::map_extra_body_para
 use betterlite_openai::groq_chat;
 use betterlite_openai::openai_base_config::Object as ChatObject;
 use betterlite_prompts::arguments::json::Object;
-use betterlite_prompts::message_content::Message;
 
 use crate::agent_platform_dispatch::context::headers_or_global;
 
@@ -33,10 +30,13 @@ where
     P: FireworksCapabilities + Send,
 {
     match tag {
-        ChatConfigTag::CloudflareChat => Some(cloudflare(context, handler)),
+        ChatConfigTag::CloudflareChat => Some(cloudflare(context).and_then(|call| handler.complete(&call).map_err(DispatchError::Handler))),
         ChatConfigTag::FireworksAi => Some(fireworks(context, capabilities, handler, log).await),
         ChatConfigTag::GroqChat => Some(groq(context, handler)),
-        ChatConfigTag::TogetherAiChat => Some(together(context, handler, log)),
+        ChatConfigTag::TogetherAiChat => Some({
+            let call = CompletionCall::from_context(context);
+            logged(handler.complete(&call), &call, log)
+        }),
         ChatConfigTag::A2a | ChatConfigTag::Ai21Chat | ChatConfigTag::AiohttpOpenAiChat | ChatConfigTag::AmazonNovaChat | ChatConfigTag::Anthropic | ChatConfigTag::AnthropicText
         | ChatConfigTag::AzureAiStudio | ChatConfigTag::AzureAnthropic | ChatConfigTag::AzureModelRouter | ChatConfigTag::AzureOpenAi | ChatConfigTag::AzureOpenAiGpt5
         | ChatConfigTag::AzureOpenAiO1 | ChatConfigTag::AzureOpenAiText | ChatConfigTag::Baseten | ChatConfigTag::Bedrock(_) | ChatConfigTag::BedrockMantleChat
@@ -64,24 +64,6 @@ where
     }
 }
 
-// the call every arm shares, before it overrides the fields its own resolution changes
-fn resolved(context: &DispatchContext<'_>) -> CompletionCall {
-    CompletionCall {
-        model: context.model.to_owned(),
-        stream: context.stream,
-        acompletion: context.acompletion,
-        api_base: context.api_base.map(str::to_owned),
-        api_key: context.api_key.cloned(),
-        custom_llm_provider: context.custom_llm_provider.to_owned(),
-        headers: context.headers.cloned(),
-        litellm_params: context.litellm_params.clone(),
-        optional_params: context.optional_params.clone(),
-        messages: context.messages.to_vec(),
-        timeout: context.timeout,
-        provider_config: context.provider_config,
-    }
-}
-
 // _complete_fireworks_ai maps the optional params only when the Fireworks chat config is the provider config, then logs a failed call's error text with the headers
 async fn fireworks<P, R>(
     context: &DispatchContext<'_>,
@@ -92,46 +74,25 @@ async fn fireworks<P, R>(
 where
     P: FireworksCapabilities + Send,
 {
-    let mut call = resolved(context);
+    let mut call = CompletionCall::from_context(context);
     if call.provider_config == Some(ChatConfigTag::FireworksAi) {
         let params: ChatObject = logging::convert(context.optional_params)?;
         let mapped = map_extra_body_params(capabilities, context.model, &params).await;
         call.optional_params = logging::convert(&mapped)?;
     }
-    logged(
-        handler.complete(&call),
-        context.messages,
-        call.headers.as_ref(),
-        log,
-    )
+    logged(handler.complete(&call), &call, log)
 }
 
-// _complete_together_ai passes every field and logs a failed call the same way
-fn together<R>(
-    context: &DispatchContext<'_>,
-    handler: &dyn ChatCompletionHandler<Reply = R>,
-    log: &mut CallLogging<'_, '_>,
-) -> Result<R, DispatchError> {
-    let call = resolved(context);
-    logged(
-        handler.complete(&call),
-        context.messages,
-        call.headers.as_ref(),
-        log,
-    )
-}
-
-// both arms log the error text as the original response and return the same error unchanged
+// both arms log the error text and the headers as the original response and return the same error unchanged
 fn logged<R>(
     reply: Result<R, HandlerError>,
-    messages: &[Message],
-    headers: Option<&BTreeMap<String, String>>,
+    call: &CompletionCall,
     log: &mut CallLogging<'_, '_>,
 ) -> Result<R, DispatchError> {
     match reply {
         Ok(value) => Ok(value),
         Err(error) => {
-            logging::post(log, messages, &error, headers)?;
+            logging::post(log, &call.messages, &error, call.headers.as_ref())?;
             Err(DispatchError::Handler(error))
         }
     }
@@ -142,7 +103,7 @@ fn groq<R>(
     context: &DispatchContext<'_>,
     handler: &dyn ChatCompletionHandler<Reply = R>,
 ) -> Result<R, DispatchError> {
-    let mut call = resolved(context);
+    let mut call = CompletionCall::from_context(context);
     call.api_base = Some(
         first_nonempty([
             context.api_base,
@@ -164,30 +125,27 @@ fn groq<R>(
 }
 
 // _complete_cloudflare: the passed key, litellm.cloudflare_api_key, litellm.api_key and CLOUDFLARE_API_KEY; the passed base, litellm.api_base and CLOUDFLARE_API_BASE, which the URL rule completes with the account id
-fn cloudflare<R>(
-    context: &DispatchContext<'_>,
-    handler: &dyn ChatCompletionHandler<Reply = R>,
-) -> Result<R, DispatchError> {
-    let mut call = resolved(context);
-    call.api_key = first_secret([
-        context.api_key,
-        context.settings.cloudflare_api_key,
-        context.settings.api_key,
-        context.settings.env_cloudflare_api_key,
-    ]);
+fn cloudflare(context: &DispatchContext<'_>) -> Result<CompletionCall, DispatchError> {
     let base = first_nonempty([
         context.api_base,
         context.settings.api_base,
         context.settings.env_cloudflare_api_base,
     ]);
-    call.api_base = Some(cloudflare_chat::complete_url(
-        base.as_deref(),
-        context.settings.env_cloudflare_account_id,
-    )?);
-    call.headers = context.headers.cloned();
-    call.provider_config = None;
-    CLOUDFLARE_PROVIDER.clone_into(&mut call.custom_llm_provider);
-    handler.complete(&call).map_err(DispatchError::Handler)
+    Ok(CompletionCall {
+        api_key: first_secret([
+            context.api_key,
+            context.settings.cloudflare_api_key,
+            context.settings.api_key,
+            context.settings.env_cloudflare_api_key,
+        ]),
+        api_base: Some(cloudflare_chat::complete_url(
+            base.as_deref(),
+            context.settings.env_cloudflare_account_id,
+        )?),
+        custom_llm_provider: String::from(CLOUDFLARE_PROVIDER),
+        provider_config: None,
+        ..CompletionCall::from_context(context)
+    })
 }
 
 // LiteLLM adds a GroqChatConfig.get_config key only where optional_params lacks it, so a request value wins

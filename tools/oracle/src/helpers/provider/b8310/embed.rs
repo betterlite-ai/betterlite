@@ -12,7 +12,7 @@ use secrecy::SecretString;
 use serde_json::json;
 
 use super::fixtures::{environment, section_settings};
-use super::input::Case;
+use super::input::{Case, as_object};
 use super::input_failure;
 use super::wire::request_view;
 
@@ -56,7 +56,7 @@ fn embedding_call(
     Ok(EmbeddingCall {
         model: case.model.clone(),
         input: EmbeddingInput::Text(input),
-        optional_params: case.optional_params()?,
+        optional_params: as_object(case.optional_params.as_ref())?,
         litellm_params: Object::new(),
         // get_llm_provider fills the key from the environment before main.py's arm runs
         api_key: case
