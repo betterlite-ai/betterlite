@@ -90,8 +90,8 @@ fn non_empty_text(value: Option<&JsonData>) -> Option<&str> {
 }
 
 fn optional_text(value: &Option<String>) -> JsonData {
-    match value {
-        Some(text) => JsonData::String(text.clone()),
-        None => JsonData::Null,
-    }
+    let Some(text) = value else {
+        return JsonData::Null;
+    };
+    JsonData::String(text.clone())
 }

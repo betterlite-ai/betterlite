@@ -128,7 +128,7 @@ pub fn build_key_search_where(search: &str) -> WhereClause {
 }
 
 #[must_use]
-pub fn non_empty(value: &Option<String>) -> Option<&str> {
+pub const fn non_empty(value: &Option<String>) -> Option<&str> {
     match value {
         Some(text) if !text.is_empty() => Some(text.as_str()),
         Some(_) | None => None,

@@ -28,7 +28,7 @@ pub async fn list_keys_with<S>(
     query: &KeyListQuery,
 ) -> Result<KeyListResponseObject, KeyQueryPlanError>
 where
-    S: KeyListSource,
+    S: KeyListSource + Sync,
 {
     let plan = build_plan(query)?;
     tracing::debug!(conditions = ?plan.where_clause, "Filter conditions");

@@ -4,10 +4,12 @@ use std::io;
 use std::sync::{Arc, Mutex};
 
 use rust_decimal::Decimal;
+use tracing::subscriber::set_default;
 
 use betterlite_db::auxiliary_repository::repository::PrismaClient;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::database_replica::availability::Availability;
+use betterlite_db::identity_rows::OptionalPayload;
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_db::postgres_store::errors::DbError;
 use betterlite_db::postgres_store::session::PostgresStore;
@@ -63,8 +65,8 @@ fn user_table(user_id: &str, email: Option<&str>, alias: Option<&str>) -> LiteLL
         budget_reset_at: None,
         allowed_cache_controls: Vec::new(),
         policies: Vec::new(),
-        model_spend: Default::default(),
-        model_max_budget: Default::default(),
+        model_spend: OptionalPayload::default(),
+        model_max_budget: OptionalPayload::default(),
         created_at: None,
         updated_at: None,
         organization_memberships: None,
@@ -261,7 +263,7 @@ async fn page_then_count_not_snapshot() {
         .with_max_level(tracing::Level::DEBUG)
         .with_writer(move || writer.clone())
         .finish();
-    let guard = tracing::subscriber::set_default(subscriber);
+    let guard = set_default(subscriber);
     let mut source = FakeSource::default();
     source.page = vec![row(r#"{"token":"k1"}"#)];
     source.total = 7;

@@ -24,15 +24,15 @@ fn equals(column: KeyColumn, value: &str) -> WhereClause {
     vec![Where::Equals(column, text(value))]
 }
 
-fn clause_of(entries: Vec<Where>) -> WhereClause {
+const fn clause_of(entries: Vec<Where>) -> WhereClause {
     entries
 }
 
-fn or_of(children: Vec<WhereClause>) -> Where {
+const fn or_of(children: Vec<WhereClause>) -> Where {
     Where::Or(children)
 }
 
-fn and_of(children: Vec<WhereClause>) -> Where {
+const fn and_of(children: Vec<WhereClause>) -> Where {
     Where::And(children)
 }
 
