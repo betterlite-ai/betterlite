@@ -44,10 +44,19 @@ deviations:
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2213-L2220"
   - what: >-
       A litellm_proxy embedding request that sends no encoding_format posts no encoding_format even when
-      LITELLM_DEFAULT_EMBEDDING_ENCODING_FORMAT is set; a request value of none is still removed from the body.
+      LITELLM_DEFAULT_EMBEDDING_ENCODING_FORMAT is set.
     why: >-
       LiteLLM reads that default from the process environment on every call. betterlite's legacy adapter sees only the
       resolved Deployment and passes no process settings, as this task's seam rule requires, and the loaded
       openai_provider section reaches B006's OpenAI adapter only. The settings seam on Deployment that B10006 adds will
       apply the default here and remove this row.
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6529-L6537"
+  - what: >-
+      An embeddings request whose encoding_format is none is refused with 400 while LiteLLM accepts it, drops the field
+      and answers with the embedding.
+    why: >-
+      betterlite parses the embeddings body into the typed EmbeddingRequest, whose EncodingFormat admits float and
+      base64 only; accepting any string changes crates/betterlite-openai/src/embedding.rs, which every embeddings
+      provider shares and this task does not own. The litellm_proxy branch keeps LiteLLM's none rule, so the request
+      works there once that type admits it.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6534-L6535"
