@@ -21,7 +21,7 @@ use super::error::MembershipReadFailure;
 use crate::auth_read::adapter::AuthReadAdapter;
 use crate::auth_read::include::{Including, IncludingQuery};
 use crate::auth_read::repository::RepositoryTable;
-use crate::auth_read::table::{AuthReadError, AuthTable, FindOne, Presence, ReadContext};
+use crate::auth_read::table::{AuthReadError, AuthTable, FindOne, Presence, ReadContext, widen};
 
 const ONE_SQL: &str = "SELECT row_to_json(entry)::text FROM \"LiteLLM_TeamMembership\" AS entry WHERE entry.\"user_id\" = $1 AND entry.\"team_id\" = $2 LIMIT $3";
 
@@ -268,28 +268,5 @@ impl TeamMembershipRows for DatabaseTeamMembership {
 fn read_fault(source: DbError) -> MembershipReadFailure {
     MembershipReadFailure {
         source: Box::new(AuthReadError::Repository(widen(source))),
-    }
-}
-
-// access and session build DbError<Infallible>, so only the source-free variants pass through
-fn widen(error: DbError) -> DbError<MembershipRowError> {
-    match error {
-        DbError::NoDbConnected => DbError::NoDbConnected,
-        DbError::Pool { source } => DbError::Pool { source },
-        DbError::Backend { source } => DbError::Backend { source },
-        DbError::InvalidRecord { source } => match source {},
-        DbError::CreateNull => DbError::CreateNull,
-        DbError::UniqueViolation { constraint, source } => {
-            DbError::UniqueViolation { constraint, source }
-        }
-        DbError::SqlState {
-            code,
-            constraint,
-            source,
-        } => DbError::SqlState {
-            code,
-            constraint,
-            source,
-        },
     }
 }

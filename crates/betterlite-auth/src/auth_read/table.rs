@@ -1,3 +1,4 @@
+use std::convert::Infallible;
 use std::error::Error;
 use std::future::Future;
 use std::sync::Arc;
@@ -18,6 +19,29 @@ where
     Lookup(DbLookupError),
     #[error(transparent)]
     Repository(RepositoryFault<Failure>),
+}
+
+// access and session build RepositoryFault<Infallible>, so only the source-free variants pass through
+pub(crate) fn widen<Failure>(error: RepositoryFault<Infallible>) -> RepositoryFault<Failure> {
+    match error {
+        RepositoryFault::NoDbConnected => RepositoryFault::NoDbConnected,
+        RepositoryFault::Pool { source } => RepositoryFault::Pool { source },
+        RepositoryFault::Backend { source } => RepositoryFault::Backend { source },
+        RepositoryFault::InvalidRecord { source } => match source {},
+        RepositoryFault::CreateNull => RepositoryFault::CreateNull,
+        RepositoryFault::UniqueViolation { constraint, source } => {
+            RepositoryFault::UniqueViolation { constraint, source }
+        }
+        RepositoryFault::SqlState {
+            code,
+            constraint,
+            source,
+        } => RepositoryFault::SqlState {
+            code,
+            constraint,
+            source,
+        },
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
