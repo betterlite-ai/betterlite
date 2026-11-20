@@ -1,0 +1,17 @@
+name: completions-unknown-model
+config: |
+  model_list:
+    - model_name: text-model
+      litellm_params: {model: openai/gpt-3.5-turbo-instruct, api_base: "{{upstream}}", api_key: oracle-key}
+env: {}
+request:
+  method: POST
+  path: /v1/completions
+  headers: {content-type: application/json, authorization: Bearer oracle-master}
+  body: {model: missing-model, prompt: hi}
+upstream: []
+compare:
+  headers: [content-type]
+  headers_present: []
+  upstream_headers: []
+  ignore: []

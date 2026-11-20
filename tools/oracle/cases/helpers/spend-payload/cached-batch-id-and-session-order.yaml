@@ -1,0 +1,24 @@
+kind: helper
+name: a batch row id keeps its batch suffix before the session strips it
+call:
+  spend_payload:
+    function: payload
+    kwargs:
+      model: gpt-4o
+      call_type: aretrieve_batch
+      litellm_trace_id: trace-batch
+      litellm_params:
+        metadata:
+          model_group: gpt-4o
+          model_info: {id: dep-batch}
+    response:
+      mapping:
+        id: batch-5
+        usage: {total_tokens: 5, prompt_tokens: 3, completion_tokens: 2}
+    start_time: "2024-01-01T00:00:00+00:00"
+    end_time: "2024-01-01T00:00:02+00:00"
+    settings: {store_bodies: false}
+    clock: 1700000000.0
+    session_uuid: "00000000-0000-0000-0000-000000000005"
+env: {}
+compare: {ignore: []}

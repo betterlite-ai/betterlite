@@ -1,0 +1,36 @@
+kind: helper
+name: resource-api-version
+call:
+  azure_batches:
+    steps:
+    - action: project
+      args: {api_key: ra-1, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+    - action: project
+      args: {api_key: ra-2, api_base: "https://fixture.test", api_version: preview, timeout: 7.5, max_retries: 7, organization: org-x}
+    - action: project
+      args: {api_key: ra-3, api_base: "https://fixture.test", api_version: latest, timeout: 7.5, max_retries: 7, organization: org-x}
+    - action: project
+      args: {api_key: ra-4, api_base: "https://fixture.test", api_version: v1, timeout: 7.5, max_retries: 7, organization: org-x}
+    - action: project
+      args: {api_key: ra-5, api_base: "https://fixture.test", api_version: null, timeout: 7.5, max_retries: 7, organization: org-x}
+    - action: project
+      args: {api_key: ra-6, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      params: {timeout: 7.5, max_retries: 5}
+    - action: project
+      args: {api_key: ra-7, api_base: "https://fixture.test", api_version: preview, timeout: 7.5, max_retries: 7, organization: org-x}
+      params: {timeout: 7.5, max_retries: 5}
+    - action: project
+      args: {api_key: ra-8, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      params: {max_retries: 0}
+    - action: project
+      is_async: true
+      args: {api_key: ra-9, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+    - action: project
+      is_async: true
+      args: {api_key: ra-10, api_base: "https://fixture.test", api_version: preview, timeout: 7.5, max_retries: 7, organization: org-x}
+    - action: project
+      args: {api_key: ra-11, api_base: "https://fixture.test", api_version: "", timeout: 7.5, max_retries: 7, organization: org-x}
+    - action: project
+      args: {api_key: ra-12, api_base: "https://fixture.test/openai/deployments/d", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+env: {}
+compare: {ignore: []}

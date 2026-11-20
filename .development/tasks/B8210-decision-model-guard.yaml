@@ -57,15 +57,34 @@ description: >-
   (absent is false), and a wrong type is "streaming_end_of_stream_only must be a boolean". streaming_sampling_rate must
   be an integer and not a bool (absent is 5), and a value below 1 is "streaming_sampling_rate must be at least 1". The
   guardrail name is required here, and default_on is false when absent.
+
+
+  Registry arm. B8521's hook registry (crates/betterlite-guardrails/src/hook_registry) answers decision_model with
+  HookRegistryError::NotBuilt until this task lands. B8666's LiveGuardrail::build has no decision_model arm
+  either, so also add the `LiveGuardrail` variant and arm in crates/betterlite-server/src/guardrail_dispatch/live.rs. Replace that answer in hook_registry/kinds.rs with the
+  decision_model arm: build_hook_spec calls initialize_decision_model and keeps the result as
+  `HookSpec::DecisionModel(DecisionModelArgs)` in spec.rs, with its HookSpec::settings arm, and an initializer error
+  comes back as HookRegistryError::Init with the message above. supported_event_hooks("decision_model") in hooks.rs is
+  the list DecisionModelGuardrail sets. Replace B8521's `unbuilt_decision_model` test with `decision_model_arm`, and
+  take decision_model out of the not-built row in docs/deviations/B8521.yaml. When decision_model is the last NotBuilt
+  answer left, also delete the NotBuilt variant with its skips_startup arm in hook_registry/error.rs, the NotBuilt
+  half of `hook_errors_at_startup` and the row itself.
 scope:
   paths:
     - crates/betterlite-guardrails/src/decision_model_guard.rs
     - crates/betterlite-guardrails/src/decision_model_guard/**
+    - crates/betterlite-guardrails/src/hook_registry/kinds.rs
+    - crates/betterlite-guardrails/src/hook_registry/spec.rs
+    - crates/betterlite-guardrails/src/hook_registry/hooks.rs
+    - crates/betterlite-guardrails/src/hook_registry/error.rs
+    - crates/betterlite-guardrails/src/hook_registry/tests.rs
+    - docs/deviations/B8521.yaml
     - tools/oracle/cases/guardrails/decision-model-*.yaml
     - tools/oracle/helpers/b8210.py
     - tools/oracle/helpers/b8210/**
     - tools/oracle/src/helpers/guardrails/b8210.rs
     - tools/oracle/src/helpers/guardrails/b8210/**
+    - crates/betterlite-server/src/guardrail_dispatch/live.rs
   lint_tables: false
 
 references:
@@ -89,6 +108,8 @@ dod:
     proof: [oracle]
   - text: The initializer applies the documented defaults and refuses bad checks and bad streaming values.
     proof: [init-tests]
+  - text: A decision_model guardrail builds HookSpec::DecisionModel through B8521's hook registry with the class's event hooks, and its initializer errors come back as Init.
+    proof: [hook-arm-tests, hook-registry-tests]
 
 checks:
   optional: []
@@ -99,6 +120,12 @@ checks:
     - id: init-tests
       why: the initializer arguments differ from LiteLLM
       run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^decision_model_guard::init::/)'
+    - id: hook-arm-tests
+      why: decision_model still answers NotBuilt or builds the wrong spec
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^hook_registry::tests::decision_model_arm/)'
+    - id: hook-registry-tests
+      why: the new variant or arm broke another hook registry arm
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^hook_registry::/)'
 oracle_cases:
   - tools/oracle/cases/guardrails/decision-model-clean.yaml
   - tools/oracle/cases/guardrails/decision-model-block.yaml
@@ -109,14 +136,14 @@ oracle_cases:
 
 deviations:
   - what: The initializer returns DecisionModelArgs and registers nothing.
-    why: B3682 owns the registry and the registration, as with B3681.
+    why: B8521's hook registry keeps the args as a HookSpec and B8666 builds the class from it, as B3682 does for B3681's args.
   - what: A pydantic ValidationError on the checks becomes a Rust start error with the same message prefix.
     why: The Rust config types are not pydantic.
 
 out_of_scope:
   - The decisions call itself and its response format (B3514), and judge_target (B4080).
   - The guardrail base class and event hook plumbing (B5471).
-  - The initializer registry and the callback registration (B3682).
+  - The rest of the hook registry and the callback registration (B8521 and B3682); this task adds only the decision_model arm.
 
 pitfalls:
   - The step between chunks is max_chars minus the overlap, and the last chunk must reach the end of the text, so the range of starts runs to len minus max_chars plus step.

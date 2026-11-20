@@ -1,0 +1,5 @@
+kind: helper
+name: azure-assistants-seed-assistants-beta-default
+call: {azure_assistants: {assistants_beta_default: [{run: {thread_id: thread_a, assistant_id: asst_a}}]}}
+env: {}
+compare: {ignore: []}

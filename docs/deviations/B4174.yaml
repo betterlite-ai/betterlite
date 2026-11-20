@@ -1,0 +1,18 @@
+task: B4174
+deviations:
+  - what: GET /debug/asyncio-tasks, GET /memory-usage, GET /debug/memory/summary, GET /debug/memory/details and POST /debug/memory/gc/configure answer HTTP 501 with error.type and error.code unsupported_runtime instead of the Python runtime measurements.
+    why: The native runtime has no Python asyncio event loop, tracemalloc snapshot, CPython object heap or garbage collector generations to inspect, and a fabricated healthy answer would hide that.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L60-L127
+  - what: The cache count and cache item routes read cache_dict and ttl_dict from cache sources injected when the server builds the router; a source the server does not have answers zero items and empty dicts.
+    why: betterlite passes its auth, router and logging caches through typed constructor inputs instead of reading LiteLLM's proxy_server globals, and a cache that cannot enumerate its entries reports none.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L130-L205
+  - what: The details and GC query integers are parsed into i64, so a value beyond the i64 range is answered with 422 int_parsing, where Python's arbitrary-precision int accepts it and LiteLLM's handler then answers 501 here.
+    why: Python integers are arbitrary precision, while betterlite's typed query fields are fixed width; both routes validate the value only because LiteLLM declares the parameter type and answers 501 here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L672-L677
+  - what: This router contributes no paths to betterlite's OpenAPI document, including /debug/asyncio-tasks, which LiteLLM leaves in its schema because that route's decorator does not set include_in_schema=False.
+    why: betterlite builds its document from typed RouteDoc inputs that each route module supplies, and this one supplies none; the other debug endpoints are operator-only and the task's schema proof covers the include_in_schema=False routes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L60-L65
+  - what: LiteLLM parses PYTHON_GC_THRESHOLD at import and calls gc.set_threshold on the CPython collector (called at line 57); betterlite has no CPython collector, so it performs no startup GC configuration and ignores the variable.
+    why: The native runtime has no garbage collector generations or gc.set_threshold to configure, which is also why the GC configure route answers 501.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L37-L58
+kept_bugs: []

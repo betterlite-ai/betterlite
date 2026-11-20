@@ -6,9 +6,11 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+betterlite-auth = { path = "../betterlite-auth" }
 betterlite-config = { path = "../betterlite-config" }
 betterlite-env = { path = "../betterlite-env" }
 betterlite-http = { path = "../betterlite-http" }
+betterlite-models = { path = "../betterlite-models" }
 betterlite-router = { path = "../betterlite-router" }
 betterlite-secret-managers = { path = "../betterlite-secret-managers" }
 betterlite-server = { path = "../betterlite-server" }
