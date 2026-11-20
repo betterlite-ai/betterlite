@@ -9,6 +9,7 @@ use crate::agent_credentials::error::AgentCredentialsError;
 use crate::agent_credentials::redact::redact_agent_litellm_params_map as redact_params_map;
 use crate::kill_switch_management::redact::redact_kill_switch;
 
+#[derive(Clone, Copy)]
 pub struct JwtAgentSettings {
     pub enabled: bool,
     pub agent_id_field_set: bool,
