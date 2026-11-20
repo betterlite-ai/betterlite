@@ -50,7 +50,7 @@ impl GenerateContentConversion for Conversion {
         };
         let mut ids = || Uuid::nil();
         let completed = transform_response(&raw, &request, &mut ids).map_err(PortFailure::from)?;
-        Ok(json!({
+        serde_json::from_value(json!({
             "model": completed.model,
             "usage": {
                 "prompt_tokens": completed.usage.prompt_tokens,
@@ -58,6 +58,7 @@ impl GenerateContentConversion for Conversion {
                 "total_tokens": completed.usage.total_tokens,
             },
         }))
+        .map_err(PortFailure::from)
     }
 }
 
@@ -83,18 +84,10 @@ pub(super) struct Mantle;
 
 impl MantleRegionResolver for Mantle {
     fn region(&self, litellm_params: &IndexMap<String, Json>) -> Result<String, PortFailure> {
-        let globals = MantleGlobals {
-            mantle_api_key: None,
-            mantle_api_base: None,
-            mantle_region: None,
-            aws_bearer_token: None,
-            aws_region_name: None,
-            aws_region: None,
-        };
         resolve_region(
             text(litellm_params.get("aws_region_name")),
             text(litellm_params.get("api_base")),
-            &globals,
+            &MantleGlobals::default(),
         )
         .map_err(PortFailure::from)
     }

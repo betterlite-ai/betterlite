@@ -95,7 +95,7 @@ struct Services {
     ptu_cost_attribution: bool,
 }
 
-async fn record_case(services: &Services, case: &LogCase) -> Result<Json, Box<HelperError>> {
+async fn record_case(services: &Services, case: &LogCase) -> HelperResult {
     let mut log = log_state(case)?;
     let mut calls = Vec::new();
     for call in &case.calls {
@@ -159,9 +159,7 @@ async fn record_response(
                 background: *background,
             }
         }
-        ResponseSpec::Json { body } => RecordResponse::Json(body),
         ResponseSpec::GenerateContent { body } => RecordResponse::GenerateContent(body),
-        ResponseSpec::Absent => RecordResponse::Absent,
     };
     recorder.record(log, record_input(call, response)).await
 }
@@ -188,7 +186,7 @@ fn log_state(case: &LogCase) -> Result<LoggingState, Box<HelperError>> {
         },
         &redactor,
         || String::from("cost-recording"),
-        Duration::default(),
+        Duration::default,
     )
     .map_err(|error| failure(error.to_string()))?;
     state.optional_params = case.log.optional_params.clone();

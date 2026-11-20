@@ -82,13 +82,9 @@ pub(crate) enum ResponseSpec {
         #[serde(default)]
         background: bool,
     },
-    Json {
-        body: Json,
-    },
     GenerateContent {
         body: Json,
     },
-    Absent,
 }
 
 #[derive(Deserialize)]
