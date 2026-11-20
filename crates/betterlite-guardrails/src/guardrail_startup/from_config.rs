@@ -8,7 +8,7 @@ use crate::guardrail_registry::error::RegistryError;
 use crate::guardrail_registry::rows::GuardrailRows;
 
 // LiteLLM catches only ValueError and TypeError here; the hide-secrets enterprise error is a plain Exception
-const fn skips_startup(error: &RegistryError) -> bool {
+pub(crate) const fn skips_startup(error: &RegistryError) -> bool {
     match error {
         RegistryError::Unsupported { .. }
         | RegistryError::MissingGuardrailType
@@ -17,6 +17,7 @@ const fn skips_startup(error: &RegistryError) -> bool {
         | RegistryError::Base(_)
         | RegistryError::Initializer(_)
         | RegistryError::InitFailed { .. } => true,
+        RegistryError::Hook(hook) => hook.skips_startup(),
         RegistryError::Enterprise(_)
         | RegistryError::Rows(_)
         | RegistryError::Params(_)

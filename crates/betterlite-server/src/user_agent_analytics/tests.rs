@@ -5,6 +5,6 @@ mod daily;
 mod distinct;
 mod postgres;
 mod query;
-mod support;
+pub(crate) mod support;
 mod weekly;
 mod window;
