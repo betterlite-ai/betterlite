@@ -13,7 +13,7 @@ from litellm.types.integrations.prometheus import PrometheusMetricsConfig
 
 INF: Final = math.inf
 DEFAULT_BUCKETS: Final[tuple[float, ...]] = tuple(prometheus_client.Histogram.DEFAULT_BUCKETS)
-LOGGER_CLASS: Final[Callable[..., PrometheusLogger]] = PrometheusLogger
+LOGGER_CLASS: Final[Callable[[], PrometheusLogger]] = PrometheusLogger
 
 
 class MetricsConfig(TypedDict):
