@@ -132,7 +132,7 @@ fn items_outcome(items: Result<Json, Box<LifecycleFailure>>) -> StepOutcome {
     }
 }
 
-fn success(retrieved: Option<Retrieved>, items: Option<Json>) -> StepOutcome {
+const fn success(retrieved: Option<Retrieved>, items: Option<Json>) -> StepOutcome {
     StepOutcome {
         retrieved,
         items,

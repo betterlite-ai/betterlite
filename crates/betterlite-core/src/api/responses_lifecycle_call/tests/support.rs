@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
-use std::future::Future;
+use std::future::{Future, ready};
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
@@ -140,7 +140,7 @@ impl ResponsesReadExecutor for FakeExecutor {
                 logged_optional: request.log.state.optional_params.clone(),
                 logged_litellm: request.log.state.litellm_params.clone(),
             });
-        std::future::ready(reply(&answer))
+        ready(reply(&answer))
     }
 }
 
@@ -154,12 +154,12 @@ fn reply(answer: &Answer) -> Result<ReadOutcome, ReadError> {
             let raw = RawResponse {
                 status: 200,
                 headers: &headers,
-                text: *body,
+                text: body,
             };
             let typed = response_reply(&raw).map_err(ReadError::Response)?;
             Ok(ReadOutcome::Response(Box::new(typed)))
         }
-        Answer::Items(body) => Ok(ReadOutcome::InputItems(json(*body))),
+        Answer::Items(body) => Ok(ReadOutcome::InputItems(json(body))),
         Answer::Provider { status, message } => Err(ReadError::Provider(BaseLlmException {
             status_code: *status,
             message: (*message).to_owned(),

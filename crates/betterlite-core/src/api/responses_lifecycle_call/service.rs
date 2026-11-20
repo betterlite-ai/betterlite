@@ -105,7 +105,7 @@ where
     async fn run_read(
         &self,
         read: SdkRead<'_>,
-        mut log: LifecycleLog<'_, '_>,
+        log: LifecycleLog<'_, '_>,
     ) -> Result<(ReadOutcome, ReadCallPlan), Box<LifecycleFailure>> {
         let operation = read.extras.operation();
         let (extra_body, query, flag) = match read.extras {

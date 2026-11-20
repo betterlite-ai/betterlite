@@ -207,6 +207,7 @@ fn empty_listing() -> ResponsesInputItemsCall {
 }
 
 fn assert_pagination_queries(records: &[Recorded]) {
+    assert!(records.len() >= 3);
     let Some(default_query) = &records[0].query else {
         panic!("the default listing sends a query");
     };
@@ -378,6 +379,7 @@ fn assert_extras_record(record: &Recorded, headers: &BTreeMap<String, String>) {
 }
 
 fn assert_timeout_records(records: &[Recorded]) {
+    assert!(records.len() >= 11);
     assert_eq!(records[1].timeout, Some(DEFAULT_TIMEOUT));
     assert_eq!(
         records[1].logged_litellm.get("litellm_call_id"),
@@ -393,6 +395,7 @@ fn assert_timeout_records(records: &[Recorded]) {
 }
 
 fn assert_mode_records(records: &[Recorded]) {
+    assert!(records.len() >= 10);
     assert_eq!(records[5].mode, ClientKind::Sync);
     assert_eq!(records[6].mode, ClientKind::Sync);
     assert_eq!(records[7].mode, ClientKind::Asynchronous);
