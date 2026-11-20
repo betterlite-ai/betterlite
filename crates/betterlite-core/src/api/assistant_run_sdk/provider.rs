@@ -8,6 +8,7 @@ use betterlite_azure::azure_assistant_definitions::operations::AssistantsApi as 
 use betterlite_openai::assistants::client::SdkClient;
 use betterlite_openai::assistants::operations::AssistantsApi as OpenAiAssistantsApi;
 use betterlite_openai::assistants::transport::AssistantsTransport;
+use betterlite_openai::thread_runs::error::ThreadRunsError;
 use betterlite_openai::thread_runs::operations::RunsApi;
 use betterlite_openai::thread_runs::records::RunReply;
 use betterlite_openai::thread_runs::stream::{RunStream, RunStreamTransport};
@@ -27,46 +28,20 @@ where
     type Stream = RunStream<T>;
 
     async fn poll(&self, target: RunTarget<'_>) -> Result<Option<RunReply>, AssistantsRunError> {
-        match target {
-            RunTarget::OpenAi(run) => {
-                let client = self.openai_client(&run);
-                let reply = RunsApi {
-                    transport: Arc::clone(&self.transport),
-                }
-                .create_and_poll(&client, &run.request)
-                .await?;
-                Ok(Some(reply))
-            }
-            RunTarget::Azure(run) => {
-                let client = self.azure_client(&run)?;
-                let reply = AssistantsRunsApi {
-                    transport: Arc::clone(&self.transport),
-                }
-                .poll(&client, &run.request)
-                .await?;
-                Ok(Some(reply))
-            }
-        }
+        let reply = match target {
+            RunTarget::OpenAi(run) => self.poll_openai(&run).await?,
+            RunTarget::Azure(run) => self.poll_azure(&run).await?,
+        };
+        Ok(Some(reply))
     }
 
     // both managers are built without a request: the provider call starts when the caller reads the stream
     fn stream(&self, target: RunTarget<'_>) -> Result<RunStream<T>, AssistantsRunError> {
-        match target {
-            RunTarget::OpenAi(run) => {
-                let client = self.openai_client(&run);
-                Ok(RunsApi {
-                    transport: Arc::clone(&self.transport),
-                }
-                .create_stream(&client, &run.request, run.handler.clone())?)
-            }
-            RunTarget::Azure(run) => {
-                let client = self.azure_client(&run)?;
-                Ok(AssistantsRunsApi {
-                    transport: Arc::clone(&self.transport),
-                }
-                .stream(&client, &run.request, run.handler.clone())?)
-            }
-        }
+        let stream = match target {
+            RunTarget::OpenAi(run) => self.stream_openai(&run)?,
+            RunTarget::Azure(run) => self.stream_azure(&run)?,
+        };
+        Ok(stream)
     }
 }
 
@@ -74,6 +49,36 @@ impl<T> ProviderRuns<T>
 where
     T: AssistantsTransport + RunStreamTransport,
 {
+    async fn poll_openai(&self, run: &OpenAiRun) -> Result<RunReply, ThreadRunsError> {
+        RunsApi {
+            transport: Arc::clone(&self.transport),
+        }
+        .create_and_poll(&self.openai_client(run), &run.request)
+        .await
+    }
+
+    async fn poll_azure(&self, run: &AzureRun<'_>) -> Result<RunReply, AssistantsRunError> {
+        AssistantsRunsApi {
+            transport: Arc::clone(&self.transport),
+        }
+        .poll(&self.azure_client(run)?, &run.request)
+        .await
+    }
+
+    fn stream_openai(&self, run: &OpenAiRun) -> Result<RunStream<T>, ThreadRunsError> {
+        RunsApi {
+            transport: Arc::clone(&self.transport),
+        }
+        .create_stream(&self.openai_client(run), &run.request, run.handler.clone())
+    }
+
+    fn stream_azure(&self, run: &AzureRun<'_>) -> Result<RunStream<T>, AssistantsRunError> {
+        AssistantsRunsApi {
+            transport: Arc::clone(&self.transport),
+        }
+        .stream(&self.azure_client(run)?, &run.request, run.handler.clone())
+    }
+
     // get_openai_client(kind, options, client): a supplied client is returned untouched, whatever its class
     fn openai_client(&self, run: &OpenAiRun) -> SdkClient<T> {
         let supplied = run.supplied.as_ref().map(|client| SdkClient {

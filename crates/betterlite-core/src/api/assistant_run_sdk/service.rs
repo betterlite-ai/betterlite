@@ -71,14 +71,14 @@ pub struct AssistantRunSdk<'data, O> {
     pub redactor: &'data Redactor,
 }
 
+// every run wrapper answers with the dispatch-mapped litellm error
+type RunResult<T> = Result<T, AssistantRunError>;
+
 impl<'data, O> AssistantRunSdk<'data, O>
 where
     O: RunOperations,
 {
-    pub async fn run_thread(
-        &self,
-        call: RunThreadCall,
-    ) -> Result<RunOutcome<O::Stream>, AssistantRunError> {
+    pub async fn run_thread(&self, call: RunThreadCall) -> RunResult<RunOutcome<O::Stream>> {
         let arun = matches!(call.arun_thread, Some(RunFlag::Bool(true)));
         let target = self.prepare(&call, arun)?;
         if matches!(call.stream, Some(Some(RunFlag::Bool(true)))) {
@@ -96,10 +96,7 @@ where
     }
 
     // run_thread_stream(*, event_handler=None, **kwargs) -> run_thread(stream=True, ...)
-    pub fn run_thread_stream(
-        &self,
-        mut call: RunThreadCall,
-    ) -> Result<O::Stream, AssistantRunError> {
+    pub fn run_thread_stream(&self, mut call: RunThreadCall) -> RunResult<O::Stream> {
         if call.stream.is_some() {
             return Err(AssistantRunError::DuplicateStream);
         }
@@ -112,24 +109,21 @@ where
     }
 
     // arun_thread_stream is itself synchronous: it forces the switch and returns the async manager
-    pub fn arun_thread_stream(
-        &self,
-        mut call: RunThreadCall,
-    ) -> Result<O::Stream, AssistantRunError> {
+    pub fn arun_thread_stream(&self, mut call: RunThreadCall) -> RunResult<O::Stream> {
         call.arun_thread = Some(RunFlag::Bool(true));
         self.run_thread_stream(call)
     }
 
-    pub async fn arun_thread(
-        &self,
-        mut call: RunThreadCall,
-    ) -> Result<RunOutcome<O::Stream>, AssistantRunError> {
+    pub async fn arun_thread(&self, mut call: RunThreadCall) -> RunResult<RunOutcome<O::Stream>> {
         call.arun_thread = Some(RunFlag::Bool(true));
+        self.run_arun(call).await
+    }
+
+    async fn run_arun(&self, call: RunThreadCall) -> RunResult<RunOutcome<O::Stream>> {
         let provider = call.provider.clone();
-        match self.run_thread(call).await {
-            Ok(outcome) => Ok(outcome),
-            Err(error) => Err(self.map_arun_error(&provider, error)),
-        }
+        self.run_thread(call)
+            .await
+            .map_err(|error| self.map_arun_error(&provider, error))
     }
 
     // arun_thread's except block: provider and wrapper failures are mapped, a litellm error passes through

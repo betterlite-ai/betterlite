@@ -428,6 +428,27 @@ fn call(provider: &str) -> RunThreadCall {
     }
 }
 
+// a base with every key named: the ast-grep rules refuse ..RunParams::default() in a literal
+fn run_params() -> RunParams {
+    RunParams {
+        api_base: None,
+        api_key: None,
+        api_version: None,
+        organization: None,
+        azure_ad_token: None,
+        tenant_id: None,
+        client_id: None,
+        client_secret: None,
+        azure_username: None,
+        azure_password: None,
+        azure_scope: None,
+        timeout: None,
+        request_timeout: None,
+        max_retries: None,
+        extra_body: None,
+    }
+}
+
 fn azure_call(params: RunParams) -> RunThreadCall {
     let mut input = call("azure");
     input.params = params;
@@ -659,10 +680,8 @@ async fn azure_extra_body_token_choices(
     fixture.settings.azure_ad_token = Some(secret("env-token"));
     let operations = CaptureRuns::default();
     let sdk = fixture.sdk(operations);
-    let params = RunParams {
-        extra_body,
-        ..RunParams::default()
-    };
+    let mut params = run_params();
+    params.extra_body = extra_body;
     sdk.run_thread(azure_call(params)).await.unwrap();
     match sdk.operations.targets().remove(0) {
         CapturedTarget::Azure { azure_ad_token, .. } => {
@@ -680,15 +699,13 @@ async fn azure_credentials_reach_the_litellm_params() {
     let fixture = Fixture::new();
     let operations = CaptureRuns::default();
     let sdk = fixture.sdk(operations);
-    let credentials = RunParams {
-        tenant_id: Some(String::from("tenant")),
-        client_id: Some(String::from("client")),
-        client_secret: Some(secret("client-secret")),
-        azure_username: Some(String::from("user")),
-        azure_password: Some(secret("password")),
-        azure_scope: Some(String::from("scope")),
-        ..RunParams::default()
-    };
+    let mut credentials = run_params();
+    credentials.tenant_id = Some(String::from("tenant"));
+    credentials.client_id = Some(String::from("client"));
+    credentials.client_secret = Some(secret("client-secret"));
+    credentials.azure_username = Some(String::from("user"));
+    credentials.azure_password = Some(secret("password"));
+    credentials.azure_scope = Some(String::from("scope"));
     sdk.run_thread(azure_call(credentials)).await.unwrap();
     match sdk.operations.targets().remove(0) {
         CapturedTarget::Azure { params, .. } => {
