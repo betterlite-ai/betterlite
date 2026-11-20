@@ -74,7 +74,7 @@ pub enum PluginSendError {
     #[error("the plugin request could not be built: {source}")]
     Build {
         #[source]
-        source: http::Error,
+        source: HttpError,
     },
     #[error("the plugin request failed: {source}")]
     Transport {
@@ -138,7 +138,9 @@ impl PluginUpstream for ProxiedPluginUpstream {
             .headers(request.headers)
             .body(request.body)
             .build()
-            .map_err(|source| PluginSendError::Build { source })?;
+            .map_err(|source| PluginSendError::Build {
+                source: HttpError::Request(source),
+            })?;
         // the client is built with redirect(Policy::none()), so a plugin's 3xx is answered and never followed
         let response = client
             .execute_buffered(built, client.limits.body_bytes)

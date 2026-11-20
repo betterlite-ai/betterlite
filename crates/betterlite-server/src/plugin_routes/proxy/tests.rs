@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use axum::Router;
@@ -228,6 +229,22 @@ async fn answers_502_when_the_upstream_fails() {
     assert_eq!(
         text(&body),
         "Cannot connect to plugin 'litellm-platform-plugin' at http://plugin.local/"
+    );
+}
+
+#[tokio::test]
+async fn answers_502_when_the_plugin_url_is_invalid() {
+    let plugins = registry(r#"{"plugins":[{"name":"litellm-platform-plugin","url":"not a url"}]}"#);
+    let app = router(PluginState::production(plugins, &BTreeMap::new(), None));
+    let request = authorized(
+        get_request("/plugin-proxy/litellm-platform-plugin/path"),
+        master_key(),
+    );
+    let (status, _headers, body) = send(app, request).await;
+    assert_eq!(status, StatusCode::BAD_GATEWAY);
+    assert_eq!(
+        text(&body),
+        "Cannot connect to plugin 'litellm-platform-plugin' at not a url"
     );
 }
 
