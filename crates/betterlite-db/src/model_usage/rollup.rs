@@ -57,28 +57,7 @@ pub fn model_usage_rollups(
                 successful_requests: 0,
                 failed_requests: 0,
             });
-        total.spend = total
-            .spend
-            .checked_add(transaction.spend.0)
-            .ok_or(ModelUsageError::SpendOverflow)?;
-        total.prompt_tokens = total
-            .prompt_tokens
-            .checked_add(transaction.prompt_tokens)
-            .ok_or(ModelUsageError::CountOverflow)?;
-        total.completion_tokens = total
-            .completion_tokens
-            .checked_add(transaction.completion_tokens)
-            .ok_or(ModelUsageError::CountOverflow)?;
-        total.request_count = total
-            .request_count
-            .checked_add(1)
-            .ok_or(ModelUsageError::CountOverflow)?;
-        if transaction.successful {
-            total.successful_requests = total
-                .successful_requests
-                .checked_add(1)
-                .ok_or(ModelUsageError::CountOverflow)?;
-        }
+        total.accumulate(transaction)?;
     }
     let mut rollups: Vec<ModelUsageRollup> = grouped.into_values().collect();
     for rollup in &mut rollups {
@@ -87,4 +66,33 @@ pub fn model_usage_rollups(
             .saturating_sub(rollup.successful_requests);
     }
     Ok(rollups)
+}
+
+impl ModelUsageRollup {
+    // accumulate: one entry's totals and its success or failure, checked so an overflow reports instead of wrapping.
+    fn accumulate(&mut self, transaction: &ModelUsageTransaction) -> Result<(), ModelUsageError> {
+        self.spend = self
+            .spend
+            .checked_add(transaction.spend.0)
+            .ok_or(ModelUsageError::SpendOverflow)?;
+        self.prompt_tokens = self
+            .prompt_tokens
+            .checked_add(transaction.prompt_tokens)
+            .ok_or(ModelUsageError::CountOverflow)?;
+        self.completion_tokens = self
+            .completion_tokens
+            .checked_add(transaction.completion_tokens)
+            .ok_or(ModelUsageError::CountOverflow)?;
+        self.request_count = self
+            .request_count
+            .checked_add(1)
+            .ok_or(ModelUsageError::CountOverflow)?;
+        if transaction.successful {
+            self.successful_requests = self
+                .successful_requests
+                .checked_add(1)
+                .ok_or(ModelUsageError::CountOverflow)?;
+        }
+        Ok(())
+    }
 }

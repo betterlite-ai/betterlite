@@ -66,23 +66,35 @@ impl ToolDiscoveryQueue {
             return;
         };
         let queued_name = tool_name.to_owned();
+        let mut waiting = (item, queued_name);
         loop {
             let room = self.room.notified();
             tokio::pin!(room);
             // register before the check, so a flush that frees a slot right after cannot miss this waiter
             room.as_mut().enable();
-            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            if state.seen.contains(&queued_name) {
+            let Some(rejected) = self.try_queue(waiting) else {
                 return;
-            }
-            if state.pending.len() < self.capacity {
-                state.seen.insert(queued_name);
-                state.pending.push(item);
-                return;
-            }
-            drop(state);
+            };
+            waiting = rejected;
             room.await;
         }
+    }
+
+    // A full buffer hands the tool and its name back, so a producer keeps them across the wait for room.
+    fn try_queue(
+        &self,
+        (item, queued_name): (ToolDiscoveryItem, String),
+    ) -> Option<(ToolDiscoveryItem, String)> {
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        if state.seen.contains(&queued_name) {
+            return None;
+        }
+        if state.pending.len() < self.capacity {
+            state.seen.insert(queued_name);
+            state.pending.push(item);
+            return None;
+        }
+        Some((item, queued_name))
     }
 
     // flush: hand over the pending items and clear the seen set, so the next cycle counts the same tools again.

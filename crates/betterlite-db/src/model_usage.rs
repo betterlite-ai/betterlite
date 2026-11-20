@@ -120,7 +120,7 @@ where
     Write(#[source] WriteError),
 }
 
-// flush_model_usage_transactions: one additive batch in key order, retried only when the failure proves nothing reached the database, because replaying an ambiguous write would count the increments twice.
+// flush_model_usage_transactions: one additive batch in key order, retried only when the failure proves nothing reached the database, because replaying an ambiguous write would count the increments twice; the loop stays local because tool_spend's retry is its whole ToolSpendWriter flush with a private retry_delay, so only the jitter source, the pause and DEFAULT_RETRIES are shared.
 pub async fn flush_model_usage_transactions<W>(
     writer: &W,
     transactions: &[ModelUsageTransaction],
