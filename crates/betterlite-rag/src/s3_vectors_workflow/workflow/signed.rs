@@ -36,7 +36,7 @@ impl<'deps, Transport> SignedS3Vectors<'deps, Transport> {
         }
     }
 
-    fn requests(&self) -> S3VectorsRequests<'_, 'deps, Transport> {
+    const fn requests(&self) -> S3VectorsRequests<'_, 'deps, Transport> {
         S3VectorsRequests {
             clients: &self.clients,
             aws_region_name: self.aws_region_name.as_str(),
