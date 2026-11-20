@@ -5,7 +5,7 @@ use betterlite_http::proxy::outbound::RequestBody;
 use betterlite_openai::files::records::FileObject;
 use http::Method;
 
-use super::super::config::{FileLogging, FileParams, FileResponse, Headers, MetadataConfig};
+use super::super::config::{FileParams, FileResponse, Headers, MetadataConfig, ReplyContext};
 use super::super::error::MetadataError;
 use super::Attempt;
 use super::endpoints::validate_environment;
@@ -41,10 +41,10 @@ where
         let response = file_response(&reply, &url);
         let page = listing.config.transform_list_files_response(
             &response,
-            &mut FileLogging {
+            ReplyContext {
                 model_call_details: &mut log.state.model_call_details,
+                litellm_params: &listing.litellm_params,
             },
-            &listing.litellm_params,
         )?;
         let remaining = MAX_FILE_LIST_LIMIT.saturating_sub(listed).max(0);
         let take = usize::try_from(remaining).unwrap_or(0);

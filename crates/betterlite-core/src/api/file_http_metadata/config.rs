@@ -21,9 +21,10 @@ pub struct FileResponse {
     pub url: Option<String>,
 }
 
-// The logging object's model_call_details, borrowed so a transform reads what pre_call wrote and its own writes stick
-pub struct FileLogging<'logging> {
-    pub model_call_details: &'logging mut IndexMap<String, Json>,
+// What a response transform reads: the logging object's model_call_details, borrowed so the transform's writes stick, and the request's litellm_params
+pub struct ReplyContext<'call> {
+    pub model_call_details: &'call mut IndexMap<String, Json>,
+    pub litellm_params: &'call FileParams,
 }
 
 // The six arguments validate_environment receives, all of them empty except the headers, the key and litellm_params
@@ -65,8 +66,7 @@ pub trait MetadataConfig: Send + Sync {
     fn transform_retrieve_file_response(
         &self,
         raw_response: &FileResponse,
-        logging_obj: &mut FileLogging<'_>,
-        litellm_params: &FileParams,
+        context: ReplyContext<'_>,
     ) -> Result<FileObject, BaseLlmException>;
 
     fn transform_delete_file_request(
@@ -77,8 +77,7 @@ pub trait MetadataConfig: Send + Sync {
     fn transform_delete_file_response(
         &self,
         raw_response: &FileResponse,
-        logging_obj: &mut FileLogging<'_>,
-        litellm_params: &FileParams,
+        context: ReplyContext<'_>,
     ) -> Result<FileDeleted, BaseLlmException>;
 
     fn transform_list_files_request(
@@ -97,8 +96,7 @@ pub trait MetadataConfig: Send + Sync {
     fn transform_list_files_response(
         &self,
         raw_response: &FileResponse,
-        logging_obj: &mut FileLogging<'_>,
-        litellm_params: &FileParams,
+        context: ReplyContext<'_>,
     ) -> Result<Vec<FileObject>, BaseLlmException>;
 
     fn error_class(&self, message: &str, status_code: u16, headers: HeaderMap) -> BaseLlmException;

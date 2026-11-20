@@ -5,6 +5,7 @@ use indexmap::IndexMap;
 
 use super::super::config::{
     EnvironmentRequest, FileParams, FileRequest, Headers, ListRequest, MetadataConfig,
+    PreparedRequest,
 };
 use super::super::error::MetadataError;
 use super::{MetadataCall, MetadataDeps, Selected};
@@ -32,11 +33,11 @@ pub(super) fn request_endpoint<C>(
     config: &C,
     call: &MetadataCall<'_>,
     optional_params: &FileParams,
-) -> Result<(String, FileParams), MetadataError>
+) -> Result<PreparedRequest, MetadataError>
 where
     C: MetadataConfig,
 {
-    let prepared = match call {
+    match call {
         MetadataCall::Retrieve(retrieve) => config.transform_retrieve_file_request(FileRequest {
             file_id: retrieve.file_id,
             optional_params,
@@ -52,8 +53,8 @@ where
             optional_params,
             litellm_params: list.target.litellm_params,
         }),
-    };
-    prepared.map_err(MetadataError::Provider)
+    }
+    .map_err(MetadataError::Provider)
 }
 
 // The same validation runs before the first send and before every continuation, over the headers it is handed
@@ -66,19 +67,20 @@ pub(super) fn validate_environment<C>(
 where
     C: MetadataConfig,
 {
-    let api_key = litellm_params
-        .get("api_key")
-        .and_then(|value| value.as_str());
-    config
-        .validate_environment(EnvironmentRequest {
-            api_key,
-            headers,
-            model: "",
-            messages: &[],
-            optional_params,
-            litellm_params,
-        })
-        .map_err(MetadataError::Provider)
+    let environment = EnvironmentRequest {
+        api_key: litellm_params
+            .get("api_key")
+            .and_then(|value| value.as_str()),
+        headers,
+        model: "",
+        messages: &[],
+        optional_params,
+        litellm_params,
+    };
+    let validated = config
+        .validate_environment(environment)
+        .map_err(MetadataError::Provider)?;
+    Ok(validated)
 }
 
 pub(super) fn log_pre_call(

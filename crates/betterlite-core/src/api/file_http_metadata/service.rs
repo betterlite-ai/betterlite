@@ -10,7 +10,7 @@ use serde::Serialize;
 use self::endpoints::{log_pre_call, request_endpoint, select_client, validate_environment};
 use self::listing::{Listing, list_pages};
 use self::wire::{file_response, query_pairs, request_url, send_once, status_facts, wire_headers};
-use super::config::{FileLogging, FileParams, Headers, MetadataConfig};
+use super::config::{FileParams, Headers, MetadataConfig, ReplyContext};
 use super::error::{MetadataError, provider_error};
 use crate::api::vector_store_http_write::service::{
     ClientKind, ClientSource, LogContext, SuppliedClient, WriteRequest,
@@ -184,10 +184,10 @@ where
             let response = file_response(&reply, &url);
             let file = config.transform_retrieve_file_response(
                 &response,
-                &mut FileLogging {
+                ReplyContext {
                     model_call_details: &mut log.state.model_call_details,
+                    litellm_params: &litellm_params,
                 },
-                &litellm_params,
             )?;
             Ok(MetadataValue::File(file))
         }
@@ -223,10 +223,10 @@ fn deleted<C: MetadataConfig>(
     let response = file_response(reply, url);
     let deleted = config.transform_delete_file_response(
         &response,
-        &mut FileLogging {
+        ReplyContext {
             model_call_details: &mut log.state.model_call_details,
+            litellm_params,
         },
-        litellm_params,
     )?;
     Ok(MetadataValue::Deleted(deleted))
 }
