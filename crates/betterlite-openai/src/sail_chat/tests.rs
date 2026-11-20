@@ -469,7 +469,7 @@ fn transform_extra_body_merges_the_request_metadata_over_the_caller_one() {
         )
         .unwrap();
     assert_eq!(
-        value(&merged),
+        serde_json::to_value(&merged).unwrap(),
         json!({"user": "u", "metadata": {"trace": "t-1", "completion_window": "flex"}})
     );
 }
@@ -481,9 +481,15 @@ fn transform_extra_body_drops_a_tier_through_the_argument_or_the_setting() {
     let by_argument = config(false)
         .transform_extra_body(&extra, &request, MODEL, true)
         .unwrap();
-    assert_eq!(value(&by_argument), json!({"user": "u"}));
+    assert_eq!(
+        serde_json::to_value(&by_argument).unwrap(),
+        json!({"user": "u"})
+    );
     let by_setting = config(true)
         .transform_extra_body(&extra, &request, MODEL, false)
         .unwrap();
-    assert_eq!(value(&by_setting), json!({"user": "u"}));
+    assert_eq!(
+        serde_json::to_value(&by_setting).unwrap(),
+        json!({"user": "u"})
+    );
 }
