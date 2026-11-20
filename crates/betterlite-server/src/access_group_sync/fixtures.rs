@@ -11,7 +11,8 @@ use tokio::sync::Barrier;
 
 use super::cache::AccessGroupCache;
 use super::key::{KeyMembershipDatabase, KeyMembershipStatement, KeySyncError, MovedGroupRow};
-use super::team::{AffectedGroupRow, TeamGroupRow, TeamSyncError, TeamSyncTransaction};
+
+pub(crate) mod team;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum KeyCall {
@@ -127,14 +128,14 @@ impl KeyMembershipDatabase for ScriptedKeyDatabase {
 
     fn repoint_key_membership(
         &self,
-        previous_key_token: &str,
-        new_key_token: &str,
+        previous: &str,
+        new: &str,
     ) -> impl Future<Output = Result<Vec<MovedGroupRow>, KeySyncError>> + Send {
         self.calls.lock().expect("calls").push(KeyCall::Repoint {
-            previous_key_token: previous_key_token.to_owned(),
-            new_key_token: new_key_token.to_owned(),
+            previous_key_token: previous.to_owned(),
+            new_key_token: new.to_owned(),
         });
-        let moved = self.repoint_rows(previous_key_token, new_key_token);
+        let moved = self.repoint_rows(previous, new);
         async move { Ok(moved) }
     }
 }
@@ -181,117 +182,5 @@ impl AccessGroupCache for ScriptedCache {
             }
             Ok(())
         }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum TeamStep {
-    Lock,
-    Read,
-    Affected,
-    Attach,
-    Detach,
-}
-
-pub(crate) struct ScriptedTeamTransaction {
-    pub(crate) calls: Mutex<Vec<TeamStep>>,
-    pub(crate) missing_team: bool,
-    pub(crate) team_group_ids: Option<Vec<String>>,
-    pub(crate) groups: Mutex<BTreeMap<String, Option<Vec<String>>>>,
-}
-
-impl ScriptedTeamTransaction {
-    pub(crate) const fn new(
-        team_group_ids: Option<Vec<String>>,
-        groups: BTreeMap<String, Option<Vec<String>>>,
-    ) -> Self {
-        Self {
-            calls: Mutex::new(Vec::new()),
-            missing_team: false,
-            team_group_ids,
-            groups: Mutex::new(groups),
-        }
-    }
-}
-
-impl TeamSyncTransaction for ScriptedTeamTransaction {
-    fn lock_team(&self, _team_id: &str) -> impl Future<Output = Result<(), TeamSyncError>> + Send {
-        self.calls.lock().expect("calls").push(TeamStep::Lock);
-        async move { Ok(()) }
-    }
-
-    fn team_groups(
-        &self,
-        _team_id: &str,
-    ) -> impl Future<Output = Result<Vec<TeamGroupRow>, TeamSyncError>> + Send {
-        self.calls.lock().expect("calls").push(TeamStep::Read);
-        let rows = if self.missing_team {
-            Vec::new()
-        } else {
-            vec![TeamGroupRow {
-                access_group_ids: self.team_group_ids.clone(),
-            }]
-        };
-        async move { Ok(rows) }
-    }
-
-    fn affected_groups(
-        &self,
-        team_id: &str,
-        desired: &[String],
-    ) -> impl Future<Output = Result<Vec<AffectedGroupRow>, TeamSyncError>> + Send {
-        self.calls.lock().expect("calls").push(TeamStep::Affected);
-        let groups = self.groups.lock().expect("groups");
-        let rows = groups
-            .iter()
-            .filter(|(access_group_id, assigned)| {
-                desired.contains(access_group_id)
-                    || assigned
-                        .as_ref()
-                        .is_some_and(|teams| teams.iter().any(|team| team == team_id))
-            })
-            .map(|(access_group_id, _)| AffectedGroupRow {
-                access_group_id: access_group_id.clone(),
-            })
-            .collect();
-        async move { Ok(rows) }
-    }
-
-    fn attach_groups(
-        &self,
-        team_id: &str,
-        desired: &[String],
-    ) -> impl Future<Output = Result<(), TeamSyncError>> + Send {
-        self.calls.lock().expect("calls").push(TeamStep::Attach);
-        let mut groups = self.groups.lock().expect("groups");
-        for access_group_id in desired {
-            let Some(assigned) = groups.get_mut(access_group_id) else {
-                continue;
-            };
-            let teams = assigned.get_or_insert_default();
-            if !teams.iter().any(|team| team == team_id) {
-                teams.push(team_id.to_owned());
-            }
-        }
-        async move { Ok(()) }
-    }
-
-    fn detach_groups(
-        &self,
-        team_id: &str,
-        desired: &[String],
-    ) -> impl Future<Output = Result<(), TeamSyncError>> + Send {
-        self.calls.lock().expect("calls").push(TeamStep::Detach);
-        let mut groups = self.groups.lock().expect("groups");
-        for (access_group_id, assigned) in groups.iter_mut() {
-            if desired.contains(access_group_id) {
-                continue;
-            }
-            let Some(teams) = assigned else {
-                continue;
-            };
-            teams.retain(|team| team != team_id);
-        }
-        async move { Ok(()) }
     }
 }

@@ -12,9 +12,8 @@ use tokio::sync::Barrier;
 use tokio::time::timeout;
 
 use super::cache::invalidate_access_group_caches;
-use super::fixtures::{
-    KeyCall, ScriptedCache, ScriptedKeyDatabase, ScriptedTeamTransaction, TeamStep,
-};
+use super::fixtures::team::{ScriptedTeamTransaction, TeamStep};
+use super::fixtures::{KeyCall, ScriptedCache, ScriptedKeyDatabase};
 use super::key::postgres::PostgresKeyMembership;
 use super::key::{
     KeyAccessGroupUpdate, KeyMembershipDatabase, KeyMembershipStatement, KeyRegeneration,
@@ -32,16 +31,6 @@ fn groups(entries: &[(&str, &[&str])]) -> BTreeMap<String, Vec<String>> {
         .map(|(access_group_id, tokens)| {
             let tokens = tokens.iter().map(|token| (*token).to_owned()).collect();
             ((*access_group_id).to_owned(), tokens)
-        })
-        .collect()
-}
-
-fn team_groups(entries: &[(&str, Option<&[&str]>)]) -> BTreeMap<String, Option<Vec<String>>> {
-    entries
-        .iter()
-        .map(|(access_group_id, teams)| {
-            let teams = teams.map(|names| names.iter().map(|team| (*team).to_owned()).collect());
-            ((*access_group_id).to_owned(), teams)
         })
         .collect()
 }
@@ -318,10 +307,13 @@ async fn regeneration_failure_order() {
 
 #[tokio::test]
 async fn team_lock_read_reconcile_order() {
-    let transaction = ScriptedTeamTransaction::new(
-        Some(vec!["g1".to_owned(), "g3".to_owned()]),
-        team_groups(&[("g1", None), ("g2", Some(&["t1"])), ("g3", Some(&["t1"]))]),
-    );
+    let seeded = BTreeMap::from([
+        ("g1".to_owned(), None),
+        ("g2".to_owned(), Some(vec!["t1".to_owned()])),
+        ("g3".to_owned(), Some(vec!["t1".to_owned()])),
+    ]);
+    let transaction =
+        ScriptedTeamTransaction::new(Some(vec!["g1".to_owned(), "g3".to_owned()]), seeded);
     let affected = reconcile_team_access_groups(&transaction, "t1")
         .await
         .unwrap();
@@ -350,10 +342,14 @@ async fn team_lock_read_reconcile_order() {
 
 #[tokio::test]
 async fn missing_team_detaches_all() {
-    let mut transaction = ScriptedTeamTransaction::new(
-        None,
-        team_groups(&[("g1", Some(&["t1"])), ("g2", Some(&["t1", "other"]))]),
-    );
+    let seeded = BTreeMap::from([
+        ("g1".to_owned(), Some(vec!["t1".to_owned()])),
+        (
+            "g2".to_owned(),
+            Some(vec!["t1".to_owned(), "other".to_owned()]),
+        ),
+    ]);
+    let mut transaction = ScriptedTeamTransaction::new(None, seeded);
     transaction.missing_team = true;
     let affected = reconcile_team_access_groups(&transaction, "t1")
         .await
@@ -376,10 +372,14 @@ async fn missing_team_detaches_all() {
 
 #[tokio::test]
 async fn team_null_arrays_and_unchanged_groups() {
-    let transaction = ScriptedTeamTransaction::new(
-        None,
-        team_groups(&[("g1", None), ("g2", Some(&["t1", "other"]))]),
-    );
+    let seeded = BTreeMap::from([
+        ("g1".to_owned(), None),
+        (
+            "g2".to_owned(),
+            Some(vec!["t1".to_owned(), "other".to_owned()]),
+        ),
+    ]);
+    let transaction = ScriptedTeamTransaction::new(None, seeded);
     let affected = reconcile_team_access_groups(&transaction, "t1")
         .await
         .unwrap();
@@ -388,10 +388,11 @@ async fn team_null_arrays_and_unchanged_groups() {
         transaction.groups.lock().expect("groups").get("g2"),
         Some(&Some(vec!["other".to_owned()]))
     );
-    let unchanged = ScriptedTeamTransaction::new(
-        Some(vec!["g1".to_owned()]),
-        team_groups(&[("g1", Some(&["t1"])), ("g2", None)]),
-    );
+    let seeded_unchanged = BTreeMap::from([
+        ("g1".to_owned(), Some(vec!["t1".to_owned()])),
+        ("g2".to_owned(), None),
+    ]);
+    let unchanged = ScriptedTeamTransaction::new(Some(vec!["g1".to_owned()]), seeded_unchanged);
     let affected = reconcile_team_access_groups(&unchanged, "t1")
         .await
         .unwrap();

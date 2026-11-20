@@ -56,7 +56,7 @@ pub trait TeamSyncTransaction: Send + Sync {
     fn team_groups(
         &self,
         team_id: &str,
-    ) -> impl Future<Output = Result<Vec<TeamGroupRow>, TeamSyncError>> + Send;
+    ) -> impl Future<Output = Result<Option<TeamGroupRow>, TeamSyncError>> + Send;
 
     fn affected_groups(
         &self,
@@ -85,11 +85,11 @@ where
     Tx: TeamSyncTransaction + ?Sized,
 {
     transaction.lock_team(team_id).await?;
-    let rows = transaction.team_groups(team_id).await?;
-    let desired = match rows.first() {
-        Some(row) => row.access_group_ids.clone().unwrap_or_default(),
-        None => Vec::new(),
-    };
+    let desired = transaction
+        .team_groups(team_id)
+        .await?
+        .and_then(|row| row.access_group_ids)
+        .unwrap_or_default();
     let affected = transaction.affected_groups(team_id, &desired).await?;
     transaction.attach_groups(team_id, &desired).await?;
     transaction.detach_groups(team_id, &desired).await?;

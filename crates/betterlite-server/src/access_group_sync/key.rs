@@ -52,8 +52,8 @@ pub trait KeyMembershipDatabase: Send + Sync {
 
     fn repoint_key_membership(
         &self,
-        previous_key_token: &str,
-        new_key_token: &str,
+        previous: &str,
+        new: &str,
     ) -> impl Future<Output = Result<Vec<MovedGroupRow>, KeySyncError>> + Send;
 }
 

@@ -16,22 +16,17 @@ const DETACH_SQL: &str = "UPDATE \"LiteLLM_AccessGroupTable\" SET assigned_team_
 impl TeamSyncTransaction for deadpool_postgres::Transaction<'_> {
     fn lock_team(&self, team_id: &str) -> impl Future<Output = Result<(), TeamSyncError>> + Send {
         async move {
-            let parameters: [&(dyn ToSql + Sync); 1] = [&team_id];
-            query_rows(self, TEAM_ADVISORY_LOCK_SQL, &parameters)
+            run(self, TEAM_ADVISORY_LOCK_SQL, &[&team_id])
                 .await
-                .map(|_rows| ())
+                .map(drop)
         }
     }
 
     fn team_groups(
         &self,
         team_id: &str,
-    ) -> impl Future<Output = Result<Vec<TeamGroupRow>, TeamSyncError>> + Send {
-        async move {
-            let parameters: [&(dyn ToSql + Sync); 1] = [&team_id];
-            let rows = query_rows(self, READ_TEAM_SQL, &parameters).await?;
-            rows.iter().map(TeamGroupRow::from_row).collect()
-        }
+    ) -> impl Future<Output = Result<Option<TeamGroupRow>, TeamSyncError>> + Send {
+        async move { team_row(self, team_id).await }
     }
 
     fn affected_groups(
@@ -39,11 +34,7 @@ impl TeamSyncTransaction for deadpool_postgres::Transaction<'_> {
         team_id: &str,
         desired: &[String],
     ) -> impl Future<Output = Result<Vec<AffectedGroupRow>, TeamSyncError>> + Send {
-        async move {
-            let parameters: [&(dyn ToSql + Sync); 2] = [&team_id, &desired];
-            let rows = query_rows(self, AFFECTED_SQL, &parameters).await?;
-            rows.iter().map(AffectedGroupRow::from_row).collect()
-        }
+        async move { affected_rows(self, team_id, desired).await }
     }
 
     fn attach_groups(
@@ -51,12 +42,7 @@ impl TeamSyncTransaction for deadpool_postgres::Transaction<'_> {
         team_id: &str,
         desired: &[String],
     ) -> impl Future<Output = Result<(), TeamSyncError>> + Send {
-        async move {
-            let parameters: [&(dyn ToSql + Sync); 2] = [&team_id, &desired];
-            query_rows(self, ATTACH_SQL, &parameters)
-                .await
-                .map(|_rows| ())
-        }
+        async move { run(self, ATTACH_SQL, &[&team_id, &desired]).await.map(drop) }
     }
 
     fn detach_groups(
@@ -64,16 +50,34 @@ impl TeamSyncTransaction for deadpool_postgres::Transaction<'_> {
         team_id: &str,
         desired: &[String],
     ) -> impl Future<Output = Result<(), TeamSyncError>> + Send {
-        async move {
-            let parameters: [&(dyn ToSql + Sync); 2] = [&team_id, &desired];
-            query_rows(self, DETACH_SQL, &parameters)
-                .await
-                .map(|_rows| ())
-        }
+        async move { run(self, DETACH_SQL, &[&team_id, &desired]).await.map(drop) }
     }
 }
 
-async fn query_rows(
+async fn team_row(
+    transaction: &deadpool_postgres::Transaction<'_>,
+    team_id: &str,
+) -> Result<Option<TeamGroupRow>, TeamSyncError> {
+    let rows = run(transaction, READ_TEAM_SQL, &[&team_id]).await?;
+    let Some(row) = rows.first() else {
+        return Ok(None);
+    };
+    Ok(Some(TeamGroupRow::from_row(row)?))
+}
+
+async fn affected_rows(
+    transaction: &deadpool_postgres::Transaction<'_>,
+    team_id: &str,
+    desired: &[String],
+) -> Result<Vec<AffectedGroupRow>, TeamSyncError> {
+    run(transaction, AFFECTED_SQL, &[&team_id, &desired])
+        .await?
+        .iter()
+        .map(AffectedGroupRow::from_row)
+        .collect()
+}
+
+async fn run(
     transaction: &deadpool_postgres::Transaction<'_>,
     sql: &str,
     parameters: &[&(dyn ToSql + Sync)],

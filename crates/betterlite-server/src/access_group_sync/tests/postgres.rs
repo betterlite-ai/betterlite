@@ -144,22 +144,21 @@ pub(super) async fn seed_teams(pool: &Pool) {
     insert_team(pool, "t2", None).await;
 }
 
-async fn key_ids(pool: &Pool, access_group_id: &str) -> Option<Vec<String>> {
+async fn single_ids(pool: &Pool, statement: &str, access_group_id: &str) -> Option<Vec<String>> {
     let client = pool.get().await.expect("a fixture connection");
     let row = client
-        .query_one(KEY_IDS_SQL, &[&access_group_id])
+        .query_one(statement, &[&access_group_id])
         .await
         .expect("the access group row");
     row.get(0)
 }
 
+async fn key_ids(pool: &Pool, access_group_id: &str) -> Option<Vec<String>> {
+    single_ids(pool, KEY_IDS_SQL, access_group_id).await
+}
+
 async fn team_ids(pool: &Pool, access_group_id: &str) -> Option<Vec<String>> {
-    let client = pool.get().await.expect("a fixture connection");
-    let row = client
-        .query_one(TEAM_IDS_SQL, &[&access_group_id])
-        .await
-        .expect("the access group row");
-    row.get(0)
+    single_ids(pool, TEAM_IDS_SQL, access_group_id).await
 }
 
 fn moved_names(rows: &[MovedGroupRow]) -> Vec<String> {
