@@ -1,0 +1,11 @@
+kind: helper
+name: millisecond-rounding-exclusion
+call:
+  window_seed:
+    steps:
+      - {kind: exclusion_upper_bound, name: floors-microseconds, started_at: "2026-08-01T12:00:00.999999"}
+      - {kind: exclusion_upper_bound, name: keeps-whole-seconds, started_at: "2026-08-01T12:00:00"}
+      - {kind: exclusion_upper_bound, name: floors-sub-millisecond, started_at: "2026-08-01T12:34:56.000400"}
+env: {}
+compare:
+  ignore: []
