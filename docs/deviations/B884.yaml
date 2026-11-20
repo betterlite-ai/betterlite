@@ -1,0 +1,84 @@
+task: B884
+deviations:
+  - what: >-
+      A banned field that names a URL destination (api_base, base_url, aws_sts_endpoint, the observability
+      hosts and the rest of URL_DESTINATION_FIELDS) is refused even when
+      general_settings.allow_client_side_credentials is true or the deployment lists it in
+      configurable_clientside_auth_params.
+    why: >-
+      The architect's security decision for this task: either LiteLLM opt-in is an admin grant of a parameter,
+      and that grant must not let a caller choose the host that receives the provider credential.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L394-L399
+  - what: >-
+      A fallback target that is a URL is refused even when its host is listed in
+      litellm_settings.provider_url_destination_allowed_hosts.
+    why: >-
+      The allowlist governs the destinations betterlite itself dials for provider URLs; it must not admit a
+      caller-supplied fallback model string that would retarget a fallback request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L463-L474
+  - what: >-
+      The fallback denial message does not echo the refused destination value.
+    why: >-
+      The refusal is user-facing, and repeating a caller-supplied URL in an error body hands an attacker a
+      reflection point. The parameter name still says what was refused.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L463-L474
+  - what: >-
+      A stringified metadata or litellm_params value is decoded only up to 1048576 bytes and 64 nested
+      containers; beyond either bound the request fails with an auth_error 401 naming metadata.
+    why: >-
+      LiteLLM parses any size and depth at auth time. The bound keeps an unauthenticated-shaped body from
+      forcing unbounded JSON work before the caller is validated; the limits are MAX_METADATA_BYTES and
+      MAX_METADATA_DEPTH, proved by metadata_byte_limit and metadata_depth_limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L542-L559
+  - what: >-
+      A deployment matcher entry that is missing api_base, carries a non-text matcher or value, or holds an
+      invalid regex is refused with betterlite's Rejected Request auth_error message instead of Python's
+      KeyError, TypeError or re.error text.
+    why: >-
+      Both sides fail closed with the same 401 authentication_error type, param None and code 401; betterlite
+      names the refused parameter rather than exposing interpreter exception text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L168-L189
+  - what: >-
+      The request body safety stage runs after the master key stage authenticates the caller, where LiteLLM's
+      pre_db_read_auth_checks runs before key validation.
+    why: >-
+      betterlite's auth chain is an ordered stage list and only authenticates callers reach the body scan, so
+      an unauthenticated request is refused by the master key stage before its body is buffered.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1512-L1518
+  - what: >-
+      A body the auth-time reader cannot parse (malformed JSON, malformed multipart, an unreadable form) is
+      not scanned, and the route's own body decoder returns its 400.
+    why: >-
+      LiteLLM raises the 400 from the auth pre-read after seeding identity. The status matches; the message
+      comes from betterlite's route decoder instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L200-L232
+  - what: >-
+      A form body whose metadata field is a string that is not valid JSON is left for the route's own
+      validation, where LiteLLM's form pre-read raises JSONDecodeError out of auth.
+    why: >-
+      An unparseable caller value is a client error; a 500 from an uncaught interpreter exception is the wrong
+      reply, so betterlite lets the request-body validation report it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L220-L221
+  - what: >-
+      A bracket-form metadata field sent as an upload part is still scanned by name, where LiteLLM's
+      extract_nested_form_metadata drops every key whose value is an UploadFile before the banned check runs.
+    why: >-
+      The extractor's top-level names are what the policy reads, and a multipart part that names a banned
+      field is a request to set that field however it was encoded.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L578-L579
+  - what: >-
+      A request body whose model value is not a string is scanned with the empty group name, so no deployment
+      grant can admit its fields.
+    why: >-
+      LiteLLM reaches model.split and raises AttributeError, which surfaces as an auth_error 401. betterlite
+      answers the same 401 from the no-group denial path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L192-L220
+kept_bugs:
+  - what: >-
+      A configurable_clientside_auth_params matcher entry is applied with Python re.match semantics, so an
+      unanchored pattern also admits every value that starts with it, and the exact string comparison after
+      the regex keeps that shape.
+    why: >-
+      Admins write these patterns and deployed configs rely on prefix matching; changing it to a full match
+      would refuse requests those configs admit today.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L159-L165
