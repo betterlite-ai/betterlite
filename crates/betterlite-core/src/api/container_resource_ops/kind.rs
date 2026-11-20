@@ -9,7 +9,7 @@ use super::mock::{DELETE_TYPE, RETRIEVE_TYPE, mock_reply};
 pub(crate) const RETRIEVE_CALL_TYPE: &str = "retrieve_container";
 pub(crate) const DELETE_CALL_TYPE: &str = "delete_container";
 
-// what retrieve and delete do differently: the record, the call type, the mock and the handler entry point
+// what retrieve and delete do differently: the record, the call type, the mock decode and the reply id
 pub(crate) trait Kind {
     type Reply;
     const CALL_TYPE: &'static str;
