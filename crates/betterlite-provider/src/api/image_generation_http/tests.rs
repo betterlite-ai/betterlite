@@ -221,6 +221,9 @@ impl BaseImageGenerationConfig for Fixture {
         match self.response {
             Step::Fail => Err(FixtureError::Refused),
             Step::Work => {
+                assert_eq!(reply.model_response.created, 0);
+                assert_eq!(reply.model_response.data, Some(Vec::new()));
+                assert_eq!(reply.model_response.usage, Some(ImageUsage::default()));
                 let parsed: ImageResponse = serde_json::from_slice(&reply.raw_response.body)
                     .map_err(FixtureError::Reply)?;
                 {
@@ -662,16 +665,16 @@ fn prepare_error(
     fixture: &Fixture,
     params: &ImageParams,
     options: &ImageParams,
+    recorder: &mut Recorder,
 ) -> Result<(), ImageGenerationError> {
     let call = generation(options, params);
-    let mut recorder = Recorder::default();
     let source = PoolSource::new();
     let deps = ImageGenerationDeps {
         config: fixture,
         source: &source,
         supplied: None,
     };
-    match prepare(&deps, ClientKind::Sync, &call, &mut recorder) {
+    match prepare(&deps, ClientKind::Sync, &call, recorder) {
         Ok(_prepared) => Ok(()),
         Err(error) => Err(error),
     }
@@ -679,7 +682,9 @@ fn prepare_error(
 
 fn field_error(fixture: &Fixture, params: &ImageParams) -> String {
     let options = caller_options(None);
-    match prepare_error(fixture, params, &options).expect_err("the field type failure") {
+    match prepare_error(fixture, params, &options, &mut Recorder::default())
+        .expect_err("the field type failure")
+    {
         ImageGenerationError::FieldType { field, .. } => field.to_owned(),
         other => panic!("expected a field type error, got {other}"),
     }
@@ -688,8 +693,13 @@ fn field_error(fixture: &Fixture, params: &ImageParams) -> String {
 fn assert_field_failures() {
     let fixture = Fixture::working(ImageHeaders::new());
     let good = litellm_params("http://127.0.0.1:9/v1", None, None);
-    prepare_error(&fixture, &good, &caller_options(None))
-        .expect("the well-formed request to prepare");
+    prepare_error(
+        &fixture,
+        &good,
+        &caller_options(None),
+        &mut Recorder::default(),
+    )
+    .expect("the well-formed request to prepare");
     let mut wrong_ssl = good.clone();
     wrong_ssl.insert(String::from("ssl_verify"), Json::Text(String::from("yes")));
     assert_eq!(
@@ -707,14 +717,14 @@ fn assert_field_failures() {
     );
     let mut text_options = caller_options(None);
     text_options.insert(String::from("extra_headers"), Json::Text(String::from("x")));
-    let error =
-        prepare_error(&fixture, &good, &text_options).expect_err("the headers type failure");
+    let error = prepare_error(&fixture, &good, &text_options, &mut Recorder::default())
+        .expect_err("the headers type failure");
     assert!(matches!(error, ImageGenerationError::HeadersType));
     let mut value_options = caller_options(None);
     let bad = fields(&[("x", Json::Bool(true))]);
     value_options.insert(String::from("extra_headers"), Json::Object(bad));
-    let error =
-        prepare_error(&fixture, &good, &value_options).expect_err("the header type failure");
+    let error = prepare_error(&fixture, &good, &value_options, &mut Recorder::default())
+        .expect_err("the header type failure");
     match error {
         ImageGenerationError::HeaderType { name } => assert_eq!(name, "x"),
         other => panic!("expected a header value error, got {other}"),
@@ -725,20 +735,35 @@ fn assert_assembly_failures() {
     let good = litellm_params("http://127.0.0.1:9/v1", None, None);
     let mut failing = Fixture::working(ImageHeaders::new());
     failing.request = Step::Fail;
-    let error = prepare_error(&failing, &good, &caller_options(None))
-        .expect_err("the transform request failure");
+    let error = prepare_error(
+        &failing,
+        &good,
+        &caller_options(None),
+        &mut Recorder::default(),
+    )
+    .expect_err("the transform request failure");
     assert!(matches!(error, ImageGenerationError::Config(_)));
     let mut broken = Fixture::working(ImageHeaders::new());
     broken.endpoint = Endpoint::Broken;
-    let error = prepare_error(&broken, &good, &caller_options(None)).expect_err("the URL failure");
+    let mut recorder = Recorder::default();
+    let error = prepare_error(&broken, &good, &caller_options(None), &mut recorder)
+        .expect_err("the URL failure");
     assert!(matches!(error, ImageGenerationError::RequestUrl { .. }));
+    assert!(recorder.api_key.is_none());
     let bad_name = Fixture::working(header_map(&[("bad name", "value")]));
-    let error = prepare_error(&bad_name, &good, &caller_options(None))
+    let mut recorder = Recorder::default();
+    let error = prepare_error(&bad_name, &good, &caller_options(None), &mut recorder)
         .expect_err("the header name failure");
     assert!(matches!(error, ImageGenerationError::HeaderName { .. }));
+    assert_eq!(recorder.api_key.as_deref(), Some(""));
     let bad_value = Fixture::working(header_map(&[("x", "line\nbreak")]));
-    let error = prepare_error(&bad_value, &good, &caller_options(None))
-        .expect_err("the header value failure");
+    let error = prepare_error(
+        &bad_value,
+        &good,
+        &caller_options(None),
+        &mut Recorder::default(),
+    )
+    .expect_err("the header value failure");
     assert!(matches!(error, ImageGenerationError::HeaderValue { .. }));
     let fixture = Fixture::working(ImageHeaders::new());
     let source = FailingSource;
