@@ -90,9 +90,9 @@ JSON: Final[TypeAdapter[Json]] = TypeAdapter(Json)
 
 def detection_tag(value: Json) -> Json | None:
     match value:
-        case {"type": "pattern", "pattern_name": name}:
+        case {"type": "pattern", "pattern_name": str() as name}:
             return {"type": "pattern", "pattern_name": name}
-        case {"type": kind}:
+        case {"type": str() as kind}:
             return {"type": kind}
         case None | bool() | int() | float() | str() | list() | dict():
             return None
