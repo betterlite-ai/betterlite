@@ -11,15 +11,16 @@ deviations:
       arithmetics agree on.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/budget_window_spend_writer.py#L221-L230
   - what: >-
-      An offset-aware window_start is converted to UTC before it reaches the seed query or the
-      upsert. LiteLLM's seed query keeps the wall-clock digits of such a stamp and labels them
-      UTC (replace(tzinfo=timezone.utc)), while its upsert binds the same stamp as a timestamptz
-      and converts it, so its two windows can sit an offset apart.
+      An offset-aware window_start or started_at stamp is converted to UTC before it reaches the
+      seed query, the upsert or the exclusion cutoff. LiteLLM keeps the wall-clock digits of such
+      a stamp and labels them UTC (replace(tzinfo=timezone.utc)) for window_start and started_at,
+      while its upsert binds window_start as a timestamptz and converts it, so its seed query and
+      the row it writes can sit an offset apart.
     why: >-
       The window queue normalizes every stamp to naive UTC when it builds the transaction, so no
-      working setup reaches an offset-aware window_start; betterlite gives both queries the same
-      instant when one does.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/budget_window_spend_writer.py#L213
+      working setup reaches an offset-aware window_start or started_at; betterlite gives every
+      query the same instant when one does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/budget_window_spend_writer.py#L213-L237
 kept_bugs:
   - what: >-
       A failed primary or end-user spend read returns None instead of raising, so the caller
