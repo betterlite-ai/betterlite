@@ -652,7 +652,7 @@ type SelectionCase = (
 
 const SELECTION_CASES: [SelectionCase; 3] = [
     (Some(ClientKind::Sync), ClientKind::Sync, None, 0, 1, 0),
-    (None, ClientKind::Sync, Some(false), 1, 0, 1),
+    (None, ClientKind::Sync, Some(false), 1, 1, 1),
     (
         Some(ClientKind::Sync),
         ClientKind::Asynchronous,
