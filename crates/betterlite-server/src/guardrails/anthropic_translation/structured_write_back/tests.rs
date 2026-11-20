@@ -157,6 +157,12 @@ fn system_conversion_judges_cache_control_by_truthiness() {
     assert_eq!(
         anthropic_row(&message),
         Some(json!({"role": "system", "content": [
+            {"type": "text", "text": "null"},
+            {"type": "text", "text": "false"},
+            {"type": "text", "text": "empty-string"},
+            {"type": "text", "text": "empty-list"},
+            {"type": "text", "text": "empty-object"},
+            {"type": "text", "text": "zero"},
             {"type": "text", "text": "one", "cache_control": 1_i64},
             {"type": "text", "text": "number", "cache_control": 2.5_f64},
             {"type": "text", "text": "text", "cache_control": "x"},
