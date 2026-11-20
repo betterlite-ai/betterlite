@@ -249,8 +249,10 @@ fn the_identity_descriptors_need_a_non_empty_id_and_a_limit() {
     for wire in [
         r#"{"user_rpm_limit": 4}"#,
         r#"{"user_id": "", "user_rpm_limit": 4}"#,
+        r#"{"user_id": "", "team_member_rpm_limit": 5}"#,
         r#"{"user_id": "u1"}"#,
         r#"{"team_rpm_limit": 4}"#,
+        r#"{"team_id": "", "team_rpm_limit": 4}"#,
         r#"{"team_id": "team-1"}"#,
         r#"{"end_user_id": "", "end_user_rpm_limit": 4}"#,
         r#"{"end_user_rpm_limit": 4}"#,
