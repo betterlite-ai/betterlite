@@ -592,6 +592,28 @@ async fn upload_empty_bytes_still_uploads() {
     assert_eq!(harness.calls.snapshot().len(), 2);
 }
 
+#[tokio::test]
+async fn upload_ignores_chunks_and_embeddings() {
+    let harness = harness(r#"{"vector_store": {"vector_store_id": "vs_1"}}"#);
+    let chunks: &[String] = &["one".to_owned()];
+    let embeddings: &[Vec<f64>] = &[vec![0.5_f64]];
+    let (store_id, file_id) = harness
+        .ingestion
+        .store(StoreRequest {
+            file_content: Some(b"hello"),
+            filename: Some("a.txt"),
+            content_type: None,
+            chunks,
+            embeddings: Some(embeddings),
+            existing_file_id: None,
+        })
+        .await
+        .expect("the store");
+    assert_eq!(store_id.as_deref(), Some("vs_1"));
+    assert_eq!(file_id.as_deref(), Some("file_new"));
+    assert_eq!(harness.calls.snapshot().len(), 2);
+}
+
 #[rstest]
 #[case::without_content(None, Some("a.txt"))]
 #[case::without_filename(Some(&b"hello"[..]), None)]
