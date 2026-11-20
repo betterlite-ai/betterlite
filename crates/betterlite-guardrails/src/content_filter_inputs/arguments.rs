@@ -12,7 +12,7 @@ use super::error::ArgumentFilterError;
 
 pub const TOOL_CALL_LABEL: &str = "tool call";
 
-// serde_json parses 128 containers, the parse wrapper takes one, so deeper arguments never reach the tree filter
+// serde_json parses 127 containers and the parse wrapper takes one, so arguments this deep never reach the tree filter
 const PARSE_DEPTH_LIMIT: i64 = 127;
 
 #[derive(Debug)]
