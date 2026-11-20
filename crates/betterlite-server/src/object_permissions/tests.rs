@@ -13,6 +13,7 @@ use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_logging::private_json::error::PrivateJsonError;
 use betterlite_mcp::server_record::MCPServer;
 use rstest::rstest;
+use tokio_postgres::error::DbError;
 use uuid::Uuid;
 
 use self::fixtures::database::TestDatabase;
@@ -436,10 +437,9 @@ async fn upsert_before_parent_failure() {
         panic!("the permission upsert returns its id");
     };
     let failure = database.insert_parent("bad", &id).await.unwrap_err();
-    assert!(
-        failure
-            .to_string()
-            .contains("B816PermissionParents_checked")
+    assert_eq!(
+        failure.as_db_error().and_then(DbError::constraint),
+        Some("B816PermissionParents_checked")
     );
     let row = database.permission_row(&id).await.unwrap();
     assert_eq!(row.get("mcp_servers"), Some(&json(r#"["srv-a"]"#)));

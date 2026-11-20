@@ -44,7 +44,7 @@ CREATE TABLE "B816PermissionParents" (
 const SELECT_PERMISSION_SQL: &str = r#"SELECT row_to_json(t)::text FROM "LiteLLM_ObjectPermissionTable" AS t WHERE t."object_permission_id" = $1"#;
 const COUNT_PERMISSIONS_SQL: &str =
     r#"SELECT count(*)::bigint FROM "LiteLLM_ObjectPermissionTable""#;
-const SEED_PERMISSION_SQL: &str = r#"INSERT INTO "LiteLLM_ObjectPermissionTable" (object_permission_id, mcp_servers, mcp_tool_permissions) VALUES ($1, ARRAY(SELECT jsonb_array_elements_text($2::jsonb)), to_jsonb($3::text))"#;
+const SEED_PERMISSION_SQL: &str = r#"INSERT INTO "LiteLLM_ObjectPermissionTable" (object_permission_id, mcp_servers, mcp_tool_permissions) VALUES ($1, ARRAY(SELECT jsonb_array_elements_text($2::text::jsonb)), to_jsonb($3::text))"#;
 const SEED_SERVER_SQL: &str =
     r#"INSERT INTO "LiteLLM_MCPServerTable" (server_id, server_name, alias) VALUES ($1, $2, $3)"#;
 const INSERT_PARENT_SQL: &str =
