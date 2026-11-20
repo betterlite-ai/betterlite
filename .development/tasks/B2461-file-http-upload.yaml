@@ -21,6 +21,7 @@ description: >-
   130 cases, 95 adapters, 70 fuzz/replay and 30 wiring lines, totaling 790.
 scope:
   paths:
+  - "crates/betterlite-vertex/**"
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/file_http_upload.rs
   - crates/betterlite-core/src/api/file_http_upload/**
