@@ -83,7 +83,7 @@ pub(crate) struct ScriptedEmbedder {
 }
 
 impl ScriptedEmbedder {
-    pub(crate) fn new(recorder: Recorder, answer: Vec<Vec<f64>>, failing: bool) -> Self {
+    pub(crate) const fn new(recorder: Recorder, answer: Vec<Vec<f64>>, failing: bool) -> Self {
         Self {
             recorder,
             answer,
