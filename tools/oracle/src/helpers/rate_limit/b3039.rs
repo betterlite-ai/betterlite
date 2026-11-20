@@ -1,6 +1,9 @@
 use serde::Deserialize;
+use serde_json::json;
 
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_rate_limit::identity_descriptors::agent_resolution::resolved_agent_id;
+use betterlite_rate_limit::identity_descriptors::session_resolution::session_id_from_data;
 
 mod answers;
 mod fakes;
@@ -33,8 +36,14 @@ impl Helper for Op {
             Input::McpPerKey(case) => answers::mcp_per_key(case),
             Input::McpPerTeam(case) => answers::mcp_per_team(case),
             Input::AgentDescriptors(case) => answers::agent_descriptors(case),
-            Input::AgentResolution(case) => answers::agent_resolution(case),
-            Input::SessionResolution(case) => answers::session_resolution(case),
+            Input::AgentResolution(case) => {
+                let agent_id = resolved_agent_id(case.key_agent_id.as_deref(), &case.data);
+                Ok(json!({"agent_id": agent_id}))
+            }
+            Input::SessionResolution(case) => {
+                let session_id = session_id_from_data(&case.data);
+                Ok(json!({"session_id": session_id}))
+            }
         }
     }
 }

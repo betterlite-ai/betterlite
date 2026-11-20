@@ -1,5 +1,6 @@
 from typing import Literal, NotRequired, TypeAlias, TypedDict
 
+from litellm.proxy.hooks.parallel_request_limiter_v3 import RateLimitDescriptor
 from pydantic import JsonValue, TypeAdapter
 
 
@@ -125,6 +126,24 @@ class DescriptorView(TypedDict):
     key: str
     value: str
     rate_limit: RateLimitView | None
+
+
+def descriptor_view(descriptor: RateLimitDescriptor) -> DescriptorView:
+    rate_limit = descriptor["rate_limit"]
+    if rate_limit is None:
+        return DescriptorView(
+            key=descriptor["key"], value=descriptor["value"], rate_limit=None
+        )
+    return DescriptorView(
+        key=descriptor["key"],
+        value=descriptor["value"],
+        rate_limit=RateLimitView(
+            requests_per_unit=rate_limit.get("requests_per_unit"),
+            tokens_per_unit=rate_limit.get("tokens_per_unit"),
+            max_parallel_requests=rate_limit.get("max_parallel_requests"),
+            window_size=rate_limit.get("window_size"),
+        ),
+    )
 
 
 class DescriptorsAnswer(TypedDict):

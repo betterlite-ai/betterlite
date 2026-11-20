@@ -1,5 +1,5 @@
-from collections.abc import Awaitable, Callable, Mapping, Sequence
-from typing import Protocol
+from collections.abc import Mapping, Sequence
+from typing import Protocol, runtime_checkable
 
 from litellm.caching.dual_cache import DualCache
 from litellm.proxy._types import UserAPIKeyAuth
@@ -7,16 +7,13 @@ from litellm.proxy.hooks import PROXY_HOOKS
 from litellm.proxy.hooks.parallel_request_limiter_v3 import (
     RateLimitDescriptor,
     TagRateLimit,
+    TagRateLimitResolver,
 )
 from litellm.proxy.utils import InternalUsageCache
 from litellm.types.agents import AgentResponse
 from pydantic import ConfigDict, JsonValue, TypeAdapter
 
-from .types import DescriptorView, RateLimitView
-
-
-class TagResolver(Protocol):
-    def __call__(self, tag_names: Sequence[str], /) -> Awaitable[Mapping[str, TagRateLimit]]: ...
+from .types import DescriptorView, descriptor_view
 
 
 class Operations(Protocol):
@@ -113,27 +110,18 @@ class MapResolver:
         return self.limits
 
 
-def descriptor_view(descriptor: RateLimitDescriptor) -> DescriptorView:
-    rate_limit = descriptor["rate_limit"]
-    if rate_limit is None:
-        return DescriptorView(key=descriptor["key"], value=descriptor["value"], rate_limit=None)
-    return DescriptorView(
-        key=descriptor["key"],
-        value=descriptor["value"],
-        rate_limit=RateLimitView(
-            requests_per_unit=rate_limit.get("requests_per_unit"),
-            tokens_per_unit=rate_limit.get("tokens_per_unit"),
-            max_parallel_requests=rate_limit.get("max_parallel_requests"),
-            window_size=rate_limit.get("window_size"),
-        ),
-    )
+@runtime_checkable
+class LimiterConstructor(Protocol):
+    def __call__(
+        self,
+        internal_usage_cache: InternalUsageCache,
+        *,
+        tag_rate_limit_resolver: TagRateLimitResolver,
+    ) -> Operations: ...
 
 
-CONSTRUCTOR: Callable[..., Operations] = TypeAdapter(
-    Callable[..., Operations], config=ConfigDict(arbitrary_types_allowed=True)
-).validate_python(PROXY_HOOKS["parallel_request_limiter"])
-
-
-def make_limiter(resolver: TagResolver) -> Operations:
-    cache = InternalUsageCache(DualCache())
-    return CONSTRUCTOR(cache, tag_rate_limit_resolver=resolver)
+def make_limiter(resolver: TagRateLimitResolver) -> Operations:
+    constructor = TypeAdapter[LimiterConstructor](
+        LimiterConstructor, config=ConfigDict(arbitrary_types_allowed=True)
+    ).validate_python(PROXY_HOOKS["parallel_request_limiter"])
+    return constructor(InternalUsageCache(DualCache()), tag_rate_limit_resolver=resolver)

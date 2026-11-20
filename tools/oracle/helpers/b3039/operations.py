@@ -184,7 +184,8 @@ def agent_answer(call: AgentCall) -> DescriptorsAnswer:
 
 def agent_resolution_answer(call: AgentResolutionCall) -> AgentAnswer:
     limiter = make_limiter(MapResolver({}))
-    auth = AUTH.validate_python({"agent_id": call["key_agent_id"]})
+    payload: dict[str, str | None] = {"agent_id": call["key_agent_id"]}
+    auth = AUTH.validate_python(payload)
     return AgentAnswer(agent_id=Operations.agent_resolution(limiter, auth, call["data"]))
 
 

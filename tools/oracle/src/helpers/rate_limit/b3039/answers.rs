@@ -8,15 +8,13 @@ use betterlite_core::api::request_destination::RequestData;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::managed_resource_rows::tag::TagTable;
 use betterlite_rate_limit::identity_descriptors::agent_descriptor::AgentDescriptorBuilder;
-use betterlite_rate_limit::identity_descriptors::agent_resolution::resolved_agent_id;
 use betterlite_rate_limit::identity_descriptors::mcp_per_key::add_mcp_per_key_descriptor;
 use betterlite_rate_limit::identity_descriptors::mcp_per_team::add_mcp_per_team_descriptor;
-use betterlite_rate_limit::identity_descriptors::session_resolution::session_id_from_data;
 use betterlite_rate_limit::identity_descriptors::tag_create::create_tag_descriptors;
 use betterlite_rate_limit::identity_descriptors::tag_descriptor::tag_rate_limit_descriptor;
 use betterlite_rate_limit::identity_descriptors::tag_per_key::add_tag_per_key_descriptor;
 use betterlite_rate_limit::identity_descriptors::tag_resolution::resolve_tag_rate_limits;
-use betterlite_rate_limit::limiter_records::TagRateLimit;
+use betterlite_rate_limit::limiter_records::{RateLimitDescriptor, TagRateLimit};
 use serde::Deserialize;
 use serde_json::json;
 use tokio::runtime::Builder;
@@ -121,15 +119,15 @@ pub(crate) struct AgentCase {
 #[derive(Debug, Deserialize)]
 pub(crate) struct AgentResolutionCase {
     #[serde(default)]
-    key_agent_id: Option<String>,
+    pub(crate) key_agent_id: Option<String>,
     #[serde(default)]
-    data: RequestData,
+    pub(crate) data: RequestData,
 }
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct SessionCase {
     #[serde(default)]
-    data: RequestData,
+    pub(crate) data: RequestData,
 }
 
 fn block_on<Run: Future>(future: Run) -> Result<Run::Output, Box<HelperError>> {
@@ -225,29 +223,29 @@ pub(super) fn tag_per_key(case: &TagPerKeyCase) -> HelperResult {
     Ok(json!({"descriptors": descriptors}))
 }
 
-pub(super) fn mcp_per_key(case: &McpPerKeyCase) -> HelperResult {
-    let auth = UserAPIKeyAuth::construct(AuthInput::Dict(case.auth.clone())).or_value_error()?;
+fn mcp_answer<Add>(fields: &BTreeMap<String, JsonData>, add: Add) -> HelperResult
+where
+    Add: FnOnce(&UserAPIKeyAuth, &mut Vec<RateLimitDescriptor>),
+{
+    let auth = UserAPIKeyAuth::construct(AuthInput::Dict(fields.clone())).or_value_error()?;
     let mut descriptors = Vec::new();
-    add_mcp_per_key_descriptor(
-        &auth,
-        case.mcp_server_name.as_deref(),
-        case.window_size,
-        &mut descriptors,
-    );
+    add(&auth, &mut descriptors);
     Ok(json!({"descriptors": descriptors}))
 }
 
+pub(super) fn mcp_per_key(case: &McpPerKeyCase) -> HelperResult {
+    mcp_answer(&case.auth, |auth, descriptors| {
+        let server = case.mcp_server_name.as_deref();
+        add_mcp_per_key_descriptor(auth, server, case.window_size, descriptors);
+    })
+}
+
 pub(super) fn mcp_per_team(case: &McpPerTeamCase) -> HelperResult {
-    let auth = UserAPIKeyAuth::construct(AuthInput::Dict(case.auth.clone())).or_value_error()?;
-    let mut descriptors = Vec::new();
-    add_mcp_per_team_descriptor(
-        &auth,
-        case.mcp_server_name.as_deref(),
-        case.source_team_rpm_limits.as_ref(),
-        case.window_size,
-        &mut descriptors,
-    );
-    Ok(json!({"descriptors": descriptors}))
+    mcp_answer(&case.auth, |auth, descriptors| {
+        let server = case.mcp_server_name.as_deref();
+        let teams = case.source_team_rpm_limits.as_ref();
+        add_mcp_per_team_descriptor(auth, server, teams, case.window_size, descriptors);
+    })
 }
 
 pub(super) fn agent_descriptors(case: &AgentCase) -> HelperResult {
@@ -263,14 +261,4 @@ pub(super) fn agent_descriptors(case: &AgentCase) -> HelperResult {
     let descriptors =
         builder.create_agent_descriptors(&case.agent_id, &case.data, case.policy.as_ref());
     Ok(json!({"descriptors": descriptors}))
-}
-
-pub(super) fn agent_resolution(case: &AgentResolutionCase) -> HelperResult {
-    let agent_id = resolved_agent_id(case.key_agent_id.as_deref(), &case.data);
-    Ok(json!({"agent_id": agent_id}))
-}
-
-pub(super) fn session_resolution(case: &SessionCase) -> HelperResult {
-    let session_id = session_id_from_data(&case.data);
-    Ok(json!({"session_id": session_id}))
 }
