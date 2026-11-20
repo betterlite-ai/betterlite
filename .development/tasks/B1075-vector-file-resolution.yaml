@@ -71,7 +71,7 @@ dod:
     invalid parsed unified payload. Legacy pre-resolved store wins lookup; should_lookup_registry=false
     disables another lookup. Present top-level provider and credential copy even null, then non-null
     litellm_params overrides them and any request fields. Missing/null params contributes {}. No access
-    check occurs in this helper; routes must have called B1061 first.
+    check occurs in this helper; routes must have called B10014's store access check first.
   proof: [resolution-tests, oracle, helper-python]
 - text: >-
     provider_and_index_permissions picks truthy data.custom_llm_provider, then custom-llm-provider header,

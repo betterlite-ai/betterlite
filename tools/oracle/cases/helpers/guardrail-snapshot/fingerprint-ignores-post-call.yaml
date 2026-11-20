@@ -1,0 +1,17 @@
+kind: helper
+name: guardrail-snapshot-fingerprint-ignores-post-call
+call:
+  b9999:
+    function: fingerprints_match
+    first:
+      standard_logging_guardrail_information:
+        - guardrail_mode: pre_call
+          guardrail_name: pii
+    second:
+      standard_logging_guardrail_information:
+        - guardrail_mode: pre_call
+          guardrail_name: pii
+        - guardrail_mode: post_call
+          guardrail_name: topic
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,4 @@
+litellm_settings:
+  store_audit_logs: os.environ/LITELLM_STORE_AUDIT_LOGS
+  audit_log_callbacks:
+    - otel

@@ -1,0 +1,104 @@
+kind: helper
+name: messages-response-events-message-start-and-item-opening
+call:
+  messages_response_events:
+    message_id: msg_supplied
+    model: model_a
+    redaction: enabled
+    steps:
+      - {function: process_event, event: {shape: mapping, fields: {type: response.created}}}
+      - {function: process_event, event: {shape: mapping, fields: {type: response.created}}}
+      - {function: process_event, event: {shape: mapping, fields: {}}}
+      - {function: process_event, event: {shape: mapping, fields: {type: ""}}}
+      - {function: process_event, event: {shape: mapping, fields: {type: response.output_text.done}}}
+      - {function: process_event, event: {shape: mapping, fields: {type: response.output_item.added}}}
+      - {function: process_event, event: {shape: mapping, fields: {item: 5}}}
+calls:
+  - messages_response_events:
+      message_id: msg_supplied
+      model: model_a
+      redaction: enabled
+      steps:
+        - function: process_event
+          event:
+            shape: mapping
+            fields:
+              type: response.output_item.added
+              item: {type: message, id: item_a}
+        - function: process_event
+          event:
+            shape: mapping
+            fields:
+              type: response.output_item.added
+              item: {type: function_call, id: item_tool, call_id: call_a, name: lookup}
+        - function: process_event
+          event:
+            shape: mapping
+            fields:
+              type: response.output_item.added
+              item: {type: function_call, id: item_tool2}
+        - function: process_event
+          event:
+            shape: mapping
+            fields:
+              type: response.output_item.added
+              item: {type: message, id: item_a}
+        - function: process_event
+          event:
+            shape: mapping
+            fields:
+              type: response.output_item.added
+              item: {type: message, id: ""}
+        - function: process_event
+          event:
+            shape: mapping
+            fields:
+              type: response.output_item.added
+              item: {type: reasoning, id: reason_a}
+        - function: process_event
+          event:
+            shape: mapping
+            fields:
+              type: response.output_item.added
+              item: {type: web_search_call, id: search_a}
+        - function: process_event
+          event:
+            shape: mapping
+            fields:
+              type: response.output_item.added
+              item: 0
+        - function: process_event
+          event:
+            shape: mapping
+            fields:
+              type: response.output_item.added
+              item: {}
+  - messages_response_events:
+      message_id: msg_attributes
+      model: model_b
+      redaction: enabled
+      steps:
+        - function: process_event
+          event:
+            shape: attributes
+            attributes:
+              type: response.output_item.added
+              item: {type: message, id: item_attr}
+        - function: process_event
+          event:
+            shape: attributes
+            attributes:
+              type: response.output_item.added
+              item: {type: function_call, id: tool_attr, call_id: call_attr, name: attr_name}
+        - function: process_event
+          event:
+            shape: attributes
+            attributes:
+              type: response.output_item.added
+              item: {type: reasoning, id: ignored}
+        - function: process_event
+          event:
+            shape: attributes
+            attributes: {type: response.output_item.added}
+env: {}
+compare: {ignore: []}

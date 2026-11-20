@@ -30,10 +30,14 @@ description: >-
   across container restarts. The tracing-config.yaml mounts read-only into /app/tracing-config.yaml
   in the proxy container.
 
+
+  Stack tests. B151's compose_build_wiring and config_loads_in_stack cover root_stack, hardened_stack and published_package only. Add tracing_stack (docker-compose.tracing.yml) to both when this task writes the file, with B151's deviation that the tracing stack starts only when the host exports OPENAI_API_KEY, since an empty value counts as unset.
 scope:
   paths:
     - packaging/docker/docker-compose.tracing.yml
     - packaging/docker/tracing-config.yaml
+    - crates/betterlite/tests/shipped_stacks.rs
+    - crates/betterlite/tests/shipped_stacks/**
   lint_tables: false
 
 references:

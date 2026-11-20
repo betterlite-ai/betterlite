@@ -1,0 +1,67 @@
+id: B10009
+title: Public discovery config section
+description: >-
+  Build the public_discovery section in betterlite-config, in crates/betterlite-config/src/sections/public_discovery.rs with its tests in sections/public_discovery/tests.rs. The stub file, its `pub mod` line and its entry in the sections! list are on main already. Three tasks read it: B8681 takes the API docs title, B9997 seeds the MCP registry's public list and strict flag, and B077 serves the title and the useful links on the public model hub. B9300's blog feed takes its URL and local mode from it. This task builds only the section; no route or handler reads it yet.
+
+
+  Settings, with LiteLLM's defaults. blog_posts_url is a string read from litellm_settings.blog_posts_url; when the key is absent it is the LITELLM_BLOG_POSTS_URL environment variable, and when that is unset too it is https://docs.litellm.ai/blog/rss.xml. The configured key wins over the variable, since LiteLLM reads the variable at import and load_config sets the litellm attribute afterwards. Resolve os.environ/ references in the key through the existing loader. local_blog_posts is a bool from LITELLM_LOCAL_BLOG_POSTS, default false, read through the config crate's shared env bool parser the neighbor sections use (docs/compatibility.md); do not add a second parser. public_mcp_servers is an optional string list from litellm_settings.public_mcp_servers, None when the key is absent, and an explicit empty list stays Some(empty). public_mcp_hub_strict_whitelist is a bool from the same block, default true. public_model_groups_links is an ordered map from display name to link, read from litellm_settings.public_model_groups_links, default empty. docs_title is a string from the DOCS_TITLE environment variable, default "LiteLLM API". Expose all six through config.sections.public_discovery.
+
+
+  Links. A link value is either the legacy URL string or an object. Model it as a public typed union, for example `UsefulLink::Url(String)` and `UsefulLink::Entry(UsefulLinkEntry)`, where the entry keeps an optional url, an optional index and every other member as JSON values, unchanged and in order. Do not coerce an index or a url of another JSON type, and do not use a map that only holds text values. Links are display data; nothing here fetches or validates a URL. B077 reads this type when it builds useful_links.
+
+
+  DOCS_TITLE. LiteLLM reads it only for a premium user and otherwise answers the fixed "LiteLLM API". betterlite has no paid tier, so the variable applies without a license check; that is the deviation below. DOCS_DESCRIPTION is not read here.
+
+
+  Tests. sections::public_discovery::tests loads complete YAML through B002's Loader::load with an injected environment: loads_public_lists (both MCP keys and the link map set), defaults_and_url_precedence (every default with nothing set, the variable alone, the key alone, and the key beating the variable for blog_posts_url), useful_link_variants (a plain string, an object with url and index, and an object with an extra member and a non-integer index, kept as written), docs_title_without_license (DOCS_TITLE set and unset, no license key in the config) and a local mode case for LITELLM_LOCAL_BLOG_POSTS set to true, false and unset. Add config_yaml corpus seeds named public-discovery-* for B002's existing decoder, including a malformed link value and an oversized list.
+scope:
+  paths:
+    - crates/betterlite-config/src/sections/public_discovery.rs
+    - crates/betterlite-config/src/sections/public_discovery/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/public-discovery-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L430-L433
+    why: blog_posts_url and its LITELLM_BLOG_POSTS_URL default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L506-L517
+    why: public_mcp_servers, public_mcp_hub_strict_whitelist and public_model_groups_links with both link formats; the declarations between them belong to other sections.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6620-L6628
+    why: load_config sets every litellm_settings key on litellm after import, so a configured key overrides the environment default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1043-L1044
+    why: DOCS_TITLE, its "LiteLLM API" default and the premium_user branch the deviation drops.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_blog_posts.py#L131
+    why: How LiteLLM reads LITELLM_LOCAL_BLOG_POSTS; B9300 acts on the flag.
+dod:
+  - text: Loader tests prove every public-discovery key and default, None against an empty MCP list, both useful-link formats with extra members kept, the configured blog URL beating LITELLM_BLOG_POSTS_URL, the local mode flag and DOCS_TITLE without a license.
+    proof: [config-tests]
+  - text: The existing config YAML decoder replays the new public-discovery seeds, including malformed and oversized input.
+    proof: [config-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: config-tests
+      why: A public discovery key, its default or a link format is not loaded as LiteLLM reads it.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::public_discovery::/)'
+    - id: config-corpus
+      why: The public discovery keys never reach the YAML decoder's corpus.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/public-discovery-*')" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases: []
+deviations:
+  - what: DOCS_TITLE changes the API docs and public model hub title without a premium license.
+    why: betterlite has no paid tier, so the MIT branding branch applies without the license check; the default stays "LiteLLM API".
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1043-L1044
+out_of_scope:
+  - "BlogFeed, the RSS fetch, parser and cache: B9300, which reads blog_posts_url and local_blog_posts from this section."
+  - "Filling the MCP registry's RegistrySettings from this section: B9997. The public and strict rules themselves: B4731."
+  - "The model hub info response and the docs title on the docs pages: B077 and B8681."
+  - "public_model_groups and the useful links update route: B839's model_public_settings. public_agent_groups: B8647's agent_routes section. Neither key is parsed here."
+  - "DOCS_DESCRIPTION and the enterprise description: not built, as B077 and B123 say."
+  - "public_skills_index, agent_search_embedding_model, mcp_tool_search and skill_search_embedding_model sit between these declarations in __init__.py and are not read here."
+pitfalls:
+  - LITELLM_BLOG_POSTS_URL is only an import-time default, so litellm_settings.blog_posts_url takes precedence over it.
+  - public_mcp_servers starts as None and public_mcp_hub_strict_whitelist as true, so an absent list must not read as "publish every server"; keep None and an empty list apart.
+  - A link object with an index that is not an integer, or with members beyond url and index, is stored as written, since LiteLLM's type is Dict[str, Any].
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

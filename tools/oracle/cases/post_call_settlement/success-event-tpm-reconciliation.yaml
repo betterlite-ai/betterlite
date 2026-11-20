@@ -1,0 +1,19 @@
+kind: helper
+name: post-call-settlement-success-event-tpm-reconciliation
+call:
+  b3046:
+    function: success_event
+    call_id: call-1
+    usage:
+      prompt_tokens: 100
+      completion_tokens: 50
+      total_tokens: 150
+    logging:
+      user_api_key_user_id: alice
+    stash:
+      owner_call_id: call-1
+      reserved_tokens: 1000
+      reserved_scopes:
+        - [user, alice]
+env: {}
+compare: {ignore: []}

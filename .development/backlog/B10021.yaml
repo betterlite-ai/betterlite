@@ -1,0 +1,14 @@
+id: B10021
+milestone: M2 routing
+title: Auto-router catalog of saved complexity routers
+status: todo
+depends_on: [B377, B721, B1600, B2303, B171]
+file: tasks/B10021-auto-router-catalog.yaml
+covers:
+  - "litellm/proxy/management_helpers/auto_router_availability.py"
+parent: B021
+split_from: B379
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

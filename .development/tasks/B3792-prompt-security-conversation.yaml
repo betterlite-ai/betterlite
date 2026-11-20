@@ -31,10 +31,31 @@ description: >-
   from modified message dicts, _resolve_key_alias_from_request_data reads
   metadata priority, filter_messages_by_role filters by role with tool-results
   transform, _build_headers constructs API headers with APP-ID and X-LiteLLM-Key-Alias.
+
+
+  prompt_security/__init__.py's initialize_guardrail becomes an argument function, as B8217 writes the third-party
+  initializers: `initialize_prompt_security(params, guardrail_name) -> PromptSecurityArgs` in
+  prompt_security_conversation/initialize.rs (tests in initialize/tests.rs) copies api_base, api_key, the guardrail name ("" when absent), mode as the event
+  hook, default_on, streaming_transform_mode, file_sanitization_fail_open, block_on_file_modify and timeout, each None
+  when the params leave it out, and registers nothing. B8521's hook registry answers prompt_security with
+  HookRegistryError::NotBuilt until this task lands. B8666's LiveGuardrail::build has no prompt_security arm either, so
+  also add the `LiveGuardrail` variant and arm in crates/betterlite-server/src/guardrail_dispatch/live.rs. Put the prompt_security arm in its place in hook_registry/kinds.rs,
+  keeping the args as `HookSpec::PromptSecurity(PromptSecurityArgs)` in spec.rs with its settings arm, and give
+  supported_event_hooks("prompt_security") in hooks.rs the list get_supported_event_hooks returns. Swap B8521's
+  `unbuilt_prompt_security` test for `prompt_security_arm`, and drop prompt_security from the not-built row of
+  docs/deviations/B8521.yaml. If no other NotBuilt answer is left at that point, remove the variant and its
+  skips_startup arm from hook_registry/error.rs, the NotBuilt half of `hook_errors_at_startup` and the row as well.
 scope:
   paths:
     - crates/betterlite-guardrails/src/prompt_security_conversation.rs
     - crates/betterlite-guardrails/src/prompt_security_conversation/**
+    - crates/betterlite-guardrails/src/hook_registry/kinds.rs
+    - crates/betterlite-guardrails/src/hook_registry/spec.rs
+    - crates/betterlite-guardrails/src/hook_registry/hooks.rs
+    - crates/betterlite-guardrails/src/hook_registry/error.rs
+    - crates/betterlite-guardrails/src/hook_registry/tests.rs
+    - docs/deviations/B8521.yaml
+    - crates/betterlite-server/src/guardrail_dispatch/live.rs
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L41-L66
@@ -64,7 +85,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L829-L835
     why: "get_config_model returns PromptSecurityGuardrailConfigModel type for framework discovery."
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/__init__.py#L11-L30
-    why: "initialize_guardrail instantiates PromptSecurityGuardrail with config values, registers callback via add_litellm_callback."
+    why: "initialize_guardrail: the fields initialize_prompt_security copies into PromptSecurityArgs for the prompt_security arm this task adds to B8521's table."
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/prompt_security.py#L36-L38
     why: "PromptSecurityGuardrailConfigModel.ui_friendly_name() returns 'Prompt Security' for admin UI display."
 dod:
@@ -118,8 +139,10 @@ dod:
     proof: [build-headers-cases]
   - text: "get_config_model returns PromptSecurityGuardrailConfigModel type."
     proof: [config-model-cases]
-  - text: "initialize_guardrail instantiates PromptSecurityGuardrail with api_base/api_key from litellm_params, reads streaming_transform_mode/file_sanitization_fail_open/block_on_file_modify via getattr, calls add_litellm_callback."
+  - text: "initialize_prompt_security copies api_base, api_key, the guardrail name (empty when absent), mode, default_on, streaming_transform_mode, file_sanitization_fail_open, block_on_file_modify and timeout into PromptSecurityArgs, None where the params leave them out."
     proof: [initialize-cases]
+  - text: "A prompt_security guardrail builds HookSpec::PromptSecurity through B8521's hook registry with the class's three event hooks instead of answering NotBuilt."
+    proof: [hook-arm-tests, hook-registry-tests]
   - text: "PromptSecurityGuardrailConfigModel.ui_friendly_name returns 'Prompt Security'."
     proof: [ui-friendly-cases]
 checks:
@@ -201,8 +224,14 @@ checks:
       why: "get_config_model return type test is missing or fails"
       run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_conversation::config_model/)'
     - id: initialize-cases
-      why: "initialize_guardrail instantiation and callback registration tests are missing or fail"
+      why: "initialize_prompt_security argument tests are missing or fail"
       run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_conversation::initialize/)'
+    - id: hook-arm-tests
+      why: "prompt_security still answers NotBuilt in the hook registry or keeps the wrong arguments"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^hook_registry::tests::prompt_security_arm/)'
+    - id: hook-registry-tests
+      why: "the prompt_security variant or arm broke another hook registry arm"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^hook_registry::/)'
     - id: ui-friendly-cases
       why: "PromptSecurityGuardrailConfigModel.ui_friendly_name test is missing or fails"
       run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_security_conversation::ui_friendly/)'
@@ -229,6 +258,7 @@ out_of_scope:
   - "HTTP client get_async_httpx_client and httpxSpecialProvider: owned by B173"
   - "Config model loading and parameter resolution: owned by B002"
   - "Callback registration via add_litellm_callback: owned by B189"
+  - "The hook registry table, HookSpec and every other arm: owned by B8521; this task adds the prompt_security arm"
   - "File sanitization and standalone image processing: owned by B3791"
 
 pitfalls:
