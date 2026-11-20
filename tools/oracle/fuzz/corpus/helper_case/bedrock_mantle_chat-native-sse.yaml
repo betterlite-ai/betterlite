@@ -1,0 +1,9 @@
+kind: helper
+name: bedrock-mantle-native-sse-seed
+call:
+  bedrock_mantle_chat:
+    function: native_sse
+    events:
+      - '{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}'
+env: {}
+compare: {ignore: []}

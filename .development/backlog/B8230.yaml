@@ -1,14 +1,14 @@
 id: B8230
 milestone: M8 platform
 title: Plugin registry, iframe claims and plugin reverse proxy
-status: todo
+status: done
 depends_on: [B003, B173, B732]
 file: tasks/B8230-plugin-routes.yaml
 covers:
   - "litellm/proxy/plugin_routes.py"
 parent: B124
 split_from: B124
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2641

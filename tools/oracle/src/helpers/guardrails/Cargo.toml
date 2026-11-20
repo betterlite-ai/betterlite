@@ -13,6 +13,8 @@ async-trait = "0.1.92"
 axum = { version = "0.8.9", default-features = false, features = ["http1", "tokio"] }
 base64 = "0.23.1"
 betterlite-anthropic = { path = "../../../../../crates/betterlite-anthropic" }
+betterlite-bedrock = { path = "../../../../../crates/betterlite-bedrock" }
+betterlite-bedrock-guardrails = { path = "../../../../../crates/betterlite-bedrock-guardrails" }
 betterlite-config = { path = "../../../../../crates/betterlite-config" }
 betterlite-context = { path = "../../../../../crates/betterlite-context" }
 betterlite-core = { path = "../../../../../crates/betterlite-core" }

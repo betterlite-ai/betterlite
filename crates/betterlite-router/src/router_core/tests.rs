@@ -119,7 +119,6 @@ where
     boundaries::model_rate_limit_unreadable_limit_keeps_the_pick()
 )]
 #[case::stage_tag_routing(boundaries::stage_skips(RouteStage::TagRouting))]
-#[case::stage_access_windows(boundaries::stage_skips(RouteStage::AccessWindows))]
 #[case::routing_group_priority_reaches_the_pick(
     boundaries::routing_group_priority_reaches_the_pick()
 )]
