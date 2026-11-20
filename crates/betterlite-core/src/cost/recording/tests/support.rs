@@ -120,11 +120,15 @@ pub(super) struct FakeCatalog {
 
 impl FakeCatalog {
     pub(super) fn with_entry(model: &str, fields: &[(&str, Scalar)]) -> Self {
+        Self::with_keyed_entry(model, model, fields)
+    }
+
+    pub(super) fn with_keyed_entry(model: &str, key: &str, fields: &[(&str, Scalar)]) -> Self {
         let mut record = PriceRecord::new();
         for (name, value) in fields {
             record.insert((*name).to_owned(), value.clone());
         }
-        record.insert("key".to_owned(), Scalar::Text(model.to_owned()));
+        record.insert("key".to_owned(), Scalar::Text(key.to_owned()));
         Self::from_record(model, record)
     }
 

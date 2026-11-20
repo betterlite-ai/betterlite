@@ -12,6 +12,7 @@ use super::diagnostics::DiagnosticInput;
 use crate::cost::prepare::ResponseView;
 use crate::helpers::{RESPONSE_COST_HEADER, set_response_cost_in_hidden_params};
 
+mod recording_edges;
 mod support;
 
 use support::{
