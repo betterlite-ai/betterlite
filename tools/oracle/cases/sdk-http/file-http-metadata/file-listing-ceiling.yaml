@@ -1,0 +1,29 @@
+kind: sdk_http
+name: file-http-metadata-file-listing-ceiling
+env: {}
+call:
+  file_http_metadata:
+    operation: list
+    mode: sync
+    purpose: batch
+    api_key: sk-xai
+    timeout_seconds: 5
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      data:
+        - {id: fg, bytes: 7, created_at: 1700000007}
+        - {id: fh, bytes: 8, created_at: 1700000008}
+      pagination_token: t3
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      data:
+        - {id: fi, bytes: 9, created_at: 1700000009}
+      pagination_token: ""
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization]
+  ignore: []

@@ -1,0 +1,50 @@
+kind: helper
+name: shared-stream-seal-open-frame
+call:
+  b9720:
+    kind: seal
+    writes:
+      - "data: {\"x\": 1}\n\n"
+      - "data: {\"y\": 2}\r\n\r\n"
+      - "data: {\"z\":"
+      - "\n"
+      - ""
+calls:
+  - b9720:
+      kind: seal
+      writes:
+        - "data: x\r\r"
+  - b9720:
+      kind: seal
+      writes:
+        - "data: x\r"
+  - b9720:
+      kind: seal
+      writes:
+        - "eve"
+  - b9720:
+      kind: seal
+      writes:
+        - "event: ping\ndata: {\"type\": \"ping\"}\n\n"
+  - b9720:
+      kind: seal
+      writes:
+        - "ééé"
+  - b9720:
+      kind: seal
+      writes:
+        - "data: a"
+        - "b\n"
+        - "\n"
+  - b9720:
+      kind: seal
+      writes:
+        - "\n\n"
+  - b9720:
+      kind: seal
+      writes:
+        - "data: {\"x\": 1}\n\n\n"
+        - "data: {\"y\": 2}"
+env: {}
+compare:
+  ignore: []
