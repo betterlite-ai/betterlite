@@ -1,14 +1,14 @@
 id: B9999
 milestone: M7 observability
 title: Guardrail request snapshot capture
-status: todo
+status: done
 depends_on: [B8740]
 file: tasks/B9999-guardrail-snapshot-capture.yaml
 covers:
   - "litellm/integrations/shadow_eval_logger.py"
 parent: B118
 split_from: B4082
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2662

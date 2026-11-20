@@ -1,21 +1,20 @@
 id: B4777
 title: Persist agent changes and retire managed identities
 description: >-
-  Build module agent_persistence in crates/betterlite-server. It reads and writes the agents table (`"LiteLLM_AgentsTable"`) with its object permission row and its Entra identity rows, and it is the only place that does. B4775 owns the pure credential functions this task calls, B4772 owns the identity write rules, B816 owns the object permission merge, B4776 owns the in-memory registry (this task never touches it) and B4785 owns the HTTP routes that call this module. All JSON values use the `AgentJson` alias from betterlite_core::agents::json. SQL is plain tokio-postgres through B700's PostgresStore and DbSession (B700's Repository has no join and no nested write), with `$n` parameters only. Table names are `"LiteLLM_AgentsTable"`, `"LiteLLM_AgentIdentity"`, `"LiteLLM_RetiredAgentIdentity"`, `"LiteLLM_RetiredAgent"`, `"LiteLLM_ObjectPermissionTable"` and `"LiteLLM_VerificationToken"`.
+  Build module agent_persistence in crates/betterlite-server. It writes the agents table (`"LiteLLM_AgentsTable"`) with its object permission row and its Entra identity rows, and it is the only place that does. B10012's agent_rows module in the same crate holds the one select and row codec every reader of these rows uses (AGENT_SELECT_SQL, StoredAgent, AgentRowCodec) and the listing get_all_agents_from_db, and this task reads its rows through it. B4775 owns the pure credential functions this task calls, B4772 owns the identity write rules, B816 owns the object permission merge, B4776 owns the in-memory registry (this task never touches it) and B4785 owns the HTTP routes that call this module. All JSON values use the `AgentJson` alias from betterlite_core::agents::json. SQL is plain tokio-postgres through B700's PostgresStore and DbSession (B700's Repository has no join and no nested write), with `$n` parameters only. Table names are `"LiteLLM_AgentsTable"`, `"LiteLLM_AgentIdentity"`, `"LiteLLM_RetiredAgentIdentity"`, `"LiteLLM_RetiredAgent"`, `"LiteLLM_ObjectPermissionTable"` and `"LiteLLM_VerificationToken"`.
 
   Entry point. `AgentStore<P>` in agent_persistence.rs, built once by the server and passed to its users (no static). Fields: `store: PostgresStore`, `masker: SensitiveDataMasker` (B4775's), `max_json_depth: usize` (LiteLLM's DEFAULT_MAX_RECURSE_DEPTH, default 100; the server passes it, this task does not read the env var) and `publisher: P` where `P: AgentChangePublisher`. `AgentChangePublisher` is a trait of this module with one method, `async fn agents_changed(&self)`. B4144 lives in betterlite-redis, which cannot implement a betterlite-server trait, so this task implements it: `ConfigSyncAgentPublisher` in agent_persistence/change_publisher.rs (with a tests.rs) holds B4144's config change publisher and its `agents_changed` publishes one message with object_type `litellm_agentstable`. The task adds betterlite-redis to crates/betterlite-server/Cargo.toml for it. Building the store with this adapter in the server is not in this task. Methods, with LiteLLM's names and `Result<_, AgentPersistenceError>`:
   - `add_agent_to_db(&self, agent: &AgentConfig, created_by: &str, agent_id: Option<&str>) -> AgentResponse`
   - `update_agent_in_db(&self, agent_id: &str, agent: &AgentConfig, updated_by: &str) -> AgentResponse`
   - `patch_agent_in_db(&self, agent_id: &str, agent: &PatchAgentRequest, updated_by: &str) -> AgentResponse`
   - `delete_agent_from_db(&self, agent_id: &str) -> ()` (LiteLLM returns the deleted row's dump, and no caller at the pin reads it)
-  - `get_all_agents_from_db(&self) -> Vec<AgentResponse>`
   Create, update and patch call `publisher.agents_changed()` once, after the transaction committed and before returning (LiteLLM's agents table handle publishes after each write). Delete does not publish, because LiteLLM deletes through a raw transaction client that has no publisher. A failed write publishes nothing.
 
-  Errors, in agent_persistence/error.rs: `AgentPersistenceError` with variants `Conflict(&'static str)`, `Identity(AgentIdentityFailure)`, `NotFound(String)`, `Database(DbError<...>)`, `Credentials(AgentCredentialsError)`, `ObjectPermission(...)` (B816's error type) and `ListFailed(String)`. The route owner maps them: Conflict is 409, Identity is 503 when its code is `policy_unavailable` and 400 otherwise, everything else is 500 with the Display text. The two Conflict texts are exact: `Agent name or Entra application is already registered` (any unique violation, found with B700's `is_unique_violation`) and `Entra application was already registered to another agent`. NotFound text is `Agent not found, passed agent_id=<id>` everywhere except patch, where it is `Agent with ID <id> not found`. ListFailed text is `Error getting agents from DB: <error>`.
+  Errors, in agent_persistence/error.rs: `AgentPersistenceError` with variants `Conflict(&'static str)`, `Identity(AgentIdentityFailure)`, `NotFound(String)`, `Database(DbError<...>)`, `Credentials(AgentCredentialsError)` and `ObjectPermission(...)` (B816's error type). The route owner maps them: Conflict is 409, Identity is 503 when its code is `policy_unavailable` and 400 otherwise, everything else is 500 with the Display text. The two Conflict texts are exact: `Agent name or Entra application is already registered` (any unique violation, found with B700's `is_unique_violation`) and `Entra application was already registered to another agent`. NotFound text is `Agent not found, passed agent_id=<id>` everywhere except patch, where it is `Agent with ID <id> not found`.
 
   1. JSON text, in agent_persistence/json_text.rs. `safe_json_text(value: &AgentJson, max_depth: usize) -> String` is LiteLLM's safe_dumps for values that came from JSON: it removes NUL characters from every string and every object key, replaces any value nested deeper than max_depth (root is depth 0, children depth + 1, and the check is `depth > max_depth`) with the string `MaxDepthExceeded`, and returns compact serde_json text. It is used for litellm_params, agent_card_params and static_headers. extra_headers and access_group_ids are text arrays and are bound as they are. Every JSON text is bound as a text parameter and cast in SQL (`$3::text::jsonb`), so the column holds the parsed value and not a JSON string of it.
 
-  2. Reading a row, in agent_persistence/row_codec.rs. `AGENT_SELECT_SQL` is one `&str`: all columns of the agents table (a.*), then the identity columns with the prefix `i_` and the object permission columns with the prefix `p_`, from the agents table LEFT JOIN `"LiteLLM_AgentIdentity"` ON agent_id LEFT JOIN `"LiteLLM_ObjectPermissionTable"` ON object_permission_id. Callers append their own WHERE or ORDER BY. `AgentRowCodec` implements B700's `RowCodec` with `Model = StoredAgent`, where `StoredAgent { agent: AgentResponse, object_permission_id: Option<String>, litellm_params_column: Option<AgentJson>, kill_switch_column: Option<AgentJson> }`. The raw columns are kept because restoring a secret needs the stored value and `AgentResponse` serializes without kill switch auth secrets. Decoding rules: timestamps are `TIMESTAMP(3)` without zone, read as chrono NaiveDateTime and taken as UTC; tpm_limit and the other three limits are INTEGER columns widened to i64; spend is DOUBLE PRECISION converted with `Decimal::from_f64` (0.1 stays 0.1); `litellm_params` NULL gives None, otherwise B4775's `parse_agent_litellm_params` (it accepts an object and a JSON string); `agent_card_params` is an object or a JSON string holding one, then `AgentCard`; `static_headers` is an object or a JSON string (NULL gives None); `kill_switch` goes through B4775's `parse_agent_kill_switch` (so `AgentResponse.kill_switch` keeps the secret, as LiteLLM's model_validate does); the identity is None when `i_agent_id` is NULL, otherwise an `AgentIdentityBinding` with NULL role or scope arrays read as empty lists and tenant_id, client_id and service_principal_id parsed as UUIDs; the object permission is None when `object_permission_id` is NULL, otherwise an `AgentObjectPermission` built from the six columns it has (mcp_servers, mcp_access_groups, mcp_toolsets, mcp_tool_permissions, models, agents), where mcp_tool_permissions is an object or a JSON string holding one. `enabled`, `execution_mode` and `identity_managed` come from their columns; `jwt_auth_configured` is false, `keys` and `search_score` are None. The codec is public so other server modules that read agent rows reuse it. Its error is `RowDecodeError`, with one variant per failed column kind.
+  2. Reading a row. B10012 builds AGENT_SELECT_SQL, StoredAgent and AgentRowCodec in betterlite-server::agent_rows. Every read below appends its WHERE to that select and decodes with that codec, and StoredAgent's raw litellm_params and kill_switch columns are what the replace and patch planners restore secrets from. Do not write a second select or decoder.
 
   3. Planning a write, in agent_persistence/write_plan.rs, pure and with no database. `AgentColumns` lists what to write to the agents row; every field is an Option, and None means leave the column out: agent_name, litellm_params (text), agent_card_params (text), static_headers (text), extra_headers (`Option<Vec<String>>`), kill_switch (text), access_group_ids, the four limits as `Option<Option<i64>>`, enabled, execution_mode, identity_managed, created_by, created_at, updated_by, updated_at. Three planners take the already-read stored row (`Option<&StoredAgent>`) and `now: DateTime<Utc>`, and return `AgentColumns`:
   - Create (`plan_create`). litellm_params is the incoming map restored against an empty stored map with B4775's `restore_redacted_litellm_params`, so a secret key sent as `REDACTED_BY_LITELM` is dropped and never stored as the marker; the result goes through safe_json_text. agent_card_params is the incoming card as text (an empty object when absent). kill_switch is B4775's `serialize_agent_kill_switch(incoming, None)`, so a missing switch is stored as the text `null`, and that is always written. static_headers is written only when the incoming map is non-empty. extra_headers is written when present, even as an empty list. access_group_ids is written when present, with duplicates removed and first-seen order kept. A limit is written only when present and not null. created_by and updated_by are the caller, created_at and updated_at are now.
@@ -30,8 +29,6 @@ description: >-
   6. Executing, in agent_persistence/create.rs, replace.rs and patch.rs. Each operation: read the stored row (replace and patch: `AGENT_SELECT_SQL WHERE a.agent_id = $1`; a missing row is not an error for replace, which goes on with None, and is `NotFound` (text `Agent with ID <id> not found`) for patch before anything else is read or written); when replace gets an `AgentConfig` with no `agent_card_params`, it calls patch with every present field copied into a `PatchAgentRequest` (LiteLLM's `"agent_card_params" not in agent` branch) and returns that result; run B4772, the permission merge and the history check from sections 4 and 5; open one transaction (`DbSession`); write the permission row, then the agents row (create is an INSERT with a UUID v4 agent_id unless the caller passed one, update is `UPDATE ... SET <present columns> WHERE agent_id = $1`; a column list is built from AgentColumns' present fields only, from a fixed list of column names, never from input text), then history and identity rows; if an UPDATE changed no row, return `NotFound` (the transaction rolls back by being dropped); re-select the agent with `AGENT_SELECT_SQL` inside the same transaction and decode it as the return value; commit; then publish. A failed step rolls the whole transaction back, as LiteLLM's single nested Prisma write does.
 
   7. Delete, in agent_persistence/remove.rs. One transaction. Read the agent row by id; none is `NotFound` (`Agent not found, passed agent_id=<id>`). When its `identity_managed` is true: `INSERT INTO "LiteLLM_RetiredAgent" (original_agent_id) VALUES ($1) ON CONFLICT (original_agent_id) DO NOTHING`, then `DELETE FROM "LiteLLM_VerificationToken" WHERE agent_id = $1` (every key bound to the agent). Then `DELETE FROM "LiteLLM_AgentsTable" WHERE agent_id = $1`; zero rows deleted is the same `NotFound`. The identity row goes with the agent through the database cascade and `"LiteLLM_RetiredAgentIdentity"` rows keep existing with a NULL agent_id. An agent whose identity_managed is false keeps its keys. Commit.
-
-  8. Listing, in agent_persistence/listing.rs. `get_all_agents_from_db` runs `AGENT_SELECT_SQL ORDER BY a.created_at DESC` and decodes every row. Any failure is wrapped as `ListFailed`. LiteLLM returns dicts that B4776's registry validates into AgentResponse, so this returns the typed value directly.
 scope:
   paths:
     - crates/betterlite-server/Cargo.toml
@@ -51,8 +48,6 @@ references:
     why: patch_agent_in_db, with the per-key writes and the two NotFound texts.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L786-L891
     why: update_agent_in_db, with the redirect to patch, the always-written columns and the limits written only when set.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L893-L918
-    why: get_all_agents_from_db, newest first, with the error prefix.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/managed_identity.py#L22-L165
     why: ManagedWriteFields, the identity create, update and upsert shapes and the history entry that this task turns into SQL (B4772 owns the rules).
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/schema.prisma#L68-L127
@@ -74,8 +69,6 @@ dod:
     proof: [plan-tests]
   - text: Patch plans only the keys the request carries, turns null static_headers, extra_headers and access_group_ids into `{}`, `[]` and `[]`, writes a null limit as NULL, and restores a marker secret and a marker kill switch secret from the stored row.
     proof: [plan-tests]
-  - text: Rows decode into AgentResponse with the identity, the object permission, the raw litellm_params and kill_switch columns, UTC timestamps, widened limits and exact spend, and a JSON string stored in a jsonb column reads the same as an object.
-    proof: [row-codec-tests]
   - text: Creating an agent stores the row, its object permission row and its identity with the retired identity history entry in one transaction, returns the decoded agent, publishes once, and a failure after the first write leaves no row and publishes nothing.
     proof: [create-tests]
   - text: A duplicate agent_name or a duplicate Entra application is `Conflict("Agent name or Entra application is already registered")`, and an Entra application whose history row belongs to another agent is `Conflict("Entra application was already registered to another agent")`.
@@ -90,8 +83,6 @@ dod:
     proof: [permission-tests]
   - text: Deleting an identity-managed agent adds a `"LiteLLM_RetiredAgent"` row (once) and deletes the agent's keys; deleting any other agent keeps its keys; a missing agent is NotFound; delete does not publish.
     proof: [remove-tests]
-  - text: "Listing returns every agent newest first with identity and permission, and wraps a failure as `Error getting agents from DB: <error>`."
-    proof: [listing-tests]
 checks:
   optional: []
   commands:
@@ -101,9 +92,6 @@ checks:
     - id: plan-tests
       why: the create, replace or patch column plans differ from LiteLLM on which columns are written or cleared
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_persistence::write_plan::/)'
-    - id: row-codec-tests
-      why: an agent row does not decode into AgentResponse and StoredAgent against real Postgres
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_persistence::row_codec::/)'
     - id: create-tests
       why: add_agent_to_db does not store the agent, its permission and identity in one transaction, or maps conflicts wrongly
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_persistence::(create|change_publisher)::/)'
@@ -122,20 +110,18 @@ checks:
     - id: remove-tests
       why: delete_agent_from_db does not retire the id, delete the keys of a managed agent or keep the keys of an unmanaged one
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_persistence::remove::/)'
-    - id: listing-tests
-      why: get_all_agents_from_db does not order newest first or wrap its failure
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_persistence::listing::/)'
 oracle_cases: []
 deviations:
-  - what: JSON columns (litellm_params, agent_card_params, static_headers, kill_switch) are written as parsed jsonb values, and readers also accept a JSON string stored in the column.
-    why: One write path for the typed record. B4775's parsers already accept both forms, and the response JSON is the same either way.
+  - what: JSON columns (litellm_params, agent_card_params, static_headers, kill_switch) are written as parsed jsonb values.
+    why: One write path for the typed record. B10012's codec reads this and the older string form alike, so the response JSON is the same either way.
   - what: "A PATCH body with `litellm_params: null` leaves the stored params unchanged. LiteLLM resets them to the stored secrets only."
     why: B4770's typed PatchAgentRequest reads null and absent litellm_params as the same thing, and a client that wants to reset sends an empty object.
-  - what: delete_agent_from_db returns nothing, and get_all_agents_from_db returns typed AgentResponse values.
-    why: LiteLLM returns dicts that no caller reads except the registry reload, and typed values replace that dict round trip.
+  - what: delete_agent_from_db returns nothing.
+    why: LiteLLM returns the deleted row's dump, and no caller at the pin reads it.
   - what: The depth cap of the stored JSON text comes from the constructor, not from the DEFAULT_MAX_RECURSE_DEPTH env var read here.
     why: Dependencies come in through constructors, and the server passes the same default of 100.
 out_of_scope:
+  - "B10012 owns AGENT_SELECT_SQL, StoredAgent, AgentRowCodec, RowDecodeError and get_all_agents_from_db with its listing error. This task reads its rows through them and builds no listing."
   - "B4775 owns restore_redacted_litellm_params, parse_agent_litellm_params, parse_agent_kill_switch and serialize_agent_kill_switch. This task calls them and does not copy their rules."
   - "B4772 owns managed_write_fields, the identity configuration checks and raise_identity_failure's status rule. This task turns its output into SQL."
   - "B816 owns prepare_object_permission_upsert, the ambiguity check on mcp_tool_permissions and cache eviction of object permissions."

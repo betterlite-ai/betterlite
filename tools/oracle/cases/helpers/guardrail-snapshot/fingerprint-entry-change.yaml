@@ -1,0 +1,16 @@
+kind: helper
+name: guardrail-snapshot-fingerprint-entry-change
+call:
+  b9999:
+    function: fingerprints_match
+    first:
+      standard_logging_guardrail_information:
+        - guardrail_mode: pre_call
+          guardrail_name: pii
+    second:
+      standard_logging_guardrail_information:
+        - guardrail_mode: pre_call
+          guardrail_name: pii
+          policy: strict
+env: {}
+compare: {ignore: []}

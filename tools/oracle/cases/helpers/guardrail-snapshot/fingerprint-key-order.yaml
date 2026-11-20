@@ -1,0 +1,21 @@
+kind: helper
+name: guardrail-snapshot-fingerprint-key-order
+call:
+  b9999:
+    function: fingerprints_match
+    first:
+      standard_logging_guardrail_information:
+        - guardrail_mode: pre_call
+          guardrail_name: pii
+          policy:
+            block: [email, phone]
+            allow: [name]
+    second:
+      standard_logging_guardrail_information:
+        - policy:
+            allow: [name]
+            block: [email, phone]
+          guardrail_name: pii
+          guardrail_mode: pre_call
+env: {}
+compare: {ignore: []}

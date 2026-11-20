@@ -68,9 +68,15 @@ description: >-
   call handlers or insert arbitrary SQL rows from a helper. Compare error status/type/
   param/code and content-type as well as the fields the drawer consumes; normalize only
   per-process identifiers and measured times. New decoder/fuzz targets are unnecessary.
+
+  Tool policy table. B148 left the tool policy pages to this task. ToolPoliciesPanel sends GET /v1/tool/list with no query or body (B1607), and networking unwraps tools[] locally. The panel and table read tool_id, tool_name, input_policy, output_policy, call_count, created_at, team_id, key_hash, key_alias, user_agent and user.user_alias, user_email and user_id; filtering, sorting and new-today counts are local. Each dropdown separately POSTs /v1/tool/policy with {tool_name,input_policy} or {tool_name,output_policy}, omitting the other policy and all scope fields (B062). The page ignores the return body and updates its local row cache after success. Add tools/oracle/cases/ui/governance-monitor-tools/tool-list-and-partial-updates.yaml, comparing a refetch after each partial write so the untouched policy cannot be lost, with B9750's tool rows. Keep useCan("viewToolPolicies") and every server permission; no subscription-only gate exists in these components.
+
+  Browser. B148 ships the retained governance browser check (tools/dashboard-browser/tests/dashboard_governance.rs, test dashboard_governance_pages, over B144's support lifecycle) without this page, so add its steps as a spec file in tools/dashboard/browser/governance, which that test runs. Do not modify B148's test file or the shared package, config, runner or support files. Sign in against the real proxy as admin; in governance/tool-policies.spec.ts, open the tool-policies page, change a tool input policy and reload the page. Assert the displayed persisted values and the captured outgoing request shapes, with no unexpected 404 or 500 and no hydration error. Provider responses alone may be deterministic mocks.
 scope:
   paths:
+    - tools/dashboard/browser/governance/**
     - tools/oracle/cases/ui/mcp-tools/**
+    - tools/oracle/cases/ui/governance-monitor-tools/tool-list-and-partial-updates.yaml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L5102-L5260
@@ -93,16 +99,27 @@ references:
     why: B8595's field update handler and config-owned-write guard.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18728-L18990
     why: General-settings list and field deletion return the actual values consumed by MCP settings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/ToolPolicies/ToolPoliciesPanel.tsx#L50-L131
+    why: Real permission check, list cache and two partial policy mutations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/tool_management_endpoints.py#L161-L231
+    why: B1607 options and list handlers used without filters.
 dod:
+  - text: The tool-policies page changes a tool input policy that survives a reload in the retained governance browser check.
+    proof: [governance-browser]
   - text: Connection preview, editable tool listing and execution succeed with separate gateway/provider credentials and the exact optional metadata.
     proof: [tool-page-cases, oracle]
   - text: Tool detail, date-filtered logs, policy overrides, size-100 keys and size-20 teams retain the page's methods, queries and response projections.
     proof: [tool-page-cases, oracle]
   - text: MCP IP/rules settings can be read, updated and cleared through the same admin requests used by the forms.
     proof: [tool-page-cases, oracle]
+  - text: "The tool table's list read and its two partial policy writes match LiteLLM through the booted proxy, and a refetch after each write keeps the untouched policy."
+    proof: [oracle]
 checks:
   optional: []
   commands:
+    - id: governance-browser
+      why: HTTP contracts may pass while the retained page cannot render, authenticate or submit.
+      run: bash tools/dashboard/browser-check.sh --test dashboard_governance
     - id: tool-page-cases
       why: No existing transcript sends the tool drawer's headers, query values and settings bodies together.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/mcp-tools)"
@@ -115,6 +132,7 @@ oracle_cases:
   - tools/oracle/cases/ui/mcp-tools/network-and-submission-settings.yaml
   - tools/oracle/cases/ui/management-selectors/mcp-toolsets-and-tools.yaml
   - tools/oracle/cases/ui/management-selectors/guardrail-v2-and-v1.yaml
+  - tools/oracle/cases/ui/governance-monitor-tools/tool-list-and-partial-updates.yaml
 deviations: []
 out_of_scope:
   - Every tool decoder, executor and policy/report function stays with B4727/B4728/B4729/B062/B1607; B9943 owns the MCP mock's id correlation.
@@ -124,7 +142,8 @@ pitfalls:
   - Tool names must be encoded as one path segment before adding /detail, /logs or /overrides.
   - The log query uses a space-separated date-time string, not the ISO string convenient to a Rust test.
   - A successful empty tools array cannot prove that include_disabled_tools reached the backend.
+  - "Tool input and output changes are separate POST bodies; a combined body cannot catch accidental deletion of the omitted policy."
 review_level: security
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 1800
   max_new_expects: 0

@@ -4,6 +4,7 @@ use betterlite_models::controls::control_options::{
     ControlOptions, InvalidControlOption, parse_control_options,
 };
 use betterlite_models::controls::json_value::JsonValue;
+use betterlite_models::params::ParameterError;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
 use betterlite_openai::chat::{ChatRequest, RequestError, client_mock};
@@ -126,10 +127,22 @@ pub(crate) fn chat_error(error: OperationError) -> CallError<ChatError> {
         OperationError::InvalidHeader { name, source } => ChatError::Http {
             source: TransportError::InvalidHeader { name, source },
         },
-        OperationError::TransformRetry(source) => {
-            return CallError::Operation {
-                source: OperationError::TransformRetry(source),
-            };
+        OperationError::Parameters {
+            source: ParameterError::Unsupported { names, .. },
+        } => ChatError::Request {
+            source: RequestError::Unsupported {
+                name: names.join(", "),
+            },
+        },
+        OperationError::Parameters {
+            source: ParameterError::Encode { source },
+        } => ChatError::Request {
+            source: RequestError::Body { source },
+        },
+        kept @ (OperationError::TransformRetry(_)
+        | OperationError::Parameters { .. }
+        | OperationError::Anthropic { .. }) => {
+            return CallError::Operation { source: kept };
         }
     };
     CallError::Route(route)
