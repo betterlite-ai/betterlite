@@ -64,7 +64,7 @@ where
         ),
     };
     let Some(manager) = selected else {
-        return Ok(finish_without_manager(dispatch, request));
+        return Ok(finish_without_manager(dispatch, &request));
     };
     let before = breakpoints(request.messages);
     let prompt = manager
@@ -104,7 +104,7 @@ where
         ),
     };
     let Some(manager) = selected else {
-        return Ok(finish_without_manager(dispatch, call));
+        return Ok(finish_without_manager(dispatch, &call));
     };
     let before = breakpoints(call.messages);
     let prompt = manager
@@ -121,7 +121,7 @@ where
 
 fn finish_without_manager<BackendError>(
     dispatch: &mut PromptHookDispatch<'_, BackendError>,
-    request: PromptCallRequest<'_, BackendError>,
+    request: &PromptCallRequest<'_, BackendError>,
 ) -> ChatCompletionPrompt
 where
     BackendError: Error + Send + Sync + 'static,

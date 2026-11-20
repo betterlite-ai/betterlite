@@ -90,7 +90,7 @@ where
                 .unwrap_or(false)
         })
         .map(Arc::clone)?;
-    stamp_manager(dispatch, found.as_ref());
+    stamp_manager(dispatch, &*found);
     Some(found)
 }
 
@@ -118,7 +118,7 @@ where
             .map(Arc::clone)
     };
     let manager = found?;
-    stamp_manager(dispatch, manager.as_ref());
+    stamp_manager(dispatch, &*manager);
     Some(manager)
 }
 
@@ -132,7 +132,7 @@ where
 {
     let params = prompt_object(non_default_params);
     let manager = cache_control_custom_logger(&params, |name| dispatch.factory.init(name))?;
-    stamp_manager(dispatch, manager.as_ref());
+    stamp_manager(dispatch, &*manager);
     Some(manager)
 }
 
@@ -145,7 +145,7 @@ where
 {
     dispatch.vector_stores?;
     let manager = dispatch.factory.init(VECTOR_STORE_INTEGRATION)?;
-    stamp_manager(dispatch, manager.as_ref());
+    stamp_manager(dispatch, &*manager);
     if !dispatch
         .callbacks
         .iter()
@@ -158,7 +158,7 @@ where
 
 fn stamp_manager<BackendError>(
     dispatch: &mut PromptHookDispatch<'_, BackendError>,
-    manager: &dyn PromptManager<BackendError>,
+    manager: &(dyn PromptManager<BackendError> + Send + Sync),
 ) where
     BackendError: Error + Send + Sync + 'static,
 {
