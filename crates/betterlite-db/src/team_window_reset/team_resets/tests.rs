@@ -63,6 +63,7 @@ async fn resets_every_due_team_and_reports_the_counts() {
     let event = events.first().unwrap();
     assert_eq!(event.call_type, "reset_budget_teams");
     assert_eq!(event.service, "reset_budget_job");
+    assert_eq!(event.start_time, moment(0));
     assert_eq!(number_of(&event.event_metadata, "num_teams_found"), Some(2));
     assert_eq!(
         number_of(&event.event_metadata, "num_teams_updated"),
