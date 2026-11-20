@@ -15,7 +15,7 @@ use betterlite_openai::edenai_common::{
 use betterlite_prompts::arguments::json::{Json, Object};
 use rust_decimal::Decimal;
 use secrecy::SecretString;
-use serde_json::{Number, Value};
+use serde_json::Number;
 use thiserror::Error;
 
 use crate::api::anthropic_beta_filter::Headers;
@@ -128,13 +128,13 @@ pub struct ReplyInput<'request> {
 // the reply as sent, then the cost it carries goes to the call log and a reply without one leaves it alone
 pub fn transform_response(input: ReplyInput<'_>) -> Result<ResponseRecord, EdenAiMessagesError> {
     let record = decode_messages_response(input.body, input.status, input.limits)?;
-    if let Some(cost) = reply_cost(&record) {
-        if let Some(number) = Number::from_str(&cost.normalize().to_string()).ok() {
-            input
-                .state
-                .model_call_details
-                .insert(String::from(RESPONSE_COST), HiddenJson::Number(number));
-        }
+    if let Some(cost) = reply_cost(&record)
+        && let Ok(number) = Number::from_str(&cost.normalize().to_string())
+    {
+        input
+            .state
+            .model_call_details
+            .insert(String::from(RESPONSE_COST), HiddenJson::Number(number));
     }
     Ok(record)
 }
@@ -145,6 +145,8 @@ fn reply_cost(record: &ResponseRecord) -> Option<Decimal> {
         .fields
         .get(COST)
         .or_else(|| record.fields.get(EDENAI_COST_HEADER))?;
-    let value: Value = serde_json::from_str(raw.get()).ok()?;
+    let Ok(value) = serde_json::from_str(raw.get()) else {
+        return None;
+    };
     cost_value(&value)
 }
