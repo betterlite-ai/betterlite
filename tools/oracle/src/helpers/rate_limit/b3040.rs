@@ -211,7 +211,7 @@ fn descriptor_answer(case: &DescriptorCase, function: DescriptorFunction) -> Hel
     let descriptors = match function {
         DescriptorFunction::Create => create_rate_limit_descriptors(
             &builder,
-            ScopeInputs {
+            &ScopeInputs {
                 auth: &auth,
                 data: &case.data,
                 rpm_limit_type: case.rpm_limit_type.as_deref(),

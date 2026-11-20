@@ -15,13 +15,10 @@ fn auth(fields: &str) -> UserAPIKeyAuth {
 }
 
 fn policy(agent_id: &str) -> AgentResponse {
-    serde_json::from_value(serde_json::json!({
-        "agent_id": agent_id,
-        "agent_name": agent_id,
-        "agent_card_params": {},
-        "rpm_limit": 5,
-    }))
-    .expect("the policy fixture decodes")
+    let wire = format!(
+        r#"{{"agent_id": "{agent_id}", "agent_name": "{agent_id}", "agent_card_params": {{}}, "rpm_limit": 5}}"#
+    );
+    serde_json::from_str(&wire).expect("the policy fixture decodes")
 }
 
 #[test]
@@ -34,7 +31,7 @@ fn copies_the_key_limits_and_the_throttle_percentage() {
     assert_eq!(view.rpm_limit, Some(10));
     assert_eq!(view.tpm_limit, Some(20));
     assert_eq!(view.max_parallel_requests, Some(3));
-    assert_eq!(view.throttle_pct, Some(0.5));
+    assert_eq!(view.throttle_pct, Some(0.5_f64));
 }
 
 #[test]
@@ -145,7 +142,7 @@ fn returns_the_attached_server_only_fields() {
     );
     assert_eq!(
         view.source_team_rpm_limits
-            .and_then(|teams| teams.get("team-2"))
+            .and_then(|by_team| by_team.get("team-2"))
             .and_then(|limits| limits.get("server")),
         Some(&9)
     );

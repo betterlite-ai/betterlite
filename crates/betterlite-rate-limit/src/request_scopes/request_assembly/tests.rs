@@ -32,7 +32,10 @@ impl Fixture {
         }
     }
 
-    fn builder<'tags>(&self, tags: &'tags dyn TagRateLimitResolver) -> RequestScopeBuilder<'tags> {
+    fn builder<'tags>(
+        &'tags self,
+        tags: &'tags dyn TagRateLimitResolver,
+    ) -> RequestScopeBuilder<'tags> {
         support::builder(60, &[("gpt4", "gpt-4")], &self.registry, &self.health, tags)
     }
 }
