@@ -212,16 +212,12 @@ impl Delivery for Captured {
         &self,
         request: PostRequest,
     ) -> impl Future<Output = Result<PostResponse, Self::Error>> + Send {
-        let headers = request
-            .headers
-            .iter()
-            .filter_map(|(name, value)| {
-                value
-                    .to_str()
-                    .ok()
-                    .map(|text| (name.as_str().to_owned(), text.to_owned()))
-            })
-            .collect();
+        let mut headers = BTreeMap::new();
+        for (name, value) in &request.headers {
+            if let Ok(text) = value.to_str() {
+                headers.insert(name.as_str().to_owned(), text.to_owned());
+            }
+        }
         let body = serde_json::from_slice::<Json>(&request.body).unwrap_or(Json::Null);
         let recorded = Recorded {
             url: request.url.to_string(),

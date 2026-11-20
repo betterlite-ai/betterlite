@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 use tokio::task::yield_now;
 use tokio::time::{sleep, timeout};
 use tokio_util::sync::CancellationToken;
@@ -119,7 +119,7 @@ fn credentials_come_from_the_environment_or_the_constructor() {
             .settings
             .credentials
             .as_ref()
-            .map(|secret| secret.expose_secret()),
+            .map(ExposeSecret::expose_secret),
         Some(CREDENTIALS)
     );
     let constructor = Overrides {
@@ -134,7 +134,7 @@ fn credentials_come_from_the_environment_or_the_constructor() {
             .settings
             .credentials
             .as_ref()
-            .map(|secret| secret.expose_secret()),
+            .map(ExposeSecret::expose_secret),
         Some("/keys/override.json")
     );
 }
@@ -154,7 +154,7 @@ async fn an_empty_credentials_value_reads_as_unset() {
         access[0]
             .credentials
             .as_ref()
-            .map(|secret| secret.expose_secret()),
+            .map(ExposeSecret::expose_secret),
         None
     );
 }
@@ -217,7 +217,7 @@ async fn request_headers_come_from_the_vertex_token_path() {
         access[0]
             .credentials
             .as_ref()
-            .map(|secret| secret.expose_secret()),
+            .map(ExposeSecret::expose_secret),
         Some(CREDENTIALS)
     );
     let tokens = fixture.auth.token_requests();
@@ -229,14 +229,14 @@ async fn request_headers_come_from_the_vertex_token_path() {
         tokens[0]
             .auth_header
             .as_ref()
-            .map(|secret| secret.expose_secret()),
+            .map(ExposeSecret::expose_secret),
         Some(TOKEN)
     );
     assert_eq!(
         tokens[0]
             .vertex_credentials
             .as_ref()
-            .map(|secret| secret.expose_secret()),
+            .map(ExposeSecret::expose_secret),
         Some(CREDENTIALS)
     );
 }
@@ -523,26 +523,14 @@ async fn callback_logger_publishes_the_standard_payload_by_default() {
 
 #[tokio::test]
 async fn callback_logger_publishes_the_spend_projection_for_the_v1_flag() {
-    let environment = [
-        ("GCS_PUBSUB_PROJECT_ID", PROJECT),
-        ("GCS_PUBSUB_TOPIC_ID", TOPIC),
-        ("GCS_PUB_SUB_USE_V1", "true"),
-    ];
-    let fixture = open(&environment, Overrides::default(), 1);
+    let fixture = open(&v1_environment(), Overrides::default(), 1);
     let with_metadata = event_with_metadata(&[
         ("user_api_key", "sk-secret"),
         ("billing_agent_id", "agent-9"),
         ("user_api_key_end_user_id", "end-user-2"),
         ("user_api_key_user_id", "user-7"),
     ]);
-    fixture
-        .logger
-        .async_log_success_event(Arc::new(with_metadata))
-        .await
-        .expect("the event is accepted");
-    let requests = fixture.delivery.requests();
-    assert_eq!(requests.len(), 1);
-    let body = published(&requests[0]);
+    let body = projected(&fixture, with_metadata).await;
     assert_eq!(member(&body, "request_id"), &text("chatcmpl-1"));
     assert_eq!(member(&body, "call_type"), &text("completion"));
     assert_eq!(member(&body, "model"), &text("gpt-4o"));
@@ -570,15 +558,9 @@ async fn callback_logger_publishes_the_spend_projection_for_the_v1_flag() {
     assert_eq!(member(&body, "total_tokens"), &json("5"));
     assert_eq!(member(&body, "spend"), &json("0.5"));
     assert_eq!(member(&body, "status"), &text("success"));
-    let Json::Text(metadata) = member(&body, "metadata") else {
-        panic!("the metadata is a JSON string");
-    };
-    let clean = json(metadata);
+    let clean = cleaned(&body);
     assert_eq!(member(&clean, "billing_agent_id"), &text("agent-9"));
-    assert_eq!(
-        member(&clean, "additional_usage_values"),
-        &Json::Object(IndexMap::new())
-    );
+    assert_eq!(member(&clean, "additional_usage_values"), &json("{}"));
     assert_ne!(member(&clean, "user_api_key"), &text("sk-secret"));
     assert_eq!(member(&body, "api_key"), member(&clean, "user_api_key"));
 }
@@ -694,7 +676,7 @@ async fn the_spillover_headers_reach_the_projected_metadata() {
     let body = projected(&fixture, event_from(&spilled)).await;
     let clean = cleaned(&body);
     assert_eq!(
-        member(&member(&clean, "azure_spillover"), "from_deployment"),
+        member(member(&clean, "azure_spillover"), "from_deployment"),
         &text("dep-1")
     );
 }
