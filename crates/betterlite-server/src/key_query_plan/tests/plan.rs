@@ -91,6 +91,11 @@ fn default_tiebreaker_only() {
     assert_eq!(default_plan.sort, DEFAULT_SORT.to_vec());
     assert_eq!(default_plan.skip, 8);
     assert_eq!(default_plan.take, 4);
+    let page = page_query(&default_plan);
+    assert!(
+        page.sql
+            .contains("ORDER BY r.\"created_at\" DESC, r.\"token\" DESC")
+    );
 
     let mut explicit = query(1, 10);
     explicit.sort_by = Some(String::from("spend"));
