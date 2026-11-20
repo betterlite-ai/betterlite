@@ -258,6 +258,13 @@ pub(crate) struct Outcome {
     pub(crate) iam_calls: usize,
 }
 
+// The base the call hands the executor: the recorder's address, or none at all
+#[derive(Clone, Copy)]
+pub(crate) enum Base {
+    Recorder,
+    Omitted,
+}
+
 pub(crate) struct Run {
     pub(crate) optional: Object,
     pub(crate) api_key: Option<SecretString>,
@@ -266,6 +273,7 @@ pub(crate) struct Run {
     pub(crate) limits: TransportLimits,
     pub(crate) pause: Duration,
     pub(crate) supplied: bool,
+    pub(crate) base: Base,
     pub(crate) answer: Vec<u8>,
 }
 
@@ -279,6 +287,7 @@ impl Run {
             limits: TransportLimits::DEFAULT,
             pause: Duration::ZERO,
             supplied: false,
+            base: Base::Recorder,
             answer,
         }
     }
@@ -288,6 +297,10 @@ impl Run {
         let calls = Arc::clone(&iam.calls);
         let auth = WatsonxAuth::new(resolved, iam, Arc::new(|| 0.0_f64)).expect("the auth builds");
         let api_base = format!("http://{}", recorder.address);
+        let base = match self.base {
+            Base::Recorder => Some(api_base.as_str()),
+            Base::Omitted => None,
+        };
         let empty = Object::new();
         let call = WatsonxTranscriptionCall {
             model: MODEL,
@@ -297,7 +310,7 @@ impl Run {
                 content_type: AUDIO_TYPE,
             },
             api_key: self.api_key.as_ref(),
-            api_base: Some(&api_base),
+            api_base: base,
             optional_params: &self.optional,
             litellm_params: &empty,
             timeout: self.timeout,

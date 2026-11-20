@@ -9,11 +9,12 @@ use betterlite_core::api::vector_store_http_write::error::BaseLlmException;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http_fixture::reply::reply;
 use betterlite_openai::watsonx_audio::error::WatsonxAudioError;
+use betterlite_openai::watsonx_auth::error::WatsonxError;
 use rstest::rstest;
 use secrecy::SecretString;
 
 use self::support::{
-    AUDIO, Iam, MODEL, Run, SUPPLIED_BODY_BYTES, environment, object, probe_supported_options,
+    AUDIO, Base, Iam, MODEL, Run, SUPPLIED_BODY_BYTES, environment, object, probe_supported_options,
 };
 use crate::api::transcription_http::error::TranscriptionHttpError;
 use crate::watsonx_transcription::error::WatsonxTranscriptionError;
@@ -35,6 +36,8 @@ enum Case {
     RequestDeadline,
     SuppliedClient,
     ProviderNotText,
+    MissingBase,
+    ReplyMissingFields,
     SupportedOptions,
 }
 
@@ -51,6 +54,8 @@ enum Case {
 #[case::request_deadline(Case::RequestDeadline)]
 #[case::supplied_client(Case::SuppliedClient)]
 #[case::provider_not_text(Case::ProviderNotText)]
+#[case::missing_base(Case::MissingBase)]
+#[case::reply_missing_fields(Case::ReplyMissingFields)]
 #[case::supported_options(Case::SupportedOptions)]
 #[tokio::test]
 async fn watsonx_transcription_binding(#[case] case: Case) {
@@ -67,6 +72,8 @@ async fn watsonx_transcription_binding(#[case] case: Case) {
         Case::RequestDeadline => request_deadline().await,
         Case::SuppliedClient => supplied_client().await,
         Case::ProviderNotText => provider_not_text().await,
+        Case::MissingBase => missing_base().await,
+        Case::ReplyMissingFields => reply_missing_fields().await,
         Case::SupportedOptions => supported_options(),
     }
 }
@@ -146,16 +153,16 @@ async fn project_before_space() {
     let body = &outcome.requests[0].body;
     assert!(body.contains("name=\"project_id\"\r\n\r\np"));
     assert!(!body.contains("name=\"space_id\""), "the project wins");
-    for name in [
-        "language",
-        "prompt",
-        "response_format",
-        "temperature",
-        "timestamp_granularities",
+    for (field, value) in [
+        ("language", "en"),
+        ("prompt", "hi"),
+        ("response_format", "json"),
+        ("temperature", "0.2"),
+        ("timestamp_granularities", "word"),
     ] {
         assert!(
-            body.contains(&format!("name=\"{name}\"")),
-            "the form carries {name}"
+            body.contains(&format!("name=\"{field}\"\r\n\r\n{value}")),
+            "the form carries {field}={value}"
         );
     }
     let model = body
@@ -388,6 +395,49 @@ async fn provider_not_text() {
     };
     assert_eq!(field, "space_id");
     assert!(outcome.requests.is_empty(), "nothing reaches the provider");
+}
+
+async fn missing_base() {
+    let mut run = Run::new(json_reply(TRANSCRIPT));
+    run.base = Base::Omitted;
+    let outcome = run
+        .execute(
+            environment(&[("WATSONX_TOKEN", "envtoken")]),
+            Iam::refusing(),
+        )
+        .await;
+    let WatsonxTranscriptionError::Audio(WatsonxAudioError::Watsonx(error)) =
+        outcome.result.expect_err("a base is required")
+    else {
+        panic!("the adapter keeps B5842's error class");
+    };
+    let WatsonxError::Api { status_code, .. } = *error else {
+        panic!("a missing base is the 401 API error");
+    };
+    assert_eq!(status_code, 401, "the missing base is a 401");
+    assert!(outcome.requests.is_empty(), "nothing reaches the provider");
+}
+
+async fn reply_missing_fields() {
+    let run = Run::new(json_reply(r#"{"model":"m"}"#));
+    let outcome = run
+        .execute(
+            environment(&[("WATSONX_TOKEN", "envtoken")]),
+            Iam::refusing(),
+        )
+        .await;
+    let WatsonxTranscriptionError::Audio(WatsonxAudioError::MissingFields { body }) = outcome
+        .result
+        .expect_err("a reply without text or usage is refused")
+    else {
+        panic!("the adapter keeps B5842's error class");
+    };
+    assert_eq!(body, r#"{"model":"m"}"#);
+    assert_eq!(
+        outcome.requests.len(),
+        1,
+        "the reply came from one provider request"
+    );
 }
 
 fn supported_options() {
