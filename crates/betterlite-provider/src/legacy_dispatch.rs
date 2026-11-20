@@ -43,7 +43,7 @@ pub struct LegacyPrepared(Call);
 
 #[derive(Debug, Clone)]
 enum Call {
-    Proxy(proxy::Call),
+    Proxy(Box<proxy::Call>),
     Aleph(Box<aleph::Call>),
     Custom(Box<custom::Call>),
 }
@@ -58,7 +58,9 @@ impl Adapter for Legacy {
         catalog: &CatalogCapabilities,
     ) -> Result<PreparedRequest, OperationError> {
         let call = match self {
-            Self::LitellmProxy => Call::Proxy(proxy::prepare(request, deployment, catalog)?),
+            Self::LitellmProxy => {
+                Call::Proxy(Box::new(proxy::prepare(request, deployment, catalog)?))
+            }
             Self::AlephAlpha => Call::Aleph(Box::new(aleph::prepare(request, deployment)?)),
             Self::Custom => Call::Custom(Box::new(custom::prepare(request, deployment)?)),
         };

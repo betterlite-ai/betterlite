@@ -12,6 +12,7 @@ use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use betterlite_models::controls::control_options::ControlOptions;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_openai::chat::ChatRequest;
+use betterlite_openai::chat::response::ChatUsage;
 use betterlite_openai::embedding::EmbeddingRequest;
 use betterlite_openai::openai_base_config::CatalogCapabilities;
 use http::HeaderMap;
@@ -77,6 +78,14 @@ fn buffered(status: u16, body: &[u8]) -> Upstream {
     })
 }
 
+// OperationResult has no Debug, so unwrap_err cannot print the success value it would have to format
+fn error_of(result: Result<OperationResult, OperationError>) -> OperationError {
+    let Err(error) = result else {
+        panic!("the call was expected to fail");
+    };
+    error
+}
+
 fn object(body: &[u8]) -> JsonValue {
     let parsed: JsonValue = serde_json::from_slice(body).unwrap();
     let JsonValue::Object(fields) = parsed else {
@@ -85,7 +94,7 @@ fn object(body: &[u8]) -> JsonValue {
     JsonValue::Object(fields)
 }
 
-fn field<'a>(fields: &'a JsonValue, name: &str) -> &'a JsonValue {
+fn field<'fields>(fields: &'fields JsonValue, name: &str) -> &'fields JsonValue {
     let JsonValue::Object(entries) = fields else {
         panic!("the request body is not an object");
     };
@@ -139,6 +148,25 @@ fn the_custom_method_table_names_every_selector_answer() {
     assert_eq!(CustomChatMethod::Astreaming.name(), "astreaming");
 }
 
+fn proxy_messages() -> JsonValue {
+    JsonValue::Array(vec![
+        JsonValue::Object(indexmap::IndexMap::from([
+            (
+                String::from("role"),
+                JsonValue::Text(String::from("system")),
+            ),
+            (
+                String::from("content"),
+                JsonValue::Text(String::from("You are terse.")),
+            ),
+        ])),
+        JsonValue::Object(indexmap::IndexMap::from([
+            (String::from("role"), JsonValue::Text(String::from("user"))),
+            (String::from("content"), JsonValue::Text(String::from("hi"))),
+        ])),
+    ])
+}
+
 #[test]
 fn the_proxy_body_keeps_the_nested_model_and_the_supported_params() {
     let request = chat_operation(
@@ -156,25 +184,7 @@ fn the_proxy_body_keeps_the_nested_model_and_the_supported_params() {
         field(&body, "model"),
         &JsonValue::Text(String::from("gemini/gemini-1.5-pro"))
     );
-    assert_eq!(
-        field(&body, "messages"),
-        &JsonValue::Array(vec![
-            JsonValue::Object(indexmap::IndexMap::from([
-                (
-                    String::from("role"),
-                    JsonValue::Text(String::from("system"))
-                ),
-                (
-                    String::from("content"),
-                    JsonValue::Text(String::from("You are terse."))
-                ),
-            ])),
-            JsonValue::Object(indexmap::IndexMap::from([
-                (String::from("role"), JsonValue::Text(String::from("user"))),
-                (String::from("content"), JsonValue::Text(String::from("hi"))),
-            ])),
-        ])
-    );
+    assert_eq!(field(&body, "messages"), &proxy_messages());
     assert_eq!(
         field(&body, "temperature"),
         &JsonValue::Number(serde_json::Number::from_f64(0.2).unwrap())
@@ -230,9 +240,9 @@ fn the_proxy_stream_asks_for_usage_only_from_an_openai_backed_base() {
     assert_eq!(header_text(&call.headers, ACCEPT), "text/event-stream");
 
     let openai_base = deployment("gpt-4o", "https://api.openai.com/v1", Some("test-key"));
-    let call = proxy::prepare(&request, &openai_base, &catalog()).unwrap();
-    let body = object(&call.body);
-    let JsonValue::Object(usage) = field(&body, "stream_options") else {
+    let openai_call = proxy::prepare(&request, &openai_base, &catalog()).unwrap();
+    let openai_body = object(&openai_call.body);
+    let JsonValue::Object(usage) = field(&openai_body, "stream_options") else {
         panic!("stream_options is not an object");
     };
     assert_eq!(usage.get("include_usage"), Some(&JsonValue::Bool(true)));
@@ -303,11 +313,10 @@ fn the_proxy_keeps_the_provider_error_body() {
         Some("test-key"),
     );
     let call = proxy::prepare(&request, &deployment, &catalog()).unwrap();
-    let failed = proxy::decode(
+    let failed = error_of(proxy::decode(
         &call,
         buffered(429, br#"{"error":{"message":"slow down"}}"#),
-    )
-    .unwrap_err();
+    ));
     let OperationError::Provider { response } = failed else {
         panic!("a provider status is not a provider error");
     };
@@ -324,7 +333,7 @@ fn an_unparsable_reply_is_a_decode_error() {
         Some("test-key"),
     );
     let call = proxy::prepare(&request, &deployment, &catalog()).unwrap();
-    let refused = proxy::decode(&call, buffered(200, b"not json")).unwrap_err();
+    let refused = error_of(proxy::decode(&call, buffered(200, b"not json")));
     assert!(matches!(
         refused,
         OperationError::Decode {
@@ -518,7 +527,10 @@ fn the_aleph_reply_becomes_the_synthetic_chat_completion() {
     assert!(response.usage.completion_tokens > 0);
     assert_eq!(
         response.usage.total_tokens,
-        response.usage.prompt_tokens + response.usage.completion_tokens
+        response
+            .usage
+            .prompt_tokens
+            .saturating_add(response.usage.completion_tokens)
     );
 }
 
@@ -531,7 +543,7 @@ fn an_aleph_error_body_keeps_its_provider_status() {
         Some("aleph-key"),
     );
     let call = aleph::prepare(&request, &deployment).unwrap();
-    let refused = aleph::decode(&call, buffered(200, br#"{"error":"boom"}"#)).unwrap_err();
+    let refused = error_of(aleph::decode(&call, buffered(200, br#"{"error":"boom"}"#)));
     let OperationError::Provider { response } = refused else {
         panic!("an error body is a provider error");
     };
@@ -708,7 +720,7 @@ fn decode_custom_output_reads_the_first_text_output() {
         decode_custom_output(no_data),
         Err(LegacyError::CustomOutput)
     ));
-    let array_root = br#"[]"#;
+    let array_root = b"[]";
     assert!(matches!(
         decode_custom_output(array_root),
         Err(LegacyError::CustomOutput)
@@ -743,10 +755,7 @@ fn the_custom_reply_becomes_the_synthetic_chat_completion() {
     );
     // Choices() defaults a missing finish_reason to "stop" before the handler fills the content
     assert_eq!(response.choices[0].finish_reason.as_deref(), Some("stop"));
-    assert_eq!(
-        response.usage,
-        betterlite_openai::chat::response::ChatUsage::default()
-    );
+    assert_eq!(response.usage, ChatUsage::default());
 }
 
 #[test]
@@ -754,7 +763,7 @@ fn a_custom_error_status_is_a_provider_error() {
     let request = chat_operation(br#"{"messages":[{"role":"user","content":"hi"}]}"#, false);
     let deployment = deployment("custom-model", "http://10.0.0.1:8080/generate", None);
     let call = custom::prepare(&request, &deployment).unwrap();
-    let refused = custom::decode(&call, buffered(500, b"upstream exploded")).unwrap_err();
+    let refused = error_of(custom::decode(&call, buffered(500, b"upstream exploded")));
     let OperationError::Provider { response } = refused else {
         panic!("a provider status is not a provider error");
     };

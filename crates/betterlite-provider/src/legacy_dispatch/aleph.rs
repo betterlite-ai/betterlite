@@ -12,7 +12,8 @@ use betterlite_openai::aleph_alpha::reply::{decode_aleph_reply, resolve_usage};
 use betterlite_openai::aleph_alpha::request::{
     CompletionInput, CompletionRequest, completion_request,
 };
-use betterlite_openai::openai_base_config::{CatalogCapabilities, Object};
+use betterlite_openai::chat::response::ChatChoice;
+use betterlite_openai::openai_base_config::Object;
 use betterlite_tokenizer::engine::Engine;
 use betterlite_tokenizer::engine::assets;
 use betterlite_tokenizer::engine::tiktoken::{Encoding, TiktokenEngine};
@@ -37,7 +38,7 @@ const ALEPH_MAX_TOKENS: i64 = 4096;
 
 #[derive(Debug, Clone)]
 pub(super) struct Call {
-    pub(super) request: CompletionRequest,
+    pub(super) request: Arc<CompletionRequest>,
     pub(super) created: i64,
     pub(super) client_model: Option<String>,
     timeout: Duration,
@@ -91,7 +92,7 @@ fn chat_call(chat: &ChatOperation, deployment: &Deployment) -> Result<Call, Oper
         created,
     };
     Ok(Call {
-        request: completion_request(&input).map_err(error::aleph)?,
+        request: Arc::new(completion_request(&input).map_err(error::aleph)?),
         created,
         client_model: chat.request.model.clone(),
         timeout: deployment.timeout,
@@ -149,18 +150,24 @@ pub(super) fn decode(call: &Call, upstream: Upstream) -> Result<OperationResult,
     };
     let checked = success(response)?;
     let choices = decode_aleph_reply(checked.status, &checked.body).map_err(error::aleph)?;
-    let data = assets::bundled(Encoding::Cl100kBase).ok_or_else(|| OperationError::Decode {
-        operation: "chat",
-        source: JsonError::io(IoError::other("cl100k_base is not bundled")),
-    })?;
-    let engine = TiktokenEngine::from_bpe_file(Encoding::Cl100kBase, &data).map_err(|source| {
-        OperationError::Decode {
-            operation: "chat",
-            source: JsonError::io(IoError::other(source.to_string())),
-        }
-    })?;
-    let tokenizer = Engine::Tiktoken(Arc::new(engine));
+    let tokenizer = aleph_tokenizer()?;
     let usage = resolve_usage(&call.request.prompt, &choices, &tokenizer).map_err(error::aleph)?;
+    let output = aiohttp_choices(choices)?;
+    let completion = AiohttpChatResponse {
+        id: None,
+        object: Some(String::from("chat.completion")),
+        created: u64::try_from(call.created).ok(),
+        model: call.client_model.clone().filter(|model| !model.is_empty()),
+        choices: output,
+        system_fingerprint: None,
+        usage,
+    };
+    Ok(OperationResult::Chat(ChatCompletion::AiohttpOpenAi(
+        Box::new(completion),
+    )))
+}
+
+fn aiohttp_choices(choices: Vec<ChatChoice>) -> Result<Vec<AiohttpChoice>, OperationError> {
     let mut output = Vec::with_capacity(choices.len());
     for choice in choices {
         let native = if choice.provider_specific_fields.is_empty() {
@@ -190,16 +197,19 @@ pub(super) fn decode(call: &Call, upstream: Upstream) -> Result<OperationResult,
             extra: IndexMap::new(),
         });
     }
-    let response = AiohttpChatResponse {
-        id: None,
-        object: Some(String::from("chat.completion")),
-        created: u64::try_from(call.created).ok(),
-        model: call.client_model.clone().filter(|model| !model.is_empty()),
-        choices: output,
-        system_fingerprint: None,
-        usage,
-    };
-    Ok(OperationResult::Chat(ChatCompletion::AiohttpOpenAi(
-        Box::new(response),
-    )))
+    Ok(output)
+}
+
+fn aleph_tokenizer() -> Result<Engine, OperationError> {
+    let data = assets::bundled(Encoding::Cl100kBase).ok_or_else(|| OperationError::Decode {
+        operation: "chat",
+        source: JsonError::io(IoError::other("cl100k_base is not bundled")),
+    })?;
+    let engine = TiktokenEngine::from_bpe_file(Encoding::Cl100kBase, &data).map_err(|source| {
+        OperationError::Decode {
+            operation: "chat",
+            source: JsonError::io(IoError::other(source.to_string())),
+        }
+    })?;
+    Ok(Engine::Tiktoken(Arc::new(engine)))
 }

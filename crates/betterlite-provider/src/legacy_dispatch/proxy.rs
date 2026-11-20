@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use betterlite_config::sections::openai_provider::Settings as ProviderSettings;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_models::controls::json_value::JsonValue;
@@ -14,6 +15,7 @@ use betterlite_openai::proxy::error::ProxyError;
 use betterlite_openai::proxy::{map_params, transform_request};
 use http::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderName, HeaderValue};
 use http::{HeaderMap, Method};
+use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
 use url::Url;
 
@@ -71,6 +73,35 @@ fn chat_call(
     stream: bool,
 ) -> Result<Call, OperationError> {
     let body::ChatRequestFields { messages, params } = body::chat_request_fields(&chat.request)?;
+    let mut optional = mapped_params(params, deployment, catalog)?;
+    if stream {
+        apply_stream_options(&mut optional, deployment);
+    }
+    let messages_json =
+        serde_json::to_value(messages).map_err(|source| OperationError::Encode { source })?;
+    let body = transform_request(&deployment.model, messages_json, &optional);
+    Ok(Call {
+        url: deployment.endpoint.clone(),
+        headers: proxy_headers(
+            deployment,
+            if stream {
+                "text/event-stream"
+            } else {
+                "application/json"
+            },
+        )?,
+        body: serde_json::to_vec(&body).map_err(|source| OperationError::Encode { source })?,
+        timeout: deployment.timeout,
+        kind: if stream { Kind::Stream } else { Kind::Chat },
+        client_model: chat.request.model.clone(),
+    })
+}
+
+fn mapped_params(
+    params: IndexMap<String, JsonValue>,
+    deployment: &Deployment,
+    catalog: &CatalogCapabilities,
+) -> Result<Object, OperationError> {
     let serialized = serde_json::to_value(JsonValue::Object(params))
         .map_err(|source| OperationError::Encode { source })?;
     let requested: Object =
@@ -89,7 +120,12 @@ fn chat_call(
         &mut optional,
         catalog,
     )
-    .map_err(|error| match error {
+    .map_err(proxy_param_error)?;
+    Ok(optional)
+}
+
+fn proxy_param_error(error: ProxyError) -> OperationError {
+    match error {
         other @ ProxyError::ExtraBodyNotObject => error::encode(other.to_string()),
         other @ (ProxyError::MissingApiBase | ProxyError::ModelList { .. }) => {
             OperationError::UnsupportedOperation {
@@ -97,24 +133,28 @@ fn chat_call(
                 operation: other.to_string(),
             }
         }
-    })?;
-    if stream {
-        optional.insert(String::from("stream"), serde_json::Value::Bool(true));
-        // get_stream_options asks for usage only from an OpenAI-backed base, and the caller's own map wins
-        if !optional.contains_key("stream_options")
-            && is_openai_backed_api_base(&deployment.api_base).unwrap_or(false)
-        {
-            let mut usage = Object::new();
-            usage.insert(String::from("include_usage"), serde_json::Value::Bool(true));
-            optional.insert(
-                String::from("stream_options"),
-                serde_json::Value::Object(usage),
-            );
-        }
     }
-    let messages_json =
-        serde_json::to_value(messages).map_err(|source| OperationError::Encode { source })?;
-    let body = transform_request(&deployment.model, messages_json, &optional);
+}
+
+// get_stream_options asks for usage only from an OpenAI-backed base, and the caller's own map wins
+fn apply_stream_options(optional: &mut Object, deployment: &Deployment) {
+    optional.insert(String::from("stream"), serde_json::Value::Bool(true));
+    if !optional.contains_key("stream_options")
+        && is_openai_backed_api_base(&deployment.api_base).unwrap_or(false)
+    {
+        let mut usage = Object::new();
+        usage.insert(String::from("include_usage"), serde_json::Value::Bool(true));
+        optional.insert(
+            String::from("stream_options"),
+            serde_json::Value::Object(usage),
+        );
+    }
+}
+
+fn proxy_headers(
+    deployment: &Deployment,
+    accept: &'static str,
+) -> Result<HeaderMap, OperationError> {
     let mut headers = HeaderMap::new();
     let credential = deployment
         .credential()
@@ -123,28 +163,14 @@ fn chat_call(
         AUTHORIZATION,
         authorization_value(credential.expose_secret())?,
     );
-    headers.insert(
-        ACCEPT,
-        HeaderValue::from_static(if stream {
-            "text/event-stream"
-        } else {
-            "application/json"
-        }),
-    );
+    headers.insert(ACCEPT, HeaderValue::from_static(accept));
     if let Some(organization) = &deployment.organization {
         headers.insert(
             HeaderName::from_static("openai-organization"),
             header_value(organization, "openai-organization")?,
         );
     }
-    Ok(Call {
-        url: deployment.endpoint.clone(),
-        headers,
-        body: serde_json::to_vec(&body).map_err(|source| OperationError::Encode { source })?,
-        timeout: deployment.timeout,
-        kind: if stream { Kind::Stream } else { Kind::Chat },
-        client_model: chat.request.model.clone(),
-    })
+    Ok(headers)
 }
 
 // the proxy embedding branch runs the OpenAI embedding handler after B006's chain resolved the deployment
@@ -152,6 +178,23 @@ fn embedding_call(
     embedding: &EmbeddingOperation,
     deployment: &Deployment,
 ) -> Result<Call, OperationError> {
+    let fields = embedding_fields(embedding)?;
+    let mut headers = proxy_headers(deployment, "application/json")?;
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    Ok(Call {
+        url: deployment.endpoint_for("embeddings"),
+        headers,
+        body: encode(fields)?,
+        timeout: deployment.timeout,
+        kind: Kind::Embedding,
+        // the proxy restamps the embedding answer with the name the client asked for
+        client_model: embedding.request.model.clone(),
+    })
+}
+
+fn embedding_fields(
+    embedding: &EmbeddingOperation,
+) -> Result<IndexMap<String, JsonValue>, OperationError> {
     let mut fields = request_fields(&embedding.request, "embeddings")?;
     fields.insert(
         String::from("model"),
@@ -171,7 +214,7 @@ fn embedding_call(
         | None => None,
     };
     // the loaded section reaches this path with the settings seam; until then the default is unset
-    let configured = betterlite_config::sections::openai_provider::Settings::default();
+    let configured = ProviderSettings::default();
     let requested = explicit.or_else(|| configured.embedding_format.clone());
     match requested.filter(|format| format.trim().to_lowercase() != "none") {
         Some(format) => {
@@ -181,31 +224,7 @@ fn embedding_call(
             fields.shift_remove("encoding_format");
         }
     }
-    let mut headers = HeaderMap::new();
-    let credential = deployment
-        .credential()
-        .ok_or(OperationError::MissingApiKey)?;
-    headers.insert(
-        AUTHORIZATION,
-        authorization_value(credential.expose_secret())?,
-    );
-    headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
-    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-    if let Some(organization) = &deployment.organization {
-        headers.insert(
-            HeaderName::from_static("openai-organization"),
-            header_value(organization, "openai-organization")?,
-        );
-    }
-    Ok(Call {
-        url: deployment.endpoint_for("embeddings"),
-        headers,
-        body: encode(fields)?,
-        timeout: deployment.timeout,
-        kind: Kind::Embedding,
-        // the proxy restamps the embedding answer with the name the client asked for
-        client_model: embedding.request.model.clone(),
-    })
+    Ok(fields)
 }
 
 pub(super) async fn execute(

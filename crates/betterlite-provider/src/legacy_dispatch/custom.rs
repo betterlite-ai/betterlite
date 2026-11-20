@@ -115,9 +115,34 @@ pub(super) fn prepare(
 
 fn chat_call(chat: &ChatOperation, deployment: &Deployment) -> Result<Call, OperationError> {
     let body::ChatRequestFields {
-        messages: _,
         params,
+        .. // the prompt is rebuilt from the request messages below
     } = body::chat_request_fields(&chat.request)?;
+    let inner = custom_params(chat, &params)?;
+    let request_body = custom_body(&deployment.model, &params, inner)?;
+    let url = Url::parse(&deployment.api_base)
+        .map_err(|source| error::operation(error::LegacyError::Endpoint { source }))?;
+    let mut headers = HeaderMap::new();
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    let seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs());
+    Ok(Call {
+        url,
+        headers,
+        body: serde_json::to_vec(&serde_json::Value::Object(request_body))
+            .map_err(|source| OperationError::Encode { source })?,
+        timeout: deployment.timeout,
+        created: i64::try_from(seconds).unwrap_or(0),
+        client_model: chat.request.model.clone(),
+    })
+}
+
+// _complete_custom sends the joined prompt beside every call parameter in one params object
+fn custom_params(
+    chat: &ChatOperation,
+    params: &IndexMap<String, JsonValue>,
+) -> Result<Object, OperationError> {
     let prompt = prompt_text(&chat.request.messages)?;
     let mut inner = Object::new();
     inner.insert(
@@ -154,13 +179,21 @@ fn chat_call(chat: &ChatOperation, deployment: &Deployment) -> Result<Call, Oper
             None => serde_json::Value::Null,
         },
     );
+    Ok(inner)
+}
+
+// extra_body expands last, so it may replace the model or the whole params object
+fn custom_body(
+    model: &str,
+    params: &IndexMap<String, JsonValue>,
+    inner: Object,
+) -> Result<Object, OperationError> {
     let mut request_body = Object::new();
     request_body.insert(
         String::from("model"),
-        serde_json::Value::String(deployment.model.clone()),
+        serde_json::Value::String(String::from(model)),
     );
     request_body.insert(String::from("params"), serde_json::Value::Object(inner));
-    // extra_body expands last, so it may replace the model or the whole params object
     match params.get("extra_body") {
         None | Some(JsonValue::Null) => {}
         Some(JsonValue::Object(extra)) => {
@@ -174,22 +207,7 @@ fn chat_call(chat: &ChatOperation, deployment: &Deployment) -> Result<Call, Oper
             JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Text(_) | JsonValue::Array(_),
         ) => return Err(error::operation(error::LegacyError::ExtraBodyNotObject)),
     }
-    let url = Url::parse(&deployment.api_base)
-        .map_err(|source| error::operation(error::LegacyError::Endpoint { source }))?;
-    let mut headers = HeaderMap::new();
-    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-    let seconds = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_secs());
-    Ok(Call {
-        url,
-        headers,
-        body: serde_json::to_vec(&serde_json::Value::Object(request_body))
-            .map_err(|source| OperationError::Encode { source })?,
-        timeout: deployment.timeout,
-        created: i64::try_from(seconds).unwrap_or(0),
-        client_model: chat.request.model.clone(),
-    })
+    Ok(request_body)
 }
 
 // _complete_custom joins message["content"] with one space and sends nothing else

@@ -11,6 +11,15 @@ fn key(secret: &SecretString) -> &str {
     secret.expose_secret()
 }
 
+fn configured_settings() -> Settings {
+    Settings {
+        aleph_alpha_key: Some(SecretString::from("yaml-aleph-key")),
+        aleph_alpha_api_key: None,
+        alephalpha_api_key: None,
+        aleph_alpha_api_base: Some(String::from("https://env.example/complete")),
+    }
+}
+
 #[test]
 fn legacy_provider_loads_keys() {
     let environment = BTreeMap::from([
@@ -47,7 +56,11 @@ fn legacy_provider_loads_keys() {
         settings.aleph_alpha_api_base.as_deref(),
         Some("https://env.example/complete")
     );
+}
 
+#[test]
+fn the_resolve_key_chain_prefers_the_supplied_and_yaml_keys() {
+    let settings = configured_settings();
     let supplied = SecretString::from("supplied-key");
     let global = SecretString::from("global-key");
     assert_eq!(
@@ -64,6 +77,11 @@ fn legacy_provider_loads_keys() {
             .expect("configured key beats the global")),
         "yaml-aleph-key"
     );
+}
+
+#[test]
+fn the_resolve_base_chain_prefers_the_supplied_and_global_bases() {
+    let settings = configured_settings();
     assert_eq!(
         settings.resolve_aleph_alpha_base(
             Some("https://supplied.example/complete"),
@@ -96,11 +114,11 @@ fn the_environment_spellings_answer_in_order() {
         "env-aleph-key"
     );
 
-    let environment =
+    let tight_only =
         BTreeMap::from([("ALEPHALPHA_API_KEY".to_owned(), "env-tight-key".to_owned())]);
-    let settings = empty_config(environment);
+    let tight_settings = empty_config(tight_only);
     assert_eq!(
-        key(settings
+        key(tight_settings
             .resolve_aleph_alpha_key(None, None)
             .as_ref()
             .expect("the second spelling answers")),
@@ -145,7 +163,7 @@ fn an_empty_spelling_falls_through_to_the_next_source() {
 }
 
 #[test]
-fn an_empty_source_leaves_the_next_one_to_answer() {
+fn an_empty_yaml_key_leaves_the_global_to_answer() {
     // an empty litellm_settings.aleph_alpha_key is skipped like every other source
     let settings = ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),
@@ -162,12 +180,15 @@ fn an_empty_source_leaves_the_next_one_to_answer() {
             .expect("the global key answers after the empty yaml key")),
         "global-key"
     );
+}
 
-    // the second environment spelling is skipped too
+#[test]
+fn an_empty_environment_spelling_leaves_the_global_to_answer() {
     let settings = empty_config(BTreeMap::from([(
         "ALEPHALPHA_API_KEY".to_owned(),
         String::new(),
     )]));
+    let global = SecretString::from("global-key");
     assert_eq!(
         key(settings
             .resolve_aleph_alpha_key(None, Some(&global))
@@ -175,8 +196,10 @@ fn an_empty_source_leaves_the_next_one_to_answer() {
             .expect("the global key answers after the empty spelling")),
         "global-key"
     );
+}
 
-    // an empty global key is no key at all
+#[test]
+fn an_empty_global_key_is_no_key() {
     let settings = empty_config(BTreeMap::new());
     let empty = SecretString::from("");
     assert!(
@@ -184,8 +207,10 @@ fn an_empty_source_leaves_the_next_one_to_answer() {
             .resolve_aleph_alpha_key(None, Some(&empty))
             .is_none()
     );
+}
 
-    // an empty global base and an empty environment base both leave the provider host to answer
+#[test]
+fn an_empty_base_leaves_the_provider_host_to_answer() {
     assert_eq!(
         Settings::default().resolve_aleph_alpha_base(None, Some("")),
         DEFAULT_ALEPH_ALPHA_BASE
