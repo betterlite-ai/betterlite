@@ -1,0 +1,13 @@
+id: B10027
+milestone: M9 agents and mcp
+title: Mount the agent skills discovery routes with the stored-skill reader
+status: todo
+depends_on: [B8610, B8274, B3212, B3210]
+file: tasks/B10027-agent-skills-mount.yaml
+covers: []
+parent: B078
+split_from: B8648
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

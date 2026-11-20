@@ -9,7 +9,7 @@ description: >-
 
   adapters.rs, one adapter per request or router port:
   `RequestPreparer` over B1103's add_litellm_data_to_request stage, the one ServerState holds in its request_setup slot. Its policy inputs are B3241's live policy and attachment registry handles (`Mutex<PolicyRegistry>` and `Mutex<AttachmentRegistry>`) that Shared holds, read on each request and never kept as a startup snapshot.
-  `VectorStoreAccess` over B1061's assert_user_can_access_vector_store_id (core::api::vector_endpoint_access).
+  `VectorStoreAccess` over B10014's assert_user_can_access_vector_store_id (core::api::managed_store_access).
   `RouterSettingsSource` over B881's _get_hierarchical_router_settings (the auth_context_sources slot).
   `RouterView` over `shared.router` (B8611): resolved_models from B844's resolved_litellm_models, arm_prefetch from Router.arm_routing_read_prefetch, fallbacks from the router's fallbacks setting, fallback_models from B016's get_fallback_model_group (a model group match first, else the generic `*` entry), and authorize_alias from B886's can_key_call_resolved_model with the router's model list and the router. With no deployments in the startup router the port is None, which is LiteLLM's no-router branch.
   `StreamOptionsCheck` over B175's get_supported_openai_params: true when its answer lists stream_options, false when it has no answer or fails.
@@ -51,7 +51,7 @@ deviations:
     why: The server holds no tracer yet. tag_call_id and tag_request are still called, so tags appear once a tracer is wired.
 out_of_scope:
   - "The step and its ports: B8801 and B8800. The hook ports (PreCallHooks, GuardrailMerge, CompressionArming, TagBudgets, RetrievalPipelines): B8805. Handing the step to routes: B8803, B8804, B8694 and B8648."
-  - "The functions behind each adapter: B1103, B1061, B881, B844, B016, B886 and B175."
+  - "The functions behind each adapter: B1103, B10014, B881, B844, B016, B886 and B175."
   - "B8560's prompt dispatch: the step never reaches it. Prompt templates run inside pre_call_hook (B8393's prompt.rs through B8399)."
 pitfalls:
   - "fallback_models must try the exact model group before the `*` entry, as get_fallback_model_group does."

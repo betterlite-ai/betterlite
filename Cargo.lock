@@ -4500,6 +4500,7 @@ dependencies = [
 name = "betterlite-server"
 version = "0.1.0"
 dependencies = [
+ "aes 0.9.3",
  "aho-corasick",
  "async-stream",
  "async-trait",
@@ -4552,6 +4553,7 @@ dependencies = [
  "betterlite-vertex",
  "bytes",
  "caseless",
+ "cbc 0.2.1",
  "chrono",
  "clap",
  "crc32fast",
@@ -4564,6 +4566,7 @@ dependencies = [
  "futures-util",
  "getrandom 0.4.3",
  "hex",
+ "hmac 0.13.0",
  "http 1.5.0",
  "http-body 1.1.0",
  "hyper-util",
@@ -4605,6 +4608,7 @@ dependencies = [
  "speedate",
  "strum",
  "subtle",
+ "temp-env",
  "tempfile",
  "thiserror",
  "tokio",

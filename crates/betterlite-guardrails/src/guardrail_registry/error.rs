@@ -3,6 +3,7 @@ use thiserror::Error;
 
 use crate::guardrail_base::error::GuardrailBaseError;
 use crate::guardrail_initializers::error::InitializerError;
+use crate::hook_registry::error::HookRegistryError;
 
 use super::rows::RowsError;
 
@@ -28,6 +29,8 @@ pub enum RegistryError {
     // LiteLLM raises a plain Exception for the missing enterprise package, so a route still answers 200
     #[error(transparent)]
     Enterprise(InitializerError),
+    #[error(transparent)]
+    Hook(#[from] HookRegistryError),
     #[error(transparent)]
     Rows(#[from] RowsError),
     #[error(transparent)]
