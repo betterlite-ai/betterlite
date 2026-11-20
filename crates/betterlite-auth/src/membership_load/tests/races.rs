@@ -132,7 +132,8 @@ async fn replacement_survives_old_completion() {
     let reservation = key("user-1", "team-1");
     let (start, started) = oneshot::channel();
     let (completion, receiver) = watch::channel(None::<MembershipLoad>);
-    let rows_handle: Arc<dyn TeamMembershipRows> = Arc::clone(&rows);
+    let rows_arc = Arc::clone(&rows);
+    let rows_handle: Arc<dyn TeamMembershipRows> = rows_arc;
     let cache_handle: Arc<dyn MembershipCache> = cache;
     let old = tasks.spawn(run_load(LoadRequest {
         start: started,

@@ -43,7 +43,7 @@ fn report(payload: &CachedInput) -> HelperResult {
     let cached = match payload {
         CachedInput::Pending => CachedPayload::Pending,
         CachedInput::Typed { membership } => CachedPayload::Typed(membership.clone()),
-        CachedInput::Stored { payload } => CachedPayload::Stored(payload.clone()),
+        CachedInput::Stored { payload: stored } => CachedPayload::Stored(stored.clone()),
     };
     match classify_cached(cached).or_value_error()? {
         CachedMembership::Membership(membership) => Ok(json!({

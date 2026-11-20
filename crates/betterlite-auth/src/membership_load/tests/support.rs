@@ -500,12 +500,12 @@ pub(crate) fn expect_error(
 pub(crate) fn shared(error: MembershipLoadError) -> Arc<MembershipLoadError> {
     match error {
         MembershipLoadError::Shared(shared) => shared,
-        other @ MembershipLoadError::NoDatabase
-        | other @ MembershipLoadError::CacheRead(_)
-        | other @ MembershipLoadError::CacheWrite(_)
-        | other @ MembershipLoadError::Decode(_)
-        | other @ MembershipLoadError::Read(_)
-        | other @ MembershipLoadError::LoadLost => {
+        other @ (MembershipLoadError::NoDatabase
+        | MembershipLoadError::CacheRead(_)
+        | MembershipLoadError::CacheWrite(_)
+        | MembershipLoadError::Decode(_)
+        | MembershipLoadError::Read(_)
+        | MembershipLoadError::LoadLost) => {
             panic!("the waiter sees the shared failure, got {other}")
         }
     }
