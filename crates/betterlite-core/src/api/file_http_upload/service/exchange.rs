@@ -209,7 +209,7 @@ where
         body: UploadBody,
     ) -> Result<Reply, UploadError> {
         let sent_headers = match &body {
-            UploadBody::Bytes(_) => default_content_type(headers, self.mode, method),
+            UploadBody::Bytes(bytes) => default_content_type(headers, self.mode, method, bytes),
             UploadBody::Multipart { .. } | UploadBody::Blocks(_) => headers,
         };
         let request = UploadRequest {

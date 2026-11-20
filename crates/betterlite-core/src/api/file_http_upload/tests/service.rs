@@ -535,9 +535,9 @@ async fn raw_upload_defaults_to_octet_stream() {
     );
 }
 
-// aiohttp labels only POST, PUT and PATCH, so another method's type-less raw body gets no default
+// aiohttp's bytes payload labels a non-empty body octet-stream whatever the method
 #[tokio::test]
-async fn raw_upload_delete_gets_no_async_default() {
+async fn raw_upload_labels_a_non_empty_delete_body() {
     let plan = UploadPlan::Presigned(Box::new(PresignedPlan {
         method: String::from("delete"),
         url: String::from(UPLOAD_URL),
@@ -549,7 +549,53 @@ async fn raw_upload_delete_gets_no_async_default() {
         .run(Mode::Asynchronous, &create_call(), &params())
         .await
         .unwrap();
+    assert_eq!(
+        harness.seen()[0]
+            .headers
+            .get(CONTENT_TYPE)
+            .expect("the bytes label"),
+        "application/octet-stream"
+    );
+}
+
+// an empty async body goes as data=None, so a delete gets no content type
+#[tokio::test]
+async fn raw_upload_delete_of_an_empty_body_gets_no_default() {
+    let plan = UploadPlan::Presigned(Box::new(PresignedPlan {
+        method: String::from("delete"),
+        url: String::from(UPLOAD_URL),
+        headers: BTreeMap::new(),
+        data: UploadData::Bytes(Vec::new()),
+    }));
+    let mut harness = Harness::new(plan, API_BASE, vec![answer(200, &[], b"{}")]);
+    harness
+        .run(Mode::Asynchronous, &create_call(), &params())
+        .await
+        .unwrap();
     assert!(!harness.seen()[0].headers.contains_key(CONTENT_TYPE));
+}
+
+// an empty async body still takes aiohttp's send() default for POST, PUT and PATCH
+#[tokio::test]
+async fn raw_upload_empty_body_takes_the_post_method_default() {
+    let plan = UploadPlan::Presigned(Box::new(PresignedPlan {
+        method: String::from("PUT"),
+        url: String::from(UPLOAD_URL),
+        headers: BTreeMap::new(),
+        data: UploadData::Bytes(Vec::new()),
+    }));
+    let mut harness = Harness::new(plan, API_BASE, vec![answer(200, &[], b"{}")]);
+    harness
+        .run(Mode::Asynchronous, &create_call(), &params())
+        .await
+        .unwrap();
+    assert_eq!(
+        harness.seen()[0]
+            .headers
+            .get(CONTENT_TYPE)
+            .expect("the send default"),
+        "application/octet-stream"
+    );
 }
 
 // a plan that names its own content type keeps it, so only a type-less raw body takes the async default
