@@ -1,0 +1,89 @@
+kind: helper
+name: identity-descriptors-tag-per-key-rpm
+call:
+  b3039:
+    function: tag_per_key
+    auth:
+      api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      metadata:
+        tag_rpm_limit: {tag-a: 5, tag-b: 2}
+    data:
+      tags: [tag-a, tag-b]
+    window_size: 60
+calls:
+  - b3039:
+      function: tag_per_key
+      auth:
+        api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        metadata:
+          tag_rpm_limit: {tag-a: 5}
+      data:
+        tags: [tag-a, tag-c]
+      window_size: 30
+  - b3039:
+      function: tag_per_key
+      auth:
+        api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        metadata:
+          tag_rpm_limit: {tag-a: 5, tag-b: 2}
+      data:
+        tags: [tag-b, tag-a, tag-b]
+      window_size: 60
+  - b3039:
+      function: tag_per_key
+      auth:
+        metadata:
+          tag_rpm_limit: {tag-a: 5}
+      data:
+        tags: [tag-a]
+      window_size: 60
+  - b3039:
+      function: tag_per_key
+      auth:
+        api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        metadata: {}
+      data:
+        tags: [tag-a]
+      window_size: 60
+  - b3039:
+      function: tag_per_key
+      auth:
+        api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        metadata:
+          tag_rpm_limit: {tag-a: 4}
+      data:
+        metadata:
+          tags: [tag-a]
+      window_size: 60
+  - b3039:
+      function: tag_per_key
+      auth:
+        api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        metadata:
+          tag_rpm_limit: {tag-a: 0, tag-b: 3}
+      data:
+        tags: [tag-a]
+      window_size: 60
+  - b3039:
+      function: tag_per_key
+      auth:
+        api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        metadata:
+          tag_rpm_limit: {tag-b: 2}
+      data:
+        metadata:
+          tags: [tag-b]
+        litellm_metadata:
+          tags: [tag-a]
+      window_size: 60
+  - b3039:
+      function: tag_per_key
+      auth:
+        api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        metadata:
+          tag_rpm_limit: {tag-a: 6}
+      data:
+        metadata: '{"tags": ["tag-a"]}'
+      window_size: 60
+env: {}
+compare: {ignore: []}

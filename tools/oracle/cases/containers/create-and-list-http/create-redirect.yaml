@@ -1,0 +1,16 @@
+kind: helper
+name: create-redirect
+call:
+  b3364:
+    operation: create
+    name: box
+    create_params: {}
+    api_key: sk-test
+    api_base: https://api.example.com/v1
+    timeout: null
+    status: 302
+    reply_headers: {}
+    body: '{"error":{"message":"moved","type":"invalid_request_error"}}'
+    failure: null
+env: {}
+compare: {ignore: []}
