@@ -500,15 +500,15 @@ impl ReseedCache for FakeCache {
         if self.increment_fails.load(Ordering::Relaxed) {
             return Err(FakeError);
         }
-        let held = self.increments.lock().expect("the fake increment lock");
-        let base = held.get(counter_key).copied().unwrap_or(Decimal::ZERO);
-        drop(held);
+        // the read and the write share one guard, and the delay never keeps it locked
         sleep(self.increment_delay).await;
+        let mut increments = self.increments.lock().expect("the fake increment lock");
+        let base = increments
+            .get(counter_key)
+            .copied()
+            .unwrap_or(Decimal::ZERO);
         let next = incremented(base, increment);
-        self.increments
-            .lock()
-            .expect("the fake increment lock")
-            .insert(counter_key.to_owned(), next);
+        increments.insert(counter_key.to_owned(), next);
         Ok(Some(next))
     }
 }

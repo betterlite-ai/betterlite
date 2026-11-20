@@ -65,38 +65,25 @@ const fn lookup_of(key: SpendCounterKey<'_>) -> Option<(SpendRowLookup<'_>, bool
     }
 }
 
+// the two database reads differ in the shape the decoder accepts and in the row a counter names
+#[derive(Clone, Copy)]
+pub(super) enum CounterRead {
+    Primary,
+    EndUser,
+}
+
 // _counter_row's prefix order and _is_key_or_team_window_counter both live in B1735's decoder
-pub(super) fn primary_lookup<'key>(
+pub(super) fn counter_lookup<'key>(
     counter_key: &'key str,
-    durations: &dyn DurationParser,
+    durations: &(dyn DurationParser + Send + Sync),
     now: DateTime<Utc>,
+    read: CounterRead,
 ) -> Option<SpendRowLookup<'key>> {
     let windows = CounterDurations { durations, now };
     let decoded = decode_spend_counter_key(counter_key.as_bytes(), &windows).ok()?;
-    match lookup_of(decoded) {
-        Some((lookup, false)) => Some(lookup),
-        Some((_, true)) | None => None,
-    }
-}
-
-// the floor reader accepts only the end-user prefix; every other counter shape reads no row
-pub(super) fn end_user_lookup<'key>(
-    key: &'key str,
-    parser: &dyn DurationParser,
-    moment: DateTime<Utc>,
-) -> Option<SpendRowLookup<'key>> {
-    let decoded = decode_spend_counter_key(
-        key.as_bytes(),
-        &CounterDurations {
-            durations: parser,
-            now: moment,
-        },
-    )
-    .ok()?;
-    if let SpendCounterKey::EndUser(user_id) = decoded {
-        return Some(SpendRowLookup::EndUser(user_id));
-    }
-    None
+    let (lookup, end_user) = lookup_of(decoded)?;
+    // the floor reader accepts only the end-user prefix; the primary reader rejects it
+    (end_user == matches!(read, CounterRead::EndUser)).then_some(lookup)
 }
 
 pub(super) async fn bounded_row<Failure, Lookup>(

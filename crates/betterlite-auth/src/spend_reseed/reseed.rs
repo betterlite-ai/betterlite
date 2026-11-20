@@ -16,7 +16,7 @@ use crate::spend_counter_batch::batch::{CounterValue, SpendCounterBatchError};
 
 use super::cache::{ActiveSpendBatch, ReseedCache, WindowReseedCache};
 use super::locks::LockRegistry;
-use super::reads::{bounded_row, cached_amount, counter_row, end_user_lookup, primary_lookup};
+use super::reads::{CounterRead, bounded_row, cached_amount, counter_lookup, counter_row};
 use super::rows::{LookupAnswer, OwnedLookup, SpendCounterRows, SpendRow, WindowEntity};
 use super::values::{SpendValueError, aggregate_amount, stored_amount};
 use super::warm::warm;
@@ -33,12 +33,6 @@ pub enum CoalescedError<CacheError> {
     Spend(#[from] SpendValueError),
     #[error(transparent)]
     Batch(#[from] SpendCounterBatchError),
-}
-
-// the two database reads differ in the decoder, the lookup name and whether the db gate applies
-enum CounterRead {
-    Primary,
-    EndUser,
 }
 
 pub struct SpendCounterReseed<Rows: SpendCounterRows> {
@@ -78,19 +72,13 @@ impl<Rows: SpendCounterRows> SpendCounterReseed<Rows> {
         counter_key: &str,
         read: CounterRead,
     ) -> Result<Option<Decimal>, SpendValueError> {
-        let (decoded, gate, name) = match read {
-            CounterRead::Primary => (
-                primary_lookup(counter_key, self.durations.as_ref(), self.clock.now()),
-                Some(Arc::clone(&self.gate)),
-                SPEND_COUNTER_LOOKUP,
-            ),
-            CounterRead::EndUser => (
-                end_user_lookup(counter_key, self.durations.as_ref(), self.clock.now()),
-                None,
-                END_USER_SPEND_LOOKUP,
-            ),
+        let (gate, name) = match read {
+            CounterRead::Primary => (Some(Arc::clone(&self.gate)), SPEND_COUNTER_LOOKUP),
+            CounterRead::EndUser => (None, END_USER_SPEND_LOOKUP),
         };
-        let Some(lookup) = decoded else {
+        let Some(lookup) =
+            counter_lookup(counter_key, self.durations.as_ref(), self.clock.now(), read)
+        else {
             return Ok(None);
         };
         let owned = OwnedLookup::from(lookup);

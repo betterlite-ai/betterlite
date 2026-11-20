@@ -49,6 +49,30 @@ impl From<i64> for LockRegistry {
     }
 }
 
+impl KeyOperation {
+    // takes an idle slot; the caller registered its release notification first
+    fn claim(&self) -> bool {
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        if *state == OperationState::Idle {
+            *state = OperationState::Running;
+            return true;
+        }
+        false
+    }
+}
+
+// registers the release notification before the state check, so a release in between still wakes the waiter
+async fn wait_for_turn(operation: &KeyOperation) -> bool {
+    let released = operation.released.notified();
+    tokio::pin!(released);
+    released.as_mut().enable();
+    if operation.claim() {
+        return true;
+    }
+    released.await;
+    false
+}
+
 impl LockRegistry {
     #[must_use]
     pub fn operation(&self, counter_key: &str) -> Arc<KeyOperation> {
@@ -75,32 +99,7 @@ impl LockRegistry {
     pub async fn hold(&self, counter_key: &str) -> OperationGuard {
         loop {
             let operation = self.operation(counter_key);
-            // the notification borrows the operation, so it is dropped before the guard takes ownership
-            let acquired = {
-                let released = operation.released.notified();
-                tokio::pin!(released);
-                // registering before the check is what makes a release that lands in between still wake us
-                released.as_mut().enable();
-                let idle = {
-                    let mut state = operation
-                        .state
-                        .lock()
-                        .unwrap_or_else(PoisonError::into_inner);
-                    if *state == OperationState::Idle {
-                        *state = OperationState::Running;
-                        true
-                    } else {
-                        false
-                    }
-                };
-                if idle {
-                    true
-                } else {
-                    released.await;
-                    false
-                }
-            };
-            if acquired {
+            if wait_for_turn(operation.as_ref()).await {
                 return OperationGuard { operation };
             }
         }

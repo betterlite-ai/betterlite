@@ -68,10 +68,13 @@ where
     }
 }
 
-fn window_failure<CacheError: Error>(
+fn window_failure<CacheError>(
     error: CoalescedError<CacheError>,
     counter_key: &str,
-) -> CoalescedError<CacheError> {
+) -> CoalescedError<CacheError>
+where
+    CacheError: Error,
+{
     tracing::error!(
         %error,
         counter_key,
