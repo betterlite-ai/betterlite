@@ -9,6 +9,7 @@ use crate::callback_logger::CallbackLogger;
 use crate::otel::legacy_policy::config::{Exporter, OTLP_HTTP_EXPORTER, OpenTelemetryConfig};
 use crate::otel::logger_runtime::LoggerRuntime;
 
+pub const CALLBACK_NAME: &str = "logfire";
 const TOKEN_VARIABLE: &str = "LOGFIRE_TOKEN";
 const BASE_URL_VARIABLE: &str = "LOGFIRE_BASE_URL";
 const DEFAULT_BASE_URL: &str = "https://logfire-api.pydantic.dev";
@@ -22,15 +23,26 @@ pub fn build(
     shared: &SharedOtel,
     in_memory: &mut Vec<Arc<dyn CallbackLogger>>,
 ) -> Result<Arc<dyn CallbackLogger>, CatalogError> {
+    let config = legacy_config(inputs, shared)?;
+    if let Some(logger) = maybe::v2(inputs, runtime, CALLBACK_NAME, in_memory)? {
+        return Ok(logger);
+    }
+    // LiteLLM constructs OpenTelemetry(config=otel_config) with no callback name
+    let prepared = legacy::prepare(inputs, shared, config, None)?;
+    legacy::plain(prepared)
+}
+
+// the logfire traces URL, its default base, and the bearer header the token becomes
+pub(crate) fn legacy_config(
+    inputs: &CatalogInputs,
+    shared: &SharedOtel,
+) -> Result<OpenTelemetryConfig, CatalogError> {
     let token = inputs
         .env
         .lookup(TOKEN_VARIABLE)
         .ok_or_else(|| CatalogError::Init {
             message: MISSING_TOKEN.to_owned(),
         })?;
-    if let Some(logger) = maybe::v2(inputs, runtime, "logfire", in_memory)? {
-        return Ok(logger);
-    }
     let base = inputs
         .env
         .lookup(BASE_URL_VARIABLE)
@@ -43,9 +55,7 @@ pub fn build(
         ..OpenTelemetryConfig::default()
     };
     config.normalize(&shared.env);
-    // LiteLLM constructs OpenTelemetry(config=otel_config) with no callback name
-    let prepared = legacy::prepare(inputs, shared, config, None)?;
-    legacy::plain(prepared)
+    Ok(config)
 }
 
 mod tests;

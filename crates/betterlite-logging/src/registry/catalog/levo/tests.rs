@@ -1,12 +1,31 @@
 #![cfg(test)]
 
 use crate::callback_logger::CallbackLogger;
+use crate::otel::legacy_policy::config::Exporter;
 use crate::otel::logger_runtime::tests::support::fixture;
 use crate::registry::catalog::CatalogError;
 use crate::registry::catalog::otel::shared::SharedOtel;
 use crate::registry::catalog::otel::tests::support::catalog_inputs;
 
-use super::{CALLBACK_NAME, build};
+use super::{CALLBACK_NAME, build, legacy_config};
+
+#[test]
+fn the_legacy_config_carries_the_collector_url_and_the_three_part_header() {
+    let inputs = catalog_inputs("", &LEVO);
+    let shared = SharedOtel::new(&inputs);
+    let config = legacy_config(&inputs, &shared).expect("the credentials are set");
+    assert_eq!(config.exporter, Exporter::Named("otlp_http".to_owned()));
+    assert_eq!(
+        config.endpoint.as_deref(),
+        Some("https://levo.example/v1/traces")
+    );
+    assert_eq!(
+        config.headers.as_deref(),
+        Some(
+            "Authorization=Bearer levo-key,x-levo-organization-id=levo-org,x-levo-workspace-id=levo-workspace"
+        )
+    );
+}
 
 const LEVO: [(&str, &str); 4] = [
     ("LEVOAI_API_KEY", "levo-key"),

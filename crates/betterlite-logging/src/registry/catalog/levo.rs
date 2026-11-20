@@ -22,6 +22,20 @@ pub fn build(
     if let Some(logger) = maybe::v2(inputs, runtime, CALLBACK_NAME, in_memory)? {
         return Ok(logger);
     }
+    let prepared = legacy::prepare(
+        inputs,
+        shared,
+        legacy_config(inputs, shared)?,
+        Some(CALLBACK_NAME),
+    )?;
+    legacy::plain(prepared)
+}
+
+// the collector URL and the three-variable header LevoConfig builds from the environment
+pub(crate) fn legacy_config(
+    inputs: &CatalogInputs,
+    shared: &SharedOtel,
+) -> Result<OpenTelemetryConfig, CatalogError> {
     let levo = LevoConfig::from_env(inputs.env.as_ref()).map_err(|source| CatalogError::Init {
         message: source.to_string(),
     })?;
@@ -32,8 +46,7 @@ pub fn build(
         ..OpenTelemetryConfig::default()
     };
     config.normalize(&shared.env);
-    let prepared = legacy::prepare(inputs, shared, config, Some(CALLBACK_NAME))?;
-    legacy::plain(prepared)
+    Ok(config)
 }
 
 mod tests;

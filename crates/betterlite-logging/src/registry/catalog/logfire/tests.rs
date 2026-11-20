@@ -1,14 +1,45 @@
 #![cfg(test)]
 
 use crate::callback_logger::CallbackLogger;
+use crate::otel::legacy_policy::config::Exporter;
 use crate::otel::logger_runtime::tests::support::fixture;
 use crate::registry::catalog::CatalogError;
 use crate::registry::catalog::otel::shared::SharedOtel;
 use crate::registry::catalog::otel::tests::support::catalog_inputs;
 
-use super::build;
+use super::{CALLBACK_NAME, build, legacy_config};
 
 const TOKEN: (&str, &str) = ("LOGFIRE_TOKEN", "logfire-token");
+
+#[test]
+fn the_legacy_config_uses_the_default_base_url_and_the_token() {
+    let inputs = catalog_inputs("", &[TOKEN]);
+    let shared = SharedOtel::new(&inputs);
+    let config = legacy_config(&inputs, &shared).expect("the token is set");
+    assert_eq!(config.exporter, Exporter::Named("otlp_http".to_owned()));
+    assert_eq!(
+        config.endpoint.as_deref(),
+        Some("https://logfire-api.pydantic.dev/v1/traces")
+    );
+    assert_eq!(
+        config.headers.as_deref(),
+        Some("Authorization=logfire-token")
+    );
+}
+
+#[test]
+fn a_configured_base_url_replaces_the_default() {
+    let inputs = catalog_inputs(
+        "",
+        &[TOKEN, ("LOGFIRE_BASE_URL", "https://logfire.example/")],
+    );
+    let shared = SharedOtel::new(&inputs);
+    let config = legacy_config(&inputs, &shared).expect("the token is set");
+    assert_eq!(
+        config.endpoint.as_deref(),
+        Some("https://logfire.example/v1/traces")
+    );
+}
 
 #[test]
 fn a_missing_token_gives_an_init_error_before_the_switch() {

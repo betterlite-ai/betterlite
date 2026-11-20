@@ -17,14 +17,9 @@ pub struct SharedOtel {
     pub globals: GlobalProviders,
     pub proxy: ProxyRegistry,
     pub shared_exporter: InMemorySpanExporter,
+    // LiteLLM keeps the meter and logger providers on the logger: dropping either shuts its pipeline down.
+    pub kept: Mutex<Vec<(Option<SdkMeterProvider>, Option<SdkLoggerProvider>)>>,
     clients: Mutex<Option<HttpClients>>,
-    providers: Mutex<Vec<KeptProviders>>,
-}
-
-// LiteLLM keeps the meter and logger providers on the logger; the recorder and emitter hold handles only.
-struct KeptProviders {
-    _meter: Option<SdkMeterProvider>,
-    _logger: Option<SdkLoggerProvider>,
 }
 
 impl SharedOtel {
@@ -34,8 +29,8 @@ impl SharedOtel {
             globals: GlobalProviders::default(),
             proxy: ProxyRegistry::default(),
             shared_exporter: InMemorySpanExporter::default(),
+            kept: Mutex::new(Vec::new()),
             clients: Mutex::new(None),
-            providers: Mutex::new(Vec::new()),
         }
     }
 
@@ -50,17 +45,14 @@ impl SharedOtel {
         Ok(clients)
     }
 
+    // the recorder and the emitter hold handles only, so the providers the lifecycle no longer owns live here
     pub fn keep(&self, meter: Option<SdkMeterProvider>, logger: Option<SdkLoggerProvider>) {
         if meter.is_none() && logger.is_none() {
             return;
         }
-        let kept = KeptProviders {
-            _meter: meter,
-            _logger: logger,
-        };
-        self.providers
+        self.kept
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(kept);
+            .push((meter, logger));
     }
 }

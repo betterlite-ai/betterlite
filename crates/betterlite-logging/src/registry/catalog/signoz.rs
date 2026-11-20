@@ -21,6 +21,19 @@ pub fn build(
     shared: &SharedOtel,
     in_memory: &mut Vec<Arc<dyn CallbackLogger>>,
 ) -> Result<Arc<dyn CallbackLogger>, CatalogError> {
+    let config = legacy_config(inputs, shared)?;
+    if let Some(logger) = maybe::v2(inputs, runtime, CALLBACK_NAME, in_memory)? {
+        return Ok(logger);
+    }
+    let prepared = legacy::prepare(inputs, shared, config, Some(CALLBACK_NAME))?;
+    legacy::plain(prepared)
+}
+
+// the ingestion endpoint with /v1/traces appended, and the key's header when one is set
+pub(crate) fn legacy_config(
+    inputs: &CatalogInputs,
+    shared: &SharedOtel,
+) -> Result<OpenTelemetryConfig, CatalogError> {
     let base = inputs
         .env
         .lookup(SIGNOZ_INGESTION_ENDPOINT_ENV)
@@ -28,9 +41,6 @@ pub fn build(
         .ok_or_else(|| CatalogError::Init {
             message: format!("{SIGNOZ_INGESTION_ENDPOINT_ENV} not found in environment variables"),
         })?;
-    if let Some(logger) = maybe::v2(inputs, runtime, CALLBACK_NAME, in_memory)? {
-        return Ok(logger);
-    }
     let base = base.trim_end_matches('/');
     let endpoint = if base.ends_with(TRACES_PATH) {
         base.to_owned()
@@ -49,8 +59,7 @@ pub fn build(
         ..OpenTelemetryConfig::default()
     };
     config.normalize(&shared.env);
-    let prepared = legacy::prepare(inputs, shared, config, Some(CALLBACK_NAME))?;
-    legacy::plain(prepared)
+    Ok(config)
 }
 
 mod tests;

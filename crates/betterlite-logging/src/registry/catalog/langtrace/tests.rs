@@ -1,14 +1,42 @@
 #![cfg(test)]
 
 use crate::callback_logger::CallbackLogger;
+use crate::otel::legacy_policy::config::Exporter;
 use crate::otel::logger_runtime::tests::support::fixture;
 use crate::registry::catalog::CatalogError;
 use crate::registry::catalog::otel::shared::SharedOtel;
 use crate::registry::catalog::otel::tests::support::catalog_inputs;
 
-use super::{CALLBACK_NAME, build};
+use super::{CALLBACK_NAME, build, legacy_config};
 
 const KEY: (&str, &str) = ("LANGTRACE_API_KEY", "langtrace-key");
+
+#[test]
+fn the_legacy_config_names_the_host_endpoint_and_the_key_header() {
+    let inputs = catalog_inputs(
+        "",
+        &[KEY, ("LANGTRACE_API_HOST", "https://langtrace.example")],
+    );
+    let shared = SharedOtel::new(&inputs);
+    let config = legacy_config(&inputs, &shared).expect("the key is set");
+    assert_eq!(config.exporter, Exporter::Named("otlp_http".to_owned()));
+    assert_eq!(
+        config.endpoint.as_deref(),
+        Some("https://langtrace.example/api/trace")
+    );
+    assert_eq!(config.headers.as_deref(), Some("x-api-key=langtrace-key"));
+}
+
+#[test]
+fn without_a_host_the_default_langtrace_endpoint_is_used() {
+    let inputs = catalog_inputs("", &[KEY]);
+    let shared = SharedOtel::new(&inputs);
+    let config = legacy_config(&inputs, &shared).expect("the key is set");
+    assert_eq!(
+        config.endpoint.as_deref(),
+        Some("https://app.langtrace.ai/api/trace")
+    );
+}
 
 #[test]
 fn a_missing_api_key_gives_an_init_error_before_the_switch() {

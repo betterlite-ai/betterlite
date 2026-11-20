@@ -1,23 +1,124 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use betterlite_config::sections::otel_settings::OtelAttributes;
+use betterlite_config::sections::otel_settings::Settings as OtelSettings;
 use rstest::rstest;
 
 use self::support::{catalog, catalog_inputs};
 use crate::callback_logger::CallbackLogger;
+use crate::otel::legacy_metrics::filter::CallbackSettingsView;
+use crate::otel::legacy_policy::config::{OpenTelemetryConfig, Signals};
 use crate::otel::logger_runtime::tests::support::{fixture, fixture_disabled};
 use crate::otel::model::utils::coercion::OtelModelValue;
 use crate::registry::catalog::CatalogError;
+use crate::registry::catalog::otel::attributes::AttributeSettings;
 use crate::registry::catalog::otel::shared::SharedOtel;
-use crate::registry::catalog::otel::{attributes, build};
+use crate::registry::catalog::otel::{attributes, build, env, legacy};
 use crate::registry::error::RegistryError;
 
 pub(crate) mod support;
 
 const IN_MEMORY: (&str, &str) = ("OTEL_EXPORTER", "in_memory");
 const BOTH_LISTS: &str = "callback_settings:\n  otel:\n    attributes:\n      include_list:\n        - gen_ai.request.model\n      exclude_list:\n        - gen_ai.request.temperature\n";
+
+#[test]
+fn the_environment_snapshot_keeps_the_legacy_variables() {
+    let inputs = catalog_inputs("", &[IN_MEMORY, ("OTEL_SERVICE_NAME", "from-env")]);
+    let shared = SharedOtel::new(&inputs);
+    assert_eq!(
+        shared.env.get("OTEL_EXPORTER").map(String::as_str),
+        Some("in_memory")
+    );
+    assert_eq!(
+        shared.env.get("OTEL_SERVICE_NAME").map(String::as_str),
+        Some("from-env")
+    );
+    assert_eq!(shared.env.get("LITELLM_LOGGER_NAME"), None);
+}
+
+#[rstest]
+#[case::absent(None, "litellm")]
+#[case::empty(Some(""), "litellm")]
+#[case::named(Some("custom"), "custom")]
+fn the_event_logger_name_defaults_to_litellm(
+    #[case] configured: Option<&str>,
+    #[case] expected: &str,
+) {
+    let mut environment = BTreeMap::new();
+    if let Some(configured) = configured {
+        environment.insert("LITELLM_LOGGER_NAME".to_owned(), configured.to_owned());
+    }
+    assert_eq!(env::logger_name(&environment), expected);
+}
+
+#[test]
+fn prepare_carries_the_config_and_the_callback_name_into_the_provider_state() {
+    let inputs = catalog_inputs("", &[IN_MEMORY]);
+    let shared = SharedOtel::new(&inputs);
+    let config = OpenTelemetryConfig {
+        endpoint: Some("http://collector.example:4318".to_owned()),
+        ..OpenTelemetryConfig::default()
+    };
+    let prepared =
+        legacy::prepare(&inputs, &shared, config, Some("arize")).expect("the provider builds");
+    assert_eq!(
+        prepared.otel.config.endpoint.as_deref(),
+        Some("http://collector.example:4318")
+    );
+    assert_eq!(prepared.otel.callback_name.as_deref(), Some("arize"));
+}
+
+#[test]
+fn options_keep_the_providers_the_lifecycle_no_longer_owns() {
+    let inputs = catalog_inputs("", &[IN_MEMORY]);
+    let shared = SharedOtel::new(&inputs);
+    let config = OpenTelemetryConfig {
+        signals: Signals {
+            enable_metrics: true,
+            enable_events: false,
+        },
+        ..OpenTelemetryConfig::default()
+    };
+    let mut prepared =
+        legacy::prepare(&inputs, &shared, config, None).expect("the providers build");
+    prepared.options().expect("the options build");
+    assert_eq!(shared.kept.lock().expect("unpoisoned").len(), 1);
+}
+
+#[test]
+fn the_settings_view_carries_the_configured_attribute_lists() {
+    let settings = OtelSettings {
+        attributes: Some(OtelAttributes {
+            include_list: Some(vec!["gen_ai.request.model".to_owned()]),
+            exclude_list: None,
+        }),
+        ..OtelSettings::default()
+    };
+    let view = AttributeSettings::from_settings(&settings);
+    let expected = OtelModelValue::Object(BTreeMap::from([(
+        "include_list".to_owned(),
+        OtelModelValue::Array(vec![OtelModelValue::String(
+            "gen_ai.request.model".to_owned(),
+        )]),
+    )]));
+    assert_eq!(view.otel_attributes(), Some(expected));
+}
+
+#[test]
+fn a_failed_otel_build_starts_no_phoenix_logger() {
+    let catalog = catalog(BOTH_LISTS, &[IN_MEMORY, ("PHOENIX_API_KEY", "phoenix-key")]);
+    assert!(
+        catalog
+            .resolve_logger("otel")
+            .expect("the name is available")
+            .is_none()
+    );
+    assert!(catalog.existing("arize_phoenix").is_none());
+    assert!(catalog.in_memory_loggers().is_empty());
+}
 
 #[test]
 fn otel_without_v2_builds_the_legacy_opentelemetry() {

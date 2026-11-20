@@ -23,6 +23,22 @@ pub fn build(
     if let Some(logger) = maybe::v2(inputs, runtime, CALLBACK_NAME, in_memory)? {
         return Ok(logger);
     }
+    let mut prepared = legacy::prepare(
+        inputs,
+        shared,
+        legacy_config(inputs, shared)?,
+        Some(CALLBACK_NAME),
+    )?;
+    let options = prepared.options()?;
+    let lifecycle = weave_lifecycle(prepared.otel, options);
+    Ok(legacy::lifecycle_logger(lifecycle))
+}
+
+// the Weave traces URL and the Authorization,project_id header pair get_weave_otel_config builds
+pub(crate) fn legacy_config(
+    inputs: &CatalogInputs,
+    shared: &SharedOtel,
+) -> Result<OpenTelemetryConfig, CatalogError> {
     let weave =
         WeaveOtelConfig::from_env(inputs.env.as_ref()).map_err(|source| CatalogError::Init {
             message: source.to_string(),
@@ -34,10 +50,7 @@ pub fn build(
         ..OpenTelemetryConfig::default()
     };
     config.normalize(&shared.env);
-    let mut prepared = legacy::prepare(inputs, shared, config, Some(CALLBACK_NAME))?;
-    let options = prepared.options()?;
-    let lifecycle = weave_lifecycle(prepared.otel, options);
-    Ok(legacy::lifecycle_logger(lifecycle))
+    Ok(config)
 }
 
 mod tests;

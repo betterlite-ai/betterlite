@@ -1,17 +1,33 @@
 #![cfg(test)]
 
 use crate::callback_logger::CallbackLogger;
+use crate::otel::legacy_policy::config::Exporter;
 use crate::otel::logger_runtime::tests::support::fixture;
 use crate::registry::catalog::CatalogError;
 use crate::registry::catalog::otel::shared::SharedOtel;
 use crate::registry::catalog::otel::tests::support::catalog_inputs;
 
-use super::{CALLBACK_NAME, build};
+use super::{CALLBACK_NAME, build, legacy_config};
 
 const WEAVE: [(&str, &str); 2] = [
     ("WANDB_API_KEY", "wandb-key"),
     ("WANDB_PROJECT_ID", "entity/project"),
 ];
+
+#[test]
+fn the_legacy_config_carries_the_weave_endpoint_and_the_project_header() {
+    let inputs = catalog_inputs("", &WEAVE);
+    let shared = SharedOtel::new(&inputs);
+    let config = legacy_config(&inputs, &shared).expect("the credentials are set");
+    assert_eq!(config.exporter, Exporter::Named("otlp_http".to_owned()));
+    assert_eq!(
+        config.endpoint.as_deref(),
+        Some("https://trace.wandb.ai/otel/v1/traces")
+    );
+    let headers = config.headers.expect("the header is set");
+    assert!(headers.starts_with("Authorization=Basic "), "{headers}");
+    assert!(headers.contains("project_id=entity/project"), "{headers}");
+}
 
 #[test]
 fn a_missing_api_key_gives_an_init_error() {
