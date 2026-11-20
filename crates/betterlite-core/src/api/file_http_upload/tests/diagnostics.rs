@@ -5,7 +5,9 @@ use indexmap::IndexMap;
 use crate::api::file_http_upload::plan::{MultipartPlan, UploadPlan};
 use crate::api::file_http_upload::service::Mode;
 
-use super::{API_BASE, Harness, answer, create_call, field, lookup, manus_plan, params, text};
+use super::{
+    API_BASE, Harness, answer, bytes_json, create_call, field, lookup, manus_plan, params, text,
+};
 
 // an unsupported request is logged before it fails, and its top-level headers are masked like any request
 #[tokio::test]

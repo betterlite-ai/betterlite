@@ -55,9 +55,8 @@ pub(super) async fn execute(
     let mut state = logging_state(&redactor)?;
     let tasks = TaskTracker::new();
     let boundaries = || String::from(BOUNDARY);
-    let params: FileParams = call.litellm_params.clone();
     let file = file_create(call);
-    let upload_params = upload_params(api_base, &params);
+    let upload_params = upload_params(api_base, &call.litellm_params);
     let upload_call = UploadCall {
         data: &file,
         params: &upload_params,

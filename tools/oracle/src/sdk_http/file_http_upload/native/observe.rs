@@ -101,7 +101,7 @@ fn unalias(value: Json, origin: &str) -> Json {
         Json::Object(fields) => Json::Object(
             fields
                 .into_iter()
-                .map(|(name, value)| (name, unalias(value, origin)))
+                .map(|(name, child)| (name, unalias(child, origin)))
                 .collect(),
         ),
         Json::Null => Json::Null,
