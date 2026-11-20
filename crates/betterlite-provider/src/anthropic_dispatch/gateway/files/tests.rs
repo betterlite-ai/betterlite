@@ -64,7 +64,7 @@ async fn the_prefetch_fetches_each_file_url_once() {
     assert!(fetched.values().all(Result::is_ok));
 }
 
-// The assembly fetches a batch through the prefetch first, so a prefetched answer never leaves the proxy again.
+// A batch lookup answers from the prefetch and only fetches the URLs it does not hold.
 #[tokio::test]
 async fn the_files_convert_urls_resolve_through_the_prefetch() {
     let recorder = Recorder::default();
