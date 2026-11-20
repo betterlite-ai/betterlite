@@ -1,0 +1,22 @@
+kind: sdk_http
+name: transcription-http-encoding
+env: {}
+call:
+  transcription_http:
+    mode: sync
+    model: m
+    api_key: sk-provider
+    optional_params: {query: hello}
+    transform:
+      data: {query: hello}
+    response: {text: ok}
+    observe_headers: [x-request-id]
+upstream:
+  - status: 200
+    headers: {content-type: application/json, x-request-id: transcribe_1}
+    body: {text: ok}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore: []

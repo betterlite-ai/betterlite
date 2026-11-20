@@ -1,0 +1,15 @@
+kind: helper
+name: access-group-models-own-id-not-sibling
+call:
+  access_group_models:
+    function: config_sourced_sibling
+    model_list:
+      - model_name: gpt-4o
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: dep-1
+    deployment_id: dep-1
+    model_id: dep-1
+env: {}
+compare: {ignore: []}

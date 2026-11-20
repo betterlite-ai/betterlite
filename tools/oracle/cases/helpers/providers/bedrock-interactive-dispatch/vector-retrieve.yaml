@@ -1,0 +1,20 @@
+kind: helper
+name: vector-retrieve
+call:
+  bedrock_interactive_dispatch:
+    case: vector_retrieve
+    runs:
+      - query: hello
+        optional:
+          filters: {equals: {key: k, value: v}}
+          max_num_results: 5
+        extra_body: {userContext: {user: u}}
+        status: 200
+        reply: '{"retrievalResults":[{"content":{"text":"found"},"score":0.9,"metadata":{"x-amz-bedrock-kb-source-uri":"s3://bucket/doc.pdf"}}]}'
+      - query: hello
+        optional: {max_num_results: 5}
+        extra_body: {retrievalConfiguration: nope}
+        status: 200
+        reply: '{"retrievalResults":[]}'
+env: {}
+compare: {ignore: []}
