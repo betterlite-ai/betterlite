@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use betterlite_config::loader::EnvironmentLookup;
+use betterlite_config::loader::EnvironmentLookup as _;
 
 use super::otel::shared::SharedOtel;
 use super::otel::{legacy, maybe};

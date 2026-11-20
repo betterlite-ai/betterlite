@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use crate::callback_logger::CallbackLogger;
+use crate::callback_logger::CallbackLogger as _;
 use crate::otel::config::Signal;
 use crate::otel::legacy_exporters::endpoint::normalize_otel_endpoint;
 use crate::otel::legacy_policy::config::Exporter;

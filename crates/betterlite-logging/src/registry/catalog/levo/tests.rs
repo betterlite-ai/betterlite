@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use crate::callback_logger::CallbackLogger;
+use crate::callback_logger::CallbackLogger as _;
 use crate::otel::legacy_policy::config::Exporter;
 use crate::otel::logger_runtime::tests::support::fixture;
 use crate::registry::catalog::CatalogError;
