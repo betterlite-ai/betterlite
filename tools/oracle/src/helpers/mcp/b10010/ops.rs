@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 use std::convert::Infallible;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
 
-use betterlite_db::sso_assertion_rows::{AssertionRow, MemoryAssertionRows};
+use betterlite_db::sso_assertion_rows::{AssertionRow, MemoryAssertionRows, MemoryFailures};
 use betterlite_db::stored_cipher::DbCipher;
 use betterlite_mcp::sso_assertions::rotation::rotate_assertions;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
@@ -30,7 +30,10 @@ pub(crate) async fn answer(input: &Input, logs: &Logs) -> HelperResult {
     }
     let rows = MemoryAssertionRows {
         rows: Mutex::new(stored),
-        ..MemoryAssertionRows::default()
+        id_jag: false,
+        failures: MemoryFailures::default(),
+        reads: AtomicUsize::new(0),
+        writes: AtomicUsize::new(0),
     };
     let new_key = SecretString::from(NEW_KEY);
     rotate_assertions(&rows, &current, &new_key)
@@ -43,7 +46,10 @@ pub(crate) async fn answer(input: &Input, logs: &Logs) -> HelperResult {
         .clone();
     let outcomes: Vec<Value> = rotated.iter().map(|row| outcome(row, &new_key)).collect();
     let entries: Vec<Value> = logs
-        .entries()
+        .0
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone()
         .into_iter()
         .map(|(level, message)| json!({ "level": level, "message": message }))
         .collect();

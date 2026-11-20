@@ -11,14 +11,9 @@ const PREFIX: &str = "rotate_sso_identity_assertions_master_key:";
 
 // The Python side captures the same two levels off the "LiteLLM Proxy" logger and nothing else.
 #[derive(Clone, Default)]
-pub(crate) struct Logs(Arc<Mutex<Vec<(String, String)>>>);
+pub(crate) struct Logs(pub(crate) Arc<Mutex<Vec<(String, String)>>>);
 
 impl Logs {
-    pub(crate) fn entries(&self) -> Vec<(String, String)> {
-        let entries = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        entries.clone()
-    }
-
     fn record(&self, level: &'static str, message: String) {
         if !message.starts_with(PREFIX) {
             return;

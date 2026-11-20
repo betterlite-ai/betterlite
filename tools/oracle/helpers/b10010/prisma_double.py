@@ -1,3 +1,4 @@
+import asyncio
 import sys
 from collections.abc import Mapping, Sequence
 from types import ModuleType
@@ -52,6 +53,7 @@ class AssertionTable:
         return None
 
     async def find_many(self) -> Sequence[AssertionRow]:
+        await asyncio.sleep(0)
         return list(self.rows)
 
     async def upsert(
