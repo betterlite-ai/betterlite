@@ -211,7 +211,29 @@ async fn execute(
         deadline: None,
         privacy: false,
     });
-    match state.dispatch.execute(operation, &context).await {
+    let result = state.dispatch.execute(operation, &context).await;
+    completion_response(
+        result,
+        asked_model,
+        endpoint,
+        state,
+        deployment,
+        call_id,
+        started,
+    )
+}
+
+// the dispatch's answer: the converted completion, the text stream, or the failure the route renders itself
+fn completion_response(
+    dispatched: Result<CallResult, DispatchError>,
+    asked_model: Option<String>,
+    endpoint: CompletionEndpoint,
+    state: &CompletionState,
+    deployment: &ChatDeployment,
+    call_id: &str,
+    started: Instant,
+) -> Response {
+    match dispatched {
         Ok(CallResult::TextCompletion(mut result)) => {
             // common_request_processing._override_openai_response_model answers the model the client named
             if let Some(model) = asked_model {

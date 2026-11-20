@@ -154,7 +154,7 @@ pub(super) async fn buffered(
     answered: (OperationResult, HeaderMap, Duration),
 ) -> Result<CompletionAnswer, TextCompletionFailure> {
     let (result, headers, time) = answered;
-    let (completion, headers) = if let OperationResult::OutputLimit { sent } = &result {
+    let (completion, reply_headers) = if let OperationResult::OutputLimit { sent } = &result {
         recovered_completion(calls, sent, headers, request.model.as_deref()).await?
     } else {
         let OperationResult::Chat(completion) = result else {
@@ -162,7 +162,7 @@ pub(super) async fn buffered(
         };
         (completion, headers)
     };
-    converted(completion, headers, time)
+    converted(completion, reply_headers, time)
 }
 
 async fn recovered_completion(
@@ -221,7 +221,7 @@ async fn recovered_stream(
     let Some(counter) = &calls.counter else {
         return Err(chat_call_failure(CallError::Mismatched, calls));
     };
-    let (frames, headers) =
+    let (frames, reply_headers) =
         recovery::recovered_frames(&calls.state.executor, counter, sent, headers)
             .await
             .map_err(|failure| TextCompletionFailure::internal(&failure.to_string()))?;
@@ -239,7 +239,7 @@ async fn recovered_stream(
         .map_err(|source| TextCompletionFailure::internal(&source.to_string()))?;
     Ok(TextStreamAnswer {
         body: stream::iter(chunks.into_iter().map(Ok)).boxed(),
-        upstream_headers: headers,
+        upstream_headers: reply_headers,
         upstream_time,
     })
 }

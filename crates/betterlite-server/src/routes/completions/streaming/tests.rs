@@ -294,9 +294,8 @@ async fn chat_events(listener: TcpListener) {
         .expect("response");
 }
 
-// the chat provider's events reach the text route as the chunks the client reads, restamped with the caller's model
-#[tokio::test]
-async fn chat_stream_answer_decodes_the_chat_events() {
+// the chat executor, its one deployment and the chat stream request these tests send
+async fn chat_stream_setup() -> (ChatExecutor, ChatDeployment, ChatRequest, JoinSet<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let address = listener.local_addr().expect("address");
     let executor = chat_setup(address);
@@ -307,6 +306,13 @@ async fn chat_stream_answer_decodes_the_chat_events() {
         br#"{"model":"chat-model","messages":[{"role":"user","content":"hi"}],"stream":true}"#,
     )
     .expect("chat request");
+    (executor, deployment, parsed, tasks)
+}
+
+// the chat provider's events reach the text route as the chunks the client reads, restamped with the caller's model
+#[tokio::test]
+async fn chat_stream_answer_decodes_the_chat_events() {
+    let (executor, deployment, parsed, mut tasks) = chat_stream_setup().await;
     let (result, headers) = provider_stream(
         &executor,
         &deployment,
@@ -469,8 +475,10 @@ struct RecoveredChoice {
 #[derive(Deserialize)]
 struct RecoveredUsage {
     prompt_tokens: u64,
-    completion_tokens: u64,
-    total_tokens: u64,
+    #[serde(rename = "completion_tokens")]
+    completion: u64,
+    #[serde(rename = "total_tokens")]
+    total: u64,
 }
 
 #[derive(Deserialize)]
@@ -522,10 +530,10 @@ async fn a_chat_deployment_recovers_the_output_limit_on_the_completions_route() 
     assert_eq!(reply.choices[0].text.as_deref(), Some(""));
     assert_eq!(reply.choices[0].finish_reason.as_deref(), Some("length"));
     assert!(reply.usage.prompt_tokens > 0);
-    assert_eq!(reply.usage.completion_tokens, 0);
-    assert_eq!(reply.usage.total_tokens, reply.usage.prompt_tokens);
-    let sent = String::from_utf8(sent).expect("sent body");
-    assert!(sent.contains("\"messages\""), "{sent}");
+    assert_eq!(reply.usage.completion, 0);
+    assert_eq!(reply.usage.total, reply.usage.prompt_tokens);
+    let sent_text = String::from_utf8(sent).expect("sent body");
+    assert!(sent_text.contains("\"messages\""), "{sent_text}");
 }
 
 // the streamed answer is the two recovered chat frames read as the route's chunks, then the closing frame
@@ -551,9 +559,9 @@ async fn a_chat_deployment_recovers_the_output_limit_on_the_completions_stream()
     assert_eq!(second.choices[0].delta.content, None);
     assert_eq!(second.choices[0].finish_reason.as_deref(), Some("length"));
     assert_eq!(answer[2], "data: [DONE]");
-    let sent = String::from_utf8(sent).expect("sent body");
-    assert!(sent.contains("\"stream\":true"), "{sent}");
-    assert!(sent.contains("\"messages\""), "{sent}");
+    let sent_text = String::from_utf8(sent).expect("sent body");
+    assert!(sent_text.contains("\"stream\":true"), "{sent_text}");
+    assert!(sent_text.contains("\"messages\""), "{sent_text}");
 }
 
 // the provider's usage chunk reaches the client only when the caller asked for usage
@@ -572,8 +580,8 @@ async fn a_bridged_chat_stream_keeps_the_usage_frame_only_when_asked() {
     assert_eq!(status, StatusCode::OK);
     let unasked = String::from_utf8(body).expect("utf8");
     assert_eq!(frames(&unasked).len(), 2, "{unasked}");
-    let sent = String::from_utf8(sent).expect("sent body");
-    assert!(sent.contains("\"stream\":true"), "{sent}");
+    let sent_text = String::from_utf8(sent).expect("sent body");
+    assert!(sent_text.contains("\"stream\":true"), "{sent_text}");
     let (asked_status, _asked_headers, asked_body, _sent) = streamed_answer(
         r#"{"model":"chat-model","prompt":"hi","stream":true,"stream_options":{"include_usage":true}}"#,
         events,

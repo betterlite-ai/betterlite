@@ -89,7 +89,7 @@ impl ChatCall for ChatCalls {
             answer_chat(&self.executor, call.request, &call.deployment, control)
                 .await
                 .map_err(chat_failure)?;
-        let (completion, upstream_headers) = recovery::completed(
+        let (completion, recovered_headers) = recovery::completed(
             self,
             result,
             upstream_headers,
@@ -100,7 +100,7 @@ impl ChatCall for ChatCalls {
             .map_err(|source| ChatFailure::Route(ChatError::Encode { source }))?;
         Ok(ChatCompletionAnswer {
             body,
-            upstream_headers,
+            upstream_headers: recovered_headers,
             upstream_time,
         })
     }

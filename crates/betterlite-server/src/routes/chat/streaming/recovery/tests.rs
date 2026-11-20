@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::str::from_utf8;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -93,8 +94,10 @@ struct CompletedMessage {
 #[derive(Deserialize)]
 struct CompletedUsage {
     prompt_tokens: u64,
-    completion_tokens: u64,
-    total_tokens: u64,
+    #[serde(rename = "completion_tokens")]
+    completion: u64,
+    #[serde(rename = "total_tokens")]
+    total: u64,
 }
 
 #[derive(Deserialize)]
@@ -227,18 +230,6 @@ fn buffered_reply(answer: &Answer) {
             .map(|value| value.to_str().unwrap()),
         Some("up-1")
     );
-    let reply: Completion = serde_json::from_slice(&answer.body).unwrap();
-    assert_eq!(reply.id, RECOVERED_ID);
-    assert_eq!(reply.object, "chat.completion");
-    assert_eq!(reply.created, RECOVERED_CREATED);
-    assert_eq!(reply.model, "g");
-    assert_eq!(reply.choices.len(), 1);
-    assert_eq!(reply.choices[0].message.role, "assistant");
-    assert_eq!(reply.choices[0].message.content.as_deref(), Some(""));
-    assert_eq!(reply.choices[0].finish_reason.as_deref(), Some("length"));
-    assert!(reply.usage.prompt_tokens > 0);
-    assert_eq!(reply.usage.completion_tokens, 0);
-    assert_eq!(reply.usage.total_tokens, reply.usage.prompt_tokens);
     assert_eq!(answer.bodies.len(), 1);
     assert!(
         answer.bodies[0].contains("\"model\":\"up\""),
@@ -250,6 +241,23 @@ fn buffered_reply(answer: &Answer) {
         "{}",
         answer.bodies[0]
     );
+    let reply: Completion = serde_json::from_slice(&answer.body).unwrap();
+    recorded_completion(&reply);
+}
+
+// the completion the wrapper builds for the eaten 400: empty text, the length reason, the counted prompt
+fn recorded_completion(reply: &Completion) {
+    assert_eq!(reply.id, RECOVERED_ID);
+    assert_eq!(reply.object, "chat.completion");
+    assert_eq!(reply.created, RECOVERED_CREATED);
+    assert_eq!(reply.model, "g");
+    assert_eq!(reply.choices.len(), 1);
+    assert_eq!(reply.choices[0].message.role, "assistant");
+    assert_eq!(reply.choices[0].message.content.as_deref(), Some(""));
+    assert_eq!(reply.choices[0].finish_reason.as_deref(), Some("length"));
+    assert!(reply.usage.prompt_tokens > 0);
+    assert_eq!(reply.usage.completion, 0);
+    assert_eq!(reply.usage.total, reply.usage.prompt_tokens);
 }
 
 fn frame_json(frame: &str) -> Frame {
@@ -272,13 +280,25 @@ fn stream_frames(answer: &Answer) {
             .map(|value| value.to_str().unwrap()),
         Some("up-1")
     );
-    let text = std::str::from_utf8(&answer.body).unwrap();
+    assert_eq!(answer.bodies.len(), 1);
+    assert!(
+        answer.bodies[0].contains("\"stream\":true"),
+        "{}",
+        answer.bodies[0]
+    );
+    let text = from_utf8(&answer.body).unwrap();
     let frames: Vec<&str> = text
         .split("\n\n")
         .filter(|frame| !frame.is_empty())
         .collect();
     assert_eq!(frames.len(), 3, "{text}");
-    let first = frame_json(frames[0]);
+    opening_frame(&frame_json(frames[0]));
+    closing_frame(&frame_json(frames[1]));
+    assert_eq!(frames[2], "data: [DONE]");
+}
+
+// the wrapper's first chunk: the assistant role with no content and no finish reason yet
+fn opening_frame(first: &Frame) {
     assert_eq!(first.id, RECOVERED_ID);
     assert_eq!(first.object, "chat.completion.chunk");
     assert_eq!(first.created, RECOVERED_CREATED);
@@ -287,18 +307,14 @@ fn stream_frames(answer: &Answer) {
     assert_eq!(first.choices[0].delta.role.as_deref(), Some("assistant"));
     assert_eq!(first.choices[0].delta.content.as_deref(), Some(""));
     assert_eq!(first.choices[0].finish_reason, None);
-    let second = frame_json(frames[1]);
-    assert_eq!(second.id, first.id);
+}
+
+// the closing chunk: the same id, an empty delta and the held length reason
+fn closing_frame(second: &Frame) {
+    assert_eq!(second.id, RECOVERED_ID);
     assert_eq!(second.choices[0].delta.role, None);
     assert_eq!(second.choices[0].delta.content, None);
     assert_eq!(second.choices[0].finish_reason.as_deref(), Some("length"));
-    assert_eq!(frames[2], "data: [DONE]");
-    assert_eq!(answer.bodies.len(), 1);
-    assert!(
-        answer.bodies[0].contains("\"stream\":true"),
-        "{}",
-        answer.bodies[0]
-    );
 }
 
 fn provider_failure(answer: &Answer) {

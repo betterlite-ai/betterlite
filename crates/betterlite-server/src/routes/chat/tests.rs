@@ -11,6 +11,7 @@ use tokio::task::JoinSet;
 use crate::routes::chat::chat_routes_with_call_id;
 use crate::routes::chat::streaming::ChatCalls;
 use crate::server::chat_setup::chat_executor;
+use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{HeaderMap, Request};
 use betterlite_config::loader::ConfigLoader;
@@ -105,22 +106,12 @@ async fn exchange(
         ("OPENAI_API_KEY".to_owned(), "env-key".to_owned()),
         ("OPENAI_ORGANIZATION".to_owned(), "org-9".to_owned()),
     ]);
-    // a loaded Config is large, so it drops here instead of sitting in this future across the join
-    let call = {
-        let loader = ConfigLoader {
-            lookup: environment.clone(),
-        };
-        let config = loader.load(&source).unwrap();
-        let executor = chat_executor(&config, &environment, StdRng::seed_from_u64(3)).unwrap();
-        let calls = ChatCalls::new(&config, Arc::new(executor)).unwrap();
-        let mut builder = Request::post(path).header("content-type", "application/json");
-        if !call_id.is_empty() {
-            builder = builder.header("x-litellm-call-id", call_id);
-        }
-        chat_routes_with_call_id(Arc::new(calls), false)
-            .unwrap()
-            .oneshot(builder.body(Body::from(request.to_owned())).unwrap())
-    };
+    let mut builder = Request::post(path).header("content-type", "application/json");
+    if !call_id.is_empty() {
+        builder = builder.header("x-litellm-call-id", call_id);
+    }
+    let call = booted(&source, &environment)
+        .oneshot(builder.body(Body::from(request.to_owned())).unwrap());
     let upstream = Box::pin(provider(listener, reply, delay));
     let (sent, answered) = tokio::join!(upstream, Box::pin(call));
     let response = answered.unwrap();
@@ -136,6 +127,17 @@ async fn exchange(
         body,
         sent,
     }
+}
+
+// one booted chat router over the given config source; the loaded Config drops here, not across the join
+fn booted(source: &str, environment: &BTreeMap<String, String>) -> Router {
+    let loader = ConfigLoader {
+        lookup: environment.clone(),
+    };
+    let config = loader.load(source).unwrap();
+    let executor = chat_executor(&config, environment, StdRng::seed_from_u64(3)).unwrap();
+    let calls = ChatCalls::new(&config, Arc::new(executor)).unwrap();
+    chat_routes_with_call_id(Arc::new(calls), false).unwrap()
 }
 
 #[test]
