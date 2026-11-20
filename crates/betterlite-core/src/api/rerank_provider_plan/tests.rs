@@ -475,6 +475,32 @@ fn a_bad_timeout_fails_before_the_provider_call() {
 }
 
 #[test]
+fn a_string_drop_params_is_refused() {
+    let ops = FakeOps::default();
+    let identity = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Known(ProviderId::Cohere),
+        Some("k"),
+        Some("https://d/v1"),
+    );
+    let mut logging = logging_state();
+    let mut call = call("cohere");
+    call.kwargs = with(&[("drop_params", Json::Text(String::from("true")))]);
+    let error = dispatch(
+        &identity,
+        &ops,
+        &defaults(),
+        &BTreeMap::new(),
+        call,
+        &mut logging,
+    )
+    .expect_err("a string drop_params raises");
+    assert_eq!(error.message, "drop_params must be a boolean");
+    assert!(ops.options().is_empty());
+    assert!(ops.sends().is_empty());
+}
+
+#[test]
 fn only_the_boolean_true_arerank_selects_async() {
     let ops = FakeOps::default();
     let identity = FakeIdentity::new(
