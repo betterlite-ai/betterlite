@@ -31,12 +31,13 @@ pub(super) async fn claim(
     eligible: Option<&[AffinityPin]>,
 ) -> Result<StoredPin, SharedFallback> {
     let ttl = Some(f64::from(ttl_seconds));
+    let requested = serde_json::to_string(&pin.0).unwrap_or_default();
     let ours = RouteValue::Pin(PinValue {
-        model_id: serde_json::to_string(&pin.0).unwrap_or_default(),
+        model_id: requested.clone(),
     });
     let mut current = read(store, key).await?;
     for _attempt in 0..MAX_CLAIM_ATTEMPTS {
-        match evaluate(&current, pin, eligible)? {
+        match evaluate(&current, pin, &requested, eligible)? {
             Decision::Return(stored) => return Ok(stored),
             Decision::Keep { value, stored } => {
                 let outcome = store
@@ -77,6 +78,7 @@ async fn read(store: &RoutingStateStore, key: &AffinityKey) -> Result<StoreRead,
 fn evaluate(
     current: &StoreRead,
     pin: &AffinityPin,
+    requested: &str,
     eligible: Option<&[AffinityPin]>,
 ) -> Result<Decision, SharedFallback> {
     let StoreRead::Value(value) = current else {
@@ -102,7 +104,7 @@ fn evaluate(
             }
         }
         None => {
-            if stored.wire_text() == pin.wire_text() {
+            if stored.wire_text() == requested {
                 Ok(Decision::Keep {
                     value: value.clone(),
                     stored,

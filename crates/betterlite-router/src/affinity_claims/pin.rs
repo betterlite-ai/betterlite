@@ -58,11 +58,11 @@ impl StoredPin {
             Ok(pin) => Self::Pin(pin),
             Err(_error) => match value {
                 Json::Text(text) => Self::Text(text),
-                other @ Json::Null
-                | other @ Json::Bool(_)
-                | other @ Json::Number(_)
-                | other @ Json::List(_)
-                | other @ Json::Object(_) => Self::Other(other),
+                other @ (Json::Null
+                | Json::Bool(_)
+                | Json::Number(_)
+                | Json::List(_)
+                | Json::Object(_)) => Self::Other(other),
             },
         }
     }
