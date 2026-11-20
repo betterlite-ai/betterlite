@@ -13,6 +13,7 @@ from litellm.types.integrations.prometheus import PrometheusMetricsConfig
 
 INF: Final = math.inf
 DEFAULT_BUCKETS: Final[tuple[float, ...]] = tuple(prometheus_client.Histogram.DEFAULT_BUCKETS)
+LOGGER_CLASS: Final[Callable[..., PrometheusLogger]] = PrometheusLogger
 
 
 class MetricsConfig(TypedDict):
@@ -145,5 +146,5 @@ def run(input_value: Input) -> Listing:
     sys.modules["prometheus_client"] = metrics_module()
     # the constructor prints its config tables through rich; stdout carries only the helper's JSON
     with redirect_stdout(StringIO()):
-        PrometheusLogger()
+        LOGGER_CLASS()
     return {"collectors": RECORDED}
