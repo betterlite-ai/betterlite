@@ -25,18 +25,19 @@ use betterlite_models::resolution::{
 };
 use betterlite_openai::api::rerank_contracts::records::{RerankDocument, RerankResponse};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use chrono::{DateTime, FixedOffset};
+use chrono::DateTime;
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Number;
+use tokio::runtime::Builder;
 
 use super::call::{RerankCall, ReturnDocuments};
 use super::dispatch::{
     Headers, OptionsRequest, Params, RerankOperations, SendRequest, provider_failure, value_failure,
 };
-use super::plan::{CatalogIdentity, RerankIdentity, RerankPlan, rerank};
-use super::selection::SelectedConfig;
+use super::plan::{CatalogIdentity, RerankException, RerankIdentity, RerankPlan, rerank};
+use super::selection::{SelectedConfig, selected_config};
 
 mod families;
 
@@ -111,17 +112,8 @@ impl FakeOps {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
-}
 
-impl RerankOperations for FakeOps {
-    fn map_options(&self, request: OptionsRequest<'_>) -> Result<Params, RawException> {
-        if let Some(message) = &self.mapping_failure {
-            return Err(value_failure(
-                message,
-                request.model,
-                request.custom_llm_provider.unwrap_or_default(),
-            ));
-        }
+    fn record_options(&self, request: &OptionsRequest<'_>) {
         self.options
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -138,38 +130,11 @@ impl RerankOperations for FakeOps {
                 max_chunks_per_doc: request.max_chunks_per_doc,
                 max_tokens_per_doc: request.max_tokens_per_doc,
                 instruction: request.instruction.map(str::to_owned),
-                non_default_keys: request
-                    .non_default_params
-                    .keys()
-                    .map(String::clone)
-                    .collect(),
+                non_default_keys: request.non_default_params.keys().cloned().collect(),
             });
-        let mut params = Params::new();
-        params.insert("query".to_owned(), Json::Text(request.query.to_owned()));
-        params.insert(
-            "documents".to_owned(),
-            Json::List(
-                request
-                    .documents
-                    .iter()
-                    .map(RerankDocument::as_json)
-                    .collect(),
-            ),
-        );
-        if let Some(value) = request.return_documents.mapped() {
-            params.insert("return_documents".to_owned(), Json::Bool(value));
-        }
-        if let Some(top_n) = request.top_n {
-            params.insert("top_n".to_owned(), Json::Number(Number::from(top_n)));
-        }
-        Ok(params)
     }
 
-    async fn send(
-        &self,
-        request: SendRequest<'_>,
-        _logging: &mut LoggingState,
-    ) -> Result<RerankResponse, RawException> {
+    fn record_send(&self, request: &SendRequest<'_>) {
         self.sends
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -194,14 +159,104 @@ impl RerankOperations for FakeOps {
                 max_tokens_per_doc: request.max_tokens_per_doc,
                 instruction: request.instruction.map(str::to_owned),
             });
+    }
+}
+
+fn mapped_params(request: &OptionsRequest<'_>) -> Params {
+    let mut params = Params::new();
+    params.insert("query".to_owned(), Json::Text(request.query.to_owned()));
+    params.insert(
+        "documents".to_owned(),
+        Json::List(
+            request
+                .documents
+                .iter()
+                .map(RerankDocument::as_json)
+                .collect(),
+        ),
+    );
+    if let Some(value) = request.return_documents.mapped() {
+        params.insert("return_documents".to_owned(), Json::Bool(value));
+    }
+    if let Some(top_n) = request.top_n {
+        params.insert("top_n".to_owned(), Json::Number(Number::from(top_n)));
+    }
+    params
+}
+
+// Case binds the provider operations to the settings and environment one scenario dispatches with.
+struct Case<'case> {
+    ops: &'case FakeOps,
+    settings: RerankSettings,
+    environment: BTreeMap<String, String>,
+}
+
+impl<'case> Case<'case> {
+    const fn new(
+        ops: &'case FakeOps,
+        settings: RerankSettings,
+        environment: BTreeMap<String, String>,
+    ) -> Self {
+        Self {
+            ops,
+            settings,
+            environment,
+        }
+    }
+
+    fn dispatch<Identity>(
+        &self,
+        identity: &Identity,
+        call: RerankCall,
+        logging: &mut LoggingState,
+    ) -> Result<RerankResponse, RerankException>
+    where
+        Identity: RerankIdentity + Sync,
+    {
+        let redactor =
+            Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the default redactor compiles");
+        let plan = RerankPlan {
+            identity,
+            operations: self.ops,
+            settings: &self.settings,
+            environment: &self.environment,
+            redactor: &redactor,
+        };
+        Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("the test runtime builds")
+            .block_on(rerank(&plan, call, logging))
+    }
+}
+
+impl RerankOperations for FakeOps {
+    fn map_options(&self, request: OptionsRequest<'_>) -> Result<Params, Box<RawException>> {
+        if let Some(message) = &self.mapping_failure {
+            return Err(Box::new(value_failure(
+                message,
+                request.model,
+                request.custom_llm_provider.unwrap_or_default(),
+            )));
+        }
+        self.record_options(&request);
+        Ok(mapped_params(&request))
+    }
+
+    async fn send(
+        &self,
+        request: SendRequest<'_>,
+        _logging: &mut LoggingState,
+    ) -> Result<RerankResponse, Box<RawException>> {
+        self.record_send(&request);
         if let Some((status, message)) = &self.send_failure {
-            return Err(provider_failure(
+            return Err(Box::new(provider_failure(
                 *status,
                 message,
                 request.model,
                 request.provider,
                 "BaseLLMException",
-            ));
+            )));
         }
         Ok(reply())
     }
@@ -223,7 +278,7 @@ impl FakeIdentity {
         }
     }
 
-    fn missing() -> Self {
+    const fn missing() -> Self {
         Self { resolved: None }
     }
 }
@@ -298,7 +353,7 @@ fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
         .collect()
 }
 
-fn call(provider: &str) -> RerankCall {
+fn rerank_call(provider: &str) -> RerankCall {
     RerankCall {
         model: String::from("rerank-v1"),
         query: String::from("q"),
@@ -323,27 +378,13 @@ fn with(kwargs: &[(&str, Json)]) -> IndexMap<String, Json> {
         .collect()
 }
 
-fn dispatch<Identity: RerankIdentity>(
-    identity: &Identity,
-    ops: &FakeOps,
-    settings: &RerankSettings,
-    environment: &BTreeMap<String, String>,
-    call: RerankCall,
-    logging: &mut LoggingState,
-) -> Result<RerankResponse, super::plan::RerankException> {
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the default redactor compiles");
-    let plan = RerankPlan {
-        identity,
-        operations: ops,
-        settings,
-        environment,
-        redactor: &redactor,
-    };
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .expect("the test runtime builds")
-        .block_on(rerank(&plan, call, logging))
+fn cohere_identity() -> FakeIdentity {
+    FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Known(ProviderId::Cohere),
+        Some("k"),
+        Some("https://d/v1"),
+    )
 }
 
 #[test]
@@ -355,16 +396,11 @@ fn rerank_defaults_and_options() {
         Some("dynamic-key"),
         Some("https://dynamic.test/v1"),
     );
+    let case = Case::new(&ops, defaults(), BTreeMap::new());
     let mut logging = logging_state();
-    let response = dispatch(
-        &identity,
-        &ops,
-        &defaults(),
-        &BTreeMap::new(),
-        call("cohere"),
-        &mut logging,
-    )
-    .expect("the default call dispatches");
+    let response = case
+        .dispatch(&identity, rerank_call("cohere"), &mut logging)
+        .expect("the default call dispatches");
     let results: Vec<i64> = response
         .results
         .expect("the fixture carries results")
@@ -388,30 +424,36 @@ fn rerank_defaults_and_options() {
 }
 
 #[test]
+fn the_provider_call_carries_the_request_fields() {
+    let ops = FakeOps::default();
+    let identity = cohere_identity();
+    let case = Case::new(&ops, defaults(), BTreeMap::new());
+    let mut logging = logging_state();
+    case.dispatch(&identity, rerank_call("cohere"), &mut logging)
+        .expect("the call dispatches");
+    let options = ops.options();
+    assert_eq!(options[0].model, "rerank-v1");
+    assert_eq!(options[0].custom_llm_provider.as_deref(), Some("cohere"));
+    let sends = ops.sends();
+    assert_eq!(sends[0].model, "rerank-v1");
+    assert_eq!(sends[0].query, "q");
+    assert_eq!(sends[0].documents.len(), 2);
+}
+
+#[test]
 fn zero_valued_options_reach_the_mapping() {
     let ops = FakeOps::default();
-    let identity = FakeIdentity::new(
-        "rerank-v1",
-        ProviderIdentity::Known(ProviderId::Cohere),
-        Some("k"),
-        Some("https://d/v1"),
-    );
+    let identity = cohere_identity();
+    let case = Case::new(&ops, defaults(), BTreeMap::new());
     let mut logging = logging_state();
-    let mut call = call("cohere");
+    let mut call = rerank_call("cohere");
     call.top_n = Some(0);
     call.rank_fields = Some(Vec::new());
     call.max_chunks_per_doc = Some(0);
     call.max_tokens_per_doc = Some(0);
     call.kwargs = with(&[("instruction", Json::Text(String::from("brief")))]);
-    dispatch(
-        &identity,
-        &ops,
-        &defaults(),
-        &BTreeMap::new(),
-        call,
-        &mut logging,
-    )
-    .expect("zero options dispatch");
+    case.dispatch(&identity, call, &mut logging)
+        .expect("zero options dispatch");
     let options = ops.options();
     assert_eq!(options[0].top_n, Some(0));
     assert_eq!(options[0].rank_fields, Some(Vec::new()));
@@ -426,48 +468,27 @@ fn zero_valued_options_reach_the_mapping() {
 #[test]
 fn a_string_timeout_becomes_a_float_after_mapping() {
     let ops = FakeOps::default();
-    let identity = FakeIdentity::new(
-        "rerank-v1",
-        ProviderIdentity::Known(ProviderId::Cohere),
-        Some("k"),
-        Some("https://d/v1"),
-    );
+    let identity = cohere_identity();
+    let case = Case::new(&ops, defaults(), BTreeMap::new());
     let mut logging = logging_state();
-    let mut call = call("cohere");
+    let mut call = rerank_call("cohere");
     call.kwargs = with(&[("timeout", Json::Text(String::from("2.5")))]);
-    dispatch(
-        &identity,
-        &ops,
-        &defaults(),
-        &BTreeMap::new(),
-        call,
-        &mut logging,
-    )
-    .expect("the string timeout dispatches");
+    case.dispatch(&identity, call, &mut logging)
+        .expect("the string timeout dispatches");
     assert_eq!(ops.sends()[0].timeout_seconds, Some(2.5_f64));
 }
 
 #[test]
 fn a_bad_timeout_fails_before_the_provider_call() {
     let ops = FakeOps::default();
-    let identity = FakeIdentity::new(
-        "rerank-v1",
-        ProviderIdentity::Known(ProviderId::Cohere),
-        Some("k"),
-        Some("https://d/v1"),
-    );
+    let identity = cohere_identity();
+    let case = Case::new(&ops, defaults(), BTreeMap::new());
     let mut logging = logging_state();
-    let mut call = call("cohere");
+    let mut call = rerank_call("cohere");
     call.kwargs = with(&[("timeout", Json::Text(String::from("bad")))]);
-    let error = dispatch(
-        &identity,
-        &ops,
-        &defaults(),
-        &BTreeMap::new(),
-        call,
-        &mut logging,
-    )
-    .expect_err("a bad timeout raises");
+    let error = case
+        .dispatch(&identity, call, &mut logging)
+        .expect_err("a bad timeout raises");
     assert_eq!(error.message, "could not convert string to float: 'bad'");
     assert!(matches!(error.class, ErrorClass::ApiConnection(_)));
     assert_eq!(ops.options().len(), 1);
@@ -477,24 +498,14 @@ fn a_bad_timeout_fails_before_the_provider_call() {
 #[test]
 fn a_string_drop_params_is_refused() {
     let ops = FakeOps::default();
-    let identity = FakeIdentity::new(
-        "rerank-v1",
-        ProviderIdentity::Known(ProviderId::Cohere),
-        Some("k"),
-        Some("https://d/v1"),
-    );
+    let identity = cohere_identity();
+    let case = Case::new(&ops, defaults(), BTreeMap::new());
     let mut logging = logging_state();
-    let mut call = call("cohere");
+    let mut call = rerank_call("cohere");
     call.kwargs = with(&[("drop_params", Json::Text(String::from("true")))]);
-    let error = dispatch(
-        &identity,
-        &ops,
-        &defaults(),
-        &BTreeMap::new(),
-        call,
-        &mut logging,
-    )
-    .expect_err("a string drop_params raises");
+    let error = case
+        .dispatch(&identity, call, &mut logging)
+        .expect_err("a string drop_params raises");
     assert_eq!(error.message, "drop_params must be a boolean");
     assert!(ops.options().is_empty());
     assert!(ops.sends().is_empty());
@@ -503,63 +514,34 @@ fn a_string_drop_params_is_refused() {
 #[test]
 fn only_the_boolean_true_arerank_selects_async() {
     let ops = FakeOps::default();
-    let identity = FakeIdentity::new(
-        "rerank-v1",
-        ProviderIdentity::Known(ProviderId::Cohere),
-        Some("k"),
-        Some("https://d/v1"),
-    );
+    let identity = cohere_identity();
+    let case = Case::new(&ops, defaults(), BTreeMap::new());
     let mut logging = logging_state();
-    let mut call = call("cohere");
+    let mut call = rerank_call("cohere");
     call.kwargs = with(&[("arerank", Json::Bool(true))]);
-    dispatch(
-        &identity,
-        &ops,
-        &defaults(),
-        &BTreeMap::new(),
-        call,
-        &mut logging,
-    )
-    .expect("the async call dispatches");
+    case.dispatch(&identity, call, &mut logging)
+        .expect("the async call dispatches");
     assert!(ops.sends()[0].is_async);
     assert!(!ops.sends()[0].generic_params.contains_key("arerank"));
 
-    let mut call = call("cohere");
-    call.kwargs = with(&[("arerank", Json::Number(Number::from(1_i64)))]);
-    let mut logging = logging_state();
-    dispatch(
-        &identity,
-        &ops,
-        &defaults(),
-        &BTreeMap::new(),
-        call,
-        &mut logging,
-    )
-    .expect("the numeric arerank dispatches");
+    let mut second_call = rerank_call("cohere");
+    second_call.kwargs = with(&[("arerank", Json::Number(Number::from(1_i64)))]);
+    let mut second_logging = logging_state();
+    case.dispatch(&identity, second_call, &mut second_logging)
+        .expect("the numeric arerank dispatches");
     assert!(!ops.sends()[1].is_async);
 }
 
 #[test]
 fn mock_response_does_not_bypass_the_provider_call() {
     let ops = FakeOps::default();
-    let identity = FakeIdentity::new(
-        "rerank-v1",
-        ProviderIdentity::Known(ProviderId::Cohere),
-        Some("k"),
-        Some("https://d/v1"),
-    );
+    let identity = cohere_identity();
+    let case = Case::new(&ops, defaults(), BTreeMap::new());
     let mut logging = logging_state();
-    let mut call = call("cohere");
+    let mut call = rerank_call("cohere");
     call.kwargs = with(&[("mock_response", Json::Text(String::from("hello")))]);
-    dispatch(
-        &identity,
-        &ops,
-        &defaults(),
-        &BTreeMap::new(),
-        call,
-        &mut logging,
-    )
-    .expect("the call still dispatches");
+    case.dispatch(&identity, call, &mut logging)
+        .expect("the call still dispatches");
     assert_eq!(ops.sends().len(), 1);
     assert!(
         ops.options()[0]
@@ -571,80 +553,61 @@ fn mock_response_does_not_bypass_the_provider_call() {
 #[test]
 fn drop_params_uses_the_call_value_then_the_global_value() {
     let ops = FakeOps::default();
-    let identity = FakeIdentity::new(
-        "rerank-v1",
-        ProviderIdentity::Known(ProviderId::Cohere),
-        Some("k"),
-        Some("https://d/v1"),
-    );
+    let identity = cohere_identity();
+    drop_params_with_a_global_flag(&ops, &identity);
+    drop_params_with_a_call_flag(&ops, &identity);
+    drop_params_without_any_flag(&ops, &identity);
+}
+
+fn drop_params_with_a_global_flag(ops: &FakeOps, identity: &FakeIdentity) {
     let mut global = defaults();
     global.drop_params = true;
+    let case = Case::new(ops, global, BTreeMap::new());
     let mut logging = logging_state();
-    let mut call = call("cohere");
+    let mut call = rerank_call("cohere");
     call.kwargs = with(&[("drop_params", Json::Bool(false))]);
-    dispatch(
-        &identity,
-        &ops,
-        &global,
-        &BTreeMap::new(),
-        call,
-        &mut logging,
-    )
-    .expect("the call dispatches");
+    case.dispatch(identity, call, &mut logging)
+        .expect("the call dispatches");
     assert!(ops.options()[0].drop_params);
+}
 
+fn drop_params_with_a_call_flag(ops: &FakeOps, identity: &FakeIdentity) {
+    let case = Case::new(ops, defaults(), BTreeMap::new());
     let mut logging = logging_state();
-    let mut call = call("cohere");
+    let mut call = rerank_call("cohere");
     call.kwargs = with(&[("drop_params", Json::Bool(true))]);
-    dispatch(
-        &identity,
-        &ops,
-        &defaults(),
-        &BTreeMap::new(),
-        call,
-        &mut logging,
-    )
-    .expect("the call dispatches");
+    case.dispatch(identity, call, &mut logging)
+        .expect("the call dispatches");
     assert!(ops.options()[1].drop_params);
+}
 
+fn drop_params_without_any_flag(ops: &FakeOps, identity: &FakeIdentity) {
+    let case = Case::new(ops, defaults(), BTreeMap::new());
     let mut logging = logging_state();
-    dispatch(
-        &identity,
-        &ops,
-        &defaults(),
-        &BTreeMap::new(),
-        call("cohere"),
-        &mut logging,
-    )
-    .expect("the call dispatches");
+    case.dispatch(identity, rerank_call("cohere"), &mut logging)
+        .expect("the call dispatches");
     assert!(!ops.options()[2].drop_params);
 }
 
 #[test]
 fn logger_params_carry_the_call_identity_and_no_invented_stream_response() {
     let ops = FakeOps::default();
-    let identity = FakeIdentity::new(
-        "rerank-v1",
-        ProviderIdentity::Known(ProviderId::Cohere),
-        Some("k"),
-        Some("https://d/v1"),
-    );
+    let identity = cohere_identity();
+    logger_params_come_from_the_kwargs(&ops, &identity);
+    logger_params_keep_a_given_stream_response(&ops, &identity);
+}
+
+fn logger_params_come_from_the_kwargs(ops: &FakeOps, identity: &FakeIdentity) {
+    let case = Case::new(ops, defaults(), BTreeMap::new());
     let mut logging = logging_state();
-    let mut call = call("cohere");
+    let mut call = rerank_call("cohere");
     call.kwargs = with(&[
         ("litellm_call_id", Json::Text(String::from("lc-1"))),
         ("proxy_server_request", Json::Object(IndexMap::new())),
         ("model_info", Json::Object(IndexMap::new())),
     ]);
-    dispatch(
-        &identity,
-        &ops,
-        &defaults(),
-        &BTreeMap::new(),
-        call,
-        &mut logging,
-    )
-    .expect("the call dispatches");
+    case.dispatch(identity, call, &mut logging)
+        .expect("the call dispatches");
     let sends = ops.sends();
     assert_eq!(
         sends[0].litellm_params.get("litellm_call_id"),
@@ -666,8 +629,12 @@ fn logger_params_carry_the_call_identity_and_no_invented_stream_response() {
         logging.litellm_params.get("stream_response"),
         Some(&Json::Object(IndexMap::new()))
     );
+}
 
-    let mut call = call("cohere");
+fn logger_params_keep_a_given_stream_response(ops: &FakeOps, identity: &FakeIdentity) {
+    let case = Case::new(ops, defaults(), BTreeMap::new());
+    let mut logging = logging_state();
+    let mut call = rerank_call("cohere");
     call.kwargs = with(&[
         ("preset_cache_key", Json::Text(String::from("preset-1"))),
         (
@@ -675,16 +642,8 @@ fn logger_params_carry_the_call_identity_and_no_invented_stream_response() {
             Json::Object(IndexMap::from([(String::from("kept"), Json::Bool(true))])),
         ),
     ]);
-    let mut logging = logging_state();
-    dispatch(
-        &identity,
-        &ops,
-        &defaults(),
-        &BTreeMap::new(),
-        call,
-        &mut logging,
-    )
-    .expect("the call dispatches");
+    case.dispatch(identity, call, &mut logging)
+        .expect("the call dispatches");
     let sends = ops.sends();
     assert_eq!(
         sends[1].litellm_params.get("preset_cache_key"),
@@ -699,41 +658,22 @@ fn logger_params_carry_the_call_identity_and_no_invented_stream_response() {
 #[test]
 fn version_params_choose_the_cohere_client() {
     let ops = FakeOps::default();
-    let identity = FakeIdentity::new(
-        "rerank-v1",
-        ProviderIdentity::Known(ProviderId::Cohere),
-        Some("k"),
-        Some("https://d/v1"),
-    );
+    let identity = cohere_identity();
+    let case = Case::new(&ops, defaults(), BTreeMap::new());
     let mut logging = logging_state();
-    let mut call = call("cohere");
+    let mut call = rerank_call("cohere");
     call.max_chunks_per_doc = Some(0);
     call.kwargs = with(&[("api_base", Json::Text(String::from("https://d/v1/rerank")))]);
-    dispatch(
-        &identity,
-        &ops,
-        &defaults(),
-        &BTreeMap::new(),
-        call,
-        &mut logging,
-    )
-    .expect("the v1 call dispatches");
+    case.dispatch(&identity, call, &mut logging)
+        .expect("the v1 call dispatches");
     assert_eq!(ops.options()[0].config, SelectedConfig::Cohere);
 
-    let mut logging = logging_state();
-    let mut call = call("cohere");
-    call.max_tokens_per_doc = Some(0);
-    call.kwargs = with(&[("api_base", Json::Text(String::from("https://d")))]);
-
-    dispatch(
-        &identity,
-        &ops,
-        &defaults(),
-        &BTreeMap::new(),
-        call,
-        &mut logging,
-    )
-    .expect("the v2 call dispatches");
+    let mut second_call = rerank_call("cohere");
+    second_call.max_tokens_per_doc = Some(0);
+    second_call.kwargs = with(&[("api_base", Json::Text(String::from("https://d")))]);
+    let mut second_logging = logging_state();
+    case.dispatch(&identity, second_call, &mut second_logging)
+        .expect("the v2 call dispatches");
     assert_eq!(ops.options()[1].config, SelectedConfig::CohereV2);
 }
 
@@ -747,22 +687,12 @@ fn a_mapping_failure_raises_through_the_error_mapping() {
         )),
         send_failure: None,
     };
-    let identity = FakeIdentity::new(
-        "rerank-v1",
-        ProviderIdentity::Known(ProviderId::Cohere),
-        Some("k"),
-        Some("https://d/v1"),
-    );
+    let identity = cohere_identity();
+    let case = Case::new(&ops, defaults(), BTreeMap::new());
     let mut logging = logging_state();
-    let error = dispatch(
-        &identity,
-        &ops,
-        &defaults(),
-        &BTreeMap::new(),
-        call("cohere"),
-        &mut logging,
-    )
-    .expect_err("the mapping raises");
+    let error = case
+        .dispatch(&identity, rerank_call("cohere"), &mut logging)
+        .expect_err("the mapping raises");
     assert!(error.message.starts_with("Invalid parameter: stream"));
     assert!(ops.sends().is_empty());
 }
@@ -770,38 +700,20 @@ fn a_mapping_failure_raises_through_the_error_mapping() {
 #[test]
 fn return_documents_null_is_absent_and_false_is_sent() {
     let ops = FakeOps::default();
-    let identity = FakeIdentity::new(
-        "rerank-v1",
-        ProviderIdentity::Known(ProviderId::Cohere),
-        Some("k"),
-        Some("https://d/v1"),
-    );
+    let identity = cohere_identity();
+    let case = Case::new(&ops, defaults(), BTreeMap::new());
     let mut logging = logging_state();
-    let mut call = call("cohere");
+    let mut call = rerank_call("cohere");
     call.return_documents = ReturnDocuments::Null;
-    dispatch(
-        &identity,
-        &ops,
-        &defaults(),
-        &BTreeMap::new(),
-        call,
-        &mut logging,
-    )
-    .expect("the null return_documents dispatches");
+    case.dispatch(&identity, call, &mut logging)
+        .expect("the null return_documents dispatches");
     assert_eq!(ops.sends()[0].optional_params.get("return_documents"), None);
 
-    let mut logging = logging_state();
-    let mut call = call("cohere");
-    call.return_documents = ReturnDocuments::Value(false);
-    dispatch(
-        &identity,
-        &ops,
-        &defaults(),
-        &BTreeMap::new(),
-        call,
-        &mut logging,
-    )
-    .expect("the false return_documents dispatches");
+    let mut second_call = rerank_call("cohere");
+    second_call.return_documents = ReturnDocuments::Value(false);
+    let mut second_logging = logging_state();
+    case.dispatch(&identity, second_call, &mut second_logging)
+        .expect("the false return_documents dispatches");
     assert_eq!(
         ops.sends()[1].optional_params.get("return_documents"),
         Some(&Json::Bool(false))
@@ -811,24 +723,13 @@ fn return_documents_null_is_absent_and_false_is_sent() {
 #[test]
 fn the_logger_gets_the_call_user() {
     let ops = FakeOps::default();
-    let identity = FakeIdentity::new(
-        "rerank-v1",
-        ProviderIdentity::Known(ProviderId::Cohere),
-        Some("k"),
-        Some("https://d/v1"),
-    );
+    let identity = cohere_identity();
+    let case = Case::new(&ops, defaults(), BTreeMap::new());
     let mut logging = logging_state();
-    let mut call = call("cohere");
+    let mut call = rerank_call("cohere");
     call.kwargs = with(&[("user", Json::Text(String::from("u-1")))]);
-    dispatch(
-        &identity,
-        &ops,
-        &defaults(),
-        &BTreeMap::new(),
-        call,
-        &mut logging,
-    )
-    .expect("the call dispatches");
+    case.dispatch(&identity, call, &mut logging)
+        .expect("the call dispatches");
     assert_eq!(logging.user.as_deref(), Some("u-1"));
 }
 
@@ -856,10 +757,7 @@ fn every_provider_slug_selects_its_config(
     #[case] expected: SelectedConfig,
 ) {
     let identity = ProviderIdentity::Custom(slug.to_owned());
-    assert_eq!(
-        super::selection::selected_config(&identity, model, None, &[]),
-        expected
-    );
+    assert_eq!(selected_config(&identity, model, None, &[]), expected);
 }
 
 #[test]
@@ -899,19 +797,17 @@ fn watsonx_reads_its_environment_credentials() {
         None,
         None,
     );
-    let mut logging = logging_state();
-    dispatch(
-        &identity,
+    let case = Case::new(
         &ops,
-        &defaults(),
-        &environment(&[
+        defaults(),
+        environment(&[
             ("WATSONX_API_KEY", "env-key"),
             ("WATSONX_API_BASE", "https://env.watsonx.test"),
         ]),
-        call("watsonx"),
-        &mut logging,
-    )
-    .expect("watsonx takes the environment credentials");
+    );
+    let mut logging = logging_state();
+    case.dispatch(&identity, rerank_call("watsonx"), &mut logging)
+        .expect("watsonx takes the environment credentials");
     let sends = ops.sends();
     assert_eq!(sends[0].config, SelectedConfig::Watsonx);
     assert_eq!(sends[0].api_key.as_deref(), Some("env-key"));
@@ -931,16 +827,11 @@ fn watsonx_without_credentials_raises_the_key_error() {
         None,
         None,
     );
+    let case = Case::new(&ops, defaults(), BTreeMap::new());
     let mut logging = logging_state();
-    let error = dispatch(
-        &identity,
-        &ops,
-        &defaults(),
-        &BTreeMap::new(),
-        call("watsonx"),
-        &mut logging,
-    )
-    .expect_err("watsonx needs a key");
+    let error = case
+        .dispatch(&identity, rerank_call("watsonx"), &mut logging)
+        .expect_err("watsonx needs a key");
     assert_eq!(
         error.message,
         "Error: Watsonx API key not set. Set WATSONX_API_KEY in environment variables or pass in as parameter - 'api_key='."
