@@ -263,8 +263,7 @@ where
     }
 }
 
-// httpx.post turns its own timeout into litellm.Timeout, which _handle_error reports with the 408 it carries; a get
-// raises nothing of its own, so every other failure keeps the typed reason the shared converter gives it
+// httpx.post turns its own timeout into litellm.Timeout, which _handle_error reports with the 408 it carries; a get raises none
 fn send_failure<C>(
     config: &C,
     sent: Sent,

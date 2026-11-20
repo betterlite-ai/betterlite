@@ -14,8 +14,7 @@ use http::Method;
 use http::header::HeaderMap;
 use url::Url;
 
-// the body a character call carries: a lookup sends none, and a creation sends the encoded parts, with the request's
-// Content-Type naming the boundary they were encoded with
+// the body a character call carries: a lookup sends none, and a creation sends the encoded parts its Content-Type names
 #[derive(Debug)]
 pub enum CharacterBody {
     Empty,

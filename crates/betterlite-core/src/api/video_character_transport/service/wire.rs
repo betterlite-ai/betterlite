@@ -81,8 +81,7 @@ pub(crate) fn request_url(text: &str, query: &[(String, String)]) -> Result<Url,
     Ok(url)
 }
 
-// httpx encodes the parts with the boundary a caller's content type names, quotes and case included, and generates
-// one for every other call
+// httpx encodes the parts with the boundary a caller's content type names, quotes and case included, and generates one otherwise
 pub(crate) fn multipart_boundary(headers: &HeaderMap) -> Option<&str> {
     let value = headers.get(CONTENT_TYPE)?;
     let text = from_utf8(value.as_bytes()).ok()?;

@@ -9,8 +9,7 @@ use thiserror::Error;
 
 use super::config::CharacterConfig;
 
-// what a character call raises: a timed-out POST becomes the provider's 408, and every other setup or send failure
-// keeps its typed reason
+// what a character call raises: a timed-out POST becomes the provider's 408, and every other failure keeps its typed reason
 #[derive(Debug, Error)]
 pub enum CharacterError<ProviderError>
 where

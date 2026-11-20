@@ -160,8 +160,7 @@ where
     })
 }
 
-// validate_environment with the caller's headers in the map it may rewrite, the way LiteLLM hands extra_headers in
-// and re-applies the dict the config mutated, then get_complete_url
+// validate_environment gets the caller's headers in the map it may rewrite, then get_complete_url
 fn validated<C>(
     config: &C,
     call: &CallParts<'_>,
