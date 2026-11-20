@@ -115,17 +115,16 @@ async fn claim(
     ttl_seconds: u32,
     eligible: Option<&[Vec<PinField>]>,
 ) -> Result<Observation, OperationError> {
-    let mut candidates = None;
-    if let Some(sets) = eligible {
-        let mut pins = Vec::with_capacity(sets.len());
-        for entry in sets {
-            pins.push(build_pin(entry));
-        }
-        candidates = Some(pins);
-    }
+    let parsed_key = AffinityKey::try_from(key).map_err(|error| invalid(&error.to_string()))?;
+    let requested_pin = build_pin(fields);
+    let candidates = eligible.map(|sets| {
+        sets.iter()
+            .map(|entry| build_pin(entry.as_slice()))
+            .collect::<Vec<_>>()
+    });
     let outcome = Box::pin(scenario.service.claim(
-        &AffinityKey::try_from(key).map_err(|error| invalid(&error.to_string()))?,
-        &build_pin(fields),
+        &parsed_key,
+        &requested_pin,
         ttl_seconds,
         candidates.as_deref(),
     ))
